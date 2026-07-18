@@ -111,6 +111,13 @@ TILES = {
     "snow_hare": ("face", "pure white winter hare fur with faint grey shading"),
     "antler": ("face", "pale cream deer antler bone surface with faint darker ridges"),
     "torch": ("plant", "a wooden torch: brown stick with a bright orange-yellow flame at the top"),
+    "oak_sapling": ("plant", "a tiny young oak tree sapling with a few green leaves"),
+    "birch_sapling": ("plant", "a tiny young birch sapling, pale trunk, light yellow-green leaves"),
+    "spruce_sapling": ("plant", "a tiny young spruce sapling, dark green needle tufts"),
+    "jungle_sapling": ("plant", "a tiny young tropical sapling with vivid green fronds"),
+    "acacia_sapling": ("plant", "a tiny young acacia sapling with a flat olive-green crown"),
+    "offering_stone": ("tile", "mossy grey stone altar surface with a shallow bowl glowing faint pale green in the center"),
+    "bedroll": ("sprite", "a rolled-up brown leather hide bedroll tied with green fiber cords"),
     # wardens
     "thornling": ("face", "dark bristly shrub hide, dense green-black twigs with pale thorn tips"),
     "dryad": ("face", "mossy ancient bark with green lichen veins"),

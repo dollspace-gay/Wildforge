@@ -2572,3 +2572,142 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
         "wall hit dropped the arrow for recovery"
     );
 }
+
+// ---------------- stewardship ----------------
+
+#[test]
+fn saplings_parse_drop_and_grow() {
+    let reg = base_reg();
+    // Leaves carry sapling bonus drops of their own species.
+    let oak_leaves = reg.block(reg.block_id("base:leaves").unwrap());
+    let (bd_item, ch) = oak_leaves.bonus_drop.expect("leaves drop saplings");
+    assert_eq!(reg.item(bd_item).name, "base:oak_sapling");
+    assert!((ch - 0.1).abs() < 0.001);
+    let spruce = reg.block(reg.block_id("base:spruce_leaves").unwrap());
+    assert_eq!(
+        reg.item(spruce.bonus_drop.unwrap().0).name,
+        "base:spruce_sapling"
+    );
+    // Grow: sapling on dirt in open air becomes a real tree.
+    let mut w = test_world("sapgrow");
+    let dirt = reg.block_id("base:dirt").unwrap();
+    let sap = reg.block_id("base:oak_sapling").unwrap();
+    w.set_block(4, 199, 4, dirt);
+    w.set_block(4, 200, 4, sap);
+    let ire0 = {
+        w.ire = 50.0;
+        w.ire
+    };
+    assert!(w.try_grow_sapling(4, 200, 4, 7), "clear sky: grows");
+    let log = reg.block_id("base:log").unwrap();
+    assert_eq!(w.get_block(4, 200, 4), log, "trunk replaces the sapling");
+    let leaves = reg.block_id("base:leaves").unwrap();
+    let mut leaf_count = 0;
+    for x in 0..9 {
+        for z in 0..9 {
+            for y in 200..212 {
+                if w.get_block(x, y, z) == leaves {
+                    leaf_count += 1;
+                }
+            }
+        }
+    }
+    assert!(leaf_count > 8, "canopy grew ({leaf_count} leaves)");
+    assert!((w.ire - (ire0 - 2.0)).abs() < 0.01, "maturation refunds 2 ire");
+    // Blocked trunk: stays a sapling.
+    let stone = reg.block_id("base:stone").unwrap();
+    w.set_block(8, 199, 8, dirt);
+    w.set_block(8, 200, 8, sap);
+    w.set_block(8, 202, 8, stone);
+    assert!(!w.try_grow_sapling(8, 200, 8, 7), "blocked: stays");
+    assert_eq!(w.get_block(8, 200, 8), sap);
+}
+
+#[test]
+fn offering_stone_values_and_dawn() {
+    let reg = base_reg();
+    let mut w = test_world("offer");
+    let stone = reg.block_id("base:offering_stone").unwrap();
+    assert_eq!(reg.block(stone).interaction.as_deref(), Some("offering"));
+    assert_eq!(reg.block(stone).light_emit, 5, "faint wildlight");
+    assert!(!reg.recipes_for(it(&reg, "base:offering_stone")).is_empty());
+    // Value table: the wild's own materials 2.0, meat 1.0, bread hunger*0.25.
+    let v = |name: &str, n: u32| {
+        w.offering_value(&ItemStack::new(&reg, it(&reg, name), n))
+    };
+    assert_eq!(v("base:heartwood", 1), 2.0);
+    assert_eq!(v("base:raw_venison", 2), 2.0);
+    assert!((v("base:bread", 1) - 1.5).abs() < 0.01, "bread hunger 6 * 0.25");
+    assert_eq!(v("base:oak_sapling", 1), 1.0);
+    // Dawn: items taken, refund capped at 10.
+    w.ire = 60.0;
+    let mut st = crate::world::OfferingState::default();
+    st.slots[0] = Some(ItemStack::new(&reg, it(&reg, "base:heartwood"), 4)); // 8.0
+    st.slots[1] = Some(ItemStack::new(&reg, it(&reg, "base:raw_rabbit"), 5)); // 5.0
+    w.block_entities.insert((3, 90, 3), crate::world::BlockEntity::Offering(st));
+    let r = w.accept_offerings();
+    assert!((r - 10.0).abs() < 0.01, "capped at 10, got {r}");
+    assert!((w.ire - 50.0).abs() < 0.01);
+    let Some(crate::world::BlockEntity::Offering(o)) = w.block_entities.get(&(3, 90, 3))
+    else {
+        panic!()
+    };
+    assert!(o.slots.iter().all(|s| s.is_none()), "the wild took everything");
+    assert_eq!(w.accept_offerings(), 0.0, "empty stone gives nothing");
+}
+
+#[test]
+fn breeding_makes_babies_that_grow() {
+    let reg = base_reg();
+    let mut w = test_world("breed");
+    let deer_i = reg.animal_id("base:deer").unwrap();
+    w.ire = 20.0;
+    let before = w.mobs.len();
+    for x in [4.5f32, 6.5] {
+        let mut m = crate::mobs::Mob::new(deer_i, Vec3::new(x, 220.0, 4.5), 0.0);
+        m.health = 10.0;
+        m.fed = true;
+        w.mobs.push(m);
+    }
+    let mut rng = 3u32;
+    let events = w.tick_mobs(Vec3::new(200.0, 80.0, 200.0), 1.0, true, 1.0 / 60.0, &mut rng);
+    assert!(
+        events.iter().any(|e| matches!(e, crate::mobs::MobEvent::Bred(_))),
+        "birth event"
+    );
+    assert_eq!(w.mobs.len(), before + 3, "two parents + one baby");
+    let baby = w.mobs.iter().find(|m| m.growth < 1.0).expect("a baby exists");
+    assert!(baby.growth < 0.1);
+    assert!((w.ire - 19.0).abs() < 0.01, "a birth refunds 1 ire");
+    let parents_fed = w.mobs.iter().filter(|m| m.fed).count();
+    assert_eq!(parents_fed, 0, "parents spent their meal");
+    // Growth advances with time; babies persist through saves.
+    let baby_growth = baby.growth;
+    for _ in 0..120 {
+        w.tick_mobs(Vec3::new(200.0, 80.0, 200.0), 1.0, true, 1.0 / 60.0, &mut rng);
+    }
+    let baby2 = w.mobs.iter().find(|m| m.growth < 1.0).expect("still young");
+    assert!(baby2.growth > baby_growth, "babies grow");
+    // No immediate re-breeding: cooldown holds.
+    let n_now = w.mobs.len();
+    let ev2 = w.tick_mobs(Vec3::new(200.0, 80.0, 200.0), 1.0, true, 1.0 / 60.0, &mut rng);
+    assert!(!ev2.iter().any(|e| matches!(e, crate::mobs::MobEvent::Bred(_))));
+    assert_eq!(w.mobs.len(), n_now);
+}
+
+#[test]
+fn bedroll_and_breed_data_parse() {
+    let reg = base_reg();
+    let br = reg.item(it(&reg, "base:bedroll"));
+    assert!(br.bedroll);
+    assert_eq!(br.durability, 12);
+    assert!(!reg.recipes_for(it(&reg, "base:bedroll")).is_empty());
+    // Favorite foods resolved per species.
+    let food_of = |sp: &str| {
+        let d = &reg.animals[reg.animal_id(sp).unwrap()];
+        d.breed_food.map(|f| reg.item(f).name.clone())
+    };
+    assert_eq!(food_of("base:deer").as_deref(), Some("base:berry"));
+    assert_eq!(food_of("base:goat").as_deref(), Some("base:wheat"));
+    assert_eq!(food_of("base:thornling"), None, "wardens don't breed");
+}

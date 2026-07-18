@@ -68,6 +68,7 @@ enum Screen {
     Inventory,
     Furnace((i32, i32, i32)),
     Chest((i32, i32, i32)),
+    Offering((i32, i32, i32)),
     Paused,
     Dead,
 }
@@ -627,6 +628,34 @@ impl Game {
                 }
             }
         }
+        // Dev: stewardship showcase — offering stone with gifts, a planted
+        // sapling, and a grown oak (verification).
+        if std::env::var("WILDFORGE_DEMO_STEWARD").is_ok() {
+            let reg = self.reg.clone();
+            let (sx, sz) = (spawn.x as i32, spawn.z as i32);
+            if let Some(os) = reg.block_id("base:offering_stone") {
+                let y = self.world.surface_height(sx - 3, sz - 5) + 1;
+                self.world.set_block(sx - 3, y, sz - 5, os);
+                let mut st = world::OfferingState::default();
+                if let Some(hw) = reg.item_id("base:heartwood") {
+                    st.slots[0] = Some(ItemStack::new(&reg, hw, 2));
+                }
+                self.world
+                    .block_entities
+                    .insert((sx - 3, y, sz - 5), world::BlockEntity::Offering(st));
+            }
+            if let Some(sap) = reg.block_id("base:oak_sapling") {
+                let y = self.world.surface_height(sx + 2, sz - 6) + 1;
+                self.world.set_block(sx + 2, y, sz - 6, sap);
+            }
+            let ty = self.world.surface_height(sx + 6, sz - 8) + 1;
+            self.world.grow_tree(sx + 6, ty, sz - 8, "oak", 3);
+            for name in ["base:bedroll", "base:oak_sapling"] {
+                if let Some(item) = reg.item_id(name) {
+                    self.inventory.add(&reg, item, 1);
+                }
+            }
+        }
         // Dev: a stocked chest next to spawn, screen open (UI verification).
         if std::env::var("WILDFORGE_DEMO_CHEST").is_ok() {
             let p = (spawn.x as i32 - 2, spawn.y as i32, spawn.z as i32);
@@ -718,6 +747,8 @@ impl Game {
         let _ = writeln!(out, "health = {}\nhunger = {}", self.health, self.hunger);
         let _ = writeln!(out, "nutrition = {:?}", self.nutrition);
         let _ = writeln!(out, "hotbar = {}", self.hotbar_sel);
+        let sp = self.spawn_point;
+        let _ = writeln!(out, "spawn = [{}, {}, {}]", sp.x, sp.y, sp.z);
         for (i, s) in self.inventory.slots.iter().enumerate() {
             if let Some(s) = s {
                 let _ = writeln!(
@@ -753,6 +784,8 @@ impl Game {
             nutrition: [f32; 5],
             hotbar: usize,
             #[serde(default)]
+            spawn: Option<[f32; 3]>,
+            #[serde(default)]
             slot: Vec<SlotT>,
             #[serde(default)]
             armor: Vec<SlotT>,
@@ -766,6 +799,9 @@ impl Game {
         self.hunger = p.hunger;
         self.nutrition = p.nutrition;
         self.hotbar_sel = p.hotbar.min(HOTBAR_SLOTS - 1);
+        if let Some(sp) = p.spawn {
+            self.spawn_point = Vec3::new(sp[0], sp[1], sp[2]);
+        }
         for s in p.slot {
             if s.index < TOTAL_SLOTS {
                 if let Some(item) = self.reg.item_id(&s.item) {
@@ -860,7 +896,7 @@ impl Game {
         self.bow_draw = 0.0; // opening any screen relaxes the draw
 
         // Leaving the inventory returns the cursor-held stack and craft grid.
-        if self.screen == Screen::Inventory || matches!(self.screen, Screen::Furnace(_) | Screen::Chest(_)) {
+        if self.screen == Screen::Inventory || matches!(self.screen, Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_)) {
             let mut back: Vec<ItemStack> = self.held_stack.take().into_iter().collect();
             for slot in self.craft_grid.iter_mut() {
                 if let Some(s) = slot.take() {
@@ -886,6 +922,41 @@ impl Game {
             self.right_held = false;
             self.breaking = None;
         }
+    }
+
+    /// Bedroll: sleep to dawn if it's night and the wild is far enough.
+    fn try_sleep(&mut self) {
+        let sun = (self.time_of_day * std::f32::consts::TAU).sin();
+        if sun > -0.05 {
+            self.toast("You can only sleep at night.".to_string());
+            return;
+        }
+        let reg = self.reg.clone();
+        let near_warden = self.world.mobs.iter().any(|m| {
+            reg.animals.get(m.species).is_some_and(|d| d.hostile)
+                && (m.pos - self.player.pos).length_squared() < 24.0 * 24.0
+        });
+        if near_warden {
+            self.toast("The wild is too close.".to_string());
+            return;
+        }
+        // Time passes fairly: the skipped night still decays ire.
+        let skipped = (1.0 + 0.3 - self.time_of_day) % 1.0;
+        if self.world.tick_ire(skipped) {
+            let r = self.world.accept_offerings();
+            if r > 0.0 {
+                self.toast("The wild has accepted your offering.".to_string());
+            }
+        }
+        self.time_of_day = 0.3;
+        self.spawn_point = self.player.pos;
+        if !self.creative {
+            self.inventory.wear_tool(&reg, self.hotbar_sel);
+        }
+        self.save_player();
+        self.world.save_modified();
+        self.toast("You camp until dawn. This is home now.".to_string());
+        self.sfx(Sfx::Craft);
     }
 
     fn armor_points(&self) -> u32 {
@@ -1153,6 +1224,9 @@ impl Game {
                 self.world.add_ire(2.0);
             }
             self.sfx(Sfx::MobDeath(def.sound_pitch));
+            if m.growth < 1.0 {
+                continue; // the young return nothing (you monster)
+            }
             for (item, min, max) in &def.drops {
                 let n = min + (self.rand01() * (*max - *min + 1) as f32) as u32;
                 let n = n.min(*max);
@@ -1278,6 +1352,19 @@ impl Game {
                                 let v = Vec3::new(a.cos() * 1.2, 2.2, a.sin() * 1.2);
                                 self.items.push(ItemEntity::new(center, v, drop, n));
                             }
+                            // Chance extras (leaves drop saplings).
+                            if let Some((item, ch)) = reg.block(b).bonus_drop {
+                                if !self.creative && self.rand01() < ch {
+                                    let center = Vec3::new(
+                                        target.0 as f32 + 0.5,
+                                        target.1 as f32 + 0.3,
+                                        target.2 as f32 + 0.5,
+                                    );
+                                    let a = self.rand01() * std::f32::consts::TAU;
+                                    let v = Vec3::new(a.cos() * 1.2, 2.2, a.sin() * 1.2);
+                                    self.items.push(ItemEntity::new(center, v, item, 1));
+                                }
+                            }
                         }
                     } else {
                         self.breaking = Some((target, progress));
@@ -1294,6 +1381,36 @@ impl Game {
 
         // Right click: interact with the targeted block (crafting table),
         // otherwise place the selected block.
+        // Feeding wildlife: right-click an adult with its favorite food.
+        if self.right_held && self.action_cooldown <= 0.0 {
+            if let Some(mi) = self.mob_in_crosshair(&hit) {
+                let sp = self.world.mobs[mi].species;
+                let def = &reg.animals[sp];
+                if let (Some(bf), Some(h)) = (def.breed_food, held) {
+                    if bf == h
+                        && !def.hostile
+                        && self.world.mobs[mi].growth >= 1.0
+                        && self.world.mobs[mi].breed_cd <= 0.0
+                        && !self.world.mobs[mi].fed
+                    {
+                        if self.creative || self.inventory.take_one(self.hotbar_sel).is_some() {
+                            let m = &mut self.world.mobs[mi];
+                            m.fed = true;
+                            m.calm = 30.0;
+                            self.action_cooldown = 0.4;
+                            self.sfx(Sfx::Pickup);
+                            return;
+                        }
+                    }
+                }
+            }
+            // Bedroll: camp until dawn.
+            if held.is_some_and(|i| reg.item(i).bedroll) {
+                self.try_sleep();
+                self.action_cooldown = 0.5;
+                return;
+            }
+        }
         let held_is_food = held.is_some_and(|i| reg.item(i).food.is_some());
         if self.right_held && self.action_cooldown <= 0.0 && !held_is_food {
             if let Some(h) = &hit {
@@ -1364,6 +1481,17 @@ impl Game {
                                 world::BlockEntity::Chest(Default::default())
                             });
                         self.set_screen(Screen::Chest(h.block));
+                        return;
+                    }
+                    Some("offering") if self.action_cooldown <= 0.0 => {
+                        self.action_cooldown = 0.3;
+                        self.world
+                            .block_entities
+                            .entry(h.block)
+                            .or_insert_with(|| {
+                                world::BlockEntity::Offering(Default::default())
+                            });
+                        self.set_screen(Screen::Offering(h.block));
                         return;
                     }
                     _ => {}
@@ -1697,7 +1825,13 @@ impl Game {
             self.attack_cooldown = (self.attack_cooldown - dt).max(0.0);
             self.scroll_cooldown = (self.scroll_cooldown - dt).max(0.0);
             self.time_of_day = (self.time_of_day + dt / DAY_LENGTH) % 1.0;
-            self.world.tick_ire(dt / DAY_LENGTH);
+            if self.world.tick_ire(dt / DAY_LENGTH) {
+                let r = self.world.accept_offerings();
+                if r > 0.0 {
+                    self.sfx(Sfx::Pickup);
+                    self.toast("The wild has accepted your offering.".to_string());
+                }
+            }
             let tier = self.world.ire_tier();
             if tier != self.prev_ire_tier {
                 self.toast(
@@ -1739,6 +1873,10 @@ impl Game {
                             self.sfx(Sfx::Bolt(1.2));
                             self.world.projectiles.push(p);
                         }
+                        mobs::MobEvent::Bred(_) => {
+                            self.sfx(Sfx::Pickup);
+                            self.toast("New life stirs in the wild.".to_string());
+                        }
                     }
                 }
                 let bolt_dmg = self.world.tick_projectiles(self.player.pos, dt);
@@ -1760,7 +1898,9 @@ impl Game {
                     self.items.push(ItemEntity::new(center, v, s.item, s.count));
                 }
                 // Close container screens if their block vanished.
-                if let Screen::Furnace(pos) | Screen::Chest(pos) = self.screen {
+                if let Screen::Furnace(pos) | Screen::Chest(pos) | Screen::Offering(pos) =
+                    self.screen
+                {
                     if !self.world.block_entities.contains_key(&pos) {
                         self.set_screen(Screen::Playing);
                     }
@@ -2463,6 +2603,38 @@ impl Game {
                 self.ui = ui;
                 return;
             }
+            Screen::Offering(pos) => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
+                let title = "OFFERING STONE";
+                let tw = UiBatch::text_width(3.0, title);
+                ui.text_shadow((w - tw) / 2.0, h / 2.0 - 260.0, 3.0, title, [1.0; 4]);
+                let hint = "LEFT AT DUSK, TAKEN BY DAWN";
+                let hw2 = UiBatch::text_width(1.5, hint);
+                ui.text_shadow((w - hw2) / 2.0, h / 2.0 - 232.0, 1.5, hint, [0.7, 0.85, 0.65, 1.0]);
+                let slots = match self.world.block_entities.get(&pos) {
+                    Some(world::BlockEntity::Offering(o)) => o.slots,
+                    _ => [None; 3],
+                };
+                for (i, st) in slots.iter().enumerate() {
+                    let r = self.offering_slot_rect(i);
+                    Self::draw_slot(&self.reg, &mut ui, r, *st, false, self.hit(r));
+                }
+                for i in 0..TOTAL_SLOTS {
+                    let r = self.inv_slot_rect(i);
+                    Self::draw_slot(&self.reg, &mut ui, r, self.inventory.slots[i], i == self.hotbar_sel, self.hit(r));
+                }
+                self.draw_browser(&mut ui);
+                if let Some(s) = self.held_stack {
+                    let (cx, cy) = self.ui_cursor;
+                    let icon = self.reg.item(s.item).icon;
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, (icon as u32 % 16, icon as u32 / 16), [1.0; 4]);
+                    if s.count > 1 {
+                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
+                    }
+                }
+                self.ui = ui;
+                return;
+            }
             Screen::Inventory => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
                 let title = if self.craft_size == 3 { "CRAFTING" } else { "INVENTORY" };
@@ -2698,6 +2870,30 @@ impl Game {
             }
             (None, None) => {}
         }
+    }
+
+    /// Offering stone: three slots, centered.
+    fn offering_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (
+            w / 2.0 + (i as f32 - 1.5) * (Self::SLOT + 10.0) + 5.0,
+            h / 2.0 - 200.0,
+            Self::SLOT,
+            Self::SLOT,
+        )
+    }
+
+    fn offering_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+        let reg = self.reg.clone();
+        let Some(world::BlockEntity::Offering(o)) = self.world.block_entities.get_mut(&pos)
+        else {
+            return;
+        };
+        let (new_slot, new_held) =
+            inventory::click_stack(&reg, o.slots[slot], self.held_stack, right);
+        o.slots[slot] = new_slot;
+        self.held_stack = new_held;
     }
 
     fn chest_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
@@ -3106,6 +3302,23 @@ impl Game {
                     }
                 }
             }
+            Screen::Offering(pos) => {
+                if self.browser_click(right) {
+                    return;
+                }
+                for i in 0..3 {
+                    if self.hit(self.offering_slot_rect(i)) {
+                        self.offering_click(pos, i, right);
+                        return;
+                    }
+                }
+                for i in 0..TOTAL_SLOTS {
+                    if self.hit(self.inv_slot_rect(i)) {
+                        self.inventory_click(false, i, right);
+                        return;
+                    }
+                }
+            }
             Screen::Settings => {
                 for i in 0..Self::SLIDERS.len() {
                     let (bx, by, bw, bh) = self.slider_bar_rect(i);
@@ -3165,7 +3378,7 @@ impl Game {
             KeyCode::ControlLeft | KeyCode::ControlRight => self.keys.sprint = pressed,
             KeyCode::Escape if pressed => match self.screen {
                 Screen::Playing => self.set_screen(Screen::Paused),
-                Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) => self.set_screen(Screen::Playing),
+                Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_) => self.set_screen(Screen::Playing),
                 Screen::Paused => self.set_screen(Screen::Playing),
                 Screen::Settings => {
                     self.config.save();
@@ -3187,7 +3400,7 @@ impl Game {
                     self.craft_size = 2;
                     self.set_screen(Screen::Inventory);
                 }
-                Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) => self.set_screen(Screen::Playing),
+                Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_) => self.set_screen(Screen::Playing),
                 _ => {}
             },
             KeyCode::F5 if pressed => {
@@ -3278,7 +3491,7 @@ impl ApplicationHandler for App {
                 game.camera.aspect = size.width as f32 / size.height.max(1) as f32;
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                let searchable = matches!(game.screen, Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_));
+                let searchable = matches!(game.screen, Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_));
                 if game.search_focus && searchable && event.state.is_pressed() {
                     match event.physical_key {
                         PhysicalKey::Code(KeyCode::Backspace) => {

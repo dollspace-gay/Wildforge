@@ -469,3 +469,13 @@ name = "Bronze Boots"
 texture = "@bronze_boots"
 durability = 190
 armor = { slot = "feet", points = 2 }
+
+# ---- stewardship ----
+
+[[item]]
+id = "bedroll"
+name = "Bedroll"
+texture = "@bedroll"
+max_stack = 1
+durability = 12
+bedroll = true

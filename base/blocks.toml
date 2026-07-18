@@ -61,6 +61,7 @@ texture = "@leaves"
 hardness = 0.3
 opaque = false
 drops = "none"
+bonus_drop = { item = "base:oak_sapling", chance = 0.1 }
 
 [[block]]
 id = "planks"
@@ -127,6 +128,7 @@ texture = "@birch_leaves"
 hardness = 0.3
 opaque = false
 drops = "none"
+bonus_drop = { item = "base:birch_sapling", chance = 0.1 }
 
 [[block]]
 id = "spruce_log"
@@ -142,6 +144,7 @@ texture = "@spruce_leaves"
 hardness = 0.3
 opaque = false
 drops = "none"
+bonus_drop = { item = "base:spruce_sapling", chance = 0.1 }
 
 [[block]]
 id = "jungle_log"
@@ -157,6 +160,7 @@ texture = "@jungle_leaves"
 hardness = 0.3
 opaque = false
 drops = "none"
+bonus_drop = { item = "base:jungle_sapling", chance = 0.1 }
 
 [[block]]
 id = "acacia_log"
@@ -172,6 +176,7 @@ texture = "@acacia_leaves"
 hardness = 0.3
 opaque = false
 drops = "none"
+bonus_drop = { item = "base:acacia_sapling", chance = 0.1 }
 
 [[block]]
 id = "birch_planks"
@@ -342,3 +347,69 @@ texture = { top = "@chest_top", side = "@chest_side", bottom = "@planks" }
 hardness = 4.0
 tool = "axe"
 interaction = "chest"
+
+# ---- stewardship: saplings & the offering stone ----
+
+[[block]]
+id = "oak_sapling"
+name = "Oak Sapling"
+texture = "@oak_sapling"
+cross = true
+solid = false
+opaque = false
+hardness = 0.05
+drops = "self"
+sapling = { tree = "oak" }
+
+[[block]]
+id = "birch_sapling"
+name = "Birch Sapling"
+texture = "@birch_sapling"
+cross = true
+solid = false
+opaque = false
+hardness = 0.05
+drops = "self"
+sapling = { tree = "birch" }
+
+[[block]]
+id = "spruce_sapling"
+name = "Spruce Sapling"
+texture = "@spruce_sapling"
+cross = true
+solid = false
+opaque = false
+hardness = 0.05
+drops = "self"
+sapling = { tree = "spruce" }
+
+[[block]]
+id = "jungle_sapling"
+name = "Jungle Sapling"
+texture = "@jungle_sapling"
+cross = true
+solid = false
+opaque = false
+hardness = 0.05
+drops = "self"
+sapling = { tree = "jungle" }
+
+[[block]]
+id = "acacia_sapling"
+name = "Acacia Sapling"
+texture = "@acacia_sapling"
+cross = true
+solid = false
+opaque = false
+hardness = 0.05
+drops = "self"
+sapling = { tree = "acacia" }
+
+[[block]]
+id = "offering_stone"
+name = "Offering Stone"
+texture = "@offering_stone"
+hardness = 3.0
+tool = "axe"
+interaction = "offering"
+light = 5

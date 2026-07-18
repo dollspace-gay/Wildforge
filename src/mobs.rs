@@ -28,6 +28,8 @@ pub enum MobEvent {
     HitPlayer(f32, Vec3),
     /// A caster fired: projectile spawn.
     Cast(Projectile),
+    /// A wildlife pair bred at this position.
+    Bred(Vec3),
 }
 
 /// A bolt in flight: warden thorn/ember/frost, or a player's arrow.
@@ -154,6 +156,14 @@ pub struct Mob {
     cast_cd: f32,
     /// Seconds spent out of aggro range while hunting (drops at 8).
     lose_aggro: f32,
+    /// Fed and ready to breed (wildlife husbandry).
+    pub fed: bool,
+    /// Seconds of not fleeing the player after being fed.
+    pub calm: f32,
+    /// Cooldown between litters.
+    pub breed_cd: f32,
+    /// 0 = newborn, 1 = adult; scales the model.
+    pub growth: f32,
 }
 
 fn r01(rng: &mut u32) -> f32 {
@@ -179,6 +189,10 @@ impl Mob {
             attack_cd: 0.0,
             cast_cd: 1.0,
             lose_aggro: 0.0,
+            fed: false,
+            calm: 0.0,
+            breed_cd: 0.0,
+            growth: 1.0,
         }
     }
 
@@ -233,9 +247,15 @@ impl Mob {
         self.hurt_flash = (self.hurt_flash - dt).max(0.0);
         self.attack_cd = (self.attack_cd - dt).max(0.0);
         self.cast_cd = (self.cast_cd - dt).max(0.0);
+        self.calm = (self.calm - dt).max(0.0);
+        self.breed_cd = (self.breed_cd - dt).max(0.0);
+        if self.growth < 1.0 {
+            self.growth = (self.growth + dt / 1200.0).min(1.0);
+        }
 
-        // Skittish species bolt when the player closes in.
-        if def.flee_range > 0.0 && !def.hostile && self.state != MobState::Flee {
+        // Skittish species bolt when the player closes in — unless
+        // recently fed (feeding is taming-lite).
+        if def.flee_range > 0.0 && !def.hostile && self.calm <= 0.0 && self.state != MobState::Flee {
             let mut d = player - self.pos;
             d.y = 0.0;
             if d.length_squared() < def.flee_range * def.flee_range {
@@ -525,11 +545,14 @@ impl Mob {
             }
         }
 
+        let gs = 0.45 + 0.55 * self.growth.min(1.0); // babies are small
         for (size, at, is_head, swing, tile_override) in boxes {
-            let (hx, hy, hz) = (size[0] / 32.0, size[1] / 32.0, size[2] / 32.0);
-            let center = Vec3::new(at[0] / 16.0, at[1] / 16.0 + hy, at[2] / 16.0);
+            let (hx, hy, hz) =
+                (size[0] * gs / 32.0, size[1] * gs / 32.0, size[2] * gs / 32.0);
+            let center =
+                Vec3::new(at[0] * gs / 16.0, at[1] * gs / 16.0 + hy, at[2] * gs / 16.0);
             // Legs rotate around their top (hip) on the local X axis.
-            let pivot_y = at[1] / 16.0 + hy * 2.0;
+            let pivot_y = at[1] * gs / 16.0 + hy * 2.0;
             let (ss, cs) = swing.sin_cos();
             let ts = 1.0 / ATLAS_TILES as f32;
             let inset = ts / 32.0;

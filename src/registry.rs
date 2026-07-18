@@ -52,6 +52,10 @@ pub struct BlockDef {
     pub harvest: Option<(ItemId, u32, BlockId)>,
     /// Emitted light 0..15 (torches, glowing mod blocks).
     pub light_emit: u8,
+    /// Grows into this tree species on random ticks (saplings).
+    pub sapling: Option<String>,
+    /// Extra chance drop on break: (item, probability).
+    pub bonus_drop: Option<(ItemId, f32)>,
 }
 
 pub const NUTRIENTS: [&str; 5] = ["grain", "vegetable", "fruit", "fungi", "protein"];
@@ -111,6 +115,8 @@ pub struct ItemDef {
     pub ammo: Option<String>,
     /// (slot, armor points) — each point blocks 4% damage from the wild.
     pub armor: Option<(ArmorSlot, u32)>,
+    /// Right-click to camp: sleep to dawn, set spawn (bedrolls).
+    pub bedroll: bool,
 }
 
 /// One box of an animal's model. Sizes/offsets in px (16 px = 1 block);
@@ -169,6 +175,8 @@ pub struct AnimalDef {
     /// Spawns only where effective light is below this.
     pub spawn_light_max: u8,
     pub projectile: Option<ProjectileDef>,
+    /// Favorite food: feed two adults to breed (wildlife only).
+    pub breed_food: Option<ItemId>,
 }
 
 /// A recipe slot requirement: one exact item, or any member of a tag.
@@ -418,9 +426,24 @@ struct BlockToml {
     icon: Option<String>,
     #[serde(default)]
     light: u8,
+    #[serde(default)]
+    sapling: Option<SaplingToml>,
+    #[serde(default)]
+    bonus_drop: Option<BonusDropToml>,
     /// Register an item form for placing (default true).
     #[serde(default = "yes")]
     item: bool,
+}
+
+#[derive(Deserialize, Clone)]
+struct SaplingToml {
+    tree: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct BonusDropToml {
+    item: String,
+    chance: f32,
 }
 
 fn yes() -> bool {
@@ -483,6 +506,8 @@ struct ItemToml {
     ammo: Option<String>,
     #[serde(default)]
     armor: Option<ArmorToml>,
+    #[serde(default)]
+    bedroll: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -556,6 +581,8 @@ struct AnimalToml {
     spawn_light_max: Option<u8>,
     #[serde(default)]
     projectile: Option<ProjectileToml>,
+    #[serde(default)]
+    breed_food: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -892,6 +919,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         crop_any_soil: false,
         harvest: None,
         light_emit: 0,
+        sapling: None,
+        bonus_drop: None,
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
     reg.blocks.push(air);
@@ -948,6 +977,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let mut pending_fuels: Vec<(String, FuelToml)> = Vec::new();
     let mut pending_aliases: Vec<(String, AliasToml)> = Vec::new();
     let mut pending_harvests: Vec<(String, BlockId, HarvestToml)> = Vec::new();
+    let mut pending_bonus: Vec<(String, usize, BonusDropToml)> = Vec::new();
     let mut pending_places: Vec<(String, (String, String))> = Vec::new();
     // (mod id, toml, body tile, head tile, per-box tiles) — resolve in pass 1.
     #[allow(clippy::type_complexity)]
@@ -998,8 +1028,13 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 crop_any_soil: b.crop.as_ref().is_some_and(|c| c.any_soil),
                 harvest: None,
                 light_emit: b.light.min(15),
+                sapling: b.sapling.as_ref().map(|t| t.tree.clone()),
+                bonus_drop: None,
             });
             reg.block_by_name.insert(full.clone(), id);
+            if let Some(bd) = &b.bonus_drop {
+                pending_bonus.push((raw.info.id.clone(), id.0 as usize, bd.clone()));
+            }
             pending_drops.push(PendingDrop {
                 block: id.0 as usize,
                 rule: b.drops.clone().unwrap_or_else(|| {
@@ -1070,6 +1105,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     bow: None,
                     ammo: None,
                     armor: None,
+                    bedroll: false,
                 });
                 reg.item_by_name.insert(full, iid);
             }
@@ -1117,6 +1153,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 }),
                 ammo: it.ammo.clone(),
                 armor,
+                bedroll: it.bedroll,
             });
             reg.item_by_name.insert(full, iid);
         }
@@ -1191,6 +1228,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         crop_any_soil: false,
         harvest: None,
         light_emit: 0,
+        sapling: None,
+        bonus_drop: None,
     });
     reg.block_by_name.insert("base:unknown".into(), unk);
     reg.unknown_block = unk;
@@ -1209,6 +1248,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     entry.push(id);
                 }
             }
+        }
+    }
+    for (modid, bi, bd) in pending_bonus {
+        if let Some(item) = lookup_item(&reg, &modid, &bd.item) {
+            reg.blocks[bi].bonus_drop = Some((item, bd.chance));
         }
     }
     for pd in pending_drops {
@@ -1304,6 +1348,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             movement_float: a.movement.as_deref() == Some("float"),
             emissive: a.emissive,
             spawn_light_max: a.spawn_light_max.unwrap_or(3),
+            breed_food: a.breed_food.as_ref().and_then(|f| lookup_item(&reg, &modid, f)),
             projectile: a.projectile.as_ref().map(|pr| ProjectileDef {
                 tile: proj_tile.unwrap_or(crate::atlas::UNKNOWN_SLOT),
                 damage: pr.damage,

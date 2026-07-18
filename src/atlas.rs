@@ -65,7 +65,9 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("leather_chestplate", 154), ("leather_leggings", 155),
         ("leather_boots", 156), ("bronze_helmet", 157),
         ("bronze_chestplate", 158), ("bronze_leggings", 159),
-        ("bronze_boots", 160),
+        ("bronze_boots", 160), ("oak_sapling", 161), ("birch_sapling", 162),
+        ("spruce_sapling", 163), ("jungle_sapling", 164),
+        ("acacia_sapling", 165), ("offering_stone", 166), ("bedroll", 167),
         ("unknown", 15), ("crack1", 16), ("crack2", 17), ("crack3", 18),
         ("crack4", 19),
     ]
@@ -1615,6 +1617,59 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     };
     armor_art(153, [150.0, 106.0, 64.0], [70.0, 48.0, 30.0], &mut tf);
     armor_art(157, [196.0, 148.0, 62.0], [90.0, 66.0, 30.0], &mut tf);
+
+
+    // ---- stewardship: saplings, offering stone, bedroll (row 10) ----
+    let sapling_art = |slot: u32, leaf: [f32; 3], img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+        img(slot % 16, slot / 16, &mut |px, py, u, v| {
+            let stem = (u - 0.5).abs() < 0.05 && v > 0.55 && v < 0.95;
+            let dx = u - 0.5;
+            let dy = v - 0.42;
+            let crown = dx * dx + dy * dy * 1.3 < 0.05;
+            if crown && hash(px as i32, py as i32, 760 + slot) % 5 != 0 {
+                rgba(leaf, 0.8 + h01(px as i32, py as i32, 761 + slot) * 0.4, 255)
+            } else if stem {
+                rgba([110.0, 78.0, 46.0], 1.0, 255)
+            } else {
+                [0, 0, 0, 0]
+            }
+        });
+    };
+    sapling_art(161, [70.0, 130.0, 50.0], &mut tf);   // oak
+    sapling_art(162, [140.0, 170.0, 80.0], &mut tf);  // birch
+    sapling_art(163, [40.0, 90.0, 55.0], &mut tf);    // spruce
+    sapling_art(164, [60.0, 160.0, 60.0], &mut tf);   // jungle
+    sapling_art(165, [120.0, 130.0, 60.0], &mut tf);  // acacia
+    // Offering stone: mossy rock with a glowing bowl.
+    tf(6, 10, &mut |px, py, u, v| {
+        let t = fbm(u, v, 5, 770);
+        let mut c = mix3([96.0, 96.0, 92.0], [130.0, 128.0, 120.0], t);
+        if fbm(u * 2.0, v * 2.0, 4, 771) > 0.62 {
+            c = mix3(c, [70.0, 120.0, 60.0], 0.6); // moss
+        }
+        let dx = u - 0.5;
+        let dy = v - 0.4;
+        if dx * dx + dy * dy * 2.0 < 0.03 {
+            c = [190.0, 225.0, 170.0]; // wildlight pooling in the bowl
+        }
+        rgba(c, speck(px, py, 772, 0.1), 255)
+    });
+    // Bedroll: rolled hide with fiber ties.
+    tf(7, 10, &mut |px, py, u, v| {
+        let dx = u - 0.5;
+        let dy = v - 0.55;
+        if dx * dx * 0.6 + dy * dy * 2.4 < 0.06 {
+            let band = ((u * 7.0).fract() < 0.22) && dx.abs() < 0.32;
+            if band {
+                rgba([96.0, 140.0, 60.0], 1.0, 255)
+            } else {
+                let t = fbm(u * 2.0, v, 4, 780);
+                rgba(mix3([124.0, 88.0, 56.0], [156.0, 116.0, 76.0], t), 0.9 + h01(px as i32, py as i32, 781) * 0.2, 255)
+            }
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
 
     // (15,0) unknown/missing texture: magenta checkerboard.
     tile(15, 0, &mut |px, py, _u, _v| {

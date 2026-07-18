@@ -83,6 +83,31 @@ mod, registered through the same TOML pipeline external mods use
   declare `interaction`, `min_tier`, and mods get `[[smelt]]`/`[[fuel]]`
   entries plus `aliases.toml` for lossless renames.
 
+## Stewardship — the homestead path
+
+The give-back half of the ire dialogue: everything renewable, and the
+wild can be appeased as well as fought.
+
+- **Saplings**: leaves drop their species' sapling (~1 in 10). Plant on
+  grass or dirt; over a day or three it grows into a **real tree** of
+  that wood. Planting refunds a little ire; a planted tree *maturing*
+  refunds more, bypassing the daily cap — reforestation is the true
+  apology. Wood is now renewable.
+- **The offering stone** (cobblestone + fiber): three slots; whatever
+  you leave is taken at dawn, refunding ire by what the wild values —
+  its own returned materials (heartwood, embers) most, then meat and
+  food. Capped per dawn; the wild takes everything either way. It glows
+  faintly in the dark.
+- **The bedroll** (hides + fiber, 12 uses): right-click at night to
+  camp — skips to dawn, **sets your respawn to the campsite**, and
+  saves. Refused while a warden is within 24 blocks; the skipped night
+  still decays ire fairly.
+- **Breeding**: feed a wild animal its favorite food (deer love
+  berries, boars potatoes, goats wheat, grouse seeds, rabbits carrots)
+  — it calms and, meeting another fed adult, bears young. Babies grow
+  up over ~20 minutes and drop nothing if killed (you monster). Every
+  birth soothes the wild a little. Meat is now renewable.
+
 ## Bows & armor
 
 - **Bows**: the **hunting bow** (sticks + thornling fiber — reachable

@@ -333,3 +333,15 @@ output = "base:bronze_leggings"
 pattern = ["m.m", "m.m"]
 keys = { m = "base:bronze_ingot" }
 output = "base:bronze_boots"
+
+# ---- stewardship ----
+
+[[recipe]]
+pattern = ["f.f", "hhh"]
+keys = { f = "base:plant_fiber", h = "base:hide" }
+output = "base:bedroll"
+
+[[recipe]]
+pattern = ["c.c", "cfc", ".c."]
+keys = { c = "base:cobblestone", f = "base:plant_fiber" }
+output = "base:offering_stone"

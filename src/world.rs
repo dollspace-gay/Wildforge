@@ -17,6 +17,12 @@ use crate::worldgen::Generator;
 pub enum BlockEntity {
     Furnace(FurnaceState),
     Chest(ChestState),
+    Offering(OfferingState),
+}
+
+#[derive(Default)]
+pub struct OfferingState {
+    pub slots: [Option<ItemStack>; 3],
 }
 
 pub const CHEST_SLOTS: usize = 27;
@@ -178,14 +184,133 @@ impl World {
     }
 
     /// Advance ire time by a fraction of a day: passive decay (-4/day)
-    /// and the daily reset of the planting cap.
-    pub fn tick_ire(&mut self, day_frac: f32) {
+    /// and the daily reset of the planting cap. Returns true at dawn
+    /// (day rollover) — the moment offerings are accepted.
+    pub fn tick_ire(&mut self, day_frac: f32) -> bool {
         self.add_ire(-4.0 * day_frac);
         self.day_progress += day_frac;
         if self.day_progress >= 1.0 {
             self.day_progress -= 1.0;
             self.plant_ire_today = 0.0;
+            return true;
         }
+        false
+    }
+
+    /// What the wild values: its own materials most, then life given.
+    pub fn offering_value(&self, s: &ItemStack) -> f32 {
+        let d = self.reg.item(s.item);
+        let per = if ["base:heartwood", "base:living_wood", "base:ember", "base:frost_shard"]
+            .contains(&d.name.as_str())
+        {
+            2.0
+        } else if d.name.ends_with("_sapling") {
+            1.0
+        } else if d.name.contains("raw_") || d.name.contains("cooked_") {
+            1.0
+        } else if let Some(f) = &d.food {
+            f.hunger * 0.25
+        } else {
+            0.25
+        };
+        per * s.count as f32
+    }
+
+    /// Dawn: the wild takes everything left on offering stones. Items are
+    /// consumed regardless; the refund is capped at 10 per dawn.
+    pub fn accept_offerings(&mut self) -> f32 {
+        let mut taken: Vec<ItemStack> = Vec::new();
+        for e in self.block_entities.values_mut() {
+            let BlockEntity::Offering(o) = e else { continue };
+            for slot in o.slots.iter_mut() {
+                if let Some(s) = slot.take() {
+                    taken.push(s);
+                }
+            }
+        }
+        if taken.is_empty() {
+            return 0.0;
+        }
+        let value: f32 = taken.iter().map(|s| self.offering_value(s)).sum();
+        let refund = value.min(10.0);
+        self.add_ire(-refund);
+        refund
+    }
+
+    /// Grow a planted sapling into a full tree, mirroring the worldgen
+    /// shapes. Returns false (sapling stays) if the trunk is blocked.
+    pub fn grow_tree(&mut self, x: i32, y: i32, z: i32, species: &str, rnd: u32) -> bool {
+        let reg = self.reg.clone();
+        let ids = |l: &str, f: &str| Some((reg.block_id(l)?, reg.block_id(f)?));
+        let Some((log, leaf)) = (match species {
+            "birch" => ids("base:birch_log", "base:birch_leaves"),
+            "spruce" => ids("base:spruce_log", "base:spruce_leaves"),
+            "jungle" => ids("base:jungle_log", "base:jungle_leaves"),
+            "acacia" => ids("base:acacia_log", "base:acacia_leaves"),
+            _ => ids("base:log", "base:leaves"),
+        }) else {
+            return false;
+        };
+        let trunk_h = match species {
+            "acacia" => 1,
+            "spruce" => 5 + (rnd % 3) as i32,
+            "jungle" => 6 + (rnd % 3) as i32,
+            _ => 4 + (rnd % 3) as i32,
+        };
+        // Clearance: the trunk column (above the sapling cell) must be open.
+        for dy in 1..=trunk_h + 1 {
+            if self.get_block(x, y + dy, z) != AIR {
+                return false;
+            }
+        }
+        let mut leaf_at = |w: &mut World, lx: i32, ly: i32, lz: i32| {
+            if ly > 0 && ly < CHUNK_Y as i32 && w.get_block(lx, ly, lz) == AIR {
+                w.set_block(lx, ly, lz, leaf);
+            }
+        };
+        for dy in 0..trunk_h {
+            self.set_block(x, y + dy, z, log);
+        }
+        let top = y + trunk_h;
+        match species {
+            "acacia" => {
+                for dx in -1..=1 {
+                    for dz in -1..=1 {
+                        leaf_at(self, x + dx, top, z + dz);
+                    }
+                }
+            }
+            "spruce" => {
+                for (dy, r) in [(-3i32, 2i32), (-2, 1), (-1, 2), (0, 1), (1, 1)] {
+                    for dx in -r..=r {
+                        for dz in -r..=r {
+                            if dx.abs() == r && dz.abs() == r && r > 1 {
+                                continue;
+                            }
+                            if dx == 0 && dz == 0 && dy < 0 {
+                                continue;
+                            }
+                            leaf_at(self, x + dx, top + dy, z + dz);
+                        }
+                    }
+                }
+                leaf_at(self, x, top + 2, z);
+            }
+            _ => {
+                let big: i32 = if species == "jungle" { 3 } else { 2 };
+                for (dy, r) in [(-2i32, big), (-1, big), (0, 1), (1, 1)] {
+                    for dx in -r..=r {
+                        for dz in -r..=r {
+                            if dx == 0 && dz == 0 && dy < 0 {
+                                continue;
+                            }
+                            leaf_at(self, x + dx, top + dy, z + dz);
+                        }
+                    }
+                }
+            }
+        }
+        true
     }
 
     /// Ire cost of breaking a block, by what it is.
@@ -379,6 +504,42 @@ impl World {
             );
             sl as f32 * daylight < 7.0
         });
+        // Husbandry: two fed adults of a species near each other bear young.
+        let mut births: Vec<(usize, usize)> = Vec::new();
+        for i in 0..mobs.len() {
+            if births.iter().any(|&(a, b)| a == i || b == i) {
+                continue;
+            }
+            if !mobs[i].fed || mobs[i].growth < 1.0 {
+                continue;
+            }
+            for j in (i + 1)..mobs.len() {
+                if mobs[j].species == mobs[i].species
+                    && mobs[j].fed
+                    && mobs[j].growth >= 1.0
+                    && (mobs[i].pos - mobs[j].pos).length_squared() < 16.0
+                {
+                    births.push((i, j));
+                    break;
+                }
+            }
+        }
+        for (i, j) in births {
+            let mid = (mobs[i].pos + mobs[j].pos) * 0.5;
+            mobs[i].fed = false;
+            mobs[j].fed = false;
+            mobs[i].breed_cd = 300.0;
+            mobs[j].breed_cd = 300.0;
+            if mobs.len() < MOB_CAP {
+                let mut baby = Mob::new(mobs[i].species, mid, 0.0);
+                baby.health = reg.animals[mobs[i].species].health;
+                baby.growth = 0.05;
+                mobs.push(baby);
+                // Life returned to the world.
+                self.ire = (self.ire - 1.0).max(0.0);
+                events.push(MobEvent::Bred(mid));
+            }
+        }
         self.mobs = mobs;
 
         // Repopulation: overhunted wildlife slowly recovers, away from the
@@ -580,8 +741,8 @@ impl World {
             }
             let _ = writeln!(
                 out,
-                "[[mob]]\nspecies = \"{}\"\npos = [{}, {}, {}]\nyaw = {}\nhealth = {}\n",
-                def.name, m.pos.x, m.pos.y, m.pos.z, m.yaw, m.health
+                "[[mob]]\nspecies = \"{}\"\npos = [{}, {}, {}]\nyaw = {}\nhealth = {}\nfed = {}\ngrowth = {}\n",
+                def.name, m.pos.x, m.pos.y, m.pos.z, m.yaw, m.health, m.fed, m.growth
             );
         }
         if out.is_empty() {
@@ -600,12 +761,19 @@ impl World {
 
     fn load_mobs(&mut self) {
         use serde::Deserialize;
+        fn one() -> f32 {
+            1.0
+        }
         #[derive(Deserialize)]
         struct MobT {
             species: String,
             pos: [f32; 3],
             yaw: f32,
             health: f32,
+            #[serde(default)]
+            fed: bool,
+            #[serde(default = "one")]
+            growth: f32,
         }
         #[derive(Deserialize)]
         struct FileT {
@@ -620,6 +788,8 @@ impl World {
                     let mut m =
                         Mob::new(si, glam::Vec3::new(t.pos[0], t.pos[1], t.pos[2]), t.yaw);
                     m.health = t.health.min(self.reg.animals[si].health);
+                    m.fed = t.fed;
+                    m.growth = t.growth.clamp(0.05, 1.0);
                     self.mobs.push(m);
                 }
             }
@@ -982,6 +1152,7 @@ impl World {
                     [f.input, f.fuel, f.output].into_iter().flatten().collect()
                 }
                 BlockEntity::Chest(c) => c.slots.into_iter().flatten().collect(),
+                BlockEntity::Offering(o) => o.slots.into_iter().flatten().collect(),
             };
             for s in spilled {
                 self.pending_drops.push(((x, y, z), s));
@@ -995,6 +1166,7 @@ impl World {
         let farmland = reg.block_id("base:farmland");
         let keys: Vec<ChunkPos> = self.chunks.keys().copied().collect();
         let mut changes = Vec::new();
+        let mut saplings: Vec<(i32, i32, i32, String, u32)> = Vec::new();
         for pos in keys {
             for _ in 0..8 {
                 *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
@@ -1004,6 +1176,13 @@ impl World {
                 let (wx, wz) = (pos.x * 16 + lx, pos.z * 16 + lz);
                 let b = self.get_block(wx, y, wz);
                 let d = reg.block(b);
+                if let Some(species) = &d.sapling {
+                    *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                    if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.02 {
+                        saplings.push((wx, y, wz, species.clone(), *rng));
+                    }
+                    continue;
+                }
                 if let Some(next) = d.crop_next {
                     let soil_ok = d.crop_any_soil
                         || farmland == Some(self.get_block(wx, y - 1, wz));
@@ -1020,6 +1199,23 @@ impl World {
                 self.plant_ire(0.5);
             }
             self.set_block(x, y, z, b);
+        }
+        for (x, y, z, _species, rnd) in saplings {
+            self.try_grow_sapling(x, y, z, rnd);
+        }
+    }
+
+    /// Attempt to mature the sapling at this position. On success the
+    /// tree is built and the wild refunds -2 ire, bypassing the daily
+    /// planting cap (it took days — it IS the slow path).
+    pub fn try_grow_sapling(&mut self, x: i32, y: i32, z: i32, rnd: u32) -> bool {
+        let b = self.get_block(x, y, z);
+        let Some(species) = self.reg.block(b).sapling.clone() else { return false };
+        if self.grow_tree(x, y, z, &species, rnd) {
+            self.add_ire(-2.0);
+            true
+        } else {
+            false
         }
     }
 
@@ -1115,6 +1311,19 @@ impl World {
                     }
                     let _ = writeln!(out);
                 }
+                BlockEntity::Offering(o) => {
+                    let _ = writeln!(out, "[[offering]]\npos = [{x}, {y}, {z}]");
+                    for (i, st) in o.slots.iter().enumerate() {
+                        if let Some(st) = st {
+                            let _ = writeln!(
+                                out,
+                                "[[offering.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                self.reg.item(st.item).name, st.count, st.durability
+                            );
+                        }
+                    }
+                    let _ = writeln!(out);
+                }
             }
         }
         if out.is_empty() {
@@ -1164,6 +1373,8 @@ impl World {
             furnace: Vec<FurnaceT>,
             #[serde(default)]
             chest: Vec<ChestT>,
+            #[serde(default)]
+            offering: Vec<ChestT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else { return };
         let Ok(parsed) = toml::from_str::<FileT>(&text) else { return };
@@ -1197,6 +1408,19 @@ impl World {
             }
             self.block_entities
                 .insert((ch.pos[0], ch.pos[1], ch.pos[2]), BlockEntity::Chest(state));
+        }
+        for of in parsed.offering {
+            let mut state = OfferingState::default();
+            for sl in of.slot {
+                if sl.index < 3 {
+                    if let Some(item) = self.reg.item_id(&sl.item) {
+                        state.slots[sl.index] =
+                            Some(ItemStack { item, count: sl.count, durability: sl.durability });
+                    }
+                }
+            }
+            self.block_entities
+                .insert((of.pos[0], of.pos[1], of.pos[2]), BlockEntity::Offering(state));
         }
     }
 
