@@ -131,6 +131,7 @@ impl Projectile {
                     verts.push(Vertex {
                         pos: [self.pos.x + dx * o, self.pos.y + y, self.pos.z + dz * o],
                         uv: [u, v],
+                        normal: [0.0, 0.0, 0.0],
                         light: 1.0, // bolts glow faintly
                         sky: 1.0,
                     });
@@ -648,6 +649,7 @@ impl Mob {
                             tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                             ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                         ],
+                        normal: [0.0, 0.0, 0.0],
                         light: (shade * lum.0).min(2.0),
                         sky: (shade * lum.1).min(2.0),
                     });

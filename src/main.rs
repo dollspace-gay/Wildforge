@@ -688,6 +688,15 @@ impl Game {
                 self.server.time_of_day = t.fract();
             }
         }
+        // Dev: force camera look ("yaw,pitch" in radians) for framed captures.
+        if let Ok(l) = std::env::var("WILDFORGE_LOOK") {
+            if let Some((y, p)) = l.split_once(',') {
+                if let (Ok(y), Ok(p)) = (y.trim().parse::<f32>(), p.trim().parse::<f32>()) {
+                    self.camera.yaw = y;
+                    self.camera.pitch = p;
+                }
+            }
+        }
         // Dev: a ring of torches near spawn (lighting verification).
         if std::env::var("WILDFORGE_DEMO_TORCH").is_ok() {
             if let Some(torch) = self.reg.block_id("base:torch") {
@@ -2934,6 +2943,19 @@ impl Game {
             night_sky[2] + (day_sky[2] - night_sky[2]) * f,
         ];
 
+        // Sun for directional lighting. The sun arcs east->west over the day
+        // (noon at time 0.25); we keep it a touch above the horizon while up so
+        // shadows never degenerate. Warm direct light, cool sky-ambient fill,
+        // both faded by `daylight` so night is lit only by the moonlit floor
+        // and torches.
+        let ang = self.time_of_day * std::f32::consts::TAU;
+        let elev = ang.sin(); // 1 at noon, -1 at midnight
+        let horiz = ang.cos(); // +1 dawn -> 0 noon -> -1 dusk
+        let sun_dir = Vec3::new(horiz * 0.8, elev.max(0.05) + 0.15, 0.45).normalize();
+        let sun_vis = elev.clamp(0.0, 1.0).sqrt(); // 0 below horizon
+        let sun_col = Vec3::new(1.0, 0.93, 0.78) * (0.62 * sun_vis);
+        let amb_col = Vec3::new(0.60, 0.68, 0.82) * (0.42 * daylight);
+
         let playing = self.screen == Screen::Playing;
         let outline = if playing {
             raycast::raycast(&self.server.world, self.camera.pos, self.camera.forward(), REACH)
@@ -2996,6 +3018,9 @@ impl Game {
             fog_dist: fog,
             underwater,
             daylight,
+            sun_dir,
+            sun_col,
+            amb_col,
             outline,
             entity_verts: &entity_verts,
             entity_idx: &entity_idx,

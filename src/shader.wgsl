@@ -6,6 +6,12 @@ struct Uniforms {
     sky: vec4<f32>,
     // x = underwater (0/1), y = daylight, zw = screen size in pixels
     misc: vec4<f32>,
+    // xyz = normalized direction toward the sun (world space), w unused
+    sun_dir: vec4<f32>,
+    // rgb = warm direct-sun color, already scaled by daylight; a unused
+    sun_col: vec4<f32>,
+    // rgb = cool sky-ambient fill, already scaled by daylight; a unused
+    amb_col: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -15,8 +21,9 @@ struct Uniforms {
 struct VsIn {
     @location(0) pos: vec3<f32>,
     @location(1) uv: vec2<f32>,
-    @location(2) light: f32,
-    @location(3) sky: f32,
+    @location(2) normal: vec3<f32>,
+    @location(3) light: f32,
+    @location(4) sky: f32,
 };
 
 struct VsOut {
@@ -25,6 +32,7 @@ struct VsOut {
     @location(1) light: f32,
     @location(2) world: vec3<f32>,
     @location(3) sky: f32,
+    @location(4) normal: vec3<f32>,
 };
 
 @vertex
@@ -35,13 +43,35 @@ fn vs_chunk(in: VsIn) -> VsOut {
     out.light = in.light;
     out.sky = in.sky;
     out.world = in.pos;
+    out.normal = in.normal;
     return out;
 }
 
-// Torch light holds steady while sky light follows the day; unlit caves
-// keep a tiny ambient floor.
-fn lum(light: f32, sky: f32) -> f32 {
-    return max(max(light, sky * u.misc.y), 0.03);
+// Minecraft-style face brightness from a normal: top 1.0, bottom 0.5,
+// Z-sides 0.8, X-sides 0.6. Gives torch-/ambient-lit faces their form
+// without any real light direction.
+fn face_shade(n: vec3<f32>) -> f32 {
+    if (n.y > 0.5) { return 1.0; }
+    if (n.y < -0.5) { return 0.5; }
+    if (abs(n.z) > abs(n.x)) { return 0.8; }
+    return 0.6;
+}
+
+// Full lit multiplier (per channel) for a world-space surface. A near-zero
+// normal marks pre-shaded billboards/entities, which keep the old flat model.
+fn world_light(normal: vec3<f32>, light: f32, sky: f32) -> vec3<f32> {
+    if (dot(normal, normal) < 0.25) {
+        return vec3<f32>(max(max(light, sky * u.misc.y), 0.03));
+    }
+    let n = normalize(normal);
+    let fs = face_shade(n);
+    // Warm sun: direct, gated by sky visibility and surface orientation.
+    let ndl = max(dot(n, u.sun_dir.xyz), 0.0);
+    let sun = sky * ndl * u.sun_col.rgb;
+    // Cool sky fill + steady (white) torch light, both with face shade.
+    let amb = sky * fs * u.amb_col.rgb;
+    let torch = vec3<f32>(light * fs);
+    return max(sun + amb + torch, vec3<f32>(0.03));
 }
 
 fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
@@ -56,7 +86,7 @@ fn fs_chunk(in: VsOut) -> @location(0) vec4<f32> {
     if (tex.a < 0.5) {
         discard; // alpha-tested item sprites share this pipeline
     }
-    var rgb = tex.rgb * lum(in.light, in.sky);
+    var rgb = tex.rgb * world_light(in.normal, in.light, in.sky);
     rgb = apply_fog(rgb, in.world);
     if (u.misc.x > 0.5) {
         rgb = mix(rgb, vec3<f32>(0.1, 0.2, 0.5), 0.55);
@@ -67,7 +97,7 @@ fn fs_chunk(in: VsOut) -> @location(0) vec4<f32> {
 @fragment
 fn fs_water(in: VsOut) -> @location(0) vec4<f32> {
     let tex = textureSample(atlas_tex, atlas_smp, in.uv);
-    var rgb = tex.rgb * lum(in.light, in.sky);
+    var rgb = tex.rgb * world_light(in.normal, in.light, in.sky);
     rgb = apply_fog(rgb, in.world);
     if (u.misc.x > 0.5) {
         rgb = mix(rgb, vec3<f32>(0.1, 0.2, 0.5), 0.55);

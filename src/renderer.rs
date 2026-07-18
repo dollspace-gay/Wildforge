@@ -19,6 +19,9 @@ struct Uniforms {
     cam: [f32; 4],
     sky: [f32; 4],
     misc: [f32; 4],
+    sun_dir: [f32; 4],
+    sun_col: [f32; 4],
+    amb_col: [f32; 4],
 }
 
 #[repr(C)]
@@ -77,6 +80,12 @@ pub struct FrameInput<'a> {
     pub fog_dist: f32,
     pub underwater: bool,
     pub daylight: f32,
+    /// Normalized direction toward the sun (world space).
+    pub sun_dir: Vec3,
+    /// Warm direct-sun color, already scaled by daylight.
+    pub sun_col: Vec3,
+    /// Cool sky-ambient color, already scaled by daylight.
+    pub amb_col: Vec3,
     pub outline: Option<(i32, i32, i32)>,
     /// Opaque world-space extras (item entities), drawn with the chunk shader.
     pub entity_verts: &'a [Vertex],
@@ -341,7 +350,7 @@ impl Renderer {
         let vertex_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32, 3 => Float32],
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32x3, 3 => Float32, 4 => Float32],
         };
         let line_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<LineVertex>() as u64,
@@ -613,6 +622,9 @@ impl Renderer {
                 self.config.width as f32,
                 self.config.height as f32,
             ],
+            sun_dir: [f.sun_dir.x, f.sun_dir.y, f.sun_dir.z, 0.0],
+            sun_col: [f.sun_col.x, f.sun_col.y, f.sun_col.z, 0.0],
+            amb_col: [f.amb_col.x, f.amb_col.y, f.amb_col.z, 0.0],
         };
         self.entity_vbuf
             .upload(&self.device, &self.queue, bytemuck::cast_slice(f.entity_verts));

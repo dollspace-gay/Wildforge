@@ -14,9 +14,13 @@ use crate::world::World;
 pub struct Vertex {
     pub pos: [f32; 3],
     pub uv: [f32; 2],
-    /// Block-light channel (torches), premultiplied by shade/AO.
+    /// Geometric face normal (world space). Drives the sun N·L term and the
+    /// Minecraft-style face shade, both recomputed in the shader.
+    pub normal: [f32; 3],
+    /// Block-light channel (torches), 0..1, premultiplied by AO only.
     pub light: f32,
-    /// Sky-light channel, scaled by the daylight uniform in the shader.
+    /// Sky-visibility channel, 0..1, premultiplied by AO. Gates direct sun and
+    /// scales the sky-ambient fill; the daylight uniform dims it at night.
     pub sky: f32,
 }
 
@@ -140,6 +144,9 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                                 m.opaque_verts.push(Vertex {
                                     pos: [wx + qx, wy + ys[i], wz + qz],
                                     uv: tile_uv(tx, ty, u, 1.0 - ys[i]),
+                                    // Cross-quads have no single face; treat as
+                                    // upward-lit vegetation.
+                                    normal: [0.0, 1.0, 0.0],
                                     light: 0.95 * cl,
                                     sky: 0.95 * cs,
                                 });
@@ -168,7 +175,7 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                     }
                     let slot = reg.block(b).tiles[face];
                     let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
-                    let shade = FACE_SHADE[face];
+                    let nrm = [n[0] as f32, n[1] as f32, n[2] as f32];
                     let (fl, fs) = light(lx + n[0], y + n[1], lz + n[2]);
 
                     let mut ao = [3u8; 4];
@@ -199,8 +206,9 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                         verts.push(Vertex {
                             pos: [px, py, pz],
                             uv: tile_uv(tx, ty, u, v),
-                            light: shade * ao_f * fl,
-                            sky: shade * ao_f * fs,
+                            normal: nrm,
+                            light: ao_f * fl,
+                            sky: ao_f * fs,
                         });
                     }
                     // Flip the quad diagonal when AO is anisotropic.
