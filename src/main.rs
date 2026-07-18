@@ -20,6 +20,7 @@ mod raycast;
 mod registry;
 mod renderer;
 mod script;
+mod server;
 #[cfg(test)]
 mod tests;
 mod ui;
@@ -52,7 +53,6 @@ use world::World;
 
 const GEN_BUDGET: usize = 4; // chunk generations per frame (256-tall gen is pricey)
 const MESH_BUDGET: usize = 6; // chunk remeshes per frame
-const DAY_LENGTH: f32 = 600.0; // seconds per full day/night cycle
 const REACH: f32 = 5.0;
 const MAX_HEALTH: f32 = 14.0; // base half-hearts (7 hearts)
 const MAX_AIR: f32 = 15.0; // seconds of breath
@@ -76,7 +76,7 @@ enum Screen {
 struct Game {
     window: Arc<Window>,
     renderer: renderer::Renderer,
-    world: World,
+    server: server::Server,
     player: Player,
     camera: Camera,
 
@@ -148,7 +148,6 @@ struct Game {
     /// WILDFORGE_PACK dev override; shadows config.pack, never persisted.
     pack_override: Option<String>,
     tick_accum: f32,
-    tick_accum2: f32,
     config: Config,
     audio: Option<Audio>,
     in_world: bool,
@@ -158,12 +157,10 @@ struct Game {
     pending_delete: Option<usize>,
     /// Slider being dragged in the settings screen.
     dragging_slider: Option<usize>,
-    water_timer: f32,
     creative: bool,
     flying: bool,
     /// Death screen subtitle: slain by a warden, not a fall.
     killed_by_wild: bool,
-    prev_ire_tier: usize,
     last_space: f32,
     time_abs: f32,
     search: String,
@@ -173,7 +170,6 @@ struct Game {
     browse_view: Option<(ItemId, bool)>,
     browse_back: Vec<(ItemId, bool)>,
 
-    time_of_day: f32,
     total_frames: u64,
     auto_shot: Option<String>,
     last_frame: Instant,
@@ -318,6 +314,7 @@ impl Game {
         scripts.load_mods(&script_mod_dirs(&reg));
         // No world yet — the game opens on the title screen.
         let world = World::new(0, PathBuf::from("saves/.none"), reg.clone());
+        let sim = server::Server::new(world, 0.3, 0x51ed_c0de);
         let spawn = Vec3::new(0.5, 80.0, 0.5);
 
         let size = window.inner_size();
@@ -327,7 +324,7 @@ impl Game {
         let mut g = Game {
             window,
             renderer,
-            world,
+            server: sim,
             player: Player::new(spawn),
             camera: Camera::new(spawn + Vec3::new(0.0, EYE_HEIGHT, 0.0), aspect),
             keys: KeysDown::default(),
@@ -382,7 +379,6 @@ impl Game {
             pack_warnings,
             pack_override,
             tick_accum: 0.0,
-            tick_accum2: 0.0,
             config,
             audio,
             in_world: false,
@@ -390,11 +386,9 @@ impl Game {
             settings_from_pause: false,
             pending_delete: None,
             dragging_slider: None,
-            water_timer: 0.0,
             creative: false,
             flying: false,
             killed_by_wild: false,
-            prev_ire_tier: 0,
             last_space: -9.0,
             time_abs: 0.0,
             search: String::new(),
@@ -402,7 +396,6 @@ impl Game {
             browse_page: 0,
             browse_view: None,
             browse_back: Vec::new(),
-            time_of_day: 0.3, // morning
             total_frames: 0,
             auto_shot: std::env::var("WILDFORGE_SHOT").ok(),
             last_frame: Instant::now(),
@@ -501,7 +494,7 @@ impl Game {
         let spawn = Vec3::new(sx as f32 + 0.5, sy as f32 + 0.2, sz as f32 + 0.5);
 
         self.renderer.chunks.clear();
-        self.world = world;
+        self.server = server::Server::new(world, 0.3, self.rng ^ 0x5ee1);
         self.player = Player::new(spawn);
         self.spawn_point = spawn;
         self.camera.pos = spawn + Vec3::new(0.0, EYE_HEIGHT, 0.0);
@@ -545,7 +538,6 @@ impl Game {
         self.breaking = None;
         self.health = MAX_HEALTH;
         self.killed_by_wild = false;
-        self.prev_ire_tier = 0; // synced after world load below
         self.hunger = 20.0;
         self.nutrition = [0.0; 5];
         self.eating = 0.0;
@@ -556,7 +548,7 @@ impl Game {
         self.since_damage = 100.0;
         self.damage_flash = 0.0;
         self.fall_start = None;
-        self.time_of_day = 0.3;
+        self.server.time_of_day = 0.3;
         self.hotbar_sel = 0;
         let (_, mode, _) = world::read_world_meta(&PathBuf::from("saves").join(name));
         self.creative = mode == "creative";
@@ -567,33 +559,33 @@ impl Game {
             let cp = ChunkPos::of_world(self.player.pos.x as i32, self.player.pos.z as i32);
             for dx in -1..=1 {
                 for dz in -1..=1 {
-                    self.world.ensure_chunk(ChunkPos { x: cp.x + dx, z: cp.z + dz });
+                    self.server.world.ensure_chunk(ChunkPos { x: cp.x + dx, z: cp.z + dz });
                 }
             }
         }
-        self.prev_ire_tier = self.world.ire_tier();
+        self.server.sync_tier();
         self.scripts.load_kv(&PathBuf::from("saves").join(name));
         if self.scripts.wants("on_world_start") {
-            self.scripts.dispatch(&self.world, "on_world_start", (name.to_string(),));
+            self.scripts.dispatch(&self.server.world, "on_world_start", (name.to_string(),));
             self.apply_script_cmds();
         }
         // Dev: drop a water source on a pillar ahead of spawn to watch it flow.
         if std::env::var("WILDFORGE_DEMO_WATER").is_ok() {
             let (bx, bz) = (spawn.x as i32 - 6, spawn.z as i32 - 14);
-            let by = self.world.surface_height(bx, bz);
+            let by = self.server.world.surface_height(bx, bz);
             let stone = self.reg.block_id("base:stone").unwrap_or(AIR);
             let water = self.reg.block_id("base:water").unwrap_or(AIR);
             for y in by + 1..=by + 4 {
-                self.world.set_block(bx, y, bz, stone);
+                self.server.world.set_block(bx, y, bz, stone);
             }
-            self.world.set_block(bx, by + 5, bz, water);
+            self.server.world.set_block(bx, by + 5, bz, water);
             eprintln!("demo water source at ({bx},{},{bz}), spawn {:?}", by + 5, spawn);
         }
         self.set_screen(Screen::Playing);
         // Dev: force time of day (0..1; 0.75 = midnight).
         if let Ok(t) = std::env::var("WILDFORGE_TIME") {
             if let Ok(t) = t.parse::<f32>() {
-                self.time_of_day = t.fract();
+                self.server.time_of_day = t.fract();
             }
         }
         // Dev: a ring of torches near spawn (lighting verification).
@@ -601,16 +593,16 @@ impl Game {
             if let Some(torch) = self.reg.block_id("base:torch") {
                 for (dx, dz) in [(3, 0), (-3, 2), (0, 4), (2, -4)] {
                     let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
-                    let y = self.world.surface_height(x, z);
-                    self.world.set_block(x, y + 1, z, torch);
+                    let y = self.server.world.surface_height(x, z);
+                    self.server.world.set_block(x, y + 1, z, torch);
                 }
             }
         }
         // Dev: WILDFORGE_IRE=N forces the wild's ire (spawn testing).
         if let Ok(v) = std::env::var("WILDFORGE_IRE") {
             if let Ok(v) = v.parse::<f32>() {
-                self.world.ire = v.clamp(0.0, 100.0);
-                self.prev_ire_tier = self.world.ire_tier();
+                self.server.world.ire = v.clamp(0.0, 100.0);
+                self.server.sync_tier();
             }
         }
         // Dev: a row of wardens near spawn (rendering/combat verification).
@@ -622,14 +614,14 @@ impl Game {
                 if let Some(si) = self.reg.animal_id(name) {
                     let x = spawn.x as i32 - 4 + i as i32 * 3;
                     let z = spawn.z as i32 - 7;
-                    let y = self.world.surface_height(x, z) + 1;
+                    let y = self.server.world.surface_height(x, z) + 1;
                     let mut m = mobs::Mob::new(
                         si,
                         Vec3::new(x as f32 + 0.5, y as f32 + 0.05, z as f32 + 0.5),
                         0.0,
                     );
                     m.health = self.reg.animals[si].health;
-                    self.world.mobs.push(m);
+                    self.server.world.mobs.push(m);
                 }
             }
         }
@@ -639,22 +631,22 @@ impl Game {
             let reg = self.reg.clone();
             let (sx, sz) = (spawn.x as i32, spawn.z as i32);
             if let Some(os) = reg.block_id("base:offering_stone") {
-                let y = self.world.surface_height(sx - 3, sz - 5) + 1;
-                self.world.set_block(sx - 3, y, sz - 5, os);
+                let y = self.server.world.surface_height(sx - 3, sz - 5) + 1;
+                self.server.world.set_block(sx - 3, y, sz - 5, os);
                 let mut st = world::OfferingState::default();
                 if let Some(hw) = reg.item_id("base:heartwood") {
                     st.slots[0] = Some(ItemStack::new(&reg, hw, 2));
                 }
-                self.world
+                self.server.world
                     .block_entities
                     .insert((sx - 3, y, sz - 5), world::BlockEntity::Offering(st));
             }
             if let Some(sap) = reg.block_id("base:oak_sapling") {
-                let y = self.world.surface_height(sx + 2, sz - 6) + 1;
-                self.world.set_block(sx + 2, y, sz - 6, sap);
+                let y = self.server.world.surface_height(sx + 2, sz - 6) + 1;
+                self.server.world.set_block(sx + 2, y, sz - 6, sap);
             }
-            let ty = self.world.surface_height(sx + 6, sz - 8) + 1;
-            self.world.grow_tree(sx + 6, ty, sz - 8, "oak", 3);
+            let ty = self.server.world.surface_height(sx + 6, sz - 8) + 1;
+            self.server.world.grow_tree(sx + 6, ty, sz - 8, "oak", 3);
             for name in ["base:bedroll", "base:oak_sapling"] {
                 if let Some(item) = reg.item_id(name) {
                     self.inventory.add(&reg, item, 1);
@@ -666,7 +658,7 @@ impl Game {
             let p = (spawn.x as i32 - 2, spawn.y as i32, spawn.z as i32);
             let reg = self.reg.clone();
             if let Some(cb) = reg.block_id("base:chest") {
-                self.world.set_block(p.0, p.1, p.2, cb);
+                self.server.world.set_block(p.0, p.1, p.2, cb);
                 let mut st = world::ChestState::default();
                 for (i, (name, n)) in
                     [("base:bread", 5), ("base:torch", 12), ("base:bronze_sword", 1)]
@@ -677,7 +669,7 @@ impl Game {
                         st.slots[i * 4] = Some(ItemStack::new(&reg, item, *n));
                     }
                 }
-                self.world.block_entities.insert(p, world::BlockEntity::Chest(st));
+                self.server.world.block_entities.insert(p, world::BlockEntity::Chest(st));
                 self.set_screen(Screen::Chest(p));
             }
         }
@@ -696,14 +688,14 @@ impl Game {
                 if let Some(si) = self.reg.animal_id(name) {
                     let x = spawn.x as i32 - 3 + i as i32 * 2;
                     let z = spawn.z as i32 - 6;
-                    let y = self.world.surface_height(x, z) + 1;
+                    let y = self.server.world.surface_height(x, z) + 1;
                     let mut m = mobs::Mob::new(
                         si,
                         Vec3::new(x as f32 + 0.5, y as f32 + 0.05, z as f32 + 0.5),
                         i as f32 * 1.3,
                     );
                     m.health = self.reg.animals[si].health;
-                    self.world.mobs.push(m);
+                    self.server.world.mobs.push(m);
                 }
             }
         }
@@ -716,8 +708,8 @@ impl Game {
                 reg.item_id("base:raw_copper"),
                 reg.item_id("base:log"),
             ) {
-                self.world.set_block(p.0, p.1, p.2, fb);
-                self.world.block_entities.insert(
+                self.server.world.set_block(p.0, p.1, p.2, fb);
+                self.server.world.block_entities.insert(
                     p,
                     world::BlockEntity::Furnace(world::FurnaceState {
                         input: Some(ItemStack::new(&reg, raw, 5)),
@@ -772,7 +764,7 @@ impl Game {
                 );
             }
         }
-        let _ = std::fs::write(self.world.save_dir_for_saving().join("player.toml"), out);
+        let _ = std::fs::write(self.server.world.save_dir_for_saving().join("player.toml"), out);
     }
 
     fn load_player(&mut self, dir: &std::path::Path) -> bool {
@@ -829,11 +821,12 @@ impl Game {
     fn quit_to_title(&mut self) {
         if self.in_world {
             self.save_player();
-            self.world.save_modified();
-            self.scripts.save_kv(&self.world.save_dir_for_saving());
+            self.server.world.save_modified();
+            self.scripts.save_kv(&self.server.world.save_dir_for_saving());
         }
         self.renderer.chunks.clear();
-        self.world = World::new(0, PathBuf::from("saves/.none"), self.reg.clone());
+        self.server =
+            server::Server::new(World::new(0, PathBuf::from("saves/.none"), self.reg.clone()), 0.3, 1);
         self.items.clear();
         self.in_world = false;
         self.refresh_worlds();
@@ -950,13 +943,13 @@ impl Game {
 
     /// Bedroll: sleep to dawn if it's night and the wild is far enough.
     fn try_sleep(&mut self) {
-        let sun = (self.time_of_day * std::f32::consts::TAU).sin();
+        let sun = (self.server.time_of_day * std::f32::consts::TAU).sin();
         if sun > -0.05 {
             self.toast("You can only sleep at night.".to_string());
             return;
         }
         let reg = self.reg.clone();
-        let near_warden = self.world.mobs.iter().any(|m| {
+        let near_warden = self.server.world.mobs.iter().any(|m| {
             reg.animals.get(m.species).is_some_and(|d| d.hostile)
                 && (m.pos - self.player.pos).length_squared() < 24.0 * 24.0
         });
@@ -965,20 +958,20 @@ impl Game {
             return;
         }
         // Time passes fairly: the skipped night still decays ire.
-        let skipped = (1.0 + 0.3 - self.time_of_day) % 1.0;
-        if self.world.tick_ire(skipped) {
-            let r = self.world.accept_offerings();
+        let skipped = (1.0 + 0.3 - self.server.time_of_day) % 1.0;
+        if self.server.world.tick_ire(skipped) {
+            let r = self.server.world.accept_offerings();
             if r > 0.0 {
                 self.toast("The wild has accepted your offering.".to_string());
             }
         }
-        self.time_of_day = 0.3;
+        self.server.time_of_day = 0.3;
         self.spawn_point = self.player.pos;
         if !self.creative {
             self.inventory.wear_tool(&reg, self.hotbar_sel);
         }
         self.save_player();
-        self.world.save_modified();
+        self.server.world.save_modified();
         self.toast("You camp until dawn. This is home now.".to_string());
         self.sfx(Sfx::Craft);
     }
@@ -1081,7 +1074,7 @@ impl Game {
         self.since_damage = 100.0;
         self.set_screen(Screen::Playing);
         if self.scripts.wants("on_player_respawn") {
-            self.scripts.dispatch(&self.world, "on_player_respawn", ());
+            self.scripts.dispatch(&self.server.world, "on_player_respawn", ());
             self.apply_script_cmds();
         }
     }
@@ -1096,17 +1089,17 @@ impl Game {
         for dx in -vd..=vd {
             for dz in -vd..=vd {
                 let pos = ChunkPos { x: pcx + dx, z: pcz + dz };
-                if !self.world.chunks.contains_key(&pos) {
+                if !self.server.world.chunks.contains_key(&pos) {
                     wanted.push((dx * dx + dz * dz, pos));
                 }
             }
         }
         wanted.sort_by_key(|(d, _)| *d);
         for (_, pos) in wanted.into_iter().take(GEN_BUDGET) {
-            self.world.ensure_chunk(pos);
+            self.server.world.ensure_chunk(pos);
             // New terrain changes neighbors' visible faces at the border.
             for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                if let Some(c) = self.world.chunks.get_mut(&ChunkPos { x: pos.x + dx, z: pos.z + dz }) {
+                if let Some(c) = self.server.world.chunks.get_mut(&ChunkPos { x: pos.x + dx, z: pos.z + dz }) {
                     c.dirty = true;
                 }
             }
@@ -1115,6 +1108,7 @@ impl Game {
         // Unload chunks far outside the view radius.
         let limit = vd + 2;
         let far: Vec<ChunkPos> = self
+            .server
             .world
             .chunks
             .keys()
@@ -1122,15 +1116,16 @@ impl Game {
             .copied()
             .collect();
         if !far.is_empty() {
-            self.world.save_modified();
+            self.server.world.save_modified();
             for pos in far {
-                self.world.chunks.remove(&pos);
+                self.server.world.chunks.remove(&pos);
                 self.renderer.drop_chunk(pos);
             }
         }
 
         // Remesh dirty chunks (only those whose 4 neighbors exist), nearest first.
         let mut dirty: Vec<(i32, ChunkPos)> = self
+            .server
             .world
             .chunks
             .iter()
@@ -1139,16 +1134,16 @@ impl Game {
             .collect();
         dirty.retain(|(_, p)| {
             [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().all(|(dx, dz)| {
-                self.world
+                self.server.world
                     .chunks
                     .contains_key(&ChunkPos { x: p.x + dx, z: p.z + dz })
             })
         });
         dirty.sort_by_key(|(d, _)| *d);
         for (_, pos) in dirty.into_iter().take(MESH_BUDGET) {
-            let mesh = mesher::mesh_chunk(&self.world, pos);
+            let mesh = mesher::mesh_chunk(&self.server.world, pos);
             self.renderer.upload_chunk(pos, &mesh);
-            if let Some(c) = self.world.chunks.get_mut(&pos) {
+            if let Some(c) = self.server.world.chunks.get_mut(&pos) {
                 c.dirty = false;
             }
         }
@@ -1199,7 +1194,7 @@ impl Game {
         };
         let Some(arrow_id) = arrow_id else { return };
         let dir = self.camera.forward();
-        self.world.projectiles.push(mobs::Projectile {
+        self.server.world.projectiles.push(mobs::Projectile {
             pos: self.camera.pos + dir * 0.4,
             vel: dir * bow.speed * (0.6 + 0.4 * charge),
             tile: reg.item(arrow_id).icon,
@@ -1234,7 +1229,7 @@ impl Game {
             })
             .unwrap_or(REACH);
         let mut best: Option<(usize, f32)> = None;
-        for (i, m) in self.world.mobs.iter().enumerate() {
+        for (i, m) in self.server.world.mobs.iter().enumerate() {
             let def = &self.reg.animals[m.species];
             if let Some(t) = m.ray_hit(def, origin, dir, REACH.min(wall_t)) {
                 if best.is_none_or(|(_, bt)| t < bt) {
@@ -1249,16 +1244,16 @@ impl Game {
     fn sweep_dead_mobs(&mut self) {
         let reg = self.reg.clone();
         let mut i = 0;
-        while i < self.world.mobs.len() {
-            if self.world.mobs[i].health > 0.0 {
+        while i < self.server.world.mobs.len() {
+            if self.server.world.mobs[i].health > 0.0 {
                 i += 1;
                 continue;
             }
-            let m = self.world.mobs.swap_remove(i);
+            let m = self.server.world.mobs.swap_remove(i);
             let def = &reg.animals[m.species];
             if !def.hostile {
                 // The wild counts its dead — wardens are not individuals.
-                self.world.add_ire(2.0);
+                self.server.world.add_ire(2.0);
             }
             self.sfx(Sfx::MobDeath(def.sound_pitch));
             if m.growth < 1.0 {
@@ -1281,7 +1276,7 @@ impl Game {
             }
             if self.scripts.wants("on_animal_killed") {
                 self.scripts.dispatch(
-                    &self.world,
+                    &self.server.world,
                     "on_animal_killed",
                     (
                         def.name.clone(),
@@ -1298,7 +1293,7 @@ impl Game {
     /// Mining and placing while playing.
     fn interact(&mut self, dt: f32) {
         let reg = self.reg.clone();
-        let hit = raycast::raycast(&self.world, self.camera.pos, self.camera.forward(), REACH);
+        let hit = raycast::raycast(&self.server.world, self.camera.pos, self.camera.forward(), REACH);
         let held = self.inventory.slots[self.hotbar_sel].map(|s| s.item);
 
         // Bow: hold right to draw, release to loose (0.25 s minimum).
@@ -1320,7 +1315,7 @@ impl Game {
         // Archaeology: sweeping a remnant is a slow, careful channel.
         let brush_held = held.is_some_and(|i| reg.item(i).brush_tool);
         let brush_target = hit.as_ref().map(|h| h.block).filter(|t| {
-            brush_held && reg.block(self.world.get_block(t.0, t.1, t.2)).brush.is_some()
+            brush_held && reg.block(self.server.world.get_block(t.0, t.1, t.2)).brush.is_some()
         });
         if self.right_held && brush_target.is_some() {
             let target = brush_target.unwrap();
@@ -1333,7 +1328,7 @@ impl Game {
                 self.brushing = 0.0;
                 self.brush_target = None;
                 let mut r = self.rng;
-                let found = self.world.brush_block(target.0, target.1, target.2, &mut r);
+                let found = self.server.world.brush_block(target.0, target.1, target.2, &mut r);
                 self.rng = r;
                 if let Some(stack) = found {
                     let center = Vec3::new(
@@ -1368,11 +1363,11 @@ impl Game {
                 if self.attack_cooldown <= 0.0 {
                     self.attack_cooldown = 0.35;
                     let dmg = held.map(|i| reg.item(i).damage).unwrap_or(1.0);
-                    let sp = self.world.mobs[mi].species;
+                    let sp = self.server.world.mobs[mi].species;
                     let pitch = reg.animals[sp].sound_pitch;
                     let from = self.camera.pos;
                     let def = reg.animals[sp].clone();
-                    self.world.mobs[mi].hurt(&def, dmg, from);
+                    self.server.world.mobs[mi].hurt(&def, dmg, from);
                     self.sfx(Sfx::MobHurt(pitch));
                     self.hunger = (self.hunger - 0.01).max(0.0);
                     if !self.creative {
@@ -1387,7 +1382,7 @@ impl Game {
         if self.left_held {
             if let Some(h) = &hit {
                 let target = h.block;
-                let b = self.world.get_block(target.0, target.1, target.2);
+                let b = self.server.world.get_block(target.0, target.1, target.2);
                 let hardness = if self.creative {
                     Some(0.0001)
                 } else {
@@ -1403,7 +1398,7 @@ impl Game {
                         let allow = if self.scripts.wants("on_block_break") {
                             let name = reg.block(b).name.clone();
                             let ok = self.scripts.dispatch(
-                                &self.world,
+                                &self.server.world,
                                 "on_block_break",
                                 (target.0 as i64, target.1 as i64, target.2 as i64, name),
                             );
@@ -1415,9 +1410,9 @@ impl Game {
                         self.breaking = None;
                         if allow {
                             self.hunger = (self.hunger - 0.008).max(0.0);
-                            let cost = self.world.ire_for_block(b);
-                            self.world.add_ire(cost);
-                            self.world.set_block(target.0, target.1, target.2, AIR);
+                            let cost = self.server.world.ire_for_block(b);
+                            self.server.world.add_ire(cost);
+                            self.server.world.set_block(target.0, target.1, target.2, AIR);
                             self.sfx(Sfx::Break(self.break_mat(b)));
                             if !self.creative {
                                 self.inventory.wear_tool(&reg, self.hotbar_sel);
@@ -1484,17 +1479,17 @@ impl Game {
         // Feeding wildlife: right-click an adult with its favorite food.
         if self.right_held && self.action_cooldown <= 0.0 {
             if let Some(mi) = self.mob_in_crosshair(&hit) {
-                let sp = self.world.mobs[mi].species;
+                let sp = self.server.world.mobs[mi].species;
                 let def = &reg.animals[sp];
                 if let (Some(bf), Some(h)) = (def.breed_food, held) {
                     if bf == h
                         && !def.hostile
-                        && self.world.mobs[mi].growth >= 1.0
-                        && self.world.mobs[mi].breed_cd <= 0.0
-                        && !self.world.mobs[mi].fed
+                        && self.server.world.mobs[mi].growth >= 1.0
+                        && self.server.world.mobs[mi].breed_cd <= 0.0
+                        && !self.server.world.mobs[mi].fed
                     {
                         if self.creative || self.inventory.take_one(self.hotbar_sel).is_some() {
-                            let m = &mut self.world.mobs[mi];
+                            let m = &mut self.server.world.mobs[mi];
                             m.fed = true;
                             m.calm = 30.0;
                             self.action_cooldown = 0.4;
@@ -1520,10 +1515,10 @@ impl Game {
         let held_is_food = held.is_some_and(|i| reg.item(i).food.is_some());
         if self.right_held && self.action_cooldown <= 0.0 && !held_is_food {
             if let Some(h) = &hit {
-                let tb = self.world.get_block(h.block.0, h.block.1, h.block.2);
+                let tb = self.server.world.get_block(h.block.0, h.block.1, h.block.2);
                 // Harvestable blocks (berry bushes).
                 if let Some((item, n, becomes)) = reg.block(tb).harvest {
-                    self.world.set_block(h.block.0, h.block.1, h.block.2, becomes);
+                    self.server.world.set_block(h.block.0, h.block.1, h.block.2, becomes);
                     let left = self.inventory.add(&reg, item, n);
                     if left > 0 {
                         self.drop_stack(ItemStack::new(&reg, item, left));
@@ -1539,7 +1534,7 @@ impl Game {
                 ) {
                     let name = reg.block(tb).name.as_str();
                     if name == "base:grass" || name == "base:dirt" {
-                        self.world.set_block(h.block.0, h.block.1, h.block.2, farm);
+                        self.server.world.set_block(h.block.0, h.block.1, h.block.2, farm);
                         self.inventory.wear_tool(&reg, self.hotbar_sel);
                         self.sfx(Sfx::Place);
                         self.action_cooldown = 0.3;
@@ -1549,7 +1544,7 @@ impl Game {
                 if self.scripts.wants("on_interact") {
                     let name = reg.block(tb).name.clone();
                     let allow = self.scripts.dispatch(
-                        &self.world,
+                        &self.server.world,
                         "on_interact",
                         (h.block.0 as i64, h.block.1 as i64, h.block.2 as i64, name),
                     );
@@ -1569,7 +1564,7 @@ impl Game {
                     }
                     Some("furnace") => {
                         self.right_held = false;
-                        self.world
+                        self.server.world
                             .block_entities
                             .entry(h.block)
                             .or_insert_with(|| {
@@ -1581,6 +1576,7 @@ impl Game {
                     Some("chest") if self.action_cooldown <= 0.0 => {
                         self.action_cooldown = 0.3;
                         let e = self
+                            .server
                             .world
                             .block_entities
                             .entry(h.block)
@@ -1590,7 +1586,7 @@ impl Game {
                         if let world::BlockEntity::Chest(c) = e {
                             if c.wild_owned {
                                 c.wild_owned = false;
-                                self.world.add_ire(1.0);
+                                self.server.world.add_ire(1.0);
                                 self.toast("The wild keeps its trophies.".to_string());
                             }
                         }
@@ -1599,7 +1595,7 @@ impl Game {
                     }
                     Some("offering") if self.action_cooldown <= 0.0 => {
                         self.action_cooldown = 0.3;
-                        self.world
+                        self.server.world
                             .block_entities
                             .entry(h.block)
                             .or_insert_with(|| {
@@ -1616,7 +1612,7 @@ impl Game {
                 if let Some(block) = place {
                     let bd = reg.block(block);
                     let needs_farmland = bd.crop_next.is_some() && !bd.crop_any_soil;
-                    let soil = self.world.get_block(x, y - 1, z);
+                    let soil = self.server.world.get_block(x, y - 1, z);
                     if needs_farmland && Some(soil) != reg.block_id("base:farmland") {
                         return;
                     }
@@ -1624,13 +1620,13 @@ impl Game {
                     if bd.cross && !reg.is_solid(soil) {
                         return;
                     }
-                    if !reg.is_solid(self.world.get_block(x, y, z))
+                    if !reg.is_solid(self.server.world.get_block(x, y, z))
                         && !self.player.overlaps_block(x, y, z)
                     {
                         let allow = if self.scripts.wants("on_block_place") {
                             let name = reg.block(block).name.clone();
                             let ok = self.scripts.dispatch(
-                                &self.world,
+                                &self.server.world,
                                 "on_block_place",
                                 (x as i64, y as i64, z as i64, name),
                             );
@@ -1642,10 +1638,10 @@ impl Game {
                         let consumed = self.creative
                             || self.inventory.take_one(self.hotbar_sel).is_some();
                         if allow && consumed {
-                            self.world.set_block(x, y, z, block);
+                            self.server.world.set_block(x, y, z, block);
                             if bd.crop_next.is_some() {
                                 // The wild notices things growing where you walk.
-                                self.world.plant_ire(0.2);
+                                self.server.world.plant_ire(0.2);
                             }
                             self.action_cooldown = 0.22;
                             self.sfx(Sfx::Place);
@@ -1663,7 +1659,7 @@ impl Game {
             match cmd {
                 script::Cmd::SetBlock(x, y, z, name) => {
                     if let Some(b) = reg.block_id(&name) {
-                        self.world.set_block(x, y, z, b);
+                        self.server.world.set_block(x, y, z, b);
                     }
                 }
                 script::Cmd::Give(name, n) => {
@@ -1677,10 +1673,10 @@ impl Game {
                 script::Cmd::Hud(msg) => self.toast(msg),
                 script::Cmd::SpawnAnimal(name, x, y, z) => {
                     if let Some(si) = reg.animal_id(&name) {
-                        if self.world.mobs.len() < world::MOB_CAP {
+                        if self.server.world.mobs.len() < world::MOB_CAP {
                             let mut m = mobs::Mob::new(si, Vec3::new(x, y, z), 0.0);
                             m.health = reg.animals[si].health;
-                            self.world.mobs.push(m);
+                            self.server.world.mobs.push(m);
                         }
                     }
                 }
@@ -1757,9 +1753,9 @@ impl Game {
         self.breaking = None;
 
         self.reg = new_reg.clone();
-        self.world.reg = new_reg.clone();
-        self.world.remap_from(&old);
-        self.world.generator = worldgen::Generator::new(self.world.seed, &new_reg);
+        self.server.world.reg = new_reg.clone();
+        self.server.world.remap_from(&old);
+        self.server.world.generator = worldgen::Generator::new(self.server.world.seed, &new_reg);
         self.scripts.load_mods(&script_mod_dirs(&new_reg));
 
         let errors: Vec<String> = new_reg
@@ -1880,7 +1876,7 @@ impl Game {
         }
 
         // Drowning.
-        if self.player.head_underwater(&self.world) {
+        if self.player.head_underwater(&self.server.world) {
             self.air -= dt;
             if self.air <= 0.0 {
                 self.air = 0.0;
@@ -1900,7 +1896,7 @@ impl Game {
     }
 
     fn update_items(&mut self, dt: f32) {
-        let world = &self.world;
+        let world = &self.server.world;
         self.items.retain_mut(|it| it.update(world, dt));
         if self.screen == Screen::Dead {
             return;
@@ -1947,75 +1943,50 @@ impl Game {
             self.action_cooldown = (self.action_cooldown - dt).max(0.0);
             self.attack_cooldown = (self.attack_cooldown - dt).max(0.0);
             self.scroll_cooldown = (self.scroll_cooldown - dt).max(0.0);
-            self.time_of_day = (self.time_of_day + dt / DAY_LENGTH) % 1.0;
-            if self.world.tick_ire(dt / DAY_LENGTH) {
-                let r = self.world.accept_offerings();
-                if r > 0.0 {
-                    self.sfx(Sfx::Pickup);
-                    self.toast("The wild has accepted your offering.".to_string());
-                }
-            }
-            let tier = self.world.ire_tier();
-            if tier != self.prev_ire_tier {
-                self.toast(
-                    if tier > self.prev_ire_tier {
-                        "The wild stirs against you.".to_string()
-                    } else {
-                        "The wild settles.".to_string()
-                    },
-                );
-                self.prev_ire_tier = tier;
-            }
         }
 
         if self.in_world {
             self.stream_chunks();
-            // Fluid simulation ticks at 5 Hz like classic Minecraft water.
+            // The authoritative simulation steps at its fixed tick; the
+            // client applies the results as presentation.
             if !paused {
-                self.water_timer += dt;
-                while self.water_timer >= 0.2 {
-                    self.water_timer -= 0.2;
-                    self.world.tick_water(512);
-                }
-                self.world.tick_entities(dt);
-                let sun = (self.time_of_day * std::f32::consts::TAU).sin();
-                let dl = (sun * 2.5 + 0.5).clamp(0.12, 1.0);
-                let attackable = !self.creative && self.health > 0.0;
-                let mut r = self.rng;
-                let aggro_mod = if self.charm("quiet") { -2.0 } else { 0.0 };
-                let events =
-                    self.world.tick_mobs(self.player.pos, dl, attackable, aggro_mod, dt, &mut r);
-                self.world
-                    .tick_hostile_spawns(self.player.pos, self.spawn_point, dl, dt, &mut r);
-                self.rng = r;
-                for ev in events {
+                let ctx = server::PlayerCtx {
+                    pos: self.player.pos,
+                    spawn: self.spawn_point,
+                    attackable: !self.creative && self.health > 0.0,
+                    aggro_mod: if self.charm("quiet") { -2.0 } else { 0.0 },
+                };
+                let mut evs = Vec::new();
+                self.server.advance(dt, &ctx, &mut evs);
+                for ev in evs {
                     match ev {
-                        mobs::MobEvent::HitPlayer(dmg, from) => {
+                        server::SimEvent::PlayerHit { dmg, from } => {
                             self.hurt_player_from_wild(dmg, from);
                         }
-                        mobs::MobEvent::Cast(p) => {
-                            self.sfx(Sfx::Bolt(1.2));
-                            self.world.projectiles.push(p);
-                        }
-                        mobs::MobEvent::Bred(_) => {
+                        server::SimEvent::BoltCast => self.sfx(Sfx::Bolt(1.2)),
+                        server::SimEvent::Bred => {
                             self.sfx(Sfx::Pickup);
                             self.toast("New life stirs in the wild.".to_string());
                         }
+                        server::SimEvent::Dawn { offering_refund } => {
+                            if offering_refund > 0.0 {
+                                self.sfx(Sfx::Pickup);
+                                self.toast("The wild has accepted your offering.".to_string());
+                            }
+                        }
+                        server::SimEvent::IreTier { rose, .. } => {
+                            self.toast(
+                                if rose {
+                                    "The wild stirs against you.".to_string()
+                                } else {
+                                    "The wild settles.".to_string()
+                                },
+                            );
+                        }
                     }
                 }
-                let bolt_dmg = self.world.tick_projectiles(self.player.pos, dt);
-                if bolt_dmg > 0.0 && attackable {
-                    self.hurt_player_from_wild(bolt_dmg, self.player.pos);
-                }
                 self.sweep_dead_mobs();
-                self.tick_accum2 += dt;
-                if self.tick_accum2 >= 0.5 {
-                    self.tick_accum2 = 0.0;
-                    let mut r = self.rng;
-                    self.world.random_tick(&mut r);
-                    self.rng = r;
-                }
-                for (pos, s) in std::mem::take(&mut self.world.pending_drops) {
+                for (pos, s) in std::mem::take(&mut self.server.world.pending_drops) {
                     let center = Vec3::new(pos.0 as f32 + 0.5, pos.1 as f32 + 0.5, pos.2 as f32 + 0.5);
                     let a = self.rand01() * std::f32::consts::TAU;
                     let v = Vec3::new(a.cos() * 1.5, 2.5, a.sin() * 1.5);
@@ -2025,7 +1996,7 @@ impl Game {
                 if let Screen::Furnace(pos) | Screen::Chest(pos) | Screen::Offering(pos) =
                     self.screen
                 {
-                    if !self.world.block_entities.contains_key(&pos) {
+                    if !self.server.world.block_entities.contains_key(&pos) {
                         self.set_screen(Screen::Playing);
                     }
                 }
@@ -2035,7 +2006,7 @@ impl Game {
                     if self.tick_accum >= 0.1 {
                         let t = self.tick_accum;
                         self.tick_accum = 0.0;
-                        self.scripts.dispatch(&self.world, "on_tick", (t as f64,));
+                        self.scripts.dispatch(&self.server.world, "on_tick", (t as f64,));
                         self.apply_script_cmds();
                     }
                 }
@@ -2058,7 +2029,7 @@ impl Game {
 
         // Physics — only once the chunk under the player exists.
         let pchunk = ChunkPos::of_world(self.player.pos.x.floor() as i32, self.player.pos.z.floor() as i32);
-        let can_sim = self.world.chunks.contains_key(&pchunk) && !paused;
+        let can_sim = self.server.world.chunks.contains_key(&pchunk) && !paused;
         if can_sim && self.screen != Screen::Dead {
             let input = physics::Input {
                 forward: (self.keys.w as i32 - self.keys.s as i32) as f32,
@@ -2083,13 +2054,13 @@ impl Game {
                 if self.keys.sprint {
                     v.y -= 8.0;
                 }
-                self.player.fly(&self.world, v, dt);
+                self.player.fly(&self.server.world, v, dt);
             }
             let was_in_water = self.player.in_water;
             let fall_speed = self.player.vel.y;
             if !self.flying {
                 self.player.update(
-                    &self.world,
+                    &self.server.world,
                     &input,
                     self.camera.flat_forward(),
                     self.camera.right(),
@@ -2111,7 +2082,7 @@ impl Game {
         }
 
         // Day/night: daylight factor from a sun curve (full day on menus).
-        let sun = (self.time_of_day * std::f32::consts::TAU).sin();
+        let sun = (self.server.time_of_day * std::f32::consts::TAU).sin();
         // 0.12 floor: moonlit surfaces stay navigable; torch light is
         // unaffected (its own vertex channel).
         let daylight = if self.in_world {
@@ -2130,12 +2101,12 @@ impl Game {
 
         let playing = self.screen == Screen::Playing;
         let outline = if playing {
-            raycast::raycast(&self.world, self.camera.pos, self.camera.forward(), REACH)
+            raycast::raycast(&self.server.world, self.camera.pos, self.camera.forward(), REACH)
                 .map(|h| h.block)
         } else {
             None
         };
-        let underwater = self.player.head_underwater(&self.world);
+        let underwater = self.player.head_underwater(&self.server.world);
         let fog = (self.config.view_dist as f32 - 0.5) * CHUNK_X as f32;
 
         // World-space extras: item entities + mining crack overlay.
@@ -2147,14 +2118,14 @@ impl Game {
             (b as f32 / 15.0, s as f32 / 15.0)
         };
         for it in &self.items {
-            let lum = sample(&self.world, it.pos);
+            let lum = sample(&self.server.world, it.pos);
             it.emit(&self.reg, lum, &mut entity_verts, &mut entity_idx);
         }
-        for m in &self.world.mobs {
-            let lum = sample(&self.world, m.pos);
+        for m in &self.server.world.mobs {
+            let lum = sample(&self.server.world, m.pos);
             m.emit(&self.reg, lum, &mut entity_verts, &mut entity_idx);
         }
-        for p in &self.world.projectiles {
+        for p in &self.server.world.projectiles {
             p.emit(&mut entity_verts, &mut entity_idx);
         }
         let mut overlay_verts = Vec::new();
@@ -2211,7 +2182,7 @@ impl Game {
             self.last_title = now;
             let p = self.player.pos;
             let biome = if self.in_world {
-                format!(" | {}", self.world.generator.biome(p.x as i32, p.z as i32).name())
+                format!(" | {}", self.server.world.generator.biome(p.x as i32, p.z as i32).name())
             } else {
                 String::new()
             };
@@ -2709,7 +2680,7 @@ impl Game {
                 let title = "CHEST";
                 let tw = UiBatch::text_width(3.0, title);
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 340.0, 3.0, title, [1.0; 4]);
-                let slots = match self.world.block_entities.get(&pos) {
+                let slots = match self.server.world.block_entities.get(&pos) {
                     Some(world::BlockEntity::Chest(c)) => c.slots,
                     _ => [None; world::CHEST_SLOTS],
                 };
@@ -2741,7 +2712,7 @@ impl Game {
                 let hint = "LEFT AT DUSK, TAKEN BY DAWN";
                 let hw2 = UiBatch::text_width(1.5, hint);
                 ui.text_shadow((w - hw2) / 2.0, h / 2.0 - 232.0, 1.5, hint, [0.7, 0.85, 0.65, 1.0]);
-                let slots = match self.world.block_entities.get(&pos) {
+                let slots = match self.server.world.block_entities.get(&pos) {
                     Some(world::BlockEntity::Offering(o)) => o.slots,
                     _ => [None; 3],
                 };
@@ -2799,7 +2770,7 @@ impl Game {
                 let bonus = (self.max_health() - MAX_HEALTH) as i32 / 2;
                 ui.text_shadow(p0x - 190.0, p0y + 134.0, 1.5, &format!("MAX HEALTH +{bonus}"), [1.0; 4]);
                 // The wild's ire: tier word + vine meter.
-                let tier = self.world.ire_tier();
+                let tier = self.server.world.ire_tier();
                 let tier_col = [
                     [0.45, 0.75, 0.4, 1.0],
                     [0.8, 0.75, 0.35, 1.0],
@@ -2811,7 +2782,7 @@ impl Game {
                 ui.rect(
                     p0x - 130.0,
                     p0y + 162.0,
-                    self.world.ire,
+                    self.server.world.ire,
                     10.0,
                     tier_col,
                 );
@@ -2929,7 +2900,7 @@ impl Game {
         self.sfx(Sfx::Craft);
         if self.scripts.wants("on_craft") {
             let name = reg.item(recipe.output).name.clone();
-            self.scripts.dispatch(&self.world, "on_craft", (name,));
+            self.scripts.dispatch(&self.server.world, "on_craft", (name,));
             self.apply_script_cmds();
         }
     }
@@ -2951,7 +2922,7 @@ impl Game {
         &self,
         pos: (i32, i32, i32),
     ) -> (Option<ItemStack>, Option<ItemStack>, Option<ItemStack>, f32, f32) {
-        match self.world.block_entities.get(&pos) {
+        match self.server.world.block_entities.get(&pos) {
             Some(world::BlockEntity::Furnace(f)) => {
                 let time = f
                     .input
@@ -3021,7 +2992,7 @@ impl Game {
 
     fn offering_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
         let reg = self.reg.clone();
-        let Some(world::BlockEntity::Offering(o)) = self.world.block_entities.get_mut(&pos)
+        let Some(world::BlockEntity::Offering(o)) = self.server.world.block_entities.get_mut(&pos)
         else {
             return;
         };
@@ -3033,7 +3004,7 @@ impl Game {
 
     fn chest_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
         let reg = self.reg.clone();
-        let Some(world::BlockEntity::Chest(c)) = self.world.block_entities.get_mut(&pos)
+        let Some(world::BlockEntity::Chest(c)) = self.server.world.block_entities.get_mut(&pos)
         else {
             return;
         };
@@ -3045,7 +3016,7 @@ impl Game {
 
     fn furnace_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
         let reg = self.reg.clone();
-        let Some(world::BlockEntity::Furnace(f)) = self.world.block_entities.get_mut(&pos)
+        let Some(world::BlockEntity::Furnace(f)) = self.server.world.block_entities.get_mut(&pos)
         else {
             return;
         };
@@ -3321,9 +3292,9 @@ impl Game {
                     self.creative = !self.creative;
                     self.flying = false;
                     let mode = if self.creative { "creative" } else { "survival" };
-                    world::write_world_meta(&self.world.save_dir_for_saving(), self.world.seed, mode, self.world.ire);
+                    world::write_world_meta(&self.server.world.save_dir_for_saving(), self.server.world.seed, mode, self.server.world.ire);
                     if self.scripts.wants("on_mode_change") {
-                        self.scripts.dispatch(&self.world, "on_mode_change", (mode.to_string(),));
+                        self.scripts.dispatch(&self.server.world, "on_mode_change", (mode.to_string(),));
                         self.apply_script_cmds();
                     }
                 } else if self.hit(self.menu_button_rect(2)) {
@@ -3617,7 +3588,7 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => {
                 if game.in_world {
                     game.save_player();
-                    game.world.save_modified();
+                    game.server.world.save_modified();
                 }
                 event_loop.exit();
             }
@@ -3695,12 +3666,12 @@ impl ApplicationHandler for App {
                     }
                     MouseButton::Middle if pressed => {
                         if let Some(h) = raycast::raycast(
-                            &game.world,
+                            &game.server.world,
                             game.camera.pos,
                             game.camera.forward(),
                             REACH,
                         ) {
-                            let b = game.world.get_block(h.block.0, h.block.1, h.block.2);
+                            let b = game.server.world.get_block(h.block.0, h.block.1, h.block.2);
                             let reg = game.reg.clone();
                             let found = game.inventory.slots[..HOTBAR_SLOTS]
                                 .iter()

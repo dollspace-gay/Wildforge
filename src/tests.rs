@@ -2923,3 +2923,44 @@ fn charms_and_tablets_work() {
     assert_ne!(b.state, crate::mobs::MobState::Hunt, "quiet charm keeps you unseen");
     let _ = &mut w;
 }
+
+// ---------------- the server (sim/client split) ----------------
+
+#[test]
+fn server_ticks_at_fixed_rate_and_runs_the_world() {
+    let reg = base_reg();
+    let world = test_world("simsplit");
+    let mut sv = crate::server::Server::new(world, 0.3, 42);
+    let ctx = crate::server::PlayerCtx {
+        pos: Vec3::new(8.0, 80.0, 8.0),
+        spawn: Vec3::new(-500.0, 70.0, -500.0),
+        attackable: true,
+        aggro_mod: 0.0,
+    };
+    let t0 = sv.time_of_day;
+    let mut evs = Vec::new();
+    // 2 wall-seconds in odd chunks: the fixed tick must absorb it evenly.
+    for _ in 0..120 {
+        sv.advance(1.0 / 60.0, &ctx, &mut evs);
+    }
+    let advanced = sv.time_of_day - t0;
+    assert!(
+        (advanced - 2.0 / crate::server::DAY_LENGTH).abs() < 0.0005,
+        "clock advanced by the simulated time, got {advanced}"
+    );
+    // A hitch doesn't spiral the simulation.
+    sv.advance(30.0, &ctx, &mut evs);
+    assert!(sv.time_of_day - t0 < 0.01, "hitch capped, not replayed");
+    // Ire tier events flow through the server.
+    sv.world.ire = 95.0;
+    let mut evs2 = Vec::new();
+    sv.advance(0.1, &ctx, &mut evs2);
+    assert!(
+        evs2.iter().any(|e| matches!(
+            e,
+            crate::server::SimEvent::IreTier { rose: true, .. }
+        )),
+        "tier change surfaced as a SimEvent"
+    );
+    let _ = reg;
+}

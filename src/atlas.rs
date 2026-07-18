@@ -77,7 +77,10 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("iron_chestplate", 186), ("iron_leggings", 187), ("iron_boots", 188),
         ("steel_helmet", 189), ("steel_chestplate", 190),
         ("steel_leggings", 191), ("steel_boots", 192), ("shears", 193),
-        ("excavation_brush", 194),
+        ("excavation_brush", 194), ("mossy_cobblestone", 195),
+        ("cracked_masonry", 196), ("packed_earth", 197), ("old_coin", 198),
+        ("etched_tablet", 199), ("charm_quiet", 200), ("charm_bark", 201),
+        ("charm_hunger", 202),
         ("unknown", 15), ("crack1", 16), ("crack2", 17), ("crack3", 18),
         ("crack4", 19),
     ]
