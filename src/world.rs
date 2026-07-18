@@ -273,7 +273,7 @@ impl World {
                     let soil_ok = d.crop_any_soil
                         || farmland == Some(self.get_block(wx, y - 1, wz));
                     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
-                    if soil_ok && (*rng >> 8) as f32 / (1 << 24) as f32 * 2.0 < d.crop_chance {
+                    if soil_ok && ((*rng >> 8) as f32 / (1 << 24) as f32) < d.crop_chance {
                         changes.push((wx, y, wz, next));
                     }
                 }

@@ -1216,13 +1216,17 @@ fn crops_grow_on_farmland_via_random_ticks() {
     // Bushes regrow anywhere.
     let bare = b(&reg, "base:berry_bush");
     for x in 0..16 {
-        w.set_block(x, h + 3, 8, bare);
+        for z in 8..11 {
+            w.set_block(x, h + 3, z, bare);
+        }
     }
     for _ in 0..30000 {
         w.random_tick(&mut rng);
     }
+    let fruited = b(&reg, "base:berry_bush/stage1");
     let refruited = (0..16)
-        .filter(|&x| w.get_block(x, h + 3, 8) == b(&reg, "base:berry_bush/stage1"))
+        .flat_map(|x| (8..11).map(move |z| (x, z)))
+        .filter(|&(x, z)| w.get_block(x, h + 3, z) == fruited)
         .count();
     assert!(refruited > 0, "bushes should refruit anywhere");
     // Cross rendering flags.
