@@ -707,6 +707,19 @@ impl Game {
                 }
             }
         }
+        // Dev: a warm torch and a red ruby block side by side (colored-light
+        // verification — pools of warm and red that blend where they meet).
+        if std::env::var("WILDFORGE_DEMO_COLORLIGHT").is_ok() {
+            let place = |w: &mut World, name: &str, dx: i32, dz: i32| {
+                if let Some(b) = w.reg.block_id(name) {
+                    let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
+                    let y = w.surface_height(x, z);
+                    w.set_block(x, y + 1, z, b);
+                }
+            };
+            place(&mut self.world, "base:torch", -2, 5);
+            place(&mut self.world, "gems:ruby_block", 2, 5);
+        }
         // Dev: a few tall pillars near spawn (shadow-casting verification).
         if std::env::var("WILDFORGE_DEMO_PILLARS").is_ok() {
             if let Some(stone) = self.reg.block_id("base:cobblestone") {

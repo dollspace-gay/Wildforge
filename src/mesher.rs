@@ -17,8 +17,8 @@ pub struct Vertex {
     /// Geometric face normal (world space). Drives the sun N·L term and the
     /// Minecraft-style face shade, both recomputed in the shader.
     pub normal: [f32; 3],
-    /// Block-light channel (torches), 0..1, premultiplied by AO only.
-    pub light: f32,
+    /// Block-light color (torches), rgb 0..1, premultiplied by AO only.
+    pub light: [f32; 3],
     /// Sky-visibility channel, 0..1, premultiplied by AO. Gates direct sun and
     /// scales the sky-ambient fill; the daylight uniform dims it at night.
     pub sky: f32,
@@ -89,20 +89,23 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
             world.get_block(bx + lx, y, bz + lz)
         }
     };
-    // Light of the cell a face looks into, as 0..1 (block, sky) channels.
-    let light = |lx: i32, y: i32, lz: i32| -> (f32, f32) {
+    // Light of the cell a face looks into: block rgb + sky, each 0..1.
+    let light = |lx: i32, y: i32, lz: i32| -> ([f32; 3], f32) {
         if y < 0 {
-            return (0.0, 0.0);
+            return ([0.0; 3], 0.0);
         }
         if y >= CHUNK_Y as i32 {
-            return (0.0, 1.0);
+            return ([0.0; 3], 1.0);
         }
         let (b, sk) = if lx >= 0 && lx < CHUNK_X as i32 && lz >= 0 && lz < CHUNK_Z as i32 {
             chunk.light(lx as usize, y as usize, lz as usize)
         } else {
-            world.light_at(bx + lx, y, bz + lz)
+            world.light_rgb_at(bx + lx, y, bz + lz)
         };
-        (b as f32 / 15.0, sk as f32 / 15.0)
+        (
+            [b[0] as f32 / 15.0, b[1] as f32 / 15.0, b[2] as f32 / 15.0],
+            sk as f32 / 15.0,
+        )
     };
 
     let tile_uv = |tx: u32, ty: u32, u: f32, v: f32| -> [f32; 2] {
@@ -147,7 +150,7 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                                     // Cross-quads have no single face; treat as
                                     // upward-lit vegetation.
                                     normal: [0.0, 1.0, 0.0],
-                                    light: 0.95 * cl,
+                                    light: [0.95 * cl[0], 0.95 * cl[1], 0.95 * cl[2]],
                                     sky: 0.95 * cs,
                                 });
                             }
@@ -207,7 +210,7 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                             pos: [px, py, pz],
                             uv: tile_uv(tx, ty, u, v),
                             normal: nrm,
-                            light: ao_f * fl,
+                            light: [ao_f * fl[0], ao_f * fl[1], ao_f * fl[2]],
                             sky: ao_f * fs,
                         });
                     }

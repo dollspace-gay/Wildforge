@@ -338,6 +338,7 @@ solid = false
 opaque = false
 hardness = 0.05
 light = 14
+light_color = [1.0, 0.62, 0.28]  # warm flame; the glow deepens amber with distance
 drops = "self"
 
 [[block]]

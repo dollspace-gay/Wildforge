@@ -28,14 +28,14 @@ struct VsIn {
     @location(0) pos: vec3<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) normal: vec3<f32>,
-    @location(3) light: f32,
+    @location(3) light: vec3<f32>,
     @location(4) sky: f32,
 };
 
 struct VsOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) uv: vec2<f32>,
-    @location(1) light: f32,
+    @location(1) light: vec3<f32>,
     @location(2) world: vec3<f32>,
     @location(3) sky: f32,
     @location(4) normal: vec3<f32>,
@@ -95,9 +95,10 @@ fn face_shade(n: vec3<f32>) -> f32 {
 
 // Full lit multiplier (per channel) for a world-space surface. A near-zero
 // normal marks pre-shaded billboards/entities, which keep the old flat model.
-fn world_light(normal: vec3<f32>, light: f32, sky: f32, world: vec3<f32>) -> vec3<f32> {
+fn world_light(normal: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) -> vec3<f32> {
     if (dot(normal, normal) < 0.25) {
-        return vec3<f32>(max(max(light, sky * u.misc.y), 0.03));
+        let l = max(light.r, max(light.g, light.b));
+        return vec3<f32>(max(max(l, sky * u.misc.y), 0.03));
     }
     let n = normalize(normal);
     let fs = face_shade(n);
@@ -107,9 +108,9 @@ fn world_light(normal: vec3<f32>, light: f32, sky: f32, world: vec3<f32>) -> vec
     let ndl = max(dot(n, u.sun_dir.xyz), 0.0);
     let shadow = sample_shadow(world, ndl);
     let sun = sky * ndl * shadow * u.sun_col.rgb;
-    // Cool sky fill + steady (white) torch light, both with face shade.
+    // Cool sky fill + steady (colored) torch light, both with face shade.
     let amb = sky * fs * u.amb_col.rgb;
-    let torch = vec3<f32>(light * fs);
+    let torch = light * fs;
     return max(sun + amb + torch, vec3<f32>(0.03));
 }
 

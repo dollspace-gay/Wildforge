@@ -106,7 +106,7 @@ impl ItemEntity {
                         ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                     ],
                     normal: [0.0, 0.0, 0.0],
-                    light: shade * lum.0,
+                    light: [shade * lum.0; 3],
                     sky: shade * lum.1,
                 });
             }
@@ -153,7 +153,7 @@ impl ItemEntity {
                         pos: [c.x + dx * o, c.y + y + 0.5 * h, c.z + dz * o],
                         uv: [u, v],
                         normal: [0.0, 0.0, 0.0],
-                        light: 0.95 * lum.0,
+                        light: [0.95 * lum.0; 3],
                         sky: 0.95 * lum.1,
                     });
                 }
@@ -199,7 +199,7 @@ pub fn emit_crack(
                     ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                 ],
                 normal: [0.0, 0.0, 0.0],
-                light: 1.0,
+                light: [1.0; 3],
                 sky: 1.0,
             });
         }

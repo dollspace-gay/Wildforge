@@ -1126,8 +1126,8 @@ impl World {
 
     // ---------------- lighting ----------------
 
-    /// (block light, sky light) at a world position. Unloaded chunks read
-    /// as open sky so the world's edge doesn't render black.
+    /// (block-light intensity, sky light) at a world position. Unloaded chunks
+    /// read as open sky so the world's edge doesn't render black.
     pub fn light_at(&self, x: i32, y: i32, z: i32) -> (u8, u8) {
         if y < 0 {
             return (0, 0);
@@ -1136,12 +1136,31 @@ impl World {
             return (0, 15);
         }
         match self.chunks.get(&ChunkPos::of_world(x, z)) {
-            Some(c) => c.light(
+            Some(c) => c.light_intensity(
                 x.rem_euclid(CHUNK_X as i32) as usize,
                 y as usize,
                 z.rem_euclid(CHUNK_Z as i32) as usize,
             ),
             None => (0, 15),
+        }
+    }
+
+    /// (block-light r,g,b, sky light) at a world position — the full colored
+    /// signal the mesher bakes into vertices.
+    pub fn light_rgb_at(&self, x: i32, y: i32, z: i32) -> ([u8; 3], u8) {
+        if y < 0 {
+            return ([0; 3], 0);
+        }
+        if y >= CHUNK_Y as i32 {
+            return ([0; 3], 15);
+        }
+        match self.chunks.get(&ChunkPos::of_world(x, z)) {
+            Some(c) => c.light(
+                x.rem_euclid(CHUNK_X as i32) as usize,
+                y as usize,
+                z.rem_euclid(CHUNK_Z as i32) as usize,
+            ),
+            None => ([0; 3], 15),
         }
     }
 
@@ -1161,9 +1180,9 @@ impl World {
         struct Cell {
             opaque: bool,
             cost: u8, // propagation cost: 1, or 2 through water
-            emit: u8,
+            emit: [u8; 3], // per-channel emission
         }
-        let mut cells = vec![Cell { opaque: false, cost: 1, emit: 0 }; NX * NY * NZ];
+        let mut cells = vec![Cell { opaque: false, cost: 1, emit: [0; 3] }; NX * NY * NZ];
         for x in 0..NX {
             for z in 0..NZ {
                 for y in 0..NY {
@@ -1171,16 +1190,14 @@ impl World {
                     cells[idx(x, y, z)] = Cell {
                         opaque: d.opaque,
                         cost: if d.water_level.is_some() { 2 } else { 1 },
-                        emit: d.light_emit,
+                        emit: d.light_rgb,
                     };
                 }
             }
         }
 
-        let mut lb = vec![0u8; NX * NY * NZ];
         let mut ls = vec![0u8; NX * NY * NZ];
         let mut sky_q: VecDeque<(usize, usize, usize)> = VecDeque::new();
-        let mut blk_q: VecDeque<(usize, usize, usize)> = VecDeque::new();
 
         // Sky columns: full light straight down to the first opaque block,
         // dimming through water.
@@ -1205,22 +1222,12 @@ impl World {
                 }
             }
         }
-        // Emitters.
-        for x in 0..NX {
-            for z in 0..NZ {
-                for y in 0..NY {
-                    let e = cells[idx(x, y, z)].emit;
-                    if e > 0 {
-                        lb[idx(x, y, z)] = e;
-                        blk_q.push_back((x, y, z));
-                    }
-                }
-            }
-        }
         // Border seeds from loaded neighbors (light crosses chunk seams).
-        let mut seed = |grid: &mut Vec<u8>,
-                        q: &mut VecDeque<(usize, usize, usize)>,
-                        sky: bool| {
+        // `chan` selects the channel: None = sky, Some(c) = block channel c.
+        let seed = |grid: &mut [u8],
+                    q: &mut VecDeque<(usize, usize, usize)>,
+                    cells: &[Cell],
+                    chan: Option<usize>| {
             for (dx, dz, edge_x, edge_z) in [
                 (-1i32, 0i32, 0usize, usize::MAX),
                 (1, 0, NX - 1, usize::MAX),
@@ -1242,7 +1249,10 @@ impl World {
                             (t, edge_z, t, nb_z)
                         };
                         let (nlb, nls) = nc.light(nx, y, nz);
-                        let v = if sky { nls } else { nlb };
+                        let v = match chan {
+                            None => nls,
+                            Some(c) => nlb[c],
+                        };
                         if v < 2 {
                             continue;
                         }
@@ -1259,11 +1269,9 @@ impl World {
                 }
             }
         };
-        seed(&mut ls, &mut sky_q, true);
-        seed(&mut lb, &mut blk_q, false);
 
-        // BFS relax (shared by both channels).
-        let bfs = |grid: &mut Vec<u8>, q: &mut VecDeque<(usize, usize, usize)>| {
+        // BFS relax (single channel; run once per light channel).
+        let bfs = |grid: &mut [u8], q: &mut VecDeque<(usize, usize, usize)>, cells: &[Cell]| {
             while let Some((x, y, z)) = q.pop_front() {
                 let v = grid[idx(x, y, z)];
                 if v < 2 {
@@ -1288,8 +1296,31 @@ impl World {
                 if z < NZ - 1 { relax(x, y, z + 1); }
             }
         };
-        bfs(&mut lb, &mut blk_q);
-        bfs(&mut ls, &mut sky_q);
+
+        // Sky: one channel.
+        seed(&mut ls, &mut sky_q, &cells, None);
+        bfs(&mut ls, &mut sky_q, &cells);
+
+        // Block light: independent flood per color channel, packed into rgb.
+        let mut lb = vec![[0u8; 3]; NX * NY * NZ];
+        for ch in 0..3 {
+            let mut grid = vec![0u8; NX * NY * NZ];
+            let mut q: VecDeque<(usize, usize, usize)> = VecDeque::new();
+            for i in 0..cells.len() {
+                let e = cells[i].emit[ch];
+                if e > 0 {
+                    grid[i] = e;
+                    let y = i % NY;
+                    let xz = i / NY;
+                    q.push_back((xz / NZ, y, xz % NZ));
+                }
+            }
+            seed(&mut grid, &mut q, &cells, Some(ch));
+            bfs(&mut grid, &mut q, &cells);
+            for i in 0..grid.len() {
+                lb[i][ch] = grid[i];
+            }
+        }
 
         let chunk = self.chunks.get_mut(&pos).unwrap();
         let (old_b, old_s) = chunk.light_raw();
