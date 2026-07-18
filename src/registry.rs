@@ -35,7 +35,10 @@ pub struct BlockDef {
     pub drops: Option<(ItemId, u32)>,
     pub solid: bool,
     pub opaque: bool,
-    pub interactive: bool,
+    /// Right-click behavior: "crafting", "furnace", ...
+    pub interaction: Option<String>,
+    /// Minimum tool tier for drops when requires_tool is set.
+    pub min_tier: u8,
     /// 0 = fluid source, 1..=7 flowing levels. None = not a fluid.
     pub water_level: Option<u8>,
 }
@@ -46,8 +49,8 @@ pub struct ItemDef {
     pub label: String,
     pub icon: u16,
     pub max_stack: u32,
-    /// (kind, speed multiplier on matching blocks)
-    pub tool: Option<(ToolKind, f32)>,
+    /// (kind, speed multiplier on matching blocks, tier)
+    pub tool: Option<(ToolKind, f32, u8)>,
     pub durability: u32,
     /// Placing this item puts down this block.
     pub places: Option<BlockId>,
@@ -76,6 +79,13 @@ pub struct RecipeDef {
     pub pattern: Vec<Option<Ingredient>>,
     pub output: ItemId,
     pub count: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct SmeltDef {
+    pub input: Ingredient,
+    pub output: ItemId,
+    pub time: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -109,6 +119,9 @@ pub struct Registry {
     pub water_ids: [BlockId; 8],
     pub unknown_block: BlockId,
     pub mods: Vec<ModInfo>,
+    pub smelts: Vec<SmeltDef>,
+    /// (fuel ingredient, burn seconds)
+    pub fuels: Vec<(Ingredient, f32)>,
     /// Item groups usable as `#tag` recipe ingredients; mods can extend them.
     pub tags: HashMap<String, Vec<ItemId>>,
     /// Mod textures to pack: (slot, png path).
@@ -175,10 +188,18 @@ impl Registry {
         let d = self.block(block);
         let base = d.hardness?;
         let mult = match (held.and_then(|i| self.item(i).tool), d.tool) {
-            (Some((kind, speed)), Some(class)) if kind == class => speed,
+            (Some((kind, speed, _)), Some(class)) if kind == class => speed,
             _ => 1.0,
         };
         Some(base / mult)
+    }
+
+    pub fn smelt_for(&self, item: ItemId) -> Option<&SmeltDef> {
+        self.smelts.iter().find(|s| s.input.matches(item))
+    }
+
+    pub fn fuel_value(&self, item: ItemId) -> Option<f32> {
+        self.fuels.iter().find(|(f, _)| f.matches(item)).map(|(_, b)| *b)
     }
 
     /// Drop for breaking `block` with `held` (requires_tool gating).
@@ -186,7 +207,7 @@ impl Registry {
         let d = self.block(block);
         if d.requires_tool {
             let ok = match (held.and_then(|i| self.item(i).tool), d.tool) {
-                (Some((kind, _)), Some(class)) => kind == class,
+                (Some((kind, _, tier)), Some(class)) => kind == class && tier >= d.min_tier,
                 _ => false,
             };
             if !ok {
@@ -240,7 +261,9 @@ struct BlockToml {
     #[serde(default = "yes")]
     opaque: bool,
     #[serde(default)]
-    interactive: bool,
+    interaction: Option<String>,
+    #[serde(default)]
+    min_tier: u8,
     #[serde(default)]
     water: Option<u8>,
     /// Register an item form for placing (default true).
@@ -264,6 +287,8 @@ struct ItemToml {
     #[serde(default)]
     tool_speed: Option<f32>,
     #[serde(default)]
+    tool_tier: Option<u8>,
+    #[serde(default)]
     durability: Option<u32>,
 }
 
@@ -275,6 +300,26 @@ struct RecipeToml {
     output: String,
     #[serde(default)]
     count: Option<u32>,
+}
+
+#[derive(Deserialize, Clone)]
+struct SmeltToml {
+    input: String,
+    output: String,
+    #[serde(default)]
+    time: Option<f32>,
+}
+
+#[derive(Deserialize, Clone)]
+struct FuelToml {
+    item: String,
+    burn: f32,
+}
+
+#[derive(Deserialize, Clone)]
+struct AliasToml {
+    old: String,
+    new: String,
 }
 
 #[derive(Deserialize, Clone)]
@@ -311,6 +356,15 @@ struct ItemsFile {
 struct RecipesFile {
     #[serde(default)]
     recipe: Vec<RecipeToml>,
+    #[serde(default)]
+    smelt: Vec<SmeltToml>,
+    #[serde(default)]
+    fuel: Vec<FuelToml>,
+}
+#[derive(Deserialize, Default)]
+struct AliasesFile {
+    #[serde(default)]
+    alias: Vec<AliasToml>,
 }
 #[derive(Deserialize, Default)]
 struct FeaturesFile {
@@ -329,8 +383,11 @@ struct RawMod {
     blocks: Vec<BlockToml>,
     items: Vec<ItemToml>,
     recipes: Vec<RecipeToml>,
+    smelts: Vec<SmeltToml>,
+    fuels: Vec<FuelToml>,
     features: Vec<FeatureToml>,
     tags: Vec<TagToml>,
+    aliases: Vec<AliasToml>,
 }
 
 // ---------------- loading ----------------
@@ -339,6 +396,8 @@ const BASE_BLOCKS: &str = include_str!("../base/blocks.toml");
 const BASE_ITEMS: &str = include_str!("../base/items.toml");
 const BASE_RECIPES: &str = include_str!("../base/recipes.toml");
 const BASE_TAGS: &str = include_str!("../base/tags.toml");
+const BASE_FEATURES: &str = include_str!("../base/features.toml");
+const BASE_ALIASES: &str = include_str!("../base/aliases.toml");
 
 fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
     let manifest = std::fs::read_to_string(dir.join("mod.toml"))
@@ -355,6 +414,8 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         toml::from_str(&read("features.toml")).map_err(|e| format!("features.toml: {e}"))?;
     let tags: TagsFile =
         toml::from_str(&read("tags.toml")).map_err(|e| format!("tags.toml: {e}"))?;
+    let aliases: AliasesFile =
+        toml::from_str(&read("aliases.toml")).map_err(|e| format!("aliases.toml: {e}"))?;
     let has_script = dir.join("main.rhai").exists();
     Ok(RawMod {
         info: ModInfo {
@@ -368,9 +429,12 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         depends: m.depends,
         blocks: blocks.block,
         items: items.item,
+        smelts: recipes.smelt.clone(),
+        fuels: recipes.fuel.clone(),
         recipes: recipes.recipe,
         features: features.feature,
         tags: tags.tag,
+        aliases: aliases.alias,
     })
 }
 
@@ -379,6 +443,8 @@ fn base_mod() -> RawMod {
     let items: ItemsFile = toml::from_str(BASE_ITEMS).expect("base items.toml");
     let recipes: RecipesFile = toml::from_str(BASE_RECIPES).expect("base recipes.toml");
     let tags: TagsFile = toml::from_str(BASE_TAGS).expect("base tags.toml");
+    let features: FeaturesFile = toml::from_str(BASE_FEATURES).expect("base features.toml");
+    let aliases: AliasesFile = toml::from_str(BASE_ALIASES).expect("base aliases.toml");
     RawMod {
         info: ModInfo {
             id: "base".into(),
@@ -391,9 +457,12 @@ fn base_mod() -> RawMod {
         depends: vec![],
         blocks: blocks.block,
         items: items.item,
+        smelts: recipes.smelt.clone(),
+        fuels: recipes.fuel.clone(),
         recipes: recipes.recipe,
-        features: vec![],
+        features: features.feature,
         tags: tags.tag,
+        aliases: aliases.alias,
     }
 }
 
@@ -483,8 +552,11 @@ impl RemoveStable for Vec<RawMod> {
             blocks: vec![],
             items: vec![],
             recipes: vec![],
+            smelts: vec![],
+            fuels: vec![],
             features: vec![],
             tags: vec![],
+            aliases: vec![],
         };
         std::mem::replace(&mut self[idx], dummy)
     }
@@ -501,6 +573,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         water_ids: [AIR; 8],
         unknown_block: AIR,
         mods: Vec::new(),
+        smelts: Vec::new(),
+        fuels: Vec::new(),
         tags: HashMap::new(),
         tex_files: Vec::new(),
     };
@@ -518,7 +592,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         drops: None,
         solid: false,
         opaque: false,
-        interactive: false,
+        interaction: None,
+        min_tier: 0,
         water_level: None,
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
@@ -569,6 +644,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let mut pending_recipes: Vec<(String, RecipeToml)> = Vec::new();
     let mut pending_features: Vec<(String, FeatureToml)> = Vec::new();
     let mut pending_tags: Vec<(String, TagToml)> = Vec::new();
+    let mut pending_smelts: Vec<(String, SmeltToml)> = Vec::new();
+    let mut pending_fuels: Vec<(String, FuelToml)> = Vec::new();
+    let mut pending_aliases: Vec<(String, AliasToml)> = Vec::new();
 
     for raw in &raws {
         if raw.info.id.is_empty() {
@@ -605,7 +683,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 drops: None,
                 solid: b.solid && !is_fluid,
                 opaque: b.opaque && !is_fluid,
-                interactive: b.interactive,
+                interaction: b.interaction.clone(),
+                min_tier: b.min_tier,
                 water_level: b.water,
             });
             reg.block_by_name.insert(full.clone(), id);
@@ -650,7 +729,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 continue;
             }
             let icon = resolve_tex(&it.texture, &raw.info.path, &mut errs);
-            let tool = it.tool.map(|k| (k, it.tool_speed.unwrap_or(4.0)));
+            let tool = it.tool.map(|k| (k, it.tool_speed.unwrap_or(4.0), it.tool_tier.unwrap_or(1)));
             let iid = ItemId(reg.items.len() as u16);
             reg.items.push(ItemDef {
                 name: full.clone(),
@@ -672,6 +751,15 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         for t in &raw.tags {
             pending_tags.push((raw.info.id.clone(), t.clone()));
         }
+        for s in &raw.smelts {
+            pending_smelts.push((raw.info.id.clone(), s.clone()));
+        }
+        for f in &raw.fuels {
+            pending_fuels.push((raw.info.id.clone(), f.clone()));
+        }
+        for a in &raw.aliases {
+            pending_aliases.push((raw.info.id.clone(), a.clone()));
+        }
         let mut info = raw.info.clone();
         if !errs.is_empty() {
             info.error = Some(errs.join("; "));
@@ -691,7 +779,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         drops: None,
         solid: true,
         opaque: true,
-        interactive: false,
+        interaction: None,
+        min_tier: 0,
         water_level: None,
     });
     reg.block_by_name.insert("base:unknown".into(), unk);
@@ -723,6 +812,36 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             other => reg.item_id(other).map(|i| (i, pd.count)),
         };
         reg.blocks[pd.block].drops = d;
+    }
+    // Ingredient helper shared by recipes/smelts/fuels.
+    let resolve_ing = |reg: &Registry, modid: &str, name: &str| -> Option<Ingredient> {
+        if let Some(tag) = name.strip_prefix('#') {
+            reg.tags.get(&qualify(modid, tag)).filter(|l| !l.is_empty()).map(|l| Ingredient::Any(l.clone()))
+        } else {
+            lookup_item(reg, modid, name).map(Ingredient::One)
+        }
+    };
+    for (modid, s) in pending_smelts {
+        if let (Some(input), Some(output)) =
+            (resolve_ing(&reg, &modid, &s.input), lookup_item(&reg, &modid, &s.output))
+        {
+            reg.smelts.push(SmeltDef { input, output, time: s.time.unwrap_or(8.0) });
+        }
+    }
+    for (modid, f) in pending_fuels {
+        if let Some(ing) = resolve_ing(&reg, &modid, &f.item) {
+            reg.fuels.push((ing, f.burn));
+        }
+    }
+    // Aliases: old name -> already-registered new id (lossless renames).
+    for (modid, a) in pending_aliases {
+        let new = qualify(&modid, &a.new);
+        if let Some(id) = reg.block_by_name.get(&new).copied() {
+            reg.block_by_name.entry(a.old.clone()).or_insert(id);
+        }
+        if let Some(id) = reg.item_by_name.get(&new).copied() {
+            reg.item_by_name.entry(a.old.clone()).or_insert(id);
+        }
     }
     for (modid, r) in pending_recipes {
         let h = r.pattern.len();

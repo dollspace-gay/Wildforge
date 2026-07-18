@@ -89,7 +89,7 @@ name = "Crafting Table"
 texture = { top = "@table_top", side = "@table_side", bottom = "@planks" }
 hardness = 1.8
 tool = "axe"
-interactive = true
+interaction = "crafting"
 
 [[block]]
 id = "snow"
@@ -199,3 +199,46 @@ name = "Acacia Planks"
 texture = "@acacia_planks"
 hardness = 1.8
 tool = "axe"
+
+[[block]]
+id = "copper_ore"
+name = "Copper Ore"
+texture = "@copper_ore"
+hardness = 6.5
+tool = "pickaxe"
+requires_tool = true
+drops = "base:raw_copper"
+
+[[block]]
+id = "tin_ore"
+name = "Tin Ore"
+texture = "@tin_ore"
+hardness = 6.5
+tool = "pickaxe"
+requires_tool = true
+drops = "base:raw_tin"
+
+[[block]]
+id = "copper_block"
+name = "Copper Block"
+texture = "@copper_block"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+
+[[block]]
+id = "bronze_block"
+name = "Bronze Block"
+texture = "@bronze_block"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+
+[[block]]
+id = "furnace"
+name = "Furnace"
+texture = { top = "@cobblestone", side = "@furnace" }
+hardness = 6.5
+tool = "pickaxe"
+requires_tool = true
+interaction = "furnace"

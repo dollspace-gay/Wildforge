@@ -256,7 +256,8 @@ fn data_mod_loads_blocks_items_recipes_features() {
     assert_eq!(reg.block(ore).label, "Testium Ore");
     assert_eq!(reg.drops_for(ore, reg.item_id("base:wood_pickaxe")), Some((shard, 1)));
     assert_eq!(reg.drops_for(ore, None), None, "requires_tool");
-    assert_eq!(reg.ores.len(), 1);
+    let t_ore = reg.block_id("testium:ore").unwrap();
+    assert!(reg.ores.iter().any(|o| o.block == t_ore), "mod ore feature registered");
     assert!(reg.recipes.iter().any(|r| r.output == reg.item_id("testium:ore").unwrap()));
     let m = reg.mods.iter().find(|m| m.id == "testium").unwrap();
     assert!(m.error.is_none(), "{:?}", m.error);
@@ -925,6 +926,212 @@ fn biomes_grow_their_own_wood() {
     // Forests mix oak and birch.
     let (birch, oaks) = count_wood("wood-forest", Biome::Forest, "base:birch_log");
     assert!(birch > 0 && oaks > 0, "forest should mix birch ({birch}) and oak ({oaks})");
+}
+
+// ---------------- bronze age ----------------
+
+#[test]
+fn tool_tiers_gate_drops() {
+    let root = tmp_dir("tiermod");
+    let dir = root.join("t");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("mod.toml"), "id = \"t\"\n").unwrap();
+    std::fs::write(
+        dir.join("blocks.toml"),
+        "[[block]]\nid = \"hard\"\ntexture = \"@stone\"\ntool = \"pickaxe\"\nrequires_tool = true\nmin_tier = 2\n",
+    )
+    .unwrap();
+    let reg = registry::load(&root);
+    let hard = reg.block_id("t:hard").unwrap();
+    let wood = reg.item_id("base:wood_pickaxe");
+    let stone = reg.item_id("base:stone_pickaxe");
+    let bronze = reg.item_id("base:bronze_pickaxe");
+    assert_eq!(reg.drops_for(hard, wood), None, "tier 1 blocked");
+    assert!(reg.drops_for(hard, stone).is_some(), "tier 2 allowed");
+    assert!(reg.drops_for(hard, bronze).is_some(), "tier 3 allowed");
+    // Base ores are tier-0 gated (any pickaxe).
+    let copper = b(&reg, "base:copper_ore");
+    assert!(reg.drops_for(copper, wood).is_some());
+}
+
+#[test]
+fn full_bronze_chain_resolves() {
+    let reg = base_reg();
+    // Smelts: raw -> ingots, blend -> bronze, logs -> charcoal (via tag).
+    let raw_cu = it(&reg, "base:raw_copper");
+    let cu = it(&reg, "base:copper_ingot");
+    assert_eq!(reg.smelt_for(raw_cu).unwrap().output, cu);
+    assert_eq!(
+        reg.smelt_for(it(&reg, "base:bronze_blend")).unwrap().output,
+        it(&reg, "base:bronze_ingot")
+    );
+    assert_eq!(
+        reg.smelt_for(it(&reg, "base:spruce_log")).unwrap().output,
+        it(&reg, "base:charcoal"),
+        "any log smelts to charcoal via the logs tag"
+    );
+    // Fuels: charcoal beats logs beats sticks.
+    let f = |n: &str| reg.fuel_value(it(&reg, n)).unwrap();
+    assert!(f("base:charcoal") > f("base:log"));
+    assert!(f("base:log") > f("base:stick"));
+    assert!(reg.fuel_value(raw_cu).is_none(), "ore is not fuel");
+    // Blend recipe: 3 copper + 1 tin -> 4 blend.
+    let tin = it(&reg, "base:tin_ingot");
+    let mut g = vec![None; 4];
+    g[0] = Some(ItemStack::new(&reg, cu, 1));
+    g[1] = Some(ItemStack::new(&reg, cu, 1));
+    g[2] = Some(ItemStack::new(&reg, cu, 1));
+    g[3] = Some(ItemStack::new(&reg, tin, 1));
+    let r = crate::crafting::match_recipe(&reg, &g, 2).expect("bronze blend recipe");
+    assert_eq!((r.output, r.count), (it(&reg, "base:bronze_blend"), 4));
+    // Bronze pickaxe from ingots.
+    let bi = it(&reg, "base:bronze_ingot");
+    let s = it(&reg, "base:stick");
+    let mut g = vec![None; 9];
+    for i in [0, 1, 2] {
+        g[i] = Some(ItemStack::new(&reg, bi, 1));
+    }
+    g[4] = Some(ItemStack::new(&reg, s, 1));
+    g[7] = Some(ItemStack::new(&reg, s, 1));
+    assert_eq!(
+        crate::crafting::match_recipe(&reg, &g, 3).unwrap().output,
+        it(&reg, "base:bronze_pickaxe")
+    );
+    // Furnace craftable from 8 cobblestone.
+    let c = it(&reg, "base:cobblestone");
+    let mut g = vec![Some(ItemStack::new(&reg, c, 1)); 9];
+    g[4] = None;
+    assert_eq!(
+        crate::crafting::match_recipe(&reg, &g, 3).unwrap().output,
+        it(&reg, "base:furnace")
+    );
+}
+
+#[test]
+fn furnace_smelts_with_fuel_over_time() {
+    use crate::world::{BlockEntity, FurnaceState};
+    let reg = base_reg();
+    let mut w = test_world_with("furnace", reg.clone());
+    let pos = (2, 80, 2);
+    w.set_block(pos.0, pos.1, pos.2, b(&reg, "base:furnace"));
+    let raw = it(&reg, "base:raw_copper");
+    let log = it(&reg, "base:log");
+    w.block_entities.insert(
+        pos,
+        BlockEntity::Furnace(FurnaceState {
+            input: Some(ItemStack::new(&reg, raw, 2)),
+            fuel: Some(ItemStack::new(&reg, log, 2)),
+            ..Default::default()
+        }),
+    );
+    // 8s smelt at 0.1s ticks; the first log (15s) lights immediately.
+    for _ in 0..85 {
+        w.tick_entities(0.1);
+    }
+    let BlockEntity::Furnace(f) = &w.block_entities[&pos];
+    assert_eq!(f.output.unwrap().item, it(&reg, "base:copper_ingot"));
+    assert_eq!(f.input.unwrap().count, 1, "one raw consumed");
+    assert_eq!(f.fuel.unwrap().count, 1, "first log consumed for fuel");
+    assert!(f.burn_left > 0.0, "log burns 15s, smelt took 8");
+    // Second smelt needs the second log (relights at the 15s mark).
+    for _ in 0..90 {
+        w.tick_entities(0.1);
+    }
+    let BlockEntity::Furnace(f) = &w.block_entities[&pos];
+    assert_eq!(f.output.unwrap().count, 2);
+    assert!(f.input.is_none());
+    assert!(f.fuel.is_none(), "second log lit");
+    // No fuel, no input: idle without panicking.
+    for _ in 0..50 {
+        w.tick_entities(0.1);
+    }
+}
+
+#[test]
+fn furnace_state_persists_and_breaks_drop_contents() {
+    use crate::world::{BlockEntity, FurnaceState};
+    let reg = base_reg();
+    let mut w = test_world_with("furnace-save", reg.clone());
+    let pos = (3, 80, 3);
+    w.set_block(pos.0, pos.1, pos.2, b(&reg, "base:furnace"));
+    w.block_entities.insert(
+        pos,
+        BlockEntity::Furnace(FurnaceState {
+            input: Some(ItemStack::new(&reg, it(&reg, "base:raw_tin"), 5)),
+            fuel: Some(ItemStack::new(&reg, it(&reg, "base:charcoal"), 3)),
+            ..Default::default()
+        }),
+    );
+    w.save_modified();
+    // Reload: state comes back by item name.
+    let mut w2 = World::load_or_create(w.save_dir_for_test(), reg.clone());
+    for x in -2..=2 {
+        for z in -2..=2 {
+            w2.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    let BlockEntity::Furnace(f) = &w2.block_entities[&pos];
+    assert_eq!(f.input.unwrap().count, 5);
+    assert_eq!(f.fuel.unwrap().item, it(&reg, "base:charcoal"));
+    // Breaking the block spills the contents.
+    w2.set_block(pos.0, pos.1, pos.2, AIR);
+    assert!(!w2.block_entities.contains_key(&pos));
+    assert_eq!(w2.pending_drops.len(), 2, "input + fuel drop");
+}
+
+#[test]
+fn copper_aliases_migrate_old_worlds() {
+    let reg = base_reg();
+    // Old-world palette references the retired copper mod's names.
+    let dir = tmp_dir("copper-mig");
+    std::fs::write(dir.join("seed"), "42").unwrap();
+    std::fs::write(dir.join("palette"), "0 base:air\n1 copper:ore\n").unwrap();
+    let mut data = Vec::new();
+    data.extend_from_slice(b"WFC3");
+    let total = 16 * 16 * 256usize;
+    let mut left = total;
+    while left > 0 {
+        let run = left.min(u16::MAX as usize) as u16;
+        data.extend_from_slice(&run.to_le_bytes());
+        data.extend_from_slice(&1u16.to_le_bytes());
+        left -= run as usize;
+    }
+    std::fs::write(dir.join("c.0.0.wfc"), data).unwrap();
+    let mut w = World::load_or_create(dir, reg.clone());
+    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    assert_eq!(
+        w.get_block(4, 60, 4),
+        b(&reg, "base:copper_ore"),
+        "copper:ore aliases to base:copper_ore instead of placeholder"
+    );
+}
+
+#[test]
+fn base_metal_ores_generate() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("metals"), reg.clone());
+    let (cu, sn) = (b(&reg, "base:copper_ore"), b(&reg, "base:tin_ore"));
+    let (mut found_cu, mut found_sn) = (0, 0);
+    for cx in -3..3 {
+        for cz in -3..3 {
+            w.ensure_chunk(ChunkPos { x: cx, z: cz });
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    for y in 4..73 {
+                        let blk = w.get_block(cx * 16 + lx, y, cz * 16 + lz);
+                        if blk == cu {
+                            found_cu += 1;
+                        } else if blk == sn {
+                            found_sn += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(found_cu > 0, "copper generates");
+    assert!(found_sn > 0, "tin generates");
+    assert!(found_cu > found_sn, "copper more common than tin");
 }
 
 // ---------------- gameplay (regression) ----------------

@@ -1,4 +1,4 @@
-id = "copper"
-name = "Copper Age"
+id = "gems"
+name = "Gemstones"
 version = "1.0.0"
 depends = ["base"]

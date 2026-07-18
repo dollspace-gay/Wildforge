@@ -17,6 +17,7 @@ name = "Stone Pickaxe"
 texture = "@stone_pickaxe"
 tool = "pickaxe"
 tool_speed = 8.0
+tool_tier = 2
 durability = 131
 
 [[item]]
@@ -33,6 +34,7 @@ name = "Stone Axe"
 texture = "@stone_axe"
 tool = "axe"
 tool_speed = 8.0
+tool_tier = 2
 durability = 131
 
 [[item]]
@@ -49,4 +51,94 @@ name = "Stone Shovel"
 texture = "@stone_shovel"
 tool = "shovel"
 tool_speed = 8.0
+tool_tier = 2
 durability = 131
+
+[[item]]
+id = "raw_copper"
+name = "Raw Copper"
+texture = "@raw_copper"
+
+[[item]]
+id = "raw_tin"
+name = "Raw Tin"
+texture = "@raw_tin"
+
+[[item]]
+id = "copper_ingot"
+name = "Copper Ingot"
+texture = "@copper_ingot"
+
+[[item]]
+id = "tin_ingot"
+name = "Tin Ingot"
+texture = "@tin_ingot"
+
+[[item]]
+id = "bronze_ingot"
+name = "Bronze Ingot"
+texture = "@bronze_ingot"
+
+[[item]]
+id = "bronze_blend"
+name = "Bronze Blend"
+texture = "@bronze_blend"
+
+[[item]]
+id = "charcoal"
+name = "Charcoal"
+texture = "@charcoal"
+
+[[item]]
+id = "copper_pickaxe"
+name = "Copper Pickaxe"
+texture = "@copper_pickaxe"
+tool = "pickaxe"
+tool_speed = 9.0
+tool_tier = 2
+durability = 160
+
+[[item]]
+id = "copper_axe"
+name = "Copper Axe"
+texture = "@copper_axe"
+tool = "axe"
+tool_speed = 9.0
+tool_tier = 2
+durability = 160
+
+[[item]]
+id = "copper_shovel"
+name = "Copper Shovel"
+texture = "@copper_shovel"
+tool = "shovel"
+tool_speed = 9.0
+tool_tier = 2
+durability = 160
+
+[[item]]
+id = "bronze_pickaxe"
+name = "Bronze Pickaxe"
+texture = "@bronze_pickaxe"
+tool = "pickaxe"
+tool_speed = 12.0
+tool_tier = 3
+durability = 225
+
+[[item]]
+id = "bronze_axe"
+name = "Bronze Axe"
+texture = "@bronze_axe"
+tool = "axe"
+tool_speed = 12.0
+tool_tier = 3
+durability = 225
+
+[[item]]
+id = "bronze_shovel"
+name = "Bronze Shovel"
+texture = "@bronze_shovel"
+tool = "shovel"
+tool_speed = 12.0
+tool_tier = 3
+durability = 225

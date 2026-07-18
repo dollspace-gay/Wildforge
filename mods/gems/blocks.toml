@@ -1,0 +1,17 @@
+[[block]]
+id = "ruby_ore"
+name = "Ruby Ore"
+texture = "ruby_ore.png"
+hardness = 8.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 2
+drops = "gems:ruby"
+
+[[block]]
+id = "ruby_block"
+name = "Ruby Block"
+texture = "ruby_block.png"
+hardness = 8.0
+tool = "pickaxe"
+requires_tool = true

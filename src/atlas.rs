@@ -13,7 +13,7 @@ pub const ATLAS_TILES: u32 = 16;
 /// Atlas slot = row * 16 + col. Rows 0-2 are built-in procedural tiles.
 pub const UNKNOWN_SLOT: u16 = 15;
 pub const CRACK_SLOT: u16 = 16; // stages 16..=19
-pub const FIRST_FREE_SLOT: u16 = 64; // rows 0-3 are built-in tiles
+pub const FIRST_FREE_SLOT: u16 = 80; // rows 0-4 are built-in tiles
 
 /// Built-in procedural tile names usable as `@name` in mod TOML.
 pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
@@ -31,7 +31,13 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("jungle_log", 49), ("jungle_log_top", 50), ("jungle_leaves", 51),
         ("acacia_log", 52), ("acacia_log_top", 53), ("acacia_leaves", 54),
         ("birch_planks", 55), ("spruce_planks", 56), ("jungle_planks", 57),
-        ("acacia_planks", 58),
+        ("acacia_planks", 58), ("copper_ore", 59), ("tin_ore", 60),
+        ("copper_block", 61), ("bronze_block", 62), ("furnace", 63),
+        ("raw_copper", 64), ("raw_tin", 65), ("copper_ingot", 66),
+        ("tin_ingot", 67), ("bronze_ingot", 68), ("bronze_blend", 69),
+        ("charcoal", 70), ("copper_pickaxe", 71), ("copper_axe", 72),
+        ("copper_shovel", 73), ("bronze_pickaxe", 74), ("bronze_axe", 75),
+        ("bronze_shovel", 76),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
@@ -643,6 +649,109 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         let (tx, ty) = (slot % 16, slot / 16);
         tile(tx, ty, &mut |px, py, u, _v| {
             plank_colored(px, py, u, 40 + slot, board, seam, [80.0, 74.0, 64.0])
+        });
+    }
+
+    // Metals: ores (stone + nuggets), polished blocks, items.
+    let metal_sets: [(u32, u32, [f32; 3]); 2] = [
+        (59, 61, [210.0, 118.0, 52.0]),  // copper: ore slot, block slot, color
+        (60, 0, [200.0, 204.0, 212.0]),  // tin (no block tile; slot 0 unused)
+    ];
+    for (ore_slot, _blk, color) in metal_sets {
+        let (tx, ty) = (ore_slot % 16, ore_slot / 16);
+        tile(tx, ty, &mut |px, py, u, v| {
+            // Stone base with metal nugget clusters.
+            let t = fbm(u, v, 4, 7);
+            let base = mix3([112.0, 112.0, 116.0], [142.0, 142.0, 144.0], t);
+            let (d1, _, id) = voronoi(u, v, 5, 90 + ore_slot);
+            if d1 < 0.22 && id % 3 == 0 {
+                rgba(color, 0.8 + (id % 40) as f32 / 100.0, 255)
+            } else {
+                rgba(base, speck(px, py, 91, 0.05), 255)
+            }
+        });
+    }
+    // Polished metal blocks: copper 61, bronze 62.
+    for (slot, color) in [(61u32, [206.0, 116.0, 52.0]), (62, [196.0, 148.0, 62.0])] {
+        let (tx, ty) = (slot % 16, slot / 16);
+        tile(tx, ty, &mut |px, py, u, v| {
+            let t = fbm(u, v, 3, 92);
+            let c = mix3(color, [color[0] * 0.8, color[1] * 0.8, color[2] * 0.8], t);
+            rgba(c, speck(px, py, 93, 0.04) * emboss(px, py, tp), 255)
+        });
+    }
+    // Furnace side: cobble with a dark mouth.
+    tile(15, 3, &mut |px, py, u, v| {
+        let mouth = u > 0.28 && u < 0.72 && v > 0.42 && v < 0.86;
+        if mouth {
+            let glow = ((u - 0.5).abs() < 0.14 && v > 0.55) as u8;
+            if glow == 1 {
+                return rgba([230.0, 120.0, 30.0], 0.9, 255);
+            }
+            return rgba([28.0, 24.0, 22.0], 1.0, 255);
+        }
+        let (d1, d2, id) = voronoi(u, v, 4, 10);
+        if d2 - d1 < 0.14 {
+            rgba([62.0, 62.0, 62.0], speck(px, py, 11, 0.1), 255)
+        } else {
+            let tone = 0.82 + (id % 100) as f32 / 100.0 * 0.3;
+            rgba([128.0, 126.0, 124.0], tone * (1.08 - d1 * 0.45), 255)
+        }
+    });
+    // Item icons row 4: raw lumps, ingots, blend, charcoal.
+    let lump = |slot: u32, color: [f32; 3], img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+        img(slot % 16, slot / 16, &mut |px, py, u, v| {
+            let dx = u - 0.5;
+            let dy = v - 0.5;
+            let r = (dx * dx + dy * dy).sqrt();
+            let wob = h01(px as i32 / 3, py as i32 / 3, 94 + slot) * 0.1;
+            if r < 0.3 + wob {
+                rgba(color, 0.75 + h01(px as i32, py as i32, 95 + slot) * 0.45, 255)
+            } else {
+                [0, 0, 0, 0]
+            }
+        });
+    };
+    let mut tile_fn = |tx: u32, ty: u32, f: &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4]| tile(tx, ty, f);
+    lump(64, [200.0, 112.0, 50.0], &mut tile_fn); // raw copper
+    lump(65, [196.0, 200.0, 208.0], &mut tile_fn); // raw tin
+    lump(69, [186.0, 138.0, 70.0], &mut tile_fn); // bronze blend (powder pile)
+    lump(70, [36.0, 32.0, 30.0], &mut tile_fn); // charcoal
+    // Ingots: beveled bars.
+    for (slot, color) in [(66u32, [214.0, 122.0, 56.0]), (67, [206.0, 210.0, 218.0]), (68, [200.0, 152.0, 64.0])] {
+        tile(slot % 16, slot / 16, &mut |px, py, u, v| {
+            let inside = u > 0.12 && u < 0.88 && v > 0.36 && v < 0.68;
+            if !inside {
+                return [0, 0, 0, 0];
+            }
+            let top = v < 0.44 || u < 0.18;
+            let bot = v > 0.6 || u > 0.82;
+            let f = if top { 1.25 } else if bot { 0.7 } else { 1.0 };
+            rgba(color, f * speck(px, py, 96 + slot, 0.03), 255)
+        });
+    }
+    // Metal tools reuse the pixel art with tier head colors.
+    let metal_tools: [(u32, &[&str; 16], [f32; 3]); 6] = [
+        (71, &PICK_ART, [206.0, 116.0, 52.0]),
+        (72, &AXE_ART, [206.0, 116.0, 52.0]),
+        (73, &SHOVEL_ART, [206.0, 116.0, 52.0]),
+        (74, &PICK_ART, [196.0, 148.0, 62.0]),
+        (75, &AXE_ART, [196.0, 148.0, 62.0]),
+        (76, &SHOVEL_ART, [196.0, 148.0, 62.0]),
+    ];
+    let k2 = (tp / 16).max(1);
+    for (slot, art, head) in metal_tools {
+        tile(slot % 16, slot / 16, &mut |px, py, _u, _v| {
+            let ax = (px / k2).min(15) as usize;
+            let ay = (py / k2).min(15) as usize;
+            match art[ay].as_bytes().get(ax) {
+                Some(b'H') => {
+                    let f = 0.85 + h01(ax as i32, ay as i32, 300 + slot) * 0.2;
+                    rgba(head, f, 255)
+                }
+                Some(b'h') => rgba([104.0, 72.0, 42.0], 1.0, 255),
+                _ => [0, 0, 0, 0],
+            }
         });
     }
 

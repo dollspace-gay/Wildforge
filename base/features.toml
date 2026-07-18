@@ -1,0 +1,15 @@
+[[feature]]
+type = "ore"
+block = "base:copper_ore"
+replaces = "base:stone"
+vein_size = 7
+per_chunk = 8
+y_range = [8, 72]
+
+[[feature]]
+type = "ore"
+block = "base:tin_ore"
+replaces = "base:stone"
+vein_size = 5
+per_chunk = 5
+y_range = [8, 56]

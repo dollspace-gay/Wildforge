@@ -1,0 +1,17 @@
+# Lossless renames for worlds saved before these blocks moved into base.
+
+[[alias]]
+old = "copper:ore"
+new = "copper_ore"
+
+[[alias]]
+old = "copper:block"
+new = "copper_block"
+
+[[alias]]
+old = "copper:raw"
+new = "raw_copper"
+
+[[alias]]
+old = "copper:pickaxe"
+new = "copper_pickaxe"

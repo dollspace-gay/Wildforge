@@ -64,6 +64,7 @@ enum Screen {
     ConfirmDelete,
     Playing,
     Inventory,
+    Furnace((i32, i32, i32)),
     Paused,
     Dead,
 }
@@ -445,6 +446,28 @@ impl Game {
             eprintln!("demo water source at ({bx},{},{bz}), spawn {:?}", by + 5, spawn);
         }
         self.set_screen(Screen::Playing);
+        // Dev: a stocked furnace next to spawn, screen open (UI verification).
+        if std::env::var("WILDFORGE_DEMO_FURNACE").is_ok() {
+            let p = (spawn.x as i32 + 2, spawn.y as i32, spawn.z as i32);
+            let reg = self.reg.clone();
+            if let (Some(fb), Some(raw), Some(log)) = (
+                reg.block_id("base:furnace"),
+                reg.item_id("base:raw_copper"),
+                reg.item_id("base:log"),
+            ) {
+                self.world.set_block(p.0, p.1, p.2, fb);
+                self.world.block_entities.insert(
+                    p,
+                    world::BlockEntity::Furnace(world::FurnaceState {
+                        input: Some(ItemStack::new(&reg, raw, 5)),
+                        fuel: Some(ItemStack::new(&reg, log, 3)),
+                        ..Default::default()
+                    }),
+                );
+                self.inventory.add(&reg, reg.item_id("base:copper_ingot").unwrap(), 7);
+                self.set_screen(Screen::Furnace(p));
+            }
+        }
     }
 
     /// Create a fresh world folder with a random seed and enter it.
@@ -538,14 +561,9 @@ impl Game {
         if self.screen == screen {
             return;
         }
-        if std::env::var("WILDFORGE_DEBUG").is_ok() {
-            eprintln!(
-                "screen {:?} -> {:?} frame {}",
-                self.screen as u8, screen as u8, self.total_frames
-            );
-        }
+
         // Leaving the inventory returns the cursor-held stack and craft grid.
-        if self.screen == Screen::Inventory {
+        if self.screen == Screen::Inventory || matches!(self.screen, Screen::Furnace(_)) {
             let mut back: Vec<ItemStack> = self.held_stack.take().into_iter().collect();
             for slot in self.craft_grid.iter_mut() {
                 if let Some(s) = slot.take() {
@@ -776,11 +794,25 @@ impl Game {
                         return;
                     }
                 }
-                if reg.block(tb).interactive {
-                    self.right_held = false;
-                    self.craft_size = 3;
-                    self.set_screen(Screen::Inventory);
-                    return;
+                match reg.block(tb).interaction.as_deref() {
+                    Some("crafting") => {
+                        self.right_held = false;
+                        self.craft_size = 3;
+                        self.set_screen(Screen::Inventory);
+                        return;
+                    }
+                    Some("furnace") => {
+                        self.right_held = false;
+                        self.world
+                            .block_entities
+                            .entry(h.block)
+                            .or_insert_with(|| {
+                                world::BlockEntity::Furnace(Default::default())
+                            });
+                        self.set_screen(Screen::Furnace(h.block));
+                        return;
+                    }
+                    _ => {}
                 }
                 let (x, y, z) = h.adjacent;
                 let place = self.inventory.slots[self.hotbar_sel]
@@ -1013,6 +1045,19 @@ impl Game {
                 while self.water_timer >= 0.2 {
                     self.water_timer -= 0.2;
                     self.world.tick_water(512);
+                }
+                self.world.tick_entities(dt);
+                for (pos, s) in std::mem::take(&mut self.world.pending_drops) {
+                    let center = Vec3::new(pos.0 as f32 + 0.5, pos.1 as f32 + 0.5, pos.2 as f32 + 0.5);
+                    let a = self.rand01() * std::f32::consts::TAU;
+                    let v = Vec3::new(a.cos() * 1.5, 2.5, a.sin() * 1.5);
+                    self.items.push(ItemEntity::new(center, v, s.item, s.count));
+                }
+                // Close the furnace screen if its block vanished.
+                if let Screen::Furnace(pos) = self.screen {
+                    if !self.world.block_entities.contains_key(&pos) {
+                        self.set_screen(Screen::Playing);
+                    }
                 }
                 // Mod tick at 10 Hz.
                 if self.scripts.wants("on_tick") {
@@ -1527,6 +1572,40 @@ impl Game {
         match self.screen {
             Screen::Playing | Screen::Title | Screen::Mods | Screen::Settings
             | Screen::ConfirmDelete => {}
+            Screen::Furnace(pos) => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
+                let title = "FURNACE";
+                let tw = UiBatch::text_width(3.0, title);
+                ui.text_shadow((w - tw) / 2.0, h / 2.0 - 285.0, 3.0, title, [1.0; 4]);
+                let (inp, fuel, out, prog, burn) = self.furnace_view(pos);
+                let ir = self.furnace_slot_rect(0);
+                let fr = self.furnace_slot_rect(1);
+                let orr = self.furnace_slot_rect(2);
+                Self::draw_slot(&self.reg, &mut ui, ir, inp, false, self.hit(ir));
+                Self::draw_slot(&self.reg, &mut ui, fr, fuel, false, self.hit(fr));
+                Self::draw_slot(&self.reg, &mut ui, orr, out, false, self.hit(orr));
+                // Flame between input and fuel, arrow toward the output.
+                let flame_h = 24.0 * burn;
+                ui.rect(ir.0 + 12.0, fr.1 - 4.0 - flame_h, 22.0, flame_h, [1.0, 0.55, 0.1, 0.95]);
+                let ay = ir.1 + Self::SLOT + 14.0;
+                ui.rect(ir.0 + 64.0, ay, 100.0, 8.0, [0.15, 0.15, 0.15, 0.9]);
+                ui.rect(ir.0 + 64.0, ay, 100.0 * prog, 8.0, [1.0, 1.0, 1.0, 0.95]);
+                // Player inventory below for restocking.
+                for i in 0..TOTAL_SLOTS {
+                    let r = self.inv_slot_rect(i);
+                    Self::draw_slot(&self.reg, &mut ui, r, self.inventory.slots[i], i == self.hotbar_sel, self.hit(r));
+                }
+                if let Some(s) = self.held_stack {
+                    let (cx, cy) = self.ui_cursor;
+                    let icon = self.reg.item(s.item).icon;
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, (icon as u32 % 16, icon as u32 / 16), [1.0; 4]);
+                    if s.count > 1 {
+                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
+                    }
+                }
+                self.ui = ui;
+                return;
+            }
             Screen::Inventory => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
                 let title = if self.craft_size == 3 { "CRAFTING" } else { "INVENTORY" };
@@ -1641,6 +1720,78 @@ impl Game {
         }
     }
 
+    /// Furnace slot rects: 0 input, 1 fuel, 2 output (centered panel).
+    fn furnace_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        let (cx, cy) = (w / 2.0, h / 2.0 - 190.0);
+        match i {
+            0 => (cx - 120.0, cy - 46.0, Self::SLOT, Self::SLOT),
+            1 => (cx - 120.0, cy + 34.0, Self::SLOT, Self::SLOT),
+            _ => (cx + 50.0, cy - 6.0, Self::SLOT, Self::SLOT),
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn furnace_view(
+        &self,
+        pos: (i32, i32, i32),
+    ) -> (Option<ItemStack>, Option<ItemStack>, Option<ItemStack>, f32, f32) {
+        match self.world.block_entities.get(&pos) {
+            Some(world::BlockEntity::Furnace(f)) => {
+                let time = f
+                    .input
+                    .and_then(|s| self.reg.smelt_for(s.item))
+                    .map(|s| s.time)
+                    .unwrap_or(8.0);
+                let burn = if f.burn_total > 0.0 { f.burn_left / f.burn_total } else { 0.0 };
+                (f.input, f.fuel, f.output, (f.progress / time).min(1.0), burn)
+            }
+            None => (None, None, None, 0.0, 0.0),
+        }
+    }
+
+    fn furnace_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+        let reg = self.reg.clone();
+        let Some(world::BlockEntity::Furnace(f)) = self.world.block_entities.get_mut(&pos)
+        else {
+            return;
+        };
+        match slot {
+            0 | 1 => {
+                let cur = if slot == 0 { f.input } else { f.fuel };
+                let (new_slot, new_held) = inventory::click_stack(&reg, cur, self.held_stack, right);
+                if slot == 0 {
+                    if f.input.map(|s| s.item) != new_slot.map(|s| s.item) {
+                        f.progress = 0.0;
+                    }
+                    f.input = new_slot;
+                } else {
+                    f.fuel = new_slot;
+                }
+                self.held_stack = new_held;
+            }
+            _ => {
+                // Output: take-only, merging into the held stack.
+                let Some(out) = f.output else { return };
+                match self.held_stack {
+                    None => {
+                        self.held_stack = Some(out);
+                        f.output = None;
+                    }
+                    Some(h)
+                        if h.can_merge(&reg, &out)
+                            && h.count + out.count <= reg.item(h.item).max_stack =>
+                    {
+                        self.held_stack = Some(ItemStack { count: h.count + out.count, ..h });
+                        f.output = None;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     fn menu_click(&mut self, event_loop: &ActiveEventLoop, right: bool) {
         if std::env::var("WILDFORGE_DEBUG").is_ok() {
             eprintln!("menu_click at {:?} right={right}", self.ui_cursor);
@@ -1717,6 +1868,20 @@ impl Game {
                     self.set_screen(Screen::Title);
                 }
             }
+            Screen::Furnace(pos) => {
+                for i in 0..3 {
+                    if self.hit(self.furnace_slot_rect(i)) {
+                        self.furnace_click(pos, i, right);
+                        return;
+                    }
+                }
+                for i in 0..TOTAL_SLOTS {
+                    if self.hit(self.inv_slot_rect(i)) {
+                        self.inventory_click(false, i, right);
+                        return;
+                    }
+                }
+            }
             Screen::Settings => {
                 for i in 0..Self::SLIDERS.len() {
                     let (bx, by, bw, bh) = self.slider_bar_rect(i);
@@ -1767,7 +1932,7 @@ impl Game {
             KeyCode::ControlLeft | KeyCode::ControlRight => self.keys.sprint = pressed,
             KeyCode::Escape if pressed => match self.screen {
                 Screen::Playing => self.set_screen(Screen::Paused),
-                Screen::Inventory => self.set_screen(Screen::Playing),
+                Screen::Inventory | Screen::Furnace(_) => self.set_screen(Screen::Playing),
                 Screen::Paused => self.set_screen(Screen::Playing),
                 Screen::Settings => {
                     self.config.save();
@@ -1789,7 +1954,7 @@ impl Game {
                     self.craft_size = 2;
                     self.set_screen(Screen::Inventory);
                 }
-                Screen::Inventory => self.set_screen(Screen::Playing),
+                Screen::Inventory | Screen::Furnace(_) => self.set_screen(Screen::Playing),
                 _ => {}
             },
             KeyCode::F5 if pressed => {

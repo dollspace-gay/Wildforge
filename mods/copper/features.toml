@@ -1,7 +1,0 @@
-[[feature]]
-type = "ore"
-block = "copper:ore"
-replaces = "base:stone"
-vein_size = 7
-per_chunk = 10
-y_range = [8, 100]

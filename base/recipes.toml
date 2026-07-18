@@ -68,3 +68,90 @@ pattern = ["l"]
 keys = { l = "base:acacia_log" }
 output = "base:acacia_planks"
 count = 4
+
+[[recipe]]
+pattern = ["ccc", "c.c", "ccc"]
+keys = { c = "base:cobblestone" }
+output = "base:furnace"
+
+[[recipe]]
+pattern = ["cc", "ct"]
+keys = { c = "base:copper_ingot", t = "base:tin_ingot" }
+output = "base:bronze_blend"
+count = 4
+
+[[recipe]]
+pattern = ["cc", "cc"]
+keys = { c = "base:copper_ingot" }
+output = "base:copper_block"
+
+[[recipe]]
+pattern = ["bb", "bb"]
+keys = { b = "base:bronze_ingot" }
+output = "base:bronze_block"
+
+[[recipe]]
+pattern = ["mmm", ".s.", ".s."]
+keys = { m = "base:copper_ingot", s = "base:stick" }
+output = "base:copper_pickaxe"
+
+[[recipe]]
+pattern = ["mm", "ms", ".s"]
+keys = { m = "base:copper_ingot", s = "base:stick" }
+output = "base:copper_axe"
+
+[[recipe]]
+pattern = ["m", "s", "s"]
+keys = { m = "base:copper_ingot", s = "base:stick" }
+output = "base:copper_shovel"
+
+[[recipe]]
+pattern = ["mmm", ".s.", ".s."]
+keys = { m = "base:bronze_ingot", s = "base:stick" }
+output = "base:bronze_pickaxe"
+
+[[recipe]]
+pattern = ["mm", "ms", ".s"]
+keys = { m = "base:bronze_ingot", s = "base:stick" }
+output = "base:bronze_axe"
+
+[[recipe]]
+pattern = ["m", "s", "s"]
+keys = { m = "base:bronze_ingot", s = "base:stick" }
+output = "base:bronze_shovel"
+
+[[smelt]]
+input = "base:raw_copper"
+output = "base:copper_ingot"
+time = 8.0
+
+[[smelt]]
+input = "base:raw_tin"
+output = "base:tin_ingot"
+time = 8.0
+
+[[smelt]]
+input = "base:bronze_blend"
+output = "base:bronze_ingot"
+time = 10.0
+
+[[smelt]]
+input = "#base:logs"
+output = "base:charcoal"
+time = 6.0
+
+[[fuel]]
+item = "#base:logs"
+burn = 15.0
+
+[[fuel]]
+item = "#base:planks"
+burn = 7.5
+
+[[fuel]]
+item = "base:stick"
+burn = 2.5
+
+[[fuel]]
+item = "base:charcoal"
+burn = 40.0

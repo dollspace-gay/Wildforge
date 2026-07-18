@@ -8,8 +8,24 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos};
+use crate::inventory::ItemStack;
 use crate::registry::{AIR, BlockId, Registry};
 use crate::worldgen::Generator;
+
+/// Per-block persistent state for interactive machines.
+pub enum BlockEntity {
+    Furnace(FurnaceState),
+}
+
+#[derive(Default)]
+pub struct FurnaceState {
+    pub input: Option<ItemStack>,
+    pub fuel: Option<ItemStack>,
+    pub output: Option<ItemStack>,
+    pub progress: f32,
+    pub burn_left: f32,
+    pub burn_total: f32,
+}
 
 pub struct World {
     pub chunks: HashMap<ChunkPos, Chunk>,
@@ -22,6 +38,9 @@ pub struct World {
     load_remap: Vec<BlockId>,
     water_queue: VecDeque<(i32, i32, i32)>,
     water_queued: HashSet<(i32, i32, i32)>,
+    pub block_entities: HashMap<(i32, i32, i32), BlockEntity>,
+    /// Items spilled by removed block entities, for the game loop to spawn.
+    pub pending_drops: Vec<((i32, i32, i32), ItemStack)>,
 }
 
 impl World {
@@ -35,6 +54,8 @@ impl World {
             load_remap: Vec::new(),
             water_queue: VecDeque::new(),
             water_queued: HashSet::new(),
+            block_entities: HashMap::new(),
+            pending_drops: Vec::new(),
         }
     }
 
@@ -55,6 +76,7 @@ impl World {
             });
         let mut w = World::new(seed, save_dir, reg);
         w.load_remap = w.read_palette_remap();
+        w.load_entities();
         w
     }
 
@@ -154,6 +176,7 @@ impl World {
     pub fn save_modified(&self) {
         let _ = fs::create_dir_all(&self.save_dir);
         self.write_palette();
+        self.save_entities();
         for (pos, chunk) in &self.chunks {
             if chunk.modified {
                 let _ = self.save_chunk(*pos, chunk);
@@ -222,6 +245,145 @@ impl World {
             touch(0, 1);
         }
         self.wake_water(x, y, z);
+        // A changed block invalidates any machine state living there.
+        if let Some(e) = self.block_entities.remove(&(x, y, z)) {
+            let BlockEntity::Furnace(f) = e;
+            for s in [f.input, f.fuel, f.output].into_iter().flatten() {
+                self.pending_drops.push(((x, y, z), s));
+            }
+        }
+    }
+
+    /// Advance machines. Returns true if any visible state changed.
+    pub fn tick_entities(&mut self, dt: f32) {
+        let reg = self.reg.clone();
+        for e in self.block_entities.values_mut() {
+            let BlockEntity::Furnace(f) = e;
+            let smelt = f.input.and_then(|s| reg.smelt_for(s.item)).cloned();
+            let output_ok = |f: &FurnaceState, out: crate::registry::ItemId| match f.output {
+                None => true,
+                Some(o) => o.item == out && o.count < reg.item(out).max_stack,
+            };
+            let can_smelt = smelt.as_ref().is_some_and(|s| output_ok(f, s.output));
+
+            if f.burn_left <= 0.0 && can_smelt {
+                // Light more fuel.
+                if let Some(fs) = f.fuel {
+                    if let Some(burn) = reg.fuel_value(fs.item) {
+                        f.burn_left = burn;
+                        f.burn_total = burn;
+                        let left = fs.count - 1;
+                        f.fuel = if left > 0 { Some(ItemStack { count: left, ..fs }) } else { None };
+                    }
+                }
+            }
+            if f.burn_left > 0.0 {
+                f.burn_left = (f.burn_left - dt).max(0.0);
+                if can_smelt {
+                    let s = smelt.as_ref().unwrap();
+                    f.progress += dt;
+                    if f.progress >= s.time {
+                        f.progress = 0.0;
+                        // Consume one input, emit output.
+                        if let Some(inp) = f.input {
+                            let left = inp.count - 1;
+                            f.input =
+                                if left > 0 { Some(ItemStack { count: left, ..inp }) } else { None };
+                        }
+                        f.output = Some(match f.output {
+                            Some(o) => ItemStack { count: o.count + 1, ..o },
+                            None => ItemStack::new(&reg, s.output, 1),
+                        });
+                    }
+                } else {
+                    f.progress = 0.0;
+                }
+            } else if f.progress > 0.0 {
+                f.progress = (f.progress - dt * 2.0).max(0.0);
+            }
+        }
+    }
+
+    // ---- block entity persistence (by item name, mod-change safe) ----
+
+    fn entities_path(&self) -> PathBuf {
+        self.save_dir.join("entities.toml")
+    }
+
+    fn save_entities(&self) {
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        for ((x, y, z), e) in &self.block_entities {
+            let BlockEntity::Furnace(f) = e;
+            let _ = writeln!(out, "[[furnace]]\npos = [{x}, {y}, {z}]");
+            let mut slot = |k: &str, s: &Option<ItemStack>| {
+                if let Some(s) = s {
+                    let _ = writeln!(
+                        out,
+                        "{k} = {{ item = \"{}\", count = {}, durability = {} }}",
+                        self.reg.item(s.item).name, s.count, s.durability
+                    );
+                }
+            };
+            slot("input", &f.input);
+            slot("fuel", &f.fuel);
+            slot("output", &f.output);
+            let _ = writeln!(out, "progress = {}\nburn_left = {}\nburn_total = {}\n",
+                f.progress, f.burn_left, f.burn_total);
+        }
+        if out.is_empty() {
+            let _ = fs::remove_file(self.entities_path());
+        } else {
+            let _ = fs::write(self.entities_path(), out);
+        }
+    }
+
+    fn load_entities(&mut self) {
+        use serde::Deserialize;
+        #[derive(Deserialize)]
+        struct SlotT {
+            item: String,
+            count: u32,
+            durability: u32,
+        }
+        #[derive(Deserialize)]
+        struct FurnaceT {
+            pos: [i32; 3],
+            input: Option<SlotT>,
+            fuel: Option<SlotT>,
+            output: Option<SlotT>,
+            #[serde(default)]
+            progress: f32,
+            #[serde(default)]
+            burn_left: f32,
+            #[serde(default)]
+            burn_total: f32,
+        }
+        #[derive(Deserialize)]
+        struct FileT {
+            #[serde(default)]
+            furnace: Vec<FurnaceT>,
+        }
+        let Ok(text) = fs::read_to_string(self.entities_path()) else { return };
+        let Ok(parsed) = toml::from_str::<FileT>(&text) else { return };
+        let conv = |s: Option<SlotT>| -> Option<ItemStack> {
+            let s = s?;
+            let item = self.reg.item_id(&s.item)?;
+            Some(ItemStack { item, count: s.count, durability: s.durability })
+        };
+        for fu in parsed.furnace {
+            self.block_entities.insert(
+                (fu.pos[0], fu.pos[1], fu.pos[2]),
+                BlockEntity::Furnace(FurnaceState {
+                    input: conv(fu.input),
+                    fuel: conv(fu.fuel),
+                    output: conv(fu.output),
+                    progress: fu.progress,
+                    burn_left: fu.burn_left,
+                    burn_total: fu.burn_total,
+                }),
+            );
+        }
     }
 
     pub fn save_dir_for_saving(&self) -> PathBuf {

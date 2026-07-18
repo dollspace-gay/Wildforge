@@ -1,0 +1,4 @@
+[[recipe]]
+pattern = ["rr", "rr"]
+keys = { r = "gems:ruby" }
+output = "gems:ruby_block"

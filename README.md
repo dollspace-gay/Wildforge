@@ -78,8 +78,10 @@ mod, registered through the same TOML pipeline external mods use
 - **Save safety**: worlds store an id palette; removing a mod turns its
   blocks into placeholders instead of corrupting the world, and pre-mod
   (v1) worlds migrate automatically.
-- Ships with `mods/copper` — a worked example adding copper ore worldgen,
-  items, tools, recipes, and a scripted mining counter.
+- Ships with `mods/gems` — a worked example adding deep ruby ore (tier-2
+  gated), items, recipes, and a scripted milestone counter. Blocks can
+  declare `interaction`, `min_tier`, and mods get `[[smelt]]`/`[[fuel]]`
+  entries plus `aliases.toml` for lossless renames.
 
 ## Menus, worlds & settings
 
@@ -122,8 +124,20 @@ mod, registered through the same TOML pipeline external mods use
   - shovel: 1 material over 2 sticks (3×3)
   - materials: planks → wood tier, cobblestone → stone tier
 
+- **Smelting**: craft a furnace (8 cobblestone); it holds input, fuel, and
+  output with live flame/progress indicators, keeps working while you walk
+  away, and its state persists in the save. Fuels: charcoal > logs >
+  planks > sticks. Smelt raw ores into ingots and any log into charcoal.
+- **The bronze age**: copper ore (common, y8–72) and tin ore (rarer,
+  y8–56) smelt into ingots; 3 copper + 1 tin craft into bronze blend,
+  which smelts into bronze ingots. Copper tools (tier 2, 9×, 160 uses)
+  edge out stone; bronze tools (tier 3, 12×, 225 uses) are the prize.
+  Tools carry **tiers** — blocks can require a minimum tier to drop
+  (rubies in the example mod need tier 2+).
+
 The natural progression: punch a tree → planks → sticks + crafting table →
-wood pickaxe → mine stone → cobblestone → stone tools.
+wood pickaxe → mine stone → cobblestone + furnace → smelt copper and tin →
+bronze tools.
 
 Dev cheat: `WILDFORGE_GIVE=1` starts with some items for testing.
 

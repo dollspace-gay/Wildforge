@@ -1,0 +1,7 @@
+[[feature]]
+type = "ore"
+block = "gems:ruby_ore"
+replaces = "base:stone"
+vein_size = 4
+per_chunk = 2
+y_range = [4, 24]
