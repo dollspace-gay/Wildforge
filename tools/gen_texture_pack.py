@@ -120,6 +120,17 @@ TILES = {
     "gravelurk": ("face", "cracked grey granite stone hide with deep dark fissures"),
     "wrathwood": ("face", "gnarled ancient dark oak bark, deeply furrowed"),
     "wrathwood_face": ("head", "two small burning orange eyes and a huge jagged dark maw lined with wooden teeth. Gnarled dark bark."),
+    "hunting_bow": ("sprite", "a simple wooden hunting bow with a taut string, drawn curve facing left"),
+    "warbow": ("sprite", "a recurve war bow carved from green-veined living wood with a taut string"),
+    "arrow": ("sprite", "a single arrow: wooden shaft, grey stone tip, white feather fletching, diagonal"),
+    "leather_helmet": ("sprite", "a simple brown leather cap helmet"),
+    "leather_chestplate": ("sprite", "a brown leather tunic chestplate with stitching"),
+    "leather_leggings": ("sprite", "brown leather trouser leggings"),
+    "leather_boots": ("sprite", "a pair of brown leather boots"),
+    "bronze_helmet": ("sprite", "a polished golden-bronze metal helmet"),
+    "bronze_chestplate": ("sprite", "a polished golden-bronze metal chestplate with rivets"),
+    "bronze_leggings": ("sprite", "golden-bronze metal plate leggings"),
+    "bronze_boots": ("sprite", "a pair of golden-bronze metal boots"),
     "thorn_bolt": ("sprite", "a sharp green thorn spike, diagonal"),
     "ember_bolt": ("sprite", "a small blazing fireball with an orange-yellow core"),
     "frost_bolt": ("sprite", "a sharp blue ice shard, vertical"),
@@ -260,7 +271,9 @@ def chroma_key(img, thresh=110):
             r, g, b, a = px[x, y]
             # Distance to pure magenta.
             d = ((r - 255) ** 2 + g ** 2 + (b - 255) ** 2) ** 0.5
-            if d < thresh:
+            if d < thresh or (min(r, b) > max(g, 1) * 1.6 and min(r, b) > 60 and abs(r - b) < 80):
+                # Pure key color, or strongly magenta-dominant (models
+                # sometimes drift the background hue).
                 px[x, y] = (0, 0, 0, 0)
             elif r > g and b > g and min(r, b) - g > 60:
                 # Magenta-tinted halo: pull toward neutral.

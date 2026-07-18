@@ -83,6 +83,23 @@ mod, registered through the same TOML pipeline external mods use
   declare `interaction`, `min_tier`, and mods get `[[smelt]]`/`[[fuel]]`
   entries plus `aliases.toml` for lossless renames.
 
+## Bows & armor
+
+- **Bows**: the **hunting bow** (sticks + thornling fiber — reachable
+  from your first nights) and the **warbow** (dryad living wood — the
+  wild supplies the weapons you turn back on it). Hold right-click to
+  draw; damage and speed scale with charge. Arrows (stick + feather +
+  cobblestone → 4) are pulled from anywhere in your inventory, stick
+  into terrain as recoverable drops, and are spent on flesh.
+- **Armor**: **leather** (tanned hides, 7 points full) and **bronze**
+  (11 points). Four slots beside the inventory grid; each point blocks
+  4% of the wild's damage (cap 60%) — wardens' claws and bolts only;
+  gravity remains unimpressed. Pieces wear per hit and break. Armor
+  pips show above your hearts while wearing any.
+- Data-driven like everything else: `bow = { damage, speed }`,
+  `ammo = "arrow"`, `armor = { slot, points }` — mods can add all
+  three.
+
 ## The wild answers
 
 The world is alive, and it was never given to you. It tolerates small

@@ -275,3 +275,61 @@ output = "base:chest"
 [[fuel]]
 item = "base:ember"
 burn = 80.0
+
+# ---- bows, arrows & armor ----
+
+[[recipe]]
+pattern = [".sf", "s.f", ".sf"]
+keys = { s = "base:stick", f = "base:plant_fiber" }
+output = "base:hunting_bow"
+
+[[recipe]]
+pattern = [".sf", "s.f", ".sf"]
+keys = { s = "base:living_wood", f = "base:plant_fiber" }
+output = "base:warbow"
+
+[[recipe]]
+pattern = ["c", "s", "f"]
+keys = { c = "base:cobblestone", s = "base:stick", f = "base:feather" }
+output = "base:arrow"
+count = 4
+
+[[recipe]]
+pattern = ["mmm", "m.m"]
+keys = { m = "base:leather" }
+output = "base:leather_helmet"
+
+[[recipe]]
+pattern = ["m.m", "mmm", "mmm"]
+keys = { m = "base:leather" }
+output = "base:leather_chestplate"
+
+[[recipe]]
+pattern = ["mmm", "m.m", "m.m"]
+keys = { m = "base:leather" }
+output = "base:leather_leggings"
+
+[[recipe]]
+pattern = ["m.m", "m.m"]
+keys = { m = "base:leather" }
+output = "base:leather_boots"
+
+[[recipe]]
+pattern = ["mmm", "m.m"]
+keys = { m = "base:bronze_ingot" }
+output = "base:bronze_helmet"
+
+[[recipe]]
+pattern = ["m.m", "mmm", "mmm"]
+keys = { m = "base:bronze_ingot" }
+output = "base:bronze_chestplate"
+
+[[recipe]]
+pattern = ["mmm", "m.m", "m.m"]
+keys = { m = "base:bronze_ingot" }
+output = "base:bronze_leggings"
+
+[[recipe]]
+pattern = ["m.m", "m.m"]
+keys = { m = "base:bronze_ingot" }
+output = "base:bronze_boots"

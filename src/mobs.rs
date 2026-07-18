@@ -30,7 +30,7 @@ pub enum MobEvent {
     Cast(Projectile),
 }
 
-/// A warden's bolt (thorn/ember/frost) — also the groundwork for bows.
+/// A bolt in flight: warden thorn/ember/frost, or a player's arrow.
 #[derive(Clone, Debug)]
 pub struct Projectile {
     pub pos: Vec3,
@@ -38,15 +38,27 @@ pub struct Projectile {
     pub tile: u16,
     pub damage: f32,
     pub age: f32,
+    /// Player arrows seek mobs; warden bolts seek the player.
+    pub from_player: bool,
+    /// Item recovered when this sticks into a block (arrows).
+    pub drop_item: Option<crate::registry::ItemId>,
+}
+
+pub enum ProjHit {
+    /// Still flying.
+    None,
+    Expired,
+    Block,
+    Player,
+    /// Index into world.mobs.
+    Mob(usize),
 }
 
 impl Projectile {
-    /// Returns false when spent (hit something or expired).
-    /// `hit_player` is set when it connects with the player.
-    pub fn tick(&mut self, world: &World, player: Vec3, dt: f32, hit_player: &mut bool) -> bool {
+    pub fn tick(&mut self, world: &World, player: Vec3, dt: f32) -> ProjHit {
         self.age += dt;
         if self.age > 8.0 {
-            return false;
+            return ProjHit::Expired;
         }
         self.vel.y -= 3.0 * dt; // light arc
         self.pos += self.vel * dt;
@@ -56,14 +68,27 @@ impl Projectile {
             self.pos.z.floor() as i32,
         );
         if world.reg.is_solid(b) {
-            return false;
+            return ProjHit::Block;
         }
-        let d = self.pos - (player + Vec3::new(0.0, 0.9, 0.0));
-        if d.x.abs() < 0.5 && d.z.abs() < 0.5 && d.y.abs() < 1.1 {
-            *hit_player = true;
-            return false;
+        if self.from_player {
+            for (i, m) in world.mobs.iter().enumerate() {
+                let Some(def) = world.reg.animals.get(m.species) else { continue };
+                let d = self.pos - m.pos;
+                if d.x.abs() < def.half_w + 0.2
+                    && d.z.abs() < def.half_w + 0.2
+                    && d.y > -0.15
+                    && d.y < def.height + 0.2
+                {
+                    return ProjHit::Mob(i);
+                }
+            }
+        } else {
+            let d = self.pos - (player + Vec3::new(0.0, 0.9, 0.0));
+            if d.x.abs() < 0.5 && d.z.abs() < 0.5 && d.y.abs() < 1.1 {
+                return ProjHit::Player;
+            }
         }
-        true
+        ProjHit::None
     }
 
     /// Small spinning sprite, drawn with the entity pipeline.
@@ -319,6 +344,8 @@ impl Mob {
                                 tile: pr.tile,
                                 damage: pr.damage,
                                 age: 0.0,
+                                from_player: false,
+                                drop_item: None,
                             }));
                         }
                     }

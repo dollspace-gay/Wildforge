@@ -389,3 +389,83 @@ texture = "@frost_shard"
 id = "heartwood"
 name = "Heartwood"
 texture = "@heartwood"
+
+# ---- bows & ammo ----
+
+[[item]]
+id = "hunting_bow"
+name = "Hunting Bow"
+texture = "@hunting_bow"
+durability = 96
+bow = { damage = 6, speed = 24 }
+
+[[item]]
+id = "warbow"
+name = "Warbow"
+texture = "@warbow"
+durability = 240
+bow = { damage = 10, speed = 28 }
+
+[[item]]
+id = "arrow"
+name = "Arrow"
+texture = "@arrow"
+ammo = "arrow"
+
+# ---- armor: leather & bronze ----
+
+[[item]]
+id = "leather_helmet"
+name = "Leather Helmet"
+texture = "@leather_helmet"
+durability = 70
+armor = { slot = "head", points = 1 }
+
+[[item]]
+id = "leather_chestplate"
+name = "Leather Chestplate"
+texture = "@leather_chestplate"
+durability = 70
+armor = { slot = "chest", points = 3 }
+
+[[item]]
+id = "leather_leggings"
+name = "Leather Leggings"
+texture = "@leather_leggings"
+durability = 70
+armor = { slot = "legs", points = 2 }
+
+[[item]]
+id = "leather_boots"
+name = "Leather Boots"
+texture = "@leather_boots"
+durability = 70
+armor = { slot = "feet", points = 1 }
+
+[[item]]
+id = "bronze_helmet"
+name = "Bronze Helmet"
+texture = "@bronze_helmet"
+durability = 190
+armor = { slot = "head", points = 2 }
+
+[[item]]
+id = "bronze_chestplate"
+name = "Bronze Chestplate"
+texture = "@bronze_chestplate"
+durability = 190
+armor = { slot = "chest", points = 4 }
+
+[[item]]
+id = "bronze_leggings"
+name = "Bronze Leggings"
+texture = "@bronze_leggings"
+durability = 190
+armor = { slot = "legs", points = 3 }
+
+[[item]]
+id = "bronze_boots"
+name = "Bronze Boots"
+texture = "@bronze_boots"
+durability = 190
+armor = { slot = "feet", points = 2 }

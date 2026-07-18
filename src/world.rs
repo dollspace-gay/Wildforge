@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
-use crate::mobs::{Mob, MobEvent, Projectile};
+use crate::mobs::{Mob, MobEvent, ProjHit, Projectile};
 use crate::inventory::ItemStack;
 use crate::registry::{AIR, BlockId, Registry};
 use crate::worldgen::Generator;
@@ -420,19 +420,48 @@ impl World {
         events
     }
 
-    /// Advance warden bolts; returns total damage that hit the player.
+    /// Advance all bolts and arrows; returns damage that hit the player.
+    /// Player arrows strike mobs through the normal hurt path and stick
+    /// into blocks as recoverable item drops.
     pub fn tick_projectiles(&mut self, player: glam::Vec3, dt: f32) -> f32 {
         let mut dmg = 0.0;
+        let mut mob_hits: Vec<(usize, f32, glam::Vec3)> = Vec::new();
+        let mut drops: Vec<((i32, i32, i32), crate::registry::ItemId)> = Vec::new();
         let mut projectiles = std::mem::take(&mut self.projectiles);
-        projectiles.retain_mut(|p| {
-            let mut hit = false;
-            let keep = p.tick(self, player, dt, &mut hit);
-            if hit {
+        projectiles.retain_mut(|p| match p.tick(self, player, dt) {
+            ProjHit::None => true,
+            ProjHit::Expired => false,
+            ProjHit::Player => {
                 dmg += p.damage;
+                false
             }
-            keep
+            ProjHit::Mob(i) => {
+                mob_hits.push((i, p.damage, p.pos - p.vel * dt));
+                false
+            }
+            ProjHit::Block => {
+                if let Some(it) = p.drop_item {
+                    let back = p.pos - p.vel * dt * 2.0;
+                    drops.push((
+                        (back.x.floor() as i32, back.y.floor() as i32, back.z.floor() as i32),
+                        it,
+                    ));
+                }
+                false
+            }
         });
         self.projectiles = projectiles;
+        let reg = self.reg.clone();
+        for (i, d, from) in mob_hits {
+            if let Some(m) = self.mobs.get_mut(i) {
+                if let Some(def) = reg.animals.get(m.species) {
+                    m.hurt(def, d, from);
+                }
+            }
+        }
+        for (pos, it) in drops {
+            self.pending_drops.push((pos, ItemStack::new(&reg, it, 1)));
+        }
         dmg
     }
 

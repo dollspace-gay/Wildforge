@@ -63,6 +63,34 @@ pub struct FoodDef {
     pub nutrition: [f32; 5],
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ArmorSlot {
+    Head = 0,
+    Chest = 1,
+    Legs = 2,
+    Feet = 3,
+}
+
+impl ArmorSlot {
+    pub fn parse(s: &str) -> Option<ArmorSlot> {
+        match s {
+            "head" => Some(ArmorSlot::Head),
+            "chest" => Some(ArmorSlot::Chest),
+            "legs" => Some(ArmorSlot::Legs),
+            "feet" => Some(ArmorSlot::Feet),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct BowDef {
+    /// Damage at full charge (half-hearts).
+    pub damage: f32,
+    /// Arrow velocity at full charge.
+    pub speed: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct ItemDef {
     pub name: String,
@@ -78,6 +106,11 @@ pub struct ItemDef {
     /// Attack damage in half-hearts (swords set it high; tools get a
     /// modest implicit value, bare items 1).
     pub damage: f32,
+    pub bow: Option<BowDef>,
+    /// Ammo class this item belongs to ("arrow"); bows consume it.
+    pub ammo: Option<String>,
+    /// (slot, armor points) — each point blocks 4% damage from the wild.
+    pub armor: Option<(ArmorSlot, u32)>,
 }
 
 /// One box of an animal's model. Sizes/offsets in px (16 px = 1 block);
@@ -444,6 +477,25 @@ struct ItemToml {
     places: Option<String>,
     #[serde(default)]
     damage: Option<f32>,
+    #[serde(default)]
+    bow: Option<BowToml>,
+    #[serde(default)]
+    ammo: Option<String>,
+    #[serde(default)]
+    armor: Option<ArmorToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct BowToml {
+    damage: f32,
+    #[serde(default)]
+    speed: Option<f32>,
+}
+
+#[derive(Deserialize, Clone)]
+struct ArmorToml {
+    slot: String,
+    points: u32,
 }
 
 #[derive(Deserialize, Clone)]
@@ -1015,6 +1067,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     places: Some(id),
                     food: None,
                     damage: 1.0,
+                    bow: None,
+                    ammo: None,
+                    armor: None,
                 });
                 reg.item_by_name.insert(full, iid);
             }
@@ -1042,16 +1097,26 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 Some(_) => 2.0,
                 None => 1.0,
             });
+            let armor = it.armor.as_ref().and_then(|a| {
+                ArmorSlot::parse(&a.slot).map(|s| (s, a.points))
+            });
+            let one_only = tool.is_some() || it.bow.is_some() || armor.is_some();
             reg.items.push(ItemDef {
                 name: full.clone(),
                 label: it.name.clone().unwrap_or_else(|| it.id.clone()),
                 icon,
-                max_stack: if tool.is_some() { 1 } else { it.max_stack.unwrap_or(64) },
+                max_stack: if one_only { 1 } else { it.max_stack.unwrap_or(64) },
                 tool,
                 durability: it.durability.unwrap_or(if tool.is_some() { 59 } else { 0 }),
                 places: None,
                 food,
                 damage,
+                bow: it.bow.as_ref().map(|b| BowDef {
+                    damage: b.damage,
+                    speed: b.speed.unwrap_or(24.0),
+                }),
+                ammo: it.ammo.clone(),
+                armor,
             });
             reg.item_by_name.insert(full, iid);
         }

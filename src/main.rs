@@ -104,6 +104,10 @@ struct Game {
     // Survival state
     screen: Screen,
     inventory: Inventory,
+    /// Worn armor: head, chest, legs, feet.
+    armor: [Option<ItemStack>; 4],
+    /// Seconds the bow has been drawn (0 = not drawing).
+    bow_draw: f32,
     /// Stack picked up by the cursor inside the inventory screen.
     held_stack: Option<ItemStack>,
     /// Crafting grid contents (row-major; 2x2 uses the first 4 cells).
@@ -225,6 +229,11 @@ fn content_tree_stamp() -> u64 {
     content_tree_stamp_of(&[std::path::Path::new("mods"), std::path::Path::new("packs")])
 }
 
+/// Armor: each point blocks 4% of the wild's damage, capped at 60%.
+fn reduced_damage(amount: f32, points: u32) -> f32 {
+    amount * (1.0 - (points as f32 * 0.04).min(0.6))
+}
+
 /// First free "worldN" name. A name is taken if it's in the world list OR
 /// its folder exists on disk at all — a new world must never adopt an
 /// existing folder's chunks/player.toml, even one the listing can't parse.
@@ -334,6 +343,8 @@ impl Game {
             ui_cursor: (0.0, 0.0),
             screen: Screen::Title,
             inventory: Inventory::new(),
+            armor: [None; 4],
+            bow_draw: 0.0,
             held_stack: None,
             craft_grid: [None; 9],
             craft_size: 2,
@@ -491,6 +502,8 @@ impl Game {
         self.camera.yaw = -std::f32::consts::FRAC_PI_2;
         self.camera.pitch = 0.0;
         self.inventory = Inventory::new();
+        self.armor = [None; 4];
+        self.bow_draw = 0.0;
         if std::env::var("WILDFORGE_GIVE").is_ok() {
             let reg = self.reg.clone();
             for (name, n) in [
@@ -503,9 +516,20 @@ impl Game {
                 ("base:potato", 5),
                 ("base:bread", 3),
                 ("base:bronze_sword", 1),
+                ("base:hunting_bow", 1),
+                ("base:arrow", 16),
+                ("base:leather_chestplate", 1),
             ] {
                 if let Some(item) = reg.item_id(name) {
                     self.inventory.add(&reg, item, n);
+                }
+            }
+            // Auto-equip a starter set so armor pips show in shots.
+            for name in ["base:leather_helmet", "base:bronze_chestplate"] {
+                if let Some(item) = reg.item_id(name) {
+                    if let Some((slot, _)) = reg.item(item).armor {
+                        self.armor[slot as usize] = Some(ItemStack::new(&reg, item, 1));
+                    }
                 }
             }
         }
@@ -703,6 +727,15 @@ impl Game {
                 );
             }
         }
+        for (i, s) in self.armor.iter().enumerate() {
+            if let Some(s) = s {
+                let _ = writeln!(
+                    out,
+                    "[[armor]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                    self.reg.item(s.item).name, s.count, s.durability
+                );
+            }
+        }
         let _ = std::fs::write(self.world.save_dir_for_saving().join("player.toml"), out);
     }
 
@@ -721,6 +754,8 @@ impl Game {
             hotbar: usize,
             #[serde(default)]
             slot: Vec<SlotT>,
+            #[serde(default)]
+            armor: Vec<SlotT>,
         }
         let Ok(text) = std::fs::read_to_string(dir.join("player.toml")) else { return false };
         let Ok(p) = toml::from_str::<P>(&text) else { return false };
@@ -735,6 +770,14 @@ impl Game {
             if s.index < TOTAL_SLOTS {
                 if let Some(item) = self.reg.item_id(&s.item) {
                     self.inventory.slots[s.index] =
+                        Some(ItemStack { item, count: s.count, durability: s.durability });
+                }
+            }
+        }
+        for s in p.armor {
+            if s.index < 4 {
+                if let Some(item) = self.reg.item_id(&s.item) {
+                    self.armor[s.index] =
                         Some(ItemStack { item, count: s.count, durability: s.durability });
                 }
             }
@@ -814,6 +857,7 @@ impl Game {
         if self.screen == screen {
             return;
         }
+        self.bow_draw = 0.0; // opening any screen relaxes the draw
 
         // Leaving the inventory returns the cursor-held stack and craft grid.
         if self.screen == Screen::Inventory || matches!(self.screen, Screen::Furnace(_) | Screen::Chest(_)) {
@@ -844,11 +888,32 @@ impl Game {
         }
     }
 
+    fn armor_points(&self) -> u32 {
+        self.armor
+            .iter()
+            .flatten()
+            .filter_map(|s| self.reg.item(s.item).armor.map(|(_, p)| p))
+            .sum()
+    }
+
     /// Damage from a warden: knockback away from the attacker, and the
-    /// death screen knows who to blame.
+    /// death screen knows who to blame. Armor blocks 4% per point (cap
+    /// 60%) and wears; it does nothing against falls or hunger.
     fn hurt_player_from_wild(&mut self, amount: f32, from: Vec3) {
         if self.creative || self.screen == Screen::Dead {
             return;
+        }
+        let pts = self.armor_points();
+        let amount = reduced_damage(amount, pts);
+        if pts > 0 {
+            for a in self.armor.iter_mut() {
+                if let Some(st) = a {
+                    st.durability = st.durability.saturating_sub(1);
+                    if st.durability == 0 {
+                        *a = None; // worn through
+                    }
+                }
+            }
         }
         let mut away = self.player.pos - from;
         away.y = 0.0;
@@ -877,9 +942,13 @@ impl Game {
         self.sfx(Sfx::Hurt);
         if self.health <= 0.0 {
             self.health = 0.0;
-            // Death: scatter the inventory as item drops.
+            // Death: scatter the inventory and worn armor as item drops.
             let stacks = self.inventory.drain();
             for s in stacks {
+                self.drop_stack(s);
+            }
+            let worn: Vec<ItemStack> = self.armor.iter_mut().filter_map(|a| a.take()).collect();
+            for s in worn {
                 self.drop_stack(s);
             }
             self.held_stack = None;
@@ -987,6 +1056,57 @@ impl Game {
         }
     }
 
+    fn has_ammo(&self, class: &str) -> bool {
+        self.inventory.slots.iter().flatten().any(|s| {
+            self.reg.item(s.item).ammo.as_deref() == Some(class)
+        })
+    }
+
+    /// Remove one item of the ammo class; returns its id.
+    fn take_ammo(&mut self, class: &str) -> Option<ItemId> {
+        let reg = self.reg.clone();
+        for slot in self.inventory.slots.iter_mut() {
+            if let Some(s) = slot {
+                if reg.item(s.item).ammo.as_deref() == Some(class) {
+                    let id = s.item;
+                    if s.count > 1 {
+                        s.count -= 1;
+                    } else {
+                        *slot = None;
+                    }
+                    return Some(id);
+                }
+            }
+        }
+        None
+    }
+
+    /// Loose an arrow: charge in 0..1 scales damage and speed.
+    fn fire_bow(&mut self, bow: &registry::BowDef, charge: f32) {
+        let reg = self.reg.clone();
+        let arrow_id = if self.creative {
+            reg.item_id("base:arrow")
+        } else {
+            self.take_ammo("arrow")
+        };
+        let Some(arrow_id) = arrow_id else { return };
+        let dir = self.camera.forward();
+        self.world.projectiles.push(mobs::Projectile {
+            pos: self.camera.pos + dir * 0.4,
+            vel: dir * bow.speed * (0.6 + 0.4 * charge),
+            tile: reg.item(arrow_id).icon,
+            damage: bow.damage * (0.45 + 0.55 * charge),
+            age: 0.0,
+            from_player: true,
+            // Arrows that stick into terrain are recoverable.
+            drop_item: (!self.creative).then_some(arrow_id),
+        });
+        if !self.creative {
+            self.inventory.wear_tool(&reg, self.hotbar_sel);
+        }
+        self.sfx(Sfx::Bolt(0.8 + charge * 0.8));
+    }
+
     /// Nearest mob under the crosshair within reach, unless a solid block
     /// sits in front of it.
     fn mob_in_crosshair(&self, hit: &Option<raycast::Hit>) -> Option<usize> {
@@ -1069,6 +1189,22 @@ impl Game {
         let reg = self.reg.clone();
         let hit = raycast::raycast(&self.world, self.camera.pos, self.camera.forward(), REACH);
         let held = self.inventory.slots[self.hotbar_sel].map(|s| s.item);
+
+        // Bow: hold right to draw, release to loose (0.25 s minimum).
+        let bow_def = held.and_then(|i| reg.item(i).bow.clone());
+        if let Some(bow) = bow_def {
+            if self.right_held && (self.creative || self.has_ammo("arrow")) {
+                self.bow_draw += dt;
+            } else {
+                if self.bow_draw >= 0.25 {
+                    let charge = ((self.bow_draw - 0.25) / 0.75).clamp(0.0, 1.0);
+                    self.fire_bow(&bow, charge);
+                }
+                self.bow_draw = 0.0;
+            }
+        } else if self.bow_draw > 0.0 {
+            self.bow_draw = 0.0; // switched away mid-draw
+        }
 
         // Attacking: a mob in the crosshair takes the swing before the
         // block behind it. Held tools/swords set the damage.
@@ -2220,12 +2356,25 @@ impl Game {
             };
             ui.heart(hx + i as f32 * 8.0 * hs, hy - 8.0 * hs - 4.0, hs, kind);
         }
+        // Armor pips above the hearts, only while wearing any.
+        let ap = if self.creative { 0 } else { self.armor_points() };
+        for i in 0..ap.min(15) {
+            let x = hx + i as f32 * 6.0 * hs * 0.8;
+            ui.rect(x, hy - 14.0 * hs - 6.0, 4.0 * hs, 4.0 * hs, [0.75, 0.72, 0.6, 0.95]);
+        }
         // Hunger pips, right-aligned above the hotbar.
         let pips = (self.hunger / 2.0).ceil() as i32;
         for i in 0..if self.creative { 0 } else { 10 } {
             let x = hx + 9.0 * Self::SLOT - (i + 1) as f32 * 8.0 * hs;
             let a = if i < pips { 1.0 } else { 0.25 };
             ui.rect(x, hy - 8.0 * hs - 4.0 + 4.0, 6.0 * hs * 0.7, 5.0 * hs * 0.7, [0.85, 0.55, 0.2, a]);
+        }
+        // Bow draw near the crosshair (red until min draw, then filling).
+        if self.bow_draw > 0.0 {
+            let t = ((self.bow_draw - 0.25) / 0.75).clamp(0.0, 1.0);
+            ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0, 6.0, [0.1, 0.1, 0.1, 0.8]);
+            let col = if self.bow_draw < 0.25 { [0.7, 0.3, 0.2, 0.95] } else { [0.75, 0.9, 0.5, 0.95] };
+            ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0 * t.max(0.06), 6.0, col);
         }
         // Eat progress near the crosshair.
         if self.eating > 0.0 {
@@ -2365,6 +2514,14 @@ impl Game {
                     tier_col,
                 );
                 ui.text_shadow(p0x - 24.0, p0y + 162.0, 1.5, world::IRE_TIERS[tier], tier_col);
+                // Armor column: head/chest/legs/feet.
+                for (i, label) in ["H", "C", "L", "B"].iter().enumerate() {
+                    let r = self.armor_slot_rect(i);
+                    Self::draw_slot(&self.reg, &mut ui, r, self.armor[i], false, self.hit(r));
+                    if self.armor[i].is_none() {
+                        ui.text_shadow(r.0 + r.2 / 2.0 - 5.0, r.1 + r.3 / 2.0 - 7.0, 2.0, label, [0.55, 0.55, 0.55, 0.8]);
+                    }
+                }
                 // Craft grid, arrow, result.
                 let n2 = self.craft_size * self.craft_size;
                 for i in 0..n2 {
@@ -2518,6 +2675,29 @@ impl Game {
             Self::SLOT,
             Self::SLOT,
         )
+    }
+
+    /// Armor column: right of the storage grid — head, chest, legs, feet.
+    fn armor_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let (x0, y0, _, _) = self.inv_slot_rect(HOTBAR_SLOTS);
+        (x0 + 9.0 * Self::SLOT + 14.0, y0 + i as f32 * Self::SLOT, Self::SLOT, Self::SLOT)
+    }
+
+    fn armor_click(&mut self, i: usize) {
+        let reg = self.reg.clone();
+        match (self.held_stack, self.armor[i]) {
+            (Some(h), cur) => {
+                // Only the matching piece goes in its slot.
+                if reg.item(h.item).armor.map(|(s, _)| s as usize) == Some(i) {
+                    self.armor[i] = Some(h);
+                    self.held_stack = cur;
+                }
+            }
+            (None, Some(_)) => {
+                self.held_stack = self.armor[i].take();
+            }
+            (None, None) => {}
+        }
     }
 
     fn chest_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
@@ -2778,6 +2958,12 @@ impl Game {
             Screen::Inventory => {
                 if self.browser_click(right) {
                     return;
+                }
+                for i in 0..4 {
+                    if self.hit(self.armor_slot_rect(i)) {
+                        self.armor_click(i);
+                        return;
+                    }
                 }
                 for i in 0..TOTAL_SLOTS {
                     if self.hit(self.inv_slot_rect(i)) {

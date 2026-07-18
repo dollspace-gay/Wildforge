@@ -13,7 +13,7 @@ pub const ATLAS_TILES: u32 = 16;
 /// Atlas slot = row * 16 + col. Rows 0-2 are built-in procedural tiles.
 pub const UNKNOWN_SLOT: u16 = 15;
 pub const CRACK_SLOT: u16 = 16; // stages 16..=19
-pub const FIRST_FREE_SLOT: u16 = 160; // rows 0-9 are built-in tiles
+pub const FIRST_FREE_SLOT: u16 = 176; // rows 0-10 are built-in tiles
 
 /// Built-in procedural tile names usable as `@name` in mod TOML.
 pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
@@ -60,7 +60,12 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("gravelurk", 139), ("wrathwood", 140), ("wrathwood_face", 141),
         ("thorn_bolt", 142), ("ember_bolt", 143), ("frost_bolt", 144),
         ("plant_fiber", 145), ("living_wood", 146), ("ember", 147),
-        ("frost_shard", 148), ("heartwood", 149),
+        ("frost_shard", 148), ("heartwood", 149), ("hunting_bow", 150),
+        ("warbow", 151), ("arrow", 152), ("leather_helmet", 153),
+        ("leather_chestplate", 154), ("leather_leggings", 155),
+        ("leather_boots", 156), ("bronze_helmet", 157),
+        ("bronze_chestplate", 158), ("bronze_leggings", 159),
+        ("bronze_boots", 160),
         ("unknown", 15), ("crack1", 16), ("crack2", 17), ("crack3", 18),
         ("crack4", 19),
     ]
@@ -1530,6 +1535,86 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             [0, 0, 0, 0]
         }
     });
+
+
+    // ---- bows, arrows, armor (rows 9-10) ----
+    // Bows: a curved limb along the left, string down the right.
+    let bow_art = |slot: u32, limb: [f32; 3], img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+        img(slot % 16, slot / 16, &mut |px, py, u, v| {
+            // Limb: arc bulging left of a diagonal.
+            let arc = ((u - 0.62) + (v - 0.5) * (v - 0.5) * 1.6).abs();
+            if arc < 0.07 && v > 0.06 && v < 0.94 {
+                rgba(limb, 0.85 + h01(px as i32, py as i32, 710 + slot) * 0.3, 255)
+            } else if (u - 0.80).abs() < 0.025 && v > 0.10 && v < 0.90 {
+                rgba([210.0, 205.0, 185.0], 1.0, 255) // string
+            } else {
+                [0, 0, 0, 0]
+            }
+        });
+    };
+    bow_art(150, [138.0, 100.0, 58.0], &mut tf);
+    bow_art(151, [96.0, 120.0, 62.0], &mut tf); // living-wood green tint
+    // Arrow: diagonal shaft, stone head, feather fletch.
+    tf(8, 9, &mut |_px, _py, u, v| {
+        let d = (u - (1.0 - v)).abs();
+        if d < 0.06 && u > 0.15 && u < 0.85 {
+            rgba([150.0, 110.0, 62.0], 1.0, 255)
+        } else if d < 0.12 && u >= 0.78 && u < 0.95 {
+            rgba([140.0, 140.0, 140.0], 1.0, 255) // stone tip
+        } else if d < 0.14 && u > 0.08 && u <= 0.22 {
+            rgba([235.0, 235.0, 238.0], 1.0, 255) // fletching
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    // Armor silhouettes, leather then bronze.
+    let armor_art = |base: u32, c: [f32; 3], dark: [f32; 3], img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+        // helmet: dome with a face opening
+        img(base % 16, base / 16, &mut |px, py, u, v| {
+            let dx = u - 0.5;
+            let dome = dx * dx + (v - 0.55) * (v - 0.55) * 1.6 < 0.09 && v < 0.72;
+            let opening = dx.abs() < 0.16 && v > 0.48 && v < 0.72;
+            if dome && !opening {
+                rgba(c, 0.85 + h01(px as i32, py as i32, 720 + base) * 0.25, 255)
+            } else if dome {
+                rgba(dark, 1.0, 255)
+            } else {
+                [0, 0, 0, 0]
+            }
+        });
+        // chestplate: torso with shoulders
+        img((base + 1) % 16, (base + 1) / 16, &mut |px, py, u, v| {
+            let torso = (u - 0.5).abs() < 0.24 && v > 0.28 && v < 0.88;
+            let arms = (u - 0.5).abs() > 0.24 && (u - 0.5).abs() < 0.38 && v > 0.28 && v < 0.52;
+            let neck = (u - 0.5).abs() < 0.10 && v <= 0.36;
+            if (torso || arms) && !neck {
+                rgba(c, 0.85 + h01(px as i32, py as i32, 730 + base) * 0.25, 255)
+            } else {
+                [0, 0, 0, 0]
+            }
+        });
+        // leggings: waist + two legs
+        img((base + 2) % 16, (base + 2) / 16, &mut |px, py, u, v| {
+            let waist = (u - 0.5).abs() < 0.22 && v > 0.18 && v < 0.40;
+            let leg = ((u - 0.36).abs() < 0.09 || (u - 0.64).abs() < 0.09) && v >= 0.40 && v < 0.88;
+            if waist || leg {
+                rgba(c, 0.85 + h01(px as i32, py as i32, 740 + base) * 0.25, 255)
+            } else {
+                [0, 0, 0, 0]
+            }
+        });
+        // boots: two ankle boxes
+        img((base + 3) % 16, (base + 3) / 16, &mut |px, py, u, v| {
+            let boot = ((u - 0.32).abs() < 0.13 || (u - 0.68).abs() < 0.13) && v > 0.52 && v < 0.85;
+            if boot {
+                rgba(c, 0.85 + h01(px as i32, py as i32, 750 + base) * 0.25, 255)
+            } else {
+                [0, 0, 0, 0]
+            }
+        });
+    };
+    armor_art(153, [150.0, 106.0, 64.0], [70.0, 48.0, 30.0], &mut tf);
+    armor_art(157, [196.0, 148.0, 62.0], [90.0, 66.0, 30.0], &mut tf);
 
     // (15,0) unknown/missing texture: magenta checkerboard.
     tile(15, 0, &mut |px, py, _u, _v| {

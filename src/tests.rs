@@ -2371,22 +2371,25 @@ fn floaters_hover_and_projectiles_collide() {
         tile: 0,
         damage: 3.0,
         age: 0.0,
+        from_player: false,
+        drop_item: None,
     };
-    let mut hit = false;
-    let mut alive = true;
+    let mut outcome = crate::mobs::ProjHit::None;
     for _ in 0..60 {
-        alive = p.tick(&w, far, 1.0 / 30.0, &mut hit);
-        if !alive {
+        outcome = p.tick(&w, far, 1.0 / 30.0);
+        if !matches!(outcome, crate::mobs::ProjHit::None) {
             break;
         }
     }
-    assert!(!alive && !hit, "bolt stopped by the wall");
+    assert!(matches!(outcome, crate::mobs::ProjHit::Block), "bolt stopped by the wall");
     w.projectiles.push(crate::mobs::Projectile {
         pos: Vec3::new(4.5, 120.9, 2.0),
         vel: Vec3::new(0.0, 0.0, 12.0),
         tile: 0,
         damage: 3.0,
         age: 0.0,
+        from_player: false,
+        drop_item: None,
     });
     let mut dmg = 0.0;
     for _ in 0..60 {
@@ -2470,5 +2473,102 @@ fn wardens_dissolve_at_dawn_and_never_save() {
     assert!(
         w.mobs.iter().any(|m| m.species == deer_i),
         "the deer does not dissolve"
+    );
+}
+
+// ---------------- bows & armor ----------------
+
+#[test]
+fn bow_armor_recipes_and_data_resolve() {
+    let reg = base_reg();
+    // Bows parse with charge stats and stack singly.
+    let hb = reg.item(it(&reg, "base:hunting_bow"));
+    assert_eq!(hb.bow.as_ref().unwrap().damage, 6.0);
+    assert_eq!(hb.max_stack, 1);
+    assert_eq!(hb.durability, 96);
+    let wb = reg.item(it(&reg, "base:warbow"));
+    assert_eq!(wb.bow.as_ref().unwrap().damage, 10.0);
+    // Arrows are an ammo class.
+    assert_eq!(reg.item(it(&reg, "base:arrow")).ammo.as_deref(), Some("arrow"));
+    // Recipes: bows, arrow x4, all eight pieces.
+    for n in ["hunting_bow", "warbow", "leather_helmet", "leather_chestplate",
+              "leather_leggings", "leather_boots", "bronze_helmet",
+              "bronze_chestplate", "bronze_leggings", "bronze_boots"] {
+        assert!(!reg.recipes_for(it(&reg, &format!("base:{n}"))).is_empty(), "{n} recipe");
+    }
+    let arrows = reg.recipes_for(it(&reg, "base:arrow"));
+    assert_eq!(arrows[0].count, 4, "one craft yields four arrows");
+    // Armor points: full leather 7, full bronze 11; slots match.
+    use crate::registry::ArmorSlot;
+    let pts = |n: &str| reg.item(it(&reg, n)).armor.unwrap();
+    assert_eq!(pts("base:leather_helmet"), (ArmorSlot::Head, 1));
+    assert_eq!(pts("base:leather_chestplate"), (ArmorSlot::Chest, 3));
+    let leather: u32 = ["helmet", "chestplate", "leggings", "boots"]
+        .iter()
+        .map(|p| pts(&format!("base:leather_{p}")).1)
+        .sum();
+    let bronze: u32 = ["helmet", "chestplate", "leggings", "boots"]
+        .iter()
+        .map(|p| pts(&format!("base:bronze_{p}")).1)
+        .sum();
+    assert_eq!((leather, bronze), (7, 11));
+}
+
+#[test]
+fn armor_reduction_curve() {
+    assert_eq!(crate::reduced_damage(10.0, 0), 10.0);
+    assert!((crate::reduced_damage(10.0, 7) - 7.2).abs() < 0.01, "full leather: 28%");
+    assert!((crate::reduced_damage(10.0, 11) - 5.6).abs() < 0.01, "full bronze: 44%");
+    assert!((crate::reduced_damage(10.0, 50) - 4.0).abs() < 0.001, "capped at 60%");
+}
+
+#[test]
+fn player_arrows_strike_mobs_and_stick_in_walls() {
+    let reg = base_reg();
+    let mut w = test_world("arrows");
+    let deer_i = reg.animal_id("base:deer").unwrap();
+    let mut deer = crate::mobs::Mob::new(deer_i, Vec3::new(8.5, 220.0, 8.5), 0.0);
+    deer.health = 10.0;
+    let di = w.mobs.len(); // natural wildlife is seeded too — track ours
+    w.mobs.push(deer);
+    let arrow_item = it(&reg, "base:arrow");
+    // Arrow flying at the deer: hits through the normal hurt path.
+    w.projectiles.push(crate::mobs::Projectile {
+        pos: Vec3::new(8.5, 220.5, 5.0),
+        vel: Vec3::new(0.0, 0.5, 18.0),
+        tile: 0,
+        damage: 6.0,
+        age: 0.0,
+        from_player: true,
+        drop_item: Some(arrow_item),
+    });
+    let far = Vec3::new(300.0, 80.0, 300.0);
+    let mut player_dmg = 0.0;
+    for _ in 0..40 {
+        player_dmg += w.tick_projectiles(far, 1.0 / 30.0);
+    }
+    assert!(w.mobs[di].health < 10.0, "arrow connected (health {})", w.mobs[di].health);
+    assert_eq!(player_dmg, 0.0, "player arrows never hit the player");
+    assert!(w.pending_drops.is_empty(), "flesh hits consume the arrow");
+    // Arrow into a wall drops a recoverable arrow item.
+    let stone = reg.block_id("base:stone").unwrap();
+    for y in 220..226 {
+        w.set_block(2, y, 20, stone);
+    }
+    w.projectiles.push(crate::mobs::Projectile {
+        pos: Vec3::new(2.5, 222.5, 16.0),
+        vel: Vec3::new(0.0, 0.0, 16.0),
+        tile: 0,
+        damage: 6.0,
+        age: 0.0,
+        from_player: true,
+        drop_item: Some(arrow_item),
+    });
+    for _ in 0..40 {
+        w.tick_projectiles(far, 1.0 / 30.0);
+    }
+    assert!(
+        w.pending_drops.iter().any(|(_, s)| s.item == arrow_item),
+        "wall hit dropped the arrow for recovery"
     );
 }
