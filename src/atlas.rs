@@ -62,6 +62,23 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
     .collect()
 }
 
+include!(concat!(env!("OUT_DIR"), "/gemini_pack.rs"));
+
+/// Built-in packs compiled into the binary (currently just gemini).
+pub fn embedded_pack(id: &str) -> Option<&'static [(&'static str, &'static [u8])]> {
+    match id {
+        "gemini" if !GEMINI_TILES.is_empty() => Some(GEMINI_TILES),
+        _ => None,
+    }
+}
+
+/// Where an active texture pack's tiles come from: a folder under packs/
+/// (editable, hot-reloads) or a table compiled into the binary.
+pub enum PackSource {
+    Dir(std::path::PathBuf),
+    Embedded(&'static [(&'static str, &'static [u8])]),
+}
+
 /// Full tile-name -> slot map: built-in names plus mod-registered textures
 /// (`<mod_id>/<file stem>` keys, from `Registry.tex_names`).
 pub fn tile_names(tex_names: &[(String, u16)]) -> std::collections::HashMap<String, u16> {
@@ -111,7 +128,18 @@ pub fn discover_packs_in(root: &std::path::Path) -> Vec<PackInfo> {
 }
 
 pub fn discover_packs() -> Vec<PackInfo> {
-    discover_packs_in(std::path::Path::new("packs"))
+    let mut packs = discover_packs_in(std::path::Path::new("packs"));
+    // The built-in pack is always available, folder or not; a real folder
+    // of the same id wins (it's editable and hot-reloads).
+    if embedded_pack("gemini").is_some() && !packs.iter().any(|p| p.id == "gemini") {
+        packs.push(PackInfo {
+            id: "gemini".into(),
+            name: "Gemini".into(),
+            description: "AI-generated tiles (built in)".into(),
+        });
+        packs.sort_by(|a, b| a.id.cmp(&b.id));
+    }
+    packs
 }
 
 /// Find recognized tile PNGs under `<pack>/tiles/`: (slot, path), plus
@@ -152,7 +180,7 @@ pub fn scan_pack(
 /// only for tiles the pack ships). Returns (pixels, side px, pack warnings).
 pub fn build_atlas(
     tex_files: &[(u16, std::path::PathBuf)],
-    pack_dir: Option<&std::path::Path>,
+    pack: Option<PackSource>,
     tex_names: &[(String, u16)],
 ) -> (Vec<u8>, u32, Vec<String>) {
     let (mut img, px) = load_or_build();
@@ -164,16 +192,30 @@ pub fn build_atlas(
         }
     }
     let mut warnings = Vec::new();
-    if let Some(dir) = pack_dir {
-        let names = tile_names(tex_names);
-        let (files, warns) = scan_pack(dir, &names);
-        warnings = warns;
-        for (slot, path) in files {
-            match load_tile_png(&path) {
-                Some((data, w, h)) => blit_tile(&mut img, px, tp, slot, &data, w, h),
-                None => warnings.push(format!("unreadable png: {}", path.display())),
+    match pack {
+        Some(PackSource::Dir(dir)) => {
+            let names = tile_names(tex_names);
+            let (files, warns) = scan_pack(&dir, &names);
+            warnings = warns;
+            for (slot, path) in files {
+                match load_tile_png(&path) {
+                    Some((data, w, h)) => blit_tile(&mut img, px, tp, slot, &data, w, h),
+                    None => warnings.push(format!("unreadable png: {}", path.display())),
+                }
             }
         }
+        Some(PackSource::Embedded(tiles)) => {
+            let names = tile_names(tex_names);
+            for (name, bytes) in tiles {
+                // Names the current registry doesn't know (e.g. a mod's
+                // tile with that mod removed) skip silently.
+                let Some(slot) = names.get(*name) else { continue };
+                if let Some((data, w, h)) = load_tile_bytes(bytes) {
+                    blit_tile(&mut img, px, tp, *slot, &data, w, h);
+                }
+            }
+        }
+        None => {}
     }
     if let Ok(dir) = std::env::var("WILDFORGE_EXPORT_TILES") {
         match export_tiles(std::path::Path::new(&dir), &img, px, tex_names) {
@@ -223,7 +265,17 @@ pub fn export_tiles(
 
 fn load_tile_png(path: &std::path::Path) -> Option<(Vec<u8>, u32, u32)> {
     let f = std::fs::File::open(path).ok()?;
-    let mut reader = png::Decoder::new(std::io::BufReader::new(f)).read_info().ok()?;
+    load_tile_reader(png::Decoder::new(std::io::BufReader::new(f)))
+}
+
+fn load_tile_bytes(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
+    load_tile_reader(png::Decoder::new(std::io::Cursor::new(bytes)))
+}
+
+fn load_tile_reader<R: std::io::BufRead + std::io::Seek>(
+    dec: png::Decoder<R>,
+) -> Option<(Vec<u8>, u32, u32)> {
+    let mut reader = dec.read_info().ok()?;
     let mut buf = vec![0u8; reader.output_buffer_size()?];
     let info = reader.next_frame(&mut buf).ok()?;
     let n = (info.width * info.height) as usize;

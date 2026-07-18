@@ -12,13 +12,14 @@ pub struct Config {
     pub view_dist: i32,
     /// Field of view in degrees.
     pub fov: f32,
-    /// Active texture pack id (`packs/<id>/`); empty = none.
+    /// Active texture pack id (`packs/<id>/` or built-in); empty = none
+    /// (procedural). Fresh installs default to the bundled gemini pack.
     pub pack: String,
 }
 
 impl Default for Config {
     fn default() -> Config {
-        Config { volume: 0.7, sensitivity: 1.0, view_dist: 7, fov: 75.0, pack: String::new() }
+        Config { volume: 0.7, sensitivity: 1.0, view_dist: 7, fov: 75.0, pack: "gemini".into() }
     }
 }
 

@@ -129,13 +129,18 @@ Drop-in re-skins, no recompiling and no mod required. Design doc:
   whole sheet, and a full `assets/atlas.png` replacement still works as
   the base layer under packs.
 - Packs layer **over** mod textures: an explicit pack choice wins, but
-  only for tiles it ships. Two packs are bundled: `packs/dusk` (moody
-  moonlit recolors, a worked example) and `packs/gemini` — a full
-  AI-generated set (111 tiles) made with `tools/gen_texture_pack.py`,
-  which turns Gemini image generation into pack PNGs (crop, box
-  downscale, palette quantize, seam blending for ground tiles, magenta
-  chroma-key for item sprites). Regenerating needs an API key in
-  `~/.gemini_key`; the shipped PNGs don't.
+  only for tiles it ships. The **default look is `gemini`** — a full
+  AI-generated set (111 tiles) compiled into the binary, so a bare
+  executable ships with it and fresh installs load it automatically.
+  Prefer the classic zero-asset look? Pick NONE — PROCEDURAL on the
+  TEXTURE PACKS screen. A `packs/gemini/` folder on disk overrides the
+  built-in copy tile-by-tile (and hot-reloads), and `packs/dusk` ships
+  as a worked example of a folder pack. The set was made with
+  `tools/gen_texture_pack.py`, which turns Gemini image generation into
+  pack PNGs (crop, box downscale, palette quantize, seam blending for
+  ground tiles, magenta chroma-key for sprites, bottom-aligned plants).
+  Regenerating needs an API key in `~/.gemini_key`; the shipped PNGs
+  don't.
 
 ## Item browser & creative mode
 

@@ -1606,7 +1606,7 @@ fn pack_tile_override_applied_at_slot() {
     std::fs::create_dir_all(pack.join("tiles")).unwrap();
     write_solid_png(&pack.join("tiles/stone.png"), 8, 8, [255, 0, 255, 255]);
     let (base, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
-    let (img, px, warns) = crate::atlas::build_atlas(&[], Some(&pack), &[]);
+    let (img, px, warns) = crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
     assert_eq!(px, bpx);
     assert!(warns.is_empty(), "no warnings: {warns:?}");
     let stone = *crate::atlas::builtin_slots().get("stone").unwrap();
@@ -1635,7 +1635,7 @@ fn pack_overrides_mod_tile_by_name_and_wins() {
     let (img, px, _) = crate::atlas::build_atlas(&tex_files, None, &tex_names);
     assert_eq!(tile_center(&img, px, slot), [0, 255, 0, 255]);
     // ...with the pack, the pack's art wins (layered last).
-    let (img, px, warns) = crate::atlas::build_atlas(&tex_files, Some(&pack), &tex_names);
+    let (img, px, warns) = crate::atlas::build_atlas(&tex_files, Some(crate::atlas::PackSource::Dir(pack.clone())), &tex_names);
     assert!(warns.is_empty(), "{warns:?}");
     assert_eq!(tile_center(&img, px, slot), [255, 0, 255, 255], "pack > mod");
 }
@@ -1647,7 +1647,7 @@ fn pack_unknown_and_unreadable_files_warn() {
     write_solid_png(&pack.join("tiles/notatile.png"), 4, 4, [1, 2, 3, 255]);
     std::fs::write(pack.join("tiles/stone.png"), b"this is not a png").unwrap();
     let (base, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
-    let (img, px, warns) = crate::atlas::build_atlas(&[], Some(&pack), &[]);
+    let (img, px, warns) = crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
     assert_eq!(warns.len(), 2, "unknown name + unreadable png: {warns:?}");
     assert!(warns.iter().any(|w| w.contains("notatile")));
     let stone = *crate::atlas::builtin_slots().get("stone").unwrap();
@@ -1661,12 +1661,15 @@ fn pack_unknown_and_unreadable_files_warn() {
 #[test]
 fn config_pack_round_trips() {
     let mut c = crate::config::Config::default();
-    assert!(c.pack.is_empty(), "default is no pack");
+    assert_eq!(c.pack, "gemini", "fresh installs default to the bundled pack");
     c.pack = "dusk".to_string();
     let parsed = crate::config::Config::from_text(&c.to_text());
     assert_eq!(parsed, c, "config text round-trips the pack field");
+    c.pack = String::new();
+    let parsed = crate::config::Config::from_text(&c.to_text());
+    assert!(parsed.pack.is_empty(), "explicit NONE round-trips as none");
     let legacy = crate::config::Config::from_text("volume=0.5\n");
-    assert!(legacy.pack.is_empty(), "old configs load with no pack");
+    assert_eq!(legacy.pack, "gemini", "configs predating packs get the default");
 }
 
 #[test]
@@ -1689,7 +1692,7 @@ fn export_tiles_round_trip_reproduces_atlas() {
     assert!(out.join("pack.toml").exists(), "stub pack.toml written");
     assert!(out.join("tiles/stone.png").exists());
     // Selecting the exported skeleton as a pack reproduces the atlas exactly.
-    let (again, apx, warns) = crate::atlas::build_atlas(&[], Some(&out), &[]);
+    let (again, apx, warns) = crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(out.clone())), &[]);
     assert!(warns.is_empty(), "{warns:?}");
     assert_eq!(apx, px);
     assert_eq!(again, img, "export -> re-import is the identity");
@@ -1987,4 +1990,25 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
         "unstuck above the stone, got y={}",
         w.mobs[buried_i].pos.y
     );
+}
+
+#[test]
+fn embedded_gemini_pack_applies_without_folder() {
+    let tiles = crate::atlas::embedded_pack("gemini").expect("gemini compiled in");
+    assert!(tiles.len() > 100, "full pack embedded, got {}", tiles.len());
+    assert!(crate::atlas::embedded_pack("nope").is_none());
+    let (base, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
+    let (img, px, warns) =
+        crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Embedded(tiles)), &[]);
+    assert!(warns.is_empty(), "{warns:?}");
+    assert_eq!(px, bpx);
+    let stone = *crate::atlas::builtin_slots().get("stone").unwrap();
+    assert_ne!(
+        tile_center(&img, px, stone),
+        tile_center(&base, bpx, stone),
+        "embedded pack repaints stone over the procedural base"
+    );
+    // The built-in pack is always discoverable, folder or not.
+    let listed = crate::atlas::discover_packs();
+    assert!(listed.iter().any(|p| p.id == "gemini"), "gemini listed: {listed:?}");
 }

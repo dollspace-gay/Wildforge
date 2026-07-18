@@ -235,18 +235,17 @@ fn next_world_name(saves: &std::path::Path, worlds: &[(String, u32)]) -> String 
     }
 }
 
-/// Resolve a configured pack id to its directory, if it exists.
-fn pack_dir_of(id: &str) -> Option<PathBuf> {
+/// Resolve a configured pack id: a folder under packs/ wins (editable,
+/// hot-reloads), else a pack compiled into the binary, else none.
+fn pack_source_of(id: &str) -> Option<atlas::PackSource> {
     if id.is_empty() {
         return None;
     }
     let p = PathBuf::from("packs").join(id);
     if p.is_dir() {
-        Some(p)
-    } else {
-        eprintln!("packs: selected pack \"{id}\" not found, using none");
-        None
+        return Some(atlas::PackSource::Dir(p));
     }
+    atlas::embedded_pack(id).map(atlas::PackSource::Embedded)
 }
 
 /// Browser item list: public items (no internal /variants), search-filtered.
@@ -295,7 +294,7 @@ impl Game {
         let pack_override = std::env::var("WILDFORGE_PACK").ok();
         let active_pack = pack_override.clone().unwrap_or_else(|| config.pack.clone());
         let (atlas_data, atlas_px, pack_warnings) =
-            atlas::build_atlas(&reg.tex_files, pack_dir_of(&active_pack).as_deref(), &reg.tex_names);
+            atlas::build_atlas(&reg.tex_files, pack_source_of(&active_pack), &reg.tex_names);
         let renderer =
             pollster::block_on(renderer::Renderer::new(window.clone(), atlas_data, atlas_px));
         let mut scripts = script::ScriptHost::new();
@@ -1213,7 +1212,7 @@ impl Game {
     fn apply_pack(&mut self) {
         let (data, px, warns) = atlas::build_atlas(
             &self.reg.tex_files,
-            pack_dir_of(&self.active_pack_id()).as_deref(),
+            pack_source_of(&self.active_pack_id()),
             &self.reg.tex_names,
         );
         self.renderer.set_atlas(&data, px);
@@ -1226,7 +1225,7 @@ impl Game {
         let new_reg = Arc::new(registry::load(std::path::Path::new("mods")));
         let (atlas_data, atlas_px, warns) = atlas::build_atlas(
             &new_reg.tex_files,
-            pack_dir_of(&self.active_pack_id()).as_deref(),
+            pack_source_of(&self.active_pack_id()),
             &new_reg.tex_names,
         );
         self.pack_warnings = warns;
@@ -1944,7 +1943,7 @@ impl Game {
                     Self::draw_button(&mut ui, r, &label, self.hit(r));
                     let cur = self.active_pack_id();
                     let active = if i == 0 {
-                        cur.is_empty() || pack_dir_of(&cur).is_none()
+                        cur.is_empty() || pack_source_of(&cur).is_none()
                     } else {
                         self.packs[i - 1].id == cur
                     };
