@@ -362,3 +362,30 @@ texture = "@bronze_sword"
 max_stack = 1
 durability = 225
 damage = 8
+
+# ---- the wild's materials (warden drops) ----
+
+[[item]]
+id = "plant_fiber"
+name = "Plant Fiber"
+texture = "@plant_fiber"
+
+[[item]]
+id = "living_wood"
+name = "Living Wood"
+texture = "@living_wood"
+
+[[item]]
+id = "ember"
+name = "Ember"
+texture = "@ember"
+
+[[item]]
+id = "frost_shard"
+name = "Frost Shard"
+texture = "@frost_shard"
+
+[[item]]
+id = "heartwood"
+name = "Heartwood"
+texture = "@heartwood"

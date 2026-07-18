@@ -13,7 +13,7 @@ pub const ATLAS_TILES: u32 = 16;
 /// Atlas slot = row * 16 + col. Rows 0-2 are built-in procedural tiles.
 pub const UNKNOWN_SLOT: u16 = 15;
 pub const CRACK_SLOT: u16 = 16; // stages 16..=19
-pub const FIRST_FREE_SLOT: u16 = 144; // rows 0-8 are built-in tiles
+pub const FIRST_FREE_SLOT: u16 = 160; // rows 0-9 are built-in tiles
 
 /// Built-in procedural tile names usable as `@name` in mod TOML.
 pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
@@ -55,7 +55,12 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("feather", 124), ("hearty_stew", 125), ("wood_sword", 126),
         ("stone_sword", 127), ("copper_sword", 128), ("bronze_sword", 129),
         ("antler", 130), ("torch", 131), ("chest_side", 132),
-        ("chest_top", 133),
+        ("chest_top", 133), ("thornling", 134), ("dryad", 135),
+        ("dryad_face", 136), ("emberkin", 137), ("rimewisp", 138),
+        ("gravelurk", 139), ("wrathwood", 140), ("wrathwood_face", 141),
+        ("thorn_bolt", 142), ("ember_bolt", 143), ("frost_bolt", 144),
+        ("plant_fiber", 145), ("living_wood", 146), ("ember", 147),
+        ("frost_shard", 148), ("heartwood", 149),
         ("unknown", 15), ("crack1", 16), ("crack2", 17), ("crack3", 18),
         ("crack4", 19),
     ]
@@ -1354,6 +1359,177 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             rgba(c, speck(px, py, 581 + slot, 0.06), 255)
         });
     }
+
+
+    // ---- wardens (rows 8-9): the wild's own ----
+    // Thornling: dark bristly shrub-hide with thorn glints.
+    tf(6, 8, &mut |px, py, u, v| {
+        let t = fbm(u, v, 6, 600);
+        let mut c = mix3([30.0, 62.0, 28.0], [58.0, 96.0, 44.0], t);
+        if h01(px as i32, py as i32, 601) > 0.93 {
+            c = [180.0, 190.0, 150.0]; // thorn tips
+        }
+        rgba(c, speck(px, py, 602, 0.2), 255)
+    });
+    // Dryad: mossy bark.
+    tf(7, 8, &mut |px, py, u, v| {
+        let t = fbm(u * 1.5, v * 3.0, 5, 610);
+        let mut c = mix3([74.0, 56.0, 40.0], [104.0, 82.0, 56.0], t);
+        if fbm(u, v, 4, 611) > 0.62 {
+            c = mix3(c, [60.0, 110.0, 50.0], 0.6); // moss veins
+        }
+        rgba(c, speck(px, py, 612, 0.1), 255)
+    });
+    // Dryad face: bark + amber eyes + slit mouth.
+    tf(8, 8, &mut |px, py, u, v| {
+        let t = fbm(u * 1.5, v * 3.0, 5, 610);
+        let mut c = mix3([74.0, 56.0, 40.0], [104.0, 82.0, 56.0], t);
+        let eye = |cx: f32| (u - cx).abs() < 0.07 && (v - 0.38).abs() < 0.05;
+        if eye(0.30) || eye(0.70) {
+            c = [235.0, 180.0, 60.0]; // amber glow
+        }
+        if (u - 0.5).abs() < 0.16 && (v - 0.72).abs() < 0.025 {
+            c = [30.0, 22.0, 16.0];
+        }
+        rgba(c, speck(px, py, 613, 0.08), 255)
+    });
+    // Emberkin: charred crust over glowing cracks.
+    tf(9, 8, &mut |px, py, u, v| {
+        let t = fbm(u * 2.0, v * 2.0, 5, 620);
+        if t > 0.58 {
+            let g = 0.8 + h01(px as i32, py as i32, 621) * 0.4;
+            rgba([255.0 * g, 140.0 * g, 30.0 * g], 1.0, 255)
+        } else {
+            rgba(mix3([28.0, 22.0, 20.0], [56.0, 44.0, 40.0], t * 1.6), 1.0, 255)
+        }
+    });
+    // Rimewisp: pale drifting frost.
+    tf(10, 8, &mut |px, py, u, v| {
+        let t = fbm(u * 2.0, v * 2.0, 5, 630);
+        let c = mix3([150.0, 190.0, 225.0], [225.0, 240.0, 252.0], t);
+        rgba(c, speck(px, py, 631, 0.06), 255)
+    });
+    // Gravelurk: cracked granite.
+    tf(11, 8, &mut |px, py, u, v| {
+        let t = fbm(u, v, 5, 640);
+        let mut c = mix3([88.0, 86.0, 84.0], [128.0, 124.0, 118.0], t);
+        let (d1, _, _) = voronoi(u, v, 5, 641);
+        if d1 < 0.05 {
+            c = [48.0, 46.0, 44.0]; // cracks
+        }
+        rgba(c, speck(px, py, 642, 0.12), 255)
+    });
+    // Wrathwood: gnarled ancient bark.
+    tf(12, 8, &mut |px, py, u, v| {
+        let t = fbm(u * 1.2, v * 4.0, 5, 650);
+        let c = mix3([46.0, 34.0, 24.0], [80.0, 60.0, 40.0], t);
+        rgba(c, speck(px, py, 651, 0.14), 255)
+    });
+    // Wrathwood face: bark + jagged maw + burning eyes.
+    tf(13, 8, &mut |px, py, u, v| {
+        let t = fbm(u * 1.2, v * 4.0, 5, 650);
+        let mut c = mix3([46.0, 34.0, 24.0], [80.0, 60.0, 40.0], t);
+        let eye = |cx: f32| (u - cx).abs() < 0.08 && (v - 0.30).abs() < 0.06;
+        if eye(0.28) || eye(0.72) {
+            c = [240.0, 120.0, 40.0];
+        }
+        // Jagged maw: triangle teeth along a dark gash.
+        if (v - 0.68).abs() < 0.10 {
+            let tooth = ((u * 10.0).fract() - 0.5).abs() * 0.25;
+            if (v - 0.68).abs() < 0.09 - tooth {
+                c = [18.0, 12.0, 10.0];
+            }
+        }
+        rgba(c, speck(px, py, 652, 0.1), 255)
+    });
+    // Bolts: thorn / ember / frost.
+    tf(14, 8, &mut |_px, _py, u, v| {
+        let d = (u - v).abs();
+        if d < 0.10 && u > 0.2 && u < 0.85 {
+            rgba([90.0, 150.0, 60.0], 1.0, 255)
+        } else if d < 0.16 && u > 0.75 && u < 0.92 {
+            rgba([200.0, 220.0, 170.0], 1.0, 255) // pale tip
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    tf(15, 8, &mut |px, py, u, v| {
+        let dx = u - 0.5;
+        let dy = v - 0.5;
+        let r = dx * dx + dy * dy;
+        if r < 0.05 {
+            rgba([255.0, 230.0, 120.0], 1.0, 255)
+        } else if r < 0.11 {
+            rgba([255.0, 150.0, 40.0], 0.9 + h01(px as i32, py as i32, 660) * 0.2, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    tf(0, 9, &mut |_px, _py, u, v| {
+        let dx = (u - 0.5).abs();
+        let dy = (v - 0.5).abs();
+        if dx * 1.6 + dy < 0.42 && dx < 0.16 {
+            rgba([170.0, 215.0, 250.0], 1.0, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    // Drops: fiber coil, living wood, ember, frost shard, heartwood.
+    tf(1, 9, &mut |px, py, u, v| {
+        let dx = u - 0.5;
+        let dy = v - 0.5;
+        let r = (dx * dx + dy * dy).sqrt();
+        if r > 0.18 && r < 0.34 {
+            rgba([96.0, 140.0, 60.0], 0.8 + h01(px as i32, py as i32, 670) * 0.4, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    tf(2, 9, &mut |px, py, u, v| {
+        if (u - 0.5).abs() < 0.28 && (v - 0.5).abs() < 0.22 {
+            let t = fbm(u, v * 3.0, 4, 680);
+            let mut c = mix3([104.0, 82.0, 56.0], [130.0, 104.0, 70.0], t);
+            if fbm(u * 2.0, v, 4, 681) > 0.62 {
+                c = [70.0, 150.0, 60.0]; // living veins
+            }
+            rgba(c, speck(px, py, 682, 0.1), 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    tf(3, 9, &mut |px, py, u, v| {
+        let dx = u - 0.5;
+        let dy = v - 0.55;
+        let r = dx * dx + dy * dy * 1.4;
+        if r < 0.07 {
+            let t = fbm(u * 2.0, v * 2.0, 4, 690);
+            if t > 0.55 {
+                rgba([255.0, 170.0, 50.0], 1.0, 255)
+            } else {
+                rgba([50.0, 38.0, 34.0], 0.9 + h01(px as i32, py as i32, 691) * 0.2, 255)
+            }
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    tf(4, 9, &mut |_px, _py, u, v| {
+        let dx = (u - 0.5).abs();
+        let dy = (v - 0.5).abs();
+        if dx * 1.3 + dy < 0.36 && dx < 0.2 {
+            rgba([185.0, 220.0, 248.0], 1.0, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    tf(5, 9, &mut |px, py, u, v| {
+        if (u - 0.5).abs() < 0.24 && (v - 0.5).abs() < 0.26 {
+            let t = fbm(u, v * 2.0, 4, 700);
+            let c = mix3([96.0, 34.0, 28.0], [140.0, 58.0, 40.0], t);
+            rgba(c, speck(px, py, 701, 0.08), 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
 
     // (15,0) unknown/missing texture: magenta checkerboard.
     tile(15, 0, &mut |px, py, _u, _v| {

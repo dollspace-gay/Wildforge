@@ -93,6 +93,14 @@ pub struct ModelBox {
 }
 
 #[derive(Clone, Debug)]
+pub struct ProjectileDef {
+    pub tile: u16,
+    pub damage: f32,
+    pub speed: f32,
+    pub cooldown: f32,
+}
+
+#[derive(Clone, Debug)]
 pub struct AnimalDef {
     pub name: String,  // "base:deer"
     pub label: String,
@@ -114,6 +122,20 @@ pub struct AnimalDef {
     /// Collision half-width / height derived from the model.
     pub half_w: f32,
     pub height: f32,
+    // ---- hostile (warden) fields ----
+    pub hostile: bool,
+    /// Contact damage in half-hearts.
+    pub attack: f32,
+    pub aggro_range: f32,
+    /// Minimum world ire before this warden may spawn.
+    pub ire_min: f32,
+    /// Floaters hover with no gravity (ember/frost wisps).
+    pub movement_float: bool,
+    /// Rendered at full block-light — its own lantern.
+    pub emissive: bool,
+    /// Spawns only where effective light is below this.
+    pub spawn_light_max: u8,
+    pub projectile: Option<ProjectileDef>,
 }
 
 /// A recipe slot requirement: one exact item, or any member of a tag.
@@ -466,6 +488,32 @@ struct AnimalToml {
     drops: Vec<AnimalDropToml>,
     #[serde(default)]
     model: HashMap<String, BoxToml>,
+    #[serde(default)]
+    hostile: bool,
+    #[serde(default)]
+    attack: Option<f32>,
+    #[serde(default)]
+    aggro_range: Option<f32>,
+    #[serde(default)]
+    ire_min: Option<f32>,
+    #[serde(default)]
+    movement: Option<String>,
+    #[serde(default)]
+    emissive: bool,
+    #[serde(default)]
+    spawn_light_max: Option<u8>,
+    #[serde(default)]
+    projectile: Option<ProjectileToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct ProjectileToml {
+    tex: String,
+    damage: f32,
+    #[serde(default)]
+    speed: Option<f32>,
+    #[serde(default)]
+    cooldown: Option<f32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -850,7 +898,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let mut pending_harvests: Vec<(String, BlockId, HarvestToml)> = Vec::new();
     let mut pending_places: Vec<(String, (String, String))> = Vec::new();
     // (mod id, toml, body tile, head tile, per-box tiles) — resolve in pass 1.
-    let mut pending_animals: Vec<(String, AnimalToml, u16, u16, HashMap<String, u16>)> =
+    #[allow(clippy::type_complexity)]
+    let mut pending_animals: Vec<(String, AnimalToml, u16, u16, HashMap<String, u16>, Option<u16>)> =
         Vec::new();
 
     for raw in &raws {
@@ -1037,7 +1086,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     b.tex.as_ref().map(|t| (n.clone(), resolve_tex(t, &raw.info.path, &mut errs)))
                 })
                 .collect();
-            pending_animals.push((raw.info.id.clone(), a.clone(), tile, head, box_tiles));
+            let proj_tile = a
+                .projectile
+                .as_ref()
+                .map(|pr| resolve_tex(&pr.tex, &raw.info.path, &mut errs));
+            pending_animals.push((raw.info.id.clone(), a.clone(), tile, head, box_tiles, proj_tile));
         }
         for f in &raw.fuels {
             pending_fuels.push((raw.info.id.clone(), f.clone()));
@@ -1124,7 +1177,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             reg.fuels.push((ing, f.burn));
         }
     }
-    for (modid, a, tile, head_tile, box_tiles) in pending_animals {
+    for (modid, a, tile, head_tile, box_tiles, proj_tile) in pending_animals {
         let full = qualify(&modid, &a.id);
         if reg.animals.iter().any(|x| x.name == full) {
             continue; // duplicate id — first wins, like blocks/items
@@ -1179,6 +1232,19 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             model,
             half_w: half_w.min(0.45),
             height,
+            hostile: a.hostile,
+            attack: a.attack.unwrap_or(3.0),
+            aggro_range: a.aggro_range.unwrap_or(12.0),
+            ire_min: a.ire_min.unwrap_or(0.0),
+            movement_float: a.movement.as_deref() == Some("float"),
+            emissive: a.emissive,
+            spawn_light_max: a.spawn_light_max.unwrap_or(3),
+            projectile: a.projectile.as_ref().map(|pr| ProjectileDef {
+                tile: proj_tile.unwrap_or(crate::atlas::UNKNOWN_SLOT),
+                damage: pr.damage,
+                speed: pr.speed.unwrap_or(14.0),
+                cooldown: pr.cooldown.unwrap_or(2.0),
+            }),
         });
     }
     for (modid, block, h) in pending_harvests {

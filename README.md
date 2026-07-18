@@ -83,6 +83,40 @@ mod, registered through the same TOML pipeline external mods use
   declare `interaction`, `min_tier`, and mods get `[[smelt]]`/`[[fuel]]`
   entries plus `aliases.toml` for lossless renames.
 
+## The wild answers
+
+The world is alive, and it was never given to you. It tolerates small
+takers — but the forge is different: it turns forests into charcoal,
+empties the veins, cuts what was growing into what is built. The Wild
+keeps its own places — night, deep woods, the dark under the ground —
+and out of them it sends **wardens**: not evil, not cursed, just the
+world's answer. At dawn they dissolve back into it. The more you take,
+the more it sends.
+
+- **Ire** is the difficulty system (there is no difficulty setting): a
+  per-world meter raised by felling, mining, killing, and burning, and
+  lowered slowly by time — and by **planting** (capped daily; mending
+  is always slower than taking). Four tiers from CALM to WRATHFUL drive
+  what the night sends; a fresh world's first nights are gentle because
+  you haven't taken anything yet. Watch the meter in your inventory.
+- **The wardens**: thornlings (carnivorous shrubs) in the grasslands
+  and woods; dryads lobbing thorn bolts in provoked forests; emberkin
+  and rimewisps — floating elemental wisps of cinder and frost — over
+  desert and snow; gravelurks prowling every unlit cave at any hour;
+  and at full wrath, the **wrathwood** — a walking carnivorous tree,
+  one alive at a time, a night to remember.
+- They are **territorial lurkers**: they roam the dark and attack what
+  they find, but don't besiege bases. Torchlight and walls genuinely
+  work. They spawn only in darkness (surface nights, caves always),
+  never persist, and dissolve in daylight.
+- Their drops are exclusive materials — plant fiber, living wood,
+  embers (a premium fuel), frost shards, heartwood — banked for future
+  crafts (bows want fiber and living wood). Provoking the wild on
+  purpose is a valid, dangerous harvest.
+- All data-driven: wardens are `animals.toml` entries with `hostile`,
+  `attack`, `ire_min`, `movement = "float"`, `emissive`, and
+  `projectile` fields. Mods can add their own.
+
 ## Light & storage
 
 - **Real lighting**: two channels per block — sky light (full daylight

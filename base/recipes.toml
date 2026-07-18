@@ -271,3 +271,7 @@ count = 4
 pattern = ["ppp", "p.p", "ppp"]
 keys = { p = "#base:planks" }
 output = "base:chest"
+
+[[fuel]]
+item = "base:ember"
+burn = 80.0

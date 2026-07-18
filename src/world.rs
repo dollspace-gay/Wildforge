@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
-use crate::mobs::Mob;
+use crate::mobs::{Mob, MobEvent, Projectile};
 use crate::inventory::ItemStack;
 use crate::registry::{AIR, BlockId, Registry};
 use crate::worldgen::Generator;
@@ -41,28 +41,34 @@ pub struct FurnaceState {
     pub burn_total: f32,
 }
 
-/// (seed, mode) from world.toml, falling back to the legacy seed file.
-pub fn read_world_meta(dir: &std::path::Path) -> (Option<u32>, String) {
+/// (seed, mode, ire) from world.toml, falling back to the legacy seed file.
+pub fn read_world_meta(dir: &std::path::Path) -> (Option<u32>, String, f32) {
     if let Ok(t) = fs::read_to_string(dir.join("world.toml")) {
         let mut seed = None;
         let mut mode = "survival".to_string();
+        let mut ire = 0.0f32;
         for l in t.lines() {
             if let Some(v) = l.strip_prefix("seed = ") {
                 seed = v.trim().parse().ok();
             } else if let Some(v) = l.strip_prefix("mode = ") {
                 mode = v.trim().trim_matches('"').to_string();
+            } else if let Some(v) = l.strip_prefix("ire = ") {
+                ire = v.trim().parse().unwrap_or(0.0);
             }
         }
-        (seed, mode)
+        (seed, mode, ire.clamp(0.0, 100.0))
     } else {
         let seed = fs::read_to_string(dir.join("seed")).ok().and_then(|s| s.trim().parse().ok());
-        (seed, "survival".to_string())
+        (seed, "survival".to_string(), 0.0)
     }
 }
 
-pub fn write_world_meta(dir: &std::path::Path, seed: u32, mode: &str) {
+pub fn write_world_meta(dir: &std::path::Path, seed: u32, mode: &str, ire: f32) {
     let _ = fs::create_dir_all(dir);
-    let _ = fs::write(dir.join("world.toml"), format!("seed = {seed}\nmode = \"{mode}\"\n"));
+    let _ = fs::write(
+        dir.join("world.toml"),
+        format!("seed = {seed}\nmode = \"{mode}\"\nire = {ire:.2}\n"),
+    );
 }
 
 /// List worlds under `dir`: (name, seed), sorted. Reads world.toml with the
@@ -75,7 +81,7 @@ pub fn list_worlds(dir: &std::path::Path) -> Vec<(String, u32)> {
             if name.starts_with('.') || !e.path().is_dir() {
                 continue;
             }
-            if let (Some(seed), _) = read_world_meta(&e.path()) {
+            if let (Some(seed), _, _) = read_world_meta(&e.path()) {
                 out.push((name, seed));
             }
         }
@@ -99,10 +105,23 @@ pub struct World {
     /// Items spilled by removed block entities, for the game loop to spawn.
     pub pending_drops: Vec<((i32, i32, i32), ItemStack)>,
     pub mobs: Vec<crate::mobs::Mob>,
+    pub projectiles: Vec<Projectile>,
+    hostile_spawn_timer: f32,
     /// Chunks whose wildlife roll already happened (persisted).
     mob_seeded: HashSet<(i32, i32)>,
     repop_timer: f32,
+    /// Game mode string, persisted in world.toml alongside seed/ire.
+    pub mode: String,
+    /// The wild's ire 0..100 — reciprocity meter driving hostile spawns.
+    pub ire: f32,
+    /// How much ire planting has already refunded today (daily cap).
+    plant_ire_today: f32,
+    /// Fraction of the current day elapsed (for decay + cap reset).
+    day_progress: f32,
 }
+
+/// Ire tier names, index = tier.
+pub const IRE_TIERS: [&str; 4] = ["CALM", "UNEASY", "PROVOKED", "WRATHFUL"];
 
 /// Hard cap on living mobs — memory/perf backstop, far above natural density.
 pub const MOB_CAP: usize = 200;
@@ -121,22 +140,83 @@ impl World {
             block_entities: HashMap::new(),
             pending_drops: Vec::new(),
             mobs: Vec::new(),
+            projectiles: Vec::new(),
+            hostile_spawn_timer: 0.0,
             mob_seeded: HashSet::new(),
             repop_timer: 0.0,
+            mode: "survival".into(),
+            ire: 0.0,
+            plant_ire_today: 0.0,
+            day_progress: 0.0,
+        }
+    }
+
+    // ---------------- ire (reciprocity) ----------------
+
+    pub fn ire_tier(&self) -> usize {
+        match self.ire {
+            x if x < 20.0 => 0,
+            x if x < 50.0 => 1,
+            x if x < 80.0 => 2,
+            _ => 3,
+        }
+    }
+
+    pub fn add_ire(&mut self, amt: f32) {
+        self.ire = (self.ire + amt).clamp(0.0, 100.0);
+    }
+
+    /// Planting refunds ire, capped per day — mending stays slower than
+    /// taking; a clearcut can't be laundered with a seed drawer.
+    pub fn plant_ire(&mut self, amt: f32) {
+        let room = (8.0 - self.plant_ire_today).max(0.0);
+        let refund = amt.min(room);
+        if refund > 0.0 {
+            self.plant_ire_today += refund;
+            self.add_ire(-refund);
+        }
+    }
+
+    /// Advance ire time by a fraction of a day: passive decay (-4/day)
+    /// and the daily reset of the planting cap.
+    pub fn tick_ire(&mut self, day_frac: f32) {
+        self.add_ire(-4.0 * day_frac);
+        self.day_progress += day_frac;
+        if self.day_progress >= 1.0 {
+            self.day_progress -= 1.0;
+            self.plant_ire_today = 0.0;
+        }
+    }
+
+    /// Ire cost of breaking a block, by what it is.
+    pub fn ire_for_block(&self, b: BlockId) -> f32 {
+        let name = &self.reg.block(b).name;
+        if name.ends_with("_log") || name.ends_with(":log") {
+            0.3
+        } else if name.contains("ore") {
+            0.4
+        } else if name.ends_with("stone") && !name.contains("cobble") {
+            0.05
+        } else if name.contains("leaves") || name.ends_with("dirt") || name.ends_with("grass") {
+            0.02
+        } else {
+            0.0
         }
     }
 
     /// Load a world from disk (reads seed + palette) or create a fresh one.
     pub fn load_or_create(save_dir: PathBuf, reg: Arc<Registry>) -> World {
-        let (seed, mode) = read_world_meta(&save_dir);
+        let (seed, mode, ire) = read_world_meta(&save_dir);
         let seed = seed.unwrap_or_else(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as u32)
                 .unwrap_or(1337)
         });
-        write_world_meta(&save_dir, seed, &mode);
+        write_world_meta(&save_dir, seed, &mode, ire);
         let mut w = World::new(seed, save_dir, reg);
+        w.mode = mode;
+        w.ire = ire;
         w.load_remap = w.read_palette_remap();
         w.load_entities();
         w.load_mobs();
@@ -213,7 +293,8 @@ impl World {
         let (cx, cz) = (pos.x * CHUNK_X as i32, pos.z * CHUNK_Z as i32);
         let biome = self.generator.biome(cx + 8, cz + 8).name().to_lowercase();
         for (si, def) in reg.animals.iter().enumerate() {
-            if !def.biomes.iter().any(|b| *b == biome) {
+            // Wildlife only — wardens come and go with the spawner.
+            if def.hostile || !def.biomes.iter().any(|b| *b == biome) {
                 continue;
             }
             let roll = self.mob_hash(pos.x, pos.z, 7000 + si as u32);
@@ -256,8 +337,17 @@ impl World {
     }
 
     /// Tick AI/physics for all mobs, plus the slow repopulation roll.
-    pub fn tick_mobs(&mut self, player: glam::Vec3, dt: f32, rng: &mut u32) {
+    /// Returns events (player hits, projectile casts) for the game loop.
+    pub fn tick_mobs(
+        &mut self,
+        player: glam::Vec3,
+        daylight: f32,
+        attackable: bool,
+        dt: f32,
+        rng: &mut u32,
+    ) -> Vec<MobEvent> {
         let reg = self.reg.clone();
+        let mut events = Vec::new();
         let mut mobs = std::mem::take(&mut self.mobs);
         for m in &mut mobs {
             // Frozen until its chunk streams in: an unloaded chunk reads as
@@ -268,47 +358,182 @@ impl World {
             }
             if let Some(def) = reg.animals.get(m.species) {
                 m.unstick(self, def);
-                m.tick(self, def, player, dt, rng);
+                m.tick(self, def, player, attackable, dt, rng, &mut events);
             }
         }
+        // Wardens are expressions of the wild, not creatures: they dissolve
+        // in daylight (sky-lit cells only — torchlight never banishes them)
+        // and when the player leaves them far behind.
+        mobs.retain(|m| {
+            let Some(def) = reg.animals.get(m.species) else { return false };
+            if !def.hostile {
+                return true;
+            }
+            if (m.pos - player).length_squared() > 80.0 * 80.0 {
+                return false;
+            }
+            let (_, sl) = self.light_at(
+                m.pos.x.floor() as i32,
+                (m.pos.y + 0.5).floor() as i32,
+                m.pos.z.floor() as i32,
+            );
+            sl as f32 * daylight < 7.0
+        });
         self.mobs = mobs;
 
         // Repopulation: overhunted wildlife slowly recovers, away from the
         // player and only under the local cap.
         self.repop_timer += dt;
-        if self.repop_timer < 8.0 {
+        if self.repop_timer >= 8.0 {
+            self.repop_timer = 0.0;
+            let near = self
+                .mobs
+                .iter()
+                .filter(|m| (m.pos - player).length_squared() < 96.0 * 96.0)
+                .count();
+            if near < 40 && !reg.animals.is_empty() {
+                *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                let r = *rng;
+                // A ring 32-72 blocks out at a random angle.
+                let ang = (r % 1024) as f32 / 1024.0 * std::f32::consts::TAU;
+                let dist = 32.0 + ((r >> 10) % 40) as f32;
+                let x = (player.x + ang.sin() * dist).floor() as i32;
+                let z = (player.z + ang.cos() * dist).floor() as i32;
+                let cp = ChunkPos::of_world(x, z);
+                if self.chunks.contains_key(&cp) {
+                    let biome = self.generator.biome(x, z).name().to_lowercase();
+                    // Wildlife only — wardens have their own spawner.
+                    let eligible: Vec<usize> = reg
+                        .animals
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, d)| !d.hostile && d.biomes.iter().any(|b| *b == biome))
+                        .map(|(i, _)| i)
+                        .collect();
+                    if let Some(&si) = eligible.get(((r >> 20) as usize) % eligible.len().max(1))
+                    {
+                        self.try_spawn(si, x, z, (r >> 8) as f32 / (u32::MAX >> 8) as f32);
+                    }
+                }
+            }
+        }
+        events
+    }
+
+    /// Advance warden bolts; returns total damage that hit the player.
+    pub fn tick_projectiles(&mut self, player: glam::Vec3, dt: f32) -> f32 {
+        let mut dmg = 0.0;
+        let mut projectiles = std::mem::take(&mut self.projectiles);
+        projectiles.retain_mut(|p| {
+            let mut hit = false;
+            let keep = p.tick(self, player, dt, &mut hit);
+            if hit {
+                dmg += p.damage;
+            }
+            keep
+        });
+        self.projectiles = projectiles;
+        dmg
+    }
+
+    /// Ire-driven warden spawner: territorial lurkers roll into the dark
+    /// ring around the player. Never near the world spawn, never in light.
+    pub fn tick_hostile_spawns(
+        &mut self,
+        player: glam::Vec3,
+        world_spawn: glam::Vec3,
+        daylight: f32,
+        dt: f32,
+        rng: &mut u32,
+    ) {
+        self.hostile_spawn_timer += dt;
+        if self.hostile_spawn_timer < 4.0 {
             return;
         }
-        self.repop_timer = 0.0;
-        let near = self
+        self.hostile_spawn_timer = 0.0;
+        let reg = self.reg.clone();
+        let tier = self.ire_tier();
+        let budget = [2usize, 6, 10, 14][tier];
+        let near_hostiles = self
             .mobs
             .iter()
-            .filter(|m| (m.pos - player).length_squared() < 96.0 * 96.0)
+            .filter(|m| {
+                reg.animals.get(m.species).is_some_and(|d| d.hostile)
+                    && (m.pos - player).length_squared() < 96.0 * 96.0
+            })
             .count();
-        if near >= 40 || reg.animals.is_empty() {
+        if near_hostiles >= budget || self.mobs.len() >= MOB_CAP {
             return;
         }
-        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
-        let r = *rng;
-        // A ring 32-72 blocks out at a random angle.
-        let ang = (r % 1024) as f32 / 1024.0 * std::f32::consts::TAU;
-        let dist = 32.0 + ((r >> 10) % 40) as f32;
-        let x = (player.x + ang.sin() * dist).floor() as i32;
-        let z = (player.z + ang.cos() * dist).floor() as i32;
-        let cp = ChunkPos::of_world(x, z);
-        if !self.chunks.contains_key(&cp) {
-            return;
-        }
-        let biome = self.generator.biome(x, z).name().to_lowercase();
-        let eligible: Vec<usize> = reg
-            .animals
-            .iter()
-            .enumerate()
-            .filter(|(_, d)| d.biomes.iter().any(|b| *b == biome))
-            .map(|(i, _)| i)
-            .collect();
-        if let Some(&si) = eligible.get(((r >> 20) as usize) % eligible.len().max(1)) {
-            self.try_spawn(si, x, z, (r >> 8) as f32 / (u32::MAX >> 8) as f32);
+        let mut roll = |rng: &mut u32| {
+            *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            *rng >> 8
+        };
+        for _ in 0..6 {
+            let r = roll(rng);
+            let ang = (r % 1024) as f32 / 1024.0 * std::f32::consts::TAU;
+            let dist = 24.0 + ((r >> 10) % 32) as f32;
+            let x = (player.x + ang.sin() * dist).floor() as i32;
+            let z = (player.z + ang.cos() * dist).floor() as i32;
+            if !self.chunks.contains_key(&ChunkPos::of_world(x, z)) {
+                continue;
+            }
+            let dxs = x as f32 - world_spawn.x;
+            let dzs = z as f32 - world_spawn.z;
+            if dxs * dxs + dzs * dzs < 16.0 * 16.0 {
+                continue;
+            }
+            let biome = self.generator.biome(x, z).name().to_lowercase();
+            // Split the roster: surface wardens spawn at the surface, the
+            // deep's own ("underground" biome tag) in caves below.
+            let surface_y = self.surface_height(x, z);
+            let candidates: Vec<(usize, i32)> = reg
+                .animals
+                .iter()
+                .enumerate()
+                .filter(|(_, d)| d.hostile && self.ire >= d.ire_min)
+                .filter_map(|(i, d)| {
+                    if d.biomes.iter().any(|b| b == "underground") {
+                        // A random depth with a 2-tall air pocket.
+                        let y = 6 + (roll(rng) % (surface_y.max(12) as u32 - 6)) as i32;
+                        let ground = self.get_block(x, y - 1, z);
+                        let a1 = self.get_block(x, y, z);
+                        let a2 = self.get_block(x, y + 1, z);
+                        (self.reg.is_solid(ground) && a1 == AIR && a2 == AIR)
+                            .then_some((i, y))
+                    } else if d.biomes.iter().any(|b| *b == biome) && surface_y > SEA_LEVEL {
+                        Some((i, surface_y + 1))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if candidates.is_empty() {
+                continue;
+            }
+            let (si, y) = candidates[(roll(rng) as usize) % candidates.len()];
+            let def = &reg.animals[si];
+            // Only one wrathwood walks at a time.
+            if def.name.ends_with("wrathwood")
+                && self.mobs.iter().any(|m| {
+                    reg.animals.get(m.species).is_some_and(|d| d.name.ends_with("wrathwood"))
+                })
+            {
+                continue;
+            }
+            let (bl, sl) = self.light_at(x, y, z);
+            let eff = (bl as f32).max(sl as f32 * daylight);
+            if eff >= def.spawn_light_max as f32 {
+                continue;
+            }
+            let mut m = Mob::new(
+                si,
+                glam::Vec3::new(x as f32 + 0.5, y as f32 + 0.05, z as f32 + 0.5),
+                (roll(rng) % 1024) as f32 / 1024.0 * std::f32::consts::TAU,
+            );
+            m.health = def.health;
+            self.mobs.push(m);
+            return; // one spawn per cycle
         }
     }
 
@@ -321,6 +546,9 @@ impl World {
         let mut out = String::new();
         for m in &self.mobs {
             let Some(def) = self.reg.animals.get(m.species) else { continue };
+            if def.hostile {
+                continue; // wardens dissolve on save — never persisted
+            }
             let _ = writeln!(
                 out,
                 "[[mob]]\nspecies = \"{}\"\npos = [{}, {}, {}]\nyaw = {}\nhealth = {}\n",
@@ -429,6 +657,7 @@ impl World {
 
     pub fn save_modified(&self) {
         let _ = fs::create_dir_all(&self.save_dir);
+        write_world_meta(&self.save_dir, self.seed, &self.mode, self.ire);
         self.write_palette();
         self.save_entities();
         self.save_mobs();
@@ -757,6 +986,10 @@ impl World {
             }
         }
         for (x, y, z, b) in changes {
+            // A crop reaching its final stage refunds ire (capped daily).
+            if self.reg.block(b).crop_next.is_none() {
+                self.plant_ire(0.5);
+            }
             self.set_block(x, y, z, b);
         }
     }
@@ -774,13 +1007,14 @@ impl World {
             let can_smelt = smelt.as_ref().is_some_and(|s| output_ok(f, s.output));
 
             if f.burn_left <= 0.0 && can_smelt {
-                // Light more fuel.
+                // Light more fuel (the forge feeds the wild's ire).
                 if let Some(fs) = f.fuel {
                     if let Some(burn) = reg.fuel_value(fs.item) {
                         f.burn_left = burn;
                         f.burn_total = burn;
                         let left = fs.count - 1;
                         f.fuel = if left > 0 { Some(ItemStack { count: left, ..fs }) } else { None };
+                        self.ire = (self.ire + 0.1).min(100.0);
                     }
                 }
             }

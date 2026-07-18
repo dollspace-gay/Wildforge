@@ -157,3 +157,144 @@ leg = { size = [1, 2, 1], at = [1, 0, 2] }
 ear_l = { size = [1, 3, 1], at = [-1, 7, -4] }
 ear_r = { size = [1, 3, 1], at = [1, 7, -4] }
 tail = { size = [2, 2, 2], at = [0, 3, 4] }
+
+# ---- wardens: the wild's answer (hostile, never persisted) ----
+
+[[animal]]
+id = "thornling"
+name = "Thornling"
+hostile = true
+biomes = ["plains", "forest", "jungle"]
+health = 8
+speed = 2.6
+attack = 3
+aggro_range = 12
+ire_min = 0
+group = [1, 1]
+rarity = 1
+tex = "@thornling"
+sound_pitch = 1.3
+drops = [{ item = "plant_fiber", min = 1, max = 2 }]
+[animal.model]
+body = { size = [7, 5, 7], at = [0, 2, 0] }
+head = { size = [5, 4, 5], at = [0, 5, -3] }
+leg = { size = [1, 2, 1], at = [2, 0, 2] }
+
+[[animal]]
+id = "dryad"
+name = "Dryad"
+hostile = true
+biomes = ["forest", "jungle"]
+health = 14
+speed = 1.8
+attack = 2
+aggro_range = 16
+ire_min = 50
+group = [1, 1]
+rarity = 1
+tex = "@dryad"
+head_tex = "@dryad_face"
+sound_pitch = 0.9
+projectile = { tex = "@thorn_bolt", damage = 3, speed = 14, cooldown = 2.2 }
+drops = [{ item = "living_wood", min = 1, max = 2 }]
+[animal.model]
+body = { size = [4, 7, 3], at = [0, 7, 0] }
+head = { size = [3, 3, 3], at = [0, 14, -1] }
+leg = { size = [1, 7, 1], at = [1, 0, 0] }
+arm_l = { size = [1, 6, 1], at = [-2.5, 8, 0] }
+arm_r = { size = [1, 6, 1], at = [2.5, 8, 0] }
+horn_l = { size = [1, 3, 1], at = [-1, 17, -1], tex = "@antler" }
+horn_r = { size = [1, 3, 1], at = [1, 17, -1], tex = "@antler" }
+
+[[animal]]
+id = "emberkin"
+name = "Emberkin"
+hostile = true
+biomes = ["desert", "scrubland"]
+health = 10
+speed = 2.4
+attack = 2
+aggro_range = 16
+ire_min = 20
+group = [1, 1]
+rarity = 1
+tex = "@emberkin"
+movement = "float"
+emissive = true
+sound_pitch = 1.6
+projectile = { tex = "@ember_bolt", damage = 4, speed = 12, cooldown = 2.6 }
+drops = [{ item = "ember", min = 1, max = 1 }]
+[animal.model]
+body = { size = [4, 4, 4], at = [0, 2, 0] }
+wisp = { size = [2, 2, 2], at = [0, 6, 0] }
+mote_l = { size = [1, 1, 1], at = [-3, 3, 0] }
+mote_r = { size = [1, 1, 1], at = [3, 3, 0] }
+
+[[animal]]
+id = "rimewisp"
+name = "Rimewisp"
+hostile = true
+biomes = ["taiga", "arctic"]
+health = 10
+speed = 2.4
+attack = 2
+aggro_range = 16
+ire_min = 20
+group = [1, 1]
+rarity = 1
+tex = "@rimewisp"
+movement = "float"
+emissive = true
+sound_pitch = 1.9
+projectile = { tex = "@frost_bolt", damage = 3, speed = 13, cooldown = 2.4 }
+drops = [{ item = "frost_shard", min = 1, max = 1 }]
+[animal.model]
+body = { size = [4, 4, 4], at = [0, 2, 0] }
+wisp = { size = [2, 2, 2], at = [0, 6, 0] }
+mote_l = { size = [1, 1, 1], at = [-3, 3, 0] }
+mote_r = { size = [1, 1, 1], at = [3, 3, 0] }
+
+[[animal]]
+id = "gravelurk"
+name = "Gravelurk"
+hostile = true
+biomes = ["underground"]
+health = 24
+speed = 1.6
+attack = 5
+aggro_range = 10
+ire_min = 0
+group = [1, 1]
+rarity = 1
+tex = "@gravelurk"
+sound_pitch = 0.5
+drops = [
+  { item = "base:stone", min = 1, max = 2 },
+  { item = "base:raw_copper", min = 0, max = 1 },
+]
+[animal.model]
+body = { size = [8, 7, 10], at = [0, 3, 0] }
+head = { size = [5, 4, 5], at = [0, 8, -6] }
+leg = { size = [3, 3, 3], at = [2.5, 0, 3] }
+
+[[animal]]
+id = "wrathwood"
+name = "Wrathwood"
+hostile = true
+biomes = ["forest", "jungle", "taiga"]
+health = 60
+speed = 1.5
+attack = 8
+aggro_range = 14
+ire_min = 80
+group = [1, 1]
+rarity = 1
+tex = "@wrathwood"
+head_tex = "@wrathwood_face"
+sound_pitch = 0.35
+drops = [{ item = "heartwood", min = 2, max = 4 }]
+[animal.model]
+body = { size = [8, 20, 8], at = [0, 8, 0] }
+head = { size = [6, 8, 6], at = [0, 14, -5] }
+leg = { size = [3, 8, 3], at = [3, 0, 3] }
+canopy = { size = [15, 9, 15], at = [0, 28, 0], tex = "@leaves" }

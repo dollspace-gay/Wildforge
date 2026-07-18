@@ -1311,12 +1311,12 @@ fn browser_and_recipe_index() {
 fn world_meta_roundtrip_and_legacy() {
     use crate::world::{read_world_meta, write_world_meta};
     let dir = tmp_dir("meta");
-    write_world_meta(&dir, 777, "creative");
-    assert_eq!(read_world_meta(&dir), (Some(777), "creative".to_string()));
+    write_world_meta(&dir, 777, "creative", 0.0);
+    assert_eq!(read_world_meta(&dir), (Some(777), "creative".to_string(), 0.0));
     // Legacy: bare seed file means survival.
     let dir2 = tmp_dir("meta2");
     std::fs::write(dir2.join("seed"), "42").unwrap();
-    assert_eq!(read_world_meta(&dir2), (Some(42), "survival".to_string()));
+    assert_eq!(read_world_meta(&dir2), (Some(42), "survival".to_string(), 0.0));
     // load_or_create upgrades legacy worlds to world.toml.
     let reg = base_reg();
     let _ = World::load_or_create(dir2.clone(), reg);
@@ -1706,7 +1706,7 @@ fn world_listing_sees_world_toml_and_legacy_seed() {
     // world.toml worlds were invisible and their folder names got reused
     // by NEW WORLD — inheriting the old player.toml (inventory carryover).
     let root = tmp_dir("listworlds");
-    crate::world::write_world_meta(&root.join("world1"), 42, "survival");
+    crate::world::write_world_meta(&root.join("world1"), 42, "survival", 0.0);
     std::fs::create_dir_all(root.join("old")).unwrap();
     std::fs::write(root.join("old/seed"), "7").unwrap();
     std::fs::create_dir_all(root.join("junk")).unwrap();
@@ -1722,7 +1722,7 @@ fn world_listing_sees_world_toml_and_legacy_seed() {
 #[test]
 fn new_world_name_never_reuses_existing_folder() {
     let root = tmp_dir("nextworld");
-    crate::world::write_world_meta(&root.join("world1"), 1, "survival");
+    crate::world::write_world_meta(&root.join("world1"), 1, "survival", 0.0);
     std::fs::write(root.join("world1/player.toml"), "leftover inventory").unwrap();
     let listed = crate::world::list_worlds(&root);
     assert_eq!(crate::next_world_name(&root, &listed), "world2");
@@ -1736,7 +1736,16 @@ fn new_world_name_never_reuses_existing_folder() {
 #[test]
 fn base_animals_and_weapons_register() {
     let reg = base_reg();
-    assert_eq!(reg.animals.len(), 7, "seven base species");
+    assert_eq!(
+        reg.animals.iter().filter(|a| !a.hostile).count(),
+        7,
+        "seven wildlife species"
+    );
+    assert_eq!(
+        reg.animals.iter().filter(|a| a.hostile).count(),
+        6,
+        "six wardens"
+    );
     let deer = &reg.animals[reg.animal_id("base:deer").expect("deer")];
     assert_eq!(deer.biomes, vec!["forest"]);
     assert!(deer.flee_range > 0.0, "deer are skittish");
@@ -1800,25 +1809,25 @@ fn mob_settles_on_ground_and_flees_from_damage() {
     m.health = def.health;
     let mut rng = 7u32;
     for _ in 0..120 {
-        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), 1.0 / 60.0, &mut rng);
+        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), true, 1.0 / 60.0, &mut rng, &mut Vec::new());
     }
     assert!(m.on_ground, "gravity settles the mob");
     assert!((m.pos.y - 181.0).abs() < 0.3, "standing on the pad, got y={}", m.pos.y);
 
     // Damage from the east: it panics away, gaining distance from the threat.
     let threat = m.pos + Vec3::new(2.0, 0.0, 0.0);
-    m.hurt(4.0, threat);
+    m.hurt(&def, 4.0, threat);
     assert_eq!(m.state, crate::mobs::MobState::Flee);
     assert!(m.health < def.health);
     let d0 = (m.pos - threat).length();
     for _ in 0..90 {
-        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), 1.0 / 60.0, &mut rng);
+        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), true, 1.0 / 60.0, &mut rng, &mut Vec::new());
     }
     let d1 = (m.pos - threat).length();
     assert!(d1 > d0 + 1.0, "fled from the threat ({d0:.1} -> {d1:.1})");
     // Panic subsides back to idle within the flee timer.
     for _ in 0..400 {
-        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), 1.0 / 60.0, &mut rng);
+        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), true, 1.0 / 60.0, &mut rng, &mut Vec::new());
     }
     assert_ne!(m.state, crate::mobs::MobState::Flee, "calmed down");
 }
@@ -1836,8 +1845,8 @@ fn skittish_flees_players_bold_does_not() {
     let mut deer = crate::mobs::Mob::new(deer_i, pos, 0.0);
     let mut boar = crate::mobs::Mob::new(boar_i, pos, 0.0);
     let mut rng = 3u32;
-    deer.tick(&w, &deer_def, player, 1.0 / 60.0, &mut rng);
-    boar.tick(&w, &boar_def, player, 1.0 / 60.0, &mut rng);
+    deer.tick(&w, &deer_def, player, true, 1.0 / 60.0, &mut rng, &mut Vec::new());
+    boar.tick(&w, &boar_def, player, true, 1.0 / 60.0, &mut rng, &mut Vec::new());
     assert_eq!(deer.state, crate::mobs::MobState::Flee, "deer spooks");
     assert_ne!(boar.state, crate::mobs::MobState::Flee, "boar doesn't care");
 }
@@ -1967,7 +1976,7 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
     w.mobs.push(far);
     let mut rng = 1u32;
     for _ in 0..60 {
-        w.tick_mobs(Vec3::ZERO, 1.0 / 60.0, &mut rng);
+        w.tick_mobs(Vec3::ZERO, 1.0, true, 1.0 / 60.0, &mut rng);
     }
     assert_eq!(w.mobs[far_i].pos.y, 80.0, "frozen, not falling, outside loaded chunks");
 
@@ -1984,7 +1993,7 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
     let mut buried = crate::mobs::Mob::new(si, Vec3::new(1.5, 104.0, 1.5), 0.0);
     buried.health = 10.0;
     w.mobs.push(buried);
-    w.tick_mobs(Vec3::new(60.0, 80.0, 60.0), 1.0 / 60.0, &mut rng);
+    w.tick_mobs(Vec3::new(60.0, 80.0, 60.0), 1.0, true, 1.0 / 60.0, &mut rng);
     assert!(
         w.mobs[buried_i].pos.y >= 110.5,
         "unstuck above the stone, got y={}",
@@ -2236,4 +2245,230 @@ fn chest_stores_spills_and_persists() {
     }
     let r = crate::crafting::match_recipe(&reg, &g, 3).expect("chest recipe");
     assert_eq!(r.output, it(&reg, "base:chest"));
+}
+
+// ---------------- hostiles: ire, wardens, projectiles ----------------
+
+#[test]
+fn ire_gains_decay_tiers_and_persistence() {
+    let reg = base_reg();
+    let dir = tmp_dir("iresave");
+    let mut w = World::new(3, dir.clone(), reg.clone());
+    // Block classes.
+    assert_eq!(w.ire_for_block(reg.block_id("base:log").unwrap()), 0.3);
+    assert_eq!(w.ire_for_block(reg.block_id("base:copper_ore").unwrap()), 0.4);
+    assert_eq!(w.ire_for_block(reg.block_id("base:stone").unwrap()), 0.05);
+    assert_eq!(w.ire_for_block(reg.block_id("base:planks").unwrap()), 0.0);
+    // Tier thresholds.
+    w.add_ire(30.0);
+    assert_eq!(w.ire_tier(), 1, "uneasy");
+    w.add_ire(60.0);
+    assert_eq!(w.ire_tier(), 3, "wrathful");
+    w.add_ire(500.0);
+    assert_eq!(w.ire, 100.0, "clamped");
+    // Decay: -4 per day.
+    w.tick_ire(0.5);
+    assert!((w.ire - 98.0).abs() < 0.01);
+    // Planting refunds, capped at 8/day.
+    for _ in 0..100 {
+        w.plant_ire(0.5);
+    }
+    assert!((w.ire - 90.0).abs() < 0.01, "daily cap of 8, got {}", w.ire);
+    w.tick_ire(0.6); // day rolls over -> cap resets
+    w.plant_ire(0.5);
+    assert!(w.ire < 90.0 - 2.0, "cap reset next day");
+    // Persistence via world.toml.
+    w.save_modified();
+    let w2 = World::load_or_create(dir, reg);
+    assert!((w2.ire - w.ire).abs() < 0.01, "ire round-trips");
+}
+
+#[test]
+fn warden_hunts_strikes_and_caster_fires() {
+    let reg = base_reg();
+    let mut w = test_world("wardenhunt");
+    let stone = reg.block_id("base:stone").unwrap();
+    for x in -4..12 {
+        for z in -4..12 {
+            w.set_block(x, 150, z, stone);
+            for y in 151..156 {
+                w.set_block(x, y, z, AIR);
+            }
+        }
+    }
+    let ti = reg.animal_id("base:thornling").unwrap();
+    let def = reg.animals[ti].clone();
+    assert!(def.hostile && def.attack > 0.0);
+    let player = Vec3::new(1.5, 151.0, 1.5);
+    let mut m = crate::mobs::Mob::new(ti, Vec3::new(6.5, 151.0, 1.5), 0.0);
+    m.health = def.health;
+    let mut rng = 5u32;
+    let mut events = Vec::new();
+    m.tick(&w, &def, player, true, 1.0 / 60.0, &mut rng, &mut events);
+    assert_eq!(m.state, crate::mobs::MobState::Hunt, "aggro within range");
+    // Walk it onto the player: contact damage fires once, then cools down.
+    m.pos = player + Vec3::new(0.8, 0.0, 0.0);
+    for _ in 0..30 {
+        m.tick(&w, &def, player, true, 1.0 / 60.0, &mut rng, &mut events);
+        m.pos = player + Vec3::new(0.8, 0.0, 0.0);
+    }
+    let hits = events
+        .iter()
+        .filter(|e| matches!(e, crate::mobs::MobEvent::HitPlayer(..)))
+        .count();
+    assert_eq!(hits, 1, "swing cooldown limits contact damage");
+    // Creative players are invisible to the wild.
+    let mut calm = crate::mobs::Mob::new(ti, Vec3::new(6.5, 151.0, 1.5), 0.0);
+    calm.health = def.health;
+    let mut ev2 = Vec::new();
+    calm.tick(&w, &def, player, false, 1.0 / 60.0, &mut rng, &mut ev2);
+    assert_ne!(calm.state, crate::mobs::MobState::Hunt, "no aggro when unattackable");
+
+    // Dryad: holds range and lobs a thorn bolt.
+    let di = reg.animal_id("base:dryad").unwrap();
+    let ddef = reg.animals[di].clone();
+    let mut d = crate::mobs::Mob::new(di, Vec3::new(9.5, 151.0, 1.5), 0.0);
+    d.health = ddef.health;
+    let mut ev3 = Vec::new();
+    for _ in 0..90 {
+        d.tick(&w, &ddef, player, true, 1.0 / 60.0, &mut rng, &mut ev3);
+    }
+    assert!(
+        ev3.iter().any(|e| matches!(e, crate::mobs::MobEvent::Cast(_))),
+        "caster fired"
+    );
+}
+
+#[test]
+fn floaters_hover_and_projectiles_collide() {
+    let reg = base_reg();
+    let mut w = test_world("floaty");
+    let ei = reg.animal_id("base:emberkin").unwrap();
+    let def = reg.animals[ei].clone();
+    assert!(def.movement_float && def.emissive);
+    let gy = w.surface_height(4, 4);
+    let mut m = crate::mobs::Mob::new(ei, Vec3::new(4.5, gy as f32 + 3.0, 4.5), 0.0);
+    m.health = def.health;
+    let mut rng = 9u32;
+    let far = Vec3::new(200.0, 80.0, 200.0);
+    for _ in 0..240 {
+        m.tick(&w, &def, far, true, 1.0 / 60.0, &mut rng, &mut Vec::new());
+    }
+    let under = w.surface_height(m.pos.x.floor() as i32, m.pos.z.floor() as i32);
+    assert!(
+        m.pos.y > under as f32 + 0.8,
+        "wisp hovers instead of sinking (y={} ground={under})",
+        m.pos.y
+    );
+    let _ = gy;
+
+    // Projectile into a wall dies; into the player connects.
+    let stone = reg.block_id("base:stone").unwrap();
+    w.set_block(10, 200, 10, stone);
+    let mut p = crate::mobs::Projectile {
+        pos: Vec3::new(10.5, 200.5, 7.0),
+        vel: Vec3::new(0.0, 0.0, 20.0),
+        tile: 0,
+        damage: 3.0,
+        age: 0.0,
+    };
+    let mut hit = false;
+    let mut alive = true;
+    for _ in 0..60 {
+        alive = p.tick(&w, far, 1.0 / 30.0, &mut hit);
+        if !alive {
+            break;
+        }
+    }
+    assert!(!alive && !hit, "bolt stopped by the wall");
+    w.projectiles.push(crate::mobs::Projectile {
+        pos: Vec3::new(4.5, 120.9, 2.0),
+        vel: Vec3::new(0.0, 0.0, 12.0),
+        tile: 0,
+        damage: 3.0,
+        age: 0.0,
+    });
+    let mut dmg = 0.0;
+    for _ in 0..60 {
+        dmg += w.tick_projectiles(Vec3::new(4.5, 120.0, 4.5), 1.0 / 30.0);
+    }
+    assert_eq!(dmg, 3.0, "bolt connected with the player");
+}
+
+#[test]
+fn spawner_respects_darkness_ire_and_tiers() {
+    let reg = base_reg();
+    let mut w = test_world("wardenspawn");
+    let player = Vec3::new(8.0, (w.surface_height(8, 8) + 1) as f32, 8.0);
+    let world_spawn = Vec3::new(-500.0, 70.0, -500.0); // far away, no exclusion
+    let mut rng = 77u32;
+    // Daytime: surface spawns are impossible (only underground wardens may
+    // appear, if a cave pocket is found).
+    for _ in 0..200 {
+        w.tick_hostile_spawns(player, world_spawn, 1.0, 5.0, &mut rng);
+    }
+    for m in &w.mobs {
+        let d = &reg.animals[m.species];
+        if d.hostile {
+            assert!(
+                d.biomes.iter().any(|b| b == "underground"),
+                "daytime surface spawn of {}",
+                d.name
+            );
+        }
+    }
+    // Night at Calm: spawns only ire_min = 0 wardens, within the ring.
+    w.mobs.retain(|m| !reg.animals[m.species].hostile);
+    for _ in 0..300 {
+        w.tick_hostile_spawns(player, world_spawn, 0.12, 5.0, &mut rng);
+    }
+    let hostiles: Vec<_> =
+        w.mobs.iter().filter(|m| reg.animals[m.species].hostile).collect();
+    assert!(hostiles.len() <= 2, "calm budget respected: {}", hostiles.len());
+    for m in &hostiles {
+        let d = &reg.animals[m.species];
+        assert_eq!(d.ire_min, 0.0, "no provoked-tier wardens at calm");
+        let dist = (m.pos - player).length();
+        assert!((20.0..90.0).contains(&dist), "ring distance {dist}");
+    }
+    // Wrathful: higher budget, elites allowed.
+    w.ire = 95.0;
+    for _ in 0..300 {
+        w.tick_hostile_spawns(player, world_spawn, 0.12, 5.0, &mut rng);
+    }
+    let n = w.mobs.iter().filter(|m| reg.animals[m.species].hostile).count();
+    assert!(n > 2, "wrathful nights are busier: {n}");
+}
+
+#[test]
+fn wardens_dissolve_at_dawn_and_never_save() {
+    let reg = base_reg();
+    let dir = tmp_dir("wardensave");
+    let mut w = World::new(21, dir.clone(), reg.clone());
+    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    let ti = reg.animal_id("base:thornling").unwrap();
+    let deer_i = reg.animal_id("base:deer").unwrap();
+    let y = w.surface_height(4, 4) as f32 + 1.0;
+    for (si, x) in [(ti, 4.5f32), (deer_i, 6.5)] {
+        let mut m = crate::mobs::Mob::new(si, Vec3::new(x, y, 4.5), 0.0);
+        m.health = reg.animals[si].health;
+        w.mobs.push(m);
+    }
+    // Never persisted.
+    w.save_modified();
+    let w2 = World::load_or_create(dir, reg.clone());
+    assert_eq!(w2.mobs.len(), 1, "only the deer survived the save");
+    assert_eq!(w2.mobs[0].species, deer_i);
+    // Dawn dissolve: full daylight on an open surface removes the warden.
+    let player = Vec3::new(5.0, y, 5.0);
+    let mut rng = 3u32;
+    w.tick_mobs(player, 1.0, true, 1.0 / 60.0, &mut rng);
+    assert!(
+        !w.mobs.iter().any(|m| reg.animals[m.species].hostile),
+        "warden dissolved in daylight"
+    );
+    assert!(
+        w.mobs.iter().any(|m| m.species == deer_i),
+        "the deer does not dissolve"
+    );
 }

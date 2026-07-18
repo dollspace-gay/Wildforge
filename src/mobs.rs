@@ -18,6 +18,94 @@ pub enum MobState {
     Idle,
     Wander,
     Flee,
+    /// Hostiles only: chase/attack the player.
+    Hunt,
+}
+
+/// Things a mob did this tick that the game loop must apply.
+pub enum MobEvent {
+    /// Contact damage to the player (half-hearts, attacker position).
+    HitPlayer(f32, Vec3),
+    /// A caster fired: projectile spawn.
+    Cast(Projectile),
+}
+
+/// A warden's bolt (thorn/ember/frost) — also the groundwork for bows.
+#[derive(Clone, Debug)]
+pub struct Projectile {
+    pub pos: Vec3,
+    pub vel: Vec3,
+    pub tile: u16,
+    pub damage: f32,
+    pub age: f32,
+}
+
+impl Projectile {
+    /// Returns false when spent (hit something or expired).
+    /// `hit_player` is set when it connects with the player.
+    pub fn tick(&mut self, world: &World, player: Vec3, dt: f32, hit_player: &mut bool) -> bool {
+        self.age += dt;
+        if self.age > 8.0 {
+            return false;
+        }
+        self.vel.y -= 3.0 * dt; // light arc
+        self.pos += self.vel * dt;
+        let b = world.get_block(
+            self.pos.x.floor() as i32,
+            self.pos.y.floor() as i32,
+            self.pos.z.floor() as i32,
+        );
+        if world.reg.is_solid(b) {
+            return false;
+        }
+        let d = self.pos - (player + Vec3::new(0.0, 0.9, 0.0));
+        if d.x.abs() < 0.5 && d.z.abs() < 0.5 && d.y.abs() < 1.1 {
+            *hit_player = true;
+            return false;
+        }
+        true
+    }
+
+    /// Small spinning sprite, drawn with the entity pipeline.
+    pub fn emit(&self, verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
+        let (tx, ty) = (self.tile as u32 % ATLAS_TILES, self.tile as u32 / ATLAS_TILES);
+        let ts = 1.0 / ATLAS_TILES as f32;
+        let inset = ts / 32.0;
+        let ang = self.age * 6.0;
+        let (sin, cos) = ang.sin_cos();
+        let h = 0.28;
+        for (dx, dz) in [(cos, sin), (-sin, cos)] {
+            for flip in [false, true] {
+                let base = verts.len() as u32;
+                let (u0, u1) = if flip {
+                    ((tx + 1) as f32 * ts - inset, tx as f32 * ts + inset)
+                } else {
+                    (tx as f32 * ts + inset, (tx + 1) as f32 * ts - inset)
+                };
+                let sgn = if flip { -1.0 } else { 1.0 };
+                let corners = [
+                    (-0.5 * h * sgn, -0.5 * h, u0),
+                    (0.5 * h * sgn, -0.5 * h, u1),
+                    (0.5 * h * sgn, 0.5 * h, u1),
+                    (-0.5 * h * sgn, 0.5 * h, u0),
+                ];
+                for (o, y, u) in corners {
+                    let v = if y < 0.0 {
+                        (ty + 1) as f32 * ts - inset
+                    } else {
+                        ty as f32 * ts + inset
+                    };
+                    verts.push(Vertex {
+                        pos: [self.pos.x + dx * o, self.pos.y + y, self.pos.z + dz * o],
+                        uv: [u, v],
+                        light: 1.0, // bolts glow faintly
+                        sky: 1.0,
+                    });
+                }
+                idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -37,6 +125,10 @@ pub struct Mob {
     pub hurt_flash: f32,
     pub on_ground: bool,
     hit_wall: bool,
+    attack_cd: f32,
+    cast_cd: f32,
+    /// Seconds spent out of aggro range while hunting (drops at 8).
+    lose_aggro: f32,
 }
 
 fn r01(rng: &mut u32) -> f32 {
@@ -59,19 +151,30 @@ impl Mob {
             hurt_flash: 0.0,
             on_ground: false,
             hit_wall: false,
+            attack_cd: 0.0,
+            cast_cd: 1.0,
+            lose_aggro: 0.0,
         }
     }
 
-    /// Take damage from an attacker at `from`: knockback + panic.
-    pub fn hurt(&mut self, dmg: f32, from: Vec3) {
+    /// Take damage from an attacker at `from`: knockback, then panic
+    /// (wildlife) or retaliation (wardens).
+    pub fn hurt(&mut self, def: &AnimalDef, dmg: f32, from: Vec3) {
         self.health -= dmg;
         self.hurt_flash = 0.35;
         let mut away = self.pos - from;
         away.y = 0.0;
         let dir = if away.length_squared() > 0.001 { away.normalize() } else { Vec3::Z };
-        self.vel += dir * 6.0 + Vec3::new(0.0, 4.5, 0.0);
-        self.state = MobState::Flee;
-        self.state_timer = 5.0;
+        let kb = if def.movement_float { 2.5 } else { 6.0 };
+        self.vel += dir * kb + Vec3::new(0.0, if def.movement_float { 1.0 } else { 4.5 }, 0.0);
+        if def.hostile {
+            self.state = MobState::Hunt;
+            self.state_timer = 10.0;
+            self.lose_aggro = 0.0;
+        } else {
+            self.state = MobState::Flee;
+            self.state_timer = 5.0;
+        }
         self.target = from;
     }
 
@@ -91,18 +194,36 @@ impl Mob {
         }
     }
 
-    pub fn tick(&mut self, world: &World, def: &AnimalDef, player: Vec3, dt: f32, rng: &mut u32) {
+    pub fn tick(
+        &mut self,
+        world: &World,
+        def: &AnimalDef,
+        player: Vec3,
+        attackable: bool,
+        dt: f32,
+        rng: &mut u32,
+        events: &mut Vec<MobEvent>,
+    ) {
         self.state_timer -= dt;
         self.hurt_flash = (self.hurt_flash - dt).max(0.0);
+        self.attack_cd = (self.attack_cd - dt).max(0.0);
+        self.cast_cd = (self.cast_cd - dt).max(0.0);
 
         // Skittish species bolt when the player closes in.
-        if def.flee_range > 0.0 && self.state != MobState::Flee {
+        if def.flee_range > 0.0 && !def.hostile && self.state != MobState::Flee {
             let mut d = player - self.pos;
             d.y = 0.0;
             if d.length_squared() < def.flee_range * def.flee_range {
                 self.state = MobState::Flee;
                 self.state_timer = 4.0;
                 self.target = player;
+            }
+        }
+        // Wardens take notice.
+        if def.hostile && attackable && self.state != MobState::Hunt {
+            if (player - self.pos).length_squared() < def.aggro_range * def.aggro_range {
+                self.state = MobState::Hunt;
+                self.lose_aggro = 0.0;
             }
         }
 
@@ -163,25 +284,92 @@ impl Mob {
                     wish = dir * def.speed * 1.6;
                 }
             }
+            MobState::Hunt => {
+                let mut to = player - self.pos;
+                let dist = to.length();
+                to.y = 0.0;
+                let dir = if to.length_squared() > 0.001 { to.normalize() } else { Vec3::Z };
+                self.yaw = dir.x.atan2(dir.z);
+                // Losing the player for ~8 s ends the hunt.
+                if !attackable || dist > def.aggro_range * 1.6 {
+                    self.lose_aggro += dt;
+                    if self.lose_aggro > 8.0 || !attackable {
+                        self.state = MobState::Idle;
+                        self.state_timer = 1.0;
+                    }
+                } else {
+                    self.lose_aggro = 0.0;
+                }
+                match &def.projectile {
+                    Some(pr) => {
+                        // Casters hold their range and lob bolts.
+                        if dist > 11.0 {
+                            wish = dir * def.speed;
+                        } else if dist < 5.0 {
+                            wish = -dir * def.speed * 0.8;
+                        }
+                        if attackable && dist < 14.0 && self.cast_cd <= 0.0 {
+                            self.cast_cd = pr.cooldown;
+                            let muzzle = self.pos + Vec3::new(0.0, def.height * 0.7, 0.0);
+                            let aim = (player + Vec3::new(0.0, 0.9, 0.0) - muzzle)
+                                .normalize_or_zero();
+                            events.push(MobEvent::Cast(Projectile {
+                                pos: muzzle + aim * 0.6,
+                                vel: aim * pr.speed,
+                                tile: pr.tile,
+                                damage: pr.damage,
+                                age: 0.0,
+                            }));
+                        }
+                    }
+                    None => {
+                        wish = dir * def.speed * 1.2;
+                        // Contact swing with a cooldown.
+                        let dy = player.y - self.pos.y;
+                        if attackable
+                            && dist < def.half_w + 0.9
+                            && dy.abs() < 2.0
+                            && self.attack_cd <= 0.0
+                        {
+                            self.attack_cd = 1.0;
+                            events.push(MobEvent::HitPlayer(def.attack, self.pos));
+                        }
+                    }
+                }
+            }
         }
 
         // Physics: accelerate toward wish, gravity/buoyancy, collide per axis.
-        let accel = if self.on_ground { 14.0 } else { 4.0 };
+        let accel = if def.movement_float || self.on_ground { 14.0 } else { 4.0 };
         let step = (accel * dt).min(1.0);
         self.vel.x += (wish.x - self.vel.x) * step;
         self.vel.z += (wish.z - self.vel.z) * step;
 
-        let feet = world.get_block(
-            self.pos.x.floor() as i32,
-            (self.pos.y + 0.3).floor() as i32,
-            self.pos.z.floor() as i32,
-        );
-        if world.reg.is_water(feet) {
-            // Bob to the surface rather than drowning.
-            self.vel.y += (2.0 - self.vel.y).min(20.0 * dt);
+        if def.movement_float {
+            // Wisps hover: seek a bobbing height above ground (or the
+            // player's eyes while hunting), no gravity at all.
+            let gy = world.surface_height(self.pos.x.floor() as i32, self.pos.z.floor() as i32);
+            let want_y = if self.state == MobState::Hunt {
+                player.y + 1.6
+            } else {
+                gy as f32 + 2.2
+            } + (self.anim_phase * 0.7).sin() * 0.3;
+            let vy = (want_y - self.pos.y).clamp(-2.5, 2.5);
+            self.vel.y += (vy - self.vel.y) * step;
+            self.anim_phase += dt * 2.0; // wisps always shimmer
         } else {
-            self.vel.y -= GRAVITY * dt;
-            self.vel.y = self.vel.y.max(-TERMINAL);
+            let feet = world.get_block(
+                self.pos.x.floor() as i32,
+                (self.pos.y + 0.3).floor() as i32,
+                self.pos.z.floor() as i32,
+            );
+            if world.reg.is_water(feet) {
+                // Bob to the surface rather than drowning.
+                self.vel.y += (2.0 - self.vel.y).min(20.0 * dt);
+            } else {
+                self.vel.y -= GRAVITY * dt;
+                self.vel.y = self.vel.y.max(-TERMINAL);
+            }
         }
 
         let d = self.vel * dt;
@@ -192,7 +380,7 @@ impl Mob {
         self.move_axis(world, def, Vec3::new(0.0, d.y, 0.0));
 
         // Auto-jump a 1-block step when walking into a wall.
-        if self.hit_wall && self.on_ground && wish.length_squared() > 0.01 {
+        if !def.movement_float && self.hit_wall && self.on_ground && wish.length_squared() > 0.01 {
             self.vel.y = JUMP;
         }
 
@@ -284,6 +472,8 @@ impl Mob {
     /// Append this mob's boxy model to the entity mesh.
     pub fn emit(&self, reg: &Registry, lum: (f32, f32), verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
         let def = &reg.animals[self.species];
+        // Emissive wardens are their own lantern.
+        let lum = if def.emissive { (1.0, lum.1) } else { lum };
         // Models face -Z; motion forward is (sin yaw, cos yaw) = +Z at 0,
         // so render rotated by yaw + PI to keep the head leading.
         let (syaw, cyaw) = (self.yaw + std::f32::consts::PI).sin_cos();

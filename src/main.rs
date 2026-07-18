@@ -153,6 +153,9 @@ struct Game {
     water_timer: f32,
     creative: bool,
     flying: bool,
+    /// Death screen subtitle: slain by a warden, not a fall.
+    killed_by_wild: bool,
+    prev_ire_tier: usize,
     last_space: f32,
     time_abs: f32,
     search: String,
@@ -373,6 +376,8 @@ impl Game {
             water_timer: 0.0,
             creative: false,
             flying: false,
+            killed_by_wild: false,
+            prev_ire_tier: 0,
             last_space: -9.0,
             time_abs: 0.0,
             search: String::new(),
@@ -509,6 +514,8 @@ impl Game {
         self.items.clear();
         self.breaking = None;
         self.health = MAX_HEALTH;
+        self.killed_by_wild = false;
+        self.prev_ire_tier = 0; // synced after world load below
         self.hunger = 20.0;
         self.nutrition = [0.0; 5];
         self.eating = 0.0;
@@ -521,7 +528,7 @@ impl Game {
         self.fall_start = None;
         self.time_of_day = 0.3;
         self.hotbar_sel = 0;
-        let (_, mode) = world::read_world_meta(&PathBuf::from("saves").join(name));
+        let (_, mode, _) = world::read_world_meta(&PathBuf::from("saves").join(name));
         self.creative = mode == "creative";
         self.flying = false;
         self.in_world = true;
@@ -534,6 +541,7 @@ impl Game {
                 }
             }
         }
+        self.prev_ire_tier = self.world.ire_tier();
         self.scripts.load_kv(&PathBuf::from("saves").join(name));
         if self.scripts.wants("on_world_start") {
             self.scripts.dispatch(&self.world, "on_world_start", (name.to_string(),));
@@ -565,6 +573,33 @@ impl Game {
                     let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
                     let y = self.world.surface_height(x, z);
                     self.world.set_block(x, y + 1, z, torch);
+                }
+            }
+        }
+        // Dev: WILDFORGE_IRE=N forces the wild's ire (spawn testing).
+        if let Ok(v) = std::env::var("WILDFORGE_IRE") {
+            if let Ok(v) = v.parse::<f32>() {
+                self.world.ire = v.clamp(0.0, 100.0);
+                self.prev_ire_tier = self.world.ire_tier();
+            }
+        }
+        // Dev: a row of wardens near spawn (rendering/combat verification).
+        if std::env::var("WILDFORGE_DEMO_WARDENS").is_ok() {
+            for (i, name) in ["base:thornling", "base:dryad", "base:emberkin", "base:gravelurk", "base:wrathwood"]
+                .iter()
+                .enumerate()
+            {
+                if let Some(si) = self.reg.animal_id(name) {
+                    let x = spawn.x as i32 - 4 + i as i32 * 3;
+                    let z = spawn.z as i32 - 7;
+                    let y = self.world.surface_height(x, z) + 1;
+                    let mut m = mobs::Mob::new(
+                        si,
+                        Vec3::new(x as f32 + 0.5, y as f32 + 0.05, z as f32 + 0.5),
+                        0.0,
+                    );
+                    m.health = self.reg.animals[si].health;
+                    self.world.mobs.push(m);
                 }
             }
         }
@@ -642,7 +677,7 @@ impl Game {
     fn new_world_mode(&mut self, mode: &str) {
         let name = next_world_name(std::path::Path::new("saves"), &self.worlds);
         let seed = (self.rand01() * u32::MAX as f32) as u32;
-        world::write_world_meta(&PathBuf::from("saves").join(&name), seed, mode);
+        world::write_world_meta(&PathBuf::from("saves").join(&name), seed, mode, 0.0);
         self.refresh_worlds();
         self.start_world(&name);
     }
@@ -807,6 +842,23 @@ impl Game {
             self.right_held = false;
             self.breaking = None;
         }
+    }
+
+    /// Damage from a warden: knockback away from the attacker, and the
+    /// death screen knows who to blame.
+    fn hurt_player_from_wild(&mut self, amount: f32, from: Vec3) {
+        if self.creative || self.screen == Screen::Dead {
+            return;
+        }
+        let mut away = self.player.pos - from;
+        away.y = 0.0;
+        if away.length_squared() > 0.001 {
+            let dir = away.normalize();
+            self.player.vel += dir * 6.0 + Vec3::new(0.0, 3.5, 0.0);
+        }
+        self.killed_by_wild = true;
+        self.damage(amount);
+        self.killed_by_wild = self.health <= 0.0;
     }
 
     fn damage(&mut self, amount: f32) {
@@ -976,6 +1028,10 @@ impl Game {
             }
             let m = self.world.mobs.swap_remove(i);
             let def = &reg.animals[m.species];
+            if !def.hostile {
+                // The wild counts its dead — wardens are not individuals.
+                self.world.add_ire(2.0);
+            }
             self.sfx(Sfx::MobDeath(def.sound_pitch));
             for (item, min, max) in &def.drops {
                 let n = min + (self.rand01() * (*max - *min + 1) as f32) as u32;
@@ -1022,9 +1078,11 @@ impl Game {
                 if self.attack_cooldown <= 0.0 {
                     self.attack_cooldown = 0.35;
                     let dmg = held.map(|i| reg.item(i).damage).unwrap_or(1.0);
-                    let pitch = reg.animals[self.world.mobs[mi].species].sound_pitch;
+                    let sp = self.world.mobs[mi].species;
+                    let pitch = reg.animals[sp].sound_pitch;
                     let from = self.camera.pos;
-                    self.world.mobs[mi].hurt(dmg, from);
+                    let def = reg.animals[sp].clone();
+                    self.world.mobs[mi].hurt(&def, dmg, from);
                     self.sfx(Sfx::MobHurt(pitch));
                     self.hunger = (self.hunger - 0.01).max(0.0);
                     if !self.creative {
@@ -1067,6 +1125,8 @@ impl Game {
                         self.breaking = None;
                         if allow {
                             self.hunger = (self.hunger - 0.008).max(0.0);
+                            let cost = self.world.ire_for_block(b);
+                            self.world.add_ire(cost);
                             self.world.set_block(target.0, target.1, target.2, AIR);
                             self.sfx(Sfx::Break(self.break_mat(b)));
                             if !self.creative {
@@ -1205,6 +1265,10 @@ impl Game {
                             || self.inventory.take_one(self.hotbar_sel).is_some();
                         if allow && consumed {
                             self.world.set_block(x, y, z, block);
+                            if bd.crop_next.is_some() {
+                                // The wild notices things growing where you walk.
+                                self.world.plant_ire(0.2);
+                            }
                             self.action_cooldown = 0.22;
                             self.sfx(Sfx::Place);
                         }
@@ -1497,6 +1561,18 @@ impl Game {
             self.attack_cooldown = (self.attack_cooldown - dt).max(0.0);
             self.scroll_cooldown = (self.scroll_cooldown - dt).max(0.0);
             self.time_of_day = (self.time_of_day + dt / DAY_LENGTH) % 1.0;
+            self.world.tick_ire(dt / DAY_LENGTH);
+            let tier = self.world.ire_tier();
+            if tier != self.prev_ire_tier {
+                self.toast(
+                    if tier > self.prev_ire_tier {
+                        "The wild stirs against you.".to_string()
+                    } else {
+                        "The wild settles.".to_string()
+                    },
+                );
+                self.prev_ire_tier = tier;
+            }
         }
 
         if self.in_world {
@@ -1509,9 +1585,30 @@ impl Game {
                     self.world.tick_water(512);
                 }
                 self.world.tick_entities(dt);
+                let sun = (self.time_of_day * std::f32::consts::TAU).sin();
+                let dl = (sun * 2.5 + 0.5).clamp(0.12, 1.0);
+                let attackable = !self.creative && self.health > 0.0;
                 let mut r = self.rng;
-                self.world.tick_mobs(self.player.pos, dt, &mut r);
+                let events =
+                    self.world.tick_mobs(self.player.pos, dl, attackable, dt, &mut r);
+                self.world
+                    .tick_hostile_spawns(self.player.pos, self.spawn_point, dl, dt, &mut r);
                 self.rng = r;
+                for ev in events {
+                    match ev {
+                        mobs::MobEvent::HitPlayer(dmg, from) => {
+                            self.hurt_player_from_wild(dmg, from);
+                        }
+                        mobs::MobEvent::Cast(p) => {
+                            self.sfx(Sfx::Bolt(1.2));
+                            self.world.projectiles.push(p);
+                        }
+                    }
+                }
+                let bolt_dmg = self.world.tick_projectiles(self.player.pos, dt);
+                if bolt_dmg > 0.0 && attackable {
+                    self.hurt_player_from_wild(bolt_dmg, self.player.pos);
+                }
                 self.sweep_dead_mobs();
                 self.tick_accum2 += dt;
                 if self.tick_accum2 >= 0.5 {
@@ -1656,6 +1753,9 @@ impl Game {
         for m in &self.world.mobs {
             let lum = sample(&self.world, m.pos);
             m.emit(&self.reg, lum, &mut entity_verts, &mut entity_idx);
+        }
+        for p in &self.world.projectiles {
+            p.emit(&mut entity_verts, &mut entity_idx);
         }
         let mut overlay_verts = Vec::new();
         let mut overlay_idx = Vec::new();
@@ -2247,6 +2347,24 @@ impl Game {
                 }
                 let bonus = (self.max_health() - MAX_HEALTH) as i32 / 2;
                 ui.text_shadow(p0x - 190.0, p0y + 134.0, 1.5, &format!("MAX HEALTH +{bonus}"), [1.0; 4]);
+                // The wild's ire: tier word + vine meter.
+                let tier = self.world.ire_tier();
+                let tier_col = [
+                    [0.45, 0.75, 0.4, 1.0],
+                    [0.8, 0.75, 0.35, 1.0],
+                    [0.9, 0.55, 0.25, 1.0],
+                    [0.9, 0.3, 0.25, 1.0],
+                ][tier];
+                ui.text_shadow(p0x - 190.0, p0y + 162.0, 1.5, "THE WILD", [1.0; 4]);
+                ui.rect(p0x - 130.0, p0y + 162.0, 100.0, 10.0, [0.12, 0.12, 0.12, 0.9]);
+                ui.rect(
+                    p0x - 130.0,
+                    p0y + 162.0,
+                    self.world.ire,
+                    10.0,
+                    tier_col,
+                );
+                ui.text_shadow(p0x - 24.0, p0y + 162.0, 1.5, world::IRE_TIERS[tier], tier_col);
                 // Craft grid, arrow, result.
                 let n2 = self.craft_size * self.craft_size;
                 for i in 0..n2 {
@@ -2288,6 +2406,11 @@ impl Game {
                 let title = "YOU DIED";
                 let tw = UiBatch::text_width(5.0, title);
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 120.0, 5.0, title, [1.0, 0.85, 0.85, 1.0]);
+                if self.killed_by_wild {
+                    let sub = "RECLAIMED BY THE WILD";
+                    let sw = UiBatch::text_width(2.0, sub);
+                    ui.text_shadow((w - sw) / 2.0, h / 2.0 - 60.0, 2.0, sub, [0.8, 0.95, 0.75, 1.0]);
+                }
                 let r = self.menu_button_rect(0);
                 let hover = self.hit(r);
                 let bg = if hover { [0.5, 0.5, 0.5, 0.95] } else { [0.25, 0.25, 0.25, 0.95] };
@@ -2681,7 +2804,7 @@ impl Game {
                     self.creative = !self.creative;
                     self.flying = false;
                     let mode = if self.creative { "creative" } else { "survival" };
-                    world::write_world_meta(&self.world.save_dir_for_saving(), self.world.seed, mode);
+                    world::write_world_meta(&self.world.save_dir_for_saving(), self.world.seed, mode, self.world.ire);
                     if self.scripts.wants("on_mode_change") {
                         self.scripts.dispatch(&self.world, "on_mode_change", (mode.to_string(),));
                         self.apply_script_cmds();
