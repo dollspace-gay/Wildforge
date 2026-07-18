@@ -134,8 +134,11 @@ pub struct World {
     /// Host mode: record block edits for broadcasting.
     pub log_edits: bool,
     pub edit_log: Vec<(i32, i32, i32, BlockId)>,
-    /// (projectile owner, item) — guests' recovered arrows, etc.
-    pub pending_gives: Vec<(u32, crate::registry::ItemId)>,
+    /// (guest id, stack) owed over the wire: mining drops, kill loot,
+    /// recovered arrows, brush finds — full stacks so durability rides.
+    pub pending_gives: Vec<(u32, ItemStack)>,
+    /// Next stable mob id (host side; ids exist for the wire).
+    next_mob_id: u32,
 }
 
 /// Ire tier names, index = tier.
@@ -170,6 +173,7 @@ impl World {
             log_edits: false,
             edit_log: Vec::new(),
             pending_gives: Vec::new(),
+            next_mob_id: 1,
         }
     }
 
@@ -631,6 +635,13 @@ impl World {
         let player = players.first().map(|p| p.pos).unwrap_or(glam::Vec3::ZERO);
         let reg = self.reg.clone();
         let mut events = Vec::new();
+        // Stamp stable ids on anything new (spawns, births, loaded saves).
+        for m in &mut self.mobs {
+            if m.id == 0 {
+                m.id = self.next_mob_id;
+                self.next_mob_id += 1;
+            }
+        }
         let mut mobs = std::mem::take(&mut self.mobs);
         for m in &mut mobs {
             // Frozen until its chunk streams in: an unloaded chunk reads as
@@ -770,7 +781,8 @@ impl World {
                 if let Some(it) = p.drop_item {
                     if p.owner != 0 {
                         // A guest's arrow: hand it back over the wire.
-                        self.pending_gives.push((p.owner, it));
+                        let stack = ItemStack::new(&self.reg, it, 1);
+                        self.pending_gives.push((p.owner, stack));
                     } else {
                         let back = p.pos - p.vel * dt * 2.0;
                         drops.push((

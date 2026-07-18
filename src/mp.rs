@@ -17,13 +17,27 @@ pub struct Guest {
     pub name: String,
     pub pos: Vec3,
     pub yaw: f32,
-    /// Cursor stack while a container is open (host-side, authoritative).
-    pub held: Option<ItemStack>,
     pub container: Option<(i32, i32, i32)>,
     pub sleeping: bool,
     sent_chunks: HashSet<(i32, i32)>,
     edits: u32,
     edit_window: f32,
+    /// Movement packets arrive at ~20 Hz; rendering interpolates from
+    /// here toward (pos, yaw) so guests glide instead of stutter.
+    render_from: (Vec3, f32),
+    net_age: f32,
+    net_interval: f32,
+}
+
+impl Guest {
+    /// Position/yaw to draw this guest at (the sim uses the latest).
+    pub fn render_pos(&self) -> (Vec3, f32) {
+        let t = (self.net_age / self.net_interval.max(0.001)).clamp(0.0, 1.0);
+        (
+            self.render_from.0.lerp(self.pos, t),
+            crate::mobs::lerp_yaw(self.render_from.1, self.yaw, t),
+        )
+    }
 }
 
 /// Presentation the host player should see.
@@ -42,6 +56,7 @@ pub struct HostSession {
     pub world_name: String,
     snapshot_timer: f32,
     state_timer: f32,
+    container_timer: f32,
 }
 
 const REACH: f32 = 7.0;
@@ -61,6 +76,7 @@ impl HostSession {
             world_name,
             snapshot_timer: 0.0,
             state_timer: 0.0,
+            container_timer: 0.0,
         })
     }
 
@@ -119,13 +135,14 @@ impl HostSession {
             }
         }
 
-        // Rate-limit windows.
+        // Rate-limit windows + movement interpolation clocks.
         for g in self.guests.values_mut() {
             g.edit_window += dt;
             if g.edit_window >= 1.0 {
                 g.edit_window = 0.0;
                 g.edits = 0;
             }
+            g.net_age += dt;
         }
 
         // Authoritative block edits out.
@@ -134,9 +151,13 @@ impl HostSession {
                 self.net.broadcast(&S2C::BlockSet { x, y, z, id: b.0 });
             }
         }
-        // Items owed to guests (arrow recovery, mining, mob drops).
-        for (owner, item) in std::mem::take(&mut server.world.pending_gives) {
-            self.net.send(owner, &S2C::Give { item: item.0, count: 1, durability: 0 });
+        // Items owed to guests (arrow recovery, mining, mob drops,
+        // brush finds) — full stacks so durability crosses the wire.
+        for (owner, s) in std::mem::take(&mut server.world.pending_gives) {
+            self.net.send(
+                owner,
+                &S2C::Give { item: s.item.0, count: s.count, durability: s.durability },
+            );
         }
 
         // Chunk streaming toward each guest.
@@ -192,11 +213,13 @@ impl HostSession {
                 .mobs
                 .iter()
                 .map(|m| MobSnap {
+                    id: m.id,
                     species: m.species as u16,
                     pos: m.pos,
                     yaw: m.yaw,
                     growth: m.growth,
                     hurt: m.hurt_flash,
+                    fed: m.fed || m.breed_cd > 0.0 || m.growth < 1.0,
                 })
                 .collect();
             self.net.broadcast_datagram(&S2C::Mobs(mobs));
@@ -204,9 +227,23 @@ impl HostSession {
                 .world
                 .projectiles
                 .iter()
-                .map(|p| net::BoltSnap { pos: p.pos, tile: p.tile, age: p.age })
+                .map(|p| net::BoltSnap { pos: p.pos, vel: p.vel, tile: p.tile, age: p.age })
                 .collect();
             self.net.broadcast_datagram(&S2C::Bolts(bolts));
+        }
+        // Open containers stay live: furnaces smelt and other players
+        // shuffle stacks while a guest is looking at them.
+        self.container_timer += dt;
+        if self.container_timer >= 0.5 {
+            self.container_timer = 0.0;
+            let open: Vec<(u32, (i32, i32, i32))> = self
+                .guests
+                .iter()
+                .filter_map(|(id, g)| g.container.map(|c| (*id, c)))
+                .collect();
+            for (id, pos) in open {
+                self.send_container(server, id, pos);
+            }
         }
         self.state_timer += dt;
         if self.state_timer >= 1.0 {
@@ -280,12 +317,14 @@ impl HostSession {
                 name: name.clone(),
                 pos: Vec3::new(0.5, 80.0, 0.5),
                 yaw: 0.0,
-                held: None,
                 container: None,
                 sleeping: false,
                 sent_chunks: HashSet::new(),
                 edits: 0,
                 edit_window: 0.0,
+                render_from: (Vec3::new(0.5, 80.0, 0.5), 0.0),
+                net_age: 0.0,
+                net_interval: 0.05,
             },
         );
         fx.push(HostFx::Joined(name));
@@ -296,6 +335,9 @@ impl HostSession {
         match msg {
             C2S::Hello { .. } | C2S::Bye => {}
             C2S::Move { pos, yaw } => {
+                guest.render_from = guest.render_pos();
+                guest.net_interval = guest.net_age.clamp(0.03, 0.3);
+                guest.net_age = 0.0;
                 guest.pos = pos;
                 guest.yaw = yaw;
             }
@@ -311,9 +353,8 @@ impl HostSession {
                 }
                 // Drops go straight to the breaker over the wire.
                 if let Some((item, n)) = server.world.reg.drops_for(b, None) {
-                    for _ in 0..n {
-                        server.world.pending_gives.push((id, item));
-                    }
+                    let stack = ItemStack::new(&server.world.reg, item, n);
+                    server.world.pending_gives.push((id, stack));
                 }
                 let cost = server.world.ire_for_block(b);
                 server.world.add_ire(cost);
@@ -332,11 +373,12 @@ impl HostSession {
                 guest.edits += 1;
                 server.world.set_block(x, y, z, crate::registry::BlockId(block));
             }
-            C2S::AttackMob { index, dmg, from } => {
-                let i = index as usize;
+            C2S::AttackMob { id: mob_id, dmg, from } => {
+                // Stable ids: snapshots lag the sim, so an index would
+                // race deaths/spawns and strike the wrong creature.
                 let dmg = dmg.clamp(0.0, 16.0);
                 let gpos = guest.pos;
-                if let Some(m) = server.world.mobs.get_mut(i) {
+                if let Some(m) = server.world.mobs.iter_mut().find(|m| m.id == mob_id) {
                     if (m.pos - gpos).length() <= REACH {
                         let def = server.world.reg.animals[m.species].clone();
                         m.hurt(&def, dmg, from);
@@ -345,6 +387,38 @@ impl HostSession {
                             server.world.add_ire(2.0);
                         }
                     }
+                }
+            }
+            C2S::FeedMob { id: mob_id } => {
+                let gpos = guest.pos;
+                if let Some(m) = server.world.mobs.iter_mut().find(|m| m.id == mob_id) {
+                    let def = &server.world.reg.animals[m.species];
+                    if (m.pos - gpos).length() <= REACH
+                        && !def.hostile
+                        && def.breed_food.is_some()
+                        && m.growth >= 1.0
+                        && m.breed_cd <= 0.0
+                        && !m.fed
+                    {
+                        m.fed = true;
+                        m.calm = 30.0;
+                    }
+                }
+            }
+            C2S::BrushBlock { x, y, z } => {
+                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                if (p - guest.pos).length() > REACH {
+                    return;
+                }
+                let b = server.world.get_block(x, y, z);
+                if server.world.reg.block(b).brush.is_none() {
+                    return;
+                }
+                let mut r = server.rng;
+                let found = server.world.brush_block(x, y, z, &mut r);
+                server.rng = r;
+                if let Some(stack) = found {
+                    server.world.pending_gives.push((id, stack));
                 }
             }
             C2S::FireArrow { pos, vel, dmg, tile, recover } => {
@@ -394,39 +468,24 @@ impl HostSession {
                 }
                 self.send_container(server, id, (x, y, z));
             }
-            C2S::ContainerClick { x, y, z, slot, right } => {
-                self.container_click(server, id, (x, y, z), slot as usize, right);
+            C2S::ContainerClick { x, y, z, slot, right, held } => {
+                // The cursor is guest-owned (trusted-friends model, like
+                // the guest's whole inventory); a click is a transaction
+                // between it and the host-owned container.
+                let held = held.and_then(|h| {
+                    ((h.item as usize) < server.world.reg.items.len()
+                        && h.count > 0
+                        && h.count <= 99)
+                        .then_some(ItemStack {
+                            item: crate::registry::ItemId(h.item),
+                            count: h.count,
+                            durability: h.durability,
+                        })
+                });
+                self.container_click(server, id, (x, y, z), slot as usize, right, held);
             }
-            C2S::TakeHeld => {
-                if let Some(g) = self.guests.get_mut(&id) {
-                    if let Some(h) = g.held.take() {
-                        for _ in 0..h.count {
-                            server.world.pending_gives.push((id, h.item));
-                        }
-                        // Durability rides only single stacks; tools are 1x.
-                        if let Some(pos) = g.container {
-                            self.send_container(server, id, pos);
-                        }
-                    }
-                }
-            }
-            C2S::OfferHeld { item, count, durability } => {
-                if let Some(g) = self.guests.get_mut(&id) {
-                    if g.held.is_none()
-                        && (item as usize) < server.world.reg.items.len()
-                        && count > 0
-                        && count <= 64
-                    {
-                        g.held = Some(ItemStack {
-                            item: crate::registry::ItemId(item),
-                            count,
-                            durability,
-                        });
-                        if let Some(pos) = g.container {
-                            self.send_container(server, id, pos);
-                        }
-                    }
-                }
+            C2S::CloseContainer => {
+                guest.container = None;
             }
             C2S::SleepRequest => {
                 guest.sleeping = true;
@@ -443,6 +502,8 @@ impl HostSession {
         }
     }
 
+    /// Apply one guest click with the cursor stack it sent, exactly as
+    /// local play would, then echo the container and the new cursor.
     fn container_click(
         &mut self,
         server: &mut Server,
@@ -450,29 +511,33 @@ impl HostSession {
         pos: (i32, i32, i32),
         slot: usize,
         right: bool,
+        held: Option<ItemStack>,
     ) {
         let reg = server.world.reg.clone();
-        let Some(guest) = self.guests.get_mut(&id) else { return };
+        if self.guests.get(&id).is_none_or(|g| g.container != Some(pos)) {
+            return;
+        }
         let Some(entity) = server.world.block_entities.get_mut(&pos) else { return };
+        let mut held = held;
         match entity {
             BlockEntity::Chest(c) => {
                 if slot < c.slots.len() {
-                    let (ns, nh) = click_stack(&reg, c.slots[slot], guest.held, right);
+                    let (ns, nh) = click_stack(&reg, c.slots[slot], held, right);
                     c.slots[slot] = ns;
-                    guest.held = nh;
+                    held = nh;
                 }
             }
             BlockEntity::Offering(o) => {
                 if slot < o.slots.len() {
-                    let (ns, nh) = click_stack(&reg, o.slots[slot], guest.held, right);
+                    let (ns, nh) = click_stack(&reg, o.slots[slot], held, right);
                     o.slots[slot] = ns;
-                    guest.held = nh;
+                    held = nh;
                 }
             }
             BlockEntity::Furnace(f) => match slot {
                 0 | 1 => {
                     let cur = if slot == 0 { f.input } else { f.fuel };
-                    let (ns, nh) = click_stack(&reg, cur, guest.held, right);
+                    let (ns, nh) = click_stack(&reg, cur, held, right);
                     if slot == 0 {
                         if f.input.map(|s| s.item) != ns.map(|s| s.item) {
                             f.progress = 0.0;
@@ -481,21 +546,21 @@ impl HostSession {
                     } else {
                         f.fuel = ns;
                     }
-                    guest.held = nh;
+                    held = nh;
                 }
                 _ => {
+                    // Output: take-only, merging into the cursor.
                     if let Some(out) = f.output {
-                        match guest.held {
+                        match held {
                             None => {
-                                guest.held = Some(out);
+                                held = Some(out);
                                 f.output = None;
                             }
                             Some(h)
                                 if h.item == out.item
                                     && h.count + out.count <= reg.item(h.item).max_stack =>
                             {
-                                guest.held =
-                                    Some(ItemStack { count: h.count + out.count, ..h });
+                                held = Some(ItemStack { count: h.count + out.count, ..h });
                                 f.output = None;
                             }
                             _ => {}
@@ -504,6 +569,9 @@ impl HostSession {
                 }
             },
         }
+        let snap = held
+            .map(|s| StackSnap { item: s.item.0, count: s.count, durability: s.durability });
+        self.net.send(id, &S2C::HeldResult(snap));
         self.send_container(server, id, pos);
     }
 
@@ -519,11 +587,7 @@ impl HostSession {
             }
             BlockEntity::Offering(o) => (2, o.slots.iter().map(snap).collect()),
         };
-        let held = self.guests.get(&id).and_then(|g| snap(&g.held));
-        self.net.send(
-            id,
-            &S2C::Container { x: pos.0, y: pos.1, z: pos.2, kind, slots, held },
-        );
+        self.net.send(id, &S2C::Container { x: pos.0, y: pos.1, z: pos.2, kind, slots });
     }
 }
 

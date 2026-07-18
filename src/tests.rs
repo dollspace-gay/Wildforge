@@ -2975,11 +2975,22 @@ fn server_ticks_at_fixed_rate_and_runs_the_world() {
 fn net_protocol_round_trips() {
     use crate::net::{C2S, S2C, decode, encode};
     let c2s = [
-        C2S::Hello { protocol: 1, name: "doll".into(), content_hash: 42 },
+        C2S::Hello { protocol: 2, name: "doll".into(), content_hash: 42 },
         C2S::Move { pos: Vec3::new(1.5, 80.0, -3.5), yaw: 1.2 },
         C2S::Break { x: 1, y: 2, z: 3 },
         C2S::Place { x: -9, y: 70, z: 4, block: 7 },
-        C2S::AttackMob { index: 3, dmg: 8.0, from: Vec3::ZERO },
+        C2S::AttackMob { id: 3, dmg: 8.0, from: Vec3::ZERO },
+        C2S::FeedMob { id: 12 },
+        C2S::BrushBlock { x: 4, y: 30, z: -2 },
+        C2S::ContainerClick {
+            x: 1,
+            y: 2,
+            z: 3,
+            slot: 4,
+            right: true,
+            held: Some(crate::net::StackSnap { item: 9, count: 3, durability: 17 }),
+        },
+        C2S::CloseContainer,
         C2S::Chat("hello wild".into()),
         C2S::SleepRequest,
     ];
@@ -2995,11 +3006,45 @@ fn net_protocol_round_trips() {
         S2C::Chat { from: "a".into(), msg: "b".into() },
         S2C::Sleep { sleeping: 1, present: 3 },
         S2C::Chunk { x: 0, z: 0, rle: vec![1, 2, 3] },
+        S2C::HeldResult(Some(crate::net::StackSnap { item: 2, count: 1, durability: 40 })),
+        S2C::Mobs(vec![crate::net::MobSnap {
+            id: 5,
+            species: 1,
+            pos: Vec3::new(1.0, 2.0, 3.0),
+            yaw: 0.5,
+            growth: 1.0,
+            hurt: 0.0,
+            fed: true,
+        }]),
     ];
     for m in &s2c {
         let back: S2C = decode(&encode(m)).expect("s2c decodes");
         assert_eq!(format!("{m:?}"), format!("{back:?}"));
     }
+}
+
+#[test]
+fn mob_ids_stamped_unique_and_yaw_lerps_short_arc() {
+    // Interpolation turns the short way around the circle.
+    let y = crate::mobs::lerp_yaw(0.1, std::f32::consts::TAU - 0.1, 0.5);
+    assert!(y.abs() < 0.01 || (y - std::f32::consts::TAU).abs() < 0.01, "short arc, got {y}");
+
+    let reg = base_reg();
+    let mut w = test_world_with("mobids", reg.clone());
+    let wild = reg.animals.iter().position(|a| !a.hostile).expect("wildlife exists");
+    let sy = w.surface_height(4, 4) as f32 + 1.0;
+    for i in 0..3 {
+        let mut m = crate::mobs::Mob::new(wild, Vec3::new(4.5 + i as f32, sy, 4.5), 0.0);
+        m.health = 5.0;
+        w.mobs.push(m);
+    }
+    let mut rng = 1u32;
+    w.tick_mobs(&[], 1.0, 0.05, &mut rng);
+    assert!(w.mobs.iter().all(|m| m.id > 0), "every mob stamped with an id");
+    let mut ids: Vec<u32> = w.mobs.iter().map(|m| m.id).collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), w.mobs.len(), "ids unique");
 }
 
 #[test]
@@ -3105,6 +3150,63 @@ fn loopback_join_stream_and_edit() {
         far_block,
         "beyond reach: request rejected"
     );
+
+    // Containers are transactional: a click carries the guest's cursor,
+    // the host applies it and echoes both halves. A worn tool keeps its
+    // durability through the round trip (the old flow repaired it).
+    let chest = reg.block_id("base:chest").expect("chest exists");
+    let sword = reg.item_id("base:bronze_sword").expect("sword exists");
+    let cy = sim.world.surface_height(8, 8) + 1;
+    sim.world.set_block(10, cy, 8, chest);
+    client.send(&C2S::OpenContainer { x: 10, y: cy, z: 8 });
+    let mut opened = false;
+    for _ in 0..100 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        for msg in client.poll() {
+            if matches!(msg, S2C::Container { x: 10, kind: 0, .. }) {
+                opened = true;
+            }
+        }
+        if opened {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(opened, "chest opened over the wire");
+    // Deposit a worn sword into slot 2...
+    client.send(&C2S::ContainerClick {
+        x: 10,
+        y: cy,
+        z: 8,
+        slot: 2,
+        right: false,
+        held: Some(crate::net::StackSnap { item: sword.0, count: 1, durability: 7 }),
+    });
+    // ...then immediately pick it back up.
+    client.send(&C2S::ContainerClick { x: 10, y: cy, z: 8, slot: 2, right: false, held: None });
+    let mut cursor_back = None;
+    for _ in 0..100 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        for msg in client.poll() {
+            if let S2C::HeldResult(Some(s)) = msg {
+                cursor_back = Some(s);
+            }
+        }
+        if cursor_back.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let s = cursor_back.expect("cursor echoed back");
+    assert_eq!(s.item, sword.0, "same sword returns");
+    assert_eq!(s.durability, 7, "worn stays worn across the wire");
+    if let Some(crate::world::BlockEntity::Chest(c)) =
+        sim.world.block_entities.get(&(10, cy, 8))
+    {
+        assert!(c.slots[2].is_none(), "host chest slot emptied again");
+    } else {
+        panic!("host chest entity exists");
+    }
 
     // Sleep vote: host asleep + guest asleep = dawn.
     sim.time_of_day = 0.75;

@@ -87,6 +87,24 @@ fn whoami() -> String {
         .collect()
 }
 
+/// One snapshot-smoothing span: render glides from -> to over the
+/// measured packet interval instead of snapping at 20 Hz.
+struct Lerp {
+    from: Vec3,
+    to: Vec3,
+    from_yaw: f32,
+    to_yaw: f32,
+    /// Walk-cycle accumulator (mobs), fed by apparent speed — survives
+    /// the snapshot rebuild so legs don't snap mid-stride.
+    phase: f32,
+}
+
+impl Lerp {
+    fn at(&self, t: f32) -> (Vec3, f32) {
+        (self.from.lerp(self.to, t), mobs::lerp_yaw(self.from_yaw, self.to_yaw, t))
+    }
+}
+
 /// Guest-side connection state.
 struct Remote {
     client: net::Client,
@@ -97,10 +115,18 @@ struct Remote {
     item_map: Vec<Option<ItemId>>,
     /// Local block id -> host id (for Place).
     host_block: std::collections::HashMap<u16, u16>,
-    /// id -> (name, pos, yaw) of every other player.
+    /// id -> (name, pos, yaw) of every other player (render state).
     players: std::collections::HashMap<u32, (String, Vec3, f32)>,
     names: std::collections::HashMap<u32, String>,
     sleeping: bool,
+    /// Interpolation spans keyed by player / mob id, plus the shared
+    /// clocks (age since last snapshot, measured snapshot interval).
+    player_lerp: std::collections::HashMap<u32, Lerp>,
+    player_age: f32,
+    player_interval: f32,
+    mob_lerp: std::collections::HashMap<u32, Lerp>,
+    mob_age: f32,
+    mob_interval: f32,
 }
 
 struct Game {
@@ -963,6 +989,12 @@ impl Game {
         }
         self.bow_draw = 0.0; // opening any screen relaxes the draw
 
+        // Leaving a container tells the host to stop streaming it.
+        if matches!(self.screen, Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_)) {
+            if let Some(r) = &self.remote {
+                r.client.send(&net::C2S::CloseContainer);
+            }
+        }
         // Leaving the inventory returns the cursor-held stack and craft grid.
         if self.screen == Screen::Inventory || matches!(self.screen, Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_)) {
             let mut back: Vec<ItemStack> = self.held_stack.take().into_iter().collect();
@@ -1008,6 +1040,12 @@ impl Game {
                     players: Default::default(),
                     names: Default::default(),
                     sleeping: false,
+                    player_lerp: Default::default(),
+                    player_age: 0.0,
+                    player_interval: 0.05,
+                    mob_lerp: Default::default(),
+                    mob_age: 0.0,
+                    mob_interval: 0.05,
                 });
                 self.join_status = "CONNECTED - SYNCING...".to_string();
             }
@@ -1113,35 +1151,71 @@ impl Game {
                     self.server.world.pending_drops.clear();
                 }
                 net::S2C::Players(list) => {
+                    // New span: from wherever each player currently
+                    // renders, toward the fresh snapshot.
+                    let t = (r.player_age / r.player_interval.max(0.001)).clamp(0.0, 1.0);
                     for (id, pos, yaw) in list {
                         if id == r.my_id {
                             continue;
                         }
+                        let cur = match r.player_lerp.get(&id) {
+                            Some(l) => l.at(t),
+                            None => (pos, yaw),
+                        };
+                        r.player_lerp.insert(
+                            id,
+                            Lerp { from: cur.0, to: pos, from_yaw: cur.1, to_yaw: yaw, phase: 0.0 },
+                        );
                         let name =
                             r.names.get(&id).cloned().unwrap_or_else(|| format!("P{id}"));
-                        r.players.insert(id, (name, pos, yaw));
+                        r.players.insert(id, (name, cur.0, cur.1));
                     }
+                    r.player_interval = r.player_age.clamp(0.03, 0.3);
+                    r.player_age = 0.0;
                 }
                 net::S2C::Mobs(snaps) => {
+                    let t = (r.mob_age / r.mob_interval.max(0.001)).clamp(0.0, 1.0);
+                    let mut lerps = std::collections::HashMap::new();
                     self.server.world.mobs = snaps
                         .into_iter()
                         .filter(|s| (s.species as usize) < self.reg.animals.len())
                         .map(|s| {
+                            let (cur, phase) = match r.mob_lerp.get(&s.id) {
+                                Some(l) if s.id != 0 => (l.at(t), l.phase),
+                                _ => ((s.pos, s.yaw), 0.0),
+                            };
+                            lerps.insert(
+                                s.id,
+                                Lerp {
+                                    from: cur.0,
+                                    to: s.pos,
+                                    from_yaw: cur.1,
+                                    to_yaw: s.yaw,
+                                    phase,
+                                },
+                            );
                             let mut m =
-                                mobs::Mob::new(s.species as usize, s.pos, s.yaw);
+                                mobs::Mob::new(s.species as usize, cur.0, cur.1);
+                            m.id = s.id;
                             m.growth = s.growth;
                             m.hurt_flash = s.hurt;
+                            m.fed = s.fed; // "won't take food" — gates guest feeding
                             m.health = 1.0;
+                            m.anim_phase = phase;
                             m
                         })
                         .collect();
+                    r.mob_lerp = lerps; // dead mobs' spans fall away
+                    r.mob_interval = r.mob_age.clamp(0.03, 0.3);
+                    r.mob_age = 0.0;
                 }
                 net::S2C::Bolts(snaps) => {
                     self.server.world.projectiles = snaps
                         .into_iter()
                         .map(|s| mobs::Projectile {
                             pos: s.pos,
-                            vel: Vec3::ZERO,
+                            // Dead-reckoned between snapshots below.
+                            vel: s.vel,
                             tile: s.tile,
                             damage: 0.0,
                             age: s.age,
@@ -1169,7 +1243,7 @@ impl Game {
                         }
                     }
                 }
-                net::S2C::Container { x, y, z, kind, slots, held } => {
+                net::S2C::Container { x, y, z, kind, slots } => {
                     let reg = self.reg.clone();
                     let conv = |s: &Option<net::StackSnap>| -> Option<ItemStack> {
                         let s = s.as_ref()?;
@@ -1201,7 +1275,6 @@ impl Game {
                         }
                     };
                     self.server.world.block_entities.insert(pos, entity);
-                    let _ = held; // host-side cursor auto-returns via Give
                     if matches!(self.screen, Screen::Playing) {
                         self.set_screen(match kind {
                             0 => Screen::Chest(pos),
@@ -1210,6 +1283,14 @@ impl Game {
                         });
                     }
                     let _ = reg;
+                }
+                net::S2C::HeldResult(held) => {
+                    // The authoritative cursor after our click replaces
+                    // the local prediction (identical on agreement).
+                    self.held_stack = held.and_then(|s| {
+                        let local = (*r.item_map.get(s.item as usize)?)?;
+                        Some(ItemStack { item: local, count: s.count, durability: s.durability })
+                    });
                 }
                 net::S2C::Sleep { sleeping, present } => {
                     self.toast(format!("{sleeping}/{present} sleeping..."));
@@ -1224,11 +1305,41 @@ impl Game {
                 }
                 net::S2C::Left { id } => {
                     r.players.remove(&id);
+                    r.player_lerp.remove(&id);
                     if let Some(n) = r.names.remove(&id) {
                         self.toast(format!("{n} left."));
                     }
                 }
             }
+        }
+        // Snapshot smoothing: glide players and mobs along their spans,
+        // dead-reckon bolts, advance walk cycles from apparent speed.
+        r.player_age += dt;
+        r.mob_age += dt;
+        let t = (r.player_age / r.player_interval.max(0.001)).clamp(0.0, 1.0);
+        for (id, entry) in r.players.iter_mut() {
+            if let Some(l) = r.player_lerp.get(id) {
+                let (p, y) = l.at(t);
+                entry.1 = p;
+                entry.2 = y;
+            }
+        }
+        let t = (r.mob_age / r.mob_interval.max(0.001)).clamp(0.0, 1.0);
+        for m in &mut self.server.world.mobs {
+            if let Some(l) = r.mob_lerp.get_mut(&m.id) {
+                let (p, y) = l.at(t);
+                m.pos = p;
+                m.yaw = y;
+                let d = l.to - l.from;
+                let hspeed = Vec3::new(d.x, 0.0, d.z).length() / r.mob_interval.max(0.03);
+                l.phase += hspeed * dt * 3.2; // same feel as the local tick
+                m.anim_phase = l.phase;
+                m.hurt_flash = (m.hurt_flash - dt).max(0.0);
+            }
+        }
+        for p in &mut self.server.world.projectiles {
+            p.pos += p.vel * dt;
+            p.age += dt;
         }
         // Our movement upstream at 20 Hz.
         if self.in_world {
@@ -1616,9 +1727,8 @@ impl Game {
                 }
                 if m.last_hit_by != 0 {
                     // A guest's kill: their loot crosses the wire.
-                    for _ in 0..n {
-                        self.server.world.pending_gives.push((m.last_hit_by, *item));
-                    }
+                    let stack = ItemStack::new(&reg, *item, n);
+                    self.server.world.pending_gives.push((m.last_hit_by, stack));
                     continue;
                 }
                 let a = self.rand01() * std::f32::consts::TAU;
@@ -1673,7 +1783,7 @@ impl Game {
         let brush_target = hit.as_ref().map(|h| h.block).filter(|t| {
             brush_held && reg.block(self.server.world.get_block(t.0, t.1, t.2)).brush.is_some()
         });
-        if self.right_held && brush_target.is_some() && self.remote.is_none() {
+        if self.right_held && brush_target.is_some() {
             let target = brush_target.unwrap();
             if self.brush_target != Some(target) {
                 self.brush_target = Some(target);
@@ -1683,6 +1793,19 @@ impl Game {
             if self.brushing >= 1.5 {
                 self.brushing = 0.0;
                 self.brush_target = None;
+                if let Some(rc) = &self.remote {
+                    // The host rolls the find and Gives it straight to
+                    // us; the BlockSet echo swaps the remnant out.
+                    rc.client.send(&net::C2S::BrushBlock {
+                        x: target.0,
+                        y: target.1,
+                        z: target.2,
+                    });
+                    if !self.creative {
+                        self.inventory.wear_tool(&reg, self.hotbar_sel);
+                    }
+                    return;
+                }
                 let mut r = self.rng;
                 let found = self.server.world.brush_block(target.0, target.1, target.2, &mut r);
                 self.rng = r;
@@ -1723,7 +1846,8 @@ impl Game {
                     let pitch = reg.animals[sp].sound_pitch;
                     let from = self.camera.pos;
                     if let Some(r) = &self.remote {
-                        r.client.send(&net::C2S::AttackMob { index: mi as u32, dmg, from });
+                        let id = self.server.world.mobs[mi].id;
+                        r.client.send(&net::C2S::AttackMob { id, dmg, from });
                         self.server.world.mobs[mi].hurt_flash = 0.35; // feedback
                         self.sfx(Sfx::MobHurt(pitch));
                         self.hunger = (self.hunger - 0.01).max(0.0);
@@ -1860,7 +1984,7 @@ impl Game {
         // Right click: interact with the targeted block (crafting table),
         // otherwise place the selected block.
         // Feeding wildlife: right-click an adult with its favorite food.
-        if self.right_held && self.action_cooldown <= 0.0 && self.remote.is_none() {
+        if self.right_held && self.action_cooldown <= 0.0 {
             if let Some(mi) = self.mob_in_crosshair(&hit) {
                 let sp = self.server.world.mobs[mi].species;
                 let def = &reg.animals[sp];
@@ -1872,6 +1996,12 @@ impl Game {
                         && !self.server.world.mobs[mi].fed
                     {
                         if self.creative || self.inventory.take_one(self.hotbar_sel).is_some() {
+                            // Guests request; setting fed locally is the
+                            // prediction until the snapshot echoes it.
+                            if let Some(rc) = &self.remote {
+                                let id = self.server.world.mobs[mi].id;
+                                rc.client.send(&net::C2S::FeedMob { id });
+                            }
                             let m = &mut self.server.world.mobs[mi];
                             m.fed = true;
                             m.calm = 30.0;
@@ -2581,8 +2711,9 @@ impl Game {
         }
         if let Some(hst) = &self.host {
             for g in hst.guests.values() {
-                let lum = sample(&self.server.world, g.pos);
-                mobs::emit_humanoid(g.pos, g.yaw, skin, face, lum, &mut entity_verts, &mut entity_idx);
+                let (pos, yaw) = g.render_pos();
+                let lum = sample(&self.server.world, pos);
+                mobs::emit_humanoid(pos, yaw, skin, face, lum, &mut entity_verts, &mut entity_idx);
             }
         }
         let mut overlay_verts = Vec::new();
@@ -3128,7 +3259,7 @@ impl Game {
         if let Some(hst) = &self.host {
             let vp = self.camera.view_proj();
             for g in hst.guests.values() {
-                let head = g.pos + Vec3::new(0.0, 2.1, 0.0);
+                let head = g.render_pos().0 + Vec3::new(0.0, 2.1, 0.0);
                 let clip = vp * head.extend(1.0);
                 if clip.w > 0.5 {
                     let sx = (clip.x / clip.w * 0.5 + 0.5) * w;
@@ -3527,9 +3658,7 @@ impl Game {
     }
 
     fn offering_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
-        if self.remote_container_click(pos, slot, right) {
-            return;
-        }
+        self.remote_container_notify(pos, slot, right);
         let reg = self.reg.clone();
         let Some(world::BlockEntity::Offering(o)) = self.server.world.block_entities.get_mut(&pos)
         else {
@@ -3541,32 +3670,29 @@ impl Game {
         self.held_stack = new_held;
     }
 
-    /// Remote containers use a simplified authoritative flow: deposits
-    /// offer the local cursor first, pickups auto-return over the wire.
-    fn remote_container_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) -> bool {
-        let Some(r) = &self.remote else { return false };
-        if let Some(h) = self.held_stack.take() {
-            r.client.send(&net::C2S::OfferHeld {
-                item: h.item.0, // same content: local ids match host ids
-                count: h.count,
-                durability: h.durability,
-            });
-        }
+    /// Guests mirror container clicks to the host with the cursor stack
+    /// riding along; the local mutation that follows is a prediction
+    /// (same click_stack, same synced content) and the Container +
+    /// HeldResult echo is the truth that reconciles it.
+    fn remote_container_notify(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+        let Some(r) = &self.remote else { return };
+        let held = self.held_stack.map(|h| net::StackSnap {
+            item: h.item.0, // same content: local ids match host ids
+            count: h.count,
+            durability: h.durability,
+        });
         r.client.send(&net::C2S::ContainerClick {
             x: pos.0,
             y: pos.1,
             z: pos.2,
             slot: slot as u8,
             right,
+            held,
         });
-        r.client.send(&net::C2S::TakeHeld);
-        true
     }
 
     fn chest_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
-        if self.remote_container_click(pos, slot, right) {
-            return;
-        }
+        self.remote_container_notify(pos, slot, right);
         let reg = self.reg.clone();
         let Some(world::BlockEntity::Chest(c)) = self.server.world.block_entities.get_mut(&pos)
         else {
@@ -3579,9 +3705,7 @@ impl Game {
     }
 
     fn furnace_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
-        if self.remote_container_click(pos, slot, right) {
-            return;
-        }
+        self.remote_container_notify(pos, slot, right);
         let reg = self.reg.clone();
         let Some(world::BlockEntity::Furnace(f)) = self.server.world.block_entities.get_mut(&pos)
         else {

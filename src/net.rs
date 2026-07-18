@@ -19,7 +19,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 pub const GAME_PORT: u16 = 27431;
 pub const BEACON_PORT: u16 = 27430;
 /// Bump when the protocol changes shape.
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 
 // ---------------- protocol ----------------
 
@@ -32,16 +32,22 @@ pub struct StackSnap {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MobSnap {
+    /// Stable host-assigned id: guests interpolate and target by it.
+    pub id: u32,
     pub species: u16,
     pub pos: Vec3,
     pub yaw: f32,
     pub growth: f32,
     pub hurt: f32,
+    /// "Won't accept food right now" (fed, cooling down, or a juvenile).
+    pub fed: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BoltSnap {
     pub pos: Vec3,
+    /// Guests dead-reckon between snapshots.
+    pub vel: Vec3,
     pub tile: u16,
     pub age: f32,
 }
@@ -52,14 +58,18 @@ pub enum C2S {
     Move { pos: Vec3, yaw: f32 },
     Break { x: i32, y: i32, z: i32 },
     Place { x: i32, y: i32, z: i32, block: u16 },
-    AttackMob { index: u32, dmg: f32, from: Vec3 },
+    AttackMob { id: u32, dmg: f32, from: Vec3 },
     FireArrow { pos: Vec3, vel: Vec3, dmg: f32, tile: u16, recover: bool },
     OpenContainer { x: i32, y: i32, z: i32 },
-    ContainerClick { x: i32, y: i32, z: i32, slot: u8, right: bool },
-    /// Move the host-side held stack into the guest's inventory.
-    TakeHeld,
-    /// Push a guest item into the host-side held stack.
-    OfferHeld { item: u16, count: u32, durability: u32 },
+    /// One transactional click: the guest's cursor stack rides along,
+    /// the host applies the same click_stack local play uses and echoes
+    /// the container plus HeldResult. The cursor stays guest-owned.
+    ContainerClick { x: i32, y: i32, z: i32, slot: u8, right: bool, held: Option<StackSnap> },
+    CloseContainer,
+    /// Right-clicked an adult with its favorite food (consumed guest-side).
+    FeedMob { id: u32 },
+    /// Finished the 1.5 s brush channel on a remnant block.
+    BrushBlock { x: i32, y: i32, z: i32 },
     SleepRequest,
     SleepCancel,
     Chat(String),
@@ -100,8 +110,9 @@ pub enum S2C {
         /// 0 chest, 1 furnace, 2 offering.
         kind: u8,
         slots: Vec<Option<StackSnap>>,
-        held: Option<StackSnap>,
     },
+    /// The authoritative cursor stack after a ContainerClick.
+    HeldResult(Option<StackSnap>),
     Sleep { sleeping: u32, present: u32 },
     Toast(String),
     Chat { from: String, msg: String },

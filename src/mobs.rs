@@ -143,6 +143,9 @@ impl Projectile {
 
 #[derive(Clone, Debug)]
 pub struct Mob {
+    /// Stable id for the wire (0 until the host's sim assigns one);
+    /// guests interpolate and target mobs by it across snapshots.
+    pub id: u32,
     pub species: usize,
     /// Feet-center position.
     pub pos: Vec3,
@@ -179,9 +182,22 @@ fn r01(rng: &mut u32) -> f32 {
     (*rng >> 8) as f32 / (1 << 24) as f32
 }
 
+/// Shortest-arc angle interpolation (snapshot smoothing).
+pub fn lerp_yaw(a: f32, b: f32, t: f32) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    let mut d = (b - a) % TAU;
+    if d > PI {
+        d -= TAU;
+    } else if d < -PI {
+        d += TAU;
+    }
+    a + d * t
+}
+
 impl Mob {
     pub fn new(species: usize, pos: Vec3, yaw: f32) -> Mob {
         Mob {
+            id: 0,
             species,
             pos,
             vel: Vec3::ZERO,

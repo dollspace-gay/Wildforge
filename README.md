@@ -401,7 +401,10 @@ One binary, no server jar, ever:
 - **Server-authoritative**: guests send requests; the host validates
   (reach, rate) and applies them through the same code paths local
   play uses, echoing results to everyone. Chunks stream in the save
-  format; mobs, bolts, and players snapshot over unreliable datagrams.
+  format; mobs, bolts, and players snapshot over unreliable datagrams
+  and render through interpolation, so everything glides instead of
+  stuttering. Shared chests and furnaces use transactional clicks —
+  full cursor semantics, and a worn tool stays exactly as worn.
 - **Shared world, shared ire** — one meter for the whole camp; your
   friend's clearcut is your Wrathful night. Mob AI hunts the nearest
   player; drops from your kills and digs arrive in *your* inventory.

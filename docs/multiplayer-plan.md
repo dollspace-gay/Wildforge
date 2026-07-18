@@ -4,9 +4,11 @@ Drafted and **IMPLEMENTED** 2026-07-18. All three phases shipped: the
 sim/client split (`server.rs`), the wire (`net.rs`, `mp.rs` — quinn
 transport, LAN discovery, content sync, chunk streaming, authoritative
 edits, snapshots), and the feel (chat, sleep votes, shared ire, remote
-player models + name tags, `--server` headless). Friend-code
-rendezvous remains v2/out-of-repo as specified. Loopback-tested;
-remote-container clicks use a simplified offer/take flow.
+player models + name tags, `--server` headless, snapshot interpolation
+for mobs/players + dead-reckoned bolts, transactional container clicks
+with full cursor semantics, guest feeding and brushing). Mobs carry
+stable wire ids; guests target by id, never by racy index. Friend-code
+rendezvous remains v2/out-of-repo as specified. Loopback-tested.
 
 ## Dependencies
 
