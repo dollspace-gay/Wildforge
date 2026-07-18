@@ -84,6 +84,10 @@ pub struct FrameInput<'a> {
     /// Alpha-blended world-space extras (mining crack overlay).
     pub overlay_verts: &'a [Vertex],
     pub overlay_idx: &'a [u32],
+    /// First-person viewmodel (your hand and what it holds): drawn in
+    /// its own depth-cleared pass so it never clips into walls.
+    pub hand_verts: &'a [Vertex],
+    pub hand_idx: &'a [u32],
     /// 2D UI triangles in pixel coordinates.
     pub ui_verts: &'a [UiVertex],
     /// Draw the line crosshair (hidden when a menu is open).
@@ -166,6 +170,8 @@ pub struct Renderer {
     entity_ibuf: DynBuf,
     overlay_vbuf: DynBuf,
     overlay_ibuf: DynBuf,
+    hand_vbuf: DynBuf,
+    hand_ibuf: DynBuf,
     ui_vbuf: DynBuf,
 
     pub chunks: HashMap<ChunkPos, GpuChunk>,
@@ -479,6 +485,8 @@ impl Renderer {
         let entity_ibuf = DynBuf::new(&device, wgpu::BufferUsages::INDEX);
         let overlay_vbuf = DynBuf::new(&device, wgpu::BufferUsages::VERTEX);
         let overlay_ibuf = DynBuf::new(&device, wgpu::BufferUsages::INDEX);
+        let hand_vbuf = DynBuf::new(&device, wgpu::BufferUsages::VERTEX);
+        let hand_ibuf = DynBuf::new(&device, wgpu::BufferUsages::INDEX);
         let ui_vbuf = DynBuf::new(&device, wgpu::BufferUsages::VERTEX);
 
         let mut r = Renderer {
@@ -503,6 +511,8 @@ impl Renderer {
             entity_ibuf,
             overlay_vbuf,
             overlay_ibuf,
+            hand_vbuf,
+            hand_ibuf,
             ui_vbuf,
             chunks: HashMap::new(),
             sky_color: [0.55, 0.75, 0.95],
@@ -612,6 +622,10 @@ impl Renderer {
             .upload(&self.device, &self.queue, bytemuck::cast_slice(f.overlay_verts));
         self.overlay_ibuf
             .upload(&self.device, &self.queue, bytemuck::cast_slice(f.overlay_idx));
+        self.hand_vbuf
+            .upload(&self.device, &self.queue, bytemuck::cast_slice(f.hand_verts));
+        self.hand_ibuf
+            .upload(&self.device, &self.queue, bytemuck::cast_slice(f.hand_idx));
         self.ui_vbuf
             .upload(&self.device, &self.queue, bytemuck::cast_slice(f.ui_verts));
         self.queue
@@ -730,6 +744,42 @@ impl Renderer {
                 pass.set_pipeline(&self.line_world_pipeline);
                 pass.set_vertex_buffer(0, self.outline_buf.slice(..));
                 pass.draw(0..24, 0..1);
+            }
+        }
+
+        // Second pass, depth cleared: the first-person hand draws over
+        // the world no matter how close a wall is, then the flat UI.
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("hand+ui"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            pass.set_bind_group(0, &self.uniform_bg, &[]);
+            pass.set_bind_group(1, &self.atlas_bg, &[]);
+
+            if !f.hand_idx.is_empty() {
+                pass.set_pipeline(&self.chunk_pipeline);
+                pass.set_vertex_buffer(0, self.hand_vbuf.buf.slice(..));
+                pass.set_index_buffer(self.hand_ibuf.buf.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..f.hand_idx.len() as u32, 0, 0..1);
             }
 
             // Crosshair

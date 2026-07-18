@@ -410,7 +410,8 @@ One binary, no server jar, ever:
   player; drops from your kills and digs arrive in *your* inventory.
 - **The camp sleeps together**: dawn requires every present player in
   a bedroll. Chat with T. Fellow players render as boxy humans with
-  name tags.
+  name tags — and you see your own hand in first person: the held
+  block or tool swings when you mine, strike, and place.
 - Under it all: the **sim/client split** — `server::Server` steps the
   world at a fixed 30 Hz whether one player or eight are in it.
   Singleplayer is just a server with one local player.

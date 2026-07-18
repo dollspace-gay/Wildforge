@@ -168,6 +168,10 @@ struct Game {
     /// Archaeology channel: seconds brushing + the block under the brush.
     brushing: f32,
     brush_target: Option<(i32, i32, i32)>,
+    /// First-person viewmodel: swing progress (1 at trigger, decays to
+    /// 0) and the walk-bob phase accumulator.
+    swing: f32,
+    hand_bob: f32,
     /// Stack picked up by the cursor inside the inventory screen.
     held_stack: Option<ItemStack>,
     /// Crafting grid contents (row-major; 2x2 uses the first 4 cells).
@@ -417,6 +421,8 @@ impl Game {
             bow_draw: 0.0,
             brushing: 0.0,
             brush_target: None,
+            swing: 0.0,
+            hand_bob: 0.0,
             held_stack: None,
             craft_grid: [None; 9],
             craft_size: 2,
@@ -639,6 +645,13 @@ impl Game {
                 for dz in -1..=1 {
                     self.server.world.ensure_chunk(ChunkPos { x: cp.x + dx, z: cp.z + dz });
                 }
+            }
+        }
+        // Dev: pick the hotbar slot screenshots hold up (after the
+        // profile load so it isn't overwritten).
+        if let Ok(s) = std::env::var("WILDFORGE_SEL") {
+            if let Ok(i) = s.parse::<usize>() {
+                self.hotbar_sel = i.min(HOTBAR_SLOTS - 1);
             }
         }
         self.server.sync_tier();
@@ -1841,6 +1854,7 @@ impl Game {
                 self.breaking = None;
                 if self.attack_cooldown <= 0.0 {
                     self.attack_cooldown = 0.35;
+                    self.swing = 1.0;
                     let dmg = held.map(|i| reg.item(i).damage).unwrap_or(1.0);
                     let sp = self.server.world.mobs[mi].species;
                     let pitch = reg.animals[sp].sound_pitch;
@@ -1970,6 +1984,10 @@ impl Game {
                         }
                     } else {
                         self.breaking = Some((target, progress));
+                        // Keep the arm swinging while we chip away.
+                        if self.swing <= 0.0 {
+                            self.swing = 1.0;
+                        }
                     }
                 } else {
                     self.breaking = None;
@@ -2460,6 +2478,215 @@ impl Game {
         }
     }
 
+    /// First-person viewmodel: your arm, or the block/item it holds,
+    /// anchored low-right of the camera, walk-bobbed, and swung on use.
+    /// Emitted in world space; the renderer draws it depth-cleared so
+    /// it never sinks into a wall you're standing against.
+    fn emit_hand(&self, verts: &mut Vec<mesher::Vertex>, idx: &mut Vec<u32>) {
+        if !self.in_world || self.health <= 0.0 {
+            return;
+        }
+        let reg = self.reg.clone();
+        let held = self.inventory.slots[self.hotbar_sel];
+
+        // Camera basis: f forward, r screen-right, u screen-up.
+        let f = self.camera.forward();
+        let mut r = f.cross(Vec3::Y);
+        if r.length_squared() < 1e-6 {
+            r = Vec3::new(-self.camera.yaw.sin(), 0.0, self.camera.yaw.cos());
+        }
+        let r = r.normalize();
+        let u = r.cross(f).normalize();
+
+        // Swing arc peaks mid-animation (progress runs 1 -> 0).
+        // Dev: WILDFORGE_POSE freezes the swing for screenshots.
+        let swing = std::env::var("WILDFORGE_POSE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(self.swing);
+        let arc = ((1.0 - swing) * std::f32::consts::PI).sin();
+        let bow_charge = if held.is_some_and(|s| reg.item(s.item).bow.is_some()) {
+            self.bow_draw.min(1.0)
+        } else {
+            0.0
+        };
+
+        // Anchor low-right, breathing with the walk.
+        let moving =
+            (Vec3::new(self.player.vel.x, 0.0, self.player.vel.z).length().min(4.0)) / 4.0;
+        let bob_x = self.hand_bob.sin() * 0.02 * moving;
+        let bob_y = -(self.hand_bob * 2.0).sin().abs() * 0.025 * moving;
+        let mut anchor = self.camera.pos + f * 0.60 + r * (0.38 + bob_x) + u * (-0.38 + bob_y);
+        // Swing sweeps toward where you're aiming; a drawn bow comes
+        // toward center.
+        anchor += (f * 0.08 - u * 0.05 - r * 0.08) * arc;
+        anchor += (-r * 0.16 + f * 0.04) * bow_charge;
+        if self.eating > 0.0 {
+            // Nibbling: toward the face, jittering.
+            anchor += -r * 0.14 + u * (0.04 + (self.time_abs * 16.0).sin() * 0.02);
+        }
+        if self.brushing > 0.0 {
+            // Scrubbing side to side.
+            anchor += r * (self.time_abs * 22.0).sin() * 0.03;
+        }
+
+        // Local space: x right, y up, z forward. The swing dips the tip
+        // forward-down and sweeps it inward, hinged at the wrist.
+        let a = arc * 0.85;
+        let b = arc * 0.8;
+        let xf = |q: Vec3| -> Vec3 {
+            let (sa, ca) = a.sin_cos();
+            let q = Vec3::new(q.x, q.y * ca - q.z * sa, q.y * sa + q.z * ca);
+            let (sb, cb) = b.sin_cos();
+            let q = Vec3::new(q.x * cb - q.z * sb, q.y, q.x * sb + q.z * cb);
+            anchor + r * q.x + u * q.y + f * q.z
+        };
+
+        // Lit like anything standing where the camera stands.
+        let (bl, sl) = self.server.world.light_at(
+            self.camera.pos.x.floor() as i32,
+            self.camera.pos.y.floor() as i32,
+            self.camera.pos.z.floor() as i32,
+        );
+        let lum = (bl as f32 / 15.0, sl as f32 / 15.0);
+
+        // A local-space box textured one tile per face (arm, held block).
+        fn cube(
+            verts: &mut Vec<mesher::Vertex>,
+            idx: &mut Vec<u32>,
+            xf: &dyn Fn(Vec3) -> Vec3,
+            min: Vec3,
+            max: Vec3,
+            tiles: [u16; 6],
+            lum: (f32, f32),
+        ) {
+            let ts = 1.0 / atlas::ATLAS_TILES as f32;
+            let inset = ts / 32.0;
+            for face in 0..6 {
+                let slot = tiles[face];
+                let (tx, ty) =
+                    (slot as u32 % atlas::ATLAS_TILES, slot as u32 / atlas::ATLAS_TILES);
+                let base = verts.len() as u32;
+                for c in mesher::CORNERS[face].iter() {
+                    let lp = Vec3::new(
+                        min.x + c[0] * (max.x - min.x),
+                        min.y + c[1] * (max.y - min.y),
+                        min.z + c[2] * (max.z - min.z),
+                    );
+                    let wp = xf(lp);
+                    let (uu, vv) = match face {
+                        0 | 1 => (c[2], 1.0 - c[1]),
+                        4 | 5 => (c[0], 1.0 - c[1]),
+                        _ => (c[0], c[2]),
+                    };
+                    let shade = mesher::FACE_SHADE[face].max(0.7);
+                    verts.push(mesher::Vertex {
+                        pos: [wp.x, wp.y, wp.z],
+                        uv: [
+                            tx as f32 * ts + inset + uu * (ts - 2.0 * inset),
+                            ty as f32 * ts + inset + vv * (ts - 2.0 * inset),
+                        ],
+                        light: shade * lum.0,
+                        sky: shade * lum.1,
+                    });
+                }
+                idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+            }
+        }
+        // Pre-rotations in local space (3/4 view for blocks, arm angle).
+        let pre_y = |ang: f32| {
+            move |q: Vec3| {
+                let (s, c) = ang.sin_cos();
+                Vec3::new(q.x * c - q.z * s, q.y, q.x * s + q.z * c)
+            }
+        };
+        let pre_x = |ang: f32| {
+            move |q: Vec3| {
+                let (s, c) = ang.sin_cos();
+                Vec3::new(q.x, q.y * c - q.z * s, q.y * s + q.z * c)
+            }
+        };
+
+        match held {
+            // A block rides as a mini-cube, turned for a 3/4 view.
+            Some(st)
+                if reg
+                    .item(st.item)
+                    .places
+                    .is_some_and(|pb| !reg.block(pb).cross) =>
+            {
+                let pb = reg.item(st.item).places.unwrap();
+                let tilt = pre_y(0.65);
+                let x2 = |q: Vec3| xf(tilt(q));
+                cube(
+                    verts,
+                    idx,
+                    &x2,
+                    Vec3::new(-0.10, -0.12, -0.01),
+                    Vec3::new(0.10, 0.08, 0.19),
+                    reg.block(pb).tiles,
+                    lum,
+                );
+            }
+            // Anything else shows as its icon: a flat angled card,
+            // drawn double-sided like dropped item sprites.
+            Some(st) => {
+                let slot = reg.item(st.item).icon;
+                let ts = 1.0 / atlas::ATLAS_TILES as f32;
+                let inset = ts / 32.0;
+                let (tx, ty) =
+                    (slot as u32 % atlas::ATLAS_TILES, slot as u32 / atlas::ATLAS_TILES);
+                let ax = Vec3::new(0.44, 0.07, -0.21);
+                let ay = Vec3::new(-0.10, 0.44, 0.17);
+                let origin = Vec3::new(0.02, -0.16, 0.06);
+                for flip in [false, true] {
+                    let base = verts.len() as u32;
+                    let (u0, u1) = if flip {
+                        ((tx + 1) as f32 * ts - inset, tx as f32 * ts + inset)
+                    } else {
+                        (tx as f32 * ts + inset, (tx + 1) as f32 * ts - inset)
+                    };
+                    let s = if flip { -1.0 } else { 1.0 };
+                    for (i, j, uu) in
+                        [(-0.5, 0.0, u0), (0.5, 0.0, u1), (0.5, 1.0, u1), (-0.5, 1.0, u0)]
+                    {
+                        let lp = origin + ax * (i * s) + ay * j;
+                        let wp = xf(lp);
+                        let vv = if j < 0.5 {
+                            (ty + 1) as f32 * ts - inset
+                        } else {
+                            ty as f32 * ts + inset
+                        };
+                        verts.push(mesher::Vertex {
+                            pos: [wp.x, wp.y, wp.z],
+                            uv: [uu, vv],
+                            light: 0.95 * lum.0,
+                            sky: 0.95 * lum.1,
+                        });
+                    }
+                    idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+                }
+            }
+            // Bare hand: your forearm (blue sleeve and all — the same
+            // body other players see) reaching in from the low right.
+            None => {
+                let skin = *atlas::builtin_slots().get("player_skin").unwrap_or(&0);
+                let ty = pre_y(-0.30);
+                let tx = pre_x(-0.55);
+                let x2 = |q: Vec3| xf(ty(tx(q)));
+                cube(
+                    verts,
+                    idx,
+                    &x2,
+                    Vec3::new(-0.055, -0.09, -0.16),
+                    Vec3::new(0.055, 0.02, 0.26),
+                    [skin; 6],
+                    lum,
+                );
+            }
+        }
+    }
+
     fn update(&mut self) {
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32().min(0.05);
@@ -2471,6 +2698,11 @@ impl Game {
             self.action_cooldown = (self.action_cooldown - dt).max(0.0);
             self.attack_cooldown = (self.attack_cooldown - dt).max(0.0);
             self.scroll_cooldown = (self.scroll_cooldown - dt).max(0.0);
+            self.swing = (self.swing - dt / 0.3).max(0.0);
+            let hv = Vec3::new(self.player.vel.x, 0.0, self.player.vel.z).length();
+            if self.player.on_ground {
+                self.hand_bob += hv.min(6.0) * dt * 1.6;
+            }
         }
 
         if !self.in_world && self.remote.is_some() {
@@ -2721,6 +2953,9 @@ impl Game {
         if let Some((target, progress)) = self.breaking {
             entity::emit_crack(target, progress, &mut overlay_verts, &mut overlay_idx);
         }
+        let mut hand_verts = Vec::new();
+        let mut hand_idx = Vec::new();
+        self.emit_hand(&mut hand_verts, &mut hand_idx);
 
         self.build_ui();
 
@@ -2735,6 +2970,8 @@ impl Game {
             entity_idx: &entity_idx,
             overlay_verts: &overlay_verts,
             overlay_idx: &overlay_idx,
+            hand_verts: &hand_verts,
+            hand_idx: &hand_idx,
             ui_verts: &self.ui.verts,
             crosshair: playing,
         }) {
@@ -4481,7 +4718,9 @@ impl ApplicationHandler for App {
                 match button {
                     MouseButton::Left => {
                         game.left_held = pressed;
-                        if !pressed {
+                        if pressed {
+                            game.swing = 1.0;
+                        } else {
                             game.breaking = None;
                         }
                     }
@@ -4489,6 +4728,7 @@ impl ApplicationHandler for App {
                         game.right_held = pressed;
                         if pressed {
                             game.action_cooldown = 0.0;
+                            game.swing = 1.0;
                         }
                     }
                     MouseButton::Middle if pressed => {
