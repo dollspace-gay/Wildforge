@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Config {
     /// Master volume 0..1.
     pub volume: f32,
@@ -12,11 +12,13 @@ pub struct Config {
     pub view_dist: i32,
     /// Field of view in degrees.
     pub fov: f32,
+    /// Active texture pack id (`packs/<id>/`); empty = none.
+    pub pack: String,
 }
 
 impl Default for Config {
     fn default() -> Config {
-        Config { volume: 0.7, sensitivity: 1.0, view_dist: 7, fov: 75.0 }
+        Config { volume: 0.7, sensitivity: 1.0, view_dist: 7, fov: 75.0, pack: String::new() }
     }
 }
 
@@ -25,11 +27,8 @@ fn path() -> PathBuf {
 }
 
 impl Config {
-    pub fn load() -> Config {
+    pub fn from_text(text: &str) -> Config {
         let mut c = Config::default();
-        let Ok(text) = std::fs::read_to_string(path()) else {
-            return c;
-        };
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else { continue };
             let (k, v) = (k.trim(), v.trim());
@@ -54,18 +53,29 @@ impl Config {
                         c.fov = x.clamp(50.0, 110.0);
                     }
                 }
+                "pack" => c.pack = v.to_string(),
                 _ => {}
             }
         }
         c
     }
 
+    pub fn to_text(&self) -> String {
+        format!(
+            "volume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\npack={}\n",
+            self.volume, self.sensitivity, self.view_dist, self.fov, self.pack
+        )
+    }
+
+    pub fn load() -> Config {
+        match std::fs::read_to_string(path()) {
+            Ok(text) => Config::from_text(&text),
+            Err(_) => Config::default(),
+        }
+    }
+
     pub fn save(&self) {
-        let text = format!(
-            "volume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\n",
-            self.volume, self.sensitivity, self.view_dist, self.fov
-        );
-        if let Err(e) = std::fs::write(path(), text) {
+        if let Err(e) = std::fs::write(path(), self.to_text()) {
             eprintln!("config: save failed: {e}");
         }
     }

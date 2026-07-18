@@ -44,14 +44,107 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("baked_potato", 89), ("roasted_mushroom", 90), ("cactus_fruit", 91),
         ("jungle_fruit", 92), ("stew", 93), ("seeds", 94), ("wood_hoe", 96),
         ("stone_hoe", 97), ("copper_hoe", 98), ("bronze_hoe", 99),
+        ("unknown", 15), ("crack1", 16), ("crack2", 17), ("crack3", 18),
+        ("crack4", 19),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
     .collect()
 }
 
-/// Build the atlas: procedural tiles plus mod PNGs blitted into their slots.
-pub fn build_with_mods(tex_files: &[(u16, std::path::PathBuf)]) -> (Vec<u8>, u32) {
+/// Full tile-name -> slot map: built-in names plus mod-registered textures
+/// (`<mod_id>/<file stem>` keys, from `Registry.tex_names`).
+pub fn tile_names(tex_names: &[(String, u16)]) -> std::collections::HashMap<String, u16> {
+    let mut m = builtin_slots();
+    for (name, slot) in tex_names {
+        m.insert(name.clone(), *slot);
+    }
+    m
+}
+
+/// A discovered texture pack (`packs/<id>/`, optional pack.toml metadata).
+#[derive(Clone, Debug)]
+pub struct PackInfo {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct PackToml {
+    name: Option<String>,
+    description: Option<String>,
+}
+
+/// List texture packs under `root`, sorted by id.
+pub fn discover_packs_in(root: &std::path::Path) -> Vec<PackInfo> {
+    let mut out = Vec::new();
+    let Ok(rd) = std::fs::read_dir(root) else { return out };
+    for e in rd.flatten() {
+        let p = e.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let id = e.file_name().to_string_lossy().to_string();
+        let meta: PackToml = std::fs::read_to_string(p.join("pack.toml"))
+            .ok()
+            .and_then(|t| toml::from_str(&t).ok())
+            .unwrap_or_default();
+        out.push(PackInfo {
+            name: meta.name.unwrap_or_else(|| id.clone()),
+            description: meta.description.unwrap_or_default(),
+            id,
+        });
+    }
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    out
+}
+
+pub fn discover_packs() -> Vec<PackInfo> {
+    discover_packs_in(std::path::Path::new("packs"))
+}
+
+/// Find recognized tile PNGs under `<pack>/tiles/`: (slot, path), plus
+/// warnings for files that match no known tile name.
+pub fn scan_pack(
+    pack_dir: &std::path::Path,
+    names: &std::collections::HashMap<String, u16>,
+) -> (Vec<(u16, std::path::PathBuf)>, Vec<String>) {
+    fn walk(dir: &std::path::Path, acc: &mut Vec<std::path::PathBuf>) {
+        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, acc);
+            } else {
+                acc.push(p);
+            }
+        }
+    }
+    let root = pack_dir.join("tiles");
+    let mut all = Vec::new();
+    walk(&root, &mut all);
+    all.sort();
+    let (mut files, mut warns) = (Vec::new(), Vec::new());
+    for p in all {
+        let rel = p.strip_prefix(&root).unwrap_or(&p).to_string_lossy().replace('\\', "/");
+        let Some(name) = rel.strip_suffix(".png") else { continue };
+        match names.get(name) {
+            Some(slot) => files.push((*slot, p)),
+            None => warns.push(format!("{rel}: no tile named \"{name}\"")),
+        }
+    }
+    (files, warns)
+}
+
+/// Build the atlas in layers: procedural/assets base, then mod PNGs, then
+/// the active texture pack's tiles last (the explicit user choice wins, but
+/// only for tiles the pack ships). Returns (pixels, side px, pack warnings).
+pub fn build_atlas(
+    tex_files: &[(u16, std::path::PathBuf)],
+    pack_dir: Option<&std::path::Path>,
+    tex_names: &[(String, u16)],
+) -> (Vec<u8>, u32, Vec<String>) {
     let (mut img, px) = load_or_build();
     let tp = px / ATLAS_TILES;
     for (slot, path) in tex_files {
@@ -60,7 +153,62 @@ pub fn build_with_mods(tex_files: &[(u16, std::path::PathBuf)]) -> (Vec<u8>, u32
             None => eprintln!("atlas: failed to load {}", path.display()),
         }
     }
-    (img, px)
+    let mut warnings = Vec::new();
+    if let Some(dir) = pack_dir {
+        let names = tile_names(tex_names);
+        let (files, warns) = scan_pack(dir, &names);
+        warnings = warns;
+        for (slot, path) in files {
+            match load_tile_png(&path) {
+                Some((data, w, h)) => blit_tile(&mut img, px, tp, slot, &data, w, h),
+                None => warnings.push(format!("unreadable png: {}", path.display())),
+            }
+        }
+    }
+    if let Ok(dir) = std::env::var("WILDFORGE_EXPORT_TILES") {
+        match export_tiles(std::path::Path::new(&dir), &img, px, tex_names) {
+            Ok(n) => eprintln!("atlas: exported {n} tiles to {dir}"),
+            Err(e) => eprintln!("atlas: tile export failed: {e}"),
+        }
+    }
+    (img, px, warnings)
+}
+
+/// Dump every named tile as `<dir>/tiles/<name>.png` plus a stub pack.toml —
+/// a ready-to-edit texture-pack skeleton. Returns the tile count.
+pub fn export_tiles(
+    dir: &std::path::Path,
+    img: &[u8],
+    px: u32,
+    tex_names: &[(String, u16)],
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let tp = px / ATLAS_TILES;
+    let mut named: Vec<(String, u16)> = tile_names(tex_names).into_iter().collect();
+    named.sort();
+    std::fs::create_dir_all(dir)?;
+    let toml_path = dir.join("pack.toml");
+    if !toml_path.exists() {
+        std::fs::write(
+            &toml_path,
+            "name = \"My Pack\"\ndescription = \"Repaint tiles/, delete what you keep stock\"\n",
+        )?;
+    }
+    for (name, slot) in &named {
+        let path = dir.join("tiles").join(format!("{name}.png"));
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut tile = vec![0u8; (tp * tp * 4) as usize];
+        let tx = (*slot as u32 % ATLAS_TILES) * tp;
+        let ty = (*slot as u32 / ATLAS_TILES) * tp;
+        let row = (tp * 4) as usize;
+        for y in 0..tp {
+            let si = (((ty + y) * px + tx) * 4) as usize;
+            tile[y as usize * row..(y as usize + 1) * row].copy_from_slice(&img[si..si + row]);
+        }
+        export_png(&path, &tile, tp)?;
+    }
+    Ok(named.len())
 }
 
 fn load_tile_png(path: &std::path::Path) -> Option<(Vec<u8>, u32, u32)> {
@@ -112,7 +260,7 @@ pub fn load_or_build() -> (Vec<u8>, u32) {
     let data = build_procedural(tile_px);
     let px = ATLAS_TILES * tile_px;
     if let Ok(path) = std::env::var("WILDFORGE_EXPORT_ATLAS") {
-        match export_png(&path, &data, px) {
+        match export_png(std::path::Path::new(&path), &data, px) {
             Ok(()) => eprintln!("atlas: exported to {path}"),
             Err(e) => eprintln!("atlas: export failed: {e}"),
         }
@@ -151,7 +299,11 @@ fn try_load_png(path: &str) -> Option<(Vec<u8>, u32)> {
     Some((rgba, info.width))
 }
 
-fn export_png(path: &str, data: &[u8], px: u32) -> Result<(), Box<dyn std::error::Error>> {
+fn export_png(
+    path: &std::path::Path,
+    data: &[u8],
+    px: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
     let file = std::fs::File::create(path)?;
     let mut enc = png::Encoder::new(std::io::BufWriter::new(file), px, px);
     enc.set_color(png::ColorType::Rgba);

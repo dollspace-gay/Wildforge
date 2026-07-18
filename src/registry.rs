@@ -145,6 +145,8 @@ pub struct Registry {
     pub tags: HashMap<String, Vec<ItemId>>,
     /// Mod textures to pack: (slot, png path).
     pub tex_files: Vec<(u16, PathBuf)>,
+    /// Pack-addressable names for mod textures: ("<mod_id>/<file stem>", slot).
+    pub tex_names: Vec<(String, u16)>,
 }
 
 impl Registry {
@@ -657,6 +659,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         fuels: Vec::new(),
         tags: HashMap::new(),
         tex_files: Vec::new(),
+        tex_names: Vec::new(),
     };
     let mut tex_slots: HashMap<String, u16> = crate::atlas::builtin_slots();
     let mut next_slot: u16 = crate::atlas::FIRST_FREE_SLOT;
@@ -715,6 +718,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         let slot = next_slot;
         next_slot += 1;
         tex_slots.insert(key, slot);
+        let mod_id = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let stem = spec.strip_suffix(".png").unwrap_or(spec);
+        reg.tex_names.push((format!("{mod_id}/{stem}"), slot));
         reg.tex_files.push((slot, path));
         slot
     };

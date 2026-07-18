@@ -60,6 +60,7 @@ const MAX_AIR: f32 = 15.0; // seconds of breath
 enum Screen {
     Title,
     Mods,
+    Packs,
     Settings,
     ConfirmDelete,
     Playing,
@@ -129,6 +130,12 @@ struct Game {
     toasts: Vec<(String, f32)>,
     mods_stamp: u64,
     mods_poll: f32,
+    /// Discovered texture packs (refreshed when opening the packs screen).
+    packs: Vec<atlas::PackInfo>,
+    /// Warnings from the active texture pack's last build.
+    pack_warnings: Vec<String>,
+    /// WILDFORGE_PACK dev override; shadows config.pack, never persisted.
+    pack_override: Option<String>,
     tick_accum: f32,
     tick_accum2: f32,
     config: Config,
@@ -182,7 +189,9 @@ fn script_mod_dirs(reg: &Registry) -> Vec<(String, PathBuf)> {
 }
 
 /// Cheap fingerprint of the mods tree (file count + max mtime) for hot reload.
-fn mods_tree_stamp() -> u64 {
+/// Newest-mtime + file-count stamp over the hot-reloadable content trees
+/// (mods/ and packs/); a change re-triggers the 1 s reload poll.
+fn content_tree_stamp_of(roots: &[&std::path::Path]) -> u64 {
     fn walk(dir: &std::path::Path, acc: &mut u64, count: &mut u64) {
         let Ok(rd) = std::fs::read_dir(dir) else { return };
         for e in rd.flatten() {
@@ -200,8 +209,28 @@ fn mods_tree_stamp() -> u64 {
         }
     }
     let (mut acc, mut count) = (0u64, 0u64);
-    walk(std::path::Path::new("mods"), &mut acc, &mut count);
+    for root in roots {
+        walk(root, &mut acc, &mut count);
+    }
     acc ^ (count << 48)
+}
+
+fn content_tree_stamp() -> u64 {
+    content_tree_stamp_of(&[std::path::Path::new("mods"), std::path::Path::new("packs")])
+}
+
+/// Resolve a configured pack id to its directory, if it exists.
+fn pack_dir_of(id: &str) -> Option<PathBuf> {
+    if id.is_empty() {
+        return None;
+    }
+    let p = PathBuf::from("packs").join(id);
+    if p.is_dir() {
+        Some(p)
+    } else {
+        eprintln!("packs: selected pack \"{id}\" not found, using none");
+        None
+    }
 }
 
 /// Browser item list: public items (no internal /variants), search-filtered.
@@ -244,7 +273,13 @@ impl Game {
                 eprintln!("mod {}: {e}", m.id);
             }
         }
-        let (atlas_data, atlas_px) = atlas::build_with_mods(&reg.tex_files);
+        std::fs::create_dir_all("packs").ok();
+        let config = Config::load();
+        // Dev override (never persisted): WILDFORGE_PACK=<id> selects a pack.
+        let pack_override = std::env::var("WILDFORGE_PACK").ok();
+        let active_pack = pack_override.clone().unwrap_or_else(|| config.pack.clone());
+        let (atlas_data, atlas_px, pack_warnings) =
+            atlas::build_atlas(&reg.tex_files, pack_dir_of(&active_pack).as_deref(), &reg.tex_names);
         let renderer =
             pollster::block_on(renderer::Renderer::new(window.clone(), atlas_data, atlas_px));
         let mut scripts = script::ScriptHost::new();
@@ -255,7 +290,6 @@ impl Game {
 
         let size = window.inner_size();
         let aspect = size.width as f32 / size.height.max(1) as f32;
-        let config = Config::load();
         let audio = Audio::new(config.volume);
 
         let mut g = Game {
@@ -307,6 +341,9 @@ impl Game {
             toasts: Vec::new(),
             mods_stamp: 0,
             mods_poll: 0.0,
+            packs: atlas::discover_packs(),
+            pack_warnings,
+            pack_override,
             tick_accum: 0.0,
             tick_accum2: 0.0,
             config,
@@ -335,12 +372,13 @@ impl Game {
             fps: 0,
             ui: UiBatch::new(),
         };
-        g.mods_stamp = mods_tree_stamp();
+        g.mods_stamp = content_tree_stamp();
         g.apply_config();
         g.refresh_worlds();
         // Dev/headless: open a specific menu screen for UI verification.
         match std::env::var("WILDFORGE_SCREEN").as_deref() {
             Ok("mods") => g.screen = Screen::Mods,
+            Ok("packs") => g.screen = Screen::Packs,
             Ok("settings") => g.screen = Screen::Settings,
             Ok("confirm") => {
                 g.pending_delete = if g.worlds.is_empty() { None } else { Some(0) };
@@ -1061,10 +1099,33 @@ impl Game {
 
     /// Hot reload: rebuild the registry + atlas from disk, remap the live
     /// world and inventories by string id, recompile scripts.
+    /// The pack id in effect: the dev env override, else the config choice.
+    fn active_pack_id(&self) -> String {
+        self.pack_override.clone().unwrap_or_else(|| self.config.pack.clone())
+    }
+
+    /// Rebuild + swap the atlas for the currently selected texture pack and
+    /// persist the choice. Registry/scripts are untouched — packs are art only.
+    fn apply_pack(&mut self) {
+        let (data, px, warns) = atlas::build_atlas(
+            &self.reg.tex_files,
+            pack_dir_of(&self.active_pack_id()).as_deref(),
+            &self.reg.tex_names,
+        );
+        self.renderer.set_atlas(&data, px);
+        self.pack_warnings = warns;
+        self.config.save();
+    }
+
     fn reload_mods(&mut self, forced: bool) {
         let old = self.reg.clone();
         let new_reg = Arc::new(registry::load(std::path::Path::new("mods")));
-        let (atlas_data, atlas_px) = atlas::build_with_mods(&new_reg.tex_files);
+        let (atlas_data, atlas_px, warns) = atlas::build_atlas(
+            &new_reg.tex_files,
+            pack_dir_of(&self.active_pack_id()).as_deref(),
+            &new_reg.tex_names,
+        );
+        self.pack_warnings = warns;
         self.renderer.set_atlas(&atlas_data, atlas_px);
 
         // Remap items by name (old registry -> new); unknown items vanish.
@@ -1315,11 +1376,11 @@ impl Game {
                 }
             }
         }
-        // Hot reload: poll the mods tree once a second.
+        // Hot reload: poll the mods + packs trees once a second.
         self.mods_poll += dt;
         if self.mods_poll >= 1.0 {
             self.mods_poll = 0.0;
-            let stamp = mods_tree_stamp();
+            let stamp = content_tree_stamp();
             if stamp != self.mods_stamp {
                 self.mods_stamp = stamp;
                 self.reload_mods(false);
@@ -1558,6 +1619,21 @@ impl Game {
         (w / 2.0 - 150.0, base + j as f32 * 56.0, 300.0, 42.0)
     }
 
+    // ---- texture packs screen layout ----
+
+    /// Row 0 is "NONE", rows 1.. are discovered packs.
+    fn pack_row_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (w / 2.0 - 220.0, h * 0.20 + i as f32 * 68.0, 440.0, 42.0)
+    }
+
+    fn pack_back_rect(&self) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (w / 2.0 - 150.0, h - 80.0, 300.0, 42.0)
+    }
+
     // ---- settings screen layout ----
 
     const SLIDERS: [&'static str; 4] = ["VOLUME", "SENSITIVITY", "RENDER DIST", "FOV"];
@@ -1707,7 +1783,7 @@ impl Game {
                     let dr = self.title_delete_rect(i);
                     Self::draw_button(&mut ui, dr, "X", self.hit(dr));
                 }
-                for (j, label) in ["NEW SURVIVAL WORLD", "NEW CREATIVE WORLD", "MODS", "SETTINGS", "QUIT"].iter().enumerate() {
+                for (j, label) in ["NEW SURVIVAL WORLD", "NEW CREATIVE WORLD", "MODS", "TEXTURE PACKS", "SETTINGS", "QUIT"].iter().enumerate() {
                     let r = self.title_action_rect(j);
                     Self::draw_button(&mut ui, r, label, self.hit(r));
                 }
@@ -1738,6 +1814,45 @@ impl Game {
                 let hint = "EDIT MODS/ WHILE PLAYING - CHANGES HOT RELOAD. F5 FORCES.";
                 ui.text_shadow(w / 2.0 - 300.0, y + 16.0, 1.5, hint, [0.7, 0.7, 0.7, 1.0]);
                 let br = self.menu_button_rect(4);
+                Self::draw_button(&mut ui, br, "BACK", self.hit(br));
+                self.ui = ui;
+                return;
+            }
+            Screen::Packs => {
+                ui.rect(0.0, 0.0, w, h, [0.02, 0.05, 0.1, 0.75]);
+                let tw = UiBatch::text_width(4.0, "TEXTURE PACKS");
+                ui.text_shadow((w - tw) / 2.0, h * 0.08, 4.0, "TEXTURE PACKS", [1.0; 4]);
+                for i in 0..=self.packs.len().min(7) {
+                    let r = self.pack_row_rect(i);
+                    let label = if i == 0 {
+                        "NONE - PROCEDURAL".to_string()
+                    } else {
+                        self.packs[i - 1].name.to_uppercase()
+                    };
+                    Self::draw_button(&mut ui, r, &label, self.hit(r));
+                    let cur = self.active_pack_id();
+                    let active = if i == 0 {
+                        cur.is_empty() || pack_dir_of(&cur).is_none()
+                    } else {
+                        self.packs[i - 1].id == cur
+                    };
+                    if active {
+                        ui.text_shadow(r.0 + r.2 + 18.0, r.1 + 12.0, 2.0, "ACTIVE", [0.5, 1.0, 0.5, 1.0]);
+                    }
+                    if i > 0 && !self.packs[i - 1].description.is_empty() {
+                        let d: String = self.packs[i - 1].description.chars().take(64).collect();
+                        ui.text_shadow(r.0 + 8.0, r.1 + r.3 + 4.0, 1.5, &d.to_uppercase(), [0.7, 0.7, 0.7, 1.0]);
+                    }
+                }
+                let mut y = self.pack_row_rect(self.packs.len().min(7)).1 + 60.0;
+                for warn in self.pack_warnings.iter().take(3) {
+                    let msg: String = warn.chars().take(70).collect();
+                    ui.text_shadow(w / 2.0 - 300.0, y, 1.5, &msg.to_uppercase(), [1.0, 0.5, 0.5, 1.0]);
+                    y += 20.0;
+                }
+                let hint = "DROP PACKS IN PACKS/ - PNG EDITS HOT RELOAD LIVE.";
+                ui.text_shadow(w / 2.0 - 300.0, y + 4.0, 1.5, hint, [0.7, 0.7, 0.7, 1.0]);
+                let br = self.pack_back_rect();
                 Self::draw_button(&mut ui, br, "BACK", self.hit(br));
                 self.ui = ui;
                 return;
@@ -1853,7 +1968,7 @@ impl Game {
         }
 
         match self.screen {
-            Screen::Playing | Screen::Title | Screen::Mods | Screen::Settings
+            Screen::Playing | Screen::Title | Screen::Mods | Screen::Packs | Screen::Settings
             | Screen::ConfirmDelete => {}
             Screen::Furnace(pos) => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
@@ -2377,9 +2492,13 @@ impl Game {
                     self.set_screen(Screen::Mods);
                 } else if self.hit(self.title_action_rect(3)) {
                     self.sfx(Sfx::Click);
+                    self.packs = atlas::discover_packs();
+                    self.set_screen(Screen::Packs);
+                } else if self.hit(self.title_action_rect(4)) {
+                    self.sfx(Sfx::Click);
                     self.settings_from_pause = false;
                     self.set_screen(Screen::Settings);
-                } else if self.hit(self.title_action_rect(4)) {
+                } else if self.hit(self.title_action_rect(5)) {
                     event_loop.exit();
                 }
             }
@@ -2387,6 +2506,26 @@ impl Game {
                 if self.hit(self.menu_button_rect(4)) {
                     self.sfx(Sfx::Click);
                     self.set_screen(Screen::Title);
+                }
+            }
+            Screen::Packs => {
+                if self.hit(self.pack_back_rect()) {
+                    self.sfx(Sfx::Click);
+                    self.set_screen(Screen::Title);
+                    return;
+                }
+                for i in 0..=self.packs.len().min(7) {
+                    if self.hit(self.pack_row_rect(i)) {
+                        let sel =
+                            if i == 0 { String::new() } else { self.packs[i - 1].id.clone() };
+                        self.sfx(Sfx::Click);
+                        if sel != self.active_pack_id() {
+                            self.pack_override = None;
+                            self.config.pack = sel;
+                            self.apply_pack();
+                        }
+                        return;
+                    }
                 }
             }
             Screen::Furnace(pos) => {
@@ -2479,7 +2618,7 @@ impl Game {
                     self.pending_delete = None;
                     self.set_screen(Screen::Title);
                 }
-                Screen::Mods => self.set_screen(Screen::Title),
+                Screen::Mods | Screen::Packs => self.set_screen(Screen::Title),
                 Screen::Title | Screen::Dead => {}
             },
             KeyCode::KeyE if pressed && self.in_world => match self.screen {

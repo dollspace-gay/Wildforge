@@ -83,6 +83,32 @@ mod, registered through the same TOML pipeline external mods use
   declare `interaction`, `min_tier`, and mods get `[[smelt]]`/`[[fuel]]`
   entries plus `aliases.toml` for lossless renames.
 
+## Texture packs
+
+Drop-in re-skins, no recompiling and no mod required. Design doc:
+`docs/texture-packs-plan.md`.
+
+- **Format**: a folder in `packs/` with individual PNGs named by tile —
+  `packs/<id>/tiles/stone.png`, `grass_top.png`, … (the same names mod
+  TOML references as `@stone`). Mod art is addressable too:
+  `tiles/gems/ruby_ore.png` re-skins the gems mod's ruby ore. Any
+  per-tile resolution; tiles you don't include keep their default art.
+  Optional `pack.toml` supplies a display name and description.
+- **Selecting**: TEXTURE PACKS on the title screen lists every pack;
+  click to switch instantly. The choice persists in `config.txt`
+  (`WILDFORGE_PACK=<id>` overrides it for a run without saving).
+- **Live editing**: repaint a PNG while the game runs and the world
+  re-skins within a second — same hot-reload loop as mods.
+- **Start from a template**: `WILDFORGE_EXPORT_TILES=packs/mytheme`
+  dumps every named tile (built-ins plus loaded mods) as a
+  correctly-named PNG with a stub `pack.toml` — repaint what you want,
+  delete the rest. `WILDFORGE_EXPORT_ATLAS=file.png` still exports the
+  whole sheet, and a full `assets/atlas.png` replacement still works as
+  the base layer under packs.
+- Packs layer **over** mod textures: an explicit pack choice wins, but
+  only for tiles it ships. Ships with `packs/dusk` — moody moonlit
+  recolors of the overworld as a worked example.
+
 ## Item browser & creative mode
 
 - **Item browser** (native NEI/JEI): a searchable panel docked beside the

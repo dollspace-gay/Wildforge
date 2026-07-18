@@ -1464,7 +1464,7 @@ fn wood_leaf_tiles_are_opaque_in_atlas() {
     // Regression: a tile painted past the row boundary once left spruce
     // leaves transparent (invisible canopies).
     let reg = base_reg();
-    let (img, px) = crate::atlas::build_with_mods(&reg.tex_files);
+    let (img, px, _) = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
     let tp = px / 16;
     for name in ["base:leaves", "base:birch_leaves", "base:spruce_leaves",
                  "base:jungle_leaves", "base:acacia_leaves"] {
@@ -1503,7 +1503,12 @@ fn atlas_builds_with_mod_texture() {
     let red = reg.block_id("texmod:red").expect("block with png");
     let slot = reg.block(red).tiles[0];
     assert!(slot >= crate::atlas::FIRST_FREE_SLOT, "mod texture gets a free slot");
-    let (img, px) = crate::atlas::build_with_mods(&reg.tex_files);
+    assert!(
+        reg.tex_names.contains(&("texmod/red".to_string(), slot)),
+        "mod texture is pack-addressable by <mod_id>/<stem>: {:?}",
+        reg.tex_names
+    );
+    let (img, px, _) = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
     let tp = px / 16;
     let tx = (slot as u32 % 16) * tp + tp / 2;
     let ty = (slot as u32 / 16) * tp + tp / 2;
@@ -1552,4 +1557,140 @@ fn print_biome_locations() {
         }
         println!("{biome:?}: {bx},{bz}");
     }
+}
+
+// ---------------- texture packs ----------------
+
+fn write_solid_png(path: &std::path::Path, w: u32, h: u32, rgba: [u8; 4]) {
+    let mut data = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut data, w, h);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().unwrap().write_image_data(&rgba.repeat((w * h) as usize)).unwrap();
+    }
+    std::fs::write(path, data).unwrap();
+}
+
+fn tile_center(img: &[u8], px: u32, slot: u16) -> [u8; 4] {
+    let tp = px / 16;
+    let cx = (slot as u32 % 16) * tp + tp / 2;
+    let cy = (slot as u32 / 16) * tp + tp / 2;
+    let i = ((cy * px + cx) * 4) as usize;
+    [img[i], img[i + 1], img[i + 2], img[i + 3]]
+}
+
+#[test]
+fn pack_discovery_lists_folders() {
+    let root = tmp_dir("packdisc");
+    std::fs::create_dir_all(root.join("zeta")).unwrap();
+    std::fs::create_dir_all(root.join("alpha")).unwrap();
+    std::fs::write(
+        root.join("alpha/pack.toml"),
+        "name = \"Alpha Pack\"\ndescription = \"test pack\"\n",
+    )
+    .unwrap();
+    std::fs::write(root.join("stray.txt"), "not a pack").unwrap();
+    let packs = crate::atlas::discover_packs_in(&root);
+    assert_eq!(packs.len(), 2, "only directories count");
+    assert_eq!(packs[0].id, "alpha");
+    assert_eq!(packs[0].name, "Alpha Pack");
+    assert_eq!(packs[0].description, "test pack");
+    assert_eq!(packs[1].id, "zeta");
+    assert_eq!(packs[1].name, "zeta", "missing pack.toml falls back to dir name");
+}
+
+#[test]
+fn pack_tile_override_applied_at_slot() {
+    let pack = tmp_dir("packstone");
+    std::fs::create_dir_all(pack.join("tiles")).unwrap();
+    write_solid_png(&pack.join("tiles/stone.png"), 8, 8, [255, 0, 255, 255]);
+    let (base, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
+    let (img, px, warns) = crate::atlas::build_atlas(&[], Some(&pack), &[]);
+    assert_eq!(px, bpx);
+    assert!(warns.is_empty(), "no warnings: {warns:?}");
+    let stone = *crate::atlas::builtin_slots().get("stone").unwrap();
+    let dirt = *crate::atlas::builtin_slots().get("dirt").unwrap();
+    assert_eq!(tile_center(&img, px, stone), [255, 0, 255, 255], "stone repainted");
+    assert_eq!(
+        tile_center(&img, px, dirt),
+        tile_center(&base, bpx, dirt),
+        "untargeted tile falls through to base"
+    );
+}
+
+#[test]
+fn pack_overrides_mod_tile_by_name_and_wins() {
+    let modtex = tmp_dir("packmodtex");
+    let slot = crate::atlas::FIRST_FREE_SLOT;
+    write_solid_png(&modtex.join("ruby_ore.png"), 4, 4, [0, 255, 0, 255]);
+    let tex_files = vec![(slot, modtex.join("ruby_ore.png"))];
+    let tex_names = vec![("gems/ruby_ore".to_string(), slot)];
+
+    let pack = tmp_dir("packgems");
+    std::fs::create_dir_all(pack.join("tiles/gems")).unwrap();
+    write_solid_png(&pack.join("tiles/gems/ruby_ore.png"), 4, 4, [255, 0, 255, 255]);
+
+    // Without the pack the mod's art lands in the slot...
+    let (img, px, _) = crate::atlas::build_atlas(&tex_files, None, &tex_names);
+    assert_eq!(tile_center(&img, px, slot), [0, 255, 0, 255]);
+    // ...with the pack, the pack's art wins (layered last).
+    let (img, px, warns) = crate::atlas::build_atlas(&tex_files, Some(&pack), &tex_names);
+    assert!(warns.is_empty(), "{warns:?}");
+    assert_eq!(tile_center(&img, px, slot), [255, 0, 255, 255], "pack > mod");
+}
+
+#[test]
+fn pack_unknown_and_unreadable_files_warn() {
+    let pack = tmp_dir("packwarn");
+    std::fs::create_dir_all(pack.join("tiles")).unwrap();
+    write_solid_png(&pack.join("tiles/notatile.png"), 4, 4, [1, 2, 3, 255]);
+    std::fs::write(pack.join("tiles/stone.png"), b"this is not a png").unwrap();
+    let (base, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
+    let (img, px, warns) = crate::atlas::build_atlas(&[], Some(&pack), &[]);
+    assert_eq!(warns.len(), 2, "unknown name + unreadable png: {warns:?}");
+    assert!(warns.iter().any(|w| w.contains("notatile")));
+    let stone = *crate::atlas::builtin_slots().get("stone").unwrap();
+    assert_eq!(
+        tile_center(&img, px, stone),
+        tile_center(&base, bpx, stone),
+        "unreadable file leaves the base tile intact"
+    );
+}
+
+#[test]
+fn config_pack_round_trips() {
+    let mut c = crate::config::Config::default();
+    assert!(c.pack.is_empty(), "default is no pack");
+    c.pack = "dusk".to_string();
+    let parsed = crate::config::Config::from_text(&c.to_text());
+    assert_eq!(parsed, c, "config text round-trips the pack field");
+    let legacy = crate::config::Config::from_text("volume=0.5\n");
+    assert!(legacy.pack.is_empty(), "old configs load with no pack");
+}
+
+#[test]
+fn content_stamp_changes_on_pack_edit() {
+    let root = tmp_dir("packstamp");
+    std::fs::create_dir_all(root.join("dusk/tiles")).unwrap();
+    write_solid_png(&root.join("dusk/tiles/stone.png"), 4, 4, [9, 9, 9, 255]);
+    let before = crate::content_tree_stamp_of(&[&root]);
+    write_solid_png(&root.join("dusk/tiles/dirt.png"), 4, 4, [9, 9, 9, 255]);
+    let after = crate::content_tree_stamp_of(&[&root]);
+    assert_ne!(before, after, "adding a pack file re-stamps the content tree");
+}
+
+#[test]
+fn export_tiles_round_trip_reproduces_atlas() {
+    let (img, px, _) = crate::atlas::build_atlas(&[], None, &[]);
+    let out = tmp_dir("packexport");
+    let n = crate::atlas::export_tiles(&out, &img, px, &[]).unwrap();
+    assert_eq!(n, crate::atlas::builtin_slots().len(), "every named builtin tile exported");
+    assert!(out.join("pack.toml").exists(), "stub pack.toml written");
+    assert!(out.join("tiles/stone.png").exists());
+    // Selecting the exported skeleton as a pack reproduces the atlas exactly.
+    let (again, apx, warns) = crate::atlas::build_atlas(&[], Some(&out), &[]);
+    assert!(warns.is_empty(), "{warns:?}");
+    assert_eq!(apx, px);
+    assert_eq!(again, img, "export -> re-import is the identity");
 }
