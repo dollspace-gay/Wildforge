@@ -59,8 +59,11 @@ mod, registered through the same TOML pipeline external mods use
 
 - **Data mods** (no code): drop a folder in `mods/` with `mod.toml`
   (id/name/version/depends), `blocks.toml`, `items.toml`, `recipes.toml`,
-  `features.toml` (ore veins), and PNG tiles in `textures/` (packed into the
-  atlas at load; `@name` references built-in procedural tiles)
+  `features.toml` (ore veins), `tags.toml` (item groups — recipes accept
+  `"#base:planks"`-style tag ingredients, and mods can extend shared tags
+  so e.g. a new wood's planks work in every plank recipe), and PNG tiles in
+  `textures/` (packed into the atlas at load; `@name` references built-in
+  procedural tiles)
 - **Script mods**: add `main.rhai` with event handlers —
   `on_world_start`, `on_block_break/place` (return `false` to cancel),
   `on_interact`, `on_craft`, `on_player_respawn`, `on_tick`.
@@ -144,7 +147,9 @@ Dev cheat: `WILDFORGE_GIVE=1` starts with some items for testing.
   own surfaces, vegetation shapes, and densities; **five wood families**
   (oak, birch with flecked white bark, dark spruce, vivid jungle, olive
   acacia) grow per biome with distinct bark/leaf/ring textures, forests
-  mix oak and birch, and every log crafts into planks; biome placement
+  mix oak and birch, and every log crafts into its own colored planks —
+  all plank types are interchangeable (and mixable) in recipes via
+  ingredient tags; biome placement
   correlates with terrain shape because both read the same noise fields;
   the current biome shows in the window title
 - Chunk streaming with per-frame generation/meshing budgets, nearest-first

@@ -791,19 +791,94 @@ fn wood_families_registered_and_craftable() {
     for w in ["birch", "spruce", "jungle", "acacia"] {
         assert!(reg.block_id(&format!("base:{w}_log")).is_some(), "{w} log");
         assert!(reg.block_id(&format!("base:{w}_leaves")).is_some(), "{w} leaves");
-        // Each log crafts into planks.
+        assert!(reg.block_id(&format!("base:{w}_planks")).is_some(), "{w} planks");
+        // Each log crafts into ITS OWN planks.
         let log = it(&reg, &format!("base:{w}_log"));
         let mut g = vec![None; 4];
         g[0] = Some(ItemStack::new(&reg, log, 1));
         let r = crate::crafting::match_recipe(&reg, &g, 2)
             .unwrap_or_else(|| panic!("{w} log -> planks recipe"));
-        assert_eq!(r.output, it(&reg, "base:planks"));
+        assert_eq!(r.output, it(&reg, &format!("base:{w}_planks")), "{w} planks output");
         assert_eq!(r.count, 4);
     }
     // Leaves are leaf-like: non-opaque, dropless, breakable.
     let bl = b(&reg, "base:spruce_leaves");
     assert!(!reg.is_opaque(bl));
     assert_eq!(reg.block(bl).drops, None);
+}
+
+#[test]
+fn any_plank_type_is_interchangeable_in_recipes() {
+    let reg = base_reg();
+    let sticks = it(&reg, "base:stick");
+    let table = it(&reg, "base:crafting_table");
+    let grid = |size: usize, cells: &[(usize, crate::registry::ItemId)]| {
+        let mut g = vec![None; size * size];
+        for &(i, item) in cells {
+            g[i] = Some(ItemStack::new(&reg, item, 1));
+        }
+        g
+    };
+    // Sticks from every plank type.
+    for w in ["planks", "birch_planks", "spruce_planks", "jungle_planks", "acacia_planks"] {
+        let p = it(&reg, &format!("base:{w}"));
+        let g = grid(2, &[(0, p), (2, p)]);
+        let r = crate::crafting::match_recipe(&reg, &g, 2)
+            .unwrap_or_else(|| panic!("sticks from {w}"));
+        assert_eq!(r.output, sticks);
+    }
+    // A crafting table from MIXED plank types.
+    let g = grid(
+        2,
+        &[
+            (0, it(&reg, "base:planks")),
+            (1, it(&reg, "base:spruce_planks")),
+            (2, it(&reg, "base:jungle_planks")),
+            (3, it(&reg, "base:birch_planks")),
+        ],
+    );
+    assert_eq!(
+        crate::crafting::match_recipe(&reg, &g, 2).expect("mixed-plank table").output,
+        table
+    );
+    // Tools too: pickaxe head from acacia planks.
+    let a = it(&reg, "base:acacia_planks");
+    let s = it(&reg, "base:stick");
+    let g = grid(3, &[(0, a), (1, a), (2, a), (4, s), (7, s)]);
+    assert_eq!(
+        crate::crafting::match_recipe(&reg, &g, 3).unwrap().output,
+        it(&reg, "base:wood_pickaxe")
+    );
+}
+
+#[test]
+fn mods_can_extend_ingredient_tags() {
+    let root = tmp_dir("tagmod");
+    let dir = root.join("cherry");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("mod.toml"), "id = \"cherry\"\ndepends = [\"base\"]\n").unwrap();
+    std::fs::write(
+        dir.join("blocks.toml"),
+        "[[block]]\nid = \"planks\"\nname = \"Cherry Planks\"\ntexture = \"@planks\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("tags.toml"),
+        "[[tag]]\nid = \"base:planks\"\nitems = [\"cherry:planks\"]\n",
+    )
+    .unwrap();
+    let reg = registry::load(&root);
+    let cherry = reg.item_id("cherry:planks").expect("cherry planks item");
+    assert!(
+        reg.tags["base:planks"].contains(&cherry),
+        "mod planks join the shared tag"
+    );
+    // And they immediately work in base recipes: sticks from cherry planks.
+    let mut g = vec![None; 4];
+    g[0] = Some(ItemStack::new(&reg, cherry, 1));
+    g[2] = Some(ItemStack::new(&reg, cherry, 1));
+    let r = crate::crafting::match_recipe(&reg, &g, 2).expect("sticks from cherry planks");
+    assert_eq!(r.output, reg.item_id("base:stick").unwrap());
 }
 
 #[test]

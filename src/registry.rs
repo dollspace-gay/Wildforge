@@ -53,11 +53,27 @@ pub struct ItemDef {
     pub places: Option<BlockId>,
 }
 
+/// A recipe slot requirement: one exact item, or any member of a tag.
+#[derive(Clone, Debug)]
+pub enum Ingredient {
+    One(ItemId),
+    Any(Vec<ItemId>),
+}
+
+impl Ingredient {
+    pub fn matches(&self, item: ItemId) -> bool {
+        match self {
+            Ingredient::One(i) => *i == item,
+            Ingredient::Any(list) => list.contains(&item),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RecipeDef {
     pub w: usize,
     pub h: usize,
-    pub pattern: Vec<Option<ItemId>>,
+    pub pattern: Vec<Option<Ingredient>>,
     pub output: ItemId,
     pub count: u32,
 }
@@ -93,6 +109,8 @@ pub struct Registry {
     pub water_ids: [BlockId; 8],
     pub unknown_block: BlockId,
     pub mods: Vec<ModInfo>,
+    /// Item groups usable as `#tag` recipe ingredients; mods can extend them.
+    pub tags: HashMap<String, Vec<ItemId>>,
     /// Mod textures to pack: (slot, png path).
     pub tex_files: Vec<(u16, PathBuf)>,
 }
@@ -260,6 +278,12 @@ struct RecipeToml {
 }
 
 #[derive(Deserialize, Clone)]
+struct TagToml {
+    id: String,
+    items: Vec<String>,
+}
+
+#[derive(Deserialize, Clone)]
 struct FeatureToml {
     r#type: String,
     block: String,
@@ -293,6 +317,11 @@ struct FeaturesFile {
     #[serde(default)]
     feature: Vec<FeatureToml>,
 }
+#[derive(Deserialize, Default)]
+struct TagsFile {
+    #[serde(default)]
+    tag: Vec<TagToml>,
+}
 
 struct RawMod {
     info: ModInfo,
@@ -301,6 +330,7 @@ struct RawMod {
     items: Vec<ItemToml>,
     recipes: Vec<RecipeToml>,
     features: Vec<FeatureToml>,
+    tags: Vec<TagToml>,
 }
 
 // ---------------- loading ----------------
@@ -308,6 +338,7 @@ struct RawMod {
 const BASE_BLOCKS: &str = include_str!("../base/blocks.toml");
 const BASE_ITEMS: &str = include_str!("../base/items.toml");
 const BASE_RECIPES: &str = include_str!("../base/recipes.toml");
+const BASE_TAGS: &str = include_str!("../base/tags.toml");
 
 fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
     let manifest = std::fs::read_to_string(dir.join("mod.toml"))
@@ -322,6 +353,8 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         toml::from_str(&read("recipes.toml")).map_err(|e| format!("recipes.toml: {e}"))?;
     let features: FeaturesFile =
         toml::from_str(&read("features.toml")).map_err(|e| format!("features.toml: {e}"))?;
+    let tags: TagsFile =
+        toml::from_str(&read("tags.toml")).map_err(|e| format!("tags.toml: {e}"))?;
     let has_script = dir.join("main.rhai").exists();
     Ok(RawMod {
         info: ModInfo {
@@ -337,6 +370,7 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         items: items.item,
         recipes: recipes.recipe,
         features: features.feature,
+        tags: tags.tag,
     })
 }
 
@@ -344,6 +378,7 @@ fn base_mod() -> RawMod {
     let blocks: BlocksFile = toml::from_str(BASE_BLOCKS).expect("base blocks.toml");
     let items: ItemsFile = toml::from_str(BASE_ITEMS).expect("base items.toml");
     let recipes: RecipesFile = toml::from_str(BASE_RECIPES).expect("base recipes.toml");
+    let tags: TagsFile = toml::from_str(BASE_TAGS).expect("base tags.toml");
     RawMod {
         info: ModInfo {
             id: "base".into(),
@@ -358,6 +393,7 @@ fn base_mod() -> RawMod {
         items: items.item,
         recipes: recipes.recipe,
         features: vec![],
+        tags: tags.tag,
     }
 }
 
@@ -448,6 +484,7 @@ impl RemoveStable for Vec<RawMod> {
             items: vec![],
             recipes: vec![],
             features: vec![],
+            tags: vec![],
         };
         std::mem::replace(&mut self[idx], dummy)
     }
@@ -464,6 +501,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         water_ids: [AIR; 8],
         unknown_block: AIR,
         mods: Vec::new(),
+        tags: HashMap::new(),
         tex_files: Vec::new(),
     };
     let mut tex_slots: HashMap<String, u16> = crate::atlas::builtin_slots();
@@ -530,6 +568,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let mut pending_drops: Vec<PendingDrop> = Vec::new();
     let mut pending_recipes: Vec<(String, RecipeToml)> = Vec::new();
     let mut pending_features: Vec<(String, FeatureToml)> = Vec::new();
+    let mut pending_tags: Vec<(String, TagToml)> = Vec::new();
 
     for raw in &raws {
         if raw.info.id.is_empty() {
@@ -630,6 +669,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         for f in &raw.features {
             pending_features.push((raw.info.id.clone(), f.clone()));
         }
+        for t in &raw.tags {
+            pending_tags.push((raw.info.id.clone(), t.clone()));
+        }
         let mut info = raw.info.clone();
         if !errs.is_empty() {
             info.error = Some(errs.join("; "));
@@ -659,6 +701,18 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let lookup_item = |reg: &Registry, modid: &str, name: &str| -> Option<ItemId> {
         reg.item_id(&qualify(modid, name)).or_else(|| reg.item_id(name))
     };
+    // Tags first (recipes reference them). Multiple mods extend the same tag.
+    for (modid, t) in pending_tags {
+        let tag_name = qualify(&modid, &t.id);
+        for item in &t.items {
+            if let Some(id) = lookup_item(&reg, &modid, item) {
+                let entry = reg.tags.entry(tag_name.clone()).or_default();
+                if !entry.contains(&id) {
+                    entry.push(id);
+                }
+            }
+        }
+    }
     for pd in pending_drops {
         let d = match pd.rule.as_str() {
             "none" => None,
@@ -688,9 +742,19 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     ok = false;
                     continue;
                 };
-                match lookup_item(&reg, &modid, name) {
-                    Some(i) => pattern[y * w + x] = Some(i),
-                    None => ok = false,
+                if let Some(tag) = name.strip_prefix('#') {
+                    let tag_name = qualify(&modid, tag);
+                    match reg.tags.get(&tag_name) {
+                        Some(list) if !list.is_empty() => {
+                            pattern[y * w + x] = Some(Ingredient::Any(list.clone()))
+                        }
+                        _ => ok = false,
+                    }
+                } else {
+                    match lookup_item(&reg, &modid, name) {
+                        Some(i) => pattern[y * w + x] = Some(Ingredient::One(i)),
+                        None => ok = false,
+                    }
                 }
             }
         }

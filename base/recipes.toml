@@ -6,18 +6,18 @@ count = 4
 
 [[recipe]]
 pattern = ["p", "p"]
-keys = { p = "base:planks" }
+keys = { p = "#base:planks" }
 output = "base:stick"
 count = 4
 
 [[recipe]]
 pattern = ["pp", "pp"]
-keys = { p = "base:planks" }
+keys = { p = "#base:planks" }
 output = "base:crafting_table"
 
 [[recipe]]
 pattern = ["ppp", ".s.", ".s."]
-keys = { p = "base:planks", s = "base:stick" }
+keys = { p = "#base:planks", s = "base:stick" }
 output = "base:wood_pickaxe"
 
 [[recipe]]
@@ -27,7 +27,7 @@ output = "base:stone_pickaxe"
 
 [[recipe]]
 pattern = ["pp", "ps", ".s"]
-keys = { p = "base:planks", s = "base:stick" }
+keys = { p = "#base:planks", s = "base:stick" }
 output = "base:wood_axe"
 
 [[recipe]]
@@ -37,7 +37,7 @@ output = "base:stone_axe"
 
 [[recipe]]
 pattern = ["p", "s", "s"]
-keys = { p = "base:planks", s = "base:stick" }
+keys = { p = "#base:planks", s = "base:stick" }
 output = "base:wood_shovel"
 
 [[recipe]]
@@ -48,23 +48,23 @@ output = "base:stone_shovel"
 [[recipe]]
 pattern = ["l"]
 keys = { l = "base:birch_log" }
-output = "base:planks"
+output = "base:birch_planks"
 count = 4
 
 [[recipe]]
 pattern = ["l"]
 keys = { l = "base:spruce_log" }
-output = "base:planks"
+output = "base:spruce_planks"
 count = 4
 
 [[recipe]]
 pattern = ["l"]
 keys = { l = "base:jungle_log" }
-output = "base:planks"
+output = "base:jungle_planks"
 count = 4
 
 [[recipe]]
 pattern = ["l"]
 keys = { l = "base:acacia_log" }
-output = "base:planks"
+output = "base:acacia_planks"
 count = 4

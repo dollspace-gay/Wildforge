@@ -30,6 +30,8 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("spruce_log", 46), ("spruce_log_top", 47), ("spruce_leaves", 48),
         ("jungle_log", 49), ("jungle_log_top", 50), ("jungle_leaves", 51),
         ("acacia_log", 52), ("acacia_log_top", 53), ("acacia_leaves", 54),
+        ("birch_planks", 55), ("spruce_planks", 56), ("jungle_planks", 57),
+        ("acacia_planks", 58),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
@@ -404,6 +406,28 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, 1.0, 255)
     });
 
+    let plank_colored = |px: u32, py: u32, u: f32, salt: u32,
+                         board: [f32; 3], seam: [f32; 3], nail: [f32; 3]| -> [u8; 4] {
+        let boards = 4;
+        let bh = tp / boards;
+        let b = py / bh;
+        let seam_row = py % bh == 0 || py % bh == bh - 1;
+        let tone = 0.9 + h01(b as i32, 0, salt) * 0.18;
+        let joint_u = h01(b as i32, 1, salt ^ 0x55) * 0.8 + 0.1;
+        let at_joint = (u - joint_u).abs() < 0.5 / tp as f32 * 2.0;
+        if seam_row || at_joint {
+            return rgba(seam, 0.9, 255);
+        }
+        let grain = (vnoise(u * 9.0, (py as f32 / tp as f32) * 3.0, 9, salt ^ 0x99) - 0.5) * 0.16;
+        let mut c = rgba(board, tone * (1.0 + grain) * speck(px, py, salt ^ 0x77, 0.04), 255);
+        let mid = b * bh + bh / 2;
+        let e = (tp / 16).max(1);
+        if py.abs_diff(mid) < e && (px < 2 * e && px >= e || px >= tp - 2 * e && px < tp - e) {
+            c = rgba(nail, 1.0, 255);
+        }
+        c
+    };
+
     let plank_at = |px: u32, py: u32, u: f32, _v: f32, salt: u32| -> [u8; 4] {
         let boards = 4;
         let bh = tp / boards;
@@ -605,6 +629,20 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
                 c = mix3(c, [8.0, 22.0, 8.0], 0.7);
             }
             rgba(c, 1.0, 255)
+        });
+    }
+
+    // Per-wood planks (oak planks stay at slot 10).
+    let plank_sets: [(u32, [f32; 3], [f32; 3]); 4] = [
+        (55, [196.0, 178.0, 138.0], [128.0, 114.0, 86.0]),  // birch: pale
+        (56, [104.0, 78.0, 48.0], [58.0, 42.0, 26.0]),      // spruce: dark
+        (57, [156.0, 106.0, 76.0], [96.0, 60.0, 40.0]),     // jungle: ruddy
+        (58, [168.0, 96.0, 54.0], [104.0, 56.0, 30.0]),     // acacia: orange
+    ];
+    for (slot, board, seam) in plank_sets {
+        let (tx, ty) = (slot % 16, slot / 16);
+        tile(tx, ty, &mut |px, py, u, _v| {
+            plank_colored(px, py, u, 40 + slot, board, seam, [80.0, 74.0, 64.0])
         });
     }
 

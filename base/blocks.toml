@@ -64,7 +64,7 @@ drops = "none"
 
 [[block]]
 id = "planks"
-name = "Planks"
+name = "Oak Planks"
 texture = "@planks"
 hardness = 1.8
 tool = "axe"
@@ -171,3 +171,31 @@ texture = "@acacia_leaves"
 hardness = 0.3
 opaque = false
 drops = "none"
+
+[[block]]
+id = "birch_planks"
+name = "Birch Planks"
+texture = "@birch_planks"
+hardness = 1.8
+tool = "axe"
+
+[[block]]
+id = "spruce_planks"
+name = "Spruce Planks"
+texture = "@spruce_planks"
+hardness = 1.8
+tool = "axe"
+
+[[block]]
+id = "jungle_planks"
+name = "Jungle Planks"
+texture = "@jungle_planks"
+hardness = 1.8
+tool = "axe"
+
+[[block]]
+id = "acacia_planks"
+name = "Acacia Planks"
+texture = "@acacia_planks"
+hardness = 1.8
+tool = "axe"

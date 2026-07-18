@@ -1,0 +1,22 @@
+# Item groups usable in recipes as "#base:planks" etc.
+# Mods can extend these from their own tags.toml.
+
+[[tag]]
+id = "planks"
+items = [
+  "base:planks",
+  "base:birch_planks",
+  "base:spruce_planks",
+  "base:jungle_planks",
+  "base:acacia_planks",
+]
+
+[[tag]]
+id = "logs"
+items = [
+  "base:log",
+  "base:birch_log",
+  "base:spruce_log",
+  "base:jungle_log",
+  "base:acacia_log",
+]

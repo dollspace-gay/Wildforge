@@ -33,9 +33,13 @@ pub fn match_recipe<'r>(
             let ok = (0..bh).all(|y| {
                 (0..bw).all(|x| {
                     let px = if mirror { bw - 1 - x } else { x };
-                    let want = r.pattern[y * r.w + px];
+                    let want = &r.pattern[y * r.w + px];
                     let have = grid[(min_y + y) * size + (min_x + x)].map(|s| s.item);
-                    want == have
+                    match (want, have) {
+                        (None, None) => true,
+                        (Some(ing), Some(item)) => ing.matches(item),
+                        _ => false,
+                    }
                 })
             });
             if ok {
