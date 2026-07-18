@@ -90,6 +90,33 @@ pub struct FrameInput<'a> {
     pub crosshair: bool,
 }
 
+/// Frustum planes from a view-projection matrix (Gribb-Hartmann).
+fn frustum_planes(m: &Mat4) -> [glam::Vec4; 6] {
+    let r0 = m.row(0);
+    let r1 = m.row(1);
+    let r2 = m.row(2);
+    let r3 = m.row(3);
+    [r3 + r0, r3 - r0, r3 + r1, r3 - r1, r3 + r2, r3 - r2]
+}
+
+/// Is the chunk's AABB at least partially inside the frustum?
+fn chunk_visible(planes: &[glam::Vec4; 6], pos: ChunkPos) -> bool {
+    let min = glam::Vec3::new(pos.x as f32 * 16.0, 0.0, pos.z as f32 * 16.0);
+    let max = min + glam::Vec3::new(16.0, 256.0, 16.0);
+    for p in planes {
+        // Positive vertex: the AABB corner furthest along the plane normal.
+        let v = glam::Vec3::new(
+            if p.x >= 0.0 { max.x } else { min.x },
+            if p.y >= 0.0 { max.y } else { min.y },
+            if p.z >= 0.0 { max.z } else { min.z },
+        );
+        if p.x * v.x + p.y * v.y + p.z * v.z + p.w < 0.0 {
+            return false;
+        }
+    }
+    true
+}
+
 fn upload_mesh(device: &wgpu::Device, verts: &[Vertex], idx: &[u32]) -> Option<GpuMesh> {
     if idx.is_empty() {
         return None;
@@ -657,9 +684,13 @@ impl Renderer {
             pass.set_bind_group(0, &self.uniform_bg, &[]);
             pass.set_bind_group(1, &self.atlas_bg, &[]);
 
-            // Opaque terrain
+            // Opaque terrain (frustum-culled)
+            let planes = frustum_planes(&f.view_proj);
             pass.set_pipeline(&self.chunk_pipeline);
-            for gpu in self.chunks.values() {
+            for (pos, gpu) in &self.chunks {
+                if !chunk_visible(&planes, *pos) {
+                    continue;
+                }
                 if let Some(m) = &gpu.opaque {
                     pass.set_vertex_buffer(0, m.vbuf.slice(..));
                     pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
@@ -676,7 +707,10 @@ impl Renderer {
 
             // Water
             pass.set_pipeline(&self.water_pipeline);
-            for gpu in self.chunks.values() {
+            for (pos, gpu) in &self.chunks {
+                if !chunk_visible(&planes, *pos) {
+                    continue;
+                }
                 if let Some(m) = &gpu.water {
                     pass.set_vertex_buffer(0, m.vbuf.slice(..));
                     pass.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);

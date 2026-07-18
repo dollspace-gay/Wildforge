@@ -49,7 +49,7 @@ use renderer::FrameInput;
 use ui::UiBatch;
 use world::World;
 
-const GEN_BUDGET: usize = 10; // chunk generations per frame
+const GEN_BUDGET: usize = 4; // chunk generations per frame (256-tall gen is pricey)
 const MESH_BUDGET: usize = 6; // chunk remeshes per frame
 const DAY_LENGTH: f32 = 600.0; // seconds per full day/night cycle
 const REACH: f32 = 5.0;
@@ -195,7 +195,7 @@ fn find_spawn(world: &World) -> (i32, i32) {
     'outer: for r in 0..64 {
         let d = r * 8;
         for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
-            if g.height(x, z) > SEA_LEVEL + 1 {
+            if g.surface_estimate(x, z) > SEA_LEVEL + 1 {
                 best = (x, z);
                 break 'outer;
             }
@@ -342,13 +342,53 @@ impl Game {
     /// Load (or create) a world and enter it.
     fn start_world(&mut self, name: &str) {
         let mut world = World::load_or_create(PathBuf::from("saves").join(name), self.reg.clone());
-        let (sx, sz) = find_spawn(&world);
+        // Dev: WILDFORGE_SPAWN="x,z" overrides the spawn search.
+        let (sx, sz) = std::env::var("WILDFORGE_SPAWN")
+            .ok()
+            .and_then(|s| {
+                let (a, b) = s.split_once(',')?;
+                Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+            })
+            .unwrap_or_else(|| find_spawn(&world));
         let spawn_chunk = ChunkPos::of_world(sx, sz);
         for dx in -1..=1 {
             for dz in -1..=1 {
                 world.ensure_chunk(ChunkPos { x: spawn_chunk.x + dx, z: spawn_chunk.z + dz });
             }
         }
+        // 3D terrain can put the "highest solid" on an overhang lip or a
+        // spike; refine to a locally flat, dry column so spawning is safe.
+        let (sx, sz) = {
+            let mut best = (sx, sz);
+            let mut best_score = i32::MAX;
+            for dx in -12..=12 {
+                for dz in -12..=12 {
+                    let (x, z) = (sx + dx, sz + dz);
+                    let h = world.surface_height(x, z);
+                    if h <= SEA_LEVEL + 1 {
+                        continue;
+                    }
+                    let mut slope = 0;
+                    for (nx, nz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        slope = slope.max((h - world.surface_height(x + nx, z + nz)).abs());
+                    }
+                    let score = slope * 100 + dx.abs() + dz.abs();
+                    if slope <= 1 {
+                        best = (x, z);
+                        best_score = 0;
+                        break;
+                    }
+                    if score < best_score {
+                        best_score = score;
+                        best = (x, z);
+                    }
+                }
+                if best_score == 0 {
+                    break;
+                }
+            }
+            best
+        };
         let sy = world.surface_height(sx, sz) + 1;
         let spawn = Vec3::new(sx as f32 + 0.5, sy as f32 + 0.2, sz as f32 + 0.5);
 
@@ -1105,6 +1145,7 @@ impl Game {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(240);
             if self.total_frames == shot_frame {
+                eprintln!("fps at capture: {}", self.fps);
                 self.renderer.pending_screenshot = Some(path);
             } else if self.total_frames > shot_frame + 1 {
                 std::process::exit(0);
@@ -1118,8 +1159,13 @@ impl Game {
             self.frames = 0;
             self.last_title = now;
             let p = self.player.pos;
+            let biome = if self.in_world {
+                format!(" | {}", self.world.generator.biome(p.x as i32, p.z as i32).name())
+            } else {
+                String::new()
+            };
             self.window.set_title(&format!(
-                "Wildforge — {} fps | XYZ {:.1} / {:.1} / {:.1}{}",
+                "Wildforge — {} fps | XYZ {:.1} / {:.1} / {:.1}{biome}{}",
                 self.fps,
                 p.x,
                 p.y,

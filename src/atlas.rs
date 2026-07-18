@@ -24,7 +24,8 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("water", 12), ("table_top", 13), ("table_side", 14),
         ("stick", 32), ("wood_pickaxe", 33), ("stone_pickaxe", 34),
         ("wood_axe", 35), ("stone_axe", 36), ("wood_shovel", 37),
-        ("stone_shovel", 38),
+        ("stone_shovel", 38), ("snow", 39), ("ice", 40),
+        ("cactus_side", 41), ("cactus_top", 42),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
@@ -471,6 +472,51 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             return rgba([120.0, 96.0, 60.0], f, 255);
         }
         plank_at(px, py, u, v, 35)
+    });
+
+    // (39..=42 => row 2 tiles 7..) biome blocks: snow, ice, cactus.
+    tile(7, 2, &mut |px, py, u, v| {
+        // snow: bright white with faint blue shading.
+        let t = fbm(u, v, 6, 50);
+        let c = mix3([230.0, 236.0, 244.0], [250.0, 252.0, 255.0], t);
+        rgba(c, speck(px, py, 51, 0.03) * emboss(px, py, tp), 255)
+    });
+    tile(8, 2, &mut |px, py, u, v| {
+        // ice: pale glossy blue with lighter crack veins.
+        let t = fbm(u, v, 4, 52);
+        let mut c = mix3([148.0, 186.0, 224.0], [190.0, 220.0, 246.0], t);
+        let vein = (vnoise(u * 5.0, v * 5.0, 5, 53) - 0.5).abs();
+        if vein < 0.04 {
+            c = mix3(c, [235.0, 245.0, 255.0], 0.8);
+        }
+        // Diagonal gloss band.
+        let gloss = ((u + v) * std::f32::consts::TAU * 1.5).sin();
+        rgba(c, (1.0 + gloss * 0.04) * speck(px, py, 54, 0.02) * emboss(px, py, tp), 255)
+    });
+    tile(9, 2, &mut |px, py, u, _v| {
+        // cactus side: vertical ribs with pale spines.
+        let rib = ((u * std::f32::consts::TAU * 4.0).sin() * 0.5 + 0.5) * 0.3;
+        let c = mix3([44.0, 96.0, 36.0], [88.0, 148.0, 62.0], 0.4 + rib);
+        let spine = hash(px as i32, py as i32, 55) % 37 == 0;
+        if spine {
+            rgba([220.0, 228.0, 190.0], 1.0, 255)
+        } else {
+            rgba(c, speck(px, py, 56, 0.06), 255)
+        }
+    });
+    tile(10, 2, &mut |px, py, u, v| {
+        // cactus top: rib ring + pale center.
+        let dx = u - 0.5;
+        let dy = v - 0.5;
+        let r = (dx * dx + dy * dy).sqrt();
+        let c = if r < 0.12 {
+            [150.0, 190.0, 110.0]
+        } else if r < 0.34 {
+            [70.0, 128.0, 50.0]
+        } else {
+            [52.0, 106.0, 40.0]
+        };
+        rgba(c, speck(px, py, 57, 0.05) * emboss(px, py, tp), 255)
     });
 
     // (15,0) unknown/missing texture: magenta checkerboard.

@@ -126,9 +126,24 @@ Dev cheat: `WILDFORGE_GIVE=1` starts with some items for testing.
 
 ## Features
 
-- Infinite procedurally generated terrain: fBm heightmap with continents,
-  hills, beaches, oceans, 3D-noise caves, and trees (early-alpha Minecraft
-  dimensions: 16×16×128 chunks, sea level 64, bedrock floor)
+- Infinite procedural **3D terrain** (Caves & Cliffs style): a
+  lattice-interpolated density field with spline-shaped geography —
+  continentalness/erosion/ridges noises drive ocean basins, plains,
+  plateaus, and mountain ranges up to y≈230 with real overhangs and cliff
+  lips (16×16×256 chunks, sea level 64, bedrock floor); frustum-culled
+  rendering; design in `docs/terrain-v2-plan.md`
+- Layered noise caves: big "cheese" caverns deep down plus winding
+  "spaghetti" tunnels whose entrances taper near the surface
+- Slope- and altitude-aware surfacing: steep faces expose bare stone,
+  peaks above y≈170 carry snow caps, underwater floors are sand/gravel
+- **Eight biomes** by nearest-centroid matching in 5D climate space
+  (temperature, humidity, continentalness, erosion, ridges) — forest,
+  plains, desert (sand + cacti), jungle (dense giant canopies), scrubland
+  (patchy sand/grass + shrubs), taiga (conifers), arctic (snow cover,
+  frozen ocean ice), and mountains (bare stone, snow caps) — each with its
+  own surfaces, vegetation shapes, and densities; biome placement
+  correlates with terrain shape because both read the same noise fields;
+  the current biome shows in the window title
 - Chunk streaming with per-frame generation/meshing budgets, nearest-first
 - Face-culled chunk meshing with per-vertex ambient occlusion and
   Minecraft-style directional face shading (with anisotropy-fixing quad flips)

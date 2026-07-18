@@ -11,15 +11,6 @@ use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos};
 use crate::registry::{AIR, BlockId, Registry};
 use crate::worldgen::Generator;
 
-/// Block string ids of the pre-registry v1 save format, in enum order.
-const V1_PALETTE: [&str; 20] = [
-    "base:air", "base:grass", "base:dirt", "base:stone", "base:cobblestone",
-    "base:sand", "base:gravel", "base:log", "base:leaves", "base:planks",
-    "base:bedrock", "base:water", "base:crafting_table",
-    "base:water/flow1", "base:water/flow2", "base:water/flow3", "base:water/flow4",
-    "base:water/flow5", "base:water/flow6", "base:water/flow7",
-];
-
 pub struct World {
     pub chunks: HashMap<ChunkPos, Chunk>,
     pub generator: Generator,
@@ -115,34 +106,23 @@ impl World {
         let out = chunk.raw_mut();
         let mut o = 0;
 
-        if data.starts_with(b"WFC2") {
-            // v2: (count u16, id u16) pairs, remapped through the palette.
-            let mut i = 4;
-            while i + 4 <= data.len() && o < out.len() {
-                let count = u16::from_le_bytes([data[i], data[i + 1]]) as usize;
-                let stored = u16::from_le_bytes([data[i + 2], data[i + 3]]) as usize;
-                let id = self
-                    .load_remap
-                    .get(stored)
-                    .copied()
-                    .unwrap_or(self.reg.unknown_block);
-                let end = (o + count).min(out.len());
-                out[o..end].fill(id.0);
-                o = end;
-                i += 4;
-            }
-        } else {
-            // Legacy v1: (count u16, id u8), fixed enum palette.
-            let mut i = 0;
-            while i + 3 <= data.len() && o < out.len() {
-                let count = u16::from_le_bytes([data[i], data[i + 1]]) as usize;
-                let name = V1_PALETTE.get(data[i + 2] as usize).copied().unwrap_or("base:unknown");
-                let id = self.reg.block_id(name).unwrap_or(self.reg.unknown_block);
-                let end = (o + count).min(out.len());
-                out[o..end].fill(id.0);
-                o = end;
-                i += 3;
-            }
+        if !data.starts_with(b"WFC3") {
+            return None; // pre-256-height save: regenerate
+        }
+        // (count u16, id u16) pairs, remapped through the palette.
+        let mut i = 4;
+        while i + 4 <= data.len() && o < out.len() {
+            let count = u16::from_le_bytes([data[i], data[i + 1]]) as usize;
+            let stored = u16::from_le_bytes([data[i + 2], data[i + 3]]) as usize;
+            let id = self
+                .load_remap
+                .get(stored)
+                .copied()
+                .unwrap_or(self.reg.unknown_block);
+            let end = (o + count).min(out.len());
+            out[o..end].fill(id.0);
+            o = end;
+            i += 4;
         }
         if o != out.len() {
             return None; // corrupt; regenerate
@@ -155,7 +135,7 @@ impl World {
     fn save_chunk(&self, pos: ChunkPos, chunk: &Chunk) -> std::io::Result<()> {
         let raw = chunk.raw();
         let mut buf: Vec<u8> = Vec::with_capacity(4096);
-        buf.extend_from_slice(b"WFC2");
+        buf.extend_from_slice(b"WFC3");
         let mut i = 0;
         while i < raw.len() {
             let b = raw[i];

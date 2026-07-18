@@ -3,7 +3,7 @@
 use crate::registry::BlockId;
 
 pub const CHUNK_X: usize = 16;
-pub const CHUNK_Y: usize = 128;
+pub const CHUNK_Y: usize = 256;
 pub const CHUNK_Z: usize = 16;
 pub const SEA_LEVEL: i32 = 64;
 

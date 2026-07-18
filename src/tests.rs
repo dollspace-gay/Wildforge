@@ -113,30 +113,21 @@ fn save_v2_roundtrip_with_palette() {
 }
 
 #[test]
-fn legacy_v1_world_migrates() {
+fn pre_v3_saves_regenerate_cleanly() {
     let reg = base_reg();
-    let dir = tmp_dir("v1mig");
+    let dir = tmp_dir("oldsave");
     std::fs::write(dir.join("seed"), "42").unwrap();
-    // Hand-write a v1 chunk: (count u16 le, id u8) — 32768 cells.
-    // id 3 = stone in the old enum order; fill everything with it.
-    let mut data = Vec::new();
-    let total = 16 * 16 * 128usize;
-    let mut left = total;
-    while left > 0 {
-        let run = left.min(u16::MAX as usize) as u16;
-        data.extend_from_slice(&run.to_le_bytes());
-        data.push(3u8);
-        left -= run as usize;
-    }
-    std::fs::write(dir.join("c.0.0.wfc"), data).unwrap();
-
+    // A stale v2 chunk file must be ignored (regenerated), not crash.
+    std::fs::write(dir.join("c.0.0.wfc"), b"WFC2garbagegarbage").unwrap();
     let mut w = World::load_or_create(dir, reg.clone());
     w.ensure_chunk(ChunkPos { x: 0, z: 0 });
-    assert_eq!(w.get_block(5, 60, 5), b(&reg, "base:stone"), "v1 ids must remap by name");
-    // Re-save produces v2.
+    assert_eq!(w.get_block(0, 0, 0), b(&reg, "base:bedrock"));
+    w.save_modified();
+    // ensure_chunk on fresh terrain marks modified=false, so force a write.
+    w.set_block(1, 100, 1, b(&reg, "base:planks"));
     w.save_modified();
     let bytes = std::fs::read(w.save_dir_for_test().join("c.0.0.wfc")).unwrap();
-    assert!(bytes.starts_with(b"WFC2"));
+    assert!(bytes.starts_with(b"WFC3"), "saves are written as v3 now");
 }
 
 #[test]
@@ -147,8 +138,8 @@ fn unknown_palette_entries_become_placeholder() {
     // Palette maps id 1 to a mod block that no longer exists.
     std::fs::write(dir.join("palette"), "0 base:air\n1 gonemod:ore\n").unwrap();
     let mut data = Vec::new();
-    data.extend_from_slice(b"WFC2");
-    let total = 16 * 16 * 128usize;
+    data.extend_from_slice(b"WFC3");
+    let total = 16 * 16 * 256usize;
     let mut left = total;
     while left > 0 {
         let run = left.min(u16::MAX as usize) as u16;
@@ -429,6 +420,371 @@ fn world_remaps_after_registry_change() {
     assert_eq!(w.get_block(0, 0, 0), b(&reg_without, "base:bedrock"));
 }
 
+// ---------------- biomes ----------------
+
+use crate::worldgen::{Biome, Generator};
+
+/// Find a column of the given biome near the origin (deterministic per seed).
+fn find_biome(g: &Generator, want: Biome) -> Option<(i32, i32)> {
+    for r in 0..200 {
+        let d = r * 24;
+        for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d), (d, -d), (-d, d)] {
+            if g.biome(x, z) == want {
+                return Some((x, z));
+            }
+        }
+    }
+    None
+}
+
+#[test]
+fn all_seven_biomes_exist_and_are_deterministic() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    let g2 = Generator::new(42, &reg);
+    for biome in [
+        Biome::Forest,
+        Biome::Plains,
+        Biome::Desert,
+        Biome::Jungle,
+        Biome::Scrubland,
+        Biome::Taiga,
+        Biome::Arctic,
+    ] {
+        let (x, z) = find_biome(&g, biome)
+            .unwrap_or_else(|| panic!("{biome:?} not found within search radius"));
+        assert_eq!(g.biome(x, z), g2.biome(x, z), "same seed, same biome");
+    }
+    // Different seeds shuffle the layout.
+    let g3 = Generator::new(1337, &reg);
+    let mut diff = 0;
+    for i in 0..40 {
+        let (x, z) = (i * 173, i * -211);
+        if g.biome(x, z) != g3.biome(x, z) {
+            diff += 1;
+        }
+    }
+    assert!(diff > 5, "different seeds should give different biome maps ({diff})");
+}
+
+/// Generate the chunk containing a column and return (world, surface y).
+fn gen_at(reg: &Arc<Registry>, name: &str, x: i32, z: i32) -> (World, i32) {
+    let mut w = World::new(42, tmp_dir(name), reg.clone());
+    let cp = ChunkPos::of_world(x, z);
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            w.ensure_chunk(ChunkPos { x: cp.x + dx, z: cp.z + dz });
+        }
+    }
+    let h = w.surface_height(x, z);
+    (w, h)
+}
+
+#[test]
+fn desert_has_sand_surface_and_cacti() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    let (x, z) = find_biome(&g, Biome::Desert).unwrap();
+    // Find a dry desert column (above sea level).
+    let mut spot = None;
+    'scan: for dx in 0..64 {
+        for dz in 0..64 {
+            let (cx, cz) = (x + dx, z + dz);
+            if g.biome(cx, cz) == Biome::Desert && g.surface_estimate(cx, cz) > crate::chunk::SEA_LEVEL + 1 {
+                spot = Some((cx, cz));
+                break 'scan;
+            }
+        }
+    }
+    let (x, z) = spot.expect("dry desert column");
+    let (w, h) = gen_at(&reg, "desert", x, z);
+    assert_eq!(w.get_block(x, h, z), b(&reg, "base:sand"), "desert surface is sand");
+    assert_eq!(w.get_block(x, h - 2, z), b(&reg, "base:sand"), "desert subsoil is sand");
+    // Cacti generate somewhere in desert chunks (deterministic for seed 42).
+    let cactus = b(&reg, "base:cactus");
+    let cp = ChunkPos::of_world(x, z);
+    let mut w2 = World::new(42, tmp_dir("cacti"), reg.clone());
+    let mut found = false;
+    'chunks: for dx in -4..=4 {
+        for dz in -4..=4 {
+            let p = ChunkPos { x: cp.x + dx, z: cp.z + dz };
+            w2.ensure_chunk(p);
+            let bx = p.x * 16;
+            let bz = p.z * 16;
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    for y in 60..90 {
+                        if w2.get_block(bx + lx, y, bz + lz) == cactus {
+                            found = true;
+                            break 'chunks;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(found, "cacti should generate in deserts");
+}
+
+#[test]
+fn arctic_has_snow_and_frozen_ocean() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    let (x, z) = find_biome(&g, Biome::Arctic).unwrap();
+    let mut land = None;
+    let mut ocean = None;
+    for dx in 0..96 {
+        for dz in 0..96 {
+            let (cx, cz) = (x + dx, z + dz);
+            if g.biome(cx, cz) != Biome::Arctic {
+                continue;
+            }
+            let h = g.surface_estimate(cx, cz);
+            if h > crate::chunk::SEA_LEVEL + 1 && land.is_none() {
+                land = Some((cx, cz));
+            }
+            if h < crate::chunk::SEA_LEVEL - 2 && ocean.is_none() {
+                ocean = Some((cx, cz));
+            }
+        }
+    }
+    if let Some((cx, cz)) = land {
+        let (w, h) = gen_at(&reg, "arctic-land", cx, cz);
+        assert_eq!(w.get_block(cx, h, cz), b(&reg, "base:snow"), "arctic surface is snow");
+    }
+    if let Some((cx, cz)) = ocean {
+        let (w, _) = gen_at(&reg, "arctic-sea", cx, cz);
+        assert_eq!(
+            w.get_block(cx, crate::chunk::SEA_LEVEL, cz),
+            b(&reg, "base:ice"),
+            "arctic ocean surface is ice"
+        );
+        assert!(
+            reg.is_water(w.get_block(cx, crate::chunk::SEA_LEVEL - 1, cz)),
+            "water under the ice"
+        );
+    }
+    assert!(land.is_some() || ocean.is_some(), "found neither arctic land nor ocean");
+}
+
+#[test]
+fn jungle_denser_than_plains() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    let count_logs = |name: &str, biome: Biome| -> (u32, u32) {
+        let (x, z) = find_biome(&g, biome).unwrap();
+        let cp = ChunkPos::of_world(x, z);
+        let mut w = World::new(42, tmp_dir(name), reg.clone());
+        let log = b(&reg, "base:log");
+        let mut logs = 0;
+        let mut cols = 0;
+        for dx in -3..=3 {
+            for dz in -3..=3 {
+                let p = ChunkPos { x: cp.x + dx, z: cp.z + dz };
+                w.ensure_chunk(p);
+                for lx in 0..16 {
+                    for lz in 0..16 {
+                        let (wx, wz) = (p.x * 16 + lx, p.z * 16 + lz);
+                        if w.generator.biome(wx, wz) == biome {
+                            cols += 1;
+                            for y in 60..100 {
+                                if w.get_block(wx, y, wz) == log {
+                                    logs += 1;
+                                    break; // one per column
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        (logs, cols.max(1))
+    };
+    let (jl, jc) = count_logs("jungle", Biome::Jungle);
+    let (pl, pc) = count_logs("plains", Biome::Plains);
+    let jd = jl as f32 / jc as f32;
+    let pd = pl as f32 / pc as f32;
+    assert!(
+        jd > pd * 3.0,
+        "jungle tree density ({jd:.4}) should dwarf plains ({pd:.4})"
+    );
+}
+
+// ---------------- terrain v2 ----------------
+
+#[test]
+fn spline_eval_clamps_and_interpolates() {
+    use crate::worldgen::Spline;
+    let s = Spline::new(&[(-1.0, 10.0), (0.0, 20.0), (1.0, 100.0)]);
+    assert_eq!(s.at(-2.0), 10.0);
+    assert_eq!(s.at(2.0), 100.0);
+    assert_eq!(s.at(-1.0), 10.0);
+    assert!((s.at(-0.5) - 15.0).abs() < 1e-4);
+    assert!((s.at(0.5) - 60.0).abs() < 1e-4);
+}
+
+#[test]
+fn terrain_has_overhangs() {
+    // 3D density terrain must produce air-under-solid somewhere.
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("overhang"), reg.clone());
+    let mut found = false;
+    'outer: for cx in -6..6 {
+        for cz in -6..6 {
+            w.ensure_chunk(ChunkPos { x: cx, z: cz });
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    let (x, z) = (cx * 16 + lx, cz * 16 + lz);
+                    // solid above air above solid, all above sea level
+                    for y in 70..200 {
+                        if w.get_block(x, y, z) == AIR
+                            && reg.is_solid(w.get_block(x, y + 1, z))
+                            && (66..y).any(|yy| reg.is_solid(w.get_block(x, yy, z)))
+                        {
+                            found = true;
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(found, "3D terrain should create overhangs");
+}
+
+#[test]
+fn mountains_rise_above_plains() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    let sample_max = |biome: Biome| -> i32 {
+        let mut best = 0;
+        let mut n = 0;
+        for r in 0..400 {
+            let d = r * 16;
+            for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
+                if g.biome(x, z) == biome {
+                    best = best.max(g.surface_estimate(x, z));
+                    n += 1;
+                    if n > 200 {
+                        return best;
+                    }
+                }
+            }
+        }
+        best
+    };
+    let m = sample_max(Biome::Mountains);
+    let p = sample_max(Biome::Plains);
+    assert!(m > 130, "mountains should reach high ({m})");
+    assert!(m > p + 30, "mountains ({m}) far above plains ({p})");
+}
+
+#[test]
+fn oceans_exist_and_fill_with_water() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    // Find a deep-ocean column via continentalness.
+    let mut spot = None;
+    'outer: for r in 0..300 {
+        let d = r * 24;
+        for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
+            if g.surface_estimate(x, z) < 55 {
+                spot = Some((x, z));
+                break 'outer;
+            }
+        }
+    }
+    let (x, z) = spot.expect("an ocean should exist");
+    let mut w = World::new(42, tmp_dir("ocean"), reg.clone());
+    w.ensure_chunk(ChunkPos::of_world(x, z));
+    assert!(reg.is_water(w.get_block(x, 63, z)) || w.get_block(x, 63, z) == b(&reg, "base:ice"));
+    let floor = w.surface_height(x, z);
+    assert!(floor < 62, "ocean floor below sea level ({floor})");
+    let fb = w.get_block(x, floor, z);
+    assert!(
+        fb == b(&reg, "base:sand") || fb == b(&reg, "base:gravel"),
+        "ocean floor surfaced with sand/gravel, got {}",
+        reg.block(fb).name
+    );
+}
+
+#[test]
+fn caves_exist_underground() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("caves2"), reg.clone());
+    let mut pockets = 0;
+    for cx in -3..3 {
+        for cz in -3..3 {
+            w.ensure_chunk(ChunkPos { x: cx, z: cz });
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    let (x, z) = (cx * 16 + lx, cz * 16 + lz);
+                    let top = w.surface_height(x, z);
+                    for y in 6..(top - 10).min(50) {
+                        if w.get_block(x, y, z) == AIR {
+                            pockets += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(pockets > 200, "underground cave air should be plentiful ({pockets})");
+}
+
+#[test]
+fn steep_faces_and_peaks_surface_correctly() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    // Find a mountain area and generate it.
+    let (mx, mz) = {
+        let mut best = (0, 0);
+        let mut best_h = 0;
+        for r in 0..300 {
+            let d = r * 16;
+            for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
+                let h = g.surface_estimate(x, z);
+                if h > best_h {
+                    best_h = h;
+                    best = (x, z);
+                }
+            }
+            if best_h > 165 {
+                break;
+            }
+        }
+        best
+    };
+    let mut w = World::new(42, tmp_dir("peaks"), reg.clone());
+    let cp = ChunkPos::of_world(mx, mz);
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            w.ensure_chunk(ChunkPos { x: cp.x + dx, z: cp.z + dz });
+        }
+    }
+    let snow = b(&reg, "base:snow");
+    let stone = b(&reg, "base:stone");
+    let (mut snowy, mut stony, mut grassy_high) = (0, 0, 0);
+    for lx in 0..16 {
+        for lz in 0..16 {
+            let (x, z) = (cp.x * 16 + lx, cp.z * 16 + lz);
+            let top = w.surface_height(x, z);
+            let tb = w.get_block(x, top, z);
+            if top >= 170 && tb == snow {
+                snowy += 1;
+            }
+            if tb == stone {
+                stony += 1;
+            }
+            if top >= 170 && tb == b(&reg, "base:grass") {
+                grassy_high += 1;
+            }
+        }
+    }
+    assert_eq!(grassy_high, 0, "no grass on extreme peaks");
+    assert!(snowy + stony > 0, "mountain tops are stone/snow");
+}
+
 // ---------------- gameplay (regression) ----------------
 
 #[test]
@@ -610,4 +966,29 @@ fn missing_texture_uses_placeholder_not_crash() {
     assert_eq!(reg.block(x).tiles[0], crate::atlas::UNKNOWN_SLOT);
     let m = reg.mods.iter().find(|m| m.id == "m").unwrap();
     assert!(m.error.as_deref().unwrap_or("").contains("missing texture"));
+}
+
+#[test]
+#[ignore]
+fn print_biome_locations() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    for biome in [
+        Biome::Forest, Biome::Plains, Biome::Desert, Biome::Jungle,
+        Biome::Scrubland, Biome::Taiga, Biome::Arctic, Biome::Mountains,
+    ] {
+        // Prefer a dry column so the screenshot shows land.
+        let (mut bx, mut bz) = find_biome(&g, biome).unwrap();
+        'scan: for dx in 0..96 {
+            for dz in 0..96 {
+                let (x, z) = (bx + dx, bz + dz);
+                if g.biome(x, z) == biome && g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 2 {
+                    bx = x;
+                    bz = z;
+                    break 'scan;
+                }
+            }
+        }
+        println!("{biome:?}: {bx},{bz}");
+    }
 }

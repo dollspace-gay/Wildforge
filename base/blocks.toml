@@ -90,3 +90,24 @@ texture = { top = "@table_top", side = "@table_side", bottom = "@planks" }
 hardness = 1.8
 tool = "axe"
 interactive = true
+
+[[block]]
+id = "snow"
+name = "Snow"
+texture = "@snow"
+hardness = 0.5
+tool = "shovel"
+
+[[block]]
+id = "ice"
+name = "Ice"
+texture = "@ice"
+hardness = 2.0
+tool = "pickaxe"
+drops = "none"
+
+[[block]]
+id = "cactus"
+name = "Cactus"
+texture = { top = "@cactus_top", side = "@cactus_side" }
+hardness = 0.5
