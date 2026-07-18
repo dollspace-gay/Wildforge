@@ -479,3 +479,220 @@ texture = "@bedroll"
 max_stack = 1
 durability = 12
 bedroll = true
+
+# ---- iron & steel ----
+
+[[item]]
+id = "raw_iron"
+name = "Raw Iron"
+texture = "@raw_iron"
+
+[[item]]
+id = "iron_ingot"
+name = "Iron Ingot"
+texture = "@iron_ingot"
+
+[[item]]
+id = "steel_blend"
+name = "Steel Blend"
+texture = "@steel_blend"
+
+[[item]]
+id = "steel_ingot"
+name = "Steel Ingot"
+texture = "@steel_ingot"
+
+[[item]]
+id = "iron_pickaxe"
+name = "Iron Pickaxe"
+texture = "@iron_pickaxe"
+tool = "pickaxe"
+tool_speed = 16.0
+tool_tier = 4
+durability = 450
+
+[[item]]
+id = "iron_axe"
+name = "Iron Axe"
+texture = "@iron_axe"
+tool = "axe"
+tool_speed = 16.0
+tool_tier = 4
+durability = 450
+
+[[item]]
+id = "iron_shovel"
+name = "Iron Shovel"
+texture = "@iron_shovel"
+tool = "shovel"
+tool_speed = 16.0
+tool_tier = 4
+durability = 450
+
+[[item]]
+id = "iron_hoe"
+name = "Iron Hoe"
+texture = "@iron_hoe"
+tool = "hoe"
+tool_speed = 1.0
+tool_tier = 4
+durability = 450
+
+[[item]]
+id = "iron_sword"
+name = "Iron Sword"
+texture = "@iron_sword"
+max_stack = 1
+durability = 450
+damage = 10
+
+[[item]]
+id = "steel_pickaxe"
+name = "Steel Pickaxe"
+texture = "@steel_pickaxe"
+tool = "pickaxe"
+tool_speed = 20.0
+tool_tier = 5
+durability = 1000
+
+[[item]]
+id = "steel_axe"
+name = "Steel Axe"
+texture = "@steel_axe"
+tool = "axe"
+tool_speed = 20.0
+tool_tier = 5
+durability = 1000
+
+[[item]]
+id = "steel_shovel"
+name = "Steel Shovel"
+texture = "@steel_shovel"
+tool = "shovel"
+tool_speed = 20.0
+tool_tier = 5
+durability = 1000
+
+[[item]]
+id = "steel_hoe"
+name = "Steel Hoe"
+texture = "@steel_hoe"
+tool = "hoe"
+tool_speed = 1.0
+tool_tier = 5
+durability = 1000
+
+[[item]]
+id = "steel_sword"
+name = "Steel Sword"
+texture = "@steel_sword"
+max_stack = 1
+durability = 1000
+damage = 13
+
+[[item]]
+id = "iron_helmet"
+name = "Iron Helmet"
+texture = "@iron_helmet"
+durability = 380
+armor = { slot = "head", points = 2 }
+
+[[item]]
+id = "iron_chestplate"
+name = "Iron Chestplate"
+texture = "@iron_chestplate"
+durability = 380
+armor = { slot = "chest", points = 5 }
+
+[[item]]
+id = "iron_leggings"
+name = "Iron Leggings"
+texture = "@iron_leggings"
+durability = 380
+armor = { slot = "legs", points = 4 }
+
+[[item]]
+id = "iron_boots"
+name = "Iron Boots"
+texture = "@iron_boots"
+durability = 380
+armor = { slot = "feet", points = 3 }
+
+[[item]]
+id = "steel_helmet"
+name = "Steel Helmet"
+texture = "@steel_helmet"
+durability = 900
+armor = { slot = "head", points = 3 }
+
+[[item]]
+id = "steel_chestplate"
+name = "Steel Chestplate"
+texture = "@steel_chestplate"
+durability = 900
+armor = { slot = "chest", points = 6 }
+
+[[item]]
+id = "steel_leggings"
+name = "Steel Leggings"
+texture = "@steel_leggings"
+durability = 900
+armor = { slot = "legs", points = 5 }
+
+[[item]]
+id = "steel_boots"
+name = "Steel Boots"
+texture = "@steel_boots"
+durability = 900
+armor = { slot = "feet", points = 4 }
+
+[[item]]
+id = "shears"
+name = "Shears"
+texture = "@shears"
+max_stack = 1
+durability = 240
+shears = true
+
+[[item]]
+id = "excavation_brush"
+name = "Excavation Brush"
+texture = "@excavation_brush"
+max_stack = 1
+durability = 200
+brush_tool = true
+
+# ---- ruins & archaeology ----
+
+[[item]]
+id = "old_coin"
+name = "Old Coin"
+texture = "@old_coin"
+
+[[item]]
+id = "etched_tablet"
+name = "Etched Tablet"
+texture = "@etched_tablet"
+max_stack = 16
+tablet = true
+
+[[item]]
+id = "charm_quiet"
+name = "Charm of Quiet"
+texture = "@charm_quiet"
+max_stack = 1
+charm = "quiet"
+
+[[item]]
+id = "charm_bark"
+name = "Charm of Bark"
+texture = "@charm_bark"
+max_stack = 1
+charm = "bark"
+
+[[item]]
+id = "charm_hunger"
+name = "Charm of Slow Hunger"
+texture = "@charm_hunger"
+max_stack = 1
+charm = "hunger"

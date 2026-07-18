@@ -13,3 +13,11 @@ replaces = "base:stone"
 vein_size = 5
 per_chunk = 5
 y_range = [8, 56]
+
+[[feature]]
+type = "ore"
+block = "base:iron_ore"
+replaces = "base:stone"
+vein_size = 6
+per_chunk = 4
+y_range = [4, 48]

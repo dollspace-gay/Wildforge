@@ -83,6 +83,24 @@ mod, registered through the same TOML pipeline external mods use
   declare `interaction`, `min_tier`, and mods get `[[smelt]]`/`[[fuel]]`
   entries plus `aliases.toml` for lossless renames.
 
+## Iron, steel & the ruins of the takers
+
+- **Iron** runs deep (below y 48, bronze picks required); **steel** is
+  crafted knowledge — iron + charcoal blended, then a long burn. Ember
+  fuel smelts twice as fast: the wild's own fire makes the best steel.
+  Tier 4/5 tools, swords (10/13), and armor (14/18 points). **Shears**
+  clip leaves whole; the **excavation brush** (steel) opens the past.
+- **Ruins**: the wild has argued with takers before you, and won.
+  Stone circles, collapsed cabins, toppled towers on the surface;
+  cellars and old forges below, marked by chimney stubs. All
+  data-driven templates (`structures.toml`) — mods add ruins.
+- **Archaeology**: sweep cracked masonry and packed earth with the
+  brush (a slow, careful channel) for coins, seeds, worn iron tools,
+  one-slot **charms** (quiet / bark / slow hunger — modest, no
+  stacking), and **etched tablets** — the lost takers' last lines,
+  read by right-click. Breaking a remnant destroys its find, and the
+  wild charges 1 ire for opening a ruin's chest.
+
 ## Stewardship — the homestead path
 
 The give-back half of the ire dialogue: everything renewable, and the

@@ -275,6 +275,7 @@ output = "base:chest"
 [[fuel]]
 item = "base:ember"
 burn = 80.0
+speed = 2.0
 
 # ---- bows, arrows & armor ----
 
@@ -345,3 +346,131 @@ output = "base:bedroll"
 pattern = ["c.c", "cfc", ".c."]
 keys = { c = "base:cobblestone", f = "base:plant_fiber" }
 output = "base:offering_stone"
+
+# ---- iron & steel ----
+
+[[smelt]]
+input = "base:raw_iron"
+output = "base:iron_ingot"
+time = 10.0
+
+[[recipe]]
+pattern = ["ii", "cc"]
+keys = { i = "base:iron_ingot", c = "base:charcoal" }
+output = "base:steel_blend"
+count = 2
+
+[[smelt]]
+input = "base:steel_blend"
+output = "base:steel_ingot"
+time = 14.0
+
+[[recipe]]
+pattern = ["ii", "ii"]
+keys = { i = "base:iron_ingot" }
+output = "base:iron_block"
+
+[[recipe]]
+pattern = ["ss", "ss"]
+keys = { s = "base:steel_ingot" }
+output = "base:steel_block"
+
+[[recipe]]
+pattern = ["mmm", ".s.", ".s."]
+keys = { m = "base:iron_ingot", s = "base:stick" }
+output = "base:iron_pickaxe"
+
+[[recipe]]
+pattern = ["mm", "ms", ".s"]
+keys = { m = "base:iron_ingot", s = "base:stick" }
+output = "base:iron_axe"
+
+[[recipe]]
+pattern = ["m", "s", "s"]
+keys = { m = "base:iron_ingot", s = "base:stick" }
+output = "base:iron_shovel"
+
+[[recipe]]
+pattern = ["mm", ".s", ".s"]
+keys = { m = "base:iron_ingot", s = "base:stick" }
+output = "base:iron_hoe"
+
+[[recipe]]
+pattern = ["m", "m", "s"]
+keys = { m = "base:iron_ingot", s = "base:stick" }
+output = "base:iron_sword"
+
+[[recipe]]
+pattern = ["mmm", ".s.", ".s."]
+keys = { m = "base:steel_ingot", s = "base:stick" }
+output = "base:steel_pickaxe"
+
+[[recipe]]
+pattern = ["mm", "ms", ".s"]
+keys = { m = "base:steel_ingot", s = "base:stick" }
+output = "base:steel_axe"
+
+[[recipe]]
+pattern = ["m", "s", "s"]
+keys = { m = "base:steel_ingot", s = "base:stick" }
+output = "base:steel_shovel"
+
+[[recipe]]
+pattern = ["mm", ".s", ".s"]
+keys = { m = "base:steel_ingot", s = "base:stick" }
+output = "base:steel_hoe"
+
+[[recipe]]
+pattern = ["m", "m", "s"]
+keys = { m = "base:steel_ingot", s = "base:stick" }
+output = "base:steel_sword"
+
+[[recipe]]
+pattern = ["mmm", "m.m"]
+keys = { m = "base:iron_ingot" }
+output = "base:iron_helmet"
+
+[[recipe]]
+pattern = ["m.m", "mmm", "mmm"]
+keys = { m = "base:iron_ingot" }
+output = "base:iron_chestplate"
+
+[[recipe]]
+pattern = ["mmm", "m.m", "m.m"]
+keys = { m = "base:iron_ingot" }
+output = "base:iron_leggings"
+
+[[recipe]]
+pattern = ["m.m", "m.m"]
+keys = { m = "base:iron_ingot" }
+output = "base:iron_boots"
+
+[[recipe]]
+pattern = ["mmm", "m.m"]
+keys = { m = "base:steel_ingot" }
+output = "base:steel_helmet"
+
+[[recipe]]
+pattern = ["m.m", "mmm", "mmm"]
+keys = { m = "base:steel_ingot" }
+output = "base:steel_chestplate"
+
+[[recipe]]
+pattern = ["mmm", "m.m", "m.m"]
+keys = { m = "base:steel_ingot" }
+output = "base:steel_leggings"
+
+[[recipe]]
+pattern = ["m.m", "m.m"]
+keys = { m = "base:steel_ingot" }
+output = "base:steel_boots"
+
+[[recipe]]
+pattern = [".i", "i."]
+keys = { i = "base:iron_ingot" }
+output = "base:shears"
+
+[[recipe]]
+pattern = ["f", "s", "t"]
+keys = { f = "base:plant_fiber", s = "base:steel_ingot", t = "base:stick" }
+output = "base:excavation_brush"

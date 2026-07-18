@@ -1809,7 +1809,7 @@ fn mob_settles_on_ground_and_flees_from_damage() {
     m.health = def.health;
     let mut rng = 7u32;
     for _ in 0..120 {
-        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), true, 1.0 / 60.0, &mut rng, &mut Vec::new());
+        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
     }
     assert!(m.on_ground, "gravity settles the mob");
     assert!((m.pos.y - 181.0).abs() < 0.3, "standing on the pad, got y={}", m.pos.y);
@@ -1821,13 +1821,13 @@ fn mob_settles_on_ground_and_flees_from_damage() {
     assert!(m.health < def.health);
     let d0 = (m.pos - threat).length();
     for _ in 0..90 {
-        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), true, 1.0 / 60.0, &mut rng, &mut Vec::new());
+        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
     }
     let d1 = (m.pos - threat).length();
     assert!(d1 > d0 + 1.0, "fled from the threat ({d0:.1} -> {d1:.1})");
     // Panic subsides back to idle within the flee timer.
     for _ in 0..400 {
-        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), true, 1.0 / 60.0, &mut rng, &mut Vec::new());
+        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
     }
     assert_ne!(m.state, crate::mobs::MobState::Flee, "calmed down");
 }
@@ -1845,8 +1845,8 @@ fn skittish_flees_players_bold_does_not() {
     let mut deer = crate::mobs::Mob::new(deer_i, pos, 0.0);
     let mut boar = crate::mobs::Mob::new(boar_i, pos, 0.0);
     let mut rng = 3u32;
-    deer.tick(&w, &deer_def, player, true, 1.0 / 60.0, &mut rng, &mut Vec::new());
-    boar.tick(&w, &boar_def, player, true, 1.0 / 60.0, &mut rng, &mut Vec::new());
+    deer.tick(&w, &deer_def, player, true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
+    boar.tick(&w, &boar_def, player, true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
     assert_eq!(deer.state, crate::mobs::MobState::Flee, "deer spooks");
     assert_ne!(boar.state, crate::mobs::MobState::Flee, "boar doesn't care");
 }
@@ -1976,7 +1976,7 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
     w.mobs.push(far);
     let mut rng = 1u32;
     for _ in 0..60 {
-        w.tick_mobs(Vec3::ZERO, 1.0, true, 1.0 / 60.0, &mut rng);
+        w.tick_mobs(Vec3::ZERO, 1.0, true, 0.0, 1.0 / 60.0, &mut rng);
     }
     assert_eq!(w.mobs[far_i].pos.y, 80.0, "frozen, not falling, outside loaded chunks");
 
@@ -1993,7 +1993,7 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
     let mut buried = crate::mobs::Mob::new(si, Vec3::new(1.5, 104.0, 1.5), 0.0);
     buried.health = 10.0;
     w.mobs.push(buried);
-    w.tick_mobs(Vec3::new(60.0, 80.0, 60.0), 1.0, true, 1.0 / 60.0, &mut rng);
+    w.tick_mobs(Vec3::new(60.0, 80.0, 60.0), 1.0, true, 0.0, 1.0 / 60.0, &mut rng);
     assert!(
         w.mobs[buried_i].pos.y >= 110.5,
         "unstuck above the stone, got y={}",
@@ -2304,12 +2304,12 @@ fn warden_hunts_strikes_and_caster_fires() {
     m.health = def.health;
     let mut rng = 5u32;
     let mut events = Vec::new();
-    m.tick(&w, &def, player, true, 1.0 / 60.0, &mut rng, &mut events);
+    m.tick(&w, &def, player, true, 0.0, 1.0 / 60.0, &mut rng, &mut events);
     assert_eq!(m.state, crate::mobs::MobState::Hunt, "aggro within range");
     // Walk it onto the player: contact damage fires once, then cools down.
     m.pos = player + Vec3::new(0.8, 0.0, 0.0);
     for _ in 0..30 {
-        m.tick(&w, &def, player, true, 1.0 / 60.0, &mut rng, &mut events);
+        m.tick(&w, &def, player, true, 0.0, 1.0 / 60.0, &mut rng, &mut events);
         m.pos = player + Vec3::new(0.8, 0.0, 0.0);
     }
     let hits = events
@@ -2321,7 +2321,7 @@ fn warden_hunts_strikes_and_caster_fires() {
     let mut calm = crate::mobs::Mob::new(ti, Vec3::new(6.5, 151.0, 1.5), 0.0);
     calm.health = def.health;
     let mut ev2 = Vec::new();
-    calm.tick(&w, &def, player, false, 1.0 / 60.0, &mut rng, &mut ev2);
+    calm.tick(&w, &def, player, false, 0.0, 1.0 / 60.0, &mut rng, &mut ev2);
     assert_ne!(calm.state, crate::mobs::MobState::Hunt, "no aggro when unattackable");
 
     // Dryad: holds range and lobs a thorn bolt.
@@ -2331,7 +2331,7 @@ fn warden_hunts_strikes_and_caster_fires() {
     d.health = ddef.health;
     let mut ev3 = Vec::new();
     for _ in 0..90 {
-        d.tick(&w, &ddef, player, true, 1.0 / 60.0, &mut rng, &mut ev3);
+        d.tick(&w, &ddef, player, true, 0.0, 1.0 / 60.0, &mut rng, &mut ev3);
     }
     assert!(
         ev3.iter().any(|e| matches!(e, crate::mobs::MobEvent::Cast(_))),
@@ -2352,7 +2352,7 @@ fn floaters_hover_and_projectiles_collide() {
     let mut rng = 9u32;
     let far = Vec3::new(200.0, 80.0, 200.0);
     for _ in 0..240 {
-        m.tick(&w, &def, far, true, 1.0 / 60.0, &mut rng, &mut Vec::new());
+        m.tick(&w, &def, far, true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
     }
     let under = w.surface_height(m.pos.x.floor() as i32, m.pos.z.floor() as i32);
     assert!(
@@ -2465,7 +2465,7 @@ fn wardens_dissolve_at_dawn_and_never_save() {
     // Dawn dissolve: full daylight on an open surface removes the warden.
     let player = Vec3::new(5.0, y, 5.0);
     let mut rng = 3u32;
-    w.tick_mobs(player, 1.0, true, 1.0 / 60.0, &mut rng);
+    w.tick_mobs(player, 1.0, true, 0.0, 1.0 / 60.0, &mut rng);
     assert!(
         !w.mobs.iter().any(|m| reg.animals[m.species].hostile),
         "warden dissolved in daylight"
@@ -2670,7 +2670,7 @@ fn breeding_makes_babies_that_grow() {
         w.mobs.push(m);
     }
     let mut rng = 3u32;
-    let events = w.tick_mobs(Vec3::new(200.0, 80.0, 200.0), 1.0, true, 1.0 / 60.0, &mut rng);
+    let events = w.tick_mobs(Vec3::new(200.0, 80.0, 200.0), 1.0, true, 0.0, 1.0 / 60.0, &mut rng);
     assert!(
         events.iter().any(|e| matches!(e, crate::mobs::MobEvent::Bred(_))),
         "birth event"
@@ -2684,13 +2684,13 @@ fn breeding_makes_babies_that_grow() {
     // Growth advances with time; babies persist through saves.
     let baby_growth = baby.growth;
     for _ in 0..120 {
-        w.tick_mobs(Vec3::new(200.0, 80.0, 200.0), 1.0, true, 1.0 / 60.0, &mut rng);
+        w.tick_mobs(Vec3::new(200.0, 80.0, 200.0), 1.0, true, 0.0, 1.0 / 60.0, &mut rng);
     }
     let baby2 = w.mobs.iter().find(|m| m.growth < 1.0).expect("still young");
     assert!(baby2.growth > baby_growth, "babies grow");
     // No immediate re-breeding: cooldown holds.
     let n_now = w.mobs.len();
-    let ev2 = w.tick_mobs(Vec3::new(200.0, 80.0, 200.0), 1.0, true, 1.0 / 60.0, &mut rng);
+    let ev2 = w.tick_mobs(Vec3::new(200.0, 80.0, 200.0), 1.0, true, 0.0, 1.0 / 60.0, &mut rng);
     assert!(!ev2.iter().any(|e| matches!(e, crate::mobs::MobEvent::Bred(_))));
     assert_eq!(w.mobs.len(), n_now);
 }
@@ -2710,4 +2710,216 @@ fn bedroll_and_breed_data_parse() {
     assert_eq!(food_of("base:deer").as_deref(), Some("base:berry"));
     assert_eq!(food_of("base:goat").as_deref(), Some("base:wheat"));
     assert_eq!(food_of("base:thornling"), None, "wardens don't breed");
+}
+
+// ---------------- iron & steel ----------------
+
+#[test]
+fn iron_and_steel_chains_resolve() {
+    let reg = base_reg();
+    // Ore gated on bronze.
+    let ore = reg.block(reg.block_id("base:iron_ore").unwrap());
+    assert_eq!(ore.min_tier, 3, "bronze picks required");
+    // Chain: raw -> ingot -> blend -> steel.
+    assert!(!reg.smelts_for(it(&reg, "base:iron_ingot")).is_empty());
+    assert!(!reg.recipes_for(it(&reg, "base:steel_blend")).is_empty());
+    assert!(!reg.smelts_for(it(&reg, "base:steel_ingot")).is_empty());
+    // Tiers and damage.
+    let tool = |n: &str| reg.item(it(&reg, n)).tool.unwrap();
+    assert_eq!(tool("base:iron_pickaxe").2, 4);
+    assert_eq!(tool("base:steel_pickaxe").2, 5);
+    assert_eq!(reg.item(it(&reg, "base:steel_sword")).damage, 13.0);
+    // Armor totals: iron 14, steel 18.
+    let total = |m: &str| -> u32 {
+        ["helmet", "chestplate", "leggings", "boots"]
+            .iter()
+            .map(|p| reg.item(it(&reg, &format!("base:{m}_{p}"))).armor.unwrap().1)
+            .sum()
+    };
+    assert_eq!(total("iron"), 14);
+    assert_eq!(total("steel"), 18);
+    // All craftables resolve.
+    for n in ["iron_pickaxe", "iron_sword", "steel_axe", "steel_boots",
+              "iron_block", "steel_block", "shears", "excavation_brush"] {
+        assert!(!reg.recipes_for(it(&reg, &format!("base:{n}"))).is_empty(), "{n}");
+    }
+    // Ember burns hot: 2x smelt speed.
+    assert_eq!(reg.fuel_value(it(&reg, "base:ember")), Some((80.0, 2.0)));
+    assert_eq!(reg.fuel_value(it(&reg, "base:charcoal")).map(|(_, s)| s), Some(1.0));
+    // Shears flagged.
+    assert!(reg.item(it(&reg, "base:shears")).shears);
+}
+
+#[test]
+fn iron_ore_generates_in_band() {
+    let reg = base_reg();
+    let mut w = test_world("ironband");
+    let ore = reg.block_id("base:iron_ore").unwrap();
+    let mut found = 0;
+    let mut out_of_band = 0;
+    for x in -32..32 {
+        for z in -32..32 {
+            w.ensure_chunk(ChunkPos::of_world(x * 4, z * 4));
+        }
+    }
+    for (_, c) in w.chunks.iter() {
+        for (i, b) in c.raw().iter().enumerate() {
+            if *b == ore.0 {
+                found += 1;
+                let y = i % 256;
+                if !(1..=54).contains(&y) {
+                    out_of_band += 1; // random-walk veins drift up to 5
+                }
+            }
+        }
+    }
+    assert!(found > 0, "iron generates");
+    assert_eq!(out_of_band, 0, "iron stays in its band");
+}
+
+#[test]
+fn ember_fuel_speeds_the_furnace() {
+    let reg = base_reg();
+    let mut w = test_world("emberfast");
+    let mut f = crate::world::FurnaceState::default();
+    f.input = Some(ItemStack::new(&reg, it(&reg, "base:steel_blend"), 1));
+    f.fuel = Some(ItemStack::new(&reg, it(&reg, "base:ember"), 1));
+    w.block_entities.insert((0, 90, 0), crate::world::BlockEntity::Furnace(f));
+    // 14 s steel smelt at 2x should finish in ~7 s.
+    for _ in 0..80 {
+        w.tick_entities(0.1);
+    }
+    let Some(crate::world::BlockEntity::Furnace(f)) = w.block_entities.get(&(0, 90, 0))
+    else {
+        panic!()
+    };
+    assert!(
+        f.output.map(|s| reg.item(s.item).name.clone()).as_deref()
+            == Some("base:steel_ingot"),
+        "steel done in 8s of ember fire (progress {})",
+        f.progress
+    );
+}
+
+// ---------------- ruins & archaeology ----------------
+
+#[test]
+fn structures_parse_and_place() {
+    let reg = base_reg();
+    assert_eq!(reg.structures.len(), 6, "six base ruins");
+    assert!(reg.loots.contains_key("base:ruin_artifacts"));
+    assert!(reg.loots.contains_key("base:ruin_chest"));
+    let cellar = reg
+        .structures
+        .iter()
+        .position(|s| s.name == "base:buried_cellar")
+        .expect("cellar");
+    let mut w = test_world("ruinplace");
+    w.place_structure(cellar, 2, 120, 2, 12345);
+    let cob = reg.block_id("base:cobblestone").unwrap();
+    assert_eq!(w.get_block(2, 121, 2), cob, "cellar wall");
+    assert_eq!(w.get_block(4, 121, 4), AIR, "carved interior");
+    // The chest exists, is loot-filled, and belongs to the wild.
+    let chest = w
+        .block_entities
+        .iter()
+        .find_map(|(_, e)| match e {
+            crate::world::BlockEntity::Chest(c) => Some(c),
+            _ => None,
+        })
+        .expect("ruin chest placed");
+    assert!(chest.wild_owned, "the wild keeps its trophies");
+    assert!(chest.slots.iter().flatten().count() >= 3, "loot inside");
+    // Worn tools from loot arrive worn.
+    let mut rng = 99u32;
+    let mut saw_worn = false;
+    for _ in 0..300 {
+        for s in w.roll_loot("base:ruin_artifacts", 1, &mut rng) {
+            let max = reg.item(s.item).durability;
+            if max > 0 && s.durability < max {
+                saw_worn = true;
+                assert!(s.durability <= max / 4, "old tools are truly old");
+            }
+        }
+    }
+    assert!(saw_worn, "artifact tools roll worn");
+}
+
+#[test]
+fn brushing_yields_once_and_transmutes() {
+    let reg = base_reg();
+    let mut w = test_world("brushing");
+    let masonry = reg.block_id("base:cracked_masonry").unwrap();
+    w.set_block(3, 150, 3, masonry);
+    let mut rng = 7u32;
+    let found = w.brush_block(3, 150, 3, &mut rng).expect("artifact found");
+    assert!(found.count >= 1);
+    assert_eq!(
+        w.get_block(3, 150, 3),
+        reg.block_id("base:cobblestone").unwrap(),
+        "remnant becomes plain stone"
+    );
+    assert!(w.brush_block(3, 150, 3, &mut rng).is_none(), "artifact only once");
+    // Breaking a remnant instead just drops cobble (greed loses the find).
+    let d = reg.drops_for(masonry, None).unwrap();
+    assert_eq!(reg.item(d.0).name, "base:cobblestone");
+}
+
+#[test]
+fn ruins_generate_deterministically() {
+    let reg = base_reg();
+    let mut w = test_world_with("ruingen1", reg.clone());
+    let markers = [
+        reg.block_id("base:mossy_cobblestone").unwrap(),
+        reg.block_id("base:packed_earth").unwrap(),
+        reg.block_id("base:cracked_masonry").unwrap(),
+    ];
+    for cx in -10..10 {
+        for cz in -10..10 {
+            w.ensure_chunk(ChunkPos { x: cx, z: cz });
+        }
+    }
+    let mut found_at = None;
+    'outer: for (pos, c) in w.chunks.iter() {
+        for (i, b) in c.raw().iter().enumerate() {
+            if markers.contains(&crate::registry::BlockId(*b)) {
+                found_at = Some((*pos, i));
+                break 'outer;
+            }
+        }
+    }
+    let (pos, idx) = found_at.expect("some ruin generated in 400 chunks");
+    // Same seed, fresh world: the same block sits in the same place.
+    let mut w2 = test_world_with("ruingen2", reg.clone());
+    w2.ensure_chunk(pos);
+    assert_eq!(
+        w2.chunks.get(&pos).unwrap().raw()[idx],
+        w.chunks.get(&pos).unwrap().raw()[idx],
+        "structure placement is deterministic"
+    );
+}
+
+#[test]
+fn charms_and_tablets_work() {
+    let reg = base_reg();
+    // Data parses.
+    assert_eq!(reg.item(it(&reg, "base:charm_quiet")).charm.as_deref(), Some("quiet"));
+    assert!(reg.item(it(&reg, "base:etched_tablet")).tablet);
+    // The quiet charm shortens warden attention: at 10.5 blocks a
+    // thornling (aggro 12) hunts normally but not with -2.
+    let mut w = test_world("charmq");
+    let ti = reg.animal_id("base:thornling").unwrap();
+    let def = reg.animals[ti].clone();
+    let player = Vec3::new(0.5, 200.0, 0.5);
+    let pos = player + Vec3::new(10.5, 0.0, 0.0);
+    let mut rng = 4u32;
+    let mut a = crate::mobs::Mob::new(ti, pos, 0.0);
+    a.health = def.health;
+    a.tick(&w, &def, player, true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
+    assert_eq!(a.state, crate::mobs::MobState::Hunt, "in range normally");
+    let mut b = crate::mobs::Mob::new(ti, pos, 0.0);
+    b.health = def.health;
+    b.tick(&w, &def, player, true, -2.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
+    assert_ne!(b.state, crate::mobs::MobState::Hunt, "quiet charm keeps you unseen");
+    let _ = &mut w;
 }

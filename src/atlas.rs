@@ -13,7 +13,7 @@ pub const ATLAS_TILES: u32 = 16;
 /// Atlas slot = row * 16 + col. Rows 0-2 are built-in procedural tiles.
 pub const UNKNOWN_SLOT: u16 = 15;
 pub const CRACK_SLOT: u16 = 16; // stages 16..=19
-pub const FIRST_FREE_SLOT: u16 = 176; // rows 0-10 are built-in tiles
+pub const FIRST_FREE_SLOT: u16 = 208; // rows 0-12 are built-in tiles
 
 /// Built-in procedural tile names usable as `@name` in mod TOML.
 pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
@@ -68,6 +68,16 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("bronze_boots", 160), ("oak_sapling", 161), ("birch_sapling", 162),
         ("spruce_sapling", 163), ("jungle_sapling", 164),
         ("acacia_sapling", 165), ("offering_stone", 166), ("bedroll", 167),
+        ("iron_ore", 168), ("iron_block", 169), ("steel_block", 170),
+        ("raw_iron", 171), ("iron_ingot", 172), ("steel_blend", 173),
+        ("steel_ingot", 174), ("iron_pickaxe", 175), ("iron_axe", 176),
+        ("iron_shovel", 177), ("iron_hoe", 178), ("iron_sword", 179),
+        ("steel_pickaxe", 180), ("steel_axe", 181), ("steel_shovel", 182),
+        ("steel_hoe", 183), ("steel_sword", 184), ("iron_helmet", 185),
+        ("iron_chestplate", 186), ("iron_leggings", 187), ("iron_boots", 188),
+        ("steel_helmet", 189), ("steel_chestplate", 190),
+        ("steel_leggings", 191), ("steel_boots", 192), ("shears", 193),
+        ("excavation_brush", 194),
         ("unknown", 15), ("crack1", 16), ("crack2", 17), ("crack3", 18),
         ("crack4", 19),
     ]
@@ -1670,6 +1680,199 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             [0, 0, 0, 0]
         }
     });
+
+
+    // ---- iron & steel (rows 10-12) ----
+    let iron_c = [178.0, 180.0, 188.0];
+    let steel_c = [214.0, 218.0, 230.0];
+    // Iron ore: stone + grey nuggets.
+    tf(8, 10, &mut |px, py, u, v| {
+        let t = fbm(u, v, 4, 7);
+        let base = mix3([112.0, 112.0, 116.0], [142.0, 142.0, 144.0], t);
+        let (d1, _, id) = voronoi(u, v, 5, 800);
+        if d1 < 0.20 && id % 3 == 0 {
+            rgba([168.0, 156.0, 148.0], 0.8 + (id % 40) as f32 / 100.0, 255)
+        } else {
+            rgba(base, speck(px, py, 801, 0.05), 255)
+        }
+    });
+    // Polished blocks.
+    for (slot, color) in [(169u32, iron_c), (170, steel_c)] {
+        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+            let t = fbm(u, v, 3, 810 + slot);
+            let c = mix3(color, [color[0] * 0.8, color[1] * 0.8, color[2] * 0.8], t);
+            rgba(c, speck(px, py, 811 + slot, 0.04), 255)
+        });
+    }
+    // Raw lump, blend pile, ingot bars.
+    lump(171, [150.0, 132.0, 120.0], &mut tf); // raw iron
+    lump(173, [120.0, 118.0, 116.0], &mut tf); // steel blend
+    for (slot, color) in [(172u32, iron_c), (174, steel_c)] {
+        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+            let inside = u > 0.12 && u < 0.88 && v > 0.36 && v < 0.68;
+            if inside {
+                let edge = u < 0.2 || u > 0.8 || v < 0.44 || v > 0.6;
+                let f = if edge { 0.72 } else { 0.92 + h01(px as i32, py as i32, 820 + slot) * 0.2 };
+                rgba(color, f, 255)
+            } else {
+                [0, 0, 0, 0]
+            }
+        });
+    }
+    // Tool sets: pick/axe/shovel via the shared ASCII art, hoe via AXE rows.
+    let metal2: [(u32, [f32; 3]); 6] = [
+        (175, iron_c), (176, iron_c), (177, iron_c),
+        (180, steel_c), (181, steel_c), (182, steel_c),
+    ];
+    for (i, (slot, head)) in metal2.iter().enumerate() {
+        let art: &[&str; 16] = match i % 3 {
+            0 => &PICK_ART,
+            1 => &AXE_ART,
+            _ => &SHOVEL_ART,
+        };
+        tf(slot % 16, slot / 16, &mut |_px, _py, u, v| {
+            let ax = ((u * 16.0) as usize).min(15);
+            let ay = ((v * 16.0) as usize).min(15);
+            match art[ay].as_bytes().get(ax) {
+                Some(b'H') => {
+                    let f = 0.85 + h01(ax as i32, ay as i32, 830 + slot) * 0.2;
+                    rgba(*head, f, 255)
+                }
+                Some(b'h') => rgba([104.0, 72.0, 42.0], 1.0, 255),
+                _ => [0, 0, 0, 0],
+            }
+        });
+    }
+    for (slot, head) in [(178u32, iron_c), (183, steel_c)] {
+        tf(slot % 16, slot / 16, &mut |_px, _py, u, v| {
+            let ax = ((u * 16.0) as usize).min(15);
+            let ay = ((v * 16.0) as usize).min(15);
+            match AXE_ART[ay].as_bytes().get(ax) {
+                Some(b'H') if ay <= 3 => rgba(head, 0.9, 255),
+                Some(b'H') => [0, 0, 0, 0],
+                Some(b'h') => rgba([104.0, 72.0, 42.0], 1.0, 255),
+                _ => [0, 0, 0, 0],
+            }
+        });
+    }
+    for (slot, head) in [(179u32, iron_c), (184, steel_c)] {
+        tf(slot % 16, slot / 16, &mut |_px, _py, u, v| {
+            let ax = ((u * 16.0) as usize).min(15);
+            let ay = ((v * 16.0) as usize).min(15);
+            match SWORD_ART[ay].as_bytes().get(ax) {
+                Some(b'H') => {
+                    let f = 0.85 + h01(ax as i32, ay as i32, 840 + slot) * 0.25;
+                    rgba(head, f, 255)
+                }
+                Some(b'g') => rgba([70.0, 62.0, 55.0], 1.0, 255),
+                Some(b'h') => rgba([104.0, 72.0, 42.0], 1.0, 255),
+                _ => [0, 0, 0, 0],
+            }
+        });
+    }
+    armor_art(185, iron_c, [90.0, 92.0, 98.0], &mut tf);
+    armor_art(189, steel_c, [120.0, 124.0, 134.0], &mut tf);
+    // Shears: two crossed blades on a pivot.
+    tf(1, 12, &mut |_px, _py, u, v| {
+        let d1 = (u - v).abs();
+        let d2 = (u + v - 1.0).abs();
+        if (d1 < 0.09 && u > 0.2 && u < 0.8) || (d2 < 0.09 && u > 0.2 && u < 0.8) {
+            rgba([200.0, 204.0, 212.0], 1.0, 255)
+        } else if (u - 0.5).abs() < 0.06 && (v - 0.5).abs() < 0.06 {
+            rgba([90.0, 70.0, 50.0], 1.0, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    // Excavation brush: stick with a fiber head.
+    tf(2, 12, &mut |px, py, u, v| {
+        let d = (u - (1.0 - v)).abs();
+        if d < 0.06 && u > 0.3 && u < 0.9 {
+            rgba([120.0, 86.0, 50.0], 1.0, 255)
+        } else if d < 0.16 && u <= 0.34 && u > 0.08 {
+            rgba([180.0, 200.0, 120.0], 0.8 + h01(px as i32, py as i32, 850) * 0.4, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+
+
+    // ---- ruins (row 12) ----
+    // Mossy cobblestone: cobble with green growth.
+    tf(3, 12, &mut |px, py, u, v| {
+        let (d1, d2, id) = voronoi(u, v, 4, 860);
+        let mut c = if d2 - d1 < 0.14 {
+            [62.0, 62.0, 62.0]
+        } else {
+            let tone = 0.82 + (id % 100) as f32 / 100.0 * 0.3;
+            [128.0 * tone, 126.0 * tone, 124.0 * tone]
+        };
+        if fbm(u, v, 4, 861) > 0.55 {
+            c = mix3(c, [72.0, 118.0, 58.0], 0.65);
+        }
+        rgba(c, speck(px, py, 862, 0.08), 255)
+    });
+    // Cracked masonry: dressed stone with a jagged crack.
+    tf(4, 12, &mut |px, py, u, v| {
+        let brick = ((v * 4.0).fract() < 0.12) || ((u * 2.0 + (v * 4.0).floor() * 0.5).fract() < 0.06);
+        let mut c = if brick { [82.0, 80.0, 78.0] } else { [124.0, 120.0, 116.0] };
+        let crack = ((u - 0.2) * 2.0 - v).abs() < 0.05 || ((u - 0.75) + (v - 0.4) * 0.8).abs() < 0.04;
+        if crack {
+            c = [40.0, 38.0, 36.0];
+        }
+        rgba(c, speck(px, py, 870, 0.08), 255)
+    });
+    // Packed earth: dark trodden soil with flecks.
+    tf(5, 12, &mut |px, py, u, v| {
+        let t = fbm(u, v, 5, 880);
+        let mut c = mix3([84.0, 62.0, 44.0], [108.0, 82.0, 58.0], t);
+        if h01(px as i32, py as i32, 881) > 0.94 {
+            c = [140.0, 130.0, 110.0];
+        }
+        rgba(c, speck(px, py, 882, 0.07), 255)
+    });
+    // Old coin: worn disc.
+    tf(6, 12, &mut |px, py, u, v| {
+        let dx = u - 0.5;
+        let dy = v - 0.5;
+        let r = (dx * dx + dy * dy).sqrt();
+        if r < 0.24 {
+            let f = if r > 0.19 { 0.7 } else { 0.9 + h01(px as i32, py as i32, 890) * 0.2 };
+            rgba([180.0, 158.0, 92.0], f, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    // Etched tablet: stone slab with rune lines.
+    tf(7, 12, &mut |px, py, u, v| {
+        if (u - 0.5).abs() < 0.3 && (v - 0.5).abs() < 0.36 {
+            let mut c = [140.0, 136.0, 128.0];
+            let row = (v * 8.0).floor() as i32;
+            if (v * 8.0).fract() < 0.35 && row % 2 == 0 && (u - 0.5).abs() < 0.22
+                && h01(row, (u * 10.0) as i32, 895) > 0.3
+            {
+                c = [70.0, 66.0, 60.0];
+            }
+            rgba(c, speck(px, py, 896, 0.06), 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    // Charms: small knotted talismans in three tints.
+    for (slot, tint) in [(200u32, [110.0, 160.0, 120.0]), (201, [150.0, 110.0, 70.0]), (202, [170.0, 150.0, 90.0])] {
+        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+            let dx = u - 0.5;
+            let dy = v - 0.6;
+            let ring = (dx * dx + dy * dy).sqrt();
+            if ring > 0.14 && ring < 0.24 {
+                rgba(tint, 0.85 + h01(px as i32, py as i32, 900 + slot) * 0.3, 255)
+            } else if dx.abs() < 0.03 && v > 0.15 && v < 0.42 {
+                rgba([96.0, 140.0, 60.0], 1.0, 255) // fiber cord
+            } else {
+                [0, 0, 0, 0]
+            }
+        });
+    }
 
     // (15,0) unknown/missing texture: magenta checkerboard.
     tile(15, 0, &mut |px, py, _u, _v| {

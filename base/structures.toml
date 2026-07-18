@@ -1,0 +1,106 @@
+# Ruins of the takers who came before — reclaimed by the wild.
+# Layers are bottom-up; rows are north->south, chars west->east.
+# '.' leaves terrain untouched, '~' carves air, 'C' places a loot chest.
+
+[[structure]]
+id = "stone_circle"
+biomes = ["plains", "forest", "scrubland"]
+rarity = 140
+palette = { m = "base:mossy_cobblestone", c = "base:cobblestone" }
+layers = [
+  [".m.m.", "m...m", ".....", "m...m", ".m.c."],
+  [".m...", "m...m", ".....", "....m", "....."],
+]
+
+[[structure]]
+id = "cabin_foundation"
+biomes = ["forest", "taiga"]
+rarity = 160
+loot = "ruin_chest"
+palette = { m = "base:mossy_cobblestone", c = "base:cobblestone", k = "base:cracked_masonry", e = "base:packed_earth" }
+layers = [
+  ["mmcmm", "meeek", "meeem", "mekem", "mmmcm"],
+  ["c...m", ".....", ".....", "....C", "m...c"],
+]
+
+[[structure]]
+id = "toppled_tower"
+biomes = ["mountains", "scrubland", "desert"]
+rarity = 170
+palette = { c = "base:cobblestone", m = "base:mossy_cobblestone", k = "base:cracked_masonry", s = "base:stone" }
+layers = [
+  ["ccmcc", "c...c", "m...k", "c...c", "ccccc", ".mm..", "..cm.", "....c"],
+  ["cc.cc", "c...c", "c...c", "k...c", "cc.cc", ".....", ".....", "....."],
+  [".c.c.", ".....", "c...c", ".....", "c..c.", ".....", ".....", "....."],
+]
+
+[[structure]]
+id = "buried_cellar"
+biomes = ["plains", "forest", "taiga", "scrubland"]
+rarity = 150
+placement = "buried"
+depth = [5, 14]
+loot = "ruin_chest"
+palette = { c = "base:cobblestone", m = "base:mossy_cobblestone", k = "base:cracked_masonry", e = "base:packed_earth" }
+layers = [
+  ["ccccccc", "ceeeeec", "ceeekec", "ceeeeec", "ccccccc"],
+  ["ccccccc", "c~~~~~c", "c~~~~kc", "cC~~~~c", "ccccccc"],
+  ["ccccccc", "c~~~~~c", "c~~~~~c", "c~~~~~c", "ccccccc"],
+  ["ccccccc", "cmccccc", "ccccmcc", "ccccccc", "ccccccc"],
+]
+
+[[structure]]
+id = "old_forge"
+biomes = ["mountains", "desert", "forest"]
+rarity = 180
+placement = "buried"
+depth = [8, 20]
+loot = "ruin_chest"
+palette = { c = "base:cobblestone", k = "base:cracked_masonry", e = "base:packed_earth", F = "base:furnace", i = "base:iron_block" }
+layers = [
+  ["ccccccc", "ceekeec", "ceeeeec", "ceekeec", "ccccccc"],
+  ["ccccccc", "cF~~~ic", "c~~~~~c", "cC~~~kc", "ccccccc"],
+  ["ccccccc", "c~~~~~c", "c~~~~~c", "c~~~~~c", "ccccccc"],
+  ["ccccccc", "ccckccc", "ccccccc", "cckcccc", "ccccccc"],
+]
+
+[[structure]]
+id = "wild_shrine"
+biomes = ["forest", "jungle", "plains"]
+rarity = 320
+palette = { m = "base:mossy_cobblestone", O = "base:offering_stone" }
+layers = [
+  [".m.m.", "m...m", "..O..", "m...m", ".m.m."],
+]
+
+[[loot]]
+id = "ruin_artifacts"
+entries = [
+  { item = "base:old_coin", weight = 28, count = [1, 3] },
+  { item = "base:etched_tablet", weight = 20 },
+  { item = "base:wheat_seeds", weight = 8 },
+  { item = "base:carrot", weight = 8 },
+  { item = "base:potato", weight = 8 },
+  { item = "base:plant_fiber", weight = 10, count = [1, 2] },
+  { item = "base:bronze_ingot", weight = 8 },
+  { item = "base:iron_pickaxe", weight = 4, durability = 0.2 },
+  { item = "base:iron_sword", weight = 3, durability = 0.2 },
+  { item = "base:charm_quiet", weight = 1 },
+  { item = "base:charm_bark", weight = 1 },
+  { item = "base:charm_hunger", weight = 1 },
+]
+
+[[loot]]
+id = "ruin_chest"
+entries = [
+  { item = "base:old_coin", weight = 24, count = [2, 5] },
+  { item = "base:etched_tablet", weight = 14 },
+  { item = "base:iron_ingot", weight = 10, count = [1, 2] },
+  { item = "base:bronze_ingot", weight = 10, count = [1, 2] },
+  { item = "base:arrow", weight = 10, count = [2, 6] },
+  { item = "base:leather", weight = 8, count = [1, 2] },
+  { item = "base:torch", weight = 10, count = [2, 5] },
+  { item = "base:charm_quiet", weight = 3 },
+  { item = "base:charm_bark", weight = 3 },
+  { item = "base:charm_hunger", weight = 3 },
+]

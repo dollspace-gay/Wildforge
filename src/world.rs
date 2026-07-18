@@ -29,11 +29,14 @@ pub const CHEST_SLOTS: usize = 27;
 
 pub struct ChestState {
     pub slots: [Option<ItemStack>; CHEST_SLOTS],
+    /// A ruin's chest: first opening costs 1 ire (the wild keeps its
+    /// trophies).
+    pub wild_owned: bool,
 }
 
 impl Default for ChestState {
     fn default() -> ChestState {
-        ChestState { slots: [None; CHEST_SLOTS] }
+        ChestState { slots: [None; CHEST_SLOTS], wild_owned: false }
     }
 }
 
@@ -45,6 +48,8 @@ pub struct FurnaceState {
     pub progress: f32,
     pub burn_left: f32,
     pub burn_total: f32,
+    /// Smelt-speed multiplier of the currently burning fuel (embers 2x).
+    pub burn_speed: f32,
 }
 
 /// (seed, mode, ire) from world.toml, falling back to the legacy seed file.
@@ -383,10 +388,15 @@ impl World {
         if self.chunks.contains_key(&pos) {
             return false;
         }
-        let chunk = self
-            .try_load_chunk(pos)
-            .unwrap_or_else(|| self.generator.generate(pos, &self.reg));
+        let loaded = self.try_load_chunk(pos);
+        let fresh = loaded.is_none();
+        let chunk = loaded.unwrap_or_else(|| self.generator.generate(pos, &self.reg));
         self.chunks.insert(pos, chunk);
+        // Ruins place once, at first generation; placement marks the chunk
+        // modified so it saves and never regenerates.
+        if fresh {
+            self.seed_structures(pos);
+        }
         // Wildlife rolls once per chunk, ever (the mark persists with the
         // world so hunted animals stay gone across sessions).
         if self.mob_seeded.insert((pos.x, pos.z)) {
@@ -394,6 +404,140 @@ impl World {
         }
         self.relight_and_cascade(pos);
         true
+    }
+
+    // ---------------- ruins ----------------
+
+    /// Deterministic per-chunk structure roll (at most one per chunk).
+    fn seed_structures(&mut self, pos: ChunkPos) {
+        let reg = self.reg.clone();
+        let (cx, cz) = (pos.x * CHUNK_X as i32, pos.z * CHUNK_Z as i32);
+        let biome = self.generator.biome(cx + 8, cz + 8).name().to_lowercase();
+        for (si, st) in reg.structures.iter().enumerate() {
+            if !st.biomes.iter().any(|b| *b == biome) {
+                continue;
+            }
+            let h = self.mob_hash(pos.x, pos.z, 9000 + si as u32);
+            if h % st.rarity != 0 {
+                continue;
+            }
+            let w = st.layers[0].first().map(|r| r.len()).unwrap_or(0) as i32;
+            let d = st.layers[0].len() as i32;
+            if w == 0 || w > 14 || d > 14 {
+                continue;
+            }
+            let ox = cx + 1 + ((h >> 8) as i32).rem_euclid((15 - w).max(1));
+            let oz = cz + 1 + ((h >> 16) as i32).rem_euclid((15 - d).max(1));
+            let surface = self.surface_height(ox + w / 2, oz + d / 2);
+            if surface <= SEA_LEVEL + 1 || surface >= CHUNK_Y as i32 - 24 {
+                continue;
+            }
+            let y0 = match st.buried {
+                None => surface,
+                Some((min, max)) => {
+                    let depth = min + (h >> 4).rem_euclid((max - min + 1) as u32) as i32;
+                    (surface - depth).max(6)
+                }
+            };
+            self.place_structure(si, ox, y0, oz, h);
+            break;
+        }
+    }
+
+    /// Stamp a structure template into the world (clipped writes via
+    /// set_block; chests get rolled loot and belong to the wild).
+    pub fn place_structure(&mut self, si: usize, x0: i32, y0: i32, z0: i32, seed: u32) {
+        let reg = self.reg.clone();
+        let Some(st) = reg.structures.get(si).cloned() else { return };
+        let chest_block = reg.block_id("base:chest");
+        let mut rng = seed ^ 0x5f37_59df;
+        for (ly, layer) in st.layers.iter().enumerate() {
+            for (lz, row) in layer.iter().enumerate() {
+                for (lx, ch) in row.chars().enumerate() {
+                    let (x, y, z) = (x0 + lx as i32, y0 + ly as i32, z0 + lz as i32);
+                    match ch {
+                        '.' => {}
+                        '~' => self.set_block(x, y, z, AIR),
+                        'C' => {
+                            if let Some(cb) = chest_block {
+                                self.set_block(x, y, z, cb);
+                                let mut state = ChestState { wild_owned: true, ..Default::default() };
+                                if let Some(table) = &st.loot {
+                                    let n = 3 + (rng % 3) as usize;
+                                    for (i, stck) in
+                                        self.roll_loot(table, n as u32, &mut rng).into_iter().enumerate()
+                                    {
+                                        if i < CHEST_SLOTS {
+                                            // Scatter through the chest.
+                                            let slot = (i * 7 + (rng % 5) as usize) % CHEST_SLOTS;
+                                            state.slots[slot] = Some(stck);
+                                        }
+                                    }
+                                }
+                                self.block_entities.insert((x, y, z), BlockEntity::Chest(state));
+                            }
+                        }
+                        c => {
+                            if let Some(b) = st.palette.get(&c) {
+                                self.set_block(x, y, z, *b);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Buried ruins leave a hint on the surface: a chimney stub.
+        if st.buried.is_some() {
+            if let Some(cob) = reg.block_id("base:cobblestone") {
+                let hx = x0 + 1;
+                let hz = z0 + 1;
+                let sy = self.surface_height(hx, hz);
+                self.set_block(hx, sy + 1, hz, cob);
+                self.set_block(hx, sy + 2, hz, cob);
+            }
+        }
+    }
+
+    /// Weighted rolls from a loot table.
+    pub fn roll_loot(&self, table: &str, rolls: u32, rng: &mut u32) -> Vec<ItemStack> {
+        let Some(entries) = self.reg.loots.get(table) else { return Vec::new() };
+        let total: u32 = entries.iter().map(|e| e.weight).sum();
+        if total == 0 {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for _ in 0..rolls {
+            *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            let mut pick = (*rng >> 8) % total;
+            for e in entries {
+                if pick < e.weight {
+                    *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                    let span = e.count.1.saturating_sub(e.count.0) + 1;
+                    let n = e.count.0 + (*rng >> 8) % span;
+                    let mut stack = ItemStack::new(&self.reg, e.item, n.max(1));
+                    if let Some(frac) = e.durability_frac {
+                        let max = self.reg.item(e.item).durability;
+                        if max > 0 {
+                            stack.durability = ((max as f32 * frac) as u32).max(1);
+                        }
+                    }
+                    out.push(stack);
+                    break;
+                }
+                pick -= e.weight;
+            }
+        }
+        out
+    }
+
+    /// Archaeology: sweep a remnant block — it yields its artifact once
+    /// and becomes plain. Returns what was found.
+    pub fn brush_block(&mut self, x: i32, y: i32, z: i32, rng: &mut u32) -> Option<ItemStack> {
+        let b = self.get_block(x, y, z);
+        let (table, becomes) = self.reg.block(b).brush.clone()?;
+        let mut items = self.roll_loot(&table, 1, rng);
+        self.set_block(x, y, z, becomes);
+        items.pop()
     }
 
     // ---------------- wildlife ----------------
@@ -468,6 +612,7 @@ impl World {
         player: glam::Vec3,
         daylight: f32,
         attackable: bool,
+        aggro_mod: f32,
         dt: f32,
         rng: &mut u32,
     ) -> Vec<MobEvent> {
@@ -483,7 +628,7 @@ impl World {
             }
             if let Some(def) = reg.animals.get(m.species) {
                 m.unstick(self, def);
-                m.tick(self, def, player, attackable, dt, rng, &mut events);
+                m.tick(self, def, player, attackable, aggro_mod, dt, rng, &mut events);
             }
         }
         // Wardens are expressions of the wild, not creatures: they dissolve
@@ -1234,9 +1379,10 @@ impl World {
             if f.burn_left <= 0.0 && can_smelt {
                 // Light more fuel (the forge feeds the wild's ire).
                 if let Some(fs) = f.fuel {
-                    if let Some(burn) = reg.fuel_value(fs.item) {
+                    if let Some((burn, speed)) = reg.fuel_value(fs.item) {
                         f.burn_left = burn;
                         f.burn_total = burn;
+                        f.burn_speed = speed;
                         let left = fs.count - 1;
                         f.fuel = if left > 0 { Some(ItemStack { count: left, ..fs }) } else { None };
                         self.ire = (self.ire + 0.1).min(100.0);
@@ -1247,7 +1393,7 @@ impl World {
                 f.burn_left = (f.burn_left - dt).max(0.0);
                 if can_smelt {
                     let s = smelt.as_ref().unwrap();
-                    f.progress += dt;
+                    f.progress += dt * f.burn_speed.max(1.0);
                     if f.progress >= s.time {
                         f.progress = 0.0;
                         // Consume one input, emit output.
@@ -1295,11 +1441,17 @@ impl World {
                     slot("input", &f.input);
                     slot("fuel", &f.fuel);
                     slot("output", &f.output);
-                    let _ = writeln!(out, "progress = {}\nburn_left = {}\nburn_total = {}\n",
-                        f.progress, f.burn_left, f.burn_total);
+                    let _ = writeln!(
+                        out,
+                        "progress = {}\nburn_left = {}\nburn_total = {}\nburn_speed = {}\n",
+                        f.progress, f.burn_left, f.burn_total, f.burn_speed
+                    );
                 }
                 BlockEntity::Chest(c) => {
                     let _ = writeln!(out, "[[chest]]\npos = [{x}, {y}, {z}]");
+                    if c.wild_owned {
+                        let _ = writeln!(out, "wild_owned = true");
+                    }
                     for (i, st) in c.slots.iter().enumerate() {
                         if let Some(st) = st {
                             let _ = writeln!(
@@ -1353,6 +1505,8 @@ impl World {
             burn_left: f32,
             #[serde(default)]
             burn_total: f32,
+            #[serde(default)]
+            burn_speed: f32,
         }
         #[derive(Deserialize)]
         struct ChestSlotT {
@@ -1364,6 +1518,8 @@ impl World {
         #[derive(Deserialize)]
         struct ChestT {
             pos: [i32; 3],
+            #[serde(default)]
+            wild_owned: bool,
             #[serde(default)]
             slot: Vec<ChestSlotT>,
         }
@@ -1393,11 +1549,12 @@ impl World {
                     progress: fu.progress,
                     burn_left: fu.burn_left,
                     burn_total: fu.burn_total,
+                    burn_speed: fu.burn_speed.max(1.0),
                 }),
             );
         }
         for ch in parsed.chest {
-            let mut state = ChestState::default();
+            let mut state = ChestState { wild_owned: ch.wild_owned, ..Default::default() };
             for sl in ch.slot {
                 if sl.index < CHEST_SLOTS {
                     if let Some(item) = self.reg.item_id(&sl.item) {

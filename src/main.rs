@@ -105,10 +105,13 @@ struct Game {
     // Survival state
     screen: Screen,
     inventory: Inventory,
-    /// Worn armor: head, chest, legs, feet.
-    armor: [Option<ItemStack>; 4],
+    /// Worn armor: head, chest, legs, feet — plus the charm slot (4).
+    armor: [Option<ItemStack>; 5],
     /// Seconds the bow has been drawn (0 = not drawing).
     bow_draw: f32,
+    /// Archaeology channel: seconds brushing + the block under the brush.
+    brushing: f32,
+    brush_target: Option<(i32, i32, i32)>,
     /// Stack picked up by the cursor inside the inventory screen.
     held_stack: Option<ItemStack>,
     /// Crafting grid contents (row-major; 2x2 uses the first 4 cells).
@@ -344,8 +347,10 @@ impl Game {
             ui_cursor: (0.0, 0.0),
             screen: Screen::Title,
             inventory: Inventory::new(),
-            armor: [None; 4],
+            armor: [None; 5],
             bow_draw: 0.0,
+            brushing: 0.0,
+            brush_target: None,
             held_stack: None,
             craft_grid: [None; 9],
             craft_size: 2,
@@ -503,7 +508,7 @@ impl Game {
         self.camera.yaw = -std::f32::consts::FRAC_PI_2;
         self.camera.pitch = 0.0;
         self.inventory = Inventory::new();
-        self.armor = [None; 4];
+        self.armor = [None; 5];
         self.bow_draw = 0.0;
         if std::env::var("WILDFORGE_GIVE").is_ok() {
             let reg = self.reg.clone();
@@ -811,7 +816,7 @@ impl Game {
             }
         }
         for s in p.armor {
-            if s.index < 4 {
+            if s.index < 5 {
                 if let Some(item) = self.reg.item_id(&s.item) {
                     self.armor[s.index] =
                         Some(ItemStack { item, count: s.count, durability: s.durability });
@@ -924,6 +929,25 @@ impl Game {
         }
     }
 
+    /// A line from the lost takers, chosen at random.
+    fn read_tablet(&mut self) {
+        const LINES: [&str; 10] = [
+            "We burned the south wood. The nights grew teeth.",
+            "The forge ran hot for a year. Then the trees walked.",
+            "Plant after you cut. My father knew. I forgot.",
+            "It does not hate. It answers.",
+            "We left the stone offerings too late.",
+            "The deep ones never slept. We dug anyway.",
+            "Third winter: the wisps crossed the river.",
+            "Feed the land and it feeds you. Starve it and it comes.",
+            "My daughter planted a row of oaks. They spared her field.",
+            "If you read this: the wild forgives. Slowly.",
+        ];
+        let i = (self.rand01() * LINES.len() as f32) as usize % LINES.len();
+        self.toast(LINES[i].to_string());
+        self.sfx(Sfx::Click);
+    }
+
     /// Bedroll: sleep to dawn if it's night and the wild is far enough.
     fn try_sleep(&mut self) {
         let sun = (self.time_of_day * std::f32::consts::TAU).sin();
@@ -960,11 +984,20 @@ impl Game {
     }
 
     fn armor_points(&self) -> u32 {
-        self.armor
+        let base: u32 = self
+            .armor
             .iter()
             .flatten()
             .filter_map(|s| self.reg.item(s.item).armor.map(|(_, p)| p))
-            .sum()
+            .sum();
+        base + if self.charm("bark") { 1 } else { 0 }
+    }
+
+    /// Is a charm of this kind worn?
+    fn charm(&self, kind: &str) -> bool {
+        self.armor[4]
+            .as_ref()
+            .is_some_and(|s| self.reg.item(s.item).charm.as_deref() == Some(kind))
     }
 
     /// Damage from a warden: knockback away from the attacker, and the
@@ -977,8 +1010,12 @@ impl Game {
         let pts = self.armor_points();
         let amount = reduced_damage(amount, pts);
         if pts > 0 {
+            let reg = self.reg.clone();
             for a in self.armor.iter_mut() {
                 if let Some(st) = a {
+                    if reg.item(st.item).durability == 0 {
+                        continue; // charms don't wear
+                    }
                     st.durability = st.durability.saturating_sub(1);
                     if st.durability == 0 {
                         *a = None; // worn through
@@ -1280,6 +1317,49 @@ impl Game {
             self.bow_draw = 0.0; // switched away mid-draw
         }
 
+        // Archaeology: sweeping a remnant is a slow, careful channel.
+        let brush_held = held.is_some_and(|i| reg.item(i).brush_tool);
+        let brush_target = hit.as_ref().map(|h| h.block).filter(|t| {
+            brush_held && reg.block(self.world.get_block(t.0, t.1, t.2)).brush.is_some()
+        });
+        if self.right_held && brush_target.is_some() {
+            let target = brush_target.unwrap();
+            if self.brush_target != Some(target) {
+                self.brush_target = Some(target);
+                self.brushing = 0.0;
+            }
+            self.brushing += dt;
+            if self.brushing >= 1.5 {
+                self.brushing = 0.0;
+                self.brush_target = None;
+                let mut r = self.rng;
+                let found = self.world.brush_block(target.0, target.1, target.2, &mut r);
+                self.rng = r;
+                if let Some(stack) = found {
+                    let center = Vec3::new(
+                        target.0 as f32 + 0.5,
+                        target.1 as f32 + 0.6,
+                        target.2 as f32 + 0.5,
+                    );
+                    let mut ent =
+                        ItemEntity::new(center, Vec3::new(0.0, 2.0, 0.0), stack.item, stack.count);
+                    // Old tools surface as worn as they were buried.
+                    if stack.durability < reg.item(stack.item).durability {
+                        ent.durability = stack.durability;
+                    }
+                    self.items.push(ent);
+                    self.sfx(Sfx::Pickup);
+                }
+                if !self.creative {
+                    self.inventory.wear_tool(&reg, self.hotbar_sel);
+                }
+            }
+            return;
+        } else {
+            self.brushing = 0.0;
+            self.brush_target = None;
+        }
+
         // Attacking: a mob in the crosshair takes the swing before the
         // block behind it. Held tools/swords set the damage.
         if self.left_held {
@@ -1342,7 +1422,27 @@ impl Game {
                             if !self.creative {
                                 self.inventory.wear_tool(&reg, self.hotbar_sel);
                             }
-                            if let Some((drop, n)) = reg.drops_for(b, held).filter(|_| !self.creative) {
+                            // Shears: leaves come off whole.
+                            let sheared = held.is_some_and(|i| reg.item(i).shears)
+                                && reg.block(b).name.contains("leaves");
+                            if sheared && !self.creative {
+                                if let Some(item) = reg.item_id(&reg.block(b).name) {
+                                    let center = Vec3::new(
+                                        target.0 as f32 + 0.5,
+                                        target.1 as f32 + 0.3,
+                                        target.2 as f32 + 0.5,
+                                    );
+                                    self.items.push(ItemEntity::new(
+                                        center,
+                                        Vec3::new(0.0, 2.2, 0.0),
+                                        item,
+                                        1,
+                                    ));
+                                }
+                            }
+                            if let Some((drop, n)) =
+                                reg.drops_for(b, held).filter(|_| !self.creative && !sheared)
+                            {
                                 let center = Vec3::new(
                                     target.0 as f32 + 0.5,
                                     target.1 as f32 + 0.3,
@@ -1403,6 +1503,12 @@ impl Game {
                         }
                     }
                 }
+            }
+            // Etched tablets: the lost takers speak.
+            if held.is_some_and(|i| reg.item(i).tablet) {
+                self.read_tablet();
+                self.action_cooldown = 0.6;
+                return;
             }
             // Bedroll: camp until dawn.
             if held.is_some_and(|i| reg.item(i).bedroll) {
@@ -1474,12 +1580,20 @@ impl Game {
                     }
                     Some("chest") if self.action_cooldown <= 0.0 => {
                         self.action_cooldown = 0.3;
-                        self.world
+                        let e = self
+                            .world
                             .block_entities
                             .entry(h.block)
                             .or_insert_with(|| {
                                 world::BlockEntity::Chest(Default::default())
                             });
+                        if let world::BlockEntity::Chest(c) = e {
+                            if c.wild_owned {
+                                c.wild_owned = false;
+                                self.world.add_ire(1.0);
+                                self.toast("The wild keeps its trophies.".to_string());
+                            }
+                        }
                         self.set_screen(Screen::Chest(h.block));
                         return;
                     }
@@ -1692,8 +1806,9 @@ impl Game {
         if self.creative {
             return;
         }
-        // Activity-based hunger drain.
-        let mut drain = 0.01;
+        // Activity-based hunger drain (the hunger charm slows it).
+        let charm_mult = if self.charm("hunger") { 0.85 } else { 1.0 };
+        let mut drain = 0.01 * charm_mult;
         if input.sprint && (input.forward != 0.0 || input.strafe != 0.0) {
             drain += 0.02;
         }
@@ -1797,8 +1912,16 @@ impl Game {
             let it = &self.items[i];
             let d = it.pos.distance(target);
             if it.age > entity::PICKUP_DELAY && d < 1.4 {
-                let (item, count) = (self.items[i].item, self.items[i].count);
-                let left = self.inventory.add(&self.reg.clone(), item, count);
+                let (item, count, dur) =
+                    (self.items[i].item, self.items[i].count, self.items[i].durability);
+                let reg = self.reg.clone();
+                let left = if dur > 0 {
+                    let mut stack = ItemStack::new(&reg, item, count);
+                    stack.durability = dur;
+                    self.inventory.add_stack(&reg, stack)
+                } else {
+                    self.inventory.add(&reg, item, count)
+                };
                 if left < count {
                     self.sfx(Sfx::Pickup);
                 }
@@ -1859,8 +1982,9 @@ impl Game {
                 let dl = (sun * 2.5 + 0.5).clamp(0.12, 1.0);
                 let attackable = !self.creative && self.health > 0.0;
                 let mut r = self.rng;
+                let aggro_mod = if self.charm("quiet") { -2.0 } else { 0.0 };
                 let events =
-                    self.world.tick_mobs(self.player.pos, dl, attackable, dt, &mut r);
+                    self.world.tick_mobs(self.player.pos, dl, attackable, aggro_mod, dt, &mut r);
                 self.world
                     .tick_hostile_spawns(self.player.pos, self.spawn_point, dl, dt, &mut r);
                 self.rng = r;
@@ -2516,6 +2640,12 @@ impl Game {
             let col = if self.bow_draw < 0.25 { [0.7, 0.3, 0.2, 0.95] } else { [0.75, 0.9, 0.5, 0.95] };
             ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0 * t.max(0.06), 6.0, col);
         }
+        // Brushing progress near the crosshair.
+        if self.brushing > 0.0 {
+            let t = (self.brushing / 1.5).min(1.0);
+            ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0, 6.0, [0.1, 0.1, 0.1, 0.8]);
+            ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0 * t, 6.0, [0.75, 0.7, 0.5, 0.95]);
+        }
         // Eat progress near the crosshair.
         if self.eating > 0.0 {
             if let Some(f) = self.inventory.slots[self.hotbar_sel]
@@ -2687,7 +2817,7 @@ impl Game {
                 );
                 ui.text_shadow(p0x - 24.0, p0y + 162.0, 1.5, world::IRE_TIERS[tier], tier_col);
                 // Armor column: head/chest/legs/feet.
-                for (i, label) in ["H", "C", "L", "B"].iter().enumerate() {
+                for (i, label) in ["H", "C", "L", "B", "*"].iter().enumerate() {
                     let r = self.armor_slot_rect(i);
                     Self::draw_slot(&self.reg, &mut ui, r, self.armor[i], false, self.hit(r));
                     if self.armor[i].is_none() {
@@ -2859,8 +2989,13 @@ impl Game {
         let reg = self.reg.clone();
         match (self.held_stack, self.armor[i]) {
             (Some(h), cur) => {
-                // Only the matching piece goes in its slot.
-                if reg.item(h.item).armor.map(|(s, _)| s as usize) == Some(i) {
+                // Matching piece in its slot; charms in the charm slot.
+                let fits = if i == 4 {
+                    reg.item(h.item).charm.is_some()
+                } else {
+                    reg.item(h.item).armor.map(|(s, _)| s as usize) == Some(i)
+                };
+                if fits {
                     self.armor[i] = Some(h);
                     self.held_stack = cur;
                 }
@@ -3155,7 +3290,7 @@ impl Game {
                 if self.browser_click(right) {
                     return;
                 }
-                for i in 0..4 {
+                for i in 0..5 {
                     if self.hit(self.armor_slot_rect(i)) {
                         self.armor_click(i);
                         return;

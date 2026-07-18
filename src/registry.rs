@@ -56,6 +56,8 @@ pub struct BlockDef {
     pub sapling: Option<String>,
     /// Extra chance drop on break: (item, probability).
     pub bonus_drop: Option<(ItemId, f32)>,
+    /// Archaeology: (loot table, block it becomes) when brushed.
+    pub brush: Option<(String, BlockId)>,
 }
 
 pub const NUTRIENTS: [&str; 5] = ["grain", "vegetable", "fruit", "fungi", "protein"];
@@ -117,6 +119,14 @@ pub struct ItemDef {
     pub armor: Option<(ArmorSlot, u32)>,
     /// Right-click to camp: sleep to dawn, set spawn (bedrolls).
     pub bedroll: bool,
+    /// Breaking leaves with this drops the leaf block itself.
+    pub shears: bool,
+    /// Passive charm effect: "quiet" | "bark" | "hunger" (one charm slot).
+    pub charm: Option<String>,
+    /// Right-click reads a line from the lost takers.
+    pub tablet: bool,
+    /// Sweeps remnant blocks (archaeology).
+    pub brush_tool: bool,
 }
 
 /// One box of an animal's model. Sizes/offsets in px (16 px = 1 block);
@@ -221,6 +231,31 @@ pub struct OreFeature {
     pub y_max: i32,
 }
 
+/// One weighted entry in a loot table.
+#[derive(Clone, Debug)]
+pub struct LootEntry {
+    pub item: ItemId,
+    pub weight: u32,
+    pub count: (u32, u32),
+    /// Spawn worn: fraction of max durability (old tools from ruins).
+    pub durability_frac: Option<f32>,
+}
+
+/// A worldgen structure template: palette + bottom-up layers.
+/// Special chars: '.' = leave terrain, '~' = force air, 'C' = loot chest.
+#[derive(Clone, Debug)]
+pub struct StructureDef {
+    pub name: String,
+    pub biomes: Vec<String>,
+    /// 1-in-N chunks (per matching biome).
+    pub rarity: u32,
+    /// None = on the surface; Some(min, max) = buried this deep.
+    pub buried: Option<(i32, i32)>,
+    pub palette: HashMap<char, BlockId>,
+    pub layers: Vec<Vec<String>>,
+    pub loot: Option<String>,
+}
+
 #[derive(Clone, Debug)]
 pub struct ModInfo {
     pub id: String,
@@ -243,8 +278,8 @@ pub struct Registry {
     pub unknown_block: BlockId,
     pub mods: Vec<ModInfo>,
     pub smelts: Vec<SmeltDef>,
-    /// (fuel ingredient, burn seconds)
-    pub fuels: Vec<(Ingredient, f32)>,
+    /// (fuel ingredient, burn seconds, smelt-speed multiplier)
+    pub fuels: Vec<(Ingredient, f32, f32)>,
     /// Item groups usable as `#tag` recipe ingredients; mods can extend them.
     pub tags: HashMap<String, Vec<ItemId>>,
     /// Mod textures to pack: (slot, png path).
@@ -252,6 +287,8 @@ pub struct Registry {
     /// Pack-addressable names for mod textures: ("<mod_id>/<file stem>", slot).
     pub tex_names: Vec<(String, u16)>,
     pub animals: Vec<AnimalDef>,
+    pub structures: Vec<StructureDef>,
+    pub loots: HashMap<String, Vec<LootEntry>>,
 }
 
 impl Registry {
@@ -340,7 +377,7 @@ impl Registry {
             .filter(|r| r.pattern.iter().flatten().any(|i| i.matches(item)))
             .collect();
         let s = self.smelts.iter().filter(|s| s.input.matches(item)).collect();
-        let f = self.fuels.iter().any(|(i, _)| i.matches(item));
+        let f = self.fuels.iter().any(|(i, _, _)| i.matches(item));
         (r, s, f)
     }
 
@@ -348,8 +385,9 @@ impl Registry {
         self.smelts.iter().find(|s| s.input.matches(item))
     }
 
-    pub fn fuel_value(&self, item: ItemId) -> Option<f32> {
-        self.fuels.iter().find(|(f, _)| f.matches(item)).map(|(_, b)| *b)
+    /// (burn seconds, smelt-speed multiplier) for a fuel item.
+    pub fn fuel_value(&self, item: ItemId) -> Option<(f32, f32)> {
+        self.fuels.iter().find(|(f, _, _)| f.matches(item)).map(|(_, b, sp)| (*b, *sp))
     }
 
     /// Drop for breaking `block` with `held` (requires_tool gating).
@@ -430,6 +468,8 @@ struct BlockToml {
     sapling: Option<SaplingToml>,
     #[serde(default)]
     bonus_drop: Option<BonusDropToml>,
+    #[serde(default)]
+    brush: Option<BrushToml>,
     /// Register an item form for placing (default true).
     #[serde(default = "yes")]
     item: bool,
@@ -508,6 +548,14 @@ struct ItemToml {
     armor: Option<ArmorToml>,
     #[serde(default)]
     bedroll: bool,
+    #[serde(default)]
+    shears: bool,
+    #[serde(default)]
+    charm: Option<String>,
+    #[serde(default)]
+    tablet: bool,
+    #[serde(default)]
+    brush_tool: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -617,6 +665,8 @@ struct SmeltToml {
 struct FuelToml {
     item: String,
     burn: f32,
+    #[serde(default)]
+    speed: Option<f32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -679,6 +729,56 @@ struct TagsFile {
     #[serde(default)]
     tag: Vec<TagToml>,
 }
+#[derive(Deserialize, Clone)]
+struct BrushToml {
+    table: String,
+    becomes: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct LootEntryToml {
+    item: String,
+    #[serde(default = "one_u32")]
+    weight: u32,
+    #[serde(default)]
+    count: Option<[u32; 2]>,
+    #[serde(default)]
+    durability: Option<f32>,
+}
+
+fn one_u32() -> u32 {
+    1
+}
+
+#[derive(Deserialize, Clone)]
+struct LootToml {
+    id: String,
+    entries: Vec<LootEntryToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct StructureToml {
+    id: String,
+    biomes: Vec<String>,
+    rarity: u32,
+    #[serde(default)]
+    placement: Option<String>,
+    #[serde(default)]
+    depth: Option<[i32; 2]>,
+    palette: HashMap<String, String>,
+    layers: Vec<Vec<String>>,
+    #[serde(default)]
+    loot: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct StructuresFile {
+    #[serde(default)]
+    structure: Vec<StructureToml>,
+    #[serde(default)]
+    loot: Vec<LootToml>,
+}
+
 #[derive(Deserialize, Default)]
 struct AnimalsFile {
     #[serde(default)]
@@ -697,6 +797,8 @@ struct RawMod {
     tags: Vec<TagToml>,
     aliases: Vec<AliasToml>,
     animals: Vec<AnimalToml>,
+    structures: Vec<StructureToml>,
+    loots: Vec<LootToml>,
 }
 
 // ---------------- loading ----------------
@@ -708,6 +810,7 @@ const BASE_TAGS: &str = include_str!("../base/tags.toml");
 const BASE_FEATURES: &str = include_str!("../base/features.toml");
 const BASE_ALIASES: &str = include_str!("../base/aliases.toml");
 const BASE_ANIMALS: &str = include_str!("../base/animals.toml");
+const BASE_STRUCTURES: &str = include_str!("../base/structures.toml");
 
 fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
     let manifest = std::fs::read_to_string(dir.join("mod.toml"))
@@ -728,6 +831,8 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         toml::from_str(&read("aliases.toml")).map_err(|e| format!("aliases.toml: {e}"))?;
     let animals: AnimalsFile =
         toml::from_str(&read("animals.toml")).map_err(|e| format!("animals.toml: {e}"))?;
+    let structures: StructuresFile =
+        toml::from_str(&read("structures.toml")).map_err(|e| format!("structures.toml: {e}"))?;
     let has_script = dir.join("main.rhai").exists();
     Ok(RawMod {
         info: ModInfo {
@@ -748,6 +853,8 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         tags: tags.tag,
         aliases: aliases.alias,
         animals: animals.animal,
+        structures: structures.structure,
+        loots: structures.loot,
     })
 }
 
@@ -759,6 +866,8 @@ fn base_mod() -> RawMod {
     let features: FeaturesFile = toml::from_str(BASE_FEATURES).expect("base features.toml");
     let aliases: AliasesFile = toml::from_str(BASE_ALIASES).expect("base aliases.toml");
     let animals: AnimalsFile = toml::from_str(BASE_ANIMALS).expect("base animals.toml");
+    let structures: StructuresFile =
+        toml::from_str(BASE_STRUCTURES).expect("base structures.toml");
     RawMod {
         info: ModInfo {
             id: "base".into(),
@@ -778,6 +887,8 @@ fn base_mod() -> RawMod {
         tags: tags.tag,
         aliases: aliases.alias,
         animals: animals.animal,
+        structures: structures.structure,
+        loots: structures.loot,
     }
 }
 
@@ -867,6 +978,8 @@ impl RemoveStable for Vec<RawMod> {
             blocks: vec![],
             items: vec![],
             animals: vec![],
+            structures: vec![],
+            loots: vec![],
             recipes: vec![],
             smelts: vec![],
             fuels: vec![],
@@ -895,6 +1008,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         tex_files: Vec::new(),
         tex_names: Vec::new(),
         animals: Vec::new(),
+        structures: Vec::new(),
+        loots: HashMap::new(),
     };
     let mut tex_slots: HashMap<String, u16> = crate::atlas::builtin_slots();
     let mut next_slot: u16 = crate::atlas::FIRST_FREE_SLOT;
@@ -921,6 +1036,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         light_emit: 0,
         sapling: None,
         bonus_drop: None,
+        brush: None,
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
     reg.blocks.push(air);
@@ -978,6 +1094,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let mut pending_aliases: Vec<(String, AliasToml)> = Vec::new();
     let mut pending_harvests: Vec<(String, BlockId, HarvestToml)> = Vec::new();
     let mut pending_bonus: Vec<(String, usize, BonusDropToml)> = Vec::new();
+    let mut pending_brush: Vec<(String, usize, BrushToml)> = Vec::new();
+    let mut pending_structs: Vec<(String, StructureToml)> = Vec::new();
+    let mut pending_loots: Vec<(String, LootToml)> = Vec::new();
     let mut pending_places: Vec<(String, (String, String))> = Vec::new();
     // (mod id, toml, body tile, head tile, per-box tiles) — resolve in pass 1.
     #[allow(clippy::type_complexity)]
@@ -1030,10 +1149,14 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 light_emit: b.light.min(15),
                 sapling: b.sapling.as_ref().map(|t| t.tree.clone()),
                 bonus_drop: None,
+                brush: None,
             });
             reg.block_by_name.insert(full.clone(), id);
             if let Some(bd) = &b.bonus_drop {
                 pending_bonus.push((raw.info.id.clone(), id.0 as usize, bd.clone()));
+            }
+            if let Some(br) = &b.brush {
+                pending_brush.push((raw.info.id.clone(), id.0 as usize, br.clone()));
             }
             pending_drops.push(PendingDrop {
                 block: id.0 as usize,
@@ -1106,6 +1229,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     ammo: None,
                     armor: None,
                     bedroll: false,
+                    shears: false,
+                    charm: None,
+                    tablet: false,
+                    brush_tool: false,
                 });
                 reg.item_by_name.insert(full, iid);
             }
@@ -1154,6 +1281,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 ammo: it.ammo.clone(),
                 armor,
                 bedroll: it.bedroll,
+                shears: it.shears,
+                charm: it.charm.clone(),
+                tablet: it.tablet,
+                brush_tool: it.brush_tool,
             });
             reg.item_by_name.insert(full, iid);
         }
@@ -1173,6 +1304,12 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         }
         for s in &raw.smelts {
             pending_smelts.push((raw.info.id.clone(), s.clone()));
+        }
+        for st in &raw.structures {
+            pending_structs.push((raw.info.id.clone(), st.clone()));
+        }
+        for lt in &raw.loots {
+            pending_loots.push((raw.info.id.clone(), lt.clone()));
         }
         for a in &raw.animals {
             let tile = resolve_tex(&a.tex, &raw.info.path, &mut errs);
@@ -1230,6 +1367,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         light_emit: 0,
         sapling: None,
         bonus_drop: None,
+        brush: None,
     });
     reg.block_by_name.insert("base:unknown".into(), unk);
     reg.unknown_block = unk;
@@ -1254,6 +1392,61 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         if let Some(item) = lookup_item(&reg, &modid, &bd.item) {
             reg.blocks[bi].bonus_drop = Some((item, bd.chance));
         }
+    }
+    let lookup_block = |reg: &Registry, modid: &str, name: &str| -> Option<BlockId> {
+        reg.block_id(&qualify(modid, name)).or_else(|| reg.block_id(name))
+    };
+    for (modid, bi, br) in pending_brush {
+        if let Some(becomes) = lookup_block(&reg, &modid, &br.becomes) {
+            reg.blocks[bi].brush = Some((qualify(&modid, &br.table), becomes));
+        }
+    }
+    for (modid, lt) in pending_loots {
+        let entries: Vec<LootEntry> = lt
+            .entries
+            .iter()
+            .filter_map(|e| {
+                lookup_item(&reg, &modid, &e.item).map(|item| LootEntry {
+                    item,
+                    weight: e.weight.max(1),
+                    count: e.count.map(|c| (c[0], c[1])).unwrap_or((1, 1)),
+                    durability_frac: e.durability,
+                })
+            })
+            .collect();
+        if !entries.is_empty() {
+            reg.loots.insert(qualify(&modid, &lt.id), entries);
+        }
+    }
+    for (modid, st) in pending_structs {
+        let mut palette = HashMap::new();
+        let mut ok = true;
+        for (ch, block) in &st.palette {
+            let Some(c) = ch.chars().next() else { continue };
+            match lookup_block(&reg, &modid, block) {
+                Some(b) => {
+                    palette.insert(c, b);
+                }
+                None => ok = false,
+            }
+        }
+        if !ok {
+            continue;
+        }
+        reg.structures.push(StructureDef {
+            name: qualify(&modid, &st.id),
+            biomes: st.biomes.iter().map(|b| b.to_lowercase()).collect(),
+            rarity: st.rarity.max(1),
+            buried: if st.placement.as_deref() == Some("buried") {
+                let d = st.depth.unwrap_or([5, 15]);
+                Some((d[0], d[1].max(d[0])))
+            } else {
+                None
+            },
+            palette,
+            layers: st.layers,
+            loot: st.loot.as_ref().map(|l| qualify(&modid, l)),
+        });
     }
     for pd in pending_drops {
         let d = match pd.rule.as_str() {
@@ -1283,7 +1476,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     }
     for (modid, f) in pending_fuels {
         if let Some(ing) = resolve_ing(&reg, &modid, &f.item) {
-            reg.fuels.push((ing, f.burn));
+            reg.fuels.push((ing, f.burn, f.speed.unwrap_or(1.0)));
         }
     }
     for (modid, a, tile, head_tile, box_tiles, proj_tile) in pending_animals {

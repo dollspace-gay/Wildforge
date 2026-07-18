@@ -413,3 +413,59 @@ hardness = 3.0
 tool = "axe"
 interaction = "offering"
 light = 5
+
+# ---- iron & steel ----
+
+[[block]]
+id = "iron_ore"
+name = "Iron Ore"
+texture = "@iron_ore"
+hardness = 8.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 3
+drops = "base:raw_iron"
+
+[[block]]
+id = "iron_block"
+name = "Iron Block"
+texture = "@iron_block"
+hardness = 9.0
+tool = "pickaxe"
+requires_tool = true
+
+[[block]]
+id = "steel_block"
+name = "Steel Block"
+texture = "@steel_block"
+hardness = 11.0
+tool = "pickaxe"
+requires_tool = true
+
+# ---- ruins ----
+
+[[block]]
+id = "mossy_cobblestone"
+name = "Mossy Cobblestone"
+texture = "@mossy_cobblestone"
+hardness = 10.0
+tool = "pickaxe"
+drops = "base:cobblestone"
+
+[[block]]
+id = "cracked_masonry"
+name = "Cracked Masonry"
+texture = "@cracked_masonry"
+hardness = 6.0
+tool = "pickaxe"
+drops = "base:cobblestone"
+brush = { table = "ruin_artifacts", becomes = "base:cobblestone" }
+
+[[block]]
+id = "packed_earth"
+name = "Packed Earth"
+texture = "@packed_earth"
+hardness = 1.2
+tool = "shovel"
+drops = "base:dirt"
+brush = { table = "ruin_artifacts", becomes = "base:dirt" }

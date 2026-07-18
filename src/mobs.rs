@@ -239,6 +239,7 @@ impl Mob {
         def: &AnimalDef,
         player: Vec3,
         attackable: bool,
+        aggro_mod: f32,
         dt: f32,
         rng: &mut u32,
         events: &mut Vec<MobEvent>,
@@ -264,9 +265,10 @@ impl Mob {
                 self.target = player;
             }
         }
-        // Wardens take notice.
+        // Wardens take notice (the quiet charm shortens their attention).
         if def.hostile && attackable && self.state != MobState::Hunt {
-            if (player - self.pos).length_squared() < def.aggro_range * def.aggro_range {
+            let range = (def.aggro_range + aggro_mod).max(2.0);
+            if (player - self.pos).length_squared() < range * range {
                 self.state = MobState::Hunt;
                 self.lose_aggro = 0.0;
             }
