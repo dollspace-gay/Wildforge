@@ -385,6 +385,17 @@ Dev cheat: `WILDFORGE_GIVE=1` starts with some items for testing.
 - DDA voxel raycast for block targeting with wireframe outline + crosshair
 - World persistence via RLE-encoded chunk files
 
+## Toward multiplayer
+
+The engine now runs on a **sim/client split**: `server::Server` owns
+the world and steps everything (fluids, machines, creatures, ire, the
+clock) at a fixed 30 Hz tick, emitting events the client presents.
+Singleplayer *is* a server with one local player — the architecture a
+multiplayer host runs directly, built deliberately rather than
+retrofitted. The wire protocol (QUIC, one binary, content-sync on
+join, server-authoritative — see `docs/roadmap-plan.md` and
+`docs/multiplayer-plan.md`) builds on this split.
+
 ## Architecture
 
 | Module | Role |
