@@ -1,10 +1,12 @@
 # Multiplayer Phases 2–3 — The Wire & The Feel
 
-Drafted 2026-07-18, per the roadmap's phase structure. **Phase 1 (the
-sim/client split) shipped**: `server::Server` owns the world and steps
-it at a fixed 30 Hz; the Game struct is the client. This doc is the
-implementation spec for the remaining two phases, ready for its own
-`/goal`.
+Drafted and **IMPLEMENTED** 2026-07-18. All three phases shipped: the
+sim/client split (`server.rs`), the wire (`net.rs`, `mp.rs` — quinn
+transport, LAN discovery, content sync, chunk streaming, authoritative
+edits, snapshots), and the feel (chat, sleep votes, shared ire, remote
+player models + name tags, `--server` headless). Friend-code
+rendezvous remains v2/out-of-repo as specified. Loopback-tested;
+remote-container clicks use a simplified offer/take flow.
 
 ## Dependencies
 

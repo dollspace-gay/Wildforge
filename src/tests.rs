@@ -1809,7 +1809,7 @@ fn mob_settles_on_ground_and_flees_from_damage() {
     m.health = def.health;
     let mut rng = 7u32;
     for _ in 0..120 {
-        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
+        m.tick(&w, &def, &[crate::server::PlayerCtx { pos: Vec3::new(100.0, 181.0, 100.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
     }
     assert!(m.on_ground, "gravity settles the mob");
     assert!((m.pos.y - 181.0).abs() < 0.3, "standing on the pad, got y={}", m.pos.y);
@@ -1821,13 +1821,13 @@ fn mob_settles_on_ground_and_flees_from_damage() {
     assert!(m.health < def.health);
     let d0 = (m.pos - threat).length();
     for _ in 0..90 {
-        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
+        m.tick(&w, &def, &[crate::server::PlayerCtx { pos: Vec3::new(100.0, 181.0, 100.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
     }
     let d1 = (m.pos - threat).length();
     assert!(d1 > d0 + 1.0, "fled from the threat ({d0:.1} -> {d1:.1})");
     // Panic subsides back to idle within the flee timer.
     for _ in 0..400 {
-        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
+        m.tick(&w, &def, &[crate::server::PlayerCtx { pos: Vec3::new(100.0, 181.0, 100.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
     }
     assert_ne!(m.state, crate::mobs::MobState::Flee, "calmed down");
 }
@@ -1845,8 +1845,8 @@ fn skittish_flees_players_bold_does_not() {
     let mut deer = crate::mobs::Mob::new(deer_i, pos, 0.0);
     let mut boar = crate::mobs::Mob::new(boar_i, pos, 0.0);
     let mut rng = 3u32;
-    deer.tick(&w, &deer_def, player, true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
-    boar.tick(&w, &boar_def, player, true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
+    deer.tick(&w, &deer_def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
+    boar.tick(&w, &boar_def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
     assert_eq!(deer.state, crate::mobs::MobState::Flee, "deer spooks");
     assert_ne!(boar.state, crate::mobs::MobState::Flee, "boar doesn't care");
 }
@@ -1976,7 +1976,7 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
     w.mobs.push(far);
     let mut rng = 1u32;
     for _ in 0..60 {
-        w.tick_mobs(Vec3::ZERO, 1.0, true, 0.0, 1.0 / 60.0, &mut rng);
+        w.tick_mobs(&[crate::server::PlayerCtx { pos: Vec3::ZERO, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0, 1.0 / 60.0, &mut rng);
     }
     assert_eq!(w.mobs[far_i].pos.y, 80.0, "frozen, not falling, outside loaded chunks");
 
@@ -1993,7 +1993,7 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
     let mut buried = crate::mobs::Mob::new(si, Vec3::new(1.5, 104.0, 1.5), 0.0);
     buried.health = 10.0;
     w.mobs.push(buried);
-    w.tick_mobs(Vec3::new(60.0, 80.0, 60.0), 1.0, true, 0.0, 1.0 / 60.0, &mut rng);
+    w.tick_mobs(&[crate::server::PlayerCtx { pos: Vec3::new(60.0, 80.0, 60.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0, 1.0 / 60.0, &mut rng);
     assert!(
         w.mobs[buried_i].pos.y >= 110.5,
         "unstuck above the stone, got y={}",
@@ -2304,12 +2304,12 @@ fn warden_hunts_strikes_and_caster_fires() {
     m.health = def.health;
     let mut rng = 5u32;
     let mut events = Vec::new();
-    m.tick(&w, &def, player, true, 0.0, 1.0 / 60.0, &mut rng, &mut events);
+    m.tick(&w, &def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut events);
     assert_eq!(m.state, crate::mobs::MobState::Hunt, "aggro within range");
     // Walk it onto the player: contact damage fires once, then cools down.
     m.pos = player + Vec3::new(0.8, 0.0, 0.0);
     for _ in 0..30 {
-        m.tick(&w, &def, player, true, 0.0, 1.0 / 60.0, &mut rng, &mut events);
+        m.tick(&w, &def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut events);
         m.pos = player + Vec3::new(0.8, 0.0, 0.0);
     }
     let hits = events
@@ -2321,7 +2321,7 @@ fn warden_hunts_strikes_and_caster_fires() {
     let mut calm = crate::mobs::Mob::new(ti, Vec3::new(6.5, 151.0, 1.5), 0.0);
     calm.health = def.health;
     let mut ev2 = Vec::new();
-    calm.tick(&w, &def, player, false, 0.0, 1.0 / 60.0, &mut rng, &mut ev2);
+    calm.tick(&w, &def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: false, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut ev2);
     assert_ne!(calm.state, crate::mobs::MobState::Hunt, "no aggro when unattackable");
 
     // Dryad: holds range and lobs a thorn bolt.
@@ -2331,7 +2331,7 @@ fn warden_hunts_strikes_and_caster_fires() {
     d.health = ddef.health;
     let mut ev3 = Vec::new();
     for _ in 0..90 {
-        d.tick(&w, &ddef, player, true, 0.0, 1.0 / 60.0, &mut rng, &mut ev3);
+        d.tick(&w, &ddef, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut ev3);
     }
     assert!(
         ev3.iter().any(|e| matches!(e, crate::mobs::MobEvent::Cast(_))),
@@ -2352,7 +2352,7 @@ fn floaters_hover_and_projectiles_collide() {
     let mut rng = 9u32;
     let far = Vec3::new(200.0, 80.0, 200.0);
     for _ in 0..240 {
-        m.tick(&w, &def, far, true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
+        m.tick(&w, &def, &[crate::server::PlayerCtx { pos: far, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
     }
     let under = w.surface_height(m.pos.x.floor() as i32, m.pos.z.floor() as i32);
     assert!(
@@ -2373,10 +2373,11 @@ fn floaters_hover_and_projectiles_collide() {
         age: 0.0,
         from_player: false,
         drop_item: None,
+        owner: 0,
     };
     let mut outcome = crate::mobs::ProjHit::None;
     for _ in 0..60 {
-        outcome = p.tick(&w, far, 1.0 / 30.0);
+        outcome = p.tick(&w, &[crate::server::PlayerCtx { pos: far, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 30.0);
         if !matches!(outcome, crate::mobs::ProjHit::None) {
             break;
         }
@@ -2390,10 +2391,11 @@ fn floaters_hover_and_projectiles_collide() {
         age: 0.0,
         from_player: false,
         drop_item: None,
+        owner: 0,
     });
     let mut dmg = 0.0;
     for _ in 0..60 {
-        dmg += w.tick_projectiles(Vec3::new(4.5, 120.0, 4.5), 1.0 / 30.0);
+        dmg += w.tick_projectiles(&[crate::server::PlayerCtx { pos: Vec3::new(4.5, 120.0, 4.5), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 30.0).iter().map(|(_, d)| d).sum::<f32>();
     }
     assert_eq!(dmg, 3.0, "bolt connected with the player");
 }
@@ -2465,7 +2467,7 @@ fn wardens_dissolve_at_dawn_and_never_save() {
     // Dawn dissolve: full daylight on an open surface removes the warden.
     let player = Vec3::new(5.0, y, 5.0);
     let mut rng = 3u32;
-    w.tick_mobs(player, 1.0, true, 0.0, 1.0 / 60.0, &mut rng);
+    w.tick_mobs(&[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0, 1.0 / 60.0, &mut rng);
     assert!(
         !w.mobs.iter().any(|m| reg.animals[m.species].hostile),
         "warden dissolved in daylight"
@@ -2541,11 +2543,12 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
         age: 0.0,
         from_player: true,
         drop_item: Some(arrow_item),
+        owner: 0,
     });
     let far = Vec3::new(300.0, 80.0, 300.0);
     let mut player_dmg = 0.0;
     for _ in 0..40 {
-        player_dmg += w.tick_projectiles(far, 1.0 / 30.0);
+        player_dmg += w.tick_projectiles(&[crate::server::PlayerCtx { pos: far, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 30.0).iter().map(|(_, d)| d).sum::<f32>();
     }
     assert!(w.mobs[di].health < 10.0, "arrow connected (health {})", w.mobs[di].health);
     assert_eq!(player_dmg, 0.0, "player arrows never hit the player");
@@ -2563,9 +2566,10 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
         age: 0.0,
         from_player: true,
         drop_item: Some(arrow_item),
+        owner: 0,
     });
     for _ in 0..40 {
-        w.tick_projectiles(far, 1.0 / 30.0);
+        w.tick_projectiles(&[crate::server::PlayerCtx { pos: far, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 30.0);
     }
     assert!(
         w.pending_drops.iter().any(|(_, s)| s.item == arrow_item),
@@ -2670,7 +2674,7 @@ fn breeding_makes_babies_that_grow() {
         w.mobs.push(m);
     }
     let mut rng = 3u32;
-    let events = w.tick_mobs(Vec3::new(200.0, 80.0, 200.0), 1.0, true, 0.0, 1.0 / 60.0, &mut rng);
+    let events = w.tick_mobs(&[crate::server::PlayerCtx { pos: Vec3::new(200.0, 80.0, 200.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0, 1.0 / 60.0, &mut rng);
     assert!(
         events.iter().any(|e| matches!(e, crate::mobs::MobEvent::Bred(_))),
         "birth event"
@@ -2684,13 +2688,13 @@ fn breeding_makes_babies_that_grow() {
     // Growth advances with time; babies persist through saves.
     let baby_growth = baby.growth;
     for _ in 0..120 {
-        w.tick_mobs(Vec3::new(200.0, 80.0, 200.0), 1.0, true, 0.0, 1.0 / 60.0, &mut rng);
+        w.tick_mobs(&[crate::server::PlayerCtx { pos: Vec3::new(200.0, 80.0, 200.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0, 1.0 / 60.0, &mut rng);
     }
     let baby2 = w.mobs.iter().find(|m| m.growth < 1.0).expect("still young");
     assert!(baby2.growth > baby_growth, "babies grow");
     // No immediate re-breeding: cooldown holds.
     let n_now = w.mobs.len();
-    let ev2 = w.tick_mobs(Vec3::new(200.0, 80.0, 200.0), 1.0, true, 0.0, 1.0 / 60.0, &mut rng);
+    let ev2 = w.tick_mobs(&[crate::server::PlayerCtx { pos: Vec3::new(200.0, 80.0, 200.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0, 1.0 / 60.0, &mut rng);
     assert!(!ev2.iter().any(|e| matches!(e, crate::mobs::MobEvent::Bred(_))));
     assert_eq!(w.mobs.len(), n_now);
 }
@@ -2915,11 +2919,11 @@ fn charms_and_tablets_work() {
     let mut rng = 4u32;
     let mut a = crate::mobs::Mob::new(ti, pos, 0.0);
     a.health = def.health;
-    a.tick(&w, &def, player, true, 0.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
+    a.tick(&w, &def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
     assert_eq!(a.state, crate::mobs::MobState::Hunt, "in range normally");
     let mut b = crate::mobs::Mob::new(ti, pos, 0.0);
     b.health = def.health;
-    b.tick(&w, &def, player, true, -2.0, 1.0 / 60.0, &mut rng, &mut Vec::new());
+    b.tick(&w, &def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: -2.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
     assert_ne!(b.state, crate::mobs::MobState::Hunt, "quiet charm keeps you unseen");
     let _ = &mut w;
 }
@@ -2941,7 +2945,7 @@ fn server_ticks_at_fixed_rate_and_runs_the_world() {
     let mut evs = Vec::new();
     // 2 wall-seconds in odd chunks: the fixed tick must absorb it evenly.
     for _ in 0..120 {
-        sv.advance(1.0 / 60.0, &ctx, &mut evs);
+        sv.advance(1.0 / 60.0, &[ctx], &mut evs);
     }
     let advanced = sv.time_of_day - t0;
     assert!(
@@ -2949,12 +2953,12 @@ fn server_ticks_at_fixed_rate_and_runs_the_world() {
         "clock advanced by the simulated time, got {advanced}"
     );
     // A hitch doesn't spiral the simulation.
-    sv.advance(30.0, &ctx, &mut evs);
+    sv.advance(30.0, &[ctx], &mut evs);
     assert!(sv.time_of_day - t0 < 0.01, "hitch capped, not replayed");
     // Ire tier events flow through the server.
     sv.world.ire = 95.0;
     let mut evs2 = Vec::new();
-    sv.advance(0.1, &ctx, &mut evs2);
+    sv.advance(0.1, &[ctx], &mut evs2);
     assert!(
         evs2.iter().any(|e| matches!(
             e,
@@ -2963,4 +2967,170 @@ fn server_ticks_at_fixed_rate_and_runs_the_world() {
         "tier change surfaced as a SimEvent"
     );
     let _ = reg;
+}
+
+// ---------------- multiplayer: protocol + loopback ----------------
+
+#[test]
+fn net_protocol_round_trips() {
+    use crate::net::{C2S, S2C, decode, encode};
+    let c2s = [
+        C2S::Hello { protocol: 1, name: "doll".into(), content_hash: 42 },
+        C2S::Move { pos: Vec3::new(1.5, 80.0, -3.5), yaw: 1.2 },
+        C2S::Break { x: 1, y: 2, z: 3 },
+        C2S::Place { x: -9, y: 70, z: 4, block: 7 },
+        C2S::AttackMob { index: 3, dmg: 8.0, from: Vec3::ZERO },
+        C2S::Chat("hello wild".into()),
+        C2S::SleepRequest,
+    ];
+    for m in &c2s {
+        let bytes = encode(m);
+        assert!(!bytes.is_empty());
+        let back: C2S = decode(&bytes).expect("c2s decodes");
+        assert_eq!(format!("{m:?}"), format!("{back:?}"));
+    }
+    let s2c = [
+        S2C::BlockSet { x: 1, y: 2, z: 3, id: 9 },
+        S2C::TimeIre { time: 0.5, ire: 33.0 },
+        S2C::Chat { from: "a".into(), msg: "b".into() },
+        S2C::Sleep { sleeping: 1, present: 3 },
+        S2C::Chunk { x: 0, z: 0, rle: vec![1, 2, 3] },
+    ];
+    for m in &s2c {
+        let back: S2C = decode(&encode(m)).expect("s2c decodes");
+        assert_eq!(format!("{m:?}"), format!("{back:?}"));
+    }
+}
+
+#[test]
+fn loopback_join_stream_and_edit() {
+    use crate::net::{C2S, S2C};
+    let reg = base_reg();
+    // Host: a real session on an ephemeral port, with a real world.
+    let world = test_world_with("mphost", reg.clone());
+    let mut sim = crate::server::Server::new(world, 0.3, 5);
+    sim.world.log_edits = true;
+    let mut sess = crate::mp::HostSession::start_on("loop".into(), 0).expect("host binds");
+    let port = sess.net.port;
+
+    // Guest connects over localhost.
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+    let mut client =
+        crate::net::Client::connect(addr, "tester".into(), sess.content_hash).expect("connect");
+
+    // Pump both sides until the Welcome lands.
+    let ground = sim.world.surface_height(8, 8) as f32 + 1.0;
+    let gpos = Vec3::new(8.5, ground, 8.5);
+    let mut welcome = None;
+    let mut got_chunk = false;
+    let mut chunk_data: Option<(i32, i32, Vec<u8>)> = None;
+    for _ in 0..200 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        for msg in client.poll() {
+            match msg {
+                S2C::Welcome { palette, your_id, .. } => {
+                    assert!(!palette.is_empty(), "palette shipped");
+                    assert!(your_id > 0);
+                    welcome = Some(palette);
+                    // Tell the host where we stand so chunks stream.
+                    client.send(&C2S::Move { pos: gpos, yaw: 0.0 });
+                }
+                S2C::Chunk { x, z, rle } => {
+                    got_chunk = true;
+                    if chunk_data.is_none() {
+                        chunk_data = Some((x, z, rle));
+                    }
+                }
+                _ => {}
+            }
+        }
+        if welcome.is_some() && got_chunk {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let palette = welcome.expect("welcome arrived");
+    assert!(got_chunk, "chunks streamed to the guest");
+
+    // The streamed chunk decodes into an identical remote chunk.
+    let (cx, cz, rle) = chunk_data.unwrap();
+    let mut remote = World::new(1, tmp_dir("mpguest"), reg.clone());
+    remote.remote = true;
+    let remap = crate::mp::block_remap(&remote, &palette);
+    remote.insert_remote_chunk(ChunkPos { x: cx, z: cz }, &rle, &remap);
+    let host_chunk = sim.world.chunks.get(&ChunkPos { x: cx, z: cz }).unwrap();
+    let guest_chunk = remote.chunks.get(&ChunkPos { x: cx, z: cz }).unwrap();
+    assert_eq!(host_chunk.raw(), guest_chunk.raw(), "chunk survives the wire");
+    // Remote worlds never generate on their own.
+    assert!(!remote.ensure_chunk(ChunkPos { x: 90, z: 90 }));
+    assert!(!remote.chunks.contains_key(&ChunkPos { x: 90, z: 90 }));
+
+    // Guest breaks a block: host applies it authoritatively and echoes.
+    let y = sim.world.surface_height(9, 9);
+    let target_block = sim.world.get_block(9, y, 9);
+    assert_ne!(target_block, AIR);
+    client.send(&C2S::Break { x: 9, y, z: 9 });
+    let mut echoed = false;
+    let mut given = false;
+    for _ in 0..200 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        for msg in client.poll() {
+            match msg {
+                S2C::BlockSet { x: 9, y: yy, z: 9, id: 0 } if yy == y => echoed = true,
+                S2C::Give { .. } => given = true,
+                _ => {}
+            }
+        }
+        if echoed && given {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(sim.world.get_block(9, y, 9), AIR, "host applied the break");
+    assert!(echoed, "edit echoed to the guest");
+    assert!(given, "drops crossed the wire to the breaker");
+
+    // Out of reach is refused.
+    let far_y = sim.world.surface_height(200, 200);
+    sim.world.ensure_chunk(ChunkPos::of_world(200, 200));
+    let far_block = sim.world.get_block(200, far_y, 200);
+    client.send(&C2S::Break { x: 200, y: far_y, z: 200 });
+    for _ in 0..30 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        client.poll();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(
+        sim.world.get_block(200, far_y, 200),
+        far_block,
+        "beyond reach: request rejected"
+    );
+
+    // Sleep vote: host asleep + guest asleep = dawn.
+    sim.time_of_day = 0.75;
+    client.send(&C2S::SleepRequest);
+    let mut dawned = false;
+    for _ in 0..100 {
+        sess.pump(&mut sim, Some((gpos, 0.0, true)), 0.06);
+        client.poll();
+        if (sim.time_of_day - 0.3).abs() < 0.01 {
+            dawned = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(dawned, "unanimous camp sleeps to dawn");
+
+    // Chat relays.
+    client.send(&C2S::Chat("hello".into()));
+    let mut chatted = false;
+    for _ in 0..100 {
+        let fx = sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        if fx.iter().any(|f| matches!(f, crate::mp::HostFx::Chat { .. })) {
+            chatted = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(chatted, "chat reached the host");
 }

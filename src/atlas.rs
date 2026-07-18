@@ -80,7 +80,7 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("excavation_brush", 194), ("mossy_cobblestone", 195),
         ("cracked_masonry", 196), ("packed_earth", 197), ("old_coin", 198),
         ("etched_tablet", 199), ("charm_quiet", 200), ("charm_bark", 201),
-        ("charm_hunger", 202),
+        ("charm_hunger", 202), ("player_skin", 203), ("player_face", 204),
         ("unknown", 15), ("crack1", 16), ("crack2", 17), ("crack3", 18),
         ("crack4", 19),
     ]
@@ -1876,6 +1876,27 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             }
         });
     }
+
+    // Player skin + face (remote players in multiplayer).
+    tf(11, 12, &mut |px, py, u, v| {
+        // Tunic over trousers.
+        let c = if v < 0.55 { [70.0, 110.0, 140.0] } else { [80.0, 62.0, 46.0] };
+        rgba(c, 0.9 + h01(px as i32, py as i32, 910) * 0.2, 255)
+    });
+    tf(12, 12, &mut |px, py, u, v| {
+        let mut c = [224.0, 188.0, 152.0]; // skin
+        let eye = |cx: f32| (u - cx).abs() < 0.07 && (v - 0.42).abs() < 0.06;
+        if eye(0.30) || eye(0.70) {
+            c = [40.0, 50.0, 90.0];
+        }
+        if v < 0.22 {
+            c = [86.0, 62.0, 40.0]; // hair
+        }
+        if (u - 0.5).abs() < 0.14 && (v - 0.74).abs() < 0.025 {
+            c = [150.0, 110.0, 90.0]; // mouth
+        }
+        rgba(c, speck(px, py, 911, 0.04), 255)
+    });
 
     // (15,0) unknown/missing texture: magenta checkerboard.
     tile(15, 0, &mut |px, py, _u, _v| {

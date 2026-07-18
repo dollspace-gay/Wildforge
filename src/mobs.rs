@@ -7,6 +7,7 @@ use glam::Vec3;
 use crate::atlas::ATLAS_TILES;
 use crate::mesher::{CORNERS, FACE_SHADE, Vertex};
 use crate::registry::{AnimalDef, Registry};
+use crate::server::PlayerCtx;
 use crate::world::World;
 
 const GRAVITY: f32 = 28.0;
@@ -24,8 +25,8 @@ pub enum MobState {
 
 /// Things a mob did this tick that the game loop must apply.
 pub enum MobEvent {
-    /// Contact damage to the player (half-hearts, attacker position).
-    HitPlayer(f32, Vec3),
+    /// Contact damage: (player index, half-hearts, attacker position).
+    HitPlayer(usize, f32, Vec3),
     /// A caster fired: projectile spawn.
     Cast(Projectile),
     /// A wildlife pair bred at this position.
@@ -44,6 +45,8 @@ pub struct Projectile {
     pub from_player: bool,
     /// Item recovered when this sticks into a block (arrows).
     pub drop_item: Option<crate::registry::ItemId>,
+    /// 0 = the host/local player; guests get their arrows back by wire.
+    pub owner: u32,
 }
 
 pub enum ProjHit {
@@ -51,13 +54,14 @@ pub enum ProjHit {
     None,
     Expired,
     Block,
-    Player,
+    /// Index into the player list.
+    Player(usize),
     /// Index into world.mobs.
     Mob(usize),
 }
 
 impl Projectile {
-    pub fn tick(&mut self, world: &World, player: Vec3, dt: f32) -> ProjHit {
+    pub fn tick(&mut self, world: &World, players: &[PlayerCtx], dt: f32) -> ProjHit {
         self.age += dt;
         if self.age > 8.0 {
             return ProjHit::Expired;
@@ -85,9 +89,11 @@ impl Projectile {
                 }
             }
         } else {
-            let d = self.pos - (player + Vec3::new(0.0, 0.9, 0.0));
-            if d.x.abs() < 0.5 && d.z.abs() < 0.5 && d.y.abs() < 1.1 {
-                return ProjHit::Player;
+            for (i, p) in players.iter().enumerate() {
+                let d = self.pos - (p.pos + Vec3::new(0.0, 0.9, 0.0));
+                if d.x.abs() < 0.5 && d.z.abs() < 0.5 && d.y.abs() < 1.1 {
+                    return ProjHit::Player(i);
+                }
             }
         }
         ProjHit::None
@@ -164,6 +170,8 @@ pub struct Mob {
     pub breed_cd: f32,
     /// 0 = newborn, 1 = adult; scales the model.
     pub growth: f32,
+    /// Guest id that last struck this mob (0 = host); drops route there.
+    pub last_hit_by: u32,
 }
 
 fn r01(rng: &mut u32) -> f32 {
@@ -193,6 +201,7 @@ impl Mob {
             calm: 0.0,
             breed_cd: 0.0,
             growth: 1.0,
+            last_hit_by: 0,
         }
     }
 
@@ -237,13 +246,32 @@ impl Mob {
         &mut self,
         world: &World,
         def: &AnimalDef,
-        player: Vec3,
-        attackable: bool,
-        aggro_mod: f32,
+        players: &[PlayerCtx],
         dt: f32,
         rng: &mut u32,
         events: &mut Vec<MobEvent>,
     ) {
+        // The mob cares about whoever is closest (and, for hunting,
+        // closest *attackable*).
+        let nearest = players
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| {
+                (a.pos - self.pos)
+                    .length_squared()
+                    .total_cmp(&(b.pos - self.pos).length_squared())
+            })
+            .map(|(i, p)| (i, *p));
+        let prey = players
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.attackable)
+            .min_by(|(_, a), (_, b)| {
+                (a.pos - self.pos)
+                    .length_squared()
+                    .total_cmp(&(b.pos - self.pos).length_squared())
+            })
+            .map(|(i, p)| (i, *p));
         self.state_timer -= dt;
         self.hurt_flash = (self.hurt_flash - dt).max(0.0);
         self.attack_cd = (self.attack_cd - dt).max(0.0);
@@ -254,23 +282,31 @@ impl Mob {
             self.growth = (self.growth + dt / 1200.0).min(1.0);
         }
 
-        // Skittish species bolt when the player closes in — unless
-        // recently fed (feeding is taming-lite).
-        if def.flee_range > 0.0 && !def.hostile && self.calm <= 0.0 && self.state != MobState::Flee {
-            let mut d = player - self.pos;
-            d.y = 0.0;
-            if d.length_squared() < def.flee_range * def.flee_range {
-                self.state = MobState::Flee;
-                self.state_timer = 4.0;
-                self.target = player;
+        // Skittish species bolt when anyone closes in — unless recently
+        // fed (feeding is taming-lite).
+        if let Some((_, near)) = nearest {
+            if def.flee_range > 0.0
+                && !def.hostile
+                && self.calm <= 0.0
+                && self.state != MobState::Flee
+            {
+                let mut d = near.pos - self.pos;
+                d.y = 0.0;
+                if d.length_squared() < def.flee_range * def.flee_range {
+                    self.state = MobState::Flee;
+                    self.state_timer = 4.0;
+                    self.target = near.pos;
+                }
             }
         }
         // Wardens take notice (the quiet charm shortens their attention).
-        if def.hostile && attackable && self.state != MobState::Hunt {
-            let range = (def.aggro_range + aggro_mod).max(2.0);
-            if (player - self.pos).length_squared() < range * range {
-                self.state = MobState::Hunt;
-                self.lose_aggro = 0.0;
+        if let Some((_, p)) = prey {
+            if def.hostile && self.state != MobState::Hunt {
+                let range = (def.aggro_range + p.aggro_mod).max(2.0);
+                if (p.pos - self.pos).length_squared() < range * range {
+                    self.state = MobState::Hunt;
+                    self.lose_aggro = 0.0;
+                }
             }
         }
 
@@ -331,61 +367,67 @@ impl Mob {
                     wish = dir * def.speed * 1.6;
                 }
             }
-            MobState::Hunt => {
-                let mut to = player - self.pos;
-                let dist = to.length();
-                to.y = 0.0;
-                let dir = if to.length_squared() > 0.001 { to.normalize() } else { Vec3::Z };
-                self.yaw = dir.x.atan2(dir.z);
-                // Losing the player for ~8 s ends the hunt.
-                if !attackable || dist > def.aggro_range * 1.6 {
-                    self.lose_aggro += dt;
-                    if self.lose_aggro > 8.0 || !attackable {
-                        self.state = MobState::Idle;
-                        self.state_timer = 1.0;
-                    }
-                } else {
-                    self.lose_aggro = 0.0;
+            MobState::Hunt => match prey {
+                None => {
+                    self.state = MobState::Idle;
+                    self.state_timer = 1.0;
                 }
-                match &def.projectile {
-                    Some(pr) => {
-                        // Casters hold their range and lob bolts.
-                        if dist > 11.0 {
-                            wish = dir * def.speed;
-                        } else if dist < 5.0 {
-                            wish = -dir * def.speed * 0.8;
+                Some((who, p)) => {
+                    let mut to = p.pos - self.pos;
+                    let dist = to.length();
+                    to.y = 0.0;
+                    let dir =
+                        if to.length_squared() > 0.001 { to.normalize() } else { Vec3::Z };
+                    self.yaw = dir.x.atan2(dir.z);
+                    // Losing everyone for ~8 s ends the hunt.
+                    if dist > def.aggro_range * 1.6 {
+                        self.lose_aggro += dt;
+                        if self.lose_aggro > 8.0 {
+                            self.state = MobState::Idle;
+                            self.state_timer = 1.0;
                         }
-                        if attackable && dist < 14.0 && self.cast_cd <= 0.0 {
-                            self.cast_cd = pr.cooldown;
-                            let muzzle = self.pos + Vec3::new(0.0, def.height * 0.7, 0.0);
-                            let aim = (player + Vec3::new(0.0, 0.9, 0.0) - muzzle)
-                                .normalize_or_zero();
-                            events.push(MobEvent::Cast(Projectile {
-                                pos: muzzle + aim * 0.6,
-                                vel: aim * pr.speed,
-                                tile: pr.tile,
-                                damage: pr.damage,
-                                age: 0.0,
-                                from_player: false,
-                                drop_item: None,
-                            }));
-                        }
+                    } else {
+                        self.lose_aggro = 0.0;
                     }
-                    None => {
-                        wish = dir * def.speed * 1.2;
-                        // Contact swing with a cooldown.
-                        let dy = player.y - self.pos.y;
-                        if attackable
-                            && dist < def.half_w + 0.9
-                            && dy.abs() < 2.0
-                            && self.attack_cd <= 0.0
-                        {
-                            self.attack_cd = 1.0;
-                            events.push(MobEvent::HitPlayer(def.attack, self.pos));
+                    match &def.projectile {
+                        Some(pr) => {
+                            // Casters hold their range and lob bolts.
+                            if dist > 11.0 {
+                                wish = dir * def.speed;
+                            } else if dist < 5.0 {
+                                wish = -dir * def.speed * 0.8;
+                            }
+                            if dist < 14.0 && self.cast_cd <= 0.0 {
+                                self.cast_cd = pr.cooldown;
+                                let muzzle =
+                                    self.pos + Vec3::new(0.0, def.height * 0.7, 0.0);
+                                let aim = (p.pos + Vec3::new(0.0, 0.9, 0.0) - muzzle)
+                                    .normalize_or_zero();
+                                events.push(MobEvent::Cast(Projectile {
+                                    pos: muzzle + aim * 0.6,
+                                    vel: aim * pr.speed,
+                                    tile: pr.tile,
+                                    damage: pr.damage,
+                                    age: 0.0,
+                                    from_player: false,
+                                    drop_item: None,
+                                    owner: 0,
+                                }));
+                            }
+                        }
+                        None => {
+                            wish = dir * def.speed * 1.2;
+                            // Contact swing with a cooldown.
+                            let dy = p.pos.y - self.pos.y;
+                            if dist < def.half_w + 0.9 && dy.abs() < 2.0 && self.attack_cd <= 0.0
+                            {
+                                self.attack_cd = 1.0;
+                                events.push(MobEvent::HitPlayer(who, def.attack, self.pos));
+                            }
                         }
                     }
                 }
-            }
+            },
         }
 
         // Physics: accelerate toward wish, gravity/buoyancy, collide per axis.
@@ -399,7 +441,7 @@ impl Mob {
             // player's eyes while hunting), no gravity at all.
             let gy = world.surface_height(self.pos.x.floor() as i32, self.pos.z.floor() as i32);
             let want_y = if self.state == MobState::Hunt {
-                player.y + 1.6
+                prey.map(|(_, p)| p.pos.y).unwrap_or(gy as f32) + 1.6
             } else {
                 gy as f32 + 2.2
             } + (self.anim_phase * 0.7).sin() * 0.3;
@@ -596,6 +638,63 @@ impl Mob {
                 }
                 idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
             }
+        }
+    }
+}
+
+/// A remote player's body: a boxy humanoid at `pos` facing `yaw`.
+/// (Same box math as mob models; static pose, name tag drawn by the UI.)
+pub fn emit_humanoid(
+    pos: Vec3,
+    yaw: f32,
+    tile: u16,
+    face: u16,
+    lum: (f32, f32),
+    verts: &mut Vec<Vertex>,
+    idx: &mut Vec<u32>,
+) {
+    // (size px, at px, is_head)
+    let boxes: [([f32; 3], [f32; 3], bool); 6] = [
+        ([2.0, 6.0, 2.0], [-1.5, 0.0, 0.0], false),
+        ([2.0, 6.0, 2.0], [1.5, 0.0, 0.0], false),
+        ([6.0, 6.0, 3.0], [0.0, 6.0, 0.0], false),
+        ([2.0, 6.0, 2.0], [-4.0, 6.0, 0.0], false),
+        ([2.0, 6.0, 2.0], [4.0, 6.0, 0.0], false),
+        ([5.0, 5.0, 5.0], [0.0, 12.0, 0.0], true),
+    ];
+    let (syaw, cyaw) = (yaw + std::f32::consts::PI).sin_cos();
+    let ts = 1.0 / ATLAS_TILES as f32;
+    let inset = ts / 32.0;
+    for (size, at, is_head) in boxes {
+        let (hx, hy, hz) = (size[0] / 32.0, size[1] / 32.0, size[2] / 32.0);
+        let center = Vec3::new(at[0] / 16.0, at[1] / 16.0 + hy, at[2] / 16.0);
+        for f in 0..6 {
+            let t = if is_head && f == 5 { face } else { tile };
+            let (tx, ty) = (t as u32 % ATLAS_TILES, t as u32 / ATLAS_TILES);
+            let base = verts.len() as u32;
+            for c in CORNERS[f].iter() {
+                let lx = center.x + (c[0] - 0.5) * 2.0 * hx;
+                let ly = center.y + (c[1] - 0.5) * 2.0 * hy;
+                let lz = center.z + (c[2] - 0.5) * 2.0 * hz;
+                let wx = lx * cyaw + lz * syaw;
+                let wz = -lx * syaw + lz * cyaw;
+                let (u, v) = match f {
+                    0 | 1 => (c[2], 1.0 - c[1]),
+                    4 | 5 => (c[0], 1.0 - c[1]),
+                    _ => (c[0], c[2]),
+                };
+                let shade = FACE_SHADE[f].max(0.65);
+                verts.push(Vertex {
+                    pos: [pos.x + wx, pos.y + ly, pos.z + wz],
+                    uv: [
+                        tx as f32 * ts + inset + u * (ts - 2.0 * inset),
+                        ty as f32 * ts + inset + v * (ts - 2.0 * inset),
+                    ],
+                    light: shade * lum.0,
+                    sky: shade * lum.1,
+                });
+            }
+            idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
         }
     }
 }

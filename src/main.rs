@@ -19,6 +19,8 @@ mod physics;
 mod raycast;
 mod registry;
 mod renderer;
+mod mp;
+mod net;
 mod script;
 mod server;
 #[cfg(test)]
@@ -69,8 +71,36 @@ enum Screen {
     Furnace((i32, i32, i32)),
     Chest((i32, i32, i32)),
     Offering((i32, i32, i32)),
+    Join,
     Paused,
     Dead,
+}
+
+/// Player name for multiplayer: config-free, from the OS user.
+fn whoami() -> String {
+    std::env::var("WILDFORGE_NAME")
+        .or_else(|_| std::env::var("USER"))
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "player".into())
+        .chars()
+        .take(16)
+        .collect()
+}
+
+/// Guest-side connection state.
+struct Remote {
+    client: net::Client,
+    my_id: u32,
+    /// Host block id -> local block id.
+    block_map: Vec<crate::registry::BlockId>,
+    /// Host item id -> local item id.
+    item_map: Vec<Option<ItemId>>,
+    /// Local block id -> host id (for Place).
+    host_block: std::collections::HashMap<u16, u16>,
+    /// id -> (name, pos, yaw) of every other player.
+    players: std::collections::HashMap<u32, (String, Vec3, f32)>,
+    names: std::collections::HashMap<u32, String>,
+    sleeping: bool,
 }
 
 struct Game {
@@ -147,6 +177,19 @@ struct Game {
     pack_warnings: Vec<String>,
     /// WILDFORGE_PACK dev override; shadows config.pack, never persisted.
     pack_override: Option<String>,
+    /// Hosting: the multiplayer session (pause menu -> OPEN TO FRIENDS).
+    host: Option<mp::HostSession>,
+    /// Waiting for everyone else to sleep (multiplayer bedroll).
+    host_sleeping: bool,
+    /// Joined someone else's world.
+    remote: Option<Remote>,
+    /// LAN server discovery for the JOIN screen.
+    discovery: Option<net::Discovery>,
+    join_ip: String,
+    join_status: String,
+    chat_open: bool,
+    chat_text: String,
+    move_timer: f32,
     tick_accum: f32,
     config: Config,
     audio: Option<Audio>,
@@ -378,6 +421,15 @@ impl Game {
             packs: atlas::discover_packs(),
             pack_warnings,
             pack_override,
+            host: None,
+            host_sleeping: false,
+            remote: None,
+            discovery: None,
+            join_ip: String::new(),
+            join_status: String::new(),
+            chat_open: false,
+            chat_text: String::new(),
+            move_timer: 0.0,
             tick_accum: 0.0,
             config,
             audio,
@@ -819,6 +871,24 @@ impl Game {
     }
 
     fn quit_to_title(&mut self) {
+        self.host = None; // closes connections
+        self.host_sleeping = false;
+        self.server.world.log_edits = false;
+        if self.remote.is_some() {
+            self.save_player(); // guest profile under saves/.remote/profile
+            self.remote = None;
+            self.renderer.chunks.clear();
+            self.server = server::Server::new(
+                World::new(0, PathBuf::from("saves/.none"), self.reg.clone()),
+                0.3,
+                1,
+            );
+            self.items.clear();
+            self.in_world = false;
+            self.refresh_worlds();
+            self.set_screen(Screen::Title);
+            return;
+        }
         if self.in_world {
             self.save_player();
             self.server.world.save_modified();
@@ -922,6 +992,258 @@ impl Game {
         }
     }
 
+    /// Join a host: blocks briefly for the QUIC handshake, then the
+    /// Welcome/ModFiles flow finishes in remote_pump.
+    fn join_server(&mut self, addr: std::net::SocketAddr) {
+        let name = whoami();
+        let hash = net::content_hash(std::path::Path::new("mods"));
+        match net::Client::connect(addr, name, hash) {
+            Ok(client) => {
+                self.remote = Some(Remote {
+                    client,
+                    my_id: 0,
+                    block_map: Vec::new(),
+                    item_map: Vec::new(),
+                    host_block: Default::default(),
+                    players: Default::default(),
+                    names: Default::default(),
+                    sleeping: false,
+                });
+                self.join_status = "CONNECTED - SYNCING...".to_string();
+            }
+            Err(e) => {
+                self.join_status = format!("FAILED: {e}").to_uppercase();
+            }
+        }
+    }
+
+    /// Everything a guest does per frame: apply the host's stream, send
+    /// our movement. The local Server never advances in remote mode.
+    fn remote_pump(&mut self, dt: f32) {
+        let Some(mut r) = self.remote.take() else { return };
+        if !r.client.is_connected() && self.in_world {
+            self.toast("Disconnected from host.".to_string());
+            self.quit_to_title();
+            return; // remote dropped
+        }
+        let msgs = r.client.poll();
+        for msg in msgs {
+            match msg {
+                net::S2C::ModFiles(files) => {
+                    // The host's content, cached and loaded as ours.
+                    let cache = PathBuf::from("saves/.remote/mods");
+                    let _ = std::fs::remove_dir_all(&cache);
+                    for (rel, bytes) in files {
+                        if rel.contains("..") {
+                            continue; // no path escapes
+                        }
+                        let p = cache.join(rel);
+                        if let Some(parent) = p.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        let _ = std::fs::write(p, bytes);
+                    }
+                    self.reg = Arc::new(registry::load(&cache));
+                    let (data, px, warns) = atlas::build_atlas(
+                        &self.reg.tex_files,
+                        pack_source_of(&self.active_pack_id()),
+                        &self.reg.tex_names,
+                    );
+                    self.pack_warnings = warns;
+                    self.renderer.set_atlas(&data, px);
+                    self.toast("Synced the host's mods.".to_string());
+                }
+                net::S2C::Welcome {
+                    seed,
+                    mode,
+                    time,
+                    ire,
+                    palette,
+                    items,
+                    your_id,
+                    spawn,
+                    world_name,
+                } => {
+                    let mut world =
+                        World::new(seed, PathBuf::from("saves/.remote/profile"), self.reg.clone());
+                    world.remote = true;
+                    world.mode = mode.clone();
+                    world.ire = ire;
+                    r.my_id = your_id;
+                    r.block_map = mp::block_remap(&world, &palette);
+                    r.item_map = mp::item_remap(&world, &items);
+                    r.host_block = r
+                        .block_map
+                        .iter()
+                        .enumerate()
+                        .map(|(host, local)| (local.0, host as u16))
+                        .collect();
+                    self.server = server::Server::new(world, time, 7);
+                    self.renderer.chunks.clear();
+                    self.player = Player::new(spawn);
+                    self.spawn_point = spawn;
+                    self.camera.pos = spawn + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+                    self.inventory = Inventory::new();
+                    self.armor = [None; 5];
+                    self.health = MAX_HEALTH;
+                    self.hunger = 20.0;
+                    self.creative = mode == "creative";
+                    self.in_world = true;
+                    self.load_player(&PathBuf::from("saves/.remote/profile"));
+                    self.set_screen(Screen::Playing);
+                    self.toast(format!("Joined {}.", world_name.to_uppercase()));
+                }
+                net::S2C::Refused(why) => {
+                    self.join_status = format!("REFUSED: {why}").to_uppercase();
+                    self.remote = None;
+                    return;
+                }
+                net::S2C::Chunk { x, z, rle } => {
+                    self.server
+                        .world
+                        .insert_remote_chunk(ChunkPos { x, z }, &rle, &r.block_map);
+                }
+                net::S2C::BlockSet { x, y, z, id } => {
+                    let local = r
+                        .block_map
+                        .get(id as usize)
+                        .copied()
+                        .unwrap_or(self.reg.unknown_block);
+                    self.server.world.set_block(x, y, z, local);
+                    self.server.world.pending_drops.clear();
+                }
+                net::S2C::Players(list) => {
+                    for (id, pos, yaw) in list {
+                        if id == r.my_id {
+                            continue;
+                        }
+                        let name =
+                            r.names.get(&id).cloned().unwrap_or_else(|| format!("P{id}"));
+                        r.players.insert(id, (name, pos, yaw));
+                    }
+                }
+                net::S2C::Mobs(snaps) => {
+                    self.server.world.mobs = snaps
+                        .into_iter()
+                        .filter(|s| (s.species as usize) < self.reg.animals.len())
+                        .map(|s| {
+                            let mut m =
+                                mobs::Mob::new(s.species as usize, s.pos, s.yaw);
+                            m.growth = s.growth;
+                            m.hurt_flash = s.hurt;
+                            m.health = 1.0;
+                            m
+                        })
+                        .collect();
+                }
+                net::S2C::Bolts(snaps) => {
+                    self.server.world.projectiles = snaps
+                        .into_iter()
+                        .map(|s| mobs::Projectile {
+                            pos: s.pos,
+                            vel: Vec3::ZERO,
+                            tile: s.tile,
+                            damage: 0.0,
+                            age: s.age,
+                            from_player: false,
+                            drop_item: None,
+                            owner: 0,
+                        })
+                        .collect();
+                }
+                net::S2C::TimeIre { time, ire } => {
+                    self.server.time_of_day = time;
+                    self.server.world.ire = ire;
+                }
+                net::S2C::Hit { dmg, from } => self.hurt_player_from_wild(dmg, from),
+                net::S2C::Give { item, count, durability } => {
+                    if let Some(Some(local)) = r.item_map.get(item as usize) {
+                        let reg = self.reg.clone();
+                        let mut stack = ItemStack::new(&reg, *local, count.max(1));
+                        if durability > 0 {
+                            stack.durability = durability;
+                        }
+                        let left = self.inventory.add_stack(&reg, stack);
+                        if left == 0 {
+                            self.sfx(Sfx::Pickup);
+                        }
+                    }
+                }
+                net::S2C::Container { x, y, z, kind, slots, held } => {
+                    let reg = self.reg.clone();
+                    let conv = |s: &Option<net::StackSnap>| -> Option<ItemStack> {
+                        let s = s.as_ref()?;
+                        let local = (*r.item_map.get(s.item as usize)?)?;
+                        Some(ItemStack { item: local, count: s.count, durability: s.durability })
+                    };
+                    let pos = (x, y, z);
+                    let entity = match kind {
+                        0 => {
+                            let mut c = world::ChestState::default();
+                            for (i, s) in slots.iter().enumerate().take(world::CHEST_SLOTS) {
+                                c.slots[i] = conv(s);
+                            }
+                            world::BlockEntity::Chest(c)
+                        }
+                        1 => {
+                            let mut f = world::FurnaceState::default();
+                            f.input = slots.first().and_then(|s| conv(s));
+                            f.fuel = slots.get(1).and_then(|s| conv(s));
+                            f.output = slots.get(2).and_then(|s| conv(s));
+                            world::BlockEntity::Furnace(f)
+                        }
+                        _ => {
+                            let mut o = world::OfferingState::default();
+                            for (i, s) in slots.iter().enumerate().take(3) {
+                                o.slots[i] = conv(s);
+                            }
+                            world::BlockEntity::Offering(o)
+                        }
+                    };
+                    self.server.world.block_entities.insert(pos, entity);
+                    let _ = held; // host-side cursor auto-returns via Give
+                    if matches!(self.screen, Screen::Playing) {
+                        self.set_screen(match kind {
+                            0 => Screen::Chest(pos),
+                            1 => Screen::Furnace(pos),
+                            _ => Screen::Offering(pos),
+                        });
+                    }
+                    let _ = reg;
+                }
+                net::S2C::Sleep { sleeping, present } => {
+                    self.toast(format!("{sleeping}/{present} sleeping..."));
+                }
+                net::S2C::Toast(msg) => self.toast(msg),
+                net::S2C::Chat { from, msg } => self.toast(format!("{from}: {msg}")),
+                net::S2C::Joined { id, name } => {
+                    r.names.insert(id, name.clone());
+                    if id != r.my_id {
+                        self.toast(format!("{name} joined."));
+                    }
+                }
+                net::S2C::Left { id } => {
+                    r.players.remove(&id);
+                    if let Some(n) = r.names.remove(&id) {
+                        self.toast(format!("{n} left."));
+                    }
+                }
+            }
+        }
+        // Our movement upstream at 20 Hz.
+        if self.in_world {
+            self.move_timer += dt;
+            if self.move_timer >= 0.05 {
+                self.move_timer = 0.0;
+                r.client.send_datagram(&net::C2S::Move {
+                    pos: self.player.pos,
+                    yaw: self.camera.yaw,
+                });
+            }
+        }
+        self.remote = Some(r);
+    }
+
     /// A line from the lost takers, chosen at random.
     fn read_tablet(&mut self) {
         const LINES: [&str; 10] = [
@@ -942,10 +1264,22 @@ impl Game {
     }
 
     /// Bedroll: sleep to dawn if it's night and the wild is far enough.
+    /// In multiplayer, dawn waits for everyone (the sleep vote).
     fn try_sleep(&mut self) {
         let sun = (self.server.time_of_day * std::f32::consts::TAU).sin();
         if sun > -0.05 {
             self.toast("You can only sleep at night.".to_string());
+            return;
+        }
+        if let Some(r) = &self.remote {
+            r.client.send(&net::C2S::SleepRequest);
+            self.toast("You settle in, waiting for the others...".to_string());
+            return;
+        }
+        if self.host.as_ref().is_some_and(|h| !h.guests.is_empty()) {
+            self.host_sleeping = true;
+            self.spawn_point = self.player.pos;
+            self.toast("You settle in, waiting for the others...".to_string());
             return;
         }
         let reg = self.reg.clone();
@@ -1194,6 +1528,20 @@ impl Game {
         };
         let Some(arrow_id) = arrow_id else { return };
         let dir = self.camera.forward();
+        if let Some(r) = &self.remote {
+            r.client.send(&net::C2S::FireArrow {
+                pos: self.camera.pos + dir * 0.4,
+                vel: dir * bow.speed * (0.6 + 0.4 * charge),
+                dmg: bow.damage * (0.45 + 0.55 * charge),
+                tile: reg.item(arrow_id).icon,
+                recover: !self.creative,
+            });
+            if !self.creative {
+                self.inventory.wear_tool(&reg, self.hotbar_sel);
+            }
+            self.sfx(Sfx::Bolt(0.8 + charge * 0.8));
+            return;
+        }
         self.server.world.projectiles.push(mobs::Projectile {
             pos: self.camera.pos + dir * 0.4,
             vel: dir * bow.speed * (0.6 + 0.4 * charge),
@@ -1203,6 +1551,7 @@ impl Game {
             from_player: true,
             // Arrows that stick into terrain are recoverable.
             drop_item: (!self.creative).then_some(arrow_id),
+            owner: 0,
         });
         if !self.creative {
             self.inventory.wear_tool(&reg, self.hotbar_sel);
@@ -1265,6 +1614,13 @@ impl Game {
                 if n == 0 {
                     continue;
                 }
+                if m.last_hit_by != 0 {
+                    // A guest's kill: their loot crosses the wire.
+                    for _ in 0..n {
+                        self.server.world.pending_gives.push((m.last_hit_by, *item));
+                    }
+                    continue;
+                }
                 let a = self.rand01() * std::f32::consts::TAU;
                 let v = Vec3::new(a.cos() * 1.2, 2.5, a.sin() * 1.2);
                 self.items.push(ItemEntity::new(
@@ -1317,7 +1673,7 @@ impl Game {
         let brush_target = hit.as_ref().map(|h| h.block).filter(|t| {
             brush_held && reg.block(self.server.world.get_block(t.0, t.1, t.2)).brush.is_some()
         });
-        if self.right_held && brush_target.is_some() {
+        if self.right_held && brush_target.is_some() && self.remote.is_none() {
             let target = brush_target.unwrap();
             if self.brush_target != Some(target) {
                 self.brush_target = Some(target);
@@ -1366,6 +1722,17 @@ impl Game {
                     let sp = self.server.world.mobs[mi].species;
                     let pitch = reg.animals[sp].sound_pitch;
                     let from = self.camera.pos;
+                    if let Some(r) = &self.remote {
+                        r.client.send(&net::C2S::AttackMob { index: mi as u32, dmg, from });
+                        self.server.world.mobs[mi].hurt_flash = 0.35; // feedback
+                        self.sfx(Sfx::MobHurt(pitch));
+                        self.hunger = (self.hunger - 0.01).max(0.0);
+                        if !self.creative {
+                            self.inventory.wear_tool(&reg, self.hotbar_sel);
+                        }
+                        self.attack_cooldown = 0.35;
+                        return;
+                    }
                     let def = reg.animals[sp].clone();
                     self.server.world.mobs[mi].hurt(&def, dmg, from);
                     self.sfx(Sfx::MobHurt(pitch));
@@ -1408,6 +1775,22 @@ impl Game {
                             true
                         };
                         self.breaking = None;
+                        if allow && self.remote.is_some() {
+                            // Guests request; the echo applies the change.
+                            if let Some(r) = &self.remote {
+                                r.client.send(&net::C2S::Break {
+                                    x: target.0,
+                                    y: target.1,
+                                    z: target.2,
+                                });
+                            }
+                            self.hunger = (self.hunger - 0.008).max(0.0);
+                            self.sfx(Sfx::Break(self.break_mat(b)));
+                            if !self.creative {
+                                self.inventory.wear_tool(&reg, self.hotbar_sel);
+                            }
+                            return;
+                        }
                         if allow {
                             self.hunger = (self.hunger - 0.008).max(0.0);
                             let cost = self.server.world.ire_for_block(b);
@@ -1477,7 +1860,7 @@ impl Game {
         // Right click: interact with the targeted block (crafting table),
         // otherwise place the selected block.
         // Feeding wildlife: right-click an adult with its favorite food.
-        if self.right_held && self.action_cooldown <= 0.0 {
+        if self.right_held && self.action_cooldown <= 0.0 && self.remote.is_none() {
             if let Some(mi) = self.mob_in_crosshair(&hit) {
                 let sp = self.server.world.mobs[mi].species;
                 let def = &reg.animals[sp];
@@ -1637,6 +2020,21 @@ impl Game {
                         };
                         let consumed = self.creative
                             || self.inventory.take_one(self.hotbar_sel).is_some();
+                        if allow && consumed && self.remote.is_some() {
+                            if let Some(r) = &self.remote {
+                                if let Some(host_id) = r.host_block.get(&block.0) {
+                                    r.client.send(&net::C2S::Place {
+                                        x,
+                                        y,
+                                        z,
+                                        block: *host_id,
+                                    });
+                                }
+                            }
+                            self.action_cooldown = 0.22;
+                            self.sfx(Sfx::Place);
+                            return;
+                        }
                         if allow && consumed {
                             self.server.world.set_block(x, y, z, block);
                             if bd.crop_next.is_some() {
@@ -1945,23 +2343,65 @@ impl Game {
             self.scroll_cooldown = (self.scroll_cooldown - dt).max(0.0);
         }
 
+        if !self.in_world && self.remote.is_some() {
+            self.remote_pump(dt);
+        }
         if self.in_world {
             self.stream_chunks();
             // The authoritative simulation steps at its fixed tick; the
             // client applies the results as presentation.
-            if !paused {
+            if self.remote.is_some() {
+                self.remote_pump(dt);
+            } else if !paused || self.host.is_some() {
                 let ctx = server::PlayerCtx {
                     pos: self.player.pos,
                     spawn: self.spawn_point,
                     attackable: !self.creative && self.health > 0.0,
                     aggro_mod: if self.charm("quiet") { -2.0 } else { 0.0 },
                 };
+                // Hosting: guests are simulated players too, and their
+                // requests apply before the tick.
+                let players = if let Some(mut sess) = self.host.take() {
+                    self.server.world.log_edits = true;
+                    let fx = sess.pump(
+                        &mut self.server,
+                        Some((self.player.pos, self.camera.yaw, self.host_sleeping)),
+                        dt,
+                    );
+                    for f in fx {
+                        match f {
+                            mp::HostFx::Chat { from, msg } => {
+                                self.toast(format!("{from}: {msg}"));
+                            }
+                            mp::HostFx::Joined(n) => self.toast(format!("{n} joined.")),
+                            mp::HostFx::Left(n) => self.toast(format!("{n} left.")),
+                            mp::HostFx::AllSlept => {
+                                self.host_sleeping = false;
+                                self.spawn_point = self.player.pos;
+                                self.toast("Dawn. The camp wakes.".to_string());
+                            }
+                        }
+                    }
+                    let players = sess.player_ctxs(Some(ctx));
+                    self.host = Some(sess);
+                    players
+                } else {
+                    vec![ctx]
+                };
                 let mut evs = Vec::new();
-                self.server.advance(dt, &ctx, &mut evs);
+                self.server.advance(dt, &players, &mut evs);
                 for ev in evs {
                     match ev {
-                        server::SimEvent::PlayerHit { dmg, from } => {
-                            self.hurt_player_from_wild(dmg, from);
+                        server::SimEvent::PlayerHit { who, dmg, from } => {
+                            if who == 0 && self.remote.is_none() {
+                                self.hurt_player_from_wild(dmg, from);
+                            } else if let Some(sess) = &self.host {
+                                // Guests are listed after the host.
+                                let ids: Vec<u32> = sess.guests.keys().copied().collect();
+                                if let Some(gid) = ids.get(who.saturating_sub(1)) {
+                                    sess.net.send(*gid, &net::S2C::Hit { dmg, from });
+                                }
+                            }
                         }
                         server::SimEvent::BoltCast => self.sfx(Sfx::Bolt(1.2)),
                         server::SimEvent::Bred => {
@@ -1985,7 +2425,9 @@ impl Game {
                         }
                     }
                 }
-                self.sweep_dead_mobs();
+                if self.remote.is_none() {
+                    self.sweep_dead_mobs();
+                }
                 for (pos, s) in std::mem::take(&mut self.server.world.pending_drops) {
                     let center = Vec3::new(pos.0 as f32 + 0.5, pos.1 as f32 + 0.5, pos.2 as f32 + 0.5);
                     let a = self.rand01() * std::f32::consts::TAU;
@@ -2127,6 +2569,21 @@ impl Game {
         }
         for p in &self.server.world.projectiles {
             p.emit(&mut entity_verts, &mut entity_idx);
+        }
+        // Fellow players, boxy and proud.
+        let skin = *atlas::builtin_slots().get("player_skin").unwrap_or(&0);
+        let face = *atlas::builtin_slots().get("player_face").unwrap_or(&0);
+        if let Some(r) = &self.remote {
+            for (_, pos, yaw) in r.players.values() {
+                let lum = sample(&self.server.world, *pos);
+                mobs::emit_humanoid(*pos, *yaw, skin, face, lum, &mut entity_verts, &mut entity_idx);
+            }
+        }
+        if let Some(hst) = &self.host {
+            for g in hst.guests.values() {
+                let lum = sample(&self.server.world, g.pos);
+                mobs::emit_humanoid(g.pos, g.yaw, skin, face, lum, &mut entity_verts, &mut entity_idx);
+            }
         }
         let mut overlay_verts = Vec::new();
         let mut overlay_idx = Vec::new();
@@ -2434,7 +2891,7 @@ impl Game {
                     let dr = self.title_delete_rect(i);
                     Self::draw_button(&mut ui, dr, "X", self.hit(dr));
                 }
-                for (j, label) in ["NEW SURVIVAL WORLD", "NEW CREATIVE WORLD", "MODS", "TEXTURE PACKS", "SETTINGS", "QUIT"].iter().enumerate() {
+                for (j, label) in ["NEW SURVIVAL WORLD", "NEW CREATIVE WORLD", "JOIN GAME", "MODS", "TEXTURE PACKS", "SETTINGS", "QUIT"].iter().enumerate() {
                     let r = self.title_action_rect(j);
                     Self::draw_button(&mut ui, r, label, self.hit(r));
                 }
@@ -2503,6 +2960,43 @@ impl Game {
                 }
                 let hint = "DROP PACKS IN PACKS/ - PNG EDITS HOT RELOAD LIVE.";
                 ui.text_shadow(w / 2.0 - 300.0, y + 4.0, 1.5, hint, [0.7, 0.7, 0.7, 1.0]);
+                let br = self.pack_back_rect();
+                Self::draw_button(&mut ui, br, "BACK", self.hit(br));
+                self.ui = ui;
+                return;
+            }
+            Screen::Join => {
+                ui.rect(0.0, 0.0, w, h, [0.02, 0.05, 0.1, 0.75]);
+                let tw = UiBatch::text_width(4.0, "JOIN GAME");
+                ui.text_shadow((w - tw) / 2.0, h * 0.08, 4.0, "JOIN GAME", [1.0; 4]);
+                if let Some(d) = &mut self.discovery {
+                    d.poll();
+                }
+                let found: Vec<(std::net::SocketAddr, String)> = self
+                    .discovery
+                    .as_ref()
+                    .map(|d| d.found.clone())
+                    .unwrap_or_default();
+                let mut y = h * 0.20;
+                if found.is_empty() {
+                    ui.text_shadow(w / 2.0 - 220.0, y + 10.0, 2.0, "SEARCHING THE LAN...", [0.7, 0.7, 0.7, 1.0]);
+                }
+                for (i, (addr, name)) in found.iter().take(5).enumerate() {
+                    let r = (w / 2.0 - 220.0, h * 0.20 + i as f32 * 56.0, 440.0, 42.0);
+                    Self::draw_button(&mut ui, r, &format!("{} - {}", name.to_uppercase(), addr), self.hit(r));
+                    y = r.1 + 56.0;
+                }
+                y += 26.0;
+                ui.text_shadow(w / 2.0 - 220.0, y, 2.0, "DIRECT IP:", [1.0; 4]);
+                ui.rect(w / 2.0 - 80.0, y - 6.0, 300.0, 34.0, [0.1, 0.1, 0.1, 0.95]);
+                let shown = if self.join_ip.is_empty() { "TYPE ADDRESS" } else { &self.join_ip };
+                let col = if self.join_ip.is_empty() { [0.5, 0.5, 0.5, 1.0] } else { [1.0; 4] };
+                ui.text_shadow(w / 2.0 - 72.0, y, 2.0, &shown.to_uppercase(), col);
+                let cr = (w / 2.0 + 240.0, y - 6.0, 160.0, 34.0);
+                Self::draw_button(&mut ui, cr, "CONNECT", self.hit(cr));
+                if !self.join_status.is_empty() {
+                    ui.text_shadow(w / 2.0 - 220.0, y + 46.0, 2.0, &self.join_status, [1.0, 0.6, 0.5, 1.0]);
+                }
                 let br = self.pack_back_rect();
                 Self::draw_button(&mut ui, br, "BACK", self.hit(br));
                 self.ui = ui;
@@ -2611,6 +3105,39 @@ impl Game {
             let col = if self.bow_draw < 0.25 { [0.7, 0.3, 0.2, 0.95] } else { [0.75, 0.9, 0.5, 0.95] };
             ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0 * t.max(0.06), 6.0, col);
         }
+        // Chat entry line.
+        if self.chat_open {
+            ui.rect(12.0, h - 46.0, w * 0.5, 30.0, [0.0, 0.0, 0.0, 0.7]);
+            let line = format!("SAY: {}_", self.chat_text.to_uppercase());
+            ui.text_shadow(18.0, h - 40.0, 2.0, &line, [1.0; 4]);
+        }
+        // Remote players: name tags projected into the world.
+        if let Some(r) = &self.remote {
+            let vp = self.camera.view_proj();
+            for (name, pos, _) in r.players.values() {
+                let head = *pos + Vec3::new(0.0, 2.1, 0.0);
+                let clip = vp * head.extend(1.0);
+                if clip.w > 0.5 {
+                    let sx = (clip.x / clip.w * 0.5 + 0.5) * w;
+                    let sy = (0.5 - clip.y / clip.w * 0.5) * h;
+                    let tw2 = UiBatch::text_width(1.5, &name.to_uppercase());
+                    ui.text_shadow(sx - tw2 / 2.0, sy, 1.5, &name.to_uppercase(), [1.0; 4]);
+                }
+            }
+        }
+        if let Some(hst) = &self.host {
+            let vp = self.camera.view_proj();
+            for g in hst.guests.values() {
+                let head = g.pos + Vec3::new(0.0, 2.1, 0.0);
+                let clip = vp * head.extend(1.0);
+                if clip.w > 0.5 {
+                    let sx = (clip.x / clip.w * 0.5 + 0.5) * w;
+                    let sy = (0.5 - clip.y / clip.w * 0.5) * h;
+                    let tw2 = UiBatch::text_width(1.5, &g.name.to_uppercase());
+                    ui.text_shadow(sx - tw2 / 2.0, sy, 1.5, &g.name.to_uppercase(), [1.0; 4]);
+                }
+            }
+        }
         // Brushing progress near the crosshair.
         if self.brushing > 0.0 {
             let t = (self.brushing / 1.5).min(1.0);
@@ -2638,7 +3165,7 @@ impl Game {
         }
 
         match self.screen {
-            Screen::Playing | Screen::Title | Screen::Mods | Screen::Packs | Screen::Settings
+            Screen::Playing | Screen::Title | Screen::Mods | Screen::Packs | Screen::Join | Screen::Settings
             | Screen::ConfirmDelete => {}
             Screen::Furnace(pos) => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
@@ -2826,7 +3353,16 @@ impl Game {
                 let tw = UiBatch::text_width(4.0, title);
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 130.0, 4.0, title, [1.0; 4]);
                 let mode = if self.creative { "MODE: CREATIVE" } else { "MODE: SURVIVAL" };
-                for (i, label) in ["RESUME", mode, "SETTINGS", "SAVE AND QUIT TO TITLE"].iter().enumerate() {
+                let friends = match &self.host {
+                    Some(h) => format!("FRIENDS: {} CONNECTED", h.guests.len()),
+                    None if self.remote.is_some() => "CONNECTED AS GUEST".to_string(),
+                    None => "OPEN TO FRIENDS".to_string(),
+                };
+                for (i, label) in
+                    ["RESUME", mode, &friends, "SETTINGS", "SAVE AND QUIT TO TITLE"]
+                        .iter()
+                        .enumerate()
+                {
                     let r = self.menu_button_rect(i);
                     Self::draw_button(&mut ui, r, label, self.hit(r));
                 }
@@ -2991,6 +3527,9 @@ impl Game {
     }
 
     fn offering_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+        if self.remote_container_click(pos, slot, right) {
+            return;
+        }
         let reg = self.reg.clone();
         let Some(world::BlockEntity::Offering(o)) = self.server.world.block_entities.get_mut(&pos)
         else {
@@ -3002,7 +3541,32 @@ impl Game {
         self.held_stack = new_held;
     }
 
+    /// Remote containers use a simplified authoritative flow: deposits
+    /// offer the local cursor first, pickups auto-return over the wire.
+    fn remote_container_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) -> bool {
+        let Some(r) = &self.remote else { return false };
+        if let Some(h) = self.held_stack.take() {
+            r.client.send(&net::C2S::OfferHeld {
+                item: h.item.0, // same content: local ids match host ids
+                count: h.count,
+                durability: h.durability,
+            });
+        }
+        r.client.send(&net::C2S::ContainerClick {
+            x: pos.0,
+            y: pos.1,
+            z: pos.2,
+            slot: slot as u8,
+            right,
+        });
+        r.client.send(&net::C2S::TakeHeld);
+        true
+    }
+
     fn chest_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+        if self.remote_container_click(pos, slot, right) {
+            return;
+        }
         let reg = self.reg.clone();
         let Some(world::BlockEntity::Chest(c)) = self.server.world.block_entities.get_mut(&pos)
         else {
@@ -3015,6 +3579,9 @@ impl Game {
     }
 
     fn furnace_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+        if self.remote_container_click(pos, slot, right) {
+            return;
+        }
         let reg = self.reg.clone();
         let Some(world::BlockEntity::Furnace(f)) = self.server.world.block_entities.get_mut(&pos)
         else {
@@ -3299,9 +3866,24 @@ impl Game {
                     }
                 } else if self.hit(self.menu_button_rect(2)) {
                     self.sfx(Sfx::Click);
+                    if self.host.is_none() && self.remote.is_none() {
+                        match mp::HostSession::start(self.server.world.mode.clone()) {
+                            Ok(sess) => {
+                                self.server.world.log_edits = true;
+                                self.toast(format!(
+                                    "Open to friends on port {} (LAN + direct IP).",
+                                    sess.net.port
+                                ));
+                                self.host = Some(sess);
+                            }
+                            Err(e) => self.toast(format!("Could not host: {e}")),
+                        }
+                    }
+                } else if self.hit(self.menu_button_rect(3)) {
+                    self.sfx(Sfx::Click);
                     self.settings_from_pause = true;
                     self.set_screen(Screen::Settings);
-                } else if self.hit(self.menu_button_rect(3)) {
+                } else if self.hit(self.menu_button_rect(4)) {
                     self.sfx(Sfx::Click);
                     self.quit_to_title();
                 }
@@ -3335,16 +3917,21 @@ impl Game {
                     self.new_world_mode("creative");
                 } else if self.hit(self.title_action_rect(2)) {
                     self.sfx(Sfx::Click);
-                    self.set_screen(Screen::Mods);
+                    self.discovery = net::Discovery::start().ok();
+                    self.join_status.clear();
+                    self.set_screen(Screen::Join);
                 } else if self.hit(self.title_action_rect(3)) {
+                    self.sfx(Sfx::Click);
+                    self.set_screen(Screen::Mods);
+                } else if self.hit(self.title_action_rect(4)) {
                     self.sfx(Sfx::Click);
                     self.packs = atlas::discover_packs();
                     self.set_screen(Screen::Packs);
-                } else if self.hit(self.title_action_rect(4)) {
+                } else if self.hit(self.title_action_rect(5)) {
                     self.sfx(Sfx::Click);
                     self.settings_from_pause = false;
                     self.set_screen(Screen::Settings);
-                } else if self.hit(self.title_action_rect(5)) {
+                } else if self.hit(self.title_action_rect(6)) {
                     event_loop.exit();
                 }
             }
@@ -3425,6 +4012,48 @@ impl Game {
                     }
                 }
             }
+            Screen::Join => {
+                if self.hit(self.pack_back_rect()) {
+                    self.sfx(Sfx::Click);
+                    self.discovery = None;
+                    self.set_screen(Screen::Title);
+                    return;
+                }
+                let w = self.renderer.config.width as f32;
+                let h = self.renderer.config.height as f32;
+                let found: Vec<(std::net::SocketAddr, String)> = self
+                    .discovery
+                    .as_ref()
+                    .map(|d| d.found.clone())
+                    .unwrap_or_default();
+                for (i, (addr, _)) in found.iter().take(5).enumerate() {
+                    let r = (w / 2.0 - 220.0, h * 0.20 + i as f32 * 56.0, 440.0, 42.0);
+                    if self.hit(r) {
+                        self.sfx(Sfx::Click);
+                        self.join_status = "CONNECTING...".to_string();
+                        self.join_server(*addr);
+                        return;
+                    }
+                }
+                let y = h * 0.20 + found.len().min(5) as f32 * 56.0 + 26.0;
+                let cr = (w / 2.0 + 240.0, y - 6.0, 160.0, 34.0);
+                if self.hit(cr) {
+                    self.sfx(Sfx::Click);
+                    let text = self.join_ip.trim().to_string();
+                    let addr = if text.contains(':') {
+                        text.parse().ok()
+                    } else {
+                        format!("{text}:{}", net::GAME_PORT).parse().ok()
+                    };
+                    match addr {
+                        Some(a) => {
+                            self.join_status = "CONNECTING...".to_string();
+                            self.join_server(a);
+                        }
+                        None => self.join_status = "BAD ADDRESS".to_string(),
+                    }
+                }
+            }
             Screen::Settings => {
                 for i in 0..Self::SLIDERS.len() {
                     let (bx, by, bw, bh) = self.slider_bar_rect(i);
@@ -3499,6 +4128,10 @@ impl Game {
                     self.set_screen(Screen::Title);
                 }
                 Screen::Mods | Screen::Packs => self.set_screen(Screen::Title),
+                Screen::Join => {
+                    self.discovery = None;
+                    self.set_screen(Screen::Title);
+                }
                 Screen::Title | Screen::Dead => {}
             },
             KeyCode::KeyE if pressed && self.in_world => match self.screen {
@@ -3509,6 +4142,14 @@ impl Game {
                 Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_) => self.set_screen(Screen::Playing),
                 _ => {}
             },
+            KeyCode::KeyT
+                if pressed
+                    && self.screen == Screen::Playing
+                    && (self.host.is_some() || self.remote.is_some()) =>
+            {
+                self.chat_open = true;
+                self.chat_text.clear();
+            }
             KeyCode::F5 if pressed => {
                 self.reload_mods(true);
             }
@@ -3597,6 +4238,68 @@ impl ApplicationHandler for App {
                 game.camera.aspect = size.width as f32 / size.height.max(1) as f32;
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                // Join-screen IP entry.
+                if game.screen == Screen::Join && event.state.is_pressed() {
+                    match event.physical_key {
+                        PhysicalKey::Code(KeyCode::Backspace) => {
+                            game.join_ip.pop();
+                        }
+                        _ => {
+                            if let Some(t) = &event.text {
+                                for ch in t.chars() {
+                                    if (ch.is_ascii_alphanumeric() || ".:".contains(ch))
+                                        && game.join_ip.len() < 40
+                                    {
+                                        game.join_ip.push(ch);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Esc still handled below for leaving the screen.
+                    if !matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
+                        return;
+                    }
+                }
+                // Chat entry (multiplayer).
+                if game.chat_open && event.state.is_pressed() {
+                    match event.physical_key {
+                        PhysicalKey::Code(KeyCode::Escape) => {
+                            game.chat_open = false;
+                            game.chat_text.clear();
+                        }
+                        PhysicalKey::Code(KeyCode::Enter) => {
+                            let msg: String = game.chat_text.trim().chars().take(200).collect();
+                            game.chat_open = false;
+                            game.chat_text.clear();
+                            if !msg.is_empty() {
+                                let me = whoami();
+                                if let Some(r) = &game.remote {
+                                    r.client.send(&net::C2S::Chat(msg.clone()));
+                                } else if let Some(h) = &game.host {
+                                    h.net.broadcast(&net::S2C::Chat {
+                                        from: me.clone(),
+                                        msg: msg.clone(),
+                                    });
+                                }
+                                game.toast(format!("{me}: {msg}"));
+                            }
+                        }
+                        PhysicalKey::Code(KeyCode::Backspace) => {
+                            game.chat_text.pop();
+                        }
+                        _ => {
+                            if let Some(t) = &event.text {
+                                for ch in t.chars() {
+                                    if !ch.is_control() && game.chat_text.len() < 200 {
+                                        game.chat_text.push(ch);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
                 let searchable = matches!(game.screen, Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_));
                 if game.search_focus && searchable && event.state.is_pressed() {
                     match event.physical_key {
@@ -3758,7 +4461,65 @@ impl ApplicationHandler for App {
     }
 }
 
+/// Headless dedicated host: same binary, no window. `--server <world>`.
+fn run_headless_server(world_name: &str) {
+    let reg = Arc::new(registry::load(std::path::Path::new("mods")));
+    let world = World::load_or_create(PathBuf::from("saves").join(world_name), reg.clone());
+    let mut sim = server::Server::new(world, 0.3, 0xd5ed);
+    sim.world.log_edits = true;
+    let mut sess = match mp::HostSession::start(world_name.to_string()) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("server: could not bind: {e}");
+            std::process::exit(1);
+        }
+    };
+    eprintln!(
+        "wildforge --server \"{world_name}\": listening on port {} (LAN beacon on)",
+        sess.net.port
+    );
+    let mut last = Instant::now();
+    let mut save_timer = 0.0f32;
+    loop {
+        let now = Instant::now();
+        let dt = (now - last).as_secs_f32().min(0.25);
+        last = now;
+        for f in sess.pump(&mut sim, None, dt) {
+            match f {
+                mp::HostFx::Joined(n) => eprintln!("server: {n} joined"),
+                mp::HostFx::Left(n) => eprintln!("server: {n} left"),
+                mp::HostFx::Chat { from, msg } => eprintln!("<{from}> {msg}"),
+                mp::HostFx::AllSlept => eprintln!("server: the camp sleeps to dawn"),
+            }
+        }
+        let players = sess.player_ctxs(None);
+        let mut evs = Vec::new();
+        sim.advance(dt, &players, &mut evs);
+        for ev in evs {
+            if let server::SimEvent::PlayerHit { who, dmg, from } = ev {
+                let ids: Vec<u32> = sess.guests.keys().copied().collect();
+                if let Some(gid) = ids.get(who) {
+                    sess.net.send(*gid, &net::S2C::Hit { dmg, from });
+                }
+            }
+        }
+        save_timer += dt;
+        if save_timer >= 300.0 {
+            save_timer = 0.0;
+            sim.world.save_modified();
+            eprintln!("server: world saved");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(15));
+    }
+}
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--server") {
+        let world = args.get(i + 1).cloned().unwrap_or_else(|| "world1".to_string());
+        run_headless_server(&world);
+        return;
+    }
     // Prefer X11/XWayland on Linux: it supports cursor confinement and
     // warping, which pure Wayland compositors (notably WSLg) often don't.
     #[cfg(target_os = "linux")]

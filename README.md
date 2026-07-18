@@ -385,16 +385,32 @@ Dev cheat: `WILDFORGE_GIVE=1` starts with some items for testing.
 - DDA voxel raycast for block targeting with wireframe outline + crosshair
 - World persistence via RLE-encoded chunk files
 
-## Toward multiplayer
+## Multiplayer
 
-The engine now runs on a **sim/client split**: `server::Server` owns
-the world and steps everything (fluids, machines, creatures, ire, the
-clock) at a fixed 30 Hz tick, emitting events the client presents.
-Singleplayer *is* a server with one local player — the architecture a
-multiplayer host runs directly, built deliberately rather than
-retrofitted. The wire protocol (QUIC, one binary, content-sync on
-join, server-authoritative — see `docs/roadmap-plan.md` and
-`docs/multiplayer-plan.md`) builds on this split.
+One binary, no server jar, ever:
+
+- **Host**: pause menu → **OPEN TO FRIENDS**. Your world announces on
+  the LAN and accepts direct connections (QUIC on port 27431 —
+  encrypted transport, pure Rust). A **headless dedicated host** is the
+  same executable: `wildforge --server <world>`.
+- **Join**: title screen → **JOIN GAME** — LAN-discovered worlds
+  listed live, or type an IP. On join the host streams its palette
+  and, if your mods differ, **its entire mods folder** — you play with
+  the host's content, no installing anything (scripts never leave the
+  host; your texture pack stays yours).
+- **Server-authoritative**: guests send requests; the host validates
+  (reach, rate) and applies them through the same code paths local
+  play uses, echoing results to everyone. Chunks stream in the save
+  format; mobs, bolts, and players snapshot over unreliable datagrams.
+- **Shared world, shared ire** — one meter for the whole camp; your
+  friend's clearcut is your Wrathful night. Mob AI hunts the nearest
+  player; drops from your kills and digs arrive in *your* inventory.
+- **The camp sleeps together**: dawn requires every present player in
+  a bedroll. Chat with T. Fellow players render as boxy humans with
+  name tags.
+- Under it all: the **sim/client split** — `server::Server` steps the
+  world at a fixed 30 Hz whether one player or eight are in it.
+  Singleplayer is just a server with one local player.
 
 ## Architecture
 

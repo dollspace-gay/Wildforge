@@ -16,6 +16,7 @@ pub const TICK: f32 = 1.0 / 30.0;
 pub const DAY_LENGTH: f32 = 600.0; // seconds per full day/night cycle
 
 /// What the simulation needs to know about a player this tick.
+#[derive(Clone, Copy)]
 pub struct PlayerCtx {
     pub pos: Vec3,
     pub spawn: Vec3,
@@ -27,8 +28,8 @@ pub struct PlayerCtx {
 
 /// Things the simulation did that the client must present or apply.
 pub enum SimEvent {
-    /// The wild connected: damage + attacker position (knockback).
-    PlayerHit { dmg: f32, from: Vec3 },
+    /// The wild connected: which player, damage, attacker position.
+    PlayerHit { who: usize, dmg: f32, from: Vec3 },
     /// A warden loosed a bolt (sound cue; the projectile is already live).
     BoltCast,
     /// Wildlife bred.
@@ -72,16 +73,16 @@ impl Server {
 
     /// Run the simulation forward by wall-clock `dt`, stepping at the
     /// fixed tick. Events accumulate across however many ticks ran.
-    pub fn advance(&mut self, dt: f32, p: &PlayerCtx, events: &mut Vec<SimEvent>) {
+    pub fn advance(&mut self, dt: f32, players: &[PlayerCtx], events: &mut Vec<SimEvent>) {
         // A hitch (or debugger pause) must not spiral the sim.
         self.accum = (self.accum + dt).min(0.25);
         while self.accum >= TICK {
             self.accum -= TICK;
-            self.step(TICK, p, events);
+            self.step(TICK, players, events);
         }
     }
 
-    fn step(&mut self, dt: f32, p: &PlayerCtx, events: &mut Vec<SimEvent>) {
+    fn step(&mut self, dt: f32, players: &[PlayerCtx], events: &mut Vec<SimEvent>) {
         // The clock, the wild's ire, and dawn.
         self.time_of_day = (self.time_of_day + dt / DAY_LENGTH) % 1.0;
         if self.world.tick_ire(dt / DAY_LENGTH) {
@@ -107,13 +108,19 @@ impl Server {
         // Creatures: wildlife, wardens, spawning, projectiles.
         let dl = self.daylight();
         let mut rng = self.rng;
-        let mob_events =
-            self.world.tick_mobs(p.pos, dl, p.attackable, p.aggro_mod, dt, &mut rng);
-        self.world.tick_hostile_spawns(p.pos, p.spawn, dl, dt, &mut rng);
+        let mob_events = self.world.tick_mobs(players, dl, dt, &mut rng);
+        // Spawning pressure rings a random player each cycle.
+        if !players.is_empty() {
+            rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            let p = &players[(rng >> 8) as usize % players.len()];
+            self.world.tick_hostile_spawns(p.pos, p.spawn, dl, dt, &mut rng);
+        }
         self.rng = rng;
         for ev in mob_events {
             match ev {
-                MobEvent::HitPlayer(dmg, from) => events.push(SimEvent::PlayerHit { dmg, from }),
+                MobEvent::HitPlayer(who, dmg, from) => {
+                    events.push(SimEvent::PlayerHit { who, dmg, from })
+                }
                 MobEvent::Cast(proj) => {
                     self.world.projectiles.push(proj);
                     events.push(SimEvent::BoltCast);
@@ -121,9 +128,10 @@ impl Server {
                 MobEvent::Bred(_) => events.push(SimEvent::Bred),
             }
         }
-        let bolt_dmg = self.world.tick_projectiles(p.pos, dt);
-        if bolt_dmg > 0.0 && p.attackable {
-            events.push(SimEvent::PlayerHit { dmg: bolt_dmg, from: p.pos });
+        for (who, dmg) in self.world.tick_projectiles(players, dt) {
+            if players.get(who).is_some_and(|p| p.attackable) {
+                events.push(SimEvent::PlayerHit { who, dmg, from: players[who].pos });
+            }
         }
 
         // Random ticks (crops, saplings) every half second.

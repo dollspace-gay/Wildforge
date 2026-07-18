@@ -129,6 +129,13 @@ pub struct World {
     plant_ire_today: f32,
     /// Fraction of the current day elapsed (for decay + cap reset).
     day_progress: f32,
+    /// Guest mode: chunks come only from the network, never generated.
+    pub remote: bool,
+    /// Host mode: record block edits for broadcasting.
+    pub log_edits: bool,
+    pub edit_log: Vec<(i32, i32, i32, BlockId)>,
+    /// (projectile owner, item) — guests' recovered arrows, etc.
+    pub pending_gives: Vec<(u32, crate::registry::ItemId)>,
 }
 
 /// Ire tier names, index = tier.
@@ -159,6 +166,10 @@ impl World {
             ire: 0.0,
             plant_ire_today: 0.0,
             day_progress: 0.0,
+            remote: false,
+            log_edits: false,
+            edit_log: Vec::new(),
+            pending_gives: Vec::new(),
         }
     }
 
@@ -388,6 +399,9 @@ impl World {
         if self.chunks.contains_key(&pos) {
             return false;
         }
+        if self.remote {
+            return false; // guests receive chunks, they don't make them
+        }
         let loaded = self.try_load_chunk(pos);
         let fresh = loaded.is_none();
         let chunk = loaded.unwrap_or_else(|| self.generator.generate(pos, &self.reg));
@@ -609,13 +623,12 @@ impl World {
     /// Returns events (player hits, projectile casts) for the game loop.
     pub fn tick_mobs(
         &mut self,
-        player: glam::Vec3,
+        players: &[crate::server::PlayerCtx],
         daylight: f32,
-        attackable: bool,
-        aggro_mod: f32,
         dt: f32,
         rng: &mut u32,
     ) -> Vec<MobEvent> {
+        let player = players.first().map(|p| p.pos).unwrap_or(glam::Vec3::ZERO);
         let reg = self.reg.clone();
         let mut events = Vec::new();
         let mut mobs = std::mem::take(&mut self.mobs);
@@ -628,7 +641,7 @@ impl World {
             }
             if let Some(def) = reg.animals.get(m.species) {
                 m.unstick(self, def);
-                m.tick(self, def, player, attackable, aggro_mod, dt, rng, &mut events);
+                m.tick(self, def, players, dt, rng, &mut events);
             }
         }
         // Wardens are expressions of the wild, not creatures: they dissolve
@@ -639,7 +652,11 @@ impl World {
             if !def.hostile {
                 return true;
             }
-            if (m.pos - player).length_squared() > 80.0 * 80.0 {
+            let near = players
+                .iter()
+                .map(|p| (m.pos - p.pos).length_squared())
+                .fold(f32::INFINITY, f32::min);
+            if near > 80.0 * 80.0 {
                 return false;
             }
             let (_, sl) = self.light_at(
@@ -726,19 +743,23 @@ impl World {
         events
     }
 
-    /// Advance all bolts and arrows; returns damage that hit the player.
+    /// Advance all bolts and arrows; returns (player index, damage) hits.
     /// Player arrows strike mobs through the normal hurt path and stick
     /// into blocks as recoverable item drops.
-    pub fn tick_projectiles(&mut self, player: glam::Vec3, dt: f32) -> f32 {
-        let mut dmg = 0.0;
+    pub fn tick_projectiles(
+        &mut self,
+        players: &[crate::server::PlayerCtx],
+        dt: f32,
+    ) -> Vec<(usize, f32)> {
+        let mut dmg: Vec<(usize, f32)> = Vec::new();
         let mut mob_hits: Vec<(usize, f32, glam::Vec3)> = Vec::new();
         let mut drops: Vec<((i32, i32, i32), crate::registry::ItemId)> = Vec::new();
         let mut projectiles = std::mem::take(&mut self.projectiles);
-        projectiles.retain_mut(|p| match p.tick(self, player, dt) {
+        projectiles.retain_mut(|p| match p.tick(self, players, dt) {
             ProjHit::None => true,
             ProjHit::Expired => false,
-            ProjHit::Player => {
-                dmg += p.damage;
+            ProjHit::Player(i) => {
+                dmg.push((i, p.damage));
                 false
             }
             ProjHit::Mob(i) => {
@@ -747,11 +768,16 @@ impl World {
             }
             ProjHit::Block => {
                 if let Some(it) = p.drop_item {
-                    let back = p.pos - p.vel * dt * 2.0;
-                    drops.push((
-                        (back.x.floor() as i32, back.y.floor() as i32, back.z.floor() as i32),
-                        it,
-                    ));
+                    if p.owner != 0 {
+                        // A guest's arrow: hand it back over the wire.
+                        self.pending_gives.push((p.owner, it));
+                    } else {
+                        let back = p.pos - p.vel * dt * 2.0;
+                        drops.push((
+                            (back.x.floor() as i32, back.y.floor() as i32, back.z.floor() as i32),
+                            it,
+                        ));
+                    }
                 }
                 false
             }
@@ -980,7 +1006,10 @@ impl World {
         Some(chunk)
     }
 
-    fn save_chunk(&self, pos: ChunkPos, chunk: &Chunk) -> std::io::Result<()> {
+    /// WFC3 RLE bytes for a chunk — the save format, reused as the wire
+    /// format for multiplayer chunk streaming.
+    pub fn chunk_rle(&self, pos: ChunkPos) -> Option<Vec<u8>> {
+        let chunk = self.chunks.get(&pos)?;
         let raw = chunk.raw();
         let mut buf: Vec<u8> = Vec::with_capacity(4096);
         buf.extend_from_slice(b"WFC3");
@@ -995,11 +1024,50 @@ impl World {
             buf.extend_from_slice(&b.to_le_bytes());
             i += run;
         }
+        Some(buf)
+    }
+
+    /// Insert a network-streamed chunk, remapping host block ids to
+    /// local ones. Relights and marks for remesh.
+    pub fn insert_remote_chunk(&mut self, pos: ChunkPos, rle: &[u8], remap: &[BlockId]) {
+        if !rle.starts_with(b"WFC3") {
+            return;
+        }
+        let mut chunk = Chunk::new();
+        let out = chunk.raw_mut();
+        let mut o = 0;
+        let mut i = 4;
+        while i + 4 <= rle.len() && o < out.len() {
+            let count = u16::from_le_bytes([rle[i], rle[i + 1]]) as usize;
+            let stored = u16::from_le_bytes([rle[i + 2], rle[i + 3]]) as usize;
+            let id = remap.get(stored).copied().unwrap_or(self.reg.unknown_block);
+            let end = (o + count).min(out.len());
+            out[o..end].fill(id.0);
+            o = end;
+            i += 4;
+        }
+        chunk.dirty = true;
+        self.chunks.insert(pos, chunk);
+        self.relight_and_cascade(pos);
+        // Neighbors need remeshing for the new border faces.
+        for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+            let n = ChunkPos { x: pos.x + dx, z: pos.z + dz };
+            if let Some(c) = self.chunks.get_mut(&n) {
+                c.dirty = true;
+            }
+        }
+    }
+
+    fn save_chunk(&self, pos: ChunkPos, chunk: &Chunk) -> std::io::Result<()> {
+        let buf = self.chunk_rle(pos).unwrap_or_default();
         let mut f = fs::File::create(self.chunk_file(pos))?;
         f.write_all(&buf)
     }
 
     pub fn save_modified(&self) {
+        if self.remote {
+            return; // the host owns the world
+        }
         let _ = fs::create_dir_all(&self.save_dir);
         write_world_meta(&self.save_dir, self.seed, &self.mode, self.ire);
         self.write_palette();
@@ -1260,6 +1328,9 @@ impl World {
             c.set(lx, y as usize, lz, b);
             c.dirty = true;
             c.modified = true;
+            if self.log_edits {
+                self.edit_log.push((x, y, z, b));
+            }
         }
         let mut touch = |dx: i32, dz: i32| {
             let np = ChunkPos { x: pos.x + dx, z: pos.z + dz };

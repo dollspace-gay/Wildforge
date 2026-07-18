@@ -138,6 +138,8 @@ TILES = {
     "bronze_chestplate": ("sprite", "a polished golden-bronze metal chestplate with rivets"),
     "bronze_leggings": ("sprite", "golden-bronze metal plate leggings"),
     "bronze_boots": ("sprite", "a pair of golden-bronze metal boots"),
+    "player_skin": ("face", "simple blue tunic cloth over brown trousers, flat game-character clothing texture"),
+    "player_face": ("head", "a friendly human face: two blue eyes, small mouth, brown hair across the top. Light skin."),
     "mossy_cobblestone": ("tile", "grey cobblestone heavily overgrown with green moss patches"),
     "cracked_masonry": ("tile", "old dressed stone brickwork with deep jagged cracks"),
     "packed_earth": ("tile", "dark trodden packed earth floor with small stones"),
