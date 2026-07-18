@@ -1727,3 +1727,226 @@ fn new_world_name_never_reuses_existing_folder() {
     assert_eq!(crate::next_world_name(&root, &[]), "world2");
     assert_eq!(crate::next_world_name(&tmp_dir("nextworld-empty"), &[]), "world1");
 }
+
+// ---------------- animals: species, mobs, hunting ----------------
+
+#[test]
+fn base_animals_and_weapons_register() {
+    let reg = base_reg();
+    assert_eq!(reg.animals.len(), 7, "seven base species");
+    let deer = &reg.animals[reg.animal_id("base:deer").expect("deer")];
+    assert_eq!(deer.biomes, vec!["forest"]);
+    assert!(deer.flee_range > 0.0, "deer are skittish");
+    assert!(deer.half_w > 0.2 && deer.height > 0.5, "collision derived from model");
+    let boar = &reg.animals[reg.animal_id("base:boar").expect("boar")];
+    assert_eq!(boar.flee_range, 0.0, "boars are bold");
+    // Damage: swords explicit, axes implicit 3, bare items 1.
+    let dmg = |n: &str| reg.item(it(&reg, n)).damage;
+    assert_eq!(dmg("base:wood_sword"), 4.0);
+    assert_eq!(dmg("base:stone_sword"), 5.0);
+    assert_eq!(dmg("base:copper_sword"), 6.0);
+    assert_eq!(dmg("base:bronze_sword"), 8.0);
+    assert_eq!(dmg("base:wood_axe"), 3.0);
+    assert_eq!(dmg("base:bread"), 1.0);
+    // All four sword recipes resolve.
+    for s in ["wood_sword", "stone_sword", "copper_sword", "bronze_sword"] {
+        assert!(
+            !reg.recipes_for(it(&reg, &format!("base:{s}"))).is_empty(),
+            "{s} recipe"
+        );
+    }
+}
+
+#[test]
+fn meats_smelt_and_stew_crafts() {
+    let reg = base_reg();
+    for m in ["venison", "boar", "chevon", "fowl", "rabbit"] {
+        let cooked = it(&reg, &format!("base:cooked_{m}"));
+        assert!(!reg.smelts_for(cooked).is_empty(), "raw {m} smelts");
+        let raw = reg.item(it(&reg, &format!("base:raw_{m}")));
+        let idx = crate::registry::NUTRIENTS.iter().position(|n| *n == "protein").unwrap();
+        assert!(raw.food.as_ref().unwrap().nutrition[idx] > 0.0, "{m} carries protein");
+    }
+    assert!(!reg.smelts_for(it(&reg, "base:leather")).is_empty(), "hide tans to leather");
+    // Hearty stew via the #base:meats tag: any meat + potato + mushroom.
+    let mut g = vec![None; 9];
+    g[0] = Some(ItemStack::new(&reg, it(&reg, "base:raw_rabbit"), 1));
+    g[1] = Some(ItemStack::new(&reg, it(&reg, "base:potato"), 1));
+    g[2] = Some(ItemStack::new(&reg, it(&reg, "base:mushroom"), 1));
+    let r = crate::crafting::match_recipe(&reg, &g, 3).expect("hearty stew");
+    assert_eq!(r.output, it(&reg, "base:hearty_stew"));
+}
+
+#[test]
+fn mob_settles_on_ground_and_flees_from_damage() {
+    let reg = base_reg();
+    let mut w = test_world("mobphys");
+    let si = reg.animal_id("base:deer").unwrap();
+    let def = reg.animals[si].clone();
+    // Flat pad well above any terrain, high in the air.
+    let stone = reg.block_id("base:stone").unwrap();
+    for x in -6..=6 {
+        for z in -6..=6 {
+            w.set_block(x, 180, z, stone);
+            for y in 181..=186 {
+                w.set_block(x, y, z, AIR);
+            }
+        }
+    }
+    let mut m = crate::mobs::Mob::new(si, Vec3::new(0.5, 184.0, 0.5), 0.0);
+    m.health = def.health;
+    let mut rng = 7u32;
+    for _ in 0..120 {
+        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), 1.0 / 60.0, &mut rng);
+    }
+    assert!(m.on_ground, "gravity settles the mob");
+    assert!((m.pos.y - 181.0).abs() < 0.3, "standing on the pad, got y={}", m.pos.y);
+
+    // Damage from the east: it panics away, gaining distance from the threat.
+    let threat = m.pos + Vec3::new(2.0, 0.0, 0.0);
+    m.hurt(4.0, threat);
+    assert_eq!(m.state, crate::mobs::MobState::Flee);
+    assert!(m.health < def.health);
+    let d0 = (m.pos - threat).length();
+    for _ in 0..90 {
+        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), 1.0 / 60.0, &mut rng);
+    }
+    let d1 = (m.pos - threat).length();
+    assert!(d1 > d0 + 1.0, "fled from the threat ({d0:.1} -> {d1:.1})");
+    // Panic subsides back to idle within the flee timer.
+    for _ in 0..400 {
+        m.tick(&w, &def, Vec3::new(100.0, 181.0, 100.0), 1.0 / 60.0, &mut rng);
+    }
+    assert_ne!(m.state, crate::mobs::MobState::Flee, "calmed down");
+}
+
+#[test]
+fn skittish_flees_players_bold_does_not() {
+    let reg = base_reg();
+    let w = test_world("mobskit");
+    let deer_i = reg.animal_id("base:deer").unwrap();
+    let boar_i = reg.animal_id("base:boar").unwrap();
+    let deer_def = reg.animals[deer_i].clone();
+    let boar_def = reg.animals[boar_i].clone();
+    let pos = Vec3::new(0.5, 120.0, 0.5);
+    let player = pos + Vec3::new(4.0, 0.0, 0.0); // within deer flee_range (10)
+    let mut deer = crate::mobs::Mob::new(deer_i, pos, 0.0);
+    let mut boar = crate::mobs::Mob::new(boar_i, pos, 0.0);
+    let mut rng = 3u32;
+    deer.tick(&w, &deer_def, player, 1.0 / 60.0, &mut rng);
+    boar.tick(&w, &boar_def, player, 1.0 / 60.0, &mut rng);
+    assert_eq!(deer.state, crate::mobs::MobState::Flee, "deer spooks");
+    assert_ne!(boar.state, crate::mobs::MobState::Flee, "boar doesn't care");
+}
+
+#[test]
+fn mob_ray_hit_works() {
+    let reg = base_reg();
+    let si = reg.animal_id("base:deer").unwrap();
+    let def = &reg.animals[si];
+    let m = crate::mobs::Mob::new(si, Vec3::new(10.0, 64.0, 10.0), 0.0);
+    let origin = Vec3::new(10.0, 64.5, 6.0);
+    let t = m.ray_hit(def, origin, Vec3::Z, 8.0).expect("aimed ray hits");
+    assert!(t > 2.0 && t < 5.0, "hit distance sane: {t}");
+    assert!(m.ray_hit(def, origin, -Vec3::Z, 8.0).is_none(), "away ray misses");
+    assert!(m.ray_hit(def, origin, Vec3::Z, 2.0).is_none(), "out of reach");
+}
+
+#[test]
+fn wildlife_seeds_matching_biomes_only() {
+    let reg = base_reg();
+    let mut w = test_world_with("mobseed", reg.clone());
+    // Sweep a wide area; every spawned mob must belong to its chunk's biome.
+    for cx in -12..12 {
+        for cz in -12..12 {
+            w.ensure_chunk(ChunkPos { x: cx, z: cz });
+        }
+    }
+    for m in &w.mobs {
+        let def = &reg.animals[m.species];
+        // The group roll uses the chunk-center biome; members may scatter a
+        // few blocks over a biome edge, which is fine.
+        let cp = ChunkPos::of_world(m.pos.x.floor() as i32, m.pos.z.floor() as i32);
+        let biome = w
+            .generator
+            .biome(cp.x * 16 + 8, cp.z * 16 + 8)
+            .name()
+            .to_lowercase();
+        assert!(
+            def.biomes.contains(&biome),
+            "{} rolled in {biome} chunk",
+            def.name
+        );
+        assert!(m.health > 0.0, "spawned alive");
+    }
+    assert!(w.mobs.len() <= crate::world::MOB_CAP);
+}
+
+#[test]
+fn mob_persistence_round_trips_and_skips_unknown() {
+    let reg = base_reg();
+    let dir = tmp_dir("mobsave");
+    let mut w = World::new(11, dir.clone(), reg.clone());
+    let si = reg.animal_id("base:goat").unwrap();
+    let mut m = crate::mobs::Mob::new(si, Vec3::new(3.5, 90.0, -2.5), 1.25);
+    m.health = 7.0;
+    w.mobs.push(m);
+    w.save_modified();
+    // Unknown species entries (removed mod) skip cleanly on load.
+    let extra = "\n[[mob]]\nspecies = \"gone:wolf\"\npos = [0, 80, 0]\nyaw = 0\nhealth = 5\n";
+    let path = dir.join("animals.toml");
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    text.push_str(extra);
+    std::fs::write(&path, text).unwrap();
+
+    let w2 = World::load_or_create(dir, reg.clone());
+    assert_eq!(w2.mobs.len(), 1, "goat loaded, unknown skipped");
+    let g = &w2.mobs[0];
+    assert_eq!(g.species, si);
+    assert_eq!(g.health, 7.0);
+    assert!((g.pos - Vec3::new(3.5, 90.0, -2.5)).length() < 0.01);
+    assert!((g.yaw - 1.25).abs() < 0.01);
+}
+
+#[test]
+fn wildlife_seed_marks_persist() {
+    let reg = base_reg();
+    let dir = tmp_dir("mobmark");
+    let mut w = World::new(5, dir.clone(), reg.clone());
+    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    let first = w.mobs.len();
+    w.save_modified();
+    // Reload: regenerating the same chunk must NOT reroll wildlife.
+    let mut w2 = World::load_or_create(dir, reg);
+    w2.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    assert_eq!(
+        w2.mobs.len(),
+        first,
+        "seeded mark survives; no duplicate wildlife on revisit"
+    );
+}
+
+#[test]
+fn mod_can_add_species() {
+    let root = tmp_dir("modanimal");
+    let dir = root.join("fauna");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("mod.toml"), "id = \"fauna\"\n").unwrap();
+    std::fs::write(
+        dir.join("animals.toml"),
+        r#"
+[[animal]]
+id = "shadow_cat"
+biomes = ["forest"]
+health = 6
+tex = "@deer"
+drops = [{ item = "base:hide", min = 1, max = 1 }]
+"#,
+    )
+    .unwrap();
+    let reg = registry::load(&root);
+    let si = reg.animal_id("fauna:shadow_cat").expect("mod species registers");
+    let def = &reg.animals[si];
+    assert!(!def.model.is_empty(), "default model filled in");
+    assert_eq!(def.drops.len(), 1, "drop resolved to base:hide");
+}

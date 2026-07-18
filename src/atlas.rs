@@ -13,7 +13,7 @@ pub const ATLAS_TILES: u32 = 16;
 /// Atlas slot = row * 16 + col. Rows 0-2 are built-in procedural tiles.
 pub const UNKNOWN_SLOT: u16 = 15;
 pub const CRACK_SLOT: u16 = 16; // stages 16..=19
-pub const FIRST_FREE_SLOT: u16 = 112; // rows 0-6 are built-in tiles
+pub const FIRST_FREE_SLOT: u16 = 144; // rows 0-8 are built-in tiles
 
 /// Built-in procedural tile names usable as `@name` in mod TOML.
 pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
@@ -44,6 +44,16 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("baked_potato", 89), ("roasted_mushroom", 90), ("cactus_fruit", 91),
         ("jungle_fruit", 92), ("stew", 93), ("seeds", 94), ("wood_hoe", 96),
         ("stone_hoe", 97), ("copper_hoe", 98), ("bronze_hoe", 99),
+        ("deer", 100), ("deer_face", 101), ("boar", 102), ("boar_face", 103),
+        ("goat", 104), ("goat_face", 105), ("grouse", 106),
+        ("grouse_face", 107), ("rabbit", 108), ("rabbit_face", 109),
+        ("desert_hare", 110), ("snow_hare", 111),
+        ("raw_venison", 112), ("cooked_venison", 113), ("raw_boar", 114),
+        ("cooked_boar", 115), ("raw_chevon", 116), ("cooked_chevon", 117),
+        ("raw_fowl", 118), ("cooked_fowl", 119), ("raw_rabbit", 120),
+        ("cooked_rabbit", 121), ("hide", 122), ("leather", 123),
+        ("feather", 124), ("hearty_stew", 125), ("wood_sword", 126),
+        ("stone_sword", 127), ("copper_sword", 128), ("bronze_sword", 129),
         ("unknown", 15), ("crack1", 16), ("crack2", 17), ("crack3", 18),
         ("crack4", 19),
     ]
@@ -1034,6 +1044,210 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
                     rgba(head, f, 255)
                 }
                 Some(b'H') => [0, 0, 0, 0],
+                Some(b'h') => rgba([104.0, 72.0, 42.0], 1.0, 255),
+                _ => [0, 0, 0, 0],
+            }
+        });
+    }
+
+    // ---- animals: fur/hide tiles + faces (rows 6-7) ----
+    let furs: [(u32, [f32; 3], [f32; 3], f32); 7] = [
+        (100, [150.0, 105.0, 65.0], [120.0, 80.0, 50.0], 0.08),  // deer
+        (102, [95.0, 80.0, 70.0], [70.0, 58.0, 50.0], 0.22),     // boar (bristly)
+        (104, [215.0, 210.0, 200.0], [175.0, 170.0, 160.0], 0.10), // goat
+        (106, [140.0, 100.0, 70.0], [95.0, 70.0, 50.0], 0.10),   // grouse
+        (108, [170.0, 140.0, 110.0], [140.0, 110.0, 85.0], 0.08), // rabbit
+        (110, [205.0, 180.0, 135.0], [175.0, 150.0, 110.0], 0.08), // desert hare
+        (111, [235.0, 235.0, 240.0], [205.0, 205.0, 215.0], 0.05), // snow hare
+    ];
+    for (slot, hi, lo, rough) in furs {
+        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+            let t = fbm(u, v, 6, 400 + slot);
+            let mut c = mix3(lo, hi, t);
+            // Grouse: light feather dapple.
+            if slot == 106 {
+                let (d1, _, id) = voronoi(u, v, 6, 410);
+                if d1 < 0.16 && id % 3 == 0 {
+                    c = [200.0, 180.0, 140.0];
+                }
+            }
+            rgba(c, speck(px, py, 420 + slot, rough), 255)
+        });
+    }
+    // Faces: fur base + eyes + species snout.
+    for (slot, fur_slot) in [(101u32, 100u32), (103, 102), (105, 104), (107, 106), (109, 108)] {
+        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+            let base_t = fbm(u, v, 6, 400 + fur_slot);
+            let (hi, lo) = match fur_slot {
+                100 => ([150.0, 105.0, 65.0], [120.0, 80.0, 50.0]),
+                102 => ([95.0, 80.0, 70.0], [70.0, 58.0, 50.0]),
+                104 => ([215.0, 210.0, 200.0], [175.0, 170.0, 160.0]),
+                106 => ([140.0, 100.0, 70.0], [95.0, 70.0, 50.0]),
+                _ => ([170.0, 140.0, 110.0], [140.0, 110.0, 85.0]),
+            };
+            let mut c = mix3(lo, hi, base_t);
+            let eye = |cx: f32, cy: f32, w: f32, h: f32| {
+                (u - cx).abs() < w && (v - cy).abs() < h
+            };
+            // Eyes (goat gets wide horizontal pupils).
+            let (ew, eh) = if fur_slot == 104 { (0.09, 0.045) } else { (0.055, 0.06) };
+            if eye(0.28, 0.35, ew, eh) || eye(0.72, 0.35, ew, eh) {
+                c = [15.0, 12.0, 10.0];
+            }
+            match fur_slot {
+                100 => {
+                    // Deer: dark nose.
+                    if (u - 0.5).abs() < 0.10 && v > 0.82 {
+                        c = [30.0, 22.0, 18.0];
+                    }
+                }
+                102 => {
+                    // Boar: pink snout disc + nostrils + tusks.
+                    let dx = u - 0.5;
+                    let dy = v - 0.78;
+                    if dx * dx + dy * dy * 1.6 < 0.030 {
+                        c = [214.0, 140.0, 130.0];
+                        if eye(0.42, 0.78, 0.03, 0.035) || eye(0.58, 0.78, 0.03, 0.035) {
+                            c = [120.0, 60.0, 55.0];
+                        }
+                    }
+                    if eye(0.16, 0.85, 0.045, 0.06) || eye(0.84, 0.85, 0.045, 0.06) {
+                        c = [235.0, 230.0, 215.0];
+                    }
+                }
+                104 => {
+                    // Goat: grey muzzle.
+                    if v > 0.75 {
+                        c = mix3(c, [150.0, 145.0, 138.0], 0.7);
+                    }
+                }
+                106 => {
+                    // Grouse: orange beak wedge.
+                    if v > 0.62 && (u - 0.5).abs() < (0.95 - v) * 0.45 {
+                        c = [210.0, 130.0, 40.0];
+                    }
+                }
+                _ => {
+                    // Rabbit: pink nose.
+                    if (u - 0.5).abs() < 0.06 && (v - 0.72).abs() < 0.05 {
+                        c = [220.0, 130.0, 130.0];
+                    }
+                }
+            }
+            rgba(c, speck(px, py, 430 + slot, 0.06), 255)
+        });
+    }
+    // Meats: slab with fat marbling (raw) or browned surface + char rim (cooked).
+    let meats: [(u32, [f32; 3], bool); 10] = [
+        (112, [165.0, 45.0, 55.0], false),  // venison
+        (113, [125.0, 75.0, 45.0], true),
+        (114, [210.0, 110.0, 120.0], false), // boar
+        (115, [170.0, 105.0, 60.0], true),
+        (116, [180.0, 60.0, 65.0], false),  // chevon
+        (117, [140.0, 85.0, 50.0], true),
+        (118, [225.0, 170.0, 160.0], false), // fowl
+        (119, [205.0, 140.0, 75.0], true),
+        (120, [215.0, 140.0, 135.0], false), // rabbit
+        (121, [185.0, 120.0, 70.0], true),
+    ];
+    for (slot, base, cooked) in meats {
+        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+            let dx = (u - 0.5) * 1.15;
+            let dy = (v - 0.55) * 1.5;
+            let d = dx * dx + dy * dy;
+            if d > 0.16 {
+                return [0, 0, 0, 0];
+            }
+            let mut c = base;
+            let m = fbm(u * 2.0, v * 2.0, 5, 500 + slot);
+            if !cooked && m > 0.62 {
+                c = [235.0, 225.0, 220.0]; // fat marbling
+            }
+            if cooked {
+                c = mix3(c, [90.0, 55.0, 30.0], (m - 0.4).clamp(0.0, 1.0) * 0.5);
+                if d > 0.11 {
+                    c = mix3(c, [60.0, 38.0, 22.0], 0.7); // char rim
+                }
+            }
+            rgba(c, speck(px, py, 510 + slot, 0.08), 255)
+        });
+    }
+    // Hide: rough pelt rectangle with darker border.
+    tf(10, 7, &mut |px, py, u, v| {
+        let dx = (u - 0.5).abs();
+        let dy = (v - 0.5).abs();
+        if dx > 0.38 || dy > 0.32 || (dx > 0.30 && dy > 0.24) {
+            return [0, 0, 0, 0];
+        }
+        let t = fbm(u, v, 5, 520);
+        let mut c = mix3([120.0, 85.0, 55.0], [155.0, 115.0, 75.0], t);
+        if dx > 0.32 || dy > 0.26 {
+            c = mix3(c, [80.0, 55.0, 35.0], 0.7);
+        }
+        rgba(c, speck(px, py, 521, 0.12), 255)
+    });
+    // Leather: smooth tanned rectangle.
+    tf(11, 7, &mut |px, py, u, v| {
+        let dx = (u - 0.5).abs();
+        let dy = (v - 0.5).abs();
+        if dx > 0.36 || dy > 0.30 || (dx > 0.28 && dy > 0.22) {
+            return [0, 0, 0, 0];
+        }
+        let t = fbm(u, v, 4, 530);
+        rgba(mix3([170.0, 120.0, 70.0], [195.0, 145.0, 90.0], t), speck(px, py, 531, 0.05), 255)
+    });
+    // Feather: diagonal quill with pale barbs.
+    tf(12, 7, &mut |px, py, u, v| {
+        // Line from (0.22, 0.82) to (0.78, 0.18).
+        let t = ((u - 0.22) * 0.5 + (0.82 - v) * 0.5).clamp(0.0, 1.0);
+        let (lx, ly) = (0.22 + 0.56 * t, 0.82 - 0.64 * t);
+        let dist = ((u - lx) * (u - lx) + (v - ly) * (v - ly)).sqrt();
+        let width = 0.16 * (1.0 - t * 0.8);
+        if dist < width * 0.22 {
+            rgba([150.0, 150.0, 155.0], 1.0, 255) // shaft
+        } else if dist < width {
+            let f = 0.85 + h01(px as i32, py as i32, 540) * 0.3;
+            rgba([228.0, 228.0, 232.0], f, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    lump(125, [140.0, 75.0, 50.0], &mut tf); // hearty stew (dark meaty bowl)
+    // Swords: diagonal blade + guard + handle, tier head colors.
+    const SWORD_ART: [&str; 16] = [
+        "..............HH",
+        ".............HHH",
+        "............HHH.",
+        "...........HHH..",
+        "..........HHH...",
+        ".........HHH....",
+        "........HHH.....",
+        ".......HHH......",
+        "......HHH.......",
+        ".....HHH........",
+        "..g.HHH.........",
+        "..gggH..........",
+        "...ggg..........",
+        "..hh.gg.........",
+        ".hh.............",
+        "hh..............",
+    ];
+    let sword_sets: [(u32, [f32; 3]); 4] = [
+        (126, [168.0, 122.0, 60.0]),
+        (127, [130.0, 130.0, 130.0]),
+        (128, [206.0, 116.0, 52.0]),
+        (129, [196.0, 148.0, 62.0]),
+    ];
+    for (slot, head) in sword_sets {
+        tf(slot % 16, slot / 16, &mut |_px, _py, u, v| {
+            let ax = ((u * 16.0) as usize).min(15);
+            let ay = ((v * 16.0) as usize).min(15);
+            match SWORD_ART[ay].as_bytes().get(ax) {
+                Some(b'H') => {
+                    let f = 0.85 + h01(ax as i32, ay as i32, 550 + slot) * 0.25;
+                    rgba(head, f, 255)
+                }
+                Some(b'g') => rgba([70.0, 62.0, 55.0], 1.0, 255),
                 Some(b'h') => rgba([104.0, 72.0, 42.0], 1.0, 255),
                 _ => [0, 0, 0, 0],
             }

@@ -7,7 +7,8 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos};
+use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
+use crate::mobs::Mob;
 use crate::inventory::ItemStack;
 use crate::registry::{AIR, BlockId, Registry};
 use crate::worldgen::Generator;
@@ -84,7 +85,14 @@ pub struct World {
     pub block_entities: HashMap<(i32, i32, i32), BlockEntity>,
     /// Items spilled by removed block entities, for the game loop to spawn.
     pub pending_drops: Vec<((i32, i32, i32), ItemStack)>,
+    pub mobs: Vec<crate::mobs::Mob>,
+    /// Chunks whose wildlife roll already happened (persisted).
+    mob_seeded: HashSet<(i32, i32)>,
+    repop_timer: f32,
 }
+
+/// Hard cap on living mobs — memory/perf backstop, far above natural density.
+pub const MOB_CAP: usize = 200;
 
 impl World {
     pub fn new(seed: u32, save_dir: PathBuf, reg: Arc<Registry>) -> World {
@@ -99,6 +107,9 @@ impl World {
             water_queued: HashSet::new(),
             block_entities: HashMap::new(),
             pending_drops: Vec::new(),
+            mobs: Vec::new(),
+            mob_seeded: HashSet::new(),
+            repop_timer: 0.0,
         }
     }
 
@@ -115,6 +126,7 @@ impl World {
         let mut w = World::new(seed, save_dir, reg);
         w.load_remap = w.read_palette_remap();
         w.load_entities();
+        w.load_mobs();
         w
     }
 
@@ -157,7 +169,190 @@ impl World {
             .try_load_chunk(pos)
             .unwrap_or_else(|| self.generator.generate(pos, &self.reg));
         self.chunks.insert(pos, chunk);
+        // Wildlife rolls once per chunk, ever (the mark persists with the
+        // world so hunted animals stay gone across sessions).
+        if self.mob_seeded.insert((pos.x, pos.z)) {
+            self.seed_wildlife(pos);
+        }
         true
+    }
+
+    // ---------------- wildlife ----------------
+
+    fn mob_hash(&self, x: i32, z: i32, salt: u32) -> u32 {
+        let mut h = (x as u32).wrapping_mul(0x85eb_ca6b)
+            ^ (z as u32).wrapping_mul(0xc2b2_ae35)
+            ^ self.seed.wrapping_mul(0x9e37_79b9)
+            ^ salt.wrapping_mul(0x2708_92cd);
+        h ^= h >> 15;
+        h = h.wrapping_mul(0x2c1b_3c6d);
+        h ^= h >> 12;
+        h
+    }
+
+    /// Deterministic per-chunk wildlife roll: at most one species' group.
+    fn seed_wildlife(&mut self, pos: ChunkPos) {
+        if self.mobs.len() >= MOB_CAP {
+            return;
+        }
+        let reg = self.reg.clone();
+        let (cx, cz) = (pos.x * CHUNK_X as i32, pos.z * CHUNK_Z as i32);
+        let biome = self.generator.biome(cx + 8, cz + 8).name().to_lowercase();
+        for (si, def) in reg.animals.iter().enumerate() {
+            if !def.biomes.iter().any(|b| *b == biome) {
+                continue;
+            }
+            let roll = self.mob_hash(pos.x, pos.z, 7000 + si as u32);
+            if roll % def.rarity != 0 {
+                continue;
+            }
+            let span = def.group[1].saturating_sub(def.group[0]) + 1;
+            let n = def.group[0] + (roll >> 8) % span;
+            for i in 0..n {
+                let h = self.mob_hash(pos.x, pos.z, 7100 + si as u32 * 31 + i);
+                let lx = (h % CHUNK_X as u32) as i32;
+                let lz = ((h >> 8) % CHUNK_Z as u32) as i32;
+                self.try_spawn(si, cx + lx, cz + lz, (h >> 16) as f32 / 65535.0);
+            }
+            break; // one species per chunk keeps groups readable
+        }
+    }
+
+    /// Spawn on dry solid ground at the surface; silently skips bad spots.
+    fn try_spawn(&mut self, species: usize, x: i32, z: i32, yaw01: f32) -> bool {
+        if self.mobs.len() >= MOB_CAP {
+            return false;
+        }
+        let y = self.surface_height(x, z);
+        if y <= SEA_LEVEL {
+            return false;
+        }
+        let ground = self.get_block(x, y, z);
+        if !self.reg.is_solid(ground) {
+            return false;
+        }
+        let mut m = Mob::new(
+            species,
+            glam::Vec3::new(x as f32 + 0.5, y as f32 + 1.05, z as f32 + 0.5),
+            yaw01 * std::f32::consts::TAU,
+        );
+        m.health = self.reg.animals[species].health;
+        self.mobs.push(m);
+        true
+    }
+
+    /// Tick AI/physics for all mobs, plus the slow repopulation roll.
+    pub fn tick_mobs(&mut self, player: glam::Vec3, dt: f32, rng: &mut u32) {
+        let reg = self.reg.clone();
+        let mut mobs = std::mem::take(&mut self.mobs);
+        for m in &mut mobs {
+            if let Some(def) = reg.animals.get(m.species) {
+                m.tick(self, def, player, dt, rng);
+            }
+        }
+        self.mobs = mobs;
+
+        // Repopulation: overhunted wildlife slowly recovers, away from the
+        // player and only under the local cap.
+        self.repop_timer += dt;
+        if self.repop_timer < 8.0 {
+            return;
+        }
+        self.repop_timer = 0.0;
+        let near = self
+            .mobs
+            .iter()
+            .filter(|m| (m.pos - player).length_squared() < 96.0 * 96.0)
+            .count();
+        if near >= 40 || reg.animals.is_empty() {
+            return;
+        }
+        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        let r = *rng;
+        // A ring 32-72 blocks out at a random angle.
+        let ang = (r % 1024) as f32 / 1024.0 * std::f32::consts::TAU;
+        let dist = 32.0 + ((r >> 10) % 40) as f32;
+        let x = (player.x + ang.sin() * dist).floor() as i32;
+        let z = (player.z + ang.cos() * dist).floor() as i32;
+        let cp = ChunkPos::of_world(x, z);
+        if !self.chunks.contains_key(&cp) {
+            return;
+        }
+        let biome = self.generator.biome(x, z).name().to_lowercase();
+        let eligible: Vec<usize> = reg
+            .animals
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| d.biomes.iter().any(|b| *b == biome))
+            .map(|(i, _)| i)
+            .collect();
+        if let Some(&si) = eligible.get(((r >> 20) as usize) % eligible.len().max(1)) {
+            self.try_spawn(si, x, z, (r >> 8) as f32 / (u32::MAX >> 8) as f32);
+        }
+    }
+
+    fn mobs_path(&self) -> PathBuf {
+        self.save_dir.join("animals.toml")
+    }
+
+    fn save_mobs(&self) {
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        for m in &self.mobs {
+            let Some(def) = self.reg.animals.get(m.species) else { continue };
+            let _ = writeln!(
+                out,
+                "[[mob]]\nspecies = \"{}\"\npos = [{}, {}, {}]\nyaw = {}\nhealth = {}\n",
+                def.name, m.pos.x, m.pos.y, m.pos.z, m.yaw, m.health
+            );
+        }
+        if out.is_empty() {
+            let _ = fs::remove_file(self.mobs_path());
+        } else {
+            let _ = fs::write(self.mobs_path(), out);
+        }
+        // Seeded-chunk marks: compact binary pairs.
+        let mut buf = Vec::with_capacity(self.mob_seeded.len() * 8);
+        for (x, z) in &self.mob_seeded {
+            buf.extend_from_slice(&x.to_le_bytes());
+            buf.extend_from_slice(&z.to_le_bytes());
+        }
+        let _ = fs::write(self.save_dir.join("aseeded"), buf);
+    }
+
+    fn load_mobs(&mut self) {
+        use serde::Deserialize;
+        #[derive(Deserialize)]
+        struct MobT {
+            species: String,
+            pos: [f32; 3],
+            yaw: f32,
+            health: f32,
+        }
+        #[derive(Deserialize)]
+        struct FileT {
+            #[serde(default)]
+            mob: Vec<MobT>,
+        }
+        if let Ok(text) = fs::read_to_string(self.mobs_path()) {
+            if let Ok(f) = toml::from_str::<FileT>(&text) {
+                for t in f.mob {
+                    // Unknown species (mod removed) skip cleanly.
+                    let Some(si) = self.reg.animal_id(&t.species) else { continue };
+                    let mut m =
+                        Mob::new(si, glam::Vec3::new(t.pos[0], t.pos[1], t.pos[2]), t.yaw);
+                    m.health = t.health.min(self.reg.animals[si].health);
+                    self.mobs.push(m);
+                }
+            }
+        }
+        if let Ok(data) = fs::read(self.save_dir.join("aseeded")) {
+            for p in data.chunks_exact(8) {
+                let x = i32::from_le_bytes([p[0], p[1], p[2], p[3]]);
+                let z = i32::from_le_bytes([p[4], p[5], p[6], p[7]]);
+                self.mob_seeded.insert((x, z));
+            }
+        }
     }
 
     fn try_load_chunk(&self, pos: ChunkPos) -> Option<Chunk> {
@@ -215,6 +410,7 @@ impl World {
         let _ = fs::create_dir_all(&self.save_dir);
         self.write_palette();
         self.save_entities();
+        self.save_mobs();
         for (pos, chunk) in &self.chunks {
             if chunk.modified {
                 let _ = self.save_chunk(*pos, chunk);

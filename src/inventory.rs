@@ -135,7 +135,8 @@ impl Inventory {
     /// Wear the tool in `slot` by one use; destroys it at zero durability.
     pub fn wear_tool(&mut self, reg: &Registry, slot: usize) {
         if let Some(s) = self.slots[slot].as_mut() {
-            if reg.item(s.item).tool.is_some() {
+            // Anything with a durability pool wears: tools and swords.
+            if reg.item(s.item).durability > 0 {
                 s.durability = s.durability.saturating_sub(1);
                 if s.durability == 0 {
                     self.slots[slot] = None;

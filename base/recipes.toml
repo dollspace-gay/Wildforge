@@ -201,3 +201,60 @@ time = 6.0
 input = "base:mushroom"
 output = "base:roasted_mushroom"
 time = 5.0
+
+# ---- hunting & weapons ----
+
+[[recipe]]
+pattern = ["m", "m", "s"]
+keys = { m = "#base:planks", s = "base:stick" }
+output = "base:wood_sword"
+
+[[recipe]]
+pattern = ["m", "m", "s"]
+keys = { m = "base:cobblestone", s = "base:stick" }
+output = "base:stone_sword"
+
+[[recipe]]
+pattern = ["m", "m", "s"]
+keys = { m = "base:copper_ingot", s = "base:stick" }
+output = "base:copper_sword"
+
+[[recipe]]
+pattern = ["m", "m", "s"]
+keys = { m = "base:bronze_ingot", s = "base:stick" }
+output = "base:bronze_sword"
+
+[[recipe]]
+pattern = ["mpf"]
+keys = { m = "#base:meats", p = "base:potato", f = "base:mushroom" }
+output = "base:hearty_stew"
+
+[[smelt]]
+input = "base:raw_venison"
+output = "base:cooked_venison"
+time = 7.0
+
+[[smelt]]
+input = "base:raw_boar"
+output = "base:cooked_boar"
+time = 7.0
+
+[[smelt]]
+input = "base:raw_chevon"
+output = "base:cooked_chevon"
+time = 7.0
+
+[[smelt]]
+input = "base:raw_fowl"
+output = "base:cooked_fowl"
+time = 6.0
+
+[[smelt]]
+input = "base:raw_rabbit"
+output = "base:cooked_rabbit"
+time = 6.0
+
+[[smelt]]
+input = "base:hide"
+output = "base:leather"
+time = 6.0

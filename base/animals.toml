@@ -1,0 +1,138 @@
+# Biome-native wildlife. Sizes/offsets in px (16 px = 1 block); a box
+# named "leg" is mirrored into four legs at (+-x, y, +-z).
+
+[[animal]]
+id = "deer"
+name = "Deer"
+biomes = ["forest"]
+health = 10
+speed = 2.4
+flee_range = 10
+group = [1, 3]
+rarity = 5
+tex = "@deer"
+head_tex = "@deer_face"
+sound_pitch = 1.0
+drops = [
+  { item = "raw_venison", min = 1, max = 2 },
+  { item = "hide", min = 0, max = 1 },
+]
+[animal.model]
+body = { size = [6, 7, 11], at = [0, 9, 0] }
+head = { size = [4, 4, 5], at = [0, 14, -7] }
+leg = { size = [2, 9, 2], at = [2, 0, 4] }
+
+[[animal]]
+id = "boar"
+name = "Boar"
+biomes = ["jungle"]
+health = 14
+speed = 2.0
+flee_range = 0          # bold: only flees when hurt
+group = [1, 2]
+rarity = 5
+tex = "@boar"
+head_tex = "@boar_face"
+sound_pitch = 0.6
+drops = [
+  { item = "raw_boar", min = 1, max = 2 },
+  { item = "hide", min = 0, max = 1 },
+]
+[animal.model]
+body = { size = [7, 7, 12], at = [0, 5, 0] }
+head = { size = [5, 5, 5], at = [0, 6, -8] }
+leg = { size = [2, 5, 2], at = [2, 0, 4] }
+
+[[animal]]
+id = "goat"
+name = "Mountain Goat"
+biomes = ["mountains"]
+health = 12
+speed = 2.2
+flee_range = 7
+group = [1, 3]
+rarity = 5
+tex = "@goat"
+head_tex = "@goat_face"
+sound_pitch = 0.85
+drops = [
+  { item = "raw_chevon", min = 1, max = 2 },
+  { item = "hide", min = 0, max = 1 },
+]
+[animal.model]
+body = { size = [6, 7, 10], at = [0, 8, 0] }
+head = { size = [4, 5, 4], at = [0, 12, -6] }
+leg = { size = [2, 8, 2], at = [2, 0, 3] }
+
+[[animal]]
+id = "grouse"
+name = "Grouse"
+biomes = ["taiga"]
+health = 5
+speed = 1.8
+flee_range = 6
+group = [2, 4]
+rarity = 4
+tex = "@grouse"
+head_tex = "@grouse_face"
+sound_pitch = 1.6
+drops = [
+  { item = "raw_fowl", min = 1, max = 1 },
+  { item = "feather", min = 1, max = 2 },
+]
+[animal.model]
+body = { size = [5, 5, 7], at = [0, 3, 0] }
+head = { size = [3, 3, 3], at = [0, 8, -4] }
+leg = { size = [1, 3, 1], at = [1, 0, 1] }
+
+[[animal]]
+id = "rabbit"
+name = "Rabbit"
+biomes = ["plains"]
+health = 4
+speed = 2.8
+flee_range = 8
+group = [2, 4]
+rarity = 4
+tex = "@rabbit"
+head_tex = "@rabbit_face"
+sound_pitch = 2.0
+drops = [{ item = "raw_rabbit", min = 1, max = 1 }]
+[animal.model]
+body = { size = [4, 4, 6], at = [0, 2, 0] }
+head = { size = [3, 4, 3], at = [0, 4, -4] }
+leg = { size = [1, 2, 1], at = [1, 0, 2] }
+
+[[animal]]
+id = "desert_hare"
+name = "Desert Hare"
+biomes = ["desert", "scrubland"]
+health = 4
+speed = 3.0
+flee_range = 8
+group = [1, 3]
+rarity = 5
+tex = "@desert_hare"
+sound_pitch = 2.0
+drops = [{ item = "raw_rabbit", min = 1, max = 1 }]
+[animal.model]
+body = { size = [4, 4, 6], at = [0, 2, 0] }
+head = { size = [3, 4, 3], at = [0, 4, -4] }
+leg = { size = [1, 2, 1], at = [1, 0, 2] }
+
+[[animal]]
+id = "snow_hare"
+name = "Snow Hare"
+biomes = ["arctic"]
+health = 4
+speed = 2.8
+flee_range = 8
+group = [1, 3]
+rarity = 5
+tex = "@snow_hare"
+sound_pitch = 2.0
+drops = [{ item = "raw_rabbit", min = 1, max = 1 }]
+[animal.model]
+body = { size = [4, 4, 6], at = [0, 2, 0] }
+head = { size = [3, 4, 3], at = [0, 4, -4] }
+leg = { size = [1, 2, 1], at = [1, 0, 2] }

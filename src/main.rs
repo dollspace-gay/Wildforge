@@ -14,6 +14,7 @@ mod crafting;
 mod entity;
 mod inventory;
 mod mesher;
+mod mobs;
 mod physics;
 mod raycast;
 mod registry;
@@ -92,6 +93,7 @@ struct Game {
     left_held: bool,
     right_held: bool,
     action_cooldown: f32,
+    attack_cooldown: f32,
     hotbar_sel: usize,
     scroll_accum: f32,
     scroll_cooldown: f32,
@@ -322,6 +324,7 @@ impl Game {
             left_held: false,
             right_held: false,
             action_cooldown: 0.0,
+            attack_cooldown: 0.0,
             hotbar_sel: 0,
             scroll_accum: 0.0,
             scroll_cooldown: 0.0,
@@ -546,6 +549,27 @@ impl Game {
             eprintln!("demo water source at ({bx},{},{bz}), spawn {:?}", by + 5, spawn);
         }
         self.set_screen(Screen::Playing);
+        // Dev: a small menagerie near spawn (rendering/combat verification).
+        if std::env::var("WILDFORGE_DEMO_MOBS").is_ok() {
+            for (i, name) in
+                ["base:deer", "base:boar", "base:goat", "base:grouse", "base:rabbit"]
+                    .iter()
+                    .enumerate()
+            {
+                if let Some(si) = self.reg.animal_id(name) {
+                    let x = spawn.x as i32 - 3 + i as i32 * 2;
+                    let z = spawn.z as i32 - 6;
+                    let y = self.world.surface_height(x, z) + 1;
+                    let mut m = mobs::Mob::new(
+                        si,
+                        Vec3::new(x as f32 + 0.5, y as f32 + 0.05, z as f32 + 0.5),
+                        i as f32 * 1.3,
+                    );
+                    m.health = self.reg.animals[si].health;
+                    self.world.mobs.push(m);
+                }
+            }
+        }
         // Dev: a stocked furnace next to spawn, screen open (UI verification).
         if std::env::var("WILDFORGE_DEMO_FURNACE").is_ok() {
             let p = (spawn.x as i32 + 2, spawn.y as i32, spawn.z as i32);
@@ -867,11 +891,105 @@ impl Game {
         }
     }
 
+    /// Nearest mob under the crosshair within reach, unless a solid block
+    /// sits in front of it.
+    fn mob_in_crosshair(&self, hit: &Option<raycast::Hit>) -> Option<usize> {
+        let origin = self.camera.pos;
+        let dir = self.camera.forward();
+        // A wall in the way shields the mob behind it (approximate the
+        // wall distance by its block center).
+        let wall_t = hit
+            .as_ref()
+            .map(|h| {
+                let c = Vec3::new(
+                    h.block.0 as f32 + 0.5,
+                    h.block.1 as f32 + 0.5,
+                    h.block.2 as f32 + 0.5,
+                );
+                (c - origin).length() + 0.5
+            })
+            .unwrap_or(REACH);
+        let mut best: Option<(usize, f32)> = None;
+        for (i, m) in self.world.mobs.iter().enumerate() {
+            let def = &self.reg.animals[m.species];
+            if let Some(t) = m.ray_hit(def, origin, dir, REACH.min(wall_t)) {
+                if best.is_none_or(|(_, bt)| t < bt) {
+                    best = Some((i, t));
+                }
+            }
+        }
+        best.map(|(i, _)| i)
+    }
+
+    /// Remove dead mobs: roll their drop table, spill items, notify mods.
+    fn sweep_dead_mobs(&mut self) {
+        let reg = self.reg.clone();
+        let mut i = 0;
+        while i < self.world.mobs.len() {
+            if self.world.mobs[i].health > 0.0 {
+                i += 1;
+                continue;
+            }
+            let m = self.world.mobs.swap_remove(i);
+            let def = &reg.animals[m.species];
+            self.sfx(Sfx::MobDeath(def.sound_pitch));
+            for (item, min, max) in &def.drops {
+                let n = min + (self.rand01() * (*max - *min + 1) as f32) as u32;
+                let n = n.min(*max);
+                if n == 0 {
+                    continue;
+                }
+                let a = self.rand01() * std::f32::consts::TAU;
+                let v = Vec3::new(a.cos() * 1.2, 2.5, a.sin() * 1.2);
+                self.items.push(ItemEntity::new(
+                    m.pos + Vec3::new(0.0, def.height * 0.5, 0.0),
+                    v,
+                    *item,
+                    n,
+                ));
+            }
+            if self.scripts.wants("on_animal_killed") {
+                self.scripts.dispatch(
+                    &self.world,
+                    "on_animal_killed",
+                    (
+                        def.name.clone(),
+                        m.pos.x as i64,
+                        m.pos.y as i64,
+                        m.pos.z as i64,
+                    ),
+                );
+                self.apply_script_cmds();
+            }
+        }
+    }
+
     /// Mining and placing while playing.
     fn interact(&mut self, dt: f32) {
         let reg = self.reg.clone();
         let hit = raycast::raycast(&self.world, self.camera.pos, self.camera.forward(), REACH);
         let held = self.inventory.slots[self.hotbar_sel].map(|s| s.item);
+
+        // Attacking: a mob in the crosshair takes the swing before the
+        // block behind it. Held tools/swords set the damage.
+        if self.left_held {
+            if let Some(mi) = self.mob_in_crosshair(&hit) {
+                self.breaking = None;
+                if self.attack_cooldown <= 0.0 {
+                    self.attack_cooldown = 0.35;
+                    let dmg = held.map(|i| reg.item(i).damage).unwrap_or(1.0);
+                    let pitch = reg.animals[self.world.mobs[mi].species].sound_pitch;
+                    let from = self.camera.pos;
+                    self.world.mobs[mi].hurt(dmg, from);
+                    self.sfx(Sfx::MobHurt(pitch));
+                    self.hunger = (self.hunger - 0.01).max(0.0);
+                    if !self.creative {
+                        self.inventory.wear_tool(&reg, self.hotbar_sel);
+                    }
+                }
+                return;
+            }
+        }
 
         // Hold-to-mine; tools speed up matching blocks and wear down.
         if self.left_held {
@@ -1056,6 +1174,15 @@ impl Game {
                     }
                 }
                 script::Cmd::Hud(msg) => self.toast(msg),
+                script::Cmd::SpawnAnimal(name, x, y, z) => {
+                    if let Some(si) = reg.animal_id(&name) {
+                        if self.world.mobs.len() < world::MOB_CAP {
+                            let mut m = mobs::Mob::new(si, Vec3::new(x, y, z), 0.0);
+                            m.health = reg.animals[si].health;
+                            self.world.mobs.push(m);
+                        }
+                    }
+                }
                 script::Cmd::Sound(name) => {
                     let sfx = match name.as_str() {
                         "click" => Some(Sfx::Click),
@@ -1308,6 +1435,7 @@ impl Game {
         let paused = self.screen == Screen::Paused || !self.in_world;
         if !paused {
             self.action_cooldown = (self.action_cooldown - dt).max(0.0);
+            self.attack_cooldown = (self.attack_cooldown - dt).max(0.0);
             self.scroll_cooldown = (self.scroll_cooldown - dt).max(0.0);
             self.time_of_day = (self.time_of_day + dt / DAY_LENGTH) % 1.0;
         }
@@ -1322,6 +1450,10 @@ impl Game {
                     self.world.tick_water(512);
                 }
                 self.world.tick_entities(dt);
+                let mut r = self.rng;
+                self.world.tick_mobs(self.player.pos, dt, &mut r);
+                self.rng = r;
+                self.sweep_dead_mobs();
                 self.tick_accum2 += dt;
                 if self.tick_accum2 >= 0.5 {
                     self.tick_accum2 = 0.0;
@@ -1453,6 +1585,9 @@ impl Game {
         let mut entity_idx = Vec::new();
         for it in &self.items {
             it.emit(&self.reg, &mut entity_verts, &mut entity_idx);
+        }
+        for m in &self.world.mobs {
+            m.emit(&self.reg, &mut entity_verts, &mut entity_idx);
         }
         let mut overlay_verts = Vec::new();
         let mut overlay_idx = Vec::new();
@@ -2001,7 +2136,7 @@ impl Game {
                     [0.35, 0.75, 0.3, 1.0],
                     [0.85, 0.3, 0.3, 1.0],
                     [0.6, 0.45, 0.3, 1.0],
-                    [0.5, 0.5, 0.55, 1.0],
+                    [0.8, 0.4, 0.35, 1.0],
                 ];
                 for i in 0..5 {
                     let y = p0y + i as f32 * 26.0;

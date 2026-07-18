@@ -21,6 +21,7 @@ pub enum Cmd {
     Give(String, u32),
     Hud(String),
     Sound(String),
+    SpawnAnimal(String, f32, f32, f32),
 }
 
 pub struct ScriptMod {
@@ -106,6 +107,15 @@ impl ScriptHost {
         let q = queue.clone();
         engine.register_fn("play_sound", move |name: &str| {
             q.borrow_mut().push(Cmd::Sound(name.into()));
+        });
+        let q = queue.clone();
+        engine.register_fn("spawn_animal", move |species: &str, x: i64, y: i64, z: i64| {
+            q.borrow_mut().push(Cmd::SpawnAnimal(
+                species.into(),
+                x as f32 + 0.5,
+                y as f32,
+                z as f32 + 0.5,
+            ));
         });
         let cur = current.clone();
         engine.register_fn("log", move |msg: &str| {

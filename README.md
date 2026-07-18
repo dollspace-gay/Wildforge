@@ -83,6 +83,29 @@ mod, registered through the same TOML pipeline external mods use
   declare `interaction`, `min_tier`, and mods get `[[smelt]]`/`[[fuel]]`
   entries plus `aliases.toml` for lossless renames.
 
+## Wildlife & hunting
+
+Every biome has its own animals — boxy, data-driven, and moddable like
+everything else (`base/animals.toml`; mods add species via their own
+`animals.toml`, texture packs re-skin them by tile name).
+
+- **Species**: deer (Forest), boar (Jungle), mountain goats, grouse
+  (Taiga), rabbits (Plains) and desert/snow hares. Skittish species bolt
+  when you approach; boars barely care until struck.
+- **Hunting**: swing at an animal in your crosshair (left click).
+  **Swords** — wood, stone, copper, bronze (2 material over a stick) —
+  hit far harder than tools; every swing costs a little hunger and
+  durability. Kills drop raw meat plus hides or feathers.
+- **Cooking**: every meat roasts in the furnace (cooked is strictly
+  better), hides tan into **leather**, and any meat + potato + mushroom
+  crafts a **hearty stew**. Meat wakes the dormant **Protein** nutrition
+  track — a fifth +2-heart max-health bonus for a truly balanced diet.
+- **Wildlife is persistent**: animals are seeded once per chunk as the
+  world generates, saved with the world, and never despawn. Overhunt an
+  area and it stays empty — wildlife recovers slowly, spawning well away
+  from you. There's no breeding yet; hunting pressure is real.
+- Mods get an `on_animal_killed` event and a `spawn_animal` host call.
+
 ## Texture packs
 
 Drop-in re-skins, no recompiling and no mod required. Design doc:

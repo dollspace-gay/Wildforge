@@ -244,3 +244,121 @@ tool = "hoe"
 tool_speed = 1.0
 tool_tier = 3
 durability = 225
+
+# ---- hunting: meats (raw -> cooked), materials ----
+
+[[item]]
+id = "raw_venison"
+name = "Raw Venison"
+texture = "@raw_venison"
+food = { hunger = 3, eat_time = 1.6, nutrition = { protein = 7 } }
+
+[[item]]
+id = "cooked_venison"
+name = "Cooked Venison"
+texture = "@cooked_venison"
+food = { hunger = 8, eat_time = 1.6, nutrition = { protein = 18 } }
+
+[[item]]
+id = "raw_boar"
+name = "Raw Boar Meat"
+texture = "@raw_boar"
+food = { hunger = 3, eat_time = 1.6, nutrition = { protein = 7 } }
+
+[[item]]
+id = "cooked_boar"
+name = "Cooked Boar Meat"
+texture = "@cooked_boar"
+food = { hunger = 8, eat_time = 1.6, nutrition = { protein = 18 } }
+
+[[item]]
+id = "raw_chevon"
+name = "Raw Chevon"
+texture = "@raw_chevon"
+food = { hunger = 3, eat_time = 1.6, nutrition = { protein = 7 } }
+
+[[item]]
+id = "cooked_chevon"
+name = "Cooked Chevon"
+texture = "@cooked_chevon"
+food = { hunger = 7, eat_time = 1.6, nutrition = { protein = 16 } }
+
+[[item]]
+id = "raw_fowl"
+name = "Raw Fowl"
+texture = "@raw_fowl"
+food = { hunger = 2, eat_time = 1.4, nutrition = { protein = 6 } }
+
+[[item]]
+id = "cooked_fowl"
+name = "Roast Fowl"
+texture = "@cooked_fowl"
+food = { hunger = 6, eat_time = 1.4, nutrition = { protein = 14 } }
+
+[[item]]
+id = "raw_rabbit"
+name = "Raw Rabbit"
+texture = "@raw_rabbit"
+food = { hunger = 2, eat_time = 1.4, nutrition = { protein = 5 } }
+
+[[item]]
+id = "cooked_rabbit"
+name = "Cooked Rabbit"
+texture = "@cooked_rabbit"
+food = { hunger = 5, eat_time = 1.4, nutrition = { protein = 12 } }
+
+[[item]]
+id = "hide"
+name = "Hide"
+texture = "@hide"
+
+[[item]]
+id = "leather"
+name = "Leather"
+texture = "@leather"
+
+[[item]]
+id = "feather"
+name = "Feather"
+texture = "@feather"
+
+[[item]]
+id = "hearty_stew"
+name = "Hearty Stew"
+texture = "@hearty_stew"
+max_stack = 16
+food = { hunger = 10, eat_time = 2.0, nutrition = { protein = 14, vegetable = 10, fungi = 10 } }
+
+# ---- weapons ----
+
+[[item]]
+id = "wood_sword"
+name = "Wood Sword"
+texture = "@wood_sword"
+max_stack = 1
+durability = 59
+damage = 4
+
+[[item]]
+id = "stone_sword"
+name = "Stone Sword"
+texture = "@stone_sword"
+max_stack = 1
+durability = 131
+damage = 5
+
+[[item]]
+id = "copper_sword"
+name = "Copper Sword"
+texture = "@copper_sword"
+max_stack = 1
+durability = 160
+damage = 6
+
+[[item]]
+id = "bronze_sword"
+name = "Bronze Sword"
+texture = "@bronze_sword"
+max_stack = 1
+durability = 225
+damage = 8

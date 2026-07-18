@@ -24,6 +24,9 @@ pub enum Sfx {
     Hurt,
     Craft,
     Splash,
+    /// Animal hit/death thumps, pitched per species (1.0 = deer-sized).
+    MobHurt(f32),
+    MobDeath(f32),
 }
 
 pub struct Audio {
@@ -109,6 +112,8 @@ fn synth(sfx: Sfx) -> Vec<f32> {
         Sfx::Pickup => chirp(0.12, 420.0, 1000.0),
         Sfx::Click => burst(0.03, 2500.0, 0.0, 0.0, 1.0, 77),
         Sfx::Hurt => burst(0.22, 300.0, 90.0, 0.6, 1.8, 88),
+        Sfx::MobHurt(p) => burst(0.16, 320.0 * p, 110.0 * p, 0.5, 2.0, 121),
+        Sfx::MobDeath(p) => burst(0.34, 240.0 * p, 55.0 * p, 0.7, 1.4, 122),
         Sfx::Craft => burst(0.12, 600.0, 200.0, 0.5, 2.5, 99),
         Sfx::Splash => burst(0.30, 1200.0, 0.0, 0.0, 1.2, 111),
     }
