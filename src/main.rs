@@ -707,6 +707,18 @@ impl Game {
                 }
             }
         }
+        // Dev: a few tall pillars near spawn (shadow-casting verification).
+        if std::env::var("WILDFORGE_DEMO_PILLARS").is_ok() {
+            if let Some(stone) = self.reg.block_id("base:cobblestone") {
+                for (dx, dz, h) in [(4, 2, 6), (7, -3, 8), (-2, 6, 5), (10, 4, 7)] {
+                    let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
+                    let base = self.world.surface_height(x, z);
+                    for i in 1..=h {
+                        self.world.set_block(x, base + i, z, stone);
+                    }
+                }
+            }
+        }
         // Dev: WILDFORGE_IRE=N forces the wild's ire (spawn testing).
         if let Ok(v) = std::env::var("WILDFORGE_IRE") {
             if let Ok(v) = v.parse::<f32>() {
