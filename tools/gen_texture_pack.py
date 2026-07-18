@@ -39,6 +39,14 @@ SPRITE_STYLE = (
     + "no frames, no borders, no white bars, no other background colors, no shadows. {}"
 )
 FACE_STYLE = STYLE + "A full-frame flat texture (no background visible), {}"
+HEAD_STYLE = (
+    STYLE
+    + "A flat texture for the FRONT face of a cube-shaped animal head in a retro "
+    + "voxel game (like a Minecraft mob face). Fur fills the entire frame edge to "
+    + "edge. Facial features are drawn FLAT and simple: two eyes in the upper "
+    + "half, {} No ears, no horns, no head outline, no portrait framing, no "
+    + "background, no fisheye — just fur with flat features."
+)
 
 # name -> (category, prompt fragment). Categories:
 #   tile   = opaque + edge-wrapped for tiling, crop center quarter
@@ -87,15 +95,15 @@ TILES = {
     "farmland": ("tile", "dark tilled farm soil with moist furrow rows"),
     # animal fur + faces (box-model textures, full frame)
     "deer": ("face", "tan brown deer fur"),
-    "deer_face": ("face", "cute boxy deer face: tan fur, two dark eyes, dark nose at the bottom center"),
+    "deer_face": ("head", "a small dark nose at the bottom center. Tan brown deer fur."),
     "boar": ("face", "coarse dark grey-brown bristly boar hide"),
-    "boar_face": ("face", "cute boxy wild boar face: dark bristly fur, two eyes, pink snout with nostrils and small white tusks"),
+    "boar_face": ("head", "a flat pink snout disc with two nostrils at the bottom center and two tiny white tusk dots at the sides. Dark grey-brown bristly boar fur."),
     "goat": ("face", "shaggy off-white mountain goat wool"),
-    "goat_face": ("face", "cute boxy goat face: off-white wool, two eyes with horizontal pupils, grey muzzle"),
+    "goat_face": ("head", "eyes with horizontal bar pupils, and a grey muzzle patch at the bottom. Shaggy off-white goat wool."),
     "grouse": ("face", "mottled brown and buff feather plumage"),
-    "grouse_face": ("face", "cute boxy grouse bird face: mottled brown feathers, two eyes, small orange beak at the bottom center"),
+    "grouse_face": ("head", "a small flat orange beak triangle at the bottom center. Mottled brown and buff feathers."),
     "rabbit": ("face", "soft light brown rabbit fur"),
-    "rabbit_face": ("face", "cute boxy rabbit face: light brown fur, two dark eyes, small pink nose"),
+    "rabbit_face": ("head", "a tiny pink nose at the center bottom with small whisker dots. Soft light brown rabbit fur."),
     "desert_hare": ("face", "sandy pale tan hare fur"),
     "snow_hare": ("face", "pure white winter hare fur with faint grey shading"),
     # crops & plants (sprites on magenta, drawn full-height)
@@ -306,7 +314,8 @@ def main():
             skipped += 1
             continue
         cat, frag = TILES[name]
-        prompt = {"tile": TILE_STYLE, "face": FACE_STYLE, "sprite": SPRITE_STYLE}[cat].format(frag)
+        styles = {"tile": TILE_STYLE, "face": FACE_STYLE, "head": HEAD_STYLE, "sprite": SPRITE_STYLE}
+        prompt = styles[cat].format(frag)
         try:
             img = process(generate(prompt), cat)
             img.save(out)

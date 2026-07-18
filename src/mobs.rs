@@ -276,32 +276,36 @@ impl Mob {
         let flash = 1.0 + self.hurt_flash * 2.4;
 
         // A box named "leg" mirrors into 4; everything else draws once.
-        let mut boxes: Vec<([f32; 3], [f32; 3], u16, f32)> = Vec::new();
+        let mut boxes: Vec<([f32; 3], [f32; 3], bool, f32)> = Vec::new();
         for b in &def.model {
-            let tile = if b.name.starts_with("head") { def.head_tile } else { def.tile };
+            let is_head = b.name.starts_with("head");
             if b.name == "leg" {
                 for (sx, sz) in [(1.0f32, 1.0f32), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
                     let at = [b.at[0] * sx, b.at[1], b.at[2] * sz];
                     // Diagonal pairs swing together.
                     let phase = if sx * sz > 0.0 { 0.0 } else { std::f32::consts::PI };
                     let swing = (self.anim_phase + phase).sin() * 0.55 * amp;
-                    boxes.push((b.size, at, tile, swing));
+                    boxes.push((b.size, at, false, swing));
                 }
             } else {
-                boxes.push((b.size, b.at, tile, 0.0));
+                boxes.push((b.size, b.at, is_head, 0.0));
             }
         }
 
-        for (size, at, tile, swing) in boxes {
+        for (size, at, is_head, swing) in boxes {
             let (hx, hy, hz) = (size[0] / 32.0, size[1] / 32.0, size[2] / 32.0);
             let center = Vec3::new(at[0] / 16.0, at[1] / 16.0 + hy, at[2] / 16.0);
             // Legs rotate around their top (hip) on the local X axis.
             let pivot_y = at[1] / 16.0 + hy * 2.0;
             let (ss, cs) = swing.sin_cos();
-            let (tx, ty) = (tile as u32 % ATLAS_TILES, tile as u32 / ATLAS_TILES);
             let ts = 1.0 / ATLAS_TILES as f32;
             let inset = ts / 32.0;
             for face in 0..6 {
+                // The face art goes only on the head's front (-Z); every
+                // other surface is fur — a face on the back of a skull
+                // reads as cursed.
+                let tile = if is_head && face == 5 { def.head_tile } else { def.tile };
+                let (tx, ty) = (tile as u32 % ATLAS_TILES, tile as u32 / ATLAS_TILES);
                 let base = verts.len() as u32;
                 for c in CORNERS[face].iter() {
                     let lx = center.x + (c[0] - 0.5) * 2.0 * hx;
