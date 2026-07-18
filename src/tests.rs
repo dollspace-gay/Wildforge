@@ -1950,3 +1950,41 @@ drops = [{ item = "base:hide", min = 1, max = 1 }]
     assert!(!def.model.is_empty(), "default model filled in");
     assert_eq!(def.drops.len(), 1, "drop resolved to base:hide");
 }
+
+#[test]
+fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
+    let reg = base_reg();
+    let mut w = test_world("mobfreeze"); // chunks -2..=2 are loaded
+    let si = reg.animal_id("base:deer").unwrap();
+    // Regression: mobs outside loaded chunks used to fall through the
+    // unloaded (all-air) world, then get buried when the chunk streamed in.
+    let far_i = w.mobs.len(); // test_world seeds natural wildlife too
+    let mut far = crate::mobs::Mob::new(si, Vec3::new(500.5, 80.0, 500.5), 0.0);
+    far.health = 10.0;
+    w.mobs.push(far);
+    let mut rng = 1u32;
+    for _ in 0..60 {
+        w.tick_mobs(Vec3::ZERO, 1.0 / 60.0, &mut rng);
+    }
+    assert_eq!(w.mobs[far_i].pos.y, 80.0, "frozen, not falling, outside loaded chunks");
+
+    // A mob already wedged inside solid ground pops up to the surface.
+    let stone = reg.block_id("base:stone").unwrap();
+    for y in 100..=110 {
+        for x in 0..4 {
+            for z in 0..4 {
+                w.set_block(x, y, z, stone);
+            }
+        }
+    }
+    let buried_i = w.mobs.len();
+    let mut buried = crate::mobs::Mob::new(si, Vec3::new(1.5, 104.0, 1.5), 0.0);
+    buried.health = 10.0;
+    w.mobs.push(buried);
+    w.tick_mobs(Vec3::new(60.0, 80.0, 60.0), 1.0 / 60.0, &mut rng);
+    assert!(
+        w.mobs[buried_i].pos.y >= 110.5,
+        "unstuck above the stone, got y={}",
+        w.mobs[buried_i].pos.y
+    );
+}

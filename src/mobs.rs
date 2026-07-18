@@ -75,6 +75,22 @@ impl Mob {
         self.target = from;
     }
 
+    /// If embedded in solid blocks (ticked while its chunk was missing in
+    /// an older save), pop up to the first free spot instead of staying
+    /// wedged belly-deep in the terrain.
+    pub fn unstick(&mut self, world: &World, def: &AnimalDef) {
+        if !self.collides(world, def, self.pos) {
+            return;
+        }
+        for _ in 0..64 {
+            self.pos.y += 0.5;
+            if !self.collides(world, def, self.pos) {
+                self.vel = Vec3::ZERO;
+                return;
+            }
+        }
+    }
+
     pub fn tick(&mut self, world: &World, def: &AnimalDef, player: Vec3, dt: f32, rng: &mut u32) {
         self.state_timer -= dt;
         self.hurt_flash = (self.hurt_flash - dt).max(0.0);

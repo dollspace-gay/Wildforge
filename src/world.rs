@@ -246,7 +246,14 @@ impl World {
         let reg = self.reg.clone();
         let mut mobs = std::mem::take(&mut self.mobs);
         for m in &mut mobs {
+            // Frozen until its chunk streams in: an unloaded chunk reads as
+            // air, and ticking against it drops the mob through the world.
+            let cp = ChunkPos::of_world(m.pos.x.floor() as i32, m.pos.z.floor() as i32);
+            if !self.chunks.contains_key(&cp) {
+                continue;
+            }
             if let Some(def) = reg.animals.get(m.species) {
+                m.unstick(self, def);
                 m.tick(self, def, player, dt, rng);
             }
         }
