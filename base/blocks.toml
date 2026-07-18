@@ -254,6 +254,7 @@ drops = "base:dirt"
 
 [[block]]
 id = "wheat_seeds"
+icon = "@seeds"
 cross = true
 name = "Wheat Seeds"
 texture = "@wheat_young"

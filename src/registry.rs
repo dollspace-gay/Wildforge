@@ -291,6 +291,8 @@ struct BlockToml {
     crop: Option<CropToml>,
     #[serde(default)]
     harvest: Option<HarvestToml>,
+    #[serde(default)]
+    icon: Option<String>,
     /// Register an item form for placing (default true).
     #[serde(default = "yes")]
     item: bool,
@@ -809,11 +811,16 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 }
             }
             if b.item && !is_fluid {
+                let icon_slot = b
+                    .icon
+                    .as_ref()
+                    .map(|t| resolve_tex(t, &raw.info.path, &mut errs))
+                    .unwrap_or(tiles[0]);
                 let iid = ItemId(reg.items.len() as u16);
                 reg.items.push(ItemDef {
                     name: full.clone(),
                     label: reg.blocks[id.0 as usize].label.clone(),
-                    icon: tiles[0],
+                    icon: icon_slot,
                     max_stack: 64,
                     tool: None,
                     durability: 0,

@@ -65,9 +65,12 @@ impl ItemEntity {
     /// Emit this entity as a spinning, bobbing mini-cube (blocks) or a
     /// crossed pair of upright sprite quads (tools, sticks).
     pub fn emit(&self, reg: &Registry, verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
-        let Some(block) = reg.item(self.item).places else {
-            self.emit_sprite(reg, verts, idx);
-            return;
+        let block = match reg.item(self.item).places {
+            Some(b) if !reg.block(b).cross => b,
+            _ => {
+                self.emit_sprite(reg, verts, idx);
+                return;
+            }
         };
         let half = SIZE / 2.0;
         let bob = (self.age * 2.2).sin() * 0.05;

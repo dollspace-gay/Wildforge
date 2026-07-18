@@ -42,7 +42,7 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("bush_fruited", 82), ("bush_bare", 83), ("mushroom", 84),
         ("bread", 85), ("berry", 86), ("carrot", 87), ("potato", 88),
         ("baked_potato", 89), ("roasted_mushroom", 90), ("cactus_fruit", 91),
-        ("jungle_fruit", 92), ("stew", 93), ("wood_hoe", 96),
+        ("jungle_fruit", 92), ("stew", 93), ("seeds", 94), ("wood_hoe", 96),
         ("stone_hoe", 97), ("copper_hoe", 98), ("bronze_hoe", 99),
     ]
     .into_iter()
@@ -855,6 +855,16 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     lump(91, [220.0, 90.0, 130.0], &mut tf); // cactus fruit
     lump(92, [235.0, 190.0, 60.0], &mut tf); // jungle fruit
     lump(93, [160.0, 110.0, 60.0], &mut tf); // stew
+    // Seeds: cluster of dark-green kernels, readable on grass.
+    tf(14, 5, &mut |px, py, u, v| {
+        let dx = u - 0.5;
+        let dy = v - 0.5;
+        if dx * dx + dy * dy < 0.11 && hash(px as i32 / 2, py as i32 / 2, 180) % 3 != 0 {
+            rgba([28.0, 62.0, 22.0], 0.8 + h01(px as i32, py as i32, 181) * 0.5, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
     // Hoes: reuse shovel-ish art with thin blade — use SHOVEL_ART with tier colors.
     let hoe_sets: [(u32, [f32; 3]); 4] = [
         (96, [168.0, 122.0, 60.0]),
