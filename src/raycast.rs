@@ -40,7 +40,9 @@ pub fn raycast(world: &World, origin: Vec3, dir: Vec3, max_dist: f32) -> Option<
     let mut t = 0.0f32;
     while t <= max_dist {
         let b = world.get_block(x, y, z);
-        if world.reg.is_solid(b) {
+        // Hit anything mineable: solids AND non-solid plants (cross blocks),
+        // but never water or air.
+        if b != crate::registry::AIR && !world.reg.is_water(b) {
             return Some(Hit { block: (x, y, z), adjacent: prev });
         }
         prev = (x, y, z);

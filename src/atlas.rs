@@ -791,8 +791,32 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     };
     plant(78, [90.0, 160.0, 60.0], None, 0.5, &mut tf); // young wheat
     plant(79, [200.0, 170.0, 70.0], Some([222.0, 190.0, 90.0]), 0.9, &mut tf); // ripe wheat
-    plant(80, [70.0, 140.0, 55.0], Some([225.0, 120.0, 40.0]), 0.6, &mut tf); // carrot
-    plant(81, [75.0, 130.0, 60.0], Some([170.0, 140.0, 90.0]), 0.6, &mut tf); // potato
+    // Carrot: leafy fan with orange crowns peeking at the soil line.
+    tf(0, 5, &mut |px, py, u, v| {
+        let fan = (v > 0.45) && ((u - 0.5).abs() < (v - 0.4) * 0.65);
+        let crown = v > 0.88 && ((u - 0.3).abs() < 0.05 || (u - 0.7).abs() < 0.05);
+        if crown {
+            rgba([225.0, 120.0, 40.0], 1.0, 255)
+        } else if fan && hash(px as i32, py as i32, 170) % 4 != 0 {
+            rgba([70.0, 150.0, 55.0], 0.8 + h01(px as i32, py as i32, 171) * 0.4, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    // Potato: low bushy clump with white blossoms.
+    tf(1, 5, &mut |px, py, u, v| {
+        let dx = u - 0.5;
+        let dy = v - 0.75;
+        if dx * dx + dy * dy * 2.2 < 0.09 {
+            if hash(px as i32, py as i32, 172) % 17 == 0 {
+                return rgba([235.0, 235.0, 220.0], 1.0, 255);
+            }
+            let t = fbm(u, v, 6, 173);
+            rgba(mix3([55.0, 110.0, 45.0], [90.0, 150.0, 65.0], t), 1.0, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
     // Bushes: leafy blob, fruited variant with red dots.
     for (slot, fruited) in [(82u32, true), (83, false)] {
         tf(slot % 16, slot / 16, &mut |px, py, u, v| {
