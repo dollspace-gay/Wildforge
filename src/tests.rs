@@ -1694,3 +1694,36 @@ fn export_tiles_round_trip_reproduces_atlas() {
     assert_eq!(apx, px);
     assert_eq!(again, img, "export -> re-import is the identity");
 }
+
+// ---------------- world listing / new-world naming ----------------
+
+#[test]
+fn world_listing_sees_world_toml_and_legacy_seed() {
+    // Regression: the title list only read the legacy `seed` file, so
+    // world.toml worlds were invisible and their folder names got reused
+    // by NEW WORLD — inheriting the old player.toml (inventory carryover).
+    let root = tmp_dir("listworlds");
+    crate::world::write_world_meta(&root.join("world1"), 42, "survival");
+    std::fs::create_dir_all(root.join("old")).unwrap();
+    std::fs::write(root.join("old/seed"), "7").unwrap();
+    std::fs::create_dir_all(root.join("junk")).unwrap();
+    std::fs::write(root.join("stray.txt"), "x").unwrap();
+    let worlds = crate::world::list_worlds(&root);
+    assert_eq!(
+        worlds,
+        vec![("old".to_string(), 7), ("world1".to_string(), 42)],
+        "world.toml and legacy worlds both list; junk doesn't"
+    );
+}
+
+#[test]
+fn new_world_name_never_reuses_existing_folder() {
+    let root = tmp_dir("nextworld");
+    crate::world::write_world_meta(&root.join("world1"), 1, "survival");
+    std::fs::write(root.join("world1/player.toml"), "leftover inventory").unwrap();
+    let listed = crate::world::list_worlds(&root);
+    assert_eq!(crate::next_world_name(&root, &listed), "world2");
+    // Even a folder the listing can't see must not be adopted as "new".
+    assert_eq!(crate::next_world_name(&root, &[]), "world2");
+    assert_eq!(crate::next_world_name(&tmp_dir("nextworld-empty"), &[]), "world1");
+}

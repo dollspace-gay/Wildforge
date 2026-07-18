@@ -219,6 +219,20 @@ fn content_tree_stamp() -> u64 {
     content_tree_stamp_of(&[std::path::Path::new("mods"), std::path::Path::new("packs")])
 }
 
+/// First free "worldN" name. A name is taken if it's in the world list OR
+/// its folder exists on disk at all — a new world must never adopt an
+/// existing folder's chunks/player.toml, even one the listing can't parse.
+fn next_world_name(saves: &std::path::Path, worlds: &[(String, u32)]) -> String {
+    let mut n = 1;
+    loop {
+        let name = format!("world{n}");
+        if !worlds.iter().any(|(w, _)| w == &name) && !saves.join(&name).exists() {
+            return name;
+        }
+        n += 1;
+    }
+}
+
 /// Resolve a configured pack id to its directory, if it exists.
 fn pack_dir_of(id: &str) -> Option<PathBuf> {
     if id.is_empty() {
@@ -405,21 +419,7 @@ impl Game {
     }
 
     fn refresh_worlds(&mut self) {
-        self.worlds.clear();
-        if let Ok(rd) = std::fs::read_dir("saves") {
-            for e in rd.flatten() {
-                let name = e.file_name().to_string_lossy().to_string();
-                if name.starts_with('.') {
-                    continue;
-                }
-                if let Ok(s) = std::fs::read_to_string(e.path().join("seed")) {
-                    if let Ok(seed) = s.trim().parse::<u32>() {
-                        self.worlds.push((name, seed));
-                    }
-                }
-            }
-        }
-        self.worlds.sort();
+        self.worlds = world::list_worlds(std::path::Path::new("saves"));
     }
 
     /// Load (or create) a world and enter it.
@@ -503,6 +503,12 @@ impl Game {
         self.items.clear();
         self.breaking = None;
         self.health = MAX_HEALTH;
+        self.hunger = 20.0;
+        self.nutrition = [0.0; 5];
+        self.eating = 0.0;
+        self.exhaustion_regen = 0.0;
+        self.starve_timer = 0.0;
+        self.drown_timer = 0.0;
         self.air = MAX_AIR;
         self.since_damage = 100.0;
         self.damage_flash = 0.0;
@@ -566,38 +572,9 @@ impl Game {
 
     /// Create a fresh world folder with a random seed and enter it.
     fn new_world_mode(&mut self, mode: &str) {
-        let n = self.next_world_num();
-        let name = format!("world{n}");
+        let name = next_world_name(std::path::Path::new("saves"), &self.worlds);
         let seed = (self.rand01() * u32::MAX as f32) as u32;
         world::write_world_meta(&PathBuf::from("saves").join(&name), seed, mode);
-        self.refresh_worlds();
-        self.start_world(&name);
-    }
-
-    fn next_world_num(&self) -> u32 {
-        let mut n = 1;
-        while self.worlds.iter().any(|(name, _)| name == &format!("world{n}")) {
-            n += 1;
-        }
-        n
-    }
-
-    #[allow(dead_code)]
-    fn new_world(&mut self) {
-        let mut n = 1;
-        while self.worlds.iter().any(|(name, _)| name == &format!("world{n}")) {
-            n += 1;
-        }
-        let name = format!("world{n}");
-        let seed = (self.rand01() * u32::MAX as f32) as u32
-            ^ std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.subsec_nanos())
-                .unwrap_or(1)
-                .wrapping_mul(2654435761);
-        let dir = PathBuf::from("saves").join(&name);
-        let _ = std::fs::create_dir_all(&dir);
-        let _ = std::fs::write(dir.join("seed"), seed.to_string());
         self.refresh_worlds();
         self.start_world(&name);
     }

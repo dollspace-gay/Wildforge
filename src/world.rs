@@ -51,6 +51,25 @@ pub fn write_world_meta(dir: &std::path::Path, seed: u32, mode: &str) {
     let _ = fs::write(dir.join("world.toml"), format!("seed = {seed}\nmode = \"{mode}\"\n"));
 }
 
+/// List worlds under `dir`: (name, seed), sorted. Reads world.toml with the
+/// legacy `seed`-file fallback, same as read_world_meta.
+pub fn list_worlds(dir: &std::path::Path) -> Vec<(String, u32)> {
+    let mut out = Vec::new();
+    if let Ok(rd) = fs::read_dir(dir) {
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') || !e.path().is_dir() {
+                continue;
+            }
+            if let (Some(seed), _) = read_world_meta(&e.path()) {
+                out.push((name, seed));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 pub struct World {
     pub chunks: HashMap<ChunkPos, Chunk>,
     pub generator: Generator,
