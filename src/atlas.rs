@@ -54,6 +54,7 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("cooked_rabbit", 121), ("hide", 122), ("leather", 123),
         ("feather", 124), ("hearty_stew", 125), ("wood_sword", 126),
         ("stone_sword", 127), ("copper_sword", 128), ("bronze_sword", 129),
+        ("antler", 130),
         ("unknown", 15), ("crack1", 16), ("crack2", 17), ("crack3", 18),
         ("crack4", 19),
     ]
@@ -1305,6 +1306,16 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             }
         });
     }
+
+    // Antler: pale bone with faint darker ridges (deer antler boxes).
+    tf(2, 8, &mut |px, py, u, v| {
+        let t = fbm(u, v, 4, 560);
+        let mut c = mix3([225.0, 214.0, 192.0], [200.0, 186.0, 160.0], t);
+        if (v * 6.0).fract() < 0.18 {
+            c = mix3(c, [160.0, 145.0, 120.0], 0.5);
+        }
+        rgba(c, speck(px, py, 561, 0.05), 255)
+    });
 
     // (15,0) unknown/missing texture: magenta checkerboard.
     tile(15, 0, &mut |px, py, _u, _v| {

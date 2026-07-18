@@ -2012,3 +2012,22 @@ fn embedded_gemini_pack_applies_without_folder() {
     let listed = crate::atlas::discover_packs();
     assert!(listed.iter().any(|p| p.id == "gemini"), "gemini listed: {listed:?}");
 }
+
+#[test]
+fn model_boxes_can_carry_their_own_texture() {
+    let reg = base_reg();
+    let deer = &reg.animals[reg.animal_id("base:deer").unwrap()];
+    let antler_slot = *crate::atlas::builtin_slots().get("antler").unwrap();
+    let antlers: Vec<_> =
+        deer.model.iter().filter(|b| b.name.starts_with("antler")).collect();
+    assert_eq!(antlers.len(), 2, "deer has an antler pair");
+    for b in &antlers {
+        assert_eq!(b.tile, Some(antler_slot), "antlers use the bone tile, not fur");
+    }
+    assert!(
+        deer.model.iter().filter(|b| b.name.starts_with("tine")).count() == 2,
+        "antlers branch"
+    );
+    let body = deer.model.iter().find(|b| b.name == "body").unwrap();
+    assert_eq!(body.tile, None, "body stays on the fur tile");
+}

@@ -21,9 +21,13 @@ drops = [
 body = { size = [6, 7, 11], at = [0, 9, 0] }
 head = { size = [4, 4, 5], at = [0, 14, -7] }
 leg = { size = [2, 9, 2], at = [2, 0, 4] }
-ear_l = { size = [1, 2, 1], at = [-2, 18, -7] }
-ear_r = { size = [1, 2, 1], at = [2, 18, -7] }
+ear_l = { size = [1, 2, 1], at = [-2.5, 18, -6] }
+ear_r = { size = [1, 2, 1], at = [2.5, 18, -6] }
 tail = { size = [1, 2, 1], at = [0, 12, 6] }
+antler_l = { size = [1, 4, 1], at = [-1.2, 18, -7.5], tex = "@antler" }
+antler_r = { size = [1, 4, 1], at = [1.2, 18, -7.5], tex = "@antler" }
+tine_l = { size = [1, 1, 4], at = [-1.2, 21, -8], tex = "@antler" }
+tine_r = { size = [1, 1, 4], at = [1.2, 21, -8], tex = "@antler" }
 
 [[animal]]
 id = "boar"

@@ -109,6 +109,7 @@ TILES = {
     "rabbit_face": ("head", "a tiny pink nose at the center bottom with small whisker dots. Soft light brown rabbit fur."),
     "desert_hare": ("face", "sandy pale tan hare fur"),
     "snow_hare": ("face", "pure white winter hare fur with faint grey shading"),
+    "antler": ("face", "pale cream deer antler bone surface with faint darker ridges"),
     # crops & plants: sprite-keyed, then bottom-aligned so they sit on soil
     "wheat_young": ("plant", "a few short young green wheat sprouts growing from the bottom edge"),
     "wheat_ripe": ("plant", "tall ripe golden wheat stalks with heavy heads, growing from the bottom edge"),

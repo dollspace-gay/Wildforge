@@ -86,6 +86,8 @@ pub struct ModelBox {
     pub name: String,
     pub size: [f32; 3],
     pub at: [f32; 3],
+    /// Explicit texture for this box (e.g. bone antlers); None = fur.
+    pub tile: Option<u16>,
 }
 
 #[derive(Clone, Debug)]
@@ -422,6 +424,8 @@ struct ItemToml {
 struct BoxToml {
     size: [f32; 3],
     at: [f32; 3],
+    #[serde(default)]
+    tex: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -840,8 +844,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let mut pending_aliases: Vec<(String, AliasToml)> = Vec::new();
     let mut pending_harvests: Vec<(String, BlockId, HarvestToml)> = Vec::new();
     let mut pending_places: Vec<(String, (String, String))> = Vec::new();
-    // (mod id, toml, body tile, head tile) — tiles resolve in pass 1.
-    let mut pending_animals: Vec<(String, AnimalToml, u16, u16)> = Vec::new();
+    // (mod id, toml, body tile, head tile, per-box tiles) — resolve in pass 1.
+    let mut pending_animals: Vec<(String, AnimalToml, u16, u16, HashMap<String, u16>)> =
+        Vec::new();
 
     for raw in &raws {
         if raw.info.id.is_empty() {
@@ -1019,7 +1024,14 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 .as_ref()
                 .map(|t| resolve_tex(t, &raw.info.path, &mut errs))
                 .unwrap_or(tile);
-            pending_animals.push((raw.info.id.clone(), a.clone(), tile, head));
+            let box_tiles: HashMap<String, u16> = a
+                .model
+                .iter()
+                .filter_map(|(n, b)| {
+                    b.tex.as_ref().map(|t| (n.clone(), resolve_tex(t, &raw.info.path, &mut errs)))
+                })
+                .collect();
+            pending_animals.push((raw.info.id.clone(), a.clone(), tile, head, box_tiles));
         }
         for f in &raw.fuels {
             pending_fuels.push((raw.info.id.clone(), f.clone()));
@@ -1105,7 +1117,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             reg.fuels.push((ing, f.burn));
         }
     }
-    for (modid, a, tile, head_tile) in pending_animals {
+    for (modid, a, tile, head_tile, box_tiles) in pending_animals {
         let full = qualify(&modid, &a.id);
         if reg.animals.iter().any(|x| x.name == full) {
             continue; // duplicate id — first wins, like blocks/items
@@ -1121,13 +1133,18 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         let mut model: Vec<ModelBox> = a
             .model
             .iter()
-            .map(|(name, b)| ModelBox { name: name.clone(), size: b.size, at: b.at })
+            .map(|(name, b)| ModelBox {
+                name: name.clone(),
+                size: b.size,
+                at: b.at,
+                tile: box_tiles.get(name).copied(),
+            })
             .collect();
         if model.is_empty() {
             model = vec![
-                ModelBox { name: "body".into(), size: [6.0, 6.0, 10.0], at: [0.0, 7.0, 0.0] },
-                ModelBox { name: "head".into(), size: [4.0, 4.0, 4.0], at: [0.0, 11.0, -6.0] },
-                ModelBox { name: "leg".into(), size: [2.0, 7.0, 2.0], at: [2.0, 0.0, 3.0] },
+                ModelBox { name: "body".into(), size: [6.0, 6.0, 10.0], at: [0.0, 7.0, 0.0], tile: None },
+                ModelBox { name: "head".into(), size: [4.0, 4.0, 4.0], at: [0.0, 11.0, -6.0], tile: None },
+                ModelBox { name: "leg".into(), size: [2.0, 7.0, 2.0], at: [2.0, 0.0, 3.0], tile: None },
             ];
         }
         model.sort_by(|a, b| a.name.cmp(&b.name));
