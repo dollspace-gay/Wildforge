@@ -1,0 +1,46 @@
+[[recipe]]
+pattern = ["l"]
+keys = { l = "base:log" }
+output = "base:planks"
+count = 4
+
+[[recipe]]
+pattern = ["p", "p"]
+keys = { p = "base:planks" }
+output = "base:stick"
+count = 4
+
+[[recipe]]
+pattern = ["pp", "pp"]
+keys = { p = "base:planks" }
+output = "base:crafting_table"
+
+[[recipe]]
+pattern = ["ppp", ".s.", ".s."]
+keys = { p = "base:planks", s = "base:stick" }
+output = "base:wood_pickaxe"
+
+[[recipe]]
+pattern = ["ccc", ".s.", ".s."]
+keys = { c = "base:cobblestone", s = "base:stick" }
+output = "base:stone_pickaxe"
+
+[[recipe]]
+pattern = ["pp", "ps", ".s"]
+keys = { p = "base:planks", s = "base:stick" }
+output = "base:wood_axe"
+
+[[recipe]]
+pattern = ["cc", "cs", ".s"]
+keys = { c = "base:cobblestone", s = "base:stick" }
+output = "base:stone_axe"
+
+[[recipe]]
+pattern = ["p", "s", "s"]
+keys = { p = "base:planks", s = "base:stick" }
+output = "base:wood_shovel"
+
+[[recipe]]
+pattern = ["c", "s", "s"]
+keys = { c = "base:cobblestone", s = "base:stick" }
+output = "base:stone_shovel"

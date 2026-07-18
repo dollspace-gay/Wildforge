@@ -1,0 +1,52 @@
+[[item]]
+id = "stick"
+name = "Stick"
+texture = "@stick"
+
+[[item]]
+id = "wood_pickaxe"
+name = "Wood Pickaxe"
+texture = "@wood_pickaxe"
+tool = "pickaxe"
+tool_speed = 4.0
+durability = 59
+
+[[item]]
+id = "stone_pickaxe"
+name = "Stone Pickaxe"
+texture = "@stone_pickaxe"
+tool = "pickaxe"
+tool_speed = 8.0
+durability = 131
+
+[[item]]
+id = "wood_axe"
+name = "Wood Axe"
+texture = "@wood_axe"
+tool = "axe"
+tool_speed = 4.0
+durability = 59
+
+[[item]]
+id = "stone_axe"
+name = "Stone Axe"
+texture = "@stone_axe"
+tool = "axe"
+tool_speed = 8.0
+durability = 131
+
+[[item]]
+id = "wood_shovel"
+name = "Wood Shovel"
+texture = "@wood_shovel"
+tool = "shovel"
+tool_speed = 4.0
+durability = 59
+
+[[item]]
+id = "stone_shovel"
+name = "Stone Shovel"
+texture = "@stone_shovel"
+tool = "shovel"
+tool_speed = 8.0
+durability = 131

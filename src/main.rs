@@ -1,0 +1,1986 @@
+//! Wildforge — a Minecraft-alpha-style voxel game.
+//!
+//! Controls: WASD move, mouse look, Space jump, Ctrl sprint,
+//! hold left click to mine, right click place, middle click pick block,
+//! 1-9 / scroll wheel select hotbar slot, E inventory, Esc pause,
+//! F2 screenshot, F11 fullscreen.
+
+mod atlas;
+mod audio;
+mod camera;
+mod chunk;
+mod config;
+mod crafting;
+mod entity;
+mod inventory;
+mod mesher;
+mod physics;
+mod raycast;
+mod registry;
+mod renderer;
+mod script;
+#[cfg(test)]
+mod tests;
+mod ui;
+mod world;
+mod worldgen;
+
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Instant;
+
+use glam::Vec3;
+use winit::application::ApplicationHandler;
+use winit::dpi::LogicalSize;
+use winit::event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
+
+use audio::{Audio, BreakMat, Sfx};
+use camera::Camera;
+use config::Config;
+use chunk::{CHUNK_X, ChunkPos, SEA_LEVEL};
+use entity::ItemEntity;
+use inventory::{HOTBAR_SLOTS, Inventory, ItemStack, TOTAL_SLOTS};
+use physics::{EYE_HEIGHT, Player};
+use registry::{AIR, ItemId, Registry, ToolKind};
+use renderer::FrameInput;
+use ui::UiBatch;
+use world::World;
+
+const GEN_BUDGET: usize = 10; // chunk generations per frame
+const MESH_BUDGET: usize = 6; // chunk remeshes per frame
+const DAY_LENGTH: f32 = 600.0; // seconds per full day/night cycle
+const REACH: f32 = 5.0;
+const MAX_HEALTH: f32 = 20.0; // half-hearts
+const MAX_AIR: f32 = 15.0; // seconds of breath
+
+#[derive(Clone, Copy, PartialEq)]
+enum Screen {
+    Title,
+    Mods,
+    Settings,
+    ConfirmDelete,
+    Playing,
+    Inventory,
+    Paused,
+    Dead,
+}
+
+struct Game {
+    window: Arc<Window>,
+    renderer: renderer::Renderer,
+    world: World,
+    player: Player,
+    camera: Camera,
+
+    keys: KeysDown,
+    mouse_captured: bool,
+    /// True when the OS pinned the cursor in place (Locked grab): look uses
+    /// raw motion. Otherwise look uses cursor-position deltas + recentering,
+    /// which behaves correctly where raw deltas are broken (e.g. WSLg).
+    raw_look: bool,
+    last_cursor: Option<(f64, f64)>,
+    warp_pending: bool,
+    /// Under WSLg the compositor cannot move the host Windows cursor, so any
+    /// warp desyncs guest/host pointers and produces huge bogus deltas
+    /// (microsoft/wslg#1361). There: never warp, use pure position deltas.
+    allow_warp: bool,
+    left_held: bool,
+    right_held: bool,
+    action_cooldown: f32,
+    hotbar_sel: usize,
+    scroll_accum: f32,
+    scroll_cooldown: f32,
+    /// Cursor position in window pixels (for menus).
+    ui_cursor: (f32, f32),
+
+    // Survival state
+    screen: Screen,
+    inventory: Inventory,
+    /// Stack picked up by the cursor inside the inventory screen.
+    held_stack: Option<ItemStack>,
+    /// Crafting grid contents (row-major; 2x2 uses the first 4 cells).
+    craft_grid: [Option<ItemStack>; 9],
+    /// 2 in the inventory screen, 3 at a crafting table.
+    craft_size: usize,
+    items: Vec<ItemEntity>,
+    /// Block being mined and progress 0..1.
+    breaking: Option<((i32, i32, i32), f32)>,
+    health: f32,
+    air: f32,
+    since_damage: f32,
+    regen_timer: f32,
+    drown_timer: f32,
+    damage_flash: f32,
+    fall_start: Option<f32>,
+    spawn_point: Vec3,
+    rng: u32,
+
+    // Menus / meta
+    reg: Arc<Registry>,
+    scripts: script::ScriptHost,
+    toasts: Vec<(String, f32)>,
+    mods_stamp: u64,
+    mods_poll: f32,
+    tick_accum: f32,
+    config: Config,
+    audio: Option<Audio>,
+    in_world: bool,
+    /// (name, seed) of every world under saves/.
+    worlds: Vec<(String, u32)>,
+    settings_from_pause: bool,
+    pending_delete: Option<usize>,
+    /// Slider being dragged in the settings screen.
+    dragging_slider: Option<usize>,
+    water_timer: f32,
+
+    time_of_day: f32,
+    total_frames: u64,
+    auto_shot: Option<String>,
+    last_frame: Instant,
+    last_title: Instant,
+    frames: u32,
+    fps: u32,
+    ui: UiBatch,
+}
+
+#[derive(Default)]
+struct KeysDown {
+    w: bool,
+    a: bool,
+    s: bool,
+    d: bool,
+    space: bool,
+    sprint: bool,
+}
+
+/// (mod id, dir) pairs for mods that ship a main.rhai.
+fn script_mod_dirs(reg: &Registry) -> Vec<(String, PathBuf)> {
+    reg.mods
+        .iter()
+        .filter(|m| m.has_script && m.error.is_none())
+        .filter_map(|m| m.path.clone().map(|p| (m.id.clone(), p)))
+        .collect()
+}
+
+/// Cheap fingerprint of the mods tree (file count + max mtime) for hot reload.
+fn mods_tree_stamp() -> u64 {
+    fn walk(dir: &std::path::Path, acc: &mut u64, count: &mut u64) {
+        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, acc, count);
+            } else if let Ok(md) = e.metadata() {
+                *count += 1;
+                if let Ok(t) = md.modified() {
+                    if let Ok(d) = t.duration_since(std::time::UNIX_EPOCH) {
+                        *acc = (*acc).max(d.as_secs() * 1000 + d.subsec_millis() as u64);
+                    }
+                }
+            }
+        }
+    }
+    let (mut acc, mut count) = (0u64, 0u64);
+    walk(std::path::Path::new("mods"), &mut acc, &mut count);
+    acc ^ (count << 48)
+}
+
+fn find_spawn(world: &World) -> (i32, i32) {
+    // Walk outward until we find dry land.
+    let g = &world.generator;
+    let mut best = (0, 0);
+    'outer: for r in 0..64 {
+        let d = r * 8;
+        for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
+            if g.height(x, z) > SEA_LEVEL + 1 {
+                best = (x, z);
+                break 'outer;
+            }
+        }
+    }
+    best
+}
+
+impl Game {
+    fn new(window: Arc<Window>) -> Game {
+        // Registry + atlas first: the renderer needs the packed texture atlas.
+        let reg = Arc::new(registry::load(std::path::Path::new("mods")));
+        for m in &reg.mods {
+            if let Some(e) = &m.error {
+                eprintln!("mod {}: {e}", m.id);
+            }
+        }
+        let (atlas_data, atlas_px) = atlas::build_with_mods(&reg.tex_files);
+        let renderer =
+            pollster::block_on(renderer::Renderer::new(window.clone(), atlas_data, atlas_px));
+        let mut scripts = script::ScriptHost::new();
+        scripts.load_mods(&script_mod_dirs(&reg));
+        // No world yet — the game opens on the title screen.
+        let world = World::new(0, PathBuf::from("saves/.none"), reg.clone());
+        let spawn = Vec3::new(0.5, 80.0, 0.5);
+
+        let size = window.inner_size();
+        let aspect = size.width as f32 / size.height.max(1) as f32;
+        let config = Config::load();
+        let audio = Audio::new(config.volume);
+
+        let mut g = Game {
+            window,
+            renderer,
+            world,
+            player: Player::new(spawn),
+            camera: Camera::new(spawn + Vec3::new(0.0, EYE_HEIGHT, 0.0), aspect),
+            keys: KeysDown::default(),
+            mouse_captured: false,
+            raw_look: false,
+            last_cursor: None,
+            warp_pending: false,
+            allow_warp: std::env::var("WSL_DISTRO_NAME").is_err()
+                && !std::path::Path::new("/mnt/wslg").exists(),
+            left_held: false,
+            right_held: false,
+            action_cooldown: 0.0,
+            hotbar_sel: 0,
+            scroll_accum: 0.0,
+            scroll_cooldown: 0.0,
+            ui_cursor: (0.0, 0.0),
+            screen: Screen::Title,
+            inventory: Inventory::new(),
+            held_stack: None,
+            craft_grid: [None; 9],
+            craft_size: 2,
+            items: Vec::new(),
+            breaking: None,
+            health: MAX_HEALTH,
+            air: MAX_AIR,
+            since_damage: 100.0,
+            regen_timer: 0.0,
+            drown_timer: 0.0,
+            damage_flash: 0.0,
+            fall_start: None,
+            spawn_point: spawn,
+            rng: 0x1234_5678
+                ^ std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.subsec_nanos())
+                    .unwrap_or(0),
+            reg,
+            scripts,
+            toasts: Vec::new(),
+            mods_stamp: 0,
+            mods_poll: 0.0,
+            tick_accum: 0.0,
+            config,
+            audio,
+            in_world: false,
+            worlds: Vec::new(),
+            settings_from_pause: false,
+            pending_delete: None,
+            dragging_slider: None,
+            water_timer: 0.0,
+            time_of_day: 0.3, // morning
+            total_frames: 0,
+            auto_shot: std::env::var("WILDFORGE_SHOT").ok(),
+            last_frame: Instant::now(),
+            last_title: Instant::now(),
+            frames: 0,
+            fps: 0,
+            ui: UiBatch::new(),
+        };
+        g.mods_stamp = mods_tree_stamp();
+        g.apply_config();
+        g.refresh_worlds();
+        // Dev/headless: open a specific menu screen for UI verification.
+        match std::env::var("WILDFORGE_SCREEN").as_deref() {
+            Ok("mods") => g.screen = Screen::Mods,
+            Ok("settings") => g.screen = Screen::Settings,
+            Ok("confirm") => {
+                g.pending_delete = if g.worlds.is_empty() { None } else { Some(0) };
+                g.screen = Screen::ConfirmDelete;
+            }
+            _ => {}
+        }
+        g
+    }
+
+    fn sfx(&self, s: Sfx) {
+        if let Some(a) = &self.audio {
+            a.play(s);
+        }
+    }
+
+    fn apply_config(&mut self) {
+        self.camera.sens = self.config.sensitivity;
+        self.camera.fovy = self.config.fov.to_radians();
+        if let Some(a) = &mut self.audio {
+            a.volume = self.config.volume;
+        }
+        self.config.save();
+    }
+
+    fn refresh_worlds(&mut self) {
+        self.worlds.clear();
+        if let Ok(rd) = std::fs::read_dir("saves") {
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                if name.starts_with('.') {
+                    continue;
+                }
+                if let Ok(s) = std::fs::read_to_string(e.path().join("seed")) {
+                    if let Ok(seed) = s.trim().parse::<u32>() {
+                        self.worlds.push((name, seed));
+                    }
+                }
+            }
+        }
+        self.worlds.sort();
+    }
+
+    /// Load (or create) a world and enter it.
+    fn start_world(&mut self, name: &str) {
+        let mut world = World::load_or_create(PathBuf::from("saves").join(name), self.reg.clone());
+        let (sx, sz) = find_spawn(&world);
+        let spawn_chunk = ChunkPos::of_world(sx, sz);
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                world.ensure_chunk(ChunkPos { x: spawn_chunk.x + dx, z: spawn_chunk.z + dz });
+            }
+        }
+        let sy = world.surface_height(sx, sz) + 1;
+        let spawn = Vec3::new(sx as f32 + 0.5, sy as f32 + 0.2, sz as f32 + 0.5);
+
+        self.renderer.chunks.clear();
+        self.world = world;
+        self.player = Player::new(spawn);
+        self.spawn_point = spawn;
+        self.camera.pos = spawn + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+        self.camera.yaw = -std::f32::consts::FRAC_PI_2;
+        self.camera.pitch = 0.0;
+        self.inventory = Inventory::new();
+        if std::env::var("WILDFORGE_GIVE").is_ok() {
+            let reg = self.reg.clone();
+            for (name, n) in [
+                ("base:dirt", 64),
+                ("base:cobblestone", 32),
+                ("base:log", 8),
+                ("base:planks", 12),
+                ("base:stick", 8),
+                ("base:wood_pickaxe", 1),
+            ] {
+                if let Some(item) = reg.item_id(name) {
+                    self.inventory.add(&reg, item, n);
+                }
+            }
+        }
+        self.held_stack = None;
+        self.craft_grid = [None; 9];
+        self.items.clear();
+        self.breaking = None;
+        self.health = MAX_HEALTH;
+        self.air = MAX_AIR;
+        self.since_damage = 100.0;
+        self.damage_flash = 0.0;
+        self.fall_start = None;
+        self.time_of_day = 0.3;
+        self.hotbar_sel = 0;
+        self.in_world = true;
+        self.scripts.load_kv(&PathBuf::from("saves").join(name));
+        if self.scripts.wants("on_world_start") {
+            self.scripts.dispatch(&self.world, "on_world_start", (name.to_string(),));
+            self.apply_script_cmds();
+        }
+        // Dev: drop a water source on a pillar ahead of spawn to watch it flow.
+        if std::env::var("WILDFORGE_DEMO_WATER").is_ok() {
+            let (bx, bz) = (spawn.x as i32 - 6, spawn.z as i32 - 14);
+            let by = self.world.surface_height(bx, bz);
+            let stone = self.reg.block_id("base:stone").unwrap_or(AIR);
+            let water = self.reg.block_id("base:water").unwrap_or(AIR);
+            for y in by + 1..=by + 4 {
+                self.world.set_block(bx, y, bz, stone);
+            }
+            self.world.set_block(bx, by + 5, bz, water);
+            eprintln!("demo water source at ({bx},{},{bz}), spawn {:?}", by + 5, spawn);
+        }
+        self.set_screen(Screen::Playing);
+    }
+
+    /// Create a fresh world folder with a random seed and enter it.
+    fn new_world(&mut self) {
+        let mut n = 1;
+        while self.worlds.iter().any(|(name, _)| name == &format!("world{n}")) {
+            n += 1;
+        }
+        let name = format!("world{n}");
+        let seed = (self.rand01() * u32::MAX as f32) as u32
+            ^ std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(1)
+                .wrapping_mul(2654435761);
+        let dir = PathBuf::from("saves").join(&name);
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(dir.join("seed"), seed.to_string());
+        self.refresh_worlds();
+        self.start_world(&name);
+    }
+
+    fn quit_to_title(&mut self) {
+        if self.in_world {
+            self.world.save_modified();
+            self.scripts.save_kv(&self.world.save_dir_for_saving());
+        }
+        self.renderer.chunks.clear();
+        self.world = World::new(0, PathBuf::from("saves/.none"), self.reg.clone());
+        self.items.clear();
+        self.in_world = false;
+        self.refresh_worlds();
+        self.set_screen(Screen::Title);
+    }
+
+    fn rand01(&mut self) -> f32 {
+        self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        (self.rng >> 8) as f32 / (1 << 24) as f32
+    }
+
+    fn capture_mouse(&mut self, capture: bool) {
+        if capture {
+            // A Locked grab pins the cursor: raw deltas are the only signal.
+            // Anything less (Confined, or no grab at all): use cursor-position
+            // deltas + recentering instead — raw deltas are unreliable on some
+            // stacks (notably WSLg's XWayland).
+            self.raw_look = self.window.set_cursor_grab(CursorGrabMode::Locked).is_ok();
+            if !self.raw_look {
+                let _ = self.window.set_cursor_grab(CursorGrabMode::Confined);
+                self.last_cursor = None;
+                self.warp_pending =
+                    self.allow_warp && self.window.set_cursor_position(self.center()).is_ok();
+            }
+        } else {
+            let _ = self.window.set_cursor_grab(CursorGrabMode::None);
+        }
+        self.window.set_cursor_visible(!capture);
+        self.mouse_captured = capture;
+    }
+
+    fn center(&self) -> winit::dpi::PhysicalPosition<f64> {
+        let size = self.window.inner_size();
+        winit::dpi::PhysicalPosition::new(size.width as f64 / 2.0, size.height as f64 / 2.0)
+    }
+
+    /// Cursor-position-based look using successive position differences —
+    /// exact 1:1 deltas even when events are coalesced into big jumps.
+    /// The cursor is kept pinned in a small bubble around the window center;
+    /// the warp's own event is recognized by landing exactly on center, so
+    /// real motion events are never swallowed.
+    fn cursor_look(&mut self, pos: winit::dpi::PhysicalPosition<f64>) {
+        let c = self.center();
+        if self.warp_pending && (pos.x - c.x).abs() < 1.5 && (pos.y - c.y).abs() < 1.5 {
+            self.warp_pending = false;
+            self.last_cursor = Some((c.x, c.y));
+            return;
+        }
+        if let Some((lx, ly)) = self.last_cursor {
+            self.camera.turn((pos.x - lx) as f32, (pos.y - ly) as f32);
+        }
+        self.last_cursor = Some((pos.x, pos.y));
+
+        if self.allow_warp && ((pos.x - c.x).abs() > 40.0 || (pos.y - c.y).abs() > 40.0) {
+            if self.window.set_cursor_position(c).is_ok() {
+                self.warp_pending = true;
+            }
+        }
+    }
+
+    fn set_screen(&mut self, screen: Screen) {
+        if self.screen == screen {
+            return;
+        }
+        if std::env::var("WILDFORGE_DEBUG").is_ok() {
+            eprintln!(
+                "screen {:?} -> {:?} frame {}",
+                self.screen as u8, screen as u8, self.total_frames
+            );
+        }
+        // Leaving the inventory returns the cursor-held stack and craft grid.
+        if self.screen == Screen::Inventory {
+            let mut back: Vec<ItemStack> = self.held_stack.take().into_iter().collect();
+            for slot in self.craft_grid.iter_mut() {
+                if let Some(s) = slot.take() {
+                    back.push(s);
+                }
+            }
+            let reg = self.reg.clone();
+            for s in back {
+                let left = self.inventory.add_stack(&reg, s);
+                if left > 0 {
+                    self.drop_stack(ItemStack { count: left, ..s });
+                }
+            }
+        }
+        self.screen = screen;
+        let playing = screen == Screen::Playing;
+        if playing {
+            self.capture_mouse(true);
+        } else {
+            self.capture_mouse(false);
+            self.keys = KeysDown::default();
+            self.left_held = false;
+            self.right_held = false;
+            self.breaking = None;
+        }
+    }
+
+    fn damage(&mut self, amount: f32) {
+        if amount <= 0.0 || self.screen == Screen::Dead {
+            return;
+        }
+        if std::env::var("WILDFORGE_DEBUG").is_ok() {
+            eprintln!(
+                "damage {amount} at pos {:?} vel {:?} fall_start {:?} frame {}",
+                self.player.pos, self.player.vel, self.fall_start, self.total_frames
+            );
+        }
+        self.health -= amount;
+        self.damage_flash = 0.45;
+        self.since_damage = 0.0;
+        self.sfx(Sfx::Hurt);
+        if self.health <= 0.0 {
+            self.health = 0.0;
+            // Death: scatter the inventory as item drops.
+            let stacks = self.inventory.drain();
+            for s in stacks {
+                self.drop_stack(s);
+            }
+            self.held_stack = None;
+            self.set_screen(Screen::Dead);
+        }
+    }
+
+    fn drop_stack(&mut self, stack: ItemStack) {
+        let a = self.rand01() * std::f32::consts::TAU;
+        let v = Vec3::new(a.cos() * 2.0, 3.0 + self.rand01() * 1.5, a.sin() * 2.0);
+        let pos = self.player.pos + Vec3::new(0.0, 1.0, 0.0);
+        self.items.push(ItemEntity::new(pos, v, stack.item, stack.count));
+    }
+
+    fn respawn(&mut self) {
+        self.player = Player::new(self.spawn_point);
+        self.health = MAX_HEALTH;
+        self.air = MAX_AIR;
+        self.fall_start = None;
+        self.drown_timer = 0.0;
+        self.since_damage = 100.0;
+        self.set_screen(Screen::Playing);
+        if self.scripts.wants("on_player_respawn") {
+            self.scripts.dispatch(&self.world, "on_player_respawn", ());
+            self.apply_script_cmds();
+        }
+    }
+
+    fn stream_chunks(&mut self) {
+        let pcx = (self.player.pos.x.floor() as i32).div_euclid(CHUNK_X as i32);
+        let pcz = (self.player.pos.z.floor() as i32).div_euclid(CHUNK_X as i32);
+
+        // Generate missing chunks, nearest first.
+        let mut wanted: Vec<(i32, ChunkPos)> = Vec::new();
+        let vd = self.config.view_dist;
+        for dx in -vd..=vd {
+            for dz in -vd..=vd {
+                let pos = ChunkPos { x: pcx + dx, z: pcz + dz };
+                if !self.world.chunks.contains_key(&pos) {
+                    wanted.push((dx * dx + dz * dz, pos));
+                }
+            }
+        }
+        wanted.sort_by_key(|(d, _)| *d);
+        for (_, pos) in wanted.into_iter().take(GEN_BUDGET) {
+            self.world.ensure_chunk(pos);
+            // New terrain changes neighbors' visible faces at the border.
+            for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                if let Some(c) = self.world.chunks.get_mut(&ChunkPos { x: pos.x + dx, z: pos.z + dz }) {
+                    c.dirty = true;
+                }
+            }
+        }
+
+        // Unload chunks far outside the view radius.
+        let limit = vd + 2;
+        let far: Vec<ChunkPos> = self
+            .world
+            .chunks
+            .keys()
+            .filter(|p| (p.x - pcx).abs() > limit || (p.z - pcz).abs() > limit)
+            .copied()
+            .collect();
+        if !far.is_empty() {
+            self.world.save_modified();
+            for pos in far {
+                self.world.chunks.remove(&pos);
+                self.renderer.drop_chunk(pos);
+            }
+        }
+
+        // Remesh dirty chunks (only those whose 4 neighbors exist), nearest first.
+        let mut dirty: Vec<(i32, ChunkPos)> = self
+            .world
+            .chunks
+            .iter()
+            .filter(|(_, c)| c.dirty)
+            .map(|(p, _)| ((p.x - pcx).pow(2) + (p.z - pcz).pow(2), *p))
+            .collect();
+        dirty.retain(|(_, p)| {
+            [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().all(|(dx, dz)| {
+                self.world
+                    .chunks
+                    .contains_key(&ChunkPos { x: p.x + dx, z: p.z + dz })
+            })
+        });
+        dirty.sort_by_key(|(d, _)| *d);
+        for (_, pos) in dirty.into_iter().take(MESH_BUDGET) {
+            let mesh = mesher::mesh_chunk(&self.world, pos);
+            self.renderer.upload_chunk(pos, &mesh);
+            if let Some(c) = self.world.chunks.get_mut(&pos) {
+                c.dirty = false;
+            }
+        }
+    }
+
+    /// Break-sound family for a block, from its tool class.
+    fn break_mat(&self, b: registry::BlockId) -> BreakMat {
+        match self.reg.block(b).tool {
+            Some(ToolKind::Pickaxe) => BreakMat::Stone,
+            Some(ToolKind::Axe) => BreakMat::Wood,
+            Some(ToolKind::Shovel) => BreakMat::Soft,
+            None => BreakMat::Leafy,
+        }
+    }
+
+    /// Mining and placing while playing.
+    fn interact(&mut self, dt: f32) {
+        let reg = self.reg.clone();
+        let hit = raycast::raycast(&self.world, self.camera.pos, self.camera.forward(), REACH);
+        let held = self.inventory.slots[self.hotbar_sel].map(|s| s.item);
+
+        // Hold-to-mine; tools speed up matching blocks and wear down.
+        if self.left_held {
+            if let Some(h) = &hit {
+                let target = h.block;
+                let b = self.world.get_block(target.0, target.1, target.2);
+                if let Some(hardness) = reg.effective_hardness(b, held) {
+                    let progress = match self.breaking {
+                        Some((t, p)) if t == target => p + dt / hardness,
+                        _ => dt / hardness,
+                    };
+                    if progress >= 1.0 {
+                        // Cancellable mod event.
+                        let allow = if self.scripts.wants("on_block_break") {
+                            let name = reg.block(b).name.clone();
+                            let ok = self.scripts.dispatch(
+                                &self.world,
+                                "on_block_break",
+                                (target.0 as i64, target.1 as i64, target.2 as i64, name),
+                            );
+                            self.apply_script_cmds();
+                            ok
+                        } else {
+                            true
+                        };
+                        self.breaking = None;
+                        if allow {
+                            self.world.set_block(target.0, target.1, target.2, AIR);
+                            self.sfx(Sfx::Break(self.break_mat(b)));
+                            self.inventory.wear_tool(&reg, self.hotbar_sel);
+                            if let Some((drop, n)) = reg.drops_for(b, held) {
+                                let center = Vec3::new(
+                                    target.0 as f32 + 0.5,
+                                    target.1 as f32 + 0.3,
+                                    target.2 as f32 + 0.5,
+                                );
+                                let a = self.rand01() * std::f32::consts::TAU;
+                                let v = Vec3::new(a.cos() * 1.2, 2.2, a.sin() * 1.2);
+                                self.items.push(ItemEntity::new(center, v, drop, n));
+                            }
+                        }
+                    } else {
+                        self.breaking = Some((target, progress));
+                    }
+                } else {
+                    self.breaking = None;
+                }
+            } else {
+                self.breaking = None;
+            }
+        } else {
+            self.breaking = None;
+        }
+
+        // Right click: interact with the targeted block (crafting table),
+        // otherwise place the selected block.
+        if self.right_held && self.action_cooldown <= 0.0 {
+            if let Some(h) = &hit {
+                let tb = self.world.get_block(h.block.0, h.block.1, h.block.2);
+                if self.scripts.wants("on_interact") {
+                    let name = reg.block(tb).name.clone();
+                    let allow = self.scripts.dispatch(
+                        &self.world,
+                        "on_interact",
+                        (h.block.0 as i64, h.block.1 as i64, h.block.2 as i64, name),
+                    );
+                    self.apply_script_cmds();
+                    if !allow {
+                        self.right_held = false;
+                        self.action_cooldown = 0.22;
+                        return;
+                    }
+                }
+                if reg.block(tb).interactive {
+                    self.right_held = false;
+                    self.craft_size = 3;
+                    self.set_screen(Screen::Inventory);
+                    return;
+                }
+                let (x, y, z) = h.adjacent;
+                let place = self.inventory.slots[self.hotbar_sel]
+                    .and_then(|s| reg.item(s.item).places);
+                if let Some(block) = place {
+                    if !reg.is_solid(self.world.get_block(x, y, z))
+                        && !self.player.overlaps_block(x, y, z)
+                    {
+                        let allow = if self.scripts.wants("on_block_place") {
+                            let name = reg.block(block).name.clone();
+                            let ok = self.scripts.dispatch(
+                                &self.world,
+                                "on_block_place",
+                                (x as i64, y as i64, z as i64, name),
+                            );
+                            self.apply_script_cmds();
+                            ok
+                        } else {
+                            true
+                        };
+                        if allow && self.inventory.take_one(self.hotbar_sel).is_some() {
+                            self.world.set_block(x, y, z, block);
+                            self.action_cooldown = 0.22;
+                            self.sfx(Sfx::Place);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Apply world mutations queued by scripts during the last dispatch.
+    fn apply_script_cmds(&mut self) {
+        let reg = self.reg.clone();
+        for cmd in self.scripts.take_cmds() {
+            match cmd {
+                script::Cmd::SetBlock(x, y, z, name) => {
+                    if let Some(b) = reg.block_id(&name) {
+                        self.world.set_block(x, y, z, b);
+                    }
+                }
+                script::Cmd::Give(name, n) => {
+                    if let Some(item) = reg.item_id(&name) {
+                        let left = self.inventory.add(&reg, item, n);
+                        if left > 0 {
+                            self.drop_stack(ItemStack::new(&reg, item, left));
+                        }
+                    }
+                }
+                script::Cmd::Hud(msg) => self.toast(msg),
+                script::Cmd::Sound(name) => {
+                    let sfx = match name.as_str() {
+                        "click" => Some(Sfx::Click),
+                        "place" => Some(Sfx::Place),
+                        "pickup" => Some(Sfx::Pickup),
+                        "hurt" => Some(Sfx::Hurt),
+                        "craft" => Some(Sfx::Craft),
+                        "splash" => Some(Sfx::Splash),
+                        _ => None,
+                    };
+                    if let Some(s) = sfx {
+                        self.sfx(s);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Hot reload: rebuild the registry + atlas from disk, remap the live
+    /// world and inventories by string id, recompile scripts.
+    fn reload_mods(&mut self, forced: bool) {
+        let old = self.reg.clone();
+        let new_reg = Arc::new(registry::load(std::path::Path::new("mods")));
+        let (atlas_data, atlas_px) = atlas::build_with_mods(&new_reg.tex_files);
+        self.renderer.set_atlas(&atlas_data, atlas_px);
+
+        // Remap items by name (old registry -> new); unknown items vanish.
+        let remap_item = |reg: &Registry, it: ItemId| -> Option<ItemId> {
+            reg.item_id(&old.item(it).name)
+        };
+        let fix_stack = |reg: &Registry, s: Option<ItemStack>| -> Option<ItemStack> {
+            s.and_then(|s| remap_item(reg, s.item).map(|item| ItemStack { item, ..s }))
+        };
+        for slot in self.inventory.slots.iter_mut() {
+            *slot = fix_stack(&new_reg, *slot);
+        }
+        for slot in self.craft_grid.iter_mut() {
+            *slot = fix_stack(&new_reg, *slot);
+        }
+        self.held_stack = fix_stack(&new_reg, self.held_stack);
+        self.items.retain_mut(|e| match remap_item(&new_reg, e.item) {
+            Some(item) => {
+                e.item = item;
+                true
+            }
+            None => false,
+        });
+        self.breaking = None;
+
+        self.reg = new_reg.clone();
+        self.world.reg = new_reg.clone();
+        self.world.remap_from(&old);
+        self.world.generator = worldgen::Generator::new(self.world.seed, &new_reg);
+        self.scripts.load_mods(&script_mod_dirs(&new_reg));
+
+        let errors: Vec<String> = new_reg
+            .mods
+            .iter()
+            .filter_map(|m| m.error.clone())
+            .chain(self.scripts.mods.iter().filter_map(|m| m.error.clone()))
+            .collect();
+        if errors.is_empty() {
+            eprintln!(
+                "mods: reloaded ({} blocks, {} items, {} recipes)",
+                new_reg.blocks.len(),
+                new_reg.items.len(),
+                new_reg.recipes.len()
+            );
+            self.toast(format!(
+                "mods reloaded ({} blocks, {} items, {} recipes)",
+                new_reg.blocks.len(),
+                new_reg.items.len(),
+                new_reg.recipes.len()
+            ));
+        } else {
+            for e in errors.iter().take(3) {
+                self.toast(format!("mod error: {e}"));
+            }
+        }
+        if forced {
+            self.sfx(Sfx::Click);
+        }
+    }
+
+    fn toast(&mut self, msg: String) {
+        self.toasts.push((msg, 4.0));
+        if self.toasts.len() > 5 {
+            self.toasts.remove(0);
+        }
+    }
+
+    fn update_survival(&mut self, dt: f32) {
+        // Fall damage: measure from the apex of the fall.
+        if self.player.in_water || self.player.on_ground {
+            if let (Some(start), true) = (self.fall_start, self.player.on_ground) {
+                let fall = start - self.player.pos.y;
+                self.damage((fall - 3.0).floor());
+            }
+            self.fall_start = None;
+        } else if self.player.vel.y < 0.0 {
+            self.fall_start = Some(self.fall_start.unwrap_or(self.player.pos.y).max(self.player.pos.y));
+        } else {
+            self.fall_start = None;
+        }
+
+        // Drowning.
+        if self.player.head_underwater(&self.world) {
+            self.air -= dt;
+            if self.air <= 0.0 {
+                self.air = 0.0;
+                self.drown_timer += dt;
+                if self.drown_timer >= 1.0 {
+                    self.drown_timer = 0.0;
+                    self.damage(2.0);
+                }
+            }
+        } else {
+            self.air = (self.air + dt * 4.0).min(MAX_AIR);
+            self.drown_timer = 0.0;
+        }
+
+        // Slow regeneration when out of danger for a while.
+        self.since_damage += dt;
+        if self.health < MAX_HEALTH && self.since_damage > 8.0 {
+            self.regen_timer += dt;
+            if self.regen_timer >= 2.0 {
+                self.regen_timer = 0.0;
+                self.health = (self.health + 1.0).min(MAX_HEALTH);
+            }
+        }
+        self.damage_flash = (self.damage_flash - dt).max(0.0);
+    }
+
+    fn update_items(&mut self, dt: f32) {
+        let world = &self.world;
+        self.items.retain_mut(|it| it.update(world, dt));
+        if self.screen == Screen::Dead {
+            return;
+        }
+        // Pickup: magnetize into the inventory.
+        let target = self.player.pos + Vec3::new(0.0, 0.9, 0.0);
+        let mut i = 0;
+        while i < self.items.len() {
+            let it = &self.items[i];
+            let d = it.pos.distance(target);
+            if it.age > entity::PICKUP_DELAY && d < 1.4 {
+                let (item, count) = (self.items[i].item, self.items[i].count);
+                let left = self.inventory.add(&self.reg.clone(), item, count);
+                if left < count {
+                    self.sfx(Sfx::Pickup);
+                }
+                if left == 0 {
+                    self.items.swap_remove(i);
+                    continue;
+                } else {
+                    self.items[i].count = left;
+                }
+            }
+            i += 1;
+        }
+    }
+
+    fn update(&mut self) {
+        let now = Instant::now();
+        let dt = (now - self.last_frame).as_secs_f32().min(0.05);
+        self.last_frame = now;
+
+        let paused = self.screen == Screen::Paused || !self.in_world;
+        if !paused {
+            self.action_cooldown = (self.action_cooldown - dt).max(0.0);
+            self.scroll_cooldown = (self.scroll_cooldown - dt).max(0.0);
+            self.time_of_day = (self.time_of_day + dt / DAY_LENGTH) % 1.0;
+        }
+
+        if self.in_world {
+            self.stream_chunks();
+            // Fluid simulation ticks at 5 Hz like classic Minecraft water.
+            if !paused {
+                self.water_timer += dt;
+                while self.water_timer >= 0.2 {
+                    self.water_timer -= 0.2;
+                    self.world.tick_water(512);
+                }
+                // Mod tick at 10 Hz.
+                if self.scripts.wants("on_tick") {
+                    self.tick_accum += dt;
+                    if self.tick_accum >= 0.1 {
+                        let t = self.tick_accum;
+                        self.tick_accum = 0.0;
+                        self.scripts.dispatch(&self.world, "on_tick", (t as f64,));
+                        self.apply_script_cmds();
+                    }
+                }
+            }
+        }
+        // Hot reload: poll the mods tree once a second.
+        self.mods_poll += dt;
+        if self.mods_poll >= 1.0 {
+            self.mods_poll = 0.0;
+            let stamp = mods_tree_stamp();
+            if stamp != self.mods_stamp {
+                self.mods_stamp = stamp;
+                self.reload_mods(false);
+            }
+        }
+        for t in self.toasts.iter_mut() {
+            t.1 -= dt;
+        }
+        self.toasts.retain(|t| t.1 > 0.0);
+
+        // Physics — only once the chunk under the player exists.
+        let pchunk = ChunkPos::of_world(self.player.pos.x.floor() as i32, self.player.pos.z.floor() as i32);
+        let can_sim = self.world.chunks.contains_key(&pchunk) && !paused;
+        if can_sim && self.screen != Screen::Dead {
+            let input = physics::Input {
+                forward: (self.keys.w as i32 - self.keys.s as i32) as f32,
+                strafe: (self.keys.d as i32 - self.keys.a as i32) as f32,
+                jump: self.keys.space,
+                sprint: self.keys.sprint,
+            };
+            let was_in_water = self.player.in_water;
+            let fall_speed = self.player.vel.y;
+            self.player.update(
+                &self.world,
+                &input,
+                self.camera.flat_forward(),
+                self.camera.right(),
+                dt,
+            );
+            if !was_in_water && self.player.in_water && fall_speed < -4.0 {
+                self.sfx(Sfx::Splash);
+            }
+            self.update_survival(dt);
+        }
+        if can_sim {
+            self.update_items(dt);
+        }
+        self.camera.pos = self.player.eye();
+
+        if self.screen == Screen::Playing && self.mouse_captured {
+            self.interact(dt);
+        }
+
+        // Day/night: daylight factor from a sun curve (full day on menus).
+        let sun = (self.time_of_day * std::f32::consts::TAU).sin();
+        let daylight = if self.in_world {
+            (sun * 2.5 + 0.5).clamp(0.08, 1.0)
+        } else {
+            1.0
+        };
+        let day_sky = [0.55, 0.75, 0.95];
+        let night_sky = [0.02, 0.03, 0.08];
+        let f = daylight;
+        self.renderer.sky_color = [
+            night_sky[0] + (day_sky[0] - night_sky[0]) * f,
+            night_sky[1] + (day_sky[1] - night_sky[1]) * f,
+            night_sky[2] + (day_sky[2] - night_sky[2]) * f,
+        ];
+
+        let playing = self.screen == Screen::Playing;
+        let outline = if playing {
+            raycast::raycast(&self.world, self.camera.pos, self.camera.forward(), REACH)
+                .map(|h| h.block)
+        } else {
+            None
+        };
+        let underwater = self.player.head_underwater(&self.world);
+        let fog = (self.config.view_dist as f32 - 0.5) * CHUNK_X as f32;
+
+        // World-space extras: item entities + mining crack overlay.
+        let mut entity_verts = Vec::new();
+        let mut entity_idx = Vec::new();
+        for it in &self.items {
+            it.emit(&self.reg, &mut entity_verts, &mut entity_idx);
+        }
+        let mut overlay_verts = Vec::new();
+        let mut overlay_idx = Vec::new();
+        if let Some((target, progress)) = self.breaking {
+            entity::emit_crack(target, progress, &mut overlay_verts, &mut overlay_idx);
+        }
+
+        self.build_ui();
+
+        match self.renderer.render(FrameInput {
+            view_proj: self.camera.view_proj(),
+            cam_pos: self.camera.pos,
+            fog_dist: fog,
+            underwater,
+            daylight,
+            outline,
+            entity_verts: &entity_verts,
+            entity_idx: &entity_idx,
+            overlay_verts: &overlay_verts,
+            overlay_idx: &overlay_idx,
+            ui_verts: &self.ui.verts,
+            crosshair: playing,
+        }) {
+            Ok(()) => {}
+            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                let size = self.window.inner_size();
+                self.renderer.resize(size.width, size.height);
+            }
+            Err(e) => eprintln!("render error: {e:?}"),
+        }
+
+        // Headless verification: WILDFORGE_SHOT=path.ppm captures a frame once
+        // the world is meshed, then exits.
+        self.total_frames += 1;
+        if let Some(path) = self.auto_shot.clone() {
+            let shot_frame: u64 = std::env::var("WILDFORGE_SHOT_FRAME")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(240);
+            if self.total_frames == shot_frame {
+                self.renderer.pending_screenshot = Some(path);
+            } else if self.total_frames > shot_frame + 1 {
+                std::process::exit(0);
+            }
+        }
+
+        // Window-title HUD.
+        self.frames += 1;
+        if (now - self.last_title).as_secs_f32() > 0.5 {
+            self.fps = (self.frames as f32 / (now - self.last_title).as_secs_f32()) as u32;
+            self.frames = 0;
+            self.last_title = now;
+            let p = self.player.pos;
+            self.window.set_title(&format!(
+                "Wildforge — {} fps | XYZ {:.1} / {:.1} / {:.1}{}",
+                self.fps,
+                p.x,
+                p.y,
+                p.z,
+                if self.mouse_captured || self.screen != Screen::Playing {
+                    ""
+                } else {
+                    "  [click to capture mouse]"
+                },
+            ));
+        }
+    }
+
+    // ---------- UI layout ----------
+
+    const SLOT: f32 = 46.0;
+
+    fn hotbar_origin(&self) -> (f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        ((w - 9.0 * Self::SLOT) / 2.0, h - Self::SLOT - 8.0)
+    }
+
+    fn hotbar_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let (x0, y0) = self.hotbar_origin();
+        (x0 + i as f32 * Self::SLOT, y0, Self::SLOT, Self::SLOT)
+    }
+
+    /// Slot rects for the inventory screen: 0..9 hotbar row, 9..36 storage grid.
+    fn inv_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        let panel_w = 9.0 * Self::SLOT;
+        let x0 = (w - panel_w) / 2.0;
+        let grid_y = h / 2.0 - 2.0 * Self::SLOT;
+        if i < HOTBAR_SLOTS {
+            (
+                x0 + i as f32 * Self::SLOT,
+                grid_y + 3.0 * Self::SLOT + 14.0,
+                Self::SLOT,
+                Self::SLOT,
+            )
+        } else {
+            let j = i - HOTBAR_SLOTS;
+            (
+                x0 + (j % 9) as f32 * Self::SLOT,
+                grid_y + (j / 9) as f32 * Self::SLOT,
+                Self::SLOT,
+                Self::SLOT,
+            )
+        }
+    }
+
+    fn menu_button_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (w / 2.0 - 150.0, h / 2.0 - 40.0 + i as f32 * 56.0, 300.0, 40.0)
+    }
+
+    // ---- title screen layout ----
+
+    fn title_row_y(&self, i: usize) -> f32 {
+        self.renderer.config.height as f32 * 0.28 + i as f32 * 54.0
+    }
+
+    fn title_play_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        (w / 2.0 + 60.0, self.title_row_y(i), 100.0, 42.0)
+    }
+
+    fn title_delete_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        (w / 2.0 + 172.0, self.title_row_y(i), 46.0, 42.0)
+    }
+
+    /// 0 = new world, 1 = settings, 2 = quit.
+    fn title_action_rect(&self, j: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let base = self.title_row_y(self.worlds.len().min(6)) + 26.0;
+        (w / 2.0 - 150.0, base + j as f32 * 56.0, 300.0, 42.0)
+    }
+
+    // ---- settings screen layout ----
+
+    const SLIDERS: [&'static str; 4] = ["VOLUME", "SENSITIVITY", "RENDER DIST", "FOV"];
+
+    fn slider_bar_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (w / 2.0 - 20.0, h * 0.30 + i as f32 * 64.0, 300.0, 30.0)
+    }
+
+    fn settings_back_rect(&self) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (w / 2.0 - 150.0, h * 0.30 + 4.0 * 64.0 + 24.0, 300.0, 42.0)
+    }
+
+    fn slider_frac(&self, i: usize) -> f32 {
+        match i {
+            0 => self.config.volume,
+            1 => (self.config.sensitivity - 0.1) / 2.9,
+            2 => (self.config.view_dist - 4) as f32 / 8.0,
+            _ => (self.config.fov - 50.0) / 60.0,
+        }
+    }
+
+    fn slider_label(&self, i: usize) -> String {
+        match i {
+            0 => format!("{:.0}", self.config.volume * 100.0),
+            1 => format!("{:.2}", self.config.sensitivity),
+            2 => format!("{}", self.config.view_dist),
+            _ => format!("{:.0}", self.config.fov),
+        }
+    }
+
+    fn set_slider(&mut self, i: usize, frac: f32) {
+        let f = frac.clamp(0.0, 1.0);
+        match i {
+            0 => self.config.volume = (f * 20.0).round() / 20.0,
+            1 => self.config.sensitivity = ((0.1 + f * 2.9) * 20.0).round() / 20.0,
+            2 => self.config.view_dist = 4 + (f * 8.0).round() as i32,
+            _ => self.config.fov = 50.0 + (f * 60.0).round(),
+        }
+        self.apply_config();
+    }
+
+    fn draw_button(ui: &mut UiBatch, r: (f32, f32, f32, f32), label: &str, hover: bool) {
+        let bg = if hover { [0.5, 0.5, 0.5, 0.95] } else { [0.25, 0.25, 0.25, 0.95] };
+        ui.rect(r.0, r.1, r.2, r.3, [0.1, 0.1, 0.1, 0.95]);
+        ui.rect(r.0 + 2.0, r.1 + 2.0, r.2 - 4.0, r.3 - 4.0, bg);
+        let lw = UiBatch::text_width(2.0, label);
+        ui.text_shadow(r.0 + (r.2 - lw) / 2.0, r.1 + (r.3 - 14.0) / 2.0, 2.0, label, [1.0; 4]);
+    }
+
+    fn hit(&self, r: (f32, f32, f32, f32)) -> bool {
+        let (x, y) = self.ui_cursor;
+        x >= r.0 && x < r.0 + r.2 && y >= r.1 && y < r.1 + r.3
+    }
+
+    fn draw_slot(reg: &Registry, ui: &mut UiBatch, r: (f32, f32, f32, f32), stack: Option<ItemStack>, selected: bool, hover: bool) {
+        let (x, y, w, h) = r;
+        let border = if selected {
+            [1.0, 1.0, 1.0, 0.9]
+        } else {
+            [0.35, 0.35, 0.35, 0.9]
+        };
+        ui.rect(x + 1.0, y + 1.0, w - 2.0, h - 2.0, border);
+        let bg = if hover {
+            [0.45, 0.45, 0.45, 0.92]
+        } else {
+            [0.18, 0.18, 0.18, 0.92]
+        };
+        ui.rect(x + 3.0, y + 3.0, w - 6.0, h - 6.0, bg);
+        if let Some(s) = stack {
+            let pad = 8.0;
+            let icon = reg.item(s.item).icon;
+            let tile = (icon as u32 % 16, icon as u32 / 16);
+            ui.tile(x + pad, y + pad, w - 2.0 * pad, h - 2.0 * pad, tile, [1.0; 4]);
+            if s.count > 1 {
+                let txt = format!("{}", s.count);
+                let tw = UiBatch::text_width(2.0, &txt);
+                ui.text_shadow(x + w - tw - 4.0, y + h - 18.0, 2.0, &txt, [1.0; 4]);
+            }
+            // Durability bar for worn tools.
+            let max = reg.item(s.item).durability;
+            if max > 0 && s.durability < max {
+                let frac = s.durability as f32 / max as f32;
+                ui.rect(x + 6.0, y + h - 9.0, w - 12.0, 4.0, [0.05, 0.05, 0.05, 0.9]);
+                ui.rect(
+                    x + 6.0,
+                    y + h - 9.0,
+                    (w - 12.0) * frac,
+                    4.0,
+                    [1.0 - frac, frac, 0.1, 1.0],
+                );
+            }
+        }
+    }
+
+    /// Craft grid layout: grid slots then the result slot to their right.
+    fn craft_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let n = self.craft_size;
+        let (sx, sy, _, _) = self.inv_slot_rect(HOTBAR_SLOTS); // storage top-left
+        let y0 = sy - (n as f32) * Self::SLOT - 16.0;
+        let x0 = sx + 1.5 * Self::SLOT;
+        (
+            x0 + (i % n) as f32 * Self::SLOT,
+            y0 + (i / n) as f32 * Self::SLOT,
+            Self::SLOT,
+            Self::SLOT,
+        )
+    }
+
+    fn result_slot_rect(&self) -> (f32, f32, f32, f32) {
+        let n = self.craft_size;
+        let (gx, gy, _, _) = self.craft_slot_rect(0);
+        (
+            gx + n as f32 * Self::SLOT + Self::SLOT,
+            gy + ((n as f32) - 1.0) * Self::SLOT / 2.0,
+            Self::SLOT,
+            Self::SLOT,
+        )
+    }
+
+    fn build_ui(&mut self) {
+        let mut ui = std::mem::replace(&mut self.ui, UiBatch::new());
+        ui.clear();
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+
+        // Menu-only screens draw over the sky and skip the HUD entirely.
+        match self.screen {
+            Screen::Title => {
+                ui.rect(0.0, 0.0, w, h, [0.05, 0.08, 0.15, 0.55]);
+                let tw = UiBatch::text_width(8.0, "WILDFORGE");
+                ui.text_shadow((w - tw) / 2.0, h * 0.10, 8.0, "WILDFORGE", [1.0, 0.95, 0.7, 1.0]);
+                if self.worlds.is_empty() {
+                    let msg = "NO WORLDS YET - CREATE ONE";
+                    let mw = UiBatch::text_width(2.0, msg);
+                    ui.text_shadow((w - mw) / 2.0, self.title_row_y(0) + 12.0, 2.0, msg, [0.8, 0.8, 0.8, 1.0]);
+                }
+                for (i, (name, seed)) in self.worlds.iter().take(6).enumerate() {
+                    let y = self.title_row_y(i);
+                    let label = format!("{}  SEED {}", name.to_uppercase(), seed);
+                    ui.text_shadow(w / 2.0 - 310.0, y + 13.0, 2.0, &label, [1.0; 4]);
+                    let pr = self.title_play_rect(i);
+                    Self::draw_button(&mut ui, pr, "PLAY", self.hit(pr));
+                    let dr = self.title_delete_rect(i);
+                    Self::draw_button(&mut ui, dr, "X", self.hit(dr));
+                }
+                for (j, label) in ["NEW WORLD", "MODS", "SETTINGS", "QUIT"].iter().enumerate() {
+                    let r = self.title_action_rect(j);
+                    Self::draw_button(&mut ui, r, label, self.hit(r));
+                }
+                self.ui = ui;
+                return;
+            }
+            Screen::Mods => {
+                ui.rect(0.0, 0.0, w, h, [0.02, 0.05, 0.1, 0.75]);
+                let tw = UiBatch::text_width(4.0, "MODS");
+                ui.text_shadow((w - tw) / 2.0, h * 0.10, 4.0, "MODS", [1.0; 4]);
+                let mut y = h * 0.24;
+                for m in self.reg.mods.iter().take(10) {
+                    let script = if m.has_script { " +SCRIPT" } else { "" };
+                    let line = format!("{} {}{}", m.name.to_uppercase(), m.version, script);
+                    ui.text_shadow(w / 2.0 - 300.0, y, 2.0, &line, [1.0; 4]);
+                    match &m.error {
+                        Some(e) => {
+                            let msg: String = e.chars().take(60).collect();
+                            ui.text_shadow(w / 2.0 - 300.0, y + 20.0, 1.5, &msg.to_uppercase(), [1.0, 0.5, 0.5, 1.0]);
+                            y += 44.0;
+                        }
+                        None => {
+                            ui.text_shadow(w / 2.0 + 200.0, y, 2.0, "OK", [0.5, 1.0, 0.5, 1.0]);
+                            y += 30.0;
+                        }
+                    }
+                }
+                let hint = "EDIT MODS/ WHILE PLAYING - CHANGES HOT RELOAD. F5 FORCES.";
+                ui.text_shadow(w / 2.0 - 300.0, y + 16.0, 1.5, hint, [0.7, 0.7, 0.7, 1.0]);
+                let br = self.menu_button_rect(4);
+                Self::draw_button(&mut ui, br, "BACK", self.hit(br));
+                self.ui = ui;
+                return;
+            }
+            Screen::Settings => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.6]);
+                let tw = UiBatch::text_width(4.0, "SETTINGS");
+                ui.text_shadow((w - tw) / 2.0, h * 0.12, 4.0, "SETTINGS", [1.0; 4]);
+                for i in 0..Self::SLIDERS.len() {
+                    let (bx, by, bw, bh) = self.slider_bar_rect(i);
+                    ui.text_shadow(w / 2.0 - 300.0, by + 8.0, 2.0, Self::SLIDERS[i], [1.0; 4]);
+                    ui.rect(bx, by, bw, bh, [0.1, 0.1, 0.1, 0.95]);
+                    let frac = self.slider_frac(i);
+                    ui.rect(bx + 2.0, by + 2.0, (bw - 4.0) * frac, bh - 4.0, [0.35, 0.65, 0.35, 0.95]);
+                    // Handle notch.
+                    let hx = bx + 2.0 + (bw - 8.0) * frac;
+                    ui.rect(hx, by, 4.0, bh, [0.9, 0.9, 0.9, 1.0]);
+                    ui.text_shadow(bx + bw + 14.0, by + 8.0, 2.0, &self.slider_label(i), [1.0; 4]);
+                }
+                let br = self.settings_back_rect();
+                Self::draw_button(&mut ui, br, "BACK", self.hit(br));
+                self.ui = ui;
+                return;
+            }
+            Screen::ConfirmDelete => {
+                ui.rect(0.0, 0.0, w, h, [0.1, 0.02, 0.02, 0.7]);
+                let name = self
+                    .pending_delete
+                    .and_then(|i| self.worlds.get(i))
+                    .map(|(n, _)| n.to_uppercase())
+                    .unwrap_or_default();
+                let msg = format!("DELETE {name}?");
+                let tw = UiBatch::text_width(4.0, &msg);
+                ui.text_shadow((w - tw) / 2.0, h * 0.25, 4.0, &msg, [1.0, 0.8, 0.8, 1.0]);
+                let sub = "THIS CANNOT BE UNDONE";
+                let sw = UiBatch::text_width(2.0, sub);
+                ui.text_shadow((w - sw) / 2.0, h * 0.25 + 50.0, 2.0, sub, [0.9, 0.7, 0.7, 1.0]);
+                for (j, label) in ["DELETE", "CANCEL"].iter().enumerate() {
+                    let r = self.menu_button_rect(j);
+                    Self::draw_button(&mut ui, r, label, self.hit(r));
+                }
+                self.ui = ui;
+                return;
+            }
+            _ => {}
+        }
+
+        // Damage flash vignette.
+        if self.damage_flash > 0.0 {
+            ui.rect(0.0, 0.0, w, h, [0.8, 0.1, 0.1, self.damage_flash * 0.55]);
+        }
+
+        // Mod/system toasts, top center.
+        for (i, (msg, ttl)) in self.toasts.iter().enumerate() {
+            let a = ttl.min(1.0);
+            let m = msg.to_uppercase();
+            let tw = UiBatch::text_width(2.0, &m);
+            ui.text_shadow((w - tw) / 2.0, 16.0 + i as f32 * 22.0, 2.0, &m, [1.0, 1.0, 0.6, a]);
+        }
+
+        // Hotbar.
+        for i in 0..HOTBAR_SLOTS {
+            let r = self.hotbar_rect(i);
+            Self::draw_slot(&self.reg, &mut ui, r, self.inventory.slots[i], i == self.hotbar_sel, false);
+        }
+        // Selected item name above the hotbar.
+        if let Some(s) = self.inventory.slots[self.hotbar_sel] {
+            let name = &self.reg.item(s.item).label.to_uppercase();
+            let tw = UiBatch::text_width(2.0, name);
+            let (hx0, hy0) = self.hotbar_origin();
+            ui.text_shadow(hx0 + (9.0 * Self::SLOT - tw) / 2.0, hy0 - 52.0, 2.0, name, [1.0; 4]);
+        }
+
+        // Hearts above the hotbar.
+        let (hx, hy) = self.hotbar_origin();
+        let hs = 2.6;
+        for i in 0..10 {
+            let kind = if self.health >= (i * 2 + 2) as f32 {
+                2
+            } else if self.health >= (i * 2 + 1) as f32 {
+                1
+            } else {
+                0
+            };
+            ui.heart(hx + i as f32 * 8.0 * hs, hy - 8.0 * hs - 4.0, hs, kind);
+        }
+
+        // Air bubbles (right-aligned above hotbar) when submerged.
+        if self.air < MAX_AIR {
+            let n = (self.air / MAX_AIR * 10.0).ceil() as usize;
+            for i in 0..n {
+                let x = hx + 9.0 * Self::SLOT - (i + 1) as f32 * 8.0 * hs;
+                ui.bubble(x, hy - 8.0 * hs - 4.0, hs);
+            }
+        }
+
+        match self.screen {
+            Screen::Playing | Screen::Title | Screen::Mods | Screen::Settings
+            | Screen::ConfirmDelete => {}
+            Screen::Inventory => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
+                let title = if self.craft_size == 3 { "CRAFTING" } else { "INVENTORY" };
+                let tw = UiBatch::text_width(3.0, title);
+                let (c0x, c0y, _, _) = self.craft_slot_rect(0);
+                ui.text_shadow((w - tw) / 2.0, c0y - 40.0, 3.0, title, [1.0; 4]);
+                for i in 0..TOTAL_SLOTS {
+                    let r = self.inv_slot_rect(i);
+                    let hover = self.hit(r);
+                    Self::draw_slot(&self.reg, &mut ui, r, self.inventory.slots[i], i == self.hotbar_sel, hover);
+                }
+                // Craft grid, arrow, result.
+                let n2 = self.craft_size * self.craft_size;
+                for i in 0..n2 {
+                    let r = self.craft_slot_rect(i);
+                    Self::draw_slot(&self.reg, &mut ui, r, self.craft_grid[i], false, self.hit(r));
+                }
+                let rr = self.result_slot_rect();
+                ui.text_shadow(rr.0 - 34.0, rr.1 + 16.0, 2.5, "-", [1.0; 4]);
+                ui.text_shadow(rr.0 - 24.0, rr.1 + 14.0, 2.5, ">", [1.0; 4]);
+                let result = crafting::match_recipe(&self.reg, &self.craft_grid[..n2], self.craft_size)
+                    .map(|r| ItemStack::new(&self.reg, r.output, r.count));
+                Self::draw_slot(&self.reg, &mut ui, rr, result, false, self.hit(rr));
+                let _ = c0x;
+                // Stack on the cursor.
+                if let Some(s) = self.held_stack {
+                    let (cx, cy) = self.ui_cursor;
+                    let icon = self.reg.item(s.item).icon;
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, (icon as u32 % 16, icon as u32 / 16), [1.0; 4]);
+                    if s.count > 1 {
+                        let txt = format!("{}", s.count);
+                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &txt, [1.0; 4]);
+                    }
+                }
+            }
+            Screen::Paused => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.6]);
+                let title = "GAME PAUSED";
+                let tw = UiBatch::text_width(4.0, title);
+                ui.text_shadow((w - tw) / 2.0, h / 2.0 - 130.0, 4.0, title, [1.0; 4]);
+                for (i, label) in ["RESUME", "SETTINGS", "SAVE AND QUIT TO TITLE"].iter().enumerate() {
+                    let r = self.menu_button_rect(i);
+                    Self::draw_button(&mut ui, r, label, self.hit(r));
+                }
+            }
+            Screen::Dead => {
+                ui.rect(0.0, 0.0, w, h, [0.5, 0.0, 0.0, 0.5]);
+                let title = "YOU DIED";
+                let tw = UiBatch::text_width(5.0, title);
+                ui.text_shadow((w - tw) / 2.0, h / 2.0 - 120.0, 5.0, title, [1.0, 0.85, 0.85, 1.0]);
+                let r = self.menu_button_rect(0);
+                let hover = self.hit(r);
+                let bg = if hover { [0.5, 0.5, 0.5, 0.95] } else { [0.25, 0.25, 0.25, 0.95] };
+                ui.rect(r.0, r.1, r.2, r.3, [0.1, 0.1, 0.1, 0.95]);
+                ui.rect(r.0 + 2.0, r.1 + 2.0, r.2 - 4.0, r.3 - 4.0, bg);
+                let lw = UiBatch::text_width(2.0, "RESPAWN");
+                ui.text_shadow(r.0 + (r.2 - lw) / 2.0, r.1 + (r.3 - 14.0) / 2.0, 2.0, "RESPAWN", [1.0; 4]);
+            }
+        }
+        self.ui = ui;
+    }
+
+    // ---------- Menu / inventory clicks ----------
+
+    fn slot_get(&self, craft: bool, i: usize) -> Option<ItemStack> {
+        if craft { self.craft_grid[i] } else { self.inventory.slots[i] }
+    }
+
+    fn slot_set(&mut self, craft: bool, i: usize, v: Option<ItemStack>) {
+        if craft {
+            self.craft_grid[i] = v;
+        } else {
+            self.inventory.slots[i] = v;
+        }
+    }
+
+    fn inventory_click(&mut self, craft: bool, slot: usize, right: bool) {
+        let cur = self.slot_get(craft, slot);
+        let (new_slot, new_held) =
+            inventory::click_stack(&self.reg, cur, self.held_stack, right);
+        self.slot_set(craft, slot, new_slot);
+        self.held_stack = new_held;
+    }
+
+    /// Click the craft result slot: take the output, consume ingredients.
+    fn result_click(&mut self) {
+        let reg = self.reg.clone();
+        let n2 = self.craft_size * self.craft_size;
+        let Some(recipe) = crafting::match_recipe(&reg, &self.craft_grid[..n2], self.craft_size)
+        else {
+            return;
+        };
+        let out = ItemStack::new(&reg, recipe.output, recipe.count);
+        match self.held_stack {
+            None => {
+                self.held_stack = Some(out);
+            }
+            Some(h)
+                if h.can_merge(&reg, &out)
+                    && h.count + out.count <= reg.item(h.item).max_stack =>
+            {
+                self.held_stack = Some(ItemStack { count: h.count + out.count, ..h });
+            }
+            _ => return, // held stack can't take the output
+        }
+        crafting::consume(&mut self.craft_grid[..n2]);
+        self.sfx(Sfx::Craft);
+        if self.scripts.wants("on_craft") {
+            let name = reg.item(recipe.output).name.clone();
+            self.scripts.dispatch(&self.world, "on_craft", (name,));
+            self.apply_script_cmds();
+        }
+    }
+
+    fn menu_click(&mut self, event_loop: &ActiveEventLoop, right: bool) {
+        if std::env::var("WILDFORGE_DEBUG").is_ok() {
+            eprintln!("menu_click at {:?} right={right}", self.ui_cursor);
+        }
+        match self.screen {
+            Screen::Inventory => {
+                for i in 0..TOTAL_SLOTS {
+                    if self.hit(self.inv_slot_rect(i)) {
+                        self.inventory_click(false, i, right);
+                        return;
+                    }
+                }
+                for i in 0..self.craft_size * self.craft_size {
+                    if self.hit(self.craft_slot_rect(i)) {
+                        self.inventory_click(true, i, right);
+                        return;
+                    }
+                }
+                if self.hit(self.result_slot_rect()) {
+                    self.result_click();
+                }
+            }
+            Screen::Paused => {
+                if self.hit(self.menu_button_rect(0)) {
+                    self.sfx(Sfx::Click);
+                    self.set_screen(Screen::Playing);
+                } else if self.hit(self.menu_button_rect(1)) {
+                    self.sfx(Sfx::Click);
+                    self.settings_from_pause = true;
+                    self.set_screen(Screen::Settings);
+                } else if self.hit(self.menu_button_rect(2)) {
+                    self.sfx(Sfx::Click);
+                    self.quit_to_title();
+                }
+            }
+            Screen::Dead => {
+                if self.hit(self.menu_button_rect(0)) {
+                    self.sfx(Sfx::Click);
+                    self.respawn();
+                }
+            }
+            Screen::Title => {
+                for i in 0..self.worlds.len().min(6) {
+                    if self.hit(self.title_play_rect(i)) {
+                        self.sfx(Sfx::Click);
+                        let name = self.worlds[i].0.clone();
+                        self.start_world(&name);
+                        return;
+                    }
+                    if self.hit(self.title_delete_rect(i)) {
+                        self.sfx(Sfx::Click);
+                        self.pending_delete = Some(i);
+                        self.set_screen(Screen::ConfirmDelete);
+                        return;
+                    }
+                }
+                if self.hit(self.title_action_rect(0)) {
+                    self.sfx(Sfx::Click);
+                    self.new_world();
+                } else if self.hit(self.title_action_rect(1)) {
+                    self.sfx(Sfx::Click);
+                    self.set_screen(Screen::Mods);
+                } else if self.hit(self.title_action_rect(2)) {
+                    self.sfx(Sfx::Click);
+                    self.settings_from_pause = false;
+                    self.set_screen(Screen::Settings);
+                } else if self.hit(self.title_action_rect(3)) {
+                    event_loop.exit();
+                }
+            }
+            Screen::Mods => {
+                if self.hit(self.menu_button_rect(4)) {
+                    self.sfx(Sfx::Click);
+                    self.set_screen(Screen::Title);
+                }
+            }
+            Screen::Settings => {
+                for i in 0..Self::SLIDERS.len() {
+                    let (bx, by, bw, bh) = self.slider_bar_rect(i);
+                    let (cx, cy) = self.ui_cursor;
+                    if cx >= bx && cx < bx + bw && cy >= by && cy < by + bh {
+                        self.dragging_slider = Some(i);
+                        self.set_slider(i, (cx - bx - 2.0) / (bw - 4.0));
+                        return;
+                    }
+                }
+                if self.hit(self.settings_back_rect()) {
+                    self.sfx(Sfx::Click);
+                    self.config.save();
+                    self.set_screen(if self.settings_from_pause {
+                        Screen::Paused
+                    } else {
+                        Screen::Title
+                    });
+                }
+            }
+            Screen::ConfirmDelete => {
+                if self.hit(self.menu_button_rect(0)) {
+                    self.sfx(Sfx::Click);
+                    if let Some(i) = self.pending_delete.take() {
+                        if let Some((name, _)) = self.worlds.get(i) {
+                            let _ = std::fs::remove_dir_all(PathBuf::from("saves").join(name));
+                        }
+                        self.refresh_worlds();
+                    }
+                    self.set_screen(Screen::Title);
+                } else if self.hit(self.menu_button_rect(1)) {
+                    self.sfx(Sfx::Click);
+                    self.pending_delete = None;
+                    self.set_screen(Screen::Title);
+                }
+            }
+            Screen::Playing => {}
+        }
+    }
+
+    fn key(&mut self, code: KeyCode, pressed: bool, _event_loop: &ActiveEventLoop) {
+        match code {
+            KeyCode::KeyW | KeyCode::ArrowUp => self.keys.w = pressed,
+            KeyCode::KeyA | KeyCode::ArrowLeft => self.keys.a = pressed,
+            KeyCode::KeyS | KeyCode::ArrowDown => self.keys.s = pressed,
+            KeyCode::KeyD | KeyCode::ArrowRight => self.keys.d = pressed,
+            KeyCode::Space => self.keys.space = pressed,
+            KeyCode::ControlLeft | KeyCode::ControlRight => self.keys.sprint = pressed,
+            KeyCode::Escape if pressed => match self.screen {
+                Screen::Playing => self.set_screen(Screen::Paused),
+                Screen::Inventory => self.set_screen(Screen::Playing),
+                Screen::Paused => self.set_screen(Screen::Playing),
+                Screen::Settings => {
+                    self.config.save();
+                    self.set_screen(if self.settings_from_pause {
+                        Screen::Paused
+                    } else {
+                        Screen::Title
+                    });
+                }
+                Screen::ConfirmDelete => {
+                    self.pending_delete = None;
+                    self.set_screen(Screen::Title);
+                }
+                Screen::Mods => self.set_screen(Screen::Title),
+                Screen::Title | Screen::Dead => {}
+            },
+            KeyCode::KeyE if pressed && self.in_world => match self.screen {
+                Screen::Playing => {
+                    self.craft_size = 2;
+                    self.set_screen(Screen::Inventory);
+                }
+                Screen::Inventory => self.set_screen(Screen::Playing),
+                _ => {}
+            },
+            KeyCode::F5 if pressed => {
+                self.reload_mods(true);
+            }
+            KeyCode::F2 if pressed => {
+                let name = format!(
+                    "screenshot-{}.ppm",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
+                );
+                self.renderer.pending_screenshot = Some(name);
+            }
+            KeyCode::F11 if pressed => {
+                let fs = self.window.fullscreen();
+                self.window.set_fullscreen(if fs.is_some() {
+                    None
+                } else {
+                    Some(Fullscreen::Borderless(None))
+                });
+            }
+            _ => {
+                if pressed && self.screen == Screen::Playing {
+                    let digit = match code {
+                        KeyCode::Digit1 => Some(0),
+                        KeyCode::Digit2 => Some(1),
+                        KeyCode::Digit3 => Some(2),
+                        KeyCode::Digit4 => Some(3),
+                        KeyCode::Digit5 => Some(4),
+                        KeyCode::Digit6 => Some(5),
+                        KeyCode::Digit7 => Some(6),
+                        KeyCode::Digit8 => Some(7),
+                        KeyCode::Digit9 => Some(8),
+                        _ => None,
+                    };
+                    if let Some(d) = digit {
+                        self.hotbar_sel = d;
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+struct App {
+    game: Option<Game>,
+}
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.game.is_some() {
+            return;
+        }
+        let window = Arc::new(
+            event_loop
+                .create_window(
+                    Window::default_attributes()
+                        .with_title("Wildforge — loading world…")
+                        .with_inner_size(LogicalSize::new(1280, 720)),
+                )
+                .expect("create window"),
+        );
+        let mut game = Game::new(window);
+        // Headless/dev: WILDFORGE_WORLD=name skips the title screen.
+        if let Ok(name) = std::env::var("WILDFORGE_WORLD") {
+            game.start_world(&name);
+        }
+        self.game = Some(game);
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        let Some(game) = self.game.as_mut() else {
+            return;
+        };
+        match event {
+            WindowEvent::CloseRequested => {
+                if game.in_world {
+                    game.world.save_modified();
+                }
+                event_loop.exit();
+            }
+            WindowEvent::Resized(size) => {
+                game.renderer.resize(size.width, size.height);
+                game.camera.aspect = size.width as f32 / size.height.max(1) as f32;
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let PhysicalKey::Code(code) = event.physical_key {
+                    game.key(code, event.state.is_pressed(), event_loop);
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                let pressed = state == ElementState::Pressed;
+                if !pressed {
+                    game.dragging_slider = None;
+                }
+                // Menu screens take clicks directly.
+                if game.screen != Screen::Playing {
+                    if pressed {
+                        match button {
+                            MouseButton::Left => game.menu_click(event_loop, false),
+                            MouseButton::Right => game.menu_click(event_loop, true),
+                            _ => {}
+                        }
+                    }
+                    return;
+                }
+                if !game.mouse_captured {
+                    if pressed {
+                        game.capture_mouse(true);
+                    }
+                    return;
+                }
+                match button {
+                    MouseButton::Left => {
+                        game.left_held = pressed;
+                        if !pressed {
+                            game.breaking = None;
+                        }
+                    }
+                    MouseButton::Right => {
+                        game.right_held = pressed;
+                        if pressed {
+                            game.action_cooldown = 0.0;
+                        }
+                    }
+                    MouseButton::Middle if pressed => {
+                        if let Some(h) = raycast::raycast(
+                            &game.world,
+                            game.camera.pos,
+                            game.camera.forward(),
+                            REACH,
+                        ) {
+                            let b = game.world.get_block(h.block.0, h.block.1, h.block.2);
+                            let reg = game.reg.clone();
+                            let found = game.inventory.slots[..HOTBAR_SLOTS]
+                                .iter()
+                                .position(|s| {
+                                    s.map(|s| reg.item(s.item).places) == Some(Some(b))
+                                });
+                            if let Some(i) = found {
+                                game.hotbar_sel = i;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                // WSLg can synthesize a scroll event as the window opens.
+                if game.total_frames < 30 || game.screen != Screen::Playing {
+                    return;
+                }
+                // Some stacks fire many small wheel events per physical notch;
+                // accumulate and step one hotbar slot per whole notch.
+                game.scroll_accum += match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y,
+                    MouseScrollDelta::PixelDelta(p) => p.y as f32 / 120.0,
+                };
+                // One slot per notch, rate-limited: platforms like WSLg fire
+                // multiple events per physical notch.
+                let steps = game.scroll_accum.trunc() as i32;
+                if steps != 0 {
+                    if game.scroll_cooldown <= 0.0 {
+                        let n = HOTBAR_SLOTS as i32;
+                        let sel = (game.hotbar_sel as i32 - steps.signum()).rem_euclid(n);
+                        game.hotbar_sel = sel as usize;
+                        game.scroll_cooldown = 0.15;
+                    }
+                    game.scroll_accum = 0.0;
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                game.ui_cursor = (position.x as f32, position.y as f32);
+                if let Some(i) = game.dragging_slider {
+                    let (bx, _, bw, _) = game.slider_bar_rect(i);
+                    game.set_slider(i, (position.x as f32 - bx - 2.0) / (bw - 4.0));
+                }
+                if game.mouse_captured && !game.raw_look && game.screen == Screen::Playing {
+                    game.cursor_look(position);
+                }
+            }
+            // Crossing the window boundary teleports the cursor; never treat
+            // that jump as look motion.
+            WindowEvent::CursorEntered { .. } | WindowEvent::CursorLeft { .. } => {
+                game.last_cursor = None;
+            }
+            WindowEvent::Focused(false) => {
+                if game.screen == Screen::Playing {
+                    game.capture_mouse(false);
+                }
+                game.keys = KeysDown::default();
+                game.left_held = false;
+                game.right_held = false;
+                game.breaking = None;
+            }
+            WindowEvent::RedrawRequested => {
+                game.update();
+            }
+            _ => {}
+        }
+    }
+
+    fn device_event(&mut self, _el: &ActiveEventLoop, _id: DeviceId, event: DeviceEvent) {
+        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
+            if let Some(game) = self.game.as_mut() {
+                if game.mouse_captured && game.raw_look && game.screen == Screen::Playing {
+                    game.camera.turn(dx as f32, dy as f32);
+                }
+            }
+        }
+    }
+
+    fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
+        if let Some(game) = self.game.as_ref() {
+            game.window.request_redraw();
+        }
+    }
+}
+
+fn main() {
+    // Prefer X11/XWayland on Linux: it supports cursor confinement and
+    // warping, which pure Wayland compositors (notably WSLg) often don't.
+    #[cfg(target_os = "linux")]
+    let event_loop = {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        let mut builder = EventLoop::builder();
+        if std::env::var("DISPLAY").is_ok() {
+            builder.with_x11();
+        }
+        builder.build().expect("create event loop")
+    };
+    #[cfg(not(target_os = "linux"))]
+    let event_loop = EventLoop::new().expect("create event loop");
+    event_loop.set_control_flow(ControlFlow::Poll);
+    let mut app = App::default();
+    event_loop.run_app(&mut app).expect("run event loop");
+}

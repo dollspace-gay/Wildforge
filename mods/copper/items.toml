@@ -1,0 +1,12 @@
+[[item]]
+id = "raw"
+name = "Raw Copper"
+texture = "raw_copper.png"
+
+[[item]]
+id = "pickaxe"
+name = "Copper Pickaxe"
+texture = "copper_pickaxe.png"
+tool = "pickaxe"
+tool_speed = 12.0
+durability = 200

@@ -1,0 +1,4 @@
+id = "copper"
+name = "Copper Age"
+version = "1.0.0"
+depends = ["base"]

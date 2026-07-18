@@ -1,0 +1,17 @@
+# Build artifacts
+/target
+
+# Player data and local settings
+/saves/
+config.txt
+
+# Screenshots and scratch output
+*.ppm
+screenshot-*.png
+
+# Editor/OS noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

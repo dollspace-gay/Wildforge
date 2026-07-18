@@ -1,0 +1,92 @@
+# Vanilla blocks — registered through the same data path external mods use.
+# Textures prefixed with @ reference built-in procedural tiles.
+
+[[block]]
+id = "grass"
+name = "Grass"
+texture = { top = "@grass_top", side = "@grass_side", bottom = "@dirt" }
+hardness = 0.75
+tool = "shovel"
+drops = "base:dirt"
+
+[[block]]
+id = "dirt"
+name = "Dirt"
+texture = "@dirt"
+hardness = 0.6
+tool = "shovel"
+
+[[block]]
+id = "stone"
+name = "Stone"
+texture = "@stone"
+hardness = 6.5
+tool = "pickaxe"
+requires_tool = true
+drops = "base:cobblestone"
+
+[[block]]
+id = "cobblestone"
+name = "Cobblestone"
+texture = "@cobblestone"
+hardness = 6.5
+tool = "pickaxe"
+requires_tool = true
+
+[[block]]
+id = "sand"
+name = "Sand"
+texture = "@sand"
+hardness = 0.6
+tool = "shovel"
+
+[[block]]
+id = "gravel"
+name = "Gravel"
+texture = "@gravel"
+hardness = 0.6
+tool = "shovel"
+
+[[block]]
+id = "log"
+name = "Log"
+texture = { top = "@log_top", side = "@log_side" }
+hardness = 2.2
+tool = "axe"
+
+[[block]]
+id = "leaves"
+name = "Leaves"
+texture = "@leaves"
+hardness = 0.3
+opaque = false
+drops = "none"
+
+[[block]]
+id = "planks"
+name = "Planks"
+texture = "@planks"
+hardness = 1.8
+tool = "axe"
+
+[[block]]
+id = "bedrock"
+name = "Bedrock"
+texture = "@bedrock"
+unbreakable = true
+drops = "none"
+
+[[block]]
+id = "water"
+name = "Water"
+texture = "@water"
+water = 0
+item = false
+
+[[block]]
+id = "crafting_table"
+name = "Crafting Table"
+texture = { top = "@table_top", side = "@table_side", bottom = "@planks" }
+hardness = 1.8
+tool = "axe"
+interactive = true

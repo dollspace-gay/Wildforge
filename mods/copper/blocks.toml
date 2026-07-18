@@ -1,0 +1,16 @@
+[[block]]
+id = "ore"
+name = "Copper Ore"
+texture = "copper_ore.png"
+hardness = 6.5
+tool = "pickaxe"
+requires_tool = true
+drops = "copper:raw"
+
+[[block]]
+id = "block"
+name = "Copper Block"
+texture = "copper_block.png"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true

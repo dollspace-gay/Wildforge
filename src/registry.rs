@@ -1,0 +1,736 @@
+//! Dynamic block/item/recipe registries — the foundation of the mod system.
+//! Vanilla content is the built-in `base` mod, registered through the same
+//! TOML path external mods use.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+use serde::Deserialize;
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct BlockId(pub u16);
+pub const AIR: BlockId = BlockId(0);
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct ItemId(pub u16);
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolKind {
+    Pickaxe,
+    Axe,
+    Shovel,
+}
+
+#[derive(Clone, Debug)]
+pub struct BlockDef {
+    pub name: String,  // "base:stone"
+    pub label: String, // "Stone"
+    /// Atlas slots per face: +X -X +Y -Y +Z -Z.
+    pub tiles: [u16; 6],
+    pub hardness: Option<f32>,
+    pub tool: Option<ToolKind>,
+    pub requires_tool: bool,
+    /// Resolved drop (item, count); None = drops nothing.
+    pub drops: Option<(ItemId, u32)>,
+    pub solid: bool,
+    pub opaque: bool,
+    pub interactive: bool,
+    /// 0 = fluid source, 1..=7 flowing levels. None = not a fluid.
+    pub water_level: Option<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ItemDef {
+    pub name: String,
+    pub label: String,
+    pub icon: u16,
+    pub max_stack: u32,
+    /// (kind, speed multiplier on matching blocks)
+    pub tool: Option<(ToolKind, f32)>,
+    pub durability: u32,
+    /// Placing this item puts down this block.
+    pub places: Option<BlockId>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RecipeDef {
+    pub w: usize,
+    pub h: usize,
+    pub pattern: Vec<Option<ItemId>>,
+    pub output: ItemId,
+    pub count: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct OreFeature {
+    pub block: BlockId,
+    pub replaces: BlockId,
+    pub vein_size: u32,
+    pub per_chunk: u32,
+    pub y_min: i32,
+    pub y_max: i32,
+}
+
+#[derive(Clone, Debug)]
+pub struct ModInfo {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub path: Option<PathBuf>,
+    pub has_script: bool,
+    pub error: Option<String>,
+}
+
+pub struct Registry {
+    pub blocks: Vec<BlockDef>,
+    pub items: Vec<ItemDef>,
+    pub recipes: Vec<RecipeDef>,
+    pub ores: Vec<OreFeature>,
+    pub block_by_name: HashMap<String, BlockId>,
+    pub item_by_name: HashMap<String, ItemId>,
+    /// water_ids[level] — source at 0, flows 1..=7.
+    pub water_ids: [BlockId; 8],
+    pub unknown_block: BlockId,
+    pub mods: Vec<ModInfo>,
+    /// Mod textures to pack: (slot, png path).
+    pub tex_files: Vec<(u16, PathBuf)>,
+}
+
+impl Registry {
+    #[inline]
+    pub fn block(&self, id: BlockId) -> &BlockDef {
+        &self.blocks[id.0 as usize]
+    }
+
+    #[inline]
+    pub fn item(&self, id: ItemId) -> &ItemDef {
+        &self.items[id.0 as usize]
+    }
+
+    pub fn block_id(&self, name: &str) -> Option<BlockId> {
+        self.block_by_name.get(name).copied()
+    }
+
+    pub fn item_id(&self, name: &str) -> Option<ItemId> {
+        self.item_by_name.get(name).copied()
+    }
+
+    #[inline]
+    pub fn is_air(&self, id: BlockId) -> bool {
+        id == AIR
+    }
+
+    #[inline]
+    pub fn is_solid(&self, id: BlockId) -> bool {
+        self.block(id).solid
+    }
+
+    #[inline]
+    pub fn is_opaque(&self, id: BlockId) -> bool {
+        self.block(id).opaque
+    }
+
+    #[inline]
+    pub fn is_water(&self, id: BlockId) -> bool {
+        self.block(id).water_level.is_some()
+    }
+
+    #[inline]
+    pub fn water_level(&self, id: BlockId) -> Option<u8> {
+        self.block(id).water_level
+    }
+
+    pub fn water_block(&self, level: u8) -> BlockId {
+        self.water_ids[(level as usize).min(7)]
+    }
+
+    pub fn water_height(&self, id: BlockId) -> f32 {
+        match self.block(id).water_level {
+            Some(l) => (8 - l) as f32 / 9.0,
+            None => 1.0,
+        }
+    }
+
+    /// Seconds to break `block` holding `held`.
+    pub fn effective_hardness(&self, block: BlockId, held: Option<ItemId>) -> Option<f32> {
+        let d = self.block(block);
+        let base = d.hardness?;
+        let mult = match (held.and_then(|i| self.item(i).tool), d.tool) {
+            (Some((kind, speed)), Some(class)) if kind == class => speed,
+            _ => 1.0,
+        };
+        Some(base / mult)
+    }
+
+    /// Drop for breaking `block` with `held` (requires_tool gating).
+    pub fn drops_for(&self, block: BlockId, held: Option<ItemId>) -> Option<(ItemId, u32)> {
+        let d = self.block(block);
+        if d.requires_tool {
+            let ok = match (held.and_then(|i| self.item(i).tool), d.tool) {
+                (Some((kind, _)), Some(class)) => kind == class,
+                _ => false,
+            };
+            if !ok {
+                return None;
+            }
+        }
+        d.drops
+    }
+}
+
+// ---------------- TOML schema ----------------
+
+#[derive(Deserialize)]
+struct ModToml {
+    id: String,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    depends: Vec<String>,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(untagged)]
+enum TexSpec {
+    One(String),
+    Faces { top: String, side: String, #[serde(default)] bottom: Option<String> },
+}
+
+#[derive(Deserialize, Clone)]
+struct BlockToml {
+    id: String,
+    name: Option<String>,
+    texture: TexSpec,
+    #[serde(default)]
+    hardness: Option<f32>,
+    #[serde(default)]
+    unbreakable: bool,
+    #[serde(default)]
+    tool: Option<ToolKind>,
+    #[serde(default)]
+    requires_tool: bool,
+    /// "self" (default), "none", or an item id.
+    #[serde(default)]
+    drops: Option<String>,
+    #[serde(default)]
+    drop_count: Option<u32>,
+    #[serde(default = "yes")]
+    solid: bool,
+    #[serde(default = "yes")]
+    opaque: bool,
+    #[serde(default)]
+    interactive: bool,
+    #[serde(default)]
+    water: Option<u8>,
+    /// Register an item form for placing (default true).
+    #[serde(default = "yes")]
+    item: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+#[derive(Deserialize, Clone)]
+struct ItemToml {
+    id: String,
+    name: Option<String>,
+    texture: String,
+    #[serde(default)]
+    max_stack: Option<u32>,
+    #[serde(default)]
+    tool: Option<ToolKind>,
+    #[serde(default)]
+    tool_speed: Option<f32>,
+    #[serde(default)]
+    durability: Option<u32>,
+}
+
+#[derive(Deserialize, Clone)]
+struct RecipeToml {
+    pattern: Vec<String>,
+    #[serde(default)]
+    keys: HashMap<String, String>,
+    output: String,
+    #[serde(default)]
+    count: Option<u32>,
+}
+
+#[derive(Deserialize, Clone)]
+struct FeatureToml {
+    r#type: String,
+    block: String,
+    #[serde(default)]
+    replaces: Option<String>,
+    #[serde(default)]
+    vein_size: Option<u32>,
+    #[serde(default)]
+    per_chunk: Option<u32>,
+    #[serde(default)]
+    y_range: Option<[i32; 2]>,
+}
+
+#[derive(Deserialize, Default)]
+struct BlocksFile {
+    #[serde(default)]
+    block: Vec<BlockToml>,
+}
+#[derive(Deserialize, Default)]
+struct ItemsFile {
+    #[serde(default)]
+    item: Vec<ItemToml>,
+}
+#[derive(Deserialize, Default)]
+struct RecipesFile {
+    #[serde(default)]
+    recipe: Vec<RecipeToml>,
+}
+#[derive(Deserialize, Default)]
+struct FeaturesFile {
+    #[serde(default)]
+    feature: Vec<FeatureToml>,
+}
+
+struct RawMod {
+    info: ModInfo,
+    depends: Vec<String>,
+    blocks: Vec<BlockToml>,
+    items: Vec<ItemToml>,
+    recipes: Vec<RecipeToml>,
+    features: Vec<FeatureToml>,
+}
+
+// ---------------- loading ----------------
+
+const BASE_BLOCKS: &str = include_str!("../base/blocks.toml");
+const BASE_ITEMS: &str = include_str!("../base/items.toml");
+const BASE_RECIPES: &str = include_str!("../base/recipes.toml");
+
+fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
+    let manifest = std::fs::read_to_string(dir.join("mod.toml"))
+        .map_err(|e| format!("mod.toml: {e}"))?;
+    let m: ModToml = toml::from_str(&manifest).map_err(|e| format!("mod.toml: {e}"))?;
+    let read = |f: &str| std::fs::read_to_string(dir.join(f)).unwrap_or_default();
+    let blocks: BlocksFile =
+        toml::from_str(&read("blocks.toml")).map_err(|e| format!("blocks.toml: {e}"))?;
+    let items: ItemsFile =
+        toml::from_str(&read("items.toml")).map_err(|e| format!("items.toml: {e}"))?;
+    let recipes: RecipesFile =
+        toml::from_str(&read("recipes.toml")).map_err(|e| format!("recipes.toml: {e}"))?;
+    let features: FeaturesFile =
+        toml::from_str(&read("features.toml")).map_err(|e| format!("features.toml: {e}"))?;
+    let has_script = dir.join("main.rhai").exists();
+    Ok(RawMod {
+        info: ModInfo {
+            id: m.id.clone(),
+            name: m.name.unwrap_or(m.id),
+            version: m.version.unwrap_or_else(|| "0.0.0".into()),
+            path: Some(dir.to_path_buf()),
+            has_script,
+            error: None,
+        },
+        depends: m.depends,
+        blocks: blocks.block,
+        items: items.item,
+        recipes: recipes.recipe,
+        features: features.feature,
+    })
+}
+
+fn base_mod() -> RawMod {
+    let blocks: BlocksFile = toml::from_str(BASE_BLOCKS).expect("base blocks.toml");
+    let items: ItemsFile = toml::from_str(BASE_ITEMS).expect("base items.toml");
+    let recipes: RecipesFile = toml::from_str(BASE_RECIPES).expect("base recipes.toml");
+    RawMod {
+        info: ModInfo {
+            id: "base".into(),
+            name: "Wildforge".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            path: None,
+            has_script: false,
+            error: None,
+        },
+        depends: vec![],
+        blocks: blocks.block,
+        items: items.item,
+        recipes: recipes.recipe,
+        features: vec![],
+    }
+}
+
+/// Load base + all mods under `mods_dir` into a fresh registry.
+/// Individual bad mods are skipped with their error recorded.
+pub fn load(mods_dir: &Path) -> Registry {
+    let mut raws = vec![base_mod()];
+    let mut failed: Vec<ModInfo> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(mods_dir) {
+        let mut dirs: Vec<PathBuf> = rd
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_dir() && p.join("mod.toml").exists())
+            .collect();
+        dirs.sort();
+        for dir in dirs {
+            match parse_mod_dir(&dir) {
+                Ok(r) => raws.push(r),
+                Err(e) => failed.push(ModInfo {
+                    id: dir.file_name().unwrap_or_default().to_string_lossy().into(),
+                    name: String::new(),
+                    version: String::new(),
+                    path: Some(dir),
+                    has_script: false,
+                    error: Some(e),
+                }),
+            }
+        }
+    }
+
+    // Topological order by depends (base first; unknown deps = load error).
+    let ids: Vec<String> = raws.iter().map(|r| r.info.id.clone()).collect();
+    let mut order: Vec<usize> = Vec::new();
+    let mut placed = vec![false; raws.len()];
+    for _ in 0..raws.len() {
+        let mut progressed = false;
+        for i in 0..raws.len() {
+            if placed[i] {
+                continue;
+            }
+            let ok = raws[i].depends.iter().all(|d| {
+                ids.iter()
+                    .enumerate()
+                    .any(|(j, id)| id == d && placed[j])
+                    || d == &raws[i].info.id
+            });
+            if ok {
+                placed[i] = true;
+                order.push(i);
+                progressed = true;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+    for i in 0..raws.len() {
+        if !placed[i] {
+            let mut info = raws[i].info.clone();
+            info.error = Some(format!(
+                "unresolved or cyclic dependencies: {:?}",
+                raws[i].depends
+            ));
+            failed.push(info);
+        }
+    }
+
+    build(order.into_iter().map(|i| raws.remove_stable(i)).collect(), failed)
+}
+
+trait RemoveStable {
+    fn remove_stable(&mut self, idx: usize) -> RawMod;
+}
+impl RemoveStable for Vec<RawMod> {
+    fn remove_stable(&mut self, idx: usize) -> RawMod {
+        // Order indices refer to the original vec; replace with tombstones.
+        let dummy = RawMod {
+            info: ModInfo {
+                id: String::new(),
+                name: String::new(),
+                version: String::new(),
+                path: None,
+                has_script: false,
+                error: None,
+            },
+            depends: vec![],
+            blocks: vec![],
+            items: vec![],
+            recipes: vec![],
+            features: vec![],
+        };
+        std::mem::replace(&mut self[idx], dummy)
+    }
+}
+
+fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
+    let mut reg = Registry {
+        blocks: Vec::new(),
+        items: Vec::new(),
+        recipes: Vec::new(),
+        ores: Vec::new(),
+        block_by_name: HashMap::new(),
+        item_by_name: HashMap::new(),
+        water_ids: [AIR; 8],
+        unknown_block: AIR,
+        mods: Vec::new(),
+        tex_files: Vec::new(),
+    };
+    let mut tex_slots: HashMap<String, u16> = crate::atlas::builtin_slots();
+    let mut next_slot: u16 = crate::atlas::FIRST_FREE_SLOT;
+
+    // Air (id 0) and the unknown-block placeholder are engine-registered.
+    let air = BlockDef {
+        name: "base:air".into(),
+        label: "Air".into(),
+        tiles: [0; 6],
+        hardness: None,
+        tool: None,
+        requires_tool: false,
+        drops: None,
+        solid: false,
+        opaque: false,
+        interactive: false,
+        water_level: None,
+    };
+    reg.block_by_name.insert(air.name.clone(), BlockId(0));
+    reg.blocks.push(air);
+
+    let mut resolve_tex = |spec: &str, mod_path: &Option<PathBuf>, errs: &mut Vec<String>| -> u16 {
+        if let Some(name) = spec.strip_prefix('@') {
+            return *tex_slots.get(name).unwrap_or_else(|| {
+                errs.push(format!("unknown builtin texture @{name}"));
+                &crate::atlas::UNKNOWN_SLOT
+            });
+        }
+        let key = format!(
+            "{}/{}",
+            mod_path.as_deref().map(|p| p.display().to_string()).unwrap_or_default(),
+            spec
+        );
+        if let Some(s) = tex_slots.get(&key) {
+            return *s;
+        }
+        let Some(dir) = mod_path else {
+            errs.push(format!("texture {spec} needs a mod directory"));
+            return crate::atlas::UNKNOWN_SLOT;
+        };
+        let path = dir.join("textures").join(spec);
+        if !path.exists() {
+            errs.push(format!("missing texture {spec}"));
+            return crate::atlas::UNKNOWN_SLOT;
+        }
+        if next_slot >= 256 {
+            errs.push("texture atlas full (256 tiles)".into());
+            return crate::atlas::UNKNOWN_SLOT;
+        }
+        let slot = next_slot;
+        next_slot += 1;
+        tex_slots.insert(key, slot);
+        reg.tex_files.push((slot, path));
+        slot
+    };
+
+    // Pass 1: register blocks and items (unresolved drops/recipes yet).
+    struct PendingDrop {
+        block: usize,
+        rule: String,
+        count: u32,
+    }
+    let mut pending_drops: Vec<PendingDrop> = Vec::new();
+    let mut pending_recipes: Vec<(String, RecipeToml)> = Vec::new();
+    let mut pending_features: Vec<(String, FeatureToml)> = Vec::new();
+
+    for raw in &raws {
+        if raw.info.id.is_empty() {
+            continue; // tombstone
+        }
+        let mut errs: Vec<String> = Vec::new();
+        for b in &raw.blocks {
+            let full = qualify(&raw.info.id, &b.id);
+            if reg.block_by_name.contains_key(&full) {
+                errs.push(format!("duplicate block {full}"));
+                continue;
+            }
+            let tiles = match &b.texture {
+                TexSpec::One(t) => [resolve_tex(t, &raw.info.path, &mut errs); 6],
+                TexSpec::Faces { top, side, bottom } => {
+                    let t = resolve_tex(top, &raw.info.path, &mut errs);
+                    let s = resolve_tex(side, &raw.info.path, &mut errs);
+                    let bo = bottom
+                        .as_ref()
+                        .map(|x| resolve_tex(x, &raw.info.path, &mut errs))
+                        .unwrap_or(t);
+                    [s, s, t, bo, s, s]
+                }
+            };
+            let id = BlockId(reg.blocks.len() as u16);
+            let is_fluid = b.water.is_some();
+            reg.blocks.push(BlockDef {
+                name: full.clone(),
+                label: b.name.clone().unwrap_or_else(|| b.id.clone()),
+                tiles,
+                hardness: if b.unbreakable || is_fluid { None } else { b.hardness.or(Some(1.0)) },
+                tool: b.tool,
+                requires_tool: b.requires_tool,
+                drops: None,
+                solid: b.solid && !is_fluid,
+                opaque: b.opaque && !is_fluid,
+                interactive: b.interactive,
+                water_level: b.water,
+            });
+            reg.block_by_name.insert(full.clone(), id);
+            pending_drops.push(PendingDrop {
+                block: id.0 as usize,
+                rule: b.drops.clone().unwrap_or_else(|| {
+                    if is_fluid { "none".into() } else { "self".into() }
+                }),
+                count: b.drop_count.unwrap_or(1),
+            });
+            if b.water == Some(0) {
+                // Auto-register the 7 flowing variants.
+                reg.water_ids[0] = id;
+                for l in 1..=7u8 {
+                    let fid = BlockId(reg.blocks.len() as u16);
+                    let mut def = reg.blocks[id.0 as usize].clone();
+                    def.name = format!("{full}/flow{l}");
+                    def.water_level = Some(l);
+                    reg.block_by_name.insert(def.name.clone(), fid);
+                    reg.blocks.push(def);
+                    reg.water_ids[l as usize] = fid;
+                }
+            }
+            if b.item && !is_fluid {
+                let iid = ItemId(reg.items.len() as u16);
+                reg.items.push(ItemDef {
+                    name: full.clone(),
+                    label: reg.blocks[id.0 as usize].label.clone(),
+                    icon: tiles[0],
+                    max_stack: 64,
+                    tool: None,
+                    durability: 0,
+                    places: Some(id),
+                });
+                reg.item_by_name.insert(full, iid);
+            }
+        }
+        for it in &raw.items {
+            let full = qualify(&raw.info.id, &it.id);
+            if reg.item_by_name.contains_key(&full) {
+                errs.push(format!("duplicate item {full}"));
+                continue;
+            }
+            let icon = resolve_tex(&it.texture, &raw.info.path, &mut errs);
+            let tool = it.tool.map(|k| (k, it.tool_speed.unwrap_or(4.0)));
+            let iid = ItemId(reg.items.len() as u16);
+            reg.items.push(ItemDef {
+                name: full.clone(),
+                label: it.name.clone().unwrap_or_else(|| it.id.clone()),
+                icon,
+                max_stack: if tool.is_some() { 1 } else { it.max_stack.unwrap_or(64) },
+                tool,
+                durability: it.durability.unwrap_or(if tool.is_some() { 59 } else { 0 }),
+                places: None,
+            });
+            reg.item_by_name.insert(full, iid);
+        }
+        for r in &raw.recipes {
+            pending_recipes.push((raw.info.id.clone(), r.clone()));
+        }
+        for f in &raw.features {
+            pending_features.push((raw.info.id.clone(), f.clone()));
+        }
+        let mut info = raw.info.clone();
+        if !errs.is_empty() {
+            info.error = Some(errs.join("; "));
+        }
+        reg.mods.push(info);
+    }
+
+    // The unknown-block placeholder.
+    let unk = BlockId(reg.blocks.len() as u16);
+    reg.blocks.push(BlockDef {
+        name: "base:unknown".into(),
+        label: "Unknown".into(),
+        tiles: [crate::atlas::UNKNOWN_SLOT; 6],
+        hardness: Some(0.5),
+        tool: None,
+        requires_tool: false,
+        drops: None,
+        solid: true,
+        opaque: true,
+        interactive: false,
+        water_level: None,
+    });
+    reg.block_by_name.insert("base:unknown".into(), unk);
+    reg.unknown_block = unk;
+
+    // Pass 2: resolve drops, recipes, features by name.
+    let lookup_item = |reg: &Registry, modid: &str, name: &str| -> Option<ItemId> {
+        reg.item_id(&qualify(modid, name)).or_else(|| reg.item_id(name))
+    };
+    for pd in pending_drops {
+        let d = match pd.rule.as_str() {
+            "none" => None,
+            "self" => {
+                let name = reg.blocks[pd.block].name.clone();
+                reg.item_id(&name).map(|i| (i, pd.count))
+            }
+            other => reg.item_id(other).map(|i| (i, pd.count)),
+        };
+        reg.blocks[pd.block].drops = d;
+    }
+    for (modid, r) in pending_recipes {
+        let h = r.pattern.len();
+        let w = r.pattern.iter().map(|s| s.chars().count()).max().unwrap_or(0);
+        if h == 0 || w == 0 || h > 3 || w > 3 {
+            continue;
+        }
+        let mut pattern = vec![None; w * h];
+        let mut ok = true;
+        for (y, row) in r.pattern.iter().enumerate() {
+            for (x, ch) in row.chars().enumerate() {
+                if ch == '.' || ch == ' ' {
+                    continue;
+                }
+                let key = ch.to_string();
+                let Some(name) = r.keys.get(&key) else {
+                    ok = false;
+                    continue;
+                };
+                match lookup_item(&reg, &modid, name) {
+                    Some(i) => pattern[y * w + x] = Some(i),
+                    None => ok = false,
+                }
+            }
+        }
+        let Some(out) = lookup_item(&reg, &modid, &r.output) else { continue };
+        if ok {
+            reg.recipes.push(RecipeDef { w, h, pattern, output: out, count: r.count.unwrap_or(1) });
+        }
+    }
+    for (modid, f) in pending_features {
+        if f.r#type != "ore" {
+            continue;
+        }
+        let lookup_block = |name: &str| {
+            reg.block_id(&qualify(&modid, name)).or_else(|| reg.block_id(name))
+        };
+        let (Some(block), Some(replaces)) = (
+            lookup_block(&f.block),
+            lookup_block(f.replaces.as_deref().unwrap_or("base:stone")),
+        ) else {
+            continue;
+        };
+        let [y0, y1] = f.y_range.unwrap_or([4, 60]);
+        reg.ores.push(OreFeature {
+            block,
+            replaces,
+            vein_size: f.vein_size.unwrap_or(5).clamp(1, 32),
+            per_chunk: f.per_chunk.unwrap_or(6).clamp(0, 64),
+            y_min: y0,
+            y_max: y1,
+        });
+    }
+
+    reg.mods.extend(failed.drain(..));
+    reg
+}
+
+fn qualify(modid: &str, name: &str) -> String {
+    if name.contains(':') {
+        name.to_string()
+    } else {
+        format!("{modid}:{name}")
+    }
+}

@@ -1,0 +1,9 @@
+[[recipe]]
+pattern = ["rr", "rr"]
+keys = { r = "copper:raw" }
+output = "copper:block"
+
+[[recipe]]
+pattern = ["rrr", ".s.", ".s."]
+keys = { r = "copper:raw", s = "base:stick" }
+output = "copper:pickaxe"
