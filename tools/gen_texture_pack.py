@@ -36,7 +36,10 @@ SPRITE_STYLE = (
     STYLE
     + "A single small game item sprite, centered, isolated on a SOLID PURE MAGENTA "
     + "(#FF00FF) background. The magenta must fill the entire image edge to edge — "
-    + "no frames, no borders, no white bars, no other background colors, no shadows. {}"
+    + "no frames, no borders, no white bars, no other background colors, no shadows. "
+    + "The ENTIRE object is fully visible and small in the frame with generous "
+    + "magenta margin on every side — never zoomed in, never touching or cut off "
+    + "by the image edges. {}"
 )
 FACE_STYLE = STYLE + "A full-frame flat texture (no background visible), {}"
 HEAD_STYLE = (
