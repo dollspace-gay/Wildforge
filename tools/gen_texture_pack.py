@@ -286,6 +286,20 @@ def process(img, cat):
         # the resize smears magenta into every edge pixel.
         img = chroma_key(img)
         img = resize_sprite(img, OUT_PX)
+        if cat == "sprite":
+            # Frame-filling art reads as a cropped zoom in inventory slots;
+            # cap sprites at ~75% of the tile and center them.
+            bbox = img.getbbox()
+            if bbox:
+                w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                if max(w, h) > 26:
+                    crop = img.crop(bbox)
+                    scale = 24 / max(w, h)
+                    nw = max(1, round(w * scale))
+                    nh = max(1, round(h * scale))
+                    crop = crop.resize((nw, nh), Image.NEAREST)
+                    img = Image.new("RGBA", (OUT_PX, OUT_PX), (0, 0, 0, 0))
+                    img.paste(crop, ((OUT_PX - nw) // 2, (OUT_PX - nh) // 2))
     else:
         img = img.resize((OUT_PX, OUT_PX), Image.BOX)
     img = quantize(img)

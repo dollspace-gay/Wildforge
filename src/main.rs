@@ -494,6 +494,9 @@ impl Game {
                 ("base:planks", 12),
                 ("base:stick", 8),
                 ("base:wood_pickaxe", 1),
+                ("base:potato", 5),
+                ("base:bread", 3),
+                ("base:bronze_sword", 1),
             ] {
                 if let Some(item) = reg.item_id(name) {
                     self.inventory.add(&reg, item, n);
@@ -548,6 +551,11 @@ impl Game {
             eprintln!("demo water source at ({bx},{},{bz}), spawn {:?}", by + 5, spawn);
         }
         self.set_screen(Screen::Playing);
+        // Dev/headless: open the inventory for UI verification.
+        if std::env::var("WILDFORGE_SCREEN").as_deref() == Ok("inventory") {
+            self.craft_size = 2;
+            self.set_screen(Screen::Inventory);
+        }
         // Dev: a small menagerie near spawn (rendering/combat verification).
         if std::env::var("WILDFORGE_DEMO_MOBS").is_ok() {
             for (i, name) in
