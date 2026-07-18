@@ -155,3 +155,49 @@ burn = 2.5
 [[fuel]]
 item = "base:charcoal"
 burn = 40.0
+
+[[recipe]]
+pattern = ["www"]
+keys = { w = "base:wheat" }
+output = "base:bread"
+
+[[recipe]]
+pattern = ["w"]
+keys = { w = "base:wheat" }
+output = "base:wheat_seeds"
+count = 2
+
+[[recipe]]
+pattern = ["mcb"]
+keys = { m = "base:mushroom", c = "base:carrot", b = "base:berry" }
+output = "base:forest_stew"
+
+[[recipe]]
+pattern = ["mm", ".s", ".s"]
+keys = { m = "#base:planks", s = "base:stick" }
+output = "base:wood_hoe"
+
+[[recipe]]
+pattern = ["mm", ".s", ".s"]
+keys = { m = "base:cobblestone", s = "base:stick" }
+output = "base:stone_hoe"
+
+[[recipe]]
+pattern = ["mm", ".s", ".s"]
+keys = { m = "base:copper_ingot", s = "base:stick" }
+output = "base:copper_hoe"
+
+[[recipe]]
+pattern = ["mm", ".s", ".s"]
+keys = { m = "base:bronze_ingot", s = "base:stick" }
+output = "base:bronze_hoe"
+
+[[smelt]]
+input = "base:potato"
+output = "base:baked_potato"
+time = 6.0
+
+[[smelt]]
+input = "base:mushroom"
+output = "base:roasted_mushroom"
+time = 5.0

@@ -102,8 +102,23 @@ mod, registered through the same TOML pipeline external mods use
   that bob, spin, and magnetize into your inventory
 - **Inventory**: 9 hotbar + 27 storage slots, 64-per-stack, full drag-and-drop
   inventory screen (E); placing consumes items
-- **Health**: 10 hearts, fall damage (beyond 3 blocks), drowning with air
-  bubbles, slow regeneration when out of danger
+- **Health**: base 7 hearts, fall damage (beyond 3 blocks), drowning with
+  air bubbles; **regeneration costs food** (hunger ≥ 85%)
+- **Hunger & nutrition**: activity drains hunger (sprinting/jumping/mining
+  cost extra); below 30% you can't sprint; starving weakens you to 1 heart.
+  Foods feed five nutrition tracks (grain, vegetable, fruit, fungi, protein
+  — protein awaits animals); every track kept above 40 adds **+1 max
+  heart** (up to 11 today), so a diverse diet literally makes you tougher.
+  Nutrition panel lives in the inventory screen
+- **Farming**: craft a hoe (any tier), till dirt into farmland, plant
+  wheat seeds/carrots/potatoes; crops grow through staged sprites via
+  random ticks. Wild food is biome-tied: plains wheat, forest carrots and
+  regrowing berry bushes, taiga potatoes and mushrooms, desert cactus
+  fruit (right-click cacti), jungle fruit bushes. Furnace bakes potatoes,
+  roasts mushrooms, and bread/forest stew reward cooking; food data
+  (`food = { hunger, nutrition = {...} }`) is fully moddable
+- **Player persistence**: position, health, hunger, nutrition, and
+  inventory now save with the world (`player.toml`)
 - **Death**: your inventory scatters as drops; respawn at the world spawn
 - **HUD**: hotbar with icons/counts, hearts, air bubbles, item name popup,
   damage vignette — all drawn with a procedural 5×7 pixel font (zero assets)

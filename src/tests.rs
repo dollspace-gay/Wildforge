@@ -1134,6 +1134,139 @@ fn base_metal_ores_generate() {
     assert!(found_cu > found_sn, "copper more common than tin");
 }
 
+// ---------------- food & farming ----------------
+
+#[test]
+fn food_data_and_recipes_resolve() {
+    let reg = base_reg();
+    let bread = reg.item(it(&reg, "base:bread"));
+    let f = bread.food.as_ref().expect("bread is food");
+    assert_eq!(f.hunger, 6.0);
+    assert!(f.nutrition[0] > 0.0, "bread is grain");
+    let stew = reg.item(it(&reg, "base:forest_stew")).food.clone().unwrap();
+    assert!(stew.nutrition[1] > 0.0 && stew.nutrition[2] > 0.0 && stew.nutrition[3] > 0.0);
+    // Stew crafts from mushroom+carrot+berry.
+    let g3 = |a: &str, b2: &str, c: &str| {
+        let mut g = vec![None; 9];
+        g[0] = Some(ItemStack::new(&reg, it(&reg, a), 1));
+        g[1] = Some(ItemStack::new(&reg, it(&reg, b2), 1));
+        g[2] = Some(ItemStack::new(&reg, it(&reg, c), 1));
+        g
+    };
+    assert_eq!(
+        crate::crafting::match_recipe(&reg, &g3("base:mushroom", "base:carrot", "base:berry"), 3)
+            .unwrap()
+            .output,
+        it(&reg, "base:forest_stew")
+    );
+    // Hoes and smelted foods.
+    assert!(reg.item(it(&reg, "base:bronze_hoe")).tool.is_some());
+    assert_eq!(
+        reg.smelt_for(it(&reg, "base:potato")).unwrap().output,
+        it(&reg, "base:baked_potato")
+    );
+    assert!(reg.block_id("base:wheat_seeds/stage1").is_some(), "stage1 registered");
+    assert!(reg.block_id("base:wheat_seeds/stage2").is_some(), "stage2 registered");
+    // Carrot plants its crop.
+    assert_eq!(
+        reg.item(it(&reg, "base:carrot")).places,
+        reg.block_id("base:carrot_crop")
+    );
+}
+
+#[test]
+fn crops_grow_on_farmland_via_random_ticks() {
+    let reg = base_reg();
+    let mut w = test_world_with("crops", reg.clone());
+    let h = w.surface_height(4, 4);
+    let farm = b(&reg, "base:farmland");
+    let seed0 = b(&reg, "base:wheat_seeds");
+    // A field on farmland grows; a control column on dirt doesn't.
+    for x in 0..16 {
+        for z in 0..16 {
+            if (x, z) == (6, 6) {
+                continue;
+            }
+            w.set_block(x, h, z, farm);
+            w.set_block(x, h + 1, z, seed0);
+        }
+    }
+    w.set_block(6, h, 6, b(&reg, "base:dirt"));
+    w.set_block(6, h + 1, 6, seed0);
+    let mut rng = 12345u32;
+    for _ in 0..3000 {
+        w.random_tick(&mut rng);
+    }
+    let mut advanced = 0;
+    for x in 0..16 {
+        for z in 0..16 {
+            if (x, z) != (6, 6) && w.get_block(x, h + 1, z) != seed0 {
+                advanced += 1;
+            }
+        }
+    }
+    assert!(advanced > 0, "farmland crops should advance");
+    assert_eq!(w.get_block(6, h + 1, 6), seed0, "dirt crop must not grow");
+    // Stage chain terminates at ripe (stage2) with a harvest def.
+    let ripe = b(&reg, "base:wheat_seeds/stage2");
+    assert!(reg.block(ripe).crop_next.is_none());
+    let (item, _, becomes) = reg.block(ripe).harvest.expect("ripe wheat harvests");
+    assert_eq!(item, it(&reg, "base:wheat"));
+    assert_eq!(becomes, seed0);
+    // Bushes regrow anywhere.
+    let bare = b(&reg, "base:berry_bush");
+    for x in 0..16 {
+        w.set_block(x, h + 3, 8, bare);
+    }
+    for _ in 0..30000 {
+        w.random_tick(&mut rng);
+    }
+    let refruited = (0..16)
+        .filter(|&x| w.get_block(x, h + 3, 8) == b(&reg, "base:berry_bush/stage1"))
+        .count();
+    assert!(refruited > 0, "bushes should refruit anywhere");
+    // Cross rendering flags.
+    assert!(reg.block(seed0).cross);
+    assert!(!reg.is_solid(seed0));
+}
+
+#[test]
+fn wild_food_generates_per_biome() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    let has = |biome: Biome, blocks: &[&str], name: &str| -> bool {
+        let (x, z) = find_biome(&g, biome).unwrap();
+        let cp = ChunkPos::of_world(x, z);
+        let mut w = World::new(42, tmp_dir(name), reg.clone());
+        let ids: Vec<_> = blocks.iter().filter_map(|n| reg.block_id(n)).collect();
+        for dx in -4..=4 {
+            for dz in -4..=4 {
+                let p = ChunkPos { x: cp.x + dx, z: cp.z + dz };
+                w.ensure_chunk(p);
+                for lx in 0..16 {
+                    for lz in 0..16 {
+                        for y in 64..140 {
+                            if ids.contains(&w.get_block(p.x * 16 + lx, y, p.z * 16 + lz)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        false
+    };
+    assert!(has(Biome::Plains, &["base:wheat_seeds/stage2"], "ww"), "plains wheat");
+    assert!(
+        has(Biome::Forest, &["base:carrot_crop/stage1", "base:berry_bush/stage1"], "wf"),
+        "forest carrots/berries"
+    );
+    assert!(
+        has(Biome::Taiga, &["base:potato_crop/stage1", "base:wild_mushroom"], "wt"),
+        "taiga potato/mushroom"
+    );
+}
+
 // ---------------- gameplay (regression) ----------------
 
 #[test]

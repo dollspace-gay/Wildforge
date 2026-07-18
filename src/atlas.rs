@@ -13,7 +13,7 @@ pub const ATLAS_TILES: u32 = 16;
 /// Atlas slot = row * 16 + col. Rows 0-2 are built-in procedural tiles.
 pub const UNKNOWN_SLOT: u16 = 15;
 pub const CRACK_SLOT: u16 = 16; // stages 16..=19
-pub const FIRST_FREE_SLOT: u16 = 80; // rows 0-4 are built-in tiles
+pub const FIRST_FREE_SLOT: u16 = 112; // rows 0-6 are built-in tiles
 
 /// Built-in procedural tile names usable as `@name` in mod TOML.
 pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
@@ -37,7 +37,13 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("tin_ingot", 67), ("bronze_ingot", 68), ("bronze_blend", 69),
         ("charcoal", 70), ("copper_pickaxe", 71), ("copper_axe", 72),
         ("copper_shovel", 73), ("bronze_pickaxe", 74), ("bronze_axe", 75),
-        ("bronze_shovel", 76),
+        ("bronze_shovel", 76), ("farmland", 77), ("wheat_young", 78),
+        ("wheat_ripe", 79), ("carrot_plant", 80), ("potato_plant", 81),
+        ("bush_fruited", 82), ("bush_bare", 83), ("mushroom", 84),
+        ("bread", 85), ("berry", 86), ("carrot", 87), ("potato", 88),
+        ("baked_potato", 89), ("roasted_mushroom", 90), ("cactus_fruit", 91),
+        ("jungle_fruit", 92), ("stew", 93), ("wood_hoe", 96),
+        ("stone_hoe", 97), ("copper_hoe", 98), ("bronze_hoe", 99),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
@@ -749,6 +755,99 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
                     let f = 0.85 + h01(ax as i32, ay as i32, 300 + slot) * 0.2;
                     rgba(head, f, 255)
                 }
+                Some(b'h') => rgba([104.0, 72.0, 42.0], 1.0, 255),
+                _ => [0, 0, 0, 0],
+            }
+        });
+    }
+
+    let mut tf = |tx: u32, ty: u32, f: &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4]| tile(tx, ty, f);
+    // Farmland: dark tilled rows.
+    tf(13, 4, &mut |px, py, u, v| {
+        let row = ((v * 8.0) as u32) % 2 == 0;
+        let t = fbm(u, v, 5, 120);
+        let c = mix3([78.0, 54.0, 36.0], [102.0, 72.0, 48.0], t);
+        rgba(c, if row { 0.75 } else { 1.0 } * speck(px, py, 121, 0.08), 255)
+    });
+    // Plant sprites: stems with leaves/heads, transparent bg.
+    let plant = |slot: u32, stem: [f32; 3], head: Option<[f32; 3]>, height: f32,
+                 tile: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+        tile(slot % 16, slot / 16, &mut |px, py, u, v| {
+            let col = (u * 5.0) as i32;
+            let cx = 0.1 + col as f32 * 0.2 + h01(col, 0, 130 + slot) * 0.08;
+            let stem_here = (u - cx).abs() < 0.035 && v > 1.0 - height;
+            let head_here = head.is_some()
+                && (u - cx).abs() < 0.09
+                && v > 1.0 - height
+                && v < 1.0 - height + 0.3;
+            if head_here {
+                rgba(head.unwrap(), 0.85 + h01(px as i32, py as i32, 131) * 0.3, 255)
+            } else if stem_here {
+                rgba(stem, 0.85 + h01(px as i32, py as i32, 132) * 0.3, 255)
+            } else {
+                [0, 0, 0, 0]
+            }
+        });
+    };
+    plant(78, [90.0, 160.0, 60.0], None, 0.5, &mut tf); // young wheat
+    plant(79, [200.0, 170.0, 70.0], Some([222.0, 190.0, 90.0]), 0.9, &mut tf); // ripe wheat
+    plant(80, [70.0, 140.0, 55.0], Some([225.0, 120.0, 40.0]), 0.6, &mut tf); // carrot
+    plant(81, [75.0, 130.0, 60.0], Some([170.0, 140.0, 90.0]), 0.6, &mut tf); // potato
+    // Bushes: leafy blob, fruited variant with red dots.
+    for (slot, fruited) in [(82u32, true), (83, false)] {
+        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+            let dx = u - 0.5;
+            let dy = v - 0.62;
+            if dx * dx + dy * dy < 0.14 {
+                if fruited && hash(px as i32, py as i32, 140) % 13 == 0 {
+                    return rgba([210.0, 40.0, 60.0], 1.0, 255);
+                }
+                let t = fbm(u, v, 6, 141);
+                rgba(mix3([40.0, 90.0, 30.0], [70.0, 130.0, 50.0], t), 1.0, 255)
+            } else {
+                [0, 0, 0, 0]
+            }
+        });
+    }
+    // Mushroom sprite.
+    tf(4, 5, &mut |px, py, u, v| {
+        let cap = (u - 0.5).abs() < 0.28 && v > 0.35 && v < 0.62;
+        let stem = (u - 0.5).abs() < 0.08 && v >= 0.62 && v < 0.95;
+        if cap {
+            rgba([170.0, 90.0, 60.0], 0.85 + h01(px as i32, py as i32, 150) * 0.3, 255)
+        } else if stem {
+            rgba([225.0, 215.0, 195.0], 1.0, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    // Food lumps.
+    lump(85, [205.0, 160.0, 90.0], &mut tf); // bread
+    lump(86, [200.0, 45.0, 70.0], &mut tf); // berry
+    lump(87, [225.0, 120.0, 40.0], &mut tf); // carrot
+    lump(88, [190.0, 160.0, 105.0], &mut tf); // potato
+    lump(89, [222.0, 186.0, 120.0], &mut tf); // baked potato
+    lump(90, [150.0, 95.0, 60.0], &mut tf); // roasted mushroom
+    lump(91, [220.0, 90.0, 130.0], &mut tf); // cactus fruit
+    lump(92, [235.0, 190.0, 60.0], &mut tf); // jungle fruit
+    lump(93, [160.0, 110.0, 60.0], &mut tf); // stew
+    // Hoes: reuse shovel-ish art with thin blade — use SHOVEL_ART with tier colors.
+    let hoe_sets: [(u32, [f32; 3]); 4] = [
+        (96, [168.0, 122.0, 60.0]),
+        (97, [130.0, 130.0, 130.0]),
+        (98, [206.0, 116.0, 52.0]),
+        (99, [196.0, 148.0, 62.0]),
+    ];
+    for (slot, head) in hoe_sets {
+        tf(slot % 16, slot / 16, &mut |px, py, _u, _v| {
+            let ax = (px / k2).min(15) as usize;
+            let ay = (py / k2).min(15) as usize;
+            match AXE_ART[ay].as_bytes().get(ax) {
+                Some(b'H') if ay <= 3 => {
+                    let f = 0.85 + h01(ax as i32, ay as i32, 160 + slot) * 0.2;
+                    rgba(head, f, 255)
+                }
+                Some(b'H') => [0, 0, 0, 0],
                 Some(b'h') => rgba([104.0, 72.0, 42.0], 1.0, 255),
                 _ => [0, 0, 0, 0],
             }

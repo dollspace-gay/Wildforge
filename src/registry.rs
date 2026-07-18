@@ -20,6 +20,7 @@ pub enum ToolKind {
     Pickaxe,
     Axe,
     Shovel,
+    Hoe,
 }
 
 #[derive(Clone, Debug)]
@@ -41,6 +42,23 @@ pub struct BlockDef {
     pub min_tier: u8,
     /// 0 = fluid source, 1..=7 flowing levels. None = not a fluid.
     pub water_level: Option<u8>,
+    /// Render as two crossed quads instead of a cube (plants).
+    pub cross: bool,
+    /// Crop: (final stage block advances no further). tick advances stages.
+    pub crop_next: Option<BlockId>,
+    pub crop_chance: f32,
+    pub crop_any_soil: bool,
+    /// Right-click harvest: (item, count, block it becomes).
+    pub harvest: Option<(ItemId, u32, BlockId)>,
+}
+
+pub const NUTRIENTS: [&str; 5] = ["grain", "vegetable", "fruit", "fungi", "protein"];
+
+#[derive(Clone, Debug)]
+pub struct FoodDef {
+    pub hunger: f32,
+    pub eat_time: f32,
+    pub nutrition: [f32; 5],
 }
 
 #[derive(Clone, Debug)]
@@ -54,6 +72,7 @@ pub struct ItemDef {
     pub durability: u32,
     /// Placing this item puts down this block.
     pub places: Option<BlockId>,
+    pub food: Option<FoodDef>,
 }
 
 /// A recipe slot requirement: one exact item, or any member of a tag.
@@ -266,6 +285,12 @@ struct BlockToml {
     min_tier: u8,
     #[serde(default)]
     water: Option<u8>,
+    #[serde(default)]
+    cross: bool,
+    #[serde(default)]
+    crop: Option<CropToml>,
+    #[serde(default)]
+    harvest: Option<HarvestToml>,
     /// Register an item form for placing (default true).
     #[serde(default = "yes")]
     item: bool,
@@ -273,6 +298,35 @@ struct BlockToml {
 
 fn yes() -> bool {
     true
+}
+
+#[derive(Deserialize, Clone)]
+struct CropToml {
+    stages: u8,
+    #[serde(default)]
+    next_chance: Option<f32>,
+    /// Texture per stage (else the block texture is reused).
+    #[serde(default)]
+    stage_textures: Vec<String>,
+    #[serde(default)]
+    any_soil: bool,
+}
+
+#[derive(Deserialize, Clone)]
+struct HarvestToml {
+    item: String,
+    #[serde(default)]
+    count: Option<u32>,
+    becomes: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct FoodToml {
+    hunger: f32,
+    #[serde(default)]
+    eat_time: Option<f32>,
+    #[serde(default)]
+    nutrition: HashMap<String, f32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -290,6 +344,10 @@ struct ItemToml {
     tool_tier: Option<u8>,
     #[serde(default)]
     durability: Option<u32>,
+    #[serde(default)]
+    food: Option<FoodToml>,
+    #[serde(default)]
+    places: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -595,6 +653,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         interaction: None,
         min_tier: 0,
         water_level: None,
+        cross: false,
+        crop_next: None,
+        crop_chance: 0.0,
+        crop_any_soil: false,
+        harvest: None,
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
     reg.blocks.push(air);
@@ -647,6 +710,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let mut pending_smelts: Vec<(String, SmeltToml)> = Vec::new();
     let mut pending_fuels: Vec<(String, FuelToml)> = Vec::new();
     let mut pending_aliases: Vec<(String, AliasToml)> = Vec::new();
+    let mut pending_harvests: Vec<(String, BlockId, HarvestToml)> = Vec::new();
+    let mut pending_places: Vec<(String, (String, String))> = Vec::new();
 
     for raw in &raws {
         if raw.info.id.is_empty() {
@@ -686,6 +751,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 interaction: b.interaction.clone(),
                 min_tier: b.min_tier,
                 water_level: b.water,
+                cross: b.cross,
+                crop_next: None,
+                crop_chance: 0.0,
+                crop_any_soil: b.crop.as_ref().is_some_and(|c| c.any_soil),
+                harvest: None,
             });
             reg.block_by_name.insert(full.clone(), id);
             pending_drops.push(PendingDrop {
@@ -695,6 +765,36 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 }),
                 count: b.drop_count.unwrap_or(1),
             });
+            if let Some(crop) = &b.crop {
+                // Auto-register growth stages; each links to the next.
+                let mut prev = id;
+                for st in 1..crop.stages {
+                    let sid = BlockId(reg.blocks.len() as u16);
+                    let mut def = reg.blocks[id.0 as usize].clone();
+                    def.name = format!("{full}/stage{st}");
+                    if let Some(t) = crop.stage_textures.get(st as usize - 1) {
+                        let s = resolve_tex(t, &raw.info.path, &mut errs);
+                        def.tiles = [s; 6];
+                    }
+                    reg.block_by_name.insert(def.name.clone(), sid);
+                    reg.blocks.push(def);
+                    reg.blocks[prev.0 as usize].crop_next = Some(sid);
+                    reg.blocks[prev.0 as usize].crop_chance =
+                        crop.next_chance.unwrap_or(0.2);
+                    prev = sid;
+                }
+                // The final stage grows no further (clones inherit the
+                // base's link otherwise).
+                reg.blocks[prev.0 as usize].crop_next = None;
+                reg.blocks[prev.0 as usize].crop_chance = 0.0;
+            }
+            if let Some(h) = &b.harvest {
+                // Harvest applies to the final growth stage (or the block
+                // itself when it has no stages).
+                let target = BlockId(reg.blocks.len() as u16 - 1);
+                let target = if b.crop.is_some() { target } else { id };
+                pending_harvests.push((raw.info.id.clone(), target, h.clone()));
+            }
             if b.water == Some(0) {
                 // Auto-register the 7 flowing variants.
                 reg.water_ids[0] = id;
@@ -718,6 +818,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     tool: None,
                     durability: 0,
                     places: Some(id),
+                    food: None,
                 });
                 reg.item_by_name.insert(full, iid);
             }
@@ -731,6 +832,15 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             let icon = resolve_tex(&it.texture, &raw.info.path, &mut errs);
             let tool = it.tool.map(|k| (k, it.tool_speed.unwrap_or(4.0), it.tool_tier.unwrap_or(1)));
             let iid = ItemId(reg.items.len() as u16);
+            let food = it.food.as_ref().map(|f| {
+                let mut n = [0.0f32; 5];
+                for (k, v) in &f.nutrition {
+                    if let Some(i) = NUTRIENTS.iter().position(|x| x == k) {
+                        n[i] = *v;
+                    }
+                }
+                FoodDef { hunger: f.hunger, eat_time: f.eat_time.unwrap_or(1.5), nutrition: n }
+            });
             reg.items.push(ItemDef {
                 name: full.clone(),
                 label: it.name.clone().unwrap_or_else(|| it.id.clone()),
@@ -739,6 +849,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 tool,
                 durability: it.durability.unwrap_or(if tool.is_some() { 59 } else { 0 }),
                 places: None,
+                food,
             });
             reg.item_by_name.insert(full, iid);
         }
@@ -747,6 +858,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         }
         for f in &raw.features {
             pending_features.push((raw.info.id.clone(), f.clone()));
+        }
+        for it in &raw.items {
+            if let Some(p) = &it.places {
+                pending_places.push((raw.info.id.clone(), (it.id.clone(), p.clone())));
+            }
         }
         for t in &raw.tags {
             pending_tags.push((raw.info.id.clone(), t.clone()));
@@ -782,6 +898,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         interaction: None,
         min_tier: 0,
         water_level: None,
+        cross: false,
+        crop_next: None,
+        crop_chance: 0.0,
+        crop_any_soil: false,
+        harvest: None,
     });
     reg.block_by_name.insert("base:unknown".into(), unk);
     reg.unknown_block = unk;
@@ -833,6 +954,15 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             reg.fuels.push((ing, f.burn));
         }
     }
+    for (modid, block, h) in pending_harvests {
+        let becomes = reg
+            .block_id(&qualify(&modid, &h.becomes))
+            .or_else(|| reg.block_id(&h.becomes));
+        let item = lookup_item(&reg, &modid, &h.item);
+        if let (Some(item), Some(becomes)) = (item, becomes) {
+            reg.blocks[block.0 as usize].harvest = Some((item, h.count.unwrap_or(2), becomes));
+        }
+    }
     // Aliases: old name -> already-registered new id (lossless renames).
     for (modid, a) in pending_aliases {
         let new = qualify(&modid, &a.new);
@@ -841,6 +971,15 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         }
         if let Some(id) = reg.item_by_name.get(&new).copied() {
             reg.item_by_name.entry(a.old.clone()).or_insert(id);
+        }
+    }
+    // Item `places` links (food items that plant crops).
+    for (modid, it_toml) in &pending_places {
+        if let (Some(item), Some(block)) = (
+            reg.item_id(&qualify(modid, &it_toml.0)),
+            reg.block_id(&qualify(modid, &it_toml.1)).or_else(|| reg.block_id(&it_toml.1)),
+        ) {
+            reg.items[item.0 as usize].places = Some(block);
         }
     }
     for (modid, r) in pending_recipes {
@@ -880,6 +1019,15 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         let Some(out) = lookup_item(&reg, &modid, &r.output) else { continue };
         if ok {
             reg.recipes.push(RecipeDef { w, h, pattern, output: out, count: r.count.unwrap_or(1) });
+        }
+    }
+    // Crop stages inherit their parent's drops (after drop resolution).
+    for i in 0..reg.blocks.len() {
+        if reg.blocks[i].name.contains("/stage") {
+            let base = reg.blocks[i].name.split("/stage").next().unwrap().to_string();
+            if let Some(pid) = reg.block_by_name.get(&base).copied() {
+                reg.blocks[i].drops = reg.blocks[pid.0 as usize].drops;
+            }
         }
     }
     for (modid, f) in pending_features {

@@ -100,6 +100,12 @@ pub struct Generator {
     // Resolved block ids.
     grass: BlockId,
     dirt: BlockId,
+    wild_wheat: BlockId,
+    wild_carrot: BlockId,
+    wild_potato: BlockId,
+    berry_bush: BlockId,
+    jungle_bush: BlockId,
+    mushroom: BlockId,
     stone: BlockId,
     sand: BlockId,
     gravel: BlockId,
@@ -176,6 +182,12 @@ impl Generator {
             ]),
             grass: b("base:grass"),
             dirt: b("base:dirt"),
+            wild_wheat: b("base:wheat_seeds/stage2"),
+            wild_carrot: b("base:carrot_crop/stage1"),
+            wild_potato: b("base:potato_crop/stage1"),
+            berry_bush: b("base:berry_bush/stage1"),
+            jungle_bush: b("base:jungle_bush/stage1"),
+            mushroom: b("base:wild_mushroom"),
             stone: b("base:stone"),
             sand: b("base:sand"),
             gravel: b("base:gravel"),
@@ -497,6 +509,10 @@ impl Generator {
         }
     }
 
+    fn height_hint(&self, heights: &[[i32; CHUNK_Z]; CHUNK_X], lx: usize, lz: usize) -> i32 {
+        heights[lx][lz]
+    }
+
     fn plant_trees(
         &self,
         c: &mut Chunk,
@@ -520,6 +536,31 @@ impl Generator {
                     Biome::Desert => 190, // cacti
                     Biome::Arctic | Biome::Mountains => 0,
                 };
+                // Wild food plants roll independently of trees (~1/70 cols).
+                let food_roll = hash2(self.seed ^ 0x5eed, wx, wz);
+                if food_roll % 70 == 0 && biome != Biome::Desert {
+                    let h2 = self.height_hint(heights, lx, lz);
+                    let plant = match biome {
+                        Biome::Plains => self.wild_wheat,
+                        Biome::Forest => {
+                            if food_roll % 2 == 0 { self.wild_carrot } else { self.berry_bush }
+                        }
+                        Biome::Taiga => {
+                            if food_roll % 2 == 0 { self.wild_potato } else { self.mushroom }
+                        }
+                        Biome::Jungle => self.jungle_bush,
+                        _ => AIR,
+                    };
+                    if plant != AIR
+                        && h2 > SEA_LEVEL + 1
+                        && h2 + 2 < CHUNK_Y as i32
+                        && c.get(lx, h2 as usize, lz) == self.grass
+                        && c.get(lx, (h2 + 1) as usize, lz) == AIR
+                    {
+                        c.set(lx, (h2 + 1) as usize, lz, plant);
+                        continue;
+                    }
+                }
                 if density == 0 || hash2(self.seed, wx, wz) % density != 0 {
                     continue;
                 }

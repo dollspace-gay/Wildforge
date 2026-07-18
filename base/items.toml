@@ -142,3 +142,105 @@ tool = "shovel"
 tool_speed = 12.0
 tool_tier = 3
 durability = 225
+
+[[item]]
+id = "wheat"
+name = "Wheat"
+texture = "@wheat_ripe"
+
+[[item]]
+id = "bread"
+name = "Bread"
+texture = "@bread"
+food = { hunger = 6, eat_time = 1.6, nutrition = { grain = 22 } }
+
+[[item]]
+id = "berry"
+name = "Berries"
+texture = "@berry"
+food = { hunger = 3, eat_time = 0.9, nutrition = { fruit = 14 } }
+
+[[item]]
+id = "carrot"
+name = "Carrot"
+texture = "@carrot"
+places = "base:carrot_crop"
+food = { hunger = 4, eat_time = 1.2, nutrition = { vegetable = 16 } }
+
+[[item]]
+id = "potato"
+name = "Potato"
+texture = "@potato"
+places = "base:potato_crop"
+food = { hunger = 2, eat_time = 1.2, nutrition = { vegetable = 8 } }
+
+[[item]]
+id = "baked_potato"
+name = "Baked Potato"
+texture = "@baked_potato"
+food = { hunger = 6, eat_time = 1.4, nutrition = { vegetable = 24 } }
+
+[[item]]
+id = "mushroom"
+name = "Mushroom"
+texture = "@mushroom"
+food = { hunger = 2, eat_time = 1.0, nutrition = { fungi = 10 } }
+
+[[item]]
+id = "roasted_mushroom"
+name = "Roasted Mushroom"
+texture = "@roasted_mushroom"
+food = { hunger = 5, eat_time = 1.2, nutrition = { fungi = 24 } }
+
+[[item]]
+id = "cactus_fruit"
+name = "Cactus Fruit"
+texture = "@cactus_fruit"
+food = { hunger = 4, eat_time = 1.0, nutrition = { fruit = 16 } }
+
+[[item]]
+id = "jungle_fruit"
+name = "Jungle Fruit"
+texture = "@jungle_fruit"
+food = { hunger = 4, eat_time = 1.0, nutrition = { fruit = 16 } }
+
+[[item]]
+id = "forest_stew"
+name = "Forest Stew"
+texture = "@stew"
+food = { hunger = 10, eat_time = 2.0, nutrition = { vegetable = 18, fungi = 18, fruit = 18 } }
+
+[[item]]
+id = "wood_hoe"
+name = "Wood Hoe"
+texture = "@wood_hoe"
+tool = "hoe"
+tool_speed = 1.0
+durability = 59
+
+[[item]]
+id = "stone_hoe"
+name = "Stone Hoe"
+texture = "@stone_hoe"
+tool = "hoe"
+tool_speed = 1.0
+tool_tier = 2
+durability = 131
+
+[[item]]
+id = "copper_hoe"
+name = "Copper Hoe"
+texture = "@copper_hoe"
+tool = "hoe"
+tool_speed = 1.0
+tool_tier = 2
+durability = 160
+
+[[item]]
+id = "bronze_hoe"
+name = "Bronze Hoe"
+texture = "@bronze_hoe"
+tool = "hoe"
+tool_speed = 1.0
+tool_tier = 3
+durability = 225

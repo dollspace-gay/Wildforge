@@ -254,6 +254,36 @@ impl World {
         }
     }
 
+    /// Random ticks: crops advance a stage when conditions hold.
+    pub fn random_tick(&mut self, rng: &mut u32) {
+        let reg = self.reg.clone();
+        let farmland = reg.block_id("base:farmland");
+        let keys: Vec<ChunkPos> = self.chunks.keys().copied().collect();
+        let mut changes = Vec::new();
+        for pos in keys {
+            for _ in 0..8 {
+                *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                let r = *rng >> 8;
+                let (lx, lz) = ((r % 16) as i32, ((r >> 4) % 16) as i32);
+                let y = ((r >> 8) % CHUNK_Y as u32) as i32;
+                let (wx, wz) = (pos.x * 16 + lx, pos.z * 16 + lz);
+                let b = self.get_block(wx, y, wz);
+                let d = reg.block(b);
+                if let Some(next) = d.crop_next {
+                    let soil_ok = d.crop_any_soil
+                        || farmland == Some(self.get_block(wx, y - 1, wz));
+                    *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                    if soil_ok && (*rng >> 8) as f32 / (1 << 24) as f32 * 2.0 < d.crop_chance {
+                        changes.push((wx, y, wz, next));
+                    }
+                }
+            }
+        }
+        for (x, y, z, b) in changes {
+            self.set_block(x, y, z, b);
+        }
+    }
+
     /// Advance machines. Returns true if any visible state changed.
     pub fn tick_entities(&mut self, dt: f32) {
         let reg = self.reg.clone();

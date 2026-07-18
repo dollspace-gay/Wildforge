@@ -53,7 +53,7 @@ const GEN_BUDGET: usize = 4; // chunk generations per frame (256-tall gen is pri
 const MESH_BUDGET: usize = 6; // chunk remeshes per frame
 const DAY_LENGTH: f32 = 600.0; // seconds per full day/night cycle
 const REACH: f32 = 5.0;
-const MAX_HEALTH: f32 = 20.0; // half-hearts
+const MAX_HEALTH: f32 = 14.0; // base half-hearts (7 hearts)
 const MAX_AIR: f32 = 15.0; // seconds of breath
 
 #[derive(Clone, Copy, PartialEq)]
@@ -110,6 +110,11 @@ struct Game {
     /// Block being mined and progress 0..1.
     breaking: Option<((i32, i32, i32), f32)>,
     health: f32,
+    hunger: f32,
+    nutrition: [f32; 5],
+    eating: f32,
+    exhaustion_regen: f32,
+    starve_timer: f32,
     air: f32,
     since_damage: f32,
     regen_timer: f32,
@@ -126,6 +131,7 @@ struct Game {
     mods_stamp: u64,
     mods_poll: f32,
     tick_accum: f32,
+    tick_accum2: f32,
     config: Config,
     audio: Option<Audio>,
     in_world: bool,
@@ -256,6 +262,11 @@ impl Game {
             items: Vec::new(),
             breaking: None,
             health: MAX_HEALTH,
+            hunger: 20.0,
+            nutrition: [0.0; 5],
+            eating: 0.0,
+            exhaustion_regen: 0.0,
+            starve_timer: 0.0,
             air: MAX_AIR,
             since_damage: 100.0,
             regen_timer: 0.0,
@@ -274,6 +285,7 @@ impl Game {
             mods_stamp: 0,
             mods_poll: 0.0,
             tick_accum: 0.0,
+            tick_accum2: 0.0,
             config,
             audio,
             in_world: false,
@@ -428,6 +440,15 @@ impl Game {
         self.time_of_day = 0.3;
         self.hotbar_sel = 0;
         self.in_world = true;
+        if self.load_player(&PathBuf::from("saves").join(name)) {
+            // Ensure the chunk under the restored position exists.
+            let cp = ChunkPos::of_world(self.player.pos.x as i32, self.player.pos.z as i32);
+            for dx in -1..=1 {
+                for dz in -1..=1 {
+                    self.world.ensure_chunk(ChunkPos { x: cp.x + dx, z: cp.z + dz });
+                }
+            }
+        }
         self.scripts.load_kv(&PathBuf::from("saves").join(name));
         if self.scripts.wants("on_world_start") {
             self.scripts.dispatch(&self.world, "on_world_start", (name.to_string(),));
@@ -490,8 +511,69 @@ impl Game {
         self.start_world(&name);
     }
 
+    fn save_player(&self) {
+        if !self.in_world {
+            return;
+        }
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        let p = self.player.pos;
+        let _ = writeln!(out, "pos = [{}, {}, {}]", p.x, p.y, p.z);
+        let _ = writeln!(out, "yaw = {}\npitch = {}", self.camera.yaw, self.camera.pitch);
+        let _ = writeln!(out, "health = {}\nhunger = {}", self.health, self.hunger);
+        let _ = writeln!(out, "nutrition = {:?}", self.nutrition);
+        let _ = writeln!(out, "hotbar = {}", self.hotbar_sel);
+        for (i, s) in self.inventory.slots.iter().enumerate() {
+            if let Some(s) = s {
+                let _ = writeln!(
+                    out,
+                    "[[slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                    self.reg.item(s.item).name, s.count, s.durability
+                );
+            }
+        }
+        let _ = std::fs::write(self.world.save_dir_for_saving().join("player.toml"), out);
+    }
+
+    fn load_player(&mut self, dir: &std::path::Path) -> bool {
+        use serde::Deserialize;
+        #[derive(Deserialize)]
+        struct SlotT { index: usize, item: String, count: u32, durability: u32 }
+        #[derive(Deserialize)]
+        struct P {
+            pos: [f32; 3],
+            yaw: f32,
+            pitch: f32,
+            health: f32,
+            hunger: f32,
+            nutrition: [f32; 5],
+            hotbar: usize,
+            #[serde(default)]
+            slot: Vec<SlotT>,
+        }
+        let Ok(text) = std::fs::read_to_string(dir.join("player.toml")) else { return false };
+        let Ok(p) = toml::from_str::<P>(&text) else { return false };
+        self.player.pos = Vec3::new(p.pos[0], p.pos[1], p.pos[2]);
+        self.camera.yaw = p.yaw;
+        self.camera.pitch = p.pitch;
+        self.health = p.health;
+        self.hunger = p.hunger;
+        self.nutrition = p.nutrition;
+        self.hotbar_sel = p.hotbar.min(HOTBAR_SLOTS - 1);
+        for s in p.slot {
+            if s.index < TOTAL_SLOTS {
+                if let Some(item) = self.reg.item_id(&s.item) {
+                    self.inventory.slots[s.index] =
+                        Some(ItemStack { item, count: s.count, durability: s.durability });
+                }
+            }
+        }
+        true
+    }
+
     fn quit_to_title(&mut self) {
         if self.in_world {
+            self.save_player();
             self.world.save_modified();
             self.scripts.save_kv(&self.world.save_dir_for_saving());
         }
@@ -626,7 +708,8 @@ impl Game {
 
     fn respawn(&mut self) {
         self.player = Player::new(self.spawn_point);
-        self.health = MAX_HEALTH;
+        self.health = self.max_health();
+        self.hunger = 20.0;
         self.air = MAX_AIR;
         self.fall_start = None;
         self.drown_timer = 0.0;
@@ -712,7 +795,7 @@ impl Game {
             Some(ToolKind::Pickaxe) => BreakMat::Stone,
             Some(ToolKind::Axe) => BreakMat::Wood,
             Some(ToolKind::Shovel) => BreakMat::Soft,
-            None => BreakMat::Leafy,
+            Some(ToolKind::Hoe) | None => BreakMat::Leafy,
         }
     }
 
@@ -748,6 +831,7 @@ impl Game {
                         };
                         self.breaking = None;
                         if allow {
+                            self.hunger = (self.hunger - 0.008).max(0.0);
                             self.world.set_block(target.0, target.1, target.2, AIR);
                             self.sfx(Sfx::Break(self.break_mat(b)));
                             self.inventory.wear_tool(&reg, self.hotbar_sel);
@@ -777,9 +861,35 @@ impl Game {
 
         // Right click: interact with the targeted block (crafting table),
         // otherwise place the selected block.
-        if self.right_held && self.action_cooldown <= 0.0 {
+        let held_is_food = held.is_some_and(|i| reg.item(i).food.is_some());
+        if self.right_held && self.action_cooldown <= 0.0 && !held_is_food {
             if let Some(h) = &hit {
                 let tb = self.world.get_block(h.block.0, h.block.1, h.block.2);
+                // Harvestable blocks (berry bushes).
+                if let Some((item, n, becomes)) = reg.block(tb).harvest {
+                    self.world.set_block(h.block.0, h.block.1, h.block.2, becomes);
+                    let left = self.inventory.add(&reg, item, n);
+                    if left > 0 {
+                        self.drop_stack(ItemStack::new(&reg, item, left));
+                    }
+                    self.sfx(Sfx::Pickup);
+                    self.action_cooldown = 0.3;
+                    return;
+                }
+                // Hoe tills grass/dirt into farmland.
+                if let (Some((ToolKind::Hoe, _, _)), Some(farm)) = (
+                    held.and_then(|i| reg.item(i).tool),
+                    reg.block_id("base:farmland"),
+                ) {
+                    let name = reg.block(tb).name.as_str();
+                    if name == "base:grass" || name == "base:dirt" {
+                        self.world.set_block(h.block.0, h.block.1, h.block.2, farm);
+                        self.inventory.wear_tool(&reg, self.hotbar_sel);
+                        self.sfx(Sfx::Place);
+                        self.action_cooldown = 0.3;
+                        return;
+                    }
+                }
                 if self.scripts.wants("on_interact") {
                     let name = reg.block(tb).name.clone();
                     let allow = self.scripts.dispatch(
@@ -818,6 +928,12 @@ impl Game {
                 let place = self.inventory.slots[self.hotbar_sel]
                     .and_then(|s| reg.item(s.item).places);
                 if let Some(block) = place {
+                    let bd = reg.block(block);
+                    let needs_farmland = bd.crop_next.is_some() && !bd.crop_any_soil;
+                    let soil = self.world.get_block(x, y - 1, z);
+                    if needs_farmland && Some(soil) != reg.block_id("base:farmland") {
+                        return;
+                    }
                     if !reg.is_solid(self.world.get_block(x, y, z))
                         && !self.player.overlaps_block(x, y, z)
                     {
@@ -954,6 +1070,69 @@ impl Game {
         }
     }
 
+    fn max_health(&self) -> f32 {
+        MAX_HEALTH + self.nutrition.iter().filter(|&&n| n >= 40.0).count() as f32 * 2.0
+    }
+
+    fn update_food(&mut self, dt: f32, input: &physics::Input) {
+        // Activity-based hunger drain.
+        let mut drain = 0.01;
+        if input.sprint && (input.forward != 0.0 || input.strafe != 0.0) {
+            drain += 0.02;
+        }
+        self.hunger = (self.hunger - drain * dt).max(0.0);
+        // Nutrition decays slowly (~full to empty over long play).
+        for n in self.nutrition.iter_mut() {
+            *n = (*n - dt * 0.01).max(0.0);
+        }
+        let maxh = self.max_health();
+        self.health = self.health.min(maxh);
+        // Food-gated regen (replaces free idle regen).
+        if self.hunger >= 17.0 && self.health < maxh && self.since_damage > 4.0 {
+            self.exhaustion_regen += dt;
+            if self.exhaustion_regen >= 3.0 {
+                self.exhaustion_regen = 0.0;
+                self.health = (self.health + 1.0).min(maxh);
+                self.hunger = (self.hunger - 0.5).max(0.0);
+            }
+        }
+        // Starvation weakens to 1 heart, never kills.
+        if self.hunger <= 0.0 {
+            self.starve_timer += dt;
+            if self.starve_timer >= 4.0 {
+                self.starve_timer = 0.0;
+                if self.health > 2.0 {
+                    self.health -= 1.0;
+                    self.damage_flash = 0.3;
+                    self.sfx(Sfx::Hurt);
+                }
+            }
+        }
+        // Eating: hold right-click with food selected.
+        let food = self.inventory.slots[self.hotbar_sel]
+            .and_then(|s| self.reg.item(s.item).food.clone());
+        if self.right_held && self.screen == Screen::Playing {
+            if let Some(f) = food {
+                let want = self.hunger < 19.5
+                    || f.nutrition.iter().zip(&self.nutrition).any(|(a, b)| *a > 0.0 && *b < 99.0);
+                if want {
+                    self.eating += dt;
+                    if self.eating >= f.eat_time {
+                        self.eating = 0.0;
+                        self.hunger = (self.hunger + f.hunger).min(20.0);
+                        for (n, add) in self.nutrition.iter_mut().zip(&f.nutrition) {
+                            *n = (*n + add).min(100.0);
+                        }
+                        self.inventory.take_one(self.hotbar_sel);
+                        self.sfx(Sfx::Pickup);
+                    }
+                    return;
+                }
+            }
+        }
+        self.eating = 0.0;
+    }
+
     fn update_survival(&mut self, dt: f32) {
         // Fall damage: measure from the apex of the fall.
         if self.player.in_water || self.player.on_ground {
@@ -984,15 +1163,7 @@ impl Game {
             self.drown_timer = 0.0;
         }
 
-        // Slow regeneration when out of danger for a while.
         self.since_damage += dt;
-        if self.health < MAX_HEALTH && self.since_damage > 8.0 {
-            self.regen_timer += dt;
-            if self.regen_timer >= 2.0 {
-                self.regen_timer = 0.0;
-                self.health = (self.health + 1.0).min(MAX_HEALTH);
-            }
-        }
         self.damage_flash = (self.damage_flash - dt).max(0.0);
     }
 
@@ -1047,6 +1218,13 @@ impl Game {
                     self.world.tick_water(512);
                 }
                 self.world.tick_entities(dt);
+                self.tick_accum2 += dt;
+                if self.tick_accum2 >= 0.5 {
+                    self.tick_accum2 = 0.0;
+                    let mut r = self.rng;
+                    self.world.random_tick(&mut r);
+                    self.rng = r;
+                }
                 for (pos, s) in std::mem::take(&mut self.world.pending_drops) {
                     let center = Vec3::new(pos.0 as f32 + 0.5, pos.1 as f32 + 0.5, pos.2 as f32 + 0.5);
                     let a = self.rand01() * std::f32::consts::TAU;
@@ -1094,8 +1272,12 @@ impl Game {
                 forward: (self.keys.w as i32 - self.keys.s as i32) as f32,
                 strafe: (self.keys.d as i32 - self.keys.a as i32) as f32,
                 jump: self.keys.space,
-                sprint: self.keys.sprint,
+                sprint: self.keys.sprint && self.hunger >= 6.0,
             };
+            if self.keys.space && self.player.on_ground {
+                self.hunger = (self.hunger - 0.005).max(0.0);
+            }
+            self.update_food(dt, &input);
             let was_in_water = self.player.in_water;
             let fall_speed = self.player.vel.y;
             self.player.update(
@@ -1546,10 +1728,11 @@ impl Game {
             ui.text_shadow(hx0 + (9.0 * Self::SLOT - tw) / 2.0, hy0 - 52.0, 2.0, name, [1.0; 4]);
         }
 
-        // Hearts above the hotbar.
+        // Hearts above the hotbar (count follows max health).
         let (hx, hy) = self.hotbar_origin();
         let hs = 2.6;
-        for i in 0..10 {
+        let hearts = (self.max_health() / 2.0).ceil() as i32;
+        for i in 0..hearts {
             let kind = if self.health >= (i * 2 + 2) as f32 {
                 2
             } else if self.health >= (i * 2 + 1) as f32 {
@@ -1559,13 +1742,30 @@ impl Game {
             };
             ui.heart(hx + i as f32 * 8.0 * hs, hy - 8.0 * hs - 4.0, hs, kind);
         }
+        // Hunger pips, right-aligned above the hotbar.
+        let pips = (self.hunger / 2.0).ceil() as i32;
+        for i in 0..10 {
+            let x = hx + 9.0 * Self::SLOT - (i + 1) as f32 * 8.0 * hs;
+            let a = if i < pips { 1.0 } else { 0.25 };
+            ui.rect(x, hy - 8.0 * hs - 4.0 + 4.0, 6.0 * hs * 0.7, 5.0 * hs * 0.7, [0.85, 0.55, 0.2, a]);
+        }
+        // Eat progress near the crosshair.
+        if self.eating > 0.0 {
+            if let Some(f) = self.inventory.slots[self.hotbar_sel]
+                .and_then(|s| self.reg.item(s.item).food.clone())
+            {
+                let t = (self.eating / f.eat_time).min(1.0);
+                ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0, 6.0, [0.1, 0.1, 0.1, 0.8]);
+                ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0 * t, 6.0, [0.9, 0.8, 0.3, 0.95]);
+            }
+        }
 
         // Air bubbles (right-aligned above hotbar) when submerged.
         if self.air < MAX_AIR {
             let n = (self.air / MAX_AIR * 10.0).ceil() as usize;
             for i in 0..n {
                 let x = hx + 9.0 * Self::SLOT - (i + 1) as f32 * 8.0 * hs;
-                ui.bubble(x, hy - 8.0 * hs - 4.0, hs);
+                ui.bubble(x, hy - 16.0 * hs - 8.0, hs);
             }
         }
 
@@ -1617,6 +1817,28 @@ impl Game {
                     let hover = self.hit(r);
                     Self::draw_slot(&self.reg, &mut ui, r, self.inventory.slots[i], i == self.hotbar_sel, hover);
                 }
+                // Nutrition panel.
+                let (p0x, p0y, _, _) = self.inv_slot_rect(HOTBAR_SLOTS);
+                let names = ["GRAIN", "VEG", "FRUIT", "FUNGI", "PROT"];
+                let cols = [
+                    [0.85, 0.7, 0.25, 1.0],
+                    [0.35, 0.75, 0.3, 1.0],
+                    [0.85, 0.3, 0.3, 1.0],
+                    [0.6, 0.45, 0.3, 1.0],
+                    [0.5, 0.5, 0.55, 1.0],
+                ];
+                for i in 0..5 {
+                    let y = p0y + i as f32 * 26.0;
+                    ui.text_shadow(p0x - 190.0, y, 1.5, names[i], [1.0; 4]);
+                    ui.rect(p0x - 130.0, y, 100.0, 10.0, [0.12, 0.12, 0.12, 0.9]);
+                    let v = self.nutrition[i] / 100.0;
+                    ui.rect(p0x - 130.0, y, 100.0 * v, 10.0, cols[i]);
+                    if self.nutrition[i] >= 40.0 {
+                        ui.text_shadow(p0x - 24.0, y, 1.5, "+", [0.6, 1.0, 0.6, 1.0]);
+                    }
+                }
+                let bonus = (self.max_health() - MAX_HEALTH) as i32 / 2;
+                ui.text_shadow(p0x - 190.0, p0y + 134.0, 1.5, &format!("MAX HEALTH +{bonus}"), [1.0; 4]);
                 // Craft grid, arrow, result.
                 let n2 = self.craft_size * self.craft_size;
                 for i in 0..n2 {
@@ -2035,6 +2257,7 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => {
                 if game.in_world {
+                    game.save_player();
                     game.world.save_modified();
                 }
                 event_loop.exit();

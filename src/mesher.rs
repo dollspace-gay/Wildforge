@@ -99,6 +99,38 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                 if b == AIR {
                     continue;
                 }
+                let def = reg.block(b);
+                if def.cross {
+                    // Plant: two crossed quads, both sides, alpha-tested.
+                    let slot = def.tiles[0];
+                    let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
+                    let (wx, wy, wz) = ((bx + lx) as f32, y as f32, (bz + lz) as f32);
+                    for (x0, z0, x1, z1) in
+                        [(0.15, 0.15, 0.85, 0.85), (0.15, 0.85, 0.85, 0.15)]
+                    {
+                        for flip in [false, true] {
+                            let base = m.opaque_verts.len() as u32;
+                            let quad = if flip {
+                                [(x1, z1, 1.0), (x0, z0, 0.0), (x0, z0, 0.0), (x1, z1, 1.0)]
+                            } else {
+                                [(x0, z0, 0.0), (x1, z1, 1.0), (x1, z1, 1.0), (x0, z0, 0.0)]
+                            };
+                            let ys = [0.0, 0.0, 1.0, 1.0];
+                            for i in 0..4 {
+                                let (qx, qz, u) = quad[i];
+                                m.opaque_verts.push(Vertex {
+                                    pos: [wx + qx, wy + ys[i], wz + qz],
+                                    uv: tile_uv(tx, ty, u, 1.0 - ys[i]),
+                                    light: 0.95,
+                                });
+                            }
+                            m.opaque_idx.extend_from_slice(&[
+                                base, base + 1, base + 2, base, base + 2, base + 3,
+                            ]);
+                        }
+                    }
+                    continue;
+                }
                 let water = reg.is_water(b);
                 // Water surface height falls with flow level (unless the
                 // block above is also water — then it's a full column).

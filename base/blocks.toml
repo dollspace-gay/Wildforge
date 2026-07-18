@@ -111,6 +111,7 @@ id = "cactus"
 name = "Cactus"
 texture = { top = "@cactus_top", side = "@cactus_side" }
 hardness = 0.5
+harvest = { item = "base:cactus_fruit", count = 1, becomes = "base:cactus" }
 
 [[block]]
 id = "birch_log"
@@ -242,3 +243,82 @@ hardness = 6.5
 tool = "pickaxe"
 requires_tool = true
 interaction = "furnace"
+
+[[block]]
+id = "farmland"
+name = "Farmland"
+texture = { top = "@farmland", side = "@dirt" }
+hardness = 0.6
+tool = "shovel"
+drops = "base:dirt"
+
+[[block]]
+id = "wheat_seeds"
+cross = true
+name = "Wheat Seeds"
+texture = "@wheat_young"
+hardness = 0.05
+solid = false
+opaque = false
+drops = "self"
+crop = { stages = 3, next_chance = 0.3, stage_textures = ["@wheat_young", "@wheat_ripe"] }
+harvest = { item = "base:wheat", count = 1, becomes = "base:wheat_seeds" }
+
+[[block]]
+id = "carrot_crop"
+cross = true
+name = "Carrot Crop"
+texture = "@carrot_plant"
+hardness = 0.05
+solid = false
+opaque = false
+drops = "base:carrot"
+item = false
+crop = { stages = 2, next_chance = 0.25 }
+
+[[block]]
+id = "potato_crop"
+cross = true
+name = "Potato Crop"
+texture = "@potato_plant"
+hardness = 0.05
+solid = false
+opaque = false
+drops = "base:potato"
+item = false
+crop = { stages = 2, next_chance = 0.25 }
+
+[[block]]
+id = "berry_bush"
+cross = true
+name = "Berry Bush"
+texture = "@bush_bare"
+hardness = 0.4
+solid = false
+opaque = false
+drops = "self"
+crop = { stages = 2, next_chance = 0.06, stage_textures = ["@bush_fruited"], any_soil = true }
+harvest = { item = "base:berry", count = 2, becomes = "base:berry_bush" }
+
+[[block]]
+id = "wild_mushroom"
+cross = true
+name = "Mushroom"
+texture = "@mushroom"
+hardness = 0.05
+solid = false
+opaque = false
+drops = "base:mushroom"
+item = false
+
+[[block]]
+id = "jungle_bush"
+cross = true
+name = "Fruit Bush"
+texture = "@bush_bare"
+hardness = 0.4
+solid = false
+opaque = false
+drops = "self"
+crop = { stages = 2, next_chance = 0.06, stage_textures = ["@bush_fruited"], any_soil = true }
+harvest = { item = "base:jungle_fruit", count = 2, becomes = "base:jungle_bush" }
