@@ -66,7 +66,7 @@ impl ItemEntity {
 
     /// Emit this entity as a spinning, bobbing mini-cube (blocks) or a
     /// crossed pair of upright sprite quads (tools, sticks).
-    pub fn emit(&self, reg: &Registry, lum: (f32, f32), verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
+    pub fn emit(&self, reg: &Registry, lum: ([f32; 3], f32), verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
         let block = match reg.item(self.item).places {
             Some(b) if !reg.block(b).cross => b,
             _ => {
@@ -106,7 +106,7 @@ impl ItemEntity {
                         ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                     ],
                     normal: [0.0, 0.0, 0.0],
-                    light: [shade * lum.0; 3],
+                    light: [shade * lum.0[0], shade * lum.0[1], shade * lum.0[2]],
                     sky: shade * lum.1,
                 });
             }
@@ -116,7 +116,7 @@ impl ItemEntity {
 }
 
 impl ItemEntity {
-    fn emit_sprite(&self, reg: &Registry, lum: (f32, f32), verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
+    fn emit_sprite(&self, reg: &Registry, lum: ([f32; 3], f32), verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
         let slot = reg.item(self.item).icon;
         let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
         let ts = 1.0 / ATLAS_TILES as f32;
@@ -153,7 +153,7 @@ impl ItemEntity {
                         pos: [c.x + dx * o, c.y + y + 0.5 * h, c.z + dz * o],
                         uv: [u, v],
                         normal: [0.0, 0.0, 0.0],
-                        light: [0.95 * lum.0; 3],
+                        light: [0.95 * lum.0[0], 0.95 * lum.0[1], 0.95 * lum.0[2]],
                         sky: 0.95 * lum.1,
                     });
                 }

@@ -97,8 +97,9 @@ fn face_shade(n: vec3<f32>) -> f32 {
 // normal marks pre-shaded billboards/entities, which keep the old flat model.
 fn world_light(normal: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) -> vec3<f32> {
     if (dot(normal, normal) < 0.25) {
-        let l = max(light.r, max(light.g, light.b));
-        return vec3<f32>(max(max(l, sky * u.misc.y), 0.03));
+        // Pre-shaded billboards/entities: colored block light or grayscale sky,
+        // whichever is brighter per channel, over a small floor.
+        return max(max(light, vec3<f32>(sky * u.misc.y)), vec3<f32>(0.03));
     }
     let n = normalize(normal);
     let fs = face_shade(n);
@@ -138,6 +139,16 @@ fn fs_chunk(in: VsOut) -> @location(0) vec4<f32> {
 fn fs_water(in: VsOut) -> @location(0) vec4<f32> {
     let tex = textureSample(atlas_tex, atlas_smp, in.uv);
     var rgb = tex.rgb * world_light(in.normal, in.light, in.sky, in.world);
+    // Sun specular glint: a sharp Blinn-Phong highlight where the sun reflects
+    // into the eye, gated by sky visibility and cast shadows.
+    if (dot(in.normal, in.normal) > 0.25) {
+        let n = normalize(in.normal);
+        let v = normalize(u.cam.xyz - in.world);
+        let h = normalize(u.sun_dir.xyz + v);
+        let spec = pow(max(dot(n, h), 0.0), 64.0);
+        let sun_lit = in.sky * sample_shadow(in.world, max(dot(n, u.sun_dir.xyz), 0.0));
+        rgb = rgb + spec * sun_lit * u.sun_col.rgb * 1.6;
+    }
     rgb = apply_fog(rgb, in.world);
     if (u.misc.x > 0.5) {
         rgb = mix(rgb, vec3<f32>(0.1, 0.2, 0.5), 0.55);

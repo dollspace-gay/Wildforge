@@ -707,6 +707,19 @@ impl Game {
                 }
             }
         }
+        // Dev: a flat water pool ahead of spawn (specular-glint verification).
+        if std::env::var("WILDFORGE_DEMO_POOL").is_ok() {
+            if let Some(water) = self.reg.block_id("base:water") {
+                let cx = spawn.x as i32;
+                let cz = spawn.z as i32 + 10;
+                let y = self.world.surface_height(cx, cz);
+                for dx in -8..=8 {
+                    for dz in -8..=8 {
+                        self.world.set_block(cx + dx, y, cz + dz, water);
+                    }
+                }
+            }
+        }
         // Dev: a warm torch and a red ruby block side by side (colored-light
         // verification — pools of warm and red that blend where they meet).
         if std::env::var("WILDFORGE_DEMO_COLORLIGHT").is_ok() {
@@ -2978,7 +2991,11 @@ impl Game {
         let horiz = ang.cos(); // +1 dawn -> 0 noon -> -1 dusk
         let sun_dir = Vec3::new(horiz * 0.8, elev.max(0.05) + 0.15, 0.45).normalize();
         let sun_vis = elev.clamp(0.0, 1.0).sqrt(); // 0 below horizon
-        let sun_col = Vec3::new(1.0, 0.93, 0.78) * (0.62 * sun_vis);
+        // Golden hour: the sun's hue warms from near-white at noon to deep
+        // orange as it nears the horizon.
+        let noon = Vec3::new(1.0, 0.96, 0.86);
+        let horizon = Vec3::new(1.0, 0.54, 0.26);
+        let sun_col = horizon.lerp(noon, elev.clamp(0.0, 1.0).sqrt()) * (0.64 * sun_vis);
         let amb_col = Vec3::new(0.60, 0.68, 0.82) * (0.42 * daylight);
 
         let playing = self.screen == Screen::Playing;
@@ -2994,10 +3011,13 @@ impl Game {
         // World-space extras: item entities + mining crack overlay.
         let mut entity_verts = Vec::new();
         let mut entity_idx = Vec::new();
-        let sample = |w: &World, p: Vec3| -> (f32, f32) {
+        let sample = |w: &World, p: Vec3| -> ([f32; 3], f32) {
             let (b, s) =
-                w.light_at(p.x.floor() as i32, (p.y + 0.4).floor() as i32, p.z.floor() as i32);
-            (b as f32 / 15.0, s as f32 / 15.0)
+                w.light_rgb_at(p.x.floor() as i32, (p.y + 0.4).floor() as i32, p.z.floor() as i32);
+            (
+                [b[0] as f32 / 15.0, b[1] as f32 / 15.0, b[2] as f32 / 15.0],
+                s as f32 / 15.0,
+            )
         };
         for it in &self.items {
             let lum = sample(&self.server.world, it.pos);
