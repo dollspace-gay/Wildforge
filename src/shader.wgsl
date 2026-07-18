@@ -16,6 +16,7 @@ struct VsIn {
     @location(0) pos: vec3<f32>,
     @location(1) uv: vec2<f32>,
     @location(2) light: f32,
+    @location(3) sky: f32,
 };
 
 struct VsOut {
@@ -23,6 +24,7 @@ struct VsOut {
     @location(0) uv: vec2<f32>,
     @location(1) light: f32,
     @location(2) world: vec3<f32>,
+    @location(3) sky: f32,
 };
 
 @vertex
@@ -31,8 +33,15 @@ fn vs_chunk(in: VsIn) -> VsOut {
     out.clip = u.view_proj * vec4<f32>(in.pos, 1.0);
     out.uv = in.uv;
     out.light = in.light;
+    out.sky = in.sky;
     out.world = in.pos;
     return out;
+}
+
+// Torch light holds steady while sky light follows the day; unlit caves
+// keep a tiny ambient floor.
+fn lum(light: f32, sky: f32) -> f32 {
+    return max(max(light, sky * u.misc.y), 0.03);
 }
 
 fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
@@ -47,7 +56,7 @@ fn fs_chunk(in: VsOut) -> @location(0) vec4<f32> {
     if (tex.a < 0.5) {
         discard; // alpha-tested item sprites share this pipeline
     }
-    var rgb = tex.rgb * in.light * mix(0.25, 1.0, u.misc.y);
+    var rgb = tex.rgb * lum(in.light, in.sky);
     rgb = apply_fog(rgb, in.world);
     if (u.misc.x > 0.5) {
         rgb = mix(rgb, vec3<f32>(0.1, 0.2, 0.5), 0.55);
@@ -58,7 +67,7 @@ fn fs_chunk(in: VsOut) -> @location(0) vec4<f32> {
 @fragment
 fn fs_water(in: VsOut) -> @location(0) vec4<f32> {
     let tex = textureSample(atlas_tex, atlas_smp, in.uv);
-    var rgb = tex.rgb * in.light * mix(0.25, 1.0, u.misc.y);
+    var rgb = tex.rgb * lum(in.light, in.sky);
     rgb = apply_fog(rgb, in.world);
     if (u.misc.x > 0.5) {
         rgb = mix(rgb, vec3<f32>(0.1, 0.2, 0.5), 0.55);

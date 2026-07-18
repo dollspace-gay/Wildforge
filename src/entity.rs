@@ -64,11 +64,11 @@ impl ItemEntity {
 
     /// Emit this entity as a spinning, bobbing mini-cube (blocks) or a
     /// crossed pair of upright sprite quads (tools, sticks).
-    pub fn emit(&self, reg: &Registry, verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
+    pub fn emit(&self, reg: &Registry, lum: (f32, f32), verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
         let block = match reg.item(self.item).places {
             Some(b) if !reg.block(b).cross => b,
             _ => {
-                self.emit_sprite(reg, verts, idx);
+                self.emit_sprite(reg, lum, verts, idx);
                 return;
             }
         };
@@ -96,13 +96,15 @@ impl ItemEntity {
                     4 | 5 => (c[0], 1.0 - c[1]),
                     _ => (c[0], c[2]),
                 };
+                let shade = FACE_SHADE[face].max(0.7);
                 verts.push(Vertex {
                     pos: [center.x + rx, center.y + ly - half, center.z + rz],
                     uv: [
                         tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                         ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                     ],
-                    light: FACE_SHADE[face].max(0.7),
+                    light: shade * lum.0,
+                    sky: shade * lum.1,
                 });
             }
             idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -111,7 +113,7 @@ impl ItemEntity {
 }
 
 impl ItemEntity {
-    fn emit_sprite(&self, reg: &Registry, verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
+    fn emit_sprite(&self, reg: &Registry, lum: (f32, f32), verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
         let slot = reg.item(self.item).icon;
         let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
         let ts = 1.0 / ATLAS_TILES as f32;
@@ -147,7 +149,8 @@ impl ItemEntity {
                     verts.push(Vertex {
                         pos: [c.x + dx * o, c.y + y + 0.5 * h, c.z + dz * o],
                         uv: [u, v],
-                        light: 0.95,
+                        light: 0.95 * lum.0,
+                        sky: 0.95 * lum.1,
                     });
                 }
                 idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -192,6 +195,7 @@ pub fn emit_crack(
                     ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                 ],
                 light: 1.0,
+                sky: 1.0,
             });
         }
         idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);

@@ -110,6 +110,9 @@ TILES = {
     "desert_hare": ("face", "sandy pale tan hare fur"),
     "snow_hare": ("face", "pure white winter hare fur with faint grey shading"),
     "antler": ("face", "pale cream deer antler bone surface with faint darker ridges"),
+    "torch": ("plant", "a wooden torch: brown stick with a bright orange-yellow flame at the top"),
+    "chest_side": ("tile", "wooden chest side panel: warm planks with a dark frame border and a grey metal latch at the top center"),
+    "chest_top": ("tile", "wooden chest lid seen from above: warm planks with a dark frame border"),
     # crops & plants: sprite-keyed, then bottom-aligned so they sit on soil
     "wheat_young": ("plant", "a few short young green wheat sprouts growing from the bottom edge"),
     "wheat_ripe": ("plant", "tall ripe golden wheat stalks with heavy heads, growing from the bottom edge"),

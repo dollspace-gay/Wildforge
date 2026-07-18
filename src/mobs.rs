@@ -282,7 +282,7 @@ impl Mob {
     }
 
     /// Append this mob's boxy model to the entity mesh.
-    pub fn emit(&self, reg: &Registry, verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
+    pub fn emit(&self, reg: &Registry, lum: (f32, f32), verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
         let def = &reg.animals[self.species];
         // Models face -Z; motion forward is (sin yaw, cos yaw) = +Z at 0,
         // so render rotated by yaw + PI to keep the head leading.
@@ -341,13 +341,15 @@ impl Mob {
                         4 | 5 => (c[0], 1.0 - c[1]),
                         _ => (c[0], c[2]),
                     };
+                    let shade = FACE_SHADE[face].max(0.65) * flash;
                     verts.push(Vertex {
                         pos: [self.pos.x + wx, self.pos.y + ly, self.pos.z + wz],
                         uv: [
                             tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                             ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                         ],
-                        light: (FACE_SHADE[face].max(0.65) * flash).min(2.0),
+                        light: (shade * lum.0).min(2.0),
+                        sky: (shade * lum.1).min(2.0),
                     });
                 }
                 idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);

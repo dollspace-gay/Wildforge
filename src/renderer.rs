@@ -335,7 +335,7 @@ impl Renderer {
         let vertex_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32],
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32, 3 => Float32],
         };
         let line_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<LineVertex>() as u64,

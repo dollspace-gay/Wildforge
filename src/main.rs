@@ -67,6 +67,7 @@ enum Screen {
     Playing,
     Inventory,
     Furnace((i32, i32, i32)),
+    Chest((i32, i32, i32)),
     Paused,
     Dead,
 }
@@ -551,6 +552,42 @@ impl Game {
             eprintln!("demo water source at ({bx},{},{bz}), spawn {:?}", by + 5, spawn);
         }
         self.set_screen(Screen::Playing);
+        // Dev: force time of day (0..1; 0.75 = midnight).
+        if let Ok(t) = std::env::var("WILDFORGE_TIME") {
+            if let Ok(t) = t.parse::<f32>() {
+                self.time_of_day = t.fract();
+            }
+        }
+        // Dev: a ring of torches near spawn (lighting verification).
+        if std::env::var("WILDFORGE_DEMO_TORCH").is_ok() {
+            if let Some(torch) = self.reg.block_id("base:torch") {
+                for (dx, dz) in [(3, 0), (-3, 2), (0, 4), (2, -4)] {
+                    let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
+                    let y = self.world.surface_height(x, z);
+                    self.world.set_block(x, y + 1, z, torch);
+                }
+            }
+        }
+        // Dev: a stocked chest next to spawn, screen open (UI verification).
+        if std::env::var("WILDFORGE_DEMO_CHEST").is_ok() {
+            let p = (spawn.x as i32 - 2, spawn.y as i32, spawn.z as i32);
+            let reg = self.reg.clone();
+            if let Some(cb) = reg.block_id("base:chest") {
+                self.world.set_block(p.0, p.1, p.2, cb);
+                let mut st = world::ChestState::default();
+                for (i, (name, n)) in
+                    [("base:bread", 5), ("base:torch", 12), ("base:bronze_sword", 1)]
+                        .iter()
+                        .enumerate()
+                {
+                    if let Some(item) = reg.item_id(name) {
+                        st.slots[i * 4] = Some(ItemStack::new(&reg, item, *n));
+                    }
+                }
+                self.world.block_entities.insert(p, world::BlockEntity::Chest(st));
+                self.set_screen(Screen::Chest(p));
+            }
+        }
         // Dev/headless: open the inventory for UI verification.
         if std::env::var("WILDFORGE_SCREEN").as_deref() == Ok("inventory") {
             self.craft_size = 2;
@@ -744,7 +781,7 @@ impl Game {
         }
 
         // Leaving the inventory returns the cursor-held stack and craft grid.
-        if self.screen == Screen::Inventory || matches!(self.screen, Screen::Furnace(_)) {
+        if self.screen == Screen::Inventory || matches!(self.screen, Screen::Furnace(_) | Screen::Chest(_)) {
             let mut back: Vec<ItemStack> = self.held_stack.take().into_iter().collect();
             for slot in self.craft_grid.iter_mut() {
                 if let Some(s) = slot.take() {
@@ -1122,6 +1159,17 @@ impl Game {
                         self.set_screen(Screen::Furnace(h.block));
                         return;
                     }
+                    Some("chest") if self.action_cooldown <= 0.0 => {
+                        self.action_cooldown = 0.3;
+                        self.world
+                            .block_entities
+                            .entry(h.block)
+                            .or_insert_with(|| {
+                                world::BlockEntity::Chest(Default::default())
+                            });
+                        self.set_screen(Screen::Chest(h.block));
+                        return;
+                    }
                     _ => {}
                 }
                 let (x, y, z) = h.adjacent;
@@ -1132,6 +1180,10 @@ impl Game {
                     let needs_farmland = bd.crop_next.is_some() && !bd.crop_any_soil;
                     let soil = self.world.get_block(x, y - 1, z);
                     if needs_farmland && Some(soil) != reg.block_id("base:farmland") {
+                        return;
+                    }
+                    // Cross blocks (torches, plants) need solid ground.
+                    if bd.cross && !reg.is_solid(soil) {
                         return;
                     }
                     if !reg.is_solid(self.world.get_block(x, y, z))
@@ -1474,8 +1526,8 @@ impl Game {
                     let v = Vec3::new(a.cos() * 1.5, 2.5, a.sin() * 1.5);
                     self.items.push(ItemEntity::new(center, v, s.item, s.count));
                 }
-                // Close the furnace screen if its block vanished.
-                if let Screen::Furnace(pos) = self.screen {
+                // Close container screens if their block vanished.
+                if let Screen::Furnace(pos) | Screen::Chest(pos) = self.screen {
                     if !self.world.block_entities.contains_key(&pos) {
                         self.set_screen(Screen::Playing);
                     }
@@ -1563,8 +1615,10 @@ impl Game {
 
         // Day/night: daylight factor from a sun curve (full day on menus).
         let sun = (self.time_of_day * std::f32::consts::TAU).sin();
+        // 0.12 floor: moonlit surfaces stay navigable; torch light is
+        // unaffected (its own vertex channel).
         let daylight = if self.in_world {
-            (sun * 2.5 + 0.5).clamp(0.08, 1.0)
+            (sun * 2.5 + 0.5).clamp(0.12, 1.0)
         } else {
             1.0
         };
@@ -1590,11 +1644,18 @@ impl Game {
         // World-space extras: item entities + mining crack overlay.
         let mut entity_verts = Vec::new();
         let mut entity_idx = Vec::new();
+        let sample = |w: &World, p: Vec3| -> (f32, f32) {
+            let (b, s) =
+                w.light_at(p.x.floor() as i32, (p.y + 0.4).floor() as i32, p.z.floor() as i32);
+            (b as f32 / 15.0, s as f32 / 15.0)
+        };
         for it in &self.items {
-            it.emit(&self.reg, &mut entity_verts, &mut entity_idx);
+            let lum = sample(&self.world, it.pos);
+            it.emit(&self.reg, lum, &mut entity_verts, &mut entity_idx);
         }
         for m in &self.world.mobs {
-            m.emit(&self.reg, &mut entity_verts, &mut entity_idx);
+            let lum = sample(&self.world, m.pos);
+            m.emit(&self.reg, lum, &mut entity_verts, &mut entity_idx);
         }
         let mut overlay_verts = Vec::new();
         let mut overlay_idx = Vec::new();
@@ -2124,6 +2185,35 @@ impl Game {
                 self.ui = ui;
                 return;
             }
+            Screen::Chest(pos) => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
+                let title = "CHEST";
+                let tw = UiBatch::text_width(3.0, title);
+                ui.text_shadow((w - tw) / 2.0, h / 2.0 - 340.0, 3.0, title, [1.0; 4]);
+                let slots = match self.world.block_entities.get(&pos) {
+                    Some(world::BlockEntity::Chest(c)) => c.slots,
+                    _ => [None; world::CHEST_SLOTS],
+                };
+                for (i, st) in slots.iter().enumerate() {
+                    let r = self.chest_slot_rect(i);
+                    Self::draw_slot(&self.reg, &mut ui, r, *st, false, self.hit(r));
+                }
+                for i in 0..TOTAL_SLOTS {
+                    let r = self.inv_slot_rect(i);
+                    Self::draw_slot(&self.reg, &mut ui, r, self.inventory.slots[i], i == self.hotbar_sel, self.hit(r));
+                }
+                self.draw_browser(&mut ui);
+                if let Some(s) = self.held_stack {
+                    let (cx, cy) = self.ui_cursor;
+                    let icon = self.reg.item(s.item).icon;
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, (icon as u32 % 16, icon as u32 / 16), [1.0; 4]);
+                    if s.count > 1 {
+                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
+                    }
+                }
+                self.ui = ui;
+                return;
+            }
             Screen::Inventory => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
                 let title = if self.craft_size == 3 { "CRAFTING" } else { "INVENTORY" };
@@ -2289,8 +2379,34 @@ impl Game {
                 let burn = if f.burn_total > 0.0 { f.burn_left / f.burn_total } else { 0.0 };
                 (f.input, f.fuel, f.output, (f.progress / time).min(1.0), burn)
             }
-            None => (None, None, None, 0.0, 0.0),
+            _ => (None, None, None, 0.0, 0.0),
         }
+    }
+
+    /// Chest slot rects: 9x3 grid centered above the inventory panel.
+    fn chest_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        let x0 = w / 2.0 - 4.5 * Self::SLOT;
+        let y0 = h / 2.0 - 300.0;
+        (
+            x0 + (i % 9) as f32 * Self::SLOT,
+            y0 + (i / 9) as f32 * Self::SLOT,
+            Self::SLOT,
+            Self::SLOT,
+        )
+    }
+
+    fn chest_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+        let reg = self.reg.clone();
+        let Some(world::BlockEntity::Chest(c)) = self.world.block_entities.get_mut(&pos)
+        else {
+            return;
+        };
+        let (new_slot, new_held) =
+            inventory::click_stack(&reg, c.slots[slot], self.held_stack, right);
+        c.slots[slot] = new_slot;
+        self.held_stack = new_held;
     }
 
     fn furnace_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
@@ -2664,6 +2780,23 @@ impl Game {
                     }
                 }
             }
+            Screen::Chest(pos) => {
+                if self.browser_click(right) {
+                    return;
+                }
+                for i in 0..world::CHEST_SLOTS {
+                    if self.hit(self.chest_slot_rect(i)) {
+                        self.chest_click(pos, i, right);
+                        return;
+                    }
+                }
+                for i in 0..TOTAL_SLOTS {
+                    if self.hit(self.inv_slot_rect(i)) {
+                        self.inventory_click(false, i, right);
+                        return;
+                    }
+                }
+            }
             Screen::Settings => {
                 for i in 0..Self::SLIDERS.len() {
                     let (bx, by, bw, bh) = self.slider_bar_rect(i);
@@ -2723,7 +2856,7 @@ impl Game {
             KeyCode::ControlLeft | KeyCode::ControlRight => self.keys.sprint = pressed,
             KeyCode::Escape if pressed => match self.screen {
                 Screen::Playing => self.set_screen(Screen::Paused),
-                Screen::Inventory | Screen::Furnace(_) => self.set_screen(Screen::Playing),
+                Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) => self.set_screen(Screen::Playing),
                 Screen::Paused => self.set_screen(Screen::Playing),
                 Screen::Settings => {
                     self.config.save();
@@ -2745,7 +2878,7 @@ impl Game {
                     self.craft_size = 2;
                     self.set_screen(Screen::Inventory);
                 }
-                Screen::Inventory | Screen::Furnace(_) => self.set_screen(Screen::Playing),
+                Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) => self.set_screen(Screen::Playing),
                 _ => {}
             },
             KeyCode::F5 if pressed => {
@@ -2836,7 +2969,7 @@ impl ApplicationHandler for App {
                 game.camera.aspect = size.width as f32 / size.height.max(1) as f32;
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                let searchable = matches!(game.screen, Screen::Inventory | Screen::Furnace(_));
+                let searchable = matches!(game.screen, Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_));
                 if game.search_focus && searchable && event.state.is_pressed() {
                     match event.physical_key {
                         PhysicalKey::Code(KeyCode::Backspace) => {

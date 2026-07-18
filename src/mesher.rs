@@ -14,7 +14,10 @@ use crate::world::World;
 pub struct Vertex {
     pub pos: [f32; 3],
     pub uv: [f32; 2],
+    /// Block-light channel (torches), premultiplied by shade/AO.
     pub light: f32,
+    /// Sky-light channel, scaled by the daylight uniform in the shader.
+    pub sky: f32,
 }
 
 pub struct ChunkMesh {
@@ -82,6 +85,21 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
             world.get_block(bx + lx, y, bz + lz)
         }
     };
+    // Light of the cell a face looks into, as 0..1 (block, sky) channels.
+    let light = |lx: i32, y: i32, lz: i32| -> (f32, f32) {
+        if y < 0 {
+            return (0.0, 0.0);
+        }
+        if y >= CHUNK_Y as i32 {
+            return (0.0, 1.0);
+        }
+        let (b, sk) = if lx >= 0 && lx < CHUNK_X as i32 && lz >= 0 && lz < CHUNK_Z as i32 {
+            chunk.light(lx as usize, y as usize, lz as usize)
+        } else {
+            world.light_at(bx + lx, y, bz + lz)
+        };
+        (b as f32 / 15.0, sk as f32 / 15.0)
+    };
 
     let tile_uv = |tx: u32, ty: u32, u: f32, v: f32| -> [f32; 2] {
         let ts = 1.0 / ATLAS_TILES as f32;
@@ -102,6 +120,7 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                 let def = reg.block(b);
                 if def.cross {
                     // Plant: two crossed quads, both sides, alpha-tested.
+                    let (cl, cs) = light(lx, y, lz);
                     let slot = def.tiles[0];
                     let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
                     let (wx, wy, wz) = ((bx + lx) as f32, y as f32, (bz + lz) as f32);
@@ -121,7 +140,8 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                                 m.opaque_verts.push(Vertex {
                                     pos: [wx + qx, wy + ys[i], wz + qz],
                                     uv: tile_uv(tx, ty, u, 1.0 - ys[i]),
-                                    light: 0.95,
+                                    light: 0.95 * cl,
+                                    sky: 0.95 * cs,
                                 });
                             }
                             m.opaque_idx.extend_from_slice(&[
@@ -149,6 +169,7 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                     let slot = reg.block(b).tiles[face];
                     let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
                     let shade = FACE_SHADE[face];
+                    let (fl, fs) = light(lx + n[0], y + n[1], lz + n[2]);
 
                     let mut ao = [3u8; 4];
                     if !water {
@@ -178,7 +199,8 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                         verts.push(Vertex {
                             pos: [px, py, pz],
                             uv: tile_uv(tx, ty, u, v),
-                            light: shade * ao_f,
+                            light: shade * ao_f * fl,
+                            sky: shade * ao_f * fs,
                         });
                     }
                     // Flip the quad diagonal when AO is anisotropic.

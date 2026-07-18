@@ -16,6 +16,19 @@ use crate::worldgen::Generator;
 /// Per-block persistent state for interactive machines.
 pub enum BlockEntity {
     Furnace(FurnaceState),
+    Chest(ChestState),
+}
+
+pub const CHEST_SLOTS: usize = 27;
+
+pub struct ChestState {
+    pub slots: [Option<ItemStack>; CHEST_SLOTS],
+}
+
+impl Default for ChestState {
+    fn default() -> ChestState {
+        ChestState { slots: [None; CHEST_SLOTS] }
+    }
 }
 
 #[derive(Default)]
@@ -174,6 +187,7 @@ impl World {
         if self.mob_seeded.insert((pos.x, pos.z)) {
             self.seed_wildlife(pos);
         }
+        self.relight_and_cascade(pos);
         true
     }
 
@@ -442,6 +456,211 @@ impl World {
         self.load_remap = self.read_palette_remap();
     }
 
+    // ---------------- lighting ----------------
+
+    /// (block light, sky light) at a world position. Unloaded chunks read
+    /// as open sky so the world's edge doesn't render black.
+    pub fn light_at(&self, x: i32, y: i32, z: i32) -> (u8, u8) {
+        if y < 0 {
+            return (0, 0);
+        }
+        if y >= CHUNK_Y as i32 {
+            return (0, 15);
+        }
+        match self.chunks.get(&ChunkPos::of_world(x, z)) {
+            Some(c) => c.light(
+                x.rem_euclid(CHUNK_X as i32) as usize,
+                y as usize,
+                z.rem_euclid(CHUNK_Z as i32) as usize,
+            ),
+            None => (0, 15),
+        }
+    }
+
+    /// Recompute both light channels for one chunk from scratch: sky column
+    /// scan, then BFS from emitters and lit cells, seeded across chunk
+    /// borders from loaded neighbors. Returns true if any value changed.
+    fn relight_chunk(&mut self, pos: ChunkPos) -> bool {
+        const NX: usize = CHUNK_X;
+        const NY: usize = CHUNK_Y;
+        const NZ: usize = CHUNK_Z;
+        let idx = |x: usize, y: usize, z: usize| (x * NZ + z) * NY + y;
+        let reg = self.reg.clone();
+        let Some(chunk) = self.chunks.get(&pos) else { return false };
+
+        // Per-cell properties, resolved once.
+        #[derive(Clone, Copy)]
+        struct Cell {
+            opaque: bool,
+            cost: u8, // propagation cost: 1, or 2 through water
+            emit: u8,
+        }
+        let mut cells = vec![Cell { opaque: false, cost: 1, emit: 0 }; NX * NY * NZ];
+        for x in 0..NX {
+            for z in 0..NZ {
+                for y in 0..NY {
+                    let d = reg.block(chunk.get(x, y, z));
+                    cells[idx(x, y, z)] = Cell {
+                        opaque: d.opaque,
+                        cost: if d.water_level.is_some() { 2 } else { 1 },
+                        emit: d.light_emit,
+                    };
+                }
+            }
+        }
+
+        let mut lb = vec![0u8; NX * NY * NZ];
+        let mut ls = vec![0u8; NX * NY * NZ];
+        let mut sky_q: VecDeque<(usize, usize, usize)> = VecDeque::new();
+        let mut blk_q: VecDeque<(usize, usize, usize)> = VecDeque::new();
+
+        // Sky columns: full light straight down to the first opaque block,
+        // dimming through water.
+        for x in 0..NX {
+            for z in 0..NZ {
+                let mut v = 15u8;
+                for y in (0..NY).rev() {
+                    let c = cells[idx(x, y, z)];
+                    if c.opaque {
+                        break; // rest of the column stays 0
+                    }
+                    if c.cost > 1 {
+                        v = v.saturating_sub(1);
+                    }
+                    ls[idx(x, y, z)] = v;
+                    if v >= 2 {
+                        sky_q.push_back((x, y, z));
+                    }
+                    if v == 0 {
+                        break;
+                    }
+                }
+            }
+        }
+        // Emitters.
+        for x in 0..NX {
+            for z in 0..NZ {
+                for y in 0..NY {
+                    let e = cells[idx(x, y, z)].emit;
+                    if e > 0 {
+                        lb[idx(x, y, z)] = e;
+                        blk_q.push_back((x, y, z));
+                    }
+                }
+            }
+        }
+        // Border seeds from loaded neighbors (light crosses chunk seams).
+        let mut seed = |grid: &mut Vec<u8>,
+                        q: &mut VecDeque<(usize, usize, usize)>,
+                        sky: bool| {
+            for (dx, dz, edge_x, edge_z) in [
+                (-1i32, 0i32, 0usize, usize::MAX),
+                (1, 0, NX - 1, usize::MAX),
+                (0, -1, usize::MAX, 0usize),
+                (0, 1, usize::MAX, NZ - 1),
+            ] {
+                let npos = ChunkPos { x: pos.x + dx, z: pos.z + dz };
+                let Some(nc) = self.chunks.get(&npos) else { continue };
+                // The neighbor's cell touching our edge cell.
+                let (nb_x, nb_z) = (
+                    if dx == -1 { NX - 1 } else { 0 },
+                    if dz == -1 { NZ - 1 } else { 0 },
+                );
+                for t in 0..(if edge_x == usize::MAX { NX } else { NZ }) {
+                    for y in 0..NY {
+                        let (ox, oz, nx, nz) = if edge_x != usize::MAX {
+                            (edge_x, t, nb_x, t)
+                        } else {
+                            (t, edge_z, t, nb_z)
+                        };
+                        let (nlb, nls) = nc.light(nx, y, nz);
+                        let v = if sky { nls } else { nlb };
+                        if v < 2 {
+                            continue;
+                        }
+                        let c = cells[idx(ox, y, oz)];
+                        if c.opaque {
+                            continue;
+                        }
+                        let nv = v.saturating_sub(c.cost);
+                        if nv > grid[idx(ox, y, oz)] {
+                            grid[idx(ox, y, oz)] = nv;
+                            q.push_back((ox, y, oz));
+                        }
+                    }
+                }
+            }
+        };
+        seed(&mut ls, &mut sky_q, true);
+        seed(&mut lb, &mut blk_q, false);
+
+        // BFS relax (shared by both channels).
+        let bfs = |grid: &mut Vec<u8>, q: &mut VecDeque<(usize, usize, usize)>| {
+            while let Some((x, y, z)) = q.pop_front() {
+                let v = grid[idx(x, y, z)];
+                if v < 2 {
+                    continue;
+                }
+                let mut relax = |nx: usize, ny: usize, nz: usize| {
+                    let c = cells[idx(nx, ny, nz)];
+                    if c.opaque {
+                        return;
+                    }
+                    let nv = v.saturating_sub(c.cost);
+                    if nv > grid[idx(nx, ny, nz)] {
+                        grid[idx(nx, ny, nz)] = nv;
+                        q.push_back((nx, ny, nz));
+                    }
+                };
+                if x > 0 { relax(x - 1, y, z); }
+                if x < NX - 1 { relax(x + 1, y, z); }
+                if y > 0 { relax(x, y - 1, z); }
+                if y < NY - 1 { relax(x, y + 1, z); }
+                if z > 0 { relax(x, y, z - 1); }
+                if z < NZ - 1 { relax(x, y, z + 1); }
+            }
+        };
+        bfs(&mut lb, &mut blk_q);
+        bfs(&mut ls, &mut sky_q);
+
+        let chunk = self.chunks.get_mut(&pos).unwrap();
+        let (old_b, old_s) = chunk.light_raw();
+        if old_b == lb.as_slice() && old_s == ls.as_slice() {
+            return false;
+        }
+        let (dst_b, dst_s) = chunk.light_raw_mut();
+        dst_b.copy_from_slice(&lb);
+        dst_s.copy_from_slice(&ls);
+        chunk.dirty = true;
+        true
+    }
+
+    /// Relight a chunk and let changes ripple to loaded neighbors until the
+    /// light field settles (light reaches at most ~1 chunk, so this is
+    /// short); every changed chunk is marked for remesh.
+    pub fn relight_and_cascade(&mut self, start: ChunkPos) {
+        let mut queue = VecDeque::from([start]);
+        let mut visits: HashMap<(i32, i32), u32> = HashMap::new();
+        while let Some(p) = queue.pop_front() {
+            let v = visits.entry((p.x, p.z)).or_insert(0);
+            if *v >= 4 {
+                continue; // safety cap; converges long before this
+            }
+            *v += 1;
+            if !self.chunks.contains_key(&p) {
+                continue;
+            }
+            if self.relight_chunk(p) {
+                for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    let n = ChunkPos { x: p.x + dx, z: p.z + dz };
+                    if self.chunks.contains_key(&n) {
+                        queue.push_back(n);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn get_block(&self, x: i32, y: i32, z: i32) -> BlockId {
         if y < 0 || y >= CHUNK_Y as i32 {
             return AIR;
@@ -486,10 +705,27 @@ impl World {
             touch(0, 1);
         }
         self.wake_water(x, y, z);
+        // Cross blocks (torches, plants) pop off when their support vanishes.
+        if !self.reg.is_solid(b) && y + 1 < CHUNK_Y as i32 {
+            let above = self.get_block(x, y + 1, z);
+            if above != AIR && self.reg.block(above).cross {
+                if let Some((item, n)) = self.reg.block(above).drops {
+                    let reg = self.reg.clone();
+                    self.pending_drops.push(((x, y + 1, z), ItemStack::new(&reg, item, n)));
+                }
+                self.set_block(x, y + 1, z, AIR);
+            }
+        }
+        self.relight_and_cascade(pos);
         // A changed block invalidates any machine state living there.
         if let Some(e) = self.block_entities.remove(&(x, y, z)) {
-            let BlockEntity::Furnace(f) = e;
-            for s in [f.input, f.fuel, f.output].into_iter().flatten() {
+            let spilled: Vec<ItemStack> = match e {
+                BlockEntity::Furnace(f) => {
+                    [f.input, f.fuel, f.output].into_iter().flatten().collect()
+                }
+                BlockEntity::Chest(c) => c.slots.into_iter().flatten().collect(),
+            };
+            for s in spilled {
                 self.pending_drops.push(((x, y, z), s));
             }
         }
@@ -529,7 +765,7 @@ impl World {
     pub fn tick_entities(&mut self, dt: f32) {
         let reg = self.reg.clone();
         for e in self.block_entities.values_mut() {
-            let BlockEntity::Furnace(f) = e;
+            let BlockEntity::Furnace(f) = e else { continue };
             let smelt = f.input.and_then(|s| reg.smelt_for(s.item)).cloned();
             let output_ok = |f: &FurnaceState, out: crate::registry::ItemId| match f.output {
                 None => true,
@@ -585,22 +821,38 @@ impl World {
         use std::fmt::Write as _;
         let mut out = String::new();
         for ((x, y, z), e) in &self.block_entities {
-            let BlockEntity::Furnace(f) = e;
-            let _ = writeln!(out, "[[furnace]]\npos = [{x}, {y}, {z}]");
-            let mut slot = |k: &str, s: &Option<ItemStack>| {
-                if let Some(s) = s {
-                    let _ = writeln!(
-                        out,
-                        "{k} = {{ item = \"{}\", count = {}, durability = {} }}",
-                        self.reg.item(s.item).name, s.count, s.durability
-                    );
+            match e {
+                BlockEntity::Furnace(f) => {
+                    let _ = writeln!(out, "[[furnace]]\npos = [{x}, {y}, {z}]");
+                    let mut slot = |k: &str, s: &Option<ItemStack>| {
+                        if let Some(s) = s {
+                            let _ = writeln!(
+                                out,
+                                "{k} = {{ item = \"{}\", count = {}, durability = {} }}",
+                                self.reg.item(s.item).name, s.count, s.durability
+                            );
+                        }
+                    };
+                    slot("input", &f.input);
+                    slot("fuel", &f.fuel);
+                    slot("output", &f.output);
+                    let _ = writeln!(out, "progress = {}\nburn_left = {}\nburn_total = {}\n",
+                        f.progress, f.burn_left, f.burn_total);
                 }
-            };
-            slot("input", &f.input);
-            slot("fuel", &f.fuel);
-            slot("output", &f.output);
-            let _ = writeln!(out, "progress = {}\nburn_left = {}\nburn_total = {}\n",
-                f.progress, f.burn_left, f.burn_total);
+                BlockEntity::Chest(c) => {
+                    let _ = writeln!(out, "[[chest]]\npos = [{x}, {y}, {z}]");
+                    for (i, st) in c.slots.iter().enumerate() {
+                        if let Some(st) = st {
+                            let _ = writeln!(
+                                out,
+                                "[[chest.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                self.reg.item(st.item).name, st.count, st.durability
+                            );
+                        }
+                    }
+                    let _ = writeln!(out);
+                }
+            }
         }
         if out.is_empty() {
             let _ = fs::remove_file(self.entities_path());
@@ -631,9 +883,24 @@ impl World {
             burn_total: f32,
         }
         #[derive(Deserialize)]
+        struct ChestSlotT {
+            index: usize,
+            item: String,
+            count: u32,
+            durability: u32,
+        }
+        #[derive(Deserialize)]
+        struct ChestT {
+            pos: [i32; 3],
+            #[serde(default)]
+            slot: Vec<ChestSlotT>,
+        }
+        #[derive(Deserialize)]
         struct FileT {
             #[serde(default)]
             furnace: Vec<FurnaceT>,
+            #[serde(default)]
+            chest: Vec<ChestT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else { return };
         let Ok(parsed) = toml::from_str::<FileT>(&text) else { return };
@@ -654,6 +921,19 @@ impl World {
                     burn_total: fu.burn_total,
                 }),
             );
+        }
+        for ch in parsed.chest {
+            let mut state = ChestState::default();
+            for sl in ch.slot {
+                if sl.index < CHEST_SLOTS {
+                    if let Some(item) = self.reg.item_id(&sl.item) {
+                        state.slots[sl.index] =
+                            Some(ItemStack { item, count: sl.count, durability: sl.durability });
+                    }
+                }
+            }
+            self.block_entities
+                .insert((ch.pos[0], ch.pos[1], ch.pos[2]), BlockEntity::Chest(state));
         }
     }
 

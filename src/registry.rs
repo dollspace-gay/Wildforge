@@ -50,6 +50,8 @@ pub struct BlockDef {
     pub crop_any_soil: bool,
     /// Right-click harvest: (item, count, block it becomes).
     pub harvest: Option<(ItemId, u32, BlockId)>,
+    /// Emitted light 0..15 (torches, glowing mod blocks).
+    pub light_emit: u8,
 }
 
 pub const NUTRIENTS: [&str; 5] = ["grain", "vegetable", "fruit", "fungi", "protein"];
@@ -359,6 +361,8 @@ struct BlockToml {
     harvest: Option<HarvestToml>,
     #[serde(default)]
     icon: Option<String>,
+    #[serde(default)]
+    light: u8,
     /// Register an item form for placing (default true).
     #[serde(default = "yes")]
     item: bool,
@@ -787,6 +791,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         crop_chance: 0.0,
         crop_any_soil: false,
         harvest: None,
+        light_emit: 0,
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
     reg.blocks.push(air);
@@ -891,6 +896,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 crop_chance: 0.0,
                 crop_any_soil: b.crop.as_ref().is_some_and(|c| c.any_soil),
                 harvest: None,
+                light_emit: b.light.min(15),
             });
             reg.block_by_name.insert(full.clone(), id);
             pending_drops.push(PendingDrop {
@@ -1066,6 +1072,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         crop_chance: 0.0,
         crop_any_soil: false,
         harvest: None,
+        light_emit: 0,
     });
     reg.block_by_name.insert("base:unknown".into(), unk);
     reg.unknown_block = unk;

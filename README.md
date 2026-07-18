@@ -83,6 +83,22 @@ mod, registered through the same TOML pipeline external mods use
   declare `interaction`, `min_tier`, and mods get `[[smelt]]`/`[[fuel]]`
   entries plus `aliases.toml` for lossless renames.
 
+## Light & storage
+
+- **Real lighting**: two channels per block — sky light (full daylight
+  down to the first roof, flooding sideways into cave mouths, dimming
+  through water) and block light from emitters. Torches hold their
+  brightness while the sky fades at dusk; sealed caves are properly
+  black. Any block, including mod blocks, can glow with `light = 1..15`
+  in its TOML. Edits relight the affected chunks from scratch — no
+  incremental-unlighting ghosts.
+- **Torches**: charcoal over a stick → 4. Floor-placed, pop off if
+  their block is mined, light level 14.
+- **Chests**: 8 planks (any wood mix) in a ring. 27 slots on the same
+  block-entity system as the furnace; contents persist with the world,
+  spill when broken, and survive mod changes by item name. Mods make
+  containers with one line: `interaction = "chest"`.
+
 ## Wildlife & hunting
 
 Every biome has its own animals — boxy, data-driven, and moddable like

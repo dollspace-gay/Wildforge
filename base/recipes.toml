@@ -258,3 +258,16 @@ time = 6.0
 input = "base:hide"
 output = "base:leather"
 time = 6.0
+
+# ---- light & storage ----
+
+[[recipe]]
+pattern = ["c", "s"]
+keys = { c = "base:charcoal", s = "base:stick" }
+output = "base:torch"
+count = 4
+
+[[recipe]]
+pattern = ["ppp", "p.p", "ppp"]
+keys = { p = "#base:planks" }
+output = "base:chest"

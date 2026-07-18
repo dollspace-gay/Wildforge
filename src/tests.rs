@@ -1028,7 +1028,7 @@ fn furnace_smelts_with_fuel_over_time() {
     for _ in 0..85 {
         w.tick_entities(0.1);
     }
-    let BlockEntity::Furnace(f) = &w.block_entities[&pos];
+    let BlockEntity::Furnace(f) = &w.block_entities[&pos] else { panic!("furnace") };
     assert_eq!(f.output.unwrap().item, it(&reg, "base:copper_ingot"));
     assert_eq!(f.input.unwrap().count, 1, "one raw consumed");
     assert_eq!(f.fuel.unwrap().count, 1, "first log consumed for fuel");
@@ -1037,7 +1037,7 @@ fn furnace_smelts_with_fuel_over_time() {
     for _ in 0..90 {
         w.tick_entities(0.1);
     }
-    let BlockEntity::Furnace(f) = &w.block_entities[&pos];
+    let BlockEntity::Furnace(f) = &w.block_entities[&pos] else { panic!("furnace") };
     assert_eq!(f.output.unwrap().count, 2);
     assert!(f.input.is_none());
     assert!(f.fuel.is_none(), "second log lit");
@@ -1070,7 +1070,7 @@ fn furnace_state_persists_and_breaks_drop_contents() {
             w2.ensure_chunk(ChunkPos { x, z });
         }
     }
-    let BlockEntity::Furnace(f) = &w2.block_entities[&pos];
+    let BlockEntity::Furnace(f) = &w2.block_entities[&pos] else { panic!("furnace") };
     assert_eq!(f.input.unwrap().count, 5);
     assert_eq!(f.fuel.unwrap().item, it(&reg, "base:charcoal"));
     // Breaking the block spills the contents.
@@ -2030,4 +2030,210 @@ fn model_boxes_can_carry_their_own_texture() {
     );
     let body = deer.model.iter().find(|b| b.name == "body").unwrap();
     assert_eq!(body.tile, None, "body stays on the fur tile");
+}
+
+// ---------------- lighting ----------------
+
+#[test]
+fn torch_light_propagates_and_walls_block_it() {
+    let reg = base_reg();
+    let mut w = test_world("lighttorch");
+    let stone = reg.block_id("base:stone").unwrap();
+    let torch = reg.block_id("base:torch").unwrap();
+    // Sealed 9x9x9 stone box, hollow interior, well above terrain.
+    for x in 0..9 {
+        for z in 0..9 {
+            for y in 150..159 {
+                let shell = x == 0 || x == 8 || z == 0 || z == 8 || y == 150 || y == 158;
+                w.set_block(x, y, z, if shell { stone } else { AIR });
+            }
+        }
+    }
+    assert_eq!(w.light_at(4, 154, 4), (0, 0), "sealed box is pitch black");
+    w.set_block(4, 151, 4, torch);
+    assert_eq!(w.light_at(4, 151, 4).0, 14, "torch emits 14");
+    assert_eq!(w.light_at(5, 151, 4).0, 13, "one step dims by one");
+    assert_eq!(w.light_at(7, 151, 4).0, 11, "three steps");
+    assert_eq!(w.light_at(4, 153, 4).0, 12, "propagates vertically too");
+    assert_eq!(w.light_at(10, 151, 4).0, 0, "opaque wall stops it");
+    w.set_block(4, 151, 4, AIR);
+    assert_eq!(w.light_at(5, 151, 4).0, 0, "removing the torch relights dark");
+}
+
+#[test]
+fn sky_light_surface_cave_and_roof_opening() {
+    let reg = base_reg();
+    let mut w = test_world("lightsky");
+    let stone = reg.block_id("base:stone").unwrap();
+    // Open surface reads full sky.
+    let y = w.surface_height(2, 2);
+    assert_eq!(w.light_at(2, y + 1, 2).1, 15, "surface is full daylight");
+    // Sealed box: no sky inside; opening the roof floods it.
+    for x in 20..29 {
+        for z in 20..29 {
+            for yy in 150..159 {
+                let shell =
+                    x == 20 || x == 28 || z == 20 || z == 28 || yy == 150 || yy == 158;
+                w.set_block(x, yy, z, if shell { stone } else { AIR });
+            }
+        }
+    }
+    assert_eq!(w.light_at(24, 154, 24).1, 0, "sealed roof blocks sky");
+    w.set_block(24, 158, 24, AIR); // skylight hole
+    assert_eq!(w.light_at(24, 154, 24).1, 15, "column under the hole is lit");
+    assert_eq!(w.light_at(26, 154, 24).1, 13, "and floods sideways, dimming");
+}
+
+#[test]
+fn light_crosses_chunk_borders() {
+    let reg = base_reg();
+    let mut w = test_world("lightseam");
+    let torch = reg.block_id("base:torch").unwrap();
+    // Torch on the last column of chunk (0,0); the neighbor chunk must see it.
+    w.set_block(15, 200, 8, torch);
+    assert_eq!(w.light_at(15, 200, 8).0, 14);
+    assert_eq!(w.light_at(16, 200, 8).0, 13, "crosses the seam");
+    assert_eq!(w.light_at(19, 200, 8).0, 10, "keeps dimming next door");
+}
+
+#[test]
+fn water_dims_sky_and_mod_blocks_can_glow() {
+    let reg = base_reg();
+    let mut w = test_world("lightwater");
+    let water = reg.water_ids[0];
+    let stone = reg.block_id("base:stone").unwrap();
+    // A water-filled shaft walled in stone: light only enters from above,
+    // dimming one level per water block.
+    for x in 2..7 {
+        for z in 2..7 {
+            for y in 179..183 {
+                w.set_block(x, y, z, stone);
+            }
+        }
+    }
+    for y in 180..183 {
+        w.set_block(4, y, 4, water);
+    }
+    assert_eq!(w.light_at(4, 182, 4).1, 14, "first water block dims to 14");
+    assert_eq!(w.light_at(4, 180, 4).1, 12, "third dims to 12");
+
+    // Mod block with light = 9.
+    let root = tmp_dir("glowmod");
+    let dir = root.join("glow");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("mod.toml"), "id = \"glow\"\n").unwrap();
+    std::fs::write(
+        dir.join("blocks.toml"),
+        "[[block]]\nid = \"lamp\"\ntexture = \"@stone\"\nlight = 9\n",
+    )
+    .unwrap();
+    let reg2 = Arc::new(registry::load(&root));
+    let lamp = reg2.block_id("glow:lamp").unwrap();
+    assert_eq!(reg2.block(lamp).light_emit, 9);
+    let mut w2 = test_world_with("lightmod", reg2);
+    w2.set_block(4, 200, 4, lamp);
+    assert_eq!(w2.light_at(4, 200, 4).0, 9, "emitter itself");
+    assert_eq!(w2.light_at(4, 202, 4).0, 7, "two steps out");
+}
+
+#[test]
+fn placing_a_roof_casts_shadow() {
+    let reg = base_reg();
+    let mut w = test_world("lightshadow");
+    let stone = reg.block_id("base:stone").unwrap();
+    let y = w.surface_height(8, 8);
+    assert_eq!(w.light_at(8, y + 1, 8).1, 15);
+    w.set_block(8, y + 3, 8, stone); // roof two above the ground cell
+    let shaded = w.light_at(8, y + 1, 8).1;
+    assert!(shaded < 15, "column shadowed, got {shaded}");
+    assert!(shaded >= 12, "but side-lit by flood, got {shaded}");
+}
+
+#[test]
+fn relight_perf_sane() {
+    let mut w = test_world("lightperf");
+    let t0 = std::time::Instant::now();
+    for _ in 0..10 {
+        w.relight_and_cascade(ChunkPos { x: 0, z: 0 });
+    }
+    let per = t0.elapsed().as_secs_f32() / 10.0;
+    assert!(per < 0.05, "relight cascade averaged {per:.4}s");
+}
+
+#[test]
+fn torch_needs_ground_and_pops_without_it() {
+    let reg = base_reg();
+    let mut w = test_world("torchpop");
+    let stone = reg.block_id("base:stone").unwrap();
+    let torch = reg.block_id("base:torch").unwrap();
+    w.set_block(5, 150, 5, stone);
+    w.set_block(5, 151, 5, torch);
+    assert_eq!(w.get_block(5, 151, 5), torch);
+    // Mining the support pops the torch off as a drop.
+    w.set_block(5, 150, 5, AIR);
+    assert_eq!(w.get_block(5, 151, 5), AIR, "torch popped");
+    assert!(
+        w.pending_drops.iter().any(|(_, s)| reg.item(s.item).name == "base:torch"),
+        "torch dropped as an item"
+    );
+    // Torch recipe: charcoal over stick -> 4.
+    let mut g = vec![None; 9];
+    g[0] = Some(ItemStack::new(&reg, it(&reg, "base:charcoal"), 1));
+    g[3] = Some(ItemStack::new(&reg, it(&reg, "base:stick"), 1));
+    let r = crate::crafting::match_recipe(&reg, &g, 3).expect("torch recipe");
+    assert_eq!(r.output, it(&reg, "base:torch"));
+    assert_eq!(r.count, 4);
+}
+
+// ---------------- chests ----------------
+
+#[test]
+fn chest_stores_spills_and_persists() {
+    let reg = base_reg();
+    let dir = tmp_dir("chestsave");
+    let mut w = World::new(9, dir.clone(), reg.clone());
+    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    let chest = reg.block_id("base:chest").unwrap();
+    assert_eq!(reg.block(chest).interaction.as_deref(), Some("chest"));
+    let pos = (4, 100, 4);
+    w.set_block(pos.0, pos.1, pos.2, chest);
+    let mut state = crate::world::ChestState::default();
+    state.slots[0] = Some(ItemStack::new(&reg, it(&reg, "base:bread"), 3));
+    state.slots[26] = Some(ItemStack::new(&reg, it(&reg, "base:bronze_ingot"), 7));
+    w.block_entities.insert(pos, crate::world::BlockEntity::Chest(state));
+    w.save_modified();
+
+    // Round-trip by name, plus an unknown item that must skip cleanly.
+    let path = dir.join("entities.toml");
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    text.push_str("\n[[chest]]\npos = [9, 90, 9]\n[[chest.slot]]\nindex = 0\nitem = \"gone:widget\"\ncount = 5\ndurability = 0\n");
+    std::fs::write(&path, text).unwrap();
+    let w2 = World::load_or_create(dir, reg.clone());
+    let Some(crate::world::BlockEntity::Chest(c)) = w2.block_entities.get(&pos) else {
+        panic!("chest reloaded")
+    };
+    assert_eq!(c.slots[0].map(|s| (reg.item(s.item).name.clone(), s.count)),
+        Some(("base:bread".to_string(), 3)));
+    assert_eq!(c.slots[26].map(|s| s.count), Some(7));
+    let Some(crate::world::BlockEntity::Chest(c2)) = w2.block_entities.get(&(9, 90, 9)) else {
+        panic!("second chest reloaded")
+    };
+    assert!(c2.slots.iter().all(|s| s.is_none()), "unknown item skipped");
+
+    // Breaking the chest spills every stack.
+    let mut w3 = w2;
+    w3.set_block(pos.0, pos.1, pos.2, AIR);
+    assert!(w3.block_entities.get(&pos).is_none());
+    let spilled: Vec<_> = w3.pending_drops.iter().map(|(_, s)| s.count).collect();
+    assert_eq!(spilled.iter().sum::<u32>(), 10, "3 bread + 7 ingots spilled");
+
+    // Recipe: 8 planks in a ring.
+    let mut g = vec![None; 9];
+    for i in 0..9 {
+        if i != 4 {
+            g[i] = Some(ItemStack::new(&reg, it(&reg, "base:planks"), 1));
+        }
+    }
+    let r = crate::crafting::match_recipe(&reg, &g, 3).expect("chest recipe");
+    assert_eq!(r.output, it(&reg, "base:chest"));
 }

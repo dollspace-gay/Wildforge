@@ -323,3 +323,22 @@ opaque = false
 drops = "self"
 crop = { stages = 2, next_chance = 0.06, stage_textures = ["@bush_fruited"], any_soil = true }
 harvest = { item = "base:jungle_fruit", count = 2, becomes = "base:jungle_bush" }
+
+[[block]]
+id = "torch"
+name = "Torch"
+texture = "@torch"
+cross = true
+solid = false
+opaque = false
+hardness = 0.05
+light = 14
+drops = "self"
+
+[[block]]
+id = "chest"
+name = "Chest"
+texture = { top = "@chest_top", side = "@chest_side", bottom = "@planks" }
+hardness = 4.0
+tool = "axe"
+interaction = "chest"

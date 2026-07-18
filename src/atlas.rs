@@ -54,7 +54,8 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("cooked_rabbit", 121), ("hide", 122), ("leather", 123),
         ("feather", 124), ("hearty_stew", 125), ("wood_sword", 126),
         ("stone_sword", 127), ("copper_sword", 128), ("bronze_sword", 129),
-        ("antler", 130),
+        ("antler", 130), ("torch", 131), ("chest_side", 132),
+        ("chest_top", 133),
         ("unknown", 15), ("crack1", 16), ("crack2", 17), ("crack3", 18),
         ("crack4", 19),
     ]
@@ -1316,6 +1317,43 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
         rgba(c, speck(px, py, 561, 0.05), 255)
     });
+
+    // Torch: stick with a bright flame head (cross-rendered).
+    tf(3, 8, &mut |px, py, u, v| {
+        let stick = (u - 0.5).abs() < 0.06 && v > 0.38 && v < 0.95;
+        let dx = u - 0.5;
+        let dy = v - 0.28;
+        let flame = dx * dx + dy * dy * 1.4 < 0.014;
+        let core = dx * dx + dy * dy * 1.4 < 0.005;
+        if core {
+            rgba([255.0, 240.0, 180.0], 1.0, 255)
+        } else if flame {
+            rgba([255.0, 170.0, 60.0], 0.9 + h01(px as i32, py as i32, 570) * 0.2, 255)
+        } else if stick {
+            rgba([120.0, 84.0, 50.0], 1.0, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    // Chest: plank panel with dark frame; side gets a latch.
+    for (slot, latch) in [(132u32, true), (133, false)] {
+        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+            let t = fbm(u, v * 3.0, 4, 580);
+            let mut c = mix3([142.0, 100.0, 58.0], [168.0, 122.0, 72.0], t);
+            let edge = u < 0.06 || u > 0.94 || v < 0.06 || v > 0.94;
+            if edge {
+                c = [92.0, 64.0, 38.0];
+            }
+            if latch && (u - 0.5).abs() < 0.08 && v > 0.30 && v < 0.52 {
+                c = if (u - 0.5).abs() < 0.03 && v > 0.36 && v < 0.46 {
+                    [60.0, 60.0, 64.0]
+                } else {
+                    [150.0, 150.0, 158.0]
+                };
+            }
+            rgba(c, speck(px, py, 581 + slot, 0.06), 255)
+        });
+    }
 
     // (15,0) unknown/missing texture: magenta checkerboard.
     tile(15, 0, &mut |px, py, _u, _v| {
