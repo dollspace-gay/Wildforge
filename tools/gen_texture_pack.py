@@ -106,14 +106,14 @@ TILES = {
     "rabbit_face": ("head", "a tiny pink nose at the center bottom with small whisker dots. Soft light brown rabbit fur."),
     "desert_hare": ("face", "sandy pale tan hare fur"),
     "snow_hare": ("face", "pure white winter hare fur with faint grey shading"),
-    # crops & plants (sprites on magenta, drawn full-height)
-    "wheat_young": ("sprite", "a few short young green wheat sprouts growing from the bottom edge"),
-    "wheat_ripe": ("sprite", "tall ripe golden wheat stalks with heavy heads, growing from the bottom edge"),
-    "carrot_plant": ("sprite", "leafy green carrot tops with orange carrot crowns peeking at the soil line"),
-    "potato_plant": ("sprite", "low bushy green potato plant with tiny white blossoms"),
-    "bush_fruited": ("sprite", "small leafy berry bush dotted with ripe red berries"),
-    "bush_bare": ("sprite", "small leafy green bush with no berries"),
-    "mushroom": ("sprite", "single brown forest mushroom with pale stem"),
+    # crops & plants: sprite-keyed, then bottom-aligned so they sit on soil
+    "wheat_young": ("plant", "a few short young green wheat sprouts growing from the bottom edge"),
+    "wheat_ripe": ("plant", "tall ripe golden wheat stalks with heavy heads, growing from the bottom edge"),
+    "carrot_plant": ("plant", "leafy green carrot tops with orange carrot crowns peeking at the soil line"),
+    "potato_plant": ("plant", "low bushy green potato plant with tiny white blossoms"),
+    "bush_fruited": ("plant", "small leafy berry bush dotted with ripe red berries"),
+    "bush_bare": ("plant", "small leafy green bush with no berries"),
+    "mushroom": ("plant", "single brown forest mushroom with pale stem"),
     # items
     "stick": ("sprite", "a simple wooden stick, diagonal"),
     "wood_pickaxe": ("sprite", "pickaxe whose head is carved from light brown WOOD (not stone, not metal), stick handle, diagonal"),
@@ -281,7 +281,7 @@ def process(img, cat):
     else:
         # Faces/sprites are single subjects filling the frame: keep it all.
         img = img.crop(((w - side) // 2, (h - side) // 2, (w + side) // 2, (h + side) // 2))
-    if cat == "sprite":
+    if cat in ("sprite", "plant"):
         # Key at full resolution, then alpha-aware downscale — keying after
         # the resize smears magenta into every edge pixel.
         img = chroma_key(img)
@@ -291,6 +291,20 @@ def process(img, cat):
     img = quantize(img)
     if cat == "tile":
         img = make_tileable(img)
+    if cat == "plant":
+        # Cross-rendered blocks grow from the block floor: shift the art
+        # down so its lowest opaque row touches the bottom edge.
+        px = img.load()
+        lowest = 0
+        for y in range(OUT_PX - 1, -1, -1):
+            if any(px[x, y][3] > 0 for x in range(OUT_PX)):
+                lowest = y
+                break
+        shift = (OUT_PX - 1) - lowest
+        if shift:
+            moved = Image.new("RGBA", (OUT_PX, OUT_PX), (0, 0, 0, 0))
+            moved.paste(img, (0, shift))
+            img = moved
     return img
 
 
@@ -314,7 +328,13 @@ def main():
             skipped += 1
             continue
         cat, frag = TILES[name]
-        styles = {"tile": TILE_STYLE, "face": FACE_STYLE, "head": HEAD_STYLE, "sprite": SPRITE_STYLE}
+        styles = {
+            "tile": TILE_STYLE,
+            "face": FACE_STYLE,
+            "head": HEAD_STYLE,
+            "sprite": SPRITE_STYLE,
+            "plant": SPRITE_STYLE,
+        }
         prompt = styles[cat].format(frag)
         try:
             img = process(generate(prompt), cat)
