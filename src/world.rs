@@ -27,6 +27,30 @@ pub struct FurnaceState {
     pub burn_total: f32,
 }
 
+/// (seed, mode) from world.toml, falling back to the legacy seed file.
+pub fn read_world_meta(dir: &std::path::Path) -> (Option<u32>, String) {
+    if let Ok(t) = fs::read_to_string(dir.join("world.toml")) {
+        let mut seed = None;
+        let mut mode = "survival".to_string();
+        for l in t.lines() {
+            if let Some(v) = l.strip_prefix("seed = ") {
+                seed = v.trim().parse().ok();
+            } else if let Some(v) = l.strip_prefix("mode = ") {
+                mode = v.trim().trim_matches('"').to_string();
+            }
+        }
+        (seed, mode)
+    } else {
+        let seed = fs::read_to_string(dir.join("seed")).ok().and_then(|s| s.trim().parse().ok());
+        (seed, "survival".to_string())
+    }
+}
+
+pub fn write_world_meta(dir: &std::path::Path, seed: u32, mode: &str) {
+    let _ = fs::create_dir_all(dir);
+    let _ = fs::write(dir.join("world.toml"), format!("seed = {seed}\nmode = \"{mode}\"\n"));
+}
+
 pub struct World {
     pub chunks: HashMap<ChunkPos, Chunk>,
     pub generator: Generator,
@@ -61,19 +85,14 @@ impl World {
 
     /// Load a world from disk (reads seed + palette) or create a fresh one.
     pub fn load_or_create(save_dir: PathBuf, reg: Arc<Registry>) -> World {
-        let seed_file = save_dir.join("seed");
-        let seed = fs::read_to_string(&seed_file)
-            .ok()
-            .and_then(|s| s.trim().parse::<u32>().ok())
-            .unwrap_or_else(|| {
-                let s = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs() as u32)
-                    .unwrap_or(1337);
-                let _ = fs::create_dir_all(&save_dir);
-                let _ = fs::write(&seed_file, s.to_string());
-                s
-            });
+        let (seed, mode) = read_world_meta(&save_dir);
+        let seed = seed.unwrap_or_else(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as u32)
+                .unwrap_or(1337)
+        });
+        write_world_meta(&save_dir, seed, &mode);
         let mut w = World::new(seed, save_dir, reg);
         w.load_remap = w.read_palette_remap();
         w.load_entities();

@@ -213,6 +213,26 @@ impl Registry {
         Some(base / mult)
     }
 
+    pub fn recipes_for(&self, item: ItemId) -> Vec<&RecipeDef> {
+        self.recipes.iter().filter(|r| r.output == item).collect()
+    }
+
+    pub fn smelts_for(&self, item: ItemId) -> Vec<&SmeltDef> {
+        self.smelts.iter().filter(|s| s.output == item).collect()
+    }
+
+    /// (recipes using it, smelts using it, is-a-fuel)
+    pub fn uses_of(&self, item: ItemId) -> (Vec<&RecipeDef>, Vec<&SmeltDef>, bool) {
+        let r = self
+            .recipes
+            .iter()
+            .filter(|r| r.pattern.iter().flatten().any(|i| i.matches(item)))
+            .collect();
+        let s = self.smelts.iter().filter(|s| s.input.matches(item)).collect();
+        let f = self.fuels.iter().any(|(i, _)| i.matches(item));
+        (r, s, f)
+    }
+
     pub fn smelt_for(&self, item: ItemId) -> Option<&SmeltDef> {
         self.smelts.iter().find(|s| s.input.matches(item))
     }

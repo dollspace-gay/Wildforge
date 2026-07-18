@@ -1284,6 +1284,45 @@ fn raycast_hits_nonsolid_plants() {
     assert!(!reg.is_solid(bush), "bush stays non-solid for physics");
 }
 
+#[test]
+fn browser_and_recipe_index() {
+    let reg = base_reg();
+    // Filtering: variants hidden, search matches label and id.
+    let all = crate::browser_items(&reg, "");
+    assert!(all.iter().all(|i| !reg.item(*i).name.contains('/')));
+    let q = crate::browser_items(&reg, "bronze");
+    assert!(q.iter().any(|i| reg.item(*i).name == "base:bronze_pickaxe"));
+    assert!(!crate::browser_items(&reg, "base:stick").is_empty(), "id search");
+    // recipes_for/uses_of.
+    let bread = it(&reg, "base:bread");
+    assert_eq!(reg.recipes_for(bread).len(), 1);
+    let planks = it(&reg, "base:planks");
+    let (uses, _, _) = reg.uses_of(planks);
+    assert!(uses.iter().any(|r| r.output == it(&reg, "base:stick")), "tag uses counted");
+    let charcoal = it(&reg, "base:charcoal");
+    let (_, _, fuel) = reg.uses_of(charcoal);
+    assert!(fuel, "charcoal reported as fuel");
+    let (_, smelt_uses, _) = reg.uses_of(it(&reg, "base:raw_copper"));
+    assert_eq!(smelt_uses.len(), 1, "raw copper used in smelting");
+    assert_eq!(reg.smelts_for(it(&reg, "base:copper_ingot")).len(), 1);
+}
+
+#[test]
+fn world_meta_roundtrip_and_legacy() {
+    use crate::world::{read_world_meta, write_world_meta};
+    let dir = tmp_dir("meta");
+    write_world_meta(&dir, 777, "creative");
+    assert_eq!(read_world_meta(&dir), (Some(777), "creative".to_string()));
+    // Legacy: bare seed file means survival.
+    let dir2 = tmp_dir("meta2");
+    std::fs::write(dir2.join("seed"), "42").unwrap();
+    assert_eq!(read_world_meta(&dir2), (Some(42), "survival".to_string()));
+    // load_or_create upgrades legacy worlds to world.toml.
+    let reg = base_reg();
+    let _ = World::load_or_create(dir2.clone(), reg);
+    assert!(dir2.join("world.toml").exists());
+}
+
 // ---------------- gameplay (regression) ----------------
 
 #[test]

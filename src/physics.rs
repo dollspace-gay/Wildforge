@@ -126,6 +126,17 @@ impl Player {
         self.head_in_water(world)
     }
 
+    /// Creative flight: direct velocity, no gravity, collisions kept.
+    pub fn fly(&mut self, world: &World, wish: Vec3, dt: f32) {
+        self.vel = wish;
+        self.on_ground = false;
+        self.in_water = false;
+        let d = wish * dt;
+        self.move_axis(world, Vec3::new(d.x, 0.0, 0.0));
+        self.move_axis(world, Vec3::new(0.0, 0.0, d.z));
+        self.move_axis(world, Vec3::new(0.0, d.y, 0.0));
+    }
+
     fn collides(&self, world: &World, pos: Vec3) -> bool {
         let min = pos - Vec3::new(PLAYER_HALF_W, 0.0, PLAYER_HALF_W);
         let max = pos + Vec3::new(PLAYER_HALF_W, PLAYER_HEIGHT, PLAYER_HALF_W);

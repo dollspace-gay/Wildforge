@@ -83,6 +83,20 @@ mod, registered through the same TOML pipeline external mods use
   declare `interaction`, `min_tier`, and mods get `[[smelt]]`/`[[fuel]]`
   entries plus `aliases.toml` for lossless renames.
 
+## Item browser & creative mode
+
+- **Item browser** (native NEI/JEI): a searchable panel docked beside the
+  inventory, crafting, and furnace screens listing every item — including
+  everything mods add, automatically. Click an item for its crafting and
+  smelting recipes (tag ingredients cycle through their members) or the
+  USES tab (recipes, smelting inputs, and fuel roles). In creative mode
+  the browser is the palette: click grabs a stack, right-click one.
+- **Creative mode**: choose Survival or Creative at world creation, or
+  toggle anytime from the pause menu (stored in `world.toml`). Creative
+  means invulnerability (survival HUD hidden), instant breaking with no
+  drops or tool rules, placement that never consumes, and **flight** —
+  double-tap space, then space/ctrl to rise and sink.
+
 ## Menus, worlds & settings
 
 - **Title screen**: list of worlds under `saves/` with their seeds — play any,
