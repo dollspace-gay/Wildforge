@@ -141,7 +141,10 @@ Dev cheat: `WILDFORGE_GIVE=1` starts with some items for testing.
   plains, desert (sand + cacti), jungle (dense giant canopies), scrubland
   (patchy sand/grass + shrubs), taiga (conifers), arctic (snow cover,
   frozen ocean ice), and mountains (bare stone, snow caps) — each with its
-  own surfaces, vegetation shapes, and densities; biome placement
+  own surfaces, vegetation shapes, and densities; **five wood families**
+  (oak, birch with flecked white bark, dark spruce, vivid jungle, olive
+  acacia) grow per biome with distinct bark/leaf/ring textures, forests
+  mix oak and birch, and every log crafts into planks; biome placement
   correlates with terrain shape because both read the same noise fields;
   the current biome shows in the window title
 - Chunk streaming with per-frame generation/meshing budgets, nearest-first

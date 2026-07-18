@@ -49,14 +49,14 @@ tool = "shovel"
 
 [[block]]
 id = "log"
-name = "Log"
+name = "Oak Log"
 texture = { top = "@log_top", side = "@log_side" }
 hardness = 2.2
 tool = "axe"
 
 [[block]]
 id = "leaves"
-name = "Leaves"
+name = "Oak Leaves"
 texture = "@leaves"
 hardness = 0.3
 opaque = false
@@ -111,3 +111,63 @@ id = "cactus"
 name = "Cactus"
 texture = { top = "@cactus_top", side = "@cactus_side" }
 hardness = 0.5
+
+[[block]]
+id = "birch_log"
+name = "Birch Log"
+texture = { top = "@birch_log_top", side = "@birch_log" }
+hardness = 2.2
+tool = "axe"
+
+[[block]]
+id = "birch_leaves"
+name = "Birch Leaves"
+texture = "@birch_leaves"
+hardness = 0.3
+opaque = false
+drops = "none"
+
+[[block]]
+id = "spruce_log"
+name = "Spruce Log"
+texture = { top = "@spruce_log_top", side = "@spruce_log" }
+hardness = 2.2
+tool = "axe"
+
+[[block]]
+id = "spruce_leaves"
+name = "Spruce Leaves"
+texture = "@spruce_leaves"
+hardness = 0.3
+opaque = false
+drops = "none"
+
+[[block]]
+id = "jungle_log"
+name = "Jungle Log"
+texture = { top = "@jungle_log_top", side = "@jungle_log" }
+hardness = 2.2
+tool = "axe"
+
+[[block]]
+id = "jungle_leaves"
+name = "Jungle Leaves"
+texture = "@jungle_leaves"
+hardness = 0.3
+opaque = false
+drops = "none"
+
+[[block]]
+id = "acacia_log"
+name = "Acacia Log"
+texture = { top = "@acacia_log_top", side = "@acacia_log" }
+hardness = 2.2
+tool = "axe"
+
+[[block]]
+id = "acacia_leaves"
+name = "Acacia Leaves"
+texture = "@acacia_leaves"
+hardness = 0.3
+opaque = false
+drops = "none"

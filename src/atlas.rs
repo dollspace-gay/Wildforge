@@ -13,7 +13,7 @@ pub const ATLAS_TILES: u32 = 16;
 /// Atlas slot = row * 16 + col. Rows 0-2 are built-in procedural tiles.
 pub const UNKNOWN_SLOT: u16 = 15;
 pub const CRACK_SLOT: u16 = 16; // stages 16..=19
-pub const FIRST_FREE_SLOT: u16 = 48;
+pub const FIRST_FREE_SLOT: u16 = 64; // rows 0-3 are built-in tiles
 
 /// Built-in procedural tile names usable as `@name` in mod TOML.
 pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
@@ -26,6 +26,10 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("wood_axe", 35), ("stone_axe", 36), ("wood_shovel", 37),
         ("stone_shovel", 38), ("snow", 39), ("ice", 40),
         ("cactus_side", 41), ("cactus_top", 42),
+        ("birch_log", 43), ("birch_log_top", 44), ("birch_leaves", 45),
+        ("spruce_log", 46), ("spruce_log_top", 47), ("spruce_leaves", 48),
+        ("jungle_log", 49), ("jungle_log_top", 50), ("jungle_leaves", 51),
+        ("acacia_log", 52), ("acacia_log_top", 53), ("acacia_leaves", 54),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
@@ -518,6 +522,91 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         };
         rgba(c, speck(px, py, 57, 0.05) * emboss(px, py, tp), 255)
     });
+
+    // Wood families: bark side, ringed top, and leaves per species.
+    struct Wood {
+        slot: u32,
+        bark: [f32; 3],
+        birch_flecks: bool,
+        leaf_dark: [f32; 3],
+        leaf_light: [f32; 3],
+    }
+    let woods = [
+        Wood { slot: 43, bark: [201.0, 196.0, 182.0], birch_flecks: true,
+               leaf_dark: [62.0, 110.0, 40.0], leaf_light: [112.0, 168.0, 66.0] },
+        Wood { slot: 46, bark: [68.0, 50.0, 32.0], birch_flecks: false,
+               leaf_dark: [26.0, 60.0, 38.0], leaf_light: [52.0, 96.0, 66.0] },
+        Wood { slot: 49, bark: [94.0, 66.0, 40.0], birch_flecks: false,
+               leaf_dark: [44.0, 124.0, 26.0], leaf_light: [88.0, 188.0, 50.0] },
+        Wood { slot: 52, bark: [122.0, 108.0, 92.0], birch_flecks: false,
+               leaf_dark: [86.0, 102.0, 46.0], leaf_light: [128.0, 148.0, 72.0] },
+    ];
+    for wd in woods {
+        // Each tile's coords derive from its own slot — families may cross
+        // atlas row boundaries (e.g. spruce leaves at slot 48 = row 3).
+        let (tx, ty) = (wd.slot % 16, wd.slot / 16);
+        let (tx1, ty1) = ((wd.slot + 1) % 16, (wd.slot + 1) / 16);
+        let (tx2, ty2) = ((wd.slot + 2) % 16, (wd.slot + 2) / 16);
+        let bark = wd.bark;
+        let flecks = wd.birch_flecks;
+        // Bark side.
+        tile(tx, ty, &mut |px, py, u, v| {
+            if flecks {
+                // Birch: pale bark with short dark horizontal flecks.
+                let dash = hash(px as i32 / 5, py as i32, 60) % 11 == 0
+                    && px % 5 < 3;
+                if dash {
+                    return rgba([38.0, 34.0, 30.0], 1.0, 255);
+                }
+                let t = fbm(u, v, 5, 61);
+                rgba(mix3(bark, [170.0, 166.0, 154.0], t * 0.5), speck(px, py, 62, 0.04), 255)
+            } else {
+                let grain = ((u * std::f32::consts::TAU * 6.0)
+                    + vnoise(v * 4.0, u * 2.0, 4, 63) * 3.0)
+                    .sin();
+                let ridge = vnoise(u * 8.0, v * 2.0, 8, 64);
+                let mut f = 0.9 + grain * 0.1;
+                if ridge > 0.72 {
+                    f *= 0.68;
+                } else if ridge < 0.2 {
+                    f *= 1.12;
+                }
+                rgba(bark, f * speck(px, py, 65, 0.05), 255)
+            }
+        });
+        // Ringed top.
+        tile(tx1, ty1, &mut |px, py, u, v| {
+            let dx = u - 0.5;
+            let dy = v - 0.5;
+            let ang = dy.atan2(dx);
+            let wob = vnoise(ang.cos() * 2.0 + 2.0, ang.sin() * 2.0 + 2.0, 4, 66) * 0.06;
+            let r = (dx * dx + dy * dy).sqrt() + wob;
+            if r > 0.46 {
+                rgba([bark[0] * 0.9, bark[1] * 0.9, bark[2] * 0.9], speck(px, py, 67, 0.08), 255)
+            } else {
+                let ring = (r * 40.0).sin() * 0.5 + 0.5;
+                let light = [
+                    (bark[0] * 1.6 + 40.0).min(235.0),
+                    (bark[1] * 1.6 + 36.0).min(230.0),
+                    (bark[2] * 1.5 + 30.0).min(220.0),
+                ];
+                let dark = [bark[0] * 1.2, bark[1] * 1.2, bark[2] * 1.15];
+                rgba(mix3(light, dark, ring), speck(px, py, 68, 0.04), 255)
+            }
+        });
+        // Leaves.
+        tile(tx2, ty2, &mut |px, py, u, v| {
+            let t = fbm(u, v, 6, 69);
+            let mut c = mix3(wd.leaf_dark, wd.leaf_light, t);
+            let pocket = h01(px as i32, py as i32, 70 + wd.slot as u32);
+            if pocket > 0.93 {
+                c = mix3(c, [wd.leaf_light[0] + 50.0, wd.leaf_light[1] + 40.0, wd.leaf_light[2] + 30.0], 0.8);
+            } else if pocket < 0.10 {
+                c = mix3(c, [8.0, 22.0, 8.0], 0.7);
+            }
+            rgba(c, 1.0, 255)
+        });
+    }
 
     // (15,0) unknown/missing texture: magenta checkerboard.
     tile(15, 0, &mut |px, py, _u, _v| {

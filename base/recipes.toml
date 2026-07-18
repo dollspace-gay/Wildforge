@@ -44,3 +44,27 @@ output = "base:wood_shovel"
 pattern = ["c", "s", "s"]
 keys = { c = "base:cobblestone", s = "base:stick" }
 output = "base:stone_shovel"
+
+[[recipe]]
+pattern = ["l"]
+keys = { l = "base:birch_log" }
+output = "base:planks"
+count = 4
+
+[[recipe]]
+pattern = ["l"]
+keys = { l = "base:spruce_log" }
+output = "base:planks"
+count = 4
+
+[[recipe]]
+pattern = ["l"]
+keys = { l = "base:jungle_log" }
+output = "base:planks"
+count = 4
+
+[[recipe]]
+pattern = ["l"]
+keys = { l = "base:acacia_log" }
+output = "base:planks"
+count = 4

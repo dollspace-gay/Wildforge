@@ -106,6 +106,14 @@ pub struct Generator {
     water: BlockId,
     log: BlockId,
     leaves: BlockId,
+    birch_log: BlockId,
+    birch_leaves: BlockId,
+    spruce_log: BlockId,
+    spruce_leaves: BlockId,
+    jungle_log: BlockId,
+    jungle_leaves: BlockId,
+    acacia_log: BlockId,
+    acacia_leaves: BlockId,
     bedrock: BlockId,
     snow: BlockId,
     ice: BlockId,
@@ -174,6 +182,14 @@ impl Generator {
             water: b("base:water"),
             log: b("base:log"),
             leaves: b("base:leaves"),
+            birch_log: b("base:birch_log"),
+            birch_leaves: b("base:birch_leaves"),
+            spruce_log: b("base:spruce_log"),
+            spruce_leaves: b("base:spruce_leaves"),
+            jungle_log: b("base:jungle_log"),
+            jungle_leaves: b("base:jungle_leaves"),
+            acacia_log: b("base:acacia_log"),
+            acacia_leaves: b("base:acacia_leaves"),
             bedrock: b("base:bedrock"),
             snow: b("base:snow"),
             ice: b("base:ice"),
@@ -529,14 +545,23 @@ impl Generator {
                 c.set(lx, h as usize, lz, self.dirt);
                 let base = h + 1;
 
+                // Wood family per biome; forests mix oak with birch.
+                let (wood, leaf) = match biome {
+                    Biome::Taiga => (self.spruce_log, self.spruce_leaves),
+                    Biome::Jungle => (self.jungle_log, self.jungle_leaves),
+                    Biome::Scrubland => (self.acacia_log, self.acacia_leaves),
+                    Biome::Forest if rnd % 10 < 3 => (self.birch_log, self.birch_leaves),
+                    _ => (self.log, self.leaves),
+                };
+
                 match biome {
                     Biome::Scrubland => {
-                        c.set(lx, base as usize, lz, self.log);
+                        c.set(lx, base as usize, lz, wood);
                         for dx in -1i32..=1 {
                             for dz in -1i32..=1 {
                                 let (x, y, z) = (lx as i32 + dx, base + 1, lz as i32 + dz);
                                 if c.get(x as usize, y as usize, z as usize) == AIR {
-                                    c.set(x as usize, y as usize, z as usize, self.leaves);
+                                    c.set(x as usize, y as usize, z as usize, leaf);
                                 }
                             }
                         }
@@ -544,7 +569,7 @@ impl Generator {
                     Biome::Taiga => {
                         let trunk_h = 5 + (rnd % 3) as i32;
                         for y in 0..trunk_h {
-                            c.set(lx, (base + y) as usize, lz, self.log);
+                            c.set(lx, (base + y) as usize, lz, wood);
                         }
                         let top = base + trunk_h;
                         for (dy, r) in [(-3i32, 2i32), (-2, 1), (-1, 2), (0, 1), (1, 1)] {
@@ -562,12 +587,12 @@ impl Generator {
                                         continue;
                                     }
                                     if c.get(x as usize, y as usize, z as usize) == AIR {
-                                        c.set(x as usize, y as usize, z as usize, self.leaves);
+                                        c.set(x as usize, y as usize, z as usize, leaf);
                                     }
                                 }
                             }
                         }
-                        c.set(lx, (top + 2).min(CHUNK_Y as i32 - 1) as usize, lz, self.leaves);
+                        c.set(lx, (top + 2).min(CHUNK_Y as i32 - 1) as usize, lz, leaf);
                     }
                     _ => {
                         let jungle = biome == Biome::Jungle;
@@ -577,7 +602,7 @@ impl Generator {
                             4 + (rnd % 3) as i32
                         };
                         for y in 0..trunk_h {
-                            c.set(lx, (base + y) as usize, lz, self.log);
+                            c.set(lx, (base + y) as usize, lz, wood);
                         }
                         let top = base + trunk_h;
                         let big: i32 = if jungle { 3 } else { 2 };
@@ -601,7 +626,7 @@ impl Generator {
                                         continue;
                                     }
                                     if c.get(x as usize, y as usize, z as usize) == AIR {
-                                        c.set(x as usize, y as usize, z as usize, self.leaves);
+                                        c.set(x as usize, y as usize, z as usize, leaf);
                                     }
                                 }
                             }

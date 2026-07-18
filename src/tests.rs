@@ -571,11 +571,11 @@ fn arctic_has_snow_and_frozen_ocean() {
 fn jungle_denser_than_plains() {
     let reg = base_reg();
     let g = Generator::new(42, &reg);
-    let count_logs = |name: &str, biome: Biome| -> (u32, u32) {
+    let count_logs = |name: &str, biome: Biome, log_name: &str| -> (u32, u32) {
         let (x, z) = find_biome(&g, biome).unwrap();
         let cp = ChunkPos::of_world(x, z);
         let mut w = World::new(42, tmp_dir(name), reg.clone());
-        let log = b(&reg, "base:log");
+        let log = b(&reg, log_name);
         let mut logs = 0;
         let mut cols = 0;
         for dx in -3..=3 {
@@ -600,8 +600,8 @@ fn jungle_denser_than_plains() {
         }
         (logs, cols.max(1))
     };
-    let (jl, jc) = count_logs("jungle", Biome::Jungle);
-    let (pl, pc) = count_logs("plains", Biome::Plains);
+    let (jl, jc) = count_logs("jungle", Biome::Jungle, "base:jungle_log");
+    let (pl, pc) = count_logs("plains", Biome::Plains, "base:log");
     let jd = jl as f32 / jc as f32;
     let pd = pl as f32 / pc as f32;
     assert!(
@@ -785,6 +785,73 @@ fn steep_faces_and_peaks_surface_correctly() {
     assert!(snowy + stony > 0, "mountain tops are stone/snow");
 }
 
+#[test]
+fn wood_families_registered_and_craftable() {
+    let reg = base_reg();
+    for w in ["birch", "spruce", "jungle", "acacia"] {
+        assert!(reg.block_id(&format!("base:{w}_log")).is_some(), "{w} log");
+        assert!(reg.block_id(&format!("base:{w}_leaves")).is_some(), "{w} leaves");
+        // Each log crafts into planks.
+        let log = it(&reg, &format!("base:{w}_log"));
+        let mut g = vec![None; 4];
+        g[0] = Some(ItemStack::new(&reg, log, 1));
+        let r = crate::crafting::match_recipe(&reg, &g, 2)
+            .unwrap_or_else(|| panic!("{w} log -> planks recipe"));
+        assert_eq!(r.output, it(&reg, "base:planks"));
+        assert_eq!(r.count, 4);
+    }
+    // Leaves are leaf-like: non-opaque, dropless, breakable.
+    let bl = b(&reg, "base:spruce_leaves");
+    assert!(!reg.is_opaque(bl));
+    assert_eq!(reg.block(bl).drops, None);
+}
+
+#[test]
+fn biomes_grow_their_own_wood() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    let count_wood = |name: &str, biome: Biome, log: &str| -> (u32, u32) {
+        let (x, z) = find_biome(&g, biome).unwrap();
+        let cp = ChunkPos::of_world(x, z);
+        let mut w = World::new(42, tmp_dir(name), reg.clone());
+        let want = b(&reg, log);
+        let oak = b(&reg, "base:log");
+        let (mut hits, mut oaks) = (0, 0);
+        for dx in -4..=4 {
+            for dz in -4..=4 {
+                let p = ChunkPos { x: cp.x + dx, z: cp.z + dz };
+                w.ensure_chunk(p);
+                for lx in 0..16 {
+                    for lz in 0..16 {
+                        let (wx, wz) = (p.x * 16 + lx, p.z * 16 + lz);
+                        if w.generator.biome(wx, wz) != biome {
+                            continue;
+                        }
+                        for y in 64..200 {
+                            let blk = w.get_block(wx, y, wz);
+                            if blk == want {
+                                hits += 1;
+                            } else if blk == oak {
+                                oaks += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        (hits, oaks)
+    };
+    let (spruce, _) = count_wood("wood-taiga", Biome::Taiga, "base:spruce_log");
+    assert!(spruce > 0, "taiga should grow spruce");
+    let (jungle, _) = count_wood("wood-jungle", Biome::Jungle, "base:jungle_log");
+    assert!(jungle > 0, "jungle should grow jungle wood");
+    let (acacia, _) = count_wood("wood-scrub", Biome::Scrubland, "base:acacia_log");
+    assert!(acacia > 0, "scrubland shrubs should be acacia");
+    // Forests mix oak and birch.
+    let (birch, oaks) = count_wood("wood-forest", Biome::Forest, "base:birch_log");
+    assert!(birch > 0 && oaks > 0, "forest should mix birch ({birch}) and oak ({oaks})");
+}
+
 // ---------------- gameplay (regression) ----------------
 
 #[test]
@@ -922,6 +989,25 @@ fn crafting_matches_shapes_and_grids() {
 }
 
 #[test]
+fn wood_leaf_tiles_are_opaque_in_atlas() {
+    // Regression: a tile painted past the row boundary once left spruce
+    // leaves transparent (invisible canopies).
+    let reg = base_reg();
+    let (img, px) = crate::atlas::build_with_mods(&reg.tex_files);
+    let tp = px / 16;
+    for name in ["base:leaves", "base:birch_leaves", "base:spruce_leaves",
+                 "base:jungle_leaves", "base:acacia_leaves"] {
+        let id = reg.block_id(name).unwrap();
+        let slot = reg.block(id).tiles[0] as u32;
+        let cx = (slot % 16) * tp + tp / 2;
+        let cy = (slot / 16) * tp + tp / 2;
+        let i = ((cy * px + cx) * 4) as usize;
+        assert_eq!(img[i + 3], 255, "{name} tile center must be opaque");
+        assert!(img[i + 1] > img[i], "{name} should be green-ish");
+    }
+}
+
+#[test]
 fn atlas_builds_with_mod_texture() {
     let root = tmp_dir("atlasmod");
     let dir = root.join("texmod");
@@ -979,10 +1065,14 @@ fn print_biome_locations() {
     ] {
         // Prefer a dry column so the screenshot shows land.
         let (mut bx, mut bz) = find_biome(&g, biome).unwrap();
-        'scan: for dx in 0..96 {
-            for dz in 0..96 {
+        'scan: for dx in 0..200 {
+            for dz in 0..200 {
                 let (x, z) = (bx + dx, bz + dz);
-                if g.biome(x, z) == biome && g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 2 {
+                // Deep interior: same biome 32 blocks in every direction.
+                let deep = [(0, 0), (32, 0), (-32, 0), (0, 32), (0, -32)]
+                    .iter()
+                    .all(|(ox, oz)| g.biome(x + ox, z + oz) == biome);
+                if deep && g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 2 {
                     bx = x;
                     bz = z;
                     break 'scan;
