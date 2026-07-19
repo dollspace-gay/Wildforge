@@ -24,16 +24,40 @@ pub fn raycast(world: &World, origin: Vec3, dir: Vec3, max_dist: f32) -> Option<
     let step_z = if dir.z > 0.0 { 1 } else { -1 };
 
     let t_delta = Vec3::new(
-        if dir.x != 0.0 { (1.0 / dir.x).abs() } else { f32::INFINITY },
-        if dir.y != 0.0 { (1.0 / dir.y).abs() } else { f32::INFINITY },
-        if dir.z != 0.0 { (1.0 / dir.z).abs() } else { f32::INFINITY },
+        if dir.x != 0.0 {
+            (1.0 / dir.x).abs()
+        } else {
+            f32::INFINITY
+        },
+        if dir.y != 0.0 {
+            (1.0 / dir.y).abs()
+        } else {
+            f32::INFINITY
+        },
+        if dir.z != 0.0 {
+            (1.0 / dir.z).abs()
+        } else {
+            f32::INFINITY
+        },
     );
 
     let frac = |v: f32| v - v.floor();
     let mut t_max = Vec3::new(
-        if dir.x > 0.0 { (1.0 - frac(origin.x)) * t_delta.x } else { frac(origin.x) * t_delta.x },
-        if dir.y > 0.0 { (1.0 - frac(origin.y)) * t_delta.y } else { frac(origin.y) * t_delta.y },
-        if dir.z > 0.0 { (1.0 - frac(origin.z)) * t_delta.z } else { frac(origin.z) * t_delta.z },
+        if dir.x > 0.0 {
+            (1.0 - frac(origin.x)) * t_delta.x
+        } else {
+            frac(origin.x) * t_delta.x
+        },
+        if dir.y > 0.0 {
+            (1.0 - frac(origin.y)) * t_delta.y
+        } else {
+            frac(origin.y) * t_delta.y
+        },
+        if dir.z > 0.0 {
+            (1.0 - frac(origin.z)) * t_delta.z
+        } else {
+            frac(origin.z) * t_delta.z
+        },
     );
 
     let mut prev = (x, y, z);
@@ -43,7 +67,10 @@ pub fn raycast(world: &World, origin: Vec3, dir: Vec3, max_dist: f32) -> Option<
         // Hit anything mineable: solids AND non-solid plants (cross blocks),
         // but never water or air.
         if b != crate::registry::AIR && !world.reg.is_water(b) {
-            return Some(Hit { block: (x, y, z), adjacent: prev });
+            return Some(Hit {
+                block: (x, y, z),
+                adjacent: prev,
+            });
         }
         prev = (x, y, z);
         if t_max.x < t_max.y && t_max.x < t_max.z {

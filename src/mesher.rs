@@ -131,9 +131,7 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                     let slot = def.tiles[0];
                     let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
                     let (wx, wy, wz) = ((bx + lx) as f32, y as f32, (bz + lz) as f32);
-                    for (x0, z0, x1, z1) in
-                        [(0.15, 0.15, 0.85, 0.85), (0.15, 0.85, 0.85, 0.15)]
-                    {
+                    for (x0, z0, x1, z1) in [(0.15, 0.15, 0.85, 0.85), (0.15, 0.85, 0.85, 0.15)] {
                         for flip in [false, true] {
                             let base = m.opaque_verts.len() as u32;
                             let quad = if flip {
@@ -155,7 +153,12 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                                 });
                             }
                             m.opaque_idx.extend_from_slice(&[
-                                base, base + 1, base + 2, base, base + 2, base + 3,
+                                base,
+                                base + 1,
+                                base + 2,
+                                base,
+                                base + 2,
+                                base + 3,
                             ]);
                         }
                     }
@@ -216,9 +219,23 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                     }
                     // Flip the quad diagonal when AO is anisotropic.
                     if ao[0] as u16 + ao[2] as u16 >= ao[1] as u16 + ao[3] as u16 {
-                        idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+                        idx.extend_from_slice(&[
+                            base,
+                            base + 1,
+                            base + 2,
+                            base,
+                            base + 2,
+                            base + 3,
+                        ]);
                     } else {
-                        idx.extend_from_slice(&[base + 1, base + 2, base + 3, base + 1, base + 3, base]);
+                        idx.extend_from_slice(&[
+                            base + 1,
+                            base + 2,
+                            base + 3,
+                            base + 1,
+                            base + 3,
+                            base,
+                        ]);
                     }
                 }
             }
@@ -247,8 +264,16 @@ fn corner_ao(
     let mut out = [3u8; 4];
     for (ci, c) in CORNERS[face].iter().enumerate() {
         // Sign of this corner along each tangent axis.
-        let s1 = if c[0] * t1[0] as f32 + c[1] * t1[1] as f32 + c[2] * t1[2] as f32 > 0.5 { 1 } else { -1 };
-        let s2 = if c[0] * t2[0] as f32 + c[1] * t2[1] as f32 + c[2] * t2[2] as f32 > 0.5 { 1 } else { -1 };
+        let s1 = if c[0] * t1[0] as f32 + c[1] * t1[1] as f32 + c[2] * t1[2] as f32 > 0.5 {
+            1
+        } else {
+            -1
+        };
+        let s2 = if c[0] * t2[0] as f32 + c[1] * t2[1] as f32 + c[2] * t2[2] as f32 > 0.5 {
+            1
+        } else {
+            -1
+        };
         let side1 = occl(t1[0] * s1, t1[1] * s1, t1[2] * s1);
         let side2 = occl(t2[0] * s2, t2[1] * s2, t2[2] * s2);
         let corner = occl(

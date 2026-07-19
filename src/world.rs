@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
-use crate::mobs::{Mob, MobEvent, ProjHit, Projectile};
 use crate::inventory::ItemStack;
+use crate::mobs::{Mob, MobEvent, ProjHit, Projectile};
 use crate::registry::{AIR, BlockId, Registry};
 use crate::worldgen::Generator;
 
@@ -36,7 +36,10 @@ pub struct ChestState {
 
 impl Default for ChestState {
     fn default() -> ChestState {
-        ChestState { slots: [None; CHEST_SLOTS], wild_owned: false }
+        ChestState {
+            slots: [None; CHEST_SLOTS],
+            wild_owned: false,
+        }
     }
 }
 
@@ -69,7 +72,9 @@ pub fn read_world_meta(dir: &std::path::Path) -> (Option<u32>, String, f32) {
         }
         (seed, mode, ire.clamp(0.0, 100.0))
     } else {
-        let seed = fs::read_to_string(dir.join("seed")).ok().and_then(|s| s.trim().parse().ok());
+        let seed = fs::read_to_string(dir.join("seed"))
+            .ok()
+            .and_then(|s| s.trim().parse().ok());
         (seed, "survival".to_string(), 0.0)
     }
 }
@@ -220,8 +225,13 @@ impl World {
     /// What the wild values: its own materials most, then life given.
     pub fn offering_value(&self, s: &ItemStack) -> f32 {
         let d = self.reg.item(s.item);
-        let per = if ["base:heartwood", "base:living_wood", "base:ember", "base:frost_shard"]
-            .contains(&d.name.as_str())
+        let per = if [
+            "base:heartwood",
+            "base:living_wood",
+            "base:ember",
+            "base:frost_shard",
+        ]
+        .contains(&d.name.as_str())
         {
             2.0
         } else if d.name.ends_with("_sapling") {
@@ -241,7 +251,9 @@ impl World {
     pub fn accept_offerings(&mut self) -> f32 {
         let mut taken: Vec<ItemStack> = Vec::new();
         for e in self.block_entities.values_mut() {
-            let BlockEntity::Offering(o) = e else { continue };
+            let BlockEntity::Offering(o) = e else {
+                continue;
+            };
             for slot in o.slots.iter_mut() {
                 if let Some(s) = slot.take() {
                     taken.push(s);
@@ -375,12 +387,19 @@ impl World {
         };
         let mut remap = Vec::new();
         for line in text.lines() {
-            let Some((num, name)) = line.split_once(' ') else { continue };
-            let Ok(num) = num.parse::<usize>() else { continue };
+            let Some((num, name)) = line.split_once(' ') else {
+                continue;
+            };
+            let Ok(num) = num.parse::<usize>() else {
+                continue;
+            };
             if remap.len() <= num {
                 remap.resize(num + 1, self.reg.unknown_block);
             }
-            remap[num] = self.reg.block_id(name.trim()).unwrap_or(self.reg.unknown_block);
+            remap[num] = self
+                .reg
+                .block_id(name.trim())
+                .unwrap_or(self.reg.unknown_block);
         }
         remap
     }
@@ -478,7 +497,9 @@ impl World {
     /// set_block; chests get rolled loot and belong to the wild).
     pub fn place_structure(&mut self, si: usize, x0: i32, y0: i32, z0: i32, seed: u32) {
         let reg = self.reg.clone();
-        let Some(st) = reg.structures.get(si).cloned() else { return };
+        let Some(st) = reg.structures.get(si).cloned() else {
+            return;
+        };
         let chest_block = reg.block_id("base:chest");
         let mut rng = seed ^ 0x5f37_59df;
         for (ly, layer) in st.layers.iter().enumerate() {
@@ -491,11 +512,16 @@ impl World {
                         'C' => {
                             if let Some(cb) = chest_block {
                                 self.set_block(x, y, z, cb);
-                                let mut state = ChestState { wild_owned: true, ..Default::default() };
+                                let mut state = ChestState {
+                                    wild_owned: true,
+                                    ..Default::default()
+                                };
                                 if let Some(table) = &st.loot {
                                     let n = 3 + (rng % 3) as usize;
-                                    for (i, stck) in
-                                        self.roll_loot(table, n as u32, &mut rng).into_iter().enumerate()
+                                    for (i, stck) in self
+                                        .roll_loot(table, n as u32, &mut rng)
+                                        .into_iter()
+                                        .enumerate()
                                     {
                                         if i < CHEST_SLOTS {
                                             // Scatter through the chest.
@@ -504,7 +530,8 @@ impl World {
                                         }
                                     }
                                 }
-                                self.block_entities.insert((x, y, z), BlockEntity::Chest(state));
+                                self.block_entities
+                                    .insert((x, y, z), BlockEntity::Chest(state));
                             }
                         }
                         c => {
@@ -530,7 +557,9 @@ impl World {
 
     /// Weighted rolls from a loot table.
     pub fn roll_loot(&self, table: &str, rolls: u32, rng: &mut u32) -> Vec<ItemStack> {
-        let Some(entries) = self.reg.loots.get(table) else { return Vec::new() };
+        let Some(entries) = self.reg.loots.get(table) else {
+            return Vec::new();
+        };
         let total: u32 = entries.iter().map(|e| e.weight).sum();
         if total == 0 {
             return Vec::new();
@@ -671,7 +700,9 @@ impl World {
         // in daylight (sky-lit cells only — torchlight never banishes them)
         // and when the player leaves them far behind.
         mobs.retain(|m| {
-            let Some(def) = reg.animals.get(m.species) else { return false };
+            let Some(def) = reg.animals.get(m.species) else {
+                return false;
+            };
             if m.pos.y < -20.0 {
                 return false; // fell out of the world somehow
             }
@@ -759,8 +790,7 @@ impl World {
                         .filter(|(_, d)| !d.hostile && d.biomes.iter().any(|b| *b == biome))
                         .map(|(i, _)| i)
                         .collect();
-                    if let Some(&si) = eligible.get(((r >> 20) as usize) % eligible.len().max(1))
-                    {
+                    if let Some(&si) = eligible.get(((r >> 20) as usize) % eligible.len().max(1)) {
                         self.try_spawn(si, x, z, (r >> 8) as f32 / (u32::MAX >> 8) as f32);
                     }
                 }
@@ -801,7 +831,11 @@ impl World {
                     } else {
                         let back = p.pos - p.vel * dt * 2.0;
                         drops.push((
-                            (back.x.floor() as i32, back.y.floor() as i32, back.z.floor() as i32),
+                            (
+                                back.x.floor() as i32,
+                                back.y.floor() as i32,
+                                back.z.floor() as i32,
+                            ),
                             it,
                         ));
                     }
@@ -887,8 +921,7 @@ impl World {
                         let ground = self.get_block(x, y - 1, z);
                         let a1 = self.get_block(x, y, z);
                         let a2 = self.get_block(x, y + 1, z);
-                        (self.reg.is_solid(ground) && a1 == AIR && a2 == AIR)
-                            .then_some((i, y))
+                        (self.reg.is_solid(ground) && a1 == AIR && a2 == AIR).then_some((i, y))
                     } else if d.biomes.iter().any(|b| *b == biome) && surface_y > SEA_LEVEL {
                         Some((i, surface_y + 1))
                     } else {
@@ -904,7 +937,9 @@ impl World {
             // Only one wrathwood walks at a time.
             if def.name.ends_with("wrathwood")
                 && self.mobs.iter().any(|m| {
-                    reg.animals.get(m.species).is_some_and(|d| d.name.ends_with("wrathwood"))
+                    reg.animals
+                        .get(m.species)
+                        .is_some_and(|d| d.name.ends_with("wrathwood"))
                 })
             {
                 continue;
@@ -933,7 +968,9 @@ impl World {
         use std::fmt::Write as _;
         let mut out = String::new();
         for m in &self.mobs {
-            let Some(def) = self.reg.animals.get(m.species) else { continue };
+            let Some(def) = self.reg.animals.get(m.species) else {
+                continue;
+            };
             if def.hostile {
                 continue; // wardens dissolve on save — never persisted
             }
@@ -982,9 +1019,10 @@ impl World {
             if let Ok(f) = toml::from_str::<FileT>(&text) {
                 for t in f.mob {
                     // Unknown species (mod removed) skip cleanly.
-                    let Some(si) = self.reg.animal_id(&t.species) else { continue };
-                    let mut m =
-                        Mob::new(si, glam::Vec3::new(t.pos[0], t.pos[1], t.pos[2]), t.yaw);
+                    let Some(si) = self.reg.animal_id(&t.species) else {
+                        continue;
+                    };
+                    let mut m = Mob::new(si, glam::Vec3::new(t.pos[0], t.pos[1], t.pos[2]), t.yaw);
                     m.health = t.health.min(self.reg.animals[si].health);
                     m.fed = t.fed;
                     m.growth = t.growth.clamp(0.05, 1.0);
@@ -1078,7 +1116,10 @@ impl World {
         self.relight_and_cascade(pos);
         // Neighbors need remeshing for the new border faces.
         for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-            let n = ChunkPos { x: pos.x + dx, z: pos.z + dz };
+            let n = ChunkPos {
+                x: pos.x + dx,
+                z: pos.z + dz,
+            };
             if let Some(c) = self.chunks.get_mut(&n) {
                 c.dirty = true;
             }
@@ -1117,7 +1158,11 @@ impl World {
             .collect();
         for chunk in self.chunks.values_mut() {
             for cell in chunk.raw_mut() {
-                *cell = map.get(*cell as usize).copied().unwrap_or(self.reg.unknown_block).0;
+                *cell = map
+                    .get(*cell as usize)
+                    .copied()
+                    .unwrap_or(self.reg.unknown_block)
+                    .0;
             }
             chunk.dirty = true;
         }
@@ -1173,16 +1218,25 @@ impl World {
         const NZ: usize = CHUNK_Z;
         let idx = |x: usize, y: usize, z: usize| (x * NZ + z) * NY + y;
         let reg = self.reg.clone();
-        let Some(chunk) = self.chunks.get(&pos) else { return false };
+        let Some(chunk) = self.chunks.get(&pos) else {
+            return false;
+        };
 
         // Per-cell properties, resolved once.
         #[derive(Clone, Copy)]
         struct Cell {
             opaque: bool,
-            cost: u8, // propagation cost: 1, or 2 through water
+            cost: u8,      // propagation cost: 1, or 2 through water
             emit: [u8; 3], // per-channel emission
         }
-        let mut cells = vec![Cell { opaque: false, cost: 1, emit: [0; 3] }; NX * NY * NZ];
+        let mut cells = vec![
+            Cell {
+                opaque: false,
+                cost: 1,
+                emit: [0; 3]
+            };
+            NX * NY * NZ
+        ];
         for x in 0..NX {
             for z in 0..NZ {
                 for y in 0..NY {
@@ -1234,8 +1288,13 @@ impl World {
                 (0, -1, usize::MAX, 0usize),
                 (0, 1, usize::MAX, NZ - 1),
             ] {
-                let npos = ChunkPos { x: pos.x + dx, z: pos.z + dz };
-                let Some(nc) = self.chunks.get(&npos) else { continue };
+                let npos = ChunkPos {
+                    x: pos.x + dx,
+                    z: pos.z + dz,
+                };
+                let Some(nc) = self.chunks.get(&npos) else {
+                    continue;
+                };
                 // The neighbor's cell touching our edge cell.
                 let (nb_x, nb_z) = (
                     if dx == -1 { NX - 1 } else { 0 },
@@ -1288,12 +1347,24 @@ impl World {
                         q.push_back((nx, ny, nz));
                     }
                 };
-                if x > 0 { relax(x - 1, y, z); }
-                if x < NX - 1 { relax(x + 1, y, z); }
-                if y > 0 { relax(x, y - 1, z); }
-                if y < NY - 1 { relax(x, y + 1, z); }
-                if z > 0 { relax(x, y, z - 1); }
-                if z < NZ - 1 { relax(x, y, z + 1); }
+                if x > 0 {
+                    relax(x - 1, y, z);
+                }
+                if x < NX - 1 {
+                    relax(x + 1, y, z);
+                }
+                if y > 0 {
+                    relax(x, y - 1, z);
+                }
+                if y < NY - 1 {
+                    relax(x, y + 1, z);
+                }
+                if z > 0 {
+                    relax(x, y, z - 1);
+                }
+                if z < NZ - 1 {
+                    relax(x, y, z + 1);
+                }
             }
         };
 
@@ -1351,7 +1422,10 @@ impl World {
             }
             if self.relight_chunk(p) {
                 for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                    let n = ChunkPos { x: p.x + dx, z: p.z + dz };
+                    let n = ChunkPos {
+                        x: p.x + dx,
+                        z: p.z + dz,
+                    };
                     if self.chunks.contains_key(&n) {
                         queue.push_back(n);
                     }
@@ -1391,7 +1465,10 @@ impl World {
             }
         }
         let mut touch = |dx: i32, dz: i32| {
-            let np = ChunkPos { x: pos.x + dx, z: pos.z + dz };
+            let np = ChunkPos {
+                x: pos.x + dx,
+                z: pos.z + dz,
+            };
             if let Some(c) = self.chunks.get_mut(&np) {
                 c.dirty = true;
             }
@@ -1413,7 +1490,8 @@ impl World {
             if above != AIR && self.reg.block(above).cross {
                 if let Some((item, n)) = self.reg.block(above).drops {
                     let reg = self.reg.clone();
-                    self.pending_drops.push(((x, y + 1, z), ItemStack::new(&reg, item, n)));
+                    self.pending_drops
+                        .push(((x, y + 1, z), ItemStack::new(&reg, item, n)));
                 }
                 self.set_block(x, y + 1, z, AIR);
             }
@@ -1458,8 +1536,8 @@ impl World {
                     continue;
                 }
                 if let Some(next) = d.crop_next {
-                    let soil_ok = d.crop_any_soil
-                        || farmland == Some(self.get_block(wx, y - 1, wz));
+                    let soil_ok =
+                        d.crop_any_soil || farmland == Some(self.get_block(wx, y - 1, wz));
                     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                     if soil_ok && ((*rng >> 8) as f32 / (1 << 24) as f32) < d.crop_chance {
                         changes.push((wx, y, wz, next));
@@ -1484,7 +1562,9 @@ impl World {
     /// planting cap (it took days — it IS the slow path).
     pub fn try_grow_sapling(&mut self, x: i32, y: i32, z: i32, rnd: u32) -> bool {
         let b = self.get_block(x, y, z);
-        let Some(species) = self.reg.block(b).sapling.clone() else { return false };
+        let Some(species) = self.reg.block(b).sapling.clone() else {
+            return false;
+        };
         if self.grow_tree(x, y, z, &species, rnd) {
             self.add_ire(-2.0);
             true
@@ -1513,7 +1593,11 @@ impl World {
                         f.burn_total = burn;
                         f.burn_speed = speed;
                         let left = fs.count - 1;
-                        f.fuel = if left > 0 { Some(ItemStack { count: left, ..fs }) } else { None };
+                        f.fuel = if left > 0 {
+                            Some(ItemStack { count: left, ..fs })
+                        } else {
+                            None
+                        };
                         self.ire = (self.ire + 0.1).min(100.0);
                     }
                 }
@@ -1528,11 +1612,17 @@ impl World {
                         // Consume one input, emit output.
                         if let Some(inp) = f.input {
                             let left = inp.count - 1;
-                            f.input =
-                                if left > 0 { Some(ItemStack { count: left, ..inp }) } else { None };
+                            f.input = if left > 0 {
+                                Some(ItemStack { count: left, ..inp })
+                            } else {
+                                None
+                            };
                         }
                         f.output = Some(match f.output {
-                            Some(o) => ItemStack { count: o.count + 1, ..o },
+                            Some(o) => ItemStack {
+                                count: o.count + 1,
+                                ..o
+                            },
                             None => ItemStack::new(&reg, s.output, 1),
                         });
                     }
@@ -1563,7 +1653,9 @@ impl World {
                             let _ = writeln!(
                                 out,
                                 "{k} = {{ item = \"{}\", count = {}, durability = {} }}",
-                                self.reg.item(s.item).name, s.count, s.durability
+                                self.reg.item(s.item).name,
+                                s.count,
+                                s.durability
                             );
                         }
                     };
@@ -1586,7 +1678,9 @@ impl World {
                             let _ = writeln!(
                                 out,
                                 "[[chest.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
-                                self.reg.item(st.item).name, st.count, st.durability
+                                self.reg.item(st.item).name,
+                                st.count,
+                                st.durability
                             );
                         }
                     }
@@ -1599,7 +1693,9 @@ impl World {
                             let _ = writeln!(
                                 out,
                                 "[[offering.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
-                                self.reg.item(st.item).name, st.count, st.durability
+                                self.reg.item(st.item).name,
+                                st.count,
+                                st.durability
                             );
                         }
                     }
@@ -1661,12 +1757,20 @@ impl World {
             #[serde(default)]
             offering: Vec<ChestT>,
         }
-        let Ok(text) = fs::read_to_string(self.entities_path()) else { return };
-        let Ok(parsed) = toml::from_str::<FileT>(&text) else { return };
+        let Ok(text) = fs::read_to_string(self.entities_path()) else {
+            return;
+        };
+        let Ok(parsed) = toml::from_str::<FileT>(&text) else {
+            return;
+        };
         let conv = |s: Option<SlotT>| -> Option<ItemStack> {
             let s = s?;
             let item = self.reg.item_id(&s.item)?;
-            Some(ItemStack { item, count: s.count, durability: s.durability })
+            Some(ItemStack {
+                item,
+                count: s.count,
+                durability: s.durability,
+            })
         };
         for fu in parsed.furnace {
             self.block_entities.insert(
@@ -1683,12 +1787,18 @@ impl World {
             );
         }
         for ch in parsed.chest {
-            let mut state = ChestState { wild_owned: ch.wild_owned, ..Default::default() };
+            let mut state = ChestState {
+                wild_owned: ch.wild_owned,
+                ..Default::default()
+            };
             for sl in ch.slot {
                 if sl.index < CHEST_SLOTS {
                     if let Some(item) = self.reg.item_id(&sl.item) {
-                        state.slots[sl.index] =
-                            Some(ItemStack { item, count: sl.count, durability: sl.durability });
+                        state.slots[sl.index] = Some(ItemStack {
+                            item,
+                            count: sl.count,
+                            durability: sl.durability,
+                        });
                     }
                 }
             }
@@ -1700,13 +1810,18 @@ impl World {
             for sl in of.slot {
                 if sl.index < 3 {
                     if let Some(item) = self.reg.item_id(&sl.item) {
-                        state.slots[sl.index] =
-                            Some(ItemStack { item, count: sl.count, durability: sl.durability });
+                        state.slots[sl.index] = Some(ItemStack {
+                            item,
+                            count: sl.count,
+                            durability: sl.durability,
+                        });
                     }
                 }
             }
-            self.block_entities
-                .insert((of.pos[0], of.pos[1], of.pos[2]), BlockEntity::Offering(state));
+            self.block_entities.insert(
+                (of.pos[0], of.pos[1], of.pos[2]),
+                BlockEntity::Offering(state),
+            );
         }
     }
 
@@ -1728,7 +1843,15 @@ impl World {
     }
 
     pub fn wake_water(&mut self, x: i32, y: i32, z: i32) {
-        for (dx, dy, dz) in [(0, 0, 0), (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)] {
+        for (dx, dy, dz) in [
+            (0, 0, 0),
+            (1, 0, 0),
+            (-1, 0, 0),
+            (0, 1, 0),
+            (0, -1, 0),
+            (0, 0, 1),
+            (0, 0, -1),
+        ] {
             self.schedule_water(x + dx, y + dy, z + dz);
         }
     }
@@ -1756,7 +1879,9 @@ impl World {
     pub fn tick_water(&mut self, budget: usize) -> bool {
         let mut changed = false;
         for _ in 0..budget {
-            let Some(pos) = self.water_queue.pop_front() else { break };
+            let Some(pos) = self.water_queue.pop_front() else {
+                break;
+            };
             self.water_queued.remove(&pos);
             let (x, y, z) = pos;
             let b = self.get_block(x, y, z);

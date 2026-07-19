@@ -25,7 +25,14 @@ pub const PICKUP_DELAY: f32 = 0.6;
 
 impl ItemEntity {
     pub fn new(pos: Vec3, vel: Vec3, item: ItemId, count: u32) -> ItemEntity {
-        ItemEntity { pos, vel, item, count, age: 0.0, durability: 0 }
+        ItemEntity {
+            pos,
+            vel,
+            item,
+            count,
+            age: 0.0,
+            durability: 0,
+        }
     }
 
     /// Returns false when the entity should despawn.
@@ -66,7 +73,13 @@ impl ItemEntity {
 
     /// Emit this entity as a spinning, bobbing mini-cube (blocks) or a
     /// crossed pair of upright sprite quads (tools, sticks).
-    pub fn emit(&self, reg: &Registry, lum: ([f32; 3], f32), verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
+    pub fn emit(
+        &self,
+        reg: &Registry,
+        lum: ([f32; 3], f32),
+        verts: &mut Vec<Vertex>,
+        idx: &mut Vec<u32>,
+    ) {
         let block = match reg.item(self.item).places {
             Some(b) if !reg.block(b).cross => b,
             _ => {
@@ -116,7 +129,13 @@ impl ItemEntity {
 }
 
 impl ItemEntity {
-    fn emit_sprite(&self, reg: &Registry, lum: ([f32; 3], f32), verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
+    fn emit_sprite(
+        &self,
+        reg: &Registry,
+        lum: ([f32; 3], f32),
+        verts: &mut Vec<Vertex>,
+        idx: &mut Vec<u32>,
+    ) {
         let slot = reg.item(self.item).icon;
         let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
         let ts = 1.0 / ATLAS_TILES as f32;

@@ -25,7 +25,11 @@ fn main() {
     println!("cargo:rerun-if-changed=packs/gemini/tiles");
     let out = env::var("OUT_DIR").unwrap();
     let mut entries = Vec::new();
-    walk(Path::new("packs/gemini/tiles"), Path::new("packs/gemini/tiles"), &mut entries);
+    walk(
+        Path::new("packs/gemini/tiles"),
+        Path::new("packs/gemini/tiles"),
+        &mut entries,
+    );
     let mut src = String::from(
         "/// (tile name, png bytes) for the built-in gemini pack.\n\
          pub static GEMINI_TILES: &[(&str, &[u8])] = &[\n",

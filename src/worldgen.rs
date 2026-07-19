@@ -270,7 +270,11 @@ impl Generator {
         }
         let n = (n / 1.75) as f32; // ~[-1, 1]
         let dy = offset - y as f32;
-        let s = if dy < 0.0 { factor * 0.011 } else { factor.max(3.0) * 0.026 };
+        let s = if dy < 0.0 {
+            factor * 0.011
+        } else {
+            factor.max(3.0) * 0.026
+        };
         n * 0.62 + dy * s
     }
 
@@ -306,7 +310,11 @@ impl Generator {
         let fz = (lz + 4) as f32 / 4.0;
         let fy = y as f32 / 8.0;
         let (ix, iy, iz) = (fx as usize, fy as usize, fz as usize);
-        let (ix1, iy1, iz1) = ((ix + 1).min(NX - 1), (iy + 1).min(NY - 1), (iz + 1).min(NX - 1));
+        let (ix1, iy1, iz1) = (
+            (ix + 1).min(NX - 1),
+            (iy + 1).min(NY - 1),
+            (iz + 1).min(NX - 1),
+        );
         let (tx, ty, tz) = (fx - ix as f32, fy - iy as f32, fz - iz as f32);
         let g = |x: usize, z: usize, y: usize| lat[(x * NX + z) * NY + y];
         let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
@@ -367,15 +375,16 @@ impl Generator {
                     let yf = y as f64;
                     // Cheese: big voids, more common deeper down.
                     let ch = self.cheese.get([wx / 120.0, yf / 85.0, wz / 120.0]) as f32;
-                    let cheese_thr =
-                        0.74 - (SEA_LEVEL as f32 - y as f32).clamp(0.0, 50.0) * 0.004;
+                    let cheese_thr = 0.74 - (SEA_LEVEL as f32 - y as f32).clamp(0.0, 50.0) * 0.004;
                     // Spaghetti: two noises near zero = a winding tunnel.
                     // Width tapers near the surface so entrances are rare.
                     let taper = (depth / 12.0).min(1.0);
                     let w = (0.055 + depth * 0.0003) * taper;
                     let s1 = self.spag1.get([wx / 70.0, yf / 55.0, wz / 70.0]) as f32;
-                    let s2 =
-                        self.spag2.get([wx / 70.0 + 41.0, yf / 55.0, wz / 70.0 - 13.0]) as f32;
+                    let s2 = self
+                        .spag2
+                        .get([wx / 70.0 + 41.0, yf / 55.0, wz / 70.0 - 13.0])
+                        as f32;
                     if ch > cheese_thr || (s1.abs() < w && s2.abs() < w) {
                         c.set(lx as usize, y as usize, lz as usize, AIR);
                     }
@@ -405,8 +414,7 @@ impl Generator {
                 let h0 = shape_top[lx + 1][lz + 1];
                 let mut slope = 0;
                 for (dx, dz) in [(0i32, 1i32), (0, -1), (1, 0), (-1, 0)] {
-                    let n =
-                        shape_top[(lx as i32 + 1 + dx) as usize][(lz as i32 + 1 + dz) as usize];
+                    let n = shape_top[(lx as i32 + 1 + dx) as usize][(lz as i32 + 1 + dz) as usize];
                     slope = slope.max((h0 - n).abs());
                 }
                 let steep = slope >= 3;
@@ -543,10 +551,18 @@ impl Generator {
                     let plant = match biome {
                         Biome::Plains => self.wild_wheat,
                         Biome::Forest => {
-                            if food_roll % 2 == 0 { self.wild_carrot } else { self.berry_bush }
+                            if food_roll % 2 == 0 {
+                                self.wild_carrot
+                            } else {
+                                self.berry_bush
+                            }
                         }
                         Biome::Taiga => {
-                            if food_roll % 2 == 0 { self.wild_potato } else { self.mushroom }
+                            if food_roll % 2 == 0 {
+                                self.wild_potato
+                            } else {
+                                self.mushroom
+                            }
                         }
                         Biome::Jungle => self.jungle_bush,
                         _ => AIR,

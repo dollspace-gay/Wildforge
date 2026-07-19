@@ -18,70 +18,197 @@ pub const FIRST_FREE_SLOT: u16 = 208; // rows 0-12 are built-in tiles
 /// Built-in procedural tile names usable as `@name` in mod TOML.
 pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
     [
-        ("grass_top", 0u16), ("grass_side", 1), ("dirt", 2), ("stone", 3),
-        ("cobblestone", 4), ("sand", 5), ("gravel", 6), ("log_side", 7),
-        ("log_top", 8), ("leaves", 9), ("planks", 10), ("bedrock", 11),
-        ("water", 12), ("table_top", 13), ("table_side", 14),
-        ("stick", 32), ("wood_pickaxe", 33), ("stone_pickaxe", 34),
-        ("wood_axe", 35), ("stone_axe", 36), ("wood_shovel", 37),
-        ("stone_shovel", 38), ("snow", 39), ("ice", 40),
-        ("cactus_side", 41), ("cactus_top", 42),
-        ("birch_log", 43), ("birch_log_top", 44), ("birch_leaves", 45),
-        ("spruce_log", 46), ("spruce_log_top", 47), ("spruce_leaves", 48),
-        ("jungle_log", 49), ("jungle_log_top", 50), ("jungle_leaves", 51),
-        ("acacia_log", 52), ("acacia_log_top", 53), ("acacia_leaves", 54),
-        ("birch_planks", 55), ("spruce_planks", 56), ("jungle_planks", 57),
-        ("acacia_planks", 58), ("copper_ore", 59), ("tin_ore", 60),
-        ("copper_block", 61), ("bronze_block", 62), ("furnace", 63),
-        ("raw_copper", 64), ("raw_tin", 65), ("copper_ingot", 66),
-        ("tin_ingot", 67), ("bronze_ingot", 68), ("bronze_blend", 69),
-        ("charcoal", 70), ("copper_pickaxe", 71), ("copper_axe", 72),
-        ("copper_shovel", 73), ("bronze_pickaxe", 74), ("bronze_axe", 75),
-        ("bronze_shovel", 76), ("farmland", 77), ("wheat_young", 78),
-        ("wheat_ripe", 79), ("carrot_plant", 80), ("potato_plant", 81),
-        ("bush_fruited", 82), ("bush_bare", 83), ("mushroom", 84),
-        ("bread", 85), ("berry", 86), ("carrot", 87), ("potato", 88),
-        ("baked_potato", 89), ("roasted_mushroom", 90), ("cactus_fruit", 91),
-        ("jungle_fruit", 92), ("stew", 93), ("seeds", 94), ("wood_hoe", 96),
-        ("stone_hoe", 97), ("copper_hoe", 98), ("bronze_hoe", 99),
-        ("deer", 100), ("deer_face", 101), ("boar", 102), ("boar_face", 103),
-        ("goat", 104), ("goat_face", 105), ("grouse", 106),
-        ("grouse_face", 107), ("rabbit", 108), ("rabbit_face", 109),
-        ("desert_hare", 110), ("snow_hare", 111),
-        ("raw_venison", 112), ("cooked_venison", 113), ("raw_boar", 114),
-        ("cooked_boar", 115), ("raw_chevon", 116), ("cooked_chevon", 117),
-        ("raw_fowl", 118), ("cooked_fowl", 119), ("raw_rabbit", 120),
-        ("cooked_rabbit", 121), ("hide", 122), ("leather", 123),
-        ("feather", 124), ("hearty_stew", 125), ("wood_sword", 126),
-        ("stone_sword", 127), ("copper_sword", 128), ("bronze_sword", 129),
-        ("antler", 130), ("torch", 131), ("chest_side", 132),
-        ("chest_top", 133), ("thornling", 134), ("dryad", 135),
-        ("dryad_face", 136), ("emberkin", 137), ("rimewisp", 138),
-        ("gravelurk", 139), ("wrathwood", 140), ("wrathwood_face", 141),
-        ("thorn_bolt", 142), ("ember_bolt", 143), ("frost_bolt", 144),
-        ("plant_fiber", 145), ("living_wood", 146), ("ember", 147),
-        ("frost_shard", 148), ("heartwood", 149), ("hunting_bow", 150),
-        ("warbow", 151), ("arrow", 152), ("leather_helmet", 153),
-        ("leather_chestplate", 154), ("leather_leggings", 155),
-        ("leather_boots", 156), ("bronze_helmet", 157),
-        ("bronze_chestplate", 158), ("bronze_leggings", 159),
-        ("bronze_boots", 160), ("oak_sapling", 161), ("birch_sapling", 162),
-        ("spruce_sapling", 163), ("jungle_sapling", 164),
-        ("acacia_sapling", 165), ("offering_stone", 166), ("bedroll", 167),
-        ("iron_ore", 168), ("iron_block", 169), ("steel_block", 170),
-        ("raw_iron", 171), ("iron_ingot", 172), ("steel_blend", 173),
-        ("steel_ingot", 174), ("iron_pickaxe", 175), ("iron_axe", 176),
-        ("iron_shovel", 177), ("iron_hoe", 178), ("iron_sword", 179),
-        ("steel_pickaxe", 180), ("steel_axe", 181), ("steel_shovel", 182),
-        ("steel_hoe", 183), ("steel_sword", 184), ("iron_helmet", 185),
-        ("iron_chestplate", 186), ("iron_leggings", 187), ("iron_boots", 188),
-        ("steel_helmet", 189), ("steel_chestplate", 190),
-        ("steel_leggings", 191), ("steel_boots", 192), ("shears", 193),
-        ("excavation_brush", 194), ("mossy_cobblestone", 195),
-        ("cracked_masonry", 196), ("packed_earth", 197), ("old_coin", 198),
-        ("etched_tablet", 199), ("charm_quiet", 200), ("charm_bark", 201),
-        ("charm_hunger", 202), ("player_skin", 203), ("player_face", 204),
-        ("unknown", 15), ("crack1", 16), ("crack2", 17), ("crack3", 18),
+        ("grass_top", 0u16),
+        ("grass_side", 1),
+        ("dirt", 2),
+        ("stone", 3),
+        ("cobblestone", 4),
+        ("sand", 5),
+        ("gravel", 6),
+        ("log_side", 7),
+        ("log_top", 8),
+        ("leaves", 9),
+        ("planks", 10),
+        ("bedrock", 11),
+        ("water", 12),
+        ("table_top", 13),
+        ("table_side", 14),
+        ("stick", 32),
+        ("wood_pickaxe", 33),
+        ("stone_pickaxe", 34),
+        ("wood_axe", 35),
+        ("stone_axe", 36),
+        ("wood_shovel", 37),
+        ("stone_shovel", 38),
+        ("snow", 39),
+        ("ice", 40),
+        ("cactus_side", 41),
+        ("cactus_top", 42),
+        ("birch_log", 43),
+        ("birch_log_top", 44),
+        ("birch_leaves", 45),
+        ("spruce_log", 46),
+        ("spruce_log_top", 47),
+        ("spruce_leaves", 48),
+        ("jungle_log", 49),
+        ("jungle_log_top", 50),
+        ("jungle_leaves", 51),
+        ("acacia_log", 52),
+        ("acacia_log_top", 53),
+        ("acacia_leaves", 54),
+        ("birch_planks", 55),
+        ("spruce_planks", 56),
+        ("jungle_planks", 57),
+        ("acacia_planks", 58),
+        ("copper_ore", 59),
+        ("tin_ore", 60),
+        ("copper_block", 61),
+        ("bronze_block", 62),
+        ("furnace", 63),
+        ("raw_copper", 64),
+        ("raw_tin", 65),
+        ("copper_ingot", 66),
+        ("tin_ingot", 67),
+        ("bronze_ingot", 68),
+        ("bronze_blend", 69),
+        ("charcoal", 70),
+        ("copper_pickaxe", 71),
+        ("copper_axe", 72),
+        ("copper_shovel", 73),
+        ("bronze_pickaxe", 74),
+        ("bronze_axe", 75),
+        ("bronze_shovel", 76),
+        ("farmland", 77),
+        ("wheat_young", 78),
+        ("wheat_ripe", 79),
+        ("carrot_plant", 80),
+        ("potato_plant", 81),
+        ("bush_fruited", 82),
+        ("bush_bare", 83),
+        ("mushroom", 84),
+        ("bread", 85),
+        ("berry", 86),
+        ("carrot", 87),
+        ("potato", 88),
+        ("baked_potato", 89),
+        ("roasted_mushroom", 90),
+        ("cactus_fruit", 91),
+        ("jungle_fruit", 92),
+        ("stew", 93),
+        ("seeds", 94),
+        ("wood_hoe", 96),
+        ("stone_hoe", 97),
+        ("copper_hoe", 98),
+        ("bronze_hoe", 99),
+        ("deer", 100),
+        ("deer_face", 101),
+        ("boar", 102),
+        ("boar_face", 103),
+        ("goat", 104),
+        ("goat_face", 105),
+        ("grouse", 106),
+        ("grouse_face", 107),
+        ("rabbit", 108),
+        ("rabbit_face", 109),
+        ("desert_hare", 110),
+        ("snow_hare", 111),
+        ("raw_venison", 112),
+        ("cooked_venison", 113),
+        ("raw_boar", 114),
+        ("cooked_boar", 115),
+        ("raw_chevon", 116),
+        ("cooked_chevon", 117),
+        ("raw_fowl", 118),
+        ("cooked_fowl", 119),
+        ("raw_rabbit", 120),
+        ("cooked_rabbit", 121),
+        ("hide", 122),
+        ("leather", 123),
+        ("feather", 124),
+        ("hearty_stew", 125),
+        ("wood_sword", 126),
+        ("stone_sword", 127),
+        ("copper_sword", 128),
+        ("bronze_sword", 129),
+        ("antler", 130),
+        ("torch", 131),
+        ("chest_side", 132),
+        ("chest_top", 133),
+        ("thornling", 134),
+        ("dryad", 135),
+        ("dryad_face", 136),
+        ("emberkin", 137),
+        ("rimewisp", 138),
+        ("gravelurk", 139),
+        ("wrathwood", 140),
+        ("wrathwood_face", 141),
+        ("thorn_bolt", 142),
+        ("ember_bolt", 143),
+        ("frost_bolt", 144),
+        ("plant_fiber", 145),
+        ("living_wood", 146),
+        ("ember", 147),
+        ("frost_shard", 148),
+        ("heartwood", 149),
+        ("hunting_bow", 150),
+        ("warbow", 151),
+        ("arrow", 152),
+        ("leather_helmet", 153),
+        ("leather_chestplate", 154),
+        ("leather_leggings", 155),
+        ("leather_boots", 156),
+        ("bronze_helmet", 157),
+        ("bronze_chestplate", 158),
+        ("bronze_leggings", 159),
+        ("bronze_boots", 160),
+        ("oak_sapling", 161),
+        ("birch_sapling", 162),
+        ("spruce_sapling", 163),
+        ("jungle_sapling", 164),
+        ("acacia_sapling", 165),
+        ("offering_stone", 166),
+        ("bedroll", 167),
+        ("iron_ore", 168),
+        ("iron_block", 169),
+        ("steel_block", 170),
+        ("raw_iron", 171),
+        ("iron_ingot", 172),
+        ("steel_blend", 173),
+        ("steel_ingot", 174),
+        ("iron_pickaxe", 175),
+        ("iron_axe", 176),
+        ("iron_shovel", 177),
+        ("iron_hoe", 178),
+        ("iron_sword", 179),
+        ("steel_pickaxe", 180),
+        ("steel_axe", 181),
+        ("steel_shovel", 182),
+        ("steel_hoe", 183),
+        ("steel_sword", 184),
+        ("iron_helmet", 185),
+        ("iron_chestplate", 186),
+        ("iron_leggings", 187),
+        ("iron_boots", 188),
+        ("steel_helmet", 189),
+        ("steel_chestplate", 190),
+        ("steel_leggings", 191),
+        ("steel_boots", 192),
+        ("shears", 193),
+        ("excavation_brush", 194),
+        ("mossy_cobblestone", 195),
+        ("cracked_masonry", 196),
+        ("packed_earth", 197),
+        ("old_coin", 198),
+        ("etched_tablet", 199),
+        ("charm_quiet", 200),
+        ("charm_bark", 201),
+        ("charm_hunger", 202),
+        ("player_skin", 203),
+        ("player_face", 204),
+        ("unknown", 15),
+        ("crack1", 16),
+        ("crack2", 17),
+        ("crack3", 18),
         ("crack4", 19),
     ]
     .into_iter()
@@ -133,7 +260,9 @@ struct PackToml {
 /// List texture packs under `root`, sorted by id.
 pub fn discover_packs_in(root: &std::path::Path) -> Vec<PackInfo> {
     let mut out = Vec::new();
-    let Ok(rd) = std::fs::read_dir(root) else { return out };
+    let Ok(rd) = std::fs::read_dir(root) else {
+        return out;
+    };
     for e in rd.flatten() {
         let p = e.path();
         if !p.is_dir() {
@@ -176,7 +305,9 @@ pub fn scan_pack(
     names: &std::collections::HashMap<String, u16>,
 ) -> (Vec<(u16, std::path::PathBuf)>, Vec<String>) {
     fn walk(dir: &std::path::Path, acc: &mut Vec<std::path::PathBuf>) {
-        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
         for e in rd.flatten() {
             let p = e.path();
             if p.is_dir() {
@@ -192,8 +323,14 @@ pub fn scan_pack(
     all.sort();
     let (mut files, mut warns) = (Vec::new(), Vec::new());
     for p in all {
-        let rel = p.strip_prefix(&root).unwrap_or(&p).to_string_lossy().replace('\\', "/");
-        let Some(name) = rel.strip_suffix(".png") else { continue };
+        let rel = p
+            .strip_prefix(&root)
+            .unwrap_or(&p)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let Some(name) = rel.strip_suffix(".png") else {
+            continue;
+        };
         match names.get(name) {
             Some(slot) => files.push((*slot, p)),
             None => warns.push(format!("{rel}: no tile named \"{name}\"")),
@@ -236,7 +373,9 @@ pub fn build_atlas(
             for (name, bytes) in tiles {
                 // Names the current registry doesn't know (e.g. a mod's
                 // tile with that mod removed) skip silently.
-                let Some(slot) = names.get(*name) else { continue };
+                let Some(slot) = names.get(*name) else {
+                    continue;
+                };
                 if let Some((data, w, h)) = load_tile_bytes(bytes) {
                     blit_tile(&mut img, px, tp, *slot, &data, w, h);
                 }
@@ -427,7 +566,11 @@ fn vnoise(x: f32, y: f32, period: i32, salt: u32) -> f32 {
     let fx = smooth(x - xi as f32);
     let fy = smooth(y - yi as f32);
     let p = |dx: i32, dy: i32| {
-        h01((xi + dx).rem_euclid(period), (yi + dy).rem_euclid(period), salt)
+        h01(
+            (xi + dx).rem_euclid(period),
+            (yi + dy).rem_euclid(period),
+            salt,
+        )
     };
     let top = p(0, 0) + (p(1, 0) - p(0, 0)) * fx;
     let bot = p(0, 1) + (p(1, 1) - p(0, 1)) * fx;
@@ -437,12 +580,21 @@ fn vnoise(x: f32, y: f32, period: i32, salt: u32) -> f32 {
 /// 2-octave tileable fBm in 0..1. `freq` is cells across the tile.
 fn fbm(u: f32, v: f32, freq: i32, salt: u32) -> f32 {
     let a = vnoise(u * freq as f32, v * freq as f32, freq, salt);
-    let b = vnoise(u * freq as f32 * 2.0, v * freq as f32 * 2.0, freq * 2, salt ^ 0x9e37);
+    let b = vnoise(
+        u * freq as f32 * 2.0,
+        v * freq as f32 * 2.0,
+        freq * 2,
+        salt ^ 0x9e37,
+    );
     (a * 0.68 + b * 0.32).clamp(0.0, 1.0)
 }
 
 fn mix3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
-    [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+    [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+    ]
 }
 
 fn rgba(c: [f32; 3], f: f32, a: u8) -> [u8; 4] {
@@ -566,7 +718,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         if fy < depth {
             let t = fbm(u, v, 5, 1);
             let c = mix3([80.0, 138.0, 44.0], [108.0, 176.0, 58.0], t);
-            rgba(c, speck(px, py, 6, 0.06) * if py == 0 { 1.12 } else { 1.0 }, 255)
+            rgba(
+                c,
+                speck(px, py, 6, 0.06) * if py == 0 { 1.12 } else { 1.0 },
+                255,
+            )
         } else if fy < depth + (tp / 16).max(1) as f32 {
             rgba([70.0, 50.0, 34.0], 1.0, 255) // shadow line under the turf
         } else {
@@ -595,7 +751,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             let tone = 0.82 + (id % 100) as f32 / 100.0 * 0.3;
             // Round shading: bright at stone center, darker toward mortar.
             let dome = 1.08 - d1 * 0.45;
-            rgba([128.0, 126.0, 124.0], tone * dome * speck(px, py, 12, 0.05), 255)
+            rgba(
+                [128.0, 126.0, 124.0],
+                tone * dome * speck(px, py, 12, 0.05),
+                255,
+            )
         }
     });
 
@@ -604,7 +764,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         let ripple = ((v + fbm(u, v, 3, 13) * 0.25) * std::f32::consts::TAU * 3.0).sin() * 0.05;
         let t = fbm(u, v, 8, 14);
         let c = mix3([206.0, 192.0, 148.0], [228.0, 216.0, 172.0], t);
-        rgba(c, (1.0 + ripple) * speck(px, py, 15, 0.06) * emboss(px, py, tp), 255)
+        rgba(
+            c,
+            (1.0 + ripple) * speck(px, py, 15, 0.06) * emboss(px, py, tp),
+            255,
+        )
     });
 
     // (6,0) gravel: tightly packed pebbles.
@@ -612,14 +776,19 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         let (d1, _, id) = voronoi(u, v, 6, 16);
         let grayish = 0.75 + (id % 100) as f32 / 100.0 * 0.5;
         let warm = (id >> 8) % 4 == 0;
-        let base = if warm { [134.0, 116.0, 100.0] } else { [122.0, 120.0, 118.0] };
+        let base = if warm {
+            [134.0, 116.0, 100.0]
+        } else {
+            [122.0, 120.0, 118.0]
+        };
         let dome = 1.05 - d1 * 0.5;
         rgba(base, grayish * dome * speck(px, py, 17, 0.07), 255)
     });
 
     // (7,0) log side: vertical grain and bark ridges.
     tile(7, 0, &mut |px, py, u, v| {
-        let grain = ((u * std::f32::consts::TAU * 6.0) + vnoise(v * 4.0, u * 2.0, 4, 18) * 3.0).sin();
+        let grain =
+            ((u * std::f32::consts::TAU * 6.0) + vnoise(v * 4.0, u * 2.0, 4, 18) * 3.0).sin();
         let ridge = vnoise(u * 8.0, v * 2.0, 8, 19);
         let mut f = 0.9 + grain * 0.1;
         if ridge > 0.72 {
@@ -659,8 +828,14 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, 1.0, 255)
     });
 
-    let plank_colored = |px: u32, py: u32, u: f32, salt: u32,
-                         board: [f32; 3], seam: [f32; 3], nail: [f32; 3]| -> [u8; 4] {
+    let plank_colored = |px: u32,
+                         py: u32,
+                         u: f32,
+                         salt: u32,
+                         board: [f32; 3],
+                         seam: [f32; 3],
+                         nail: [f32; 3]|
+     -> [u8; 4] {
         let boards = 4;
         let bh = tp / boards;
         let b = py / bh;
@@ -672,7 +847,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             return rgba(seam, 0.9, 255);
         }
         let grain = (vnoise(u * 9.0, (py as f32 / tp as f32) * 3.0, 9, salt ^ 0x99) - 0.5) * 0.16;
-        let mut c = rgba(board, tone * (1.0 + grain) * speck(px, py, salt ^ 0x77, 0.04), 255);
+        let mut c = rgba(
+            board,
+            tone * (1.0 + grain) * speck(px, py, salt ^ 0x77, 0.04),
+            255,
+        );
         let mid = b * bh + bh / 2;
         let e = (tp / 16).max(1);
         if py.abs_diff(mid) < e && (px < 2 * e && px >= e || px >= tp - 2 * e && px < tp - e) {
@@ -694,7 +873,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             return rgba([92.0, 70.0, 40.0], 0.9, 255);
         }
         let grain = (vnoise(u * 9.0, (py as f32 / tp as f32) * 3.0, 9, salt ^ 0x99) - 0.5) * 0.16;
-        let mut c = rgba([164.0, 132.0, 80.0], tone * (1.0 + grain) * speck(px, py, salt ^ 0x77, 0.04), 255);
+        let mut c = rgba(
+            [164.0, 132.0, 80.0],
+            tone * (1.0 + grain) * speck(px, py, salt ^ 0x77, 0.04),
+            255,
+        );
         // Nails at board ends.
         let mid = b * bh + bh / 2;
         let e = (tp / 16).max(1);
@@ -772,7 +955,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
         // Diagonal gloss band.
         let gloss = ((u + v) * std::f32::consts::TAU * 1.5).sin();
-        rgba(c, (1.0 + gloss * 0.04) * speck(px, py, 54, 0.02) * emboss(px, py, tp), 255)
+        rgba(
+            c,
+            (1.0 + gloss * 0.04) * speck(px, py, 54, 0.02) * emboss(px, py, tp),
+            255,
+        )
     });
     tile(9, 2, &mut |px, py, u, _v| {
         // cactus side: vertical ribs with pale spines.
@@ -809,14 +996,34 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         leaf_light: [f32; 3],
     }
     let woods = [
-        Wood { slot: 43, bark: [201.0, 196.0, 182.0], birch_flecks: true,
-               leaf_dark: [62.0, 110.0, 40.0], leaf_light: [112.0, 168.0, 66.0] },
-        Wood { slot: 46, bark: [68.0, 50.0, 32.0], birch_flecks: false,
-               leaf_dark: [26.0, 60.0, 38.0], leaf_light: [52.0, 96.0, 66.0] },
-        Wood { slot: 49, bark: [94.0, 66.0, 40.0], birch_flecks: false,
-               leaf_dark: [44.0, 124.0, 26.0], leaf_light: [88.0, 188.0, 50.0] },
-        Wood { slot: 52, bark: [122.0, 108.0, 92.0], birch_flecks: false,
-               leaf_dark: [86.0, 102.0, 46.0], leaf_light: [128.0, 148.0, 72.0] },
+        Wood {
+            slot: 43,
+            bark: [201.0, 196.0, 182.0],
+            birch_flecks: true,
+            leaf_dark: [62.0, 110.0, 40.0],
+            leaf_light: [112.0, 168.0, 66.0],
+        },
+        Wood {
+            slot: 46,
+            bark: [68.0, 50.0, 32.0],
+            birch_flecks: false,
+            leaf_dark: [26.0, 60.0, 38.0],
+            leaf_light: [52.0, 96.0, 66.0],
+        },
+        Wood {
+            slot: 49,
+            bark: [94.0, 66.0, 40.0],
+            birch_flecks: false,
+            leaf_dark: [44.0, 124.0, 26.0],
+            leaf_light: [88.0, 188.0, 50.0],
+        },
+        Wood {
+            slot: 52,
+            bark: [122.0, 108.0, 92.0],
+            birch_flecks: false,
+            leaf_dark: [86.0, 102.0, 46.0],
+            leaf_light: [128.0, 148.0, 72.0],
+        },
     ];
     for wd in woods {
         // Each tile's coords derive from its own slot — families may cross
@@ -830,13 +1037,16 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         tile(tx, ty, &mut |px, py, u, v| {
             if flecks {
                 // Birch: pale bark with short dark horizontal flecks.
-                let dash = hash(px as i32 / 5, py as i32, 60) % 11 == 0
-                    && px % 5 < 3;
+                let dash = hash(px as i32 / 5, py as i32, 60) % 11 == 0 && px % 5 < 3;
                 if dash {
                     return rgba([38.0, 34.0, 30.0], 1.0, 255);
                 }
                 let t = fbm(u, v, 5, 61);
-                rgba(mix3(bark, [170.0, 166.0, 154.0], t * 0.5), speck(px, py, 62, 0.04), 255)
+                rgba(
+                    mix3(bark, [170.0, 166.0, 154.0], t * 0.5),
+                    speck(px, py, 62, 0.04),
+                    255,
+                )
             } else {
                 let grain = ((u * std::f32::consts::TAU * 6.0)
                     + vnoise(v * 4.0, u * 2.0, 4, 63) * 3.0)
@@ -859,7 +1069,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             let wob = vnoise(ang.cos() * 2.0 + 2.0, ang.sin() * 2.0 + 2.0, 4, 66) * 0.06;
             let r = (dx * dx + dy * dy).sqrt() + wob;
             if r > 0.46 {
-                rgba([bark[0] * 0.9, bark[1] * 0.9, bark[2] * 0.9], speck(px, py, 67, 0.08), 255)
+                rgba(
+                    [bark[0] * 0.9, bark[1] * 0.9, bark[2] * 0.9],
+                    speck(px, py, 67, 0.08),
+                    255,
+                )
             } else {
                 let ring = (r * 40.0).sin() * 0.5 + 0.5;
                 let light = [
@@ -877,7 +1091,15 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             let mut c = mix3(wd.leaf_dark, wd.leaf_light, t);
             let pocket = h01(px as i32, py as i32, 70 + wd.slot as u32);
             if pocket > 0.93 {
-                c = mix3(c, [wd.leaf_light[0] + 50.0, wd.leaf_light[1] + 40.0, wd.leaf_light[2] + 30.0], 0.8);
+                c = mix3(
+                    c,
+                    [
+                        wd.leaf_light[0] + 50.0,
+                        wd.leaf_light[1] + 40.0,
+                        wd.leaf_light[2] + 30.0,
+                    ],
+                    0.8,
+                );
             } else if pocket < 0.10 {
                 c = mix3(c, [8.0, 22.0, 8.0], 0.7);
             }
@@ -887,10 +1109,10 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
 
     // Per-wood planks (oak planks stay at slot 10).
     let plank_sets: [(u32, [f32; 3], [f32; 3]); 4] = [
-        (55, [196.0, 178.0, 138.0], [128.0, 114.0, 86.0]),  // birch: pale
-        (56, [104.0, 78.0, 48.0], [58.0, 42.0, 26.0]),      // spruce: dark
-        (57, [156.0, 106.0, 76.0], [96.0, 60.0, 40.0]),     // jungle: ruddy
-        (58, [168.0, 96.0, 54.0], [104.0, 56.0, 30.0]),     // acacia: orange
+        (55, [196.0, 178.0, 138.0], [128.0, 114.0, 86.0]), // birch: pale
+        (56, [104.0, 78.0, 48.0], [58.0, 42.0, 26.0]),     // spruce: dark
+        (57, [156.0, 106.0, 76.0], [96.0, 60.0, 40.0]),    // jungle: ruddy
+        (58, [168.0, 96.0, 54.0], [104.0, 56.0, 30.0]),    // acacia: orange
     ];
     for (slot, board, seam) in plank_sets {
         let (tx, ty) = (slot % 16, slot / 16);
@@ -901,8 +1123,8 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
 
     // Metals: ores (stone + nuggets), polished blocks, items.
     let metal_sets: [(u32, u32, [f32; 3]); 2] = [
-        (59, 61, [210.0, 118.0, 52.0]),  // copper: ore slot, block slot, color
-        (60, 0, [200.0, 204.0, 212.0]),  // tin (no block tile; slot 0 unused)
+        (59, 61, [210.0, 118.0, 52.0]), // copper: ore slot, block slot, color
+        (60, 0, [200.0, 204.0, 212.0]), // tin (no block tile; slot 0 unused)
     ];
     for (ore_slot, _blk, color) in metal_sets {
         let (tx, ty) = (ore_slot % 16, ore_slot / 16);
@@ -946,26 +1168,38 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
     // Item icons row 4: raw lumps, ingots, blend, charcoal.
-    let lump = |slot: u32, color: [f32; 3], img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
-        img(slot % 16, slot / 16, &mut |px, py, u, v| {
-            let dx = u - 0.5;
-            let dy = v - 0.5;
-            let r = (dx * dx + dy * dy).sqrt();
-            let wob = h01(px as i32 / 3, py as i32 / 3, 94 + slot) * 0.1;
-            if r < 0.3 + wob {
-                rgba(color, 0.75 + h01(px as i32, py as i32, 95 + slot) * 0.45, 255)
-            } else {
-                [0, 0, 0, 0]
-            }
-        });
-    };
-    let mut tile_fn = |tx: u32, ty: u32, f: &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4]| tile(tx, ty, f);
+    let lump =
+        |slot: u32,
+         color: [f32; 3],
+         img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+            img(slot % 16, slot / 16, &mut |px, py, u, v| {
+                let dx = u - 0.5;
+                let dy = v - 0.5;
+                let r = (dx * dx + dy * dy).sqrt();
+                let wob = h01(px as i32 / 3, py as i32 / 3, 94 + slot) * 0.1;
+                if r < 0.3 + wob {
+                    rgba(
+                        color,
+                        0.75 + h01(px as i32, py as i32, 95 + slot) * 0.45,
+                        255,
+                    )
+                } else {
+                    [0, 0, 0, 0]
+                }
+            });
+        };
+    let mut tile_fn =
+        |tx: u32, ty: u32, f: &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4]| tile(tx, ty, f);
     lump(64, [200.0, 112.0, 50.0], &mut tile_fn); // raw copper
     lump(65, [196.0, 200.0, 208.0], &mut tile_fn); // raw tin
     lump(69, [186.0, 138.0, 70.0], &mut tile_fn); // bronze blend (powder pile)
     lump(70, [36.0, 32.0, 30.0], &mut tile_fn); // charcoal
     // Ingots: beveled bars.
-    for (slot, color) in [(66u32, [214.0, 122.0, 56.0]), (67, [206.0, 210.0, 218.0]), (68, [200.0, 152.0, 64.0])] {
+    for (slot, color) in [
+        (66u32, [214.0, 122.0, 56.0]),
+        (67, [206.0, 210.0, 218.0]),
+        (68, [200.0, 152.0, 64.0]),
+    ] {
         tile(slot % 16, slot / 16, &mut |px, py, u, v| {
             let inside = u > 0.12 && u < 0.88 && v > 0.36 && v < 0.68;
             if !inside {
@@ -973,7 +1207,13 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             }
             let top = v < 0.44 || u < 0.18;
             let bot = v > 0.6 || u > 0.82;
-            let f = if top { 1.25 } else if bot { 0.7 } else { 1.0 };
+            let f = if top {
+                1.25
+            } else if bot {
+                0.7
+            } else {
+                1.0
+            };
             rgba(color, f * speck(px, py, 96 + slot, 0.03), 255)
         });
     }
@@ -1002,36 +1242,55 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         });
     }
 
-    let mut tf = |tx: u32, ty: u32, f: &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4]| tile(tx, ty, f);
+    let mut tf =
+        |tx: u32, ty: u32, f: &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4]| tile(tx, ty, f);
     // Farmland: dark tilled rows.
     tf(13, 4, &mut |px, py, u, v| {
         let row = ((v * 8.0) as u32) % 2 == 0;
         let t = fbm(u, v, 5, 120);
         let c = mix3([78.0, 54.0, 36.0], [102.0, 72.0, 48.0], t);
-        rgba(c, if row { 0.75 } else { 1.0 } * speck(px, py, 121, 0.08), 255)
+        rgba(
+            c,
+            if row { 0.75 } else { 1.0 } * speck(px, py, 121, 0.08),
+            255,
+        )
     });
     // Plant sprites: stems with leaves/heads, transparent bg.
-    let plant = |slot: u32, stem: [f32; 3], head: Option<[f32; 3]>, height: f32,
-                 tile: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
-        tile(slot % 16, slot / 16, &mut |px, py, u, v| {
-            let col = (u * 5.0) as i32;
-            let cx = 0.1 + col as f32 * 0.2 + h01(col, 0, 130 + slot) * 0.08;
-            let stem_here = (u - cx).abs() < 0.035 && v > 1.0 - height;
-            let head_here = head.is_some()
-                && (u - cx).abs() < 0.09
-                && v > 1.0 - height
-                && v < 1.0 - height + 0.3;
-            if head_here {
-                rgba(head.unwrap(), 0.85 + h01(px as i32, py as i32, 131) * 0.3, 255)
-            } else if stem_here {
-                rgba(stem, 0.85 + h01(px as i32, py as i32, 132) * 0.3, 255)
-            } else {
-                [0, 0, 0, 0]
-            }
-        });
-    };
+    let plant =
+        |slot: u32,
+         stem: [f32; 3],
+         head: Option<[f32; 3]>,
+         height: f32,
+         tile: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+            tile(slot % 16, slot / 16, &mut |px, py, u, v| {
+                let col = (u * 5.0) as i32;
+                let cx = 0.1 + col as f32 * 0.2 + h01(col, 0, 130 + slot) * 0.08;
+                let stem_here = (u - cx).abs() < 0.035 && v > 1.0 - height;
+                let head_here = head.is_some()
+                    && (u - cx).abs() < 0.09
+                    && v > 1.0 - height
+                    && v < 1.0 - height + 0.3;
+                if head_here {
+                    rgba(
+                        head.unwrap(),
+                        0.85 + h01(px as i32, py as i32, 131) * 0.3,
+                        255,
+                    )
+                } else if stem_here {
+                    rgba(stem, 0.85 + h01(px as i32, py as i32, 132) * 0.3, 255)
+                } else {
+                    [0, 0, 0, 0]
+                }
+            });
+        };
     plant(78, [90.0, 160.0, 60.0], None, 0.5, &mut tf); // young wheat
-    plant(79, [200.0, 170.0, 70.0], Some([222.0, 190.0, 90.0]), 0.9, &mut tf); // ripe wheat
+    plant(
+        79,
+        [200.0, 170.0, 70.0],
+        Some([222.0, 190.0, 90.0]),
+        0.9,
+        &mut tf,
+    ); // ripe wheat
     // Carrot: leafy fan with orange crowns peeking at the soil line.
     tf(0, 5, &mut |px, py, u, v| {
         let fan = (v > 0.45) && ((u - 0.5).abs() < (v - 0.4) * 0.65);
@@ -1039,7 +1298,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         if crown {
             rgba([225.0, 120.0, 40.0], 1.0, 255)
         } else if fan && hash(px as i32, py as i32, 170) % 4 != 0 {
-            rgba([70.0, 150.0, 55.0], 0.8 + h01(px as i32, py as i32, 171) * 0.4, 255)
+            rgba(
+                [70.0, 150.0, 55.0],
+                0.8 + h01(px as i32, py as i32, 171) * 0.4,
+                255,
+            )
         } else {
             [0, 0, 0, 0]
         }
@@ -1079,7 +1342,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         let cap = (u - 0.5).abs() < 0.28 && v > 0.35 && v < 0.62;
         let stem = (u - 0.5).abs() < 0.08 && v >= 0.62 && v < 0.95;
         if cap {
-            rgba([170.0, 90.0, 60.0], 0.85 + h01(px as i32, py as i32, 150) * 0.3, 255)
+            rgba(
+                [170.0, 90.0, 60.0],
+                0.85 + h01(px as i32, py as i32, 150) * 0.3,
+                255,
+            )
         } else if stem {
             rgba([225.0, 215.0, 195.0], 1.0, 255)
         } else {
@@ -1101,7 +1368,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         let dx = u - 0.5;
         let dy = v - 0.5;
         if dx * dx + dy * dy < 0.11 && hash(px as i32 / 2, py as i32 / 2, 180) % 3 != 0 {
-            rgba([28.0, 62.0, 22.0], 0.8 + h01(px as i32, py as i32, 181) * 0.5, 255)
+            rgba(
+                [28.0, 62.0, 22.0],
+                0.8 + h01(px as i32, py as i32, 181) * 0.5,
+                255,
+            )
         } else {
             [0, 0, 0, 0]
         }
@@ -1131,10 +1402,10 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
 
     // ---- animals: fur/hide tiles + faces (rows 6-7) ----
     let furs: [(u32, [f32; 3], [f32; 3], f32); 7] = [
-        (100, [150.0, 105.0, 65.0], [120.0, 80.0, 50.0], 0.08),  // deer
-        (102, [95.0, 80.0, 70.0], [70.0, 58.0, 50.0], 0.22),     // boar (bristly)
+        (100, [150.0, 105.0, 65.0], [120.0, 80.0, 50.0], 0.08), // deer
+        (102, [95.0, 80.0, 70.0], [70.0, 58.0, 50.0], 0.22),    // boar (bristly)
         (104, [215.0, 210.0, 200.0], [175.0, 170.0, 160.0], 0.10), // goat
-        (106, [140.0, 100.0, 70.0], [95.0, 70.0, 50.0], 0.10),   // grouse
+        (106, [140.0, 100.0, 70.0], [95.0, 70.0, 50.0], 0.10),  // grouse
         (108, [170.0, 140.0, 110.0], [140.0, 110.0, 85.0], 0.08), // rabbit
         (110, [205.0, 180.0, 135.0], [175.0, 150.0, 110.0], 0.08), // desert hare
         (111, [235.0, 235.0, 240.0], [205.0, 205.0, 215.0], 0.05), // snow hare
@@ -1154,7 +1425,13 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         });
     }
     // Faces: fur base + eyes + species snout.
-    for (slot, fur_slot) in [(101u32, 100u32), (103, 102), (105, 104), (107, 106), (109, 108)] {
+    for (slot, fur_slot) in [
+        (101u32, 100u32),
+        (103, 102),
+        (105, 104),
+        (107, 106),
+        (109, 108),
+    ] {
         tf(slot % 16, slot / 16, &mut |px, py, u, v| {
             let base_t = fbm(u, v, 6, 400 + fur_slot);
             let (hi, lo) = match fur_slot {
@@ -1165,11 +1442,13 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
                 _ => ([170.0, 140.0, 110.0], [140.0, 110.0, 85.0]),
             };
             let mut c = mix3(lo, hi, base_t);
-            let eye = |cx: f32, cy: f32, w: f32, h: f32| {
-                (u - cx).abs() < w && (v - cy).abs() < h
-            };
+            let eye = |cx: f32, cy: f32, w: f32, h: f32| (u - cx).abs() < w && (v - cy).abs() < h;
             // Eyes (goat gets wide horizontal pupils).
-            let (ew, eh) = if fur_slot == 104 { (0.09, 0.045) } else { (0.055, 0.06) };
+            let (ew, eh) = if fur_slot == 104 {
+                (0.09, 0.045)
+            } else {
+                (0.055, 0.06)
+            };
             if eye(0.28, 0.35, ew, eh) || eye(0.72, 0.35, ew, eh) {
                 c = [15.0, 12.0, 10.0];
             }
@@ -1218,11 +1497,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     }
     // Meats: slab with fat marbling (raw) or browned surface + char rim (cooked).
     let meats: [(u32, [f32; 3], bool); 10] = [
-        (112, [165.0, 45.0, 55.0], false),  // venison
+        (112, [165.0, 45.0, 55.0], false), // venison
         (113, [125.0, 75.0, 45.0], true),
         (114, [210.0, 110.0, 120.0], false), // boar
         (115, [170.0, 105.0, 60.0], true),
-        (116, [180.0, 60.0, 65.0], false),  // chevon
+        (116, [180.0, 60.0, 65.0], false), // chevon
         (117, [140.0, 85.0, 50.0], true),
         (118, [225.0, 170.0, 160.0], false), // fowl
         (119, [205.0, 140.0, 75.0], true),
@@ -1273,7 +1552,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             return [0, 0, 0, 0];
         }
         let t = fbm(u, v, 4, 530);
-        rgba(mix3([170.0, 120.0, 70.0], [195.0, 145.0, 90.0], t), speck(px, py, 531, 0.05), 255)
+        rgba(
+            mix3([170.0, 120.0, 70.0], [195.0, 145.0, 90.0], t),
+            speck(px, py, 531, 0.05),
+            255,
+        )
     });
     // Feather: diagonal quill with pale barbs.
     tf(12, 7, &mut |px, py, u, v| {
@@ -1353,7 +1636,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         if core {
             rgba([255.0, 240.0, 180.0], 1.0, 255)
         } else if flame {
-            rgba([255.0, 170.0, 60.0], 0.9 + h01(px as i32, py as i32, 570) * 0.2, 255)
+            rgba(
+                [255.0, 170.0, 60.0],
+                0.9 + h01(px as i32, py as i32, 570) * 0.2,
+                255,
+            )
         } else if stick {
             rgba([120.0, 84.0, 50.0], 1.0, 255)
         } else {
@@ -1379,7 +1666,6 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             rgba(c, speck(px, py, 581 + slot, 0.06), 255)
         });
     }
-
 
     // ---- wardens (rows 8-9): the wild's own ----
     // Thornling: dark bristly shrub-hide with thorn glints.
@@ -1420,7 +1706,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             let g = 0.8 + h01(px as i32, py as i32, 621) * 0.4;
             rgba([255.0 * g, 140.0 * g, 30.0 * g], 1.0, 255)
         } else {
-            rgba(mix3([28.0, 22.0, 20.0], [56.0, 44.0, 40.0], t * 1.6), 1.0, 255)
+            rgba(
+                mix3([28.0, 22.0, 20.0], [56.0, 44.0, 40.0], t * 1.6),
+                1.0,
+                255,
+            )
         }
     });
     // Rimewisp: pale drifting frost.
@@ -1480,7 +1770,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         if r < 0.05 {
             rgba([255.0, 230.0, 120.0], 1.0, 255)
         } else if r < 0.11 {
-            rgba([255.0, 150.0, 40.0], 0.9 + h01(px as i32, py as i32, 660) * 0.2, 255)
+            rgba(
+                [255.0, 150.0, 40.0],
+                0.9 + h01(px as i32, py as i32, 660) * 0.2,
+                255,
+            )
         } else {
             [0, 0, 0, 0]
         }
@@ -1500,7 +1794,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         let dy = v - 0.5;
         let r = (dx * dx + dy * dy).sqrt();
         if r > 0.18 && r < 0.34 {
-            rgba([96.0, 140.0, 60.0], 0.8 + h01(px as i32, py as i32, 670) * 0.4, 255)
+            rgba(
+                [96.0, 140.0, 60.0],
+                0.8 + h01(px as i32, py as i32, 670) * 0.4,
+                255,
+            )
         } else {
             [0, 0, 0, 0]
         }
@@ -1526,7 +1824,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             if t > 0.55 {
                 rgba([255.0, 170.0, 50.0], 1.0, 255)
             } else {
-                rgba([50.0, 38.0, 34.0], 0.9 + h01(px as i32, py as i32, 691) * 0.2, 255)
+                rgba(
+                    [50.0, 38.0, 34.0],
+                    0.9 + h01(px as i32, py as i32, 691) * 0.2,
+                    255,
+                )
             }
         } else {
             [0, 0, 0, 0]
@@ -1551,22 +1853,28 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
 
-
     // ---- bows, arrows, armor (rows 9-10) ----
     // Bows: a curved limb along the left, string down the right.
-    let bow_art = |slot: u32, limb: [f32; 3], img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
-        img(slot % 16, slot / 16, &mut |px, py, u, v| {
-            // Limb: arc bulging left of a diagonal.
-            let arc = ((u - 0.62) + (v - 0.5) * (v - 0.5) * 1.6).abs();
-            if arc < 0.07 && v > 0.06 && v < 0.94 {
-                rgba(limb, 0.85 + h01(px as i32, py as i32, 710 + slot) * 0.3, 255)
-            } else if (u - 0.80).abs() < 0.025 && v > 0.10 && v < 0.90 {
-                rgba([210.0, 205.0, 185.0], 1.0, 255) // string
-            } else {
-                [0, 0, 0, 0]
-            }
-        });
-    };
+    let bow_art =
+        |slot: u32,
+         limb: [f32; 3],
+         img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+            img(slot % 16, slot / 16, &mut |px, py, u, v| {
+                // Limb: arc bulging left of a diagonal.
+                let arc = ((u - 0.62) + (v - 0.5) * (v - 0.5) * 1.6).abs();
+                if arc < 0.07 && v > 0.06 && v < 0.94 {
+                    rgba(
+                        limb,
+                        0.85 + h01(px as i32, py as i32, 710 + slot) * 0.3,
+                        255,
+                    )
+                } else if (u - 0.80).abs() < 0.025 && v > 0.10 && v < 0.90 {
+                    rgba([210.0, 205.0, 185.0], 1.0, 255) // string
+                } else {
+                    [0, 0, 0, 0]
+                }
+            });
+        };
     bow_art(150, [138.0, 100.0, 58.0], &mut tf);
     bow_art(151, [96.0, 120.0, 62.0], &mut tf); // living-wood green tint
     // Arrow: diagonal shaft, stone head, feather fletch.
@@ -1583,76 +1891,84 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
     // Armor silhouettes, leather then bronze.
-    let armor_art = |base: u32, c: [f32; 3], dark: [f32; 3], img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
-        // helmet: dome with a face opening
-        img(base % 16, base / 16, &mut |px, py, u, v| {
-            let dx = u - 0.5;
-            let dome = dx * dx + (v - 0.55) * (v - 0.55) * 1.6 < 0.09 && v < 0.72;
-            let opening = dx.abs() < 0.16 && v > 0.48 && v < 0.72;
-            if dome && !opening {
-                rgba(c, 0.85 + h01(px as i32, py as i32, 720 + base) * 0.25, 255)
-            } else if dome {
-                rgba(dark, 1.0, 255)
-            } else {
-                [0, 0, 0, 0]
-            }
-        });
-        // chestplate: torso with shoulders
-        img((base + 1) % 16, (base + 1) / 16, &mut |px, py, u, v| {
-            let torso = (u - 0.5).abs() < 0.24 && v > 0.28 && v < 0.88;
-            let arms = (u - 0.5).abs() > 0.24 && (u - 0.5).abs() < 0.38 && v > 0.28 && v < 0.52;
-            let neck = (u - 0.5).abs() < 0.10 && v <= 0.36;
-            if (torso || arms) && !neck {
-                rgba(c, 0.85 + h01(px as i32, py as i32, 730 + base) * 0.25, 255)
-            } else {
-                [0, 0, 0, 0]
-            }
-        });
-        // leggings: waist + two legs
-        img((base + 2) % 16, (base + 2) / 16, &mut |px, py, u, v| {
-            let waist = (u - 0.5).abs() < 0.22 && v > 0.18 && v < 0.40;
-            let leg = ((u - 0.36).abs() < 0.09 || (u - 0.64).abs() < 0.09) && v >= 0.40 && v < 0.88;
-            if waist || leg {
-                rgba(c, 0.85 + h01(px as i32, py as i32, 740 + base) * 0.25, 255)
-            } else {
-                [0, 0, 0, 0]
-            }
-        });
-        // boots: two ankle boxes
-        img((base + 3) % 16, (base + 3) / 16, &mut |px, py, u, v| {
-            let boot = ((u - 0.32).abs() < 0.13 || (u - 0.68).abs() < 0.13) && v > 0.52 && v < 0.85;
-            if boot {
-                rgba(c, 0.85 + h01(px as i32, py as i32, 750 + base) * 0.25, 255)
-            } else {
-                [0, 0, 0, 0]
-            }
-        });
-    };
+    let armor_art =
+        |base: u32,
+         c: [f32; 3],
+         dark: [f32; 3],
+         img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+            // helmet: dome with a face opening
+            img(base % 16, base / 16, &mut |px, py, u, v| {
+                let dx = u - 0.5;
+                let dome = dx * dx + (v - 0.55) * (v - 0.55) * 1.6 < 0.09 && v < 0.72;
+                let opening = dx.abs() < 0.16 && v > 0.48 && v < 0.72;
+                if dome && !opening {
+                    rgba(c, 0.85 + h01(px as i32, py as i32, 720 + base) * 0.25, 255)
+                } else if dome {
+                    rgba(dark, 1.0, 255)
+                } else {
+                    [0, 0, 0, 0]
+                }
+            });
+            // chestplate: torso with shoulders
+            img((base + 1) % 16, (base + 1) / 16, &mut |px, py, u, v| {
+                let torso = (u - 0.5).abs() < 0.24 && v > 0.28 && v < 0.88;
+                let arms = (u - 0.5).abs() > 0.24 && (u - 0.5).abs() < 0.38 && v > 0.28 && v < 0.52;
+                let neck = (u - 0.5).abs() < 0.10 && v <= 0.36;
+                if (torso || arms) && !neck {
+                    rgba(c, 0.85 + h01(px as i32, py as i32, 730 + base) * 0.25, 255)
+                } else {
+                    [0, 0, 0, 0]
+                }
+            });
+            // leggings: waist + two legs
+            img((base + 2) % 16, (base + 2) / 16, &mut |px, py, u, v| {
+                let waist = (u - 0.5).abs() < 0.22 && v > 0.18 && v < 0.40;
+                let leg =
+                    ((u - 0.36).abs() < 0.09 || (u - 0.64).abs() < 0.09) && v >= 0.40 && v < 0.88;
+                if waist || leg {
+                    rgba(c, 0.85 + h01(px as i32, py as i32, 740 + base) * 0.25, 255)
+                } else {
+                    [0, 0, 0, 0]
+                }
+            });
+            // boots: two ankle boxes
+            img((base + 3) % 16, (base + 3) / 16, &mut |px, py, u, v| {
+                let boot =
+                    ((u - 0.32).abs() < 0.13 || (u - 0.68).abs() < 0.13) && v > 0.52 && v < 0.85;
+                if boot {
+                    rgba(c, 0.85 + h01(px as i32, py as i32, 750 + base) * 0.25, 255)
+                } else {
+                    [0, 0, 0, 0]
+                }
+            });
+        };
     armor_art(153, [150.0, 106.0, 64.0], [70.0, 48.0, 30.0], &mut tf);
     armor_art(157, [196.0, 148.0, 62.0], [90.0, 66.0, 30.0], &mut tf);
 
-
     // ---- stewardship: saplings, offering stone, bedroll (row 10) ----
-    let sapling_art = |slot: u32, leaf: [f32; 3], img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
-        img(slot % 16, slot / 16, &mut |px, py, u, v| {
-            let stem = (u - 0.5).abs() < 0.05 && v > 0.55 && v < 0.95;
-            let dx = u - 0.5;
-            let dy = v - 0.42;
-            let crown = dx * dx + dy * dy * 1.3 < 0.05;
-            if crown && hash(px as i32, py as i32, 760 + slot) % 5 != 0 {
-                rgba(leaf, 0.8 + h01(px as i32, py as i32, 761 + slot) * 0.4, 255)
-            } else if stem {
-                rgba([110.0, 78.0, 46.0], 1.0, 255)
-            } else {
-                [0, 0, 0, 0]
-            }
-        });
-    };
-    sapling_art(161, [70.0, 130.0, 50.0], &mut tf);   // oak
-    sapling_art(162, [140.0, 170.0, 80.0], &mut tf);  // birch
-    sapling_art(163, [40.0, 90.0, 55.0], &mut tf);    // spruce
-    sapling_art(164, [60.0, 160.0, 60.0], &mut tf);   // jungle
-    sapling_art(165, [120.0, 130.0, 60.0], &mut tf);  // acacia
+    let sapling_art =
+        |slot: u32,
+         leaf: [f32; 3],
+         img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+            img(slot % 16, slot / 16, &mut |px, py, u, v| {
+                let stem = (u - 0.5).abs() < 0.05 && v > 0.55 && v < 0.95;
+                let dx = u - 0.5;
+                let dy = v - 0.42;
+                let crown = dx * dx + dy * dy * 1.3 < 0.05;
+                if crown && hash(px as i32, py as i32, 760 + slot) % 5 != 0 {
+                    rgba(leaf, 0.8 + h01(px as i32, py as i32, 761 + slot) * 0.4, 255)
+                } else if stem {
+                    rgba([110.0, 78.0, 46.0], 1.0, 255)
+                } else {
+                    [0, 0, 0, 0]
+                }
+            });
+        };
+    sapling_art(161, [70.0, 130.0, 50.0], &mut tf); // oak
+    sapling_art(162, [140.0, 170.0, 80.0], &mut tf); // birch
+    sapling_art(163, [40.0, 90.0, 55.0], &mut tf); // spruce
+    sapling_art(164, [60.0, 160.0, 60.0], &mut tf); // jungle
+    sapling_art(165, [120.0, 130.0, 60.0], &mut tf); // acacia
     // Offering stone: mossy rock with a glowing bowl.
     tf(6, 10, &mut |px, py, u, v| {
         let t = fbm(u, v, 5, 770);
@@ -1677,13 +1993,16 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
                 rgba([96.0, 140.0, 60.0], 1.0, 255)
             } else {
                 let t = fbm(u * 2.0, v, 4, 780);
-                rgba(mix3([124.0, 88.0, 56.0], [156.0, 116.0, 76.0], t), 0.9 + h01(px as i32, py as i32, 781) * 0.2, 255)
+                rgba(
+                    mix3([124.0, 88.0, 56.0], [156.0, 116.0, 76.0], t),
+                    0.9 + h01(px as i32, py as i32, 781) * 0.2,
+                    255,
+                )
             }
         } else {
             [0, 0, 0, 0]
         }
     });
-
 
     // ---- iron & steel (rows 10-12) ----
     let iron_c = [178.0, 180.0, 188.0];
@@ -1715,7 +2034,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             let inside = u > 0.12 && u < 0.88 && v > 0.36 && v < 0.68;
             if inside {
                 let edge = u < 0.2 || u > 0.8 || v < 0.44 || v > 0.6;
-                let f = if edge { 0.72 } else { 0.92 + h01(px as i32, py as i32, 820 + slot) * 0.2 };
+                let f = if edge {
+                    0.72
+                } else {
+                    0.92 + h01(px as i32, py as i32, 820 + slot) * 0.2
+                };
                 rgba(color, f, 255)
             } else {
                 [0, 0, 0, 0]
@@ -1724,8 +2047,12 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     }
     // Tool sets: pick/axe/shovel via the shared ASCII art, hoe via AXE rows.
     let metal2: [(u32, [f32; 3]); 6] = [
-        (175, iron_c), (176, iron_c), (177, iron_c),
-        (180, steel_c), (181, steel_c), (182, steel_c),
+        (175, iron_c),
+        (176, iron_c),
+        (177, iron_c),
+        (180, steel_c),
+        (181, steel_c),
+        (182, steel_c),
     ];
     for (i, (slot, head)) in metal2.iter().enumerate() {
         let art: &[&str; 16] = match i % 3 {
@@ -1793,12 +2120,15 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         if d < 0.06 && u > 0.3 && u < 0.9 {
             rgba([120.0, 86.0, 50.0], 1.0, 255)
         } else if d < 0.16 && u <= 0.34 && u > 0.08 {
-            rgba([180.0, 200.0, 120.0], 0.8 + h01(px as i32, py as i32, 850) * 0.4, 255)
+            rgba(
+                [180.0, 200.0, 120.0],
+                0.8 + h01(px as i32, py as i32, 850) * 0.4,
+                255,
+            )
         } else {
             [0, 0, 0, 0]
         }
     });
-
 
     // ---- ruins (row 12) ----
     // Mossy cobblestone: cobble with green growth.
@@ -1817,9 +2147,15 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
     // Cracked masonry: dressed stone with a jagged crack.
     tf(4, 12, &mut |px, py, u, v| {
-        let brick = ((v * 4.0).fract() < 0.12) || ((u * 2.0 + (v * 4.0).floor() * 0.5).fract() < 0.06);
-        let mut c = if brick { [82.0, 80.0, 78.0] } else { [124.0, 120.0, 116.0] };
-        let crack = ((u - 0.2) * 2.0 - v).abs() < 0.05 || ((u - 0.75) + (v - 0.4) * 0.8).abs() < 0.04;
+        let brick =
+            ((v * 4.0).fract() < 0.12) || ((u * 2.0 + (v * 4.0).floor() * 0.5).fract() < 0.06);
+        let mut c = if brick {
+            [82.0, 80.0, 78.0]
+        } else {
+            [124.0, 120.0, 116.0]
+        };
+        let crack =
+            ((u - 0.2) * 2.0 - v).abs() < 0.05 || ((u - 0.75) + (v - 0.4) * 0.8).abs() < 0.04;
         if crack {
             c = [40.0, 38.0, 36.0];
         }
@@ -1840,7 +2176,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         let dy = v - 0.5;
         let r = (dx * dx + dy * dy).sqrt();
         if r < 0.24 {
-            let f = if r > 0.19 { 0.7 } else { 0.9 + h01(px as i32, py as i32, 890) * 0.2 };
+            let f = if r > 0.19 {
+                0.7
+            } else {
+                0.9 + h01(px as i32, py as i32, 890) * 0.2
+            };
             rgba([180.0, 158.0, 92.0], f, 255)
         } else {
             [0, 0, 0, 0]
@@ -1851,7 +2191,9 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         if (u - 0.5).abs() < 0.3 && (v - 0.5).abs() < 0.36 {
             let mut c = [140.0, 136.0, 128.0];
             let row = (v * 8.0).floor() as i32;
-            if (v * 8.0).fract() < 0.35 && row % 2 == 0 && (u - 0.5).abs() < 0.22
+            if (v * 8.0).fract() < 0.35
+                && row % 2 == 0
+                && (u - 0.5).abs() < 0.22
                 && h01(row, (u * 10.0) as i32, 895) > 0.3
             {
                 c = [70.0, 66.0, 60.0];
@@ -1862,13 +2204,21 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
     // Charms: small knotted talismans in three tints.
-    for (slot, tint) in [(200u32, [110.0, 160.0, 120.0]), (201, [150.0, 110.0, 70.0]), (202, [170.0, 150.0, 90.0])] {
+    for (slot, tint) in [
+        (200u32, [110.0, 160.0, 120.0]),
+        (201, [150.0, 110.0, 70.0]),
+        (202, [170.0, 150.0, 90.0]),
+    ] {
         tf(slot % 16, slot / 16, &mut |px, py, u, v| {
             let dx = u - 0.5;
             let dy = v - 0.6;
             let ring = (dx * dx + dy * dy).sqrt();
             if ring > 0.14 && ring < 0.24 {
-                rgba(tint, 0.85 + h01(px as i32, py as i32, 900 + slot) * 0.3, 255)
+                rgba(
+                    tint,
+                    0.85 + h01(px as i32, py as i32, 900 + slot) * 0.3,
+                    255,
+                )
             } else if dx.abs() < 0.03 && v > 0.15 && v < 0.42 {
                 rgba([96.0, 140.0, 60.0], 1.0, 255) // fiber cord
             } else {
@@ -1880,7 +2230,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     // Player skin + face (remote players in multiplayer).
     tf(11, 12, &mut |px, py, u, v| {
         // Tunic over trousers.
-        let c = if v < 0.55 { [70.0, 110.0, 140.0] } else { [80.0, 62.0, 46.0] };
+        let c = if v < 0.55 {
+            [70.0, 110.0, 140.0]
+        } else {
+            [80.0, 62.0, 46.0]
+        };
         rgba(c, 0.9 + h01(px as i32, py as i32, 910) * 0.2, 255)
     });
     tf(12, 12, &mut |px, py, u, v| {
@@ -1901,7 +2255,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     // (15,0) unknown/missing texture: magenta checkerboard.
     tile(15, 0, &mut |px, py, _u, _v| {
         let k = (tp / 8).max(1);
-        if ((px / k) + (py / k)) % 2 == 0 { [230, 0, 230, 255] } else { [20, 0, 20, 255] }
+        if ((px / k) + (py / k)) % 2 == 0 {
+            [230, 0, 230, 255]
+        } else {
+            [20, 0, 20, 255]
+        }
     });
 
     // Row 1: crack overlay stages, radial cracks scaled to resolution.

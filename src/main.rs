@@ -15,12 +15,12 @@ mod entity;
 mod inventory;
 mod mesher;
 mod mobs;
+mod mp;
+mod net;
 mod physics;
 mod raycast;
 mod registry;
 mod renderer;
-mod mp;
-mod net;
 mod script;
 mod server;
 #[cfg(test)]
@@ -36,15 +36,17 @@ use std::time::Instant;
 use glam::Vec3;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{
+    DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent,
+};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Fullscreen, Window, WindowId};
 
 use audio::{Audio, BreakMat, Sfx};
 use camera::Camera;
-use config::Config;
 use chunk::{CHUNK_X, ChunkPos, SEA_LEVEL};
+use config::Config;
 use entity::ItemEntity;
 use inventory::{HOTBAR_SLOTS, Inventory, ItemStack, TOTAL_SLOTS};
 use physics::{EYE_HEIGHT, Player};
@@ -101,7 +103,10 @@ struct Lerp {
 
 impl Lerp {
     fn at(&self, t: f32) -> (Vec3, f32) {
-        (self.from.lerp(self.to, t), mobs::lerp_yaw(self.from_yaw, self.to_yaw, t))
+        (
+            self.from.lerp(self.to, t),
+            mobs::lerp_yaw(self.from_yaw, self.to_yaw, t),
+        )
     }
 }
 
@@ -276,7 +281,9 @@ fn script_mod_dirs(reg: &Registry) -> Vec<(String, PathBuf)> {
 /// (mods/ and packs/); a change re-triggers the 1 s reload poll.
 fn content_tree_stamp_of(roots: &[&std::path::Path]) -> u64 {
     fn walk(dir: &std::path::Path, acc: &mut u64, count: &mut u64) {
-        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
         for e in rd.flatten() {
             let p = e.path();
             if p.is_dir() {
@@ -381,8 +388,11 @@ impl Game {
         let active_pack = pack_override.clone().unwrap_or_else(|| config.pack.clone());
         let (atlas_data, atlas_px, pack_warnings) =
             atlas::build_atlas(&reg.tex_files, pack_source_of(&active_pack), &reg.tex_names);
-        let renderer =
-            pollster::block_on(renderer::Renderer::new(window.clone(), atlas_data, atlas_px));
+        let renderer = pollster::block_on(renderer::Renderer::new(
+            window.clone(),
+            atlas_data,
+            atlas_px,
+        ));
         let mut scripts = script::ScriptHost::new();
         scripts.load_mods(&script_mod_dirs(&reg));
         // No world yet — the game opens on the title screen.
@@ -538,7 +548,10 @@ impl Game {
         let spawn_chunk = ChunkPos::of_world(sx, sz);
         for dx in -1..=1 {
             for dz in -1..=1 {
-                world.ensure_chunk(ChunkPos { x: spawn_chunk.x + dx, z: spawn_chunk.z + dz });
+                world.ensure_chunk(ChunkPos {
+                    x: spawn_chunk.x + dx,
+                    z: spawn_chunk.z + dz,
+                });
             }
         }
         // 3D terrain can put the "highest solid" on an overhang lip or a
@@ -643,14 +656,19 @@ impl Game {
             let cp = ChunkPos::of_world(self.player.pos.x as i32, self.player.pos.z as i32);
             for dx in -1..=1 {
                 for dz in -1..=1 {
-                    self.server.world.ensure_chunk(ChunkPos { x: cp.x + dx, z: cp.z + dz });
+                    self.server.world.ensure_chunk(ChunkPos {
+                        x: cp.x + dx,
+                        z: cp.z + dz,
+                    });
                 }
             }
             // A save from below the world floor (a void casualty) comes
             // back standing on whatever ground its column still has.
             if self.player.pos.y < 1.0 {
-                let (px, pz) =
-                    (self.player.pos.x.floor() as i32, self.player.pos.z.floor() as i32);
+                let (px, pz) = (
+                    self.player.pos.x.floor() as i32,
+                    self.player.pos.z.floor() as i32,
+                );
                 let h = self.server.world.surface_height(px, pz);
                 self.player.pos.y = h as f32 + 1.05;
                 self.player.vel = Vec3::ZERO;
@@ -666,7 +684,8 @@ impl Game {
         self.server.sync_tier();
         self.scripts.load_kv(&PathBuf::from("saves").join(name));
         if self.scripts.wants("on_world_start") {
-            self.scripts.dispatch(&self.server.world, "on_world_start", (name.to_string(),));
+            self.scripts
+                .dispatch(&self.server.world, "on_world_start", (name.to_string(),));
             self.apply_script_cmds();
         }
         // Dev: drop a water source on a pillar ahead of spawn to watch it flow.
@@ -679,7 +698,11 @@ impl Game {
                 self.server.world.set_block(bx, y, bz, stone);
             }
             self.server.world.set_block(bx, by + 5, bz, water);
-            eprintln!("demo water source at ({bx},{},{bz}), spawn {:?}", by + 5, spawn);
+            eprintln!(
+                "demo water source at ({bx},{},{bz}), spawn {:?}",
+                by + 5,
+                spawn
+            );
         }
         self.set_screen(Screen::Playing);
         // Dev: force time of day (0..1; 0.75 = midnight).
@@ -786,9 +809,15 @@ impl Game {
         }
         // Dev: a row of wardens near spawn (rendering/combat verification).
         if std::env::var("WILDFORGE_DEMO_WARDENS").is_ok() {
-            for (i, name) in ["base:thornling", "base:dryad", "base:emberkin", "base:gravelurk", "base:wrathwood"]
-                .iter()
-                .enumerate()
+            for (i, name) in [
+                "base:thornling",
+                "base:dryad",
+                "base:emberkin",
+                "base:gravelurk",
+                "base:wrathwood",
+            ]
+            .iter()
+            .enumerate()
             {
                 if let Some(si) = self.reg.animal_id(name) {
                     let x = spawn.x as i32 - 4 + i as i32 * 3;
@@ -816,7 +845,8 @@ impl Game {
                 if let Some(hw) = reg.item_id("base:heartwood") {
                     st.slots[0] = Some(ItemStack::new(&reg, hw, 2));
                 }
-                self.server.world
+                self.server
+                    .world
                     .block_entities
                     .insert((sx - 3, y, sz - 5), world::BlockEntity::Offering(st));
             }
@@ -839,16 +869,22 @@ impl Game {
             if let Some(cb) = reg.block_id("base:chest") {
                 self.server.world.set_block(p.0, p.1, p.2, cb);
                 let mut st = world::ChestState::default();
-                for (i, (name, n)) in
-                    [("base:bread", 5), ("base:torch", 12), ("base:bronze_sword", 1)]
-                        .iter()
-                        .enumerate()
+                for (i, (name, n)) in [
+                    ("base:bread", 5),
+                    ("base:torch", 12),
+                    ("base:bronze_sword", 1),
+                ]
+                .iter()
+                .enumerate()
                 {
                     if let Some(item) = reg.item_id(name) {
                         st.slots[i * 4] = Some(ItemStack::new(&reg, item, *n));
                     }
                 }
-                self.server.world.block_entities.insert(p, world::BlockEntity::Chest(st));
+                self.server
+                    .world
+                    .block_entities
+                    .insert(p, world::BlockEntity::Chest(st));
                 self.set_screen(Screen::Chest(p));
             }
         }
@@ -859,10 +895,15 @@ impl Game {
         }
         // Dev: a small menagerie near spawn (rendering/combat verification).
         if std::env::var("WILDFORGE_DEMO_MOBS").is_ok() {
-            for (i, name) in
-                ["base:deer", "base:boar", "base:goat", "base:grouse", "base:rabbit"]
-                    .iter()
-                    .enumerate()
+            for (i, name) in [
+                "base:deer",
+                "base:boar",
+                "base:goat",
+                "base:grouse",
+                "base:rabbit",
+            ]
+            .iter()
+            .enumerate()
             {
                 if let Some(si) = self.reg.animal_id(name) {
                     let x = spawn.x as i32 - 3 + i as i32 * 2;
@@ -896,7 +937,8 @@ impl Game {
                         ..Default::default()
                     }),
                 );
-                self.inventory.add(&reg, reg.item_id("base:copper_ingot").unwrap(), 7);
+                self.inventory
+                    .add(&reg, reg.item_id("base:copper_ingot").unwrap(), 7);
                 self.set_screen(Screen::Furnace(p));
             }
         }
@@ -919,7 +961,11 @@ impl Game {
         let mut out = String::new();
         let p = self.player.pos;
         let _ = writeln!(out, "pos = [{}, {}, {}]", p.x, p.y, p.z);
-        let _ = writeln!(out, "yaw = {}\npitch = {}", self.camera.yaw, self.camera.pitch);
+        let _ = writeln!(
+            out,
+            "yaw = {}\npitch = {}",
+            self.camera.yaw, self.camera.pitch
+        );
         let _ = writeln!(out, "health = {}\nhunger = {}", self.health, self.hunger);
         let _ = writeln!(out, "nutrition = {:?}", self.nutrition);
         let _ = writeln!(out, "hotbar = {}", self.hotbar_sel);
@@ -930,7 +976,9 @@ impl Game {
                 let _ = writeln!(
                     out,
                     "[[slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
-                    self.reg.item(s.item).name, s.count, s.durability
+                    self.reg.item(s.item).name,
+                    s.count,
+                    s.durability
                 );
             }
         }
@@ -939,17 +987,27 @@ impl Game {
                 let _ = writeln!(
                     out,
                     "[[armor]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
-                    self.reg.item(s.item).name, s.count, s.durability
+                    self.reg.item(s.item).name,
+                    s.count,
+                    s.durability
                 );
             }
         }
-        let _ = std::fs::write(self.server.world.save_dir_for_saving().join("player.toml"), out);
+        let _ = std::fs::write(
+            self.server.world.save_dir_for_saving().join("player.toml"),
+            out,
+        );
     }
 
     fn load_player(&mut self, dir: &std::path::Path) -> bool {
         use serde::Deserialize;
         #[derive(Deserialize)]
-        struct SlotT { index: usize, item: String, count: u32, durability: u32 }
+        struct SlotT {
+            index: usize,
+            item: String,
+            count: u32,
+            durability: u32,
+        }
         #[derive(Deserialize)]
         struct P {
             pos: [f32; 3],
@@ -966,8 +1024,12 @@ impl Game {
             #[serde(default)]
             armor: Vec<SlotT>,
         }
-        let Ok(text) = std::fs::read_to_string(dir.join("player.toml")) else { return false };
-        let Ok(p) = toml::from_str::<P>(&text) else { return false };
+        let Ok(text) = std::fs::read_to_string(dir.join("player.toml")) else {
+            return false;
+        };
+        let Ok(p) = toml::from_str::<P>(&text) else {
+            return false;
+        };
         self.player.pos = Vec3::new(p.pos[0], p.pos[1], p.pos[2]);
         self.camera.yaw = p.yaw;
         self.camera.pitch = p.pitch;
@@ -981,16 +1043,22 @@ impl Game {
         for s in p.slot {
             if s.index < TOTAL_SLOTS {
                 if let Some(item) = self.reg.item_id(&s.item) {
-                    self.inventory.slots[s.index] =
-                        Some(ItemStack { item, count: s.count, durability: s.durability });
+                    self.inventory.slots[s.index] = Some(ItemStack {
+                        item,
+                        count: s.count,
+                        durability: s.durability,
+                    });
                 }
             }
         }
         for s in p.armor {
             if s.index < 5 {
                 if let Some(item) = self.reg.item_id(&s.item) {
-                    self.armor[s.index] =
-                        Some(ItemStack { item, count: s.count, durability: s.durability });
+                    self.armor[s.index] = Some(ItemStack {
+                        item,
+                        count: s.count,
+                        durability: s.durability,
+                    });
                 }
             }
         }
@@ -1019,11 +1087,15 @@ impl Game {
         if self.in_world {
             self.save_player();
             self.server.world.save_modified();
-            self.scripts.save_kv(&self.server.world.save_dir_for_saving());
+            self.scripts
+                .save_kv(&self.server.world.save_dir_for_saving());
         }
         self.renderer.chunks.clear();
-        self.server =
-            server::Server::new(World::new(0, PathBuf::from("saves/.none"), self.reg.clone()), 0.3, 1);
+        self.server = server::Server::new(
+            World::new(0, PathBuf::from("saves/.none"), self.reg.clone()),
+            0.3,
+            1,
+        );
         self.items.clear();
         self.in_world = false;
         self.refresh_worlds();
@@ -1091,13 +1163,21 @@ impl Game {
         self.bow_draw = 0.0; // opening any screen relaxes the draw
 
         // Leaving a container tells the host to stop streaming it.
-        if matches!(self.screen, Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_)) {
+        if matches!(
+            self.screen,
+            Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_)
+        ) {
             if let Some(r) = &self.remote {
                 r.client.send(&net::C2S::CloseContainer);
             }
         }
         // Leaving the inventory returns the cursor-held stack and craft grid.
-        if self.screen == Screen::Inventory || matches!(self.screen, Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_)) {
+        if self.screen == Screen::Inventory
+            || matches!(
+                self.screen,
+                Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_)
+            )
+        {
             let mut back: Vec<ItemStack> = self.held_stack.take().into_iter().collect();
             for slot in self.craft_grid.iter_mut() {
                 if let Some(s) = slot.take() {
@@ -1159,7 +1239,9 @@ impl Game {
     /// Everything a guest does per frame: apply the host's stream, send
     /// our movement. The local Server never advances in remote mode.
     fn remote_pump(&mut self, dt: f32) {
-        let Some(mut r) = self.remote.take() else { return };
+        let Some(mut r) = self.remote.take() else {
+            return;
+        };
         if !r.client.is_connected() && self.in_world {
             self.toast("Disconnected from host.".to_string());
             self.quit_to_title();
@@ -1203,8 +1285,11 @@ impl Game {
                     spawn,
                     world_name,
                 } => {
-                    let mut world =
-                        World::new(seed, PathBuf::from("saves/.remote/profile"), self.reg.clone());
+                    let mut world = World::new(
+                        seed,
+                        PathBuf::from("saves/.remote/profile"),
+                        self.reg.clone(),
+                    );
                     world.remote = true;
                     world.mode = mode.clone();
                     world.ire = ire;
@@ -1265,10 +1350,19 @@ impl Game {
                         };
                         r.player_lerp.insert(
                             id,
-                            Lerp { from: cur.0, to: pos, from_yaw: cur.1, to_yaw: yaw, phase: 0.0 },
+                            Lerp {
+                                from: cur.0,
+                                to: pos,
+                                from_yaw: cur.1,
+                                to_yaw: yaw,
+                                phase: 0.0,
+                            },
                         );
-                        let name =
-                            r.names.get(&id).cloned().unwrap_or_else(|| format!("P{id}"));
+                        let name = r
+                            .names
+                            .get(&id)
+                            .cloned()
+                            .unwrap_or_else(|| format!("P{id}"));
                         r.players.insert(id, (name, cur.0, cur.1));
                     }
                     r.player_interval = r.player_age.clamp(0.03, 0.3);
@@ -1295,8 +1389,7 @@ impl Game {
                                     phase,
                                 },
                             );
-                            let mut m =
-                                mobs::Mob::new(s.species as usize, cur.0, cur.1);
+                            let mut m = mobs::Mob::new(s.species as usize, cur.0, cur.1);
                             m.id = s.id;
                             m.growth = s.growth;
                             m.hurt_flash = s.hurt;
@@ -1331,7 +1424,11 @@ impl Game {
                     self.server.world.ire = ire;
                 }
                 net::S2C::Hit { dmg, from } => self.hurt_player_from_wild(dmg, from),
-                net::S2C::Give { item, count, durability } => {
+                net::S2C::Give {
+                    item,
+                    count,
+                    durability,
+                } => {
                     if let Some(Some(local)) = r.item_map.get(item as usize) {
                         let reg = self.reg.clone();
                         let mut stack = ItemStack::new(&reg, *local, count.max(1));
@@ -1344,12 +1441,22 @@ impl Game {
                         }
                     }
                 }
-                net::S2C::Container { x, y, z, kind, slots } => {
+                net::S2C::Container {
+                    x,
+                    y,
+                    z,
+                    kind,
+                    slots,
+                } => {
                     let reg = self.reg.clone();
                     let conv = |s: &Option<net::StackSnap>| -> Option<ItemStack> {
                         let s = s.as_ref()?;
                         let local = (*r.item_map.get(s.item as usize)?)?;
-                        Some(ItemStack { item: local, count: s.count, durability: s.durability })
+                        Some(ItemStack {
+                            item: local,
+                            count: s.count,
+                            durability: s.durability,
+                        })
                     };
                     let pos = (x, y, z);
                     let entity = match kind {
@@ -1390,7 +1497,11 @@ impl Game {
                     // the local prediction (identical on agreement).
                     self.held_stack = held.and_then(|s| {
                         let local = (*r.item_map.get(s.item as usize)?)?;
-                        Some(ItemStack { item: local, count: s.count, durability: s.durability })
+                        Some(ItemStack {
+                            item: local,
+                            count: s.count,
+                            durability: s.durability,
+                        })
                     });
                 }
                 net::S2C::Sleep { sleeping, present } => {
@@ -1607,14 +1718,18 @@ impl Game {
         let a = self.rand01() * std::f32::consts::TAU;
         let v = Vec3::new(a.cos() * 2.0, 3.0 + self.rand01() * 1.5, a.sin() * 2.0);
         let pos = self.player.pos + Vec3::new(0.0, 1.0, 0.0);
-        self.items.push(ItemEntity::new(pos, v, stack.item, stack.count));
+        self.items
+            .push(ItemEntity::new(pos, v, stack.item, stack.count));
     }
 
     fn respawn(&mut self) {
         self.player = Player::new(self.spawn_point);
         // A dug-out or collapsed spawn column: come to on the first
         // ground below instead of free-falling to a second death.
-        let (sx, sz) = (self.spawn_point.x.floor() as i32, self.spawn_point.z.floor() as i32);
+        let (sx, sz) = (
+            self.spawn_point.x.floor() as i32,
+            self.spawn_point.z.floor() as i32,
+        );
         self.server.world.ensure_chunk(ChunkPos::of_world(sx, sz));
         let sy = (self.spawn_point.y.floor() as i32).clamp(0, chunk::CHUNK_Y as i32 - 1);
         let ground = (0..=sy)
@@ -1633,7 +1748,8 @@ impl Game {
         self.since_damage = 100.0;
         self.set_screen(Screen::Playing);
         if self.scripts.wants("on_player_respawn") {
-            self.scripts.dispatch(&self.server.world, "on_player_respawn", ());
+            self.scripts
+                .dispatch(&self.server.world, "on_player_respawn", ());
             self.apply_script_cmds();
         }
     }
@@ -1647,7 +1763,10 @@ impl Game {
         let vd = self.config.view_dist;
         for dx in -vd..=vd {
             for dz in -vd..=vd {
-                let pos = ChunkPos { x: pcx + dx, z: pcz + dz };
+                let pos = ChunkPos {
+                    x: pcx + dx,
+                    z: pcz + dz,
+                };
                 if !self.server.world.chunks.contains_key(&pos) {
                     wanted.push((dx * dx + dz * dz, pos));
                 }
@@ -1658,7 +1777,10 @@ impl Game {
             self.server.world.ensure_chunk(pos);
             // New terrain changes neighbors' visible faces at the border.
             for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                if let Some(c) = self.server.world.chunks.get_mut(&ChunkPos { x: pos.x + dx, z: pos.z + dz }) {
+                if let Some(c) = self.server.world.chunks.get_mut(&ChunkPos {
+                    x: pos.x + dx,
+                    z: pos.z + dz,
+                }) {
                     c.dirty = true;
                 }
             }
@@ -1693,9 +1815,10 @@ impl Game {
             .collect();
         dirty.retain(|(_, p)| {
             [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().all(|(dx, dz)| {
-                self.server.world
-                    .chunks
-                    .contains_key(&ChunkPos { x: p.x + dx, z: p.z + dz })
+                self.server.world.chunks.contains_key(&ChunkPos {
+                    x: p.x + dx,
+                    z: p.z + dz,
+                })
             })
         });
         dirty.sort_by_key(|(d, _)| *d);
@@ -1719,9 +1842,11 @@ impl Game {
     }
 
     fn has_ammo(&self, class: &str) -> bool {
-        self.inventory.slots.iter().flatten().any(|s| {
-            self.reg.item(s.item).ammo.as_deref() == Some(class)
-        })
+        self.inventory
+            .slots
+            .iter()
+            .flatten()
+            .any(|s| self.reg.item(s.item).ammo.as_deref() == Some(class))
     }
 
     /// Remove one item of the ammo class; returns its id.
@@ -1873,7 +1998,12 @@ impl Game {
     /// Mining and placing while playing.
     fn interact(&mut self, dt: f32) {
         let reg = self.reg.clone();
-        let hit = raycast::raycast(&self.server.world, self.camera.pos, self.camera.forward(), REACH);
+        let hit = raycast::raycast(
+            &self.server.world,
+            self.camera.pos,
+            self.camera.forward(),
+            REACH,
+        );
         let held = self.inventory.slots[self.hotbar_sel].map(|s| s.item);
 
         // Bow: hold right to draw, release to loose (0.25 s minimum).
@@ -1895,7 +2025,11 @@ impl Game {
         // Archaeology: sweeping a remnant is a slow, careful channel.
         let brush_held = held.is_some_and(|i| reg.item(i).brush_tool);
         let brush_target = hit.as_ref().map(|h| h.block).filter(|t| {
-            brush_held && reg.block(self.server.world.get_block(t.0, t.1, t.2)).brush.is_some()
+            brush_held
+                && reg
+                    .block(self.server.world.get_block(t.0, t.1, t.2))
+                    .brush
+                    .is_some()
         });
         if self.right_held && brush_target.is_some() {
             let target = brush_target.unwrap();
@@ -1921,7 +2055,10 @@ impl Game {
                     return;
                 }
                 let mut r = self.rng;
-                let found = self.server.world.brush_block(target.0, target.1, target.2, &mut r);
+                let found = self
+                    .server
+                    .world
+                    .brush_block(target.0, target.1, target.2, &mut r);
                 self.rng = r;
                 if let Some(stack) = found {
                     let center = Vec3::new(
@@ -2036,7 +2173,9 @@ impl Game {
                             self.hunger = (self.hunger - 0.008).max(0.0);
                             let cost = self.server.world.ire_for_block(b);
                             self.server.world.add_ire(cost);
-                            self.server.world.set_block(target.0, target.1, target.2, AIR);
+                            self.server
+                                .world
+                                .set_block(target.0, target.1, target.2, AIR);
                             self.sfx(Sfx::Break(self.break_mat(b)));
                             if !self.creative {
                                 self.inventory.wear_tool(&reg, self.hotbar_sel);
@@ -2059,8 +2198,9 @@ impl Game {
                                     ));
                                 }
                             }
-                            if let Some((drop, n)) =
-                                reg.drops_for(b, held).filter(|_| !self.creative && !sheared)
+                            if let Some((drop, n)) = reg
+                                .drops_for(b, held)
+                                .filter(|_| !self.creative && !sheared)
                             {
                                 let center = Vec3::new(
                                     target.0 as f32 + 0.5,
@@ -2152,7 +2292,9 @@ impl Game {
                 let tb = self.server.world.get_block(h.block.0, h.block.1, h.block.2);
                 // Harvestable blocks (berry bushes).
                 if let Some((item, n, becomes)) = reg.block(tb).harvest {
-                    self.server.world.set_block(h.block.0, h.block.1, h.block.2, becomes);
+                    self.server
+                        .world
+                        .set_block(h.block.0, h.block.1, h.block.2, becomes);
                     let left = self.inventory.add(&reg, item, n);
                     if left > 0 {
                         self.drop_stack(ItemStack::new(&reg, item, left));
@@ -2168,7 +2310,9 @@ impl Game {
                 ) {
                     let name = reg.block(tb).name.as_str();
                     if name == "base:grass" || name == "base:dirt" {
-                        self.server.world.set_block(h.block.0, h.block.1, h.block.2, farm);
+                        self.server
+                            .world
+                            .set_block(h.block.0, h.block.1, h.block.2, farm);
                         self.inventory.wear_tool(&reg, self.hotbar_sel);
                         self.sfx(Sfx::Place);
                         self.action_cooldown = 0.3;
@@ -2198,12 +2342,11 @@ impl Game {
                     }
                     Some("furnace") => {
                         self.right_held = false;
-                        self.server.world
+                        self.server
+                            .world
                             .block_entities
                             .entry(h.block)
-                            .or_insert_with(|| {
-                                world::BlockEntity::Furnace(Default::default())
-                            });
+                            .or_insert_with(|| world::BlockEntity::Furnace(Default::default()));
                         self.set_screen(Screen::Furnace(h.block));
                         return;
                     }
@@ -2214,9 +2357,7 @@ impl Game {
                             .world
                             .block_entities
                             .entry(h.block)
-                            .or_insert_with(|| {
-                                world::BlockEntity::Chest(Default::default())
-                            });
+                            .or_insert_with(|| world::BlockEntity::Chest(Default::default()));
                         if let world::BlockEntity::Chest(c) = e {
                             if c.wild_owned {
                                 c.wild_owned = false;
@@ -2229,20 +2370,19 @@ impl Game {
                     }
                     Some("offering") if self.action_cooldown <= 0.0 => {
                         self.action_cooldown = 0.3;
-                        self.server.world
+                        self.server
+                            .world
                             .block_entities
                             .entry(h.block)
-                            .or_insert_with(|| {
-                                world::BlockEntity::Offering(Default::default())
-                            });
+                            .or_insert_with(|| world::BlockEntity::Offering(Default::default()));
                         self.set_screen(Screen::Offering(h.block));
                         return;
                     }
                     _ => {}
                 }
                 let (x, y, z) = h.adjacent;
-                let place = self.inventory.slots[self.hotbar_sel]
-                    .and_then(|s| reg.item(s.item).places);
+                let place =
+                    self.inventory.slots[self.hotbar_sel].and_then(|s| reg.item(s.item).places);
                 if let Some(block) = place {
                     let bd = reg.block(block);
                     let needs_farmland = bd.crop_next.is_some() && !bd.crop_any_soil;
@@ -2269,8 +2409,8 @@ impl Game {
                         } else {
                             true
                         };
-                        let consumed = self.creative
-                            || self.inventory.take_one(self.hotbar_sel).is_some();
+                        let consumed =
+                            self.creative || self.inventory.take_one(self.hotbar_sel).is_some();
                         if allow && consumed && self.remote.is_some() {
                             if let Some(r) = &self.remote {
                                 if let Some(host_id) = r.host_block.get(&block.0) {
@@ -2351,7 +2491,9 @@ impl Game {
     /// world and inventories by string id, recompile scripts.
     /// The pack id in effect: the dev env override, else the config choice.
     fn active_pack_id(&self) -> String {
-        self.pack_override.clone().unwrap_or_else(|| self.config.pack.clone())
+        self.pack_override
+            .clone()
+            .unwrap_or_else(|| self.config.pack.clone())
     }
 
     /// Rebuild + swap the atlas for the currently selected texture pack and
@@ -2379,9 +2521,8 @@ impl Game {
         self.renderer.set_atlas(&atlas_data, atlas_px);
 
         // Remap items by name (old registry -> new); unknown items vanish.
-        let remap_item = |reg: &Registry, it: ItemId| -> Option<ItemId> {
-            reg.item_id(&old.item(it).name)
-        };
+        let remap_item =
+            |reg: &Registry, it: ItemId| -> Option<ItemId> { reg.item_id(&old.item(it).name) };
         let fix_stack = |reg: &Registry, s: Option<ItemStack>| -> Option<ItemStack> {
             s.and_then(|s| remap_item(reg, s.item).map(|item| ItemStack { item, ..s }))
         };
@@ -2392,13 +2533,14 @@ impl Game {
             *slot = fix_stack(&new_reg, *slot);
         }
         self.held_stack = fix_stack(&new_reg, self.held_stack);
-        self.items.retain_mut(|e| match remap_item(&new_reg, e.item) {
-            Some(item) => {
-                e.item = item;
-                true
-            }
-            None => false,
-        });
+        self.items
+            .retain_mut(|e| match remap_item(&new_reg, e.item) {
+                Some(item) => {
+                    e.item = item;
+                    true
+                }
+                None => false,
+            });
         self.breaking = None;
 
         self.reg = new_reg.clone();
@@ -2486,12 +2628,15 @@ impl Game {
             }
         }
         // Eating: hold right-click with food selected.
-        let food = self.inventory.slots[self.hotbar_sel]
-            .and_then(|s| self.reg.item(s.item).food.clone());
+        let food =
+            self.inventory.slots[self.hotbar_sel].and_then(|s| self.reg.item(s.item).food.clone());
         if self.right_held && self.screen == Screen::Playing {
             if let Some(f) = food {
                 let want = self.hunger < 19.5
-                    || f.nutrition.iter().zip(&self.nutrition).any(|(a, b)| *a > 0.0 && *b < 99.0);
+                    || f.nutrition
+                        .iter()
+                        .zip(&self.nutrition)
+                        .any(|(a, b)| *a > 0.0 && *b < 99.0);
                 if want {
                     self.eating += dt;
                     if self.eating >= f.eat_time {
@@ -2519,7 +2664,11 @@ impl Game {
             }
             self.fall_start = None;
         } else if self.player.vel.y < 0.0 {
-            self.fall_start = Some(self.fall_start.unwrap_or(self.player.pos.y).max(self.player.pos.y));
+            self.fall_start = Some(
+                self.fall_start
+                    .unwrap_or(self.player.pos.y)
+                    .max(self.player.pos.y),
+            );
         } else {
             self.fall_start = None;
         }
@@ -2564,8 +2713,11 @@ impl Game {
             let it = &self.items[i];
             let d = it.pos.distance(target);
             if it.age > entity::PICKUP_DELAY && d < 1.4 {
-                let (item, count, dur) =
-                    (self.items[i].item, self.items[i].count, self.items[i].durability);
+                let (item, count, dur) = (
+                    self.items[i].item,
+                    self.items[i].count,
+                    self.items[i].durability,
+                );
                 let reg = self.reg.clone();
                 let left = if dur > 0 {
                     let mut stack = ItemStack::new(&reg, item, count);
@@ -2622,8 +2774,10 @@ impl Game {
         };
 
         // Anchor low-right, breathing with the walk.
-        let moving =
-            (Vec3::new(self.player.vel.x, 0.0, self.player.vel.z).length().min(4.0)) / 4.0;
+        let moving = (Vec3::new(self.player.vel.x, 0.0, self.player.vel.z)
+            .length()
+            .min(4.0))
+            / 4.0;
         let bob_x = self.hand_bob.sin() * 0.02 * moving;
         let bob_y = -(self.hand_bob * 2.0).sin().abs() * 0.025 * moving;
         let mut anchor = self.camera.pos + f * 0.60 + r * (0.38 + bob_x) + u * (-0.38 + bob_y);
@@ -2674,8 +2828,10 @@ impl Game {
             let inset = ts / 32.0;
             for face in 0..6 {
                 let slot = tiles[face];
-                let (tx, ty) =
-                    (slot as u32 % atlas::ATLAS_TILES, slot as u32 / atlas::ATLAS_TILES);
+                let (tx, ty) = (
+                    slot as u32 % atlas::ATLAS_TILES,
+                    slot as u32 / atlas::ATLAS_TILES,
+                );
                 let base = verts.len() as u32;
                 for c in mesher::CORNERS[face].iter() {
                     let lp = Vec3::new(
@@ -2745,8 +2901,10 @@ impl Game {
                 let slot = reg.item(st.item).icon;
                 let ts = 1.0 / atlas::ATLAS_TILES as f32;
                 let inset = ts / 32.0;
-                let (tx, ty) =
-                    (slot as u32 % atlas::ATLAS_TILES, slot as u32 / atlas::ATLAS_TILES);
+                let (tx, ty) = (
+                    slot as u32 % atlas::ATLAS_TILES,
+                    slot as u32 / atlas::ATLAS_TILES,
+                );
                 let ax = Vec3::new(0.44, 0.07, -0.21);
                 let ay = Vec3::new(-0.10, 0.44, 0.17);
                 let origin = Vec3::new(0.02, -0.16, 0.06);
@@ -2758,9 +2916,12 @@ impl Game {
                         (tx as f32 * ts + inset, (tx + 1) as f32 * ts - inset)
                     };
                     let s = if flip { -1.0 } else { 1.0 };
-                    for (i, j, uu) in
-                        [(-0.5, 0.0, u0), (0.5, 0.0, u1), (0.5, 1.0, u1), (-0.5, 1.0, u0)]
-                    {
+                    for (i, j, uu) in [
+                        (-0.5, 0.0, u0),
+                        (0.5, 0.0, u1),
+                        (0.5, 1.0, u1),
+                        (-0.5, 1.0, u0),
+                    ] {
                         let lp = origin + ax * (i * s) + ay * j;
                         let wp = xf(lp);
                         let vv = if j < 0.5 {
@@ -2889,13 +3050,11 @@ impl Game {
                             }
                         }
                         server::SimEvent::IreTier { rose, .. } => {
-                            self.toast(
-                                if rose {
-                                    "The wild stirs against you.".to_string()
-                                } else {
-                                    "The wild settles.".to_string()
-                                },
-                            );
+                            self.toast(if rose {
+                                "The wild stirs against you.".to_string()
+                            } else {
+                                "The wild settles.".to_string()
+                            });
                         }
                     }
                 }
@@ -2903,7 +3062,8 @@ impl Game {
                     self.sweep_dead_mobs();
                 }
                 for (pos, s) in std::mem::take(&mut self.server.world.pending_drops) {
-                    let center = Vec3::new(pos.0 as f32 + 0.5, pos.1 as f32 + 0.5, pos.2 as f32 + 0.5);
+                    let center =
+                        Vec3::new(pos.0 as f32 + 0.5, pos.1 as f32 + 0.5, pos.2 as f32 + 0.5);
                     let a = self.rand01() * std::f32::consts::TAU;
                     let v = Vec3::new(a.cos() * 1.5, 2.5, a.sin() * 1.5);
                     self.items.push(ItemEntity::new(center, v, s.item, s.count));
@@ -2922,7 +3082,8 @@ impl Game {
                     if self.tick_accum >= 0.1 {
                         let t = self.tick_accum;
                         self.tick_accum = 0.0;
-                        self.scripts.dispatch(&self.server.world, "on_tick", (t as f64,));
+                        self.scripts
+                            .dispatch(&self.server.world, "on_tick", (t as f64,));
                         self.apply_script_cmds();
                     }
                 }
@@ -2944,7 +3105,10 @@ impl Game {
         self.toasts.retain(|t| t.1 > 0.0);
 
         // Physics — only once the chunk under the player exists.
-        let pchunk = ChunkPos::of_world(self.player.pos.x.floor() as i32, self.player.pos.z.floor() as i32);
+        let pchunk = ChunkPos::of_world(
+            self.player.pos.x.floor() as i32,
+            self.player.pos.z.floor() as i32,
+        );
         let can_sim = self.server.world.chunks.contains_key(&pchunk) && !paused;
         if can_sim && self.screen != Screen::Dead {
             let input = physics::Input {
@@ -2958,8 +3122,8 @@ impl Game {
             }
             self.update_food(dt, &input);
             if self.flying {
-                let mut wish = self.camera.flat_forward() * input.forward
-                    + self.camera.right() * input.strafe;
+                let mut wish =
+                    self.camera.flat_forward() * input.forward + self.camera.right() * input.strafe;
                 if wish.length_squared() > 1.0 {
                     wish = wish.normalize();
                 }
@@ -3034,8 +3198,13 @@ impl Game {
 
         let playing = self.screen == Screen::Playing;
         let outline = if playing {
-            raycast::raycast(&self.server.world, self.camera.pos, self.camera.forward(), REACH)
-                .map(|h| h.block)
+            raycast::raycast(
+                &self.server.world,
+                self.camera.pos,
+                self.camera.forward(),
+                REACH,
+            )
+            .map(|h| h.block)
         } else {
             None
         };
@@ -3046,8 +3215,11 @@ impl Game {
         let mut entity_verts = Vec::new();
         let mut entity_idx = Vec::new();
         let sample = |w: &World, p: Vec3| -> ([f32; 3], f32) {
-            let (b, s) =
-                w.light_rgb_at(p.x.floor() as i32, (p.y + 0.4).floor() as i32, p.z.floor() as i32);
+            let (b, s) = w.light_rgb_at(
+                p.x.floor() as i32,
+                (p.y + 0.4).floor() as i32,
+                p.z.floor() as i32,
+            );
             (
                 [b[0] as f32 / 15.0, b[1] as f32 / 15.0, b[2] as f32 / 15.0],
                 s as f32 / 15.0,
@@ -3070,14 +3242,30 @@ impl Game {
         if let Some(r) = &self.remote {
             for (_, pos, yaw) in r.players.values() {
                 let lum = sample(&self.server.world, *pos);
-                mobs::emit_humanoid(*pos, *yaw, skin, face, lum, &mut entity_verts, &mut entity_idx);
+                mobs::emit_humanoid(
+                    *pos,
+                    *yaw,
+                    skin,
+                    face,
+                    lum,
+                    &mut entity_verts,
+                    &mut entity_idx,
+                );
             }
         }
         if let Some(hst) = &self.host {
             for g in hst.guests.values() {
                 let (pos, yaw) = g.render_pos();
                 let lum = sample(&self.server.world, pos);
-                mobs::emit_humanoid(pos, yaw, skin, face, lum, &mut entity_verts, &mut entity_idx);
+                mobs::emit_humanoid(
+                    pos,
+                    yaw,
+                    skin,
+                    face,
+                    lum,
+                    &mut entity_verts,
+                    &mut entity_idx,
+                );
             }
         }
         let mut overlay_verts = Vec::new();
@@ -3142,7 +3330,14 @@ impl Game {
             self.last_title = now;
             let p = self.player.pos;
             let biome = if self.in_world {
-                format!(" | {}", self.server.world.generator.biome(p.x as i32, p.z as i32).name())
+                format!(
+                    " | {}",
+                    self.server
+                        .world
+                        .generator
+                        .biome(p.x as i32, p.z as i32)
+                        .name()
+                )
             } else {
                 String::new()
             };
@@ -3204,7 +3399,12 @@ impl Game {
     fn menu_button_rect(&self, i: usize) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;
-        (w / 2.0 - 150.0, h / 2.0 - 40.0 + i as f32 * 56.0, 300.0, 40.0)
+        (
+            w / 2.0 - 150.0,
+            h / 2.0 - 40.0 + i as f32 * 56.0,
+            300.0,
+            40.0,
+        )
     }
 
     // ---- title screen layout ----
@@ -3291,11 +3491,21 @@ impl Game {
     }
 
     fn draw_button(ui: &mut UiBatch, r: (f32, f32, f32, f32), label: &str, hover: bool) {
-        let bg = if hover { [0.5, 0.5, 0.5, 0.95] } else { [0.25, 0.25, 0.25, 0.95] };
+        let bg = if hover {
+            [0.5, 0.5, 0.5, 0.95]
+        } else {
+            [0.25, 0.25, 0.25, 0.95]
+        };
         ui.rect(r.0, r.1, r.2, r.3, [0.1, 0.1, 0.1, 0.95]);
         ui.rect(r.0 + 2.0, r.1 + 2.0, r.2 - 4.0, r.3 - 4.0, bg);
         let lw = UiBatch::text_width(2.0, label);
-        ui.text_shadow(r.0 + (r.2 - lw) / 2.0, r.1 + (r.3 - 14.0) / 2.0, 2.0, label, [1.0; 4]);
+        ui.text_shadow(
+            r.0 + (r.2 - lw) / 2.0,
+            r.1 + (r.3 - 14.0) / 2.0,
+            2.0,
+            label,
+            [1.0; 4],
+        );
     }
 
     fn hit(&self, r: (f32, f32, f32, f32)) -> bool {
@@ -3303,7 +3513,14 @@ impl Game {
         x >= r.0 && x < r.0 + r.2 && y >= r.1 && y < r.1 + r.3
     }
 
-    fn draw_slot(reg: &Registry, ui: &mut UiBatch, r: (f32, f32, f32, f32), stack: Option<ItemStack>, selected: bool, hover: bool) {
+    fn draw_slot(
+        reg: &Registry,
+        ui: &mut UiBatch,
+        r: (f32, f32, f32, f32),
+        stack: Option<ItemStack>,
+        selected: bool,
+        hover: bool,
+    ) {
         let (x, y, w, h) = r;
         let border = if selected {
             [1.0, 1.0, 1.0, 0.9]
@@ -3321,7 +3538,14 @@ impl Game {
             let pad = 8.0;
             let icon = reg.item(s.item).icon;
             let tile = (icon as u32 % 16, icon as u32 / 16);
-            ui.tile(x + pad, y + pad, w - 2.0 * pad, h - 2.0 * pad, tile, [1.0; 4]);
+            ui.tile(
+                x + pad,
+                y + pad,
+                w - 2.0 * pad,
+                h - 2.0 * pad,
+                tile,
+                [1.0; 4],
+            );
             if s.count > 1 {
                 let txt = format!("{}", s.count);
                 let tw = UiBatch::text_width(2.0, &txt);
@@ -3379,11 +3603,23 @@ impl Game {
             Screen::Title => {
                 ui.rect(0.0, 0.0, w, h, [0.05, 0.08, 0.15, 0.55]);
                 let tw = UiBatch::text_width(8.0, "WILDFORGE");
-                ui.text_shadow((w - tw) / 2.0, h * 0.10, 8.0, "WILDFORGE", [1.0, 0.95, 0.7, 1.0]);
+                ui.text_shadow(
+                    (w - tw) / 2.0,
+                    h * 0.10,
+                    8.0,
+                    "WILDFORGE",
+                    [1.0, 0.95, 0.7, 1.0],
+                );
                 if self.worlds.is_empty() {
                     let msg = "NO WORLDS YET - CREATE ONE";
                     let mw = UiBatch::text_width(2.0, msg);
-                    ui.text_shadow((w - mw) / 2.0, self.title_row_y(0) + 12.0, 2.0, msg, [0.8, 0.8, 0.8, 1.0]);
+                    ui.text_shadow(
+                        (w - mw) / 2.0,
+                        self.title_row_y(0) + 12.0,
+                        2.0,
+                        msg,
+                        [0.8, 0.8, 0.8, 1.0],
+                    );
                 }
                 for (i, (name, seed)) in self.worlds.iter().take(6).enumerate() {
                     let y = self.title_row_y(i);
@@ -3394,7 +3630,18 @@ impl Game {
                     let dr = self.title_delete_rect(i);
                     Self::draw_button(&mut ui, dr, "X", self.hit(dr));
                 }
-                for (j, label) in ["NEW SURVIVAL WORLD", "NEW CREATIVE WORLD", "JOIN GAME", "MODS", "TEXTURE PACKS", "SETTINGS", "QUIT"].iter().enumerate() {
+                for (j, label) in [
+                    "NEW SURVIVAL WORLD",
+                    "NEW CREATIVE WORLD",
+                    "JOIN GAME",
+                    "MODS",
+                    "TEXTURE PACKS",
+                    "SETTINGS",
+                    "QUIT",
+                ]
+                .iter()
+                .enumerate()
+                {
                     let r = self.title_action_rect(j);
                     Self::draw_button(&mut ui, r, label, self.hit(r));
                 }
@@ -3413,7 +3660,13 @@ impl Game {
                     match &m.error {
                         Some(e) => {
                             let msg: String = e.chars().take(60).collect();
-                            ui.text_shadow(w / 2.0 - 300.0, y + 20.0, 1.5, &msg.to_uppercase(), [1.0, 0.5, 0.5, 1.0]);
+                            ui.text_shadow(
+                                w / 2.0 - 300.0,
+                                y + 20.0,
+                                1.5,
+                                &msg.to_uppercase(),
+                                [1.0, 0.5, 0.5, 1.0],
+                            );
                             y += 44.0;
                         }
                         None => {
@@ -3448,17 +3701,35 @@ impl Game {
                         self.packs[i - 1].id == cur
                     };
                     if active {
-                        ui.text_shadow(r.0 + r.2 + 18.0, r.1 + 12.0, 2.0, "ACTIVE", [0.5, 1.0, 0.5, 1.0]);
+                        ui.text_shadow(
+                            r.0 + r.2 + 18.0,
+                            r.1 + 12.0,
+                            2.0,
+                            "ACTIVE",
+                            [0.5, 1.0, 0.5, 1.0],
+                        );
                     }
                     if i > 0 && !self.packs[i - 1].description.is_empty() {
                         let d: String = self.packs[i - 1].description.chars().take(64).collect();
-                        ui.text_shadow(r.0 + 8.0, r.1 + r.3 + 4.0, 1.5, &d.to_uppercase(), [0.7, 0.7, 0.7, 1.0]);
+                        ui.text_shadow(
+                            r.0 + 8.0,
+                            r.1 + r.3 + 4.0,
+                            1.5,
+                            &d.to_uppercase(),
+                            [0.7, 0.7, 0.7, 1.0],
+                        );
                     }
                 }
                 let mut y = self.pack_row_rect(self.packs.len().min(7)).1 + 60.0;
                 for warn in self.pack_warnings.iter().take(3) {
                     let msg: String = warn.chars().take(70).collect();
-                    ui.text_shadow(w / 2.0 - 300.0, y, 1.5, &msg.to_uppercase(), [1.0, 0.5, 0.5, 1.0]);
+                    ui.text_shadow(
+                        w / 2.0 - 300.0,
+                        y,
+                        1.5,
+                        &msg.to_uppercase(),
+                        [1.0, 0.5, 0.5, 1.0],
+                    );
                     y += 20.0;
                 }
                 let hint = "DROP PACKS IN PACKS/ - PNG EDITS HOT RELOAD LIVE.";
@@ -3482,23 +3753,48 @@ impl Game {
                     .unwrap_or_default();
                 let mut y = h * 0.20;
                 if found.is_empty() {
-                    ui.text_shadow(w / 2.0 - 220.0, y + 10.0, 2.0, "SEARCHING THE LAN...", [0.7, 0.7, 0.7, 1.0]);
+                    ui.text_shadow(
+                        w / 2.0 - 220.0,
+                        y + 10.0,
+                        2.0,
+                        "SEARCHING THE LAN...",
+                        [0.7, 0.7, 0.7, 1.0],
+                    );
                 }
                 for (i, (addr, name)) in found.iter().take(5).enumerate() {
                     let r = (w / 2.0 - 220.0, h * 0.20 + i as f32 * 56.0, 440.0, 42.0);
-                    Self::draw_button(&mut ui, r, &format!("{} - {}", name.to_uppercase(), addr), self.hit(r));
+                    Self::draw_button(
+                        &mut ui,
+                        r,
+                        &format!("{} - {}", name.to_uppercase(), addr),
+                        self.hit(r),
+                    );
                     y = r.1 + 56.0;
                 }
                 y += 26.0;
                 ui.text_shadow(w / 2.0 - 220.0, y, 2.0, "DIRECT IP:", [1.0; 4]);
                 ui.rect(w / 2.0 - 80.0, y - 6.0, 300.0, 34.0, [0.1, 0.1, 0.1, 0.95]);
-                let shown = if self.join_ip.is_empty() { "TYPE ADDRESS" } else { &self.join_ip };
-                let col = if self.join_ip.is_empty() { [0.5, 0.5, 0.5, 1.0] } else { [1.0; 4] };
+                let shown = if self.join_ip.is_empty() {
+                    "TYPE ADDRESS"
+                } else {
+                    &self.join_ip
+                };
+                let col = if self.join_ip.is_empty() {
+                    [0.5, 0.5, 0.5, 1.0]
+                } else {
+                    [1.0; 4]
+                };
                 ui.text_shadow(w / 2.0 - 72.0, y, 2.0, &shown.to_uppercase(), col);
                 let cr = (w / 2.0 + 240.0, y - 6.0, 160.0, 34.0);
                 Self::draw_button(&mut ui, cr, "CONNECT", self.hit(cr));
                 if !self.join_status.is_empty() {
-                    ui.text_shadow(w / 2.0 - 220.0, y + 46.0, 2.0, &self.join_status, [1.0, 0.6, 0.5, 1.0]);
+                    ui.text_shadow(
+                        w / 2.0 - 220.0,
+                        y + 46.0,
+                        2.0,
+                        &self.join_status,
+                        [1.0, 0.6, 0.5, 1.0],
+                    );
                 }
                 let br = self.pack_back_rect();
                 Self::draw_button(&mut ui, br, "BACK", self.hit(br));
@@ -3514,11 +3810,23 @@ impl Game {
                     ui.text_shadow(w / 2.0 - 300.0, by + 8.0, 2.0, Self::SLIDERS[i], [1.0; 4]);
                     ui.rect(bx, by, bw, bh, [0.1, 0.1, 0.1, 0.95]);
                     let frac = self.slider_frac(i);
-                    ui.rect(bx + 2.0, by + 2.0, (bw - 4.0) * frac, bh - 4.0, [0.35, 0.65, 0.35, 0.95]);
+                    ui.rect(
+                        bx + 2.0,
+                        by + 2.0,
+                        (bw - 4.0) * frac,
+                        bh - 4.0,
+                        [0.35, 0.65, 0.35, 0.95],
+                    );
                     // Handle notch.
                     let hx = bx + 2.0 + (bw - 8.0) * frac;
                     ui.rect(hx, by, 4.0, bh, [0.9, 0.9, 0.9, 1.0]);
-                    ui.text_shadow(bx + bw + 14.0, by + 8.0, 2.0, &self.slider_label(i), [1.0; 4]);
+                    ui.text_shadow(
+                        bx + bw + 14.0,
+                        by + 8.0,
+                        2.0,
+                        &self.slider_label(i),
+                        [1.0; 4],
+                    );
                 }
                 let br = self.settings_back_rect();
                 Self::draw_button(&mut ui, br, "BACK", self.hit(br));
@@ -3537,7 +3845,13 @@ impl Game {
                 ui.text_shadow((w - tw) / 2.0, h * 0.25, 4.0, &msg, [1.0, 0.8, 0.8, 1.0]);
                 let sub = "THIS CANNOT BE UNDONE";
                 let sw = UiBatch::text_width(2.0, sub);
-                ui.text_shadow((w - sw) / 2.0, h * 0.25 + 50.0, 2.0, sub, [0.9, 0.7, 0.7, 1.0]);
+                ui.text_shadow(
+                    (w - sw) / 2.0,
+                    h * 0.25 + 50.0,
+                    2.0,
+                    sub,
+                    [0.9, 0.7, 0.7, 1.0],
+                );
                 for (j, label) in ["DELETE", "CANCEL"].iter().enumerate() {
                     let r = self.menu_button_rect(j);
                     Self::draw_button(&mut ui, r, label, self.hit(r));
@@ -3558,26 +3872,49 @@ impl Game {
             let a = ttl.min(1.0);
             let m = msg.to_uppercase();
             let tw = UiBatch::text_width(2.0, &m);
-            ui.text_shadow((w - tw) / 2.0, 16.0 + i as f32 * 22.0, 2.0, &m, [1.0, 1.0, 0.6, a]);
+            ui.text_shadow(
+                (w - tw) / 2.0,
+                16.0 + i as f32 * 22.0,
+                2.0,
+                &m,
+                [1.0, 1.0, 0.6, a],
+            );
         }
 
         // Hotbar.
         for i in 0..HOTBAR_SLOTS {
             let r = self.hotbar_rect(i);
-            Self::draw_slot(&self.reg, &mut ui, r, self.inventory.slots[i], i == self.hotbar_sel, false);
+            Self::draw_slot(
+                &self.reg,
+                &mut ui,
+                r,
+                self.inventory.slots[i],
+                i == self.hotbar_sel,
+                false,
+            );
         }
         // Selected item name above the hotbar.
         if let Some(s) = self.inventory.slots[self.hotbar_sel] {
             let name = &self.reg.item(s.item).label.to_uppercase();
             let tw = UiBatch::text_width(2.0, name);
             let (hx0, hy0) = self.hotbar_origin();
-            ui.text_shadow(hx0 + (9.0 * Self::SLOT - tw) / 2.0, hy0 - 52.0, 2.0, name, [1.0; 4]);
+            ui.text_shadow(
+                hx0 + (9.0 * Self::SLOT - tw) / 2.0,
+                hy0 - 52.0,
+                2.0,
+                name,
+                [1.0; 4],
+            );
         }
 
         // Hearts above the hotbar (count follows max health).
         let (hx, hy) = self.hotbar_origin();
         let hs = 2.6;
-        let hearts = if self.creative { 0 } else { (self.max_health() / 2.0).ceil() as i32 };
+        let hearts = if self.creative {
+            0
+        } else {
+            (self.max_health() / 2.0).ceil() as i32
+        };
         for i in 0..hearts {
             let kind = if self.health >= (i * 2 + 2) as f32 {
                 2
@@ -3589,23 +3926,49 @@ impl Game {
             ui.heart(hx + i as f32 * 8.0 * hs, hy - 8.0 * hs - 4.0, hs, kind);
         }
         // Armor pips above the hearts, only while wearing any.
-        let ap = if self.creative { 0 } else { self.armor_points() };
+        let ap = if self.creative {
+            0
+        } else {
+            self.armor_points()
+        };
         for i in 0..ap.min(15) {
             let x = hx + i as f32 * 6.0 * hs * 0.8;
-            ui.rect(x, hy - 14.0 * hs - 6.0, 4.0 * hs, 4.0 * hs, [0.75, 0.72, 0.6, 0.95]);
+            ui.rect(
+                x,
+                hy - 14.0 * hs - 6.0,
+                4.0 * hs,
+                4.0 * hs,
+                [0.75, 0.72, 0.6, 0.95],
+            );
         }
         // Hunger pips, right-aligned above the hotbar.
         let pips = (self.hunger / 2.0).ceil() as i32;
         for i in 0..if self.creative { 0 } else { 10 } {
             let x = hx + 9.0 * Self::SLOT - (i + 1) as f32 * 8.0 * hs;
             let a = if i < pips { 1.0 } else { 0.25 };
-            ui.rect(x, hy - 8.0 * hs - 4.0 + 4.0, 6.0 * hs * 0.7, 5.0 * hs * 0.7, [0.85, 0.55, 0.2, a]);
+            ui.rect(
+                x,
+                hy - 8.0 * hs - 4.0 + 4.0,
+                6.0 * hs * 0.7,
+                5.0 * hs * 0.7,
+                [0.85, 0.55, 0.2, a],
+            );
         }
         // Bow draw near the crosshair (red until min draw, then filling).
         if self.bow_draw > 0.0 {
             let t = ((self.bow_draw - 0.25) / 0.75).clamp(0.0, 1.0);
-            ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0, 6.0, [0.1, 0.1, 0.1, 0.8]);
-            let col = if self.bow_draw < 0.25 { [0.7, 0.3, 0.2, 0.95] } else { [0.75, 0.9, 0.5, 0.95] };
+            ui.rect(
+                w / 2.0 - 30.0,
+                h / 2.0 + 24.0,
+                60.0,
+                6.0,
+                [0.1, 0.1, 0.1, 0.8],
+            );
+            let col = if self.bow_draw < 0.25 {
+                [0.7, 0.3, 0.2, 0.95]
+            } else {
+                [0.75, 0.9, 0.5, 0.95]
+            };
             ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0 * t.max(0.06), 6.0, col);
         }
         // Chat entry line.
@@ -3644,8 +4007,20 @@ impl Game {
         // Brushing progress near the crosshair.
         if self.brushing > 0.0 {
             let t = (self.brushing / 1.5).min(1.0);
-            ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0, 6.0, [0.1, 0.1, 0.1, 0.8]);
-            ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0 * t, 6.0, [0.75, 0.7, 0.5, 0.95]);
+            ui.rect(
+                w / 2.0 - 30.0,
+                h / 2.0 + 24.0,
+                60.0,
+                6.0,
+                [0.1, 0.1, 0.1, 0.8],
+            );
+            ui.rect(
+                w / 2.0 - 30.0,
+                h / 2.0 + 24.0,
+                60.0 * t,
+                6.0,
+                [0.75, 0.7, 0.5, 0.95],
+            );
         }
         // Eat progress near the crosshair.
         if self.eating > 0.0 {
@@ -3653,8 +4028,20 @@ impl Game {
                 .and_then(|s| self.reg.item(s.item).food.clone())
             {
                 let t = (self.eating / f.eat_time).min(1.0);
-                ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0, 6.0, [0.1, 0.1, 0.1, 0.8]);
-                ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0 * t, 6.0, [0.9, 0.8, 0.3, 0.95]);
+                ui.rect(
+                    w / 2.0 - 30.0,
+                    h / 2.0 + 24.0,
+                    60.0,
+                    6.0,
+                    [0.1, 0.1, 0.1, 0.8],
+                );
+                ui.rect(
+                    w / 2.0 - 30.0,
+                    h / 2.0 + 24.0,
+                    60.0 * t,
+                    6.0,
+                    [0.9, 0.8, 0.3, 0.95],
+                );
             }
         }
 
@@ -3668,7 +4055,12 @@ impl Game {
         }
 
         match self.screen {
-            Screen::Playing | Screen::Title | Screen::Mods | Screen::Packs | Screen::Join | Screen::Settings
+            Screen::Playing
+            | Screen::Title
+            | Screen::Mods
+            | Screen::Packs
+            | Screen::Join
+            | Screen::Settings
             | Screen::ConfirmDelete => {}
             Screen::Furnace(pos) => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
@@ -3684,20 +4076,40 @@ impl Game {
                 Self::draw_slot(&self.reg, &mut ui, orr, out, false, self.hit(orr));
                 // Flame between input and fuel, arrow toward the output.
                 let flame_h = 24.0 * burn;
-                ui.rect(ir.0 + 12.0, fr.1 - 4.0 - flame_h, 22.0, flame_h, [1.0, 0.55, 0.1, 0.95]);
+                ui.rect(
+                    ir.0 + 12.0,
+                    fr.1 - 4.0 - flame_h,
+                    22.0,
+                    flame_h,
+                    [1.0, 0.55, 0.1, 0.95],
+                );
                 let ay = ir.1 + Self::SLOT + 14.0;
                 ui.rect(ir.0 + 64.0, ay, 100.0, 8.0, [0.15, 0.15, 0.15, 0.9]);
                 ui.rect(ir.0 + 64.0, ay, 100.0 * prog, 8.0, [1.0, 1.0, 1.0, 0.95]);
                 // Player inventory below for restocking.
                 for i in 0..TOTAL_SLOTS {
                     let r = self.inv_slot_rect(i);
-                    Self::draw_slot(&self.reg, &mut ui, r, self.inventory.slots[i], i == self.hotbar_sel, self.hit(r));
+                    Self::draw_slot(
+                        &self.reg,
+                        &mut ui,
+                        r,
+                        self.inventory.slots[i],
+                        i == self.hotbar_sel,
+                        self.hit(r),
+                    );
                 }
                 self.draw_browser(&mut ui);
                 if let Some(s) = self.held_stack {
                     let (cx, cy) = self.ui_cursor;
                     let icon = self.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, (icon as u32 % 16, icon as u32 / 16), [1.0; 4]);
+                    ui.tile(
+                        cx - 16.0,
+                        cy - 16.0,
+                        32.0,
+                        32.0,
+                        (icon as u32 % 16, icon as u32 / 16),
+                        [1.0; 4],
+                    );
                     if s.count > 1 {
                         ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
                     }
@@ -3720,13 +4132,27 @@ impl Game {
                 }
                 for i in 0..TOTAL_SLOTS {
                     let r = self.inv_slot_rect(i);
-                    Self::draw_slot(&self.reg, &mut ui, r, self.inventory.slots[i], i == self.hotbar_sel, self.hit(r));
+                    Self::draw_slot(
+                        &self.reg,
+                        &mut ui,
+                        r,
+                        self.inventory.slots[i],
+                        i == self.hotbar_sel,
+                        self.hit(r),
+                    );
                 }
                 self.draw_browser(&mut ui);
                 if let Some(s) = self.held_stack {
                     let (cx, cy) = self.ui_cursor;
                     let icon = self.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, (icon as u32 % 16, icon as u32 / 16), [1.0; 4]);
+                    ui.tile(
+                        cx - 16.0,
+                        cy - 16.0,
+                        32.0,
+                        32.0,
+                        (icon as u32 % 16, icon as u32 / 16),
+                        [1.0; 4],
+                    );
                     if s.count > 1 {
                         ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
                     }
@@ -3741,7 +4167,13 @@ impl Game {
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 260.0, 3.0, title, [1.0; 4]);
                 let hint = "LEFT AT DUSK, TAKEN BY DAWN";
                 let hw2 = UiBatch::text_width(1.5, hint);
-                ui.text_shadow((w - hw2) / 2.0, h / 2.0 - 232.0, 1.5, hint, [0.7, 0.85, 0.65, 1.0]);
+                ui.text_shadow(
+                    (w - hw2) / 2.0,
+                    h / 2.0 - 232.0,
+                    1.5,
+                    hint,
+                    [0.7, 0.85, 0.65, 1.0],
+                );
                 let slots = match self.server.world.block_entities.get(&pos) {
                     Some(world::BlockEntity::Offering(o)) => o.slots,
                     _ => [None; 3],
@@ -3752,13 +4184,27 @@ impl Game {
                 }
                 for i in 0..TOTAL_SLOTS {
                     let r = self.inv_slot_rect(i);
-                    Self::draw_slot(&self.reg, &mut ui, r, self.inventory.slots[i], i == self.hotbar_sel, self.hit(r));
+                    Self::draw_slot(
+                        &self.reg,
+                        &mut ui,
+                        r,
+                        self.inventory.slots[i],
+                        i == self.hotbar_sel,
+                        self.hit(r),
+                    );
                 }
                 self.draw_browser(&mut ui);
                 if let Some(s) = self.held_stack {
                     let (cx, cy) = self.ui_cursor;
                     let icon = self.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, (icon as u32 % 16, icon as u32 / 16), [1.0; 4]);
+                    ui.tile(
+                        cx - 16.0,
+                        cy - 16.0,
+                        32.0,
+                        32.0,
+                        (icon as u32 % 16, icon as u32 / 16),
+                        [1.0; 4],
+                    );
                     if s.count > 1 {
                         ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
                     }
@@ -3768,14 +4214,25 @@ impl Game {
             }
             Screen::Inventory => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
-                let title = if self.craft_size == 3 { "CRAFTING" } else { "INVENTORY" };
+                let title = if self.craft_size == 3 {
+                    "CRAFTING"
+                } else {
+                    "INVENTORY"
+                };
                 let tw = UiBatch::text_width(3.0, title);
                 let (c0x, c0y, _, _) = self.craft_slot_rect(0);
                 ui.text_shadow((w - tw) / 2.0, c0y - 40.0, 3.0, title, [1.0; 4]);
                 for i in 0..TOTAL_SLOTS {
                     let r = self.inv_slot_rect(i);
                     let hover = self.hit(r);
-                    Self::draw_slot(&self.reg, &mut ui, r, self.inventory.slots[i], i == self.hotbar_sel, hover);
+                    Self::draw_slot(
+                        &self.reg,
+                        &mut ui,
+                        r,
+                        self.inventory.slots[i],
+                        i == self.hotbar_sel,
+                        hover,
+                    );
                 }
                 // Nutrition panel.
                 let (p0x, p0y, _, _) = self.inv_slot_rect(HOTBAR_SLOTS);
@@ -3798,7 +4255,13 @@ impl Game {
                     }
                 }
                 let bonus = (self.max_health() - MAX_HEALTH) as i32 / 2;
-                ui.text_shadow(p0x - 190.0, p0y + 134.0, 1.5, &format!("MAX HEALTH +{bonus}"), [1.0; 4]);
+                ui.text_shadow(
+                    p0x - 190.0,
+                    p0y + 134.0,
+                    1.5,
+                    &format!("MAX HEALTH +{bonus}"),
+                    [1.0; 4],
+                );
                 // The wild's ire: tier word + vine meter.
                 let tier = self.server.world.ire_tier();
                 let tier_col = [
@@ -3808,7 +4271,13 @@ impl Game {
                     [0.9, 0.3, 0.25, 1.0],
                 ][tier];
                 ui.text_shadow(p0x - 190.0, p0y + 162.0, 1.5, "THE WILD", [1.0; 4]);
-                ui.rect(p0x - 130.0, p0y + 162.0, 100.0, 10.0, [0.12, 0.12, 0.12, 0.9]);
+                ui.rect(
+                    p0x - 130.0,
+                    p0y + 162.0,
+                    100.0,
+                    10.0,
+                    [0.12, 0.12, 0.12, 0.9],
+                );
                 ui.rect(
                     p0x - 130.0,
                     p0y + 162.0,
@@ -3816,26 +4285,46 @@ impl Game {
                     10.0,
                     tier_col,
                 );
-                ui.text_shadow(p0x - 24.0, p0y + 162.0, 1.5, world::IRE_TIERS[tier], tier_col);
+                ui.text_shadow(
+                    p0x - 24.0,
+                    p0y + 162.0,
+                    1.5,
+                    world::IRE_TIERS[tier],
+                    tier_col,
+                );
                 // Armor column: head/chest/legs/feet.
                 for (i, label) in ["H", "C", "L", "B", "*"].iter().enumerate() {
                     let r = self.armor_slot_rect(i);
                     Self::draw_slot(&self.reg, &mut ui, r, self.armor[i], false, self.hit(r));
                     if self.armor[i].is_none() {
-                        ui.text_shadow(r.0 + r.2 / 2.0 - 5.0, r.1 + r.3 / 2.0 - 7.0, 2.0, label, [0.55, 0.55, 0.55, 0.8]);
+                        ui.text_shadow(
+                            r.0 + r.2 / 2.0 - 5.0,
+                            r.1 + r.3 / 2.0 - 7.0,
+                            2.0,
+                            label,
+                            [0.55, 0.55, 0.55, 0.8],
+                        );
                     }
                 }
                 // Craft grid, arrow, result.
                 let n2 = self.craft_size * self.craft_size;
                 for i in 0..n2 {
                     let r = self.craft_slot_rect(i);
-                    Self::draw_slot(&self.reg, &mut ui, r, self.craft_grid[i], false, self.hit(r));
+                    Self::draw_slot(
+                        &self.reg,
+                        &mut ui,
+                        r,
+                        self.craft_grid[i],
+                        false,
+                        self.hit(r),
+                    );
                 }
                 let rr = self.result_slot_rect();
                 ui.text_shadow(rr.0 - 34.0, rr.1 + 16.0, 2.5, "-", [1.0; 4]);
                 ui.text_shadow(rr.0 - 24.0, rr.1 + 14.0, 2.5, ">", [1.0; 4]);
-                let result = crafting::match_recipe(&self.reg, &self.craft_grid[..n2], self.craft_size)
-                    .map(|r| ItemStack::new(&self.reg, r.output, r.count));
+                let result =
+                    crafting::match_recipe(&self.reg, &self.craft_grid[..n2], self.craft_size)
+                        .map(|r| ItemStack::new(&self.reg, r.output, r.count));
                 Self::draw_slot(&self.reg, &mut ui, rr, result, false, self.hit(rr));
                 let _ = c0x;
                 self.draw_browser(&mut ui);
@@ -3843,7 +4332,14 @@ impl Game {
                 if let Some(s) = self.held_stack {
                     let (cx, cy) = self.ui_cursor;
                     let icon = self.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, (icon as u32 % 16, icon as u32 / 16), [1.0; 4]);
+                    ui.tile(
+                        cx - 16.0,
+                        cy - 16.0,
+                        32.0,
+                        32.0,
+                        (icon as u32 % 16, icon as u32 / 16),
+                        [1.0; 4],
+                    );
                     if s.count > 1 {
                         let txt = format!("{}", s.count);
                         ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &txt, [1.0; 4]);
@@ -3855,16 +4351,25 @@ impl Game {
                 let title = "GAME PAUSED";
                 let tw = UiBatch::text_width(4.0, title);
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 130.0, 4.0, title, [1.0; 4]);
-                let mode = if self.creative { "MODE: CREATIVE" } else { "MODE: SURVIVAL" };
+                let mode = if self.creative {
+                    "MODE: CREATIVE"
+                } else {
+                    "MODE: SURVIVAL"
+                };
                 let friends = match &self.host {
                     Some(h) => format!("FRIENDS: {} CONNECTED", h.guests.len()),
                     None if self.remote.is_some() => "CONNECTED AS GUEST".to_string(),
                     None => "OPEN TO FRIENDS".to_string(),
                 };
-                for (i, label) in
-                    ["RESUME", mode, &friends, "SETTINGS", "SAVE AND QUIT TO TITLE"]
-                        .iter()
-                        .enumerate()
+                for (i, label) in [
+                    "RESUME",
+                    mode,
+                    &friends,
+                    "SETTINGS",
+                    "SAVE AND QUIT TO TITLE",
+                ]
+                .iter()
+                .enumerate()
                 {
                     let r = self.menu_button_rect(i);
                     Self::draw_button(&mut ui, r, label, self.hit(r));
@@ -3874,19 +4379,41 @@ impl Game {
                 ui.rect(0.0, 0.0, w, h, [0.5, 0.0, 0.0, 0.5]);
                 let title = "YOU DIED";
                 let tw = UiBatch::text_width(5.0, title);
-                ui.text_shadow((w - tw) / 2.0, h / 2.0 - 120.0, 5.0, title, [1.0, 0.85, 0.85, 1.0]);
+                ui.text_shadow(
+                    (w - tw) / 2.0,
+                    h / 2.0 - 120.0,
+                    5.0,
+                    title,
+                    [1.0, 0.85, 0.85, 1.0],
+                );
                 if self.killed_by_wild {
                     let sub = "RECLAIMED BY THE WILD";
                     let sw = UiBatch::text_width(2.0, sub);
-                    ui.text_shadow((w - sw) / 2.0, h / 2.0 - 60.0, 2.0, sub, [0.8, 0.95, 0.75, 1.0]);
+                    ui.text_shadow(
+                        (w - sw) / 2.0,
+                        h / 2.0 - 60.0,
+                        2.0,
+                        sub,
+                        [0.8, 0.95, 0.75, 1.0],
+                    );
                 }
                 let r = self.menu_button_rect(0);
                 let hover = self.hit(r);
-                let bg = if hover { [0.5, 0.5, 0.5, 0.95] } else { [0.25, 0.25, 0.25, 0.95] };
+                let bg = if hover {
+                    [0.5, 0.5, 0.5, 0.95]
+                } else {
+                    [0.25, 0.25, 0.25, 0.95]
+                };
                 ui.rect(r.0, r.1, r.2, r.3, [0.1, 0.1, 0.1, 0.95]);
                 ui.rect(r.0 + 2.0, r.1 + 2.0, r.2 - 4.0, r.3 - 4.0, bg);
                 let lw = UiBatch::text_width(2.0, "RESPAWN");
-                ui.text_shadow(r.0 + (r.2 - lw) / 2.0, r.1 + (r.3 - 14.0) / 2.0, 2.0, "RESPAWN", [1.0; 4]);
+                ui.text_shadow(
+                    r.0 + (r.2 - lw) / 2.0,
+                    r.1 + (r.3 - 14.0) / 2.0,
+                    2.0,
+                    "RESPAWN",
+                    [1.0; 4],
+                );
             }
         }
         self.ui = ui;
@@ -3895,7 +4422,11 @@ impl Game {
     // ---------- Menu / inventory clicks ----------
 
     fn slot_get(&self, craft: bool, i: usize) -> Option<ItemStack> {
-        if craft { self.craft_grid[i] } else { self.inventory.slots[i] }
+        if craft {
+            self.craft_grid[i]
+        } else {
+            self.inventory.slots[i]
+        }
     }
 
     fn slot_set(&mut self, craft: bool, i: usize, v: Option<ItemStack>) {
@@ -3908,8 +4439,7 @@ impl Game {
 
     fn inventory_click(&mut self, craft: bool, slot: usize, right: bool) {
         let cur = self.slot_get(craft, slot);
-        let (new_slot, new_held) =
-            inventory::click_stack(&self.reg, cur, self.held_stack, right);
+        let (new_slot, new_held) = inventory::click_stack(&self.reg, cur, self.held_stack, right);
         self.slot_set(craft, slot, new_slot);
         self.held_stack = new_held;
     }
@@ -3928,10 +4458,12 @@ impl Game {
                 self.held_stack = Some(out);
             }
             Some(h)
-                if h.can_merge(&reg, &out)
-                    && h.count + out.count <= reg.item(h.item).max_stack =>
+                if h.can_merge(&reg, &out) && h.count + out.count <= reg.item(h.item).max_stack =>
             {
-                self.held_stack = Some(ItemStack { count: h.count + out.count, ..h });
+                self.held_stack = Some(ItemStack {
+                    count: h.count + out.count,
+                    ..h
+                });
             }
             _ => return, // held stack can't take the output
         }
@@ -3939,7 +4471,8 @@ impl Game {
         self.sfx(Sfx::Craft);
         if self.scripts.wants("on_craft") {
             let name = reg.item(recipe.output).name.clone();
-            self.scripts.dispatch(&self.server.world, "on_craft", (name,));
+            self.scripts
+                .dispatch(&self.server.world, "on_craft", (name,));
             self.apply_script_cmds();
         }
     }
@@ -3960,7 +4493,13 @@ impl Game {
     fn furnace_view(
         &self,
         pos: (i32, i32, i32),
-    ) -> (Option<ItemStack>, Option<ItemStack>, Option<ItemStack>, f32, f32) {
+    ) -> (
+        Option<ItemStack>,
+        Option<ItemStack>,
+        Option<ItemStack>,
+        f32,
+        f32,
+    ) {
         match self.server.world.block_entities.get(&pos) {
             Some(world::BlockEntity::Furnace(f)) => {
                 let time = f
@@ -3968,8 +4507,18 @@ impl Game {
                     .and_then(|s| self.reg.smelt_for(s.item))
                     .map(|s| s.time)
                     .unwrap_or(8.0);
-                let burn = if f.burn_total > 0.0 { f.burn_left / f.burn_total } else { 0.0 };
-                (f.input, f.fuel, f.output, (f.progress / time).min(1.0), burn)
+                let burn = if f.burn_total > 0.0 {
+                    f.burn_left / f.burn_total
+                } else {
+                    0.0
+                };
+                (
+                    f.input,
+                    f.fuel,
+                    f.output,
+                    (f.progress / time).min(1.0),
+                    burn,
+                )
             }
             _ => (None, None, None, 0.0, 0.0),
         }
@@ -3992,7 +4541,12 @@ impl Game {
     /// Armor column: right of the storage grid — head, chest, legs, feet.
     fn armor_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
         let (x0, y0, _, _) = self.inv_slot_rect(HOTBAR_SLOTS);
-        (x0 + 9.0 * Self::SLOT + 14.0, y0 + i as f32 * Self::SLOT, Self::SLOT, Self::SLOT)
+        (
+            x0 + 9.0 * Self::SLOT + 14.0,
+            y0 + i as f32 * Self::SLOT,
+            Self::SLOT,
+            Self::SLOT,
+        )
     }
 
     fn armor_click(&mut self, i: usize) {
@@ -4086,7 +4640,8 @@ impl Game {
         match slot {
             0 | 1 => {
                 let cur = if slot == 0 { f.input } else { f.fuel };
-                let (new_slot, new_held) = inventory::click_stack(&reg, cur, self.held_stack, right);
+                let (new_slot, new_held) =
+                    inventory::click_stack(&reg, cur, self.held_stack, right);
                 if slot == 0 {
                     if f.input.map(|s| s.item) != new_slot.map(|s| s.item) {
                         f.progress = 0.0;
@@ -4109,7 +4664,10 @@ impl Game {
                         if h.can_merge(&reg, &out)
                             && h.count + out.count <= reg.item(h.item).max_stack =>
                     {
-                        self.held_stack = Some(ItemStack { count: h.count + out.count, ..h });
+                        self.held_stack = Some(ItemStack {
+                            count: h.count + out.count,
+                            ..h
+                        });
                         f.output = None;
                     }
                     _ => {}
@@ -4123,7 +4681,10 @@ impl Game {
     const BSLOT: f32 = 40.0;
 
     fn browser_origin(&self) -> (f32, f32) {
-        (self.renderer.config.width as f32 - Self::BCOLS as f32 * Self::BSLOT - 20.0, 96.0)
+        (
+            self.renderer.config.width as f32 - Self::BCOLS as f32 * Self::BSLOT - 20.0,
+            96.0,
+        )
     }
 
     fn browser_cell(&self, i: usize) -> (f32, f32, f32, f32) {
@@ -4155,8 +4716,18 @@ impl Game {
         let reg = &self.reg;
         let sr = self.browser_search_rect();
         ui.rect(sr.0, sr.1, sr.2, sr.3, [0.08, 0.08, 0.08, 0.95]);
-        let caret = if self.search_focus && (self.time_abs * 2.0) as i32 % 2 == 0 { "_" } else { "" };
-        ui.text_shadow(sr.0 + 6.0, sr.1 + 6.0, 2.0, &format!("{}{caret}", self.search.to_uppercase()), [1.0; 4]);
+        let caret = if self.search_focus && (self.time_abs * 2.0) as i32 % 2 == 0 {
+            "_"
+        } else {
+            ""
+        };
+        ui.text_shadow(
+            sr.0 + 6.0,
+            sr.1 + 6.0,
+            2.0,
+            &format!("{}{caret}", self.search.to_uppercase()),
+            [1.0; 4],
+        );
         if self.search.is_empty() && !self.search_focus {
             ui.text_shadow(sr.0 + 6.0, sr.1 + 6.0, 2.0, "SEARCH", [0.5, 0.5, 0.5, 1.0]);
         }
@@ -4167,12 +4738,34 @@ impl Game {
         for (ci, item) in items.iter().skip(page * per).take(per).enumerate() {
             let r = self.browser_cell(ci);
             let hov = self.hit(r);
-            ui.rect(r.0 + 1.0, r.1 + 1.0, r.2 - 2.0, r.3 - 2.0,
-                if hov { [0.4, 0.4, 0.4, 0.85] } else { [0.16, 0.16, 0.16, 0.85] });
+            ui.rect(
+                r.0 + 1.0,
+                r.1 + 1.0,
+                r.2 - 2.0,
+                r.3 - 2.0,
+                if hov {
+                    [0.4, 0.4, 0.4, 0.85]
+                } else {
+                    [0.16, 0.16, 0.16, 0.85]
+                },
+            );
             let icon = reg.item(*item).icon;
-            ui.tile(r.0 + 5.0, r.1 + 5.0, 30.0, 30.0, (icon as u32 % 16, icon as u32 / 16), [1.0; 4]);
+            ui.tile(
+                r.0 + 5.0,
+                r.1 + 5.0,
+                30.0,
+                30.0,
+                (icon as u32 % 16, icon as u32 / 16),
+                [1.0; 4],
+            );
             if hov {
-                ui.text_shadow(r.0 - 120.0, r.1 + 12.0, 1.5, &reg.item(*item).label.to_uppercase(), [1.0, 1.0, 0.7, 1.0]);
+                ui.text_shadow(
+                    r.0 - 120.0,
+                    r.1 + 12.0,
+                    1.5,
+                    &reg.item(*item).label.to_uppercase(),
+                    [1.0, 1.0, 0.7, 1.0],
+                );
             }
         }
         for (next, lbl) in [(false, "<"), (true, ">")] {
@@ -4181,14 +4774,26 @@ impl Game {
         }
         let (x0, _) = self.browser_origin();
         let y = self.browser_nav_rect(false).1 + 5.0;
-        ui.text_shadow(x0 + 90.0, y, 2.0, &format!("{}/{pages}", page + 1), [1.0; 4]);
+        ui.text_shadow(
+            x0 + 90.0,
+            y,
+            2.0,
+            &format!("{}/{pages}", page + 1),
+            [1.0; 4],
+        );
 
         // Recipe overlay.
         if let Some((item, uses)) = self.browse_view {
             let (px, py) = (40.0, 96.0);
             let pw = 380.0;
             ui.rect(px - 10.0, py - 40.0, pw, 460.0, [0.05, 0.05, 0.08, 0.96]);
-            ui.text_shadow(px, py - 30.0, 2.0, &reg.item(item).label.to_uppercase(), [1.0, 1.0, 0.6, 1.0]);
+            ui.text_shadow(
+                px,
+                py - 30.0,
+                2.0,
+                &reg.item(item).label.to_uppercase(),
+                [1.0, 1.0, 0.6, 1.0],
+            );
             for (ti, lbl) in ["RECIPES", "USES"].iter().enumerate() {
                 let r = (px + 150.0 + ti as f32 * 90.0, py - 34.0, 84.0, 24.0);
                 Self::draw_button(ui, r, lbl, (ti == 1) == uses);
@@ -4216,7 +4821,14 @@ impl Game {
                                 crate::registry::Ingredient::Any(l) => l[cycle % l.len()],
                             };
                             let ic = reg.item(show).icon;
-                            ui.tile(cell.0 + 3.0, cell.1 + 3.0, 30.0, 30.0, (ic as u32 % 16, ic as u32 / 16), [1.0; 4]);
+                            ui.tile(
+                                cell.0 + 3.0,
+                                cell.1 + 3.0,
+                                30.0,
+                                30.0,
+                                (ic as u32 % 16, ic as u32 / 16),
+                                [1.0; 4],
+                            );
                         }
                     }
                 }
@@ -4224,9 +4836,22 @@ impl Game {
                 ui.text_shadow(px + 126.0, oy + 12.0, 2.5, ">", [1.0; 4]);
                 ui.rect(px + 150.0, oy, 36.0, 36.0, [0.22, 0.22, 0.22, 0.9]);
                 let oc = reg.item(r.output).icon;
-                ui.tile(px + 153.0, oy + 3.0, 30.0, 30.0, (oc as u32 % 16, oc as u32 / 16), [1.0; 4]);
+                ui.tile(
+                    px + 153.0,
+                    oy + 3.0,
+                    30.0,
+                    30.0,
+                    (oc as u32 % 16, oc as u32 / 16),
+                    [1.0; 4],
+                );
                 if r.count > 1 {
-                    ui.text_shadow(px + 172.0, oy + 22.0, 2.0, &format!("{}", r.count), [1.0; 4]);
+                    ui.text_shadow(
+                        px + 172.0,
+                        oy + 22.0,
+                        2.0,
+                        &format!("{}", r.count),
+                        [1.0; 4],
+                    );
                 }
                 y += r.h as f32 * 38.0 + 14.0;
             }
@@ -4239,7 +4864,14 @@ impl Game {
                 for (sx, it2) in [(90.0, show), (170.0, s.output)] {
                     ui.rect(px + sx, y, 36.0, 36.0, [0.2, 0.2, 0.2, 0.9]);
                     let ic = reg.item(it2).icon;
-                    ui.tile(px + sx + 3.0, y + 3.0, 30.0, 30.0, (ic as u32 % 16, ic as u32 / 16), [1.0; 4]);
+                    ui.tile(
+                        px + sx + 3.0,
+                        y + 3.0,
+                        30.0,
+                        30.0,
+                        (ic as u32 % 16, ic as u32 / 16),
+                        [1.0; 4],
+                    );
                 }
                 ui.text_shadow(px + 140.0, y + 12.0, 2.5, ">", [1.0; 4]);
                 y += 50.0;
@@ -4354,10 +4986,23 @@ impl Game {
                     self.sfx(Sfx::Click);
                     self.creative = !self.creative;
                     self.flying = false;
-                    let mode = if self.creative { "creative" } else { "survival" };
-                    world::write_world_meta(&self.server.world.save_dir_for_saving(), self.server.world.seed, mode, self.server.world.ire);
+                    let mode = if self.creative {
+                        "creative"
+                    } else {
+                        "survival"
+                    };
+                    world::write_world_meta(
+                        &self.server.world.save_dir_for_saving(),
+                        self.server.world.seed,
+                        mode,
+                        self.server.world.ire,
+                    );
                     if self.scripts.wants("on_mode_change") {
-                        self.scripts.dispatch(&self.server.world, "on_mode_change", (mode.to_string(),));
+                        self.scripts.dispatch(
+                            &self.server.world,
+                            "on_mode_change",
+                            (mode.to_string(),),
+                        );
                         self.apply_script_cmds();
                     }
                 } else if self.hit(self.menu_button_rect(2)) {
@@ -4445,8 +5090,11 @@ impl Game {
                 }
                 for i in 0..=self.packs.len().min(7) {
                     if self.hit(self.pack_row_rect(i)) {
-                        let sel =
-                            if i == 0 { String::new() } else { self.packs[i - 1].id.clone() };
+                        let sel = if i == 0 {
+                            String::new()
+                        } else {
+                            self.packs[i - 1].id.clone()
+                        };
                         self.sfx(Sfx::Click);
                         if sel != self.active_pack_id() {
                             self.pack_override = None;
@@ -4609,7 +5257,9 @@ impl Game {
             KeyCode::ControlLeft | KeyCode::ControlRight => self.keys.sprint = pressed,
             KeyCode::Escape if pressed => match self.screen {
                 Screen::Playing => self.set_screen(Screen::Paused),
-                Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_) => self.set_screen(Screen::Playing),
+                Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_) => {
+                    self.set_screen(Screen::Playing)
+                }
                 Screen::Paused => self.set_screen(Screen::Playing),
                 Screen::Settings => {
                     self.config.save();
@@ -4635,7 +5285,9 @@ impl Game {
                     self.craft_size = 2;
                     self.set_screen(Screen::Inventory);
                 }
-                Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_) => self.set_screen(Screen::Playing),
+                Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_) => {
+                    self.set_screen(Screen::Playing)
+                }
                 _ => {}
             },
             KeyCode::KeyT
@@ -4796,7 +5448,10 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
-                let searchable = matches!(game.screen, Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_));
+                let searchable = matches!(
+                    game.screen,
+                    Screen::Inventory | Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_)
+                );
                 if game.search_focus && searchable && event.state.is_pressed() {
                     match event.physical_key {
                         PhysicalKey::Code(KeyCode::Backspace) => {
@@ -4877,9 +5532,7 @@ impl ApplicationHandler for App {
                             let reg = game.reg.clone();
                             let found = game.inventory.slots[..HOTBAR_SLOTS]
                                 .iter()
-                                .position(|s| {
-                                    s.map(|s| reg.item(s.item).places) == Some(Some(b))
-                                });
+                                .position(|s| s.map(|s| reg.item(s.item).places) == Some(Some(b)));
                             if let Some(i) = found {
                                 game.hotbar_sel = i;
                             }
@@ -5015,7 +5668,10 @@ fn run_headless_server(world_name: &str) {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if let Some(i) = args.iter().position(|a| a == "--server") {
-        let world = args.get(i + 1).cloned().unwrap_or_else(|| "world1".to_string());
+        let world = args
+            .get(i + 1)
+            .cloned()
+            .unwrap_or_else(|| "world1".to_string());
         run_headless_server(&world);
         return;
     }
