@@ -58,6 +58,24 @@ pub struct BlockDef {
     pub bonus_drop: Option<(ItemId, f32)>,
     /// Archaeology: (loot table, block it becomes) when brushed.
     pub brush: Option<(String, BlockId)>,
+    /// Per-channel emission (r,g,b), each 0..15. The brightest channel equals
+    /// `light_emit`, so a colored light keeps its intensity; the dimmer
+    /// channels fall off sooner, warming/cooling the glow with distance.
+    pub light_rgb: [u8; 3],
+}
+
+/// Resolve a block's per-channel emission from its level and optional color.
+/// The color is hue-normalized so the brightest channel always reaches the
+/// full level (preserving the scalar light contract the world/tests rely on).
+fn resolve_light_rgb(level: u8, color: Option<[f32; 3]>) -> [u8; 3] {
+    match color {
+        None => [level, level, level],
+        Some(c) => {
+            let m = c[0].max(c[1]).max(c[2]).max(1e-3);
+            let ch = |v: f32| ((level as f32) * (v / m).clamp(0.0, 1.0)).round() as u8;
+            [ch(c[0]), ch(c[1]), ch(c[2])]
+        }
+    }
 }
 
 pub const NUTRIENTS: [&str; 5] = ["grain", "vegetable", "fruit", "fungi", "protein"];
@@ -482,6 +500,10 @@ struct BlockToml {
     bonus_drop: Option<BonusDropToml>,
     #[serde(default)]
     brush: Option<BrushToml>,
+    /// Optional glow color (r,g,b, each 0..1); brightest channel scales to
+    /// `light`. Omit for white light.
+    #[serde(default)]
+    light_color: Option<[f32; 3]>,
     /// Register an item form for placing (default true).
     #[serde(default = "yes")]
     item: bool,
@@ -1048,6 +1070,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         sapling: None,
         bonus_drop: None,
         brush: None,
+        light_rgb: [0, 0, 0],
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
     reg.blocks.push(air);
@@ -1177,6 +1200,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 sapling: b.sapling.as_ref().map(|t| t.tree.clone()),
                 bonus_drop: None,
                 brush: None,
+                light_rgb: resolve_light_rgb(b.light.min(15), b.light_color),
             });
             reg.block_by_name.insert(full.clone(), id);
             if let Some(bd) = &b.bonus_drop {
@@ -1418,6 +1442,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         sapling: None,
         bonus_drop: None,
         brush: None,
+        light_rgb: [0, 0, 0],
     });
     reg.block_by_name.insert("base:unknown".into(), unk);
     reg.unknown_block = unk;

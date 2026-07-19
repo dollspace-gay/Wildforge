@@ -136,7 +136,8 @@ impl Projectile {
                     verts.push(Vertex {
                         pos: [self.pos.x + dx * o, self.pos.y + y, self.pos.z + dz * o],
                         uv: [u, v],
-                        light: 1.0, // bolts glow faintly
+                        normal: [0.0, 0.0, 0.0],
+                        light: [1.0; 3], // bolts glow faintly
                         sky: 1.0,
                     });
                 }
@@ -593,13 +594,13 @@ impl Mob {
     pub fn emit(
         &self,
         reg: &Registry,
-        lum: (f32, f32),
+        lum: ([f32; 3], f32),
         verts: &mut Vec<Vertex>,
         idx: &mut Vec<u32>,
     ) {
         let def = &reg.animals[self.species];
         // Emissive wardens are their own lantern.
-        let lum = if def.emissive { (1.0, lum.1) } else { lum };
+        let lum = if def.emissive { ([1.0; 3], lum.1) } else { lum };
         // Models face -Z; motion forward is (sin yaw, cos yaw) = +Z at 0,
         // so render rotated by yaw + PI to keep the head leading.
         let (syaw, cyaw) = (self.yaw + std::f32::consts::PI).sin_cos();
@@ -677,7 +678,12 @@ impl Mob {
                             tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                             ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                         ],
-                        light: (shade * lum.0).min(2.0),
+                        normal: [0.0, 0.0, 0.0],
+                        light: [
+                            (shade * lum.0[0]).min(2.0),
+                            (shade * lum.0[1]).min(2.0),
+                            (shade * lum.0[2]).min(2.0),
+                        ],
                         sky: (shade * lum.1).min(2.0),
                     });
                 }
@@ -694,7 +700,7 @@ pub fn emit_humanoid(
     yaw: f32,
     tile: u16,
     face: u16,
-    lum: (f32, f32),
+    lum: ([f32; 3], f32),
     verts: &mut Vec<Vertex>,
     idx: &mut Vec<u32>,
 ) {
@@ -735,7 +741,8 @@ pub fn emit_humanoid(
                         tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                         ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                     ],
-                    light: shade * lum.0,
+                    normal: [0.0, 0.0, 0.0],
+                    light: [shade * lum.0[0], shade * lum.0[1], shade * lum.0[2]],
                     sky: shade * lum.1,
                 });
             }

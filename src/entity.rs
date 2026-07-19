@@ -76,7 +76,7 @@ impl ItemEntity {
     pub fn emit(
         &self,
         reg: &Registry,
-        lum: (f32, f32),
+        lum: ([f32; 3], f32),
         verts: &mut Vec<Vertex>,
         idx: &mut Vec<u32>,
     ) {
@@ -118,7 +118,8 @@ impl ItemEntity {
                         tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                         ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                     ],
-                    light: shade * lum.0,
+                    normal: [0.0, 0.0, 0.0],
+                    light: [shade * lum.0[0], shade * lum.0[1], shade * lum.0[2]],
                     sky: shade * lum.1,
                 });
             }
@@ -131,7 +132,7 @@ impl ItemEntity {
     fn emit_sprite(
         &self,
         reg: &Registry,
-        lum: (f32, f32),
+        lum: ([f32; 3], f32),
         verts: &mut Vec<Vertex>,
         idx: &mut Vec<u32>,
     ) {
@@ -170,7 +171,8 @@ impl ItemEntity {
                     verts.push(Vertex {
                         pos: [c.x + dx * o, c.y + y + 0.5 * h, c.z + dz * o],
                         uv: [u, v],
-                        light: 0.95 * lum.0,
+                        normal: [0.0, 0.0, 0.0],
+                        light: [0.95 * lum.0[0], 0.95 * lum.0[1], 0.95 * lum.0[2]],
                         sky: 0.95 * lum.1,
                     });
                 }
@@ -215,7 +217,8 @@ pub fn emit_crack(
                     tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                     ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                 ],
-                light: 1.0,
+                normal: [0.0, 0.0, 0.0],
+                light: [1.0; 3],
                 sky: 1.0,
             });
         }

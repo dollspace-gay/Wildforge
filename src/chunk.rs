@@ -10,8 +10,9 @@ pub const SEA_LEVEL: i32 = 64;
 pub struct Chunk {
     /// Indexed [x][z][y] flattened: (x * CHUNK_Z + z) * CHUNK_Y + y
     blocks: Vec<u16>,
-    /// Torch/emitter light 0..15, same indexing. Derived — never saved.
-    light_block: Vec<u8>,
+    /// Torch/emitter light per channel (r,g,b), each 0..15, same indexing.
+    /// Derived — never saved.
+    light_block: Vec<[u8; 3]>,
     /// Sky light 0..15, scaled by the daylight uniform at render time.
     light_sky: Vec<u8>,
     pub dirty: bool,    // needs remesh
@@ -23,7 +24,7 @@ impl Chunk {
         let n = CHUNK_X * CHUNK_Y * CHUNK_Z;
         Chunk {
             blocks: vec![0; n],
-            light_block: vec![0; n],
+            light_block: vec![[0; 3]; n],
             light_sky: vec![0; n],
             dirty: true,
             modified: false,
@@ -35,18 +36,27 @@ impl Chunk {
         (x * CHUNK_Z + z) * CHUNK_Y + y
     }
 
+    /// Per-channel block light (r,g,b) and sky light at a cell.
     #[inline]
-    pub fn light(&self, x: usize, y: usize, z: usize) -> (u8, u8) {
+    pub fn light(&self, x: usize, y: usize, z: usize) -> ([u8; 3], u8) {
         let i = Self::idx(x, y, z);
         (self.light_block[i], self.light_sky[i])
     }
 
+    /// Scalar block-light intensity (brightest channel) and sky light — the
+    /// value gameplay/spawn logic and light tests read.
     #[inline]
-    pub fn light_raw_mut(&mut self) -> (&mut [u8], &mut [u8]) {
+    pub fn light_intensity(&self, x: usize, y: usize, z: usize) -> (u8, u8) {
+        let i = Self::idx(x, y, z);
+        let c = self.light_block[i];
+        (c[0].max(c[1]).max(c[2]), self.light_sky[i])
+    }
+
+    pub fn light_raw_mut(&mut self) -> (&mut [[u8; 3]], &mut [u8]) {
         (&mut self.light_block, &mut self.light_sky)
     }
 
-    pub fn light_raw(&self) -> (&[u8], &[u8]) {
+    pub fn light_raw(&self) -> (&[[u8; 3]], &[u8]) {
         (&self.light_block, &self.light_sky)
     }
 

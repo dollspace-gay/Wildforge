@@ -715,6 +715,14 @@ impl Game {
         {
             self.server.time_of_day = t.fract();
         }
+        // Dev: force camera look ("yaw,pitch" in radians) for framed captures.
+        if let Ok(l) = std::env::var("WILDFORGE_LOOK")
+            && let Some((y, p)) = l.split_once(',')
+            && let (Ok(y), Ok(p)) = (y.trim().parse::<f32>(), p.trim().parse::<f32>())
+        {
+            self.camera.yaw = y;
+            self.camera.pitch = p;
+        }
         // Dev: a ring of torches near spawn (lighting verification).
         if std::env::var("WILDFORGE_DEMO_TORCH").is_ok()
             && let Some(torch) = self.reg.block_id("base:torch")
@@ -723,6 +731,76 @@ impl Game {
                 let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
                 let y = self.server.world.surface_height(x, z);
                 self.server.world.set_block(x, y + 1, z, torch);
+            }
+        }
+        // Dev: two pillars flanked by a blue and a red lamp — colored-shadow
+        // test (each pillar should cast a blue shadow away from the blue lamp
+        // and a red one away from the red lamp, purple where both reach).
+        if std::env::var("WILDFORGE_DEMO_COLORSHADOW").is_ok() {
+            let blue = self.reg.block_id("base:blue_lamp");
+            let red = self.reg.block_id("base:red_lamp");
+            let stone = self.reg.block_id("base:cobblestone");
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32 + 4;
+            let y = self.server.world.surface_height(bx, bz);
+            if let Some(stone) = stone {
+                // A neutral grey floor reads colored light far better than grass.
+                for dx in -8..=8 {
+                    for dz in -6..=8 {
+                        self.server.world.set_block(bx + dx, y, bz + dz, stone);
+                    }
+                }
+                // Two pillars as occluders.
+                for px in [-2i32, 2] {
+                    for h in 1..=3 {
+                        self.server.world.set_block(bx + px, y + h, bz, stone);
+                    }
+                }
+            }
+            // Low colored lamps to either side so shadows rake across the floor.
+            if let Some(b) = blue {
+                self.server.world.set_block(bx - 5, y + 2, bz, b);
+            }
+            if let Some(r) = red {
+                self.server.world.set_block(bx + 5, y + 2, bz, r);
+            }
+        }
+        // Dev: a flat water pool ahead of spawn (specular-glint verification).
+        if std::env::var("WILDFORGE_DEMO_POOL").is_ok()
+            && let Some(water) = self.reg.block_id("base:water")
+        {
+            let cx = spawn.x as i32;
+            let cz = spawn.z as i32 + 10;
+            let y = self.server.world.surface_height(cx, cz);
+            for dx in -8..=8 {
+                for dz in -8..=8 {
+                    self.server.world.set_block(cx + dx, y, cz + dz, water);
+                }
+            }
+        }
+        // Dev: a warm torch and a red ruby block side by side (colored-light
+        // verification — pools of warm and red that blend where they meet).
+        if std::env::var("WILDFORGE_DEMO_COLORLIGHT").is_ok() {
+            let place = |w: &mut World, name: &str, dx: i32, dz: i32| {
+                if let Some(b) = w.reg.block_id(name) {
+                    let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
+                    let y = w.surface_height(x, z);
+                    w.set_block(x, y + 1, z, b);
+                }
+            };
+            place(&mut self.server.world, "base:torch", -2, 5);
+            place(&mut self.server.world, "gems:ruby_block", 2, 5);
+        }
+        // Dev: a few tall pillars near spawn (shadow-casting verification).
+        if std::env::var("WILDFORGE_DEMO_PILLARS").is_ok()
+            && let Some(stone) = self.reg.block_id("base:cobblestone")
+        {
+            for (dx, dz, h) in [(4, 2, 6), (7, -3, 8), (-2, 6, 5), (10, 4, 7)] {
+                let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
+                let base = self.server.world.surface_height(x, z);
+                for i in 1..=h {
+                    self.server.world.set_block(x, base + i, z, stone);
+                }
             }
         }
         // Dev: WILDFORGE_IRE=N forces the wild's ire (spawn testing).
@@ -2787,7 +2865,8 @@ impl Game {
                             tx as f32 * ts + inset + uu * (ts - 2.0 * inset),
                             ty as f32 * ts + inset + vv * (ts - 2.0 * inset),
                         ],
-                        light: shade * lum.0,
+                        normal: [0.0, 0.0, 0.0],
+                        light: [shade * lum.0, shade * lum.0, shade * lum.0],
                         sky: shade * lum.1,
                     });
                 }
@@ -2866,7 +2945,8 @@ impl Game {
                         verts.push(mesher::Vertex {
                             pos: [wp.x, wp.y, wp.z],
                             uv: [uu, vv],
-                            light: 0.95 * lum.0,
+                            normal: [0.0, 0.0, 0.0],
+                            light: [0.95 * lum.0, 0.95 * lum.0, 0.95 * lum.0],
                             sky: 0.95 * lum.1,
                         });
                     }
@@ -3125,6 +3205,23 @@ impl Game {
             night_sky[2] + (day_sky[2] - night_sky[2]) * f,
         ];
 
+        // Sun for directional lighting. The sun arcs east->west over the day
+        // (noon at time 0.25); we keep it a touch above the horizon while up so
+        // shadows never degenerate. Warm direct light, cool sky-ambient fill,
+        // both faded by `daylight` so night is lit only by the moonlit floor
+        // and torches.
+        let ang = self.server.time_of_day * std::f32::consts::TAU;
+        let elev = ang.sin(); // 1 at noon, -1 at midnight
+        let horiz = ang.cos(); // +1 dawn -> 0 noon -> -1 dusk
+        let sun_dir = Vec3::new(horiz * 0.8, elev.max(0.05) + 0.15, 0.45).normalize();
+        let sun_vis = elev.clamp(0.0, 1.0).sqrt(); // 0 below horizon
+        // Golden hour: the sun's hue warms from near-white at noon to deep
+        // orange as it nears the horizon.
+        let noon = Vec3::new(1.0, 0.96, 0.86);
+        let horizon = Vec3::new(1.0, 0.54, 0.26);
+        let sun_col = horizon.lerp(noon, elev.clamp(0.0, 1.0).sqrt()) * (0.64 * sun_vis);
+        let amb_col = Vec3::new(0.60, 0.68, 0.82) * (0.42 * daylight);
+
         let playing = self.screen == Screen::Playing;
         let outline = if playing {
             raycast::raycast(
@@ -3143,13 +3240,16 @@ impl Game {
         // World-space extras: item entities + mining crack overlay.
         let mut entity_verts = Vec::new();
         let mut entity_idx = Vec::new();
-        let sample = |w: &World, p: Vec3| -> (f32, f32) {
-            let (b, s) = w.light_at(
+        let sample = |w: &World, p: Vec3| -> ([f32; 3], f32) {
+            let (b, s) = w.light_rgb_at(
                 p.x.floor() as i32,
                 (p.y + 0.4).floor() as i32,
                 p.z.floor() as i32,
             );
-            (b as f32 / 15.0, s as f32 / 15.0)
+            (
+                [b[0] as f32 / 15.0, b[1] as f32 / 15.0, b[2] as f32 / 15.0],
+                s as f32 / 15.0,
+            )
         };
         for it in &self.items {
             let lum = sample(&self.server.world, it.pos);
@@ -3211,6 +3311,9 @@ impl Game {
             fog_dist: fog,
             underwater,
             daylight,
+            sun_dir,
+            sun_col,
+            amb_col,
             outline,
             entity_verts: &entity_verts,
             entity_idx: &entity_idx,
