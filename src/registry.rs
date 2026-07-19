@@ -1121,6 +1121,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
 
     // Pass 1: register blocks and items (unresolved drops/recipes yet).
     struct PendingDrop {
+        modid: String,
         block: usize,
         rule: String,
         count: u32,
@@ -1210,6 +1211,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 pending_brush.push((raw.info.id.clone(), id.0 as usize, br.clone()));
             }
             pending_drops.push(PendingDrop {
+                modid: raw.info.id.clone(),
                 block: id.0 as usize,
                 rule: b.drops.clone().unwrap_or_else(|| {
                     if is_fluid {
@@ -1532,7 +1534,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 let name = reg.blocks[pd.block].name.clone();
                 reg.item_id(&name).map(|i| (i, pd.count))
             }
-            other => reg.item_id(other).map(|i| (i, pd.count)),
+            // Bare names qualify with the declaring mod, like every
+            // other cross-reference field.
+            other => lookup_item(&reg, &pd.modid, other).map(|i| (i, pd.count)),
         };
         reg.blocks[pd.block].drops = d;
     }

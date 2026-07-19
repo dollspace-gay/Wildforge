@@ -3715,6 +3715,246 @@ fn net_protocol_round_trips() {
     }
 }
 
+/// The modding guide is executable: every `# mods/meadow/<file>` code
+/// block in mods/README.md is extracted verbatim, written to a mods
+/// dir, loaded, and its documented behavior asserted. Docs that drift
+/// from the code fail here.
+#[test]
+fn mods_readme_example_mod_loads_and_works() {
+    use crate::registry::Ingredient;
+    let doc = std::fs::read_to_string("mods/README.md").expect("mods/README.md exists");
+    let root = tmp_dir("readme-mod");
+    let dir = root.join("meadow");
+    std::fs::create_dir_all(dir.join("textures")).unwrap();
+
+    // Extract fenced blocks labeled `# mods/meadow/<file>` (toml) or
+    // `// mods/meadow/<file>` (rhai).
+    let mut found = 0;
+    for chunk in doc.split("```").skip(1).step_by(2) {
+        let body = chunk.splitn(2, '\n').nth(1).unwrap_or("");
+        let first = body.lines().next().unwrap_or("");
+        let label = first
+            .trim_start_matches('#')
+            .trim_start_matches("//")
+            .trim();
+        if let Some(rel) = label.strip_prefix("mods/meadow/") {
+            std::fs::write(dir.join(rel), body).unwrap();
+            found += 1;
+        }
+    }
+    assert!(
+        found >= 7,
+        "doc ships a complete example, found {found} files"
+    );
+
+    // The doc's example references these PNGs; any size works.
+    for tex in [
+        "sunstone.png",
+        "sunstone_ore.png",
+        "sun_shard.png",
+        "hen.png",
+        "hen_face.png",
+    ] {
+        let mut png = Vec::new();
+        {
+            let mut enc = png::Encoder::new(&mut png, 4, 4);
+            enc.set_color(png::ColorType::Rgba);
+            enc.set_depth(png::BitDepth::Eight);
+            enc.write_header()
+                .unwrap()
+                .write_image_data(&[240, 200, 60, 255].repeat(16))
+                .unwrap();
+        }
+        std::fs::write(dir.join("textures").join(tex), png).unwrap();
+    }
+
+    let reg = Arc::new(registry::load(&root));
+    let meadow = reg
+        .mods
+        .iter()
+        .find(|m| m.id == "meadow")
+        .expect("meadow loads");
+    assert!(meadow.error.is_none(), "meadow error: {:?}", meadow.error);
+    assert!(meadow.has_script, "doc example ships a script");
+
+    // Blocks: qualified names, light, tool gating, cross-mod drops.
+    let sunstone = reg.block_id("meadow:sunstone").expect("block qualified");
+    let d = reg.block(sunstone);
+    assert_eq!(d.light_emit, 9, "light = 9 as documented");
+    assert_eq!(
+        d.light_rgb.iter().copied().max(),
+        Some(9),
+        "light_color is hue-normalized: brightest channel = light level"
+    );
+    assert!(
+        d.light_rgb[0] > d.light_rgb[2],
+        "warm tint: red channel outshines blue"
+    );
+    assert!(d.requires_tool && d.tool == Some(crate::registry::ToolKind::Pickaxe));
+    let ore = reg.block_id("meadow:sunstone_ore").unwrap();
+    let shard = reg.item_id("meadow:sun_shard").expect("item registered");
+    assert_eq!(
+        reg.block(ore).drops,
+        Some((shard, 1)),
+        "bare drop name auto-qualifies"
+    );
+    assert_eq!(reg.block(ore).min_tier, 1);
+
+    // Items: @builtin icon + food defaults.
+    let bread = reg.item_id("meadow:honey_bread").unwrap();
+    let f = reg.item(bread).food.as_ref().expect("food block parses");
+    assert_eq!(f.hunger, 7.0);
+    assert_eq!(f.eat_time, 1.5, "eat_time defaults to 1.5 as documented");
+    assert_eq!(reg.item(bread).max_stack, 64, "max_stack defaults to 64");
+
+    // Recipes: 2x2 shard square crafts a sunstone (matched in-grid).
+    let stone_item = reg.item_id("meadow:sunstone").unwrap();
+    let mut grid: [Option<ItemStack>; 4] = [Some(ItemStack::new(&reg, shard, 1)); 4];
+    let r = crate::crafting::match_recipe(&reg, &grid, 2).expect("2x2 recipe matches");
+    assert_eq!(r.output, stone_item);
+    grid[3] = None;
+    assert!(
+        crate::crafting::match_recipe(&reg, &grid, 2).is_none(),
+        "shape is exact"
+    );
+
+    // Tag recipes: #shiny qualifies to meadow:shiny and accepts both members.
+    let tag = reg.tags.get("meadow:shiny").expect("tag qualified");
+    let copper = reg.item_id("base:copper_ingot").unwrap();
+    assert!(
+        tag.contains(&shard) && tag.contains(&copper),
+        "tag lists both items"
+    );
+    let tag_recipe = reg
+        .recipes
+        .iter()
+        .find(|r| r.output == shard && r.count == 4)
+        .expect("tag recipe registered");
+    assert!(
+        tag_recipe
+            .pattern
+            .iter()
+            .flatten()
+            .any(|i| matches!(i, Ingredient::Any(l) if l.contains(&copper))),
+        "#shiny resolved to an any-of ingredient"
+    );
+
+    // Smelt + fuel with documented defaults.
+    let smelt = reg.smelt_for(stone_item).expect("smelt registered");
+    assert_eq!(smelt.output, shard);
+    assert_eq!(smelt.time, 6.0);
+    assert!(
+        reg.fuels
+            .iter()
+            .any(|(i, burn, speed)| i.matches(shard) && *burn == 20.0 && *speed == 1.5),
+        "fuel with burn/speed as documented"
+    );
+
+    // Ore feature generates inside the documented band.
+    let feat = reg
+        .ores
+        .iter()
+        .find(|o| o.block == ore)
+        .expect("ore feature registered");
+    assert_eq!((feat.y_min, feat.y_max), (10, 40));
+    let mut w = World::new(9, root.join("world"), reg.clone());
+    let mut hits = 0;
+    'scan: for cx in 0..6 {
+        for cz in 0..6 {
+            w.ensure_chunk(ChunkPos { x: cx, z: cz });
+            let c = &w.chunks[&ChunkPos { x: cx, z: cz }];
+            for x in 0..16 {
+                for z in 0..16 {
+                    for y in 4..48 {
+                        if c.get(x, y, z) == ore {
+                            assert!((10..=45).contains(&(y as i32)), "vein walks stay near band");
+                            hits += 1;
+                            if hits > 3 {
+                                break 'scan;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(hits > 0, "sunstone ore generates in the world");
+
+    // Animal: model boxes, breed food, drops.
+    let hen = reg
+        .animals
+        .iter()
+        .find(|a| a.name == "meadow:meadow_hen")
+        .expect("animal registered");
+    assert_eq!(hen.health, 6.0);
+    assert_eq!(
+        hen.breed_food,
+        reg.item_id("base:wheat"),
+        "breed food resolves cross-mod"
+    );
+    assert!(
+        hen.model.iter().any(|b| b.name == "leg"),
+        "model boxes parse"
+    );
+    assert!(hen.biomes.contains(&"plains".to_string()));
+
+    // Structure + loot table, qualified and linked.
+    let shrine = reg
+        .structures
+        .iter()
+        .find(|s| s.name == "meadow:sun_shrine")
+        .expect("structure registered");
+    assert_eq!(shrine.loot.as_deref(), Some("meadow:shrine_loot"));
+    assert!(
+        shrine.palette.values().any(|b| *b == sunstone),
+        "palette maps to mod block"
+    );
+    let loot = reg
+        .loots
+        .get("meadow:shrine_loot")
+        .expect("loot table registered");
+    assert!(loot.iter().any(|e| e.item == shard && e.count == (1, 3)));
+    assert!(
+        loot.iter().any(|e| e.durability_frac == Some(0.4)),
+        "worn-tool loot entry parses"
+    );
+
+    // Script: events fire, storage counts, sounds queue.
+    let mut host = crate::script::ScriptHost::new();
+    host.load_mods(&[("meadow".to_string(), dir.clone())]);
+    host.dispatch(&w, "on_world_start", ("qa".to_string(),));
+    let cmds = host.take_cmds();
+    assert!(
+        cmds.iter()
+            .any(|c| matches!(c, crate::script::Cmd::Hud(m) if m.contains("meadow"))),
+        "on_world_start toasts"
+    );
+    for _ in 0..2 {
+        host.dispatch(
+            &w,
+            "on_block_break",
+            (1i64, 2i64, 3i64, "meadow:sunstone_ore".to_string()),
+        );
+    }
+    let cmds = host.take_cmds();
+    assert!(
+        cmds.iter()
+            .any(|c| matches!(c, crate::script::Cmd::Hud(m) if m.contains("2"))),
+        "storage_get/set counts across events"
+    );
+    assert!(
+        cmds.iter()
+            .any(|c| matches!(c, crate::script::Cmd::Sound(s) if s == "craft")),
+        "play_sound queues"
+    );
+    // Breaking anything else stays allowed (handler returns true).
+    assert!(host.dispatch(
+        &w,
+        "on_block_break",
+        (0i64, 0i64, 0i64, "base:dirt".to_string())
+    ));
+}
+
 /// The whole content graph, audited: recipes well-formed, tables and
 /// palettes resolve, and every survival item is actually obtainable
 /// (dropped, harvested, looted, crafted, or smelted from things that

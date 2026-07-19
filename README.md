@@ -55,21 +55,28 @@ world with a new seed.
 
 Wildforge has a built-in mod system — vanilla content itself is the `base`
 mod, registered through the same TOML pipeline external mods use
-(see `base/*.toml` for the reference). Design doc: `docs/modding-plan.md`.
+(see `base/*.toml` for the reference). **The full guide lives in
+[`mods/README.md`](mods/README.md)** — and it's executable: the guide's
+worked example is extracted verbatim by the test suite, loaded, and
+every claim asserted, so the docs can't drift from the code.
 
 - **Data mods** (no code): drop a folder in `mods/` with `mod.toml`
-  (id/name/version/depends), `blocks.toml`, `items.toml`, `recipes.toml`,
-  `features.toml` (ore veins), `tags.toml` (item groups — recipes accept
-  `"#base:planks"`-style tag ingredients, and mods can extend shared tags
-  so e.g. a new wood's planks work in every plank recipe), and PNG tiles in
-  `textures/` (packed into the atlas at load; `@name` references built-in
-  procedural tiles)
+  (id/name/version/depends) and any of `blocks.toml`, `items.toml`,
+  `recipes.toml` (crafting + `[[smelt]]`/`[[fuel]]`), `tags.toml`
+  (item groups — recipes accept `"#base:planks"`-style tag ingredients,
+  and mods can extend shared tags so a new wood's planks work in every
+  plank recipe), `features.toml` (ore veins), `animals.toml` (creatures
+  with box models — wildlife or wardens), `structures.toml` (worldgen
+  templates + loot tables), `aliases.toml` (lossless renames), and PNG
+  tiles in `textures/` (packed into the atlas at load; `@name`
+  references built-in procedural tiles)
 - **Script mods**: add `main.rhai` with event handlers —
-  `on_world_start`, `on_block_break/place` (return `false` to cancel),
-  `on_interact`, `on_craft`, `on_player_respawn`, `on_tick`.
-  Host API: `get_block`/`set_block`, `give`, `hud_message`, `play_sound`,
-  `surface_height`, `log`, and `storage_get`/`storage_set` — a per-mod KV
-  store that survives hot reloads and is saved with the world.
+  `on_world_start`, `on_tick`, `on_block_break/place` and `on_interact`
+  (return `false` to cancel), `on_craft`, `on_animal_killed`,
+  `on_player_respawn`, `on_mode_change`. Host API: `get_block` /
+  `set_block`, `give`, `hud_message`, `play_sound`, `spawn_animal`,
+  `surface_height`, `log`, and `storage_get`/`storage_set` — a per-mod
+  KV store that survives hot reloads and is saved with the world.
   Scripts are sandboxed (no filesystem/network, per-event op limits).
 - **Hot reload**: edit anything under `mods/` while playing — the game
   repacks the registry/atlas, remaps the live world, and recompiles scripts
@@ -78,10 +85,11 @@ mod, registered through the same TOML pipeline external mods use
 - **Save safety**: worlds store an id palette; removing a mod turns its
   blocks into placeholders instead of corrupting the world, and pre-mod
   (v1) worlds migrate automatically.
+- **Multiplayer**: joining a host with different mods streams the
+  host's data and textures to you automatically — nothing to install.
+  Scripts never leave the host.
 - Ships with `mods/gems` — a worked example adding deep ruby ore (tier-2
-  gated), items, recipes, and a scripted milestone counter. Blocks can
-  declare `interaction`, `min_tier`, and mods get `[[smelt]]`/`[[fuel]]`
-  entries plus `aliases.toml` for lossless renames.
+  gated), items, recipes, and a scripted milestone counter.
 
 ## Iron, steel & the ruins of the takers
 
