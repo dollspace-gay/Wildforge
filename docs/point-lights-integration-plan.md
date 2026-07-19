@@ -1,0 +1,160 @@
+# Point lights in the game — integration plan
+
+Drafted 2026-07-19, following the merge of point shadows M1–M2
+(docs/point-shadows-plan.md, PR #2). That work proved the machinery:
+colored point lights with hard line-of-sight shadows via distance
+cube maps. This plan wires it into the actual game. Decisions herein
+settled with dollspace: **held torches cast real shadows**, the
+default look is **stark**, and **emberkin glow ships in this pass**.
+
+## The governing rule: the flood-fill is the sim's truth
+
+Every gameplay read of light — mob spawn checks, snow melt, crop and
+greenhouse rules — goes through the flood-fill, and keeps doing so.
+Point lights are presentation, same contract as the juice layer: a
+headless server and a guest sim identically with the renderer
+deleted. Consequences:
+
+- **No sim-side exclusion.** The original M4 idea ("exclude promoted
+  lights from the flood-fill") would change `light_at` and therefore
+  gameplay. We don't do it.
+- **Render-side suppression instead**: for each promoted light the
+  chunk shader subtracts an *estimate* of its flood contribution
+  from the rendered torch term: `est = max(0, 1 − d/range) · color`,
+  clamped so the term never goes negative. In open line of sight the
+  estimate cancels the flood glow and the punchy direct term takes
+  over. Behind a wall it over-subtracts (the real flood wrapped the
+  corner and is weaker than the straight-line estimate), which is
+  exactly the goal: the shadow side falls toward ambient, keeping
+  only a dim wrap that reads as bounce light. Hard shadows finally
+  read in a real torch-lit room — and the sim never notices.
+- A held torch does **not** suppress mob spawns. Placed light is
+  safety; carried light is sight. (Classic Minecraft rule, and it
+  keeps "being followed by something in the dark" possible.)
+
+## The roster (who gets a real light)
+
+No new block data: anything with `light_emit`/`light_color` is a
+candidate, so mod blocks join automatically.
+
+1. **Static emitters** — torches, lit bloomeries, lit kilns, burning
+   furnaces, smoldering clamps. Promoted by proximity; cube maps
+   cached (below).
+2. **The held torch** — the flagship. Holding any item that places a
+   light-emitting block (or any item with a new optional
+   `glow = [r, g, b]` ItemDef field, e.g. a raw ember) carries a
+   warm light with **real shadows**: your own body of light sweeping
+   a cave as you turn is the point of the whole system. Anchored at
+   the camera, offset slightly toward the viewmodel hand so the beam
+   direction feels like it comes from the torch.
+3. **Emberkin** (and any future `emissive` hostile) — a
+   shadow-casting glow at the mob's position. Firelight sweeping
+   around a corner announces the creature before you see it — the
+   visual twin of the presence audio cue. Wildlife stays unlit.
+
+## Budget, promotion, caching
+
+- `MAX_PT_LIGHTS = 8` total: up to **5 static** + **up to 3
+  dynamic** (1 held + 2 nearest glowing mobs).
+- **Promotion**: each frame, gather candidate emitters within ~48
+  blocks of the camera (from per-chunk emitter lists the mesher
+  already walks — collect `(pos, id)` of emitting blocks during
+  meshing and store them on the chunk). Score by
+  `intensity / (1 + d)`; take the top N. **Hysteresis**: an
+  incumbent keeps its slot unless a challenger beats its score by
+  25%, so slots don't flicker at range boundaries.
+- **Static cube-map cache** (this is what makes it affordable): each
+  slot remembers `(light_pos, revision)`. A cached cube re-renders
+  only when (a) the light is newly promoted, or (b) a chunk within
+  the light's range re-uploads its mesh — chunk re-upload already
+  happens for every visible edit, so invalidation needs no new
+  plumbing in the world code. Steady-state cost of a torch-lit
+  smithy: zero shadow passes per frame.
+- **Dynamic lights** re-render their 6 faces when they move or when
+  an in-range chunk changes. A held torch standing still is cached;
+  walking costs 6 small range-culled passes — measured, not feared
+  (the sun's 2048² pass is bigger than all six 512² faces).
+- Fewer than 8 active lights = zeroed slots, shader loop already
+  handles it.
+
+## Look and feel
+
+- **Stark by default.** Ambient floor low (≈0.04 at night); caves
+  and shadowed interiors are genuinely dark, torches genuinely
+  matter. The shader's hard `0.03` floor becomes the config value.
+- **Settings** (settings screen, persisted in config.txt):
+  - `DYNAMIC LIGHTS: OFF / ON / +SHADOWS` — OFF renders no point
+    lights (flood-fill only, today's look), ON gives shadowless
+    direct light (cheap GPUs), +SHADOWS is the full system
+    (default).
+  - `DARKNESS: STARK / SOFT` — the ambient floor pair
+    (0.04 / 0.12). `WILDFORGE_AMBIENT` still overrides for tests.
+- **Flame flicker**: ±8% intensity on flame-colored lights
+  (torch/bloomery/kiln/emberkin), slow noise, not strobing; also
+  gently jitters the suppression estimate so the pool breathes. Not
+  gated by the juice flag — lighting is core rendering like the sun.
+- Colors from `light_color` × an intensity per emit level (14 → ~1.8
+  so a torch blares at arm's length and dies by ~16 blocks).
+
+## Entities face the light
+
+Entity vertices (items, mobs, players, falling blocks) currently
+write zero normals, so `N·L` kills every point light on them — a
+deer standing in the beam would render flat-dark against a lit wall.
+Fix: the entity emitters already know their face orientation (cube
+faces, model boxes) — write real normals. Particles keep zero
+normals deliberately (dust motes shouldn't flash). This also gives
+entities directional *sun* shading for free, which they've never
+had — expect the world to look slightly better everywhere.
+
+## Multiplayer
+
+- Nothing crosses the wire for static lights or your own held light
+  (each client promotes and renders locally from its own world copy;
+  guests have the blocks already).
+- Emberkin glow works on guests from the existing mob snapshots.
+- **Stretch**: remote players' held torches need the `Players`
+  snapshot to carry a held item id (protocol bump). Ship last, or
+  defer to the next protocol change — it also unlocks *rendering*
+  the held item on other players' models, which is its own feature.
+
+## Explicitly future (not this plan)
+
+- Stained glass tinting the beam (cube pass is opaque-only, so glass
+  correctly doesn't block light, but colored transmission needs an
+  RGB shadow map — lovely, later).
+- PCF/soft shadows, bloom, screen-space GI (per the original doc).
+- Emissive *texture* regions (lava veins etc.).
+
+## Stages
+
+1. **Emitter lists + promotion + static cache** — mesher collects
+   per-chunk emitters; nearest-N with hysteresis; cube cache with
+   chunk-upload invalidation; flood-suppression term in the shader.
+   Prove: a room with 12 torches renders 0 shadow passes/frame at
+   steady state and the shadows read.
+2. **Held light** — camera-anchored shadow-casting light from the
+   held item (`places → light_emit`, plus `ItemDef.glow`);
+   move/edit-triggered re-render, cached when still.
+3. **Emberkin glow** — 2 nearest emissive hostiles as dynamic
+   casters; flicker for all flame lights.
+4. **Entity normals** — real normals in item/mob/player emitters.
+5. **Settings + stark default** — the two settings rows, ambient
+   floor rewire, config persistence.
+6. **Docs & demos** — `WILDFORGE_DEMO_TORCHROOM` (cached smithy),
+   update README lighting blurb; keep `DEMO_PTLIGHT`/`DEMO_CORNER`.
+
+## Tests
+
+- Promotion: nearest-N scoring and hysteresis (pure function, unit
+  test with synthetic emitter sets).
+- Cache: a static scene renders zero cube passes after warm-up; an
+  edit within range invalidates exactly the lights that cover it
+  (expose a pass counter for tests).
+- Suppression math: estimate never exceeds the flood term's
+  possible contribution; term clamps at zero.
+- Sim purity: `light_at`/spawn/melt behavior identical with
+  DYNAMIC LIGHTS OFF/ON/+SHADOWS (they never read renderer state).
+- Screenshots: torch room hard shadows, held-torch cave sweep,
+  emberkin glow around a corner, STARK vs SOFT floor comparison.
+- Settings roundtrip in config.txt; existing suites green.
