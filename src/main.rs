@@ -4473,6 +4473,27 @@ impl Game {
         // Fellow players, boxy and proud.
         let skin = *atlas::builtin_slots().get("player_skin").unwrap_or(&0);
         let face = *atlas::builtin_slots().get("player_face").unwrap_or(&0);
+        // Dev: a stand-in player a few blocks ahead (model iteration).
+        if std::env::var("WILDFORGE_DEMO_PLAYER").is_ok() && self.in_world {
+            let px = self.player.pos.x.floor() + 0.5;
+            let pz = self.player.pos.z.floor() + 3.5;
+            let py = self
+                .server
+                .world
+                .surface_height(px.floor() as i32, pz.floor() as i32) as f32
+                + 1.0;
+            let at = Vec3::new(px, py, pz);
+            let lum = sample(&self.server.world, at);
+            mobs::emit_humanoid(
+                at,
+                std::f32::consts::PI,
+                skin,
+                face,
+                lum,
+                &mut entity_verts,
+                &mut entity_idx,
+            );
+        }
         if let Some(r) = &self.remote {
             for (_, pos, yaw) in r.players.values() {
                 let lum = sample(&self.server.world, *pos);
