@@ -13,7 +13,7 @@ pub const ATLAS_TILES: u32 = 32;
 /// Atlas slot = row * 16 + col. Rows 0-2 are built-in procedural tiles.
 pub const UNKNOWN_SLOT: u16 = 15;
 pub const CRACK_SLOT: u16 = 16; // stages 16..=19
-pub const FIRST_FREE_SLOT: u16 = 216; // rows 0-13 are built-in tiles
+pub const FIRST_FREE_SLOT: u16 = 240; // built-ins own slots 0-239 (32-wide grid)
 
 /// Built-in procedural tile names usable as `@name` in mod TOML.
 pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
@@ -215,6 +215,7 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("stone_anvil", 212),
         ("steel_bloom", 213),
         ("smith_hammer", 214),
+        ("glass", 216),
         ("unknown", 15),
         ("crack1", 16),
         ("crack2", 17),
@@ -2398,6 +2399,19 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
                 0.9 + h01(px as i32, py as i32, 971) * 0.2,
                 255,
             )
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+
+    // (216) glass: transparent pane with a pale frame and glints.
+    tf(216, &mut |px, py, u, v| {
+        let edge = !(0.06..=0.94).contains(&u) || !(0.06..=0.94).contains(&v);
+        let glint = ((u + v) * 10.0).fract() < 0.12 && u > 0.15 && u < 0.55 && v < 0.6;
+        if edge {
+            rgba([210.0, 224.0, 232.0], speck(px, py, 973, 0.05), 255)
+        } else if glint {
+            [235, 244, 250, 255]
         } else {
             [0, 0, 0, 0]
         }

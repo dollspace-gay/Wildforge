@@ -3776,6 +3776,112 @@ fn atlas_layout_is_slot_stable_at_32() {
     assert!(FIRST_FREE_SLOT as u32 <= ATLAS_TILES * ATLAS_TILES);
 }
 
+// ---------------- glassworks ----------------
+
+#[test]
+fn sand_falls_lands_chains_and_crushes() {
+    let reg = base_reg();
+    let mut w = test_world_with("gw-fall", reg.clone());
+    let sand = reg.block_id("base:sand").unwrap();
+    let plank = reg.block_id("base:planks").unwrap();
+    let my = 120;
+    // The ground it will land on (before we scaffold anything).
+    let gy = w.surface_height(10, 10);
+    // A supported sand column: pull the support and it all comes down.
+    w.set_block(10, my, 10, plank);
+    w.set_block(10, my + 1, 10, sand);
+    w.set_block(10, my + 2, 10, sand);
+    assert!(w.falling.is_empty(), "supported sand stays put");
+    w.set_block(10, my, 10, AIR);
+    assert_eq!(w.falling.len(), 2, "the whole column detaches");
+    assert_eq!(
+        w.get_block(10, my + 1, 10),
+        AIR,
+        "detached cells empty atomically"
+    );
+    for _ in 0..600 {
+        w.tick_falling(1.0 / 30.0);
+    }
+    assert!(w.falling.is_empty(), "everything lands");
+    assert_eq!(
+        w.get_block(10, gy + 1, 10),
+        sand,
+        "first sand rests on ground"
+    );
+    assert_eq!(
+        w.get_block(10, gy + 2, 10),
+        sand,
+        "second stacks on the first"
+    );
+
+    // Placing sand over air drops it immediately.
+    w.set_block(12, my + 3, 12, sand);
+    assert_eq!(
+        w.get_block(12, my + 3, 12),
+        AIR,
+        "unsupported placement detaches"
+    );
+    assert_eq!(w.falling.len(), 1);
+    w.settle_falling();
+    assert!(w.falling.is_empty());
+
+    // A crushed crop pops as its drop.
+    let torch = reg.block_id("base:torch").unwrap();
+    let ty2 = w.surface_height(14, 14);
+    w.set_block(14, ty2 + 1, 14, torch);
+    w.pending_drops.clear();
+    w.set_block(14, ty2 + 6, 14, sand);
+    w.settle_falling();
+    assert_eq!(w.get_block(14, ty2 + 1, 14), sand, "sand took the cell");
+    assert!(
+        w.pending_drops
+            .iter()
+            .any(|(_, st)| Some(st.item) == reg.item_id("base:torch")),
+        "the torch popped as a drop"
+    );
+}
+
+#[test]
+fn glass_smelts_passes_light_and_grows_winter_crops() {
+    let reg = base_reg();
+    let glass = reg.block_id("base:glass").unwrap();
+    // Sand cooks into glass.
+    let smelts = reg.smelts_for(reg.item_id("base:glass").unwrap());
+    assert!(!smelts.is_empty(), "glass smelt registered");
+    assert!(smelts[0].input.matches(reg.item_id("base:sand").unwrap()));
+    assert!(!reg.block(glass).opaque, "glass is see-through");
+    assert!(reg.block(glass).glass, "glass is glazing");
+
+    let mut w = test_world_with("gw-glass", reg.clone());
+    let b = |n: &str| reg.block_id(n).unwrap();
+    let h = w.surface_height(4, 4);
+    // Sky light passes a glass roof (BFS treats it like leaves).
+    w.set_block(4, h + 5, 4, glass);
+    let (_, sl) = w.light_at(4, h + 1, 4);
+    assert_eq!(sl, 15, "sky light passes glass");
+
+    // Winter: glass-roofed crops grow at 0.75x; sky-open twins sleep.
+    w.day = 3 * crate::world::SEASON_DAYS;
+    for x in 0..16 {
+        w.set_block(x, h + 6, 4, b("base:farmland"));
+        w.set_block(x, h + 7, 4, b("base:wheat_seeds"));
+        w.set_block(x, h + 10, 4, glass); // glass roof
+        w.set_block(x, h + 6, 12, b("base:farmland"));
+        w.set_block(x, h + 7, 12, b("base:wheat_seeds")); // open sky
+    }
+    let mut rng = 11u32;
+    for _ in 0..30_000 {
+        w.random_tick(&mut rng);
+    }
+    let grown = |z: i32| {
+        (0..16)
+            .filter(|&x| w.get_block(x, h + 7, z) != b("base:wheat_seeds"))
+            .count()
+    };
+    assert!(grown(4) > 0, "the glasshouse grows in winter");
+    assert_eq!(grown(12), 0, "open sky still sleeps");
+}
+
 // ---------------- steelworks ----------------
 
 /// Build a valid bloomery at (x,y,z)=mouth with core on +X, in air.
@@ -5099,6 +5205,41 @@ fn loopback_join_stream_and_edit() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert!(chatted, "chat reached the host");
+
+    // Gravity over the wire: break sand's support and the guest sees
+    // the tumble (Falling datagrams) and the authoritative landing.
+    let sand = reg.item_id("base:sand").unwrap();
+    let sand_b = reg.block_id("base:sand").unwrap();
+    let sy2 = sim.world.surface_height(11, 8);
+    let plank_b = reg.block_id("base:planks").unwrap();
+    sim.world.set_block(11, sy2 + 3, 8, plank_b);
+    sim.world.set_block(11, sy2 + 4, 8, sand_b);
+    client.send(&C2S::Break {
+        x: 11,
+        y: sy2 + 3,
+        z: 8,
+    });
+    let (mut saw_falling, mut saw_land) = (false, false);
+    for _ in 0..200 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        sim.advance(0.06, &[], &mut Vec::new());
+        for msg in client.poll() {
+            match msg {
+                S2C::Falling(f) if !f.is_empty() => saw_falling = true,
+                S2C::BlockSet {
+                    x: 11, z: 8, id, ..
+                } if id == sand_b.0 => saw_land = true,
+                _ => {}
+            }
+        }
+        if saw_falling && saw_land {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(saw_falling, "the guest watches the sand tumble");
+    assert!(saw_land, "and receives its authoritative landing");
+    let _ = sand;
 
     // The steelworks over the wire: a guest charges and lights a
     // bloomery through the container RPC, then hammers at the anvil.

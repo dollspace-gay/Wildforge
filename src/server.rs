@@ -116,8 +116,9 @@ impl Server {
             self.world.tick_water(512);
         }
 
-        // Machines.
+        // Machines and gravity.
         self.world.tick_entities(dt);
+        self.world.tick_falling(dt);
 
         // Creatures: wildlife, wardens, spawning, projectiles.
         let dl = self.daylight();

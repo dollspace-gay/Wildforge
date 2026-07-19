@@ -19,7 +19,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 pub const GAME_PORT: u16 = 27431;
 pub const BEACON_PORT: u16 = 27430;
 /// Bump when the protocol changes shape.
-pub const PROTOCOL: u32 = 4;
+pub const PROTOCOL: u32 = 5;
 
 // ---------------- protocol ----------------
 
@@ -41,6 +41,12 @@ pub struct MobSnap {
     pub hurt: f32,
     /// "Won't accept food right now" (fed, cooling down, or a juvenile).
     pub fed: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct FallSnap {
+    pub pos: Vec3,
+    pub block: u16,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -180,6 +186,8 @@ pub enum S2C {
     Players(Vec<(u32, Vec3, f32)>),
     Mobs(Vec<MobSnap>),
     Bolts(Vec<BoltSnap>),
+    /// Airborne gravity blocks (sand mid-tumble). Datagram.
+    Falling(Vec<FallSnap>),
     TimeIre {
         time: f32,
         ire: f32,

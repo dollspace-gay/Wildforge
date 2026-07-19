@@ -1208,6 +1208,7 @@ impl Game {
         }
         if self.in_world {
             self.save_player();
+            self.server.world.settle_falling();
             self.server.world.save_modified();
             self.scripts
                 .save_kv(&self.server.world.save_dir_for_saving());
@@ -1534,6 +1535,20 @@ impl Game {
                     r.mob_interval = r.mob_age.clamp(0.03, 0.3);
                     r.mob_age = 0.0;
                 }
+                net::S2C::Falling(snaps) => {
+                    self.server.world.falling = snaps
+                        .into_iter()
+                        .map(|f| world::FallingBlock {
+                            pos: f.pos,
+                            vel: 0.0,
+                            block: r
+                                .block_map
+                                .get(f.block as usize)
+                                .copied()
+                                .unwrap_or(self.reg.unknown_block),
+                        })
+                        .collect();
+                }
                 net::S2C::Bolts(snaps) => {
                     self.server.world.projectiles = snaps
                         .into_iter()
@@ -1790,6 +1805,7 @@ impl Game {
             self.inventory.wear_tool(&reg, self.hotbar_sel);
         }
         self.save_player();
+        self.server.world.settle_falling();
         self.server.world.save_modified();
         self.toast("You camp until dawn. This is home now.".to_string());
         self.sfx(Sfx::Craft);
@@ -1959,6 +1975,7 @@ impl Game {
             .copied()
             .collect();
         if !far.is_empty() {
+            self.server.world.settle_falling();
             self.server.world.save_modified();
             for pos in far {
                 self.server.world.chunks.remove(&pos);
@@ -3687,6 +3704,41 @@ impl Game {
                 );
             }
         }
+        // Airborne sand tumbles as full-size cubes.
+        for f in &self.server.world.falling.clone() {
+            let lum = sample(&self.server.world, f.pos + Vec3::new(0.5, 0.5, 0.5));
+            let d = self.reg.block(f.block);
+            let ts = 1.0 / atlas::ATLAS_TILES as f32;
+            let inset = ts / 32.0;
+            for (face, corners) in mesher::CORNERS.iter().enumerate() {
+                let slot = d.tiles[face];
+                let (tx, ty) = (
+                    slot as u32 % atlas::ATLAS_TILES,
+                    slot as u32 / atlas::ATLAS_TILES,
+                );
+                let base = entity_verts.len() as u32;
+                for c in corners.iter() {
+                    let (uu, vv) = match face {
+                        0 | 1 => (c[2], 1.0 - c[1]),
+                        4 | 5 => (c[0], 1.0 - c[1]),
+                        _ => (c[0], c[2]),
+                    };
+                    let shade = mesher::FACE_SHADE[face].max(0.6);
+                    entity_verts.push(mesher::Vertex {
+                        pos: [f.pos.x + c[0], f.pos.y + c[1], f.pos.z + c[2]],
+                        uv: [
+                            tx as f32 * ts + inset + uu * (ts - 2.0 * inset),
+                            ty as f32 * ts + inset + vv * (ts - 2.0 * inset),
+                        ],
+                        normal: [0.0, 0.0, 0.0],
+                        light: [shade * lum.0[0], shade * lum.0[1], shade * lum.0[2]],
+                        sky: shade * lum.1,
+                    });
+                }
+                entity_idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+            }
+        }
+
         // The steelworks show their work: a rested bloom on the anvil,
         // smoke over lit bloomeries and smoldering clamps.
         if self.in_world {
@@ -6202,6 +6254,7 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => {
                 if game.in_world {
                     game.save_player();
+                    game.server.world.settle_falling();
                     game.server.world.save_modified();
                 }
                 event_loop.exit();
@@ -6488,6 +6541,7 @@ fn run_headless_server(world_name: &str) {
         save_timer += dt;
         if save_timer >= 300.0 {
             save_timer = 0.0;
+            sim.world.settle_falling();
             sim.world.save_modified();
             eprintln!("server: world saved");
         }

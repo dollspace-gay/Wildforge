@@ -181,6 +181,7 @@ TILES = {
     "living_wood": ("sprite", "a piece of wood with glowing green sap veins"),
     "ember": ("sprite", "a lump of charcoal with glowing orange cracks, radiating heat"),
     "snowball": ("sprite", "a single round packed snowball, white with soft blue shading, centered with margin on all sides"),
+    "glass": ("sprite", "a clear glass window pane: thin pale frame around the edge, two faint diagonal white glints, everything else pure magenta background"),
     "firebrick": ("tile", "deep red-brown refractory bricks with dark mortar seams, kiln-worn"),
     "bloomery": ("tile", "red-brown firebrick wall with a dark arched furnace mouth in the center, cold and sooty"),
     "bloomery_lit": ("tile", "red-brown firebrick wall with an arched furnace mouth glowing bright orange from within, embers"),

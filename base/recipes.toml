@@ -525,3 +525,10 @@ pattern = ["sss"]
 keys = { s = "base:snow" }
 output = "base:snow_layer"
 count = 6
+
+# ---- glassworks ----
+
+[[smelt]]
+input = "base:sand"
+output = "base:glass"
+time = 6.0

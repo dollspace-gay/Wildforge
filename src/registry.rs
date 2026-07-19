@@ -60,6 +60,10 @@ pub struct BlockDef {
     pub brush: Option<(String, BlockId)>,
     /// Rendered height 0..1; None = full cube (snow layers are 0.125).
     pub height: Option<f32>,
+    /// Falls when unsupported.
+    pub falls: bool,
+    /// Glazing: a glass roof is a greenhouse.
+    pub glass: bool,
     /// Per-channel emission (r,g,b), each 0..15. The brightest channel equals
     /// `light_emit`, so a colored light keeps its intensity; the dimmer
     /// channels fall off sooner, warming/cooling the glow with distance.
@@ -533,6 +537,12 @@ struct BlockToml {
     /// Render height 0..1 (thin slabs like snow layers).
     #[serde(default)]
     height: Option<f32>,
+    /// Gravity: detaches and falls when unsupported (sand, gravel).
+    #[serde(default)]
+    falls: bool,
+    /// Counts as glazing: passes sky light and makes greenhouses.
+    #[serde(default)]
+    glass: bool,
     /// Register an item form for placing (default true).
     #[serde(default = "yes")]
     item: bool,
@@ -1141,6 +1151,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         bonus_drop: None,
         brush: None,
         height: None,
+        falls: false,
+        glass: false,
         light_rgb: [0, 0, 0],
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
@@ -1275,6 +1287,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 bonus_drop: None,
                 brush: None,
                 height: b.height.map(|h| h.clamp(0.05, 1.0)),
+                falls: b.falls,
+                glass: b.glass,
                 light_rgb: resolve_light_rgb(b.light.min(15), b.light_color),
             });
             reg.block_by_name.insert(full.clone(), id);
@@ -1529,6 +1543,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         bonus_drop: None,
         brush: None,
         height: None,
+        falls: false,
+        glass: false,
         light_rgb: [0, 0, 0],
     });
     reg.block_by_name.insert("base:unknown".into(), unk);

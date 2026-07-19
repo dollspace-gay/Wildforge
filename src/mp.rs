@@ -245,6 +245,17 @@ impl HostSession {
                 })
                 .collect();
             self.net.broadcast_datagram(&S2C::Bolts(bolts));
+            // Sent even when empty so guests clear their last tumble.
+            let falls: Vec<net::FallSnap> = server
+                .world
+                .falling
+                .iter()
+                .map(|f| net::FallSnap {
+                    pos: f.pos,
+                    block: f.block.0,
+                })
+                .collect();
+            self.net.broadcast_datagram(&S2C::Falling(falls));
         }
         // Open containers stay live: furnaces smelt and other players
         // shuffle stacks while a guest is looking at them.

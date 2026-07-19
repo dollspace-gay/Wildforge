@@ -39,6 +39,7 @@ name = "Sand"
 texture = "@sand"
 hardness = 0.6
 tool = "shovel"
+falls = true
 
 [[block]]
 id = "gravel"
@@ -46,6 +47,7 @@ name = "Gravel"
 texture = "@gravel"
 hardness = 0.6
 tool = "shovel"
+falls = true
 
 [[block]]
 id = "log"
@@ -555,3 +557,13 @@ tool = "pickaxe"
 requires_tool = true
 interaction = "anvil"
 height = 0.75
+
+# ---- glassworks ----
+
+[[block]]
+id = "glass"
+name = "Glass"
+texture = "@glass"
+hardness = 0.4
+opaque = false
+glass = true

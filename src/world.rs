@@ -53,6 +53,14 @@ pub struct AnvilState {
     pub strikes: u32,
 }
 
+/// A gravity block mid-fall (host-simulated; guests get snapshots).
+#[derive(Clone, Copy)]
+pub struct FallingBlock {
+    pub pos: glam::Vec3,
+    pub vel: f32,
+    pub block: BlockId,
+}
+
 /// Half an in-game day of fire per batch.
 pub const BLOOMERY_FIRE_SECS: f32 = 300.0;
 /// Seconds of smolder per log in a charcoal clamp.
@@ -209,6 +217,8 @@ pub struct World {
     /// Host mode: record block edits for broadcasting.
     pub log_edits: bool,
     pub edit_log: Vec<(i32, i32, i32, BlockId)>,
+    /// Gravity blocks currently airborne.
+    pub falling: Vec<FallingBlock>,
     /// (guest id, stack) owed over the wire: mining drops, kill loot,
     /// recovered arrows, brush finds — full stacks so durability rides.
     pub pending_gives: Vec<(u32, ItemStack)>,
@@ -304,6 +314,7 @@ impl World {
             weather_timer: 0.0,
             log_edits: false,
             edit_log: Vec::new(),
+            falling: Vec::new(),
             pending_gives: Vec::new(),
             next_mob_id: 1,
         }
@@ -746,6 +757,71 @@ impl World {
             }
         }
         out
+    }
+
+    // ---------------- gravity blocks ----------------
+
+    /// Lift a block out of the grid and into the air (atomically: the
+    /// cell empties in the same call, so it can't be duped).
+    fn detach(&mut self, x: i32, y: i32, z: i32, b: BlockId) {
+        self.set_block(x, y, z, AIR);
+        self.falling.push(FallingBlock {
+            pos: glam::Vec3::new(x as f32, y as f32, z as f32),
+            vel: 0.0,
+            block: b,
+        });
+    }
+
+    /// Advance airborne blocks; landings re-plant (popping any plant or
+    /// layer they crush) and re-trigger the cell above the launch site
+    /// through the normal edit cascade.
+    pub fn tick_falling(&mut self, dt: f32) {
+        if self.falling.is_empty() {
+            return;
+        }
+        // Landings apply immediately so a stacked column settles one on
+        // top of the other instead of racing into the same cell.
+        let mut fallen = std::mem::take(&mut self.falling);
+        let mut still = Vec::with_capacity(fallen.len());
+        for mut f in fallen.drain(..) {
+            f.vel = (f.vel + 20.0 * dt).min(30.0);
+            f.pos.y -= f.vel * dt;
+            let (x, z) = (f.pos.x.floor() as i32, f.pos.z.floor() as i32);
+            let below = f.pos.y.floor() as i32;
+            if below < 0 {
+                continue; // out of the world (should be impossible)
+            }
+            if !self.reg.is_solid(self.get_block(x, below, z)) {
+                still.push(f);
+                continue;
+            }
+            // Land on the first free cell above the obstruction - a
+            // second sand in the same column stacks instead of popping.
+            let mut y = below + 1;
+            while y < CHUNK_Y as i32 - 1 && self.reg.is_solid(self.get_block(x, y, z)) {
+                y += 1;
+            }
+            let b = f.block;
+            let cur = self.get_block(x, y, z);
+            if cur != AIR {
+                // Crushed: the plant/layer pops as its drop first.
+                if let Some((item, n)) = self.reg.block(cur).drops {
+                    let reg = self.reg.clone();
+                    self.pending_drops
+                        .push(((x, y, z), ItemStack::new(&reg, item, n)));
+                }
+            }
+            self.set_block(x, y, z, b);
+        }
+        // Landings may have detached more (rare); keep both sets.
+        self.falling.extend(still);
+    }
+
+    /// Land every airborne block instantly (world save/quit).
+    pub fn settle_falling(&mut self) {
+        while !self.falling.is_empty() {
+            self.tick_falling(0.5);
+        }
     }
 
     // ---------------- steelworks ----------------
@@ -1853,6 +1929,20 @@ impl World {
             touch(0, 1);
         }
         self.wake_water(x, y, z);
+        // Gravity blocks detach when their support vanishes — and a
+        // gravity block placed over nothing starts falling immediately.
+        // Guests never simulate this; the host's BlockSet echoes land.
+        if !self.remote {
+            if !self.reg.is_solid(b) && y + 1 < CHUNK_Y as i32 {
+                let above = self.get_block(x, y + 1, z);
+                if self.reg.block(above).falls {
+                    self.detach(x, y + 1, z, above);
+                }
+            }
+            if self.reg.block(b).falls && y > 0 && !self.reg.is_solid(self.get_block(x, y - 1, z)) {
+                self.detach(x, y, z, b);
+            }
+        }
         // Cross blocks (torches, plants) and thin slabs (snow layers)
         // pop off when their support vanishes.
         if !self.reg.is_solid(b) && y + 1 < CHUNK_Y as i32 {
@@ -1931,7 +2021,16 @@ impl World {
                     };
                     let mult = if mult == 0.0 && !d.crop_any_soil {
                         let (bl, sl) = self.light_at(wx, y, wz);
-                        if sl < 15 && bl >= 10 { 0.5 } else { 0.0 }
+                        if sl < 15 && bl >= 10 {
+                            0.5 // dark roof + torchlight
+                        } else if sl == 15
+                            && (1..=16)
+                                .any(|dy| self.reg.block(self.get_block(wx, y + dy, wz)).glass)
+                        {
+                            0.75 // a glass roof is a greenhouse
+                        } else {
+                            0.0
+                        }
                     } else {
                         mult
                     };
