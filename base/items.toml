@@ -712,3 +712,43 @@ texture = "@smith_hammer"
 durability = 120
 damage = 3
 hammer = true
+
+[[item]]
+id = "raw_cobalt"
+name = "Raw Cobalt"
+texture = "@cobalt_ore"
+
+[[item]]
+id = "raw_cinnabar"
+name = "Raw Cinnabar"
+texture = "@cinnabar_ore"
+
+[[item]]
+id = "raw_manganese"
+name = "Raw Manganese"
+texture = "@manganese_ore"
+
+[[item]]
+id = "verdigris_powder"
+name = "Verdigris"
+texture = "@verdigris_powder"
+
+[[item]]
+id = "ochre_powder"
+name = "Ochre"
+texture = "@ochre_powder"
+
+[[item]]
+id = "cobalt_powder"
+name = "Cobalt Powder"
+texture = "@cobalt_powder"
+
+[[item]]
+id = "cinnabar_powder"
+name = "Cinnabar Powder"
+texture = "@cinnabar_powder"
+
+[[item]]
+id = "manganese_powder"
+name = "Manganese Powder"
+texture = "@manganese_powder"

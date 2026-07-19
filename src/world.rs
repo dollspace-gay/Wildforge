@@ -24,6 +24,7 @@ pub enum BlockEntity {
     Bloomery(BloomeryState),
     Clamp(ClampState),
     Anvil(AnvilState),
+    Kiln(KilnState),
 }
 
 /// The steelworks stack: a batch of charge + fuel, fired for half a
@@ -38,6 +39,20 @@ pub struct BloomeryState {
     /// Hollow core cell of the validated stack (set on lighting).
     pub core: (i32, i32, i32),
 }
+
+/// The glass kiln: sand + one powder + charcoal, fired hot and fast.
+#[derive(Default)]
+pub struct KilnState {
+    pub sand: [Option<ItemStack>; 4],
+    pub powder: Option<ItemStack>,
+    pub fuel: [Option<ItemStack>; 4],
+    pub lit: bool,
+    pub progress: f32,
+    pub core: (i32, i32, i32),
+}
+
+/// A quarter-day of white heat per glass batch.
+pub const KILN_FIRE_SECS: f32 = 150.0;
 
 /// A covered log pile smoldering into charcoal.
 pub struct ClampState {
@@ -830,11 +845,32 @@ impl World {
     /// core beside the mouth wrapped in a 3-wide, 3-tall firebrick
     /// ring (23 firebrick + the mouth), open on top. Returns the core.
     pub fn check_bloomery(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
-        let fb = self.reg.block_id("base:firebrick")?;
         let mouth = [
             self.reg.block_id("base:bloomery"),
             self.reg.block_id("base:bloomery_lit"),
         ];
+        self.check_stack(x, y, z, &mouth)
+    }
+
+    /// The same stack with a kiln in its mouth fires glass instead.
+    pub fn check_kiln(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
+        let mouth = [
+            self.reg.block_id("base:kiln"),
+            self.reg.block_id("base:kiln_lit"),
+        ];
+        self.check_stack(x, y, z, &mouth)
+    }
+
+    /// The shared shell scan: the stack is the stack; the mouth block
+    /// decides the craft.
+    fn check_stack(
+        &self,
+        x: i32,
+        y: i32,
+        z: i32,
+        mouth: &[Option<BlockId>; 2],
+    ) -> Option<(i32, i32, i32)> {
+        let fb = self.reg.block_id("base:firebrick")?;
         'dirs: for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
             let (cx, cz) = (x + dx, z + dz);
             for ly in 0..3 {
@@ -884,6 +920,118 @@ impl World {
         b.core = core;
         self.swap_block_keep_entity(x, y, z, "base:bloomery_lit");
         Ok(())
+    }
+
+    /// Light a charged kiln. Errors name what's missing.
+    pub fn light_kiln(&mut self, x: i32, y: i32, z: i32) -> Result<(), &'static str> {
+        let core = self.check_kiln(x, y, z).ok_or("the stack is breached")?;
+        let Some(BlockEntity::Kiln(k)) = self.block_entities.get_mut(&(x, y, z)) else {
+            return Err("nothing charged");
+        };
+        if k.lit {
+            return Err("already firing");
+        }
+        let n_sand: u32 = k.sand.iter().flatten().map(|s| s.count).sum();
+        let n_fuel: u32 = k.fuel.iter().flatten().map(|s| s.count).sum();
+        if n_sand < 2 || n_fuel < 2 {
+            return Err("needs at least 2 sand and 2 charcoal");
+        }
+        k.lit = true;
+        k.progress = 0.0;
+        k.core = core;
+        self.swap_block_keep_entity(x, y, z, "base:kiln_lit");
+        Ok(())
+    }
+
+    /// Fire every lit kiln: shared shell/weather rules, glass out.
+    fn tick_kilns(&mut self, dt: f32) {
+        let keys: Vec<(i32, i32, i32)> = self
+            .block_entities
+            .iter()
+            .filter(|(_, e)| matches!(e, BlockEntity::Kiln(k) if k.lit))
+            .map(|(k, _)| *k)
+            .collect();
+        for pos in keys {
+            let Some(BlockEntity::Kiln(mut k)) = self.block_entities.remove(&pos) else {
+                continue;
+            };
+            let (x, y, z) = pos;
+            if self.check_kiln(x, y, z).is_none() {
+                k.lit = false;
+                k.progress = 0.0;
+                self.swap_block_keep_entity(x, y, z, "base:kiln");
+                self.block_entities.insert(pos, BlockEntity::Kiln(k));
+                continue;
+            }
+            let unroofed = self.light_at(k.core.0, y + 3, k.core.2).1 == 15;
+            let wet = self.weather.precipitating() && self.rains_at(x, z) && unroofed;
+            if wet && self.weather == Weather::Storm {
+                k.lit = false;
+                k.progress = 0.0;
+                self.swap_block_keep_entity(x, y, z, "base:kiln");
+                self.block_entities.insert(pos, BlockEntity::Kiln(k));
+                continue;
+            }
+            k.progress += dt * if wet { 0.5 } else { 1.0 };
+            if k.progress >= KILN_FIRE_SECS {
+                if let Some((_, fuel_item, clear)) = self.reg.kiln_base {
+                    let n_sand: u32 = k.sand.iter().flatten().map(|s| s.count).sum();
+                    let n_fuel: u32 = k.fuel.iter().flatten().map(|s| s.count).sum();
+                    let pairs = n_sand.min(n_fuel) / 2;
+                    let out_n = pairs * 2;
+                    // One powder colors the whole batch.
+                    let colored = k.powder.as_ref().and_then(|p| {
+                        self.reg
+                            .kiln
+                            .iter()
+                            .find(|(pw, _)| *pw == p.item)
+                            .map(|(_, g)| *g)
+                    });
+                    let out_item = colored.unwrap_or(clear);
+                    if colored.is_some()
+                        && let Some(p) = &mut k.powder
+                    {
+                        p.count -= 1;
+                        if p.count == 0 {
+                            k.powder = None;
+                        }
+                    }
+                    let eat = |slots: &mut [Option<ItemStack>; 4], mut n: u32| {
+                        for s in slots.iter_mut() {
+                            if n == 0 {
+                                break;
+                            }
+                            if let Some(st) = s {
+                                let take = st.count.min(n);
+                                n -= take;
+                                st.count -= take;
+                                if st.count == 0 {
+                                    *s = None;
+                                }
+                            }
+                        }
+                    };
+                    eat(&mut k.sand, pairs * 2);
+                    eat(&mut k.fuel, pairs * 2);
+                    let _ = fuel_item;
+                    if out_n > 0 {
+                        let reg = self.reg.clone();
+                        let mut out = ItemStack::new(&reg, out_item, 1);
+                        out.count = out_n;
+                        for s in k.sand.iter_mut() {
+                            if s.is_none() {
+                                *s = Some(out);
+                                break;
+                            }
+                        }
+                    }
+                }
+                k.lit = false;
+                k.progress = 0.0;
+                self.swap_block_keep_entity(x, y, z, "base:kiln");
+            }
+            self.block_entities.insert(pos, BlockEntity::Kiln(k));
+        }
     }
 
     /// Swap a block without invalidating the machine living there.
@@ -968,9 +1116,26 @@ impl World {
         Ok(n)
     }
 
-    /// Rest a workable item on an anvil (one at a time).
+    /// The station kind ("anvil"/"quern") of the block at pos.
+    fn station_at(&self, pos: (i32, i32, i32)) -> Option<String> {
+        self.reg
+            .block(self.get_block(pos.0, pos.1, pos.2))
+            .interaction
+            .clone()
+    }
+
+    /// Rest a workable item on a station (one at a time). Only items
+    /// this station's worked-table accepts may rest.
     pub fn anvil_put(&mut self, pos: (i32, i32, i32), stack: ItemStack) -> bool {
-        if !self.reg.worked.iter().any(|w| w.input == stack.item) {
+        let Some(st) = self.station_at(pos) else {
+            return false;
+        };
+        if !self
+            .reg
+            .worked
+            .iter()
+            .any(|w| w.input == stack.item && w.station == st)
+        {
             return false;
         }
         let e = self
@@ -998,15 +1163,21 @@ impl World {
     /// One hammer strike; finishing the work returns the output.
     pub fn anvil_strike(&mut self, pos: (i32, i32, i32)) -> Option<ItemStack> {
         let reg = self.reg.clone();
+        let st = self.station_at(pos)?;
         if let Some(BlockEntity::Anvil(a)) = self.block_entities.get_mut(&pos)
             && let Some(b) = a.bloom
-            && let Some(def) = reg.worked.iter().find(|w| w.input == b.item)
+            && let Some(def) = reg
+                .worked
+                .iter()
+                .find(|w| w.input == b.item && w.station == st)
         {
             a.strikes += 1;
             if a.strikes >= def.strikes {
                 a.bloom = None;
                 a.strikes = 0;
-                return Some(ItemStack::new(&reg, def.output, 1));
+                let mut out = ItemStack::new(&reg, def.output, 1);
+                out.count = def.count;
+                return Some(out);
             }
         }
         None
@@ -1668,14 +1839,16 @@ impl World {
         #[derive(Clone, Copy)]
         struct Cell {
             opaque: bool,
-            cost: u8,      // propagation cost: 1, or 2 through water
-            emit: [u8; 3], // per-channel emission
+            cost: u8,          // propagation cost: 1, or 2 through water
+            emit: [u8; 3],     // per-channel emission
+            filter: [bool; 3], // stained glass gates channels
         }
         let mut cells = vec![
             Cell {
                 opaque: false,
                 cost: 1,
-                emit: [0; 3]
+                emit: [0; 3],
+                filter: [true; 3],
             };
             NX * NY * NZ
         ];
@@ -1687,6 +1860,7 @@ impl World {
                         opaque: d.opaque,
                         cost: if d.water_level.is_some() { 2 } else { 1 },
                         emit: d.light_rgb,
+                        filter: d.light_filter,
                     };
                 }
             }
@@ -1758,7 +1932,7 @@ impl World {
                             continue;
                         }
                         let c = cells[idx(ox, y, oz)];
-                        if c.opaque {
+                        if c.opaque || chan.is_some_and(|ch| !c.filter[ch]) {
                             continue;
                         }
                         let nv = v.saturating_sub(c.cost);
@@ -1772,7 +1946,10 @@ impl World {
         };
 
         // BFS relax (single channel; run once per light channel).
-        let bfs = |grid: &mut [u8], q: &mut VecDeque<(usize, usize, usize)>, cells: &[Cell]| {
+        let bfs = |grid: &mut [u8],
+                   q: &mut VecDeque<(usize, usize, usize)>,
+                   cells: &[Cell],
+                   chan: Option<usize>| {
             while let Some((x, y, z)) = q.pop_front() {
                 let v = grid[idx(x, y, z)];
                 if v < 2 {
@@ -1780,7 +1957,8 @@ impl World {
                 }
                 let mut relax = |nx: usize, ny: usize, nz: usize| {
                     let c = cells[idx(nx, ny, nz)];
-                    if c.opaque {
+                    // Stained glass is opaque to the channels it blocks.
+                    if c.opaque || chan.is_some_and(|ch| !c.filter[ch]) {
                         return;
                     }
                     let nv = v.saturating_sub(c.cost);
@@ -1812,7 +1990,7 @@ impl World {
 
         // Sky: one channel.
         seed(&mut ls, &mut sky_q, &cells, None);
-        bfs(&mut ls, &mut sky_q, &cells);
+        bfs(&mut ls, &mut sky_q, &cells, None);
 
         // Block light: independent flood per color channel, packed into rgb.
         let mut lb = vec![[0u8; 3]; NX * NY * NZ];
@@ -1832,7 +2010,7 @@ impl World {
                 }
             }
             seed(&mut grid, &mut q, &cells, Some(ch));
-            bfs(&mut grid, &mut q, &cells);
+            bfs(&mut grid, &mut q, &cells, Some(ch));
             for i in 0..grid.len() {
                 lb[i][ch] = grid[i];
             }
@@ -1969,6 +2147,13 @@ impl World {
                 BlockEntity::Bloomery(b) => b.charge.into_iter().chain(b.fuel).flatten().collect(),
                 BlockEntity::Clamp(_) => Vec::new(), // the burn dies with it
                 BlockEntity::Anvil(a) => a.bloom.into_iter().collect(),
+                BlockEntity::Kiln(k) => k
+                    .sand
+                    .into_iter()
+                    .chain(k.fuel)
+                    .chain([k.powder])
+                    .flatten()
+                    .collect(),
             };
             for s in spilled {
                 self.pending_drops.push(((x, y, z), s));
@@ -2269,6 +2454,7 @@ impl World {
 
     pub fn tick_entities(&mut self, dt: f32) {
         self.tick_bloomeries(dt);
+        self.tick_kilns(dt);
         self.tick_clamps(dt);
         let reg = self.reg.clone();
         for e in self.block_entities.values_mut() {
@@ -2428,6 +2614,31 @@ impl World {
                         logs.join(", ")
                     );
                 }
+                BlockEntity::Kiln(k) => {
+                    let _ = writeln!(
+                        out,
+                        "[[kiln]]\npos = [{x}, {y}, {z}]\nlit = {}\nprogress = {}\ncore = [{}, {}, {}]",
+                        k.lit, k.progress, k.core.0, k.core.1, k.core.2
+                    );
+                    let all: Vec<&Option<ItemStack>> = k
+                        .sand
+                        .iter()
+                        .chain([&k.powder])
+                        .chain(k.fuel.iter())
+                        .collect();
+                    for (i, st) in all.into_iter().enumerate() {
+                        if let Some(st) = st {
+                            let _ = writeln!(
+                                out,
+                                "[[kiln.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                self.reg.item(st.item).name,
+                                st.count,
+                                st.durability
+                            );
+                        }
+                    }
+                    let _ = writeln!(out);
+                }
                 BlockEntity::Anvil(a) => {
                     let _ = writeln!(
                         out,
@@ -2533,6 +2744,8 @@ impl World {
             clamp: Vec<ClampT>,
             #[serde(default)]
             anvil: Vec<AnvilT>,
+            #[serde(default)]
+            kiln: Vec<BloomeryT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else {
             return;
@@ -2636,6 +2849,32 @@ impl World {
                     timer: cl.timer,
                 }),
             );
+        }
+        for kl in parsed.kiln {
+            let mut state = KilnState {
+                lit: kl.lit,
+                progress: kl.progress,
+                core: kl.core.map(|c| (c[0], c[1], c[2])).unwrap_or_default(),
+                ..Default::default()
+            };
+            for sl in kl.slot {
+                if sl.index < 9
+                    && let Some(item) = self.reg.item_id(&sl.item)
+                {
+                    let st = Some(ItemStack {
+                        item,
+                        count: sl.count,
+                        durability: sl.durability,
+                    });
+                    match sl.index {
+                        0..=3 => state.sand[sl.index] = st,
+                        4 => state.powder = st,
+                        _ => state.fuel[sl.index - 5] = st,
+                    }
+                }
+            }
+            self.block_entities
+                .insert((kl.pos[0], kl.pos[1], kl.pos[2]), BlockEntity::Kiln(state));
         }
         for an in parsed.anvil {
             self.block_entities.insert(

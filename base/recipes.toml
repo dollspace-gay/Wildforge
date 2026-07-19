@@ -532,3 +532,82 @@ count = 6
 input = "base:sand"
 output = "base:glass"
 time = 6.0
+
+[[recipe]]
+pattern = ["sss", "t.t"]
+keys = { s = "base:stone", t = "base:stick" }
+output = "base:quern"
+
+[[recipe]]
+pattern = ["ff", "tt"]
+keys = { f = "base:firebrick", t = "base:tin_ingot" }
+output = "base:kiln"
+
+# Grinding at the quern: every color is a rock first.
+
+[[worked]]
+input = "base:raw_copper"
+output = "base:verdigris_powder"
+station = "quern"
+tool = "none"
+strikes = 2
+count = 2
+
+[[worked]]
+input = "base:raw_iron"
+output = "base:ochre_powder"
+station = "quern"
+tool = "none"
+strikes = 2
+count = 2
+
+[[worked]]
+input = "base:raw_cobalt"
+output = "base:cobalt_powder"
+station = "quern"
+tool = "none"
+strikes = 2
+count = 2
+
+[[worked]]
+input = "base:raw_cinnabar"
+output = "base:cinnabar_powder"
+station = "quern"
+tool = "none"
+strikes = 2
+count = 2
+
+[[worked]]
+input = "base:raw_manganese"
+output = "base:manganese_powder"
+station = "quern"
+tool = "none"
+strikes = 2
+count = 2
+
+# The kiln: one powder colors a whole batch.
+
+[kiln_base]
+sand = "base:sand"
+fuel = "base:charcoal"
+clear = "base:glass"
+
+[[kiln]]
+powder = "base:verdigris_powder"
+glass = "base:teal_glass"
+
+[[kiln]]
+powder = "base:ochre_powder"
+glass = "base:amber_glass"
+
+[[kiln]]
+powder = "base:cobalt_powder"
+glass = "base:blue_glass"
+
+[[kiln]]
+powder = "base:cinnabar_powder"
+glass = "base:red_glass"
+
+[[kiln]]
+powder = "base:manganese_powder"
+glass = "base:violet_glass"

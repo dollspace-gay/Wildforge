@@ -64,6 +64,8 @@ pub struct BlockDef {
     pub falls: bool,
     /// Glazing: a glass roof is a greenhouse.
     pub glass: bool,
+    /// Per-channel block-light pass-through (stained glass).
+    pub light_filter: [bool; 3],
     /// Per-channel emission (r,g,b), each 0..15. The brightest channel equals
     /// `light_emit`, so a colored light keeps its intensity; the dimmer
     /// channels fall off sooner, warming/cooling the glow with distance.
@@ -257,12 +259,16 @@ pub struct BloomeryDef {
     pub bloom: ItemId,
 }
 
-/// Anvil work: hammer an input into its output over N strikes.
+/// Station work: beat or grind an input into its output over N
+/// strikes/turns at a block whose `interaction` matches `station`.
 #[derive(Clone, Debug)]
 pub struct WorkedDef {
     pub input: ItemId,
     pub output: ItemId,
     pub strikes: u32,
+    pub station: String,
+    pub needs_hammer: bool,
+    pub count: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -326,6 +332,10 @@ pub struct Registry {
     pub fuels: Vec<(Ingredient, f32, f32)>,
     /// Bloomery firing chains (the steelworks).
     pub bloomery: Vec<BloomeryDef>,
+    /// Kiln color chains: powder -> glass.
+    pub kiln: Vec<(ItemId, ItemId)>,
+    /// Kiln staples: (sand, fuel, clear glass output).
+    pub kiln_base: Option<(ItemId, ItemId, ItemId)>,
     /// Anvil work recipes (bloom -> bar).
     pub worked: Vec<WorkedDef>,
     /// Item groups usable as `#tag` recipe ingredients; mods can extend them.
@@ -543,6 +553,10 @@ struct BlockToml {
     /// Counts as glazing: passes sky light and makes greenhouses.
     #[serde(default)]
     glass: bool,
+    /// Stained light: which RGB channels of block light pass through
+    /// (e.g. [1, 0, 0] for red glass). Default: all.
+    #[serde(default)]
+    light_filter: Option<[u8; 3]>,
     /// Register an item form for placing (default true).
     #[serde(default = "yes")]
     item: bool,
@@ -762,11 +776,32 @@ struct BloomeryToml {
 }
 
 #[derive(Deserialize, Clone)]
+struct KilnToml {
+    powder: String,
+    glass: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct KilnBaseToml {
+    sand: String,
+    fuel: String,
+    clear: String,
+}
+
+#[derive(Deserialize, Clone)]
 struct WorkedToml {
     input: String,
     output: String,
     #[serde(default)]
     strikes: Option<u32>,
+    /// Which station block works it: "anvil" (default) or "quern".
+    #[serde(default)]
+    station: Option<String>,
+    /// "hammer" (default) or "none" (bare hands, e.g. the quern).
+    #[serde(default)]
+    tool: Option<String>,
+    #[serde(default)]
+    count: Option<u32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -817,6 +852,10 @@ struct RecipesFile {
     bloomery: Vec<BloomeryToml>,
     #[serde(default)]
     worked: Vec<WorkedToml>,
+    #[serde(default)]
+    kiln: Vec<KilnToml>,
+    #[serde(default)]
+    kiln_base: Option<KilnBaseToml>,
 }
 #[derive(Deserialize, Default)]
 struct AliasesFile {
@@ -899,6 +938,8 @@ struct RawMod {
     fuels: Vec<FuelToml>,
     bloomeries: Vec<BloomeryToml>,
     workeds: Vec<WorkedToml>,
+    kilns: Vec<KilnToml>,
+    kiln_bases: Vec<KilnBaseToml>,
     features: Vec<FeatureToml>,
     tags: Vec<TagToml>,
     aliases: Vec<AliasToml>,
@@ -956,6 +997,8 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         fuels: recipes.fuel.clone(),
         bloomeries: recipes.bloomery.clone(),
         workeds: recipes.worked.clone(),
+        kilns: recipes.kiln.clone(),
+        kiln_bases: recipes.kiln_base.clone().into_iter().collect(),
         recipes: recipes.recipe,
         features: features.feature,
         tags: tags.tag,
@@ -991,6 +1034,8 @@ fn base_mod() -> RawMod {
         fuels: recipes.fuel.clone(),
         bloomeries: recipes.bloomery.clone(),
         workeds: recipes.worked.clone(),
+        kilns: recipes.kiln.clone(),
+        kiln_bases: recipes.kiln_base.clone().into_iter().collect(),
         recipes: recipes.recipe,
         features: features.feature,
         tags: tags.tag,
@@ -1094,6 +1139,8 @@ impl RemoveStable for Vec<RawMod> {
             fuels: vec![],
             bloomeries: vec![],
             workeds: vec![],
+            kilns: vec![],
+            kiln_bases: vec![],
             features: vec![],
             tags: vec![],
             aliases: vec![],
@@ -1117,6 +1164,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         fuels: Vec::new(),
         bloomery: Vec::new(),
         worked: Vec::new(),
+        kiln: Vec::new(),
+        kiln_base: None,
         tags: HashMap::new(),
         tex_files: Vec::new(),
         tex_names: Vec::new(),
@@ -1153,6 +1202,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         height: None,
         falls: false,
         glass: false,
+        light_filter: [true; 3],
         light_rgb: [0, 0, 0],
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
@@ -1216,6 +1266,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let mut pending_smelts: Vec<(String, SmeltToml)> = Vec::new();
     let mut pending_bloomeries: Vec<(String, BloomeryToml)> = Vec::new();
     let mut pending_workeds: Vec<(String, WorkedToml)> = Vec::new();
+    let mut pending_kilns: Vec<(String, KilnToml)> = Vec::new();
+    let mut pending_kiln_bases: Vec<(String, KilnBaseToml)> = Vec::new();
     let mut pending_fuels: Vec<(String, FuelToml)> = Vec::new();
     let mut pending_aliases: Vec<(String, AliasToml)> = Vec::new();
     let mut pending_harvests: Vec<(String, BlockId, HarvestToml)> = Vec::new();
@@ -1289,6 +1341,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 height: b.height.map(|h| h.clamp(0.05, 1.0)),
                 falls: b.falls,
                 glass: b.glass,
+                light_filter: b
+                    .light_filter
+                    .map(|f| [f[0] > 0, f[1] > 0, f[2] > 0])
+                    .unwrap_or([true; 3]),
                 light_rgb: resolve_light_rgb(b.light.min(15), b.light_color),
             });
             reg.block_by_name.insert(full.clone(), id);
@@ -1470,6 +1526,12 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         for w in &raw.workeds {
             pending_workeds.push((raw.info.id.clone(), w.clone()));
         }
+        for k in &raw.kilns {
+            pending_kilns.push((raw.info.id.clone(), k.clone()));
+        }
+        for k in &raw.kiln_bases {
+            pending_kiln_bases.push((raw.info.id.clone(), k.clone()));
+        }
         for st in &raw.structures {
             pending_structs.push((raw.info.id.clone(), st.clone()));
         }
@@ -1545,6 +1607,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         height: None,
         falls: false,
         glass: false,
+        light_filter: [true; 3],
         light_rgb: [0, 0, 0],
     });
     reg.block_by_name.insert("base:unknown".into(), unk);
@@ -1686,7 +1749,27 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 input,
                 output,
                 strikes: w.strikes.unwrap_or(3).max(1),
+                station: w.station.clone().unwrap_or_else(|| "anvil".into()),
+                needs_hammer: w.tool.as_deref().unwrap_or("hammer") == "hammer",
+                count: w.count.unwrap_or(1).max(1),
             });
+        }
+    }
+    for (modid, k) in pending_kilns {
+        if let (Some(p), Some(g)) = (
+            lookup_item(&reg, &modid, &k.powder),
+            lookup_item(&reg, &modid, &k.glass),
+        ) {
+            reg.kiln.push((p, g));
+        }
+    }
+    for (modid, k) in pending_kiln_bases {
+        if let (Some(sa), Some(fu), Some(cl)) = (
+            lookup_item(&reg, &modid, &k.sand),
+            lookup_item(&reg, &modid, &k.fuel),
+            lookup_item(&reg, &modid, &k.clear),
+        ) {
+            reg.kiln_base = Some((sa, fu, cl));
         }
     }
     for (modid, f) in pending_fuels {

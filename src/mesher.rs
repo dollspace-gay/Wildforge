@@ -165,6 +165,9 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                     continue;
                 }
                 let water = reg.is_water(b);
+                // Glass rides the blended pipeline: translucent tint,
+                // and panes catch the water shader's sun glint.
+                let blended = water || reg.block(b).glass;
                 // Water surface height falls with flow level (unless the
                 // block above is also water — then it's a full column).
                 let top_drop = if water && !reg.is_water(get(lx, y + 1, lz)) {
@@ -193,7 +196,7 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                         ao = corner_ao(reg, &get, [lx, y, lz], face);
                     }
 
-                    let (verts, idx) = if water {
+                    let (verts, idx) = if blended {
                         (&mut m.water_verts, &mut m.water_idx)
                     } else {
                         (&mut m.opaque_verts, &mut m.opaque_idx)

@@ -1,11 +1,12 @@
 # Glassworks — sand falls, glass rises, minerals give it color
 
-Drafted 2026-07-19. Sand finally earns its keep: it falls like it
-should, cooks into glass, and — through a kiln, a quern, and minerals
-you mine and grind — becomes colored glass with no dye system
-anywhere in sight. Every color is a rock first. The steelworks
-template (multiblock shell, batch firing, station-work tables) gets
-its first reuse, which is exactly what that machinery was built for.
+Drafted and **IMPLEMENTED** 2026-07-19, all five stages. Notes vs.
+this spec: glass renders through the blended (water) pipeline for
+true translucency — panes even catch the sun glint; the quern takes
+no give-backs (a rested chunk grinds or the quern breaks); guests
+light kilns through the shared LightBloomery message (the host checks
+the mouth); and falling blocks land by walking up to the first free
+cell, so simultaneous columns stack instead of popping.
 
 This plan also carries **Stage 0: the atlas grows 16×16 → 32×32**
 (256 → 1024 tiles), because glassworks would otherwise be the last

@@ -4105,6 +4105,12 @@ fn anvil_works_blooms_into_bars() {
     let ingot = reg.item_id("base:steel_ingot").unwrap();
     let iron = reg.item_id("base:iron_ingot").unwrap();
     let pos = (10, 120, 10);
+    w.set_block(
+        pos.0,
+        pos.1,
+        pos.2,
+        reg.block_id("base:stone_anvil").unwrap(),
+    );
     // Only workable items rest on the anvil.
     assert!(
         !w.anvil_put(pos, ItemStack::new(&reg, iron, 1)),
@@ -4443,6 +4449,164 @@ fn weather_and_season_touch_the_sim() {
         w.tick_mobs(&[], 1.0, 1.0 / 30.0, &mut rng);
     }
     assert!(w.mobs.len() > before, "summer births arrive");
+}
+
+#[test]
+fn quern_grinds_minerals_and_kiln_colors_glass() {
+    use crate::world::{BlockEntity, KILN_FIRE_SECS, KilnState, Weather};
+    let reg = base_reg();
+    let mut w = test_world_with("gw-kiln", reg.clone());
+    let b = |n: &str| reg.block_id(n).unwrap();
+    let it2 = |n: &str| reg.item_id(n).unwrap();
+
+    // The quern is a station: bare-hand turns, two per chunk, 2 powder out.
+    let qpos = (10, 120, 10);
+    w.set_block(10, 120, 10, b("base:quern"));
+    let bloom = it2("base:steel_bloom");
+    assert!(
+        !w.anvil_put(qpos, ItemStack::new(&reg, bloom, 1)),
+        "blooms don't grind"
+    );
+    assert!(
+        w.anvil_put(qpos, ItemStack::new(&reg, it2("base:raw_cobalt"), 1)),
+        "a mineral chunk rests on the quern"
+    );
+    let def = reg
+        .worked
+        .iter()
+        .find(|d| d.input == it2("base:raw_cobalt"))
+        .unwrap();
+    assert!(!def.needs_hammer && def.station == "quern" && def.count == 2);
+    assert!(w.anvil_strike(qpos).is_none(), "turn one");
+    let out = w.anvil_strike(qpos).expect("turn two grinds");
+    assert_eq!(out.item, it2("base:cobalt_powder"));
+    assert_eq!(out.count, 2, "one chunk, two powders");
+
+    // The kiln shares the bloomery's shell; a bloomery mouth still
+    // validates its own and never the kiln's.
+    let my = 130;
+    build_bloomery(&mut w, &reg, 20, my, 10);
+    assert!(w.check_bloomery(20, my, 10).is_some());
+    assert!(
+        w.check_kiln(20, my, 10).is_none(),
+        "wrong mouth, wrong craft"
+    );
+    w.set_block(20, my, 10, b("base:kiln"));
+    assert!(
+        w.check_kiln(20, my, 10).is_some(),
+        "swap the mouth, get a kiln"
+    );
+
+    // 8 sand + 1 cobalt powder + 8 charcoal -> 8 blue glass.
+    let mut st = KilnState::default();
+    for i in 0..4 {
+        st.sand[i] = Some(ItemStack::new(&reg, it2("base:sand"), 2));
+        st.fuel[i] = Some(ItemStack::new(&reg, it2("base:charcoal"), 2));
+    }
+    st.powder = Some(ItemStack::new(&reg, it2("base:cobalt_powder"), 1));
+    w.block_entities.insert((20, my, 10), BlockEntity::Kiln(st));
+    w.weather = Weather::Clear;
+    assert!(w.light_kiln(20, my, 10).is_ok());
+    assert_eq!(
+        w.get_block(20, my, 10),
+        b("base:kiln_lit"),
+        "the mouth glows white-gold"
+    );
+    let steps = (KILN_FIRE_SECS / 0.5) as i32 + 4;
+    for _ in 0..steps {
+        w.tick_entities(0.5);
+    }
+    let Some(BlockEntity::Kiln(k)) = w.block_entities.get(&(20, my, 10)) else {
+        panic!()
+    };
+    assert!(!k.lit);
+    assert!(
+        k.powder.is_none(),
+        "the powder colored the batch and is gone"
+    );
+    let blue: u32 = k
+        .sand
+        .iter()
+        .flatten()
+        .filter(|s| s.item == it2("base:blue_glass"))
+        .map(|s| s.count)
+        .sum();
+    assert_eq!(blue, 8, "a full batch of blue glass");
+
+    // No powder = bulk clear glass.
+    let mut st = KilnState::default();
+    st.sand[0] = Some(ItemStack::new(&reg, it2("base:sand"), 2));
+    st.fuel[0] = Some(ItemStack::new(&reg, it2("base:charcoal"), 2));
+    w.block_entities.insert((20, my, 10), BlockEntity::Kiln(st));
+    w.light_kiln(20, my, 10).unwrap();
+    for _ in 0..steps {
+        w.tick_entities(0.5);
+    }
+    let Some(BlockEntity::Kiln(k)) = w.block_entities.get(&(20, my, 10)) else {
+        panic!()
+    };
+    let clear: u32 = k
+        .sand
+        .iter()
+        .flatten()
+        .filter(|s| s.item == it2("base:glass"))
+        .map(|s| s.count)
+        .sum();
+    assert_eq!(clear, 2, "an uncolored batch fires clear");
+
+    // Ore gates: manganese refuses everything under steel.
+    let mn = b("base:manganese_ore");
+    assert_eq!(reg.block(mn).min_tier, 5, "manganese is steel-gated");
+    let iron_pick = reg.item_id("base:iron_pickaxe");
+    assert!(
+        reg.drops_for(mn, iron_pick).is_none() || reg.block(mn).min_tier > 4,
+        "iron picks get nothing from manganese"
+    );
+    // All three ore bands registered.
+    for ore in ["base:cobalt_ore", "base:cinnabar_ore", "base:manganese_ore"] {
+        assert!(
+            reg.ores.iter().any(|o| o.block == b(ore)),
+            "{ore} generates"
+        );
+    }
+}
+
+#[test]
+fn stained_glass_filters_torchlight_by_channel() {
+    let reg = base_reg();
+    let mut w = test_world_with("gw-stain", reg.clone());
+    let b = |n: &str| reg.block_id(n).unwrap();
+    let my = 120;
+    // A sealed corridor: torch | red glass | probe cell.
+    let stone = b("base:stone");
+    for x in 8..15 {
+        for y in my - 1..my + 3 {
+            for z in 8..12 {
+                w.set_block(x, y, z, stone);
+            }
+        }
+    }
+    for x in 9..14 {
+        w.set_block(x, my, 10, AIR);
+        w.set_block(x, my + 1, 10, AIR);
+    }
+    w.set_block(9, my, 10, b("base:torch"));
+    w.set_block(11, my, 10, b("base:red_glass"));
+    w.set_block(11, my + 1, 10, b("base:red_glass"));
+    let (rgb, _) = w.light_rgb_at(13, my, 10);
+    assert!(rgb[0] > 0, "red passes red glass: {rgb:?}");
+    assert_eq!(rgb[1], 0, "green dies at red glass: {rgb:?}");
+    assert_eq!(rgb[2], 0, "blue dies at red glass: {rgb:?}");
+    // Clear glass passes everything.
+    w.set_block(11, my, 10, b("base:glass"));
+    w.set_block(11, my + 1, 10, b("base:glass"));
+    let (rgb, _) = w.light_rgb_at(13, my, 10);
+    // A torch burns warm: blue is already spent at this range, so the
+    // proof is red and green surviving where red glass killed green.
+    assert!(
+        rgb[0] > 0 && rgb[1] > 0,
+        "clear passes the torch's warmth: {rgb:?}"
+    );
 }
 
 #[test]
@@ -4885,6 +5049,20 @@ fn content_graph_is_complete_and_obtainable() {
             if !ok.contains(&w.output.0) && ok.contains(&w.input.0) {
                 ok.insert(w.output.0);
                 grew = true;
+            }
+        }
+        if let Some((sand, fuel, clear)) = reg.kiln_base {
+            if ok.contains(&sand.0) && ok.contains(&fuel.0) {
+                if !ok.contains(&clear.0) {
+                    ok.insert(clear.0);
+                    grew = true;
+                }
+                for (p, g) in &reg.kiln {
+                    if !ok.contains(&g.0) && ok.contains(&p.0) {
+                        ok.insert(g.0);
+                        grew = true;
+                    }
+                }
             }
         }
         if !grew {
@@ -5333,6 +5511,27 @@ fn loopback_join_stream_and_edit() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert!(bar, "guest hammer strikes work the bloom into a bar");
+
+    // The kiln streams to guests as container kind 4.
+    let ky = sim.world.surface_height(6, 12) + 1;
+    build_bloomery(&mut sim.world, &reg, 6, ky, 12);
+    let kiln_b = reg.block_id("base:kiln").unwrap();
+    sim.world.set_block(6, ky, 12, kiln_b);
+    client.send(&C2S::OpenContainer { x: 6, y: ky, z: 12 });
+    let mut got_kind4 = false;
+    for _ in 0..100 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        for msg in client.poll() {
+            if matches!(msg, S2C::Container { kind: 4, .. }) {
+                got_kind4 = true;
+            }
+        }
+        if got_kind4 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(got_kind4, "kiln streams as container kind 4");
 
     // A withdrawn sleep vote blocks the dawn.
     sim.time_of_day = 0.75;

@@ -108,6 +108,22 @@ into throwable snowballs (harmless, knockback — aim well), packs
 back into snow blocks, and melts under bright torchlight. Rain even
 soothes the wild: ire decays a quarter faster while the land drinks.
 
+## Glassworks
+
+Sand falls like it should — pull the support and the column tumbles,
+crushing what it lands on. It also smelts into **glass**, which
+renders truly translucent, passes sunlight, and turns a glass roof
+into a real greenhouse (winter crops grow under it, no torches).
+Color is geology, not dyes: grind minerals to pigment at the
+**quern** — verdigris and ochre from the copper and iron you already
+mine, plus cobalt, cinnabar, and steel-gated manganese from three new
+ore bands — then charge a **glass kiln** (the bloomery's own
+firebrick stack with a different mouth) with sand and charcoal and
+one powder, and fire the whole batch that color. Five stained
+glasses, and the light engine plays along: **a torch behind red
+glass throws only red light** — stained windows paint the night the
+color of their panes.
+
 ## Iron, steel & the ruins of the takers
 
 - **Iron** runs deep (below y 48, bronze picks required); **steel is

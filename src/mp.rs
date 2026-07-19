@@ -513,6 +513,7 @@ impl HostSession {
                     Some("furnace") => 1,
                     Some("offering") => 2,
                     Some("bloomery") => 3,
+                    Some("kiln") => 4,
                     _ => return,
                 };
                 let entry = server
@@ -523,6 +524,7 @@ impl HostSession {
                         0 => BlockEntity::Chest(Default::default()),
                         1 => BlockEntity::Furnace(Default::default()),
                         3 => BlockEntity::Bloomery(Default::default()),
+                        4 => BlockEntity::Kiln(Default::default()),
                         _ => BlockEntity::Offering(Default::default()),
                     });
                 if let BlockEntity::Chest(c) = entry
@@ -569,7 +571,12 @@ impl HostSession {
                 if (p - guest.pos).length() > REACH {
                     return;
                 }
-                match server.world.light_bloomery(x, y, z) {
+                let b = server.world.get_block(x, y, z);
+                let res = match server.world.reg.block(b).interaction.as_deref() {
+                    Some("kiln") => server.world.light_kiln(x, y, z),
+                    _ => server.world.light_bloomery(x, y, z),
+                };
+                match res {
                     Ok(()) => self.send_container(server, id, (x, y, z)),
                     Err(e) => self.net.send(id, &S2C::Toast(e.into())),
                 }
@@ -677,6 +684,30 @@ impl HostSession {
                     }
                 }
             }
+            BlockEntity::Kiln(kl) => {
+                // Sealed while firing. Sand slots 0-3, powder 4, fuel
+                // 5-8; puts validate against the kiln tables.
+                if !kl.lit && slot < 9 {
+                    let base = server.world.reg.kiln_base;
+                    let powders: Vec<crate::registry::ItemId> =
+                        server.world.reg.kiln.iter().map(|(p, _)| *p).collect();
+                    let ok_put = |it: crate::registry::ItemId| match slot {
+                        0..=3 => base.map(|(sa, _, _)| sa) == Some(it),
+                        4 => powders.contains(&it),
+                        _ => base.map(|(_, fu, _)| fu) == Some(it),
+                    };
+                    let s = match slot {
+                        0..=3 => &mut kl.sand[slot],
+                        4 => &mut kl.powder,
+                        _ => &mut kl.fuel[slot - 5],
+                    };
+                    if held.is_none() || held.map(|h| ok_put(h.item)) == Some(true) {
+                        let (ns, nh) = click_stack(&reg, *s, held, right);
+                        *s = ns;
+                        held = nh;
+                    }
+                }
+            }
             BlockEntity::Clamp(_) | BlockEntity::Anvil(_) => {}
             BlockEntity::Chest(c) => {
                 if slot < c.slots.len() {
@@ -764,6 +795,19 @@ impl HostSession {
                 vec![
                     if b.lit { 1.0 } else { 0.0 },
                     b.progress / crate::world::BLOOMERY_FIRE_SECS,
+                ],
+            ),
+            BlockEntity::Kiln(k) => (
+                4,
+                k.sand
+                    .iter()
+                    .chain([&k.powder])
+                    .chain(k.fuel.iter())
+                    .map(snap)
+                    .collect(),
+                vec![
+                    if k.lit { 1.0 } else { 0.0 },
+                    k.progress / crate::world::KILN_FIRE_SECS,
                 ],
             ),
             BlockEntity::Clamp(_) | BlockEntity::Anvil(_) => return,

@@ -21,3 +21,27 @@ replaces = "base:stone"
 vein_size = 6
 per_chunk = 4
 y_range = [4, 48]
+
+[[feature]]
+type = "ore"
+block = "base:cobalt_ore"
+replaces = "base:stone"
+vein_size = 4
+per_chunk = 2
+y_range = [4, 24]
+
+[[feature]]
+type = "ore"
+block = "base:cinnabar_ore"
+replaces = "base:stone"
+vein_size = 4
+per_chunk = 2
+y_range = [16, 40]
+
+[[feature]]
+type = "ore"
+block = "base:manganese_ore"
+replaces = "base:stone"
+vein_size = 3
+per_chunk = 2
+y_range = [4, 16]

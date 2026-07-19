@@ -74,6 +74,7 @@ enum Screen {
     Chest((i32, i32, i32)),
     Offering((i32, i32, i32)),
     Bloomery((i32, i32, i32)),
+    Kiln((i32, i32, i32)),
     Join,
     Paused,
     Dead,
@@ -901,6 +902,108 @@ impl Game {
                 }
             }
         }
+        // Dev: a glassworks yard - kiln stack, quern, minerals, sand.
+        if std::env::var("WILDFORGE_DEMO_GLASSWORKS").is_ok() {
+            let b = |n: &str| self.reg.block_id(n);
+            if let (Some(fb), Some(kiln), Some(quern)) =
+                (b("base:firebrick"), b("base:kiln"), b("base:quern"))
+            {
+                let (sx, sz) = (spawn.x as i32 + 6, spawn.z as i32 - 6);
+                let sy = self.server.world.surface_height(sx, sz) + 1;
+                for ly in 0..3 {
+                    for rx in -1..=1i32 {
+                        for rz in -1..=1i32 {
+                            if rx == 0 && rz == 0 {
+                                continue;
+                            }
+                            self.server.world.set_block(sx + rx, sy + ly, sz + rz, fb);
+                        }
+                    }
+                    self.server
+                        .world
+                        .set_block(sx, sy + ly, sz, crate::registry::AIR);
+                }
+                self.server.world.set_block(sx - 1, sy, sz, kiln);
+                self.server.world.set_block(sx - 3, sy, sz + 2, quern);
+                let reg = self.reg.clone();
+                if let (Some(sand), Some(coal), Some(pow)) = (
+                    reg.item_id("base:sand"),
+                    reg.item_id("base:charcoal"),
+                    reg.item_id("base:cobalt_powder"),
+                ) {
+                    let mut st = world::KilnState::default();
+                    for i in 0..4 {
+                        st.sand[i] = Some(ItemStack::new(&reg, sand, 2));
+                        st.fuel[i] = Some(ItemStack::new(&reg, coal, 2));
+                    }
+                    st.powder = Some(ItemStack::new(&reg, pow, 1));
+                    self.server
+                        .world
+                        .block_entities
+                        .insert((sx - 1, sy, sz), world::BlockEntity::Kiln(st));
+                    let _ = self.server.world.light_kiln(sx - 1, sy, sz);
+                }
+                for (name, n) in [
+                    ("base:sand", 16),
+                    ("base:raw_cobalt", 4),
+                    ("base:raw_cinnabar", 4),
+                    ("base:charcoal", 8),
+                    ("base:ember", 2),
+                    ("base:blue_glass", 8),
+                    ("base:glass", 8),
+                ] {
+                    if let Some(item) = reg.item_id(name) {
+                        self.inventory.add(&reg, item, n);
+                    }
+                }
+                // Torches behind stained panes: the light comes out
+                // the color of the glass (stage 5's proof).
+                let (tx2, tz2) = (spawn.x as i32 - 8, spawn.z as i32 + 2);
+                let ty2 = self.server.world.surface_height(tx2, tz2) + 1;
+                if let (Some(stone), Some(torch), Some(rg), Some(bg)) = (
+                    b("base:stone"),
+                    b("base:torch"),
+                    b("base:red_glass"),
+                    b("base:blue_glass"),
+                ) {
+                    for (i, pane) in [rg, bg].iter().enumerate() {
+                        let z = tz2 + i as i32 * 3;
+                        // A stone alcove holding a torch, glazed shut.
+                        for dy in -1..=1i32 {
+                            for dz in -1..=1i32 {
+                                self.server
+                                    .world
+                                    .set_block(tx2 - 1, ty2 + dy, z + dz, stone);
+                                if dy != 0 || dz != 0 {
+                                    self.server.world.set_block(tx2, ty2 + dy, z + dz, stone);
+                                }
+                            }
+                        }
+                        self.server.world.set_block(tx2, ty2, z, torch);
+                        self.server.world.set_block(tx2 + 1, ty2, z, *pane);
+                    }
+                }
+                // A stained window row so the tint shows in shots.
+                let (wx, wz) = (spawn.x as i32 - 5, spawn.z as i32);
+                let wy = self.server.world.surface_height(wx, wz) + 1;
+                for (i, g) in [
+                    "base:glass",
+                    "base:teal_glass",
+                    "base:amber_glass",
+                    "base:blue_glass",
+                    "base:red_glass",
+                    "base:violet_glass",
+                ]
+                .iter()
+                .enumerate()
+                {
+                    if let Some(gb) = b(g) {
+                        self.server.world.set_block(wx, wy, wz + i as i32, gb);
+                        self.server.world.set_block(wx, wy + 1, wz + i as i32, gb);
+                    }
+                }
+            }
+        }
         // Dev: WILDFORGE_IRE=N forces the wild's ire (spawn testing).
         if let Ok(v) = std::env::var("WILDFORGE_IRE")
             && let Ok(v) = v.parse::<f32>()
@@ -1289,7 +1392,11 @@ impl Game {
         // Leaving a container tells the host to stop streaming it.
         if matches!(
             self.screen,
-            Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_) | Screen::Bloomery(_)
+            Screen::Furnace(_)
+                | Screen::Chest(_)
+                | Screen::Offering(_)
+                | Screen::Bloomery(_)
+                | Screen::Kiln(_)
         ) && let Some(r) = &self.remote
         {
             r.client.send(&net::C2S::CloseContainer);
@@ -1298,7 +1405,11 @@ impl Game {
         if self.screen == Screen::Inventory
             || matches!(
                 self.screen,
-                Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_) | Screen::Bloomery(_)
+                Screen::Furnace(_)
+                    | Screen::Chest(_)
+                    | Screen::Offering(_)
+                    | Screen::Bloomery(_)
+                    | Screen::Kiln(_)
             )
         {
             let mut back: Vec<ItemStack> = self.held_stack.take().into_iter().collect();
@@ -1633,6 +1744,23 @@ impl Game {
                             };
                             world::BlockEntity::Furnace(f)
                         }
+                        4 => {
+                            let mut k = world::KilnState {
+                                lit: aux.first().copied().unwrap_or(0.0) > 0.5,
+                                progress: aux.get(1).copied().unwrap_or(0.0)
+                                    * world::KILN_FIRE_SECS,
+                                ..Default::default()
+                            };
+                            for (i, sl) in slots.iter().enumerate().take(9) {
+                                let st = conv(sl);
+                                match i {
+                                    0..=3 => k.sand[i] = st,
+                                    4 => k.powder = st,
+                                    _ => k.fuel[i - 5] = st,
+                                }
+                            }
+                            world::BlockEntity::Kiln(k)
+                        }
                         3 => {
                             let mut b = world::BloomeryState {
                                 lit: aux.first().copied().unwrap_or(0.0) > 0.5,
@@ -1663,6 +1791,7 @@ impl Game {
                             0 => Screen::Chest(pos),
                             1 => Screen::Furnace(pos),
                             3 => Screen::Bloomery(pos),
+                            4 => Screen::Kiln(pos),
                             _ => Screen::Offering(pos),
                         });
                     }
@@ -2263,19 +2392,31 @@ impl Game {
             self.brush_target = None;
         }
 
-        // Smithing: hammering a rested bloom is a held channel, three
-        // strikes to a bar. The archaeology brush taught us this shape.
+        // Station work is a held channel: hammer strikes at the anvil,
+        // bare-hand turns at the quern. The def decides the tool.
         let anvil_target = hit.as_ref().map(|h| h.block).filter(|t| {
-            held.is_some_and(|i| reg.item(i).hammer)
-                && reg
-                    .block(self.server.world.get_block(t.0, t.1, t.2))
-                    .interaction
-                    .as_deref()
-                    == Some("anvil")
-                && matches!(
-                    self.server.world.block_entities.get(t),
-                    Some(world::BlockEntity::Anvil(a)) if a.bloom.is_some()
-                )
+            let station = reg
+                .block(self.server.world.get_block(t.0, t.1, t.2))
+                .interaction
+                .clone();
+            let Some(station) = station else { return false };
+            let rested = match self.server.world.block_entities.get(t) {
+                Some(world::BlockEntity::Anvil(a)) => a.bloom,
+                _ => None,
+            };
+            let Some(rested) = rested else { return false };
+            let Some(def) = reg
+                .worked
+                .iter()
+                .find(|w| w.input == rested.item && w.station == station)
+            else {
+                return false;
+            };
+            if def.needs_hammer {
+                held.is_some_and(|i| reg.item(i).hammer)
+            } else {
+                held.is_none()
+            }
         });
         if let (true, Some(target)) = (self.right_held, anvil_target) {
             if self.anvil_pos != Some(target) {
@@ -2286,7 +2427,7 @@ impl Game {
             if self.anvil_work >= 2.0 {
                 self.anvil_work = 0.0;
                 self.sfx(Sfx::Break(BreakMat::Stone));
-                if !self.creative {
+                if !self.creative && held.is_some() {
                     self.inventory.wear_tool(&reg, self.hotbar_sel);
                 }
                 if let Some(rc) = &self.remote {
@@ -4892,6 +5033,83 @@ impl Game {
                 self.ui = ui;
                 return;
             }
+            Screen::Kiln(pos) => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
+                let title = "GLASS KILN";
+                let tw = UiBatch::text_width(3.0, title);
+                ui.text_shadow((w - tw) / 2.0, h / 2.0 - 310.0, 3.0, title, [1.0; 4]);
+                let (slots, lit, progress, breached) = {
+                    let breached = self.server.world.check_kiln(pos.0, pos.1, pos.2).is_none();
+                    match self.server.world.block_entities.get(&pos) {
+                        Some(world::BlockEntity::Kiln(k)) => {
+                            let mut v = [None; 9];
+                            v[..4].copy_from_slice(&k.sand);
+                            v[4] = k.powder;
+                            v[5..].copy_from_slice(&k.fuel);
+                            (v, k.lit, k.progress / world::KILN_FIRE_SECS, breached)
+                        }
+                        _ => ([None; 9], false, 0.0, breached),
+                    }
+                };
+                ui.text_shadow(w / 2.0 - 150.0, h / 2.0 - 288.0, 1.5, "SAND", [1.0; 4]);
+                ui.text_shadow(w / 2.0 - 150.0, h / 2.0 - 210.0, 1.5, "PIGMENT", [1.0; 4]);
+                ui.text_shadow(w / 2.0 - 150.0, h / 2.0 - 132.0, 1.5, "CHARCOAL", [1.0; 4]);
+                for (i, sl) in slots.iter().enumerate() {
+                    let r = self.kiln_slot_rect(i);
+                    Self::draw_slot(&self.reg, &mut ui, r, *sl, false, self.hit(r));
+                }
+                let lr = self.bloomery_light_rect();
+                if lit {
+                    let br = (
+                        w / 2.0 - 2.0 * (Self::SLOT + 10.0) + 5.0,
+                        h / 2.0 - 60.0,
+                        4.0 * (Self::SLOT + 10.0) - 10.0,
+                        10.0,
+                    );
+                    ui.rect(br.0, br.1, br.2, br.3, [0.15, 0.15, 0.15, 0.9]);
+                    ui.rect(br.0, br.1, br.2 * progress, br.3, [1.0, 0.9, 0.5, 0.95]);
+                    ui.text_shadow(
+                        br.0,
+                        br.1 + 16.0,
+                        1.5,
+                        "FIRING - SEALED",
+                        [1.0, 0.9, 0.6, 1.0],
+                    );
+                } else if breached {
+                    ui.text_shadow(
+                        lr.0,
+                        lr.1 + 44.0,
+                        1.5,
+                        "THE STACK IS BREACHED",
+                        [1.0, 0.5, 0.4, 1.0],
+                    );
+                    Self::draw_button(&mut ui, lr, "LIGHT", false);
+                } else {
+                    Self::draw_button(&mut ui, lr, "LIGHT", self.hit(lr));
+                }
+                for i in 0..TOTAL_SLOTS {
+                    let r = self.inv_slot_rect(i);
+                    Self::draw_slot(
+                        &self.reg,
+                        &mut ui,
+                        r,
+                        self.inventory.slots[i],
+                        i == self.hotbar_sel,
+                        self.hit(r),
+                    );
+                }
+                self.draw_browser(&mut ui);
+                if let Some(s) = self.held_stack {
+                    let (cx, cy) = self.ui_cursor;
+                    let icon = self.reg.item(s.item).icon;
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
+                    if s.count > 1 {
+                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
+                    }
+                }
+                self.ui = ui;
+                return;
+            }
             Screen::Chest(pos) => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
                 let title = "CHEST";
@@ -5023,12 +5241,13 @@ impl Game {
                     &format!("MAX HEALTH +{bonus}"),
                     [1.0; 4],
                 );
-                // The calendar: day count and where the season stands.
+                // The calendar: day count and where the season stands
+                // (below the wild's ire row).
                 let w = &self.server.world;
                 let third = ["EARLY", "MID", "LATE"][((w.season_progress() * 3.0) as usize).min(2)];
                 ui.text_shadow(
                     p0x - 190.0,
-                    p0y + 158.0,
+                    p0y + 184.0,
                     1.5,
                     &format!("DAY {} - {third} {}", w.day + 1, world::SEASONS[w.season()]),
                     [0.85, 0.9, 1.0, 1.0],
@@ -5326,13 +5545,76 @@ impl Game {
             });
             return;
         }
-        match self.server.world.light_bloomery(pos.0, pos.1, pos.2) {
+        let kilnish = self
+            .reg
+            .block(self.server.world.get_block(pos.0, pos.1, pos.2))
+            .interaction
+            .as_deref()
+            == Some("kiln");
+        let res = if kilnish {
+            self.server.world.light_kiln(pos.0, pos.1, pos.2)
+        } else {
+            self.server.world.light_bloomery(pos.0, pos.1, pos.2)
+        };
+        match res {
             Ok(()) => {
                 self.inventory.take_one(slot);
                 self.sfx(Sfx::Bolt(0.8));
-                self.toast("The stack takes the ember. Half a day of fire.".to_string());
+                self.toast(if kilnish {
+                    "The kiln takes the ember. White heat.".to_string()
+                } else {
+                    "The stack takes the ember. Half a day of fire.".to_string()
+                });
             }
             Err(e) => self.toast(e.to_string()),
+        }
+    }
+
+    /// Kiln slots: 0-3 sand (top), 4 powder (middle), 5-8 fuel (bottom).
+    fn kiln_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        let (col, row) = if i == 4 {
+            (1.5, 1.0)
+        } else if i < 4 {
+            (i as f32, 0.0)
+        } else {
+            ((i - 5) as f32, 2.0)
+        };
+        (
+            w / 2.0 - 2.0 * (Self::SLOT + 10.0) + col * (Self::SLOT + 10.0) + 5.0,
+            h / 2.0 - 270.0 + row * (Self::SLOT + 26.0),
+            Self::SLOT,
+            Self::SLOT,
+        )
+    }
+
+    fn kiln_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+        self.remote_container_notify(pos, slot, right);
+        let reg = self.reg.clone();
+        let Some(world::BlockEntity::Kiln(k)) = self.server.world.block_entities.get_mut(&pos)
+        else {
+            return;
+        };
+        if k.lit || slot >= 9 {
+            return;
+        }
+        let base = reg.kiln_base;
+        let powders: Vec<ItemId> = reg.kiln.iter().map(|(p, _)| *p).collect();
+        let ok_put = |it: ItemId| match slot {
+            0..=3 => base.map(|(sa, _, _)| sa) == Some(it),
+            4 => powders.contains(&it),
+            _ => base.map(|(_, fu, _)| fu) == Some(it),
+        };
+        let s = match slot {
+            0..=3 => &mut k.sand[slot],
+            4 => &mut k.powder,
+            _ => &mut k.fuel[slot - 5],
+        };
+        if self.held_stack.is_none() || self.held_stack.map(|h| ok_put(h.item)) == Some(true) {
+            let (ns, nh) = inventory::click_stack(&reg, *s, self.held_stack, right);
+            *s = ns;
+            self.held_stack = nh;
         }
     }
 
@@ -5995,6 +6277,28 @@ impl Game {
                     }
                 }
             }
+            Screen::Kiln(pos) => {
+                if self.browser_click(right) {
+                    return;
+                }
+                if self.hit(self.bloomery_light_rect()) {
+                    self.sfx(Sfx::Click);
+                    self.light_bloomery_action(pos);
+                    return;
+                }
+                for i in 0..9 {
+                    if self.hit(self.kiln_slot_rect(i)) {
+                        self.kiln_click(pos, i, right);
+                        return;
+                    }
+                }
+                for i in 0..TOTAL_SLOTS {
+                    if self.hit(self.inv_slot_rect(i)) {
+                        self.inventory_click(false, i, right);
+                        return;
+                    }
+                }
+            }
             Screen::Chest(pos) => {
                 if self.browser_click(right) {
                     return;
@@ -6134,7 +6438,8 @@ impl Game {
                 | Screen::Furnace(_)
                 | Screen::Chest(_)
                 | Screen::Offering(_)
-                | Screen::Bloomery(_) => self.set_screen(Screen::Playing),
+                | Screen::Bloomery(_)
+                | Screen::Kiln(_) => self.set_screen(Screen::Playing),
                 Screen::Paused => self.set_screen(Screen::Playing),
                 Screen::Settings => {
                     self.config.save();
@@ -6164,7 +6469,8 @@ impl Game {
                 | Screen::Furnace(_)
                 | Screen::Chest(_)
                 | Screen::Offering(_)
-                | Screen::Bloomery(_) => self.set_screen(Screen::Playing),
+                | Screen::Bloomery(_)
+                | Screen::Kiln(_) => self.set_screen(Screen::Playing),
                 _ => {}
             },
             KeyCode::KeyT

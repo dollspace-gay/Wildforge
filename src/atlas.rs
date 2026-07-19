@@ -216,6 +216,22 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("steel_bloom", 213),
         ("smith_hammer", 214),
         ("glass", 216),
+        ("cobalt_ore", 217),
+        ("cinnabar_ore", 218),
+        ("manganese_ore", 219),
+        ("verdigris_powder", 220),
+        ("ochre_powder", 221),
+        ("cobalt_powder", 222),
+        ("cinnabar_powder", 223),
+        ("manganese_powder", 224),
+        ("teal_glass", 225),
+        ("amber_glass", 226),
+        ("blue_glass", 227),
+        ("red_glass", 228),
+        ("violet_glass", 229),
+        ("kiln", 230),
+        ("kiln_lit", 231),
+        ("quern", 232),
         ("unknown", 15),
         ("crack1", 16),
         ("crack2", 17),
@@ -2415,6 +2431,119 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         } else {
             [0, 0, 0, 0]
         }
+    });
+
+    // (217-219) color minerals: stone studded with vivid crystal.
+    for (slot, c) in [
+        (217u32, [52.0f32, 82.0, 200.0]), // cobalt
+        (218, [200.0, 52.0, 48.0]),       // cinnabar
+        (219, [148.0, 64.0, 190.0]),      // manganese
+    ] {
+        tf(slot, &mut |px, py, u, v| {
+            let t = fbm(u, v, 4, 7);
+            let base = mix3([112.0, 112.0, 116.0], [142.0, 142.0, 144.0], t);
+            let (d1, _, id) = voronoi(u, v, 5, 977 + slot);
+            if d1 < 0.2 && id % 3 == 0 {
+                rgba(c, 0.8 + (id % 40) as f32 / 100.0, 255)
+            } else {
+                rgba(base, speck(px, py, 979, 0.05), 255)
+            }
+        });
+    }
+    // (220-224) pigment powders: soft heaps on transparency.
+    for (slot, c) in [
+        (220u32, [96.0f32, 180.0, 150.0]), // verdigris
+        (221, [196.0, 140.0, 60.0]),       // ochre
+        (222, [58.0, 92.0, 210.0]),        // cobalt
+        (223, [210.0, 58.0, 52.0]),        // cinnabar
+        (224, [156.0, 70.0, 200.0]),       // manganese
+    ] {
+        tf(slot, &mut |px, py, u, v| {
+            let dx = u - 0.5;
+            let heap = v > 0.45 && (v - 0.45) > dx * dx * 2.2 - 0.35 && v < 0.85;
+            if heap {
+                rgba(c, 0.8 + h01(px as i32, py as i32, 983 + slot) * 0.35, 255)
+            } else {
+                [0, 0, 0, 0]
+            }
+        });
+    }
+    // (225-229) colored glass: the clear pane, tinted.
+    for (slot, c) in [
+        (225u32, [110.0f32, 210.0, 190.0]),
+        (226, [230.0, 180.0, 90.0]),
+        (227, [90.0, 130.0, 235.0]),
+        (228, [230.0, 90.0, 85.0]),
+        (229, [190.0, 110.0, 230.0]),
+    ] {
+        tf(slot, &mut |px, py, u, v| {
+            let edge = !(0.06..=0.94).contains(&u) || !(0.06..=0.94).contains(&v);
+            let glint = ((u + v) * 10.0).fract() < 0.12 && u > 0.15 && u < 0.55 && v < 0.6;
+            if edge {
+                rgba(
+                    [c[0] * 0.8, c[1] * 0.8, c[2] * 0.8],
+                    speck(px, py, 987, 0.05),
+                    255,
+                )
+            } else if glint {
+                rgba([c[0] * 1.1, c[1] * 1.1, c[2] * 1.1], 1.0, 255)
+            } else {
+                // A held/placed tint pane: mostly open, faint film.
+                [c[0] as u8, c[1] as u8, c[2] as u8, 90]
+            }
+        });
+    }
+    // (230/231) kiln mouth, cold and lit: brick around a wide slot.
+    for (slot, lit) in [(230u32, false), (231, true)] {
+        tf(slot, &mut |px, py, u, v| {
+            let mouth = (u - 0.5).abs() < 0.3 && (0.45..0.8).contains(&v);
+            if mouth {
+                if lit {
+                    let t = fbm(u, v, 3, 991);
+                    rgba(
+                        mix3([255.0, 220.0, 120.0], [255.0, 250.0, 210.0], t),
+                        1.0,
+                        255,
+                    )
+                } else {
+                    rgba([26.0, 20.0, 18.0], speck(px, py, 993, 0.1), 255)
+                }
+            } else {
+                let t = fbm(u, v, 4, 941);
+                let seam = (v * 4.0).fract() < 0.14 || (u * 4.0).fract() < 0.14;
+                let c = if seam {
+                    [46.0, 26.0, 22.0]
+                } else {
+                    mix3([132.0, 58.0, 40.0], [170.0, 84.0, 52.0], t)
+                };
+                rgba(c, speck(px, py, 943, 0.08), 255)
+            }
+        });
+    }
+    // (232) quern top: a millstone with a center eye and sweep grooves.
+    tf(232, &mut |px, py, u, v| {
+        let dx = u - 0.5;
+        let dy = v - 0.5;
+        let r = (dx * dx + dy * dy).sqrt();
+        if r > 0.48 {
+            let t = fbm(u, v, 4, 959);
+            return rgba(
+                mix3([120.0, 120.0, 124.0], [150.0, 150.0, 154.0], t),
+                1.0,
+                255,
+            );
+        }
+        if r < 0.08 {
+            return rgba([50.0, 48.0, 46.0], 1.0, 255); // the eye
+        }
+        let ang = dy.atan2(dx);
+        let groove = ((ang * 5.0 + r * 9.0).sin()).abs() < 0.16;
+        let t = fbm(u, v, 4, 997);
+        let mut c = mix3([138.0, 136.0, 132.0], [168.0, 166.0, 160.0], t);
+        if groove {
+            c = [104.0, 102.0, 98.0];
+        }
+        rgba(c, speck(px, py, 999, 0.06), 255)
     });
 
     // (15,0) unknown/missing texture: magenta checkerboard.

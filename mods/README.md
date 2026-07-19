@@ -105,8 +105,11 @@ Every field, with defaults:
 | `light` | `0` | emitted light 0–15 (torch is 14) |
 | `light_color` | white | `[r, g, b]` 0–1 tint for the glow — hue-normalized so the brightest channel still reaches the full `light` level (torches burn warm; a modded block can smoulder any color) |
 | `height` | full cube | render height 0–1 for thin slabs (snow layers are `0.125`); pair with `solid = false` to walk through, and unsupported slabs pop off like torches |
+| `falls` | `false` | gravity block: detaches and falls when unsupported (sand, gravel) |
+| `glass` | `false` | glazing: renders translucent (the blended pipeline), passes sky light, and a glass roof grows winter crops at 0.75× |
+| `light_filter` | all pass | `[r, g, b]` as 0/1 — stained light: which block-light channels pass through (red glass is `[1, 0, 0]`) |
 | `water` | none | fluid level: `0` = source (registers flow levels automatically) |
-| `interaction` | none | right-click opens: `"crafting"` \| `"furnace"` \| `"chest"` \| `"offering"` \| `"bloomery"` \| `"anvil"` |
+| `interaction` | none | right-click opens: `"crafting"` \| `"furnace"` \| `"chest"` \| `"offering"` \| `"bloomery"` \| `"kiln"` \| `"anvil"` \| `"quern"` |
 | `crop` | none | `{ stages = N, next_chance = 0.3, stage_textures = [...], any_soil = false }` — advances on random ticks; `any_soil` grows off farmland too |
 | `harvest` | none | `{ item = "...", count = 2, becomes = "..." }` — right-click yield without breaking |
 | `sapling` | none | `{ tree = "oak" }` — grows into that tree species on random ticks (`oak`/`birch`/`spruce`/`jungle`/`acacia`; unknown names grow oak) |
@@ -196,9 +199,14 @@ speed = 1.5
 - `[[bloomery]]` `{ charge, fuel, bloom }` declares a bloomery firing
   chain: a lit stack converts 2 charge + 2 fuel per bloom (+2 bonus
   blooms on a full 8+8 batch) over half an in-game day.
-- `[[worked]]` `{ input, output, strikes = 3 }` declares anvil work:
-  an item with `hammer = true` beats `input` into `output` on any
-  block with `interaction = "anvil"`.
+- `[[worked]]` `{ input, output, strikes = 3, station = "anvil",
+  tool = "hammer", count = 1 }` declares station work. The anvil wants
+  a `hammer = true` item; `station = "quern"` with `tool = "none"`
+  grinds bare-handed (minerals into pigment). `count` is the output
+  stack.
+- `[[kiln]]` `{ powder, glass }` maps a pigment to its colored glass;
+  the `[kiln_base]` table `{ sand, fuel, clear }` declares the kiln's
+  staples. One powder colors a whole batch; no powder fires clear.
 
 ## tags.toml
 

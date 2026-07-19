@@ -567,3 +567,111 @@ texture = "@glass"
 hardness = 0.4
 opaque = false
 glass = true
+
+[[block]]
+id = "cobalt_ore"
+name = "Cobalt Ore"
+texture = "@cobalt_ore"
+hardness = 8.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 4
+drops = "base:raw_cobalt"
+
+[[block]]
+id = "cinnabar_ore"
+name = "Cinnabar Ore"
+texture = "@cinnabar_ore"
+hardness = 8.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 4
+drops = "base:raw_cinnabar"
+
+[[block]]
+id = "manganese_ore"
+name = "Manganese Ore"
+# The deep's violet: only steel bites it.
+texture = "@manganese_ore"
+hardness = 9.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 5
+drops = "base:raw_manganese"
+
+[[block]]
+id = "quern"
+name = "Quern"
+texture = { top = "@quern", side = "@stone" }
+hardness = 6.5
+tool = "pickaxe"
+requires_tool = true
+interaction = "quern"
+height = 0.6
+
+[[block]]
+id = "kiln"
+name = "Glass Kiln"
+texture = { top = "@firebrick", side = "@kiln" }
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+interaction = "kiln"
+
+[[block]]
+id = "kiln_lit"
+name = "Glass Kiln"
+texture = { top = "@firebrick", side = "@kiln_lit" }
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+interaction = "kiln"
+light = 13
+light_color = [1.0, 0.85, 0.55]
+drops = "base:kiln"
+item = false
+
+[[block]]
+id = "teal_glass"
+light_filter = [0, 1, 1]
+name = "Teal Glass"
+texture = "@teal_glass"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "amber_glass"
+light_filter = [1, 1, 0]
+name = "Amber Glass"
+texture = "@amber_glass"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "blue_glass"
+light_filter = [0, 0, 1]
+name = "Blue Glass"
+texture = "@blue_glass"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "red_glass"
+light_filter = [1, 0, 0]
+name = "Red Glass"
+texture = "@red_glass"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "violet_glass"
+light_filter = [1, 0, 1]
+name = "Violet Glass"
+texture = "@violet_glass"
+hardness = 0.4
+opaque = false
+glass = true
