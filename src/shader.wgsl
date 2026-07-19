@@ -29,6 +29,8 @@ const MAX_PT_LIGHTS: u32 = 8u;
 @group(1) @binding(1) var atlas_smp: sampler;
 @group(2) @binding(0) var shadow_tex: texture_depth_2d;
 @group(2) @binding(1) var shadow_smp: sampler_comparison;
+@group(2) @binding(2) var pt_cube: texture_cube_array<f32>;
+@group(2) @binding(3) var pt_smp: sampler;
 
 const SHADOW_RES: f32 = 2048.0;
 
@@ -134,7 +136,10 @@ fn world_light(normal: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) 
             let ndl2 = max(dot(n, ldir), 0.0);
             let a = clamp(1.0 - d / range, 0.0, 1.0);
             let atten = a * a;
-            let shadow_pt = 1.0; // TODO(M2): cube shadow map
+            // Cube distance map: nearest occluder distance along light->fragment.
+            let nearest = textureSampleLevel(pt_cube, pt_smp, -to_light, i32(i), 0.0).r;
+            let bias = 0.08 + 0.15 * d / range;
+            let shadow_pt = select(0.0, 1.0, d <= nearest + bias);
             direct = direct + u.pt_col[i].rgb * (atten * ndl2 * shadow_pt);
         }
     }
