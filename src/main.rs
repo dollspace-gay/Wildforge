@@ -840,13 +840,7 @@ impl Game {
             self.server.time_of_day = t.fract();
         }
         // Dev: force camera look ("yaw,pitch" in radians) for framed captures.
-        if let Ok(l) = std::env::var("WILDFORGE_LOOK")
-            && let Some((y, p)) = l.split_once(',')
-            && let (Ok(y), Ok(p)) = (y.trim().parse::<f32>(), p.trim().parse::<f32>())
-        {
-            self.camera.yaw = y;
-            self.camera.pitch = p;
-        }
+        self.apply_look_env();
         // Dev: a ring of torches near spawn (lighting verification).
         if std::env::var("WILDFORGE_DEMO_TORCH").is_ok()
             && let Some(torch) = self.reg.block_id("base:torch")
@@ -925,6 +919,71 @@ impl Game {
                 },
             ];
         }
+        // Dev: a dusk campsite for the README hero shot — torch posts
+        // throwing hard shadows across the grass, a blue-glass lantern
+        // staining its pool, a chest and anvil for life.
+        if std::env::var("WILDFORGE_DEMO_CAMP").is_ok() {
+            let b = |n: &str| self.reg.block_id(n);
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            for dx in [-8i32, 0, 8] {
+                for dz in [-8i32, 0, 8] {
+                    self.server
+                        .world
+                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                }
+            }
+            if let (Some(log), Some(torch), Some(bg)) =
+                (b("base:log"), b("base:torch"), b("base:blue_glass"))
+            {
+                // A clearing: no trunks photobombing the campfire.
+                for dx in -6..=6i32 {
+                    for dz in -1..=12i32 {
+                        let (x, z) = (bx + dx, bz + dz);
+                        let y = self.server.world.surface_height(x, z);
+                        for h in 1..=9 {
+                            if self.server.world.get_block(x, y + h, z) != AIR {
+                                self.server.world.set_block(x, y + h, z, AIR);
+                            }
+                        }
+                    }
+                }
+                // Torch posts: a 2-log stake with the flame on top.
+                for (px, pz) in [(4i32, 4i32), (-4, 6), (0, 10)] {
+                    let (x, z) = (bx + px, bz + pz);
+                    let y = self.server.world.surface_height(x, z);
+                    self.server.world.set_block(x, y + 1, z, log);
+                    self.server.world.set_block(x, y + 2, z, log);
+                    self.server.world.set_block(x, y + 3, z, torch);
+                }
+                // The lantern: a ground shrine — torch boxed in blue
+                // glass, staining its pool across the grass.
+                let (lx, lz) = (bx - 2, bz + 8);
+                let ly = self.server.world.surface_height(lx, lz);
+                self.server.world.set_block(lx, ly + 1, lz, torch);
+                for (gx, gy, gz) in [
+                    (lx - 1, ly + 1, lz),
+                    (lx + 1, ly + 1, lz),
+                    (lx, ly + 1, lz - 1),
+                    (lx, ly + 1, lz + 1),
+                    (lx, ly + 2, lz),
+                ] {
+                    self.server.world.set_block(gx, gy, gz, bg);
+                }
+            }
+            for (name, px, pz) in [("base:chest", 2i32, 7i32), ("base:stone_anvil", -2, 4)] {
+                if let Some(blk) = b(name) {
+                    let (x, z) = (bx + px, bz + pz);
+                    let y = self.server.world.surface_height(x, z);
+                    self.server.world.set_block(x, y + 1, z, blk);
+                }
+            }
+            let reg = self.reg.clone();
+            if let Some(t) = reg.item_id("base:torch") {
+                self.inventory.add(&reg, t, 5);
+            }
+        }
+
         // Dev: an enclosed torch-lit room — the full static pipeline
         // (mesher emitters -> promotion -> cached cube shadows), with two
         // pillars to throw hard shadows and a red-glazed alcove (stained
@@ -3878,6 +3937,19 @@ impl Game {
         }
     }
 
+    /// Dev: WILDFORGE_LOOK pins yaw,pitch (applied at spawn, and every
+    /// frame during WILDFORGE_SHOT runs — synthetic WSLg mouse events
+    /// drift the camera over long headless warmups otherwise).
+    fn apply_look_env(&mut self) {
+        if let Ok(l) = std::env::var("WILDFORGE_LOOK")
+            && let Some((y, p)) = l.split_once(',')
+            && let (Ok(y), Ok(p)) = (y.trim().parse::<f32>(), p.trim().parse::<f32>())
+        {
+            self.camera.yaw = y;
+            self.camera.pitch = p;
+        }
+    }
+
     fn update(&mut self) {
         let now = Instant::now();
         let dt = (now - self.last_frame).as_secs_f32().min(0.05);
@@ -4740,6 +4812,9 @@ impl Game {
             }
         }
 
+        if self.auto_shot.is_some() {
+            self.apply_look_env();
+        }
         // Point lights: promote nearby emitters + the dynamic set.
         let mut dyn_lights = self.demo_lights.clone();
         // The held torch: your own body of light, real shadows and all.
@@ -5496,8 +5571,14 @@ impl Game {
             }
         }
 
-        // Mod/system toasts, top center.
-        for (i, (msg, ttl)) in self.toasts.iter().enumerate() {
+        // Mod/system toasts, top center (hidden during screenshot
+        // sessions — they'd sit over every captured frame).
+        for (i, (msg, ttl)) in self
+            .toasts
+            .iter()
+            .filter(|_| self.auto_shot.is_none())
+            .enumerate()
+        {
             let a = ttl.min(1.0);
             let m = msg.to_uppercase();
             let tw = UiBatch::text_width(2.0, &m);
