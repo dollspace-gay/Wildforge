@@ -10,7 +10,8 @@ struct Uniforms {
     sun_dir: vec4<f32>,
     // rgb = warm direct-sun color, already scaled by daylight; a unused
     sun_col: vec4<f32>,
-    // rgb = cool sky-ambient fill, already scaled by daylight; a unused
+    // rgb = cool sky-ambient fill, already scaled by daylight;
+    // a = the ambient floor (the stark<->soft darkness knob)
     amb_col: vec4<f32>,
     // world -> sun light-space clip, for shadow-map lookup
     light_vp: mat4x4<f32>,
@@ -112,7 +113,7 @@ fn world_light(normal: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) 
     if (dot(normal, normal) < 0.25) {
         // Pre-shaded billboards/entities: colored block light or grayscale sky,
         // whichever is brighter per channel, over a small floor.
-        return max(max(light, vec3<f32>(sky * u.misc.y)), vec3<f32>(0.03));
+        return max(max(light, vec3<f32>(sky * u.misc.y)), vec3<f32>(u.amb_col.a));
     }
     let n = normalize(normal);
     let fs = face_shade(n);
@@ -155,7 +156,7 @@ fn world_light(normal: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) 
     }
     // Steady (colored) torch light, minus each promoted light's estimate.
     let torch = max(light - suppress, vec3<f32>(0.0)) * fs;
-    return max(sun + amb + torch + direct, vec3<f32>(0.03));
+    return max(sun + amb + torch + direct, vec3<f32>(u.amb_col.a));
 }
 
 fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {

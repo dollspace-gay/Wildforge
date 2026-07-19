@@ -15,6 +15,10 @@ pub struct Config {
     /// Active texture pack id (`packs/<id>/` or built-in); empty = none
     /// (procedural). Fresh installs default to the bundled gemini pack.
     pub pack: String,
+    /// Point lights: 0 = off, 1 = shadowless, 2 = hard shadows.
+    pub lights: u8,
+    /// Ambient floor: true = stark (dark truly dark), false = soft.
+    pub stark: bool,
 }
 
 impl Default for Config {
@@ -25,6 +29,8 @@ impl Default for Config {
             view_dist: 7,
             fov: 75.0,
             pack: "gemini".into(),
+            lights: 2,
+            stark: true,
         }
     }
 }
@@ -63,6 +69,14 @@ impl Config {
                     }
                 }
                 "pack" => c.pack = v.to_string(),
+                "lights" => {
+                    c.lights = match v {
+                        "off" => 0,
+                        "on" => 1,
+                        _ => 2,
+                    }
+                }
+                "darkness" => c.stark = v != "soft",
                 _ => {}
             }
         }
@@ -71,8 +85,14 @@ impl Config {
 
     pub fn to_text(&self) -> String {
         format!(
-            "volume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\npack={}\n",
-            self.volume, self.sensitivity, self.view_dist, self.fov, self.pack
+            "volume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\npack={}\nlights={}\ndarkness={}\n",
+            self.volume,
+            self.sensitivity,
+            self.view_dist,
+            self.fov,
+            self.pack,
+            ["off", "on", "shadows"][self.lights.min(2) as usize],
+            if self.stark { "stark" } else { "soft" },
         )
     }
 

@@ -139,6 +139,8 @@ pub struct FrameInput<'a> {
     pub sun_col: Vec3,
     /// Cool sky-ambient color, already scaled by daylight.
     pub amb_col: Vec3,
+    /// Absolute darkness floor (stark ~0.04, soft ~0.12).
+    pub ambient_floor: f32,
     /// Dynamic colored point lights (accumulated in the chunk shader).
     pub point_lights: &'a [PointLight],
     pub outline: Option<(i32, i32, i32)>,
@@ -1057,7 +1059,7 @@ fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
             ],
             sun_dir: [f.sun_dir.x, f.sun_dir.y, f.sun_dir.z, 0.0],
             sun_col: [f.sun_col.x, f.sun_col.y, f.sun_col.z, 0.0],
-            amb_col: [f.amb_col.x, f.amb_col.y, f.amb_col.z, 0.0],
+            amb_col: [f.amb_col.x, f.amb_col.y, f.amb_col.z, f.ambient_floor],
             light_vp: light_vp.to_cols_array_2d(),
             pt_count: [f.point_lights.len().min(MAX_PT_LIGHTS) as u32, 0, 0, 0],
             pt_pos: {

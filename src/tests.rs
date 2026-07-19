@@ -5804,3 +5804,27 @@ fn light_director_caches_until_an_edit_lands_nearby() {
     let h3 = d.frame(cam, &[held(cam + Vec3::new(1.0, 0.0, 0.0))], 0.016, true);
     assert!(h3[1].epoch > e2, "real movement re-renders");
 }
+
+#[test]
+fn config_lights_and_darkness_roundtrip() {
+    use crate::config::Config;
+    let d = Config::default();
+    assert_eq!(d.lights, 2, "full shadows by default");
+    assert!(d.stark, "stark by default");
+
+    let c = Config {
+        lights: 1,
+        stark: false,
+        ..Default::default()
+    };
+    let c2 = Config::from_text(&c.to_text());
+    assert_eq!(c2.lights, 1);
+    assert!(!c2.stark);
+
+    let c3 = Config::from_text("lights=off\ndarkness=soft\n");
+    assert_eq!(c3.lights, 0);
+    assert!(!c3.stark);
+    let c4 = Config::from_text("lights=banana\ndarkness=???\n");
+    assert_eq!(c4.lights, 2, "unknown value falls back to full");
+    assert!(c4.stark, "unknown darkness falls back to stark");
+}

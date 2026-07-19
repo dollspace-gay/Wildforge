@@ -4736,11 +4736,13 @@ impl Game {
             glows.sort_by(|a, b| a.0.total_cmp(&b.0));
             dyn_lights.extend(glows.into_iter().take(2).map(|(_, l)| l));
         }
-        let point_lights = if self.in_world {
-            self.lights.frame(self.camera.pos, &dyn_lights, dt, true)
+        let point_lights = if self.in_world && self.config.lights > 0 {
+            self.lights
+                .frame(self.camera.pos, &dyn_lights, dt, self.config.lights >= 2)
         } else {
             Vec::new()
         };
+        let ambient_floor = if self.config.stark { 0.04 } else { 0.12 };
 
         let saved_cam = self.camera.pos;
         if self.nudge.1 > 0.0 {
@@ -4758,6 +4760,7 @@ impl Game {
             sun_dir,
             sun_col,
             amb_col,
+            ambient_floor,
             point_lights: &point_lights,
             outline,
             entity_verts: &entity_verts,
@@ -4946,10 +4949,22 @@ impl Game {
         (w / 2.0 - 20.0, h * 0.30 + i as f32 * 64.0, 300.0, 30.0)
     }
 
+    /// The two lighting rows under the sliders (0 = lights, 1 = darkness).
+    fn settings_toggle_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (
+            w / 2.0 - 20.0,
+            h * 0.30 + (4 + i) as f32 * 64.0 - 8.0,
+            300.0,
+            42.0,
+        )
+    }
+
     fn settings_back_rect(&self) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;
-        (w / 2.0 - 150.0, h * 0.30 + 4.0 * 64.0 + 24.0, 300.0, 42.0)
+        (w / 2.0 - 150.0, h * 0.30 + 6.0 * 64.0 + 24.0, 300.0, 42.0)
     }
 
     fn slider_frac(&self, i: usize) -> f32 {
@@ -5327,6 +5342,20 @@ impl Game {
                         &self.slider_label(i),
                         [1.0; 4],
                     );
+                }
+                for (i, (name, value)) in [
+                    (
+                        "DYNAMIC LIGHTS",
+                        ["OFF", "ON", "+SHADOWS"][self.config.lights.min(2) as usize],
+                    ),
+                    ("DARKNESS", if self.config.stark { "STARK" } else { "SOFT" }),
+                ]
+                .iter()
+                .enumerate()
+                {
+                    let r = self.settings_toggle_rect(i);
+                    ui.text_shadow(w / 2.0 - 300.0, r.1 + 12.0, 2.0, name, [1.0; 4]);
+                    Self::draw_button(&mut ui, r, value, self.hit(r));
                 }
                 let br = self.settings_back_rect();
                 Self::draw_button(&mut ui, br, "BACK", self.hit(br));
@@ -7114,6 +7143,16 @@ impl Game {
                         self.set_slider(i, (cx - bx - 2.0) / (bw - 4.0));
                         return;
                     }
+                }
+                if self.hit(self.settings_toggle_rect(0)) {
+                    self.sfx(Sfx::Click);
+                    self.config.lights = (self.config.lights + 1) % 3;
+                    return;
+                }
+                if self.hit(self.settings_toggle_rect(1)) {
+                    self.sfx(Sfx::Click);
+                    self.config.stark = !self.config.stark;
+                    return;
                 }
                 if self.hit(self.settings_back_rect()) {
                     self.sfx(Sfx::Click);
