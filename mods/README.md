@@ -102,7 +102,7 @@ Every field, with defaults:
 | `solid` | `true` | player/mob collision and raycast solidity |
 | `opaque` | `true` | set `false` for see-through blocks (leaves): neighbors render behind them and light passes |
 | `cross` | `false` | render as two crossed quads (plants) instead of a cube |
-| `light` | `0` | emitted light 0–15 (torch is 14) |
+| `light` | `0` | emitted light 0–15 (torch is 14). Emitting blocks also become **shadow-casting point lights** when the player is near — no extra data; the same `light`/`light_color` drive both the flood-fill and the hard light |
 | `light_color` | white | `[r, g, b]` 0–1 tint for the glow — hue-normalized so the brightest channel still reaches the full `light` level (torches burn warm; a modded block can smoulder any color) |
 | `height` | full cube | render height 0–1 for thin slabs (snow layers are `0.125`); pair with `solid = false` to walk through, and unsupported slabs pop off like torches |
 | `falls` | `false` | gravity block: detaches and falls when unsupported (sand, gravel) |
@@ -155,6 +155,7 @@ food = { hunger = 7, nutrition = { grain = 30 } }
 | `brush_tool` | `false` | channels on brushable blocks |
 | `throw` | none | `{ speed = 18.0 }` — right-click throws the item as a projectile (snowballs); zero-damage throws still knock back |
 | `hammer` | `false` | works `[[worked]]` inputs on an anvil (a 2 s channel per strike) |
+| `glow` | none | `[r, g, b]` color × intensity — the item sheds a carried light while held (items that place a light-emitting block glow automatically; this is for the rest, e.g. a raw ember) |
 
 ## recipes.toml
 
@@ -289,6 +290,10 @@ at = [2, 0, 2]
   `movement = "float"`, `emissive = true`, and `projectile =
   { tex, damage, speed = 14, cooldown = 2 }`. Hostiles spawn from
   darkness pressure, never persist, and dissolve in daylight.
+- `glow = [r, g, b]` (color × intensity) gives a creature a real
+  shadow-casting light the player sees coming — the two nearest
+  glowing creatures cast (emberkin's firelight, rimewisp's shimmer).
+  Warm glows flicker like flame; cool ones hold steady.
 
 ## structures.toml
 

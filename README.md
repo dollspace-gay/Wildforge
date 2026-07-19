@@ -108,6 +108,29 @@ into throwable snowballs (harmless, knockback — aim well), packs
 back into snow blocks, and melts under bright torchlight. Rain even
 soothes the wild: ire decays a quarter faster while the land drinks.
 
+## Light and shadow
+
+The world's fires are real lights now. Torches, lit bloomeries and
+kilns, burning furnaces — anything that emits — cast **hard
+line-of-sight shadows** from distance cube maps (the point-shadow
+engine landed in ngutten's PR #2; the game now drives it): a torch
+around the corner leaves you dark, the wall you face blares. Static
+lights cache their shadow cubes and re-render only when a nearby
+block changes, so a torch-lit smithy costs nothing per frame at
+steady state. **Holding** a torch carries your own body of light
+through a cave — and in multiplayer you'll see a friend's torchlight
+bobbing toward you before you see them (the held item rides the
+snapshot). Emberkin announce themselves the same way: firelight
+sweeping around a corner before the creature appears. Stained glass
+stains the beam — a torch behind a red pane throws a red pool —
+because each light also carries a transmission cube that panes
+multiply their color into. Mobs, items, and players have real face
+normals now, so they catch beams and directional sun like the world
+does. The flood-fill remains the *simulation's* light (spawns, snow
+melt, greenhouses); every hard shadow is presentation, and a
+settings row (DYNAMIC LIGHTS off / shadowless / full, DARKNESS
+stark / soft) scales it to your GPU and your nerves.
+
 ## Game feel
 
 The feedback skin, tuned to the game's quiet register: every effect

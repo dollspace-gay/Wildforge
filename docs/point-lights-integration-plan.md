@@ -1,11 +1,23 @@
 # Point lights in the game — integration plan
 
-Drafted 2026-07-19, following the merge of point shadows M1–M2
-(docs/point-shadows-plan.md, PR #2). That work proved the machinery:
-colored point lights with hard line-of-sight shadows via distance
-cube maps. This plan wires it into the actual game. Decisions herein
-settled with dollspace: **held torches cast real shadows**, the
-default look is **stark**, and **emberkin glow ships in this pass**.
+Drafted and **IMPLEMENTED** 2026-07-19, all eight stages. Notes vs.
+this spec: the transmission pass tints by each pane texel's **hue at
+full saturation** (alpha sets strength) rather than raw texture
+color — pane interiors are mostly transparent, and raw alpha washed
+the tint to white; this also means water gently blues a submerged
+beam for free. Rimewisp got a cold-shimmer `glow` alongside emberkin
+(cool lights skip the flame flicker by color). Emissive wardens and
+the viewmodel hand deliberately keep the flat pre-shaded model. The
+promotion/cache director lives in `src/lights.rs`; demo lights ride
+it too (`Key::Demo`), so `DEMO_PTLIGHT`/`DEMO_CORNER` now cache like
+everything else. `WILDFORGE_DEMO_TORCHROOM` stages the torch-lit
+room *plus* the red-glazed alcove (stage 7's proof), built on the
+footprint's highest ground with its chunks force-ensured — demo
+staging that writes into ungenerated chunks silently loses blocks.
+
+Original plan follows. Decisions settled with dollspace: **held
+torches cast real shadows**, the default look is **stark**, and
+**emberkin glow ships in this pass**.
 
 ## The governing rule: the flood-fill is the sim's truth
 
