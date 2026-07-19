@@ -108,6 +108,44 @@ fn face_shade(n: vec3<f32>) -> f32 {
     return 0.6;
 }
 
+// Per-fragment pseudo-random value in [0,1) from a world position (stable
+// under camera motion, so the dithered penumbra doesn't crawl).
+fn hash12(p: vec2<f32>) -> f32 {
+    var p3 = fract(vec3<f32>(p.x, p.y, p.x) * 0.1031);
+    p3 = p3 + dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+// Fraction of point light `i` reaching `world` (1 lit, 0 occluded), from its
+// distance cube map. pt_misc[i].w is the source radius: 0 is a hard point;
+// larger softens the penumbra by PCF-sampling a Vogel disk (scaled by radius,
+// dither-rotated per fragment) — an approximate area source.
+fn point_shadow(i: u32, world: vec3<f32>, to_light: vec3<f32>, d: f32, range: f32) -> f32 {
+    let bias = 0.08 + 0.15 * d / range;
+    let dir = -to_light;
+    let radius = u.pt_misc[i].w;
+    if (radius < 0.001) {
+        let nearest = textureSampleLevel(pt_cube, pt_smp, dir, i32(i), 0.0).r;
+        return select(0.0, 1.0, d <= nearest + bias);
+    }
+    let nd = normalize(dir);
+    let up0 = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(nd.y) > 0.99);
+    let tang = normalize(cross(up0, nd));
+    let bitang = cross(nd, tang);
+    let rot = hash12(world.xz + world.yx) * 6.2831853;
+    let N = 16u;
+    var occ = 0.0;
+    for (var s = 0u; s < N; s = s + 1u) {
+        let rr = sqrt((f32(s) + 0.5) / f32(N));
+        let th = f32(s) * 2.399963 + rot;
+        let off = rr * vec2<f32>(cos(th), sin(th)) * radius;
+        let sdir = dir + tang * off.x + bitang * off.y;
+        let nearest = textureSampleLevel(pt_cube, pt_smp, sdir, i32(i), 0.0).r;
+        occ = occ + select(0.0, 1.0, d <= nearest + bias);
+    }
+    return occ / f32(N);
+}
+
 // Full lit multiplier (per channel) for a world-space surface. A near-zero
 // normal marks pre-shaded billboards/entities, which keep the old flat model.
 fn world_light(normal: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) -> vec3<f32> {
@@ -148,10 +186,8 @@ fn world_light(normal: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) 
             var shadow_pt = 1.0;
             var tint = vec3<f32>(1.0);
             if (u.pt_misc[i].z > 0.5) {
-                // Cube distance map: nearest occluder along light->fragment.
-                let nearest = textureSampleLevel(pt_cube, pt_smp, -to_light, i32(i), 0.0).r;
-                let bias = 0.08 + 0.15 * d / range;
-                shadow_pt = select(0.0, 1.0, d <= nearest + bias);
+                // Cube distance map, hard or soft (per-light radius).
+                shadow_pt = point_shadow(i, world, to_light, d, range);
                 // Stained transmission: panes between light and fragment
                 // multiply in their color (a small margin keeps a pane
                 // from tinting its own surface).

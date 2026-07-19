@@ -75,6 +75,10 @@ pub struct PointLight {
     /// subtracts `color * scale * max(0, 1 - d/range)` from the soft
     /// torch term so the hard direct light reads. (0, _) disables.
     pub suppress: (f32, f32),
+    /// Source size in world units. 0 is a hard point; larger softens the
+    /// shadow penumbra (approximate area light). Sampling-only — doesn't
+    /// affect the cached cube.
+    pub radius: f32,
 }
 
 #[repr(C)]
@@ -1230,7 +1234,7 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
                         l.suppress.0,
                         l.suppress.1,
                         if l.shadows { 1.0 } else { 0.0 },
-                        0.0,
+                        l.radius,
                     ];
                 }
                 a
