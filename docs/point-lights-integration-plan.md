@@ -113,18 +113,45 @@ had — expect the world to look slightly better everywhere.
   (each client promotes and renders locally from its own world copy;
   guests have the blocks already).
 - Emberkin glow works on guests from the existing mob snapshots.
-- **Stretch**: remote players' held torches need the `Players`
-  snapshot to carry a held item id (protocol bump). Ship last, or
-  defer to the next protocol change — it also unlocks *rendering*
-  the held item on other players' models, which is its own feature.
+- **Remote players' held torches** (in scope): the `Players`
+  snapshot carries each player's held item id (protocol bump).
+  Guests derive a held light for every remote player by the same
+  rules as their own (`places → light_emit`, `glow`). Seeing your
+  friend's torchlight bobbing toward you through the trees is
+  People Fun; it also hands us the data to later *render* the held
+  item on their model.
+
+## Stained glass tints the beam
+
+The cube pass renders opaque geometry only, so glass correctly
+doesn't *block* point light — but a torch behind a red pane should
+throw a red pool. In scope, via a **transmission cube** per
+shadow-casting light:
+
+- A second cube array (Rgba16Float): RGB starts white and glass
+  surfaces in range render with **multiplicative blending**
+  (`dst × src` of the pane's filter color). Multiplication is
+  commutative, so panes need no depth sorting.
+- The opaque pass's scratch depth is kept and tested (no write), so
+  glass behind a wall never tints.
+- Alpha stores the **nearest glass distance** (Min blend). The main
+  shader applies the tint only when that distance is closer than the
+  fragment (`glass_d ≤ frag_d`), so a pane *beyond* the lit surface
+  doesn't stain it. One pane between light and surface — the common
+  alcove case — is exact; stacked panes tint as a unit, which voxel
+  scenes can live with.
+- Shadowless lights (DYNAMIC LIGHTS: ON tier) skip transmission too;
+  the tier stays cheap.
+- This is also the missing physics for the stage-5 glassworks light:
+  the flood-fill already filters per channel through `light_filter`,
+  so the two systems will finally agree on what color a window is.
 
 ## Explicitly future (not this plan)
 
-- Stained glass tinting the beam (cube pass is opaque-only, so glass
-  correctly doesn't block light, but colored transmission needs an
-  RGB shadow map — lovely, later).
 - PCF/soft shadows, bloom, screen-space GI (per the original doc).
 - Emissive *texture* regions (lava veins etc.).
+- Rendering held items on remote player models (the snapshot data
+  ships here; the model work is its own feature).
 
 ## Stages
 
@@ -141,7 +168,12 @@ had — expect the world to look slightly better everywhere.
 4. **Entity normals** — real normals in item/mob/player emitters.
 5. **Settings + stark default** — the two settings rows, ambient
    floor rewire, config persistence.
-6. **Docs & demos** — `WILDFORGE_DEMO_TORCHROOM` (cached smithy),
+6. **Remote held lights** — protocol bump: held item id rides the
+   `Players` snapshot; guest-side held lights for remote players
+   (loopback-tested like every other message).
+7. **Stained transmission** — the multiplicative transmission cube;
+   torch-behind-red-pane demo.
+8. **Docs & demos** — `WILDFORGE_DEMO_TORCHROOM` (cached smithy),
    update README lighting blurb; keep `DEMO_PTLIGHT`/`DEMO_CORNER`.
 
 ## Tests
@@ -156,5 +188,7 @@ had — expect the world to look slightly better everywhere.
 - Sim purity: `light_at`/spawn/melt behavior identical with
   DYNAMIC LIGHTS OFF/ON/+SHADOWS (they never read renderer state).
 - Screenshots: torch room hard shadows, held-torch cave sweep,
-  emberkin glow around a corner, STARK vs SOFT floor comparison.
+  emberkin glow around a corner, STARK vs SOFT floor comparison,
+  red-pane tinted pool (with the shadow still hard).
+- Loopback: held item id round-trips in the Players snapshot.
 - Settings roundtrip in config.txt; existing suites green.
