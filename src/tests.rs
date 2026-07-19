@@ -3325,10 +3325,21 @@ fn iron_and_steel_chains_resolve() {
     // Ore gated on bronze.
     let ore = reg.block(reg.block_id("base:iron_ore").unwrap());
     assert_eq!(ore.min_tier, 3, "bronze picks required");
-    // Chain: raw -> ingot -> blend -> steel.
+    // Chain: raw -> ingot -> bloomery -> bloom -> anvil -> steel.
     assert!(!reg.smelts_for(it(&reg, "base:iron_ingot")).is_empty());
-    assert!(!reg.recipes_for(it(&reg, "base:steel_blend")).is_empty());
-    assert!(!reg.smelts_for(it(&reg, "base:steel_ingot")).is_empty());
+    let chain = reg.bloomery.first().expect("bloomery chain registered");
+    assert_eq!(chain.charge, it(&reg, "base:iron_ingot"));
+    assert_eq!(chain.fuel, it(&reg, "base:charcoal"));
+    assert_eq!(chain.bloom, it(&reg, "base:steel_bloom"));
+    let worked = reg.worked.first().expect("anvil work registered");
+    assert_eq!(worked.input, it(&reg, "base:steel_bloom"));
+    assert_eq!(worked.output, it(&reg, "base:steel_ingot"));
+    assert_eq!(worked.strikes, 3);
+    // The old blend name still resolves for old saves (alias).
+    assert_eq!(
+        reg.item_id("base:steel_blend"),
+        Some(it(&reg, "base:steel_bloom"))
+    );
     // Tiers and damage.
     let tool = |n: &str| reg.item(it(&reg, n)).tool.unwrap();
     assert_eq!(tool("base:iron_pickaxe").2, 4);
@@ -3406,11 +3417,12 @@ fn ember_fuel_speeds_the_furnace() {
     let reg = base_reg();
     let mut w = test_world("emberfast");
     let mut f = crate::world::FurnaceState::default();
-    f.input = Some(ItemStack::new(&reg, it(&reg, "base:steel_blend"), 1));
+    f.input = Some(ItemStack::new(&reg, it(&reg, "base:raw_iron"), 1));
     f.fuel = Some(ItemStack::new(&reg, it(&reg, "base:ember"), 1));
     w.block_entities
         .insert((0, 90, 0), crate::world::BlockEntity::Furnace(f));
-    // 14 s steel smelt at 2x should finish in ~7 s.
+    // A 10 s iron smelt at the ember's 2x finishes in ~5 s; without the
+    // speedup, 8 s of ticks would not be enough.
     for _ in 0..80 {
         w.tick_entities(0.1);
     }
@@ -3418,8 +3430,8 @@ fn ember_fuel_speeds_the_furnace() {
         panic!()
     };
     assert!(
-        f.output.map(|s| reg.item(s.item).name.clone()).as_deref() == Some("base:steel_ingot"),
-        "steel done in 8s of ember fire (progress {})",
+        f.output.map(|s| reg.item(s.item).name.clone()).as_deref() == Some("base:iron_ingot"),
+        "iron done in 8s of ember fire (progress {})",
         f.progress
     );
 }
@@ -3716,6 +3728,264 @@ fn net_protocol_round_trips() {
         let back: S2C = decode(&encode(m)).expect("s2c decodes");
         assert_eq!(format!("{m:?}"), format!("{back:?}"));
     }
+}
+
+// ---------------- steelworks ----------------
+
+/// Build a valid bloomery at (x,y,z)=mouth with core on +X, in air.
+fn build_bloomery(w: &mut World, reg: &Registry, mx: i32, my: i32, mz: i32) {
+    let fb = reg.block_id("base:firebrick").unwrap();
+    let mouth = reg.block_id("base:bloomery").unwrap();
+    let (cx, cz) = (mx + 1, mz);
+    for ly in 0..3 {
+        for rx in -1..=1i32 {
+            for rz in -1..=1i32 {
+                if rx == 0 && rz == 0 {
+                    continue;
+                }
+                w.set_block(cx + rx, my + ly, cz + rz, fb);
+            }
+        }
+        w.set_block(cx, my + ly, cz, AIR);
+    }
+    w.set_block(mx, my, mz, mouth);
+}
+
+#[test]
+fn bloomery_multiblock_fires_batches_and_fears_the_rain() {
+    use crate::world::{BLOOMERY_FIRE_SECS, BlockEntity, BloomeryState, Weather};
+    let reg = base_reg();
+    let mut w = test_world_with("steel-fire", reg.clone());
+    let my = 120; // open sky, far above terrain
+    build_bloomery(&mut w, &reg, 10, my, 10);
+    assert!(w.check_bloomery(10, my, 10).is_some(), "shell validates");
+    // Any missing brick breaches it.
+    let fb = reg.block_id("base:firebrick").unwrap();
+    w.set_block(11, my + 2, 11, AIR);
+    assert!(w.check_bloomery(10, my, 10).is_none(), "breach detected");
+    w.set_block(11, my + 2, 11, fb);
+    assert!(
+        w.check_bloomery(10, my, 10).is_some(),
+        "repair re-validates"
+    );
+
+    // Charge it full (8 iron + 8 charcoal), light, and fire to the end.
+    let iron = reg.item_id("base:iron_ingot").unwrap();
+    let coal = reg.item_id("base:charcoal").unwrap();
+    let bloom = reg.item_id("base:steel_bloom").unwrap();
+    let mut st = BloomeryState::default();
+    for i in 0..4 {
+        st.charge[i] = Some(ItemStack::new(&reg, iron, 2));
+        st.fuel[i] = Some(ItemStack::new(&reg, coal, 2));
+    }
+    w.block_entities
+        .insert((10, my, 10), BlockEntity::Bloomery(st));
+    assert!(w.light_bloomery(10, my, 10).is_ok(), "lights when charged");
+    assert_eq!(
+        w.get_block(10, my, 10),
+        reg.block_id("base:bloomery_lit").unwrap(),
+        "the mouth glows"
+    );
+    // Clear skies: full rate. Fire it through.
+    w.weather = Weather::Clear;
+    let steps = (BLOOMERY_FIRE_SECS / 0.5) as i32 + 4;
+    for _ in 0..steps {
+        w.tick_entities(0.5);
+    }
+    let Some(BlockEntity::Bloomery(b)) = w.block_entities.get(&(10, my, 10)) else {
+        panic!("bloomery survived");
+    };
+    assert!(!b.lit, "the firing ended");
+    let blooms: u32 = b
+        .charge
+        .iter()
+        .flatten()
+        .filter(|s| s.item == bloom)
+        .map(|s| s.count)
+        .sum();
+    assert_eq!(blooms, 6, "a full 8+8 firing yields 6 blooms");
+    assert_eq!(
+        w.get_block(10, my, 10),
+        reg.block_id("base:bloomery").unwrap(),
+        "the mouth cools"
+    );
+
+    // A partial 2+2 charge yields a single bloom.
+    let mut st = BloomeryState::default();
+    st.charge[0] = Some(ItemStack::new(&reg, iron, 2));
+    st.fuel[0] = Some(ItemStack::new(&reg, coal, 2));
+    w.block_entities
+        .insert((10, my, 10), BlockEntity::Bloomery(st));
+    w.light_bloomery(10, my, 10).unwrap();
+    for _ in 0..steps {
+        w.tick_entities(0.5);
+    }
+    let Some(BlockEntity::Bloomery(b)) = w.block_entities.get(&(10, my, 10)) else {
+        panic!()
+    };
+    let blooms: u32 = b
+        .charge
+        .iter()
+        .flatten()
+        .filter(|s| s.item == bloom)
+        .map(|s| s.count)
+        .sum();
+    assert_eq!(blooms, 1, "2+2 makes one bloom");
+
+    // Rain halves an unroofed stack; a storm douses it outright.
+    let mut st = BloomeryState::default();
+    st.charge[0] = Some(ItemStack::new(&reg, iron, 2));
+    st.fuel[0] = Some(ItemStack::new(&reg, coal, 2));
+    w.block_entities
+        .insert((10, my, 10), BlockEntity::Bloomery(st));
+    w.light_bloomery(10, my, 10).unwrap();
+    w.weather = Weather::Precip;
+    for _ in 0..20 {
+        w.tick_entities(1.0);
+    }
+    let Some(BlockEntity::Bloomery(b)) = w.block_entities.get(&(10, my, 10)) else {
+        panic!()
+    };
+    assert!(
+        (b.progress - 10.0).abs() < 0.6,
+        "rain fires at half rate, got {}",
+        b.progress
+    );
+    w.weather = Weather::Storm;
+    w.tick_entities(1.0);
+    let Some(BlockEntity::Bloomery(b)) = w.block_entities.get(&(10, my, 10)) else {
+        panic!()
+    };
+    assert!(!b.lit, "a storm douses the unroofed stack");
+    let kept: u32 = b.charge.iter().flatten().map(|s| s.count).sum();
+    assert_eq!(kept, 2, "the charge survives a dousing");
+
+    // Roofed, the same rain doesn't slow it. (Cover the core top.)
+    let plank = reg.block_id("base:planks").unwrap();
+    w.set_block(11, my + 4, 10, plank);
+    let Some(BlockEntity::Bloomery(b)) = w.block_entities.get_mut(&(10, my, 10)) else {
+        panic!()
+    };
+    b.lit = true;
+    b.progress = 0.0;
+    b.core = (11, my, 10);
+    w.weather = Weather::Precip;
+    for _ in 0..10 {
+        w.tick_entities(1.0);
+    }
+    let Some(BlockEntity::Bloomery(b)) = w.block_entities.get(&(10, my, 10)) else {
+        panic!()
+    };
+    assert!(
+        (b.progress - 10.0).abs() < 0.6,
+        "a roof keeps the fire honest, got {}",
+        b.progress
+    );
+}
+
+#[test]
+fn clamp_smolders_logs_into_charcoal_and_vents() {
+    use crate::world::{BlockEntity, CLAMP_SECS_PER_LOG};
+    let reg = base_reg();
+    let mut w = test_world_with("steel-clamp", reg.clone());
+    let log = reg.block_id("base:log").unwrap();
+    let dirt = reg.block_id("base:dirt").unwrap();
+    let my = 120;
+    // A 2-log pile at (10,my,10)-(11,my,10), fully cased in dirt except
+    // one exposed face at (9,my,10).
+    for x in 9..=12 {
+        for y in my - 1..=my + 1 {
+            for z in 9..=11 {
+                w.set_block(x, y, z, dirt);
+            }
+        }
+    }
+    w.set_block(10, my, 10, log);
+    w.set_block(11, my, 10, log);
+    w.set_block(9, my, 10, AIR); // the lighting face
+    assert_eq!(
+        w.try_light_clamp(10, my, 10),
+        Ok(2),
+        "a covered pile lights"
+    );
+    // Too exposed fails: open a second face on a fresh pile elsewhere.
+    w.set_block(10, my + 4, 10, log);
+    w.set_block(11, my + 4, 10, log);
+    assert!(
+        w.try_light_clamp(10, my + 4, 10).is_err(),
+        "an open pile refuses the ember"
+    );
+    // Burn it down: 2 logs = 2x CLAMP_SECS_PER_LOG.
+    let total = 2.0 * CLAMP_SECS_PER_LOG + 5.0;
+    let mut t = 0.0;
+    while t < total {
+        w.tick_entities(2.0);
+        t += 2.0;
+    }
+    let cc = reg.block_id("base:charcoal_block").unwrap();
+    assert_eq!(w.get_block(10, my, 10), cc, "logs became charcoal");
+    assert_eq!(w.get_block(11, my, 10), cc);
+    assert!(
+        !w.block_entities.contains_key(&(10, my, 10)),
+        "the clamp retires"
+    );
+
+    // Venting: uncover a burning pile and the exposed log burns away.
+    w.set_block(10, my, 10, log);
+    w.set_block(11, my, 10, log);
+    w.set_block(9, my, 10, AIR);
+    assert_eq!(w.try_light_clamp(10, my, 10), Ok(2));
+    w.set_block(11, my + 1, 10, AIR); // rip the lid off log 2
+    w.tick_entities(0.5);
+    assert_eq!(
+        w.get_block(11, my, 10),
+        AIR,
+        "the uncovered log burns to nothing"
+    );
+}
+
+#[test]
+fn anvil_works_blooms_into_bars() {
+    use crate::world::BlockEntity;
+    let reg = base_reg();
+    let mut w = test_world_with("steel-anvil", reg.clone());
+    let bloom = reg.item_id("base:steel_bloom").unwrap();
+    let ingot = reg.item_id("base:steel_ingot").unwrap();
+    let iron = reg.item_id("base:iron_ingot").unwrap();
+    let pos = (10, 120, 10);
+    // Only workable items rest on the anvil.
+    assert!(
+        !w.anvil_put(pos, ItemStack::new(&reg, iron, 1)),
+        "iron is not workable"
+    );
+    assert!(
+        w.anvil_put(pos, ItemStack::new(&reg, bloom, 1)),
+        "a bloom rests"
+    );
+    assert!(
+        !w.anvil_put(pos, ItemStack::new(&reg, bloom, 1)),
+        "one at a time"
+    );
+    assert!(w.anvil_strike(pos).is_none(), "strike one");
+    assert!(w.anvil_strike(pos).is_none(), "strike two");
+    let out = w.anvil_strike(pos).expect("strike three finishes");
+    assert_eq!(out.item, ingot, "the bloom became a bar");
+    let Some(BlockEntity::Anvil(a)) = w.block_entities.get(&pos) else {
+        panic!()
+    };
+    assert!(a.bloom.is_none() && a.strikes == 0, "the anvil clears");
+    // Taking a half-worked bloom resets the count.
+    w.anvil_put(pos, ItemStack::new(&reg, bloom, 1));
+    w.anvil_strike(pos);
+    let back = w.anvil_take(pos).expect("take it back");
+    assert_eq!(back.item, bloom);
+    w.anvil_put(pos, back);
+    assert!(w.anvil_strike(pos).is_none());
+    assert!(w.anvil_strike(pos).is_none());
+    assert!(
+        w.anvil_strike(pos).is_some(),
+        "work starts over after a take"
+    );
 }
 
 // ---------------- weather & seasons ----------------
@@ -4448,6 +4718,20 @@ fn content_graph_is_complete_and_obtainable() {
                 grew = true;
             }
         }
+        // The steelworks: a fired bloomery turns charge into blooms,
+        // and the anvil works blooms into bars (proven by sim tests).
+        for b in &reg.bloomery {
+            if !ok.contains(&b.bloom.0) && ok.contains(&b.charge.0) && ok.contains(&b.fuel.0) {
+                ok.insert(b.bloom.0);
+                grew = true;
+            }
+        }
+        for w in &reg.worked {
+            if !ok.contains(&w.output.0) && ok.contains(&w.input.0) {
+                ok.insert(w.output.0);
+                grew = true;
+            }
+        }
         if !grew {
             break;
         }
@@ -4766,6 +5050,99 @@ fn loopback_join_stream_and_edit() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert!(chatted, "chat reached the host");
+
+    // The steelworks over the wire: a guest charges and lights a
+    // bloomery through the container RPC, then hammers at the anvil.
+    let by = sim.world.surface_height(12, 8) + 1;
+    build_bloomery(&mut sim.world, &reg, 12, by, 8);
+    client.send(&C2S::OpenContainer { x: 12, y: by, z: 8 });
+    let mut got_kind3 = false;
+    for _ in 0..100 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        for msg in client.poll() {
+            if matches!(msg, S2C::Container { kind: 3, .. }) {
+                got_kind3 = true;
+            }
+        }
+        if got_kind3 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(got_kind3, "bloomery streams as container kind 3");
+    let iron = reg.item_id("base:iron_ingot").unwrap();
+    let coal = reg.item_id("base:charcoal").unwrap();
+    client.send(&C2S::ContainerClick {
+        x: 12,
+        y: by,
+        z: 8,
+        slot: 0,
+        right: false,
+        held: Some(crate::net::StackSnap {
+            item: iron.0,
+            count: 2,
+            durability: 0,
+        }),
+    });
+    client.send(&C2S::ContainerClick {
+        x: 12,
+        y: by,
+        z: 8,
+        slot: 4,
+        right: false,
+        held: Some(crate::net::StackSnap {
+            item: coal.0,
+            count: 2,
+            durability: 0,
+        }),
+    });
+    client.send(&C2S::LightBloomery { x: 12, y: by, z: 8 });
+    let lit = reg.block_id("base:bloomery_lit").unwrap();
+    let mut is_lit = false;
+    for _ in 0..100 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        client.poll();
+        if sim.world.get_block(12, by, 8) == lit {
+            is_lit = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(is_lit, "a guest can charge and light the stack");
+    // Anvil: put a bloom, strike thrice, the bar comes back as a Give.
+    let anvil = reg.block_id("base:stone_anvil").unwrap();
+    sim.world.set_block(11, by, 10, anvil);
+    let bloom = reg.item_id("base:steel_bloom").unwrap();
+    let ingot = reg.item_id("base:steel_ingot").unwrap();
+    client.send(&C2S::AnvilPut {
+        x: 11,
+        y: by,
+        z: 10,
+        item: bloom.0,
+    });
+    for _ in 0..3 {
+        client.send(&C2S::AnvilStrike {
+            x: 11,
+            y: by,
+            z: 10,
+        });
+    }
+    let mut bar = false;
+    for _ in 0..100 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        for msg in client.poll() {
+            if let S2C::Give { item, .. } = msg
+                && item == ingot.0
+            {
+                bar = true;
+            }
+        }
+        if bar {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(bar, "guest hammer strikes work the bloom into a bar");
 
     // A withdrawn sleep vote blocks the dawn.
     sim.time_of_day = 0.75;

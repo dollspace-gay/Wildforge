@@ -21,7 +21,42 @@ pub enum BlockEntity {
     Furnace(FurnaceState),
     Chest(ChestState),
     Offering(OfferingState),
+    Bloomery(BloomeryState),
+    Clamp(ClampState),
+    Anvil(AnvilState),
 }
+
+/// The steelworks stack: a batch of charge + fuel, fired for half a
+/// day inside a validated firebrick shell.
+#[derive(Default)]
+pub struct BloomeryState {
+    pub charge: [Option<ItemStack>; 4],
+    pub fuel: [Option<ItemStack>; 4],
+    pub lit: bool,
+    /// Seconds fired so far (out of BLOOMERY_FIRE_SECS).
+    pub progress: f32,
+    /// Hollow core cell of the validated stack (set on lighting).
+    pub core: (i32, i32, i32),
+}
+
+/// A covered log pile smoldering into charcoal.
+pub struct ClampState {
+    pub logs: Vec<(i32, i32, i32)>,
+    /// Seconds remaining until the whole pile converts.
+    pub timer: f32,
+}
+
+/// A bloom resting on the anvil, part-way worked.
+#[derive(Default)]
+pub struct AnvilState {
+    pub bloom: Option<ItemStack>,
+    pub strikes: u32,
+}
+
+/// Half an in-game day of fire per batch.
+pub const BLOOMERY_FIRE_SECS: f32 = 300.0;
+/// Seconds of smolder per log in a charcoal clamp.
+pub const CLAMP_SECS_PER_LOG: f32 = 300.0;
 
 #[derive(Default)]
 pub struct OfferingState {
@@ -711,6 +746,194 @@ impl World {
             }
         }
         out
+    }
+
+    // ---------------- steelworks ----------------
+
+    /// Validate the bloomery multiblock at this mouth: a hollow 1x1
+    /// core beside the mouth wrapped in a 3-wide, 3-tall firebrick
+    /// ring (23 firebrick + the mouth), open on top. Returns the core.
+    pub fn check_bloomery(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
+        let fb = self.reg.block_id("base:firebrick")?;
+        let mouth = [
+            self.reg.block_id("base:bloomery"),
+            self.reg.block_id("base:bloomery_lit"),
+        ];
+        'dirs: for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let (cx, cz) = (x + dx, z + dz);
+            for ly in 0..3 {
+                if self.get_block(cx, y + ly, cz) != AIR {
+                    continue 'dirs;
+                }
+                for rx in -1..=1 {
+                    for rz in -1..=1 {
+                        if rx == 0 && rz == 0 {
+                            continue;
+                        }
+                        let (bx, bz) = (cx + rx, cz + rz);
+                        let b = self.get_block(bx, y + ly, bz);
+                        if bx == x && bz == z && ly == 0 {
+                            if !mouth.contains(&Some(b)) {
+                                continue 'dirs;
+                            }
+                        } else if b != fb {
+                            continue 'dirs;
+                        }
+                    }
+                }
+            }
+            return Some((cx, y, cz));
+        }
+        None
+    }
+
+    /// Light a charged bloomery. Errors name what's missing.
+    pub fn light_bloomery(&mut self, x: i32, y: i32, z: i32) -> Result<(), &'static str> {
+        let core = self
+            .check_bloomery(x, y, z)
+            .ok_or("the stack is breached")?;
+        let Some(BlockEntity::Bloomery(b)) = self.block_entities.get_mut(&(x, y, z)) else {
+            return Err("nothing charged");
+        };
+        if b.lit {
+            return Err("already firing");
+        }
+        let n_charge: u32 = b.charge.iter().flatten().map(|s| s.count).sum();
+        let n_fuel: u32 = b.fuel.iter().flatten().map(|s| s.count).sum();
+        if n_charge < 2 || n_fuel < 2 {
+            return Err("needs at least 2 charge and 2 charcoal");
+        }
+        b.lit = true;
+        b.progress = 0.0;
+        b.core = core;
+        self.swap_block_keep_entity(x, y, z, "base:bloomery_lit");
+        Ok(())
+    }
+
+    /// Swap a block without invalidating the machine living there.
+    fn swap_block_keep_entity(&mut self, x: i32, y: i32, z: i32, to: &str) {
+        let Some(to) = self.reg.block_id(to) else {
+            return;
+        };
+        let e = self.block_entities.remove(&(x, y, z));
+        self.set_block(x, y, z, to);
+        if let Some(e) = e {
+            self.block_entities.insert((x, y, z), e);
+        }
+    }
+
+    /// Flood-fill a covered log pile from the clicked log and light it.
+    /// Exactly one face (the lighting face) may be exposed.
+    pub fn try_light_clamp(&mut self, x: i32, y: i32, z: i32) -> Result<usize, &'static str> {
+        let logs_tag = self.reg.tags.get("base:logs").cloned().unwrap_or_default();
+        let is_log = |w: &World, p: (i32, i32, i32)| {
+            let b = w.get_block(p.0, p.1, p.2);
+            w.reg
+                .item_id(&w.reg.block(b).name)
+                .is_some_and(|i| logs_tag.contains(&i))
+        };
+        if !is_log(self, (x, y, z)) {
+            return Err("light a log");
+        }
+        let mut set = vec![(x, y, z)];
+        let mut queue = vec![(x, y, z)];
+        while let Some(p) = queue.pop() {
+            for d in [
+                (1, 0, 0),
+                (-1, 0, 0),
+                (0, 1, 0),
+                (0, -1, 0),
+                (0, 0, 1),
+                (0, 0, -1),
+            ] {
+                let n = (p.0 + d.0, p.1 + d.1, p.2 + d.2);
+                if !set.contains(&n) && is_log(self, n) {
+                    set.push(n);
+                    if set.len() > 8 {
+                        return Err("the pile is too big to smolder (8 logs at most)");
+                    }
+                    queue.push(n);
+                }
+            }
+        }
+        if set.len() < 2 {
+            return Err("a clamp needs at least 2 logs");
+        }
+        let mut exposed = 0;
+        for p in &set {
+            for d in [
+                (1, 0, 0),
+                (-1, 0, 0),
+                (0, 1, 0),
+                (0, -1, 0),
+                (0, 0, 1),
+                (0, 0, -1),
+            ] {
+                let n = (p.0 + d.0, p.1 + d.1, p.2 + d.2);
+                if set.contains(&n) {
+                    continue;
+                }
+                if !self.reg.is_solid(self.get_block(n.0, n.1, n.2)) {
+                    exposed += 1;
+                }
+            }
+        }
+        if exposed > 1 {
+            return Err("cover the pile with earth (one face open)");
+        }
+        let n = set.len();
+        self.block_entities.insert(
+            (x, y, z),
+            BlockEntity::Clamp(ClampState {
+                logs: set,
+                timer: n as f32 * CLAMP_SECS_PER_LOG,
+            }),
+        );
+        Ok(n)
+    }
+
+    /// Rest a workable item on an anvil (one at a time).
+    pub fn anvil_put(&mut self, pos: (i32, i32, i32), stack: ItemStack) -> bool {
+        if !self.reg.worked.iter().any(|w| w.input == stack.item) {
+            return false;
+        }
+        let e = self
+            .block_entities
+            .entry(pos)
+            .or_insert_with(|| BlockEntity::Anvil(Default::default()));
+        if let BlockEntity::Anvil(a) = e
+            && a.bloom.is_none()
+        {
+            a.bloom = Some(ItemStack { count: 1, ..stack });
+            a.strikes = 0;
+            return true;
+        }
+        false
+    }
+
+    pub fn anvil_take(&mut self, pos: (i32, i32, i32)) -> Option<ItemStack> {
+        if let Some(BlockEntity::Anvil(a)) = self.block_entities.get_mut(&pos) {
+            a.strikes = 0;
+            return a.bloom.take();
+        }
+        None
+    }
+
+    /// One hammer strike; finishing the work returns the output.
+    pub fn anvil_strike(&mut self, pos: (i32, i32, i32)) -> Option<ItemStack> {
+        let reg = self.reg.clone();
+        if let Some(BlockEntity::Anvil(a)) = self.block_entities.get_mut(&pos)
+            && let Some(b) = a.bloom
+            && let Some(def) = reg.worked.iter().find(|w| w.input == b.item)
+        {
+            a.strikes += 1;
+            if a.strikes >= def.strikes {
+                a.bloom = None;
+                a.strikes = 0;
+                return Some(ItemStack::new(&reg, def.output, 1));
+            }
+        }
+        None
     }
 
     /// Archaeology: sweep a remnant block — it yields its artifact once
@@ -1653,6 +1876,9 @@ impl World {
                 }
                 BlockEntity::Chest(c) => c.slots.into_iter().flatten().collect(),
                 BlockEntity::Offering(o) => o.slots.into_iter().flatten().collect(),
+                BlockEntity::Bloomery(b) => b.charge.into_iter().chain(b.fuel).flatten().collect(),
+                BlockEntity::Clamp(_) => Vec::new(), // the burn dies with it
+                BlockEntity::Anvil(a) => a.bloom.into_iter().collect(),
             };
             for s in spilled {
                 self.pending_drops.push(((x, y, z), s));
@@ -1798,7 +2024,153 @@ impl World {
     }
 
     /// Advance machines. Returns true if any visible state changed.
+    /// Fire every lit bloomery: validate the shell, let the weather
+    /// slow or douse an unroofed stack, and cash the batch when done.
+    fn tick_bloomeries(&mut self, dt: f32) {
+        let keys: Vec<(i32, i32, i32)> = self
+            .block_entities
+            .iter()
+            .filter(|(_, e)| matches!(e, BlockEntity::Bloomery(b) if b.lit))
+            .map(|(k, _)| *k)
+            .collect();
+        for pos in keys {
+            let Some(BlockEntity::Bloomery(mut b)) = self.block_entities.remove(&pos) else {
+                continue;
+            };
+            let (x, y, z) = pos;
+            if self.check_bloomery(x, y, z).is_none() {
+                // Breached mid-fire: the heat escapes, the charge survives.
+                b.lit = false;
+                b.progress = 0.0;
+                self.swap_block_keep_entity(x, y, z, "base:bloomery");
+                self.block_entities.insert(pos, BlockEntity::Bloomery(b));
+                continue;
+            }
+            // An unroofed stack fights the rain and loses to a storm.
+            let unroofed = self.light_at(b.core.0, y + 3, b.core.2).1 == 15;
+            let wet = self.weather.precipitating() && self.rains_at(x, z) && unroofed;
+            if wet && self.weather == Weather::Storm {
+                b.lit = false;
+                b.progress = 0.0;
+                self.swap_block_keep_entity(x, y, z, "base:bloomery");
+                self.block_entities.insert(pos, BlockEntity::Bloomery(b));
+                continue;
+            }
+            b.progress += dt * if wet { 0.5 } else { 1.0 };
+            if b.progress >= BLOOMERY_FIRE_SECS {
+                // Cash the batch: 2 charge + 2 fuel per bloom, +2 bonus
+                // blooms on a full 8+8 firing.
+                let chain = self.reg.bloomery.first().cloned();
+                if let Some(chain) = chain {
+                    let n_charge: u32 = b.charge.iter().flatten().map(|s| s.count).sum();
+                    let n_fuel: u32 = b.fuel.iter().flatten().map(|s| s.count).sum();
+                    let units = n_charge.min(n_fuel) / 2;
+                    let blooms = units + if units >= 4 { 2 } else { 0 };
+                    let eat = |slots: &mut [Option<ItemStack>; 4], mut n: u32| {
+                        for s in slots.iter_mut() {
+                            if n == 0 {
+                                break;
+                            }
+                            if let Some(st) = s {
+                                let take = st.count.min(n);
+                                n -= take;
+                                st.count -= take;
+                                if st.count == 0 {
+                                    *s = None;
+                                }
+                            }
+                        }
+                    };
+                    eat(&mut b.charge, units * 2);
+                    eat(&mut b.fuel, units * 2);
+                    let reg = self.reg.clone();
+                    let mut out = ItemStack::new(&reg, chain.bloom, blooms.max(1));
+                    out.count = blooms.max(1);
+                    // Blooms land in the first empty charge slot.
+                    for s in b.charge.iter_mut() {
+                        if s.is_none() {
+                            *s = Some(out);
+                            break;
+                        }
+                    }
+                }
+                b.lit = false;
+                b.progress = 0.0;
+                self.swap_block_keep_entity(x, y, z, "base:bloomery");
+            }
+            self.block_entities.insert(pos, BlockEntity::Bloomery(b));
+        }
+    }
+
+    /// Smolder every clamp; venting burns the exposed log away.
+    fn tick_clamps(&mut self, dt: f32) {
+        let keys: Vec<(i32, i32, i32)> = self
+            .block_entities
+            .iter()
+            .filter(|(_, e)| matches!(e, BlockEntity::Clamp(_)))
+            .map(|(k, _)| *k)
+            .collect();
+        let logs_tag = self.reg.tags.get("base:logs").cloned().unwrap_or_default();
+        for pos in keys {
+            let Some(BlockEntity::Clamp(mut c)) = self.block_entities.remove(&pos) else {
+                continue;
+            };
+            // Logs that stopped being logs (mined) leave the pile.
+            c.logs.retain(|&(x, y, z)| {
+                let b = self.get_block(x, y, z);
+                self.reg
+                    .item_id(&self.reg.block(b).name)
+                    .is_some_and(|i| logs_tag.contains(&i))
+            });
+            // A newly exposed log burns to nothing.
+            let mut vented: Option<(i32, i32, i32)> = None;
+            let mut exposed = 0;
+            'scan: for p in &c.logs {
+                for d in [
+                    (1, 0, 0),
+                    (-1, 0, 0),
+                    (0, 1, 0),
+                    (0, -1, 0),
+                    (0, 0, 1),
+                    (0, 0, -1),
+                ] {
+                    let n = (p.0 + d.0, p.1 + d.1, p.2 + d.2);
+                    if c.logs.contains(&n) {
+                        continue;
+                    }
+                    if !self.reg.is_solid(self.get_block(n.0, n.1, n.2)) {
+                        exposed += 1;
+                        if exposed > 1 {
+                            vented = Some(*p);
+                            break 'scan;
+                        }
+                    }
+                }
+            }
+            if let Some(p) = vented {
+                self.set_block(p.0, p.1, p.2, AIR);
+                c.logs.retain(|l| *l != p);
+                c.timer -= CLAMP_SECS_PER_LOG;
+            }
+            if c.logs.is_empty() {
+                continue; // the pile is gone; so is the burn
+            }
+            c.timer -= dt;
+            if c.timer <= 0.0 {
+                if let Some(cc) = self.reg.block_id("base:charcoal_block") {
+                    for p in c.logs.clone() {
+                        self.set_block(p.0, p.1, p.2, cc);
+                    }
+                }
+                continue; // done; entity retires
+            }
+            self.block_entities.insert(pos, BlockEntity::Clamp(c));
+        }
+    }
+
     pub fn tick_entities(&mut self, dt: f32) {
+        self.tick_bloomeries(dt);
+        self.tick_clamps(dt);
         let reg = self.reg.clone();
         for e in self.block_entities.values_mut() {
             let BlockEntity::Furnace(f) = e else { continue };
@@ -1925,6 +2297,55 @@ impl World {
                     }
                     let _ = writeln!(out);
                 }
+                BlockEntity::Bloomery(b) => {
+                    let _ = writeln!(
+                        out,
+                        "[[bloomery]]\npos = [{x}, {y}, {z}]\nlit = {}\nprogress = {}\ncore = [{}, {}, {}]",
+                        b.lit, b.progress, b.core.0, b.core.1, b.core.2
+                    );
+                    for (i, st) in b.charge.iter().chain(b.fuel.iter()).enumerate() {
+                        if let Some(st) = st {
+                            let _ = writeln!(
+                                out,
+                                "[[bloomery.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                self.reg.item(st.item).name,
+                                st.count,
+                                st.durability
+                            );
+                        }
+                    }
+                    let _ = writeln!(out);
+                }
+                BlockEntity::Clamp(c) => {
+                    let logs: Vec<String> = c
+                        .logs
+                        .iter()
+                        .map(|(a, b2, c2)| format!("[{a}, {b2}, {c2}]"))
+                        .collect();
+                    let _ = writeln!(
+                        out,
+                        "[[clamp]]\npos = [{x}, {y}, {z}]\ntimer = {}\nlogs = [{}]\n",
+                        c.timer,
+                        logs.join(", ")
+                    );
+                }
+                BlockEntity::Anvil(a) => {
+                    let _ = writeln!(
+                        out,
+                        "[[anvil]]\npos = [{x}, {y}, {z}]\nstrikes = {}",
+                        a.strikes
+                    );
+                    if let Some(st) = &a.bloom {
+                        let _ = writeln!(
+                            out,
+                            "bloom = {{ item = \"{}\", count = {}, durability = {} }}",
+                            self.reg.item(st.item).name,
+                            st.count,
+                            st.durability
+                        );
+                    }
+                    let _ = writeln!(out);
+                }
             }
         }
         if out.is_empty() {
@@ -1973,6 +2394,33 @@ impl World {
             slot: Vec<ChestSlotT>,
         }
         #[derive(Deserialize)]
+        struct BloomeryT {
+            pos: [i32; 3],
+            #[serde(default)]
+            lit: bool,
+            #[serde(default)]
+            progress: f32,
+            #[serde(default)]
+            core: Option<[i32; 3]>,
+            #[serde(default)]
+            slot: Vec<ChestSlotT>,
+        }
+        #[derive(Deserialize)]
+        struct ClampT {
+            pos: [i32; 3],
+            timer: f32,
+            #[serde(default)]
+            logs: Vec<[i32; 3]>,
+        }
+        #[derive(Deserialize)]
+        struct AnvilT {
+            pos: [i32; 3],
+            #[serde(default)]
+            strikes: u32,
+            #[serde(default)]
+            bloom: Option<SlotT>,
+        }
+        #[derive(Deserialize)]
         struct FileT {
             #[serde(default)]
             furnace: Vec<FurnaceT>,
@@ -1980,6 +2428,12 @@ impl World {
             chest: Vec<ChestT>,
             #[serde(default)]
             offering: Vec<ChestT>,
+            #[serde(default)]
+            bloomery: Vec<BloomeryT>,
+            #[serde(default)]
+            clamp: Vec<ClampT>,
+            #[serde(default)]
+            anvil: Vec<AnvilT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else {
             return;
@@ -2045,6 +2499,52 @@ impl World {
             self.block_entities.insert(
                 (of.pos[0], of.pos[1], of.pos[2]),
                 BlockEntity::Offering(state),
+            );
+        }
+        for bl in parsed.bloomery {
+            let mut state = BloomeryState {
+                lit: bl.lit,
+                progress: bl.progress,
+                core: bl.core.map(|c| (c[0], c[1], c[2])).unwrap_or_default(),
+                ..Default::default()
+            };
+            for sl in bl.slot {
+                if sl.index < 8
+                    && let Some(item) = self.reg.item_id(&sl.item)
+                {
+                    let st = Some(ItemStack {
+                        item,
+                        count: sl.count,
+                        durability: sl.durability,
+                    });
+                    if sl.index < 4 {
+                        state.charge[sl.index] = st;
+                    } else {
+                        state.fuel[sl.index - 4] = st;
+                    }
+                }
+            }
+            self.block_entities.insert(
+                (bl.pos[0], bl.pos[1], bl.pos[2]),
+                BlockEntity::Bloomery(state),
+            );
+        }
+        for cl in parsed.clamp {
+            self.block_entities.insert(
+                (cl.pos[0], cl.pos[1], cl.pos[2]),
+                BlockEntity::Clamp(ClampState {
+                    logs: cl.logs.iter().map(|l| (l[0], l[1], l[2])).collect(),
+                    timer: cl.timer,
+                }),
+            );
+        }
+        for an in parsed.anvil {
+            self.block_entities.insert(
+                (an.pos[0], an.pos[1], an.pos[2]),
+                BlockEntity::Anvil(AnvilState {
+                    bloom: conv(an.bloom),
+                    strikes: an.strikes,
+                }),
             );
         }
     }

@@ -19,7 +19,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 pub const GAME_PORT: u16 = 27431;
 pub const BEACON_PORT: u16 = 27430;
 /// Bump when the protocol changes shape.
-pub const PROTOCOL: u32 = 3;
+pub const PROTOCOL: u32 = 4;
 
 // ---------------- protocol ----------------
 
@@ -113,6 +113,34 @@ pub enum C2S {
         y: i32,
         z: i32,
     },
+    /// Steelworks: light a charged bloomery / a covered log pile.
+    LightBloomery {
+        x: i32,
+        y: i32,
+        z: i32,
+    },
+    LightClamp {
+        x: i32,
+        y: i32,
+        z: i32,
+    },
+    /// Anvil: rest a workable item, strike with a hammer, take it back.
+    AnvilPut {
+        x: i32,
+        y: i32,
+        z: i32,
+        item: u16,
+    },
+    AnvilStrike {
+        x: i32,
+        y: i32,
+        z: i32,
+    },
+    AnvilTake {
+        x: i32,
+        y: i32,
+        z: i32,
+    },
     SleepRequest,
     SleepCancel,
     Chat(String),
@@ -171,9 +199,12 @@ pub enum S2C {
         x: i32,
         y: i32,
         z: i32,
-        /// 0 chest, 1 furnace, 2 offering.
+        /// 0 chest, 1 furnace, 2 offering, 3 bloomery.
         kind: u8,
         slots: Vec<Option<StackSnap>>,
+        /// Live machine state: furnace [progress, burn_left,
+        /// burn_total], bloomery [lit, progress 0..1].
+        aux: Vec<f32>,
     },
     /// The authoritative cursor stack after a ContainerClick.
     HeldResult(Option<StackSnap>),

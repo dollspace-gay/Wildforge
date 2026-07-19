@@ -110,11 +110,19 @@ soothes the wild: ire decays a quarter faster while the land drinks.
 
 ## Iron, steel & the ruins of the takers
 
-- **Iron** runs deep (below y 48, bronze picks required); **steel** is
-  crafted knowledge — iron + charcoal blended, then a long burn. Ember
-  fuel smelts twice as fast: the wild's own fire makes the best steel.
-  Tier 4/5 tools, swords (10/13), and armor (14/18 points). **Shears**
-  clip leaves whole; the **excavation brush** (steel) opens the past.
+- **Iron** runs deep (below y 48, bronze picks required); **steel is
+  a process**, not a recipe. Bake **firebrick** from stone and a
+  warden's ember, raise a hollow **bloomery stack** (23 firebrick
+  around a core, mouth at the base), charge it with iron and charcoal,
+  and light it with another ember — half an in-game day of fire, the
+  mouth glowing through the night. Rain slows an unroofed stack; a
+  storm douses it. The batch pays for infrastructure: a full 8+8
+  charge yields six **steel blooms**, hammered three strikes each
+  into bars at a **stone anvil**. Bulk charcoal comes from the
+  **clamp**: bury a log pile in earth, leave one face open, touch an
+  ember to it, and tend it while it smolders. Tier 4/5 tools, swords
+  (10/13), and armor (14/18 points). **Shears** clip leaves whole;
+  the **excavation brush** (steel) opens the past.
 - **Ruins**: the wild has argued with takers before you, and won.
   Stone circles, collapsed cabins, toppled towers on the surface;
   cellars and old forges below, marked by chimney stubs. All

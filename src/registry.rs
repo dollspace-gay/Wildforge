@@ -149,6 +149,8 @@ pub struct ItemDef {
     pub brush_tool: bool,
     /// Right-click throw speed (None = not throwable).
     pub throw_speed: Option<f32>,
+    /// Works blooms on an anvil.
+    pub hammer: bool,
 }
 
 /// One box of an animal's model. Sizes/offsets in px (16 px = 1 block);
@@ -243,6 +245,22 @@ pub struct SmeltDef {
     pub time: f32,
 }
 
+/// A bloomery batch chain: charge + fuel fire into blooms.
+#[derive(Clone, Debug)]
+pub struct BloomeryDef {
+    pub charge: ItemId,
+    pub fuel: ItemId,
+    pub bloom: ItemId,
+}
+
+/// Anvil work: hammer an input into its output over N strikes.
+#[derive(Clone, Debug)]
+pub struct WorkedDef {
+    pub input: ItemId,
+    pub output: ItemId,
+    pub strikes: u32,
+}
+
 #[derive(Clone, Debug)]
 pub struct OreFeature {
     pub block: BlockId,
@@ -302,6 +320,10 @@ pub struct Registry {
     pub smelts: Vec<SmeltDef>,
     /// (fuel ingredient, burn seconds, smelt-speed multiplier)
     pub fuels: Vec<(Ingredient, f32, f32)>,
+    /// Bloomery firing chains (the steelworks).
+    pub bloomery: Vec<BloomeryDef>,
+    /// Anvil work recipes (bloom -> bar).
+    pub worked: Vec<WorkedDef>,
     /// Item groups usable as `#tag` recipe ingredients; mods can extend them.
     pub tags: HashMap<String, Vec<ItemId>>,
     /// Mod textures to pack: (slot, png path).
@@ -600,6 +622,9 @@ struct ItemToml {
     /// Right-click throw: projectile speed (snowballs).
     #[serde(default)]
     throw: Option<ThrowToml>,
+    /// Works blooms on an anvil.
+    #[serde(default)]
+    hammer: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -720,6 +745,21 @@ struct FuelToml {
 }
 
 #[derive(Deserialize, Clone)]
+struct BloomeryToml {
+    charge: String,
+    fuel: String,
+    bloom: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct WorkedToml {
+    input: String,
+    output: String,
+    #[serde(default)]
+    strikes: Option<u32>,
+}
+
+#[derive(Deserialize, Clone)]
 struct AliasToml {
     old: String,
     new: String,
@@ -763,6 +803,10 @@ struct RecipesFile {
     smelt: Vec<SmeltToml>,
     #[serde(default)]
     fuel: Vec<FuelToml>,
+    #[serde(default)]
+    bloomery: Vec<BloomeryToml>,
+    #[serde(default)]
+    worked: Vec<WorkedToml>,
 }
 #[derive(Deserialize, Default)]
 struct AliasesFile {
@@ -843,6 +887,8 @@ struct RawMod {
     recipes: Vec<RecipeToml>,
     smelts: Vec<SmeltToml>,
     fuels: Vec<FuelToml>,
+    bloomeries: Vec<BloomeryToml>,
+    workeds: Vec<WorkedToml>,
     features: Vec<FeatureToml>,
     tags: Vec<TagToml>,
     aliases: Vec<AliasToml>,
@@ -898,6 +944,8 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         items: items.item,
         smelts: recipes.smelt.clone(),
         fuels: recipes.fuel.clone(),
+        bloomeries: recipes.bloomery.clone(),
+        workeds: recipes.worked.clone(),
         recipes: recipes.recipe,
         features: features.feature,
         tags: tags.tag,
@@ -931,6 +979,8 @@ fn base_mod() -> RawMod {
         items: items.item,
         smelts: recipes.smelt.clone(),
         fuels: recipes.fuel.clone(),
+        bloomeries: recipes.bloomery.clone(),
+        workeds: recipes.worked.clone(),
         recipes: recipes.recipe,
         features: features.feature,
         tags: tags.tag,
@@ -1032,6 +1082,8 @@ impl RemoveStable for Vec<RawMod> {
             recipes: vec![],
             smelts: vec![],
             fuels: vec![],
+            bloomeries: vec![],
+            workeds: vec![],
             features: vec![],
             tags: vec![],
             aliases: vec![],
@@ -1053,6 +1105,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         mods: Vec::new(),
         smelts: Vec::new(),
         fuels: Vec::new(),
+        bloomery: Vec::new(),
+        worked: Vec::new(),
         tags: HashMap::new(),
         tex_files: Vec::new(),
         tex_names: Vec::new(),
@@ -1148,6 +1202,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let mut pending_features: Vec<(String, FeatureToml)> = Vec::new();
     let mut pending_tags: Vec<(String, TagToml)> = Vec::new();
     let mut pending_smelts: Vec<(String, SmeltToml)> = Vec::new();
+    let mut pending_bloomeries: Vec<(String, BloomeryToml)> = Vec::new();
+    let mut pending_workeds: Vec<(String, WorkedToml)> = Vec::new();
     let mut pending_fuels: Vec<(String, FuelToml)> = Vec::new();
     let mut pending_aliases: Vec<(String, AliasToml)> = Vec::new();
     let mut pending_harvests: Vec<(String, BlockId, HarvestToml)> = Vec::new();
@@ -1308,6 +1364,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     tablet: false,
                     brush_tool: false,
                     throw_speed: None,
+                    hammer: false,
                 });
                 reg.item_by_name.insert(full, iid);
             }
@@ -1372,6 +1429,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 tablet: it.tablet,
                 brush_tool: it.brush_tool,
                 throw_speed: it.throw.as_ref().map(|t| t.speed.unwrap_or(18.0)),
+                hammer: it.hammer,
             });
             reg.item_by_name.insert(full, iid);
         }
@@ -1391,6 +1449,12 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         }
         for s in &raw.smelts {
             pending_smelts.push((raw.info.id.clone(), s.clone()));
+        }
+        for b in &raw.bloomeries {
+            pending_bloomeries.push((raw.info.id.clone(), b.clone()));
+        }
+        for w in &raw.workeds {
+            pending_workeds.push((raw.info.id.clone(), w.clone()));
         }
         for st in &raw.structures {
             pending_structs.push((raw.info.id.clone(), st.clone()));
@@ -1581,6 +1645,31 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 input,
                 output,
                 time: s.time.unwrap_or(8.0),
+            });
+        }
+    }
+    for (modid, b) in pending_bloomeries {
+        if let (Some(charge), Some(fuel), Some(bloom)) = (
+            lookup_item(&reg, &modid, &b.charge),
+            lookup_item(&reg, &modid, &b.fuel),
+            lookup_item(&reg, &modid, &b.bloom),
+        ) {
+            reg.bloomery.push(BloomeryDef {
+                charge,
+                fuel,
+                bloom,
+            });
+        }
+    }
+    for (modid, w) in pending_workeds {
+        if let (Some(input), Some(output)) = (
+            lookup_item(&reg, &modid, &w.input),
+            lookup_item(&reg, &modid, &w.output),
+        ) {
+            reg.worked.push(WorkedDef {
+                input,
+                output,
+                strikes: w.strikes.unwrap_or(3).max(1),
             });
         }
     }

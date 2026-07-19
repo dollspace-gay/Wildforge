@@ -1,12 +1,16 @@
 # Steelworks — steel becomes A Process
 
-Drafted 2026-07-19. Bronze is easy and stays easy. Iron stays a
-furnace job. But **steel stops being a recipe and becomes
-infrastructure** — a charcoal clamp you fire and wait on, a bloomery
-stack you build from firebrick, a charge you light and tend, and an
-anvil where blooms get worked into bars. Railcraft/Vintage Story
-energy, Wildforge materials, and one reciprocity twist: the hottest
-fire in the game is lit with the wild's own ember.
+Drafted and **IMPLEMENTED** 2026-07-19. Bronze is easy and stays
+easy. Iron stays a furnace job. Steel became infrastructure.
+Implementation notes vs. this spec: the shell is 23 firebrick + the
+mouth (the mouth counts as a ring cell); the clamp smolders without
+an interior glow (smoke quads only) and mining its lit log
+extinguishes the whole burn; the anvil renders its bloom as a
+floating sprite rather than a block model; strikes are a 2 s hammer
+channel each; charcoal-only fuel is enforced at the container-click
+layer; and guests ride five new protocol-4 messages plus container
+kind 3 (the `Container` message also gained an `aux` field, which
+incidentally gave guest furnace screens live progress).
 
 This is the template for every metal after iron/steel: each new tier
 should add a *process*, not a recipe. Design the machinery here so it

@@ -13,7 +13,7 @@ pub const ATLAS_TILES: u32 = 16;
 /// Atlas slot = row * 16 + col. Rows 0-2 are built-in procedural tiles.
 pub const UNKNOWN_SLOT: u16 = 15;
 pub const CRACK_SLOT: u16 = 16; // stages 16..=19
-pub const FIRST_FREE_SLOT: u16 = 208; // rows 0-12 are built-in tiles
+pub const FIRST_FREE_SLOT: u16 = 216; // rows 0-13 are built-in tiles
 
 /// Built-in procedural tile names usable as `@name` in mod TOML.
 pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
@@ -208,6 +208,13 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("snowball", 205),
         ("rain_streak", 206),
         ("snow_flake", 207),
+        ("firebrick", 208),
+        ("bloomery", 209),
+        ("bloomery_lit", 210),
+        ("charcoal_block", 211),
+        ("stone_anvil", 212),
+        ("steel_bloom", 213),
+        ("smith_hammer", 214),
         ("unknown", 15),
         ("crack1", 16),
         ("crack2", 17),
@@ -2294,6 +2301,111 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             [245, 248, 255, 235]
         } else {
             let _ = (px, py);
+            [0, 0, 0, 0]
+        }
+    });
+
+    // ---- steelworks (row 13) ----
+    // (0,13) firebrick: deep red-brown bricks with ember-dark seams.
+    tf(0, 13, &mut |px, py, u, v| {
+        let bh = (u * 4.0) as u32;
+        let row = (v * 4.0) as u32;
+        let off = if row.is_multiple_of(2) { 0.125 } else { 0.0 };
+        let seam_v = (v * 4.0).fract() < 0.14;
+        let seam_h = ((u + off) * 4.0).fract() < 0.14;
+        let c = if seam_v || seam_h {
+            [46.0, 26.0, 22.0]
+        } else {
+            let t = fbm(u, v, 4, 941);
+            mix3([132.0, 58.0, 40.0], [170.0, 84.0, 52.0], t)
+        };
+        let _ = bh;
+        rgba(c, speck(px, py, 943, 0.08), 255)
+    });
+    // (1,13) bloomery mouth, cold: firebrick around a dark arch.
+    // (2,13) the same mouth, lit: the arch glows from within.
+    for (tx2, lit) in [(1u32, false), (2u32, true)] {
+        tf(tx2, 13, &mut |px, py, u, v| {
+            let dx = u - 0.5;
+            let arch = dx * dx * 2.2 + (v - 0.75) * (v - 0.75) < 0.055 && v > 0.4;
+            if arch {
+                if lit {
+                    let t = fbm(u, v, 3, 947);
+                    rgba(
+                        mix3([255.0, 140.0, 30.0], [255.0, 210.0, 90.0], t),
+                        1.0,
+                        255,
+                    )
+                } else {
+                    rgba([24.0, 18.0, 16.0], speck(px, py, 949, 0.1), 255)
+                }
+            } else {
+                let t = fbm(u, v, 4, 941);
+                let seam = (v * 4.0).fract() < 0.14 || (u * 4.0).fract() < 0.14;
+                let c = if seam {
+                    [46.0, 26.0, 22.0]
+                } else {
+                    mix3([132.0, 58.0, 40.0], [170.0, 84.0, 52.0], t)
+                };
+                rgba(c, speck(px, py, 943, 0.08), 255)
+            }
+        });
+    }
+    // (3,13) charcoal block: black chunks with faint sheen.
+    tf(3, 13, &mut |px, py, u, v| {
+        let (d1, _, id) = voronoi(u, v, 5, 953);
+        let edge = d1 < 0.05;
+        let base = 26.0 + (id % 5) as f32 * 6.0;
+        let c = if edge {
+            [12.0, 11.0, 10.0]
+        } else {
+            [base, base, base + 2.0]
+        };
+        rgba(c, speck(px, py, 957, 0.12), 255)
+    });
+    // (4,13) anvil top: worn gray face with a darker working band.
+    tf(4, 13, &mut |px, py, u, v| {
+        let t = fbm(u, v, 4, 959);
+        let mut c = mix3([120.0, 120.0, 124.0], [156.0, 156.0, 160.0], t);
+        if (v - 0.5).abs() < 0.18 && (u - 0.5).abs() < 0.36 {
+            c = [88.0, 88.0, 94.0];
+        }
+        rgba(c, speck(px, py, 961, 0.07), 255)
+    });
+    // (5,13) steel bloom: a spongy slag-streaked lump (sprite).
+    tf(5, 13, &mut |px, py, u, v| {
+        let dx = u - 0.5;
+        let dy = v - 0.55;
+        let wob = h01(px as i32 / 3, py as i32 / 3, 963) * 0.06;
+        if dx * dx + dy * dy < 0.09 + wob {
+            let t = fbm(u, v, 4, 965);
+            let c = if h01(px as i32, py as i32, 967) > 0.8 {
+                [70.0, 60.0, 52.0] // slag streaks
+            } else {
+                mix3([120.0, 122.0, 128.0], [168.0, 170.0, 176.0], t)
+            };
+            rgba(c, 1.0, 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    // (6,13) smithing hammer: iron head, stout handle (sprite).
+    tf(6, 13, &mut |px, py, u, v| {
+        let head = (0.25..0.75).contains(&u) && (0.12..0.38).contains(&v);
+        let handle = (u - 0.5).abs() < 0.06 && (0.38..0.92).contains(&v);
+        if head {
+            rgba(
+                [150.0, 152.0, 158.0],
+                0.85 + h01(px as i32, py as i32, 969) * 0.3,
+                255,
+            )
+        } else if handle {
+            rgba(
+                [110.0, 78.0, 48.0],
+                0.9 + h01(px as i32, py as i32, 971) * 0.2,
+                255,
+            )
+        } else {
             [0, 0, 0, 0]
         }
     });

@@ -15,3 +15,7 @@ new = "raw_copper"
 [[alias]]
 old = "copper:pickaxe"
 new = "copper_pickaxe"
+
+[[alias]]
+old = "base:steel_blend"
+new = "base:steel_bloom"

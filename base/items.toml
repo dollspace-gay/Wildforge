@@ -493,11 +493,6 @@ name = "Iron Ingot"
 texture = "@iron_ingot"
 
 [[item]]
-id = "steel_blend"
-name = "Steel Blend"
-texture = "@steel_blend"
-
-[[item]]
 id = "steel_ingot"
 name = "Steel Ingot"
 texture = "@steel_ingot"
@@ -703,3 +698,17 @@ name = "Snowball"
 texture = "@snowball"
 max_stack = 16
 throw = { speed = 18.0 }
+
+[[item]]
+id = "steel_bloom"
+name = "Steel Bloom"
+texture = "@steel_bloom"
+max_stack = 16
+
+[[item]]
+id = "smith_hammer"
+name = "Smithing Hammer"
+texture = "@smith_hammer"
+durability = 120
+damage = 3
+hammer = true

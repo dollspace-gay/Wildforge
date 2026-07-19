@@ -502,3 +502,56 @@ hardness = 1.2
 tool = "shovel"
 drops = "base:dirt"
 brush = { table = "ruin_artifacts", becomes = "base:dirt" }
+
+# ---- steelworks ----
+
+[[block]]
+id = "firebrick"
+name = "Firebrick"
+# Stone baked around a warden's ember: the only shell that holds a
+# bloomery's heat.
+texture = "@firebrick"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+
+[[block]]
+id = "bloomery"
+name = "Bloomery"
+texture = { top = "@firebrick", side = "@bloomery" }
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+interaction = "bloomery"
+
+[[block]]
+id = "bloomery_lit"
+name = "Bloomery"
+texture = { top = "@firebrick", side = "@bloomery_lit" }
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+interaction = "bloomery"
+light = 13
+light_color = [1.0, 0.55, 0.2]
+drops = "base:bloomery"
+item = false
+
+[[block]]
+id = "charcoal_block"
+name = "Charcoal Block"
+texture = "@charcoal_block"
+hardness = 2.0
+tool = "axe"
+drops = "base:charcoal"
+drop_count = 4
+
+[[block]]
+id = "stone_anvil"
+name = "Stone Anvil"
+texture = { top = "@stone_anvil", side = "@stone" }
+hardness = 6.5
+tool = "pickaxe"
+requires_tool = true
+interaction = "anvil"
+height = 0.75

@@ -354,16 +354,54 @@ input = "base:raw_iron"
 output = "base:iron_ingot"
 time = 10.0
 
-[[recipe]]
-pattern = ["ii", "cc"]
-keys = { i = "base:iron_ingot", c = "base:charcoal" }
-output = "base:steel_blend"
-count = 2
+# Steel is a process now: charge a bloomery stack, fire it for half a
+# day, and hammer the blooms into bars at an anvil.
 
-[[smelt]]
-input = "base:steel_blend"
+[[recipe]]
+pattern = [".s.", "ses", ".s."]
+keys = { s = "base:stone", e = "base:ember" }
+output = "base:firebrick"
+count = 4
+
+[[recipe]]
+pattern = ["ff", "ff"]
+keys = { f = "base:firebrick" }
+output = "base:bloomery"
+
+[[recipe]]
+pattern = ["cc", "cc"]
+keys = { c = "base:charcoal" }
+output = "base:charcoal_block"
+
+[[recipe]]
+pattern = ["b"]
+keys = { b = "base:charcoal_block" }
+output = "base:charcoal"
+count = 4
+
+[[recipe]]
+pattern = ["sss", "t.t"]
+keys = { s = "base:stone", t = "base:stick" }
+output = "base:stone_anvil"
+
+[[recipe]]
+pattern = ["ii", ".t", ".t"]
+keys = { i = "base:iron_ingot", t = "base:stick" }
+output = "base:smith_hammer"
+
+[[bloomery]]
+charge = "base:iron_ingot"
+fuel = "base:charcoal"
+bloom = "base:steel_bloom"
+
+[[worked]]
+input = "base:steel_bloom"
 output = "base:steel_ingot"
-time = 14.0
+strikes = 3
+
+[[fuel]]
+item = "base:charcoal_block"
+burn = 160.0
 
 [[recipe]]
 pattern = ["ii", "ii"]

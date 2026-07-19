@@ -106,7 +106,7 @@ Every field, with defaults:
 | `light_color` | white | `[r, g, b]` 0–1 tint for the glow — hue-normalized so the brightest channel still reaches the full `light` level (torches burn warm; a modded block can smoulder any color) |
 | `height` | full cube | render height 0–1 for thin slabs (snow layers are `0.125`); pair with `solid = false` to walk through, and unsupported slabs pop off like torches |
 | `water` | none | fluid level: `0` = source (registers flow levels automatically) |
-| `interaction` | none | right-click opens: `"crafting"` \| `"furnace"` \| `"chest"` \| `"offering"` |
+| `interaction` | none | right-click opens: `"crafting"` \| `"furnace"` \| `"chest"` \| `"offering"` \| `"bloomery"` \| `"anvil"` |
 | `crop` | none | `{ stages = N, next_chance = 0.3, stage_textures = [...], any_soil = false }` — advances on random ticks; `any_soil` grows off farmland too |
 | `harvest` | none | `{ item = "...", count = 2, becomes = "..." }` — right-click yield without breaking |
 | `sapling` | none | `{ tree = "oak" }` — grows into that tree species on random ticks (`oak`/`birch`/`spruce`/`jungle`/`acacia`; unknown names grow oak) |
@@ -151,6 +151,7 @@ food = { hunger = 7, nutrition = { grain = 30 } }
 | `tablet` | `false` | right-click reads lore |
 | `brush_tool` | `false` | channels on brushable blocks |
 | `throw` | none | `{ speed = 18.0 }` — right-click throws the item as a projectile (snowballs); zero-damage throws still knock back |
+| `hammer` | `false` | works `[[worked]]` inputs on an anvil (a 2 s channel per strike) |
 
 ## recipes.toml
 
@@ -192,6 +193,12 @@ speed = 1.5
 - `[[fuel]]` `burn` is seconds of furnace heat; `speed` (default 1.0)
   multiplies smelt rate while that fuel burns — base's `ember` smelts
   at 2×.
+- `[[bloomery]]` `{ charge, fuel, bloom }` declares a bloomery firing
+  chain: a lit stack converts 2 charge + 2 fuel per bloom (+2 bonus
+  blooms on a full 8+8 batch) over half an in-game day.
+- `[[worked]]` `{ input, output, strikes = 3 }` declares anvil work:
+  an item with `hammer = true` beats `input` into `output` on any
+  block with `interaction = "anvil"`.
 
 ## tags.toml
 
@@ -331,7 +338,7 @@ palette). Base uses this for its own renames — see
 
 PNG files, any size (nearest-neighbor scaled into the atlas; base
 tiles are 32×32). Referenced by filename from the TOML. The atlas has
-256 slots and built-ins use the first 208, leaving **48 tiles for all
+256 slots and built-ins use the first 216, leaving **40 tiles for all
 installed mods together**. Texture packs can override mod tiles by
 shipping `tiles/<mod_id>/<file stem>.png`.
 

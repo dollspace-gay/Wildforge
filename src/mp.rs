@@ -501,6 +501,7 @@ impl HostSession {
                     Some("chest") => 0u8,
                     Some("furnace") => 1,
                     Some("offering") => 2,
+                    Some("bloomery") => 3,
                     _ => return,
                 };
                 let entry = server
@@ -510,6 +511,7 @@ impl HostSession {
                     .or_insert_with(|| match kind {
                         0 => BlockEntity::Chest(Default::default()),
                         1 => BlockEntity::Furnace(Default::default()),
+                        3 => BlockEntity::Bloomery(Default::default()),
                         _ => BlockEntity::Offering(Default::default()),
                     });
                 if let BlockEntity::Chest(c) = entry
@@ -550,6 +552,59 @@ impl HostSession {
             }
             C2S::CloseContainer => {
                 guest.container = None;
+            }
+            C2S::LightBloomery { x, y, z } => {
+                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                if (p - guest.pos).length() > REACH {
+                    return;
+                }
+                match server.world.light_bloomery(x, y, z) {
+                    Ok(()) => self.send_container(server, id, (x, y, z)),
+                    Err(e) => self.net.send(id, &S2C::Toast(e.into())),
+                }
+            }
+            C2S::LightClamp { x, y, z } => {
+                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                if (p - guest.pos).length() > REACH {
+                    return;
+                }
+                match server.world.try_light_clamp(x, y, z) {
+                    Ok(n) => self
+                        .net
+                        .send(id, &S2C::Toast(format!("The clamp smolders ({n} logs)."))),
+                    Err(e) => self.net.send(id, &S2C::Toast(e.into())),
+                }
+            }
+            C2S::AnvilPut { x, y, z, item } => {
+                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                if (p - guest.pos).length() > REACH
+                    || (item as usize) >= server.world.reg.items.len()
+                {
+                    return;
+                }
+                let stack = ItemStack::new(&server.world.reg, crate::registry::ItemId(item), 1);
+                if !server.world.anvil_put((x, y, z), stack) {
+                    // Rejected: the trusted-consumed item goes back.
+                    server.world.pending_gives.push((id, stack));
+                }
+            }
+            C2S::AnvilStrike { x, y, z } => {
+                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                if (p - guest.pos).length() > REACH {
+                    return;
+                }
+                if let Some(out) = server.world.anvil_strike((x, y, z)) {
+                    server.world.pending_gives.push((id, out));
+                }
+            }
+            C2S::AnvilTake { x, y, z } => {
+                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                if (p - guest.pos).length() > REACH {
+                    return;
+                }
+                if let Some(b) = server.world.anvil_take((x, y, z)) {
+                    server.world.pending_gives.push((id, b));
+                }
             }
             C2S::SleepRequest => {
                 guest.sleeping = true;
@@ -593,6 +648,25 @@ impl HostSession {
         };
         let mut held = held;
         match entity {
+            BlockEntity::Bloomery(bl) => {
+                // Sealed while firing; charge takes ore-chain items,
+                // the bank takes its fuel. Taking out is always fine.
+                if !bl.lit && slot < 8 {
+                    let chain = server.world.reg.bloomery.first().cloned();
+                    let want = chain.map(|c| if slot < 4 { c.charge } else { c.fuel });
+                    let s = if slot < 4 {
+                        &mut bl.charge[slot]
+                    } else {
+                        &mut bl.fuel[slot - 4]
+                    };
+                    if held.is_none() || held.map(|h| Some(h.item)) == Some(want) {
+                        let (ns, nh) = click_stack(&reg, *s, held, right);
+                        *s = ns;
+                        held = nh;
+                    }
+                }
+            }
+            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) => {}
             BlockEntity::Chest(c) => {
                 if slot < c.slots.len() {
                     let (ns, nh) = click_stack(&reg, c.slots[slot], held, right);
@@ -665,10 +739,23 @@ impl HostSession {
                 durability: s.durability,
             })
         };
-        let (kind, slots): (u8, Vec<Option<StackSnap>>) = match entity {
-            BlockEntity::Chest(c) => (0, c.slots.iter().map(snap).collect()),
-            BlockEntity::Furnace(f) => (1, vec![snap(&f.input), snap(&f.fuel), snap(&f.output)]),
-            BlockEntity::Offering(o) => (2, o.slots.iter().map(snap).collect()),
+        let (kind, slots, aux): (u8, Vec<Option<StackSnap>>, Vec<f32>) = match entity {
+            BlockEntity::Chest(c) => (0, c.slots.iter().map(snap).collect(), Vec::new()),
+            BlockEntity::Furnace(f) => (
+                1,
+                vec![snap(&f.input), snap(&f.fuel), snap(&f.output)],
+                vec![f.progress, f.burn_left, f.burn_total],
+            ),
+            BlockEntity::Offering(o) => (2, o.slots.iter().map(snap).collect(), Vec::new()),
+            BlockEntity::Bloomery(b) => (
+                3,
+                b.charge.iter().chain(b.fuel.iter()).map(snap).collect(),
+                vec![
+                    if b.lit { 1.0 } else { 0.0 },
+                    b.progress / crate::world::BLOOMERY_FIRE_SECS,
+                ],
+            ),
+            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) => return,
         };
         self.net.send(
             id,
@@ -678,6 +765,7 @@ impl HostSession {
                 z: pos.2,
                 kind,
                 slots,
+                aux,
             },
         );
     }
