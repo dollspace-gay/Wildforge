@@ -117,6 +117,20 @@ opaque = false
 height = 0.125
 
 [[block]]
+id = "snow_layer_trod"
+name = "Trodden Snow"
+# Footprints pressed into a snow layer: walking through leaves a
+# trail. A real block — logged, seen by guests, saved — and it melts
+# and shovels exactly like the untouched layer.
+texture = "@snow_trod"
+hardness = 0.1
+tool = "shovel"
+drops = "base:snowball"
+solid = false
+opaque = false
+height = 0.125
+
+[[block]]
 id = "ice"
 name = "Ice"
 texture = "@ice"

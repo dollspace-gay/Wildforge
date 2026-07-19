@@ -391,6 +391,12 @@ impl HostSession {
                 guest.net_age = 0.0;
                 guest.pos = pos;
                 guest.yaw = yaw;
+                // Guests leave footprints too; the edit echoes to all.
+                server.world.tread(
+                    pos.x.floor() as i32,
+                    (pos.y + 0.1).floor() as i32,
+                    pos.z.floor() as i32,
+                );
             }
             C2S::Break { x, y, z } => {
                 let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);

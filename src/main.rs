@@ -17,6 +17,7 @@ mod mesher;
 mod mobs;
 mod mp;
 mod net;
+mod particles;
 mod physics;
 mod raycast;
 mod registry;
@@ -188,6 +189,36 @@ struct Game {
     /// Smithing channel: seconds into the current hammer strike.
     anvil_work: f32,
     anvil_pos: Option<(i32, i32, i32)>,
+    /// The juice layer: presentation-only feedback. `juice` is the
+    /// kill switch (WILDFORGE_JUICE=0); `jrng` is its own rng so
+    /// cosmetics can never perturb the sim's dice.
+    juice: bool,
+    jrng: u32,
+    pool: particles::Pool,
+    /// Footsteps: distance accumulator (self), per-mob stride phase,
+    /// per-remote-player (pos, accum).
+    step_accum: f32,
+    mob_strides: std::collections::HashMap<u32, f32>,
+    remote_strides: std::collections::HashMap<u32, (Vec3, f32)>,
+    /// Pickup feedback: ghost icons flying to the hotbar, per-slot
+    /// pulse timers, and the rising pickup-pitch streak.
+    ui_flies: Vec<(u16, (f32, f32), usize, f32)>,
+    slot_pulse: [f32; HOTBAR_SLOTS],
+    pickup_streak: (u32, f32),
+    /// UI motion: screen-open easing, hotbar selection bounce, and
+    /// the one-frame button press dip.
+    screen_age: f32,
+    sel_bounce: f32,
+    press_dip: f32,
+    /// Combat impact: viewmodel hold on connect, and the single
+    /// permitted camera nudge (direction, time left).
+    hitch: f32,
+    nudge: (Vec3, f32),
+    /// Informative-audio timers: warden presence, hunger notes.
+    presence_timer: f32,
+    hunger_timer: f32,
+    /// Dev (WILDFORGE_DEMO_JUICE): re-burst here on a beat for shots.
+    demo_burst: Option<(Vec3, u16)>,
     /// Stack picked up by the cursor inside the inventory screen.
     held_stack: Option<ItemStack>,
     /// Crafting grid contents (row-major; 2x2 uses the first 4 cells).
@@ -450,6 +481,25 @@ impl Game {
             atlas_season: 1,
             anvil_work: 0.0,
             anvil_pos: None,
+            juice: std::env::var("WILDFORGE_JUICE")
+                .map(|v| v != "0")
+                .unwrap_or(true),
+            jrng: 0x9e3779b9,
+            pool: particles::Pool::default(),
+            step_accum: 0.0,
+            mob_strides: Default::default(),
+            remote_strides: Default::default(),
+            ui_flies: Vec::new(),
+            slot_pulse: [0.0; HOTBAR_SLOTS],
+            pickup_streak: (0, 0.0),
+            screen_age: 1.0,
+            sel_bounce: 1.0,
+            press_dip: 0.0,
+            hitch: 0.0,
+            nudge: (Vec3::ZERO, 0.0),
+            presence_timer: 0.0,
+            hunger_timer: 0.0,
+            demo_burst: None,
             held_stack: None,
             craft_grid: [None; 9],
             craft_size: 2,
@@ -540,6 +590,53 @@ impl Game {
         if let Some(a) = &self.audio {
             a.play(s);
         }
+    }
+
+    /// Play at a volume (distance-attenuated world sounds).
+    fn sfx_vol(&self, s: Sfx, vol: f32) {
+        if vol <= 0.02 {
+            return;
+        }
+        if let Some(a) = &self.audio {
+            a.play_vol(s, vol);
+        }
+    }
+
+    /// The variation rule: every repeated sound differs a little.
+    /// Uses the juice rng so cosmetics never touch the sim's dice.
+    fn vary(&mut self) -> f32 {
+        self.jrng = self.jrng.wrapping_mul(1664525).wrapping_add(1013904223);
+        0.9 + ((self.jrng >> 8) as f32 / (1 << 24) as f32) * 0.2
+    }
+
+    /// Debris burst from a block's own texture (breaks, hits).
+    fn juice_burst(&mut self, at: Vec3, tile: u16, n: usize, speed: f32) {
+        if !self.juice {
+            return;
+        }
+        let mut r = self.jrng;
+        self.pool.burst(at, tile, n, speed, &mut r);
+        self.jrng = r;
+    }
+
+    /// A soft ground puff (landings, grinding).
+    fn juice_puff(&mut self, at: Vec3, tile: u16, n: usize) {
+        if !self.juice {
+            return;
+        }
+        let mut r = self.jrng;
+        self.pool.puff(at, tile, n, &mut r);
+        self.jrng = r;
+    }
+
+    /// The footstep surface under a world position.
+    fn step_mat_at(&self, x: f32, y: f32, z: f32) -> audio::StepMat {
+        let b = self.server.world.get_block(
+            x.floor() as i32,
+            (y - 0.1).floor() as i32,
+            z.floor() as i32,
+        );
+        audio::step_mat(&self.reg.block(b).name, self.break_mat(b))
     }
 
     fn apply_config(&mut self) {
@@ -903,6 +1000,34 @@ impl Game {
             }
         }
         // Dev: a glassworks yard - kiln stack, quern, minerals, sand.
+        // Dev: stage the juice layer for screenshots — a trodden snow
+        // trail, low health (heart wobble + vignette), and a debris
+        // burst frozen mid-flight.
+        if std::env::var("WILDFORGE_DEMO_JUICE").is_ok() {
+            let b = |n: &str| self.reg.block_id(n);
+            if let (Some(layer), Some(dirt)) = (b("base:snow_layer"), b("base:dirt")) {
+                let (sx, sz) = (spawn.x as i32 + 4, spawn.z as i32 - 2);
+                let sy = self.server.world.surface_height(sx, sz);
+                for rx in 0..6i32 {
+                    for rz in -2..=2i32 {
+                        self.server.world.set_block(sx + rx, sy, sz + rz, dirt);
+                        self.server.world.set_block(sx + rx, sy + 1, sz + rz, layer);
+                    }
+                }
+                // A walker crossed the field on the diagonal.
+                for i in 0..5i32 {
+                    self.server.world.tread(sx + i, sy + 1, sz - 2 + i);
+                }
+                // A break mid-burst, sparks and all; the tick re-stamps
+                // the moment so any capture frame lands mid-effect.
+                let center = Vec3::new(sx as f32 + 2.5, sy as f32 + 2.5, sz as f32 + 0.5);
+                self.demo_burst = Some((center, self.reg.block(dirt).tiles[0]));
+                self.juice_burst(center, self.reg.block(dirt).tiles[0], 10, 2.2);
+            }
+            self.health = 5.0;
+            self.damage_flash = 0.35;
+        }
+
         if std::env::var("WILDFORGE_DEMO_GLASSWORKS").is_ok() {
             let b = |n: &str| self.reg.block_id(n);
             if let (Some(fb), Some(kiln), Some(quern)) =
@@ -1387,6 +1512,7 @@ impl Game {
         if self.screen == screen {
             return;
         }
+        self.screen_age = 0.0;
         self.bow_draw = 0.0; // opening any screen relaxes the draw
 
         // Leaving a container tells the host to stop streaming it.
@@ -1576,8 +1702,20 @@ impl Game {
                         .get(id as usize)
                         .copied()
                         .unwrap_or(self.reg.unknown_block);
+                    let old = self.server.world.get_block(x, y, z);
                     self.server.world.set_block(x, y, z, local);
                     self.server.world.pending_drops.clear();
+                    // Someone broke something: the world crumbles for
+                    // everyone watching.
+                    if local == crate::registry::AIR
+                        && old != crate::registry::AIR
+                        && self.reg.block(old).hardness.is_some()
+                    {
+                        let center = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                        if (center - self.camera.pos).length() < 40.0 {
+                            self.juice_burst(center, self.reg.block(old).tiles[0], 8, 2.0);
+                        }
+                    }
                 }
                 net::S2C::Players(list) => {
                     // New span: from wherever each player currently
@@ -1701,7 +1839,16 @@ impl Game {
                         }
                         let left = self.inventory.add_stack(&reg, stack);
                         if left == 0 {
-                            self.sfx(Sfx::Pickup);
+                            // Guests harvest over the wire; the ramp
+                            // climbs for them too.
+                            if self.juice {
+                                self.pickup_streak.0 = (self.pickup_streak.0 + 1).min(24);
+                                self.pickup_streak.1 = 1.5;
+                                let p = audio::pickup_pitch(self.pickup_streak.0 - 1);
+                                self.sfx(Sfx::Pickup2(p));
+                            } else {
+                                self.sfx(Sfx::Pickup);
+                            }
                         }
                     }
                 }
@@ -1985,6 +2132,11 @@ impl Game {
         if away.length_squared() > 0.001 {
             let dir = away.normalize();
             self.player.vel += dir * 6.0 + Vec3::new(0.0, 3.5, 0.0);
+            // The plan's one camera shake: a 2px nudge away from the
+            // attacker, so the flinch points at the threat.
+            if self.juice {
+                self.nudge = (dir, 0.08);
+            }
         }
         self.killed_by_wild = true;
         self.damage(amount);
@@ -2263,6 +2415,8 @@ impl Game {
                 self.server.world.add_ire(2.0);
             }
             self.sfx(Sfx::MobDeath(def.sound_pitch));
+            let (tile, at) = (def.tile, m.pos + Vec3::new(0.0, 0.5, 0.0));
+            self.juice_burst(at, tile, 12, 2.0);
             if m.growth < 1.0 {
                 continue; // the young return nothing (you monster)
             }
@@ -2427,6 +2581,26 @@ impl Game {
             if self.anvil_work >= 2.0 {
                 self.anvil_work = 0.0;
                 self.sfx(Sfx::Break(BreakMat::Stone));
+                let top = Vec3::new(
+                    target.0 as f32 + 0.5,
+                    target.1 as f32 + 1.05,
+                    target.2 as f32 + 0.5,
+                );
+                if self.juice {
+                    if held.is_some_and(|i| reg.item(i).hammer) {
+                        // The promised sparks: embers ring off the bloom.
+                        let v = self.vary();
+                        self.sfx_vol(Sfx::Spark, v.min(1.0));
+                        let ember = *atlas::builtin_slots().get("ember").unwrap_or(&0);
+                        self.juice_burst(top, ember, 8, 1.8);
+                    } else {
+                        let v = self.vary();
+                        self.sfx_vol(Sfx::Grind, v.min(1.0));
+                        let b = self.server.world.get_block(target.0, target.1, target.2);
+                        let tile = reg.block(b).tiles[2];
+                        self.juice_puff(top, tile, 3);
+                    }
+                }
                 if !self.creative && held.is_some() {
                     self.inventory.wear_tool(&reg, self.hotbar_sel);
                 }
@@ -2475,6 +2649,11 @@ impl Game {
                     let id = self.server.world.mobs[mi].id;
                     r.client.send(&net::C2S::AttackMob { id, dmg, from });
                     self.server.world.mobs[mi].hurt_flash = 0.35; // feedback
+                    if self.juice {
+                        self.hitch = 0.06;
+                    }
+                    let at = self.server.world.mobs[mi].pos + Vec3::new(0.0, 0.5, 0.0);
+                    self.juice_burst(at, reg.animals[sp].tile, 5, 1.6);
                     self.sfx(Sfx::MobHurt(pitch));
                     self.hunger = (self.hunger - 0.01).max(0.0);
                     if !self.creative {
@@ -2485,6 +2664,11 @@ impl Game {
                 }
                 let def = reg.animals[sp].clone();
                 self.server.world.mobs[mi].hurt(&def, dmg, from);
+                if self.juice {
+                    self.hitch = 0.06;
+                }
+                let at = self.server.world.mobs[mi].pos + Vec3::new(0.0, 0.5, 0.0);
+                self.juice_burst(at, def.tile, 5, 1.6);
                 self.sfx(Sfx::MobHurt(pitch));
                 self.hunger = (self.hunger - 0.01).max(0.0);
                 if !self.creative {
@@ -2537,6 +2721,12 @@ impl Game {
                             }
                             self.hunger = (self.hunger - 0.008).max(0.0);
                             self.sfx(Sfx::Break(self.break_mat(b)));
+                            let center = Vec3::new(
+                                target.0 as f32 + 0.5,
+                                target.1 as f32 + 0.5,
+                                target.2 as f32 + 0.5,
+                            );
+                            self.juice_burst(center, self.reg.block(b).tiles[0], 10, 2.2);
                             if !self.creative {
                                 self.inventory.wear_tool(&reg, self.hotbar_sel);
                             }
@@ -2550,6 +2740,12 @@ impl Game {
                                 .world
                                 .set_block(target.0, target.1, target.2, AIR);
                             self.sfx(Sfx::Break(self.break_mat(b)));
+                            let center = Vec3::new(
+                                target.0 as f32 + 0.5,
+                                target.1 as f32 + 0.5,
+                                target.2 as f32 + 0.5,
+                            );
+                            self.juice_burst(center, self.reg.block(b).tiles[0], 10, 2.2);
                             if !self.creative {
                                 self.inventory.wear_tool(&reg, self.hotbar_sel);
                             }
@@ -2601,7 +2797,18 @@ impl Game {
                             }
                         }
                     } else {
+                        let stage_before =
+                            (self.breaking.map(|(_, p)| p).unwrap_or(0.0) * 4.0) as i32;
                         self.breaking = Some((target, progress));
+                        // Chips fly as each crack stage lands.
+                        if (progress * 4.0) as i32 > stage_before {
+                            let center = Vec3::new(
+                                target.0 as f32 + 0.5,
+                                target.1 as f32 + 0.5,
+                                target.2 as f32 + 0.5,
+                            );
+                            self.juice_burst(center, self.reg.block(b).tiles[0], 2, 1.2);
+                        }
                         // Keep the arm swinging while we chip away.
                         if self.swing <= 0.0 {
                             self.swing = 1.0;
@@ -3134,6 +3341,26 @@ impl Game {
         if self.player.in_water || self.player.on_ground {
             if let (Some(start), true) = (self.fall_start, self.player.on_ground) {
                 let fall = start - self.player.pos.y;
+                if fall >= 2.0 && self.juice {
+                    let under = self.server.world.get_block(
+                        self.player.pos.x.floor() as i32,
+                        (self.player.pos.y - 0.6).floor() as i32,
+                        self.player.pos.z.floor() as i32,
+                    );
+                    let tile = self.reg.block(under).tiles[2];
+                    self.juice_puff(self.player.pos, tile, 5);
+                    if fall > 3.0 {
+                        self.sfx(Sfx::Thud);
+                    } else {
+                        let m = self.step_mat_at(
+                            self.player.pos.x,
+                            self.player.pos.y,
+                            self.player.pos.z,
+                        );
+                        let p = self.vary() * 0.8;
+                        self.sfx(Sfx::Step(m, p));
+                    }
+                }
                 self.damage((fall - 3.0).floor());
             }
             self.fall_start = None;
@@ -3187,6 +3414,7 @@ impl Game {
             let it = &self.items[i];
             let d = it.pos.distance(target);
             if it.age > entity::PICKUP_DELAY && d < 1.4 {
+                let it_pos = it.pos;
                 let (item, count, dur) = (
                     self.items[i].item,
                     self.items[i].count,
@@ -3201,7 +3429,36 @@ impl Game {
                     self.inventory.add(&reg, item, count)
                 };
                 if left < count {
-                    self.sfx(Sfx::Pickup);
+                    if !self.juice {
+                        self.sfx(Sfx::Pickup);
+                    } else {
+                        // The collection ramp: each quick pickup chimes
+                        // a step higher; the gap resets the melody.
+                        self.pickup_streak.0 = (self.pickup_streak.0 + 1).min(24);
+                        self.pickup_streak.1 = 1.5;
+                        let pitch = audio::pickup_pitch(self.pickup_streak.0 - 1);
+                        self.sfx(Sfx::Pickup2(pitch));
+                    }
+                    if self.juice
+                        && let Some(slot) = self
+                            .inventory
+                            .slots
+                            .iter()
+                            .position(|s| s.is_some_and(|s| s.item == item))
+                        && slot < HOTBAR_SLOTS
+                    {
+                        // A ghost of the icon flies to its new home.
+                        let clip = self.camera.view_proj() * it_pos.extend(1.0);
+                        if clip.w > 0.3 {
+                            let w = self.renderer.config.width as f32;
+                            let h = self.renderer.config.height as f32;
+                            let sx = (clip.x / clip.w * 0.5 + 0.5) * w;
+                            let sy = (0.5 - clip.y / clip.w * 0.5) * h;
+                            let icon = self.reg.item(item).icon;
+                            self.ui_flies.push((icon, (sx, sy), slot, 0.0));
+                        }
+                        self.slot_pulse[slot] = 0.18;
+                    }
                 }
                 if left == 0 {
                     self.items.swap_remove(i);
@@ -3444,10 +3701,141 @@ impl Game {
             self.action_cooldown = (self.action_cooldown - dt).max(0.0);
             self.attack_cooldown = (self.attack_cooldown - dt).max(0.0);
             self.scroll_cooldown = (self.scroll_cooldown - dt).max(0.0);
-            self.swing = (self.swing - dt / 0.3).max(0.0);
+            // The hand-hitch holds the swing at its peak on a connect.
+            if self.hitch > 0.0 {
+                self.hitch -= dt;
+            } else {
+                self.swing = (self.swing - dt / 0.3).max(0.0);
+            }
             let hv = Vec3::new(self.player.vel.x, 0.0, self.player.vel.z).length();
             if self.player.on_ground {
                 self.hand_bob += hv.min(6.0) * dt * 1.6;
+            }
+        }
+
+        // The juice layer's clock: particles, pulses, streaks, motion.
+        self.pool.tick(dt);
+        self.screen_age = (self.screen_age + dt / 0.14).min(1.0);
+        self.sel_bounce = (self.sel_bounce + dt / 0.12).min(1.0);
+        self.press_dip = (self.press_dip - dt).max(0.0);
+        self.nudge.1 = (self.nudge.1 - dt).max(0.0);
+        for p in self.slot_pulse.iter_mut() {
+            *p = (*p - dt).max(0.0);
+        }
+        self.pickup_streak.1 = (self.pickup_streak.1 - dt).max(0.0);
+        if self.pickup_streak.1 <= 0.0 {
+            self.pickup_streak.0 = 0;
+        }
+        for f in self.ui_flies.iter_mut() {
+            f.3 += dt;
+        }
+        self.ui_flies.retain(|f| f.3 < 0.22);
+        // A hostile you haven't met yet announces itself now and then:
+        // hearing the threat before seeing it is the point.
+        self.presence_timer -= dt;
+        if self.presence_timer <= 0.0
+            && self.in_world
+            && self.juice
+            && self.screen == Screen::Playing
+        {
+            self.presence_timer = 6.0 + (self.vary() - 0.9) * 20.0;
+            let reg = self.reg.clone();
+            let lurker = self
+                .server
+                .world
+                .mobs
+                .iter()
+                .filter(|m| {
+                    reg.animals[m.species].hostile && m.state != crate::mobs::MobState::Hunt
+                })
+                .map(|m| ((m.pos - self.player.pos).length(), m.species))
+                .filter(|(d, _)| *d < 20.0)
+                .min_by(|a, b| a.0.total_cmp(&b.0));
+            if let Some((d, sp)) = lurker {
+                let vol = (1.0 - d / 24.0).max(0.2);
+                self.sfx_vol(Sfx::Presence(reg.animals[sp].sound_pitch), vol);
+            }
+        }
+        // The stomach speaks before the bar empties.
+        self.hunger_timer -= dt;
+        if self.hunger_timer <= 0.0 {
+            let gap = if self.hunger < 2.0 { 10.0 } else { 20.0 };
+            self.hunger_timer = gap;
+            if self.hunger < 5.0 && self.in_world && self.juice && self.screen == Screen::Playing {
+                self.sfx_vol(Sfx::Rumble, 0.7);
+            }
+        }
+
+        if let Some((at, tile)) = self.demo_burst
+            && self.total_frames.is_multiple_of(10)
+        {
+            self.juice_burst(at, tile, 10, 2.2);
+            self.damage_flash = 0.4;
+        }
+
+        // Footprints in snow: not juice — the trail is world state.
+        if self.in_world && !paused && self.remote.is_none() && self.player.on_ground {
+            self.server.world.tread(
+                self.player.pos.x.floor() as i32,
+                (self.player.pos.y + 0.1).floor() as i32,
+                self.player.pos.z.floor() as i32,
+            );
+        }
+
+        // Footsteps: mine, my fellow players', and the creatures'.
+        if self.in_world && !paused && self.juice {
+            let hv = Vec3::new(self.player.vel.x, 0.0, self.player.vel.z).length();
+            if self.player.on_ground && hv > 0.5 {
+                self.step_accum += hv * dt;
+                if self.step_accum >= 2.2 {
+                    self.step_accum = 0.0;
+                    let m =
+                        self.step_mat_at(self.player.pos.x, self.player.pos.y, self.player.pos.z);
+                    let pitch = self.vary();
+                    self.sfx(Sfx::Step(m, pitch));
+                }
+            } else if hv <= 0.5 {
+                self.step_accum = 0.0;
+            }
+            // Mobs step when their stride phase crosses a beat.
+            let cam = self.camera.pos;
+            let mut steps: Vec<(audio::StepMat, f32, f32)> = Vec::new();
+            for m in &self.server.world.mobs {
+                let d = (m.pos - cam).length();
+                if d > 16.0 || m.id == 0 {
+                    continue;
+                }
+                let beat = (m.anim_phase / std::f32::consts::PI).floor();
+                let last = self.mob_strides.insert(m.id, beat);
+                if last.is_some_and(|l| beat > l) {
+                    let mat = self.step_mat_at(m.pos.x, m.pos.y, m.pos.z);
+                    let pitch = self.reg.animals[m.species].sound_pitch;
+                    steps.push((mat, pitch, 1.0 - d / 18.0));
+                }
+            }
+            // Remote players step by distance walked, like we do.
+            let remote_players: Vec<(u32, Vec3)> = self
+                .remote
+                .as_ref()
+                .map(|r| r.players.iter().map(|(id, p)| (*id, p.1)).collect())
+                .unwrap_or_default();
+            for (id, pos) in remote_players {
+                let (last, mut accum) = self.remote_strides.get(&id).copied().unwrap_or((pos, 0.0));
+                let moved = Vec3::new(pos.x - last.x, 0.0, pos.z - last.z).length();
+                accum += moved;
+                if accum >= 2.2 {
+                    accum = 0.0;
+                    let d = (pos - cam).length();
+                    if d < 16.0 {
+                        let mat = self.step_mat_at(pos.x, pos.y, pos.z);
+                        steps.push((mat, 1.0, 1.0 - d / 18.0));
+                    }
+                }
+                self.remote_strides.insert(id, (pos, accum));
+            }
+            for (mat, pitch, vol) in steps {
+                let p = pitch * self.vary();
+                self.sfx_vol(Sfx::Step(mat, p), vol * 0.6);
             }
         }
 
@@ -3767,6 +4155,16 @@ impl Game {
                 } else {
                     audio::Ambience::Rain
                 })
+            } else if self.in_world
+                && self.juice
+                && self.server.world.weather == world::Weather::Overcast
+            {
+                // Wind is the forecast: every rain passes through it.
+                Some(audio::Ambience::Wind)
+            } else if self.in_world && self.juice && daylight < 0.25 {
+                // The night bed: crickets while the wild is calm; a low
+                // hush once it turns wrathful. The ire meter, diegetic.
+                Some(audio::Ambience::Night(self.server.world.ire_tier() < 2))
             } else {
                 None
             };
@@ -3813,6 +4211,8 @@ impl Game {
         for p in &self.server.world.projectiles {
             p.emit(&mut entity_verts, &mut entity_idx);
         }
+        // Cosmetic debris and dust ride the same batch.
+        self.pool.emit(&mut entity_verts, &mut entity_idx);
         // Fellow players, boxy and proud.
         let skin = *atlas::builtin_slots().get("player_skin").unwrap_or(&0);
         let face = *atlas::builtin_slots().get("player_face").unwrap_or(&0);
@@ -4081,15 +4481,74 @@ impl Game {
         if let Some((target, progress)) = self.breaking {
             entity::emit_crack(target, progress, &mut overlay_verts, &mut overlay_idx);
         }
+        // The quern's top face turns while you grind (bare-hand station
+        // channels only; hammer stations flash sparks instead).
+        if self.juice
+            && self.right_held
+            && let Some(t) = self.anvil_pos
+            && !self.inventory.slots[self.hotbar_sel]
+                .is_some_and(|st| self.reg.item(st.item).hammer)
+        {
+            let b = self.server.world.get_block(t.0, t.1, t.2);
+            let slot = self.reg.block(b).tiles[2];
+            let ts = 1.0 / atlas::ATLAS_TILES as f32;
+            let (tx, ty) = (
+                slot as u32 % atlas::ATLAS_TILES,
+                slot as u32 / atlas::ATLAS_TILES,
+            );
+            let ang = self.anvil_work * std::f32::consts::PI;
+            let (sa, ca) = ang.sin_cos();
+            let c = Vec3::new(t.0 as f32 + 0.5, t.1 as f32 + 1.01, t.2 as f32 + 0.5);
+            let base = overlay_verts.len() as u32;
+            for (lx, lz, u, v) in [
+                (-0.5f32, -0.5f32, 0.0f32, 0.0f32),
+                (0.5, -0.5, 1.0, 0.0),
+                (0.5, 0.5, 1.0, 1.0),
+                (-0.5, 0.5, 0.0, 1.0),
+            ] {
+                let rx = lx * ca - lz * sa;
+                let rz = lx * sa + lz * ca;
+                overlay_verts.push(mesher::Vertex {
+                    pos: [c.x + rx, c.y, c.z + rz],
+                    uv: [(tx as f32 + u) * ts, (ty as f32 + v) * ts],
+                    normal: [0.0, 0.0, 0.0],
+                    light: [1.0; 3],
+                    sky: 1.0,
+                });
+            }
+            overlay_idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
         let mut hand_verts = Vec::new();
         let mut hand_idx = Vec::new();
         self.emit_hand(&mut hand_verts, &mut hand_idx);
 
         self.build_ui();
+        // Screen-open ease: scale from 0.96 and fade in over ~140ms.
+        // Animation this short reads as *faster* than a snap, not slower.
+        if self.juice && self.screen != Screen::Playing && self.screen_age < 1.0 {
+            let t = self.screen_age;
+            let e = 1.0 - (1.0 - t) * (1.0 - t);
+            let sc = 0.96 + 0.04 * e;
+            let al = 0.85 + 0.15 * e;
+            let cx = self.renderer.config.width as f32 / 2.0;
+            let cy = self.renderer.config.height as f32 / 2.0;
+            for v in &mut self.ui.verts {
+                v.pos[0] = cx + (v.pos[0] - cx) * sc;
+                v.pos[1] = cy + (v.pos[1] - cy) * sc;
+                v.color[3] *= al;
+            }
+        }
 
+        let saved_cam = self.camera.pos;
+        if self.nudge.1 > 0.0 {
+            self.camera.pos += self.nudge.0 * (self.nudge.1 / 0.08) * 0.04;
+        }
+        let frame_vp = self.camera.view_proj();
+        let frame_cam = self.camera.pos;
+        self.camera.pos = saved_cam;
         match self.renderer.render(FrameInput {
-            view_proj: self.camera.view_proj(),
-            cam_pos: self.camera.pos,
+            view_proj: frame_vp,
+            cam_pos: frame_cam,
             fog_dist: fog,
             underwater,
             daylight,
@@ -4319,8 +4778,16 @@ impl Game {
     }
 
     fn draw_button(ui: &mut UiBatch, r: (f32, f32, f32, f32), label: &str, hover: bool) {
+        // Hover grows the plate 4% and brightens; a press dips it 2% —
+        // the down-up is what makes a click feel mechanical.
+        let mut r = r;
+        if hover {
+            let sc = if ui.press_dip { 0.98 } else { 1.04 };
+            let (cx, cy) = (r.0 + r.2 / 2.0, r.1 + r.3 / 2.0);
+            r = (cx - r.2 / 2.0 * sc, cy - r.3 / 2.0 * sc, r.2 * sc, r.3 * sc);
+        }
         let bg = if hover {
-            [0.5, 0.5, 0.5, 0.95]
+            [0.55, 0.55, 0.55, 0.95]
         } else {
             [0.25, 0.25, 0.25, 0.95]
         };
@@ -4423,6 +4890,7 @@ impl Game {
     fn build_ui(&mut self) {
         let mut ui = std::mem::replace(&mut self.ui, UiBatch::new());
         ui.clear();
+        ui.press_dip = self.juice && self.press_dip > 0.0;
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;
 
@@ -4692,7 +5160,20 @@ impl Game {
 
         // Damage flash vignette.
         if self.damage_flash > 0.0 {
-            ui.rect(0.0, 0.0, w, h, [0.8, 0.1, 0.1, self.damage_flash * 0.55]);
+            if self.juice {
+                let a = self.damage_flash * 0.5;
+                for (frac, aa) in [(1.0, 0.5), (0.66, 0.35), (0.33, 0.25)] {
+                    let bw = w * 0.14 * frac;
+                    let bh = h * 0.18 * frac;
+                    let col = [0.8, 0.1, 0.1, a * aa];
+                    ui.rect(0.0, 0.0, bw, h, col);
+                    ui.rect(w - bw, 0.0, bw, h, col);
+                    ui.rect(0.0, 0.0, w, bh, col);
+                    ui.rect(0.0, h - bh, w, bh, col);
+                }
+            } else {
+                ui.rect(0.0, 0.0, w, h, [0.8, 0.1, 0.1, self.damage_flash * 0.55]);
+            }
         }
 
         // Mod/system toasts, top center.
@@ -4711,7 +5192,14 @@ impl Game {
 
         // Hotbar.
         for i in 0..HOTBAR_SLOTS {
-            let r = self.hotbar_rect(i);
+            let mut r = self.hotbar_rect(i);
+            // Selection bounce: 1.0 -> 1.12 -> 1.0 over ~120ms.
+            if i == self.hotbar_sel && self.sel_bounce < 1.0 {
+                let t = self.sel_bounce;
+                let sc = 1.0 + 0.12 * (t * std::f32::consts::PI).sin();
+                let (cx, cy) = (r.0 + r.2 / 2.0, r.1 + r.3 / 2.0);
+                r = (cx - r.2 / 2.0 * sc, cy - r.3 / 2.0 * sc, r.2 * sc, r.3 * sc);
+            }
             Self::draw_slot(
                 &self.reg,
                 &mut ui,
@@ -4719,6 +5207,36 @@ impl Game {
                 self.inventory.slots[i],
                 i == self.hotbar_sel,
                 false,
+            );
+            // Pickup pulse: one bright cycle over the receiving slot.
+            let p = self.slot_pulse[i];
+            if p > 0.0 {
+                let a = (p / 0.18) * 0.35;
+                ui.rect(
+                    r.0 + 1.0,
+                    r.1 + 1.0,
+                    r.2 - 2.0,
+                    r.3 - 2.0,
+                    [1.0, 1.0, 0.9, a],
+                );
+            }
+        }
+        // Ghost icons fly from the pickup point to their slot.
+        for &(icon, (fx, fy), slot, age) in &self.ui_flies {
+            let t = (age / 0.22).min(1.0);
+            let t = t * t; // ease-in quad
+            let r = self.hotbar_rect(slot);
+            let (tx, ty) = (r.0 + r.2 / 2.0, r.1 + r.3 / 2.0);
+            let x = fx + (tx - fx) * t;
+            let y = fy + (ty - fy) * t;
+            let sz = 28.0 * (1.0 - 0.4 * t);
+            ui.tile(
+                x - sz / 2.0,
+                y - sz / 2.0,
+                sz,
+                sz,
+                icon,
+                [1.0, 1.0, 1.0, 0.9 * (1.0 - t * 0.5)],
             );
         }
         // Selected item name above the hotbar.
@@ -4728,7 +5246,7 @@ impl Game {
             let (hx0, hy0) = self.hotbar_origin();
             ui.text_shadow(
                 hx0 + (9.0 * Self::SLOT - tw) / 2.0,
-                hy0 - 52.0,
+                hy0 - 56.0,
                 2.0,
                 name,
                 [1.0; 4],
@@ -4743,6 +5261,7 @@ impl Game {
         } else {
             (self.max_health() / 2.0).ceil() as i32
         };
+        let clock = self.total_frames as f32 / 60.0;
         for i in 0..hearts {
             let kind = if self.health >= (i * 2 + 2) as f32 {
                 2
@@ -4751,7 +5270,12 @@ impl Game {
             } else {
                 0
             };
-            ui.heart(hx + i as f32 * 8.0 * hs, hy - 8.0 * hs - 4.0, hs, kind);
+            let wobble = if self.juice && self.health <= 6.0 && kind > 0 {
+                (clock * 9.0 + i as f32 * 1.7).sin() * 2.0
+            } else {
+                0.0
+            };
+            ui.heart(hx + i as f32 * 8.0 * hs, hy - 24.0 + wobble, hs, kind);
         }
         // Armor pips above the hearts, only while wearing any.
         let ap = if self.creative {
@@ -4761,13 +5285,7 @@ impl Game {
         };
         for i in 0..ap.min(15) {
             let x = hx + i as f32 * 6.0 * hs * 0.8;
-            ui.rect(
-                x,
-                hy - 14.0 * hs - 6.0,
-                4.0 * hs,
-                4.0 * hs,
-                [0.75, 0.72, 0.6, 0.95],
-            );
+            ui.rect(x, hy - 48.0, 4.0 * hs, 4.0 * hs, [0.75, 0.72, 0.6, 0.95]);
         }
         // Hunger pips, right-aligned above the hotbar.
         let pips = (self.hunger / 2.0).ceil() as i32;
@@ -4776,7 +5294,7 @@ impl Game {
             let a = if i < pips { 1.0 } else { 0.25 };
             ui.rect(
                 x,
-                hy - 8.0 * hs - 4.0 + 4.0,
+                hy - 24.0 + 4.0,
                 6.0 * hs * 0.7,
                 5.0 * hs * 0.7,
                 [0.85, 0.55, 0.2, a],
@@ -5213,8 +5731,16 @@ impl Game {
                         hover,
                     );
                 }
-                // Nutrition panel.
+                // Nutrition panel, on one soft backing strip so the
+                // numbers parse before the art does.
                 let (p0x, p0y, _, _) = self.inv_slot_rect(HOTBAR_SLOTS);
+                ui.rect(
+                    p0x - 198.0,
+                    p0y - 8.0,
+                    184.0,
+                    200.0,
+                    [0.02, 0.03, 0.05, 0.55],
+                );
                 let names = ["GRAIN", "VEG", "FRUIT", "FUNGI", "PROT"];
                 let cols = [
                     [0.85, 0.7, 0.25, 1.0],
@@ -5224,7 +5750,7 @@ impl Game {
                     [0.8, 0.4, 0.35, 1.0],
                 ];
                 for i in 0..5 {
-                    let y = p0y + i as f32 * 26.0;
+                    let y = p0y + i as f32 * 24.0;
                     ui.text_shadow(p0x - 190.0, y, 1.5, names[i], [1.0; 4]);
                     ui.rect(p0x - 130.0, y, 100.0, 10.0, [0.12, 0.12, 0.12, 0.9]);
                     let v = self.nutrition[i] / 100.0;
@@ -5236,7 +5762,7 @@ impl Game {
                 let bonus = (self.max_health() - MAX_HEALTH) as i32 / 2;
                 ui.text_shadow(
                     p0x - 190.0,
-                    p0y + 134.0,
+                    p0y + 128.0,
                     1.5,
                     &format!("MAX HEALTH +{bonus}"),
                     [1.0; 4],
@@ -5247,7 +5773,7 @@ impl Game {
                 let third = ["EARLY", "MID", "LATE"][((w.season_progress() * 3.0) as usize).min(2)];
                 ui.text_shadow(
                     p0x - 190.0,
-                    p0y + 184.0,
+                    p0y + 176.0,
                     1.5,
                     &format!("DAY {} - {third} {}", w.day + 1, world::SEASONS[w.season()]),
                     [0.85, 0.9, 1.0, 1.0],
@@ -5260,24 +5786,24 @@ impl Game {
                     [0.9, 0.55, 0.25, 1.0],
                     [0.9, 0.3, 0.25, 1.0],
                 ][tier];
-                ui.text_shadow(p0x - 190.0, p0y + 162.0, 1.5, "THE WILD", [1.0; 4]);
+                ui.text_shadow(p0x - 190.0, p0y + 152.0, 1.5, "THE WILD", [1.0; 4]);
                 ui.rect(
                     p0x - 130.0,
-                    p0y + 162.0,
+                    p0y + 152.0,
                     100.0,
                     10.0,
                     [0.12, 0.12, 0.12, 0.9],
                 );
                 ui.rect(
                     p0x - 130.0,
-                    p0y + 162.0,
+                    p0y + 152.0,
                     self.server.world.ire,
                     10.0,
                     tier_col,
                 );
                 ui.text_shadow(
                     p0x - 24.0,
-                    p0y + 162.0,
+                    p0y + 152.0,
                     1.5,
                     world::IRE_TIERS[tier],
                     tier_col,
@@ -6517,6 +7043,9 @@ impl Game {
                         _ => None,
                     };
                     if let Some(d) = digit {
+                        if self.hotbar_sel != d {
+                            self.sel_bounce = 0.0;
+                        }
                         self.hotbar_sel = d;
                     }
                 }
@@ -6679,6 +7208,7 @@ impl ApplicationHandler for App {
                 // Menu screens take clicks directly.
                 if game.screen != Screen::Playing {
                     if pressed {
+                        game.press_dip = 0.07;
                         match button {
                             MouseButton::Left => game.menu_click(event_loop, false),
                             MouseButton::Right => game.menu_click(event_loop, true),
@@ -6722,6 +7252,9 @@ impl ApplicationHandler for App {
                                 .iter()
                                 .position(|s| s.map(|s| reg.item(s.item).places) == Some(Some(b)));
                             if let Some(i) = found {
+                                if game.hotbar_sel != i {
+                                    game.sel_bounce = 0.0;
+                                }
                                 game.hotbar_sel = i;
                             }
                         }
@@ -6748,6 +7281,7 @@ impl ApplicationHandler for App {
                         let n = HOTBAR_SLOTS as i32;
                         let sel = (game.hotbar_sel as i32 - steps.signum()).rem_euclid(n);
                         game.hotbar_sel = sel as usize;
+                        game.sel_bounce = 0.0;
                         game.scroll_cooldown = 0.15;
                     }
                     game.scroll_accum = 0.0;

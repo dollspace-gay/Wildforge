@@ -232,6 +232,7 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("kiln", 230),
         ("kiln_lit", 231),
         ("quern", 232),
+        ("snow_trod", 233),
         ("unknown", 15),
         ("crack1", 16),
         ("crack2", 17),
@@ -2520,6 +2521,29 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             }
         });
     }
+    // (233) trodden snow: the layer with bootprints pressed in.
+    tf(233, &mut |px, py, u, v| {
+        let t = fbm(u, v, 6, 50);
+        let mut c = mix3([230.0, 236.0, 244.0], [250.0, 252.0, 255.0], t);
+        // Two offset prints, each a pair of pad+heel ovals.
+        let prints = [(0.32f32, 0.30f32, 1.0f32), (0.68, 0.68, -1.0)];
+        let mut pressed = false;
+        for (cx, cy, flip) in prints {
+            for (oy, rw, rh) in [(0.0f32, 0.10f32, 0.13f32), (0.17, 0.07, 0.08)] {
+                let dx = (u - cx) / rw;
+                let dy = (v - (cy + oy * flip)) / rh;
+                if dx * dx + dy * dy < 1.0 {
+                    pressed = true;
+                }
+            }
+        }
+        if pressed {
+            // The pressed floor sits lower: bluer, darker, smoother.
+            c = mix3(c, [196.0, 206.0, 224.0], 0.75);
+        }
+        rgba(c, speck(px, py, 51, 0.03) * emboss(px, py, tp), 255)
+    });
+
     // (232) quern top: a millstone with a center eye and sweep grooves.
     tf(232, &mut |px, py, u, v| {
         let dx = u - 0.5;

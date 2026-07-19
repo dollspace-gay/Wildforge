@@ -197,6 +197,7 @@ TILES = {
     "violet_glass": ("sprite", "a violet stained-glass pane: thin darker violet frame, two faint diagonal glints, interior flat violet, on the background color"),
     "kiln": ("tile", "red-brown firebrick wall with a wide dark rectangular kiln slot in the center, cold"),
     "kiln_lit": ("tile", "red-brown firebrick wall with a wide kiln slot glowing white-gold hot"),
+    "snow_trod": ("tile", "bright white snow surface with two pressed bootprints sunken in, blue-grey shadowed prints"),
     "quern": ("tile", "a round grey millstone seen from above: center eye hole and curved sweep grooves"),
     "firebrick": ("tile", "deep red-brown refractory bricks with dark mortar seams, kiln-worn"),
     "bloomery": ("tile", "red-brown firebrick wall with a dark arched furnace mouth in the center, cold and sooty"),

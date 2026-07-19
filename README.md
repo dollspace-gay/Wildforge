@@ -108,6 +108,27 @@ into throwable snowballs (harmless, knockback — aim well), packs
 back into snow blocks, and melts under bright torchlight. Rain even
 soothes the wild: ire decays a quarter faster while the land drinks.
 
+## Game feel
+
+The feedback skin, tuned to the game's quiet register: every effect
+answers a player verb, then shuts up. Footsteps speak per material
+(snow crunches, sand scuffs — yours, your friends', and the deer you
+can't see yet), blocks burst into debris cut from their own texture,
+drops pop and fly to the hotbar slot that received them, and
+consecutive pickups climb a small melody. Combat hits hold the swing
+for a breath and shed the mob's own colors; the anvil finally throws
+its sparks and the quern visibly turns. Damage is an edge vignette
+plus a two-pixel flinch pointing away from the attacker — the plan's
+entire screenshake budget. The wild is audible: wind is the rain
+forecast, unhunted wardens rustle before you see them, your stomach
+complains before the bar empties, and calm nights chirp with
+crickets that go silent as ire climbs. Walking through snow presses
+real footprint blocks — trails guests can follow, saved with the
+world, melting in spring. All of it is client-side presentation
+(`WILDFORGE_JUICE=0` deletes the layer; the sim doesn't notice), per
+the juiciness research: animation, particles, audio, persistence —
+never autonomy theft.
+
 ## Glassworks
 
 Sand falls like it should — pull the support and the column tumbles,

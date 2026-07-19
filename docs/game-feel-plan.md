@@ -1,6 +1,22 @@
 # Game Feel — juice the verbs, not the screen
 
-Drafted 2026-07-19, from the research pass on the science of fun and
+Drafted and **IMPLEMENTED** 2026-07-19, all six stages plus the
+stretch night bed. Notes vs. this spec: warden hit particles sample
+the *mob's own body tile* instead of a species table (any mob —
+including mod mobs — sheds its own colors for free, same trick as
+block debris); the sim-purity guarantee is structural rather than a
+hash test — every juice field lives on the client-only `Game`
+struct, the particle pool and new sfx are unreachable from
+`server::Server`/`World`, and the one world-touching feature
+(snow footprints) is deliberately *not* juice: it's sim, host-owned,
+covered by its own persistence/melt test, and runs identically with
+the layer killed; item drop-pop easing is pure age-driven geometry
+so it stays on under `WILDFORGE_JUICE=0` (it cannot diverge); the
+press-dip rides a `UiBatch` flag so every button gets it without
+threading state; and guests hear the pickup ramp through the `Give`
+path since their drops never become local item entities.
+
+Drafted from the research pass on the science of fun and
 pleasing interfaces. The deep layers of Wildforge are already sound:
 Self-Determination Theory is practically the game's thesis (autonomy
 in the sandbox, competence in the tier processes, relatedness in the

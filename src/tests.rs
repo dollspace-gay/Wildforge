@@ -2625,7 +2625,7 @@ fn chest_stores_spills_and_persists() {
     // Breaking the chest spills every stack.
     let mut w3 = w2;
     w3.set_block(pos.0, pos.1, pos.2, AIR);
-    assert!(w3.block_entities.get(&pos).is_none());
+    assert!(!w3.block_entities.contains_key(&pos));
     let spilled: Vec<_> = w3.pending_drops.iter().map(|(_, s)| s.count).collect();
     assert_eq!(
         spilled.iter().sum::<u32>(),
@@ -2635,9 +2635,9 @@ fn chest_stores_spills_and_persists() {
 
     // Recipe: 8 planks in a ring.
     let mut g = vec![None; 9];
-    for i in 0..9 {
+    for (i, slot) in g.iter_mut().enumerate() {
         if i != 4 {
-            g[i] = Some(ItemStack::new(&reg, it(&reg, "base:planks"), 1));
+            *slot = Some(ItemStack::new(&reg, it(&reg, "base:planks"), 1));
         }
     }
     let r = crate::crafting::match_recipe(&reg, &g, 3).expect("chest recipe");
@@ -3416,9 +3416,11 @@ fn iron_ore_generates_in_band() {
 fn ember_fuel_speeds_the_furnace() {
     let reg = base_reg();
     let mut w = test_world("emberfast");
-    let mut f = crate::world::FurnaceState::default();
-    f.input = Some(ItemStack::new(&reg, it(&reg, "base:raw_iron"), 1));
-    f.fuel = Some(ItemStack::new(&reg, it(&reg, "base:ember"), 1));
+    let f = crate::world::FurnaceState {
+        input: Some(ItemStack::new(&reg, it(&reg, "base:raw_iron"), 1)),
+        fuel: Some(ItemStack::new(&reg, it(&reg, "base:ember"), 1)),
+        ..Default::default()
+    };
     w.block_entities
         .insert((0, 90, 0), crate::world::BlockEntity::Furnace(f));
     // A 10 s iron smelt at the ember's 2x finishes in ~5 s; without the
@@ -4037,7 +4039,7 @@ fn bloomery_multiblock_fires_batches_and_fears_the_rain() {
 
 #[test]
 fn clamp_smolders_logs_into_charcoal_and_vents() {
-    use crate::world::{BlockEntity, CLAMP_SECS_PER_LOG};
+    use crate::world::CLAMP_SECS_PER_LOG;
     let reg = base_reg();
     let mut w = test_world_with("steel-clamp", reg.clone());
     let log = reg.block_id("base:log").unwrap();
@@ -4295,7 +4297,7 @@ fn snow_settles_melts_and_snowballs_fly() {
     // Snowfall settles one layer on a cold, sky-open column - once.
     w.day = 3 * crate::world::SEASON_DAYS; // winter relaxes the snow line
     // Find LAND columns (not frozen ocean) in each climate.
-    let mut find = |w: &mut World, lo: f32, hi: f32| -> Option<(i32, i32)> {
+    let find = |w: &mut World, lo: f32, hi: f32| -> Option<(i32, i32)> {
         for x in (-400..400).step_by(16) {
             for z in (-400..400).step_by(16) {
                 let t = w.generator.climate(x, z).t;
@@ -4668,7 +4670,7 @@ fn mods_readme_example_mod_loads_and_works() {
     // `// mods/meadow/<file>` (rhai).
     let mut found = 0;
     for chunk in doc.split("```").skip(1).step_by(2) {
-        let body = chunk.splitn(2, '\n').nth(1).unwrap_or("");
+        let body = chunk.split_once('\n').map(|x| x.1).unwrap_or("");
         let first = body.lines().next().unwrap_or("");
         let label = first
             .trim_start_matches('#')
@@ -4984,10 +4986,10 @@ fn content_graph_is_complete_and_obtainable() {
     let mut ok: HashSet<u16> = HashSet::new();
     for b in &reg.blocks {
         if b.hardness.is_some() {
-            if let Some((it, n)) = b.drops {
-                if n > 0 {
-                    ok.insert(it.0);
-                }
+            if let Some((it, n)) = b.drops
+                && n > 0
+            {
+                ok.insert(it.0);
             }
             if let Some((it, _)) = b.bonus_drop {
                 ok.insert(it.0);
@@ -5012,10 +5014,11 @@ fn content_graph_is_complete_and_obtainable() {
     // Shears special-case: leaves come off whole (code path, not data).
     if reg.items.iter().any(|i| i.shears) {
         for b in &reg.blocks {
-            if b.name.contains("leaves") && b.hardness.is_some() {
-                if let Some(it) = reg.item_id(&b.name) {
-                    ok.insert(it.0);
-                }
+            if b.name.contains("leaves")
+                && b.hardness.is_some()
+                && let Some(it) = reg.item_id(&b.name)
+            {
+                ok.insert(it.0);
             }
         }
     }
@@ -5051,17 +5054,18 @@ fn content_graph_is_complete_and_obtainable() {
                 grew = true;
             }
         }
-        if let Some((sand, fuel, clear)) = reg.kiln_base {
-            if ok.contains(&sand.0) && ok.contains(&fuel.0) {
-                if !ok.contains(&clear.0) {
-                    ok.insert(clear.0);
+        if let Some((sand, fuel, clear)) = reg.kiln_base
+            && ok.contains(&sand.0)
+            && ok.contains(&fuel.0)
+        {
+            if !ok.contains(&clear.0) {
+                ok.insert(clear.0);
+                grew = true;
+            }
+            for (p, g) in &reg.kiln {
+                if !ok.contains(&g.0) && ok.contains(&p.0) {
+                    ok.insert(g.0);
                     grew = true;
-                }
-                for (p, g) in &reg.kiln {
-                    if !ok.contains(&g.0) && ok.contains(&p.0) {
-                        ok.insert(g.0);
-                        grew = true;
-                    }
                 }
             }
         }
@@ -5581,4 +5585,149 @@ fn loopback_join_stream_and_edit() {
     }
     assert!(turned_away, "banned name turned away");
     assert!(sess.guests.is_empty(), "banned name never becomes a guest");
+}
+
+// ---------------- game feel (the juice layer) ----------------
+
+#[test]
+fn particle_pool_caps_culls_and_stays_in_tile() {
+    use crate::particles::{CAP, Pool};
+    let mut pool = Pool::default();
+    let mut rng = 12345u32;
+
+    // Flood far past the cap; the pool holds its line.
+    for _ in 0..80 {
+        pool.burst(Vec3::new(0.0, 64.0, 0.0), 3, 12, 2.0, &mut rng);
+    }
+    assert_eq!(pool.v.len(), CAP, "pool caps at {CAP}");
+
+    // Everything dies by max ttl (0.7s for bursts).
+    pool.tick(1.0);
+    assert!(pool.v.is_empty(), "ttl culls the whole pool");
+
+    // Sub-tile UVs stay inside the source tile for corner slots.
+    let tiles = crate::atlas::ATLAS_TILES;
+    let ts = 1.0 / tiles as f32;
+    for slot in [0u16, (tiles * tiles - 1) as u16] {
+        pool.burst(Vec3::ZERO, slot, 12, 2.0, &mut rng);
+        let (mut verts, mut idx) = (Vec::new(), Vec::new());
+        pool.emit(&mut verts, &mut idx);
+        let (tx, ty) = (slot as u32 % tiles, slot as u32 / tiles);
+        for v in &verts {
+            assert!(
+                v.uv[0] >= tx as f32 * ts - 1e-5 && v.uv[0] <= (tx + 1) as f32 * ts + 1e-5,
+                "u {} outside tile {slot}",
+                v.uv[0]
+            );
+            assert!(
+                v.uv[1] >= ty as f32 * ts - 1e-5 && v.uv[1] <= (ty + 1) as f32 * ts + 1e-5,
+                "v {} outside tile {slot}",
+                v.uv[1]
+            );
+        }
+        pool.v.clear();
+    }
+}
+
+#[test]
+fn footstep_materials_map_by_surface() {
+    use crate::audio::{BreakMat, StepMat, step_mat};
+    // Specials win on name alone.
+    assert_eq!(step_mat("base:snow", BreakMat::Soft), StepMat::Snow);
+    assert_eq!(step_mat("base:snow_layer", BreakMat::Leafy), StepMat::Snow);
+    assert_eq!(step_mat("base:sand", BreakMat::Soft), StepMat::Loose);
+    assert_eq!(step_mat("base:gravel", BreakMat::Soft), StepMat::Loose);
+    // Everything else follows the break-material family.
+    assert_eq!(step_mat("base:stone", BreakMat::Stone), StepMat::Stone);
+    assert_eq!(step_mat("base:planks", BreakMat::Wood), StepMat::Wood);
+    assert_eq!(step_mat("base:dirt", BreakMat::Soft), StepMat::Soft);
+    assert_eq!(step_mat("base:leaves", BreakMat::Leafy), StepMat::Leafy);
+
+    // And the real registry agrees on the interesting surfaces.
+    let reg = base_reg();
+    for (name, want) in [
+        ("base:snow", StepMat::Snow),
+        ("base:snow_layer", StepMat::Snow),
+        ("base:sand", StepMat::Loose),
+    ] {
+        let b = reg.block_id(name).expect(name);
+        let fallback = match reg.block(b).tool {
+            Some(crate::registry::ToolKind::Pickaxe) => BreakMat::Stone,
+            Some(crate::registry::ToolKind::Axe) => BreakMat::Wood,
+            Some(crate::registry::ToolKind::Shovel) => BreakMat::Soft,
+            _ => BreakMat::Leafy,
+        };
+        assert_eq!(step_mat(&reg.block(b).name, fallback), want, "{name}");
+    }
+}
+
+#[test]
+fn pickup_ramp_steps_and_caps() {
+    use crate::audio::pickup_pitch;
+    assert_eq!(pickup_pitch(0), 1.0);
+    // Monotonic rise, one near-semitone per step.
+    for s in 0..7 {
+        let step = pickup_pitch(s + 1) / pickup_pitch(s);
+        assert!((step - 2.0f32.powf(1.0 / 12.0)).abs() < 1e-4);
+    }
+    // Caps at +7 semitones no matter the streak.
+    assert_eq!(pickup_pitch(7), pickup_pitch(100));
+    assert!((pickup_pitch(7) - 2.0f32.powf(7.0 / 12.0)).abs() < 1e-4);
+}
+
+#[test]
+fn snow_trod_swaps_persists_melts_and_drops() {
+    let reg = base_reg();
+    let mut w = test_world_with("snow-trod", reg.clone());
+    let layer = b(&reg, "base:snow_layer");
+    let trod = b(&reg, "base:snow_layer_trod");
+    let dirt = b(&reg, "base:dirt");
+    let (x, y, z) = (3, 90, 3);
+    w.set_block(x, y, z, dirt);
+    w.set_block(x, y + 1, z, layer);
+
+    // Walking through presses the layer into a print; treading again
+    // (or treading air/dirt) changes nothing.
+    w.tread(x, y + 1, z);
+    assert_eq!(w.get_block(x, y + 1, z), trod, "layer pressed to trod");
+    w.tread(x, y + 1, z);
+    assert_eq!(w.get_block(x, y + 1, z), trod, "idempotent");
+    w.tread(x, y + 5, z);
+    assert_eq!(w.get_block(x, y + 5, z), AIR, "air stays air");
+
+    // Same shovel yield as fresh snow — the content graph is unmoved.
+    assert_eq!(
+        reg.drops_for(trod, None),
+        reg.drops_for(layer, None),
+        "trodden snow drops the same snowball"
+    );
+
+    // The trail persists across save/load.
+    w.save_modified();
+    let mut w2 = World::load_or_create(w.save_dir_for_test(), reg.clone());
+    w2.ensure_chunk(ChunkPos::of_world(x, z));
+    assert_eq!(w2.get_block(x, y + 1, z), trod, "footprints persist");
+
+    // And melts by the same rule as the untouched layer: torchlight.
+    w2.set_block(x + 1, y + 1, z, b(&reg, "base:torch"));
+    let mut rng = 5u32;
+    for _ in 0..30_000 {
+        w2.random_tick(&mut rng);
+        if w2.get_block(x, y + 1, z) == AIR {
+            break;
+        }
+    }
+    assert_eq!(w2.get_block(x, y + 1, z), AIR, "prints melt like snow");
+
+    // Guests never tread locally; the host stamps prints for them.
+    let mut wr = test_world_with("snow-trod-remote", reg.clone());
+    wr.remote = true;
+    wr.set_block(x, y, z, dirt);
+    wr.set_block(x, y + 1, z, layer);
+    wr.tread(x, y + 1, z);
+    assert_eq!(
+        wr.get_block(x, y + 1, z),
+        layer,
+        "remote worlds wait for the echo"
+    );
 }

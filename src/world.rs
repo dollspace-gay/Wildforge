@@ -2167,6 +2167,7 @@ impl World {
         let farmland = reg.block_id("base:farmland");
         let ice = reg.block_id("base:ice");
         let snow_layer = reg.block_id("base:snow_layer");
+        let snow_trod = reg.block_id("base:snow_layer_trod");
         let season = self.season();
         let keys: Vec<ChunkPos> = self.chunks.keys().copied().collect();
         let mut changes = Vec::new();
@@ -2250,8 +2251,9 @@ impl World {
                     changes.push((wx, y, wz, self.reg.water_block(0)));
                     continue;
                 }
-                // Snow layers melt under bright light or a warm season.
-                if Some(b) == snow_layer {
+                // Snow layers melt under bright light or a warm season
+                // (footprints melt with them).
+                if Some(b) == snow_layer || Some(b) == snow_trod {
                     let (bl, _) = self.light_at(wx, y, wz);
                     let warm = season != 3 && self.generator.climate(wx, wz).t > -0.35;
                     if bl >= 12 || warm {
@@ -2269,6 +2271,24 @@ impl World {
         }
         for (x, y, z, _species, rnd) in saplings {
             self.try_grow_sapling(x, y, z, rnd);
+        }
+    }
+
+    /// A footstep through a snow layer presses it into a trodden
+    /// print — a real edit: logged, broadcast, persisted, and it melts
+    /// like any layer. History written in the ground.
+    pub fn tread(&mut self, x: i32, y: i32, z: i32) {
+        if self.remote {
+            return; // guests' prints are stamped by the host
+        }
+        let (Some(layer), Some(trod)) = (
+            self.reg.block_id("base:snow_layer"),
+            self.reg.block_id("base:snow_layer_trod"),
+        ) else {
+            return;
+        };
+        if self.get_block(x, y, z) == layer {
+            self.set_block(x, y, z, trod);
         }
     }
 

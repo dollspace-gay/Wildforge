@@ -16,12 +16,15 @@ pub struct UiVertex {
 
 pub struct UiBatch {
     pub verts: Vec<UiVertex>,
+    /// Mouse is held this frame: hovered buttons dip instead of grow.
+    pub press_dip: bool,
 }
 
 impl UiBatch {
     pub fn new() -> UiBatch {
         UiBatch {
             verts: Vec::with_capacity(1024),
+            press_dip: false,
         }
     }
 

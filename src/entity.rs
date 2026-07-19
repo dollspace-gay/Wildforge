@@ -73,6 +73,15 @@ impl ItemEntity {
 
     /// Emit this entity as a spinning, bobbing mini-cube (blocks) or a
     /// crossed pair of upright sprite quads (tools, sticks).
+    /// Spawn pop: items ease 0.6x -> 1.0x over ~150ms with one small
+    /// overshoot (ease-out back), so drops arrive instead of appear.
+    fn pop(&self) -> f32 {
+        let t = (self.age / 0.15).min(1.0);
+        let s = 1.7;
+        let u = t - 1.0;
+        0.6 + 0.4 * (1.0 + (s + 1.0) * u * u * u + s * u * u)
+    }
+
     pub fn emit(
         &self,
         reg: &Registry,
@@ -87,7 +96,8 @@ impl ItemEntity {
                 return;
             }
         };
-        let half = SIZE / 2.0;
+        let pop = self.pop();
+        let half = SIZE / 2.0 * pop;
         let bob = (self.age * 2.2).sin() * 0.05;
         let ang = self.age * 1.5;
         let (sin, cos) = ang.sin_cos();
@@ -101,9 +111,9 @@ impl ItemEntity {
             let base = verts.len() as u32;
             for c in CORNERS[face].iter() {
                 // Cube corner in local space, spun around Y.
-                let lx = (c[0] - 0.5) * SIZE;
-                let ly = (c[1] - 0.5) * SIZE + half; // rest on the ground
-                let lz = (c[2] - 0.5) * SIZE;
+                let lx = (c[0] - 0.5) * SIZE * pop;
+                let ly = (c[1] - 0.5) * SIZE * pop + half; // rest on the ground
+                let lz = (c[2] - 0.5) * SIZE * pop;
                 let rx = lx * cos - lz * sin;
                 let rz = lx * sin + lz * cos;
                 let (u, v) = match face {
@@ -144,7 +154,7 @@ impl ItemEntity {
         let ang = self.age * 1.5;
         let (sin, cos) = ang.sin_cos();
         let c = self.pos + Vec3::new(0.0, bob, 0.0);
-        let h = 0.35; // sprite size
+        let h = 0.35 * self.pop(); // sprite size
 
         // Two crossed upright quads, spun around Y (drawn double-sided).
         for (dx, dz) in [(cos, sin), (-sin, cos)] {

@@ -16,11 +16,59 @@ pub enum BreakMat {
     Leafy,
 }
 
+/// Footstep surfaces (mapped from the block underfoot).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum StepMat {
+    Stone,
+    Wood,
+    Soft,
+    Leafy,
+    Snow,
+    Loose,
+}
+
+/// Map a block to its footstep surface: name-based specials first,
+/// then the break-material fallback.
+pub fn step_mat(name: &str, fallback: BreakMat) -> StepMat {
+    if name.contains("snow") {
+        return StepMat::Snow;
+    }
+    if name.contains("sand") || name.contains("gravel") {
+        return StepMat::Loose;
+    }
+    match fallback {
+        BreakMat::Stone => StepMat::Stone,
+        BreakMat::Wood => StepMat::Wood,
+        BreakMat::Soft => StepMat::Soft,
+        BreakMat::Leafy => StepMat::Leafy,
+    }
+}
+
+/// The collection ramp: consecutive pickups climb in near-semitone
+/// steps, capped at +7, so a harvest becomes a rising melody.
+pub fn pickup_pitch(streak: u32) -> f32 {
+    2.0f32.powf(streak.min(7) as f32 / 12.0)
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Sfx {
     Break(BreakMat),
     Place,
+    /// Pickup chime at a pitch (1.0 = base; see `pickup_pitch`).
+    Pickup2(f32),
     Pickup,
+    /// A footstep on a surface, at a varied pitch.
+    Step(StepMat, f32),
+    /// Heavy landing thump.
+    Thud,
+    /// Anvil spark ring.
+    Spark,
+    /// One quern turn: stone on stone.
+    Grind,
+    /// A hungry stomach's complaint.
+    Rumble,
+    /// A nearby warden shifts its weight (pitched per species).
+    Presence(f32),
     Click,
     Hurt,
     Craft,
@@ -39,6 +87,10 @@ pub enum Sfx {
 pub enum Ambience {
     Rain,
     Storm,
+    /// Overcast wind: the forecast you can hear.
+    Wind,
+    /// The night bed; `true` = calm (crickets), `false` = wrathful hush.
+    Night(bool),
 }
 
 pub struct Audio {
@@ -91,11 +143,15 @@ impl Audio {
     }
 
     pub fn play(&self, sfx: Sfx) {
-        if self.volume <= 0.0 {
+        self.play_vol(sfx, 1.0);
+    }
+
+    pub fn play_vol(&self, sfx: Sfx, vol: f32) {
+        if self.volume <= 0.0 || vol <= 0.0 {
             return;
         }
         let samples = synth(sfx);
-        let src = SamplesBuffer::new(1, RATE, samples).amplify(self.volume);
+        let src = SamplesBuffer::new(1, RATE, samples).amplify(self.volume * vol.min(1.0));
         let _ = self.handle.play_raw(src.convert_samples());
     }
 }
@@ -157,6 +213,20 @@ fn synth(sfx: Sfx) -> Vec<f32> {
         Sfx::Click => burst(0.03, 2500.0, 0.0, 0.0, 1.0, 77),
         Sfx::Hurt => burst(0.22, 300.0, 90.0, 0.6, 1.8, 88),
         Sfx::Thunder => burst(1.4, 240.0, 48.0, 0.5, 0.9, 137),
+        Sfx::Pickup2(p) => chirp(0.12, 420.0 * p, 1000.0 * p),
+        Sfx::Step(m, p) => match m {
+            StepMat::Stone => burst(0.07, 1100.0 * p, 0.0, 0.0, 1.6, 141),
+            StepMat::Wood => burst(0.08, 640.0 * p, 130.0 * p, 0.3, 1.8, 143),
+            StepMat::Soft => burst(0.09, 700.0 * p, 0.0, 0.0, 1.2, 145),
+            StepMat::Leafy => burst(0.10, 2600.0 * p, 0.0, 0.0, 1.0, 147),
+            StepMat::Snow => burst(0.11, 1900.0 * p, 0.0, 0.0, 0.9, 149),
+            StepMat::Loose => burst(0.10, 1400.0 * p, 0.0, 0.0, 1.1, 151),
+        },
+        Sfx::Thud => burst(0.18, 260.0, 70.0, 0.5, 2.2, 153),
+        Sfx::Spark => burst(0.12, 3200.0, 2400.0, 0.6, 2.6, 157),
+        Sfx::Grind => burst(0.30, 480.0, 90.0, 0.25, 0.8, 163),
+        Sfx::Rumble => burst(0.35, 180.0, 55.0, 0.6, 0.6, 167),
+        Sfx::Presence(p) => burst(0.25, 420.0 * p, 75.0 * p, 0.5, 0.7, 173),
         Sfx::MobHurt(p) => burst(0.16, 320.0 * p, 110.0 * p, 0.5, 2.0, 121),
         Sfx::MobDeath(p) => burst(0.34, 240.0 * p, 55.0 * p, 0.7, 1.4, 122),
         Sfx::Bolt(p) => chirp(0.14, 900.0 * p, 300.0 * p),
@@ -174,6 +244,8 @@ fn ambience_loop(kind: Ambience) -> Vec<f32> {
     let (cutoff, gain) = match kind {
         Ambience::Rain => (2400.0, 0.5),
         Ambience::Storm => (900.0, 0.8),
+        Ambience::Wind => (500.0, 0.55),
+        Ambience::Night(_) => (700.0, 0.30),
     };
     let alpha = (cutoff / RATE as f32).min(1.0);
     let mut lp = 0.0f32;
@@ -185,6 +257,24 @@ fn ambience_loop(kind: Ambience) -> Vec<f32> {
         // cycle completes over the loop so the seam is inaudible.
         let surge = 1.0 + 0.35 * (t * std::f32::consts::TAU).sin();
         out.push(lp * gain * surge);
+    }
+    // A wrathful night is just the low wash: the crickets have gone
+    // quiet, and you notice.
+    if kind == Ambience::Night(true) {
+        // Crickets: short resonant chirps in a steady rhythm.
+        let chirp_hz = 4300.0;
+        for c in 0..14 {
+            let start = (c as f32 * 0.29 * RATE as f32) as usize;
+            for j in 0..(0.035 * RATE as f32) as usize {
+                let k = start + j;
+                if k >= n {
+                    break;
+                }
+                let env = (1.0 - j as f32 / (0.035 * RATE as f32)).max(0.0);
+                out[k] +=
+                    (j as f32 / RATE as f32 * chirp_hz * std::f32::consts::TAU).sin() * env * 0.10;
+            }
+        }
     }
     out
 }
