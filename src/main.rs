@@ -260,6 +260,9 @@ struct Game {
     browse_back: Vec<(ItemId, bool)>,
 
     total_frames: u64,
+    /// Prototype dynamic point lights (colored, shadow-cast) for the current
+    /// world — presently seeded by demo hooks; real emitters wire in later.
+    demo_lights: Vec<renderer::PointLight>,
     auto_shot: Option<String>,
     last_frame: Instant,
     last_title: Instant,
@@ -508,6 +511,7 @@ impl Game {
             browse_view: None,
             browse_back: Vec::new(),
             total_frames: 0,
+            demo_lights: Vec::new(),
             auto_shot: std::env::var("WILDFORGE_SHOT").ok(),
             last_frame: Instant::now(),
             last_title: Instant::now(),
@@ -781,6 +785,40 @@ impl Game {
             if let Some(r) = red {
                 self.server.world.set_block(bx + 5, y + 2, bz, r);
             }
+        }
+        // Dev: two pillars on a grey floor lit by a blue and a red dynamic
+        // point light (sharp per-light shadows). Pair with
+        // WILDFORGE_AMBIENT=0.05,0.05,0.05 for stark contrast.
+        if std::env::var("WILDFORGE_DEMO_PTLIGHT").is_ok() {
+            let stone = self.reg.block_id("base:cobblestone");
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32 + 5;
+            let y = self.server.world.surface_height(bx, bz);
+            if let Some(stone) = stone {
+                for dx in -9..=9 {
+                    for dz in -7..=9 {
+                        self.server.world.set_block(bx + dx, y, bz + dz, stone);
+                    }
+                }
+                for px in [-2i32, 2] {
+                    for h in 1..=3 {
+                        self.server.world.set_block(bx + px, y + h, bz, stone);
+                    }
+                }
+            }
+            let fy = (y + 2) as f32 + 0.5;
+            self.demo_lights = vec![
+                renderer::PointLight {
+                    pos: Vec3::new(bx as f32 - 5.0 + 0.5, fy, bz as f32 + 0.5),
+                    range: 16.0,
+                    color: Vec3::new(0.35, 0.6, 2.0),
+                },
+                renderer::PointLight {
+                    pos: Vec3::new(bx as f32 + 5.0 + 0.5, fy, bz as f32 + 0.5),
+                    range: 16.0,
+                    color: Vec3::new(2.0, 0.35, 0.3),
+                },
+            ];
         }
         // Dev: a flat water pool ahead of spawn (specular-glint verification).
         if std::env::var("WILDFORGE_DEMO_POOL").is_ok()
@@ -3772,6 +3810,16 @@ impl Game {
             };
             a.set_ambience(want);
         }
+        // Ambient is the engine's stark<->accessible knob. Dev override:
+        // WILDFORGE_AMBIENT="r,g,b" pins a flat ambient (crush it to make
+        // point-light contrast legible in tests). Applied last so it wins over
+        // weather gloom.
+        if let Ok(s) = std::env::var("WILDFORGE_AMBIENT") {
+            let v: Vec<f32> = s.split(',').filter_map(|p| p.trim().parse().ok()).collect();
+            if v.len() == 3 {
+                amb_col = Vec3::new(v[0], v[1], v[2]);
+            }
+        }
 
         let playing = self.screen == Screen::Playing;
         let outline = if playing {
@@ -4096,6 +4144,7 @@ impl Game {
             sun_dir,
             sun_col,
             amb_col,
+            point_lights: &self.demo_lights,
             outline,
             entity_verts: &entity_verts,
             entity_idx: &entity_idx,

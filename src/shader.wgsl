@@ -14,7 +14,15 @@ struct Uniforms {
     amb_col: vec4<f32>,
     // world -> sun light-space clip, for shadow-map lookup
     light_vp: mat4x4<f32>,
+    // x = active point-light count
+    pt_count: vec4<u32>,
+    // per light: xyz = world position, w = range
+    pt_pos: array<vec4<f32>, 8>,
+    // per light: rgb = color × intensity, w unused
+    pt_col: array<vec4<f32>, 8>,
 };
+
+const MAX_PT_LIGHTS: u32 = 8u;
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(1) @binding(0) var atlas_tex: texture_2d<f32>;
@@ -112,7 +120,25 @@ fn world_light(normal: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) 
     // Cool sky fill + steady (colored) torch light, both with face shade.
     let amb = sky * fs * u.amb_col.rgb;
     let torch = light * fs;
-    return max(sun + amb + torch, vec3<f32>(0.03));
+    // Hard-edged colored point lights: range-attenuated N·L, summed. Shadow
+    // gating (cube maps) lands in the next milestone — stubbed to 1 here.
+    var direct = vec3<f32>(0.0);
+    let count = min(u.pt_count.x, MAX_PT_LIGHTS);
+    for (var i = 0u; i < count; i = i + 1u) {
+        let lp = u.pt_pos[i].xyz;
+        let range = u.pt_pos[i].w;
+        let to_light = lp - world;
+        let d = length(to_light);
+        if (d < range) {
+            let ldir = to_light / max(d, 1e-3);
+            let ndl2 = max(dot(n, ldir), 0.0);
+            let a = clamp(1.0 - d / range, 0.0, 1.0);
+            let atten = a * a;
+            let shadow_pt = 1.0; // TODO(M2): cube shadow map
+            direct = direct + u.pt_col[i].rgb * (atten * ndl2 * shadow_pt);
+        }
+    }
+    return max(sun + amb + torch + direct, vec3<f32>(0.03));
 }
 
 fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {

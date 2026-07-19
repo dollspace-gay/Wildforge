@@ -23,10 +23,30 @@ struct Uniforms {
     sun_col: [f32; 4],
     amb_col: [f32; 4],
     light_vp: [[f32; 4]; 4],
+    /// x = active point-light count.
+    pt_count: [u32; 4],
+    /// Per light: xyz = world position, w = range.
+    pt_pos: [[f32; 4]; MAX_PT_LIGHTS],
+    /// Per light: rgb = color × intensity, w unused.
+    pt_col: [[f32; 4]; MAX_PT_LIGHTS],
 }
 
 /// Sun shadow-map resolution (square). Keep in sync with SHADOW_RES in the shader.
 const SHADOW_RES: u32 = 2048;
+
+/// Max shadow-casting/accumulated point lights per frame. Keep in sync with the
+/// shader's MAX_PT_LIGHTS.
+const MAX_PT_LIGHTS: usize = 8;
+
+/// A dynamic colored point light accumulated (and later shadow-mapped) in the
+/// chunk shader.
+#[derive(Clone, Copy)]
+pub struct PointLight {
+    pub pos: Vec3,
+    pub range: f32,
+    /// Color premultiplied by intensity.
+    pub color: Vec3,
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -90,6 +110,8 @@ pub struct FrameInput<'a> {
     pub sun_col: Vec3,
     /// Cool sky-ambient color, already scaled by daylight.
     pub amb_col: Vec3,
+    /// Dynamic colored point lights (accumulated in the chunk shader).
+    pub point_lights: &'a [PointLight],
     pub outline: Option<(i32, i32, i32)>,
     /// Opaque world-space extras (item entities), drawn with the chunk shader.
     pub entity_verts: &'a [Vertex],
@@ -790,6 +812,21 @@ impl Renderer {
             sun_col: [f.sun_col.x, f.sun_col.y, f.sun_col.z, 0.0],
             amb_col: [f.amb_col.x, f.amb_col.y, f.amb_col.z, 0.0],
             light_vp: light_vp.to_cols_array_2d(),
+            pt_count: [f.point_lights.len().min(MAX_PT_LIGHTS) as u32, 0, 0, 0],
+            pt_pos: {
+                let mut a = [[0.0f32; 4]; MAX_PT_LIGHTS];
+                for (i, l) in f.point_lights.iter().take(MAX_PT_LIGHTS).enumerate() {
+                    a[i] = [l.pos.x, l.pos.y, l.pos.z, l.range];
+                }
+                a
+            },
+            pt_col: {
+                let mut a = [[0.0f32; 4]; MAX_PT_LIGHTS];
+                for (i, l) in f.point_lights.iter().take(MAX_PT_LIGHTS).enumerate() {
+                    a[i] = [l.color.x, l.color.y, l.color.z, 0.0];
+                }
+                a
+            },
         };
         self.entity_vbuf.upload(
             &self.device,
