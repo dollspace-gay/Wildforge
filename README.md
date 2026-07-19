@@ -5,7 +5,7 @@ no game framework, just **wgpu** for rendering, **winit** for windowing,
 **glam** for math, and **noise** for terrain. Physics is hand-rolled AABB
 collision (a voxel world doesn't need a general-purpose physics engine).
 
-![screenshot](docs/screenshot.png)
+![Wildforge at dusk: a torch-lit camp with hard point-light shadows](docs/hero.png)
 
 ## Run
 
