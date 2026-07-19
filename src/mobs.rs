@@ -5,7 +5,7 @@
 use glam::Vec3;
 
 use crate::atlas::ATLAS_TILES;
-use crate::mesher::{CORNERS, FACE_SHADE, Vertex};
+use crate::mesher::{CORNERS, FACE_SHADE, NORMALS, Vertex};
 use crate::registry::{AnimalDef, Registry};
 use crate::server::PlayerCtx;
 use crate::world::World;
@@ -653,6 +653,22 @@ impl Mob {
                     def.tile
                 });
                 let (tx, ty) = (tile as u32 % ATLAS_TILES, tile as u32 / ATLAS_TILES);
+                // The face normal, through the same swing + yaw as the
+                // verts. Emissive wardens stay normal-less: they are
+                // their own lantern and shade would dim the glow.
+                let normal = if def.emissive {
+                    [0.0, 0.0, 0.0]
+                } else {
+                    let n = NORMALS[face];
+                    let (mut ny, mut nz) = (n[1] as f32, n[2] as f32);
+                    if swing != 0.0 {
+                        let (y0, z0) = (ny, nz);
+                        ny = y0 * cs - z0 * ss;
+                        nz = y0 * ss + z0 * cs;
+                    }
+                    let nx = n[0] as f32;
+                    [nx * cyaw + nz * syaw, ny, -nx * syaw + nz * cyaw]
+                };
                 let base = verts.len() as u32;
                 for c in CORNERS[face].iter() {
                     let lx = center.x + (c[0] - 0.5) * 2.0 * hx;
@@ -671,14 +687,21 @@ impl Mob {
                         4 | 5 => (c[0], 1.0 - c[1]),
                         _ => (c[0], c[2]),
                     };
-                    let shade = FACE_SHADE[face].max(0.65) * flash;
+                    // Lit bodies hand the shader raw light; it applies
+                    // the face shade from the normal. Emissive ones keep
+                    // the old pre-shaded flat model.
+                    let shade = if def.emissive {
+                        FACE_SHADE[face].max(0.65) * flash
+                    } else {
+                        flash
+                    };
                     verts.push(Vertex {
                         pos: [self.pos.x + wx, self.pos.y + ly, self.pos.z + wz],
                         uv: [
                             tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                             ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                         ],
-                        normal: [0.0, 0.0, 0.0],
+                        normal,
                         light: [
                             (shade * lum.0[0]).min(2.0),
                             (shade * lum.0[1]).min(2.0),
@@ -722,6 +745,9 @@ pub fn emit_humanoid(
         for f in 0..6 {
             let t = if is_head && f == 5 { face } else { tile };
             let (tx, ty) = (t as u32 % ATLAS_TILES, t as u32 / ATLAS_TILES);
+            let n = NORMALS[f];
+            let (nx, nz) = (n[0] as f32, n[2] as f32);
+            let normal = [nx * cyaw + nz * syaw, n[1] as f32, -nx * syaw + nz * cyaw];
             let base = verts.len() as u32;
             for c in CORNERS[f].iter() {
                 let lx = center.x + (c[0] - 0.5) * 2.0 * hx;
@@ -734,16 +760,15 @@ pub fn emit_humanoid(
                     4 | 5 => (c[0], 1.0 - c[1]),
                     _ => (c[0], c[2]),
                 };
-                let shade = FACE_SHADE[f].max(0.65);
                 verts.push(Vertex {
                     pos: [pos.x + wx, pos.y + ly, pos.z + wz],
                     uv: [
                         tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                         ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                     ],
-                    normal: [0.0, 0.0, 0.0],
-                    light: [shade * lum.0[0], shade * lum.0[1], shade * lum.0[2]],
-                    sky: shade * lum.1,
+                    normal,
+                    light: lum.0,
+                    sky: lum.1,
                 });
             }
             idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);

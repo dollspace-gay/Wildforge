@@ -4,7 +4,7 @@
 use glam::Vec3;
 
 use crate::atlas::{ATLAS_TILES, CRACK_SLOT};
-use crate::mesher::{CORNERS, FACE_SHADE, Vertex};
+use crate::mesher::{CORNERS, NORMALS, Vertex};
 use crate::registry::{ItemId, Registry};
 use crate::world::World;
 
@@ -108,6 +108,9 @@ impl ItemEntity {
             let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
             let ts = 1.0 / ATLAS_TILES as f32;
             let inset = ts / 32.0;
+            let n = NORMALS[face];
+            let (nx, nz) = (n[0] as f32, n[2] as f32);
+            let normal = [nx * cos - nz * sin, n[1] as f32, nx * sin + nz * cos];
             let base = verts.len() as u32;
             for c in CORNERS[face].iter() {
                 // Cube corner in local space, spun around Y.
@@ -121,16 +124,15 @@ impl ItemEntity {
                     4 | 5 => (c[0], 1.0 - c[1]),
                     _ => (c[0], c[2]),
                 };
-                let shade = FACE_SHADE[face].max(0.7);
                 verts.push(Vertex {
                     pos: [center.x + rx, center.y + ly - half, center.z + rz],
                     uv: [
                         tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                         ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                     ],
-                    normal: [0.0, 0.0, 0.0],
-                    light: [shade * lum.0[0], shade * lum.0[1], shade * lum.0[2]],
-                    sky: shade * lum.1,
+                    normal,
+                    light: lum.0,
+                    sky: lum.1,
                 });
             }
             idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);

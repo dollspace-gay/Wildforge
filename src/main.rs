@@ -4416,16 +4416,16 @@ impl Game {
                         4 | 5 => (c[0], 1.0 - c[1]),
                         _ => (c[0], c[2]),
                     };
-                    let shade = mesher::FACE_SHADE[face].max(0.6);
+                    let n = mesher::NORMALS[face];
                     entity_verts.push(mesher::Vertex {
                         pos: [f.pos.x + c[0], f.pos.y + c[1], f.pos.z + c[2]],
                         uv: [
                             tx as f32 * ts + inset + uu * (ts - 2.0 * inset),
                             ty as f32 * ts + inset + vv * (ts - 2.0 * inset),
                         ],
-                        normal: [0.0, 0.0, 0.0],
-                        light: [shade * lum.0[0], shade * lum.0[1], shade * lum.0[2]],
-                        sky: shade * lum.1,
+                        normal: [n[0] as f32, n[1] as f32, n[2] as f32],
+                        light: lum.0,
+                        sky: lum.1,
                     });
                 }
                 entity_idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
