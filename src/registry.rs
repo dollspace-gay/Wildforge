@@ -155,6 +155,10 @@ pub struct ItemDef {
     pub brush_tool: bool,
     /// Right-click throw speed (None = not throwable).
     pub throw_speed: Option<f32>,
+    /// Carried-light color x intensity (a glowing item that isn't a
+    /// placeable lamp, e.g. a raw ember). Placeable emitters glow
+    /// automatically from their block's light.
+    pub glow: Option<[f32; 3]>,
     /// Works blooms on an anvil.
     pub hammer: bool,
 }
@@ -212,6 +216,9 @@ pub struct AnimalDef {
     pub movement_float: bool,
     /// Rendered at full block-light — its own lantern.
     pub emissive: bool,
+    /// Point-light color x intensity carried by the creature (client
+    /// presentation; wardens announcing themselves in light).
+    pub glow: Option<[f32; 3]>,
     /// Spawns only where effective light is below this.
     pub spawn_light_max: u8,
     pub projectile: Option<ProjectileDef>,
@@ -649,6 +656,9 @@ struct ItemToml {
     /// Works blooms on an anvil.
     #[serde(default)]
     hammer: bool,
+    /// Carried-light color for non-placeable glowing items.
+    #[serde(default)]
+    glow: Option<[f32; 3]>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -724,6 +734,8 @@ struct AnimalToml {
     movement: Option<String>,
     #[serde(default)]
     emissive: bool,
+    #[serde(default)]
+    glow: Option<[f32; 3]>,
     #[serde(default)]
     spawn_light_max: Option<u8>,
     #[serde(default)]
@@ -1435,6 +1447,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     brush_tool: false,
                     throw_speed: None,
                     hammer: false,
+                    glow: None,
                 });
                 reg.item_by_name.insert(full, iid);
             }
@@ -1500,6 +1513,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 brush_tool: it.brush_tool,
                 throw_speed: it.throw.as_ref().map(|t| t.speed.unwrap_or(18.0)),
                 hammer: it.hammer,
+                glow: it.glow,
             });
             reg.item_by_name.insert(full, iid);
         }
@@ -1853,6 +1867,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             ire_min: a.ire_min.unwrap_or(0.0),
             movement_float: a.movement.as_deref() == Some("float"),
             emissive: a.emissive,
+            glow: a.glow,
             spawn_light_max: a.spawn_light_max.unwrap_or(3),
             breed_food: a
                 .breed_food

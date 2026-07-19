@@ -5731,3 +5731,76 @@ fn snow_trod_swaps_persists_melts_and_drops() {
         "remote worlds wait for the echo"
     );
 }
+
+// ---------------- point lights (the director) ----------------
+
+#[test]
+fn light_promotion_scores_and_hysteresis() {
+    use crate::lights::{Key, promote};
+    let (a, b, c) = (
+        Key::Block(0, 0, 0),
+        Key::Block(1, 0, 0),
+        Key::Block(2, 0, 0),
+    );
+
+    // Empty slots fill best-first.
+    let s = promote(&[None, None], &[(a, 1.0), (b, 3.0), (c, 2.0)], 2);
+    assert_eq!(s, vec![Some(b), Some(c)]);
+
+    // A marginally better challenger does NOT evict (hysteresis)...
+    let s2 = promote(&s, &[(a, 2.2), (b, 3.0), (c, 2.0)], 2);
+    assert_eq!(s2, vec![Some(b), Some(c)], "1.1x is not decisive");
+    // ...a decisive one does, and takes the weakest slot.
+    let s3 = promote(&s, &[(a, 2.6), (b, 3.0), (c, 2.0)], 2);
+    assert_eq!(s3, vec![Some(b), Some(a)], "1.3x evicts the weakest");
+
+    // Vanished candidates free their slot in place; slot order is stable
+    // (slots are cube-map layers — stability is the cache).
+    let s4 = promote(&s3, &[(a, 2.6)], 2);
+    assert_eq!(s4, vec![None, Some(a)]);
+}
+
+#[test]
+fn light_director_caches_until_an_edit_lands_nearby() {
+    use crate::lights::{Director, DynLight, Emitter, Key};
+    let mut d = Director::new();
+    let torch = Emitter {
+        pos: (4, 64, 4),
+        rgb: [14, 11, 6],
+        emit: 14,
+    };
+    d.chunk_meshed(ChunkPos { x: 0, z: 0 }, vec![torch]);
+    let cam = Vec3::new(2.0, 64.0, 2.0);
+
+    // Steady state: same key, same epoch -> the renderer skips all six
+    // cube faces. (Flicker moves the color, never the epoch.)
+    let l1 = d.frame(cam, &[], 0.016, true);
+    let l2 = d.frame(cam, &[], 0.016, true);
+    assert_eq!(l1.len(), 1, "torch promoted");
+    assert_eq!((l1[0].key, l1[0].epoch), (l2[0].key, l2[0].epoch));
+    assert!(l1[0].suppress.0 > 0.0, "static lights suppress their flood");
+
+    // An edit in a far chunk leaves the cube cached...
+    d.chunk_meshed(ChunkPos { x: 8, z: 8 }, vec![]);
+    let l3 = d.frame(cam, &[], 0.016, true);
+    assert_eq!(l3[0].epoch, l2[0].epoch, "far edits don't invalidate");
+    // ...an edit within range invalidates it.
+    d.chunk_meshed(ChunkPos { x: 0, z: 0 }, vec![torch]);
+    let l4 = d.frame(cam, &[], 0.016, true);
+    assert!(l4[0].epoch > l3[0].epoch, "near edits re-render the cube");
+
+    // Dynamic lights: standing still is a cache hit; moving is not.
+    let held = |p: Vec3| DynLight {
+        key: Key::Held,
+        pos: p,
+        color: Vec3::new(1.8, 1.4, 0.7),
+        range: 16.0,
+    };
+    let h1 = d.frame(cam, &[held(cam)], 0.016, true);
+    let h2 = d.frame(cam, &[held(cam + Vec3::new(0.05, 0.0, 0.0))], 0.016, true);
+    let (e1, e2) = (h1[1].epoch, h2[1].epoch);
+    assert_eq!(e1, e2, "sub-threshold movement keeps the cube");
+    assert_eq!(h2[1].suppress.0, 0.0, "dynamic lights aren't in the flood");
+    let h3 = d.frame(cam, &[held(cam + Vec3::new(1.0, 0.0, 0.0))], 0.016, true);
+    assert!(h3[1].epoch > e2, "real movement re-renders");
+}

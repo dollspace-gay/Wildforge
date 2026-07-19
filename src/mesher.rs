@@ -29,6 +29,9 @@ pub struct ChunkMesh {
     pub opaque_idx: Vec<u32>,
     pub water_verts: Vec<Vertex>,
     pub water_idx: Vec<u32>,
+    /// Light-emitting blocks seen during the walk, for the point-light
+    /// director (client presentation; the sim never reads this).
+    pub emitters: Vec<crate::lights::Emitter>,
 }
 
 /// face: 0=+X 1=-X 2=+Y 3=-Y 4=+Z 5=-Z
@@ -76,6 +79,7 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
         opaque_idx: Vec::new(),
         water_verts: Vec::new(),
         water_idx: Vec::new(),
+        emitters: Vec::new(),
     };
 
     // Neighbor lookup crossing chunk borders (world lookup only on the border).
@@ -125,6 +129,13 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                     continue;
                 }
                 let def = reg.block(b);
+                if def.light_emit > 0 {
+                    m.emitters.push(crate::lights::Emitter {
+                        pos: (bx + lx, y, bz + lz),
+                        rgb: def.light_rgb,
+                        emit: def.light_emit,
+                    });
+                }
                 if def.cross {
                     // Plant: two crossed quads, both sides, alpha-tested.
                     let (cl, cs) = light(lx, y, lz);

@@ -13,6 +13,7 @@ mod config;
 mod crafting;
 mod entity;
 mod inventory;
+mod lights;
 mod mesher;
 mod mobs;
 mod mp;
@@ -291,9 +292,11 @@ struct Game {
     browse_back: Vec<(ItemId, bool)>,
 
     total_frames: u64,
-    /// Prototype dynamic point lights (colored, shadow-cast) for the current
-    /// world — presently seeded by demo hooks; real emitters wire in later.
-    demo_lights: Vec<renderer::PointLight>,
+    /// The point-light director: promotes emitters to shadow-casting
+    /// lights, caches their cube maps (client presentation only).
+    lights: lights::Director,
+    /// Extra dev lights from demo hooks, fed to the director each frame.
+    demo_lights: Vec<lights::DynLight>,
     auto_shot: Option<String>,
     last_frame: Instant,
     last_title: Instant,
@@ -561,6 +564,7 @@ impl Game {
             browse_view: None,
             browse_back: Vec::new(),
             total_frames: 0,
+            lights: lights::Director::new(),
             demo_lights: Vec::new(),
             auto_shot: std::env::var("WILDFORGE_SHOT").ok(),
             last_frame: Instant::now(),
@@ -905,18 +909,58 @@ impl Game {
             }
             let fy = (y + 2) as f32 + 0.5;
             self.demo_lights = vec![
-                renderer::PointLight {
+                lights::DynLight {
+                    key: lights::Key::Demo(0),
                     pos: Vec3::new(bx as f32 - 5.0 + 0.5, fy, bz as f32 + 0.5),
                     range: 16.0,
                     color: Vec3::new(0.35, 0.6, 2.0),
                 },
-                renderer::PointLight {
+                lights::DynLight {
+                    key: lights::Key::Demo(1),
                     pos: Vec3::new(bx as f32 + 5.0 + 0.5, fy, bz as f32 + 0.5),
                     range: 16.0,
                     color: Vec3::new(2.0, 0.35, 0.3),
                 },
             ];
         }
+        // Dev: an enclosed torch-lit room — the full static pipeline
+        // (mesher emitters -> promotion -> cached cube shadows), with two
+        // pillars to throw hard shadows. Real torch blocks, no demo lights.
+        if std::env::var("WILDFORGE_DEMO_TORCHROOM").is_ok()
+            && let (Some(stone), Some(torch)) = (
+                self.reg.block_id("base:cobblestone"),
+                self.reg.block_id("base:torch"),
+            )
+        {
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            let y = self.server.world.surface_height(bx, bz);
+            for dx in -7..=7i32 {
+                for dz in -7..=7i32 {
+                    self.server.world.set_block(bx + dx, y, bz + dz, stone);
+                    for h in 1..=4 {
+                        let wall = dx.abs() == 7 || dz.abs() == 7;
+                        let b = if wall || h == 4 { stone } else { AIR };
+                        self.server.world.set_block(bx + dx, y + h, bz + dz, b);
+                    }
+                }
+            }
+            for px in [-3i32, 3] {
+                for h in 1..=3 {
+                    self.server.world.set_block(bx + px, y + h, bz + 3, stone);
+                }
+            }
+            for (tx, tz) in [(-6i32, -6i32), (6, -6), (0, 6)] {
+                self.server.world.set_block(bx + tx, y + 1, bz + tz, torch);
+            }
+            // A torch in slot 0: WILDFORGE_SEL=0 holds it (held-light
+            // shots), WILDFORGE_SEL=8 keeps the hand empty.
+            let reg = self.reg.clone();
+            if let Some(t) = reg.item_id("base:torch") {
+                self.inventory.add(&reg, t, 5);
+            }
+        }
+
         // Dev: a warm light behind a wall with a doorway — light blares through
         // the gap onto the near floor while the wall and the corners beside it
         // stay dark. Pair with WILDFORGE_AMBIENT=0.03,0.03,0.04.
@@ -947,7 +991,8 @@ impl Game {
             }
             // Warm light on the far side of the wall — it blares through the
             // doorway and lights the far room, leaving the near side dark.
-            self.demo_lights = vec![renderer::PointLight {
+            self.demo_lights = vec![lights::DynLight {
+                key: lights::Key::Demo(0),
                 pos: Vec3::new(bx as f32 + 0.5, (y + 2) as f32 + 0.5, bz as f32 + 5.5),
                 range: 24.0,
                 color: Vec3::new(2.4, 1.7, 0.8),
@@ -2335,6 +2380,7 @@ impl Game {
             for pos in far {
                 self.server.world.chunks.remove(&pos);
                 self.renderer.drop_chunk(pos);
+                self.lights.chunk_dropped(pos);
             }
         }
 
@@ -2359,10 +2405,32 @@ impl Game {
         for (_, pos) in dirty.into_iter().take(MESH_BUDGET) {
             let mesh = mesher::mesh_chunk(&self.server.world, pos);
             self.renderer.upload_chunk(pos, &mesh);
+            self.lights.chunk_meshed(pos, mesh.emitters);
             if let Some(c) = self.server.world.chunks.get_mut(&pos) {
                 c.dirty = false;
             }
         }
+    }
+
+    /// The carried light of a held item, if any: an explicit item glow,
+    /// or derived from the light of the block it places (torches).
+    fn held_glow(&self, item: ItemId) -> Option<(Vec3, f32)> {
+        let def = self.reg.item(item);
+        if let Some(g) = def.glow {
+            return Some((Vec3::from(g), 14.0));
+        }
+        let b = def.places?;
+        let bd = self.reg.block(b);
+        if bd.light_emit == 0 {
+            return None;
+        }
+        let emit = bd.light_emit.max(1) as f32;
+        let color = Vec3::new(
+            bd.light_rgb[0] as f32 / emit,
+            bd.light_rgb[1] as f32 / emit,
+            bd.light_rgb[2] as f32 / emit,
+        );
+        Some((color * 1.8 * (emit / 14.0), emit + 2.0))
     }
 
     /// Break-sound family for a block, from its tool class.
@@ -4623,6 +4691,57 @@ impl Game {
             }
         }
 
+        // Point lights: promote nearby emitters + the dynamic set.
+        let mut dyn_lights = self.demo_lights.clone();
+        // The held torch: your own body of light, real shadows and all.
+        if self.in_world
+            && let Some(stack) = self.inventory.slots[self.hotbar_sel]
+            && let Some((color, range)) = self.held_glow(stack.item)
+        {
+            let fwd = self.camera.forward();
+            let right = fwd.cross(Vec3::Y).normalize_or_zero();
+            let pos = self.camera.pos + right * 0.3 - Vec3::Y * 0.15;
+            dyn_lights.push(lights::DynLight {
+                key: lights::Key::Held,
+                pos,
+                color,
+                range,
+            });
+        }
+        // Glowing wardens: the two nearest carry real firelight.
+        if self.in_world {
+            let cam = self.camera.pos;
+            let mut glows: Vec<(f32, lights::DynLight)> = self
+                .server
+                .world
+                .mobs
+                .iter()
+                .filter(|m| m.id != 0)
+                .filter_map(|m| {
+                    let g = self.reg.animals[m.species].glow?;
+                    let d = (m.pos - cam).length();
+                    (d < 32.0).then(|| {
+                        (
+                            d,
+                            lights::DynLight {
+                                key: lights::Key::Mob(m.id),
+                                pos: m.pos + Vec3::new(0.0, 0.7, 0.0),
+                                color: Vec3::from(g),
+                                range: 12.0,
+                            },
+                        )
+                    })
+                })
+                .collect();
+            glows.sort_by(|a, b| a.0.total_cmp(&b.0));
+            dyn_lights.extend(glows.into_iter().take(2).map(|(_, l)| l));
+        }
+        let point_lights = if self.in_world {
+            self.lights.frame(self.camera.pos, &dyn_lights, dt, true)
+        } else {
+            Vec::new()
+        };
+
         let saved_cam = self.camera.pos;
         if self.nudge.1 > 0.0 {
             self.camera.pos += self.nudge.0 * (self.nudge.1 / 0.08) * 0.04;
@@ -4639,7 +4758,7 @@ impl Game {
             sun_dir,
             sun_col,
             amb_col,
-            point_lights: &self.demo_lights,
+            point_lights: &point_lights,
             outline,
             entity_verts: &entity_verts,
             entity_idx: &entity_idx,

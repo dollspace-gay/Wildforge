@@ -29,6 +29,9 @@ struct Uniforms {
     pt_pos: [[f32; 4]; MAX_PT_LIGHTS],
     /// Per light: rgb = color × intensity, w unused.
     pt_col: [[f32; 4]; MAX_PT_LIGHTS],
+    /// Per light: x = suppression scale, y = suppression range,
+    /// z = shadows enabled, w unused.
+    pt_misc: [[f32; 4]; MAX_PT_LIGHTS],
 }
 
 /// Sun shadow-map resolution (square). Keep in sync with SHADOW_RES in the shader.
@@ -54,14 +57,24 @@ const CUBE_FACES: [([f32; 3], [f32; 3]); 6] = [
     ([0.0, 0.0, -1.0], [0.0, -1.0, 0.0]),
 ];
 
-/// A dynamic colored point light accumulated (and later shadow-mapped) in the
-/// chunk shader.
+/// A colored point light accumulated (and shadow-mapped) in the chunk
+/// shader. The lights::Director decides who gets one each frame.
 #[derive(Clone, Copy)]
 pub struct PointLight {
     pub pos: Vec3,
     pub range: f32,
     /// Color premultiplied by intensity.
     pub color: Vec3,
+    /// Stable identity + revision: the cube-map cache re-renders a slot
+    /// only when (key, epoch) changes. Bump epoch to invalidate.
+    pub key: u64,
+    pub epoch: u64,
+    /// false = shadowless (no cube passes, no cube sampling).
+    pub shadows: bool,
+    /// Rendered flood-fill suppression: (scale, range). The shader
+    /// subtracts `color * scale * max(0, 1 - d/range)` from the soft
+    /// torch term so the hard direct light reads. (0, _) disables.
+    pub suppress: (f32, f32),
 }
 
 #[repr(C)]
@@ -226,6 +239,9 @@ pub struct Renderer {
     shadow_bg: wgpu::BindGroup,
 
     // Point-light distance cube maps (one cube = 6 layers per light).
+    // pt_cached remembers (key, epoch) per slot; a slot's 6 faces
+    // re-render only when that changes (the static-light cache).
+    pt_cached: [Option<(u64, u64)>; MAX_PT_LIGHTS],
     pt_shadow_pipeline: wgpu::RenderPipeline,
     pt_face_views: Vec<wgpu::TextureView>, // 6 * MAX_PT_LIGHTS render targets
     pt_shadow_depth: wgpu::TextureView,    // shared scratch depth
@@ -883,6 +899,7 @@ fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
             shadow_pipeline,
             shadow_view,
             shadow_bg,
+            pt_cached: [None; MAX_PT_LIGHTS],
             pt_shadow_pipeline,
             pt_face_views,
             pt_shadow_depth,
@@ -1057,6 +1074,18 @@ fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
                 }
                 a
             },
+            pt_misc: {
+                let mut a = [[0.0f32; 4]; MAX_PT_LIGHTS];
+                for (i, l) in f.point_lights.iter().take(MAX_PT_LIGHTS).enumerate() {
+                    a[i] = [
+                        l.suppress.0,
+                        l.suppress.1,
+                        if l.shadows { 1.0 } else { 0.0 },
+                        0.0,
+                    ];
+                }
+                a
+            },
         };
         self.entity_vbuf.upload(
             &self.device,
@@ -1198,8 +1227,17 @@ fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
         }
 
         // Point-light shadow passes: for each active light, render terrain
-        // distance into its 6 cube faces (range-culled to the light's reach).
+        // distance into its 6 cube faces (range-culled to the light's
+        // reach). The cache makes static scenes free: a slot re-renders
+        // only when its (key, epoch) changed since the cube was drawn.
         for (li, l) in f.point_lights.iter().take(MAX_PT_LIGHTS).enumerate() {
+            if !l.shadows {
+                continue;
+            }
+            if self.pt_cached[li] == Some((l.key, l.epoch)) {
+                continue;
+            }
+            self.pt_cached[li] = Some((l.key, l.epoch));
             for face in 0..6 {
                 let layer = li * 6 + face;
                 let mut pp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

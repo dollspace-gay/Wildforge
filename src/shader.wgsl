@@ -20,6 +20,9 @@ struct Uniforms {
     pt_pos: array<vec4<f32>, 8>,
     // per light: rgb = color × intensity, w unused
     pt_col: array<vec4<f32>, 8>,
+    // per light: x = flood-suppression scale, y = its range,
+    // z = shadows enabled, w unused
+    pt_misc: array<vec4<f32>, 8>,
 };
 
 const MAX_PT_LIGHTS: u32 = 8u;
@@ -119,30 +122,39 @@ fn world_light(normal: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) 
     let ndl = max(dot(n, u.sun_dir.xyz), 0.0);
     let shadow = sample_shadow(world, ndl);
     let sun = sky * ndl * shadow * u.sun_col.rgb;
-    // Cool sky fill + steady (colored) torch light, both with face shade.
+    // Cool sky fill.
     let amb = sky * fs * u.amb_col.rgb;
-    let torch = light * fs;
-    // Hard-edged colored point lights: range-attenuated N·L, summed. Shadow
-    // gating (cube maps) lands in the next milestone — stubbed to 1 here.
+    // Hard-edged colored point lights: range-attenuated N·L, summed, gated
+    // by the distance cube maps. Each promoted light also cancels its own
+    // soft flood-fill wrap (suppression) so the hard shadow reads — the
+    // sim's flood values are untouched; this is render-side only.
     var direct = vec3<f32>(0.0);
+    var suppress = vec3<f32>(0.0);
     let count = min(u.pt_count.x, MAX_PT_LIGHTS);
     for (var i = 0u; i < count; i = i + 1u) {
         let lp = u.pt_pos[i].xyz;
         let range = u.pt_pos[i].w;
         let to_light = lp - world;
         let d = length(to_light);
+        let sup = u.pt_misc[i].x * max(1.0 - d / max(u.pt_misc[i].y, 0.001), 0.0);
+        suppress = suppress + u.pt_col[i].rgb * sup;
         if (d < range) {
             let ldir = to_light / max(d, 1e-3);
             let ndl2 = max(dot(n, ldir), 0.0);
             let a = clamp(1.0 - d / range, 0.0, 1.0);
             let atten = a * a;
-            // Cube distance map: nearest occluder distance along light->fragment.
-            let nearest = textureSampleLevel(pt_cube, pt_smp, -to_light, i32(i), 0.0).r;
-            let bias = 0.08 + 0.15 * d / range;
-            let shadow_pt = select(0.0, 1.0, d <= nearest + bias);
+            var shadow_pt = 1.0;
+            if (u.pt_misc[i].z > 0.5) {
+                // Cube distance map: nearest occluder along light->fragment.
+                let nearest = textureSampleLevel(pt_cube, pt_smp, -to_light, i32(i), 0.0).r;
+                let bias = 0.08 + 0.15 * d / range;
+                shadow_pt = select(0.0, 1.0, d <= nearest + bias);
+            }
             direct = direct + u.pt_col[i].rgb * (atten * ndl2 * shadow_pt);
         }
     }
+    // Steady (colored) torch light, minus each promoted light's estimate.
+    let torch = max(light - suppress, vec3<f32>(0.0)) * fs;
     return max(sun + amb + torch + direct, vec3<f32>(0.03));
 }
 
