@@ -933,9 +933,7 @@ impl Game {
                         .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
                 }
             }
-            if let (Some(log), Some(torch), Some(bg)) =
-                (b("base:log"), b("base:torch"), b("base:blue_glass"))
-            {
+            if let (Some(log), Some(torch)) = (b("base:log"), b("base:torch")) {
                 // A clearing: no trunks photobombing the campfire.
                 for dx in -6..=6i32 {
                     for dz in -1..=12i32 {
@@ -955,20 +953,6 @@ impl Game {
                     self.server.world.set_block(x, y + 1, z, log);
                     self.server.world.set_block(x, y + 2, z, log);
                     self.server.world.set_block(x, y + 3, z, torch);
-                }
-                // The lantern: a ground shrine — torch boxed in blue
-                // glass, staining its pool across the grass.
-                let (lx, lz) = (bx - 2, bz + 8);
-                let ly = self.server.world.surface_height(lx, lz);
-                self.server.world.set_block(lx, ly + 1, lz, torch);
-                for (gx, gy, gz) in [
-                    (lx - 1, ly + 1, lz),
-                    (lx + 1, ly + 1, lz),
-                    (lx, ly + 1, lz - 1),
-                    (lx, ly + 1, lz + 1),
-                    (lx, ly + 2, lz),
-                ] {
-                    self.server.world.set_block(gx, gy, gz, bg);
                 }
             }
             for (name, px, pz) in [("base:chest", 2i32, 7i32), ("base:stone_anvil", -2, 4)] {
