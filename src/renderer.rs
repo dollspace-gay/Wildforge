@@ -23,10 +23,46 @@ struct Uniforms {
     sun_col: [f32; 4],
     amb_col: [f32; 4],
     light_vp: [[f32; 4]; 4],
+    /// x = active point-light count.
+    pt_count: [u32; 4],
+    /// Per light: xyz = world position, w = range.
+    pt_pos: [[f32; 4]; MAX_PT_LIGHTS],
+    /// Per light: rgb = color × intensity, w unused.
+    pt_col: [[f32; 4]; MAX_PT_LIGHTS],
 }
 
 /// Sun shadow-map resolution (square). Keep in sync with SHADOW_RES in the shader.
 const SHADOW_RES: u32 = 2048;
+
+/// Max shadow-casting/accumulated point lights per frame. Keep in sync with the
+/// shader's MAX_PT_LIGHTS.
+const MAX_PT_LIGHTS: usize = 8;
+
+/// Per-face resolution of each point light's distance cube map.
+const PT_SHADOW_RES: u32 = 512;
+/// Bytes per per-face uniform slot (256 = min dynamic-offset alignment).
+const PT_FACE_STRIDE: u64 = 256;
+
+/// The six cube-map face camera basis vectors (look dir, up), matching the
+/// standard cube layout (+X -X +Y -Y +Z -Z).
+const CUBE_FACES: [([f32; 3], [f32; 3]); 6] = [
+    ([1.0, 0.0, 0.0], [0.0, -1.0, 0.0]),
+    ([-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]),
+    ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+    ([0.0, -1.0, 0.0], [0.0, 0.0, -1.0]),
+    ([0.0, 0.0, 1.0], [0.0, -1.0, 0.0]),
+    ([0.0, 0.0, -1.0], [0.0, -1.0, 0.0]),
+];
+
+/// A dynamic colored point light accumulated (and later shadow-mapped) in the
+/// chunk shader.
+#[derive(Clone, Copy)]
+pub struct PointLight {
+    pub pos: Vec3,
+    pub range: f32,
+    /// Color premultiplied by intensity.
+    pub color: Vec3,
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -90,6 +126,8 @@ pub struct FrameInput<'a> {
     pub sun_col: Vec3,
     /// Cool sky-ambient color, already scaled by daylight.
     pub amb_col: Vec3,
+    /// Dynamic colored point lights (accumulated in the chunk shader).
+    pub point_lights: &'a [PointLight],
     pub outline: Option<(i32, i32, i32)>,
     /// Opaque world-space extras (item entities), drawn with the chunk shader.
     pub entity_verts: &'a [Vertex],
@@ -132,6 +170,13 @@ fn chunk_visible(planes: &[glam::Vec4; 6], pos: ChunkPos) -> bool {
         }
     }
     true
+}
+
+/// Is any part of the chunk's AABB within `range` of the light?
+fn chunk_in_range(pos: ChunkPos, light: Vec3, range: f32) -> bool {
+    let min = Vec3::new(pos.x as f32 * 16.0, 0.0, pos.z as f32 * 16.0);
+    let max = min + Vec3::new(16.0, 256.0, 16.0);
+    light.distance(light.clamp(min, max)) <= range
 }
 
 fn upload_mesh(device: &wgpu::Device, verts: &[Vertex], idx: &[u32]) -> Option<GpuMesh> {
@@ -179,6 +224,13 @@ pub struct Renderer {
     shadow_pipeline: wgpu::RenderPipeline,
     shadow_view: wgpu::TextureView,
     shadow_bg: wgpu::BindGroup,
+
+    // Point-light distance cube maps (one cube = 6 layers per light).
+    pt_shadow_pipeline: wgpu::RenderPipeline,
+    pt_face_views: Vec<wgpu::TextureView>, // 6 * MAX_PT_LIGHTS render targets
+    pt_shadow_depth: wgpu::TextureView,    // shared scratch depth
+    pt_face_buf: wgpu::Buffer,             // per-face {view_proj, light_pos}
+    pt_face_bg: wgpu::BindGroup,           // dynamic-offset bind of pt_face_buf
 
     outline_buf: wgpu::Buffer,
     crosshair_buf: wgpu::Buffer,
@@ -347,6 +399,39 @@ impl Renderer {
             label: Some("shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
+        // The point-shadow pass has its own group-0 uniform (per-face matrix +
+        // light position), so it lives in a separate module.
+        let pt_shadow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("pt-shadow-shader"),
+            source: wgpu::ShaderSource::Wgsl(
+                r#"
+struct PtFace {
+    view_proj: mat4x4<f32>,
+    light_pos: vec4<f32>,
+};
+@group(0) @binding(0) var<uniform> f: PtFace;
+
+struct VOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) world: vec3<f32>,
+};
+
+@vertex
+fn vs_pt_shadow(@location(0) pos: vec3<f32>) -> VOut {
+    var o: VOut;
+    o.clip = f.view_proj * vec4<f32>(pos, 1.0);
+    o.world = pos;
+    return o;
+}
+
+@fragment
+fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
+    return vec4<f32>(length(in.world - f.light_pos.xyz), 0.0, 0.0, 0.0);
+}
+"#
+                .into(),
+            ),
+        });
 
         // Sun shadow map: a depth texture rendered from the light's POV and
         // sampled (with hardware PCF via a comparison sampler) in the main pass.
@@ -372,6 +457,62 @@ impl Renderer {
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
+        // Point-light distance cube maps: one R32Float cube (6 layers) per
+        // light, packed into an array texture. Each fragment stores its
+        // distance to the light; the main shader compares to decide occlusion.
+        let pt_cube_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("pt-cube"),
+            size: wgpu::Extent3d {
+                width: PT_SHADOW_RES,
+                height: PT_SHADOW_RES,
+                depth_or_array_layers: 6 * MAX_PT_LIGHTS as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let pt_cube_view = pt_cube_tex.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("pt-cube-sample"),
+            dimension: Some(wgpu::TextureViewDimension::CubeArray),
+            ..Default::default()
+        });
+        let pt_face_views: Vec<wgpu::TextureView> = (0..6 * MAX_PT_LIGHTS as u32)
+            .map(|layer| {
+                pt_cube_tex.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("pt-face"),
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    base_array_layer: layer,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                })
+            })
+            .collect();
+        let pt_shadow_depth = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("pt-shadow-depth"),
+                size: wgpu::Extent3d {
+                    width: PT_SHADOW_RES,
+                    height: PT_SHADOW_RES,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Depth32Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let pt_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("pt-cube-smp"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
         let shadow_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("shadow-bgl"),
             entries: &[
@@ -391,6 +532,22 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::CubeArray,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                    count: None,
+                },
             ],
         });
         let shadow_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -405,7 +562,49 @@ impl Renderer {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(&shadow_sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&pt_cube_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&pt_sampler),
+                },
             ],
+        });
+
+        // Per-face uniform for the point-shadow pass: {view_proj, light_pos},
+        // one slot per cube face, addressed by dynamic offset.
+        let pt_face_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("pt-face"),
+            size: PT_FACE_STRIDE * 6 * MAX_PT_LIGHTS as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let pt_face_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("pt-face-bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: true,
+                    min_binding_size: core::num::NonZeroU64::new(80),
+                },
+                count: None,
+            }],
+        });
+        let pt_face_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("pt-face-bg"),
+            layout: &pt_face_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &pt_face_buf,
+                    offset: 0,
+                    size: core::num::NonZeroU64::new(PT_FACE_STRIDE),
+                }),
+            }],
         });
 
         // Main-pass pipelines bind [uniforms, atlas, shadow]. Line/UI pipelines
@@ -596,6 +795,54 @@ impl Renderer {
             cache: None,
         });
 
+        // Point-light cube-face pass: writes distance-to-light into an R32Float
+        // face. No culling (robust for 1-block-thin occluders); a depth bias in
+        // the compare keeps acne off lit faces.
+        let pt_shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("pt-shadow-layout"),
+            bind_group_layouts: &[&pt_face_bgl],
+            push_constant_ranges: &[],
+        });
+        let pt_shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("pt-shadow"),
+            layout: Some(&pt_shadow_layout),
+            vertex: wgpu::VertexState {
+                module: &pt_shadow_shader,
+                entry_point: Some("vs_pt_shadow"),
+                compilation_options: Default::default(),
+                buffers: std::slice::from_ref(&shadow_vertex_layout),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &pt_shadow_shader,
+                entry_point: Some("fs_pt_shadow"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::R32Float,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         let outline_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("outline"),
             size: (24 * std::mem::size_of::<LineVertex>()) as u64,
@@ -636,6 +883,11 @@ impl Renderer {
             shadow_pipeline,
             shadow_view,
             shadow_bg,
+            pt_shadow_pipeline,
+            pt_face_views,
+            pt_shadow_depth,
+            pt_face_buf,
+            pt_face_bg,
             outline_buf,
             crosshair_buf,
             entity_vbuf,
@@ -790,6 +1042,21 @@ impl Renderer {
             sun_col: [f.sun_col.x, f.sun_col.y, f.sun_col.z, 0.0],
             amb_col: [f.amb_col.x, f.amb_col.y, f.amb_col.z, 0.0],
             light_vp: light_vp.to_cols_array_2d(),
+            pt_count: [f.point_lights.len().min(MAX_PT_LIGHTS) as u32, 0, 0, 0],
+            pt_pos: {
+                let mut a = [[0.0f32; 4]; MAX_PT_LIGHTS];
+                for (i, l) in f.point_lights.iter().take(MAX_PT_LIGHTS).enumerate() {
+                    a[i] = [l.pos.x, l.pos.y, l.pos.z, l.range];
+                }
+                a
+            },
+            pt_col: {
+                let mut a = [[0.0f32; 4]; MAX_PT_LIGHTS];
+                for (i, l) in f.point_lights.iter().take(MAX_PT_LIGHTS).enumerate() {
+                    a[i] = [l.color.x, l.color.y, l.color.z, 0.0];
+                }
+                a
+            },
         };
         self.entity_vbuf.upload(
             &self.device,
@@ -822,6 +1089,32 @@ impl Renderer {
             .upload(&self.device, &self.queue, bytemuck::cast_slice(f.ui_verts));
         self.queue
             .write_buffer(&self.uniforms_buf, 0, bytemuck::bytes_of(&uniforms));
+
+        // Per-face matrices for the point-shadow cube passes: a 90° perspective
+        // per cube face, plus the light position for the distance write.
+        let n_pt = f.point_lights.len().min(MAX_PT_LIGHTS);
+        if n_pt > 0 {
+            let stride = PT_FACE_STRIDE as usize;
+            let mut data = vec![0u8; n_pt * 6 * stride];
+            for (li, l) in f.point_lights.iter().take(MAX_PT_LIGHTS).enumerate() {
+                let proj = Mat4::perspective_rh(
+                    std::f32::consts::FRAC_PI_2,
+                    1.0,
+                    0.1,
+                    l.range.max(1.0),
+                );
+                for face in 0..6 {
+                    let (dir, up) = CUBE_FACES[face];
+                    let view = Mat4::look_at_rh(l.pos, l.pos + Vec3::from(dir), Vec3::from(up));
+                    let vp = (proj * view).to_cols_array();
+                    let lp = [l.pos.x, l.pos.y, l.pos.z, 0.0f32];
+                    let s = (li * 6 + face) * stride;
+                    data[s..s + 64].copy_from_slice(bytemuck::cast_slice(&vp));
+                    data[s + 64..s + 80].copy_from_slice(bytemuck::cast_slice(&lp));
+                }
+            }
+            self.queue.write_buffer(&self.pt_face_buf, 0, &data);
+        }
 
         if let Some((bx, by, bz)) = outline {
             let e = 0.003f32;
@@ -902,6 +1195,54 @@ impl Renderer {
                     sp.set_vertex_buffer(0, m.vbuf.slice(..));
                     sp.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
                     sp.draw_indexed(0..m.count, 0, 0..1);
+                }
+            }
+        }
+
+        // Point-light shadow passes: for each active light, render terrain
+        // distance into its 6 cube faces (range-culled to the light's reach).
+        for (li, l) in f.point_lights.iter().take(MAX_PT_LIGHTS).enumerate() {
+            for face in 0..6 {
+                let layer = li * 6 + face;
+                let mut pp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("pt-shadow"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.pt_face_views[layer],
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            // Clear "far" so untouched texels read as lit.
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 1.0e6,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 0.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.pt_shadow_depth,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Discard,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                pp.set_pipeline(&self.pt_shadow_pipeline);
+                pp.set_bind_group(0, &self.pt_face_bg, &[(layer as u32) * PT_FACE_STRIDE as u32]);
+                for (pos, gpu) in &self.chunks {
+                    if let Some(m) = &gpu.opaque {
+                        if !chunk_in_range(*pos, l.pos, l.range) {
+                            continue;
+                        }
+                        pp.set_vertex_buffer(0, m.vbuf.slice(..));
+                        pp.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                        pp.draw_indexed(0..m.count, 0, 0..1);
+                    }
                 }
             }
         }
