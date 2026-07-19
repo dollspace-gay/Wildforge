@@ -920,38 +920,38 @@ impl Game {
         // Dev: a warm light behind a wall with a doorway — light blares through
         // the gap onto the near floor while the wall and the corners beside it
         // stay dark. Pair with WILDFORGE_AMBIENT=0.03,0.03,0.04.
-        if std::env::var("WILDFORGE_DEMO_CORNER").is_ok() {
-            if let Some(stone) = self.reg.block_id("base:cobblestone") {
-                let bx = spawn.x as i32;
-                let bz = spawn.z as i32 + 6;
-                let y = self.server.world.surface_height(bx, bz);
-                // Carve a clean flat arena: cobblestone floor, air above, so
-                // grass and trees don't intrude on the shadow.
-                for dx in -11..=11 {
-                    for dz in -9..=15 {
-                        self.server.world.set_block(bx + dx, y, bz + dz, stone);
-                        for h in 1..=9 {
-                            self.server.world.set_block(bx + dx, y + h, bz + dz, AIR);
-                        }
+        if std::env::var("WILDFORGE_DEMO_CORNER").is_ok()
+            && let Some(stone) = self.reg.block_id("base:cobblestone")
+        {
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32 + 6;
+            let y = self.server.world.surface_height(bx, bz);
+            // Carve a clean flat arena: cobblestone floor, air above, so
+            // grass and trees don't intrude on the shadow.
+            for dx in -11..=11 {
+                for dz in -9..=15 {
+                    self.server.world.set_block(bx + dx, y, bz + dz, stone);
+                    for h in 1..=9 {
+                        self.server.world.set_block(bx + dx, y + h, bz + dz, AIR);
                     }
                 }
-                // Wall across X at z=bz, 5 tall, with a 1-wide doorway at bx.
-                for dx in -11..=11 {
-                    if dx == 0 {
-                        continue;
-                    }
-                    for h in 1..=5 {
-                        self.server.world.set_block(bx + dx, y + h, bz, stone);
-                    }
-                }
-                // Warm light on the far side of the wall — it blares through the
-                // doorway and lights the far room, leaving the near side dark.
-                self.demo_lights = vec![renderer::PointLight {
-                    pos: Vec3::new(bx as f32 + 0.5, (y + 2) as f32 + 0.5, bz as f32 + 5.5),
-                    range: 24.0,
-                    color: Vec3::new(2.4, 1.7, 0.8),
-                }];
             }
+            // Wall across X at z=bz, 5 tall, with a 1-wide doorway at bx.
+            for dx in -11..=11 {
+                if dx == 0 {
+                    continue;
+                }
+                for h in 1..=5 {
+                    self.server.world.set_block(bx + dx, y + h, bz, stone);
+                }
+            }
+            // Warm light on the far side of the wall — it blares through the
+            // doorway and lights the far room, leaving the near side dark.
+            self.demo_lights = vec![renderer::PointLight {
+                pos: Vec3::new(bx as f32 + 0.5, (y + 2) as f32 + 0.5, bz as f32 + 5.5),
+                range: 24.0,
+                color: Vec3::new(2.4, 1.7, 0.8),
+            }];
         }
         // Dev: a flat water pool ahead of spawn (specular-glint verification).
         if std::env::var("WILDFORGE_DEMO_POOL").is_ok()

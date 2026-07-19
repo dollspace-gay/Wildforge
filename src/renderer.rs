@@ -1097,15 +1097,13 @@ fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
             let stride = PT_FACE_STRIDE as usize;
             let mut data = vec![0u8; n_pt * 6 * stride];
             for (li, l) in f.point_lights.iter().take(MAX_PT_LIGHTS).enumerate() {
-                let proj = Mat4::perspective_rh(
-                    std::f32::consts::FRAC_PI_2,
-                    1.0,
-                    0.1,
-                    l.range.max(1.0),
-                );
-                for face in 0..6 {
-                    let (dir, up) = CUBE_FACES[face];
-                    let view = Mat4::look_at_rh(l.pos, l.pos + Vec3::from(dir), Vec3::from(up));
+                // Same deprecated-but-stable glam camera API as Camera::view_proj.
+                #[allow(deprecated)]
+                let proj =
+                    Mat4::perspective_rh(std::f32::consts::FRAC_PI_2, 1.0, 0.1, l.range.max(1.0));
+                for (face, (dir, up)) in CUBE_FACES.iter().enumerate() {
+                    #[allow(deprecated)]
+                    let view = Mat4::look_at_rh(l.pos, l.pos + Vec3::from(*dir), Vec3::from(*up));
                     let vp = (proj * view).to_cols_array();
                     let lp = [l.pos.x, l.pos.y, l.pos.z, 0.0f32];
                     let s = (li * 6 + face) * stride;
@@ -1233,7 +1231,11 @@ fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
                     occlusion_query_set: None,
                 });
                 pp.set_pipeline(&self.pt_shadow_pipeline);
-                pp.set_bind_group(0, &self.pt_face_bg, &[(layer as u32) * PT_FACE_STRIDE as u32]);
+                pp.set_bind_group(
+                    0,
+                    &self.pt_face_bg,
+                    &[(layer as u32) * PT_FACE_STRIDE as u32],
+                );
                 for (pos, gpu) in &self.chunks {
                     if let Some(m) = &gpu.opaque {
                         if !chunk_in_range(*pos, l.pos, l.range) {
