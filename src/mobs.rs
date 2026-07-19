@@ -667,7 +667,7 @@ pub fn emit_humanoid(
     yaw: f32,
     tile: u16,
     face: u16,
-    lum: (f32, f32),
+    lum: ([f32; 3], f32),
     verts: &mut Vec<Vertex>,
     idx: &mut Vec<u32>,
 ) {
@@ -708,7 +708,8 @@ pub fn emit_humanoid(
                         tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                         ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                     ],
-                    light: shade * lum.0,
+                    normal: [0.0, 0.0, 0.0],
+                    light: [shade * lum.0[0], shade * lum.0[1], shade * lum.0[2]],
                     sky: shade * lum.1,
                 });
             }

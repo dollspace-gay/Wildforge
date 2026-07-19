@@ -953,6 +953,9 @@ impl Renderer {
             });
             pass.set_bind_group(0, &self.uniform_bg, &[]);
             pass.set_bind_group(1, &self.atlas_bg, &[]);
+            // The chunk/line/ui pipelines share a 3-group layout; the shadow
+            // group must stay bound here even though the hand doesn't sample it.
+            pass.set_bind_group(2, &self.shadow_bg, &[]);
 
             if !f.hand_idx.is_empty() {
                 pass.set_pipeline(&self.chunk_pipeline);

@@ -716,27 +716,27 @@ impl Game {
             let stone = self.reg.block_id("base:cobblestone");
             let bx = spawn.x as i32;
             let bz = spawn.z as i32 + 4;
-            let y = self.world.surface_height(bx, bz);
+            let y = self.server.world.surface_height(bx, bz);
             if let Some(stone) = stone {
                 // A neutral grey floor reads colored light far better than grass.
                 for dx in -8..=8 {
                     for dz in -6..=8 {
-                        self.world.set_block(bx + dx, y, bz + dz, stone);
+                        self.server.world.set_block(bx + dx, y, bz + dz, stone);
                     }
                 }
                 // Two pillars as occluders.
                 for px in [-2i32, 2] {
                     for h in 1..=3 {
-                        self.world.set_block(bx + px, y + h, bz, stone);
+                        self.server.world.set_block(bx + px, y + h, bz, stone);
                     }
                 }
             }
             // Low colored lamps to either side so shadows rake across the floor.
             if let Some(b) = blue {
-                self.world.set_block(bx - 5, y + 2, bz, b);
+                self.server.world.set_block(bx - 5, y + 2, bz, b);
             }
             if let Some(r) = red {
-                self.world.set_block(bx + 5, y + 2, bz, r);
+                self.server.world.set_block(bx + 5, y + 2, bz, r);
             }
         }
         // Dev: a flat water pool ahead of spawn (specular-glint verification).
@@ -744,10 +744,10 @@ impl Game {
             if let Some(water) = self.reg.block_id("base:water") {
                 let cx = spawn.x as i32;
                 let cz = spawn.z as i32 + 10;
-                let y = self.world.surface_height(cx, cz);
+                let y = self.server.world.surface_height(cx, cz);
                 for dx in -8..=8 {
                     for dz in -8..=8 {
-                        self.world.set_block(cx + dx, y, cz + dz, water);
+                        self.server.world.set_block(cx + dx, y, cz + dz, water);
                     }
                 }
             }
@@ -762,17 +762,17 @@ impl Game {
                     w.set_block(x, y + 1, z, b);
                 }
             };
-            place(&mut self.world, "base:torch", -2, 5);
-            place(&mut self.world, "gems:ruby_block", 2, 5);
+            place(&mut self.server.world, "base:torch", -2, 5);
+            place(&mut self.server.world, "gems:ruby_block", 2, 5);
         }
         // Dev: a few tall pillars near spawn (shadow-casting verification).
         if std::env::var("WILDFORGE_DEMO_PILLARS").is_ok() {
             if let Some(stone) = self.reg.block_id("base:cobblestone") {
                 for (dx, dz, h) in [(4, 2, 6), (7, -3, 8), (-2, 6, 5), (10, 4, 7)] {
                     let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
-                    let base = self.world.surface_height(x, z);
+                    let base = self.server.world.surface_height(x, z);
                     for i in 1..=h {
-                        self.world.set_block(x, base + i, z, stone);
+                        self.server.world.set_block(x, base + i, z, stone);
                     }
                 }
             }
@@ -2696,7 +2696,8 @@ impl Game {
                             tx as f32 * ts + inset + uu * (ts - 2.0 * inset),
                             ty as f32 * ts + inset + vv * (ts - 2.0 * inset),
                         ],
-                        light: shade * lum.0,
+                        normal: [0.0, 0.0, 0.0],
+                        light: [shade * lum.0, shade * lum.0, shade * lum.0],
                         sky: shade * lum.1,
                     });
                 }
@@ -2770,7 +2771,8 @@ impl Game {
                         verts.push(mesher::Vertex {
                             pos: [wp.x, wp.y, wp.z],
                             uv: [uu, vv],
-                            light: 0.95 * lum.0,
+                            normal: [0.0, 0.0, 0.0],
+                            light: [0.95 * lum.0, 0.95 * lum.0, 0.95 * lum.0],
                             sky: 0.95 * lum.1,
                         });
                     }
@@ -3018,7 +3020,7 @@ impl Game {
         // shadows never degenerate. Warm direct light, cool sky-ambient fill,
         // both faded by `daylight` so night is lit only by the moonlit floor
         // and torches.
-        let ang = self.time_of_day * std::f32::consts::TAU;
+        let ang = self.server.time_of_day * std::f32::consts::TAU;
         let elev = ang.sin(); // 1 at noon, -1 at midnight
         let horiz = ang.cos(); // +1 dawn -> 0 noon -> -1 dusk
         let sun_dir = Vec3::new(horiz * 0.8, elev.max(0.05) + 0.15, 0.45).normalize();
