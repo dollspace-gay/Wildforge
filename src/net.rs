@@ -19,7 +19,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 pub const GAME_PORT: u16 = 27431;
 pub const BEACON_PORT: u16 = 27430;
 /// Bump when the protocol changes shape.
-pub const PROTOCOL: u32 = 5;
+pub const PROTOCOL: u32 = 6;
 
 // ---------------- protocol ----------------
 
@@ -68,6 +68,8 @@ pub enum C2S {
     Move {
         pos: Vec3,
         yaw: f32,
+        /// Wire item id in hand (u16::MAX = empty) — remote held lights.
+        held: u16,
     },
     Break {
         x: i32,
@@ -182,8 +184,9 @@ pub enum S2C {
         z: i32,
         id: u16,
     },
-    /// (id, pos, yaw) for every player, host included. Datagram.
-    Players(Vec<(u32, Vec3, f32)>),
+    /// (id, pos, yaw, held wire item id) for every player, host
+    /// included (u16::MAX = empty hand). Datagram.
+    Players(Vec<(u32, Vec3, f32, u16)>),
     Mobs(Vec<MobSnap>),
     Bolts(Vec<BoltSnap>),
     /// Airborne gravity blocks (sand mid-tumble). Datagram.

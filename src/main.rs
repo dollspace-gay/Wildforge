@@ -126,6 +126,8 @@ struct Remote {
     host_block: std::collections::HashMap<u16, u16>,
     /// id -> (name, pos, yaw) of every other player (render state).
     players: std::collections::HashMap<u32, (String, Vec3, f32)>,
+    /// Wire item id each player holds (from Players snapshots).
+    player_held: std::collections::HashMap<u32, u16>,
     names: std::collections::HashMap<u32, String>,
     sleeping: bool,
     /// Interpolation spans keyed by player / mob id, plus the shared
@@ -1698,6 +1700,7 @@ impl Game {
                     item_map: Vec::new(),
                     host_block: Default::default(),
                     players: Default::default(),
+                    player_held: Default::default(),
                     names: Default::default(),
                     sleeping: false,
                     player_lerp: Default::default(),
@@ -1840,10 +1843,11 @@ impl Game {
                     // New span: from wherever each player currently
                     // renders, toward the fresh snapshot.
                     let t = (r.player_age / r.player_interval.max(0.001)).clamp(0.0, 1.0);
-                    for (id, pos, yaw) in list {
+                    for (id, pos, yaw, held) in list {
                         if id == r.my_id {
                             continue;
                         }
+                        r.player_held.insert(id, held);
                         let cur = match r.player_lerp.get(&id) {
                             Some(l) => l.at(t),
                             None => (pos, yaw),
@@ -2129,9 +2133,14 @@ impl Game {
             self.move_timer += dt;
             if self.move_timer >= 0.05 {
                 self.move_timer = 0.0;
+                let held = self.inventory.slots[self.hotbar_sel]
+                    .and_then(|st| r.item_map.iter().position(|m| *m == Some(st.item)))
+                    .map(|i| i as u16)
+                    .unwrap_or(u16::MAX);
                 r.client.send_datagram(&net::C2S::Move {
                     pos: self.player.pos,
                     yaw: self.camera.yaw,
+                    held,
                 });
             }
         }
@@ -4001,9 +4010,12 @@ impl Game {
                 // requests apply before the tick.
                 let players = if let Some(mut sess) = self.host.take() {
                     self.server.world.log_edits = true;
+                    let held = self.inventory.slots[self.hotbar_sel]
+                        .map(|st| st.item.0)
+                        .unwrap_or(u16::MAX);
                     let fx = sess.pump(
                         &mut self.server,
-                        Some((self.player.pos, self.camera.yaw, self.host_sleeping)),
+                        Some((self.player.pos, self.camera.yaw, self.host_sleeping, held)),
                         dt,
                     );
                     for f in fx {
@@ -4708,33 +4720,71 @@ impl Game {
                 range,
             });
         }
-        // Glowing wardens: the two nearest carry real firelight.
+        // The remaining dynamic slots go to whatever is closest: other
+        // players' torches or glowing wardens.
         if self.in_world {
             let cam = self.camera.pos;
-            let mut glows: Vec<(f32, lights::DynLight)> = self
-                .server
-                .world
-                .mobs
-                .iter()
-                .filter(|m| m.id != 0)
-                .filter_map(|m| {
-                    let g = self.reg.animals[m.species].glow?;
-                    let d = (m.pos - cam).length();
-                    (d < 32.0).then(|| {
-                        (
-                            d,
+            let mut tail: Vec<(f32, lights::DynLight)> = Vec::new();
+            if let Some(r) = &self.remote {
+                for (id, (_, pos, _)) in &r.players {
+                    let Some(&held) = r.player_held.get(id) else {
+                        continue;
+                    };
+                    let local = r.item_map.get(held as usize).copied().flatten();
+                    if let Some(item) = local
+                        && let Some((color, range)) = self.held_glow(item)
+                    {
+                        tail.push((
+                            pos.distance(cam),
                             lights::DynLight {
-                                key: lights::Key::Mob(m.id),
-                                pos: m.pos + Vec3::new(0.0, 0.7, 0.0),
-                                color: Vec3::from(g),
-                                range: 12.0,
+                                key: lights::Key::RemoteHeld(*id),
+                                pos: *pos + Vec3::new(0.0, 1.4, 0.0),
+                                color,
+                                range,
                             },
-                        )
-                    })
-                })
-                .collect();
-            glows.sort_by(|a, b| a.0.total_cmp(&b.0));
-            dyn_lights.extend(glows.into_iter().take(2).map(|(_, l)| l));
+                        ));
+                    }
+                }
+            }
+            if let Some(sess) = &self.host {
+                for (id, g) in &sess.guests {
+                    if g.held == u16::MAX {
+                        continue;
+                    }
+                    if let Some((color, range)) = self.held_glow(ItemId(g.held)) {
+                        let p = g.render_pos().0;
+                        tail.push((
+                            p.distance(cam),
+                            lights::DynLight {
+                                key: lights::Key::RemoteHeld(*id),
+                                pos: p + Vec3::new(0.0, 1.4, 0.0),
+                                color,
+                                range,
+                            },
+                        ));
+                    }
+                }
+            }
+            for m in self.server.world.mobs.iter().filter(|m| m.id != 0) {
+                let Some(g) = self.reg.animals[m.species].glow else {
+                    continue;
+                };
+                let d = (m.pos - cam).length();
+                if d < 32.0 {
+                    tail.push((
+                        d,
+                        lights::DynLight {
+                            key: lights::Key::Mob(m.id),
+                            pos: m.pos + Vec3::new(0.0, 0.7, 0.0),
+                            color: Vec3::from(g),
+                            range: 12.0,
+                        },
+                    ));
+                }
+            }
+            tail.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let spare = lights::MAX_DYNAMIC.saturating_sub(dyn_lights.len());
+            dyn_lights.extend(tail.into_iter().take(spare).map(|(_, l)| l));
         }
         let point_lights = if self.in_world && self.config.lights > 0 {
             self.lights

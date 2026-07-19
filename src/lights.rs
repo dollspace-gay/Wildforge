@@ -25,6 +25,8 @@ pub enum Key {
     Block(i32, i32, i32),
     Held,
     Mob(u32),
+    /// Another player's carried light (by player id).
+    RemoteHeld(u32),
     /// Dev demo hooks.
     Demo(u32),
 }
@@ -299,6 +301,7 @@ fn key_bits(k: Key) -> u64 {
         }
         Key::Held => 1 << 62,
         Key::Mob(id) => (2 << 62) | id as u64,
+        Key::RemoteHeld(id) => (3 << 62) | ((id as u64) << 20),
         Key::Demo(id) => (3 << 62) | id as u64,
     }
 }

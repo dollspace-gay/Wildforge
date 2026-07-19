@@ -3648,6 +3648,7 @@ fn net_protocol_round_trips() {
         C2S::Move {
             pos: Vec3::new(1.5, 80.0, -3.5),
             yaw: 1.2,
+            held: u16::MAX,
         },
         C2S::Break { x: 1, y: 2, z: 3 },
         C2S::Place {
@@ -5189,22 +5190,31 @@ fn loopback_join_stream_and_edit() {
     let ground = sim.world.surface_height(8, 8) as f32 + 1.0;
     let gpos = Vec3::new(8.5, ground, 8.5);
     let mut welcome = None;
+    let mut torch_wire: Option<usize> = None;
+    let mut held_echo: Option<(u16, u16)> = None; // (host's, ours)
+    let host_held = reg.item_id("base:torch").unwrap().0;
     let mut got_chunk = false;
     let mut chunk_data: Option<(i32, i32, Vec<u8>)> = None;
     for _ in 0..200 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
         for msg in client.poll() {
             match msg {
                 S2C::Welcome {
-                    palette, your_id, ..
+                    palette,
+                    items,
+                    your_id,
+                    ..
                 } => {
                     assert!(!palette.is_empty(), "palette shipped");
                     assert!(your_id > 0);
+                    torch_wire = items.iter().position(|n| n == "base:torch");
                     welcome = Some(palette);
-                    // Tell the host where we stand so chunks stream.
+                    // Tell the host where we stand (and that we carry a
+                    // torch — remote held lights ride the Move packet).
                     client.send(&C2S::Move {
                         pos: gpos,
                         yaw: 0.0,
+                        held: torch_wire.expect("torch on the wire") as u16,
                     });
                 }
                 S2C::Chunk { x, z, rle } => {
@@ -5249,7 +5259,7 @@ fn loopback_join_stream_and_edit() {
     let mut echoed = false;
     let mut given = false;
     for _ in 0..200 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
         for msg in client.poll() {
             match msg {
                 S2C::BlockSet {
@@ -5259,16 +5269,34 @@ fn loopback_join_stream_and_edit() {
                     id: 0,
                 } if yy == y => echoed = true,
                 S2C::Give { .. } => given = true,
+                S2C::Players(list) => {
+                    // Held items ride the snapshot: the host's torch and
+                    // our own held id, round-tripped.
+                    let host = list.iter().find(|p| p.0 == 0).map(|p| p.3);
+                    let me = list.iter().find(|p| p.0 != 0).map(|p| p.3);
+                    if let (Some(h), Some(m)) = (host, me) {
+                        held_echo = Some((h, m));
+                    }
+                }
                 _ => {}
             }
         }
-        if echoed && given {
+        if echoed && given && held_echo.is_some() {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     assert_eq!(sim.world.get_block(9, y, 9), AIR, "host applied the break");
     assert!(echoed, "edit echoed to the guest");
+    let (h, m) = held_echo.expect("players snapshot carried held items");
+    assert_eq!(h, host_held, "host's torch visible to guests");
+    assert_eq!(m as usize, torch_wire.unwrap(), "our held id round-trips");
+    assert!(
+        sess.guests
+            .values()
+            .all(|g| g.held as usize == torch_wire.unwrap()),
+        "host tracks the guest's held item"
+    );
     assert!(given, "drops crossed the wire to the breaker");
 
     // Out of reach is refused.
@@ -5281,7 +5309,7 @@ fn loopback_join_stream_and_edit() {
         z: 200,
     });
     for _ in 0..30 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
         client.poll();
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
@@ -5301,7 +5329,7 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::OpenContainer { x: 10, y: cy, z: 8 });
     let mut opened = false;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
         for msg in client.poll() {
             if matches!(msg, S2C::Container { x: 10, kind: 0, .. }) {
                 opened = true;
@@ -5337,7 +5365,7 @@ fn loopback_join_stream_and_edit() {
     });
     let mut cursor_back = None;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
         for msg in client.poll() {
             if let S2C::HeldResult(Some(s)) = msg {
                 cursor_back = Some(s);
@@ -5362,7 +5390,7 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::SleepRequest);
     let mut dawned = false;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, true)), 0.06);
+        sess.pump(&mut sim, Some((gpos, 0.0, true, host_held)), 0.06);
         client.poll();
         if (sim.time_of_day - 0.3).abs() < 0.01 {
             dawned = true;
@@ -5376,7 +5404,7 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::Chat("hello".into()));
     let mut chatted = false;
     for _ in 0..100 {
-        let fx = sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        let fx = sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
         if fx
             .iter()
             .any(|f| matches!(f, crate::mp::HostFx::Chat { .. }))
@@ -5403,7 +5431,7 @@ fn loopback_join_stream_and_edit() {
     });
     let (mut saw_falling, mut saw_land) = (false, false);
     for _ in 0..200 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
         sim.advance(0.06, &[], &mut Vec::new());
         for msg in client.poll() {
             match msg {
@@ -5430,7 +5458,7 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::OpenContainer { x: 12, y: by, z: 8 });
     let mut got_kind3 = false;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
         for msg in client.poll() {
             if matches!(msg, S2C::Container { kind: 3, .. }) {
                 got_kind3 = true;
@@ -5472,7 +5500,7 @@ fn loopback_join_stream_and_edit() {
     let lit = reg.block_id("base:bloomery_lit").unwrap();
     let mut is_lit = false;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
         client.poll();
         if sim.world.get_block(12, by, 8) == lit {
             is_lit = true;
@@ -5501,7 +5529,7 @@ fn loopback_join_stream_and_edit() {
     }
     let mut bar = false;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
         for msg in client.poll() {
             if let S2C::Give { item, .. } = msg
                 && item == ingot.0
@@ -5524,7 +5552,7 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::OpenContainer { x: 6, y: ky, z: 12 });
     let mut got_kind4 = false;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
+        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
         for msg in client.poll() {
             if matches!(msg, S2C::Container { kind: 4, .. }) {
                 got_kind4 = true;
@@ -5542,7 +5570,7 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::SleepRequest);
     client.send(&C2S::SleepCancel);
     for _ in 0..30 {
-        sess.pump(&mut sim, Some((gpos, 0.0, true)), 0.06);
+        sess.pump(&mut sim, Some((gpos, 0.0, true, host_held)), 0.06);
         client.poll();
         std::thread::sleep(std::time::Duration::from_millis(10));
     }

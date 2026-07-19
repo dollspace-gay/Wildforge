@@ -19,6 +19,8 @@ pub struct Guest {
     pub yaw: f32,
     pub container: Option<(i32, i32, i32)>,
     pub sleeping: bool,
+    /// Wire item id in hand (u16::MAX = empty), from Move packets.
+    pub held: u16,
     sent_chunks: HashSet<(i32, i32)>,
     edits: u32,
     edit_window: f32,
@@ -113,12 +115,15 @@ impl HostSession {
     pub fn pump(
         &mut self,
         server: &mut Server,
-        host: Option<(Vec3, f32, bool)>,
+        host: Option<(Vec3, f32, bool, u16)>,
         dt: f32,
     ) -> Vec<HostFx> {
-        let host_pos = host.map(|(p, _, _)| p).unwrap_or(Vec3::new(0.5, 80.0, 0.5));
-        let host_yaw = host.map(|(_, y, _)| y).unwrap_or(0.0);
-        let host_sleeping = host.map(|(_, _, s)| s).unwrap_or(false);
+        let host_pos = host
+            .map(|(p, _, _, _)| p)
+            .unwrap_or(Vec3::new(0.5, 80.0, 0.5));
+        let host_yaw = host.map(|(_, y, _, _)| y).unwrap_or(0.0);
+        let host_sleeping = host.map(|(_, _, s, _)| s).unwrap_or(false);
+        let host_held = host.map(|(_, _, _, h)| h).unwrap_or(u16::MAX);
         let mut fx = Vec::new();
         for ev in self.net.poll() {
             match ev {
@@ -212,10 +217,10 @@ impl HostSession {
             self.snapshot_timer = 0.0;
             let mut players = Vec::new();
             if host.is_some() {
-                players.push((0u32, host_pos, host_yaw));
+                players.push((0u32, host_pos, host_yaw, host_held));
             }
             for (id, g) in &self.guests {
-                players.push((*id, g.pos, g.yaw));
+                players.push((*id, g.pos, g.yaw, g.held));
             }
             self.net.broadcast_datagram(&S2C::Players(players));
             let mobs: Vec<MobSnap> = server
@@ -358,6 +363,7 @@ impl HostSession {
                 yaw: 0.0,
                 container: None,
                 sleeping: false,
+                held: u16::MAX,
                 sent_chunks: HashSet::new(),
                 edits: 0,
                 edit_window: 0.0,
@@ -385,12 +391,13 @@ impl HostSession {
         };
         match msg {
             C2S::Hello { .. } | C2S::Bye => {}
-            C2S::Move { pos, yaw } => {
+            C2S::Move { pos, yaw, held } => {
                 guest.render_from = guest.render_pos();
                 guest.net_interval = guest.net_age.clamp(0.03, 0.3);
                 guest.net_age = 0.0;
                 guest.pos = pos;
                 guest.yaw = yaw;
+                guest.held = held;
                 // Guests leave footprints too; the edit echoes to all.
                 server.world.tread(
                     pos.x.floor() as i32,
