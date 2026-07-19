@@ -764,9 +764,15 @@ impl Renderer {
             } else {
                 Vec3::Y
             };
-            let view = Mat4::look_at_rh(eye, center, up);
-            let proj =
-                Mat4::orthographic_rh(-radius, radius, -radius, radius, 1.0, dist + radius * 2.0);
+            let view = glam::camera::rh::view::look_at_mat4(eye, center, up);
+            let proj = glam::camera::rh::proj::directx::orthographic(
+                -radius,
+                radius,
+                -radius,
+                radius,
+                1.0,
+                dist + radius * 2.0,
+            );
             proj * view
         };
 

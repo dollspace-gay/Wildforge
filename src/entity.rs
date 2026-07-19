@@ -199,9 +199,9 @@ pub fn emit_crack(
     let origin = Vec3::new(block.0 as f32 - e, block.1 as f32 - e, block.2 as f32 - e);
     let scale = 1.0 + 2.0 * e;
 
-    for face in 0..6 {
+    for (face, corners) in CORNERS.iter().enumerate() {
         let base = verts.len() as u32;
-        for c in CORNERS[face].iter() {
+        for c in corners.iter() {
             let (u, v) = match face {
                 0 | 1 => (c[2], 1.0 - c[1]),
                 4 | 5 => (c[0], 1.0 - c[1]),

@@ -131,7 +131,7 @@ impl Server {
                     self.world.projectiles.push(proj);
                     events.push(SimEvent::BoltCast);
                 }
-                MobEvent::Bred(_) => events.push(SimEvent::Bred),
+                MobEvent::Bred => events.push(SimEvent::Bred),
             }
         }
         for (who, dmg) in self.world.tick_projectiles(players, dt) {

@@ -233,10 +233,10 @@ impl ScriptHost {
     pub fn load_kv(&self, world_dir: &Path) {
         let mut kv = self.kv.borrow_mut();
         kv.clear();
-        if let Ok(text) = std::fs::read_to_string(world_dir.join("modstore.toml")) {
-            if let Ok(parsed) = toml::from_str::<HashMap<String, HashMap<String, String>>>(&text) {
-                *kv = parsed;
-            }
+        if let Ok(text) = std::fs::read_to_string(world_dir.join("modstore.toml"))
+            && let Ok(parsed) = toml::from_str::<HashMap<String, HashMap<String, String>>>(&text)
+        {
+            *kv = parsed;
         }
     }
 

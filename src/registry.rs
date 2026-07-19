@@ -1773,7 +1773,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         });
     }
 
-    reg.mods.extend(failed.drain(..));
+    reg.mods.append(&mut failed);
     reg
 }
 

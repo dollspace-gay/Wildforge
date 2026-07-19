@@ -546,19 +546,19 @@ impl Generator {
                 };
                 // Wild food plants roll independently of trees (~1/70 cols).
                 let food_roll = hash2(self.seed ^ 0x5eed, wx, wz);
-                if food_roll % 70 == 0 && biome != Biome::Desert {
+                if food_roll.is_multiple_of(70) && biome != Biome::Desert {
                     let h2 = self.height_hint(heights, lx, lz);
                     let plant = match biome {
                         Biome::Plains => self.wild_wheat,
                         Biome::Forest => {
-                            if food_roll % 2 == 0 {
+                            if food_roll.is_multiple_of(2) {
                                 self.wild_carrot
                             } else {
                                 self.berry_bush
                             }
                         }
                         Biome::Taiga => {
-                            if food_roll % 2 == 0 {
+                            if food_roll.is_multiple_of(2) {
                                 self.wild_potato
                             } else {
                                 self.mushroom
@@ -577,7 +577,7 @@ impl Generator {
                         continue;
                     }
                 }
-                if density == 0 || hash2(self.seed, wx, wz) % density != 0 {
+                if density == 0 || !hash2(self.seed, wx, wz).is_multiple_of(density) {
                     continue;
                 }
                 let h = heights[lx][lz];

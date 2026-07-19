@@ -30,7 +30,7 @@ pub enum MobEvent {
     /// A caster fired: projectile spawn.
     Cast(Projectile),
     /// A wildlife pair bred at this position.
-    Bred(Vec3),
+    Bred,
 }
 
 /// A bolt in flight: warden thorn/ember/frost, or a player's arrow.
@@ -310,29 +310,29 @@ impl Mob {
 
         // Skittish species bolt when anyone closes in — unless recently
         // fed (feeding is taming-lite).
-        if let Some((_, near)) = nearest {
-            if def.flee_range > 0.0
-                && !def.hostile
-                && self.calm <= 0.0
-                && self.state != MobState::Flee
-            {
-                let mut d = near.pos - self.pos;
-                d.y = 0.0;
-                if d.length_squared() < def.flee_range * def.flee_range {
-                    self.state = MobState::Flee;
-                    self.state_timer = 4.0;
-                    self.target = near.pos;
-                }
+        if let Some((_, near)) = nearest
+            && def.flee_range > 0.0
+            && !def.hostile
+            && self.calm <= 0.0
+            && self.state != MobState::Flee
+        {
+            let mut d = near.pos - self.pos;
+            d.y = 0.0;
+            if d.length_squared() < def.flee_range * def.flee_range {
+                self.state = MobState::Flee;
+                self.state_timer = 4.0;
+                self.target = near.pos;
             }
         }
         // Wardens take notice (the quiet charm shortens their attention).
-        if let Some((_, p)) = prey {
-            if def.hostile && self.state != MobState::Hunt {
-                let range = (def.aggro_range + p.aggro_mod).max(2.0);
-                if (p.pos - self.pos).length_squared() < range * range {
-                    self.state = MobState::Hunt;
-                    self.lose_aggro = 0.0;
-                }
+        if let Some((_, p)) = prey
+            && def.hostile
+            && self.state != MobState::Hunt
+        {
+            let range = (def.aggro_range + p.aggro_mod).max(2.0);
+            if (p.pos - self.pos).length_squared() < range * range {
+                self.state = MobState::Hunt;
+                self.lose_aggro = 0.0;
             }
         }
 
@@ -609,6 +609,7 @@ impl Mob {
         let flash = 1.0 + self.hurt_flash * 2.4;
 
         // A box named "leg" mirrors into 4; everything else draws once.
+        #[allow(clippy::type_complexity)] // (min, size, mirrored, swing amp, tex override)
         let mut boxes: Vec<([f32; 3], [f32; 3], bool, f32, Option<u16>)> = Vec::new();
         for b in &def.model {
             let is_head = b.name.starts_with("head");

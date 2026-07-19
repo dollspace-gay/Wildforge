@@ -57,6 +57,8 @@ pub struct HostSession {
     pub guests: HashMap<u32, Guest>,
     pub content_hash: u64,
     pub world_name: String,
+    /// Names kicked this session: refused if they reconnect.
+    banned: HashSet<String>,
     snapshot_timer: f32,
     state_timer: f32,
     container_timer: f32,
@@ -77,14 +79,11 @@ impl HostSession {
             guests: HashMap::new(),
             content_hash: net::content_hash(std::path::Path::new("mods")),
             world_name,
+            banned: HashSet::new(),
             snapshot_timer: 0.0,
             state_timer: 0.0,
             container_timer: 0.0,
         })
-    }
-
-    pub fn player_count(&self) -> usize {
-        self.guests.len() + 1
     }
 
     /// PlayerCtx list for the simulation: host (when windowed) + guests.
@@ -305,6 +304,11 @@ impl HostSession {
         content_hash: u64,
         fx: &mut Vec<HostFx>,
     ) {
+        if self.banned.contains(&name) {
+            self.net.send(id, &S2C::Refused("kicked by host".into()));
+            self.net.kick(id);
+            return;
+        }
         let reg = &server.world.reg;
         if content_hash != self.content_hash {
             // Stream the mods dir so the guest can match us exactly.
@@ -348,6 +352,16 @@ impl HostSession {
             },
         );
         fx.push(HostFx::Joined(name));
+    }
+
+    /// Kick a guest and refuse them for the rest of the session.
+    pub fn kick_guest(&mut self, id: u32) -> Option<String> {
+        let g = self.guests.remove(&id)?;
+        self.banned.insert(g.name.clone());
+        self.net.send(id, &S2C::Refused("kicked by host".into()));
+        self.net.broadcast(&S2C::Left { id });
+        self.net.kick(id);
+        Some(g.name)
     }
 
     fn on_msg(&mut self, server: &mut Server, id: u32, msg: C2S, fx: &mut Vec<HostFx>) {
@@ -408,14 +422,14 @@ impl HostSession {
                 // race deaths/spawns and strike the wrong creature.
                 let dmg = dmg.clamp(0.0, 16.0);
                 let gpos = guest.pos;
-                if let Some(m) = server.world.mobs.iter_mut().find(|m| m.id == mob_id) {
-                    if (m.pos - gpos).length() <= REACH {
-                        let def = server.world.reg.animals[m.species].clone();
-                        m.hurt(&def, dmg, from);
-                        m.last_hit_by = id;
-                        if !def.hostile {
-                            server.world.add_ire(2.0);
-                        }
+                if let Some(m) = server.world.mobs.iter_mut().find(|m| m.id == mob_id)
+                    && (m.pos - gpos).length() <= REACH
+                {
+                    let def = server.world.reg.animals[m.species].clone();
+                    m.hurt(&def, dmg, from);
+                    m.last_hit_by = id;
+                    if !def.hostile {
+                        server.world.add_ire(2.0);
                     }
                 }
             }
@@ -494,13 +508,13 @@ impl HostSession {
                         1 => BlockEntity::Furnace(Default::default()),
                         _ => BlockEntity::Offering(Default::default()),
                     });
-                if let BlockEntity::Chest(c) = entry {
-                    if c.wild_owned {
-                        c.wild_owned = false;
-                        server.world.add_ire(1.0);
-                        self.net
-                            .send(id, &S2C::Toast("The wild keeps its trophies.".into()));
-                    }
+                if let BlockEntity::Chest(c) = entry
+                    && c.wild_owned
+                {
+                    c.wild_owned = false;
+                    server.world.add_ire(1.0);
+                    self.net
+                        .send(id, &S2C::Toast("The wild keeps its trophies.".into()));
                 }
                 if let Some(g) = self.guests.get_mut(&id) {
                     g.container = Some((x, y, z));

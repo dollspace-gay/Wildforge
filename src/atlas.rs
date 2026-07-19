@@ -839,7 +839,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         let boards = 4;
         let bh = tp / boards;
         let b = py / bh;
-        let seam_row = py % bh == 0 || py % bh == bh - 1;
+        let seam_row = py.is_multiple_of(bh) || py % bh == bh - 1;
         let tone = 0.9 + h01(b as i32, 0, salt) * 0.18;
         let joint_u = h01(b as i32, 1, salt ^ 0x55) * 0.8 + 0.1;
         let at_joint = (u - joint_u).abs() < 0.5 / tp as f32 * 2.0;
@@ -864,7 +864,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         let boards = 4;
         let bh = tp / boards;
         let b = py / bh;
-        let seam = py % bh == 0 || py % bh == bh - 1;
+        let seam = py.is_multiple_of(bh) || py % bh == bh - 1;
         let tone = 0.9 + h01(b as i32, 0, salt) * 0.18;
         // End-of-board joints staggered per row.
         let joint_u = h01(b as i32, 1, salt ^ 0x55) * 0.8 + 0.1;
@@ -965,7 +965,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         // cactus side: vertical ribs with pale spines.
         let rib = ((u * std::f32::consts::TAU * 4.0).sin() * 0.5 + 0.5) * 0.3;
         let c = mix3([44.0, 96.0, 36.0], [88.0, 148.0, 62.0], 0.4 + rib);
-        let spine = hash(px as i32, py as i32, 55) % 37 == 0;
+        let spine = hash(px as i32, py as i32, 55).is_multiple_of(37);
         if spine {
             rgba([220.0, 228.0, 190.0], 1.0, 255)
         } else {
@@ -1037,7 +1037,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         tile(tx, ty, &mut |px, py, u, v| {
             if flecks {
                 // Birch: pale bark with short dark horizontal flecks.
-                let dash = hash(px as i32 / 5, py as i32, 60) % 11 == 0 && px % 5 < 3;
+                let dash = hash(px as i32 / 5, py as i32, 60).is_multiple_of(11) && px % 5 < 3;
                 if dash {
                     return rgba([38.0, 34.0, 30.0], 1.0, 255);
                 }
@@ -1089,7 +1089,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         tile(tx2, ty2, &mut |px, py, u, v| {
             let t = fbm(u, v, 6, 69);
             let mut c = mix3(wd.leaf_dark, wd.leaf_light, t);
-            let pocket = h01(px as i32, py as i32, 70 + wd.slot as u32);
+            let pocket = h01(px as i32, py as i32, 70 + wd.slot);
             if pocket > 0.93 {
                 c = mix3(
                     c,
@@ -1168,6 +1168,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
     // Item icons row 4: raw lumps, ingots, blend, charcoal.
+    #[allow(clippy::type_complexity)]
     let lump =
         |slot: u32,
          color: [f32; 3],
@@ -1246,7 +1247,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         |tx: u32, ty: u32, f: &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4]| tile(tx, ty, f);
     // Farmland: dark tilled rows.
     tf(13, 4, &mut |px, py, u, v| {
-        let row = ((v * 8.0) as u32) % 2 == 0;
+        let row = ((v * 8.0) as u32).is_multiple_of(2);
         let t = fbm(u, v, 5, 120);
         let c = mix3([78.0, 54.0, 36.0], [102.0, 72.0, 48.0], t);
         rgba(
@@ -1256,6 +1257,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         )
     });
     // Plant sprites: stems with leaves/heads, transparent bg.
+    #[allow(clippy::type_complexity)]
     let plant =
         |slot: u32,
          stem: [f32; 3],
@@ -1297,7 +1299,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         let crown = v > 0.88 && ((u - 0.3).abs() < 0.05 || (u - 0.7).abs() < 0.05);
         if crown {
             rgba([225.0, 120.0, 40.0], 1.0, 255)
-        } else if fan && hash(px as i32, py as i32, 170) % 4 != 0 {
+        } else if fan && !hash(px as i32, py as i32, 170).is_multiple_of(4) {
             rgba(
                 [70.0, 150.0, 55.0],
                 0.8 + h01(px as i32, py as i32, 171) * 0.4,
@@ -1312,7 +1314,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         let dx = u - 0.5;
         let dy = v - 0.75;
         if dx * dx + dy * dy * 2.2 < 0.09 {
-            if hash(px as i32, py as i32, 172) % 17 == 0 {
+            if hash(px as i32, py as i32, 172).is_multiple_of(17) {
                 return rgba([235.0, 235.0, 220.0], 1.0, 255);
             }
             let t = fbm(u, v, 6, 173);
@@ -1327,7 +1329,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             let dx = u - 0.5;
             let dy = v - 0.62;
             if dx * dx + dy * dy < 0.14 {
-                if fruited && hash(px as i32, py as i32, 140) % 13 == 0 {
+                if fruited && hash(px as i32, py as i32, 140).is_multiple_of(13) {
                     return rgba([210.0, 40.0, 60.0], 1.0, 255);
                 }
                 let t = fbm(u, v, 6, 141);
@@ -1340,7 +1342,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     // Mushroom sprite.
     tf(4, 5, &mut |px, py, u, v| {
         let cap = (u - 0.5).abs() < 0.28 && v > 0.35 && v < 0.62;
-        let stem = (u - 0.5).abs() < 0.08 && v >= 0.62 && v < 0.95;
+        let stem = (u - 0.5).abs() < 0.08 && (0.62..0.95).contains(&v);
         if cap {
             rgba(
                 [170.0, 90.0, 60.0],
@@ -1367,7 +1369,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     tf(14, 5, &mut |px, py, u, v| {
         let dx = u - 0.5;
         let dy = v - 0.5;
-        if dx * dx + dy * dy < 0.11 && hash(px as i32 / 2, py as i32 / 2, 180) % 3 != 0 {
+        if dx * dx + dy * dy < 0.11 && !hash(px as i32 / 2, py as i32 / 2, 180).is_multiple_of(3) {
             rgba(
                 [28.0, 62.0, 22.0],
                 0.8 + h01(px as i32, py as i32, 181) * 0.5,
@@ -1652,7 +1654,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         tf(slot % 16, slot / 16, &mut |px, py, u, v| {
             let t = fbm(u, v * 3.0, 4, 580);
             let mut c = mix3([142.0, 100.0, 58.0], [168.0, 122.0, 72.0], t);
-            let edge = u < 0.06 || u > 0.94 || v < 0.06 || v > 0.94;
+            let edge = !(0.06..=0.94).contains(&u) || !(0.06..=0.94).contains(&v);
             if edge {
                 c = [92.0, 64.0, 38.0];
             }
@@ -1855,6 +1857,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
 
     // ---- bows, arrows, armor (rows 9-10) ----
     // Bows: a curved limb along the left, string down the right.
+    #[allow(clippy::type_complexity)]
     let bow_art =
         |slot: u32,
          limb: [f32; 3],
@@ -1882,7 +1885,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         let d = (u - (1.0 - v)).abs();
         if d < 0.06 && u > 0.15 && u < 0.85 {
             rgba([150.0, 110.0, 62.0], 1.0, 255)
-        } else if d < 0.12 && u >= 0.78 && u < 0.95 {
+        } else if d < 0.12 && (0.78..0.95).contains(&u) {
             rgba([140.0, 140.0, 140.0], 1.0, 255) // stone tip
         } else if d < 0.14 && u > 0.08 && u <= 0.22 {
             rgba([235.0, 235.0, 238.0], 1.0, 255) // fletching
@@ -1891,6 +1894,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
     // Armor silhouettes, leather then bronze.
+    #[allow(clippy::type_complexity)]
     let armor_art =
         |base: u32,
          c: [f32; 3],
@@ -1923,8 +1927,8 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             // leggings: waist + two legs
             img((base + 2) % 16, (base + 2) / 16, &mut |px, py, u, v| {
                 let waist = (u - 0.5).abs() < 0.22 && v > 0.18 && v < 0.40;
-                let leg =
-                    ((u - 0.36).abs() < 0.09 || (u - 0.64).abs() < 0.09) && v >= 0.40 && v < 0.88;
+                let leg = ((u - 0.36).abs() < 0.09 || (u - 0.64).abs() < 0.09)
+                    && (0.40..0.88).contains(&v);
                 if waist || leg {
                     rgba(c, 0.85 + h01(px as i32, py as i32, 740 + base) * 0.25, 255)
                 } else {
@@ -1946,6 +1950,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     armor_art(157, [196.0, 148.0, 62.0], [90.0, 66.0, 30.0], &mut tf);
 
     // ---- stewardship: saplings, offering stone, bedroll (row 10) ----
+    #[allow(clippy::type_complexity)]
     let sapling_art =
         |slot: u32,
          leaf: [f32; 3],
@@ -1955,7 +1960,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
                 let dx = u - 0.5;
                 let dy = v - 0.42;
                 let crown = dx * dx + dy * dy * 1.3 < 0.05;
-                if crown && hash(px as i32, py as i32, 760 + slot) % 5 != 0 {
+                if crown && !hash(px as i32, py as i32, 760 + slot).is_multiple_of(5) {
                     rgba(leaf, 0.8 + h01(px as i32, py as i32, 761 + slot) * 0.4, 255)
                 } else if stem {
                     rgba([110.0, 78.0, 46.0], 1.0, 255)
@@ -2033,7 +2038,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         tf(slot % 16, slot / 16, &mut |px, py, u, v| {
             let inside = u > 0.12 && u < 0.88 && v > 0.36 && v < 0.68;
             if inside {
-                let edge = u < 0.2 || u > 0.8 || v < 0.44 || v > 0.6;
+                let edge = !(0.2..=0.8).contains(&u) || !(0.44..=0.6).contains(&v);
                 let f = if edge {
                     0.72
                 } else {
@@ -2106,7 +2111,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     tf(1, 12, &mut |_px, _py, u, v| {
         let d1 = (u - v).abs();
         let d2 = (u + v - 1.0).abs();
-        if (d1 < 0.09 && u > 0.2 && u < 0.8) || (d2 < 0.09 && u > 0.2 && u < 0.8) {
+        if (d1 < 0.09 || d2 < 0.09) && u > 0.2 && u < 0.8 {
             rgba([200.0, 204.0, 212.0], 1.0, 255)
         } else if (u - 0.5).abs() < 0.06 && (v - 0.5).abs() < 0.06 {
             rgba([90.0, 70.0, 50.0], 1.0, 255)
@@ -2228,7 +2233,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     }
 
     // Player skin + face (remote players in multiplayer).
-    tf(11, 12, &mut |px, py, u, v| {
+    tf(11, 12, &mut |px, py, _u, v| {
         // Tunic over trousers.
         let c = if v < 0.55 {
             [70.0, 110.0, 140.0]
@@ -2255,7 +2260,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     // (15,0) unknown/missing texture: magenta checkerboard.
     tile(15, 0, &mut |px, py, _u, _v| {
         let k = (tp / 8).max(1);
-        if ((px / k) + (py / k)) % 2 == 0 {
+        if ((px / k) + (py / k)).is_multiple_of(2) {
             [230, 0, 230, 255]
         } else {
             [20, 0, 20, 255]
@@ -2276,7 +2281,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
                 let d = (ang - base - wob).rem_euclid(std::f32::consts::TAU);
                 let d = d.min(std::f32::consts::TAU - d);
                 let max_r = 0.16 + stage as f32 * 0.12;
-                if d < 0.16 && r < max_r + h01(px as i32, py as i32, 202) as f32 * 0.12 {
+                if d < 0.16 && r < max_r + h01(px as i32, py as i32, 202) * 0.12 {
                     return [20, 16, 12, 200];
                 }
             }

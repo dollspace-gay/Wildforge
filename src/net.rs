@@ -332,10 +332,6 @@ impl Host {
         }
     }
 
-    pub fn peer_count(&self) -> usize {
-        self.peers.len()
-    }
-
     pub fn kick(&mut self, id: u32) {
         if let Some(p) = self.peers.remove(&id) {
             p.conn.close(0u32.into(), b"kicked");
@@ -383,7 +379,7 @@ async fn accept_loop(
                 return;
             };
             if protocol != PROTOCOL {
-                let _ = conn.close(1u32.into(), b"protocol mismatch");
+                conn.close(1u32.into(), b"protocol mismatch");
                 return;
             }
             let (tx, rx) = unbounded_channel::<Vec<u8>>();
@@ -687,10 +683,10 @@ pub fn collect_mod_files(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
             let p = e.path();
             if p.is_dir() {
                 walk(root, &p, out);
-            } else if p.extension().is_none_or(|e| e != "rhai") {
-                if let (Ok(rel), Ok(bytes)) = (p.strip_prefix(root), std::fs::read(&p)) {
-                    out.push((rel.to_string_lossy().replace('\\', "/"), bytes));
-                }
+            } else if p.extension().is_none_or(|e| e != "rhai")
+                && let (Ok(rel), Ok(bytes)) = (p.strip_prefix(root), std::fs::read(&p))
+            {
+                out.push((rel.to_string_lossy().replace('\\', "/"), bytes));
             }
         }
     }

@@ -114,12 +114,14 @@ impl Inventory {
                 if count == 0 {
                     break;
                 }
-                if let Some(s) = slot {
-                    if s.item == stack.item && reg.item(s.item).tool.is_none() && s.count < max {
-                        let take = count.min(max - s.count);
-                        s.count += take;
-                        count -= take;
-                    }
+                if let Some(s) = slot
+                    && s.item == stack.item
+                    && reg.item(s.item).tool.is_none()
+                    && s.count < max
+                {
+                    let take = count.min(max - s.count);
+                    s.count += take;
+                    count -= take;
                 }
             }
         }

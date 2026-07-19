@@ -65,9 +65,9 @@ Unreliable datagrams: Move/Players/Mobs/Projectiles (latest-wins).
   `Server::advance`, applies them through the same code paths local
   play uses (server-authoritative by construction), and broadcasts
   outbound deltas after.
-- Validation: reach ≤ 6 blocks, edit rate ≤ 10/s, tier gates checked
-  server-side, movement speed sanity (teleport clamp). Whitelist +
-  host kick from the pause menu.
+- Validation: reach ≤ 7 blocks, edit rate ≤ 10/s, checked server-side.
+  Host kick from the pause menu; a kicked name is refused for the rest
+  of the session.
 - Content sync: `content_hash` = hash of the mods dir; on mismatch the
   host streams every file under `mods/` (data + textures + scripts stay
   host-side — scripts are never sent). Guest caches under

@@ -14,6 +14,9 @@ use crate::registry::{AIR, BlockId, Registry};
 use crate::worldgen::Generator;
 
 /// Per-block persistent state for interactive machines.
+// Chest dwarfs the others; entity counts are tiny, so boxing would
+// only add indirection.
+#[allow(clippy::large_enum_variant)]
 pub enum BlockEntity {
     Furnace(FurnaceState),
     Chest(ChestState),
@@ -234,9 +237,10 @@ impl World {
         .contains(&d.name.as_str())
         {
             2.0
-        } else if d.name.ends_with("_sapling") {
-            1.0
-        } else if d.name.contains("raw_") || d.name.contains("cooked_") {
+        } else if d.name.ends_with("_sapling")
+            || d.name.contains("raw_")
+            || d.name.contains("cooked_")
+        {
             1.0
         } else if let Some(f) = &d.food {
             f.hunger * 0.25
@@ -295,7 +299,7 @@ impl World {
                 return false;
             }
         }
-        let mut leaf_at = |w: &mut World, lx: i32, ly: i32, lz: i32| {
+        let leaf_at = |w: &mut World, lx: i32, ly: i32, lz: i32| {
             if ly > 0 && ly < CHUNK_Y as i32 && w.get_block(lx, ly, lz) == AIR {
                 w.set_block(lx, ly, lz, leaf);
             }
@@ -463,11 +467,11 @@ impl World {
         let (cx, cz) = (pos.x * CHUNK_X as i32, pos.z * CHUNK_Z as i32);
         let biome = self.generator.biome(cx + 8, cz + 8).name().to_lowercase();
         for (si, st) in reg.structures.iter().enumerate() {
-            if !st.biomes.iter().any(|b| *b == biome) {
+            if !st.biomes.contains(&biome) {
                 continue;
             }
             let h = self.mob_hash(pos.x, pos.z, 9000 + si as u32);
-            if h % st.rarity != 0 {
+            if !h.is_multiple_of(st.rarity) {
                 continue;
             }
             let w = st.layers[0].first().map(|r| r.len()).unwrap_or(0) as i32;
@@ -544,14 +548,14 @@ impl World {
             }
         }
         // Buried ruins leave a hint on the surface: a chimney stub.
-        if st.buried.is_some() {
-            if let Some(cob) = reg.block_id("base:cobblestone") {
-                let hx = x0 + 1;
-                let hz = z0 + 1;
-                let sy = self.surface_height(hx, hz);
-                self.set_block(hx, sy + 1, hz, cob);
-                self.set_block(hx, sy + 2, hz, cob);
-            }
+        if st.buried.is_some()
+            && let Some(cob) = reg.block_id("base:cobblestone")
+        {
+            let hx = x0 + 1;
+            let hz = z0 + 1;
+            let sy = self.surface_height(hx, hz);
+            self.set_block(hx, sy + 1, hz, cob);
+            self.set_block(hx, sy + 2, hz, cob);
         }
     }
 
@@ -622,11 +626,11 @@ impl World {
         let biome = self.generator.biome(cx + 8, cz + 8).name().to_lowercase();
         for (si, def) in reg.animals.iter().enumerate() {
             // Wildlife only — wardens come and go with the spawner.
-            if def.hostile || !def.biomes.iter().any(|b| *b == biome) {
+            if def.hostile || !def.biomes.contains(&biome) {
                 continue;
             }
             let roll = self.mob_hash(pos.x, pos.z, 7000 + si as u32);
-            if roll % def.rarity != 0 {
+            if !roll.is_multiple_of(def.rarity) {
                 continue;
             }
             let span = def.group[1].saturating_sub(def.group[0]) + 1;
@@ -756,7 +760,7 @@ impl World {
                 mobs.push(baby);
                 // Life returned to the world.
                 self.ire = (self.ire - 1.0).max(0.0);
-                events.push(MobEvent::Bred(mid));
+                events.push(MobEvent::Bred);
             }
         }
         self.mobs = mobs;
@@ -787,7 +791,7 @@ impl World {
                         .animals
                         .iter()
                         .enumerate()
-                        .filter(|(_, d)| !d.hostile && d.biomes.iter().any(|b| *b == biome))
+                        .filter(|(_, d)| !d.hostile && d.biomes.contains(&biome))
                         .map(|(i, _)| i)
                         .collect();
                     if let Some(&si) = eligible.get(((r >> 20) as usize) % eligible.len().max(1)) {
@@ -846,10 +850,10 @@ impl World {
         self.projectiles = projectiles;
         let reg = self.reg.clone();
         for (i, d, from) in mob_hits {
-            if let Some(m) = self.mobs.get_mut(i) {
-                if let Some(def) = reg.animals.get(m.species) {
-                    m.hurt(def, d, from);
-                }
+            if let Some(m) = self.mobs.get_mut(i)
+                && let Some(def) = reg.animals.get(m.species)
+            {
+                m.hurt(def, d, from);
             }
         }
         for (pos, it) in drops {
@@ -887,7 +891,7 @@ impl World {
         if near_hostiles >= budget || self.mobs.len() >= MOB_CAP {
             return;
         }
-        let mut roll = |rng: &mut u32| {
+        let roll = |rng: &mut u32| {
             *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
             *rng >> 8
         };
@@ -922,7 +926,7 @@ impl World {
                         let a1 = self.get_block(x, y, z);
                         let a2 = self.get_block(x, y + 1, z);
                         (self.reg.is_solid(ground) && a1 == AIR && a2 == AIR).then_some((i, y))
-                    } else if d.biomes.iter().any(|b| *b == biome) && surface_y > SEA_LEVEL {
+                    } else if d.biomes.contains(&biome) && surface_y > SEA_LEVEL {
                         Some((i, surface_y + 1))
                     } else {
                         None
@@ -1015,19 +1019,19 @@ impl World {
             #[serde(default)]
             mob: Vec<MobT>,
         }
-        if let Ok(text) = fs::read_to_string(self.mobs_path()) {
-            if let Ok(f) = toml::from_str::<FileT>(&text) {
-                for t in f.mob {
-                    // Unknown species (mod removed) skip cleanly.
-                    let Some(si) = self.reg.animal_id(&t.species) else {
-                        continue;
-                    };
-                    let mut m = Mob::new(si, glam::Vec3::new(t.pos[0], t.pos[1], t.pos[2]), t.yaw);
-                    m.health = t.health.min(self.reg.animals[si].health);
-                    m.fed = t.fed;
-                    m.growth = t.growth.clamp(0.05, 1.0);
-                    self.mobs.push(m);
-                }
+        if let Ok(text) = fs::read_to_string(self.mobs_path())
+            && let Ok(f) = toml::from_str::<FileT>(&text)
+        {
+            for t in f.mob {
+                // Unknown species (mod removed) skip cleanly.
+                let Some(si) = self.reg.animal_id(&t.species) else {
+                    continue;
+                };
+                let mut m = Mob::new(si, glam::Vec3::new(t.pos[0], t.pos[1], t.pos[2]), t.yaw);
+                m.health = t.health.min(self.reg.animals[si].health);
+                m.fed = t.fed;
+                m.growth = t.growth.clamp(0.05, 1.0);
+                self.mobs.push(m);
             }
         }
         if let Ok(data) = fs::read(self.save_dir.join("aseeded")) {
@@ -1126,7 +1130,7 @@ impl World {
         }
     }
 
-    fn save_chunk(&self, pos: ChunkPos, chunk: &Chunk) -> std::io::Result<()> {
+    fn save_chunk(&self, pos: ChunkPos) -> std::io::Result<()> {
         let buf = self.chunk_rle(pos).unwrap_or_default();
         let mut f = fs::File::create(self.chunk_file(pos))?;
         f.write_all(&buf)
@@ -1143,7 +1147,7 @@ impl World {
         self.save_mobs();
         for (pos, chunk) in &self.chunks {
             if chunk.modified {
-                let _ = self.save_chunk(*pos, chunk);
+                let _ = self.save_chunk(*pos);
             }
         }
     }
@@ -1374,6 +1378,9 @@ impl World {
 
         // Block light: independent flood per color channel, packed into rgb.
         let mut lb = vec![[0u8; 3]; NX * NY * NZ];
+        // `ch` selects a lane of per-cell arrays and parameterizes seed();
+        // there is no slice to enumerate here.
+        #[allow(clippy::needless_range_loop)]
         for ch in 0..3 {
             let mut grid = vec![0u8; NX * NY * NZ];
             let mut q: VecDeque<(usize, usize, usize)> = VecDeque::new();
@@ -1587,19 +1594,19 @@ impl World {
 
             if f.burn_left <= 0.0 && can_smelt {
                 // Light more fuel (the forge feeds the wild's ire).
-                if let Some(fs) = f.fuel {
-                    if let Some((burn, speed)) = reg.fuel_value(fs.item) {
-                        f.burn_left = burn;
-                        f.burn_total = burn;
-                        f.burn_speed = speed;
-                        let left = fs.count - 1;
-                        f.fuel = if left > 0 {
-                            Some(ItemStack { count: left, ..fs })
-                        } else {
-                            None
-                        };
-                        self.ire = (self.ire + 0.1).min(100.0);
-                    }
+                if let Some(fs) = f.fuel
+                    && let Some((burn, speed)) = reg.fuel_value(fs.item)
+                {
+                    f.burn_left = burn;
+                    f.burn_total = burn;
+                    f.burn_speed = speed;
+                    let left = fs.count - 1;
+                    f.fuel = if left > 0 {
+                        Some(ItemStack { count: left, ..fs })
+                    } else {
+                        None
+                    };
+                    self.ire = (self.ire + 0.1).min(100.0);
                 }
             }
             if f.burn_left > 0.0 {
@@ -1792,14 +1799,14 @@ impl World {
                 ..Default::default()
             };
             for sl in ch.slot {
-                if sl.index < CHEST_SLOTS {
-                    if let Some(item) = self.reg.item_id(&sl.item) {
-                        state.slots[sl.index] = Some(ItemStack {
-                            item,
-                            count: sl.count,
-                            durability: sl.durability,
-                        });
-                    }
+                if sl.index < CHEST_SLOTS
+                    && let Some(item) = self.reg.item_id(&sl.item)
+                {
+                    state.slots[sl.index] = Some(ItemStack {
+                        item,
+                        count: sl.count,
+                        durability: sl.durability,
+                    });
                 }
             }
             self.block_entities
@@ -1808,14 +1815,14 @@ impl World {
         for of in parsed.offering {
             let mut state = OfferingState::default();
             for sl in of.slot {
-                if sl.index < 3 {
-                    if let Some(item) = self.reg.item_id(&sl.item) {
-                        state.slots[sl.index] = Some(ItemStack {
-                            item,
-                            count: sl.count,
-                            durability: sl.durability,
-                        });
-                    }
+                if sl.index < 3
+                    && let Some(item) = self.reg.item_id(&sl.item)
+                {
+                    state.slots[sl.index] = Some(ItemStack {
+                        item,
+                        count: sl.count,
+                        durability: sl.durability,
+                    });
                 }
             }
             self.block_entities.insert(
@@ -1864,10 +1871,10 @@ impl World {
         let mut best: Option<u8> = None;
         for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
             let n = self.get_block(x + dx, y, z + dz);
-            if let Some(l) = reg.water_level(n) {
-                if reg.is_solid(self.get_block(x + dx, y - 1, z + dz)) {
-                    best = Some(best.map_or(l, |b| b.min(l)));
-                }
+            if let Some(l) = reg.water_level(n)
+                && reg.is_solid(self.get_block(x + dx, y - 1, z + dz))
+            {
+                best = Some(best.map_or(l, |b| b.min(l)));
             }
         }
         match best {

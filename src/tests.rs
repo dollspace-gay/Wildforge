@@ -3252,7 +3252,7 @@ fn breeding_makes_babies_that_grow() {
     assert!(
         events
             .iter()
-            .any(|e| matches!(e, crate::mobs::MobEvent::Bred(_))),
+            .any(|e| matches!(e, crate::mobs::MobEvent::Bred)),
         "birth event"
     );
     assert_eq!(w.mobs.len(), before + 3, "two parents + one baby");
@@ -3295,10 +3295,7 @@ fn breeding_makes_babies_that_grow() {
         1.0 / 60.0,
         &mut rng,
     );
-    assert!(
-        !ev2.iter()
-            .any(|e| matches!(e, crate::mobs::MobEvent::Bred(_)))
-    );
+    assert!(!ev2.iter().any(|e| matches!(e, crate::mobs::MobEvent::Bred)));
     assert_eq!(w.mobs.len(), n_now);
 }
 
@@ -3718,6 +3715,188 @@ fn net_protocol_round_trips() {
     }
 }
 
+/// The whole content graph, audited: recipes well-formed, tables and
+/// palettes resolve, and every survival item is actually obtainable
+/// (dropped, harvested, looted, crafted, or smelted from things that
+/// are). Catches half-wired content before a player does.
+#[test]
+fn content_graph_is_complete_and_obtainable() {
+    use crate::registry::Ingredient;
+    use std::collections::HashSet;
+    let reg = base_reg();
+    for m in &reg.mods {
+        assert!(m.error.is_none(), "mod {} load error: {:?}", m.id, m.error);
+    }
+
+    // Structure of every recipe / table / template.
+    for r in &reg.recipes {
+        let out = &reg.item(r.output).name;
+        assert_eq!(r.pattern.len(), r.w * r.h, "recipe for {out} malformed");
+        assert!(
+            r.count > 0 && r.w <= 3 && r.h <= 3,
+            "recipe for {out} malformed"
+        );
+        assert!(
+            r.pattern.iter().any(|p| p.is_some()),
+            "recipe for {out} is empty"
+        );
+    }
+    for (name, entries) in &reg.loots {
+        assert!(!entries.is_empty(), "loot table {name} is empty");
+        for e in entries {
+            assert!(
+                e.weight > 0 && e.count.0 <= e.count.1,
+                "loot table {name} entry malformed"
+            );
+        }
+    }
+    for st in &reg.structures {
+        if let Some(l) = &st.loot {
+            assert!(
+                reg.loots.contains_key(l),
+                "structure {} wants missing loot table {l}",
+                st.name
+            );
+        }
+        for layer in &st.layers {
+            for row in layer {
+                for ch in row.chars() {
+                    assert!(
+                        matches!(ch, '.' | '~' | 'C') || st.palette.contains_key(&ch),
+                        "structure {} uses unmapped char '{ch}'",
+                        st.name
+                    );
+                }
+            }
+        }
+    }
+    for b in &reg.blocks {
+        if let Some((table, _)) = &b.brush {
+            assert!(
+                reg.loots.contains_key(table),
+                "{} brushes into missing table {table}",
+                b.name
+            );
+        }
+    }
+    let biomes = [
+        "forest",
+        "plains",
+        "desert",
+        "jungle",
+        "scrubland",
+        "taiga",
+        "arctic",
+        "mountains",
+    ];
+    for a in &reg.animals {
+        assert!(!a.model.is_empty(), "animal {} has no model", a.name);
+        assert!(a.health > 0.0, "animal {} has no health", a.name);
+        if !a.hostile {
+            assert!(
+                !a.biomes.is_empty() && a.biomes.iter().all(|b| biomes.contains(&b.as_str())),
+                "animal {} has invalid biomes {:?}",
+                a.name,
+                a.biomes
+            );
+        }
+    }
+
+    // Obtainability: seed with world sources, then close over crafting
+    // and smelting until nothing new appears.
+    let mut ok: HashSet<u16> = HashSet::new();
+    for b in &reg.blocks {
+        if b.hardness.is_some() {
+            if let Some((it, n)) = b.drops {
+                if n > 0 {
+                    ok.insert(it.0);
+                }
+            }
+            if let Some((it, _)) = b.bonus_drop {
+                ok.insert(it.0);
+            }
+        }
+        if let Some((it, _, _)) = b.harvest {
+            ok.insert(it.0);
+        }
+    }
+    for a in &reg.animals {
+        for (it, _, mx) in &a.drops {
+            if *mx > 0 {
+                ok.insert(it.0);
+            }
+        }
+    }
+    for entries in reg.loots.values() {
+        for e in entries {
+            ok.insert(e.item.0);
+        }
+    }
+    // Shears special-case: leaves come off whole (code path, not data).
+    if reg.items.iter().any(|i| i.shears) {
+        for b in &reg.blocks {
+            if b.name.contains("leaves") && b.hardness.is_some() {
+                if let Some(it) = reg.item_id(&b.name) {
+                    ok.insert(it.0);
+                }
+            }
+        }
+    }
+    let ing_ok = |ing: &Ingredient, ok: &HashSet<u16>| match ing {
+        Ingredient::One(i) => ok.contains(&i.0),
+        Ingredient::Any(l) => l.iter().any(|i| ok.contains(&i.0)),
+    };
+    loop {
+        let mut grew = false;
+        for r in &reg.recipes {
+            if !ok.contains(&r.output.0) && r.pattern.iter().flatten().all(|i| ing_ok(i, &ok)) {
+                ok.insert(r.output.0);
+                grew = true;
+            }
+        }
+        for s in &reg.smelts {
+            if !ok.contains(&s.output.0) && ing_ok(&s.input, &ok) {
+                ok.insert(s.output.0);
+                grew = true;
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    // World-only block items: the block deliberately drops a different
+    // item or nothing (grass, ice, ores, ruin masonry, bedrock) - the
+    // silk-touch category. Anything else unobtainable is a content bug.
+    let world_only = |name: &str| {
+        reg.block_id(name).is_some_and(|b| {
+            let d = reg.block(b);
+            let own = reg.item_id(name);
+            d.hardness.is_none() || d.drops.map(|(it, _)| Some(it)) != Some(own)
+        })
+    };
+    let missing: Vec<&str> = reg
+        .items
+        .iter()
+        .enumerate()
+        .filter(|(i, d)| !ok.contains(&(*i as u16)) && !world_only(&d.name))
+        .map(|(_, d)| d.name.as_str())
+        .collect();
+    assert!(missing.is_empty(), "unobtainable in survival: {missing:?}");
+
+    // The furnace can actually run, and husbandry foods exist.
+    assert!(
+        reg.fuels
+            .iter()
+            .any(|(f, burn, _)| *burn > 0.0 && ing_ok(f, &ok)),
+        "no obtainable fuel"
+    );
+    for a in &reg.animals {
+        if let Some(bf) = a.breed_food {
+            assert!(ok.contains(&bf.0), "breed food for {} unobtainable", a.name);
+        }
+    }
+}
+
 #[test]
 fn bedrock_floor_is_unbreakable_and_reseals_on_load() {
     let reg = base_reg();
@@ -3999,4 +4178,53 @@ fn loopback_join_stream_and_edit() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert!(chatted, "chat reached the host");
+
+    // A withdrawn sleep vote blocks the dawn.
+    sim.time_of_day = 0.75;
+    client.send(&C2S::SleepRequest);
+    client.send(&C2S::SleepCancel);
+    for _ in 0..30 {
+        sess.pump(&mut sim, Some((gpos, 0.0, true)), 0.06);
+        client.poll();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        (sim.time_of_day - 0.75).abs() < 0.02,
+        "host sleeping alone after a cancel must not dawn"
+    );
+
+    // Kick: the guest is dropped and the name is banned for the session.
+    let gid = *sess.guests.keys().next().expect("guest present");
+    assert!(sess.kick_guest(gid).is_some());
+    assert!(sess.guests.is_empty(), "kicked guest removed");
+    for _ in 0..100 {
+        sess.pump(&mut sim, None, 0.06);
+        client.poll();
+        if !client.is_connected() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(!client.is_connected(), "kicked guest disconnected");
+    // Rejoining under the banned name never yields a Welcome.
+    let mut client2 =
+        crate::net::Client::connect(addr, "tester".into(), sess.content_hash).expect("reconnect");
+    let mut turned_away = false;
+    for _ in 0..150 {
+        sess.pump(&mut sim, None, 0.06);
+        for msg in client2.poll() {
+            match msg {
+                S2C::Refused(_) => turned_away = true,
+                S2C::Welcome { .. } => panic!("banned name re-admitted"),
+                _ => {}
+            }
+        }
+        if turned_away || !client2.is_connected() {
+            turned_away = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(turned_away, "banned name turned away");
+    assert!(sess.guests.is_empty(), "banned name never becomes a guest");
 }

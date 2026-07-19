@@ -290,10 +290,10 @@ fn content_tree_stamp_of(roots: &[&std::path::Path]) -> u64 {
                 walk(&p, acc, count);
             } else if let Ok(md) = e.metadata() {
                 *count += 1;
-                if let Ok(t) = md.modified() {
-                    if let Ok(d) = t.duration_since(std::time::UNIX_EPOCH) {
-                        *acc = (*acc).max(d.as_secs() * 1000 + d.subsec_millis() as u64);
-                    }
+                if let Ok(t) = md.modified()
+                    && let Ok(d) = t.duration_since(std::time::UNIX_EPOCH)
+                {
+                    *acc = (*acc).max(d.as_secs() * 1000 + d.subsec_millis() as u64);
                 }
             }
         }
@@ -510,6 +510,10 @@ impl Game {
                 g.pending_delete = if g.worlds.is_empty() { None } else { Some(0) };
                 g.screen = Screen::ConfirmDelete;
             }
+            Ok("join") => {
+                g.discovery = net::Discovery::start().ok();
+                g.screen = Screen::Join;
+            }
             _ => {}
         }
         g
@@ -622,10 +626,10 @@ impl Game {
             }
             // Auto-equip a starter set so armor pips show in shots.
             for name in ["base:leather_helmet", "base:bronze_chestplate"] {
-                if let Some(item) = reg.item_id(name) {
-                    if let Some((slot, _)) = reg.item(item).armor {
-                        self.armor[slot as usize] = Some(ItemStack::new(&reg, item, 1));
-                    }
+                if let Some(item) = reg.item_id(name)
+                    && let Some((slot, _)) = reg.item(item).armor
+                {
+                    self.armor[slot as usize] = Some(ItemStack::new(&reg, item, 1));
                 }
             }
         }
@@ -676,10 +680,10 @@ impl Game {
         }
         // Dev: pick the hotbar slot screenshots hold up (after the
         // profile load so it isn't overwritten).
-        if let Ok(s) = std::env::var("WILDFORGE_SEL") {
-            if let Ok(i) = s.parse::<usize>() {
-                self.hotbar_sel = i.min(HOTBAR_SLOTS - 1);
-            }
+        if let Ok(s) = std::env::var("WILDFORGE_SEL")
+            && let Ok(i) = s.parse::<usize>()
+        {
+            self.hotbar_sel = i.min(HOTBAR_SLOTS - 1);
         }
         self.server.sync_tier();
         self.scripts.load_kv(&PathBuf::from("saves").join(name));
@@ -706,28 +710,27 @@ impl Game {
         }
         self.set_screen(Screen::Playing);
         // Dev: force time of day (0..1; 0.75 = midnight).
-        if let Ok(t) = std::env::var("WILDFORGE_TIME") {
-            if let Ok(t) = t.parse::<f32>() {
-                self.server.time_of_day = t.fract();
-            }
+        if let Ok(t) = std::env::var("WILDFORGE_TIME")
+            && let Ok(t) = t.parse::<f32>()
+        {
+            self.server.time_of_day = t.fract();
         }
         // Dev: force camera look ("yaw,pitch" in radians) for framed captures.
-        if let Ok(l) = std::env::var("WILDFORGE_LOOK") {
-            if let Some((y, p)) = l.split_once(',') {
-                if let (Ok(y), Ok(p)) = (y.trim().parse::<f32>(), p.trim().parse::<f32>()) {
-                    self.camera.yaw = y;
-                    self.camera.pitch = p;
-                }
-            }
+        if let Ok(l) = std::env::var("WILDFORGE_LOOK")
+            && let Some((y, p)) = l.split_once(',')
+            && let (Ok(y), Ok(p)) = (y.trim().parse::<f32>(), p.trim().parse::<f32>())
+        {
+            self.camera.yaw = y;
+            self.camera.pitch = p;
         }
         // Dev: a ring of torches near spawn (lighting verification).
-        if std::env::var("WILDFORGE_DEMO_TORCH").is_ok() {
-            if let Some(torch) = self.reg.block_id("base:torch") {
-                for (dx, dz) in [(3, 0), (-3, 2), (0, 4), (2, -4)] {
-                    let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
-                    let y = self.server.world.surface_height(x, z);
-                    self.server.world.set_block(x, y + 1, z, torch);
-                }
+        if std::env::var("WILDFORGE_DEMO_TORCH").is_ok()
+            && let Some(torch) = self.reg.block_id("base:torch")
+        {
+            for (dx, dz) in [(3, 0), (-3, 2), (0, 4), (2, -4)] {
+                let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
+                let y = self.server.world.surface_height(x, z);
+                self.server.world.set_block(x, y + 1, z, torch);
             }
         }
         // Dev: two pillars flanked by a blue and a red lamp — colored-shadow
@@ -763,15 +766,15 @@ impl Game {
             }
         }
         // Dev: a flat water pool ahead of spawn (specular-glint verification).
-        if std::env::var("WILDFORGE_DEMO_POOL").is_ok() {
-            if let Some(water) = self.reg.block_id("base:water") {
-                let cx = spawn.x as i32;
-                let cz = spawn.z as i32 + 10;
-                let y = self.server.world.surface_height(cx, cz);
-                for dx in -8..=8 {
-                    for dz in -8..=8 {
-                        self.server.world.set_block(cx + dx, y, cz + dz, water);
-                    }
+        if std::env::var("WILDFORGE_DEMO_POOL").is_ok()
+            && let Some(water) = self.reg.block_id("base:water")
+        {
+            let cx = spawn.x as i32;
+            let cz = spawn.z as i32 + 10;
+            let y = self.server.world.surface_height(cx, cz);
+            for dx in -8..=8 {
+                for dz in -8..=8 {
+                    self.server.world.set_block(cx + dx, y, cz + dz, water);
                 }
             }
         }
@@ -789,23 +792,23 @@ impl Game {
             place(&mut self.server.world, "gems:ruby_block", 2, 5);
         }
         // Dev: a few tall pillars near spawn (shadow-casting verification).
-        if std::env::var("WILDFORGE_DEMO_PILLARS").is_ok() {
-            if let Some(stone) = self.reg.block_id("base:cobblestone") {
-                for (dx, dz, h) in [(4, 2, 6), (7, -3, 8), (-2, 6, 5), (10, 4, 7)] {
-                    let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
-                    let base = self.server.world.surface_height(x, z);
-                    for i in 1..=h {
-                        self.server.world.set_block(x, base + i, z, stone);
-                    }
+        if std::env::var("WILDFORGE_DEMO_PILLARS").is_ok()
+            && let Some(stone) = self.reg.block_id("base:cobblestone")
+        {
+            for (dx, dz, h) in [(4, 2, 6), (7, -3, 8), (-2, 6, 5), (10, 4, 7)] {
+                let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
+                let base = self.server.world.surface_height(x, z);
+                for i in 1..=h {
+                    self.server.world.set_block(x, base + i, z, stone);
                 }
             }
         }
         // Dev: WILDFORGE_IRE=N forces the wild's ire (spawn testing).
-        if let Ok(v) = std::env::var("WILDFORGE_IRE") {
-            if let Ok(v) = v.parse::<f32>() {
-                self.server.world.ire = v.clamp(0.0, 100.0);
-                self.server.sync_tier();
-            }
+        if let Ok(v) = std::env::var("WILDFORGE_IRE")
+            && let Ok(v) = v.parse::<f32>()
+        {
+            self.server.world.ire = v.clamp(0.0, 100.0);
+            self.server.sync_tier();
         }
         // Dev: a row of wardens near spawn (rendering/combat verification).
         if std::env::var("WILDFORGE_DEMO_WARDENS").is_ok() {
@@ -1041,25 +1044,25 @@ impl Game {
             self.spawn_point = Vec3::new(sp[0], sp[1], sp[2]);
         }
         for s in p.slot {
-            if s.index < TOTAL_SLOTS {
-                if let Some(item) = self.reg.item_id(&s.item) {
-                    self.inventory.slots[s.index] = Some(ItemStack {
-                        item,
-                        count: s.count,
-                        durability: s.durability,
-                    });
-                }
+            if s.index < TOTAL_SLOTS
+                && let Some(item) = self.reg.item_id(&s.item)
+            {
+                self.inventory.slots[s.index] = Some(ItemStack {
+                    item,
+                    count: s.count,
+                    durability: s.durability,
+                });
             }
         }
         for s in p.armor {
-            if s.index < 5 {
-                if let Some(item) = self.reg.item_id(&s.item) {
-                    self.armor[s.index] = Some(ItemStack {
-                        item,
-                        count: s.count,
-                        durability: s.durability,
-                    });
-                }
+            if s.index < 5
+                && let Some(item) = self.reg.item_id(&s.item)
+            {
+                self.armor[s.index] = Some(ItemStack {
+                    item,
+                    count: s.count,
+                    durability: s.durability,
+                });
             }
         }
         true
@@ -1149,10 +1152,11 @@ impl Game {
         }
         self.last_cursor = Some((pos.x, pos.y));
 
-        if self.allow_warp && ((pos.x - c.x).abs() > 40.0 || (pos.y - c.y).abs() > 40.0) {
-            if self.window.set_cursor_position(c).is_ok() {
-                self.warp_pending = true;
-            }
+        if self.allow_warp
+            && ((pos.x - c.x).abs() > 40.0 || (pos.y - c.y).abs() > 40.0)
+            && self.window.set_cursor_position(c).is_ok()
+        {
+            self.warp_pending = true;
         }
     }
 
@@ -1166,10 +1170,9 @@ impl Game {
         if matches!(
             self.screen,
             Screen::Furnace(_) | Screen::Chest(_) | Screen::Offering(_)
-        ) {
-            if let Some(r) = &self.remote {
-                r.client.send(&net::C2S::CloseContainer);
-            }
+        ) && let Some(r) = &self.remote
+        {
+            r.client.send(&net::C2S::CloseContainer);
         }
         // Leaving the inventory returns the cursor-held stack and craft grid.
         if self.screen == Screen::Inventory
@@ -1318,8 +1321,15 @@ impl Game {
                     self.toast(format!("Joined {}.", world_name.to_uppercase()));
                 }
                 net::S2C::Refused(why) => {
-                    self.join_status = format!("REFUSED: {why}").to_uppercase();
-                    self.remote = None;
+                    if self.in_world {
+                        // Kicked mid-game: a clean exit, not a broken
+                        // half-local world.
+                        self.toast(format!("Removed by host: {why}"));
+                        self.quit_to_title();
+                    } else {
+                        self.join_status = format!("REFUSED: {why}").to_uppercase();
+                        self.remote = None;
+                    }
                     return;
                 }
                 net::S2C::Chunk { x, z, rle } => {
@@ -1468,10 +1478,12 @@ impl Game {
                             world::BlockEntity::Chest(c)
                         }
                         1 => {
-                            let mut f = world::FurnaceState::default();
-                            f.input = slots.first().and_then(|s| conv(s));
-                            f.fuel = slots.get(1).and_then(|s| conv(s));
-                            f.output = slots.get(2).and_then(|s| conv(s));
+                            let f = world::FurnaceState {
+                                input: slots.first().and_then(&conv),
+                                fuel: slots.get(1).and_then(&conv),
+                                output: slots.get(2).and_then(&conv),
+                                ..Default::default()
+                            };
                             world::BlockEntity::Furnace(f)
                         }
                         _ => {
@@ -1594,15 +1606,16 @@ impl Game {
             self.toast("You can only sleep at night.".to_string());
             return;
         }
-        if let Some(r) = &self.remote {
+        if let Some(r) = &mut self.remote {
             r.client.send(&net::C2S::SleepRequest);
-            self.toast("You settle in, waiting for the others...".to_string());
+            r.sleeping = true;
+            self.toast("You settle in, waiting for the others... (move to get up)".to_string());
             return;
         }
         if self.host.as_ref().is_some_and(|h| !h.guests.is_empty()) {
             self.host_sleeping = true;
             self.spawn_point = self.player.pos;
-            self.toast("You settle in, waiting for the others...".to_string());
+            self.toast("You settle in, waiting for the others... (move to get up)".to_string());
             return;
         }
         let reg = self.reg.clone();
@@ -1735,10 +1748,10 @@ impl Game {
         let ground = (0..=sy)
             .rev()
             .find(|&y| self.reg.is_solid(self.server.world.get_block(sx, y, sz)));
-        if let Some(g) = ground {
-            if self.spawn_point.y - g as f32 > 4.0 {
-                self.player.pos.y = g as f32 + 1.05;
-            }
+        if let Some(g) = ground
+            && self.spawn_point.y - g as f32 > 4.0
+        {
+            self.player.pos.y = g as f32 + 1.05;
         }
         self.health = self.max_health();
         self.hunger = 20.0;
@@ -1853,16 +1866,16 @@ impl Game {
     fn take_ammo(&mut self, class: &str) -> Option<ItemId> {
         let reg = self.reg.clone();
         for slot in self.inventory.slots.iter_mut() {
-            if let Some(s) = slot {
-                if reg.item(s.item).ammo.as_deref() == Some(class) {
-                    let id = s.item;
-                    if s.count > 1 {
-                        s.count -= 1;
-                    } else {
-                        *slot = None;
-                    }
-                    return Some(id);
+            if let Some(s) = slot
+                && reg.item(s.item).ammo.as_deref() == Some(class)
+            {
+                let id = s.item;
+                if s.count > 1 {
+                    s.count -= 1;
+                } else {
+                    *slot = None;
                 }
+                return Some(id);
             }
         }
         None
@@ -1930,10 +1943,10 @@ impl Game {
         let mut best: Option<(usize, f32)> = None;
         for (i, m) in self.server.world.mobs.iter().enumerate() {
             let def = &self.reg.animals[m.species];
-            if let Some(t) = m.ray_hit(def, origin, dir, REACH.min(wall_t)) {
-                if best.is_none_or(|(_, bt)| t < bt) {
-                    best = Some((i, t));
-                }
+            if let Some(t) = m.ray_hit(def, origin, dir, REACH.min(wall_t))
+                && best.is_none_or(|(_, bt)| t < bt)
+            {
+                best = Some((i, t));
             }
         }
         best.map(|(i, _)| i)
@@ -2031,8 +2044,7 @@ impl Game {
                     .brush
                     .is_some()
         });
-        if self.right_held && brush_target.is_some() {
-            let target = brush_target.unwrap();
+        if let (true, Some(target)) = (self.right_held, brush_target) {
             if self.brush_target != Some(target) {
                 self.brush_target = Some(target);
                 self.brushing = 0.0;
@@ -2087,38 +2099,38 @@ impl Game {
 
         // Attacking: a mob in the crosshair takes the swing before the
         // block behind it. Held tools/swords set the damage.
-        if self.left_held {
-            if let Some(mi) = self.mob_in_crosshair(&hit) {
-                self.breaking = None;
-                if self.attack_cooldown <= 0.0 {
-                    self.attack_cooldown = 0.35;
-                    self.swing = 1.0;
-                    let dmg = held.map(|i| reg.item(i).damage).unwrap_or(1.0);
-                    let sp = self.server.world.mobs[mi].species;
-                    let pitch = reg.animals[sp].sound_pitch;
-                    let from = self.camera.pos;
-                    if let Some(r) = &self.remote {
-                        let id = self.server.world.mobs[mi].id;
-                        r.client.send(&net::C2S::AttackMob { id, dmg, from });
-                        self.server.world.mobs[mi].hurt_flash = 0.35; // feedback
-                        self.sfx(Sfx::MobHurt(pitch));
-                        self.hunger = (self.hunger - 0.01).max(0.0);
-                        if !self.creative {
-                            self.inventory.wear_tool(&reg, self.hotbar_sel);
-                        }
-                        self.attack_cooldown = 0.35;
-                        return;
-                    }
-                    let def = reg.animals[sp].clone();
-                    self.server.world.mobs[mi].hurt(&def, dmg, from);
+        if self.left_held
+            && let Some(mi) = self.mob_in_crosshair(&hit)
+        {
+            self.breaking = None;
+            if self.attack_cooldown <= 0.0 {
+                self.attack_cooldown = 0.35;
+                self.swing = 1.0;
+                let dmg = held.map(|i| reg.item(i).damage).unwrap_or(1.0);
+                let sp = self.server.world.mobs[mi].species;
+                let pitch = reg.animals[sp].sound_pitch;
+                let from = self.camera.pos;
+                if let Some(r) = &self.remote {
+                    let id = self.server.world.mobs[mi].id;
+                    r.client.send(&net::C2S::AttackMob { id, dmg, from });
+                    self.server.world.mobs[mi].hurt_flash = 0.35; // feedback
                     self.sfx(Sfx::MobHurt(pitch));
                     self.hunger = (self.hunger - 0.01).max(0.0);
                     if !self.creative {
                         self.inventory.wear_tool(&reg, self.hotbar_sel);
                     }
+                    self.attack_cooldown = 0.35;
+                    return;
                 }
-                return;
+                let def = reg.animals[sp].clone();
+                self.server.world.mobs[mi].hurt(&def, dmg, from);
+                self.sfx(Sfx::MobHurt(pitch));
+                self.hunger = (self.hunger - 0.01).max(0.0);
+                if !self.creative {
+                    self.inventory.wear_tool(&reg, self.hotbar_sel);
+                }
             }
+            return;
         }
 
         // Hold-to-mine; tools speed up matching blocks and wear down.
@@ -2183,20 +2195,21 @@ impl Game {
                             // Shears: leaves come off whole.
                             let sheared = held.is_some_and(|i| reg.item(i).shears)
                                 && reg.block(b).name.contains("leaves");
-                            if sheared && !self.creative {
-                                if let Some(item) = reg.item_id(&reg.block(b).name) {
-                                    let center = Vec3::new(
-                                        target.0 as f32 + 0.5,
-                                        target.1 as f32 + 0.3,
-                                        target.2 as f32 + 0.5,
-                                    );
-                                    self.items.push(ItemEntity::new(
-                                        center,
-                                        Vec3::new(0.0, 2.2, 0.0),
-                                        item,
-                                        1,
-                                    ));
-                                }
+                            if sheared
+                                && !self.creative
+                                && let Some(item) = reg.item_id(&reg.block(b).name)
+                            {
+                                let center = Vec3::new(
+                                    target.0 as f32 + 0.5,
+                                    target.1 as f32 + 0.3,
+                                    target.2 as f32 + 0.5,
+                                );
+                                self.items.push(ItemEntity::new(
+                                    center,
+                                    Vec3::new(0.0, 2.2, 0.0),
+                                    item,
+                                    1,
+                                ));
                             }
                             if let Some((drop, n)) = reg
                                 .drops_for(b, held)
@@ -2212,17 +2225,18 @@ impl Game {
                                 self.items.push(ItemEntity::new(center, v, drop, n));
                             }
                             // Chance extras (leaves drop saplings).
-                            if let Some((item, ch)) = reg.block(b).bonus_drop {
-                                if !self.creative && self.rand01() < ch {
-                                    let center = Vec3::new(
-                                        target.0 as f32 + 0.5,
-                                        target.1 as f32 + 0.3,
-                                        target.2 as f32 + 0.5,
-                                    );
-                                    let a = self.rand01() * std::f32::consts::TAU;
-                                    let v = Vec3::new(a.cos() * 1.2, 2.2, a.sin() * 1.2);
-                                    self.items.push(ItemEntity::new(center, v, item, 1));
-                                }
+                            if let Some((item, ch)) = reg.block(b).bonus_drop
+                                && !self.creative
+                                && self.rand01() < ch
+                            {
+                                let center = Vec3::new(
+                                    target.0 as f32 + 0.5,
+                                    target.1 as f32 + 0.3,
+                                    target.2 as f32 + 0.5,
+                                );
+                                let a = self.rand01() * std::f32::consts::TAU;
+                                let v = Vec3::new(a.cos() * 1.2, 2.2, a.sin() * 1.2);
+                                self.items.push(ItemEntity::new(center, v, item, 1));
                             }
                         }
                     } else {
@@ -2249,28 +2263,26 @@ impl Game {
             if let Some(mi) = self.mob_in_crosshair(&hit) {
                 let sp = self.server.world.mobs[mi].species;
                 let def = &reg.animals[sp];
-                if let (Some(bf), Some(h)) = (def.breed_food, held) {
-                    if bf == h
-                        && !def.hostile
-                        && self.server.world.mobs[mi].growth >= 1.0
-                        && self.server.world.mobs[mi].breed_cd <= 0.0
-                        && !self.server.world.mobs[mi].fed
-                    {
-                        if self.creative || self.inventory.take_one(self.hotbar_sel).is_some() {
-                            // Guests request; setting fed locally is the
-                            // prediction until the snapshot echoes it.
-                            if let Some(rc) = &self.remote {
-                                let id = self.server.world.mobs[mi].id;
-                                rc.client.send(&net::C2S::FeedMob { id });
-                            }
-                            let m = &mut self.server.world.mobs[mi];
-                            m.fed = true;
-                            m.calm = 30.0;
-                            self.action_cooldown = 0.4;
-                            self.sfx(Sfx::Pickup);
-                            return;
-                        }
+                if let (Some(bf), Some(h)) = (def.breed_food, held)
+                    && bf == h
+                    && !def.hostile
+                    && self.server.world.mobs[mi].growth >= 1.0
+                    && self.server.world.mobs[mi].breed_cd <= 0.0
+                    && !self.server.world.mobs[mi].fed
+                    && (self.creative || self.inventory.take_one(self.hotbar_sel).is_some())
+                {
+                    // Guests request; setting fed locally is the
+                    // prediction until the snapshot echoes it.
+                    if let Some(rc) = &self.remote {
+                        let id = self.server.world.mobs[mi].id;
+                        rc.client.send(&net::C2S::FeedMob { id });
                     }
+                    let m = &mut self.server.world.mobs[mi];
+                    m.fed = true;
+                    m.calm = 30.0;
+                    self.action_cooldown = 0.4;
+                    self.sfx(Sfx::Pickup);
+                    return;
                 }
             }
             // Etched tablets: the lost takers speak.
@@ -2287,154 +2299,155 @@ impl Game {
             }
         }
         let held_is_food = held.is_some_and(|i| reg.item(i).food.is_some());
-        if self.right_held && self.action_cooldown <= 0.0 && !held_is_food {
-            if let Some(h) = &hit {
-                let tb = self.server.world.get_block(h.block.0, h.block.1, h.block.2);
-                // Harvestable blocks (berry bushes).
-                if let Some((item, n, becomes)) = reg.block(tb).harvest {
+        if self.right_held
+            && self.action_cooldown <= 0.0
+            && !held_is_food
+            && let Some(h) = &hit
+        {
+            let tb = self.server.world.get_block(h.block.0, h.block.1, h.block.2);
+            // Harvestable blocks (berry bushes).
+            if let Some((item, n, becomes)) = reg.block(tb).harvest {
+                self.server
+                    .world
+                    .set_block(h.block.0, h.block.1, h.block.2, becomes);
+                let left = self.inventory.add(&reg, item, n);
+                if left > 0 {
+                    self.drop_stack(ItemStack::new(&reg, item, left));
+                }
+                self.sfx(Sfx::Pickup);
+                self.action_cooldown = 0.3;
+                return;
+            }
+            // Hoe tills grass/dirt into farmland.
+            if let (Some((ToolKind::Hoe, _, _)), Some(farm)) = (
+                held.and_then(|i| reg.item(i).tool),
+                reg.block_id("base:farmland"),
+            ) {
+                let name = reg.block(tb).name.as_str();
+                if name == "base:grass" || name == "base:dirt" {
                     self.server
                         .world
-                        .set_block(h.block.0, h.block.1, h.block.2, becomes);
-                    let left = self.inventory.add(&reg, item, n);
-                    if left > 0 {
-                        self.drop_stack(ItemStack::new(&reg, item, left));
-                    }
-                    self.sfx(Sfx::Pickup);
+                        .set_block(h.block.0, h.block.1, h.block.2, farm);
+                    self.inventory.wear_tool(&reg, self.hotbar_sel);
+                    self.sfx(Sfx::Place);
                     self.action_cooldown = 0.3;
                     return;
                 }
-                // Hoe tills grass/dirt into farmland.
-                if let (Some((ToolKind::Hoe, _, _)), Some(farm)) = (
-                    held.and_then(|i| reg.item(i).tool),
-                    reg.block_id("base:farmland"),
-                ) {
-                    let name = reg.block(tb).name.as_str();
-                    if name == "base:grass" || name == "base:dirt" {
-                        self.server
-                            .world
-                            .set_block(h.block.0, h.block.1, h.block.2, farm);
-                        self.inventory.wear_tool(&reg, self.hotbar_sel);
-                        self.sfx(Sfx::Place);
-                        self.action_cooldown = 0.3;
-                        return;
-                    }
+            }
+            if self.scripts.wants("on_interact") {
+                let name = reg.block(tb).name.clone();
+                let allow = self.scripts.dispatch(
+                    &self.server.world,
+                    "on_interact",
+                    (h.block.0 as i64, h.block.1 as i64, h.block.2 as i64, name),
+                );
+                self.apply_script_cmds();
+                if !allow {
+                    self.right_held = false;
+                    self.action_cooldown = 0.22;
+                    return;
                 }
-                if self.scripts.wants("on_interact") {
-                    let name = reg.block(tb).name.clone();
-                    let allow = self.scripts.dispatch(
-                        &self.server.world,
-                        "on_interact",
-                        (h.block.0 as i64, h.block.1 as i64, h.block.2 as i64, name),
-                    );
-                    self.apply_script_cmds();
-                    if !allow {
-                        self.right_held = false;
-                        self.action_cooldown = 0.22;
-                        return;
-                    }
+            }
+            match reg.block(tb).interaction.as_deref() {
+                Some("crafting") => {
+                    self.right_held = false;
+                    self.craft_size = 3;
+                    self.set_screen(Screen::Inventory);
+                    return;
                 }
-                match reg.block(tb).interaction.as_deref() {
-                    Some("crafting") => {
-                        self.right_held = false;
-                        self.craft_size = 3;
-                        self.set_screen(Screen::Inventory);
-                        return;
-                    }
-                    Some("furnace") => {
-                        self.right_held = false;
-                        self.server
-                            .world
-                            .block_entities
-                            .entry(h.block)
-                            .or_insert_with(|| world::BlockEntity::Furnace(Default::default()));
-                        self.set_screen(Screen::Furnace(h.block));
-                        return;
-                    }
-                    Some("chest") if self.action_cooldown <= 0.0 => {
-                        self.action_cooldown = 0.3;
-                        let e = self
-                            .server
-                            .world
-                            .block_entities
-                            .entry(h.block)
-                            .or_insert_with(|| world::BlockEntity::Chest(Default::default()));
-                        if let world::BlockEntity::Chest(c) = e {
-                            if c.wild_owned {
-                                c.wild_owned = false;
-                                self.server.world.add_ire(1.0);
-                                self.toast("The wild keeps its trophies.".to_string());
-                            }
-                        }
-                        self.set_screen(Screen::Chest(h.block));
-                        return;
-                    }
-                    Some("offering") if self.action_cooldown <= 0.0 => {
-                        self.action_cooldown = 0.3;
-                        self.server
-                            .world
-                            .block_entities
-                            .entry(h.block)
-                            .or_insert_with(|| world::BlockEntity::Offering(Default::default()));
-                        self.set_screen(Screen::Offering(h.block));
-                        return;
-                    }
-                    _ => {}
+                Some("furnace") => {
+                    self.right_held = false;
+                    self.server
+                        .world
+                        .block_entities
+                        .entry(h.block)
+                        .or_insert_with(|| world::BlockEntity::Furnace(Default::default()));
+                    self.set_screen(Screen::Furnace(h.block));
+                    return;
                 }
-                let (x, y, z) = h.adjacent;
-                let place =
-                    self.inventory.slots[self.hotbar_sel].and_then(|s| reg.item(s.item).places);
-                if let Some(block) = place {
-                    let bd = reg.block(block);
-                    let needs_farmland = bd.crop_next.is_some() && !bd.crop_any_soil;
-                    let soil = self.server.world.get_block(x, y - 1, z);
-                    if needs_farmland && Some(soil) != reg.block_id("base:farmland") {
-                        return;
-                    }
-                    // Cross blocks (torches, plants) need solid ground.
-                    if bd.cross && !reg.is_solid(soil) {
-                        return;
-                    }
-                    if !reg.is_solid(self.server.world.get_block(x, y, z))
-                        && !self.player.overlaps_block(x, y, z)
+                Some("chest") if self.action_cooldown <= 0.0 => {
+                    self.action_cooldown = 0.3;
+                    let e = self
+                        .server
+                        .world
+                        .block_entities
+                        .entry(h.block)
+                        .or_insert_with(|| world::BlockEntity::Chest(Default::default()));
+                    if let world::BlockEntity::Chest(c) = e
+                        && c.wild_owned
                     {
-                        let allow = if self.scripts.wants("on_block_place") {
-                            let name = reg.block(block).name.clone();
-                            let ok = self.scripts.dispatch(
-                                &self.server.world,
-                                "on_block_place",
-                                (x as i64, y as i64, z as i64, name),
-                            );
-                            self.apply_script_cmds();
-                            ok
-                        } else {
-                            true
-                        };
-                        let consumed =
-                            self.creative || self.inventory.take_one(self.hotbar_sel).is_some();
-                        if allow && consumed && self.remote.is_some() {
-                            if let Some(r) = &self.remote {
-                                if let Some(host_id) = r.host_block.get(&block.0) {
-                                    r.client.send(&net::C2S::Place {
-                                        x,
-                                        y,
-                                        z,
-                                        block: *host_id,
-                                    });
-                                }
-                            }
-                            self.action_cooldown = 0.22;
-                            self.sfx(Sfx::Place);
-                            return;
+                        c.wild_owned = false;
+                        self.server.world.add_ire(1.0);
+                        self.toast("The wild keeps its trophies.".to_string());
+                    }
+                    self.set_screen(Screen::Chest(h.block));
+                    return;
+                }
+                Some("offering") if self.action_cooldown <= 0.0 => {
+                    self.action_cooldown = 0.3;
+                    self.server
+                        .world
+                        .block_entities
+                        .entry(h.block)
+                        .or_insert_with(|| world::BlockEntity::Offering(Default::default()));
+                    self.set_screen(Screen::Offering(h.block));
+                    return;
+                }
+                _ => {}
+            }
+            let (x, y, z) = h.adjacent;
+            let place = self.inventory.slots[self.hotbar_sel].and_then(|s| reg.item(s.item).places);
+            if let Some(block) = place {
+                let bd = reg.block(block);
+                let needs_farmland = bd.crop_next.is_some() && !bd.crop_any_soil;
+                let soil = self.server.world.get_block(x, y - 1, z);
+                if needs_farmland && Some(soil) != reg.block_id("base:farmland") {
+                    return;
+                }
+                // Cross blocks (torches, plants) need solid ground.
+                if bd.cross && !reg.is_solid(soil) {
+                    return;
+                }
+                if !reg.is_solid(self.server.world.get_block(x, y, z))
+                    && !self.player.overlaps_block(x, y, z)
+                {
+                    let allow = if self.scripts.wants("on_block_place") {
+                        let name = reg.block(block).name.clone();
+                        let ok = self.scripts.dispatch(
+                            &self.server.world,
+                            "on_block_place",
+                            (x as i64, y as i64, z as i64, name),
+                        );
+                        self.apply_script_cmds();
+                        ok
+                    } else {
+                        true
+                    };
+                    let consumed =
+                        self.creative || self.inventory.take_one(self.hotbar_sel).is_some();
+                    if allow && consumed && self.remote.is_some() {
+                        if let Some(r) = &self.remote
+                            && let Some(host_id) = r.host_block.get(&block.0)
+                        {
+                            r.client.send(&net::C2S::Place {
+                                x,
+                                y,
+                                z,
+                                block: *host_id,
+                            });
                         }
-                        if allow && consumed {
-                            self.server.world.set_block(x, y, z, block);
-                            if bd.crop_next.is_some() {
-                                // The wild notices things growing where you walk.
-                                self.server.world.plant_ire(0.2);
-                            }
-                            self.action_cooldown = 0.22;
-                            self.sfx(Sfx::Place);
+                        self.action_cooldown = 0.22;
+                        self.sfx(Sfx::Place);
+                        return;
+                    }
+                    if allow && consumed {
+                        self.server.world.set_block(x, y, z, block);
+                        if bd.crop_next.is_some() {
+                            // The wild notices things growing where you walk.
+                            self.server.world.plant_ire(0.2);
                         }
+                        self.action_cooldown = 0.22;
+                        self.sfx(Sfx::Place);
                     }
                 }
             }
@@ -2461,12 +2474,12 @@ impl Game {
                 }
                 script::Cmd::Hud(msg) => self.toast(msg),
                 script::Cmd::SpawnAnimal(name, x, y, z) => {
-                    if let Some(si) = reg.animal_id(&name) {
-                        if self.server.world.mobs.len() < world::MOB_CAP {
-                            let mut m = mobs::Mob::new(si, Vec3::new(x, y, z), 0.0);
-                            m.health = reg.animals[si].health;
-                            self.server.world.mobs.push(m);
-                        }
+                    if let Some(si) = reg.animal_id(&name)
+                        && self.server.world.mobs.len() < world::MOB_CAP
+                    {
+                        let mut m = mobs::Mob::new(si, Vec3::new(x, y, z), 0.0);
+                        m.health = reg.animals[si].health;
+                        self.server.world.mobs.push(m);
                     }
                 }
                 script::Cmd::Sound(name) => {
@@ -2630,26 +2643,27 @@ impl Game {
         // Eating: hold right-click with food selected.
         let food =
             self.inventory.slots[self.hotbar_sel].and_then(|s| self.reg.item(s.item).food.clone());
-        if self.right_held && self.screen == Screen::Playing {
-            if let Some(f) = food {
-                let want = self.hunger < 19.5
-                    || f.nutrition
-                        .iter()
-                        .zip(&self.nutrition)
-                        .any(|(a, b)| *a > 0.0 && *b < 99.0);
-                if want {
-                    self.eating += dt;
-                    if self.eating >= f.eat_time {
-                        self.eating = 0.0;
-                        self.hunger = (self.hunger + f.hunger).min(20.0);
-                        for (n, add) in self.nutrition.iter_mut().zip(&f.nutrition) {
-                            *n = (*n + add).min(100.0);
-                        }
-                        self.inventory.take_one(self.hotbar_sel);
-                        self.sfx(Sfx::Pickup);
+        if self.right_held
+            && self.screen == Screen::Playing
+            && let Some(f) = food
+        {
+            let want = self.hunger < 19.5
+                || f.nutrition
+                    .iter()
+                    .zip(&self.nutrition)
+                    .any(|(a, b)| *a > 0.0 && *b < 99.0);
+            if want {
+                self.eating += dt;
+                if self.eating >= f.eat_time {
+                    self.eating = 0.0;
+                    self.hunger = (self.hunger + f.hunger).min(20.0);
+                    for (n, add) in self.nutrition.iter_mut().zip(&f.nutrition) {
+                        *n = (*n + add).min(100.0);
                     }
-                    return;
+                    self.inventory.take_one(self.hotbar_sel);
+                    self.sfx(Sfx::Pickup);
                 }
+                return;
             }
         }
         self.eating = 0.0;
@@ -2826,14 +2840,13 @@ impl Game {
         ) {
             let ts = 1.0 / atlas::ATLAS_TILES as f32;
             let inset = ts / 32.0;
-            for face in 0..6 {
-                let slot = tiles[face];
+            for (face, (&slot, corners)) in tiles.iter().zip(mesher::CORNERS.iter()).enumerate() {
                 let (tx, ty) = (
                     slot as u32 % atlas::ATLAS_TILES,
                     slot as u32 / atlas::ATLAS_TILES,
                 );
                 let base = verts.len() as u32;
-                for c in mesher::CORNERS[face].iter() {
+                for c in corners.iter() {
                     let lp = Vec3::new(
                         min.x + c[0] * (max.x - min.x),
                         min.y + c[1] * (max.y - min.y),
@@ -3049,11 +3062,12 @@ impl Game {
                                 self.toast("The wild has accepted your offering.".to_string());
                             }
                         }
-                        server::SimEvent::IreTier { rose, .. } => {
+                        server::SimEvent::IreTier { rose, tier } => {
+                            let name = world::IRE_TIERS[tier.min(world::IRE_TIERS.len() - 1)];
                             self.toast(if rose {
-                                "The wild stirs against you.".to_string()
+                                format!("The wild stirs against you - {name}.")
                             } else {
-                                "The wild settles.".to_string()
+                                format!("The wild settles - {name}.")
                             });
                         }
                     }
@@ -3071,10 +3085,9 @@ impl Game {
                 // Close container screens if their block vanished.
                 if let Screen::Furnace(pos) | Screen::Chest(pos) | Screen::Offering(pos) =
                     self.screen
+                    && !self.server.world.block_entities.contains_key(&pos)
                 {
-                    if !self.server.world.block_entities.contains_key(&pos) {
-                        self.set_screen(Screen::Playing);
-                    }
+                    self.set_screen(Screen::Playing);
                 }
                 // Mod tick at 10 Hz.
                 if self.scripts.wants("on_tick") {
@@ -3119,6 +3132,19 @@ impl Game {
             };
             if self.keys.space && self.player.on_ground {
                 self.hunger = (self.hunger - 0.005).max(0.0);
+            }
+            // Getting up: any movement withdraws a pending sleep vote.
+            if input.forward != 0.0 || input.strafe != 0.0 || input.jump {
+                if self.host_sleeping {
+                    self.host_sleeping = false;
+                    self.toast("You get up.".to_string());
+                }
+                if self.remote.as_ref().is_some_and(|r| r.sleeping) {
+                    let r = self.remote.as_mut().unwrap();
+                    r.sleeping = false;
+                    r.client.send(&net::C2S::SleepCancel);
+                    self.toast("You get up.".to_string());
+                }
             }
             self.update_food(dt, &input);
             if self.flying {
@@ -3405,6 +3431,26 @@ impl Game {
             300.0,
             40.0,
         )
+    }
+
+    /// Kick button beside the pause menu, one row per connected guest.
+    fn kick_rect(&self, row: usize) -> (f32, f32, f32, f32) {
+        let (bx, by, bw, _) = self.menu_button_rect(2);
+        (bx + bw + 16.0, by + row as f32 * 36.0, 70.0, 28.0)
+    }
+
+    /// Guest (id, name) rows in a stable order for the pause menu.
+    fn guest_rows(&self) -> Vec<(u32, String)> {
+        let Some(h) = &self.host else {
+            return Vec::new();
+        };
+        let mut rows: Vec<(u32, String)> = h
+            .guests
+            .iter()
+            .map(|(id, g)| (*id, g.name.clone()))
+            .collect();
+        rows.sort_by_key(|(id, _)| *id);
+        rows
     }
 
     // ---- title screen layout ----
@@ -3751,11 +3797,10 @@ impl Game {
                     .as_ref()
                     .map(|d| d.found.clone())
                     .unwrap_or_default();
-                let mut y = h * 0.20;
                 if found.is_empty() {
                     ui.text_shadow(
                         w / 2.0 - 220.0,
-                        y + 10.0,
+                        h * 0.20 + 10.0,
                         2.0,
                         "SEARCHING THE LAN...",
                         [0.7, 0.7, 0.7, 1.0],
@@ -3769,9 +3814,10 @@ impl Game {
                         &format!("{} - {}", name.to_uppercase(), addr),
                         self.hit(r),
                     );
-                    y = r.1 + 56.0;
                 }
-                y += 26.0;
+                // The searching line occupies one row when the list is
+                // empty; the click handler mirrors this formula.
+                let y = h * 0.20 + found.len().clamp(1, 5) as f32 * 56.0 + 26.0;
                 ui.text_shadow(w / 2.0 - 220.0, y, 2.0, "DIRECT IP:", [1.0; 4]);
                 ui.rect(w / 2.0 - 80.0, y - 6.0, 300.0, 34.0, [0.1, 0.1, 0.1, 0.95]);
                 let shown = if self.join_ip.is_empty() {
@@ -4023,26 +4069,25 @@ impl Game {
             );
         }
         // Eat progress near the crosshair.
-        if self.eating > 0.0 {
-            if let Some(f) = self.inventory.slots[self.hotbar_sel]
+        if self.eating > 0.0
+            && let Some(f) = self.inventory.slots[self.hotbar_sel]
                 .and_then(|s| self.reg.item(s.item).food.clone())
-            {
-                let t = (self.eating / f.eat_time).min(1.0);
-                ui.rect(
-                    w / 2.0 - 30.0,
-                    h / 2.0 + 24.0,
-                    60.0,
-                    6.0,
-                    [0.1, 0.1, 0.1, 0.8],
-                );
-                ui.rect(
-                    w / 2.0 - 30.0,
-                    h / 2.0 + 24.0,
-                    60.0 * t,
-                    6.0,
-                    [0.9, 0.8, 0.3, 0.95],
-                );
-            }
+        {
+            let t = (self.eating / f.eat_time).min(1.0);
+            ui.rect(
+                w / 2.0 - 30.0,
+                h / 2.0 + 24.0,
+                60.0,
+                6.0,
+                [0.1, 0.1, 0.1, 0.8],
+            );
+            ui.rect(
+                w / 2.0 - 30.0,
+                h / 2.0 + 24.0,
+                60.0 * t,
+                6.0,
+                [0.9, 0.8, 0.3, 0.95],
+            );
         }
 
         // Air bubbles (right-aligned above hotbar) when submerged.
@@ -4373,6 +4418,18 @@ impl Game {
                 {
                     let r = self.menu_button_rect(i);
                     Self::draw_button(&mut ui, r, label, self.hit(r));
+                }
+                // Hosting: each guest gets a name row and a KICK button.
+                for (row, (_, name)) in self.guest_rows().iter().enumerate() {
+                    let r = self.kick_rect(row);
+                    ui.text_shadow(
+                        r.0,
+                        r.1 - 16.0,
+                        1.5,
+                        &name.to_uppercase(),
+                        [0.9, 0.9, 0.9, 1.0],
+                    );
+                    Self::draw_button(&mut ui, r, "KICK", self.hit(r));
                 }
             }
             Screen::Dead => {
@@ -5008,7 +5065,14 @@ impl Game {
                 } else if self.hit(self.menu_button_rect(2)) {
                     self.sfx(Sfx::Click);
                     if self.host.is_none() && self.remote.is_none() {
-                        match mp::HostSession::start(self.server.world.mode.clone()) {
+                        let wname = self
+                            .server
+                            .world
+                            .save_dir_for_saving()
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "world".into());
+                        match mp::HostSession::start(wname) {
                             Ok(sess) => {
                                 self.server.world.log_edits = true;
                                 self.toast(format!(
@@ -5027,6 +5091,18 @@ impl Game {
                 } else if self.hit(self.menu_button_rect(4)) {
                     self.sfx(Sfx::Click);
                     self.quit_to_title();
+                } else {
+                    for (row, (id, _)) in self.guest_rows().iter().enumerate() {
+                        if self.hit(self.kick_rect(row)) {
+                            self.sfx(Sfx::Click);
+                            if let Some(h) = &mut self.host
+                                && let Some(name) = h.kick_guest(*id)
+                            {
+                                self.toast(format!("{name} was kicked."));
+                            }
+                            break;
+                        }
+                    }
                 }
             }
             Screen::Dead => {
@@ -5179,7 +5255,7 @@ impl Game {
                         return;
                     }
                 }
-                let y = h * 0.20 + found.len().min(5) as f32 * 56.0 + 26.0;
+                let y = h * 0.20 + found.len().clamp(1, 5) as f32 * 56.0 + 26.0;
                 let cr = (w / 2.0 + 240.0, y - 6.0, 160.0, 34.0);
                 if self.hit(cr) {
                     self.sfx(Sfx::Click);
@@ -5597,12 +5673,13 @@ impl ApplicationHandler for App {
     }
 
     fn device_event(&mut self, _el: &ActiveEventLoop, _id: DeviceId, event: DeviceEvent) {
-        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
-            if let Some(game) = self.game.as_mut() {
-                if game.mouse_captured && game.raw_look && game.screen == Screen::Playing {
-                    game.camera.turn(dx as f32, dy as f32);
-                }
-            }
+        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event
+            && let Some(game) = self.game.as_mut()
+            && game.mouse_captured
+            && game.raw_look
+            && game.screen == Screen::Playing
+        {
+            game.camera.turn(dx as f32, dy as f32);
         }
     }
 
