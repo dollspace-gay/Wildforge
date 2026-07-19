@@ -50,6 +50,20 @@ pub struct DynLight {
     pub range: f32,
 }
 
+/// Soft-shadow source size (world units) for real lights. A torch flame is
+/// small, so a tight radius gives a soft-but-crisp penumbra; 0 is a hard
+/// point. Dev override: WILDFORGE_LIGHT_RADIUS.
+fn soft_radius() -> f32 {
+    use std::sync::OnceLock;
+    static R: OnceLock<f32> = OnceLock::new();
+    *R.get_or_init(|| {
+        std::env::var("WILDFORGE_LIGHT_RADIUS")
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0.15)
+    })
+}
+
 /// The derived render parameters for a promoted emitter.
 fn static_light(e: &Emitter, flicker: f32) -> PointLight {
     let emit = e.emit.max(1) as f32;
@@ -77,6 +91,7 @@ fn static_light(e: &Emitter, flicker: f32) -> PointLight {
         epoch: 0,
         shadows: true,
         suppress: (suppress_scale, emit),
+        radius: soft_radius(),
     }
 }
 
@@ -287,6 +302,7 @@ impl Director {
                 epoch: self.epochs.get(&d.key).copied().unwrap_or(0),
                 shadows,
                 suppress: (0.0, 1.0), // dynamic lights aren't in the flood-fill
+                radius: soft_radius(),
             });
         }
         out
