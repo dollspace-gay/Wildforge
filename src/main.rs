@@ -707,6 +707,38 @@ impl Game {
                 }
             }
         }
+        // Dev: two pillars flanked by a blue and a red lamp — colored-shadow
+        // test (each pillar should cast a blue shadow away from the blue lamp
+        // and a red one away from the red lamp, purple where both reach).
+        if std::env::var("WILDFORGE_DEMO_COLORSHADOW").is_ok() {
+            let blue = self.reg.block_id("base:blue_lamp");
+            let red = self.reg.block_id("base:red_lamp");
+            let stone = self.reg.block_id("base:cobblestone");
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32 + 4;
+            let y = self.world.surface_height(bx, bz);
+            if let Some(stone) = stone {
+                // A neutral grey floor reads colored light far better than grass.
+                for dx in -8..=8 {
+                    for dz in -6..=8 {
+                        self.world.set_block(bx + dx, y, bz + dz, stone);
+                    }
+                }
+                // Two pillars as occluders.
+                for px in [-2i32, 2] {
+                    for h in 1..=3 {
+                        self.world.set_block(bx + px, y + h, bz, stone);
+                    }
+                }
+            }
+            // Low colored lamps to either side so shadows rake across the floor.
+            if let Some(b) = blue {
+                self.world.set_block(bx - 5, y + 2, bz, b);
+            }
+            if let Some(r) = red {
+                self.world.set_block(bx + 5, y + 2, bz, r);
+            }
+        }
         // Dev: a flat water pool ahead of spawn (specular-glint verification).
         if std::env::var("WILDFORGE_DEMO_POOL").is_ok() {
             if let Some(water) = self.reg.block_id("base:water") {
