@@ -104,6 +104,7 @@ Every field, with defaults:
 | `cross` | `false` | render as two crossed quads (plants) instead of a cube |
 | `light` | `0` | emitted light 0–15 (torch is 14) |
 | `light_color` | white | `[r, g, b]` 0–1 tint for the glow — hue-normalized so the brightest channel still reaches the full `light` level (torches burn warm; a modded block can smoulder any color) |
+| `height` | full cube | render height 0–1 for thin slabs (snow layers are `0.125`); pair with `solid = false` to walk through, and unsupported slabs pop off like torches |
 | `water` | none | fluid level: `0` = source (registers flow levels automatically) |
 | `interaction` | none | right-click opens: `"crafting"` \| `"furnace"` \| `"chest"` \| `"offering"` |
 | `crop` | none | `{ stages = N, next_chance = 0.3, stage_textures = [...], any_soil = false }` — advances on random ticks; `any_soil` grows off farmland too |
@@ -149,6 +150,7 @@ food = { hunger = 7, nutrition = { grain = 30 } }
 | `shears` | `false` | leaves break into leaf blocks |
 | `tablet` | `false` | right-click reads lore |
 | `brush_tool` | `false` | channels on brushable blocks |
+| `throw` | none | `{ speed = 18.0 }` — right-click throws the item as a projectile (snowballs); zero-damage throws still knock back |
 
 ## recipes.toml
 

@@ -58,6 +58,8 @@ pub struct BlockDef {
     pub bonus_drop: Option<(ItemId, f32)>,
     /// Archaeology: (loot table, block it becomes) when brushed.
     pub brush: Option<(String, BlockId)>,
+    /// Rendered height 0..1; None = full cube (snow layers are 0.125).
+    pub height: Option<f32>,
     /// Per-channel emission (r,g,b), each 0..15. The brightest channel equals
     /// `light_emit`, so a colored light keeps its intensity; the dimmer
     /// channels fall off sooner, warming/cooling the glow with distance.
@@ -145,6 +147,8 @@ pub struct ItemDef {
     pub tablet: bool,
     /// Sweeps remnant blocks (archaeology).
     pub brush_tool: bool,
+    /// Right-click throw speed (None = not throwable).
+    pub throw_speed: Option<f32>,
 }
 
 /// One box of an animal's model. Sizes/offsets in px (16 px = 1 block);
@@ -504,6 +508,9 @@ struct BlockToml {
     /// `light`. Omit for white light.
     #[serde(default)]
     light_color: Option<[f32; 3]>,
+    /// Render height 0..1 (thin slabs like snow layers).
+    #[serde(default)]
+    height: Option<f32>,
     /// Register an item form for placing (default true).
     #[serde(default = "yes")]
     item: bool,
@@ -590,6 +597,15 @@ struct ItemToml {
     tablet: bool,
     #[serde(default)]
     brush_tool: bool,
+    /// Right-click throw: projectile speed (snowballs).
+    #[serde(default)]
+    throw: Option<ThrowToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct ThrowToml {
+    #[serde(default)]
+    speed: Option<f32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -1070,6 +1086,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         sapling: None,
         bonus_drop: None,
         brush: None,
+        height: None,
         light_rgb: [0, 0, 0],
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
@@ -1201,6 +1218,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 sapling: b.sapling.as_ref().map(|t| t.tree.clone()),
                 bonus_drop: None,
                 brush: None,
+                height: b.height.map(|h| h.clamp(0.05, 1.0)),
                 light_rgb: resolve_light_rgb(b.light.min(15), b.light_color),
             });
             reg.block_by_name.insert(full.clone(), id);
@@ -1289,6 +1307,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     charm: None,
                     tablet: false,
                     brush_tool: false,
+                    throw_speed: None,
                 });
                 reg.item_by_name.insert(full, iid);
             }
@@ -1352,6 +1371,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 charm: it.charm.clone(),
                 tablet: it.tablet,
                 brush_tool: it.brush_tool,
+                throw_speed: it.throw.as_ref().map(|t| t.speed.unwrap_or(18.0)),
             });
             reg.item_by_name.insert(full, iid);
         }
@@ -1444,6 +1464,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         sapling: None,
         bonus_drop: None,
         brush: None,
+        height: None,
         light_rgb: [0, 0, 0],
     });
     reg.block_by_name.insert("base:unknown".into(), unk);

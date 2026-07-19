@@ -177,6 +177,12 @@ struct Game {
     /// 0) and the walk-bob phase accumulator.
     swing: f32,
     hand_bob: f32,
+    /// Weather presentation: lerped gloom 0..1, lightning flash timer,
+    /// pending thunder delay, and the season the atlas was tinted for.
+    weather_vis: f32,
+    lightning: f32,
+    thunder_delay: f32,
+    atlas_season: usize,
     /// Stack picked up by the cursor inside the inventory screen.
     held_stack: Option<ItemStack>,
     /// Crafting grid contents (row-major; 2x2 uses the first 4 cells).
@@ -433,6 +439,10 @@ impl Game {
             brush_target: None,
             swing: 0.0,
             hand_bob: 0.0,
+            weather_vis: 0.0,
+            lightning: 0.0,
+            thunder_delay: -1.0,
+            atlas_season: 1,
             held_stack: None,
             craft_grid: [None; 9],
             craft_size: 2,
@@ -809,6 +819,27 @@ impl Game {
         {
             self.server.world.ire = v.clamp(0.0, 100.0);
             self.server.sync_tier();
+        }
+        // Dev: force the calendar and the sky.
+        if let Ok(v) = std::env::var("WILDFORGE_DAY")
+            && let Ok(v) = v.parse::<u32>()
+        {
+            self.server.world.day = v;
+        }
+        if let Ok(v) = std::env::var("WILDFORGE_SEASON")
+            && let Ok(v) = v.parse::<u32>()
+        {
+            self.server.world.day = (v % 4) * world::SEASON_DAYS;
+        }
+        if let Ok(v) = std::env::var("WILDFORGE_WEATHER") {
+            self.server.world.weather = world::Weather::from_name(&v);
+            self.server.world.weather_timer = 1.0e9; // pinned for the session
+            self.weather_vis = match self.server.world.weather {
+                world::Weather::Clear => 0.0,
+                world::Weather::Overcast => 0.4,
+                world::Weather::Precip => 0.55,
+                world::Weather::Storm => 0.7,
+            };
         }
         // Dev: a row of wardens near spawn (rendering/combat verification).
         if std::env::var("WILDFORGE_DEMO_WARDENS").is_ok() {
@@ -1268,11 +1299,13 @@ impl Game {
                         let _ = std::fs::write(p, bytes);
                     }
                     self.reg = Arc::new(registry::load(&cache));
-                    let (data, px, warns) = atlas::build_atlas(
+                    let (mut data, px, warns) = atlas::build_atlas(
                         &self.reg.tex_files,
                         pack_source_of(&self.active_pack_id()),
                         &self.reg.tex_names,
                     );
+                    atlas::season_tint(&mut data, px, self.server.world.season());
+                    self.atlas_season = self.server.world.season();
                     self.pack_warnings = warns;
                     self.renderer.set_atlas(&data, px);
                     self.toast("Synced the host's mods.".to_string());
@@ -1429,9 +1462,16 @@ impl Game {
                         })
                         .collect();
                 }
-                net::S2C::TimeIre { time, ire } => {
+                net::S2C::TimeIre {
+                    time,
+                    ire,
+                    day,
+                    weather,
+                } => {
                     self.server.time_of_day = time;
                     self.server.world.ire = ire;
+                    self.server.world.day = day;
+                    self.server.world.weather = world::Weather::from_u8(weather);
                 }
                 net::S2C::Hit { dmg, from } => self.hurt_player_from_wild(dmg, from),
                 net::S2C::Give {
@@ -1635,7 +1675,7 @@ impl Game {
                 self.toast("The wild has accepted your offering.".to_string());
             }
         }
-        self.server.time_of_day = 0.3;
+        self.server.sleep_to_dawn();
         self.spawn_point = self.player.pos;
         if !self.creative {
             self.inventory.wear_tool(&reg, self.hotbar_sel);
@@ -2285,6 +2325,39 @@ impl Game {
                     return;
                 }
             }
+            // Throwables (snowballs): loosed from the hand.
+            if let Some(speed) = held.and_then(|i| reg.item(i).throw_speed)
+                && (self.creative || self.inventory.take_one(self.hotbar_sel).is_some())
+            {
+                let item = held.unwrap();
+                let dir = self.camera.forward();
+                let pos = self.camera.pos + dir * 0.4;
+                let vel = dir * speed;
+                let tile = reg.item(item).icon;
+                if let Some(rc) = &self.remote {
+                    rc.client.send(&net::C2S::FireArrow {
+                        pos,
+                        vel,
+                        dmg: 0.0,
+                        tile,
+                        recover: false,
+                    });
+                } else {
+                    self.server.world.projectiles.push(mobs::Projectile {
+                        pos,
+                        vel,
+                        tile,
+                        damage: 0.0,
+                        age: 0.0,
+                        from_player: true,
+                        drop_item: None,
+                        owner: 0,
+                    });
+                }
+                self.sfx(Sfx::Bolt(1.6));
+                self.action_cooldown = 0.35;
+                return;
+            }
             // Etched tablets: the lost takers speak.
             if held.is_some_and(|i| reg.item(i).tablet) {
                 self.read_tablet();
@@ -2512,11 +2585,18 @@ impl Game {
     /// Rebuild + swap the atlas for the currently selected texture pack and
     /// persist the choice. Registry/scripts are untouched — packs are art only.
     fn apply_pack(&mut self) {
-        let (data, px, warns) = atlas::build_atlas(
+        let (mut data, px, warns) = atlas::build_atlas(
             &self.reg.tex_files,
             pack_source_of(&self.active_pack_id()),
             &self.reg.tex_names,
         );
+        let season = if self.in_world {
+            self.server.world.season()
+        } else {
+            1
+        };
+        atlas::season_tint(&mut data, px, season);
+        self.atlas_season = season;
         self.renderer.set_atlas(&data, px);
         self.pack_warnings = warns;
         self.config.save();
@@ -2525,11 +2605,18 @@ impl Game {
     fn reload_mods(&mut self, forced: bool) {
         let old = self.reg.clone();
         let new_reg = Arc::new(registry::load(std::path::Path::new("mods")));
-        let (atlas_data, atlas_px, warns) = atlas::build_atlas(
+        let (mut atlas_data, atlas_px, warns) = atlas::build_atlas(
             &new_reg.tex_files,
             pack_source_of(&self.active_pack_id()),
             &new_reg.tex_names,
         );
+        let season = if self.in_world {
+            self.server.world.season()
+        } else {
+            1
+        };
+        atlas::season_tint(&mut atlas_data, atlas_px, season);
+        self.atlas_season = season;
         self.pack_warnings = warns;
         self.renderer.set_atlas(&atlas_data, atlas_px);
 
@@ -3062,6 +3149,15 @@ impl Game {
                                 self.toast("The wild has accepted your offering.".to_string());
                             }
                         }
+                        server::SimEvent::WeatherChanged(w) => {
+                            // Presentation lerps from world.weather every
+                            // frame; only a breaking storm needs a latch:
+                            // no flash or rumble after the sky clears.
+                            if w != world::Weather::Storm {
+                                self.lightning = 0.0;
+                                self.thunder_delay = -1.0;
+                            }
+                        }
                         server::SimEvent::IreTier { rose, tier } => {
                             let name = world::IRE_TIERS[tier.min(world::IRE_TIERS.len() - 1)];
                             self.toast(if rose {
@@ -3102,6 +3198,19 @@ impl Game {
                 }
             }
         }
+        // The turning of the season repaints the leaves.
+        if self.in_world && self.server.world.season() != self.atlas_season {
+            let (mut data, px, warns) = atlas::build_atlas(
+                &self.reg.tex_files,
+                pack_source_of(&self.active_pack_id()),
+                &self.reg.tex_names,
+            );
+            atlas::season_tint(&mut data, px, self.server.world.season());
+            self.atlas_season = self.server.world.season();
+            self.pack_warnings = warns;
+            self.renderer.set_atlas(&data, px);
+        }
+
         // Hot reload: poll the mods + packs trees once a second.
         self.mods_poll += dt;
         if self.mods_poll >= 1.0 {
@@ -3219,8 +3328,75 @@ impl Game {
         // orange as it nears the horizon.
         let noon = Vec3::new(1.0, 0.96, 0.86);
         let horizon = Vec3::new(1.0, 0.54, 0.26);
-        let sun_col = horizon.lerp(noon, elev.clamp(0.0, 1.0).sqrt()) * (0.64 * sun_vis);
-        let amb_col = Vec3::new(0.60, 0.68, 0.82) * (0.42 * daylight);
+        let mut sun_col = horizon.lerp(noon, elev.clamp(0.0, 1.0).sqrt()) * (0.64 * sun_vis);
+        let mut amb_col = Vec3::new(0.60, 0.68, 0.82) * (0.42 * daylight);
+
+        // Weather gloom: fronts dim the direct sun hard and the ambient
+        // gently, gray the sky, and pull the fog in. Lerped over ~10 s
+        // so transitions read as skies changing, not a light switch.
+        let gloom_target = if self.in_world {
+            match self.server.world.weather {
+                world::Weather::Clear => 0.0,
+                world::Weather::Overcast => 0.4,
+                world::Weather::Precip => 0.55,
+                world::Weather::Storm => 0.7,
+            }
+        } else {
+            0.0
+        };
+        self.weather_vis += (gloom_target - self.weather_vis) * (dt / 10.0).min(1.0);
+        let gloom = self.weather_vis;
+        sun_col *= 1.0 - gloom;
+        amb_col *= 1.0 - gloom * 0.45;
+        let gray = [0.36 * f, 0.39 * f, 0.44 * f];
+        let mix = (gloom * 1.4).min(1.0);
+        for (c, g) in self.renderer.sky_color.iter_mut().zip(gray) {
+            *c += (g - *c) * mix;
+        }
+
+        // Storms flash: two frames of borrowed noon, thunder later.
+        let mut daylight = daylight;
+        if self.in_world && self.server.world.weather == world::Weather::Storm {
+            self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            if ((self.rng >> 8) as f32 / (1 << 24) as f32) < dt / 25.0 {
+                self.lightning = 0.12;
+                self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                self.thunder_delay = 0.5 + ((self.rng >> 8) as f32 / (1 << 24) as f32) * 2.5;
+            }
+        }
+        if self.lightning > 0.0 {
+            self.lightning -= dt;
+            daylight = 1.0;
+            self.renderer.sky_color = [0.85, 0.88, 0.95];
+            sun_col = Vec3::new(0.9, 0.92, 1.0);
+        }
+        if self.thunder_delay >= 0.0 {
+            self.thunder_delay -= dt;
+            if self.thunder_delay < 0.0 {
+                self.sfx(Sfx::Thunder);
+            }
+        }
+
+        // The weather bed follows what's actually falling where you stand.
+        if let Some(a) = &self.audio {
+            let (px, pz) = (
+                self.player.pos.x.floor() as i32,
+                self.player.pos.z.floor() as i32,
+            );
+            let want = if self.in_world
+                && self.server.world.weather.precipitating()
+                && self.server.world.rains_at(px, pz)
+            {
+                Some(if self.server.world.weather == world::Weather::Storm {
+                    audio::Ambience::Storm
+                } else {
+                    audio::Ambience::Rain
+                })
+            } else {
+                None
+            };
+            a.set_ambience(want);
+        }
 
         let playing = self.screen == Screen::Playing;
         let outline = if playing {
@@ -3235,7 +3411,7 @@ impl Game {
             None
         };
         let underwater = self.player.head_underwater(&self.server.world);
-        let fog = (self.config.view_dist as f32 - 0.5) * CHUNK_X as f32;
+        let fog = (self.config.view_dist as f32 - 0.5) * CHUNK_X as f32 * (1.0 - 0.35 * gloom);
 
         // World-space extras: item entities + mining crack overlay.
         let mut entity_verts = Vec::new();
@@ -3292,6 +3468,84 @@ impl Game {
                     &mut entity_verts,
                     &mut entity_idx,
                 );
+            }
+        }
+        // Precipitation: a cylinder of falling quads around the camera.
+        // Each streak owns a column; roofed columns stay dry.
+        if self.in_world && self.server.world.weather.precipitating() {
+            let cam = self.camera.pos;
+            let t = self.time_abs;
+            let ts = 1.0 / atlas::ATLAS_TILES as f32;
+            let inset = ts / 32.0;
+            let rain_slot = *atlas::builtin_slots().get("rain_streak").unwrap_or(&0);
+            let snow_slot = *atlas::builtin_slots().get("snow_flake").unwrap_or(&0);
+            for i in 0..150u32 {
+                let h = i.wrapping_mul(2654435761);
+                let a = (h >> 8 & 0xffff) as f32 / 65536.0 * std::f32::consts::TAU;
+                let r = 2.0 + (h >> 16 & 0xff) as f32 / 255.0 * 13.0;
+                let phase = (h & 0xff) as f32 / 255.0;
+                let wx = cam.x + a.cos() * r;
+                let wz = cam.z + a.sin() * r;
+                let (cx, cz) = (wx.floor() as i32, wz.floor() as i32);
+                if !self.server.world.rains_at(cx, cz) {
+                    continue;
+                }
+                let snow = self.server.world.snows_at(cx, cz);
+                let speed = if snow { 3.0 } else { 13.0 };
+                let span = 14.0;
+                let y = cam.y + 7.0 - (t * speed + phase * span) % span;
+                if self.server.world.light_at(cx, y.floor() as i32, cz).1 < 15 {
+                    continue; // a roof owns this column
+                }
+                let slot = if snow { snow_slot } else { rain_slot };
+                let (tx, ty) = (
+                    slot as u32 % atlas::ATLAS_TILES,
+                    slot as u32 / atlas::ATLAS_TILES,
+                );
+                let (w2, h2) = if snow { (0.09, 0.09) } else { (0.035, 0.55) };
+                let drift = if snow {
+                    (t * 1.3 + phase * 9.0).sin() * 0.25
+                } else {
+                    0.0
+                };
+                for (dx, dz) in [(1.0f32, 0.0f32), (0.0, 1.0)] {
+                    for flip in [false, true] {
+                        let base = entity_verts.len() as u32;
+                        let (u0, u1) = if flip {
+                            ((tx + 1) as f32 * ts - inset, tx as f32 * ts + inset)
+                        } else {
+                            (tx as f32 * ts + inset, (tx + 1) as f32 * ts - inset)
+                        };
+                        let sgn = if flip { -1.0 } else { 1.0 };
+                        for (o, dy, uu) in [
+                            (-0.5 * w2 * sgn, 0.0, u0),
+                            (0.5 * w2 * sgn, 0.0, u1),
+                            (0.5 * w2 * sgn, h2, u1),
+                            (-0.5 * w2 * sgn, h2, u0),
+                        ] {
+                            let vv = if dy == 0.0 {
+                                (ty + 1) as f32 * ts - inset
+                            } else {
+                                ty as f32 * ts + inset
+                            };
+                            entity_verts.push(mesher::Vertex {
+                                pos: [wx + drift + dx * o, y + dy, wz + dz * o],
+                                uv: [uu, vv],
+                                normal: [0.0, 0.0, 0.0],
+                                light: [0.5; 3],
+                                sky: 0.9,
+                            });
+                        }
+                        entity_idx.extend_from_slice(&[
+                            base,
+                            base + 1,
+                            base + 2,
+                            base,
+                            base + 2,
+                            base + 3,
+                        ]);
+                    }
+                }
             }
         }
         let mut overlay_verts = Vec::new();
@@ -4307,6 +4561,16 @@ impl Game {
                     &format!("MAX HEALTH +{bonus}"),
                     [1.0; 4],
                 );
+                // The calendar: day count and where the season stands.
+                let w = &self.server.world;
+                let third = ["EARLY", "MID", "LATE"][((w.season_progress() * 3.0) as usize).min(2)];
+                ui.text_shadow(
+                    p0x - 190.0,
+                    p0y + 158.0,
+                    1.5,
+                    &format!("DAY {} - {third} {}", w.day + 1, world::SEASONS[w.season()]),
+                    [0.85, 0.9, 1.0, 1.0],
+                );
                 // The wild's ire: tier word + vine meter.
                 let tier = self.server.world.ire_tier();
                 let tier_col = [
@@ -5048,11 +5312,13 @@ impl Game {
                     } else {
                         "survival"
                     };
-                    world::write_world_meta(
+                    world::write_world_meta_full(
                         &self.server.world.save_dir_for_saving(),
                         self.server.world.seed,
                         mode,
                         self.server.world.ire,
+                        self.server.world.day,
+                        self.server.world.weather,
                     );
                     if self.scripts.wants("on_mode_change") {
                         self.scripts.dispatch(

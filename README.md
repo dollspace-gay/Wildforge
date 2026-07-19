@@ -91,6 +91,23 @@ every claim asserted, so the docs can't drift from the code.
 - Ships with `mods/gems` — a worked example adding deep ruby ore (tier-2
   gated), items, recipes, and a scripted milestone counter.
 
+## Weather & seasons
+
+The sky joined the simulation. Server-owned weather fronts roll from
+clear through overcast into rain and back — and storms lean on the
+wild's ire, so a WRATHFUL camp lives under thunder (with lightning
+that borrows a frame of noon, and rain/storm ambience beds). A
+48-day year turns through four seasons on a persistent calendar (the
+inventory shows the day): foliage repaints each season, crops surge
+in spring and stop in winter — unless roofed and torchlit, so
+greenhouses emerge from rules you already know — berry bushes fruit
+in summer and autumn, wildlife bears young in spring and never in
+winter, and exposed lakes freeze over for the cold months. Snow is a
+material now: snowfall settles white layers on cold ground, shovels
+into throwable snowballs (harmless, knockback — aim well), packs
+back into snow blocks, and melts under bright torchlight. Rain even
+soothes the wild: ire decays a quarter faster while the land drinks.
+
 ## Iron, steel & the ruins of the takers
 
 - **Iron** runs deep (below y 48, bronze picks required); **steel** is

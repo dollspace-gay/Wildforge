@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use glam::Vec3;
 
-use crate::chunk::{CHUNK_Y, ChunkPos};
+use crate::chunk::{CHUNK_Y, ChunkPos, SEA_LEVEL};
 use crate::inventory::{Inventory, ItemStack, click_stack};
 use crate::physics::{Input, Player};
 use crate::raycast::raycast;
@@ -1350,7 +1350,8 @@ fn crops_grow_on_farmland_via_random_ticks() {
     let (item, _, becomes) = reg.block(ripe).harvest.expect("ripe wheat harvests");
     assert_eq!(item, it(&reg, "base:wheat"));
     assert_eq!(becomes, seed0);
-    // Bushes regrow anywhere.
+    // Bushes regrow anywhere - but only in season (summer/autumn).
+    w.day = crate::world::SEASON_DAYS; // summer
     let bare = b(&reg, "base:berry_bush");
     for x in 0..16 {
         for z in 8..11 {
@@ -3680,6 +3681,8 @@ fn net_protocol_round_trips() {
         S2C::TimeIre {
             time: 0.5,
             ire: 33.0,
+            day: 7,
+            weather: 2,
         },
         S2C::Chat {
             from: "a".into(),
@@ -3713,6 +3716,351 @@ fn net_protocol_round_trips() {
         let back: S2C = decode(&encode(m)).expect("s2c decodes");
         assert_eq!(format!("{m:?}"), format!("{back:?}"));
     }
+}
+
+// ---------------- weather & seasons ----------------
+
+#[test]
+fn weather_machine_rolls_legal_fronts_and_storms_lean_on_ire() {
+    use crate::world::Weather;
+    let reg = base_reg();
+    let count_storms = |ire: f32, name: &str| -> (u32, bool) {
+        let mut w = World::new(42, tmp_dir(name), reg.clone());
+        w.ire = ire;
+        let mut sim = crate::server::Server::new(w, 0.3, 5);
+        let mut storms = 0;
+        let mut legal = true;
+        let mut prev = sim.world.weather;
+        let mut events = Vec::new();
+        for _ in 0..40_000 {
+            sim.advance(1.0, &[], &mut events);
+            sim.world.ire = ire; // hold it steady against decay
+            for e in events.drain(..) {
+                if let crate::server::SimEvent::WeatherChanged(next) = e {
+                    assert_eq!(next, sim.world.weather, "event carries the new front");
+                    legal &= match prev {
+                        Weather::Clear => next == Weather::Overcast,
+                        Weather::Overcast => next != Weather::Overcast,
+                        Weather::Precip => next == Weather::Clear,
+                        Weather::Storm => next == Weather::Overcast,
+                    };
+                    if next == Weather::Storm {
+                        storms += 1;
+                    }
+                    prev = next;
+                }
+            }
+        }
+        (storms, legal)
+    };
+    let (calm_storms, calm_legal) = count_storms(0.0, "wx-calm");
+    let (wrath_storms, wrath_legal) = count_storms(100.0, "wx-wrath");
+    assert!(calm_legal && wrath_legal, "only legal transitions");
+    assert!(
+        wrath_storms > calm_storms,
+        "storms lean on ire: {wrath_storms} vs {calm_storms}"
+    );
+
+    // The day advances when the clock wraps, and when the camp sleeps.
+    let w = World::new(42, tmp_dir("wx-day"), reg.clone());
+    let mut sim = crate::server::Server::new(w, 0.999, 5);
+    let mut ev = Vec::new();
+    for _ in 0..40 {
+        sim.advance(0.1, &[], &mut ev); // the hitch cap swallows big steps
+    }
+    assert_eq!(sim.world.day, 1, "midnight rolls the calendar");
+    sim.sleep_to_dawn();
+    assert_eq!(sim.world.day, 2, "sleeping skips into tomorrow");
+    assert!(sim.world.weather_timer <= 0.0, "the front re-rolls at dawn");
+
+    // Calendar persistence rides world.toml.
+    let dir = tmp_dir("wx-persist");
+    let mut w = World::new(42, dir.clone(), reg.clone());
+    w.day = 23;
+    w.weather = Weather::Storm;
+    w.save_modified();
+    let w2 = World::load_or_create(dir, reg);
+    assert_eq!(w2.day, 23);
+    assert_eq!(w2.weather, Weather::Storm);
+    assert_eq!(w2.season(), 1, "day 23 is summer");
+}
+
+#[test]
+fn winter_gates_growth_and_freezes_exposed_water() {
+    let reg = base_reg();
+    let mut w = test_world_with("wx-winter", reg.clone());
+    w.day = 3 * crate::world::SEASON_DAYS; // deep winter
+    let b = |n: &str| reg.block_id(n).unwrap();
+    let h = w.surface_height(4, 4);
+
+    // A strip of sky-open wheat on farmland never advances in winter...
+    for x in 0..16 {
+        w.set_block(x, h + 6, 4, b("base:farmland"));
+        w.set_block(x, h + 7, 4, b("base:wheat_seeds"));
+    }
+    // ...while a roofed, torchlit one still creeps (the greenhouse).
+    for x in 0..16 {
+        w.set_block(x, h + 6, 8, b("base:farmland"));
+        w.set_block(x, h + 7, 8, b("base:wheat_seeds"));
+        w.set_block(x, h + 9, 8, b("base:planks"));
+        if x % 3 == 0 {
+            w.set_block(x, h + 7, 9, b("base:torch"));
+        }
+    }
+    let mut rng = 7u32;
+    for _ in 0..30_000 {
+        w.random_tick(&mut rng);
+    }
+    let open_grown = (0..16)
+        .filter(|&x| w.get_block(x, h + 7, 4) != b("base:wheat_seeds"))
+        .count();
+    let roofed_grown = (0..16)
+        .filter(|&x| {
+            let g = w.get_block(x, h + 7, 8);
+            g != b("base:wheat_seeds") && g != AIR
+        })
+        .count();
+    assert_eq!(open_grown, 0, "winter halts sky-open crops");
+    assert!(
+        roofed_grown > 0,
+        "roof + torchlight keeps a greenhouse alive"
+    );
+
+    // Exposed still water freezes over in winter...
+    for x in 0..8 {
+        w.set_block(x, h + 12, 12, b("base:planks"));
+        w.set_block(x, h + 13, 12, reg.water_block(0));
+    }
+    // (support keeps it a still pool; sky above is open)
+    for _ in 0..30_000 {
+        w.random_tick(&mut rng);
+    }
+    let iced = (0..8)
+        .filter(|&x| w.get_block(x, h + 13, 12) == b("base:ice"))
+        .count();
+    assert!(iced > 0, "winter freezes exposed pools, froze {iced}");
+
+    // ...and spring gives them back.
+    w.day = 0;
+    for _ in 0..30_000 {
+        w.random_tick(&mut rng);
+    }
+    let thawed = (0..8)
+        .filter(|&x| w.get_block(x, h + 13, 12) == reg.water_block(0))
+        .count();
+    assert!(thawed > 0, "spring thaws the ice, thawed {thawed}");
+}
+
+#[test]
+fn snow_settles_melts_and_snowballs_fly() {
+    use glam::Vec3;
+    let reg = base_reg();
+    let mut w = test_world_with("wx-snow", reg.clone());
+    let b = |n: &str| reg.block_id(n).unwrap();
+    let layer = b("base:snow_layer");
+    assert_eq!(
+        reg.block(layer).height,
+        Some(0.125),
+        "snow layers render thin"
+    );
+
+    // Snowfall settles one layer on a cold, sky-open column - once.
+    w.day = 3 * crate::world::SEASON_DAYS; // winter relaxes the snow line
+    // Find LAND columns (not frozen ocean) in each climate.
+    let mut find = |w: &mut World, lo: f32, hi: f32| -> Option<(i32, i32)> {
+        for x in (-400..400).step_by(16) {
+            for z in (-400..400).step_by(16) {
+                let t = w.generator.climate(x, z).t;
+                if t < lo || t > hi {
+                    continue;
+                }
+                w.ensure_chunk(ChunkPos::of_world(x, z));
+                let y = w.surface_height(x, z);
+                if y > SEA_LEVEL + 1 && w.get_block(x, y + 1, z) == AIR {
+                    return Some((x, z));
+                }
+            }
+        }
+        None
+    };
+    let (cx, cz) = find(&mut w, -1.0, -0.15).expect("cold land in range");
+    let (wx, wz) = find(&mut w, 0.0, 0.3).expect("temperate land in range");
+    let cy = w.surface_height(cx, cz);
+    w.settle_snow(cx, cz);
+    assert_eq!(
+        w.get_block(cx, cy + 1, cz),
+        layer,
+        "snow settled on the cold column"
+    );
+    w.settle_snow(cx, cz);
+    assert_eq!(w.get_block(cx, cy + 2, cz), AIR, "layers never stack");
+    let wy = w.surface_height(wx, wz);
+    w.settle_snow(wx, wz);
+    assert_ne!(
+        w.get_block(wx, wy + 1, wz),
+        layer,
+        "temperate columns shrug it off"
+    );
+
+    // Torchlight melts layers even in an arctic winter.
+    w.set_block(cx + 1, cy + 1, cz, b("base:torch"));
+    let mut rng = 9u32;
+    for _ in 0..30_000 {
+        w.random_tick(&mut rng);
+        if w.get_block(cx, cy + 1, cz) == AIR {
+            break;
+        }
+    }
+    assert_eq!(w.get_block(cx, cy + 1, cz), AIR, "bright light clears snow");
+
+    // Breaking a snow block yields snowballs; the crafting loop closes.
+    assert_eq!(
+        reg.block(b("base:snow")).drops,
+        Some((reg.item_id("base:snowball").unwrap(), 4))
+    );
+    let ball = reg.item_id("base:snowball").unwrap();
+    assert_eq!(
+        reg.item(ball).throw_speed,
+        Some(18.0),
+        "snowballs are throwable"
+    );
+    let grid = [Some(ItemStack::new(&reg, ball, 1)); 4];
+    let r = crate::crafting::match_recipe(&reg, &grid, 2).expect("4 snowballs pack a block");
+    assert_eq!(r.output, reg.item_id("base:snow").unwrap());
+
+    // A zero-damage projectile still shoves: snowball knockback.
+    // Staged high in open sky so terrain can't intercept the shot.
+    let sy = 140.0;
+    let wild = reg.animals.iter().position(|a| !a.hostile).unwrap();
+    let mi = w.mobs.len();
+    let mut m = crate::mobs::Mob::new(wild, Vec3::new(4.5, sy, 4.5), 0.0);
+    m.health = 10.0;
+    w.mobs.push(m);
+    w.projectiles.push(crate::mobs::Projectile {
+        pos: Vec3::new(4.5, sy + 0.4, 3.0),
+        vel: Vec3::new(0.0, 0.0, 12.0),
+        tile: 0,
+        damage: 0.0,
+        age: 0.0,
+        from_player: true,
+        drop_item: None,
+        owner: 0,
+    });
+    for _ in 0..60 {
+        w.tick_projectiles(&[], 1.0 / 30.0);
+    }
+    assert_eq!(w.mobs[mi].health, 10.0, "a snowball draws no blood");
+    assert!(
+        w.mobs[mi].hurt_flash > 0.0 || w.mobs[mi].vel.length() > 0.1,
+        "but it definitely lands"
+    );
+
+    // Removing a layer's support pops it as a drop.
+    let py = w.surface_height(10, 10);
+    w.set_block(10, py + 2, 10, b("base:planks"));
+    w.set_block(10, py + 3, 10, layer);
+    w.pending_drops.clear();
+    w.set_block(10, py + 2, 10, AIR);
+    assert_eq!(
+        w.get_block(10, py + 3, 10),
+        AIR,
+        "unsupported layers fall away"
+    );
+    assert!(
+        w.pending_drops.iter().any(|(_, s)| s.item == ball),
+        "and hand back their snowball"
+    );
+}
+
+#[test]
+fn weather_and_season_touch_the_sim() {
+    use crate::world::Weather;
+    let reg = base_reg();
+    // Rain speeds ire decay.
+    let mut w = World::new(42, tmp_dir("wx-ire"), reg.clone());
+    w.ire = 50.0;
+    w.weather = Weather::Clear;
+    w.tick_ire(0.5);
+    let dry = w.ire;
+    let mut w2 = World::new(42, tmp_dir("wx-ire2"), reg.clone());
+    w2.ire = 50.0;
+    w2.weather = Weather::Precip;
+    w2.tick_ire(0.5);
+    assert!(w2.ire < dry, "the land drinks: {} < {dry}", w2.ire);
+
+    // Winter pauses breeding even for fed adults side by side.
+    let mut w = test_world_with("wx-breed", reg.clone());
+    w.day = 3 * crate::world::SEASON_DAYS;
+    let wild = reg
+        .animals
+        .iter()
+        .position(|a| !a.hostile && a.breed_food.is_some())
+        .expect("breedable wildlife");
+    let y = w.surface_height(4, 4) as f32 + 1.05;
+    let before = w.mobs.len();
+    for dx in 0..2 {
+        let mut m = crate::mobs::Mob::new(wild, glam::Vec3::new(4.5 + dx as f32, y, 4.5), 0.0);
+        m.health = 10.0;
+        m.fed = true;
+        w.mobs.push(m);
+    }
+    let mut rng = 3u32;
+    for _ in 0..120 {
+        w.tick_mobs(&[], 1.0, 1.0 / 30.0, &mut rng);
+    }
+    assert!(w.mobs.iter().all(|m| m.growth >= 1.0), "no winter litters");
+    assert!(w.mobs.len() <= before + 2, "no winter births");
+    // Summer: the same pair bears young.
+    w.day = crate::world::SEASON_DAYS;
+    for m in &mut w.mobs {
+        m.fed = true;
+        m.breed_cd = 0.0;
+    }
+    let before = w.mobs.len();
+    for _ in 0..120 {
+        w.tick_mobs(&[], 1.0, 1.0 / 30.0, &mut rng);
+    }
+    assert!(w.mobs.len() > before, "summer births arrive");
+}
+
+#[test]
+fn season_tint_repaints_foliage() {
+    let px = crate::atlas::ATLAS_TILES * 8;
+    let summer = crate::atlas::build_procedural(8);
+    let grass = *crate::atlas::builtin_slots().get("grass_top").unwrap() as u32;
+    let tile_px = |img: &Vec<u8>, slot: u32| -> Vec<u8> {
+        let tp = 8u32;
+        let (tx, ty) = (slot % 16 * tp, slot / 16 * tp);
+        let mut out = Vec::new();
+        for y in ty..ty + tp {
+            for x in tx..tx + tp {
+                let i = ((y * px + x) * 4) as usize;
+                out.extend_from_slice(&summer[i..i + 3]);
+                let _ = img;
+            }
+        }
+        out
+    };
+    let reference = tile_px(&summer, grass);
+    for season in [0usize, 2, 3] {
+        let mut img = summer.clone();
+        crate::atlas::season_tint(&mut img, px, season);
+        let tp = 8u32;
+        let (tx, ty) = (grass % 16 * tp, grass / 16 * tp);
+        let mut changed = false;
+        let mut k = 0;
+        for y in ty..ty + tp {
+            for x in tx..tx + tp {
+                let i = ((y * px + x) * 4) as usize;
+                changed |= img[i..i + 3] != reference[k..k + 3];
+                k += 3;
+            }
+        }
+        assert!(changed, "season {season} repaints grass");
+    }
+    let mut img = summer.clone();
+    crate::atlas::season_tint(&mut img, px, 1);
+    assert_eq!(img, summer, "summer is the reference look");
 }
 
 /// The modding guide is executable: every `# mods/meadow/<file>` code

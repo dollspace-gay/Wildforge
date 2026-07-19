@@ -205,6 +205,9 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("charm_hunger", 202),
         ("player_skin", 203),
         ("player_face", 204),
+        ("snowball", 205),
+        ("rain_streak", 206),
+        ("snow_flake", 207),
         ("unknown", 15),
         ("crack1", 16),
         ("crack2", 17),
@@ -2257,6 +2260,44 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 911, 0.04), 255)
     });
 
+    // (13,12) snowball: a packed white ball, blue-shadowed.
+    tf(13, 12, &mut |px, py, u, v| {
+        let dx = u - 0.5;
+        let dy = v - 0.52;
+        let r = dx * dx + dy * dy;
+        if r < 0.11 {
+            let shade = 1.0 - (dx * 0.5 + dy * 1.1).clamp(0.0, 0.45);
+            let c = [235.0 * shade, 242.0 * shade, 252.0 * shade];
+            rgba(c, speck(px, py, 921, 0.06), 255)
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    // (14,12) rain streak: faint vertical strands on transparency.
+    tf(14, 12, &mut |px, py, u, _v| {
+        let strand = h01((u * 8.0) as i32, 0, 923) > 0.55 && px % 2 == 0;
+        if strand {
+            let a = 120 + (h01(px as i32, py as i32, 925) * 60.0) as u8;
+            [170, 190, 220, a]
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    // (15,12) snow flake: soft white dots drifting on transparency.
+    tf(15, 12, &mut |px, py, u, v| {
+        let cellx = (u * 4.0) as i32;
+        let celly = (v * 4.0) as i32;
+        let cx = (cellx as f32 + 0.5) / 4.0 + (h01(cellx, celly, 927) - 0.5) * 0.12;
+        let cy = (celly as f32 + 0.5) / 4.0 + (h01(cellx, celly, 929) - 0.5) * 0.12;
+        let d = (u - cx) * (u - cx) + (v - cy) * (v - cy);
+        if d < 0.0016 && h01(cellx, celly, 931) > 0.35 {
+            [245, 248, 255, 235]
+        } else {
+            let _ = (px, py);
+            [0, 0, 0, 0]
+        }
+    });
+
     // (15,0) unknown/missing texture: magenta checkerboard.
     tile(15, 0, &mut |px, py, _u, _v| {
         let k = (tp / 8).max(1);
@@ -2395,3 +2436,43 @@ const STICK_ART: [&str; 16] = [
     "................",
     "................",
 ];
+
+/// Tint the foliage tiles for a season, applied to the finished atlas
+/// (so texture packs get the same treatment). Only greenish pixels
+/// shift, which spares the dirt band on grass sides.
+pub fn season_tint(img: &mut [u8], px: u32, season: usize) {
+    let mult: [f32; 3] = match season {
+        0 => [0.92, 1.06, 0.86], // spring: vivid
+        2 => [1.14, 0.92, 0.58], // autumn: amber
+        3 => [0.86, 0.86, 0.90], // winter: drab
+        _ => return,             // summer is the reference look
+    };
+    let slots = builtin_slots();
+    let tp = px / ATLAS_TILES;
+    for name in [
+        "grass_top",
+        "grass_side",
+        "leaves",
+        "birch_leaves",
+        "spruce_leaves",
+        "jungle_leaves",
+        "acacia_leaves",
+    ] {
+        let Some(&slot) = slots.get(name) else {
+            continue;
+        };
+        let tx = (slot as u32 % ATLAS_TILES) * tp;
+        let ty = (slot as u32 / ATLAS_TILES) * tp;
+        for y in ty..ty + tp {
+            for x in tx..tx + tp {
+                let i = ((y * px + x) * 4) as usize;
+                let (r, g, b) = (img[i] as f32, img[i + 1] as f32, img[i + 2] as f32);
+                if g >= r && g >= b {
+                    img[i] = (r * mult[0]).min(255.0) as u8;
+                    img[i + 1] = (g * mult[1]).min(255.0) as u8;
+                    img[i + 2] = (b * mult[2]).min(255.0) as u8;
+                }
+            }
+        }
+    }
+}

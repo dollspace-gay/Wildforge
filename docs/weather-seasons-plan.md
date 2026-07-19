@@ -1,11 +1,12 @@
 # Weather & Seasons — the sky joins the simulation
 
-Drafted 2026-07-19. Weather fronts roll over the world, seasons turn
-on a calendar, and snow stops being scenery. Everything is
-server-authoritative (multiplayer-correct by construction) and leans
-on the new lighting stack — overcast skies dim the directional sun,
-storms darken the world, and a lightning flash is one frame of
-borrowed noon.
+Drafted and **IMPLEMENTED** 2026-07-19. Weather fronts roll over the
+world, seasons turn on a calendar, and snow stopped being scenery.
+Implementation notes vs. this spec: the 1 Hz broadcast kept the
+`TimeIre` name (gaining `day` + `weather` fields, protocol 3); the
+sun/sky dimming is CPU-side pre-scaling of the sun/ambient/sky colors
+rather than a shader uniform (identical result, no shader change);
+and a storm that breaks cancels any pending flash and thunder.
 
 ## Why this fits Wildforge
 

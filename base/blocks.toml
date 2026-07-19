@@ -98,6 +98,21 @@ name = "Snow"
 texture = "@snow"
 hardness = 0.5
 tool = "shovel"
+drops = "base:snowball"
+drop_count = 4
+
+[[block]]
+id = "snow_layer"
+name = "Snow Layer"
+# A thin dusting: walk-through, shovels into a snowball, melts under
+# bright light or a warm season.
+texture = "@snow"
+hardness = 0.1
+tool = "shovel"
+drops = "base:snowball"
+solid = false
+opaque = false
+height = 0.125
 
 [[block]]
 id = "ice"

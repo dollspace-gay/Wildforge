@@ -60,10 +60,18 @@ pub struct FurnaceState {
 
 /// (seed, mode, ire) from world.toml, falling back to the legacy seed file.
 pub fn read_world_meta(dir: &std::path::Path) -> (Option<u32>, String, f32) {
+    let (seed, mode, ire, _, _) = read_world_meta_full(dir);
+    (seed, mode, ire)
+}
+
+/// Full metadata: (seed, mode, ire, day, weather).
+pub fn read_world_meta_full(dir: &std::path::Path) -> (Option<u32>, String, f32, u32, Weather) {
     if let Ok(t) = fs::read_to_string(dir.join("world.toml")) {
         let mut seed = None;
         let mut mode = "survival".to_string();
         let mut ire = 0.0f32;
+        let mut day = 0u32;
+        let mut weather = Weather::Clear;
         for l in t.lines() {
             if let Some(v) = l.strip_prefix("seed = ") {
                 seed = v.trim().parse().ok();
@@ -71,22 +79,40 @@ pub fn read_world_meta(dir: &std::path::Path) -> (Option<u32>, String, f32) {
                 mode = v.trim().trim_matches('"').to_string();
             } else if let Some(v) = l.strip_prefix("ire = ") {
                 ire = v.trim().parse().unwrap_or(0.0);
+            } else if let Some(v) = l.strip_prefix("day = ") {
+                day = v.trim().parse().unwrap_or(0);
+            } else if let Some(v) = l.strip_prefix("weather = ") {
+                weather = Weather::from_name(v.trim().trim_matches('"'));
             }
         }
-        (seed, mode, ire.clamp(0.0, 100.0))
+        (seed, mode, ire.clamp(0.0, 100.0), day, weather)
     } else {
         let seed = fs::read_to_string(dir.join("seed"))
             .ok()
             .and_then(|s| s.trim().parse().ok());
-        (seed, "survival".to_string(), 0.0)
+        (seed, "survival".to_string(), 0.0, 0, Weather::Clear)
     }
 }
 
 pub fn write_world_meta(dir: &std::path::Path, seed: u32, mode: &str, ire: f32) {
+    write_world_meta_full(dir, seed, mode, ire, 0, Weather::Clear);
+}
+
+pub fn write_world_meta_full(
+    dir: &std::path::Path,
+    seed: u32,
+    mode: &str,
+    ire: f32,
+    day: u32,
+    weather: Weather,
+) {
     let _ = fs::create_dir_all(dir);
     let _ = fs::write(
         dir.join("world.toml"),
-        format!("seed = {seed}\nmode = \"{mode}\"\nire = {ire:.2}\n"),
+        format!(
+            "seed = {seed}\nmode = \"{mode}\"\nire = {ire:.2}\nday = {day}\nweather = \"{}\"\n",
+            weather.name()
+        ),
     );
 }
 
@@ -139,6 +165,12 @@ pub struct World {
     day_progress: f32,
     /// Guest mode: chunks come only from the network, never generated.
     pub remote: bool,
+    /// Calendar day (increments at dawn, natural or slept-through).
+    pub day: u32,
+    /// Current weather + seconds remaining on it (the Server's machine
+    /// drives this; it lives here so world.toml persistence is natural).
+    pub weather: Weather,
+    pub weather_timer: f32,
     /// Host mode: record block edits for broadcasting.
     pub log_edits: bool,
     pub edit_log: Vec<(i32, i32, i32, BlockId)>,
@@ -151,6 +183,60 @@ pub struct World {
 
 /// Ire tier names, index = tier.
 pub const IRE_TIERS: [&str; 4] = ["CALM", "UNEASY", "PROVOKED", "WRATHFUL"];
+
+// ---------------- calendar & weather ----------------
+
+/// In-game days per season; four seasons make a 48-day year.
+pub const SEASON_DAYS: u32 = 12;
+pub const SEASONS: [&str; 4] = ["SPRING", "SUMMER", "AUTUMN", "WINTER"];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Weather {
+    Clear,
+    Overcast,
+    /// Rain or snow, decided per column by climate + season.
+    Precip,
+    Storm,
+}
+
+impl Weather {
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Weather::Clear => 0,
+            Weather::Overcast => 1,
+            Weather::Precip => 2,
+            Weather::Storm => 3,
+        }
+    }
+    pub fn from_u8(v: u8) -> Weather {
+        match v {
+            1 => Weather::Overcast,
+            2 => Weather::Precip,
+            3 => Weather::Storm,
+            _ => Weather::Clear,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Weather::Clear => "clear",
+            Weather::Overcast => "overcast",
+            Weather::Precip => "precip",
+            Weather::Storm => "storm",
+        }
+    }
+    pub fn from_name(s: &str) -> Weather {
+        match s {
+            "overcast" => Weather::Overcast,
+            "precip" | "rain" | "snow" => Weather::Precip,
+            "storm" => Weather::Storm,
+            _ => Weather::Clear,
+        }
+    }
+    /// Anything falling from the sky right now?
+    pub fn precipitating(self) -> bool {
+        matches!(self, Weather::Precip | Weather::Storm)
+    }
+}
 
 /// Hard cap on living mobs — memory/perf backstop, far above natural density.
 pub const MOB_CAP: usize = 200;
@@ -178,11 +264,37 @@ impl World {
             plant_ire_today: 0.0,
             day_progress: 0.0,
             remote: false,
+            day: 0,
+            weather: Weather::Clear,
+            weather_timer: 0.0,
             log_edits: false,
             edit_log: Vec::new(),
             pending_gives: Vec::new(),
             next_mob_id: 1,
         }
+    }
+
+    /// 0 spring, 1 summer, 2 autumn, 3 winter.
+    pub fn season(&self) -> usize {
+        ((self.day / SEASON_DAYS) % 4) as usize
+    }
+
+    /// 0..1 through the current season.
+    pub fn season_progress(&self) -> f32 {
+        (self.day % SEASON_DAYS) as f32 / SEASON_DAYS as f32
+    }
+
+    /// Does precipitation fall as snow in this column? The threshold
+    /// relaxes in winter so taiga and cold-temperate lands whiten.
+    pub fn snows_at(&self, x: i32, z: i32) -> bool {
+        let t = self.generator.climate(x, z).t;
+        t < if self.season() == 3 { -0.05 } else { -0.35 }
+    }
+
+    /// Deserts stay dry: overcast skies, nothing falls.
+    pub fn rains_at(&self, x: i32, z: i32) -> bool {
+        let c = self.generator.climate(x, z);
+        !(c.t > 0.6 && c.h < -0.5)
     }
 
     // ---------------- ire (reciprocity) ----------------
@@ -215,7 +327,13 @@ impl World {
     /// and the daily reset of the planting cap. Returns true at dawn
     /// (day rollover) — the moment offerings are accepted.
     pub fn tick_ire(&mut self, day_frac: f32) -> bool {
-        self.add_ire(-4.0 * day_frac);
+        // The wild breathes easier when the land drinks.
+        let decay = if self.weather.precipitating() {
+            5.0
+        } else {
+            4.0
+        };
+        self.add_ire(-decay * day_frac);
         self.day_progress += day_frac;
         if self.day_progress >= 1.0 {
             self.day_progress -= 1.0;
@@ -367,17 +485,19 @@ impl World {
 
     /// Load a world from disk (reads seed + palette) or create a fresh one.
     pub fn load_or_create(save_dir: PathBuf, reg: Arc<Registry>) -> World {
-        let (seed, mode, ire) = read_world_meta(&save_dir);
+        let (seed, mode, ire, day, weather) = read_world_meta_full(&save_dir);
         let seed = seed.unwrap_or_else(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as u32)
                 .unwrap_or(1337)
         });
-        write_world_meta(&save_dir, seed, &mode, ire);
+        write_world_meta_full(&save_dir, seed, &mode, ire, day, weather);
         let mut w = World::new(seed, save_dir, reg);
         w.mode = mode;
         w.ire = ire;
+        w.day = day;
+        w.weather = weather;
         w.load_remap = w.read_palette_remap();
         w.load_entities();
         w.load_mobs();
@@ -727,10 +847,12 @@ impl World {
             );
             sl as f32 * daylight < 7.0
         });
-        // Husbandry: two fed adults of a species near each other bear young.
+        // Husbandry: two fed adults of a species near each other bear
+        // young - but not in winter; spring is the birthing season.
+        let winter = self.season() == 3;
         let mut births: Vec<(usize, usize)> = Vec::new();
         for i in 0..mobs.len() {
-            if births.iter().any(|&(a, b)| a == i || b == i) {
+            if winter || births.iter().any(|&(a, b)| a == i || b == i) {
                 continue;
             }
             if !mobs[i].fed || mobs[i].growth < 1.0 {
@@ -767,7 +889,14 @@ impl World {
 
         // Repopulation: overhunted wildlife slowly recovers, away from the
         // player and only under the local cap.
-        self.repop_timer += dt;
+        // Spring teems, winter starves: the repop clock runs at double
+        // or half speed with the season.
+        self.repop_timer += dt
+            * match self.season() {
+                0 => 2.0,
+                3 => 0.5,
+                _ => 1.0,
+            };
         if self.repop_timer >= 8.0 {
             self.repop_timer = 0.0;
             let near = self
@@ -879,7 +1008,10 @@ impl World {
         self.hostile_spawn_timer = 0.0;
         let reg = self.reg.clone();
         let tier = self.ire_tier();
-        let budget = [2usize, 6, 10, 14][tier];
+        let mut budget = [2usize, 6, 10, 14][tier];
+        if self.weather == Weather::Storm && tier >= 2 {
+            budget += 1; // dark skies are cover
+        }
         let near_hostiles = self
             .mobs
             .iter()
@@ -1141,7 +1273,14 @@ impl World {
             return; // the host owns the world
         }
         let _ = fs::create_dir_all(&self.save_dir);
-        write_world_meta(&self.save_dir, self.seed, &self.mode, self.ire);
+        write_world_meta_full(
+            &self.save_dir,
+            self.seed,
+            &self.mode,
+            self.ire,
+            self.day,
+            self.weather,
+        );
         self.write_palette();
         self.save_entities();
         self.save_mobs();
@@ -1491,10 +1630,12 @@ impl World {
             touch(0, 1);
         }
         self.wake_water(x, y, z);
-        // Cross blocks (torches, plants) pop off when their support vanishes.
+        // Cross blocks (torches, plants) and thin slabs (snow layers)
+        // pop off when their support vanishes.
         if !self.reg.is_solid(b) && y + 1 < CHUNK_Y as i32 {
             let above = self.get_block(x, y + 1, z);
-            if above != AIR && self.reg.block(above).cross {
+            let ad = self.reg.block(above);
+            if above != AIR && (ad.cross || ad.height.is_some()) {
                 if let Some((item, n)) = self.reg.block(above).drops {
                     let reg = self.reg.clone();
                     self.pending_drops
@@ -1523,6 +1664,9 @@ impl World {
     pub fn random_tick(&mut self, rng: &mut u32) {
         let reg = self.reg.clone();
         let farmland = reg.block_id("base:farmland");
+        let ice = reg.block_id("base:ice");
+        let snow_layer = reg.block_id("base:snow_layer");
+        let season = self.season();
         let keys: Vec<ChunkPos> = self.chunks.keys().copied().collect();
         let mut changes = Vec::new();
         let mut saplings: Vec<(i32, i32, i32, String, u32)> = Vec::new();
@@ -1545,9 +1689,63 @@ impl World {
                 if let Some(next) = d.crop_next {
                     let soil_ok =
                         d.crop_any_soil || farmland == Some(self.get_block(wx, y - 1, wz));
+                    // The calendar gates growth. Bushes fruit in summer
+                    // and autumn; crops slow through the year and stop
+                    // in winter - unless roofed and torchlit (a
+                    // greenhouse, emergent from the light rules).
+                    let mult = if d.crop_any_soil {
+                        if season == 1 || season == 2 { 1.0 } else { 0.0 }
+                    } else {
+                        match season {
+                            0 => 1.25,
+                            1 => 1.0,
+                            2 => 0.75,
+                            _ => 0.0,
+                        }
+                    };
+                    let mult = if mult == 0.0 && !d.crop_any_soil {
+                        let (bl, sl) = self.light_at(wx, y, wz);
+                        if sl < 15 && bl >= 10 { 0.5 } else { 0.0 }
+                    } else {
+                        mult
+                    };
                     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
-                    if soil_ok && ((*rng >> 8) as f32 / (1 << 24) as f32) < d.crop_chance {
+                    if soil_ok
+                        && mult > 0.0
+                        && ((*rng >> 8) as f32 / (1 << 24) as f32) < d.crop_chance * mult
+                    {
                         changes.push((wx, y, wz, next));
+                    }
+                    continue;
+                }
+                // Winter freezes exposed still water outside the warm
+                // belts; spring gives the lakes back.
+                let sky_open = self.light_at(wx, y + 1, wz).1 == 15;
+                if d.water_level == Some(0)
+                    && season == 3
+                    && sky_open
+                    && self.get_block(wx, y + 1, wz) == AIR
+                    && self.generator.climate(wx, wz).t < 0.35
+                {
+                    if let Some(ice) = ice {
+                        changes.push((wx, y, wz, ice));
+                    }
+                    continue;
+                }
+                if Some(b) == ice
+                    && (season == 0 || season == 1)
+                    && sky_open
+                    && self.generator.climate(wx, wz).t > -0.35
+                {
+                    changes.push((wx, y, wz, self.reg.water_block(0)));
+                    continue;
+                }
+                // Snow layers melt under bright light or a warm season.
+                if Some(b) == snow_layer {
+                    let (bl, _) = self.light_at(wx, y, wz);
+                    let warm = season != 3 && self.generator.climate(wx, wz).t > -0.35;
+                    if bl >= 12 || warm {
+                        changes.push((wx, y, wz, AIR));
                     }
                 }
             }
@@ -1562,6 +1760,25 @@ impl World {
         for (x, y, z, _species, rnd) in saplings {
             self.try_grow_sapling(x, y, z, rnd);
         }
+    }
+
+    /// One flake of consequence: lay a snow layer on this column's
+    /// surface if the storm is cold here and the sky can reach it.
+    pub fn settle_snow(&mut self, x: i32, z: i32) {
+        if !self.snows_at(x, z) {
+            return;
+        }
+        let Some(layer) = self.reg.block_id("base:snow_layer") else {
+            return;
+        };
+        let y = self.surface_height(x, z);
+        if y <= SEA_LEVEL || y + 1 >= CHUNK_Y as i32 - 1 {
+            return;
+        }
+        if self.get_block(x, y + 1, z) != AIR || self.light_at(x, y + 1, z).1 != 15 {
+            return;
+        }
+        self.set_block(x, y + 1, z, layer);
     }
 
     /// Attempt to mature the sapling at this position. On success the

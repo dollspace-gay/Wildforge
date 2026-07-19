@@ -9,7 +9,7 @@
 use glam::Vec3;
 
 use crate::mobs::MobEvent;
-use crate::world::World;
+use crate::world::{Weather, World};
 
 /// Fixed simulation rate. Rendering runs faster and interpol- er, copes.
 pub const TICK: f32 = 1.0 / 30.0;
@@ -38,6 +38,8 @@ pub enum SimEvent {
     Dawn { offering_refund: f32 },
     /// The wild's ire crossed a tier boundary.
     IreTier { rose: bool, tier: usize },
+    /// The sky changed its mind (ambience/visual transitions).
+    WeatherChanged(Weather),
 }
 
 pub struct Server {
@@ -48,6 +50,7 @@ pub struct Server {
     accum: f32,
     water_timer: f32,
     random_timer: f32,
+    snow_timer: f32,
     prev_tier: usize,
 }
 
@@ -61,6 +64,7 @@ impl Server {
             accum: 0.0,
             water_timer: 0.0,
             random_timer: 0.0,
+            snow_timer: 0.0,
             prev_tier,
         }
     }
@@ -84,7 +88,12 @@ impl Server {
 
     fn step(&mut self, dt: f32, players: &[PlayerCtx], events: &mut Vec<SimEvent>) {
         // The clock, the wild's ire, and dawn.
+        let before = self.time_of_day;
         self.time_of_day = (self.time_of_day + dt / DAY_LENGTH) % 1.0;
+        if self.time_of_day < before {
+            self.world.day = self.world.day.wrapping_add(1);
+        }
+        self.step_weather(dt, events);
         if self.world.tick_ire(dt / DAY_LENGTH) {
             let refund = self.world.accept_offerings();
             events.push(SimEvent::Dawn {
@@ -144,6 +153,27 @@ impl Server {
             }
         }
 
+        // Falling snow settles: sprinkle layers onto exposed cold
+        // ground near players while precipitation lasts.
+        if self.world.weather.precipitating() && !players.is_empty() {
+            self.snow_timer += dt;
+            if self.snow_timer >= 0.25 {
+                self.snow_timer = 0.0;
+                let mut rng = self.rng;
+                for _ in 0..4 {
+                    rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                    let p = players[(rng >> 8) as usize % players.len()].pos;
+                    rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                    let dx = ((rng >> 8) % 49) as i32 - 24;
+                    rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                    let dz = ((rng >> 8) % 49) as i32 - 24;
+                    let (x, z) = (p.x.floor() as i32 + dx, p.z.floor() as i32 + dz);
+                    self.world.settle_snow(x, z);
+                }
+                self.rng = rng;
+            }
+        }
+
         // Random ticks (crops, saplings) every half second.
         self.random_timer += dt;
         if self.random_timer >= 0.5 {
@@ -152,6 +182,45 @@ impl Server {
             self.world.random_tick(&mut rng);
             self.rng = rng;
         }
+    }
+
+    /// The weather front machine: mostly random, but storm odds lean on
+    /// the wild's ire. Durations are rolled per state, in day fractions.
+    fn step_weather(&mut self, dt: f32, events: &mut Vec<SimEvent>) {
+        self.world.weather_timer -= dt;
+        if self.world.weather_timer > 0.0 {
+            return;
+        }
+        let mut r01 = || {
+            self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            (self.rng >> 8) as f32 / (1 << 24) as f32
+        };
+        let (next, dur_days) = match self.world.weather {
+            Weather::Clear => (Weather::Overcast, 0.2 + r01() * 0.3),
+            Weather::Overcast => {
+                let storm_p = 0.1 + 0.5 * (self.world.ire / 100.0);
+                let roll = r01();
+                if roll < storm_p {
+                    (Weather::Storm, 0.1 + r01() * 0.2)
+                } else if roll < storm_p + (1.0 - storm_p) * 0.6 {
+                    (Weather::Precip, 0.2 + r01() * 0.6)
+                } else {
+                    (Weather::Clear, 0.5 + r01() * 1.5)
+                }
+            }
+            Weather::Precip => (Weather::Clear, 0.5 + r01() * 1.5),
+            Weather::Storm => (Weather::Overcast, 0.2 + r01() * 0.3),
+        };
+        self.world.weather = next;
+        self.world.weather_timer = dur_days * DAY_LENGTH;
+        events.push(SimEvent::WeatherChanged(next));
+    }
+
+    /// The night was slept through: the front moved on with it.
+    pub fn sleep_to_dawn(&mut self) {
+        self.time_of_day = 0.3;
+        self.world.day = self.world.day.wrapping_add(1);
+        self.world.weather_timer = 0.0;
     }
 
     /// Sync the tier tracker (world load / forced ire) so the next tick

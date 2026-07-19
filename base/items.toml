@@ -696,3 +696,10 @@ name = "Charm of Slow Hunger"
 texture = "@charm_hunger"
 max_stack = 1
 charm = "hunger"
+
+[[item]]
+id = "snowball"
+name = "Snowball"
+texture = "@snowball"
+max_stack = 16
+throw = { speed = 18.0 }

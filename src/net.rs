@@ -19,7 +19,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 pub const GAME_PORT: u16 = 27431;
 pub const BEACON_PORT: u16 = 27430;
 /// Bump when the protocol changes shape.
-pub const PROTOCOL: u32 = 2;
+pub const PROTOCOL: u32 = 3;
 
 // ---------------- protocol ----------------
 
@@ -155,6 +155,8 @@ pub enum S2C {
     TimeIre {
         time: f32,
         ire: f32,
+        day: u32,
+        weather: u8,
     },
     Hit {
         dmg: f32,

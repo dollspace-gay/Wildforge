@@ -266,6 +266,8 @@ impl HostSession {
             self.net.broadcast(&S2C::TimeIre {
                 time: server.time_of_day,
                 ire: server.world.ire,
+                day: server.world.day,
+                weather: server.world.weather.as_u8(),
             });
         }
 
@@ -280,13 +282,15 @@ impl HostSession {
                 if server.world.tick_ire(skipped) {
                     server.world.accept_offerings();
                 }
-                server.time_of_day = 0.3;
+                server.sleep_to_dawn();
                 for g in self.guests.values_mut() {
                     g.sleeping = false;
                 }
                 self.net.broadcast(&S2C::TimeIre {
                     time: server.time_of_day,
                     ire: server.world.ire,
+                    day: server.world.day,
+                    weather: server.world.weather.as_u8(),
                 });
                 self.net
                     .broadcast(&S2C::Toast("Dawn. The camp wakes.".into()));

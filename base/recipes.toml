@@ -474,3 +474,16 @@ output = "base:shears"
 pattern = ["f", "s", "t"]
 keys = { f = "base:plant_fiber", s = "base:steel_ingot", t = "base:stick" }
 output = "base:excavation_brush"
+
+# ---- snow (weather & seasons) ----
+
+[[recipe]]
+pattern = ["bb", "bb"]
+keys = { b = "base:snowball" }
+output = "base:snow"
+
+[[recipe]]
+pattern = ["sss"]
+keys = { s = "base:snow" }
+output = "base:snow_layer"
+count = 6

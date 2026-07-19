@@ -1,6 +1,7 @@
 //! Procedurally synthesized sound effects — no audio files.
 //! Degrades to silence if no output device is available.
 
+use rodio::Sink;
 use rodio::buffer::SamplesBuffer;
 use rodio::{OutputStream, OutputStreamHandle, Source};
 
@@ -29,12 +30,22 @@ pub enum Sfx {
     MobDeath(f32),
     /// Warden bolt cast/whoosh.
     Bolt(f32),
+    /// Distant thunder, delayed after the flash.
+    Thunder,
+}
+
+/// Looping background weather beds.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Ambience {
+    Rain,
+    Storm,
 }
 
 pub struct Audio {
     _stream: OutputStream,
     handle: OutputStreamHandle,
     pub volume: f32,
+    ambience: std::cell::RefCell<Option<(Ambience, Sink)>>,
 }
 
 impl Audio {
@@ -44,10 +55,37 @@ impl Audio {
                 _stream: stream,
                 handle,
                 volume,
+                ambience: std::cell::RefCell::new(None),
             }),
             Err(e) => {
                 eprintln!("audio: no output device ({e}); running silent");
                 None
+            }
+        }
+    }
+
+    /// Swap the looping weather bed (None fades it out). Idempotent
+    /// per kind — call every frame with the desired state.
+    pub fn set_ambience(&self, want: Option<Ambience>) {
+        let mut cur = self.ambience.borrow_mut();
+        match (want, cur.as_ref().map(|(k, _)| *k)) {
+            (Some(w), Some(c)) if w == c => {}
+            (None, None) => {}
+            (want, _) => {
+                *cur = None; // dropping the sink stops the old loop
+                if let Some(kind) = want {
+                    if self.volume <= 0.0 {
+                        return;
+                    }
+                    if let Ok(sink) = Sink::try_new(&self.handle) {
+                        let samples = ambience_loop(kind);
+                        let src = SamplesBuffer::new(1, RATE, samples)
+                            .repeat_infinite()
+                            .amplify(self.volume * 0.35);
+                        sink.append(src);
+                        *cur = Some((kind, sink));
+                    }
+                }
             }
         }
     }
@@ -118,10 +156,35 @@ fn synth(sfx: Sfx) -> Vec<f32> {
         Sfx::Pickup => chirp(0.12, 420.0, 1000.0),
         Sfx::Click => burst(0.03, 2500.0, 0.0, 0.0, 1.0, 77),
         Sfx::Hurt => burst(0.22, 300.0, 90.0, 0.6, 1.8, 88),
+        Sfx::Thunder => burst(1.4, 240.0, 48.0, 0.5, 0.9, 137),
         Sfx::MobHurt(p) => burst(0.16, 320.0 * p, 110.0 * p, 0.5, 2.0, 121),
         Sfx::MobDeath(p) => burst(0.34, 240.0 * p, 55.0 * p, 0.7, 1.4, 122),
         Sfx::Bolt(p) => chirp(0.14, 900.0 * p, 300.0 * p),
         Sfx::Craft => burst(0.12, 600.0, 200.0, 0.5, 2.5, 99),
         Sfx::Splash => burst(0.30, 1200.0, 0.0, 0.0, 1.2, 111),
     }
+}
+
+/// A seamless few seconds of weather noise for the ambience sink.
+/// Rain is hissy; storms sit lower with slow surges.
+fn ambience_loop(kind: Ambience) -> Vec<f32> {
+    let dur = 4.0f32;
+    let n = (dur * RATE as f32) as usize;
+    let mut rng = Rng(if kind == Ambience::Rain { 4242 } else { 8484 });
+    let (cutoff, gain) = match kind {
+        Ambience::Rain => (2400.0, 0.5),
+        Ambience::Storm => (900.0, 0.8),
+    };
+    let alpha = (cutoff / RATE as f32).min(1.0);
+    let mut lp = 0.0f32;
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let t = i as f32 / n as f32;
+        lp += alpha * (rng.next() - lp);
+        // A slow surge cycle keeps it from reading as flat static; the
+        // cycle completes over the loop so the seam is inaudible.
+        let surge = 1.0 + 0.35 * (t * std::f32::consts::TAU).sin();
+        out.push(lp * gain * surge);
+    }
+    out
 }

@@ -169,6 +169,10 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                 // block above is also water — then it's a full column).
                 let top_drop = if water && !reg.is_water(get(lx, y + 1, lz)) {
                     1.0 - reg.water_height(b)
+                } else if let Some(h) = reg.block(b).height {
+                    // Thin slabs (snow layers): the top face and every
+                    // side's upper corners drop to the declared height.
+                    1.0 - h
                 } else {
                     0.0
                 };
