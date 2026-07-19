@@ -646,6 +646,15 @@ impl Game {
                     self.server.world.ensure_chunk(ChunkPos { x: cp.x + dx, z: cp.z + dz });
                 }
             }
+            // A save from below the world floor (a void casualty) comes
+            // back standing on whatever ground its column still has.
+            if self.player.pos.y < 1.0 {
+                let (px, pz) =
+                    (self.player.pos.x.floor() as i32, self.player.pos.z.floor() as i32);
+                let h = self.server.world.surface_height(px, pz);
+                self.player.pos.y = h as f32 + 1.05;
+                self.player.vel = Vec3::ZERO;
+            }
         }
         // Dev: pick the hotbar slot screenshots hold up (after the
         // profile load so it isn't overwritten).
@@ -1524,6 +1533,19 @@ impl Game {
 
     fn respawn(&mut self) {
         self.player = Player::new(self.spawn_point);
+        // A dug-out or collapsed spawn column: come to on the first
+        // ground below instead of free-falling to a second death.
+        let (sx, sz) = (self.spawn_point.x.floor() as i32, self.spawn_point.z.floor() as i32);
+        self.server.world.ensure_chunk(ChunkPos::of_world(sx, sz));
+        let sy = (self.spawn_point.y.floor() as i32).clamp(0, chunk::CHUNK_Y as i32 - 1);
+        let ground = (0..=sy)
+            .rev()
+            .find(|&y| self.reg.is_solid(self.server.world.get_block(sx, y, sz)));
+        if let Some(g) = ground {
+            if self.spawn_point.y - g as f32 > 4.0 {
+                self.player.pos.y = g as f32 + 1.05;
+            }
+        }
         self.health = self.max_health();
         self.hunger = 20.0;
         self.air = MAX_AIR;
@@ -1889,7 +1911,9 @@ impl Game {
                 let target = h.block;
                 let b = self.server.world.get_block(target.0, target.1, target.2);
                 let hardness = if self.creative {
-                    Some(0.0001)
+                    // Creative breaks anything instantly — except the
+                    // unbreakable (the world's floor stays a floor).
+                    reg.block(b).hardness.map(|_| 0.0001)
                 } else {
                     reg.effective_hardness(b, held)
                 };
@@ -2419,6 +2443,13 @@ impl Game {
             self.fall_start = Some(self.fall_start.unwrap_or(self.player.pos.y).max(self.player.pos.y));
         } else {
             self.fall_start = None;
+        }
+
+        // The void below the world's floor: nothing survives long out
+        // there (a backstop — worldroot should make this unreachable).
+        if self.player.pos.y < -8.0 && self.since_damage >= 0.4 {
+            self.killed_by_wild = false;
+            self.damage(4.0);
         }
 
         // Drowning.

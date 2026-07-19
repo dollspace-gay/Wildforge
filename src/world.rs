@@ -408,7 +408,19 @@ impl World {
         }
         let loaded = self.try_load_chunk(pos);
         let fresh = loaded.is_none();
-        let chunk = loaded.unwrap_or_else(|| self.generator.generate(pos, &self.reg));
+        let mut chunk = loaded.unwrap_or_else(|| self.generator.generate(pos, &self.reg));
+        // The floor reseals on load: any hole in the bedrock (a
+        // creative dig, an old bug) heals when the chunk comes back.
+        // Idempotent — set() doesn't mark the chunk modified.
+        if let Some(root) = self.reg.block_id("base:bedrock") {
+            for lx in 0..CHUNK_X {
+                for lz in 0..CHUNK_Z {
+                    if chunk.get(lx, 0, lz) != root {
+                        chunk.set(lx, 0, lz, root);
+                    }
+                }
+            }
+        }
         self.chunks.insert(pos, chunk);
         // Ruins place once, at first generation; placement marks the chunk
         // modified so it saves and never regenerates.
@@ -660,6 +672,9 @@ impl World {
         // and when the player leaves them far behind.
         mobs.retain(|m| {
             let Some(def) = reg.animals.get(m.species) else { return false };
+            if m.pos.y < -20.0 {
+                return false; // fell out of the world somehow
+            }
             if !def.hostile {
                 return true;
             }
