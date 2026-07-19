@@ -19,7 +19,13 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Config {
-        Config { volume: 0.7, sensitivity: 1.0, view_dist: 7, fov: 75.0, pack: "gemini".into() }
+        Config {
+            volume: 0.7,
+            sensitivity: 1.0,
+            view_dist: 7,
+            fov: 75.0,
+            pack: "gemini".into(),
+        }
     }
 }
 
@@ -31,7 +37,9 @@ impl Config {
     pub fn from_text(text: &str) -> Config {
         let mut c = Config::default();
         for line in text.lines() {
-            let Some((k, v)) = line.split_once('=') else { continue };
+            let Some((k, v)) = line.split_once('=') else {
+                continue;
+            };
             let (k, v) = (k.trim(), v.trim());
             match k {
                 "volume" => {

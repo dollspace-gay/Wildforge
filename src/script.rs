@@ -85,11 +85,17 @@ impl ScriptHost {
 
         let q = queue.clone();
         engine.register_fn("set_block", move |x: i64, y: i64, z: i64, block: &str| {
-            q.borrow_mut().push(Cmd::SetBlock(x as i32, y as i32, z as i32, block.into()));
+            q.borrow_mut()
+                .push(Cmd::SetBlock(x as i32, y as i32, z as i32, block.into()));
         });
         engine.register_fn("get_block", |x: i64, y: i64, z: i64| -> String {
             with_world(
-                |w| w.reg.block(w.get_block(x as i32, y as i32, z as i32)).name.clone(),
+                |w| {
+                    w.reg
+                        .block(w.get_block(x as i32, y as i32, z as i32))
+                        .name
+                        .clone()
+                },
                 String::new(),
             )
         });
@@ -98,7 +104,8 @@ impl ScriptHost {
         });
         let q = queue.clone();
         engine.register_fn("give", move |item: &str, count: i64| {
-            q.borrow_mut().push(Cmd::Give(item.into(), count.max(0) as u32));
+            q.borrow_mut()
+                .push(Cmd::Give(item.into(), count.max(0) as u32));
         });
         let q = queue.clone();
         engine.register_fn("hud_message", move |msg: &str| {
@@ -109,14 +116,17 @@ impl ScriptHost {
             q.borrow_mut().push(Cmd::Sound(name.into()));
         });
         let q = queue.clone();
-        engine.register_fn("spawn_animal", move |species: &str, x: i64, y: i64, z: i64| {
-            q.borrow_mut().push(Cmd::SpawnAnimal(
-                species.into(),
-                x as f32 + 0.5,
-                y as f32,
-                z as f32 + 0.5,
-            ));
-        });
+        engine.register_fn(
+            "spawn_animal",
+            move |species: &str, x: i64, y: i64, z: i64| {
+                q.borrow_mut().push(Cmd::SpawnAnimal(
+                    species.into(),
+                    x as f32 + 0.5,
+                    y as f32,
+                    z as f32 + 0.5,
+                ));
+            },
+        );
         let cur = current.clone();
         engine.register_fn("log", move |msg: &str| {
             eprintln!("[mod:{}] {msg}", cur.borrow());
@@ -137,7 +147,13 @@ impl ScriptHost {
                 .insert(key.into(), value.into());
         });
 
-        ScriptHost { engine, mods: Vec::new(), queue, kv, current }
+        ScriptHost {
+            engine,
+            mods: Vec::new(),
+            queue,
+            kv,
+            current,
+        }
     }
 
     /// Compile `main.rhai` for each mod dir. On error, keeps the previous
@@ -154,7 +170,11 @@ impl ScriptHost {
                 .map_err(|e| e.to_string())
                 .and_then(|src| self.engine.compile(&src).map_err(|e| e.to_string()))
             {
-                Ok(ast) => next.push(ScriptMod { id: id.clone(), ast: Some(ast), error: None }),
+                Ok(ast) => next.push(ScriptMod {
+                    id: id.clone(),
+                    ast: Some(ast),
+                    error: None,
+                }),
                 Err(e) => {
                     let kept = old.and_then(|m| m.ast.take());
                     next.push(ScriptMod {
@@ -213,10 +233,10 @@ impl ScriptHost {
     pub fn load_kv(&self, world_dir: &Path) {
         let mut kv = self.kv.borrow_mut();
         kv.clear();
-        if let Ok(text) = std::fs::read_to_string(world_dir.join("modstore.toml")) {
-            if let Ok(parsed) = toml::from_str::<HashMap<String, HashMap<String, String>>>(&text) {
-                *kv = parsed;
-            }
+        if let Ok(text) = std::fs::read_to_string(world_dir.join("modstore.toml"))
+            && let Ok(parsed) = toml::from_str::<HashMap<String, HashMap<String, String>>>(&text)
+        {
+            *kv = parsed;
         }
     }
 

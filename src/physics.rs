@@ -75,7 +75,11 @@ impl Player {
             WALK_SPEED
         };
         // Snappy ground control, floatier air control.
-        let accel = if self.on_ground || self.in_water { 18.0 } else { 6.0 };
+        let accel = if self.on_ground || self.in_water {
+            18.0
+        } else {
+            6.0
+        };
         let target = wish * speed;
         let cur = Vec3::new(self.vel.x, 0.0, self.vel.z);
         let delta = target - cur;

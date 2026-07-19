@@ -17,7 +17,11 @@ pub struct ItemStack {
 
 impl ItemStack {
     pub fn new(reg: &Registry, item: ItemId, count: u32) -> ItemStack {
-        ItemStack { item, count, durability: reg.item(item).durability }
+        ItemStack {
+            item,
+            count,
+            durability: reg.item(item).durability,
+        }
     }
 
     /// Stacks merge only if same item and neither is a tool.
@@ -37,9 +41,15 @@ pub fn click_stack(
         (Some(held), Some(s), false) if s.can_merge(reg, &held) => {
             let max = reg.item(s.item).max_stack;
             let move_n = held.count.min(max - s.count);
-            let slot = Some(ItemStack { count: s.count + move_n, ..s });
+            let slot = Some(ItemStack {
+                count: s.count + move_n,
+                ..s
+            });
             let held = if held.count > move_n {
-                Some(ItemStack { count: held.count - move_n, ..held })
+                Some(ItemStack {
+                    count: held.count - move_n,
+                    ..held
+                })
             } else {
                 None
             };
@@ -56,7 +66,10 @@ pub fn click_stack(
                 let count = cur.map_or(0, |s| s.count) + 1;
                 let slot = Some(ItemStack { count, ..held });
                 let held = if held.count > 1 {
-                    Some(ItemStack { count: held.count - 1, ..held })
+                    Some(ItemStack {
+                        count: held.count - 1,
+                        ..held
+                    })
                 } else {
                     None
                 };
@@ -68,7 +81,10 @@ pub fn click_stack(
         (None, Some(s), true) => {
             let take = s.count.div_ceil(2);
             let slot = if s.count > take {
-                Some(ItemStack { count: s.count - take, ..s })
+                Some(ItemStack {
+                    count: s.count - take,
+                    ..s
+                })
             } else {
                 None
             };
@@ -84,7 +100,9 @@ pub struct Inventory {
 
 impl Inventory {
     pub fn new() -> Inventory {
-        Inventory { slots: [None; TOTAL_SLOTS] }
+        Inventory {
+            slots: [None; TOTAL_SLOTS],
+        }
     }
 
     /// Add a stack; returns the count that did not fit.
@@ -96,12 +114,14 @@ impl Inventory {
                 if count == 0 {
                     break;
                 }
-                if let Some(s) = slot {
-                    if s.item == stack.item && reg.item(s.item).tool.is_none() && s.count < max {
-                        let take = count.min(max - s.count);
-                        s.count += take;
-                        count -= take;
-                    }
+                if let Some(s) = slot
+                    && s.item == stack.item
+                    && reg.item(s.item).tool.is_none()
+                    && s.count < max
+                {
+                    let take = count.min(max - s.count);
+                    s.count += take;
+                    count -= take;
                 }
             }
         }
@@ -111,7 +131,10 @@ impl Inventory {
             }
             if slot.is_none() {
                 let take = count.min(max);
-                *slot = Some(ItemStack { count: take, ..stack });
+                *slot = Some(ItemStack {
+                    count: take,
+                    ..stack
+                });
                 count -= take;
             }
         }

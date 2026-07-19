@@ -87,11 +87,16 @@ impl Server {
         self.time_of_day = (self.time_of_day + dt / DAY_LENGTH) % 1.0;
         if self.world.tick_ire(dt / DAY_LENGTH) {
             let refund = self.world.accept_offerings();
-            events.push(SimEvent::Dawn { offering_refund: refund });
+            events.push(SimEvent::Dawn {
+                offering_refund: refund,
+            });
         }
         let tier = self.world.ire_tier();
         if tier != self.prev_tier {
-            events.push(SimEvent::IreTier { rose: tier > self.prev_tier, tier });
+            events.push(SimEvent::IreTier {
+                rose: tier > self.prev_tier,
+                tier,
+            });
             self.prev_tier = tier;
         }
 
@@ -113,7 +118,8 @@ impl Server {
         if !players.is_empty() {
             rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
             let p = &players[(rng >> 8) as usize % players.len()];
-            self.world.tick_hostile_spawns(p.pos, p.spawn, dl, dt, &mut rng);
+            self.world
+                .tick_hostile_spawns(p.pos, p.spawn, dl, dt, &mut rng);
         }
         self.rng = rng;
         for ev in mob_events {
@@ -125,12 +131,16 @@ impl Server {
                     self.world.projectiles.push(proj);
                     events.push(SimEvent::BoltCast);
                 }
-                MobEvent::Bred(_) => events.push(SimEvent::Bred),
+                MobEvent::Bred => events.push(SimEvent::Bred),
             }
         }
         for (who, dmg) in self.world.tick_projectiles(players, dt) {
             if players.get(who).is_some_and(|p| p.attackable) {
-                events.push(SimEvent::PlayerHit { who, dmg, from: players[who].pos });
+                events.push(SimEvent::PlayerHit {
+                    who,
+                    dmg,
+                    from: players[who].pos,
+                });
             }
         }
 

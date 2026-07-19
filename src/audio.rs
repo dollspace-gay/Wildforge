@@ -40,7 +40,11 @@ pub struct Audio {
 impl Audio {
     pub fn new(volume: f32) -> Option<Audio> {
         match OutputStream::try_default() {
-            Ok((stream, handle)) => Some(Audio { _stream: stream, handle, volume }),
+            Ok((stream, handle)) => Some(Audio {
+                _stream: stream,
+                handle,
+                volume,
+            }),
             Err(e) => {
                 eprintln!("audio: no output device ({e}); running silent");
                 None

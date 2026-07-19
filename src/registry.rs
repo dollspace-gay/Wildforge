@@ -151,7 +151,7 @@ pub struct ProjectileDef {
 
 #[derive(Clone, Debug)]
 pub struct AnimalDef {
-    pub name: String,  // "base:deer"
+    pub name: String, // "base:deer"
     pub label: String,
     /// Lowercase biome names this species spawns in.
     pub biomes: Vec<String>,
@@ -376,7 +376,11 @@ impl Registry {
             .iter()
             .filter(|r| r.pattern.iter().flatten().any(|i| i.matches(item)))
             .collect();
-        let s = self.smelts.iter().filter(|s| s.input.matches(item)).collect();
+        let s = self
+            .smelts
+            .iter()
+            .filter(|s| s.input.matches(item))
+            .collect();
         let f = self.fuels.iter().any(|(i, _, _)| i.matches(item));
         (r, s, f)
     }
@@ -387,7 +391,10 @@ impl Registry {
 
     /// (burn seconds, smelt-speed multiplier) for a fuel item.
     pub fn fuel_value(&self, item: ItemId) -> Option<(f32, f32)> {
-        self.fuels.iter().find(|(f, _, _)| f.matches(item)).map(|(_, b, sp)| (*b, *sp))
+        self.fuels
+            .iter()
+            .find(|(f, _, _)| f.matches(item))
+            .map(|(_, b, sp)| (*b, *sp))
     }
 
     /// Drop for breaking `block` with `held` (requires_tool gating).
@@ -423,7 +430,12 @@ struct ModToml {
 #[serde(untagged)]
 enum TexSpec {
     One(String),
-    Faces { top: String, side: String, #[serde(default)] bottom: Option<String> },
+    Faces {
+        top: String,
+        side: String,
+        #[serde(default)]
+        bottom: Option<String>,
+    },
 }
 
 #[derive(Deserialize, Clone)]
@@ -813,8 +825,8 @@ const BASE_ANIMALS: &str = include_str!("../base/animals.toml");
 const BASE_STRUCTURES: &str = include_str!("../base/structures.toml");
 
 fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
-    let manifest = std::fs::read_to_string(dir.join("mod.toml"))
-        .map_err(|e| format!("mod.toml: {e}"))?;
+    let manifest =
+        std::fs::read_to_string(dir.join("mod.toml")).map_err(|e| format!("mod.toml: {e}"))?;
     let m: ModToml = toml::from_str(&manifest).map_err(|e| format!("mod.toml: {e}"))?;
     let read = |f: &str| std::fs::read_to_string(dir.join(f)).unwrap_or_default();
     let blocks: BlocksFile =
@@ -866,8 +878,7 @@ fn base_mod() -> RawMod {
     let features: FeaturesFile = toml::from_str(BASE_FEATURES).expect("base features.toml");
     let aliases: AliasesFile = toml::from_str(BASE_ALIASES).expect("base aliases.toml");
     let animals: AnimalsFile = toml::from_str(BASE_ANIMALS).expect("base animals.toml");
-    let structures: StructuresFile =
-        toml::from_str(BASE_STRUCTURES).expect("base structures.toml");
+    let structures: StructuresFile = toml::from_str(BASE_STRUCTURES).expect("base structures.toml");
     RawMod {
         info: ModInfo {
             id: "base".into(),
@@ -930,10 +941,7 @@ pub fn load(mods_dir: &Path) -> Registry {
                 continue;
             }
             let ok = raws[i].depends.iter().all(|d| {
-                ids.iter()
-                    .enumerate()
-                    .any(|(j, id)| id == d && placed[j])
-                    || d == &raws[i].info.id
+                ids.iter().enumerate().any(|(j, id)| id == d && placed[j]) || d == &raws[i].info.id
             });
             if ok {
                 placed[i] = true;
@@ -956,7 +964,10 @@ pub fn load(mods_dir: &Path) -> Registry {
         }
     }
 
-    build(order.into_iter().map(|i| raws.remove_stable(i)).collect(), failed)
+    build(
+        order.into_iter().map(|i| raws.remove_stable(i)).collect(),
+        failed,
+    )
 }
 
 trait RemoveStable {
@@ -1050,7 +1061,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         }
         let key = format!(
             "{}/{}",
-            mod_path.as_deref().map(|p| p.display().to_string()).unwrap_or_default(),
+            mod_path
+                .as_deref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
             spec
         );
         if let Some(s) = tex_slots.get(&key) {
@@ -1072,7 +1086,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         let slot = next_slot;
         next_slot += 1;
         tex_slots.insert(key, slot);
-        let mod_id = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let mod_id = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
         let stem = spec.strip_suffix(".png").unwrap_or(spec);
         reg.tex_names.push((format!("{mod_id}/{stem}"), slot));
         reg.tex_files.push((slot, path));
@@ -1100,8 +1117,14 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let mut pending_places: Vec<(String, (String, String))> = Vec::new();
     // (mod id, toml, body tile, head tile, per-box tiles) — resolve in pass 1.
     #[allow(clippy::type_complexity)]
-    let mut pending_animals: Vec<(String, AnimalToml, u16, u16, HashMap<String, u16>, Option<u16>)> =
-        Vec::new();
+    let mut pending_animals: Vec<(
+        String,
+        AnimalToml,
+        u16,
+        u16,
+        HashMap<String, u16>,
+        Option<u16>,
+    )> = Vec::new();
 
     for raw in &raws {
         if raw.info.id.is_empty() {
@@ -1132,7 +1155,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 name: full.clone(),
                 label: b.name.clone().unwrap_or_else(|| b.id.clone()),
                 tiles,
-                hardness: if b.unbreakable || is_fluid { None } else { b.hardness.or(Some(1.0)) },
+                hardness: if b.unbreakable || is_fluid {
+                    None
+                } else {
+                    b.hardness.or(Some(1.0))
+                },
                 tool: b.tool,
                 requires_tool: b.requires_tool,
                 drops: None,
@@ -1161,7 +1188,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             pending_drops.push(PendingDrop {
                 block: id.0 as usize,
                 rule: b.drops.clone().unwrap_or_else(|| {
-                    if is_fluid { "none".into() } else { "self".into() }
+                    if is_fluid {
+                        "none".into()
+                    } else {
+                        "self".into()
+                    }
                 }),
                 count: b.drop_count.unwrap_or(1),
             });
@@ -1179,8 +1210,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     reg.block_by_name.insert(def.name.clone(), sid);
                     reg.blocks.push(def);
                     reg.blocks[prev.0 as usize].crop_next = Some(sid);
-                    reg.blocks[prev.0 as usize].crop_chance =
-                        crop.next_chance.unwrap_or(0.2);
+                    reg.blocks[prev.0 as usize].crop_chance = crop.next_chance.unwrap_or(0.2);
                     prev = sid;
                 }
                 // The final stage grows no further (clones inherit the
@@ -1244,7 +1274,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 continue;
             }
             let icon = resolve_tex(&it.texture, &raw.info.path, &mut errs);
-            let tool = it.tool.map(|k| (k, it.tool_speed.unwrap_or(4.0), it.tool_tier.unwrap_or(1)));
+            let tool = it
+                .tool
+                .map(|k| (k, it.tool_speed.unwrap_or(4.0), it.tool_tier.unwrap_or(1)));
             let iid = ItemId(reg.items.len() as u16);
             let food = it.food.as_ref().map(|f| {
                 let mut n = [0.0f32; 5];
@@ -1253,22 +1285,31 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                         n[i] = *v;
                     }
                 }
-                FoodDef { hunger: f.hunger, eat_time: f.eat_time.unwrap_or(1.5), nutrition: n }
+                FoodDef {
+                    hunger: f.hunger,
+                    eat_time: f.eat_time.unwrap_or(1.5),
+                    nutrition: n,
+                }
             });
             let damage = it.damage.unwrap_or(match tool {
                 Some((ToolKind::Axe, _, _)) => 3.0,
                 Some(_) => 2.0,
                 None => 1.0,
             });
-            let armor = it.armor.as_ref().and_then(|a| {
-                ArmorSlot::parse(&a.slot).map(|s| (s, a.points))
-            });
+            let armor = it
+                .armor
+                .as_ref()
+                .and_then(|a| ArmorSlot::parse(&a.slot).map(|s| (s, a.points)));
             let one_only = tool.is_some() || it.bow.is_some() || armor.is_some();
             reg.items.push(ItemDef {
                 name: full.clone(),
                 label: it.name.clone().unwrap_or_else(|| it.id.clone()),
                 icon,
-                max_stack: if one_only { 1 } else { it.max_stack.unwrap_or(64) },
+                max_stack: if one_only {
+                    1
+                } else {
+                    it.max_stack.unwrap_or(64)
+                },
                 tool,
                 durability: it.durability.unwrap_or(if tool.is_some() { 59 } else { 0 }),
                 places: None,
@@ -1322,14 +1363,23 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 .model
                 .iter()
                 .filter_map(|(n, b)| {
-                    b.tex.as_ref().map(|t| (n.clone(), resolve_tex(t, &raw.info.path, &mut errs)))
+                    b.tex
+                        .as_ref()
+                        .map(|t| (n.clone(), resolve_tex(t, &raw.info.path, &mut errs)))
                 })
                 .collect();
             let proj_tile = a
                 .projectile
                 .as_ref()
                 .map(|pr| resolve_tex(&pr.tex, &raw.info.path, &mut errs));
-            pending_animals.push((raw.info.id.clone(), a.clone(), tile, head, box_tiles, proj_tile));
+            pending_animals.push((
+                raw.info.id.clone(),
+                a.clone(),
+                tile,
+                head,
+                box_tiles,
+                proj_tile,
+            ));
         }
         for f in &raw.fuels {
             pending_fuels.push((raw.info.id.clone(), f.clone()));
@@ -1374,7 +1424,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
 
     // Pass 2: resolve drops, recipes, features by name.
     let lookup_item = |reg: &Registry, modid: &str, name: &str| -> Option<ItemId> {
-        reg.item_id(&qualify(modid, name)).or_else(|| reg.item_id(name))
+        reg.item_id(&qualify(modid, name))
+            .or_else(|| reg.item_id(name))
     };
     // Tags first (recipes reference them). Multiple mods extend the same tag.
     for (modid, t) in pending_tags {
@@ -1394,7 +1445,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         }
     }
     let lookup_block = |reg: &Registry, modid: &str, name: &str| -> Option<BlockId> {
-        reg.block_id(&qualify(modid, name)).or_else(|| reg.block_id(name))
+        reg.block_id(&qualify(modid, name))
+            .or_else(|| reg.block_id(name))
     };
     for (modid, bi, br) in pending_brush {
         if let Some(becomes) = lookup_block(&reg, &modid, &br.becomes) {
@@ -1462,16 +1514,24 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     // Ingredient helper shared by recipes/smelts/fuels.
     let resolve_ing = |reg: &Registry, modid: &str, name: &str| -> Option<Ingredient> {
         if let Some(tag) = name.strip_prefix('#') {
-            reg.tags.get(&qualify(modid, tag)).filter(|l| !l.is_empty()).map(|l| Ingredient::Any(l.clone()))
+            reg.tags
+                .get(&qualify(modid, tag))
+                .filter(|l| !l.is_empty())
+                .map(|l| Ingredient::Any(l.clone()))
         } else {
             lookup_item(reg, modid, name).map(Ingredient::One)
         }
     };
     for (modid, s) in pending_smelts {
-        if let (Some(input), Some(output)) =
-            (resolve_ing(&reg, &modid, &s.input), lookup_item(&reg, &modid, &s.output))
-        {
-            reg.smelts.push(SmeltDef { input, output, time: s.time.unwrap_or(8.0) });
+        if let (Some(input), Some(output)) = (
+            resolve_ing(&reg, &modid, &s.input),
+            lookup_item(&reg, &modid, &s.output),
+        ) {
+            reg.smelts.push(SmeltDef {
+                input,
+                output,
+                time: s.time.unwrap_or(8.0),
+            });
         }
     }
     for (modid, f) in pending_fuels {
@@ -1504,9 +1564,24 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             .collect();
         if model.is_empty() {
             model = vec![
-                ModelBox { name: "body".into(), size: [6.0, 6.0, 10.0], at: [0.0, 7.0, 0.0], tile: None },
-                ModelBox { name: "head".into(), size: [4.0, 4.0, 4.0], at: [0.0, 11.0, -6.0], tile: None },
-                ModelBox { name: "leg".into(), size: [2.0, 7.0, 2.0], at: [2.0, 0.0, 3.0], tile: None },
+                ModelBox {
+                    name: "body".into(),
+                    size: [6.0, 6.0, 10.0],
+                    at: [0.0, 7.0, 0.0],
+                    tile: None,
+                },
+                ModelBox {
+                    name: "head".into(),
+                    size: [4.0, 4.0, 4.0],
+                    at: [0.0, 11.0, -6.0],
+                    tile: None,
+                },
+                ModelBox {
+                    name: "leg".into(),
+                    size: [2.0, 7.0, 2.0],
+                    at: [2.0, 0.0, 3.0],
+                    tile: None,
+                },
             ];
         }
         model.sort_by(|a, b| a.name.cmp(&b.name));
@@ -1541,7 +1616,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             movement_float: a.movement.as_deref() == Some("float"),
             emissive: a.emissive,
             spawn_light_max: a.spawn_light_max.unwrap_or(3),
-            breed_food: a.breed_food.as_ref().and_then(|f| lookup_item(&reg, &modid, f)),
+            breed_food: a
+                .breed_food
+                .as_ref()
+                .and_then(|f| lookup_item(&reg, &modid, f)),
             projectile: a.projectile.as_ref().map(|pr| ProjectileDef {
                 tile: proj_tile.unwrap_or(crate::atlas::UNKNOWN_SLOT),
                 damage: pr.damage,
@@ -1573,14 +1651,20 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     for (modid, it_toml) in &pending_places {
         if let (Some(item), Some(block)) = (
             reg.item_id(&qualify(modid, &it_toml.0)),
-            reg.block_id(&qualify(modid, &it_toml.1)).or_else(|| reg.block_id(&it_toml.1)),
+            reg.block_id(&qualify(modid, &it_toml.1))
+                .or_else(|| reg.block_id(&it_toml.1)),
         ) {
             reg.items[item.0 as usize].places = Some(block);
         }
     }
     for (modid, r) in pending_recipes {
         let h = r.pattern.len();
-        let w = r.pattern.iter().map(|s| s.chars().count()).max().unwrap_or(0);
+        let w = r
+            .pattern
+            .iter()
+            .map(|s| s.chars().count())
+            .max()
+            .unwrap_or(0);
         if h == 0 || w == 0 || h > 3 || w > 3 {
             continue;
         }
@@ -1612,15 +1696,28 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 }
             }
         }
-        let Some(out) = lookup_item(&reg, &modid, &r.output) else { continue };
+        let Some(out) = lookup_item(&reg, &modid, &r.output) else {
+            continue;
+        };
         if ok {
-            reg.recipes.push(RecipeDef { w, h, pattern, output: out, count: r.count.unwrap_or(1) });
+            reg.recipes.push(RecipeDef {
+                w,
+                h,
+                pattern,
+                output: out,
+                count: r.count.unwrap_or(1),
+            });
         }
     }
     // Crop stages inherit their parent's drops (after drop resolution).
     for i in 0..reg.blocks.len() {
         if reg.blocks[i].name.contains("/stage") {
-            let base = reg.blocks[i].name.split("/stage").next().unwrap().to_string();
+            let base = reg.blocks[i]
+                .name
+                .split("/stage")
+                .next()
+                .unwrap()
+                .to_string();
             if let Some(pid) = reg.block_by_name.get(&base).copied() {
                 reg.blocks[i].drops = reg.blocks[pid.0 as usize].drops;
             }
@@ -1631,7 +1728,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             continue;
         }
         let lookup_block = |name: &str| {
-            reg.block_id(&qualify(&modid, name)).or_else(|| reg.block_id(name))
+            reg.block_id(&qualify(&modid, name))
+                .or_else(|| reg.block_id(name))
         };
         let (Some(block), Some(replaces)) = (
             lookup_block(&f.block),
@@ -1650,7 +1748,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         });
     }
 
-    reg.mods.extend(failed.drain(..));
+    reg.mods.append(&mut failed);
     reg
 }
 

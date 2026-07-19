@@ -42,12 +42,6 @@ impl Chunk {
     }
 
     #[inline]
-    pub fn set_light(&mut self, x: usize, y: usize, z: usize, block: u8, sky: u8) {
-        let i = Self::idx(x, y, z);
-        self.light_block[i] = block;
-        self.light_sky[i] = sky;
-    }
-
     pub fn light_raw_mut(&mut self) -> (&mut [u8], &mut [u8]) {
         (&mut self.light_block, &mut self.light_sky)
     }

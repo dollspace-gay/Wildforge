@@ -25,7 +25,14 @@ pub const PICKUP_DELAY: f32 = 0.6;
 
 impl ItemEntity {
     pub fn new(pos: Vec3, vel: Vec3, item: ItemId, count: u32) -> ItemEntity {
-        ItemEntity { pos, vel, item, count, age: 0.0, durability: 0 }
+        ItemEntity {
+            pos,
+            vel,
+            item,
+            count,
+            age: 0.0,
+            durability: 0,
+        }
     }
 
     /// Returns false when the entity should despawn.
@@ -66,7 +73,13 @@ impl ItemEntity {
 
     /// Emit this entity as a spinning, bobbing mini-cube (blocks) or a
     /// crossed pair of upright sprite quads (tools, sticks).
-    pub fn emit(&self, reg: &Registry, lum: (f32, f32), verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
+    pub fn emit(
+        &self,
+        reg: &Registry,
+        lum: (f32, f32),
+        verts: &mut Vec<Vertex>,
+        idx: &mut Vec<u32>,
+    ) {
         let block = match reg.item(self.item).places {
             Some(b) if !reg.block(b).cross => b,
             _ => {
@@ -115,7 +128,13 @@ impl ItemEntity {
 }
 
 impl ItemEntity {
-    fn emit_sprite(&self, reg: &Registry, lum: (f32, f32), verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
+    fn emit_sprite(
+        &self,
+        reg: &Registry,
+        lum: (f32, f32),
+        verts: &mut Vec<Vertex>,
+        idx: &mut Vec<u32>,
+    ) {
         let slot = reg.item(self.item).icon;
         let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
         let ts = 1.0 / ATLAS_TILES as f32;
@@ -178,9 +197,9 @@ pub fn emit_crack(
     let origin = Vec3::new(block.0 as f32 - e, block.1 as f32 - e, block.2 as f32 - e);
     let scale = 1.0 + 2.0 * e;
 
-    for face in 0..6 {
+    for (face, corners) in CORNERS.iter().enumerate() {
         let base = verts.len() as u32;
-        for c in CORNERS[face].iter() {
+        for c in corners.iter() {
             let (u, v) = match face {
                 0 | 1 => (c[2], 1.0 - c[1]),
                 4 | 5 => (c[0], 1.0 - c[1]),

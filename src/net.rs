@@ -54,22 +54,65 @@ pub struct BoltSnap {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum C2S {
-    Hello { protocol: u32, name: String, content_hash: u64 },
-    Move { pos: Vec3, yaw: f32 },
-    Break { x: i32, y: i32, z: i32 },
-    Place { x: i32, y: i32, z: i32, block: u16 },
-    AttackMob { id: u32, dmg: f32, from: Vec3 },
-    FireArrow { pos: Vec3, vel: Vec3, dmg: f32, tile: u16, recover: bool },
-    OpenContainer { x: i32, y: i32, z: i32 },
+    Hello {
+        protocol: u32,
+        name: String,
+        content_hash: u64,
+    },
+    Move {
+        pos: Vec3,
+        yaw: f32,
+    },
+    Break {
+        x: i32,
+        y: i32,
+        z: i32,
+    },
+    Place {
+        x: i32,
+        y: i32,
+        z: i32,
+        block: u16,
+    },
+    AttackMob {
+        id: u32,
+        dmg: f32,
+        from: Vec3,
+    },
+    FireArrow {
+        pos: Vec3,
+        vel: Vec3,
+        dmg: f32,
+        tile: u16,
+        recover: bool,
+    },
+    OpenContainer {
+        x: i32,
+        y: i32,
+        z: i32,
+    },
     /// One transactional click: the guest's cursor stack rides along,
     /// the host applies the same click_stack local play uses and echoes
     /// the container plus HeldResult. The cursor stays guest-owned.
-    ContainerClick { x: i32, y: i32, z: i32, slot: u8, right: bool, held: Option<StackSnap> },
+    ContainerClick {
+        x: i32,
+        y: i32,
+        z: i32,
+        slot: u8,
+        right: bool,
+        held: Option<StackSnap>,
+    },
     CloseContainer,
     /// Right-clicked an adult with its favorite food (consumed guest-side).
-    FeedMob { id: u32 },
+    FeedMob {
+        id: u32,
+    },
     /// Finished the 1.5 s brush channel on a remnant block.
-    BrushBlock { x: i32, y: i32, z: i32 },
+    BrushBlock {
+        x: i32,
+        y: i32,
+        z: i32,
+    },
     SleepRequest,
     SleepCancel,
     Chat(String),
@@ -94,15 +137,34 @@ pub enum S2C {
     Refused(String),
     /// Host mods dir (scripts excluded) when content hashes differ.
     ModFiles(Vec<(String, Vec<u8>)>),
-    Chunk { x: i32, z: i32, rle: Vec<u8> },
-    BlockSet { x: i32, y: i32, z: i32, id: u16 },
+    Chunk {
+        x: i32,
+        z: i32,
+        rle: Vec<u8>,
+    },
+    BlockSet {
+        x: i32,
+        y: i32,
+        z: i32,
+        id: u16,
+    },
     /// (id, pos, yaw) for every player, host included. Datagram.
     Players(Vec<(u32, Vec3, f32)>),
     Mobs(Vec<MobSnap>),
     Bolts(Vec<BoltSnap>),
-    TimeIre { time: f32, ire: f32 },
-    Hit { dmg: f32, from: Vec3 },
-    Give { item: u16, count: u32, durability: u32 },
+    TimeIre {
+        time: f32,
+        ire: f32,
+    },
+    Hit {
+        dmg: f32,
+        from: Vec3,
+    },
+    Give {
+        item: u16,
+        count: u32,
+        durability: u32,
+    },
     Container {
         x: i32,
         y: i32,
@@ -113,11 +175,22 @@ pub enum S2C {
     },
     /// The authoritative cursor stack after a ContainerClick.
     HeldResult(Option<StackSnap>),
-    Sleep { sleeping: u32, present: u32 },
+    Sleep {
+        sleeping: u32,
+        present: u32,
+    },
     Toast(String),
-    Chat { from: String, msg: String },
-    Joined { id: u32, name: String },
-    Left { id: u32 },
+    Chat {
+        from: String,
+        msg: String,
+    },
+    Joined {
+        id: u32,
+        name: String,
+    },
+    Left {
+        id: u32,
+    },
 }
 
 pub fn encode<T: Serialize>(msg: &T) -> Vec<u8> {
@@ -131,9 +204,18 @@ pub fn decode<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Option<T> {
 // ---------------- host ----------------
 
 pub enum HostEvent {
-    Joined { id: u32, name: String, content_hash: u64 },
-    Msg { id: u32, msg: C2S },
-    Left { id: u32 },
+    Joined {
+        id: u32,
+        name: String,
+        content_hash: u64,
+    },
+    Msg {
+        id: u32,
+        msg: C2S,
+    },
+    Left {
+        id: u32,
+    },
 }
 
 struct Peer {
@@ -174,11 +256,14 @@ impl Host {
 
         let endpoint = {
             let _guard = rt.enter();
-            quinn::Endpoint::server(server_config.clone(), SocketAddr::from(([0, 0, 0, 0], port)))
-                .or_else(|_| {
-                    // Port busy (another host here): take any free one.
-                    quinn::Endpoint::server(server_config, SocketAddr::from(([0, 0, 0, 0], 0)))
-                })?
+            quinn::Endpoint::server(
+                server_config.clone(),
+                SocketAddr::from(([0, 0, 0, 0], port)),
+            )
+            .or_else(|_| {
+                // Port busy (another host here): take any free one.
+                quinn::Endpoint::server(server_config, SocketAddr::from(([0, 0, 0, 0], 0)))
+            })?
         };
         let port = endpoint.local_addr()?.port();
 
@@ -189,7 +274,9 @@ impl Host {
         {
             let stop = stop.clone();
             std::thread::spawn(move || {
-                let Ok(sock) = UdpSocket::bind(("0.0.0.0", 0)) else { return };
+                let Ok(sock) = UdpSocket::bind(("0.0.0.0", 0)) else {
+                    return;
+                };
                 let _ = sock.set_broadcast(true);
                 let msg = format!("WILDFORGE|{port}|{world_name}");
                 while !stop.load(Ordering::Relaxed) {
@@ -199,7 +286,14 @@ impl Host {
             });
         }
 
-        Ok(Host { rt, events, peers: Default::default(), peer_rx, stop, port })
+        Ok(Host {
+            rt,
+            events,
+            peers: Default::default(),
+            peer_rx,
+            stop,
+            port,
+        })
     }
 
     /// Drain inbound events; call once per frame.
@@ -238,10 +332,6 @@ impl Host {
         }
     }
 
-    pub fn peer_count(&self) -> usize {
-        self.peers.len()
-    }
-
     pub fn kick(&mut self, id: u32) {
         if let Some(p) = self.peers.remove(&id) {
             p.conn.close(0u32.into(), b"kicked");
@@ -274,18 +364,37 @@ async fn accept_loop(
         let peers = peers.clone();
         tokio::spawn(async move {
             // The guest opens the reliable stream and speaks first.
-            let Ok((send, mut recv)) = conn.accept_bi().await else { return };
-            let Some(first) = read_frame(&mut recv).await else { return };
-            let Some(C2S::Hello { protocol, name, content_hash }) = decode(&first) else {
+            let Ok((send, mut recv)) = conn.accept_bi().await else {
+                return;
+            };
+            let Some(first) = read_frame(&mut recv).await else {
+                return;
+            };
+            let Some(C2S::Hello {
+                protocol,
+                name,
+                content_hash,
+            }) = decode(&first)
+            else {
                 return;
             };
             if protocol != PROTOCOL {
-                let _ = conn.close(1u32.into(), b"protocol mismatch");
+                conn.close(1u32.into(), b"protocol mismatch");
                 return;
             }
             let (tx, rx) = unbounded_channel::<Vec<u8>>();
-            let _ = peers.send((id, Peer { reliable: tx, conn: conn.clone() }));
-            let _ = events.send(HostEvent::Joined { id, name, content_hash });
+            let _ = peers.send((
+                id,
+                Peer {
+                    reliable: tx,
+                    conn: conn.clone(),
+                },
+            ));
+            let _ = events.send(HostEvent::Joined {
+                id,
+                name,
+                content_hash,
+            });
 
             // Writer task.
             tokio::spawn(write_loop(send, rx));
@@ -303,7 +412,9 @@ async fn accept_loop(
             }
             // Reliable reader.
             while let Some(frame) = read_frame(&mut recv).await {
-                let Some(msg) = decode::<C2S>(&frame) else { continue };
+                let Some(msg) = decode::<C2S>(&frame) else {
+                    continue;
+                };
                 let bye = matches!(msg, C2S::Bye);
                 let _ = events.send(HostEvent::Msg { id, msg });
                 if bye {
@@ -404,8 +515,7 @@ impl Client {
         let client_cfg = quinn::ClientConfig::new(Arc::new(crypto));
 
         let conn = rt.block_on(async {
-            let mut endpoint =
-                quinn::Endpoint::client(SocketAddr::from(([0, 0, 0, 0], 0)))?;
+            let mut endpoint = quinn::Endpoint::client(SocketAddr::from(([0, 0, 0, 0], 0)))?;
             endpoint.set_default_client_config(client_cfg);
             let conn = endpoint
                 .connect(addr, "wildforge")
@@ -416,10 +526,12 @@ impl Client {
         })?;
 
         // Open the reliable stream and say hello.
-        let (send, recv) = rt
-            .block_on(conn.open_bi())
-            .map_err(std::io::Error::other)?;
-        let hello = encode(&C2S::Hello { protocol: PROTOCOL, name, content_hash });
+        let (send, recv) = rt.block_on(conn.open_bi()).map_err(std::io::Error::other)?;
+        let hello = encode(&C2S::Hello {
+            protocol: PROTOCOL,
+            name,
+            content_hash,
+        });
         let _ = rel_tx.send(hello);
         rt.spawn(write_loop(send, rel_rx));
 
@@ -452,7 +564,13 @@ impl Client {
                 }
             });
         }
-        Ok(Client { rt, inbound, reliable: rel_tx, conn, connected })
+        Ok(Client {
+            rt,
+            inbound,
+            reliable: rel_tx,
+            conn,
+            connected,
+        })
     }
 
     pub fn poll(&mut self) -> Vec<S2C> {
@@ -495,14 +613,19 @@ impl Discovery {
     pub fn start() -> std::io::Result<Discovery> {
         let sock = UdpSocket::bind(("0.0.0.0", BEACON_PORT))?;
         sock.set_nonblocking(true)?;
-        Ok(Discovery { sock, found: Vec::new() })
+        Ok(Discovery {
+            sock,
+            found: Vec::new(),
+        })
     }
 
     /// Poll for beacons; dedupes by address.
     pub fn poll(&mut self) {
         let mut buf = [0u8; 256];
         while let Ok((n, from)) = self.sock.recv_from(&mut buf) {
-            let Ok(text) = std::str::from_utf8(&buf[..n]) else { continue };
+            let Ok(text) = std::str::from_utf8(&buf[..n]) else {
+                continue;
+            };
             let mut parts = text.split('|');
             if parts.next() != Some("WILDFORGE") {
                 continue;
@@ -560,10 +683,10 @@ pub fn collect_mod_files(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
             let p = e.path();
             if p.is_dir() {
                 walk(root, &p, out);
-            } else if p.extension().is_none_or(|e| e != "rhai") {
-                if let (Ok(rel), Ok(bytes)) = (p.strip_prefix(root), std::fs::read(&p)) {
-                    out.push((rel.to_string_lossy().replace('\\', "/"), bytes));
-                }
+            } else if p.extension().is_none_or(|e| e != "rhai")
+                && let (Ok(rel), Ok(bytes)) = (p.strip_prefix(root), std::fs::read(&p))
+            {
+                out.push((rel.to_string_lossy().replace('\\', "/"), bytes));
             }
         }
     }

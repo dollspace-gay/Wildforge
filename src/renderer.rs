@@ -362,48 +362,49 @@ impl Renderer {
             bias: wgpu::DepthBiasState::default(),
         };
 
-        let make_pipeline = |label: &str,
-                             vs: &str,
-                             fs: &str,
-                             vlayout: &wgpu::VertexBufferLayout,
-                             blend: Option<wgpu::BlendState>,
-                             cull: Option<wgpu::Face>,
-                             topology: wgpu::PrimitiveTopology,
-                             depth_stencil: Option<wgpu::DepthStencilState>| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(label),
-                layout: Some(&chunk_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some(vs),
-                    compilation_options: Default::default(),
-                    buffers: std::slice::from_ref(vlayout),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some(fs),
-                    compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: config.format,
-                        blend,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: cull,
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    unclipped_depth: false,
-                    conservative: false,
-                },
-                depth_stencil,
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-                cache: None,
-            })
-        };
+        let make_pipeline =
+            |label: &str,
+             vs: &str,
+             fs: &str,
+             vlayout: &wgpu::VertexBufferLayout,
+             blend: Option<wgpu::BlendState>,
+             cull: Option<wgpu::Face>,
+             topology: wgpu::PrimitiveTopology,
+             depth_stencil: Option<wgpu::DepthStencilState>| {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&chunk_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: Some(vs),
+                        compilation_options: Default::default(),
+                        buffers: std::slice::from_ref(vlayout),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: Some(fs),
+                        compilation_options: Default::default(),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: config.format,
+                            blend,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: cull,
+                        polygon_mode: wgpu::PolygonMode::Fill,
+                        unclipped_depth: false,
+                        conservative: false,
+                    },
+                    depth_stencil,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                })
+            };
 
         let chunk_pipeline = make_pipeline(
             "chunk",
@@ -524,7 +525,11 @@ impl Renderer {
 
     /// Replace the atlas texture (hot reload).
     pub fn set_atlas(&mut self, data: &[u8], px: u32) {
-        let size = wgpu::Extent3d { width: px, height: px, depth_or_array_layers: 1 };
+        let size = wgpu::Extent3d {
+            width: px,
+            height: px,
+            depth_or_array_layers: 1,
+        };
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("atlas"),
             size,
@@ -580,10 +585,22 @@ impl Renderer {
         let s = 0.025;
         let c = [1.0, 1.0, 1.0];
         let verts = [
-            LineVertex { pos: [-s / aspect, 0.0, 0.0], color: c },
-            LineVertex { pos: [s / aspect, 0.0, 0.0], color: c },
-            LineVertex { pos: [0.0, -s, 0.0], color: c },
-            LineVertex { pos: [0.0, s, 0.0], color: c },
+            LineVertex {
+                pos: [-s / aspect, 0.0, 0.0],
+                color: c,
+            },
+            LineVertex {
+                pos: [s / aspect, 0.0, 0.0],
+                color: c,
+            },
+            LineVertex {
+                pos: [0.0, -s, 0.0],
+                color: c,
+            },
+            LineVertex {
+                pos: [0.0, s, 0.0],
+                color: c,
+            },
         ];
         self.queue
             .write_buffer(&self.crosshair_buf, 0, bytemuck::cast_slice(&verts));
@@ -614,16 +631,31 @@ impl Renderer {
                 self.config.height as f32,
             ],
         };
-        self.entity_vbuf
-            .upload(&self.device, &self.queue, bytemuck::cast_slice(f.entity_verts));
-        self.entity_ibuf
-            .upload(&self.device, &self.queue, bytemuck::cast_slice(f.entity_idx));
-        self.overlay_vbuf
-            .upload(&self.device, &self.queue, bytemuck::cast_slice(f.overlay_verts));
-        self.overlay_ibuf
-            .upload(&self.device, &self.queue, bytemuck::cast_slice(f.overlay_idx));
-        self.hand_vbuf
-            .upload(&self.device, &self.queue, bytemuck::cast_slice(f.hand_verts));
+        self.entity_vbuf.upload(
+            &self.device,
+            &self.queue,
+            bytemuck::cast_slice(f.entity_verts),
+        );
+        self.entity_ibuf.upload(
+            &self.device,
+            &self.queue,
+            bytemuck::cast_slice(f.entity_idx),
+        );
+        self.overlay_vbuf.upload(
+            &self.device,
+            &self.queue,
+            bytemuck::cast_slice(f.overlay_verts),
+        );
+        self.overlay_ibuf.upload(
+            &self.device,
+            &self.queue,
+            bytemuck::cast_slice(f.overlay_idx),
+        );
+        self.hand_vbuf.upload(
+            &self.device,
+            &self.queue,
+            bytemuck::cast_slice(f.hand_verts),
+        );
         self.hand_ibuf
             .upload(&self.device, &self.queue, bytemuck::cast_slice(f.hand_idx));
         self.ui_vbuf
@@ -634,25 +666,44 @@ impl Renderer {
         if let Some((bx, by, bz)) = outline {
             let e = 0.003f32;
             let (x0, y0, z0) = (bx as f32 - e, by as f32 - e, bz as f32 - e);
-            let (x1, y1, z1) = (bx as f32 + 1.0 + e, by as f32 + 1.0 + e, bz as f32 + 1.0 + e);
+            let (x1, y1, z1) = (
+                bx as f32 + 1.0 + e,
+                by as f32 + 1.0 + e,
+                bz as f32 + 1.0 + e,
+            );
             let c = [0.05, 0.05, 0.05];
-            let p = |x: f32, y: f32, z: f32| LineVertex { pos: [x, y, z], color: c };
+            let p = |x: f32, y: f32, z: f32| LineVertex {
+                pos: [x, y, z],
+                color: c,
+            };
             let verts = [
                 // bottom
-                p(x0, y0, z0), p(x1, y0, z0),
-                p(x1, y0, z0), p(x1, y0, z1),
-                p(x1, y0, z1), p(x0, y0, z1),
-                p(x0, y0, z1), p(x0, y0, z0),
+                p(x0, y0, z0),
+                p(x1, y0, z0),
+                p(x1, y0, z0),
+                p(x1, y0, z1),
+                p(x1, y0, z1),
+                p(x0, y0, z1),
+                p(x0, y0, z1),
+                p(x0, y0, z0),
                 // top
-                p(x0, y1, z0), p(x1, y1, z0),
-                p(x1, y1, z0), p(x1, y1, z1),
-                p(x1, y1, z1), p(x0, y1, z1),
-                p(x0, y1, z1), p(x0, y1, z0),
+                p(x0, y1, z0),
+                p(x1, y1, z0),
+                p(x1, y1, z0),
+                p(x1, y1, z1),
+                p(x1, y1, z1),
+                p(x0, y1, z1),
+                p(x0, y1, z1),
+                p(x0, y1, z0),
                 // pillars
-                p(x0, y0, z0), p(x0, y1, z0),
-                p(x1, y0, z0), p(x1, y1, z0),
-                p(x1, y0, z1), p(x1, y1, z1),
-                p(x0, y0, z1), p(x0, y1, z1),
+                p(x0, y0, z0),
+                p(x0, y1, z0),
+                p(x1, y0, z0),
+                p(x1, y1, z0),
+                p(x1, y0, z1),
+                p(x1, y1, z1),
+                p(x0, y0, z1),
+                p(x0, y1, z1),
             ];
             self.queue
                 .write_buffer(&self.outline_buf, 0, bytemuck::cast_slice(&verts));

@@ -38,11 +38,13 @@ fn test_world(name: &str) -> World {
 }
 
 fn b(reg: &Registry, name: &str) -> crate::registry::BlockId {
-    reg.block_id(name).unwrap_or_else(|| panic!("missing block {name}"))
+    reg.block_id(name)
+        .unwrap_or_else(|| panic!("missing block {name}"))
 }
 
 fn it(reg: &Registry, name: &str) -> crate::registry::ItemId {
-    reg.item_id(name).unwrap_or_else(|| panic!("missing item {name}"))
+    reg.item_id(name)
+        .unwrap_or_else(|| panic!("missing item {name}"))
 }
 
 // ---------------- phase 1: registry & saves ----------------
@@ -51,7 +53,12 @@ fn it(reg: &Registry, name: &str) -> crate::registry::ItemId {
 fn base_registry_has_vanilla_content() {
     let reg = base_reg();
     assert_eq!(reg.block(AIR).name, "base:air");
-    for name in ["base:grass", "base:stone", "base:water", "base:crafting_table"] {
+    for name in [
+        "base:grass",
+        "base:stone",
+        "base:water",
+        "base:crafting_table",
+    ] {
         assert!(reg.block_id(name).is_some(), "missing {name}");
     }
     for name in ["base:stick", "base:wood_pickaxe", "base:planks"] {
@@ -196,7 +203,11 @@ fn set_block_roundtrip_and_cross_chunk_access() {
 fn write_demo_mod(root: &Path) {
     let dir = root.join("testium");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("mod.toml"), "id = \"testium\"\nname = \"Testium\"\nversion = \"1.0.0\"\ndepends = [\"base\"]\n").unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"testium\"\nname = \"Testium\"\nversion = \"1.0.0\"\ndepends = [\"base\"]\n",
+    )
+    .unwrap();
     std::fs::write(
         dir.join("blocks.toml"),
         r#"
@@ -254,11 +265,21 @@ fn data_mod_loads_blocks_items_recipes_features() {
     let ore = reg.block_id("testium:ore").expect("mod block registered");
     let shard = reg.item_id("testium:shard").expect("mod item registered");
     assert_eq!(reg.block(ore).label, "Testium Ore");
-    assert_eq!(reg.drops_for(ore, reg.item_id("base:wood_pickaxe")), Some((shard, 1)));
+    assert_eq!(
+        reg.drops_for(ore, reg.item_id("base:wood_pickaxe")),
+        Some((shard, 1))
+    );
     assert_eq!(reg.drops_for(ore, None), None, "requires_tool");
     let t_ore = reg.block_id("testium:ore").unwrap();
-    assert!(reg.ores.iter().any(|o| o.block == t_ore), "mod ore feature registered");
-    assert!(reg.recipes.iter().any(|r| r.output == reg.item_id("testium:ore").unwrap()));
+    assert!(
+        reg.ores.iter().any(|o| o.block == t_ore),
+        "mod ore feature registered"
+    );
+    assert!(
+        reg.recipes
+            .iter()
+            .any(|r| r.output == reg.item_id("testium:ore").unwrap())
+    );
     let m = reg.mods.iter().find(|m| m.id == "testium").unwrap();
     assert!(m.error.is_none(), "{:?}", m.error);
 }
@@ -298,7 +319,11 @@ fn broken_mod_is_skipped_with_error() {
     let reg = registry::load(&root);
     // Base still loads fine; bad mod recorded with error.
     assert!(reg.block_id("base:stone").is_some());
-    let bad = reg.mods.iter().find(|m| m.id == "bad").expect("bad mod listed");
+    let bad = reg
+        .mods
+        .iter()
+        .find(|m| m.id == "bad")
+        .expect("bad mod listed");
     assert!(bad.error.is_some());
 }
 
@@ -334,16 +359,36 @@ fn on_block_break(x, y, z, block) {
 
     let w = test_world("script-w");
     // Bedrock break is cancelled.
-    let allow = host.dispatch(&w, "on_block_break", (0i64, 0i64, 0i64, "base:bedrock".to_string()));
+    let allow = host.dispatch(
+        &w,
+        "on_block_break",
+        (0i64, 0i64, 0i64, "base:bedrock".to_string()),
+    );
     assert!(!allow, "script should cancel bedrock break");
     // Normal break allowed + commands queued.
-    let allow = host.dispatch(&w, "on_block_break", (1i64, 70i64, 1i64, "base:dirt".to_string()));
+    let allow = host.dispatch(
+        &w,
+        "on_block_break",
+        (1i64, 70i64, 1i64, "base:dirt".to_string()),
+    );
     assert!(allow);
     let cmds = host.take_cmds();
-    assert!(cmds.iter().any(|c| matches!(c, crate::script::Cmd::Give(n, 2) if n == "base:stick")));
+    assert!(
+        cmds.iter()
+            .any(|c| matches!(c, crate::script::Cmd::Give(n, 2) if n == "base:stick"))
+    );
     assert!(cmds.iter().any(|c| matches!(c, crate::script::Cmd::Hud(_))));
     // KV survived across dispatches.
-    assert!(!host.kv.borrow().get("scripty").unwrap().get("count").unwrap().is_empty());
+    assert!(
+        !host
+            .kv
+            .borrow()
+            .get("scripty")
+            .unwrap()
+            .get("count")
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -364,7 +409,8 @@ fn on_tick(dt) {
     host.dispatch(&w, "on_tick", (0.1f64,));
     let cmds = host.take_cmds();
     assert!(
-        cmds.iter().any(|c| matches!(c, crate::script::Cmd::Hud(m) if m == "bedrock confirmed")),
+        cmds.iter()
+            .any(|c| matches!(c, crate::script::Cmd::Hud(m) if m == "bedrock confirmed")),
         "script get_block should see the world"
     );
 }
@@ -392,10 +438,17 @@ fn script_error_keeps_previous_ast() {
     host.load_mods(&mods);
     assert!(host.wants("on_tick"));
     // Break the script on disk; reload keeps the old compiled version.
-    std::fs::write(root.join("scripty/main.rhai"), "fn on_tick(dt) { this is broken").unwrap();
+    std::fs::write(
+        root.join("scripty/main.rhai"),
+        "fn on_tick(dt) { this is broken",
+    )
+    .unwrap();
     host.load_mods(&mods);
     assert!(host.wants("on_tick"), "old AST must survive a bad edit");
-    assert!(host.mods[0].error.is_some(), "and the error must be reported");
+    assert!(
+        host.mods[0].error.is_some(),
+        "and the error must be reported"
+    );
 }
 
 // ---------------- phase 4: hot reload remap ----------------
@@ -429,7 +482,16 @@ use crate::worldgen::{Biome, Generator};
 fn find_biome(g: &Generator, want: Biome) -> Option<(i32, i32)> {
     for r in 0..200 {
         let d = r * 24;
-        for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d), (d, -d), (-d, d)] {
+        for (x, z) in [
+            (d, 0),
+            (-d, 0),
+            (0, d),
+            (0, -d),
+            (d, d),
+            (-d, -d),
+            (d, -d),
+            (-d, d),
+        ] {
             if g.biome(x, z) == want {
                 return Some((x, z));
             }
@@ -465,7 +527,10 @@ fn all_seven_biomes_exist_and_are_deterministic() {
             diff += 1;
         }
     }
-    assert!(diff > 5, "different seeds should give different biome maps ({diff})");
+    assert!(
+        diff > 5,
+        "different seeds should give different biome maps ({diff})"
+    );
 }
 
 /// Generate the chunk containing a column and return (world, surface y).
@@ -474,7 +539,10 @@ fn gen_at(reg: &Arc<Registry>, name: &str, x: i32, z: i32) -> (World, i32) {
     let cp = ChunkPos::of_world(x, z);
     for dx in -1..=1 {
         for dz in -1..=1 {
-            w.ensure_chunk(ChunkPos { x: cp.x + dx, z: cp.z + dz });
+            w.ensure_chunk(ChunkPos {
+                x: cp.x + dx,
+                z: cp.z + dz,
+            });
         }
     }
     let h = w.surface_height(x, z);
@@ -491,7 +559,9 @@ fn desert_has_sand_surface_and_cacti() {
     'scan: for dx in 0..64 {
         for dz in 0..64 {
             let (cx, cz) = (x + dx, z + dz);
-            if g.biome(cx, cz) == Biome::Desert && g.surface_estimate(cx, cz) > crate::chunk::SEA_LEVEL + 1 {
+            if g.biome(cx, cz) == Biome::Desert
+                && g.surface_estimate(cx, cz) > crate::chunk::SEA_LEVEL + 1
+            {
                 spot = Some((cx, cz));
                 break 'scan;
             }
@@ -499,8 +569,16 @@ fn desert_has_sand_surface_and_cacti() {
     }
     let (x, z) = spot.expect("dry desert column");
     let (w, h) = gen_at(&reg, "desert", x, z);
-    assert_eq!(w.get_block(x, h, z), b(&reg, "base:sand"), "desert surface is sand");
-    assert_eq!(w.get_block(x, h - 2, z), b(&reg, "base:sand"), "desert subsoil is sand");
+    assert_eq!(
+        w.get_block(x, h, z),
+        b(&reg, "base:sand"),
+        "desert surface is sand"
+    );
+    assert_eq!(
+        w.get_block(x, h - 2, z),
+        b(&reg, "base:sand"),
+        "desert subsoil is sand"
+    );
     // Cacti generate somewhere in desert chunks (deterministic for seed 42).
     let cactus = b(&reg, "base:cactus");
     let cp = ChunkPos::of_world(x, z);
@@ -508,7 +586,10 @@ fn desert_has_sand_surface_and_cacti() {
     let mut found = false;
     'chunks: for dx in -4..=4 {
         for dz in -4..=4 {
-            let p = ChunkPos { x: cp.x + dx, z: cp.z + dz };
+            let p = ChunkPos {
+                x: cp.x + dx,
+                z: cp.z + dz,
+            };
             w2.ensure_chunk(p);
             let bx = p.x * 16;
             let bz = p.z * 16;
@@ -551,7 +632,11 @@ fn arctic_has_snow_and_frozen_ocean() {
     }
     if let Some((cx, cz)) = land {
         let (w, h) = gen_at(&reg, "arctic-land", cx, cz);
-        assert_eq!(w.get_block(cx, h, cz), b(&reg, "base:snow"), "arctic surface is snow");
+        assert_eq!(
+            w.get_block(cx, h, cz),
+            b(&reg, "base:snow"),
+            "arctic surface is snow"
+        );
     }
     if let Some((cx, cz)) = ocean {
         let (w, _) = gen_at(&reg, "arctic-sea", cx, cz);
@@ -565,7 +650,10 @@ fn arctic_has_snow_and_frozen_ocean() {
             "water under the ice"
         );
     }
-    assert!(land.is_some() || ocean.is_some(), "found neither arctic land nor ocean");
+    assert!(
+        land.is_some() || ocean.is_some(),
+        "found neither arctic land nor ocean"
+    );
 }
 
 #[test]
@@ -581,7 +669,10 @@ fn jungle_denser_than_plains() {
         let mut cols = 0;
         for dx in -3..=3 {
             for dz in -3..=3 {
-                let p = ChunkPos { x: cp.x + dx, z: cp.z + dz };
+                let p = ChunkPos {
+                    x: cp.x + dx,
+                    z: cp.z + dz,
+                };
                 w.ensure_chunk(p);
                 for lx in 0..16 {
                     for lz in 0..16 {
@@ -730,7 +821,10 @@ fn caves_exist_underground() {
             }
         }
     }
-    assert!(pockets > 200, "underground cave air should be plentiful ({pockets})");
+    assert!(
+        pockets > 200,
+        "underground cave air should be plentiful ({pockets})"
+    );
 }
 
 #[test]
@@ -760,7 +854,10 @@ fn steep_faces_and_peaks_surface_correctly() {
     let cp = ChunkPos::of_world(mx, mz);
     for dx in -1..=1 {
         for dz in -1..=1 {
-            w.ensure_chunk(ChunkPos { x: cp.x + dx, z: cp.z + dz });
+            w.ensure_chunk(ChunkPos {
+                x: cp.x + dx,
+                z: cp.z + dz,
+            });
         }
     }
     let snow = b(&reg, "base:snow");
@@ -791,15 +888,25 @@ fn wood_families_registered_and_craftable() {
     let reg = base_reg();
     for w in ["birch", "spruce", "jungle", "acacia"] {
         assert!(reg.block_id(&format!("base:{w}_log")).is_some(), "{w} log");
-        assert!(reg.block_id(&format!("base:{w}_leaves")).is_some(), "{w} leaves");
-        assert!(reg.block_id(&format!("base:{w}_planks")).is_some(), "{w} planks");
+        assert!(
+            reg.block_id(&format!("base:{w}_leaves")).is_some(),
+            "{w} leaves"
+        );
+        assert!(
+            reg.block_id(&format!("base:{w}_planks")).is_some(),
+            "{w} planks"
+        );
         // Each log crafts into ITS OWN planks.
         let log = it(&reg, &format!("base:{w}_log"));
         let mut g = vec![None; 4];
         g[0] = Some(ItemStack::new(&reg, log, 1));
         let r = crate::crafting::match_recipe(&reg, &g, 2)
             .unwrap_or_else(|| panic!("{w} log -> planks recipe"));
-        assert_eq!(r.output, it(&reg, &format!("base:{w}_planks")), "{w} planks output");
+        assert_eq!(
+            r.output,
+            it(&reg, &format!("base:{w}_planks")),
+            "{w} planks output"
+        );
         assert_eq!(r.count, 4);
     }
     // Leaves are leaf-like: non-opaque, dropless, breakable.
@@ -821,11 +928,17 @@ fn any_plank_type_is_interchangeable_in_recipes() {
         g
     };
     // Sticks from every plank type.
-    for w in ["planks", "birch_planks", "spruce_planks", "jungle_planks", "acacia_planks"] {
+    for w in [
+        "planks",
+        "birch_planks",
+        "spruce_planks",
+        "jungle_planks",
+        "acacia_planks",
+    ] {
         let p = it(&reg, &format!("base:{w}"));
         let g = grid(2, &[(0, p), (2, p)]);
-        let r = crate::crafting::match_recipe(&reg, &g, 2)
-            .unwrap_or_else(|| panic!("sticks from {w}"));
+        let r =
+            crate::crafting::match_recipe(&reg, &g, 2).unwrap_or_else(|| panic!("sticks from {w}"));
         assert_eq!(r.output, sticks);
     }
     // A crafting table from MIXED plank types.
@@ -839,7 +952,9 @@ fn any_plank_type_is_interchangeable_in_recipes() {
         ],
     );
     assert_eq!(
-        crate::crafting::match_recipe(&reg, &g, 2).expect("mixed-plank table").output,
+        crate::crafting::match_recipe(&reg, &g, 2)
+            .expect("mixed-plank table")
+            .output,
         table
     );
     // Tools too: pickaxe head from acacia planks.
@@ -857,7 +972,11 @@ fn mods_can_extend_ingredient_tags() {
     let root = tmp_dir("tagmod");
     let dir = root.join("cherry");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("mod.toml"), "id = \"cherry\"\ndepends = [\"base\"]\n").unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"cherry\"\ndepends = [\"base\"]\n",
+    )
+    .unwrap();
     std::fs::write(
         dir.join("blocks.toml"),
         "[[block]]\nid = \"planks\"\nname = \"Cherry Planks\"\ntexture = \"@planks\"\n",
@@ -895,7 +1014,10 @@ fn biomes_grow_their_own_wood() {
         let (mut hits, mut oaks) = (0, 0);
         for dx in -4..=4 {
             for dz in -4..=4 {
-                let p = ChunkPos { x: cp.x + dx, z: cp.z + dz };
+                let p = ChunkPos {
+                    x: cp.x + dx,
+                    z: cp.z + dz,
+                };
                 w.ensure_chunk(p);
                 for lx in 0..16 {
                     for lz in 0..16 {
@@ -925,7 +1047,10 @@ fn biomes_grow_their_own_wood() {
     assert!(acacia > 0, "scrubland shrubs should be acacia");
     // Forests mix oak and birch.
     let (birch, oaks) = count_wood("wood-forest", Biome::Forest, "base:birch_log");
-    assert!(birch > 0 && oaks > 0, "forest should mix birch ({birch}) and oak ({oaks})");
+    assert!(
+        birch > 0 && oaks > 0,
+        "forest should mix birch ({birch}) and oak ({oaks})"
+    );
 }
 
 // ---------------- bronze age ----------------
@@ -1028,7 +1153,9 @@ fn furnace_smelts_with_fuel_over_time() {
     for _ in 0..85 {
         w.tick_entities(0.1);
     }
-    let BlockEntity::Furnace(f) = &w.block_entities[&pos] else { panic!("furnace") };
+    let BlockEntity::Furnace(f) = &w.block_entities[&pos] else {
+        panic!("furnace")
+    };
     assert_eq!(f.output.unwrap().item, it(&reg, "base:copper_ingot"));
     assert_eq!(f.input.unwrap().count, 1, "one raw consumed");
     assert_eq!(f.fuel.unwrap().count, 1, "first log consumed for fuel");
@@ -1037,7 +1164,9 @@ fn furnace_smelts_with_fuel_over_time() {
     for _ in 0..90 {
         w.tick_entities(0.1);
     }
-    let BlockEntity::Furnace(f) = &w.block_entities[&pos] else { panic!("furnace") };
+    let BlockEntity::Furnace(f) = &w.block_entities[&pos] else {
+        panic!("furnace")
+    };
     assert_eq!(f.output.unwrap().count, 2);
     assert!(f.input.is_none());
     assert!(f.fuel.is_none(), "second log lit");
@@ -1070,7 +1199,9 @@ fn furnace_state_persists_and_breaks_drop_contents() {
             w2.ensure_chunk(ChunkPos { x, z });
         }
     }
-    let BlockEntity::Furnace(f) = &w2.block_entities[&pos] else { panic!("furnace") };
+    let BlockEntity::Furnace(f) = &w2.block_entities[&pos] else {
+        panic!("furnace")
+    };
     assert_eq!(f.input.unwrap().count, 5);
     assert_eq!(f.fuel.unwrap().item, it(&reg, "base:charcoal"));
     // Breaking the block spills the contents.
@@ -1165,8 +1296,14 @@ fn food_data_and_recipes_resolve() {
         reg.smelt_for(it(&reg, "base:potato")).unwrap().output,
         it(&reg, "base:baked_potato")
     );
-    assert!(reg.block_id("base:wheat_seeds/stage1").is_some(), "stage1 registered");
-    assert!(reg.block_id("base:wheat_seeds/stage2").is_some(), "stage2 registered");
+    assert!(
+        reg.block_id("base:wheat_seeds/stage1").is_some(),
+        "stage1 registered"
+    );
+    assert!(
+        reg.block_id("base:wheat_seeds/stage2").is_some(),
+        "stage2 registered"
+    );
     // Carrot plants its crop.
     assert_eq!(
         reg.item(it(&reg, "base:carrot")).places,
@@ -1245,7 +1382,10 @@ fn wild_food_generates_per_biome() {
         let ids: Vec<_> = blocks.iter().filter_map(|n| reg.block_id(n)).collect();
         for dx in -4..=4 {
             for dz in -4..=4 {
-                let p = ChunkPos { x: cp.x + dx, z: cp.z + dz };
+                let p = ChunkPos {
+                    x: cp.x + dx,
+                    z: cp.z + dz,
+                };
                 w.ensure_chunk(p);
                 for lx in 0..16 {
                     for lz in 0..16 {
@@ -1260,13 +1400,24 @@ fn wild_food_generates_per_biome() {
         }
         false
     };
-    assert!(has(Biome::Plains, &["base:wheat_seeds/stage2"], "ww"), "plains wheat");
     assert!(
-        has(Biome::Forest, &["base:carrot_crop/stage1", "base:berry_bush/stage1"], "wf"),
+        has(Biome::Plains, &["base:wheat_seeds/stage2"], "ww"),
+        "plains wheat"
+    );
+    assert!(
+        has(
+            Biome::Forest,
+            &["base:carrot_crop/stage1", "base:berry_bush/stage1"],
+            "wf"
+        ),
         "forest carrots/berries"
     );
     assert!(
-        has(Biome::Taiga, &["base:potato_crop/stage1", "base:wild_mushroom"], "wt"),
+        has(
+            Biome::Taiga,
+            &["base:potato_crop/stage1", "base:wild_mushroom"],
+            "wt"
+        ),
         "taiga potato/mushroom"
     );
 }
@@ -1292,13 +1443,19 @@ fn browser_and_recipe_index() {
     assert!(all.iter().all(|i| !reg.item(*i).name.contains('/')));
     let q = crate::browser_items(&reg, "bronze");
     assert!(q.iter().any(|i| reg.item(*i).name == "base:bronze_pickaxe"));
-    assert!(!crate::browser_items(&reg, "base:stick").is_empty(), "id search");
+    assert!(
+        !crate::browser_items(&reg, "base:stick").is_empty(),
+        "id search"
+    );
     // recipes_for/uses_of.
     let bread = it(&reg, "base:bread");
     assert_eq!(reg.recipes_for(bread).len(), 1);
     let planks = it(&reg, "base:planks");
     let (uses, _, _) = reg.uses_of(planks);
-    assert!(uses.iter().any(|r| r.output == it(&reg, "base:stick")), "tag uses counted");
+    assert!(
+        uses.iter().any(|r| r.output == it(&reg, "base:stick")),
+        "tag uses counted"
+    );
     let charcoal = it(&reg, "base:charcoal");
     let (_, _, fuel) = reg.uses_of(charcoal);
     assert!(fuel, "charcoal reported as fuel");
@@ -1312,11 +1469,17 @@ fn world_meta_roundtrip_and_legacy() {
     use crate::world::{read_world_meta, write_world_meta};
     let dir = tmp_dir("meta");
     write_world_meta(&dir, 777, "creative", 0.0);
-    assert_eq!(read_world_meta(&dir), (Some(777), "creative".to_string(), 0.0));
+    assert_eq!(
+        read_world_meta(&dir),
+        (Some(777), "creative".to_string(), 0.0)
+    );
     // Legacy: bare seed file means survival.
     let dir2 = tmp_dir("meta2");
     std::fs::write(dir2.join("seed"), "42").unwrap();
-    assert_eq!(read_world_meta(&dir2), (Some(42), "survival".to_string(), 0.0));
+    assert_eq!(
+        read_world_meta(&dir2),
+        (Some(42), "survival".to_string(), 0.0)
+    );
     // load_or_create upgrades legacy worlds to world.toml.
     let reg = base_reg();
     let _ = World::load_or_create(dir2.clone(), reg);
@@ -1343,7 +1506,12 @@ fn player_falls_lands_and_jumps() {
     let w = test_world("fall");
     let h = w.surface_height(4, 4);
     let mut p = Player::new(Vec3::new(4.5, h as f32 + 6.0, 4.5));
-    let idle = Input { forward: 0.0, strafe: 0.0, jump: false, sprint: false };
+    let idle = Input {
+        forward: 0.0,
+        strafe: 0.0,
+        jump: false,
+        sprint: false,
+    };
     for _ in 0..300 {
         p.update(&w, &idle, Vec3::Z, Vec3::X, 1.0 / 60.0);
     }
@@ -1440,7 +1608,16 @@ fn crafting_matches_shapes_and_grids() {
     let r = crate::crafting::match_recipe(&reg, &g, 2).expect("log->planks");
     assert_eq!((r.output, r.count), (planks, 4));
     // Pickaxe in 3x3, not in 2x2.
-    let g = grid(3, &[(0, planks), (1, planks), (2, planks), (4, stick), (7, stick)]);
+    let g = grid(
+        3,
+        &[
+            (0, planks),
+            (1, planks),
+            (2, planks),
+            (4, stick),
+            (7, stick),
+        ],
+    );
     assert_eq!(
         crate::crafting::match_recipe(&reg, &g, 3).unwrap().output,
         it(&reg, "base:wood_pickaxe")
@@ -1448,7 +1625,16 @@ fn crafting_matches_shapes_and_grids() {
     let g2 = grid(2, &[(0, planks), (1, planks), (2, stick)]);
     assert!(crate::crafting::match_recipe(&reg, &g2, 2).is_none());
     // Mirrored axe.
-    let g = grid(3, &[(0, cobble), (1, cobble), (4, cobble), (3, stick), (6, stick)]);
+    let g = grid(
+        3,
+        &[
+            (0, cobble),
+            (1, cobble),
+            (4, cobble),
+            (3, stick),
+            (6, stick),
+        ],
+    );
     assert_eq!(
         crate::crafting::match_recipe(&reg, &g, 3).unwrap().output,
         it(&reg, "base:stone_axe")
@@ -1466,8 +1652,13 @@ fn wood_leaf_tiles_are_opaque_in_atlas() {
     let reg = base_reg();
     let (img, px, _) = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
     let tp = px / 16;
-    for name in ["base:leaves", "base:birch_leaves", "base:spruce_leaves",
-                 "base:jungle_leaves", "base:acacia_leaves"] {
+    for name in [
+        "base:leaves",
+        "base:birch_leaves",
+        "base:spruce_leaves",
+        "base:jungle_leaves",
+        "base:acacia_leaves",
+    ] {
         let id = reg.block_id(name).unwrap();
         let slot = reg.block(id).tiles[0] as u32;
         let cx = (slot % 16) * tp + tp / 2;
@@ -1495,14 +1686,20 @@ fn atlas_builds_with_mod_texture() {
         let mut enc = png::Encoder::new(&mut png_data, 4, 4);
         enc.set_color(png::ColorType::Rgba);
         enc.set_depth(png::BitDepth::Eight);
-        enc.write_header().unwrap().write_image_data(&[255, 0, 0, 255].repeat(16)).unwrap();
+        enc.write_header()
+            .unwrap()
+            .write_image_data(&[255, 0, 0, 255].repeat(16))
+            .unwrap();
     }
     std::fs::write(dir.join("textures/red.png"), png_data).unwrap();
 
     let reg = registry::load(&root);
     let red = reg.block_id("texmod:red").expect("block with png");
     let slot = reg.block(red).tiles[0];
-    assert!(slot >= crate::atlas::FIRST_FREE_SLOT, "mod texture gets a free slot");
+    assert!(
+        slot >= crate::atlas::FIRST_FREE_SLOT,
+        "mod texture gets a free slot"
+    );
     assert!(
         reg.tex_names.contains(&("texmod/red".to_string(), slot)),
         "mod texture is pack-addressable by <mod_id>/<stem>: {:?}",
@@ -1513,7 +1710,11 @@ fn atlas_builds_with_mod_texture() {
     let tx = (slot as u32 % 16) * tp + tp / 2;
     let ty = (slot as u32 / 16) * tp + tp / 2;
     let i = ((ty * px + tx) * 4) as usize;
-    assert_eq!(&img[i..i + 4], &[255, 0, 0, 255], "png blitted into its slot");
+    assert_eq!(
+        &img[i..i + 4],
+        &[255, 0, 0, 255],
+        "png blitted into its slot"
+    );
 }
 
 #[test]
@@ -1522,7 +1723,11 @@ fn missing_texture_uses_placeholder_not_crash() {
     let dir = root.join("m");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("mod.toml"), "id = \"m\"\n").unwrap();
-    std::fs::write(dir.join("blocks.toml"), "[[block]]\nid = \"x\"\ntexture = \"nope.png\"\n").unwrap();
+    std::fs::write(
+        dir.join("blocks.toml"),
+        "[[block]]\nid = \"x\"\ntexture = \"nope.png\"\n",
+    )
+    .unwrap();
     let reg = registry::load(&root);
     let x = reg.block_id("m:x").unwrap();
     assert_eq!(reg.block(x).tiles[0], crate::atlas::UNKNOWN_SLOT);
@@ -1536,8 +1741,14 @@ fn print_biome_locations() {
     let reg = base_reg();
     let g = Generator::new(42, &reg);
     for biome in [
-        Biome::Forest, Biome::Plains, Biome::Desert, Biome::Jungle,
-        Biome::Scrubland, Biome::Taiga, Biome::Arctic, Biome::Mountains,
+        Biome::Forest,
+        Biome::Plains,
+        Biome::Desert,
+        Biome::Jungle,
+        Biome::Scrubland,
+        Biome::Taiga,
+        Biome::Arctic,
+        Biome::Mountains,
     ] {
         // Prefer a dry column so the screenshot shows land.
         let (mut bx, mut bz) = find_biome(&g, biome).unwrap();
@@ -1567,7 +1778,10 @@ fn write_solid_png(path: &std::path::Path, w: u32, h: u32, rgba: [u8; 4]) {
         let mut enc = png::Encoder::new(&mut data, w, h);
         enc.set_color(png::ColorType::Rgba);
         enc.set_depth(png::BitDepth::Eight);
-        enc.write_header().unwrap().write_image_data(&rgba.repeat((w * h) as usize)).unwrap();
+        enc.write_header()
+            .unwrap()
+            .write_image_data(&rgba.repeat((w * h) as usize))
+            .unwrap();
     }
     std::fs::write(path, data).unwrap();
 }
@@ -1597,7 +1811,10 @@ fn pack_discovery_lists_folders() {
     assert_eq!(packs[0].name, "Alpha Pack");
     assert_eq!(packs[0].description, "test pack");
     assert_eq!(packs[1].id, "zeta");
-    assert_eq!(packs[1].name, "zeta", "missing pack.toml falls back to dir name");
+    assert_eq!(
+        packs[1].name, "zeta",
+        "missing pack.toml falls back to dir name"
+    );
 }
 
 #[test]
@@ -1606,12 +1823,17 @@ fn pack_tile_override_applied_at_slot() {
     std::fs::create_dir_all(pack.join("tiles")).unwrap();
     write_solid_png(&pack.join("tiles/stone.png"), 8, 8, [255, 0, 255, 255]);
     let (base, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
-    let (img, px, warns) = crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
+    let (img, px, warns) =
+        crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
     assert_eq!(px, bpx);
     assert!(warns.is_empty(), "no warnings: {warns:?}");
     let stone = *crate::atlas::builtin_slots().get("stone").unwrap();
     let dirt = *crate::atlas::builtin_slots().get("dirt").unwrap();
-    assert_eq!(tile_center(&img, px, stone), [255, 0, 255, 255], "stone repainted");
+    assert_eq!(
+        tile_center(&img, px, stone),
+        [255, 0, 255, 255],
+        "stone repainted"
+    );
     assert_eq!(
         tile_center(&img, px, dirt),
         tile_center(&base, bpx, dirt),
@@ -1629,15 +1851,28 @@ fn pack_overrides_mod_tile_by_name_and_wins() {
 
     let pack = tmp_dir("packgems");
     std::fs::create_dir_all(pack.join("tiles/gems")).unwrap();
-    write_solid_png(&pack.join("tiles/gems/ruby_ore.png"), 4, 4, [255, 0, 255, 255]);
+    write_solid_png(
+        &pack.join("tiles/gems/ruby_ore.png"),
+        4,
+        4,
+        [255, 0, 255, 255],
+    );
 
     // Without the pack the mod's art lands in the slot...
     let (img, px, _) = crate::atlas::build_atlas(&tex_files, None, &tex_names);
     assert_eq!(tile_center(&img, px, slot), [0, 255, 0, 255]);
     // ...with the pack, the pack's art wins (layered last).
-    let (img, px, warns) = crate::atlas::build_atlas(&tex_files, Some(crate::atlas::PackSource::Dir(pack.clone())), &tex_names);
+    let (img, px, warns) = crate::atlas::build_atlas(
+        &tex_files,
+        Some(crate::atlas::PackSource::Dir(pack.clone())),
+        &tex_names,
+    );
     assert!(warns.is_empty(), "{warns:?}");
-    assert_eq!(tile_center(&img, px, slot), [255, 0, 255, 255], "pack > mod");
+    assert_eq!(
+        tile_center(&img, px, slot),
+        [255, 0, 255, 255],
+        "pack > mod"
+    );
 }
 
 #[test]
@@ -1647,7 +1882,8 @@ fn pack_unknown_and_unreadable_files_warn() {
     write_solid_png(&pack.join("tiles/notatile.png"), 4, 4, [1, 2, 3, 255]);
     std::fs::write(pack.join("tiles/stone.png"), b"this is not a png").unwrap();
     let (base, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
-    let (img, px, warns) = crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
+    let (img, px, warns) =
+        crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
     assert_eq!(warns.len(), 2, "unknown name + unreadable png: {warns:?}");
     assert!(warns.iter().any(|w| w.contains("notatile")));
     let stone = *crate::atlas::builtin_slots().get("stone").unwrap();
@@ -1661,7 +1897,10 @@ fn pack_unknown_and_unreadable_files_warn() {
 #[test]
 fn config_pack_round_trips() {
     let mut c = crate::config::Config::default();
-    assert_eq!(c.pack, "gemini", "fresh installs default to the bundled pack");
+    assert_eq!(
+        c.pack, "gemini",
+        "fresh installs default to the bundled pack"
+    );
     c.pack = "dusk".to_string();
     let parsed = crate::config::Config::from_text(&c.to_text());
     assert_eq!(parsed, c, "config text round-trips the pack field");
@@ -1669,7 +1908,10 @@ fn config_pack_round_trips() {
     let parsed = crate::config::Config::from_text(&c.to_text());
     assert!(parsed.pack.is_empty(), "explicit NONE round-trips as none");
     let legacy = crate::config::Config::from_text("volume=0.5\n");
-    assert_eq!(legacy.pack, "gemini", "configs predating packs get the default");
+    assert_eq!(
+        legacy.pack, "gemini",
+        "configs predating packs get the default"
+    );
 }
 
 #[test]
@@ -1680,7 +1922,10 @@ fn content_stamp_changes_on_pack_edit() {
     let before = crate::content_tree_stamp_of(&[&root]);
     write_solid_png(&root.join("dusk/tiles/dirt.png"), 4, 4, [9, 9, 9, 255]);
     let after = crate::content_tree_stamp_of(&[&root]);
-    assert_ne!(before, after, "adding a pack file re-stamps the content tree");
+    assert_ne!(
+        before, after,
+        "adding a pack file re-stamps the content tree"
+    );
 }
 
 #[test]
@@ -1688,11 +1933,16 @@ fn export_tiles_round_trip_reproduces_atlas() {
     let (img, px, _) = crate::atlas::build_atlas(&[], None, &[]);
     let out = tmp_dir("packexport");
     let n = crate::atlas::export_tiles(&out, &img, px, &[]).unwrap();
-    assert_eq!(n, crate::atlas::builtin_slots().len(), "every named builtin tile exported");
+    assert_eq!(
+        n,
+        crate::atlas::builtin_slots().len(),
+        "every named builtin tile exported"
+    );
     assert!(out.join("pack.toml").exists(), "stub pack.toml written");
     assert!(out.join("tiles/stone.png").exists());
     // Selecting the exported skeleton as a pack reproduces the atlas exactly.
-    let (again, apx, warns) = crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(out.clone())), &[]);
+    let (again, apx, warns) =
+        crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(out.clone())), &[]);
     assert!(warns.is_empty(), "{warns:?}");
     assert_eq!(apx, px);
     assert_eq!(again, img, "export -> re-import is the identity");
@@ -1728,7 +1978,10 @@ fn new_world_name_never_reuses_existing_folder() {
     assert_eq!(crate::next_world_name(&root, &listed), "world2");
     // Even a folder the listing can't see must not be adopted as "new".
     assert_eq!(crate::next_world_name(&root, &[]), "world2");
-    assert_eq!(crate::next_world_name(&tmp_dir("nextworld-empty"), &[]), "world1");
+    assert_eq!(
+        crate::next_world_name(&tmp_dir("nextworld-empty"), &[]),
+        "world1"
+    );
 }
 
 // ---------------- animals: species, mobs, hunting ----------------
@@ -1749,7 +2002,10 @@ fn base_animals_and_weapons_register() {
     let deer = &reg.animals[reg.animal_id("base:deer").expect("deer")];
     assert_eq!(deer.biomes, vec!["forest"]);
     assert!(deer.flee_range > 0.0, "deer are skittish");
-    assert!(deer.half_w > 0.2 && deer.height > 0.5, "collision derived from model");
+    assert!(
+        deer.half_w > 0.2 && deer.height > 0.5,
+        "collision derived from model"
+    );
     let boar = &reg.animals[reg.animal_id("base:boar").expect("boar")];
     assert_eq!(boar.flee_range, 0.0, "boars are bold");
     // Damage: swords explicit, axes implicit 3, bare items 1.
@@ -1776,10 +2032,19 @@ fn meats_smelt_and_stew_crafts() {
         let cooked = it(&reg, &format!("base:cooked_{m}"));
         assert!(!reg.smelts_for(cooked).is_empty(), "raw {m} smelts");
         let raw = reg.item(it(&reg, &format!("base:raw_{m}")));
-        let idx = crate::registry::NUTRIENTS.iter().position(|n| *n == "protein").unwrap();
-        assert!(raw.food.as_ref().unwrap().nutrition[idx] > 0.0, "{m} carries protein");
+        let idx = crate::registry::NUTRIENTS
+            .iter()
+            .position(|n| *n == "protein")
+            .unwrap();
+        assert!(
+            raw.food.as_ref().unwrap().nutrition[idx] > 0.0,
+            "{m} carries protein"
+        );
     }
-    assert!(!reg.smelts_for(it(&reg, "base:leather")).is_empty(), "hide tans to leather");
+    assert!(
+        !reg.smelts_for(it(&reg, "base:leather")).is_empty(),
+        "hide tans to leather"
+    );
     // Hearty stew via the #base:meats tag: any meat + potato + mushroom.
     let mut g = vec![None; 9];
     g[0] = Some(ItemStack::new(&reg, it(&reg, "base:raw_rabbit"), 1));
@@ -1809,10 +2074,26 @@ fn mob_settles_on_ground_and_flees_from_damage() {
     m.health = def.health;
     let mut rng = 7u32;
     for _ in 0..120 {
-        m.tick(&w, &def, &[crate::server::PlayerCtx { pos: Vec3::new(100.0, 181.0, 100.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
+        m.tick(
+            &w,
+            &def,
+            &[crate::server::PlayerCtx {
+                pos: Vec3::new(100.0, 181.0, 100.0),
+                spawn: Vec3::ZERO,
+                attackable: true,
+                aggro_mod: 0.0,
+            }],
+            1.0 / 60.0,
+            &mut rng,
+            &mut Vec::new(),
+        );
     }
     assert!(m.on_ground, "gravity settles the mob");
-    assert!((m.pos.y - 181.0).abs() < 0.3, "standing on the pad, got y={}", m.pos.y);
+    assert!(
+        (m.pos.y - 181.0).abs() < 0.3,
+        "standing on the pad, got y={}",
+        m.pos.y
+    );
 
     // Damage from the east: it panics away, gaining distance from the threat.
     let threat = m.pos + Vec3::new(2.0, 0.0, 0.0);
@@ -1821,13 +2102,37 @@ fn mob_settles_on_ground_and_flees_from_damage() {
     assert!(m.health < def.health);
     let d0 = (m.pos - threat).length();
     for _ in 0..90 {
-        m.tick(&w, &def, &[crate::server::PlayerCtx { pos: Vec3::new(100.0, 181.0, 100.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
+        m.tick(
+            &w,
+            &def,
+            &[crate::server::PlayerCtx {
+                pos: Vec3::new(100.0, 181.0, 100.0),
+                spawn: Vec3::ZERO,
+                attackable: true,
+                aggro_mod: 0.0,
+            }],
+            1.0 / 60.0,
+            &mut rng,
+            &mut Vec::new(),
+        );
     }
     let d1 = (m.pos - threat).length();
     assert!(d1 > d0 + 1.0, "fled from the threat ({d0:.1} -> {d1:.1})");
     // Panic subsides back to idle within the flee timer.
     for _ in 0..400 {
-        m.tick(&w, &def, &[crate::server::PlayerCtx { pos: Vec3::new(100.0, 181.0, 100.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
+        m.tick(
+            &w,
+            &def,
+            &[crate::server::PlayerCtx {
+                pos: Vec3::new(100.0, 181.0, 100.0),
+                spawn: Vec3::ZERO,
+                attackable: true,
+                aggro_mod: 0.0,
+            }],
+            1.0 / 60.0,
+            &mut rng,
+            &mut Vec::new(),
+        );
     }
     assert_ne!(m.state, crate::mobs::MobState::Flee, "calmed down");
 }
@@ -1845,8 +2150,32 @@ fn skittish_flees_players_bold_does_not() {
     let mut deer = crate::mobs::Mob::new(deer_i, pos, 0.0);
     let mut boar = crate::mobs::Mob::new(boar_i, pos, 0.0);
     let mut rng = 3u32;
-    deer.tick(&w, &deer_def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
-    boar.tick(&w, &boar_def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
+    deer.tick(
+        &w,
+        &deer_def,
+        &[crate::server::PlayerCtx {
+            pos: player,
+            spawn: Vec3::ZERO,
+            attackable: true,
+            aggro_mod: 0.0,
+        }],
+        1.0 / 60.0,
+        &mut rng,
+        &mut Vec::new(),
+    );
+    boar.tick(
+        &w,
+        &boar_def,
+        &[crate::server::PlayerCtx {
+            pos: player,
+            spawn: Vec3::ZERO,
+            attackable: true,
+            aggro_mod: 0.0,
+        }],
+        1.0 / 60.0,
+        &mut rng,
+        &mut Vec::new(),
+    );
     assert_eq!(deer.state, crate::mobs::MobState::Flee, "deer spooks");
     assert_ne!(boar.state, crate::mobs::MobState::Flee, "boar doesn't care");
 }
@@ -1858,10 +2187,18 @@ fn mob_ray_hit_works() {
     let def = &reg.animals[si];
     let m = crate::mobs::Mob::new(si, Vec3::new(10.0, 64.0, 10.0), 0.0);
     let origin = Vec3::new(10.0, 64.5, 6.0);
-    let t = m.ray_hit(def, origin, Vec3::Z, 8.0).expect("aimed ray hits");
+    let t = m
+        .ray_hit(def, origin, Vec3::Z, 8.0)
+        .expect("aimed ray hits");
     assert!(t > 2.0 && t < 5.0, "hit distance sane: {t}");
-    assert!(m.ray_hit(def, origin, -Vec3::Z, 8.0).is_none(), "away ray misses");
-    assert!(m.ray_hit(def, origin, Vec3::Z, 2.0).is_none(), "out of reach");
+    assert!(
+        m.ray_hit(def, origin, -Vec3::Z, 8.0).is_none(),
+        "away ray misses"
+    );
+    assert!(
+        m.ray_hit(def, origin, Vec3::Z, 2.0).is_none(),
+        "out of reach"
+    );
 }
 
 #[test]
@@ -1957,7 +2294,9 @@ drops = [{ item = "base:hide", min = 1, max = 1 }]
     )
     .unwrap();
     let reg = registry::load(&root);
-    let si = reg.animal_id("fauna:shadow_cat").expect("mod species registers");
+    let si = reg
+        .animal_id("fauna:shadow_cat")
+        .expect("mod species registers");
     let def = &reg.animals[si];
     assert!(!def.model.is_empty(), "default model filled in");
     assert_eq!(def.drops.len(), 1, "drop resolved to base:hide");
@@ -1976,9 +2315,22 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
     w.mobs.push(far);
     let mut rng = 1u32;
     for _ in 0..60 {
-        w.tick_mobs(&[crate::server::PlayerCtx { pos: Vec3::ZERO, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0, 1.0 / 60.0, &mut rng);
+        w.tick_mobs(
+            &[crate::server::PlayerCtx {
+                pos: Vec3::ZERO,
+                spawn: Vec3::ZERO,
+                attackable: true,
+                aggro_mod: 0.0,
+            }],
+            1.0,
+            1.0 / 60.0,
+            &mut rng,
+        );
     }
-    assert_eq!(w.mobs[far_i].pos.y, 80.0, "frozen, not falling, outside loaded chunks");
+    assert_eq!(
+        w.mobs[far_i].pos.y, 80.0,
+        "frozen, not falling, outside loaded chunks"
+    );
 
     // A mob already wedged inside solid ground pops up to the surface.
     let stone = reg.block_id("base:stone").unwrap();
@@ -1993,7 +2345,17 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
     let mut buried = crate::mobs::Mob::new(si, Vec3::new(1.5, 104.0, 1.5), 0.0);
     buried.health = 10.0;
     w.mobs.push(buried);
-    w.tick_mobs(&[crate::server::PlayerCtx { pos: Vec3::new(60.0, 80.0, 60.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0, 1.0 / 60.0, &mut rng);
+    w.tick_mobs(
+        &[crate::server::PlayerCtx {
+            pos: Vec3::new(60.0, 80.0, 60.0),
+            spawn: Vec3::ZERO,
+            attackable: true,
+            aggro_mod: 0.0,
+        }],
+        1.0,
+        1.0 / 60.0,
+        &mut rng,
+    );
     assert!(
         w.mobs[buried_i].pos.y >= 110.5,
         "unstuck above the stone, got y={}",
@@ -2019,7 +2381,10 @@ fn embedded_gemini_pack_applies_without_folder() {
     );
     // The built-in pack is always discoverable, folder or not.
     let listed = crate::atlas::discover_packs();
-    assert!(listed.iter().any(|p| p.id == "gemini"), "gemini listed: {listed:?}");
+    assert!(
+        listed.iter().any(|p| p.id == "gemini"),
+        "gemini listed: {listed:?}"
+    );
 }
 
 #[test]
@@ -2027,14 +2392,25 @@ fn model_boxes_can_carry_their_own_texture() {
     let reg = base_reg();
     let deer = &reg.animals[reg.animal_id("base:deer").unwrap()];
     let antler_slot = *crate::atlas::builtin_slots().get("antler").unwrap();
-    let antlers: Vec<_> =
-        deer.model.iter().filter(|b| b.name.starts_with("antler")).collect();
+    let antlers: Vec<_> = deer
+        .model
+        .iter()
+        .filter(|b| b.name.starts_with("antler"))
+        .collect();
     assert_eq!(antlers.len(), 2, "deer has an antler pair");
     for b in &antlers {
-        assert_eq!(b.tile, Some(antler_slot), "antlers use the bone tile, not fur");
+        assert_eq!(
+            b.tile,
+            Some(antler_slot),
+            "antlers use the bone tile, not fur"
+        );
     }
     assert!(
-        deer.model.iter().filter(|b| b.name.starts_with("tine")).count() == 2,
+        deer.model
+            .iter()
+            .filter(|b| b.name.starts_with("tine"))
+            .count()
+            == 2,
         "antlers branch"
     );
     let body = deer.model.iter().find(|b| b.name == "body").unwrap();
@@ -2066,7 +2442,11 @@ fn torch_light_propagates_and_walls_block_it() {
     assert_eq!(w.light_at(4, 153, 4).0, 12, "propagates vertically too");
     assert_eq!(w.light_at(10, 151, 4).0, 0, "opaque wall stops it");
     w.set_block(4, 151, 4, AIR);
-    assert_eq!(w.light_at(5, 151, 4).0, 0, "removing the torch relights dark");
+    assert_eq!(
+        w.light_at(5, 151, 4).0,
+        0,
+        "removing the torch relights dark"
+    );
 }
 
 #[test]
@@ -2081,16 +2461,23 @@ fn sky_light_surface_cave_and_roof_opening() {
     for x in 20..29 {
         for z in 20..29 {
             for yy in 150..159 {
-                let shell =
-                    x == 20 || x == 28 || z == 20 || z == 28 || yy == 150 || yy == 158;
+                let shell = x == 20 || x == 28 || z == 20 || z == 28 || yy == 150 || yy == 158;
                 w.set_block(x, yy, z, if shell { stone } else { AIR });
             }
         }
     }
     assert_eq!(w.light_at(24, 154, 24).1, 0, "sealed roof blocks sky");
     w.set_block(24, 158, 24, AIR); // skylight hole
-    assert_eq!(w.light_at(24, 154, 24).1, 15, "column under the hole is lit");
-    assert_eq!(w.light_at(26, 154, 24).1, 13, "and floods sideways, dimming");
+    assert_eq!(
+        w.light_at(24, 154, 24).1,
+        15,
+        "column under the hole is lit"
+    );
+    assert_eq!(
+        w.light_at(26, 154, 24).1,
+        13,
+        "and floods sideways, dimming"
+    );
 }
 
 #[test]
@@ -2182,7 +2569,9 @@ fn torch_needs_ground_and_pops_without_it() {
     w.set_block(5, 150, 5, AIR);
     assert_eq!(w.get_block(5, 151, 5), AIR, "torch popped");
     assert!(
-        w.pending_drops.iter().any(|(_, s)| reg.item(s.item).name == "base:torch"),
+        w.pending_drops
+            .iter()
+            .any(|(_, s)| reg.item(s.item).name == "base:torch"),
         "torch dropped as an item"
     );
     // Torch recipe: charcoal over stick -> 4.
@@ -2209,7 +2598,8 @@ fn chest_stores_spills_and_persists() {
     let mut state = crate::world::ChestState::default();
     state.slots[0] = Some(ItemStack::new(&reg, it(&reg, "base:bread"), 3));
     state.slots[26] = Some(ItemStack::new(&reg, it(&reg, "base:bronze_ingot"), 7));
-    w.block_entities.insert(pos, crate::world::BlockEntity::Chest(state));
+    w.block_entities
+        .insert(pos, crate::world::BlockEntity::Chest(state));
     w.save_modified();
 
     // Round-trip by name, plus an unknown item that must skip cleanly.
@@ -2221,8 +2611,10 @@ fn chest_stores_spills_and_persists() {
     let Some(crate::world::BlockEntity::Chest(c)) = w2.block_entities.get(&pos) else {
         panic!("chest reloaded")
     };
-    assert_eq!(c.slots[0].map(|s| (reg.item(s.item).name.clone(), s.count)),
-        Some(("base:bread".to_string(), 3)));
+    assert_eq!(
+        c.slots[0].map(|s| (reg.item(s.item).name.clone(), s.count)),
+        Some(("base:bread".to_string(), 3))
+    );
     assert_eq!(c.slots[26].map(|s| s.count), Some(7));
     let Some(crate::world::BlockEntity::Chest(c2)) = w2.block_entities.get(&(9, 90, 9)) else {
         panic!("second chest reloaded")
@@ -2234,7 +2626,11 @@ fn chest_stores_spills_and_persists() {
     w3.set_block(pos.0, pos.1, pos.2, AIR);
     assert!(w3.block_entities.get(&pos).is_none());
     let spilled: Vec<_> = w3.pending_drops.iter().map(|(_, s)| s.count).collect();
-    assert_eq!(spilled.iter().sum::<u32>(), 10, "3 bread + 7 ingots spilled");
+    assert_eq!(
+        spilled.iter().sum::<u32>(),
+        10,
+        "3 bread + 7 ingots spilled"
+    );
 
     // Recipe: 8 planks in a ring.
     let mut g = vec![None; 9];
@@ -2256,7 +2652,10 @@ fn ire_gains_decay_tiers_and_persistence() {
     let mut w = World::new(3, dir.clone(), reg.clone());
     // Block classes.
     assert_eq!(w.ire_for_block(reg.block_id("base:log").unwrap()), 0.3);
-    assert_eq!(w.ire_for_block(reg.block_id("base:copper_ore").unwrap()), 0.4);
+    assert_eq!(
+        w.ire_for_block(reg.block_id("base:copper_ore").unwrap()),
+        0.4
+    );
     assert_eq!(w.ire_for_block(reg.block_id("base:stone").unwrap()), 0.05);
     assert_eq!(w.ire_for_block(reg.block_id("base:planks").unwrap()), 0.0);
     // Tier thresholds.
@@ -2304,12 +2703,36 @@ fn warden_hunts_strikes_and_caster_fires() {
     m.health = def.health;
     let mut rng = 5u32;
     let mut events = Vec::new();
-    m.tick(&w, &def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut events);
+    m.tick(
+        &w,
+        &def,
+        &[crate::server::PlayerCtx {
+            pos: player,
+            spawn: Vec3::ZERO,
+            attackable: true,
+            aggro_mod: 0.0,
+        }],
+        1.0 / 60.0,
+        &mut rng,
+        &mut events,
+    );
     assert_eq!(m.state, crate::mobs::MobState::Hunt, "aggro within range");
     // Walk it onto the player: contact damage fires once, then cools down.
     m.pos = player + Vec3::new(0.8, 0.0, 0.0);
     for _ in 0..30 {
-        m.tick(&w, &def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut events);
+        m.tick(
+            &w,
+            &def,
+            &[crate::server::PlayerCtx {
+                pos: player,
+                spawn: Vec3::ZERO,
+                attackable: true,
+                aggro_mod: 0.0,
+            }],
+            1.0 / 60.0,
+            &mut rng,
+            &mut events,
+        );
         m.pos = player + Vec3::new(0.8, 0.0, 0.0);
     }
     let hits = events
@@ -2321,8 +2744,24 @@ fn warden_hunts_strikes_and_caster_fires() {
     let mut calm = crate::mobs::Mob::new(ti, Vec3::new(6.5, 151.0, 1.5), 0.0);
     calm.health = def.health;
     let mut ev2 = Vec::new();
-    calm.tick(&w, &def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: false, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut ev2);
-    assert_ne!(calm.state, crate::mobs::MobState::Hunt, "no aggro when unattackable");
+    calm.tick(
+        &w,
+        &def,
+        &[crate::server::PlayerCtx {
+            pos: player,
+            spawn: Vec3::ZERO,
+            attackable: false,
+            aggro_mod: 0.0,
+        }],
+        1.0 / 60.0,
+        &mut rng,
+        &mut ev2,
+    );
+    assert_ne!(
+        calm.state,
+        crate::mobs::MobState::Hunt,
+        "no aggro when unattackable"
+    );
 
     // Dryad: holds range and lobs a thorn bolt.
     let di = reg.animal_id("base:dryad").unwrap();
@@ -2331,10 +2770,23 @@ fn warden_hunts_strikes_and_caster_fires() {
     d.health = ddef.health;
     let mut ev3 = Vec::new();
     for _ in 0..90 {
-        d.tick(&w, &ddef, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut ev3);
+        d.tick(
+            &w,
+            &ddef,
+            &[crate::server::PlayerCtx {
+                pos: player,
+                spawn: Vec3::ZERO,
+                attackable: true,
+                aggro_mod: 0.0,
+            }],
+            1.0 / 60.0,
+            &mut rng,
+            &mut ev3,
+        );
     }
     assert!(
-        ev3.iter().any(|e| matches!(e, crate::mobs::MobEvent::Cast(_))),
+        ev3.iter()
+            .any(|e| matches!(e, crate::mobs::MobEvent::Cast(_))),
         "caster fired"
     );
 }
@@ -2352,7 +2804,19 @@ fn floaters_hover_and_projectiles_collide() {
     let mut rng = 9u32;
     let far = Vec3::new(200.0, 80.0, 200.0);
     for _ in 0..240 {
-        m.tick(&w, &def, &[crate::server::PlayerCtx { pos: far, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
+        m.tick(
+            &w,
+            &def,
+            &[crate::server::PlayerCtx {
+                pos: far,
+                spawn: Vec3::ZERO,
+                attackable: true,
+                aggro_mod: 0.0,
+            }],
+            1.0 / 60.0,
+            &mut rng,
+            &mut Vec::new(),
+        );
     }
     let under = w.surface_height(m.pos.x.floor() as i32, m.pos.z.floor() as i32);
     assert!(
@@ -2377,12 +2841,24 @@ fn floaters_hover_and_projectiles_collide() {
     };
     let mut outcome = crate::mobs::ProjHit::None;
     for _ in 0..60 {
-        outcome = p.tick(&w, &[crate::server::PlayerCtx { pos: far, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 30.0);
+        outcome = p.tick(
+            &w,
+            &[crate::server::PlayerCtx {
+                pos: far,
+                spawn: Vec3::ZERO,
+                attackable: true,
+                aggro_mod: 0.0,
+            }],
+            1.0 / 30.0,
+        );
         if !matches!(outcome, crate::mobs::ProjHit::None) {
             break;
         }
     }
-    assert!(matches!(outcome, crate::mobs::ProjHit::Block), "bolt stopped by the wall");
+    assert!(
+        matches!(outcome, crate::mobs::ProjHit::Block),
+        "bolt stopped by the wall"
+    );
     w.projectiles.push(crate::mobs::Projectile {
         pos: Vec3::new(4.5, 120.9, 2.0),
         vel: Vec3::new(0.0, 0.0, 12.0),
@@ -2395,7 +2871,19 @@ fn floaters_hover_and_projectiles_collide() {
     });
     let mut dmg = 0.0;
     for _ in 0..60 {
-        dmg += w.tick_projectiles(&[crate::server::PlayerCtx { pos: Vec3::new(4.5, 120.0, 4.5), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 30.0).iter().map(|(_, d)| d).sum::<f32>();
+        dmg += w
+            .tick_projectiles(
+                &[crate::server::PlayerCtx {
+                    pos: Vec3::new(4.5, 120.0, 4.5),
+                    spawn: Vec3::ZERO,
+                    attackable: true,
+                    aggro_mod: 0.0,
+                }],
+                1.0 / 30.0,
+            )
+            .iter()
+            .map(|(_, d)| d)
+            .sum::<f32>();
     }
     assert_eq!(dmg, 3.0, "bolt connected with the player");
 }
@@ -2427,9 +2915,16 @@ fn spawner_respects_darkness_ire_and_tiers() {
     for _ in 0..300 {
         w.tick_hostile_spawns(player, world_spawn, 0.12, 5.0, &mut rng);
     }
-    let hostiles: Vec<_> =
-        w.mobs.iter().filter(|m| reg.animals[m.species].hostile).collect();
-    assert!(hostiles.len() <= 2, "calm budget respected: {}", hostiles.len());
+    let hostiles: Vec<_> = w
+        .mobs
+        .iter()
+        .filter(|m| reg.animals[m.species].hostile)
+        .collect();
+    assert!(
+        hostiles.len() <= 2,
+        "calm budget respected: {}",
+        hostiles.len()
+    );
     for m in &hostiles {
         let d = &reg.animals[m.species];
         assert_eq!(d.ire_min, 0.0, "no provoked-tier wardens at calm");
@@ -2441,7 +2936,11 @@ fn spawner_respects_darkness_ire_and_tiers() {
     for _ in 0..300 {
         w.tick_hostile_spawns(player, world_spawn, 0.12, 5.0, &mut rng);
     }
-    let n = w.mobs.iter().filter(|m| reg.animals[m.species].hostile).count();
+    let n = w
+        .mobs
+        .iter()
+        .filter(|m| reg.animals[m.species].hostile)
+        .count();
     assert!(n > 2, "wrathful nights are busier: {n}");
 }
 
@@ -2467,7 +2966,17 @@ fn wardens_dissolve_at_dawn_and_never_save() {
     // Dawn dissolve: full daylight on an open surface removes the warden.
     let player = Vec3::new(5.0, y, 5.0);
     let mut rng = 3u32;
-    w.tick_mobs(&[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0, 1.0 / 60.0, &mut rng);
+    w.tick_mobs(
+        &[crate::server::PlayerCtx {
+            pos: player,
+            spawn: Vec3::ZERO,
+            attackable: true,
+            aggro_mod: 0.0,
+        }],
+        1.0,
+        1.0 / 60.0,
+        &mut rng,
+    );
     assert!(
         !w.mobs.iter().any(|m| reg.animals[m.species].hostile),
         "warden dissolved in daylight"
@@ -2491,12 +3000,27 @@ fn bow_armor_recipes_and_data_resolve() {
     let wb = reg.item(it(&reg, "base:warbow"));
     assert_eq!(wb.bow.as_ref().unwrap().damage, 10.0);
     // Arrows are an ammo class.
-    assert_eq!(reg.item(it(&reg, "base:arrow")).ammo.as_deref(), Some("arrow"));
+    assert_eq!(
+        reg.item(it(&reg, "base:arrow")).ammo.as_deref(),
+        Some("arrow")
+    );
     // Recipes: bows, arrow x4, all eight pieces.
-    for n in ["hunting_bow", "warbow", "leather_helmet", "leather_chestplate",
-              "leather_leggings", "leather_boots", "bronze_helmet",
-              "bronze_chestplate", "bronze_leggings", "bronze_boots"] {
-        assert!(!reg.recipes_for(it(&reg, &format!("base:{n}"))).is_empty(), "{n} recipe");
+    for n in [
+        "hunting_bow",
+        "warbow",
+        "leather_helmet",
+        "leather_chestplate",
+        "leather_leggings",
+        "leather_boots",
+        "bronze_helmet",
+        "bronze_chestplate",
+        "bronze_leggings",
+        "bronze_boots",
+    ] {
+        assert!(
+            !reg.recipes_for(it(&reg, &format!("base:{n}"))).is_empty(),
+            "{n} recipe"
+        );
     }
     let arrows = reg.recipes_for(it(&reg, "base:arrow"));
     assert_eq!(arrows[0].count, 4, "one craft yields four arrows");
@@ -2519,9 +3043,18 @@ fn bow_armor_recipes_and_data_resolve() {
 #[test]
 fn armor_reduction_curve() {
     assert_eq!(crate::reduced_damage(10.0, 0), 10.0);
-    assert!((crate::reduced_damage(10.0, 7) - 7.2).abs() < 0.01, "full leather: 28%");
-    assert!((crate::reduced_damage(10.0, 11) - 5.6).abs() < 0.01, "full bronze: 44%");
-    assert!((crate::reduced_damage(10.0, 50) - 4.0).abs() < 0.001, "capped at 60%");
+    assert!(
+        (crate::reduced_damage(10.0, 7) - 7.2).abs() < 0.01,
+        "full leather: 28%"
+    );
+    assert!(
+        (crate::reduced_damage(10.0, 11) - 5.6).abs() < 0.01,
+        "full bronze: 44%"
+    );
+    assert!(
+        (crate::reduced_damage(10.0, 50) - 4.0).abs() < 0.001,
+        "capped at 60%"
+    );
 }
 
 #[test]
@@ -2548,9 +3081,25 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
     let far = Vec3::new(300.0, 80.0, 300.0);
     let mut player_dmg = 0.0;
     for _ in 0..40 {
-        player_dmg += w.tick_projectiles(&[crate::server::PlayerCtx { pos: far, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 30.0).iter().map(|(_, d)| d).sum::<f32>();
+        player_dmg += w
+            .tick_projectiles(
+                &[crate::server::PlayerCtx {
+                    pos: far,
+                    spawn: Vec3::ZERO,
+                    attackable: true,
+                    aggro_mod: 0.0,
+                }],
+                1.0 / 30.0,
+            )
+            .iter()
+            .map(|(_, d)| d)
+            .sum::<f32>();
     }
-    assert!(w.mobs[di].health < 10.0, "arrow connected (health {})", w.mobs[di].health);
+    assert!(
+        w.mobs[di].health < 10.0,
+        "arrow connected (health {})",
+        w.mobs[di].health
+    );
     assert_eq!(player_dmg, 0.0, "player arrows never hit the player");
     assert!(w.pending_drops.is_empty(), "flesh hits consume the arrow");
     // Arrow into a wall drops a recoverable arrow item.
@@ -2569,7 +3118,15 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
         owner: 0,
     });
     for _ in 0..40 {
-        w.tick_projectiles(&[crate::server::PlayerCtx { pos: far, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 30.0);
+        w.tick_projectiles(
+            &[crate::server::PlayerCtx {
+                pos: far,
+                spawn: Vec3::ZERO,
+                attackable: true,
+                aggro_mod: 0.0,
+            }],
+            1.0 / 30.0,
+        );
     }
     assert!(
         w.pending_drops.iter().any(|(_, s)| s.item == arrow_item),
@@ -2617,7 +3174,10 @@ fn saplings_parse_drop_and_grow() {
         }
     }
     assert!(leaf_count > 8, "canopy grew ({leaf_count} leaves)");
-    assert!((w.ire - (ire0 - 2.0)).abs() < 0.01, "maturation refunds 2 ire");
+    assert!(
+        (w.ire - (ire0 - 2.0)).abs() < 0.01,
+        "maturation refunds 2 ire"
+    );
     // Blocked trunk: stays a sapling.
     let stone = reg.block_id("base:stone").unwrap();
     w.set_block(8, 199, 8, dirt);
@@ -2636,27 +3196,31 @@ fn offering_stone_values_and_dawn() {
     assert_eq!(reg.block(stone).light_emit, 5, "faint wildlight");
     assert!(!reg.recipes_for(it(&reg, "base:offering_stone")).is_empty());
     // Value table: the wild's own materials 2.0, meat 1.0, bread hunger*0.25.
-    let v = |name: &str, n: u32| {
-        w.offering_value(&ItemStack::new(&reg, it(&reg, name), n))
-    };
+    let v = |name: &str, n: u32| w.offering_value(&ItemStack::new(&reg, it(&reg, name), n));
     assert_eq!(v("base:heartwood", 1), 2.0);
     assert_eq!(v("base:raw_venison", 2), 2.0);
-    assert!((v("base:bread", 1) - 1.5).abs() < 0.01, "bread hunger 6 * 0.25");
+    assert!(
+        (v("base:bread", 1) - 1.5).abs() < 0.01,
+        "bread hunger 6 * 0.25"
+    );
     assert_eq!(v("base:oak_sapling", 1), 1.0);
     // Dawn: items taken, refund capped at 10.
     w.ire = 60.0;
     let mut st = crate::world::OfferingState::default();
     st.slots[0] = Some(ItemStack::new(&reg, it(&reg, "base:heartwood"), 4)); // 8.0
     st.slots[1] = Some(ItemStack::new(&reg, it(&reg, "base:raw_rabbit"), 5)); // 5.0
-    w.block_entities.insert((3, 90, 3), crate::world::BlockEntity::Offering(st));
+    w.block_entities
+        .insert((3, 90, 3), crate::world::BlockEntity::Offering(st));
     let r = w.accept_offerings();
     assert!((r - 10.0).abs() < 0.01, "capped at 10, got {r}");
     assert!((w.ire - 50.0).abs() < 0.01);
-    let Some(crate::world::BlockEntity::Offering(o)) = w.block_entities.get(&(3, 90, 3))
-    else {
+    let Some(crate::world::BlockEntity::Offering(o)) = w.block_entities.get(&(3, 90, 3)) else {
         panic!()
     };
-    assert!(o.slots.iter().all(|s| s.is_none()), "the wild took everything");
+    assert!(
+        o.slots.iter().all(|s| s.is_none()),
+        "the wild took everything"
+    );
     assert_eq!(w.accept_offerings(), 0.0, "empty stone gives nothing");
 }
 
@@ -2674,13 +3238,29 @@ fn breeding_makes_babies_that_grow() {
         w.mobs.push(m);
     }
     let mut rng = 3u32;
-    let events = w.tick_mobs(&[crate::server::PlayerCtx { pos: Vec3::new(200.0, 80.0, 200.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0, 1.0 / 60.0, &mut rng);
+    let events = w.tick_mobs(
+        &[crate::server::PlayerCtx {
+            pos: Vec3::new(200.0, 80.0, 200.0),
+            spawn: Vec3::ZERO,
+            attackable: true,
+            aggro_mod: 0.0,
+        }],
+        1.0,
+        1.0 / 60.0,
+        &mut rng,
+    );
     assert!(
-        events.iter().any(|e| matches!(e, crate::mobs::MobEvent::Bred(_))),
+        events
+            .iter()
+            .any(|e| matches!(e, crate::mobs::MobEvent::Bred)),
         "birth event"
     );
     assert_eq!(w.mobs.len(), before + 3, "two parents + one baby");
-    let baby = w.mobs.iter().find(|m| m.growth < 1.0).expect("a baby exists");
+    let baby = w
+        .mobs
+        .iter()
+        .find(|m| m.growth < 1.0)
+        .expect("a baby exists");
     assert!(baby.growth < 0.1);
     assert!((w.ire - 19.0).abs() < 0.01, "a birth refunds 1 ire");
     let parents_fed = w.mobs.iter().filter(|m| m.fed).count();
@@ -2688,14 +3268,34 @@ fn breeding_makes_babies_that_grow() {
     // Growth advances with time; babies persist through saves.
     let baby_growth = baby.growth;
     for _ in 0..120 {
-        w.tick_mobs(&[crate::server::PlayerCtx { pos: Vec3::new(200.0, 80.0, 200.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0, 1.0 / 60.0, &mut rng);
+        w.tick_mobs(
+            &[crate::server::PlayerCtx {
+                pos: Vec3::new(200.0, 80.0, 200.0),
+                spawn: Vec3::ZERO,
+                attackable: true,
+                aggro_mod: 0.0,
+            }],
+            1.0,
+            1.0 / 60.0,
+            &mut rng,
+        );
     }
     let baby2 = w.mobs.iter().find(|m| m.growth < 1.0).expect("still young");
     assert!(baby2.growth > baby_growth, "babies grow");
     // No immediate re-breeding: cooldown holds.
     let n_now = w.mobs.len();
-    let ev2 = w.tick_mobs(&[crate::server::PlayerCtx { pos: Vec3::new(200.0, 80.0, 200.0), spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0, 1.0 / 60.0, &mut rng);
-    assert!(!ev2.iter().any(|e| matches!(e, crate::mobs::MobEvent::Bred(_))));
+    let ev2 = w.tick_mobs(
+        &[crate::server::PlayerCtx {
+            pos: Vec3::new(200.0, 80.0, 200.0),
+            spawn: Vec3::ZERO,
+            attackable: true,
+            aggro_mod: 0.0,
+        }],
+        1.0,
+        1.0 / 60.0,
+        &mut rng,
+    );
+    assert!(!ev2.iter().any(|e| matches!(e, crate::mobs::MobEvent::Bred)));
     assert_eq!(w.mobs.len(), n_now);
 }
 
@@ -2737,19 +3337,38 @@ fn iron_and_steel_chains_resolve() {
     let total = |m: &str| -> u32 {
         ["helmet", "chestplate", "leggings", "boots"]
             .iter()
-            .map(|p| reg.item(it(&reg, &format!("base:{m}_{p}"))).armor.unwrap().1)
+            .map(|p| {
+                reg.item(it(&reg, &format!("base:{m}_{p}")))
+                    .armor
+                    .unwrap()
+                    .1
+            })
             .sum()
     };
     assert_eq!(total("iron"), 14);
     assert_eq!(total("steel"), 18);
     // All craftables resolve.
-    for n in ["iron_pickaxe", "iron_sword", "steel_axe", "steel_boots",
-              "iron_block", "steel_block", "shears", "excavation_brush"] {
-        assert!(!reg.recipes_for(it(&reg, &format!("base:{n}"))).is_empty(), "{n}");
+    for n in [
+        "iron_pickaxe",
+        "iron_sword",
+        "steel_axe",
+        "steel_boots",
+        "iron_block",
+        "steel_block",
+        "shears",
+        "excavation_brush",
+    ] {
+        assert!(
+            !reg.recipes_for(it(&reg, &format!("base:{n}"))).is_empty(),
+            "{n}"
+        );
     }
     // Ember burns hot: 2x smelt speed.
     assert_eq!(reg.fuel_value(it(&reg, "base:ember")), Some((80.0, 2.0)));
-    assert_eq!(reg.fuel_value(it(&reg, "base:charcoal")).map(|(_, s)| s), Some(1.0));
+    assert_eq!(
+        reg.fuel_value(it(&reg, "base:charcoal")).map(|(_, s)| s),
+        Some(1.0)
+    );
     // Shears flagged.
     assert!(reg.item(it(&reg, "base:shears")).shears);
 }
@@ -2788,18 +3407,17 @@ fn ember_fuel_speeds_the_furnace() {
     let mut f = crate::world::FurnaceState::default();
     f.input = Some(ItemStack::new(&reg, it(&reg, "base:steel_blend"), 1));
     f.fuel = Some(ItemStack::new(&reg, it(&reg, "base:ember"), 1));
-    w.block_entities.insert((0, 90, 0), crate::world::BlockEntity::Furnace(f));
+    w.block_entities
+        .insert((0, 90, 0), crate::world::BlockEntity::Furnace(f));
     // 14 s steel smelt at 2x should finish in ~7 s.
     for _ in 0..80 {
         w.tick_entities(0.1);
     }
-    let Some(crate::world::BlockEntity::Furnace(f)) = w.block_entities.get(&(0, 90, 0))
-    else {
+    let Some(crate::world::BlockEntity::Furnace(f)) = w.block_entities.get(&(0, 90, 0)) else {
         panic!()
     };
     assert!(
-        f.output.map(|s| reg.item(s.item).name.clone()).as_deref()
-            == Some("base:steel_ingot"),
+        f.output.map(|s| reg.item(s.item).name.clone()).as_deref() == Some("base:steel_ingot"),
         "steel done in 8s of ember fire (progress {})",
         f.progress
     );
@@ -2863,7 +3481,10 @@ fn brushing_yields_once_and_transmutes() {
         reg.block_id("base:cobblestone").unwrap(),
         "remnant becomes plain stone"
     );
-    assert!(w.brush_block(3, 150, 3, &mut rng).is_none(), "artifact only once");
+    assert!(
+        w.brush_block(3, 150, 3, &mut rng).is_none(),
+        "artifact only once"
+    );
     // Breaking a remnant instead just drops cobble (greed loses the find).
     let d = reg.drops_for(masonry, None).unwrap();
     assert_eq!(reg.item(d.0).name, "base:cobblestone");
@@ -2907,7 +3528,10 @@ fn ruins_generate_deterministically() {
 fn charms_and_tablets_work() {
     let reg = base_reg();
     // Data parses.
-    assert_eq!(reg.item(it(&reg, "base:charm_quiet")).charm.as_deref(), Some("quiet"));
+    assert_eq!(
+        reg.item(it(&reg, "base:charm_quiet")).charm.as_deref(),
+        Some("quiet")
+    );
     assert!(reg.item(it(&reg, "base:etched_tablet")).tablet);
     // The quiet charm shortens warden attention: at 10.5 blocks a
     // thornling (aggro 12) hunts normally but not with -2.
@@ -2919,12 +3543,40 @@ fn charms_and_tablets_work() {
     let mut rng = 4u32;
     let mut a = crate::mobs::Mob::new(ti, pos, 0.0);
     a.health = def.health;
-    a.tick(&w, &def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: 0.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
+    a.tick(
+        &w,
+        &def,
+        &[crate::server::PlayerCtx {
+            pos: player,
+            spawn: Vec3::ZERO,
+            attackable: true,
+            aggro_mod: 0.0,
+        }],
+        1.0 / 60.0,
+        &mut rng,
+        &mut Vec::new(),
+    );
     assert_eq!(a.state, crate::mobs::MobState::Hunt, "in range normally");
     let mut b = crate::mobs::Mob::new(ti, pos, 0.0);
     b.health = def.health;
-    b.tick(&w, &def, &[crate::server::PlayerCtx { pos: player, spawn: Vec3::ZERO, attackable: true, aggro_mod: -2.0 }], 1.0 / 60.0, &mut rng, &mut Vec::new());
-    assert_ne!(b.state, crate::mobs::MobState::Hunt, "quiet charm keeps you unseen");
+    b.tick(
+        &w,
+        &def,
+        &[crate::server::PlayerCtx {
+            pos: player,
+            spawn: Vec3::ZERO,
+            attackable: true,
+            aggro_mod: -2.0,
+        }],
+        1.0 / 60.0,
+        &mut rng,
+        &mut Vec::new(),
+    );
+    assert_ne!(
+        b.state,
+        crate::mobs::MobState::Hunt,
+        "quiet charm keeps you unseen"
+    );
     let _ = &mut w;
 }
 
@@ -2960,10 +3612,8 @@ fn server_ticks_at_fixed_rate_and_runs_the_world() {
     let mut evs2 = Vec::new();
     sv.advance(0.1, &[ctx], &mut evs2);
     assert!(
-        evs2.iter().any(|e| matches!(
-            e,
-            crate::server::SimEvent::IreTier { rose: true, .. }
-        )),
+        evs2.iter()
+            .any(|e| matches!(e, crate::server::SimEvent::IreTier { rose: true, .. })),
         "tier change surfaced as a SimEvent"
     );
     let _ = reg;
@@ -2975,11 +3625,27 @@ fn server_ticks_at_fixed_rate_and_runs_the_world() {
 fn net_protocol_round_trips() {
     use crate::net::{C2S, S2C, decode, encode};
     let c2s = [
-        C2S::Hello { protocol: 2, name: "doll".into(), content_hash: 42 },
-        C2S::Move { pos: Vec3::new(1.5, 80.0, -3.5), yaw: 1.2 },
+        C2S::Hello {
+            protocol: 2,
+            name: "doll".into(),
+            content_hash: 42,
+        },
+        C2S::Move {
+            pos: Vec3::new(1.5, 80.0, -3.5),
+            yaw: 1.2,
+        },
         C2S::Break { x: 1, y: 2, z: 3 },
-        C2S::Place { x: -9, y: 70, z: 4, block: 7 },
-        C2S::AttackMob { id: 3, dmg: 8.0, from: Vec3::ZERO },
+        C2S::Place {
+            x: -9,
+            y: 70,
+            z: 4,
+            block: 7,
+        },
+        C2S::AttackMob {
+            id: 3,
+            dmg: 8.0,
+            from: Vec3::ZERO,
+        },
         C2S::FeedMob { id: 12 },
         C2S::BrushBlock { x: 4, y: 30, z: -2 },
         C2S::ContainerClick {
@@ -2988,7 +3654,11 @@ fn net_protocol_round_trips() {
             z: 3,
             slot: 4,
             right: true,
-            held: Some(crate::net::StackSnap { item: 9, count: 3, durability: 17 }),
+            held: Some(crate::net::StackSnap {
+                item: 9,
+                count: 3,
+                durability: 17,
+            }),
         },
         C2S::CloseContainer,
         C2S::Chat("hello wild".into()),
@@ -3001,12 +3671,34 @@ fn net_protocol_round_trips() {
         assert_eq!(format!("{m:?}"), format!("{back:?}"));
     }
     let s2c = [
-        S2C::BlockSet { x: 1, y: 2, z: 3, id: 9 },
-        S2C::TimeIre { time: 0.5, ire: 33.0 },
-        S2C::Chat { from: "a".into(), msg: "b".into() },
-        S2C::Sleep { sleeping: 1, present: 3 },
-        S2C::Chunk { x: 0, z: 0, rle: vec![1, 2, 3] },
-        S2C::HeldResult(Some(crate::net::StackSnap { item: 2, count: 1, durability: 40 })),
+        S2C::BlockSet {
+            x: 1,
+            y: 2,
+            z: 3,
+            id: 9,
+        },
+        S2C::TimeIre {
+            time: 0.5,
+            ire: 33.0,
+        },
+        S2C::Chat {
+            from: "a".into(),
+            msg: "b".into(),
+        },
+        S2C::Sleep {
+            sleeping: 1,
+            present: 3,
+        },
+        S2C::Chunk {
+            x: 0,
+            z: 0,
+            rle: vec![1, 2, 3],
+        },
+        S2C::HeldResult(Some(crate::net::StackSnap {
+            item: 2,
+            count: 1,
+            durability: 40,
+        })),
         S2C::Mobs(vec![crate::net::MobSnap {
             id: 5,
             species: 1,
@@ -3020,6 +3712,188 @@ fn net_protocol_round_trips() {
     for m in &s2c {
         let back: S2C = decode(&encode(m)).expect("s2c decodes");
         assert_eq!(format!("{m:?}"), format!("{back:?}"));
+    }
+}
+
+/// The whole content graph, audited: recipes well-formed, tables and
+/// palettes resolve, and every survival item is actually obtainable
+/// (dropped, harvested, looted, crafted, or smelted from things that
+/// are). Catches half-wired content before a player does.
+#[test]
+fn content_graph_is_complete_and_obtainable() {
+    use crate::registry::Ingredient;
+    use std::collections::HashSet;
+    let reg = base_reg();
+    for m in &reg.mods {
+        assert!(m.error.is_none(), "mod {} load error: {:?}", m.id, m.error);
+    }
+
+    // Structure of every recipe / table / template.
+    for r in &reg.recipes {
+        let out = &reg.item(r.output).name;
+        assert_eq!(r.pattern.len(), r.w * r.h, "recipe for {out} malformed");
+        assert!(
+            r.count > 0 && r.w <= 3 && r.h <= 3,
+            "recipe for {out} malformed"
+        );
+        assert!(
+            r.pattern.iter().any(|p| p.is_some()),
+            "recipe for {out} is empty"
+        );
+    }
+    for (name, entries) in &reg.loots {
+        assert!(!entries.is_empty(), "loot table {name} is empty");
+        for e in entries {
+            assert!(
+                e.weight > 0 && e.count.0 <= e.count.1,
+                "loot table {name} entry malformed"
+            );
+        }
+    }
+    for st in &reg.structures {
+        if let Some(l) = &st.loot {
+            assert!(
+                reg.loots.contains_key(l),
+                "structure {} wants missing loot table {l}",
+                st.name
+            );
+        }
+        for layer in &st.layers {
+            for row in layer {
+                for ch in row.chars() {
+                    assert!(
+                        matches!(ch, '.' | '~' | 'C') || st.palette.contains_key(&ch),
+                        "structure {} uses unmapped char '{ch}'",
+                        st.name
+                    );
+                }
+            }
+        }
+    }
+    for b in &reg.blocks {
+        if let Some((table, _)) = &b.brush {
+            assert!(
+                reg.loots.contains_key(table),
+                "{} brushes into missing table {table}",
+                b.name
+            );
+        }
+    }
+    let biomes = [
+        "forest",
+        "plains",
+        "desert",
+        "jungle",
+        "scrubland",
+        "taiga",
+        "arctic",
+        "mountains",
+    ];
+    for a in &reg.animals {
+        assert!(!a.model.is_empty(), "animal {} has no model", a.name);
+        assert!(a.health > 0.0, "animal {} has no health", a.name);
+        if !a.hostile {
+            assert!(
+                !a.biomes.is_empty() && a.biomes.iter().all(|b| biomes.contains(&b.as_str())),
+                "animal {} has invalid biomes {:?}",
+                a.name,
+                a.biomes
+            );
+        }
+    }
+
+    // Obtainability: seed with world sources, then close over crafting
+    // and smelting until nothing new appears.
+    let mut ok: HashSet<u16> = HashSet::new();
+    for b in &reg.blocks {
+        if b.hardness.is_some() {
+            if let Some((it, n)) = b.drops {
+                if n > 0 {
+                    ok.insert(it.0);
+                }
+            }
+            if let Some((it, _)) = b.bonus_drop {
+                ok.insert(it.0);
+            }
+        }
+        if let Some((it, _, _)) = b.harvest {
+            ok.insert(it.0);
+        }
+    }
+    for a in &reg.animals {
+        for (it, _, mx) in &a.drops {
+            if *mx > 0 {
+                ok.insert(it.0);
+            }
+        }
+    }
+    for entries in reg.loots.values() {
+        for e in entries {
+            ok.insert(e.item.0);
+        }
+    }
+    // Shears special-case: leaves come off whole (code path, not data).
+    if reg.items.iter().any(|i| i.shears) {
+        for b in &reg.blocks {
+            if b.name.contains("leaves") && b.hardness.is_some() {
+                if let Some(it) = reg.item_id(&b.name) {
+                    ok.insert(it.0);
+                }
+            }
+        }
+    }
+    let ing_ok = |ing: &Ingredient, ok: &HashSet<u16>| match ing {
+        Ingredient::One(i) => ok.contains(&i.0),
+        Ingredient::Any(l) => l.iter().any(|i| ok.contains(&i.0)),
+    };
+    loop {
+        let mut grew = false;
+        for r in &reg.recipes {
+            if !ok.contains(&r.output.0) && r.pattern.iter().flatten().all(|i| ing_ok(i, &ok)) {
+                ok.insert(r.output.0);
+                grew = true;
+            }
+        }
+        for s in &reg.smelts {
+            if !ok.contains(&s.output.0) && ing_ok(&s.input, &ok) {
+                ok.insert(s.output.0);
+                grew = true;
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    // World-only block items: the block deliberately drops a different
+    // item or nothing (grass, ice, ores, ruin masonry, bedrock) - the
+    // silk-touch category. Anything else unobtainable is a content bug.
+    let world_only = |name: &str| {
+        reg.block_id(name).is_some_and(|b| {
+            let d = reg.block(b);
+            let own = reg.item_id(name);
+            d.hardness.is_none() || d.drops.map(|(it, _)| Some(it)) != Some(own)
+        })
+    };
+    let missing: Vec<&str> = reg
+        .items
+        .iter()
+        .enumerate()
+        .filter(|(i, d)| !ok.contains(&(*i as u16)) && !world_only(&d.name))
+        .map(|(_, d)| d.name.as_str())
+        .collect();
+    assert!(missing.is_empty(), "unobtainable in survival: {missing:?}");
+
+    // The furnace can actually run, and husbandry foods exist.
+    assert!(
+        reg.fuels
+            .iter()
+            .any(|(f, burn, _)| *burn > 0.0 && ing_ok(f, &ok)),
+        "no obtainable fuel"
+    );
+    for a in &reg.animals {
+        if let Some(bf) = a.breed_food {
+            assert!(ok.contains(&bf.0), "breed food for {} unobtainable", a.name);
+        }
     }
 }
 
@@ -3038,7 +3912,10 @@ fn bedrock_floor_is_unbreakable_and_reseals_on_load() {
     }
     // No tool gives it a hardness: it cannot be mined.
     let pick = reg.item_id("base:wood_pickaxe");
-    assert!(reg.effective_hardness(root, pick).is_none(), "bedrock unbreakable");
+    assert!(
+        reg.effective_hardness(root, pick).is_none(),
+        "bedrock unbreakable"
+    );
     // A hole knocked in the floor (a creative dig, an old bug) heals
     // when the chunk loads again.
     w.set_block(4, 0, 4, AIR);
@@ -3053,11 +3930,18 @@ fn bedrock_floor_is_unbreakable_and_reseals_on_load() {
 fn mob_ids_stamped_unique_and_yaw_lerps_short_arc() {
     // Interpolation turns the short way around the circle.
     let y = crate::mobs::lerp_yaw(0.1, std::f32::consts::TAU - 0.1, 0.5);
-    assert!(y.abs() < 0.01 || (y - std::f32::consts::TAU).abs() < 0.01, "short arc, got {y}");
+    assert!(
+        y.abs() < 0.01 || (y - std::f32::consts::TAU).abs() < 0.01,
+        "short arc, got {y}"
+    );
 
     let reg = base_reg();
     let mut w = test_world_with("mobids", reg.clone());
-    let wild = reg.animals.iter().position(|a| !a.hostile).expect("wildlife exists");
+    let wild = reg
+        .animals
+        .iter()
+        .position(|a| !a.hostile)
+        .expect("wildlife exists");
     let sy = w.surface_height(4, 4) as f32 + 1.0;
     for i in 0..3 {
         let mut m = crate::mobs::Mob::new(wild, Vec3::new(4.5 + i as f32, sy, 4.5), 0.0);
@@ -3066,7 +3950,10 @@ fn mob_ids_stamped_unique_and_yaw_lerps_short_arc() {
     }
     let mut rng = 1u32;
     w.tick_mobs(&[], 1.0, 0.05, &mut rng);
-    assert!(w.mobs.iter().all(|m| m.id > 0), "every mob stamped with an id");
+    assert!(
+        w.mobs.iter().all(|m| m.id > 0),
+        "every mob stamped with an id"
+    );
     let mut ids: Vec<u32> = w.mobs.iter().map(|m| m.id).collect();
     ids.sort();
     ids.dedup();
@@ -3099,12 +3986,17 @@ fn loopback_join_stream_and_edit() {
         sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
         for msg in client.poll() {
             match msg {
-                S2C::Welcome { palette, your_id, .. } => {
+                S2C::Welcome {
+                    palette, your_id, ..
+                } => {
                     assert!(!palette.is_empty(), "palette shipped");
                     assert!(your_id > 0);
                     welcome = Some(palette);
                     // Tell the host where we stand so chunks stream.
-                    client.send(&C2S::Move { pos: gpos, yaw: 0.0 });
+                    client.send(&C2S::Move {
+                        pos: gpos,
+                        yaw: 0.0,
+                    });
                 }
                 S2C::Chunk { x, z, rle } => {
                     got_chunk = true;
@@ -3131,7 +4023,11 @@ fn loopback_join_stream_and_edit() {
     remote.insert_remote_chunk(ChunkPos { x: cx, z: cz }, &rle, &remap);
     let host_chunk = sim.world.chunks.get(&ChunkPos { x: cx, z: cz }).unwrap();
     let guest_chunk = remote.chunks.get(&ChunkPos { x: cx, z: cz }).unwrap();
-    assert_eq!(host_chunk.raw(), guest_chunk.raw(), "chunk survives the wire");
+    assert_eq!(
+        host_chunk.raw(),
+        guest_chunk.raw(),
+        "chunk survives the wire"
+    );
     // Remote worlds never generate on their own.
     assert!(!remote.ensure_chunk(ChunkPos { x: 90, z: 90 }));
     assert!(!remote.chunks.contains_key(&ChunkPos { x: 90, z: 90 }));
@@ -3147,7 +4043,12 @@ fn loopback_join_stream_and_edit() {
         sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
         for msg in client.poll() {
             match msg {
-                S2C::BlockSet { x: 9, y: yy, z: 9, id: 0 } if yy == y => echoed = true,
+                S2C::BlockSet {
+                    x: 9,
+                    y: yy,
+                    z: 9,
+                    id: 0,
+                } if yy == y => echoed = true,
                 S2C::Give { .. } => given = true,
                 _ => {}
             }
@@ -3165,7 +4066,11 @@ fn loopback_join_stream_and_edit() {
     let far_y = sim.world.surface_height(200, 200);
     sim.world.ensure_chunk(ChunkPos::of_world(200, 200));
     let far_block = sim.world.get_block(200, far_y, 200);
-    client.send(&C2S::Break { x: 200, y: far_y, z: 200 });
+    client.send(&C2S::Break {
+        x: 200,
+        y: far_y,
+        z: 200,
+    });
     for _ in 0..30 {
         sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
         client.poll();
@@ -3206,10 +4111,21 @@ fn loopback_join_stream_and_edit() {
         z: 8,
         slot: 2,
         right: false,
-        held: Some(crate::net::StackSnap { item: sword.0, count: 1, durability: 7 }),
+        held: Some(crate::net::StackSnap {
+            item: sword.0,
+            count: 1,
+            durability: 7,
+        }),
     });
     // ...then immediately pick it back up.
-    client.send(&C2S::ContainerClick { x: 10, y: cy, z: 8, slot: 2, right: false, held: None });
+    client.send(&C2S::ContainerClick {
+        x: 10,
+        y: cy,
+        z: 8,
+        slot: 2,
+        right: false,
+        held: None,
+    });
     let mut cursor_back = None;
     for _ in 0..100 {
         sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
@@ -3226,9 +4142,7 @@ fn loopback_join_stream_and_edit() {
     let s = cursor_back.expect("cursor echoed back");
     assert_eq!(s.item, sword.0, "same sword returns");
     assert_eq!(s.durability, 7, "worn stays worn across the wire");
-    if let Some(crate::world::BlockEntity::Chest(c)) =
-        sim.world.block_entities.get(&(10, cy, 8))
-    {
+    if let Some(crate::world::BlockEntity::Chest(c)) = sim.world.block_entities.get(&(10, cy, 8)) {
         assert!(c.slots[2].is_none(), "host chest slot emptied again");
     } else {
         panic!("host chest entity exists");
@@ -3254,11 +4168,63 @@ fn loopback_join_stream_and_edit() {
     let mut chatted = false;
     for _ in 0..100 {
         let fx = sess.pump(&mut sim, Some((gpos, 0.0, false)), 0.06);
-        if fx.iter().any(|f| matches!(f, crate::mp::HostFx::Chat { .. })) {
+        if fx
+            .iter()
+            .any(|f| matches!(f, crate::mp::HostFx::Chat { .. }))
+        {
             chatted = true;
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert!(chatted, "chat reached the host");
+
+    // A withdrawn sleep vote blocks the dawn.
+    sim.time_of_day = 0.75;
+    client.send(&C2S::SleepRequest);
+    client.send(&C2S::SleepCancel);
+    for _ in 0..30 {
+        sess.pump(&mut sim, Some((gpos, 0.0, true)), 0.06);
+        client.poll();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        (sim.time_of_day - 0.75).abs() < 0.02,
+        "host sleeping alone after a cancel must not dawn"
+    );
+
+    // Kick: the guest is dropped and the name is banned for the session.
+    let gid = *sess.guests.keys().next().expect("guest present");
+    assert!(sess.kick_guest(gid).is_some());
+    assert!(sess.guests.is_empty(), "kicked guest removed");
+    for _ in 0..100 {
+        sess.pump(&mut sim, None, 0.06);
+        client.poll();
+        if !client.is_connected() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(!client.is_connected(), "kicked guest disconnected");
+    // Rejoining under the banned name never yields a Welcome.
+    let mut client2 =
+        crate::net::Client::connect(addr, "tester".into(), sess.content_hash).expect("reconnect");
+    let mut turned_away = false;
+    for _ in 0..150 {
+        sess.pump(&mut sim, None, 0.06);
+        for msg in client2.poll() {
+            match msg {
+                S2C::Refused(_) => turned_away = true,
+                S2C::Welcome { .. } => panic!("banned name re-admitted"),
+                _ => {}
+            }
+        }
+        if turned_away || !client2.is_connected() {
+            turned_away = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(turned_away, "banned name turned away");
+    assert!(sess.guests.is_empty(), "banned name never becomes a guest");
 }

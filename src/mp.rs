@@ -42,7 +42,10 @@ impl Guest {
 
 /// Presentation the host player should see.
 pub enum HostFx {
-    Chat { from: String, msg: String },
+    Chat {
+        from: String,
+        msg: String,
+    },
     Joined(String),
     Left(String),
     /// Everyone slept: the host's own dawn side-effects should run.
@@ -54,6 +57,8 @@ pub struct HostSession {
     pub guests: HashMap<u32, Guest>,
     pub content_hash: u64,
     pub world_name: String,
+    /// Names kicked this session: refused if they reconnect.
+    banned: HashSet<String>,
     snapshot_timer: f32,
     state_timer: f32,
     container_timer: f32,
@@ -74,14 +79,11 @@ impl HostSession {
             guests: HashMap::new(),
             content_hash: net::content_hash(std::path::Path::new("mods")),
             world_name,
+            banned: HashSet::new(),
             snapshot_timer: 0.0,
             state_timer: 0.0,
             container_timer: 0.0,
         })
-    }
-
-    pub fn player_count(&self) -> usize {
-        self.guests.len() + 1
     }
 
     /// PlayerCtx list for the simulation: host (when windowed) + guests.
@@ -120,7 +122,11 @@ impl HostSession {
         let mut fx = Vec::new();
         for ev in self.net.poll() {
             match ev {
-                HostEvent::Joined { id, name, content_hash } => {
+                HostEvent::Joined {
+                    id,
+                    name,
+                    content_hash,
+                } => {
                     self.on_join(server, id, name, content_hash, &mut fx);
                 }
                 HostEvent::Left { id } => {
@@ -156,7 +162,11 @@ impl HostSession {
         for (owner, s) in std::mem::take(&mut server.world.pending_gives) {
             self.net.send(
                 owner,
-                &S2C::Give { item: s.item.0, count: s.count, durability: s.durability },
+                &S2C::Give {
+                    item: s.item.0,
+                    count: s.count,
+                    durability: s.durability,
+                },
             );
         }
 
@@ -227,7 +237,12 @@ impl HostSession {
                 .world
                 .projectiles
                 .iter()
-                .map(|p| net::BoltSnap { pos: p.pos, vel: p.vel, tile: p.tile, age: p.age })
+                .map(|p| net::BoltSnap {
+                    pos: p.pos,
+                    vel: p.vel,
+                    tile: p.tile,
+                    age: p.age,
+                })
                 .collect();
             self.net.broadcast_datagram(&S2C::Bolts(bolts));
         }
@@ -273,7 +288,8 @@ impl HostSession {
                     time: server.time_of_day,
                     ire: server.world.ire,
                 });
-                self.net.broadcast(&S2C::Toast("Dawn. The camp wakes.".into()));
+                self.net
+                    .broadcast(&S2C::Toast("Dawn. The camp wakes.".into()));
                 fx.push(HostFx::AllSlept);
             }
         }
@@ -288,6 +304,11 @@ impl HostSession {
         content_hash: u64,
         fx: &mut Vec<HostFx>,
     ) {
+        if self.banned.contains(&name) {
+            self.net.send(id, &S2C::Refused("kicked by host".into()));
+            self.net.kick(id);
+            return;
+        }
         let reg = &server.world.reg;
         if content_hash != self.content_hash {
             // Stream the mods dir so the guest can match us exactly.
@@ -310,7 +331,10 @@ impl HostSession {
                 world_name: self.world_name.clone(),
             },
         );
-        self.net.broadcast(&S2C::Joined { id, name: name.clone() });
+        self.net.broadcast(&S2C::Joined {
+            id,
+            name: name.clone(),
+        });
         self.guests.insert(
             id,
             Guest {
@@ -330,8 +354,20 @@ impl HostSession {
         fx.push(HostFx::Joined(name));
     }
 
+    /// Kick a guest and refuse them for the rest of the session.
+    pub fn kick_guest(&mut self, id: u32) -> Option<String> {
+        let g = self.guests.remove(&id)?;
+        self.banned.insert(g.name.clone());
+        self.net.send(id, &S2C::Refused("kicked by host".into()));
+        self.net.broadcast(&S2C::Left { id });
+        self.net.kick(id);
+        Some(g.name)
+    }
+
     fn on_msg(&mut self, server: &mut Server, id: u32, msg: C2S, fx: &mut Vec<HostFx>) {
-        let Some(guest) = self.guests.get_mut(&id) else { return };
+        let Some(guest) = self.guests.get_mut(&id) else {
+            return;
+        };
         match msg {
             C2S::Hello { .. } | C2S::Bye => {}
             C2S::Move { pos, yaw } => {
@@ -365,27 +401,35 @@ impl HostSession {
                 if (p - guest.pos).length() > REACH || guest.edits >= EDITS_PER_SEC {
                     return;
                 }
-                let Some(def) = server.world.reg.blocks.get(block as usize) else { return };
+                let Some(def) = server.world.reg.blocks.get(block as usize) else {
+                    return;
+                };
                 if server.world.get_block(x, y, z) != crate::registry::AIR {
                     return;
                 }
                 let _ = def;
                 guest.edits += 1;
-                server.world.set_block(x, y, z, crate::registry::BlockId(block));
+                server
+                    .world
+                    .set_block(x, y, z, crate::registry::BlockId(block));
             }
-            C2S::AttackMob { id: mob_id, dmg, from } => {
+            C2S::AttackMob {
+                id: mob_id,
+                dmg,
+                from,
+            } => {
                 // Stable ids: snapshots lag the sim, so an index would
                 // race deaths/spawns and strike the wrong creature.
                 let dmg = dmg.clamp(0.0, 16.0);
                 let gpos = guest.pos;
-                if let Some(m) = server.world.mobs.iter_mut().find(|m| m.id == mob_id) {
-                    if (m.pos - gpos).length() <= REACH {
-                        let def = server.world.reg.animals[m.species].clone();
-                        m.hurt(&def, dmg, from);
-                        m.last_hit_by = id;
-                        if !def.hostile {
-                            server.world.add_ire(2.0);
-                        }
+                if let Some(m) = server.world.mobs.iter_mut().find(|m| m.id == mob_id)
+                    && (m.pos - gpos).length() <= REACH
+                {
+                    let def = server.world.reg.animals[m.species].clone();
+                    m.hurt(&def, dmg, from);
+                    m.last_hit_by = id;
+                    if !def.hostile {
+                        server.world.add_ire(2.0);
                     }
                 }
             }
@@ -421,7 +465,13 @@ impl HostSession {
                     server.world.pending_gives.push((id, stack));
                 }
             }
-            C2S::FireArrow { pos, vel, dmg, tile, recover } => {
+            C2S::FireArrow {
+                pos,
+                vel,
+                dmg,
+                tile,
+                recover,
+            } => {
                 if (pos - guest.pos).length() > 3.0 {
                     return;
                 }
@@ -449,26 +499,36 @@ impl HostSession {
                     Some("offering") => 2,
                     _ => return,
                 };
-                let entry =
-                    server.world.block_entities.entry((x, y, z)).or_insert_with(|| match kind {
+                let entry = server
+                    .world
+                    .block_entities
+                    .entry((x, y, z))
+                    .or_insert_with(|| match kind {
                         0 => BlockEntity::Chest(Default::default()),
                         1 => BlockEntity::Furnace(Default::default()),
                         _ => BlockEntity::Offering(Default::default()),
                     });
-                if let BlockEntity::Chest(c) = entry {
-                    if c.wild_owned {
-                        c.wild_owned = false;
-                        server.world.add_ire(1.0);
-                        self.net
-                            .send(id, &S2C::Toast("The wild keeps its trophies.".into()));
-                    }
+                if let BlockEntity::Chest(c) = entry
+                    && c.wild_owned
+                {
+                    c.wild_owned = false;
+                    server.world.add_ire(1.0);
+                    self.net
+                        .send(id, &S2C::Toast("The wild keeps its trophies.".into()));
                 }
                 if let Some(g) = self.guests.get_mut(&id) {
                     g.container = Some((x, y, z));
                 }
                 self.send_container(server, id, (x, y, z));
             }
-            C2S::ContainerClick { x, y, z, slot, right, held } => {
+            C2S::ContainerClick {
+                x,
+                y,
+                z,
+                slot,
+                right,
+                held,
+            } => {
                 // The cursor is guest-owned (trusted-friends model, like
                 // the guest's whole inventory); a click is a transaction
                 // between it and the host-owned container.
@@ -496,7 +556,10 @@ impl HostSession {
             C2S::Chat(msg) => {
                 let msg: String = msg.chars().take(200).collect();
                 let from = guest.name.clone();
-                self.net.broadcast(&S2C::Chat { from: from.clone(), msg: msg.clone() });
+                self.net.broadcast(&S2C::Chat {
+                    from: from.clone(),
+                    msg: msg.clone(),
+                });
                 fx.push(HostFx::Chat { from, msg });
             }
         }
@@ -514,10 +577,16 @@ impl HostSession {
         held: Option<ItemStack>,
     ) {
         let reg = server.world.reg.clone();
-        if self.guests.get(&id).is_none_or(|g| g.container != Some(pos)) {
+        if self
+            .guests
+            .get(&id)
+            .is_none_or(|g| g.container != Some(pos))
+        {
             return;
         }
-        let Some(entity) = server.world.block_entities.get_mut(&pos) else { return };
+        let Some(entity) = server.world.block_entities.get_mut(&pos) else {
+            return;
+        };
         let mut held = held;
         match entity {
             BlockEntity::Chest(c) => {
@@ -560,7 +629,10 @@ impl HostSession {
                                 if h.item == out.item
                                     && h.count + out.count <= reg.item(h.item).max_stack =>
                             {
-                                held = Some(ItemStack { count: h.count + out.count, ..h });
+                                held = Some(ItemStack {
+                                    count: h.count + out.count,
+                                    ..h
+                                });
                                 f.output = None;
                             }
                             _ => {}
@@ -569,25 +641,41 @@ impl HostSession {
                 }
             },
         }
-        let snap = held
-            .map(|s| StackSnap { item: s.item.0, count: s.count, durability: s.durability });
+        let snap = held.map(|s| StackSnap {
+            item: s.item.0,
+            count: s.count,
+            durability: s.durability,
+        });
         self.net.send(id, &S2C::HeldResult(snap));
         self.send_container(server, id, pos);
     }
 
     fn send_container(&mut self, server: &Server, id: u32, pos: (i32, i32, i32)) {
-        let Some(entity) = server.world.block_entities.get(&pos) else { return };
+        let Some(entity) = server.world.block_entities.get(&pos) else {
+            return;
+        };
         let snap = |s: &Option<ItemStack>| {
-            s.map(|s| StackSnap { item: s.item.0, count: s.count, durability: s.durability })
+            s.map(|s| StackSnap {
+                item: s.item.0,
+                count: s.count,
+                durability: s.durability,
+            })
         };
         let (kind, slots): (u8, Vec<Option<StackSnap>>) = match entity {
             BlockEntity::Chest(c) => (0, c.slots.iter().map(snap).collect()),
-            BlockEntity::Furnace(f) => {
-                (1, vec![snap(&f.input), snap(&f.fuel), snap(&f.output)])
-            }
+            BlockEntity::Furnace(f) => (1, vec![snap(&f.input), snap(&f.fuel), snap(&f.output)]),
             BlockEntity::Offering(o) => (2, o.slots.iter().map(snap).collect()),
         };
-        self.net.send(id, &S2C::Container { x: pos.0, y: pos.1, z: pos.2, kind, slots });
+        self.net.send(
+            id,
+            &S2C::Container {
+                x: pos.0,
+                y: pos.1,
+                z: pos.2,
+                kind,
+                slots,
+            },
+        );
     }
 }
 

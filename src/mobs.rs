@@ -30,7 +30,7 @@ pub enum MobEvent {
     /// A caster fired: projectile spawn.
     Cast(Projectile),
     /// A wildlife pair bred at this position.
-    Bred(Vec3),
+    Bred,
 }
 
 /// A bolt in flight: warden thorn/ember/frost, or a player's arrow.
@@ -78,7 +78,9 @@ impl Projectile {
         }
         if self.from_player {
             for (i, m) in world.mobs.iter().enumerate() {
-                let Some(def) = world.reg.animals.get(m.species) else { continue };
+                let Some(def) = world.reg.animals.get(m.species) else {
+                    continue;
+                };
                 let d = self.pos - m.pos;
                 if d.x.abs() < def.half_w + 0.2
                     && d.z.abs() < def.half_w + 0.2
@@ -101,7 +103,10 @@ impl Projectile {
 
     /// Small spinning sprite, drawn with the entity pipeline.
     pub fn emit(&self, verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
-        let (tx, ty) = (self.tile as u32 % ATLAS_TILES, self.tile as u32 / ATLAS_TILES);
+        let (tx, ty) = (
+            self.tile as u32 % ATLAS_TILES,
+            self.tile as u32 / ATLAS_TILES,
+        );
         let ts = 1.0 / ATLAS_TILES as f32;
         let inset = ts / 32.0;
         let ang = self.age * 6.0;
@@ -228,7 +233,11 @@ impl Mob {
         self.hurt_flash = 0.35;
         let mut away = self.pos - from;
         away.y = 0.0;
-        let dir = if away.length_squared() > 0.001 { away.normalize() } else { Vec3::Z };
+        let dir = if away.length_squared() > 0.001 {
+            away.normalize()
+        } else {
+            Vec3::Z
+        };
         let kb = if def.movement_float { 2.5 } else { 6.0 };
         self.vel += dir * kb + Vec3::new(0.0, if def.movement_float { 1.0 } else { 4.5 }, 0.0);
         if def.hostile {
@@ -300,29 +309,29 @@ impl Mob {
 
         // Skittish species bolt when anyone closes in — unless recently
         // fed (feeding is taming-lite).
-        if let Some((_, near)) = nearest {
-            if def.flee_range > 0.0
-                && !def.hostile
-                && self.calm <= 0.0
-                && self.state != MobState::Flee
-            {
-                let mut d = near.pos - self.pos;
-                d.y = 0.0;
-                if d.length_squared() < def.flee_range * def.flee_range {
-                    self.state = MobState::Flee;
-                    self.state_timer = 4.0;
-                    self.target = near.pos;
-                }
+        if let Some((_, near)) = nearest
+            && def.flee_range > 0.0
+            && !def.hostile
+            && self.calm <= 0.0
+            && self.state != MobState::Flee
+        {
+            let mut d = near.pos - self.pos;
+            d.y = 0.0;
+            if d.length_squared() < def.flee_range * def.flee_range {
+                self.state = MobState::Flee;
+                self.state_timer = 4.0;
+                self.target = near.pos;
             }
         }
         // Wardens take notice (the quiet charm shortens their attention).
-        if let Some((_, p)) = prey {
-            if def.hostile && self.state != MobState::Hunt {
-                let range = (def.aggro_range + p.aggro_mod).max(2.0);
-                if (p.pos - self.pos).length_squared() < range * range {
-                    self.state = MobState::Hunt;
-                    self.lose_aggro = 0.0;
-                }
+        if let Some((_, p)) = prey
+            && def.hostile
+            && self.state != MobState::Hunt
+        {
+            let range = (def.aggro_range + p.aggro_mod).max(2.0);
+            if (p.pos - self.pos).length_squared() < range * range {
+                self.state = MobState::Hunt;
+                self.lose_aggro = 0.0;
             }
         }
 
@@ -334,8 +343,7 @@ impl Mob {
                     if r01(rng) < 0.6 {
                         let ang = r01(rng) * std::f32::consts::TAU;
                         let dist = 4.0 + r01(rng) * 6.0;
-                        self.target =
-                            self.pos + Vec3::new(ang.sin() * dist, 0.0, ang.cos() * dist);
+                        self.target = self.pos + Vec3::new(ang.sin() * dist, 0.0, ang.cos() * dist);
                         self.state = MobState::Wander;
                         self.state_timer = 6.0;
                     } else {
@@ -392,8 +400,11 @@ impl Mob {
                     let mut to = p.pos - self.pos;
                     let dist = to.length();
                     to.y = 0.0;
-                    let dir =
-                        if to.length_squared() > 0.001 { to.normalize() } else { Vec3::Z };
+                    let dir = if to.length_squared() > 0.001 {
+                        to.normalize()
+                    } else {
+                        Vec3::Z
+                    };
                     self.yaw = dir.x.atan2(dir.z);
                     // Losing everyone for ~8 s ends the hunt.
                     if dist > def.aggro_range * 1.6 {
@@ -415,10 +426,9 @@ impl Mob {
                             }
                             if dist < 14.0 && self.cast_cd <= 0.0 {
                                 self.cast_cd = pr.cooldown;
-                                let muzzle =
-                                    self.pos + Vec3::new(0.0, def.height * 0.7, 0.0);
-                                let aim = (p.pos + Vec3::new(0.0, 0.9, 0.0) - muzzle)
-                                    .normalize_or_zero();
+                                let muzzle = self.pos + Vec3::new(0.0, def.height * 0.7, 0.0);
+                                let aim =
+                                    (p.pos + Vec3::new(0.0, 0.9, 0.0) - muzzle).normalize_or_zero();
                                 events.push(MobEvent::Cast(Projectile {
                                     pos: muzzle + aim * 0.6,
                                     vel: aim * pr.speed,
@@ -435,8 +445,7 @@ impl Mob {
                             wish = dir * def.speed * 1.2;
                             // Contact swing with a cooldown.
                             let dy = p.pos.y - self.pos.y;
-                            if dist < def.half_w + 0.9 && dy.abs() < 2.0 && self.attack_cd <= 0.0
-                            {
+                            if dist < def.half_w + 0.9 && dy.abs() < 2.0 && self.attack_cd <= 0.0 {
                                 self.attack_cd = 1.0;
                                 events.push(MobEvent::HitPlayer(who, def.attack, self.pos));
                             }
@@ -447,7 +456,11 @@ impl Mob {
         }
 
         // Physics: accelerate toward wish, gravity/buoyancy, collide per axis.
-        let accel = if def.movement_float || self.on_ground { 14.0 } else { 4.0 };
+        let accel = if def.movement_float || self.on_ground {
+            14.0
+        } else {
+            4.0
+        };
         let step = (accel * dt).min(1.0);
         self.vel.x += (wish.x - self.vel.x) * step;
         self.vel.z += (wish.z - self.vel.z) * step;
@@ -577,18 +590,25 @@ impl Mob {
     }
 
     /// Append this mob's boxy model to the entity mesh.
-    pub fn emit(&self, reg: &Registry, lum: (f32, f32), verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
+    pub fn emit(
+        &self,
+        reg: &Registry,
+        lum: (f32, f32),
+        verts: &mut Vec<Vertex>,
+        idx: &mut Vec<u32>,
+    ) {
         let def = &reg.animals[self.species];
         // Emissive wardens are their own lantern.
         let lum = if def.emissive { (1.0, lum.1) } else { lum };
         // Models face -Z; motion forward is (sin yaw, cos yaw) = +Z at 0,
         // so render rotated by yaw + PI to keep the head leading.
         let (syaw, cyaw) = (self.yaw + std::f32::consts::PI).sin_cos();
-        let amp = (Vec3::new(self.vel.x, 0.0, self.vel.z).length() / def.speed.max(0.1))
-            .clamp(0.0, 1.0);
+        let amp =
+            (Vec3::new(self.vel.x, 0.0, self.vel.z).length() / def.speed.max(0.1)).clamp(0.0, 1.0);
         let flash = 1.0 + self.hurt_flash * 2.4;
 
         // A box named "leg" mirrors into 4; everything else draws once.
+        #[allow(clippy::type_complexity)] // (min, size, mirrored, swing amp, tex override)
         let mut boxes: Vec<([f32; 3], [f32; 3], bool, f32, Option<u16>)> = Vec::new();
         for b in &def.model {
             let is_head = b.name.starts_with("head");
@@ -596,7 +616,11 @@ impl Mob {
                 for (sx, sz) in [(1.0f32, 1.0f32), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
                     let at = [b.at[0] * sx, b.at[1], b.at[2] * sz];
                     // Diagonal pairs swing together.
-                    let phase = if sx * sz > 0.0 { 0.0 } else { std::f32::consts::PI };
+                    let phase = if sx * sz > 0.0 {
+                        0.0
+                    } else {
+                        std::f32::consts::PI
+                    };
                     let swing = (self.anim_phase + phase).sin() * 0.55 * amp;
                     boxes.push((b.size, at, false, swing, b.tile));
                 }
@@ -607,10 +631,12 @@ impl Mob {
 
         let gs = 0.45 + 0.55 * self.growth.min(1.0); // babies are small
         for (size, at, is_head, swing, tile_override) in boxes {
-            let (hx, hy, hz) =
-                (size[0] * gs / 32.0, size[1] * gs / 32.0, size[2] * gs / 32.0);
-            let center =
-                Vec3::new(at[0] * gs / 16.0, at[1] * gs / 16.0 + hy, at[2] * gs / 16.0);
+            let (hx, hy, hz) = (
+                size[0] * gs / 32.0,
+                size[1] * gs / 32.0,
+                size[2] * gs / 32.0,
+            );
+            let center = Vec3::new(at[0] * gs / 16.0, at[1] * gs / 16.0 + hy, at[2] * gs / 16.0);
             // Legs rotate around their top (hip) on the local X axis.
             let pivot_y = at[1] * gs / 16.0 + hy * 2.0;
             let (ss, cs) = swing.sin_cos();
@@ -620,8 +646,11 @@ impl Mob {
                 // The face art goes only on the head's front (-Z); every
                 // other surface is fur — a face on the back of a skull
                 // reads as cursed.
-                let tile = tile_override
-                    .unwrap_or(if is_head && face == 5 { def.head_tile } else { def.tile });
+                let tile = tile_override.unwrap_or(if is_head && face == 5 {
+                    def.head_tile
+                } else {
+                    def.tile
+                });
                 let (tx, ty) = (tile as u32 % ATLAS_TILES, tile as u32 / ATLAS_TILES);
                 let base = verts.len() as u32;
                 for c in CORNERS[face].iter() {
