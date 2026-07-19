@@ -35,6 +35,7 @@ const MAX_PT_LIGHTS: u32 = 8u;
 @group(2) @binding(1) var shadow_smp: sampler_comparison;
 @group(2) @binding(2) var pt_cube: texture_cube_array<f32>;
 @group(2) @binding(3) var pt_smp: sampler;
+@group(2) @binding(4) var pt_tr_cube: texture_cube_array<f32>;
 
 const SHADOW_RES: f32 = 2048.0;
 
@@ -145,13 +146,21 @@ fn world_light(normal: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) 
             let a = clamp(1.0 - d / range, 0.0, 1.0);
             let atten = a * a;
             var shadow_pt = 1.0;
+            var tint = vec3<f32>(1.0);
             if (u.pt_misc[i].z > 0.5) {
                 // Cube distance map: nearest occluder along light->fragment.
                 let nearest = textureSampleLevel(pt_cube, pt_smp, -to_light, i32(i), 0.0).r;
                 let bias = 0.08 + 0.15 * d / range;
                 shadow_pt = select(0.0, 1.0, d <= nearest + bias);
+                // Stained transmission: panes between light and fragment
+                // multiply in their color (a small margin keeps a pane
+                // from tinting its own surface).
+                let tr = textureSampleLevel(pt_tr_cube, pt_smp, -to_light, i32(i), 0.0);
+                if (tr.a <= d - 0.1) {
+                    tint = tr.rgb;
+                }
             }
-            direct = direct + u.pt_col[i].rgb * (atten * ndl2 * shadow_pt);
+            direct = direct + u.pt_col[i].rgb * (atten * ndl2 * shadow_pt * tint);
         }
     }
     // Steady (colored) torch light, minus each promoted light's estimate.

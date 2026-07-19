@@ -245,7 +245,9 @@ pub struct Renderer {
     // re-render only when that changes (the static-light cache).
     pt_cached: [Option<(u64, u64)>; MAX_PT_LIGHTS],
     pt_shadow_pipeline: wgpu::RenderPipeline,
+    pt_tr_pipeline: wgpu::RenderPipeline,
     pt_face_views: Vec<wgpu::TextureView>, // 6 * MAX_PT_LIGHTS render targets
+    pt_tr_faces: Vec<wgpu::TextureView>,   // matching tint-cube targets
     pt_shadow_depth: wgpu::TextureView,    // shared scratch depth
     pt_face_buf: wgpu::Buffer,             // per-face {view_proj, light_pos}
     pt_face_bg: wgpu::BindGroup,           // dynamic-offset bind of pt_face_buf
@@ -446,6 +448,40 @@ fn vs_pt_shadow(@location(0) pos: vec3<f32>) -> VOut {
 fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
     return vec4<f32>(length(in.world - f.light_pos.xyz), 0.0, 0.0, 0.0);
 }
+
+// Transmission pass: glass surfaces multiply their filter color into the
+// light's tint cube (order-independent), alpha Min-keeps the nearest
+// glass distance so tint applies only between light and fragment.
+@group(1) @binding(0) var atlas_tex: texture_2d<f32>;
+@group(1) @binding(1) var atlas_smp: sampler;
+
+struct TrOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) world: vec3<f32>,
+    @location(1) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_pt_tr(@location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>) -> TrOut {
+    var o: TrOut;
+    o.clip = f.view_proj * vec4<f32>(pos, 1.0);
+    o.world = pos;
+    o.uv = uv;
+    return o;
+}
+
+@fragment
+fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
+    let tex = textureSample(atlas_tex, atlas_smp, in.uv);
+    // Panes are mostly-transparent texels, so raw alpha would wash the
+    // tint to white. Take the tile's hue at full saturation and let
+    // alpha set how strongly the pane stains the beam.
+    let m = max(tex.r, max(tex.g, tex.b));
+    let hue = tex.rgb / max(m, 1e-3);
+    let strength = clamp(tex.a * 2.2, 0.0, 0.92);
+    let tint = mix(vec3<f32>(1.0), hue, strength);
+    return vec4<f32>(tint, length(in.world - f.light_pos.xyz));
+}
 "#
                 .into(),
             ),
@@ -497,6 +533,36 @@ fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
             dimension: Some(wgpu::TextureViewDimension::CubeArray),
             ..Default::default()
         });
+        let pt_tr_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("pt-tr"),
+            size: wgpu::Extent3d {
+                width: PT_SHADOW_RES,
+                height: PT_SHADOW_RES,
+                depth_or_array_layers: 6 * MAX_PT_LIGHTS as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let pt_tr_view = pt_tr_tex.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("pt-tr-sample"),
+            dimension: Some(wgpu::TextureViewDimension::CubeArray),
+            ..Default::default()
+        });
+        let pt_tr_faces: Vec<wgpu::TextureView> = (0..6 * MAX_PT_LIGHTS as u32)
+            .map(|layer| {
+                pt_tr_tex.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("pt-tr-face"),
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    base_array_layer: layer,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                })
+            })
+            .collect();
         let pt_face_views: Vec<wgpu::TextureView> = (0..6 * MAX_PT_LIGHTS as u32)
             .map(|layer| {
                 pt_cube_tex.create_view(&wgpu::TextureViewDescriptor {
@@ -566,6 +632,16 @@ fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::CubeArray,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let shadow_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -587,6 +663,10 @@ fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: wgpu::BindingResource::Sampler(&pt_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&pt_tr_view),
                 },
             ],
         });
@@ -861,6 +941,71 @@ fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
             cache: None,
         });
 
+        // Glass transmission into the tint cube: multiplicative color
+        // (commutative — no sorting), Min alpha keeps the nearest pane's
+        // distance. Tests against the distance pass's depth, read-only,
+        // so glass behind an opaque wall never tints.
+        let pt_tr_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("pt-tr-layout"),
+            bind_group_layouts: &[&pt_face_bgl, &atlas_bgl],
+            push_constant_ranges: &[],
+        });
+        let tr_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2],
+        };
+        let pt_tr_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("pt-tr"),
+            layout: Some(&pt_tr_layout),
+            vertex: wgpu::VertexState {
+                module: &pt_shadow_shader,
+                entry_point: Some("vs_pt_tr"),
+                compilation_options: Default::default(),
+                buffers: std::slice::from_ref(&tr_vertex_layout),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &pt_shadow_shader,
+                entry_point: Some("fs_pt_tr"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba16Float,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::Dst,
+                            dst_factor: wgpu::BlendFactor::Zero,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::One,
+                            operation: wgpu::BlendOperation::Min,
+                        },
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         let outline_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("outline"),
             size: (24 * std::mem::size_of::<LineVertex>()) as u64,
@@ -903,7 +1048,9 @@ fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
             shadow_bg,
             pt_cached: [None; MAX_PT_LIGHTS],
             pt_shadow_pipeline,
+            pt_tr_pipeline,
             pt_face_views,
+            pt_tr_faces,
             pt_shadow_depth,
             pt_face_buf,
             pt_face_bg,
@@ -1263,7 +1410,8 @@ fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
                         view: &self.pt_shadow_depth,
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Discard,
+                            // Kept for the transmission pass below.
+                            store: wgpu::StoreOp::Store,
                         }),
                         stencil_ops: None,
                     }),
@@ -1284,6 +1432,55 @@ fn fs_pt_shadow(in: VOut) -> @location(0) vec4<f32> {
                         pp.set_vertex_buffer(0, m.vbuf.slice(..));
                         pp.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
                         pp.draw_indexed(0..m.count, 0, 0..1);
+                    }
+                }
+                drop(pp);
+                // Stained transmission: glass in range multiplies its
+                // color into the tint cube, gated by the stored opaque
+                // depth so walls still win.
+                let mut tp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("pt-tr"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &self.pt_tr_faces[layer],
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            // White = untinted; far alpha = no glass.
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                r: 1.0,
+                                g: 1.0,
+                                b: 1.0,
+                                a: 60000.0,
+                            }),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.pt_shadow_depth,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Discard,
+                        }),
+                        stencil_ops: None,
+                    }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+                tp.set_pipeline(&self.pt_tr_pipeline);
+                tp.set_bind_group(
+                    0,
+                    &self.pt_face_bg,
+                    &[(layer as u32) * PT_FACE_STRIDE as u32],
+                );
+                tp.set_bind_group(1, &self.atlas_bg, &[]);
+                for (pos, gpu) in &self.chunks {
+                    if let Some(m) = &gpu.water {
+                        if !chunk_in_range(*pos, l.pos, l.range) {
+                            continue;
+                        }
+                        tp.set_vertex_buffer(0, m.vbuf.slice(..));
+                        tp.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                        tp.draw_indexed(0..m.count, 0, 0..1);
                     }
                 }
             }

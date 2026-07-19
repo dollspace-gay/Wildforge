@@ -927,7 +927,9 @@ impl Game {
         }
         // Dev: an enclosed torch-lit room — the full static pipeline
         // (mesher emitters -> promotion -> cached cube shadows), with two
-        // pillars to throw hard shadows. Real torch blocks, no demo lights.
+        // pillars to throw hard shadows and a red-glazed alcove (stained
+        // transmission). Real torch blocks, no demo lights. Built on the
+        // footprint's highest ground so hills never poke through.
         if std::env::var("WILDFORGE_DEMO_TORCHROOM").is_ok()
             && let (Some(stone), Some(torch)) = (
                 self.reg.block_id("base:cobblestone"),
@@ -936,25 +938,60 @@ impl Game {
         {
             let bx = spawn.x as i32;
             let bz = spawn.z as i32;
-            let y = self.server.world.surface_height(bx, bz);
+            // The footprint may straddle chunks that don't exist yet —
+            // writes into missing chunks vanish, leaving open walls.
+            for dx in [-8i32, 0, 8] {
+                for dz in [-8i32, 0, 8] {
+                    self.server
+                        .world
+                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                }
+            }
+            let yf = (-7..=7)
+                .flat_map(|dx| (-7..=7).map(move |dz| (dx, dz)))
+                .map(|(dx, dz)| self.server.world.surface_height(bx + dx, bz + dz))
+                .max()
+                .unwrap_or(spawn.y as i32);
             for dx in -7..=7i32 {
                 for dz in -7..=7i32 {
-                    self.server.world.set_block(bx + dx, y, bz + dz, stone);
-                    for h in 1..=4 {
-                        let wall = dx.abs() == 7 || dz.abs() == 7;
-                        let b = if wall || h == 4 { stone } else { AIR };
-                        self.server.world.set_block(bx + dx, y + h, bz + dz, b);
+                    self.server.world.set_block(bx + dx, yf, bz + dz, stone);
+                    let wall = dx.abs() == 7 || dz.abs() == 7;
+                    for h in 1..=8 {
+                        let b = if (wall && h <= 3) || h == 4 {
+                            stone
+                        } else {
+                            AIR
+                        };
+                        let b = if h > 4 { AIR } else { b };
+                        self.server.world.set_block(bx + dx, yf + h, bz + dz, b);
                     }
                 }
             }
             for px in [-3i32, 3] {
                 for h in 1..=3 {
-                    self.server.world.set_block(bx + px, y + h, bz + 3, stone);
+                    self.server.world.set_block(bx + px, yf + h, bz + 3, stone);
                 }
             }
             for (tx, tz) in [(-6i32, -6i32), (6, -6), (0, 6)] {
-                self.server.world.set_block(bx + tx, y + 1, bz + tz, torch);
+                self.server.world.set_block(bx + tx, yf + 1, bz + tz, torch);
             }
+            // A red-glazed alcove: torch sealed behind a stained pane —
+            // its pool outside should come out the color of the glass.
+            if let Some(rg) = self.reg.block_id("base:red_glass") {
+                let (ax, az) = (bx + 4, bz - 4);
+                self.server.world.set_block(ax, yf + 1, az, stone);
+                self.server.world.set_block(ax, yf + 2, az, torch);
+                self.server.world.set_block(ax, yf + 3, az, stone);
+                self.server.world.set_block(ax - 1, yf + 2, az, stone);
+                self.server.world.set_block(ax + 1, yf + 2, az, stone);
+                self.server.world.set_block(ax, yf + 2, az - 1, stone);
+                self.server.world.set_block(ax, yf + 2, az + 1, rg);
+            }
+            // Stand in the room, whatever the terrain wanted.
+            let inside = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.2, bz as f32 + 0.5);
+            self.player.pos = inside;
+            self.spawn_point = inside;
+            self.camera.pos = inside + Vec3::new(0.0, EYE_HEIGHT, 0.0);
             // A torch in slot 0: WILDFORGE_SEL=0 holds it (held-light
             // shots), WILDFORGE_SEL=8 keeps the hand empty.
             let reg = self.reg.clone();
