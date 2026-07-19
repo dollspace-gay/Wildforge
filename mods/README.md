@@ -338,8 +338,8 @@ palette). Base uses this for its own renames — see
 
 PNG files, any size (nearest-neighbor scaled into the atlas; base
 tiles are 32×32). Referenced by filename from the TOML. The atlas has
-256 slots and built-ins use the first 216, leaving **40 tiles for all
-installed mods together**. Texture packs can override mod tiles by
+1024 slots (a 32×32 grid) and built-ins use the first ~216, leaving
+**~800 tiles for all installed mods together**. Texture packs can override mod tiles by
 shipping `tiles/<mod_id>/<file stem>.png`.
 
 ## main.rhai — scripts

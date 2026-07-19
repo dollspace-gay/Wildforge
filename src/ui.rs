@@ -35,13 +35,16 @@ impl UiBatch {
     }
 
     /// Rectangle textured with an atlas tile.
-    pub fn tile(&mut self, x: f32, y: f32, w: f32, h: f32, tile: (u32, u32), tint: [f32; 4]) {
+    /// Draw an atlas tile by slot; coordinates derive here so no call
+    /// site ever hardcodes the atlas grid width.
+    pub fn tile(&mut self, x: f32, y: f32, w: f32, h: f32, slot: u16, tint: [f32; 4]) {
+        let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
         let ts = 1.0 / ATLAS_TILES as f32;
         let inset = ts / 32.0;
-        let u0 = tile.0 as f32 * ts + inset;
-        let v0 = tile.1 as f32 * ts + inset;
-        let u1 = (tile.0 + 1) as f32 * ts - inset;
-        let v1 = (tile.1 + 1) as f32 * ts - inset;
+        let u0 = tx as f32 * ts + inset;
+        let v0 = ty as f32 * ts + inset;
+        let u1 = (tx + 1) as f32 * ts - inset;
+        let v1 = (ty + 1) as f32 * ts - inset;
         self.quad([x, y], [x + w, y + h], [u0, v0], [u1, v1], tint);
     }
 

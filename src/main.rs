@@ -4172,7 +4172,7 @@ impl Game {
         if let Some(s) = stack {
             let pad = 8.0;
             let icon = reg.item(s.item).icon;
-            let tile = (icon as u32 % 16, icon as u32 / 16);
+            let tile = icon;
             ui.tile(
                 x + pad,
                 y + pad,
@@ -4753,14 +4753,7 @@ impl Game {
                 if let Some(s) = self.held_stack {
                     let (cx, cy) = self.ui_cursor;
                     let icon = self.reg.item(s.item).icon;
-                    ui.tile(
-                        cx - 16.0,
-                        cy - 16.0,
-                        32.0,
-                        32.0,
-                        (icon as u32 % 16, icon as u32 / 16),
-                        [1.0; 4],
-                    );
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
                     if s.count > 1 {
                         ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
                     }
@@ -4839,14 +4832,7 @@ impl Game {
                 if let Some(s) = self.held_stack {
                     let (cx, cy) = self.ui_cursor;
                     let icon = self.reg.item(s.item).icon;
-                    ui.tile(
-                        cx - 16.0,
-                        cy - 16.0,
-                        32.0,
-                        32.0,
-                        (icon as u32 % 16, icon as u32 / 16),
-                        [1.0; 4],
-                    );
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
                     if s.count > 1 {
                         ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
                     }
@@ -4882,14 +4868,7 @@ impl Game {
                 if let Some(s) = self.held_stack {
                     let (cx, cy) = self.ui_cursor;
                     let icon = self.reg.item(s.item).icon;
-                    ui.tile(
-                        cx - 16.0,
-                        cy - 16.0,
-                        32.0,
-                        32.0,
-                        (icon as u32 % 16, icon as u32 / 16),
-                        [1.0; 4],
-                    );
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
                     if s.count > 1 {
                         ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
                     }
@@ -4934,14 +4913,7 @@ impl Game {
                 if let Some(s) = self.held_stack {
                     let (cx, cy) = self.ui_cursor;
                     let icon = self.reg.item(s.item).icon;
-                    ui.tile(
-                        cx - 16.0,
-                        cy - 16.0,
-                        32.0,
-                        32.0,
-                        (icon as u32 % 16, icon as u32 / 16),
-                        [1.0; 4],
-                    );
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
                     if s.count > 1 {
                         ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
                     }
@@ -5079,14 +5051,7 @@ impl Game {
                 if let Some(s) = self.held_stack {
                     let (cx, cy) = self.ui_cursor;
                     let icon = self.reg.item(s.item).icon;
-                    ui.tile(
-                        cx - 16.0,
-                        cy - 16.0,
-                        32.0,
-                        32.0,
-                        (icon as u32 % 16, icon as u32 / 16),
-                        [1.0; 4],
-                    );
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
                     if s.count > 1 {
                         let txt = format!("{}", s.count);
                         ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &txt, [1.0; 4]);
@@ -5591,14 +5556,7 @@ impl Game {
                 },
             );
             let icon = reg.item(*item).icon;
-            ui.tile(
-                r.0 + 5.0,
-                r.1 + 5.0,
-                30.0,
-                30.0,
-                (icon as u32 % 16, icon as u32 / 16),
-                [1.0; 4],
-            );
+            ui.tile(r.0 + 5.0, r.1 + 5.0, 30.0, 30.0, icon, [1.0; 4]);
             if hov {
                 ui.text_shadow(
                     r.0 - 120.0,
@@ -5662,14 +5620,7 @@ impl Game {
                                 crate::registry::Ingredient::Any(l) => l[cycle % l.len()],
                             };
                             let ic = reg.item(show).icon;
-                            ui.tile(
-                                cell.0 + 3.0,
-                                cell.1 + 3.0,
-                                30.0,
-                                30.0,
-                                (ic as u32 % 16, ic as u32 / 16),
-                                [1.0; 4],
-                            );
+                            ui.tile(cell.0 + 3.0, cell.1 + 3.0, 30.0, 30.0, ic, [1.0; 4]);
                         }
                     }
                 }
@@ -5677,14 +5628,7 @@ impl Game {
                 ui.text_shadow(px + 126.0, oy + 12.0, 2.5, ">", [1.0; 4]);
                 ui.rect(px + 150.0, oy, 36.0, 36.0, [0.22, 0.22, 0.22, 0.9]);
                 let oc = reg.item(r.output).icon;
-                ui.tile(
-                    px + 153.0,
-                    oy + 3.0,
-                    30.0,
-                    30.0,
-                    (oc as u32 % 16, oc as u32 / 16),
-                    [1.0; 4],
-                );
+                ui.tile(px + 153.0, oy + 3.0, 30.0, 30.0, oc, [1.0; 4]);
                 if r.count > 1 {
                     ui.text_shadow(
                         px + 172.0,
@@ -5705,14 +5649,7 @@ impl Game {
                 for (sx, it2) in [(90.0, show), (170.0, s.output)] {
                     ui.rect(px + sx, y, 36.0, 36.0, [0.2, 0.2, 0.2, 0.9]);
                     let ic = reg.item(it2).icon;
-                    ui.tile(
-                        px + sx + 3.0,
-                        y + 3.0,
-                        30.0,
-                        30.0,
-                        (ic as u32 % 16, ic as u32 / 16),
-                        [1.0; 4],
-                    );
+                    ui.tile(px + sx + 3.0, y + 3.0, 30.0, 30.0, ic, [1.0; 4]);
                 }
                 ui.text_shadow(px + 140.0, y + 12.0, 2.5, ">", [1.0; 4]);
                 y += 50.0;

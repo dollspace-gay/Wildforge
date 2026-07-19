@@ -9,7 +9,7 @@
 //! All UV math in the game uses tile fractions (1/16 of the atlas), so any
 //! square atlas whose side is a multiple of 16 works.
 
-pub const ATLAS_TILES: u32 = 16;
+pub const ATLAS_TILES: u32 = 32;
 /// Atlas slot = row * 16 + col. Rows 0-2 are built-in procedural tiles.
 pub const UNKNOWN_SLOT: u16 = 15;
 pub const CRACK_SLOT: u16 = 16; // stages 16..=19
@@ -674,7 +674,8 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     let atlas_px = ATLAS_TILES * tp;
     let mut img = vec![0u8; (atlas_px * atlas_px * 4) as usize];
 
-    let mut tile = |tx: u32, ty: u32, f: &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4]| {
+    let mut tile = |slot: u32, f: &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4]| {
+        let (tx, ty) = (slot % ATLAS_TILES, slot / ATLAS_TILES);
         for py in 0..tp {
             for px in 0..tp {
                 let u = (px as f32 + 0.5) / tp as f32;
@@ -694,7 +695,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
 
     // (0,0) grass top: mottled two-tone green clumps (no bevel — flat ground
     // shouldn't read as a grid).
-    tile(0, 0, &mut |px, py, u, v| {
+    tile(0, &mut |px, py, u, v| {
         let t = fbm(u, v, 5, 1);
         let c = mix3([84.0, 145.0, 47.0], [116.0, 186.0, 64.0], t);
         rgba(c, speck(px, py, 2, 0.07), 255)
@@ -712,7 +713,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     };
 
     // (2,0) dirt
-    tile(2, 0, &mut |px, py, u, v| {
+    tile(2, &mut |px, py, u, v| {
         let mut c = dirt_at(px, py, u, v);
         let f = emboss(px, py, tp);
         c[0] = (c[0] as f32 * f) as u8;
@@ -722,7 +723,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (1,0) grass side: dirt with an irregular turf overhang.
-    tile(1, 0, &mut |px, py, u, v| {
+    tile(1, &mut |px, py, u, v| {
         let depth = (0.14 + 0.12 * fbm(u, 0.0, 8, 5)) * tp as f32;
         let fy = py as f32;
         if fy < depth {
@@ -741,7 +742,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (3,0) stone: soft blotches with darker veins.
-    tile(3, 0, &mut |px, py, u, v| {
+    tile(3, &mut |px, py, u, v| {
         let t = fbm(u, v, 4, 7);
         let mut c = mix3([112.0, 112.0, 116.0], [142.0, 142.0, 144.0], t);
         let vein = (vnoise(u * 5.0, v * 5.0, 5, 8) - 0.5).abs();
@@ -752,7 +753,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (4,0) cobblestone: rounded stones with dark mortar.
-    tile(4, 0, &mut |px, py, u, v| {
+    tile(4, &mut |px, py, u, v| {
         let (d1, d2, id) = voronoi(u, v, 4, 10);
         let mortar = d2 - d1 < 0.14;
         if mortar {
@@ -770,7 +771,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (5,0) sand: fine grain with soft ripple bands.
-    tile(5, 0, &mut |px, py, u, v| {
+    tile(5, &mut |px, py, u, v| {
         let ripple = ((v + fbm(u, v, 3, 13) * 0.25) * std::f32::consts::TAU * 3.0).sin() * 0.05;
         let t = fbm(u, v, 8, 14);
         let c = mix3([206.0, 192.0, 148.0], [228.0, 216.0, 172.0], t);
@@ -782,7 +783,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (6,0) gravel: tightly packed pebbles.
-    tile(6, 0, &mut |px, py, u, v| {
+    tile(6, &mut |px, py, u, v| {
         let (d1, _, id) = voronoi(u, v, 6, 16);
         let grayish = 0.75 + (id % 100) as f32 / 100.0 * 0.5;
         let warm = (id >> 8) % 4 == 0;
@@ -796,7 +797,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (7,0) log side: vertical grain and bark ridges.
-    tile(7, 0, &mut |px, py, u, v| {
+    tile(7, &mut |px, py, u, v| {
         let grain =
             ((u * std::f32::consts::TAU * 6.0) + vnoise(v * 4.0, u * 2.0, 4, 18) * 3.0).sin();
         let ridge = vnoise(u * 8.0, v * 2.0, 8, 19);
@@ -810,7 +811,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (8,0) log top: wobbling growth rings inside a bark rim.
-    tile(8, 0, &mut |px, py, u, v| {
+    tile(8, &mut |px, py, u, v| {
         let dx = u - 0.5;
         let dy = v - 0.5;
         let ang = dy.atan2(dx);
@@ -826,7 +827,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (9,0) leaves: layered greens, deep shadow pockets, sun glints.
-    tile(9, 0, &mut |px, py, u, v| {
+    tile(9, &mut |px, py, u, v| {
         let t = fbm(u, v, 6, 24);
         let mut c = mix3([34.0, 78.0, 24.0], [72.0, 136.0, 44.0], t);
         let pocket = h01(px as i32, py as i32, 25);
@@ -898,10 +899,10 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     };
 
     // (10,0) planks
-    tile(10, 0, &mut |px, py, u, v| plank_at(px, py, u, v, 26));
+    tile(10, &mut |px, py, u, v| plank_at(px, py, u, v, 26));
 
     // (11,0) bedrock: harsh light/dark blotches.
-    tile(11, 0, &mut |px, py, u, v| {
+    tile(11, &mut |px, py, u, v| {
         let t = fbm(u, v, 5, 27);
         let c = if t > 0.55 {
             [120.0, 120.0, 122.0]
@@ -914,7 +915,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (12,0) water: soft drifting bands, translucent.
-    tile(12, 0, &mut |px, py, u, v| {
+    tile(12, &mut |px, py, u, v| {
         let band = ((v + fbm(u, v, 3, 29) * 0.4) * std::f32::consts::TAU * 2.0).sin() * 0.09;
         let t = fbm(u, v, 4, 30);
         let c = mix3([40.0, 78.0, 196.0], [70.0, 116.0, 236.0], t);
@@ -922,7 +923,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (13,0) crafting table top: planks with a dark tool-grid border.
-    tile(13, 0, &mut |px, py, u, v| {
+    tile(13, &mut |px, py, u, v| {
         let e = (tp / 16).max(1);
         let border = px < e || px >= tp - e || py < e || py >= tp - e;
         let mid = px.abs_diff(tp / 2) < e || py.abs_diff(tp / 2) < e;
@@ -934,7 +935,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (14,0) crafting table side: planks, dark top band, two "tool" squares.
-    tile(14, 0, &mut |px, py, u, v| {
+    tile(14, &mut |px, py, u, v| {
         let e = (tp / 16).max(1);
         if py < 3 * e {
             return rgba([88.0, 66.0, 40.0], speck(px, py, 34, 0.06), 255);
@@ -949,13 +950,13 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (39..=42 => row 2 tiles 7..) biome blocks: snow, ice, cactus.
-    tile(7, 2, &mut |px, py, u, v| {
+    tile(39, &mut |px, py, u, v| {
         // snow: bright white with faint blue shading.
         let t = fbm(u, v, 6, 50);
         let c = mix3([230.0, 236.0, 244.0], [250.0, 252.0, 255.0], t);
         rgba(c, speck(px, py, 51, 0.03) * emboss(px, py, tp), 255)
     });
-    tile(8, 2, &mut |px, py, u, v| {
+    tile(40, &mut |px, py, u, v| {
         // ice: pale glossy blue with lighter crack veins.
         let t = fbm(u, v, 4, 52);
         let mut c = mix3([148.0, 186.0, 224.0], [190.0, 220.0, 246.0], t);
@@ -971,7 +972,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             255,
         )
     });
-    tile(9, 2, &mut |px, py, u, _v| {
+    tile(41, &mut |px, py, u, _v| {
         // cactus side: vertical ribs with pale spines.
         let rib = ((u * std::f32::consts::TAU * 4.0).sin() * 0.5 + 0.5) * 0.3;
         let c = mix3([44.0, 96.0, 36.0], [88.0, 148.0, 62.0], 0.4 + rib);
@@ -982,7 +983,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             rgba(c, speck(px, py, 56, 0.06), 255)
         }
     });
-    tile(10, 2, &mut |px, py, u, v| {
+    tile(42, &mut |px, py, u, v| {
         // cactus top: rib ring + pale center.
         let dx = u - 0.5;
         let dy = v - 0.5;
@@ -1036,15 +1037,12 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         },
     ];
     for wd in woods {
-        // Each tile's coords derive from its own slot — families may cross
-        // atlas row boundaries (e.g. spruce leaves at slot 48 = row 3).
-        let (tx, ty) = (wd.slot % 16, wd.slot / 16);
-        let (tx1, ty1) = ((wd.slot + 1) % 16, (wd.slot + 1) / 16);
-        let (tx2, ty2) = ((wd.slot + 2) % 16, (wd.slot + 2) / 16);
+        // Painters take slots directly — families may cross atlas row
+        // boundaries (e.g. spruce leaves at slot 48 = row 3).
         let bark = wd.bark;
         let flecks = wd.birch_flecks;
         // Bark side.
-        tile(tx, ty, &mut |px, py, u, v| {
+        tile(wd.slot, &mut |px, py, u, v| {
             if flecks {
                 // Birch: pale bark with short dark horizontal flecks.
                 let dash = hash(px as i32 / 5, py as i32, 60).is_multiple_of(11) && px % 5 < 3;
@@ -1072,7 +1070,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             }
         });
         // Ringed top.
-        tile(tx1, ty1, &mut |px, py, u, v| {
+        tile(wd.slot + 1, &mut |px, py, u, v| {
             let dx = u - 0.5;
             let dy = v - 0.5;
             let ang = dy.atan2(dx);
@@ -1096,7 +1094,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             }
         });
         // Leaves.
-        tile(tx2, ty2, &mut |px, py, u, v| {
+        tile(wd.slot + 2, &mut |px, py, u, v| {
             let t = fbm(u, v, 6, 69);
             let mut c = mix3(wd.leaf_dark, wd.leaf_light, t);
             let pocket = h01(px as i32, py as i32, 70 + wd.slot);
@@ -1125,8 +1123,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         (58, [168.0, 96.0, 54.0], [104.0, 56.0, 30.0]),    // acacia: orange
     ];
     for (slot, board, seam) in plank_sets {
-        let (tx, ty) = (slot % 16, slot / 16);
-        tile(tx, ty, &mut |px, py, u, _v| {
+        tile(slot, &mut |px, py, u, _v| {
             plank_colored(px, py, u, 40 + slot, board, seam, [80.0, 74.0, 64.0])
         });
     }
@@ -1137,8 +1134,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         (60, 0, [200.0, 204.0, 212.0]), // tin (no block tile; slot 0 unused)
     ];
     for (ore_slot, _blk, color) in metal_sets {
-        let (tx, ty) = (ore_slot % 16, ore_slot / 16);
-        tile(tx, ty, &mut |px, py, u, v| {
+        tile(ore_slot, &mut |px, py, u, v| {
             // Stone base with metal nugget clusters.
             let t = fbm(u, v, 4, 7);
             let base = mix3([112.0, 112.0, 116.0], [142.0, 142.0, 144.0], t);
@@ -1152,15 +1148,14 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     }
     // Polished metal blocks: copper 61, bronze 62.
     for (slot, color) in [(61u32, [206.0, 116.0, 52.0]), (62, [196.0, 148.0, 62.0])] {
-        let (tx, ty) = (slot % 16, slot / 16);
-        tile(tx, ty, &mut |px, py, u, v| {
+        tile(slot, &mut |px, py, u, v| {
             let t = fbm(u, v, 3, 92);
             let c = mix3(color, [color[0] * 0.8, color[1] * 0.8, color[2] * 0.8], t);
             rgba(c, speck(px, py, 93, 0.04) * emboss(px, py, tp), 255)
         });
     }
     // Furnace side: cobble with a dark mouth.
-    tile(15, 3, &mut |px, py, u, v| {
+    tile(63, &mut |px, py, u, v| {
         let mouth = u > 0.28 && u < 0.72 && v > 0.42 && v < 0.86;
         if mouth {
             let glow = ((u - 0.5).abs() < 0.14 && v > 0.55) as u8;
@@ -1182,8 +1177,8 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     let lump =
         |slot: u32,
          color: [f32; 3],
-         img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
-            img(slot % 16, slot / 16, &mut |px, py, u, v| {
+         img: &mut dyn FnMut(u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+            img(slot, &mut |px, py, u, v| {
                 let dx = u - 0.5;
                 let dy = v - 0.5;
                 let r = (dx * dx + dy * dy).sqrt();
@@ -1199,8 +1194,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
                 }
             });
         };
-    let mut tile_fn =
-        |tx: u32, ty: u32, f: &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4]| tile(tx, ty, f);
+    let mut tile_fn = |slot: u32, f: &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4]| tile(slot, f);
     lump(64, [200.0, 112.0, 50.0], &mut tile_fn); // raw copper
     lump(65, [196.0, 200.0, 208.0], &mut tile_fn); // raw tin
     lump(69, [186.0, 138.0, 70.0], &mut tile_fn); // bronze blend (powder pile)
@@ -1211,7 +1205,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         (67, [206.0, 210.0, 218.0]),
         (68, [200.0, 152.0, 64.0]),
     ] {
-        tile(slot % 16, slot / 16, &mut |px, py, u, v| {
+        tile(slot, &mut |px, py, u, v| {
             let inside = u > 0.12 && u < 0.88 && v > 0.36 && v < 0.68;
             if !inside {
                 return [0, 0, 0, 0];
@@ -1239,7 +1233,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     ];
     let k2 = (tp / 16).max(1);
     for (slot, art, head) in metal_tools {
-        tile(slot % 16, slot / 16, &mut |px, py, _u, _v| {
+        tile(slot, &mut |px, py, _u, _v| {
             let ax = (px / k2).min(15) as usize;
             let ay = (py / k2).min(15) as usize;
             match art[ay].as_bytes().get(ax) {
@@ -1253,10 +1247,9 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         });
     }
 
-    let mut tf =
-        |tx: u32, ty: u32, f: &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4]| tile(tx, ty, f);
+    let mut tf = |slot: u32, f: &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4]| tile(slot, f);
     // Farmland: dark tilled rows.
-    tf(13, 4, &mut |px, py, u, v| {
+    tf(77, &mut |px, py, u, v| {
         let row = ((v * 8.0) as u32).is_multiple_of(2);
         let t = fbm(u, v, 5, 120);
         let c = mix3([78.0, 54.0, 36.0], [102.0, 72.0, 48.0], t);
@@ -1273,8 +1266,8 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
          stem: [f32; 3],
          head: Option<[f32; 3]>,
          height: f32,
-         tile: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
-            tile(slot % 16, slot / 16, &mut |px, py, u, v| {
+         tile: &mut dyn FnMut(u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+            tile(slot, &mut |px, py, u, v| {
                 let col = (u * 5.0) as i32;
                 let cx = 0.1 + col as f32 * 0.2 + h01(col, 0, 130 + slot) * 0.08;
                 let stem_here = (u - cx).abs() < 0.035 && v > 1.0 - height;
@@ -1304,7 +1297,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         &mut tf,
     ); // ripe wheat
     // Carrot: leafy fan with orange crowns peeking at the soil line.
-    tf(0, 5, &mut |px, py, u, v| {
+    tf(80, &mut |px, py, u, v| {
         let fan = (v > 0.45) && ((u - 0.5).abs() < (v - 0.4) * 0.65);
         let crown = v > 0.88 && ((u - 0.3).abs() < 0.05 || (u - 0.7).abs() < 0.05);
         if crown {
@@ -1320,7 +1313,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
     // Potato: low bushy clump with white blossoms.
-    tf(1, 5, &mut |px, py, u, v| {
+    tf(81, &mut |px, py, u, v| {
         let dx = u - 0.5;
         let dy = v - 0.75;
         if dx * dx + dy * dy * 2.2 < 0.09 {
@@ -1335,7 +1328,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
     // Bushes: leafy blob, fruited variant with red dots.
     for (slot, fruited) in [(82u32, true), (83, false)] {
-        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+        tf(slot, &mut |px, py, u, v| {
             let dx = u - 0.5;
             let dy = v - 0.62;
             if dx * dx + dy * dy < 0.14 {
@@ -1350,7 +1343,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         });
     }
     // Mushroom sprite.
-    tf(4, 5, &mut |px, py, u, v| {
+    tf(84, &mut |px, py, u, v| {
         let cap = (u - 0.5).abs() < 0.28 && v > 0.35 && v < 0.62;
         let stem = (u - 0.5).abs() < 0.08 && (0.62..0.95).contains(&v);
         if cap {
@@ -1376,7 +1369,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     lump(92, [235.0, 190.0, 60.0], &mut tf); // jungle fruit
     lump(93, [160.0, 110.0, 60.0], &mut tf); // stew
     // Seeds: cluster of dark-green kernels, readable on grass.
-    tf(14, 5, &mut |px, py, u, v| {
+    tf(94, &mut |px, py, u, v| {
         let dx = u - 0.5;
         let dy = v - 0.5;
         if dx * dx + dy * dy < 0.11 && !hash(px as i32 / 2, py as i32 / 2, 180).is_multiple_of(3) {
@@ -1397,7 +1390,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         (99, [196.0, 148.0, 62.0]),
     ];
     for (slot, head) in hoe_sets {
-        tf(slot % 16, slot / 16, &mut |px, py, _u, _v| {
+        tf(slot, &mut |px, py, _u, _v| {
             let ax = (px / k2).min(15) as usize;
             let ay = (py / k2).min(15) as usize;
             match AXE_ART[ay].as_bytes().get(ax) {
@@ -1423,7 +1416,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         (111, [235.0, 235.0, 240.0], [205.0, 205.0, 215.0], 0.05), // snow hare
     ];
     for (slot, hi, lo, rough) in furs {
-        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+        tf(slot, &mut |px, py, u, v| {
             let t = fbm(u, v, 6, 400 + slot);
             let mut c = mix3(lo, hi, t);
             // Grouse: light feather dapple.
@@ -1444,7 +1437,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         (107, 106),
         (109, 108),
     ] {
-        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+        tf(slot, &mut |px, py, u, v| {
             let base_t = fbm(u, v, 6, 400 + fur_slot);
             let (hi, lo) = match fur_slot {
                 100 => ([150.0, 105.0, 65.0], [120.0, 80.0, 50.0]),
@@ -1521,7 +1514,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         (121, [185.0, 120.0, 70.0], true),
     ];
     for (slot, base, cooked) in meats {
-        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+        tf(slot, &mut |px, py, u, v| {
             let dx = (u - 0.5) * 1.15;
             let dy = (v - 0.55) * 1.5;
             let d = dx * dx + dy * dy;
@@ -1543,7 +1536,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         });
     }
     // Hide: rough pelt rectangle with darker border.
-    tf(10, 7, &mut |px, py, u, v| {
+    tf(122, &mut |px, py, u, v| {
         let dx = (u - 0.5).abs();
         let dy = (v - 0.5).abs();
         if dx > 0.38 || dy > 0.32 || (dx > 0.30 && dy > 0.24) {
@@ -1557,7 +1550,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 521, 0.12), 255)
     });
     // Leather: smooth tanned rectangle.
-    tf(11, 7, &mut |px, py, u, v| {
+    tf(123, &mut |px, py, u, v| {
         let dx = (u - 0.5).abs();
         let dy = (v - 0.5).abs();
         if dx > 0.36 || dy > 0.30 || (dx > 0.28 && dy > 0.22) {
@@ -1571,7 +1564,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         )
     });
     // Feather: diagonal quill with pale barbs.
-    tf(12, 7, &mut |px, py, u, v| {
+    tf(124, &mut |px, py, u, v| {
         // Line from (0.22, 0.82) to (0.78, 0.18).
         let t = ((u - 0.22) * 0.5 + (0.82 - v) * 0.5).clamp(0.0, 1.0);
         let (lx, ly) = (0.22 + 0.56 * t, 0.82 - 0.64 * t);
@@ -1613,7 +1606,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         (129, [196.0, 148.0, 62.0]),
     ];
     for (slot, head) in sword_sets {
-        tf(slot % 16, slot / 16, &mut |_px, _py, u, v| {
+        tf(slot, &mut |_px, _py, u, v| {
             let ax = ((u * 16.0) as usize).min(15);
             let ay = ((v * 16.0) as usize).min(15);
             match SWORD_ART[ay].as_bytes().get(ax) {
@@ -1629,7 +1622,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     }
 
     // Antler: pale bone with faint darker ridges (deer antler boxes).
-    tf(2, 8, &mut |px, py, u, v| {
+    tf(130, &mut |px, py, u, v| {
         let t = fbm(u, v, 4, 560);
         let mut c = mix3([225.0, 214.0, 192.0], [200.0, 186.0, 160.0], t);
         if (v * 6.0).fract() < 0.18 {
@@ -1639,7 +1632,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // Torch: stick with a bright flame head (cross-rendered).
-    tf(3, 8, &mut |px, py, u, v| {
+    tf(131, &mut |px, py, u, v| {
         let stick = (u - 0.5).abs() < 0.06 && v > 0.38 && v < 0.95;
         let dx = u - 0.5;
         let dy = v - 0.28;
@@ -1661,7 +1654,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
     // Chest: plank panel with dark frame; side gets a latch.
     for (slot, latch) in [(132u32, true), (133, false)] {
-        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+        tf(slot, &mut |px, py, u, v| {
             let t = fbm(u, v * 3.0, 4, 580);
             let mut c = mix3([142.0, 100.0, 58.0], [168.0, 122.0, 72.0], t);
             let edge = !(0.06..=0.94).contains(&u) || !(0.06..=0.94).contains(&v);
@@ -1681,7 +1674,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
 
     // ---- wardens (rows 8-9): the wild's own ----
     // Thornling: dark bristly shrub-hide with thorn glints.
-    tf(6, 8, &mut |px, py, u, v| {
+    tf(134, &mut |px, py, u, v| {
         let t = fbm(u, v, 6, 600);
         let mut c = mix3([30.0, 62.0, 28.0], [58.0, 96.0, 44.0], t);
         if h01(px as i32, py as i32, 601) > 0.93 {
@@ -1690,7 +1683,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 602, 0.2), 255)
     });
     // Dryad: mossy bark.
-    tf(7, 8, &mut |px, py, u, v| {
+    tf(135, &mut |px, py, u, v| {
         let t = fbm(u * 1.5, v * 3.0, 5, 610);
         let mut c = mix3([74.0, 56.0, 40.0], [104.0, 82.0, 56.0], t);
         if fbm(u, v, 4, 611) > 0.62 {
@@ -1699,7 +1692,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 612, 0.1), 255)
     });
     // Dryad face: bark + amber eyes + slit mouth.
-    tf(8, 8, &mut |px, py, u, v| {
+    tf(136, &mut |px, py, u, v| {
         let t = fbm(u * 1.5, v * 3.0, 5, 610);
         let mut c = mix3([74.0, 56.0, 40.0], [104.0, 82.0, 56.0], t);
         let eye = |cx: f32| (u - cx).abs() < 0.07 && (v - 0.38).abs() < 0.05;
@@ -1712,7 +1705,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 613, 0.08), 255)
     });
     // Emberkin: charred crust over glowing cracks.
-    tf(9, 8, &mut |px, py, u, v| {
+    tf(137, &mut |px, py, u, v| {
         let t = fbm(u * 2.0, v * 2.0, 5, 620);
         if t > 0.58 {
             let g = 0.8 + h01(px as i32, py as i32, 621) * 0.4;
@@ -1726,13 +1719,13 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
     // Rimewisp: pale drifting frost.
-    tf(10, 8, &mut |px, py, u, v| {
+    tf(138, &mut |px, py, u, v| {
         let t = fbm(u * 2.0, v * 2.0, 5, 630);
         let c = mix3([150.0, 190.0, 225.0], [225.0, 240.0, 252.0], t);
         rgba(c, speck(px, py, 631, 0.06), 255)
     });
     // Gravelurk: cracked granite.
-    tf(11, 8, &mut |px, py, u, v| {
+    tf(139, &mut |px, py, u, v| {
         let t = fbm(u, v, 5, 640);
         let mut c = mix3([88.0, 86.0, 84.0], [128.0, 124.0, 118.0], t);
         let (d1, _, _) = voronoi(u, v, 5, 641);
@@ -1742,13 +1735,13 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 642, 0.12), 255)
     });
     // Wrathwood: gnarled ancient bark.
-    tf(12, 8, &mut |px, py, u, v| {
+    tf(140, &mut |px, py, u, v| {
         let t = fbm(u * 1.2, v * 4.0, 5, 650);
         let c = mix3([46.0, 34.0, 24.0], [80.0, 60.0, 40.0], t);
         rgba(c, speck(px, py, 651, 0.14), 255)
     });
     // Wrathwood face: bark + jagged maw + burning eyes.
-    tf(13, 8, &mut |px, py, u, v| {
+    tf(141, &mut |px, py, u, v| {
         let t = fbm(u * 1.2, v * 4.0, 5, 650);
         let mut c = mix3([46.0, 34.0, 24.0], [80.0, 60.0, 40.0], t);
         let eye = |cx: f32| (u - cx).abs() < 0.08 && (v - 0.30).abs() < 0.06;
@@ -1765,7 +1758,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 652, 0.1), 255)
     });
     // Bolts: thorn / ember / frost.
-    tf(14, 8, &mut |_px, _py, u, v| {
+    tf(142, &mut |_px, _py, u, v| {
         let d = (u - v).abs();
         if d < 0.10 && u > 0.2 && u < 0.85 {
             rgba([90.0, 150.0, 60.0], 1.0, 255)
@@ -1775,7 +1768,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             [0, 0, 0, 0]
         }
     });
-    tf(15, 8, &mut |px, py, u, v| {
+    tf(143, &mut |px, py, u, v| {
         let dx = u - 0.5;
         let dy = v - 0.5;
         let r = dx * dx + dy * dy;
@@ -1791,7 +1784,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             [0, 0, 0, 0]
         }
     });
-    tf(0, 9, &mut |_px, _py, u, v| {
+    tf(144, &mut |_px, _py, u, v| {
         let dx = (u - 0.5).abs();
         let dy = (v - 0.5).abs();
         if dx * 1.6 + dy < 0.42 && dx < 0.16 {
@@ -1801,7 +1794,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
     // Drops: fiber coil, living wood, ember, frost shard, heartwood.
-    tf(1, 9, &mut |px, py, u, v| {
+    tf(145, &mut |px, py, u, v| {
         let dx = u - 0.5;
         let dy = v - 0.5;
         let r = (dx * dx + dy * dy).sqrt();
@@ -1815,7 +1808,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             [0, 0, 0, 0]
         }
     });
-    tf(2, 9, &mut |px, py, u, v| {
+    tf(146, &mut |px, py, u, v| {
         if (u - 0.5).abs() < 0.28 && (v - 0.5).abs() < 0.22 {
             let t = fbm(u, v * 3.0, 4, 680);
             let mut c = mix3([104.0, 82.0, 56.0], [130.0, 104.0, 70.0], t);
@@ -1827,7 +1820,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             [0, 0, 0, 0]
         }
     });
-    tf(3, 9, &mut |px, py, u, v| {
+    tf(147, &mut |px, py, u, v| {
         let dx = u - 0.5;
         let dy = v - 0.55;
         let r = dx * dx + dy * dy * 1.4;
@@ -1846,7 +1839,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             [0, 0, 0, 0]
         }
     });
-    tf(4, 9, &mut |_px, _py, u, v| {
+    tf(148, &mut |_px, _py, u, v| {
         let dx = (u - 0.5).abs();
         let dy = (v - 0.5).abs();
         if dx * 1.3 + dy < 0.36 && dx < 0.2 {
@@ -1855,7 +1848,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             [0, 0, 0, 0]
         }
     });
-    tf(5, 9, &mut |px, py, u, v| {
+    tf(149, &mut |px, py, u, v| {
         if (u - 0.5).abs() < 0.24 && (v - 0.5).abs() < 0.26 {
             let t = fbm(u, v * 2.0, 4, 700);
             let c = mix3([96.0, 34.0, 28.0], [140.0, 58.0, 40.0], t);
@@ -1871,8 +1864,8 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     let bow_art =
         |slot: u32,
          limb: [f32; 3],
-         img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
-            img(slot % 16, slot / 16, &mut |px, py, u, v| {
+         img: &mut dyn FnMut(u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+            img(slot, &mut |px, py, u, v| {
                 // Limb: arc bulging left of a diagonal.
                 let arc = ((u - 0.62) + (v - 0.5) * (v - 0.5) * 1.6).abs();
                 if arc < 0.07 && v > 0.06 && v < 0.94 {
@@ -1891,7 +1884,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     bow_art(150, [138.0, 100.0, 58.0], &mut tf);
     bow_art(151, [96.0, 120.0, 62.0], &mut tf); // living-wood green tint
     // Arrow: diagonal shaft, stone head, feather fletch.
-    tf(8, 9, &mut |_px, _py, u, v| {
+    tf(152, &mut |_px, _py, u, v| {
         let d = (u - (1.0 - v)).abs();
         if d < 0.06 && u > 0.15 && u < 0.85 {
             rgba([150.0, 110.0, 62.0], 1.0, 255)
@@ -1909,9 +1902,9 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         |base: u32,
          c: [f32; 3],
          dark: [f32; 3],
-         img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+         img: &mut dyn FnMut(u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
             // helmet: dome with a face opening
-            img(base % 16, base / 16, &mut |px, py, u, v| {
+            img(base, &mut |px, py, u, v| {
                 let dx = u - 0.5;
                 let dome = dx * dx + (v - 0.55) * (v - 0.55) * 1.6 < 0.09 && v < 0.72;
                 let opening = dx.abs() < 0.16 && v > 0.48 && v < 0.72;
@@ -1924,7 +1917,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
                 }
             });
             // chestplate: torso with shoulders
-            img((base + 1) % 16, (base + 1) / 16, &mut |px, py, u, v| {
+            img(base + 1, &mut |px, py, u, v| {
                 let torso = (u - 0.5).abs() < 0.24 && v > 0.28 && v < 0.88;
                 let arms = (u - 0.5).abs() > 0.24 && (u - 0.5).abs() < 0.38 && v > 0.28 && v < 0.52;
                 let neck = (u - 0.5).abs() < 0.10 && v <= 0.36;
@@ -1935,7 +1928,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
                 }
             });
             // leggings: waist + two legs
-            img((base + 2) % 16, (base + 2) / 16, &mut |px, py, u, v| {
+            img(base + 2, &mut |px, py, u, v| {
                 let waist = (u - 0.5).abs() < 0.22 && v > 0.18 && v < 0.40;
                 let leg = ((u - 0.36).abs() < 0.09 || (u - 0.64).abs() < 0.09)
                     && (0.40..0.88).contains(&v);
@@ -1946,7 +1939,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
                 }
             });
             // boots: two ankle boxes
-            img((base + 3) % 16, (base + 3) / 16, &mut |px, py, u, v| {
+            img(base + 3, &mut |px, py, u, v| {
                 let boot =
                     ((u - 0.32).abs() < 0.13 || (u - 0.68).abs() < 0.13) && v > 0.52 && v < 0.85;
                 if boot {
@@ -1964,8 +1957,8 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     let sapling_art =
         |slot: u32,
          leaf: [f32; 3],
-         img: &mut dyn FnMut(u32, u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
-            img(slot % 16, slot / 16, &mut |px, py, u, v| {
+         img: &mut dyn FnMut(u32, &mut dyn FnMut(u32, u32, f32, f32) -> [u8; 4])| {
+            img(slot, &mut |px, py, u, v| {
                 let stem = (u - 0.5).abs() < 0.05 && v > 0.55 && v < 0.95;
                 let dx = u - 0.5;
                 let dy = v - 0.42;
@@ -1985,7 +1978,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     sapling_art(164, [60.0, 160.0, 60.0], &mut tf); // jungle
     sapling_art(165, [120.0, 130.0, 60.0], &mut tf); // acacia
     // Offering stone: mossy rock with a glowing bowl.
-    tf(6, 10, &mut |px, py, u, v| {
+    tf(166, &mut |px, py, u, v| {
         let t = fbm(u, v, 5, 770);
         let mut c = mix3([96.0, 96.0, 92.0], [130.0, 128.0, 120.0], t);
         if fbm(u * 2.0, v * 2.0, 4, 771) > 0.62 {
@@ -1999,7 +1992,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 772, 0.1), 255)
     });
     // Bedroll: rolled hide with fiber ties.
-    tf(7, 10, &mut |px, py, u, v| {
+    tf(167, &mut |px, py, u, v| {
         let dx = u - 0.5;
         let dy = v - 0.55;
         if dx * dx * 0.6 + dy * dy * 2.4 < 0.06 {
@@ -2023,7 +2016,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     let iron_c = [178.0, 180.0, 188.0];
     let steel_c = [214.0, 218.0, 230.0];
     // Iron ore: stone + grey nuggets.
-    tf(8, 10, &mut |px, py, u, v| {
+    tf(168, &mut |px, py, u, v| {
         let t = fbm(u, v, 4, 7);
         let base = mix3([112.0, 112.0, 116.0], [142.0, 142.0, 144.0], t);
         let (d1, _, id) = voronoi(u, v, 5, 800);
@@ -2035,7 +2028,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
     // Polished blocks.
     for (slot, color) in [(169u32, iron_c), (170, steel_c)] {
-        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+        tf(slot, &mut |px, py, u, v| {
             let t = fbm(u, v, 3, 810 + slot);
             let c = mix3(color, [color[0] * 0.8, color[1] * 0.8, color[2] * 0.8], t);
             rgba(c, speck(px, py, 811 + slot, 0.04), 255)
@@ -2045,7 +2038,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     lump(171, [150.0, 132.0, 120.0], &mut tf); // raw iron
     lump(173, [120.0, 118.0, 116.0], &mut tf); // steel blend
     for (slot, color) in [(172u32, iron_c), (174, steel_c)] {
-        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+        tf(slot, &mut |px, py, u, v| {
             let inside = u > 0.12 && u < 0.88 && v > 0.36 && v < 0.68;
             if inside {
                 let edge = !(0.2..=0.8).contains(&u) || !(0.44..=0.6).contains(&v);
@@ -2069,19 +2062,19 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         (181, steel_c),
         (182, steel_c),
     ];
-    for (i, (slot, head)) in metal2.iter().enumerate() {
+    for (i, &(slot, head)) in metal2.iter().enumerate() {
         let art: &[&str; 16] = match i % 3 {
             0 => &PICK_ART,
             1 => &AXE_ART,
             _ => &SHOVEL_ART,
         };
-        tf(slot % 16, slot / 16, &mut |_px, _py, u, v| {
+        tf(slot, &mut |_px, _py, u, v| {
             let ax = ((u * 16.0) as usize).min(15);
             let ay = ((v * 16.0) as usize).min(15);
             match art[ay].as_bytes().get(ax) {
                 Some(b'H') => {
                     let f = 0.85 + h01(ax as i32, ay as i32, 830 + slot) * 0.2;
-                    rgba(*head, f, 255)
+                    rgba(head, f, 255)
                 }
                 Some(b'h') => rgba([104.0, 72.0, 42.0], 1.0, 255),
                 _ => [0, 0, 0, 0],
@@ -2089,7 +2082,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         });
     }
     for (slot, head) in [(178u32, iron_c), (183, steel_c)] {
-        tf(slot % 16, slot / 16, &mut |_px, _py, u, v| {
+        tf(slot, &mut |_px, _py, u, v| {
             let ax = ((u * 16.0) as usize).min(15);
             let ay = ((v * 16.0) as usize).min(15);
             match AXE_ART[ay].as_bytes().get(ax) {
@@ -2101,7 +2094,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         });
     }
     for (slot, head) in [(179u32, iron_c), (184, steel_c)] {
-        tf(slot % 16, slot / 16, &mut |_px, _py, u, v| {
+        tf(slot, &mut |_px, _py, u, v| {
             let ax = ((u * 16.0) as usize).min(15);
             let ay = ((v * 16.0) as usize).min(15);
             match SWORD_ART[ay].as_bytes().get(ax) {
@@ -2118,7 +2111,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     armor_art(185, iron_c, [90.0, 92.0, 98.0], &mut tf);
     armor_art(189, steel_c, [120.0, 124.0, 134.0], &mut tf);
     // Shears: two crossed blades on a pivot.
-    tf(1, 12, &mut |_px, _py, u, v| {
+    tf(193, &mut |_px, _py, u, v| {
         let d1 = (u - v).abs();
         let d2 = (u + v - 1.0).abs();
         if (d1 < 0.09 || d2 < 0.09) && u > 0.2 && u < 0.8 {
@@ -2130,7 +2123,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
     // Excavation brush: stick with a fiber head.
-    tf(2, 12, &mut |px, py, u, v| {
+    tf(194, &mut |px, py, u, v| {
         let d = (u - (1.0 - v)).abs();
         if d < 0.06 && u > 0.3 && u < 0.9 {
             rgba([120.0, 86.0, 50.0], 1.0, 255)
@@ -2147,7 +2140,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
 
     // ---- ruins (row 12) ----
     // Mossy cobblestone: cobble with green growth.
-    tf(3, 12, &mut |px, py, u, v| {
+    tf(195, &mut |px, py, u, v| {
         let (d1, d2, id) = voronoi(u, v, 4, 860);
         let mut c = if d2 - d1 < 0.14 {
             [62.0, 62.0, 62.0]
@@ -2161,7 +2154,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 862, 0.08), 255)
     });
     // Cracked masonry: dressed stone with a jagged crack.
-    tf(4, 12, &mut |px, py, u, v| {
+    tf(196, &mut |px, py, u, v| {
         let brick =
             ((v * 4.0).fract() < 0.12) || ((u * 2.0 + (v * 4.0).floor() * 0.5).fract() < 0.06);
         let mut c = if brick {
@@ -2177,7 +2170,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 870, 0.08), 255)
     });
     // Packed earth: dark trodden soil with flecks.
-    tf(5, 12, &mut |px, py, u, v| {
+    tf(197, &mut |px, py, u, v| {
         let t = fbm(u, v, 5, 880);
         let mut c = mix3([84.0, 62.0, 44.0], [108.0, 82.0, 58.0], t);
         if h01(px as i32, py as i32, 881) > 0.94 {
@@ -2186,7 +2179,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 882, 0.07), 255)
     });
     // Old coin: worn disc.
-    tf(6, 12, &mut |px, py, u, v| {
+    tf(198, &mut |px, py, u, v| {
         let dx = u - 0.5;
         let dy = v - 0.5;
         let r = (dx * dx + dy * dy).sqrt();
@@ -2202,7 +2195,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
     // Etched tablet: stone slab with rune lines.
-    tf(7, 12, &mut |px, py, u, v| {
+    tf(199, &mut |px, py, u, v| {
         if (u - 0.5).abs() < 0.3 && (v - 0.5).abs() < 0.36 {
             let mut c = [140.0, 136.0, 128.0];
             let row = (v * 8.0).floor() as i32;
@@ -2224,7 +2217,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         (201, [150.0, 110.0, 70.0]),
         (202, [170.0, 150.0, 90.0]),
     ] {
-        tf(slot % 16, slot / 16, &mut |px, py, u, v| {
+        tf(slot, &mut |px, py, u, v| {
             let dx = u - 0.5;
             let dy = v - 0.6;
             let ring = (dx * dx + dy * dy).sqrt();
@@ -2243,7 +2236,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     }
 
     // Player skin + face (remote players in multiplayer).
-    tf(11, 12, &mut |px, py, _u, v| {
+    tf(203, &mut |px, py, _u, v| {
         // Tunic over trousers.
         let c = if v < 0.55 {
             [70.0, 110.0, 140.0]
@@ -2252,7 +2245,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         };
         rgba(c, 0.9 + h01(px as i32, py as i32, 910) * 0.2, 255)
     });
-    tf(12, 12, &mut |px, py, u, v| {
+    tf(204, &mut |px, py, u, v| {
         let mut c = [224.0, 188.0, 152.0]; // skin
         let eye = |cx: f32| (u - cx).abs() < 0.07 && (v - 0.42).abs() < 0.06;
         if eye(0.30) || eye(0.70) {
@@ -2268,7 +2261,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (13,12) snowball: a packed white ball, blue-shadowed.
-    tf(13, 12, &mut |px, py, u, v| {
+    tf(205, &mut |px, py, u, v| {
         let dx = u - 0.5;
         let dy = v - 0.52;
         let r = dx * dx + dy * dy;
@@ -2281,7 +2274,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
     // (14,12) rain streak: faint vertical strands on transparency.
-    tf(14, 12, &mut |px, py, u, _v| {
+    tf(206, &mut |px, py, u, _v| {
         let strand = h01((u * 8.0) as i32, 0, 923) > 0.55 && px % 2 == 0;
         if strand {
             let a = 120 + (h01(px as i32, py as i32, 925) * 60.0) as u8;
@@ -2291,7 +2284,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
     // (15,12) snow flake: soft white dots drifting on transparency.
-    tf(15, 12, &mut |px, py, u, v| {
+    tf(207, &mut |px, py, u, v| {
         let cellx = (u * 4.0) as i32;
         let celly = (v * 4.0) as i32;
         let cx = (cellx as f32 + 0.5) / 4.0 + (h01(cellx, celly, 927) - 0.5) * 0.12;
@@ -2307,7 +2300,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
 
     // ---- steelworks (row 13) ----
     // (0,13) firebrick: deep red-brown bricks with ember-dark seams.
-    tf(0, 13, &mut |px, py, u, v| {
+    tf(208, &mut |px, py, u, v| {
         let bh = (u * 4.0) as u32;
         let row = (v * 4.0) as u32;
         let off = if row.is_multiple_of(2) { 0.125 } else { 0.0 };
@@ -2325,7 +2318,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     // (1,13) bloomery mouth, cold: firebrick around a dark arch.
     // (2,13) the same mouth, lit: the arch glows from within.
     for (tx2, lit) in [(1u32, false), (2u32, true)] {
-        tf(tx2, 13, &mut |px, py, u, v| {
+        tf(13 * 16 + tx2, &mut |px, py, u, v| {
             let dx = u - 0.5;
             let arch = dx * dx * 2.2 + (v - 0.75) * (v - 0.75) < 0.055 && v > 0.4;
             if arch {
@@ -2352,7 +2345,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         });
     }
     // (3,13) charcoal block: black chunks with faint sheen.
-    tf(3, 13, &mut |px, py, u, v| {
+    tf(211, &mut |px, py, u, v| {
         let (d1, _, id) = voronoi(u, v, 5, 953);
         let edge = d1 < 0.05;
         let base = 26.0 + (id % 5) as f32 * 6.0;
@@ -2364,7 +2357,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 957, 0.12), 255)
     });
     // (4,13) anvil top: worn gray face with a darker working band.
-    tf(4, 13, &mut |px, py, u, v| {
+    tf(212, &mut |px, py, u, v| {
         let t = fbm(u, v, 4, 959);
         let mut c = mix3([120.0, 120.0, 124.0], [156.0, 156.0, 160.0], t);
         if (v - 0.5).abs() < 0.18 && (u - 0.5).abs() < 0.36 {
@@ -2373,7 +2366,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 961, 0.07), 255)
     });
     // (5,13) steel bloom: a spongy slag-streaked lump (sprite).
-    tf(5, 13, &mut |px, py, u, v| {
+    tf(213, &mut |px, py, u, v| {
         let dx = u - 0.5;
         let dy = v - 0.55;
         let wob = h01(px as i32 / 3, py as i32 / 3, 963) * 0.06;
@@ -2390,7 +2383,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
     });
     // (6,13) smithing hammer: iron head, stout handle (sprite).
-    tf(6, 13, &mut |px, py, u, v| {
+    tf(214, &mut |px, py, u, v| {
         let head = (0.25..0.75).contains(&u) && (0.12..0.38).contains(&v);
         let handle = (u - 0.5).abs() < 0.06 && (0.38..0.92).contains(&v);
         if head {
@@ -2411,7 +2404,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     });
 
     // (15,0) unknown/missing texture: magenta checkerboard.
-    tile(15, 0, &mut |px, py, _u, _v| {
+    tile(15, &mut |px, py, _u, _v| {
         let k = (tp / 8).max(1);
         if ((px / k) + (py / k)).is_multiple_of(2) {
             [230, 0, 230, 255]
@@ -2422,7 +2415,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
 
     // Row 1: crack overlay stages, radial cracks scaled to resolution.
     for stage in 0..4u32 {
-        tile(stage, 1, &mut |px, py, u, v| {
+        tile(16 + stage, &mut |px, py, u, v| {
             let dx = u - 0.5;
             let dy = v - 0.5;
             let r = (dx * dx + dy * dy).sqrt();
@@ -2455,7 +2448,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     ];
     let k = tp / 16;
     for (tx, art, head) in icons {
-        tile(tx, 2, &mut |px, py, _u, _v| {
+        tile(2 * 16 + tx, &mut |px, py, _u, _v| {
             let ax = (px / k.max(1)).min(15) as usize;
             let ay = (py / k.max(1)).min(15) as usize;
             match art[ay].as_bytes().get(ax) {

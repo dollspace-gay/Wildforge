@@ -1652,7 +1652,7 @@ fn wood_leaf_tiles_are_opaque_in_atlas() {
     // leaves transparent (invisible canopies).
     let reg = base_reg();
     let (img, px, _) = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
-    let tp = px / 16;
+    let tp = px / crate::atlas::ATLAS_TILES;
     for name in [
         "base:leaves",
         "base:birch_leaves",
@@ -1662,8 +1662,8 @@ fn wood_leaf_tiles_are_opaque_in_atlas() {
     ] {
         let id = reg.block_id(name).unwrap();
         let slot = reg.block(id).tiles[0] as u32;
-        let cx = (slot % 16) * tp + tp / 2;
-        let cy = (slot / 16) * tp + tp / 2;
+        let cx = (slot % crate::atlas::ATLAS_TILES) * tp + tp / 2;
+        let cy = (slot / crate::atlas::ATLAS_TILES) * tp + tp / 2;
         let i = ((cy * px + cx) * 4) as usize;
         assert_eq!(img[i + 3], 255, "{name} tile center must be opaque");
         assert!(img[i + 1] > img[i], "{name} should be green-ish");
@@ -1707,9 +1707,9 @@ fn atlas_builds_with_mod_texture() {
         reg.tex_names
     );
     let (img, px, _) = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
-    let tp = px / 16;
-    let tx = (slot as u32 % 16) * tp + tp / 2;
-    let ty = (slot as u32 / 16) * tp + tp / 2;
+    let tp = px / crate::atlas::ATLAS_TILES;
+    let tx = (slot as u32 % crate::atlas::ATLAS_TILES) * tp + tp / 2;
+    let ty = (slot as u32 / crate::atlas::ATLAS_TILES) * tp + tp / 2;
     let i = ((ty * px + tx) * 4) as usize;
     assert_eq!(
         &img[i..i + 4],
@@ -1788,9 +1788,9 @@ fn write_solid_png(path: &std::path::Path, w: u32, h: u32, rgba: [u8; 4]) {
 }
 
 fn tile_center(img: &[u8], px: u32, slot: u16) -> [u8; 4] {
-    let tp = px / 16;
-    let cx = (slot as u32 % 16) * tp + tp / 2;
-    let cy = (slot as u32 / 16) * tp + tp / 2;
+    let tp = px / crate::atlas::ATLAS_TILES;
+    let cx = (slot as u32 % crate::atlas::ATLAS_TILES) * tp + tp / 2;
+    let cy = (slot as u32 / crate::atlas::ATLAS_TILES) * tp + tp / 2;
     let i = ((cy * px + cx) * 4) as usize;
     [img[i], img[i + 1], img[i + 2], img[i + 3]]
 }
@@ -3730,6 +3730,52 @@ fn net_protocol_round_trips() {
     }
 }
 
+#[test]
+fn atlas_layout_is_slot_stable_at_32() {
+    use crate::atlas::{ATLAS_TILES, FIRST_FREE_SLOT, build_procedural, builtin_slots};
+    assert_eq!(ATLAS_TILES, 32, "the atlas grew");
+    let tp = 8u32;
+    let img = build_procedural(tp);
+    let px = ATLAS_TILES * tp;
+    assert_eq!(
+        img.len() as u32,
+        px * px * 4,
+        "side = ATLAS_TILES * tile_px"
+    );
+    // Slot numbers are stable identifiers; only layout derives from them.
+    let sample = |slot: u32| -> [u8; 4] {
+        let (tx, ty) = (
+            slot % ATLAS_TILES * tp + tp / 2,
+            slot / ATLAS_TILES * tp + tp / 2,
+        );
+        let i = ((ty * px + tx) * 4) as usize;
+        [img[i], img[i + 1], img[i + 2], img[i + 3]]
+    };
+    // Grass top (slot 0): green, painted.
+    let g = sample(0);
+    assert!(
+        g[1] > g[0] && g[1] > g[2] && g[3] == 255,
+        "grass at slot 0: {g:?}"
+    );
+    // The magenta missing-texture checkerboard still lives at its slot.
+    let unk = *builtin_slots().get("unknown").unwrap() as u32;
+    let u = sample(unk);
+    assert!(
+        (u[0] > 180 && u[2] > 180) || (u[0] < 40 && u[2] < 40),
+        "unknown checkerboard at slot {unk}: {u:?}"
+    );
+    // Every builtin slot fits under the mod floor, and no two names share.
+    let slots = builtin_slots();
+    let mut seen = std::collections::HashSet::new();
+    for (name, &slot) in slots.iter() {
+        assert!(slot < FIRST_FREE_SLOT, "{name} under FIRST_FREE_SLOT");
+        assert!(seen.insert(slot), "slot {slot} ({name}) is unique");
+    }
+    // A slot in the second half of the grid (impossible under 16x16)
+    // resolves to sane coordinates.
+    assert!(FIRST_FREE_SLOT as u32 <= ATLAS_TILES * ATLAS_TILES);
+}
+
 // ---------------- steelworks ----------------
 
 /// Build a valid bloomery at (x,y,z)=mouth with core on +X, in air.
@@ -4316,7 +4362,10 @@ fn season_tint_repaints_foliage() {
         let mut img = summer.clone();
         crate::atlas::season_tint(&mut img, px, season);
         let tp = 8u32;
-        let (tx, ty) = (grass % 16 * tp, grass / 16 * tp);
+        let (tx, ty) = (
+            grass % crate::atlas::ATLAS_TILES * tp,
+            grass / crate::atlas::ATLAS_TILES * tp,
+        );
         let mut changed = false;
         let mut k = 0;
         for y in ty..ty + tp {
