@@ -855,6 +855,11 @@ impl Game {
         }
         // Dev: force camera look ("yaw,pitch" in radians) for framed captures.
         self.apply_look_env();
+        // Dev: WILDFORGE_SCREEN=inventory opens the pack in-world for
+        // layout screenshots (menu screens are handled at startup).
+        if std::env::var("WILDFORGE_SCREEN").as_deref() == Ok("inventory") {
+            self.set_screen(Screen::Inventory);
+        }
         // Dev: a ring of torches near spawn (lighting verification).
         if std::env::var("WILDFORGE_DEMO_TORCH").is_ok()
             && let Some(torch) = self.reg.block_id("base:torch")
@@ -6395,16 +6400,11 @@ impl Game {
                         hover,
                     );
                 }
-                // Nutrition panel, on one soft backing strip so the
-                // numbers parse before the art does.
-                let (p0x, p0y, _, _) = self.inv_slot_rect(HOTBAR_SLOTS);
-                ui.rect(
-                    p0x - 198.0,
-                    p0y - 8.0,
-                    184.0,
-                    200.0,
-                    [0.02, 0.03, 0.05, 0.55],
-                );
+                // The status card: nutrition, health bonus, the wild's
+                // mood, and the calendar — parked in the screen's upper
+                // left where nothing else lives, on an 8px grid with a
+                // real label column so nothing overlaps.
+                ui.rect(8.0, 8.0, 384.0, 216.0, [0.02, 0.03, 0.05, 0.62]);
                 let names = ["GRAIN", "VEG", "FRUIT", "FUNGI", "PROT"];
                 let cols = [
                     [0.85, 0.7, 0.25, 1.0],
@@ -6414,34 +6414,17 @@ impl Game {
                     [0.8, 0.4, 0.35, 1.0],
                 ];
                 for i in 0..5 {
-                    let y = p0y + i as f32 * 24.0;
-                    ui.text_shadow(p0x - 190.0, y, 1.5, names[i], [1.0; 4]);
-                    ui.rect(p0x - 130.0, y, 100.0, 10.0, [0.12, 0.12, 0.12, 0.9]);
+                    let y = 24.0 + i as f32 * 24.0;
+                    ui.text_shadow(24.0, y, 1.5, names[i], [1.0; 4]);
+                    ui.rect(176.0, y, 128.0, 10.0, [0.12, 0.12, 0.12, 0.9]);
                     let v = self.nutrition[i] / 100.0;
-                    ui.rect(p0x - 130.0, y, 100.0 * v, 10.0, cols[i]);
+                    ui.rect(176.0, y, 128.0 * v, 10.0, cols[i]);
                     if self.nutrition[i] >= 40.0 {
-                        ui.text_shadow(p0x - 24.0, y, 1.5, "+", [0.6, 1.0, 0.6, 1.0]);
+                        ui.text_shadow(312.0, y, 1.5, "+", [0.6, 1.0, 0.6, 1.0]);
                     }
                 }
                 let bonus = (self.max_health() - MAX_HEALTH) as i32 / 2;
-                ui.text_shadow(
-                    p0x - 190.0,
-                    p0y + 128.0,
-                    1.5,
-                    &format!("MAX HEALTH +{bonus}"),
-                    [1.0; 4],
-                );
-                // The calendar: day count and where the season stands
-                // (below the wild's ire row).
-                let w = &self.server.world;
-                let third = ["EARLY", "MID", "LATE"][((w.season_progress() * 3.0) as usize).min(2)];
-                ui.text_shadow(
-                    p0x - 190.0,
-                    p0y + 176.0,
-                    1.5,
-                    &format!("DAY {} - {third} {}", w.day + 1, world::SEASONS[w.season()]),
-                    [0.85, 0.9, 1.0, 1.0],
-                );
+                ui.text_shadow(24.0, 152.0, 1.5, &format!("MAX HEALTH +{bonus}"), [1.0; 4]);
                 // The wild's ire: tier word + vine meter.
                 let tier = self.server.world.ire_tier();
                 let tier_col = [
@@ -6450,27 +6433,24 @@ impl Game {
                     [0.9, 0.55, 0.25, 1.0],
                     [0.9, 0.3, 0.25, 1.0],
                 ][tier];
-                ui.text_shadow(p0x - 190.0, p0y + 152.0, 1.5, "THE WILD", [1.0; 4]);
-                ui.rect(
-                    p0x - 130.0,
-                    p0y + 152.0,
-                    100.0,
-                    10.0,
-                    [0.12, 0.12, 0.12, 0.9],
-                );
-                ui.rect(
-                    p0x - 130.0,
-                    p0y + 152.0,
-                    self.server.world.ire,
-                    10.0,
-                    tier_col,
-                );
+                ui.text_shadow(24.0, 176.0, 1.5, "THE WILD", [1.0; 4]);
+                ui.rect(176.0, 176.0, 128.0, 10.0, [0.12, 0.12, 0.12, 0.9]);
+                ui.rect(176.0, 176.0, self.server.world.ire * 1.28, 10.0, tier_col);
+                ui.text_shadow(312.0, 176.0, 1.5, world::IRE_TIERS[tier], tier_col);
+                // The calendar: day count and where the season stands.
+                let w2 = &self.server.world;
+                let third =
+                    ["EARLY", "MID", "LATE"][((w2.season_progress() * 3.0) as usize).min(2)];
                 ui.text_shadow(
-                    p0x - 24.0,
-                    p0y + 152.0,
+                    24.0,
+                    200.0,
                     1.5,
-                    world::IRE_TIERS[tier],
-                    tier_col,
+                    &format!(
+                        "DAY {} - {third} {}",
+                        w2.day + 1,
+                        world::SEASONS[w2.season()]
+                    ),
+                    [0.85, 0.9, 1.0, 1.0],
                 );
                 // Armor column: head/chest/legs/feet.
                 for (i, label) in ["H", "C", "L", "B", "*"].iter().enumerate() {
