@@ -204,6 +204,13 @@ pub struct World {
     load_remap: Vec<BlockId>,
     water_queue: VecDeque<(i32, i32, i32)>,
     water_queued: HashSet<(i32, i32, i32)>,
+    /// Absolute sim-time in seconds (day * DAY_LENGTH + time-of-day),
+    /// mirrored from the Server every tick so chunk load and random
+    /// ticks share one clock.
+    pub clock: f64,
+    /// When each chunk last took its random ticks (persisted, so the
+    /// world can live on while a chunk is away).
+    last_random: HashMap<(i32, i32), f64>,
     pub block_entities: HashMap<(i32, i32, i32), BlockEntity>,
     /// Items spilled by removed block entities, for the game loop to spawn.
     pub pending_drops: Vec<((i32, i32, i32), ItemStack)>,
@@ -312,6 +319,8 @@ impl World {
             load_remap: Vec::new(),
             water_queue: VecDeque::new(),
             water_queued: HashSet::new(),
+            clock: 0.0,
+            last_random: HashMap::new(),
             block_entities: HashMap::new(),
             pending_drops: Vec::new(),
             mobs: Vec::new(),
@@ -559,10 +568,35 @@ impl World {
         w.ire = ire;
         w.day = day;
         w.weather = weather;
+        w.clock = day as f64 * crate::server::DAY_LENGTH as f64;
         w.load_remap = w.read_palette_remap();
         w.load_entities();
         w.load_mobs();
+        w.load_stamps();
         w
+    }
+
+    /// Per-chunk random-tick stamps: compact (x, z, time) triples.
+    fn load_stamps(&mut self) {
+        let Ok(buf) = fs::read(self.save_dir.join("stamps")) else {
+            return;
+        };
+        for rec in buf.chunks_exact(16) {
+            let x = i32::from_le_bytes(rec[0..4].try_into().unwrap());
+            let z = i32::from_le_bytes(rec[4..8].try_into().unwrap());
+            let t = f64::from_le_bytes(rec[8..16].try_into().unwrap());
+            self.last_random.insert((x, z), t);
+        }
+    }
+
+    fn save_stamps(&self) {
+        let mut buf = Vec::with_capacity(self.last_random.len() * 16);
+        for ((x, z), t) in &self.last_random {
+            buf.extend_from_slice(&x.to_le_bytes());
+            buf.extend_from_slice(&z.to_le_bytes());
+            buf.extend_from_slice(&t.to_le_bytes());
+        }
+        let _ = fs::write(self.save_dir.join("stamps"), buf);
     }
 
     /// Map every stored numeric id to a current runtime id via string names.
@@ -636,6 +670,9 @@ impl World {
         if self.mob_seeded.insert((pos.x, pos.z)) {
             self.seed_wildlife(pos);
         }
+        // A chunk seen for the first time is up to date; one loaded
+        // from disk keeps its old stamp (reconcile reads the gap).
+        self.last_random.entry((pos.x, pos.z)).or_insert(self.clock);
         self.wake_seams(pos);
         self.relight_and_cascade(pos);
         true
@@ -1755,6 +1792,7 @@ impl World {
         self.write_palette();
         self.save_entities();
         self.save_mobs();
+        self.save_stamps();
         for (pos, chunk) in &self.chunks {
             if chunk.modified {
                 let _ = self.save_chunk(*pos);
@@ -2163,18 +2201,46 @@ impl World {
     }
 
     /// Random ticks: crops advance a stage when conditions hold.
-    pub fn random_tick(&mut self, rng: &mut u32) {
+    /// Random ticks at constant cost: visit the K oldest-stamped
+    /// chunks with a sample burst scaled by how long each waited —
+    /// one mechanism for "far corner of a big view distance" and
+    /// "just came back". Returns samples drawn (for tests).
+    pub fn random_tick(&mut self, rng: &mut u32) -> usize {
+        const K: usize = 64;
         let reg = self.reg.clone();
         let farmland = reg.block_id("base:farmland");
         let ice = reg.block_id("base:ice");
         let snow_layer = reg.block_id("base:snow_layer");
         let snow_trod = reg.block_id("base:snow_layer_trod");
         let season = self.season();
-        let keys: Vec<ChunkPos> = self.chunks.keys().copied().collect();
+        let mut order: Vec<(f64, ChunkPos)> = self
+            .chunks
+            .keys()
+            .map(|p| {
+                (
+                    self.last_random
+                        .get(&(p.x, p.z))
+                        .copied()
+                        .unwrap_or(self.clock),
+                    *p,
+                )
+            })
+            .collect();
+        order.sort_unstable_by(|a, b| {
+            a.0.total_cmp(&b.0)
+                .then((a.1.x, a.1.z).cmp(&(b.1.x, b.1.z)))
+        });
+        order.truncate(K);
+        let mut samples = 0;
         let mut changes = Vec::new();
         let mut saplings: Vec<(i32, i32, i32, String, u32)> = Vec::new();
-        for pos in keys {
-            for _ in 0..8 {
+        for (stamp, pos) in order {
+            let elapsed = (self.clock - stamp).max(0.0);
+            // 8 samples per half-second of waiting, floor 8, cap 256.
+            let n = ((elapsed * 16.0) as usize).clamp(8, 256);
+            self.last_random.insert((pos.x, pos.z), self.clock);
+            samples += n;
+            for _ in 0..n {
                 *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                 let r = *rng >> 8;
                 let (lx, lz) = ((r % 16) as i32, ((r >> 4) % 16) as i32);
@@ -2273,6 +2339,13 @@ impl World {
         for (x, y, z, _species, rnd) in saplings {
             self.try_grow_sapling(x, y, z, rnd);
         }
+        samples
+    }
+
+    /// The last random-tick stamp for a chunk.
+    #[cfg(test)]
+    pub fn chunk_stamp(&self, x: i32, z: i32) -> Option<f64> {
+        self.last_random.get(&(x, z)).copied()
     }
 
     /// A footstep through a snow layer presses it into a trodden

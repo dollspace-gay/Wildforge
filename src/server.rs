@@ -57,6 +57,8 @@ pub struct Server {
 impl Server {
     pub fn new(world: World, time_of_day: f32, rng: u32) -> Server {
         let prev_tier = world.ire_tier();
+        let mut world = world;
+        world.clock = Server::clock_of(world.day, time_of_day);
         Server {
             world,
             time_of_day,
@@ -67,6 +69,11 @@ impl Server {
             snow_timer: 0.0,
             prev_tier,
         }
+    }
+
+    /// Absolute sim-time in seconds: whole days plus the time of day.
+    fn clock_of(day: u32, time_of_day: f32) -> f64 {
+        (day as f64 + time_of_day.rem_euclid(1.0) as f64) * DAY_LENGTH as f64
     }
 
     /// Current daylight factor (0.12 night floor .. 1.0 noon).
@@ -93,6 +100,7 @@ impl Server {
         if self.time_of_day < before {
             self.world.day = self.world.day.wrapping_add(1);
         }
+        self.world.clock = Server::clock_of(self.world.day, self.time_of_day);
         self.step_weather(dt, events);
         if self.world.tick_ire(dt / DAY_LENGTH) {
             let refund = self.world.accept_offerings();
@@ -222,6 +230,7 @@ impl Server {
         self.time_of_day = 0.3;
         self.world.day = self.world.day.wrapping_add(1);
         self.world.weather_timer = 0.0;
+        self.world.clock = Server::clock_of(self.world.day, self.time_of_day);
     }
 
     /// Sync the tier tracker (world load / forced ire) so the next tick

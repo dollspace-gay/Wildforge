@@ -1646,6 +1646,44 @@ fn breached_pond_drains_only_what_left() {
 }
 
 #[test]
+fn random_ticks_budget_stamps_and_persist() {
+    let reg = base_reg();
+    let dir = tmp_dir("stamps");
+    let mut w = World::new(42, dir.clone(), reg.clone());
+    for x in 0..3 {
+        for z in 0..3 {
+            w.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    w.clock = 100.0;
+    let mut rng = 7u32;
+    let burst = w.random_tick(&mut rng);
+    assert_eq!(burst, 9 * 256, "long-waited chunks catch up at the cap");
+    let again = w.random_tick(&mut rng);
+    assert_eq!(again, 9 * 8, "freshly stamped chunks take the floor burst");
+    assert_eq!(w.chunk_stamp(0, 0), Some(100.0));
+    w.save_modified();
+    let w2 = World::load_or_create(dir, reg.clone());
+    assert_eq!(w2.chunk_stamp(0, 0), Some(100.0), "stamps persist");
+}
+
+#[test]
+fn random_ticks_visit_a_bounded_cohort() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("cohort"), reg.clone());
+    for x in 0..9 {
+        for z in 0..9 {
+            w.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    // 81 chunks loaded, all stamped at clock 0; K = 64 caps the visit.
+    w.clock = 5.0;
+    let mut rng = 3u32;
+    assert_eq!(w.random_tick(&mut rng), 64 * 80, "K chunks, elapsed-scaled");
+    assert_eq!(w.random_tick(&mut rng), 17 * 80 + 47 * 8, "oldest first");
+}
+
+#[test]
 fn water_defers_at_the_worlds_edge() {
     let reg = base_reg();
     let mut w = World::new(42, tmp_dir("borderwater"), reg.clone());
