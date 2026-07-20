@@ -4507,7 +4507,7 @@ impl Game {
         }
 
         let playing = self.screen == Screen::Playing;
-        let outline = if playing {
+        let outline = if playing && self.config.outline {
             raycast::raycast(
                 &self.server.world,
                 self.camera.pos,
@@ -5300,13 +5300,13 @@ impl Game {
         (w / 2.0 - 20.0, h * 0.30 + i as f32 * 64.0, 300.0, 30.0)
     }
 
-    /// The two lighting rows under the sliders (0 = lights, 1 = darkness).
+    /// The toggle rows under the sliders (lights, darkness, outline).
     fn settings_toggle_rect(&self, i: usize) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;
         (
             w / 2.0 - 20.0,
-            h * 0.30 + (4 + i) as f32 * 64.0 - 8.0,
+            h * 0.30 + 4.0 * 64.0 - 8.0 + i as f32 * 56.0,
             300.0,
             42.0,
         )
@@ -5315,7 +5315,12 @@ impl Game {
     fn settings_back_rect(&self) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;
-        (w / 2.0 - 150.0, h * 0.30 + 6.0 * 64.0 + 24.0, 300.0, 42.0)
+        (
+            w / 2.0 - 150.0,
+            h * 0.30 + 4.0 * 64.0 + 3.0 * 56.0 + 8.0,
+            300.0,
+            42.0,
+        )
     }
 
     fn slider_frac(&self, i: usize) -> f32 {
@@ -5701,6 +5706,10 @@ impl Game {
                         ["OFF", "ON", "+SHADOWS"][self.config.lights.min(2) as usize],
                     ),
                     ("DARKNESS", if self.config.stark { "STARK" } else { "SOFT" }),
+                    (
+                        "BLOCK OUTLINE",
+                        if self.config.outline { "ON" } else { "OFF" },
+                    ),
                 ]
                 .iter()
                 .enumerate()
@@ -7572,6 +7581,11 @@ impl Game {
                 if self.hit(self.settings_toggle_rect(1)) {
                     self.sfx(Sfx::Click);
                     self.config.stark = !self.config.stark;
+                    return;
+                }
+                if self.hit(self.settings_toggle_rect(2)) {
+                    self.sfx(Sfx::Click);
+                    self.config.outline = !self.config.outline;
                     return;
                 }
                 if self.hit(self.settings_back_rect()) {

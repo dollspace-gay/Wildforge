@@ -21,6 +21,8 @@ pub struct Config {
     pub appearance: u32,
     /// Ambient floor: true = stark (dark truly dark), false = soft.
     pub stark: bool,
+    /// Draw the thin wireframe on the targeted block.
+    pub outline: bool,
 }
 
 impl Default for Config {
@@ -33,6 +35,7 @@ impl Default for Config {
             pack: "gemini".into(),
             lights: 2,
             stark: true,
+            outline: true,
             appearance: crate::style::Style::default().pack(),
         }
     }
@@ -80,6 +83,7 @@ impl Config {
                     }
                 }
                 "darkness" => c.stark = v != "soft",
+                "outline" => c.outline = v != "off",
                 "appearance" => {
                     if let Ok(x) = v.parse::<u32>() {
                         c.appearance = x;
@@ -93,7 +97,7 @@ impl Config {
 
     pub fn to_text(&self) -> String {
         format!(
-            "volume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\npack={}\nlights={}\ndarkness={}\nappearance={}\n",
+            "volume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\npack={}\nlights={}\ndarkness={}\noutline={}\nappearance={}\n",
             self.volume,
             self.sensitivity,
             self.view_dist,
@@ -101,6 +105,7 @@ impl Config {
             self.pack,
             ["off", "on", "shadows"][self.lights.min(2) as usize],
             if self.stark { "stark" } else { "soft" },
+            if self.outline { "on" } else { "off" },
             self.appearance,
         )
     }

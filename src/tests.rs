@@ -5933,9 +5933,11 @@ fn config_lights_and_darkness_roundtrip() {
     assert_eq!(c2.lights, 1);
     assert!(!c2.stark);
 
-    let c3 = Config::from_text("lights=off\ndarkness=soft\n");
+    let c3 = Config::from_text("lights=off\ndarkness=soft\noutline=off\n");
     assert_eq!(c3.lights, 0);
     assert!(!c3.stark);
+    assert!(!c3.outline, "outline=off persists");
+    assert!(Config::default().outline, "outline defaults on");
     let c4 = Config::from_text("lights=banana\ndarkness=???\n");
     assert_eq!(c4.lights, 2, "unknown value falls back to full");
     assert!(c4.stark, "unknown darkness falls back to stark");
