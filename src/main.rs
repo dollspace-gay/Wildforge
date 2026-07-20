@@ -5186,6 +5186,8 @@ impl Game {
             hand_idx: &hand_idx,
             ui_verts: &self.ui.verts,
             crosshair: playing,
+            // How much of the isolated overbright energy bleeds back as glow.
+            bloom: if self.config.bloom { 1.5 } else { 0.0 },
         }) {
             Ok(()) => {}
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -5399,7 +5401,7 @@ impl Game {
         let h = self.renderer.config.height as f32;
         (
             w / 2.0 - 150.0,
-            h * 0.30 + 4.0 * 64.0 + 3.0 * 56.0 + 8.0,
+            h * 0.30 + 4.0 * 64.0 + 4.0 * 56.0 + 8.0,
             300.0,
             42.0,
         )
@@ -5792,6 +5794,7 @@ impl Game {
                         "BLOCK OUTLINE",
                         if self.config.outline { "ON" } else { "OFF" },
                     ),
+                    ("BLOOM", if self.config.bloom { "ON" } else { "OFF" }),
                 ]
                 .iter()
                 .enumerate()
@@ -7668,6 +7671,11 @@ impl Game {
                 if self.hit(self.settings_toggle_rect(2)) {
                     self.sfx(Sfx::Click);
                     self.config.outline = !self.config.outline;
+                    return;
+                }
+                if self.hit(self.settings_toggle_rect(3)) {
+                    self.sfx(Sfx::Click);
+                    self.config.bloom = !self.config.bloom;
                     return;
                 }
                 if self.hit(self.settings_back_rect()) {
