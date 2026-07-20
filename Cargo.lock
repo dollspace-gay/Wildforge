@@ -3239,6 +3239,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "glam",
+ "naga",
  "noise",
  "png",
  "pollster",
