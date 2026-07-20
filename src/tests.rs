@@ -6245,6 +6245,21 @@ fn light_director_caches_until_an_edit_lands_nearby() {
     assert_eq!(h2[1].suppress.0, 0.0, "dynamic lights aren't in the flood");
     let h3 = d.frame(cam, &[held(cam + Vec3::new(1.0, 0.0, 0.0))], 0.016, true);
     assert!(h3[1].epoch > e2, "real movement re-renders");
+
+    // A world edit near a STANDING-STILL held light re-renders its
+    // cube too — the bug report was shadows of walls no longer there,
+    // resetting only once the player wandered past the threshold.
+    let hp = cam + Vec3::new(1.0, 0.0, 0.0);
+    d.chunk_meshed(ChunkPos { x: 0, z: 0 }, vec![torch]);
+    let h4 = d.frame(cam, &[held(hp)], 0.016, true);
+    assert!(
+        h4[1].epoch > h3[1].epoch,
+        "a nearby remesh invalidates a still held light's cube"
+    );
+    // And the far chunk still doesn't.
+    d.chunk_meshed(ChunkPos { x: 8, z: 8 }, vec![]);
+    let h5 = d.frame(cam, &[held(hp)], 0.016, true);
+    assert_eq!(h5[1].epoch, h4[1].epoch, "far edits leave it cached");
 }
 
 #[test]

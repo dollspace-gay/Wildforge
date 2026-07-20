@@ -4548,7 +4548,11 @@ impl Game {
                 self.player.pos.x.floor() as i32,
                 self.player.pos.z.floor() as i32,
             );
-            let want = if self.in_world
+            let want = if self.screen == Screen::Paused {
+                // The pause menu holds the world's breath: no rain,
+                // no wind, no crickets until you come back.
+                None
+            } else if self.in_world
                 && self.server.world.weather.precipitating()
                 && self.server.world.rains_at(px, pz)
             {

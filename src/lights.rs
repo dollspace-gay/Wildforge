@@ -178,13 +178,24 @@ impl Director {
     fn invalidate_near_chunk(&mut self, cpos: ChunkPos) {
         let min = Vec3::new(cpos.x as f32 * 16.0, 0.0, cpos.z as f32 * 16.0);
         let max = min + Vec3::new(16.0, 256.0, 16.0);
-        for key in self.slots.iter().flatten() {
-            let Some(p) = self.light_pos(*key) else {
+        // Statics hold a slot; dynamics (the held torch, glowing mobs)
+        // live in last_pos. Both kinds of cube go stale when the world
+        // near them remeshes — a held light that skipped this showed
+        // shadows of walls that were no longer there until its owner
+        // walked far enough to move the anchor.
+        let keys: Vec<Key> = self
+            .slots
+            .iter()
+            .flatten()
+            .copied()
+            .chain(self.last_pos.keys().copied())
+            .collect();
+        for key in keys {
+            let Some((p, range)) = self.light_pos(key) else {
                 continue;
             };
-            let (p, range) = p;
             if p.distance(p.clamp(min, max)) <= range {
-                *self.epochs.entry(*key).or_insert(0) += 1;
+                *self.epochs.entry(key).or_insert(0) += 1;
             }
         }
     }

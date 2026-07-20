@@ -261,19 +261,33 @@ fn ambience_loop(kind: Ambience) -> Vec<f32> {
     // A wrathful night is just the low wash: the crickets have gone
     // quiet, and you notice.
     if kind == Ambience::Night(true) {
-        // Crickets: short resonant chirps in a steady rhythm.
-        let chirp_hz = 4300.0;
-        for c in 0..14 {
-            let start = (c as f32 * 0.29 * RATE as f32) as usize;
-            for j in 0..(0.035 * RATE as f32) as usize {
-                let k = start + j;
-                if k >= n {
-                    break;
+        // Crickets: triple chirps in ragged groups, each pulse a
+        // warbled tone that sags as it decays — it should read as an
+        // insect in the grass, never as a machine. (A bare 4.3 kHz
+        // sine on a metronome earned a bug report as "that constant
+        // ping".)
+        let mut rng = Rng(777);
+        let mut start = 0.15f32;
+        while start < dur - 0.35 {
+            for c in 0..3 {
+                let s = ((start + c as f32 * 0.075) * RATE as f32) as usize;
+                let len = (0.045 * RATE as f32) as usize;
+                for j in 0..len {
+                    let k = s + j;
+                    if k >= n {
+                        break;
+                    }
+                    let tt = j as f32 / len as f32;
+                    let env = (1.0 - tt) * (tt * 8.0).min(1.0);
+                    let hz = 3900.0 - tt * 350.0;
+                    let warble = 1.0 + 0.02 * (tt * 90.0).sin();
+                    out[k] += (j as f32 / RATE as f32 * hz * warble * std::f32::consts::TAU).sin()
+                        * env
+                        * 0.09;
                 }
-                let env = (1.0 - j as f32 / (0.035 * RATE as f32)).max(0.0);
-                out[k] +=
-                    (j as f32 / RATE as f32 * chirp_hz * std::f32::consts::TAU).sin() * env * 0.10;
             }
+            // 0.55..1.05 s between groups, deterministic but uneven.
+            start += 0.8 + rng.next() * 0.25;
         }
     }
     out
