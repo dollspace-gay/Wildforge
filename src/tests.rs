@@ -6477,3 +6477,23 @@ fn atlas_derives_tinted_player_variants() {
         assert_eq!(v[3], b[3], "alpha preserved");
     }
 }
+
+/// The shaders are only compiled by naga at device-init time, so a typo in the
+/// WGSL would ship undetected by `cargo build`/`test`. Parse and validate both
+/// shader files here to fail loudly at CI instead of on someone's screen.
+#[test]
+fn wgsl_shaders_validate() {
+    for (name, src) in [
+        ("shader.wgsl", include_str!("shader.wgsl")),
+        ("post.wgsl", include_str!("post.wgsl")),
+    ] {
+        let module = naga::front::wgsl::parse_str(src)
+            .unwrap_or_else(|e| panic!("{name}: WGSL parse error:\n{}", e.emit_to_string(src)));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap_or_else(|e| panic!("{name}: WGSL validation failed: {e:?}"));
+    }
+}
