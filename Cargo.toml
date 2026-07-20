@@ -21,6 +21,10 @@ toml = "1.1.3"
 wgpu = "26"
 winit = "0.30.13"
 
+[dev-dependencies]
+# Validate the WGSL shaders at test time (naga runs them at runtime otherwise).
+naga = { version = "26", features = ["wgsl-in"] }
+
 [profile.dev]
 opt-level = 1
 

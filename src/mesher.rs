@@ -34,6 +34,13 @@ pub struct ChunkMesh {
     pub emitters: Vec<crate::lights::Emitter>,
 }
 
+/// How hard an emitter's own faces are pushed past the [0,1] range so the
+/// HDR/bloom pass makes them glow. The block-light channel already carries a
+/// self-lit "torch" term in the shader; for emitter tiles we overwrite it with
+/// the block's emission color at this gain (brightest channel ≈ light/15 × gain),
+/// comfortably above 1.0 even after point-light suppression and face shading.
+const EMISSIVE_GAIN: f32 = 3.5;
+
 /// face: 0=+X 1=-X 2=+Y 3=-Y 4=+Z 5=-Z
 pub(crate) const NORMALS: [[i32; 3]; 6] = [
     [1, 0, 0],
@@ -129,13 +136,23 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                     continue;
                 }
                 let def = reg.block(b);
-                if def.light_emit > 0 {
+                // An emitter's own faces glow: overwrite their light with the
+                // emission color at an overbright gain, so the HDR bloom catches
+                // them. `None` for ordinary blocks leaves lighting untouched.
+                let emissive: Option<[f32; 3]> = if def.light_emit > 0 {
                     m.emitters.push(crate::lights::Emitter {
                         pos: (bx + lx, y, bz + lz),
                         rgb: def.light_rgb,
                         emit: def.light_emit,
                     });
-                }
+                    Some([
+                        def.light_rgb[0] as f32 / 15.0 * EMISSIVE_GAIN,
+                        def.light_rgb[1] as f32 / 15.0 * EMISSIVE_GAIN,
+                        def.light_rgb[2] as f32 / 15.0 * EMISSIVE_GAIN,
+                    ])
+                } else {
+                    None
+                };
                 if def.cross {
                     // Plant: two crossed quads, both sides, alpha-tested.
                     let (cl, cs) = light(lx, y, lz);
@@ -159,7 +176,8 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                                     // Cross-quads have no single face; treat as
                                     // upward-lit vegetation.
                                     normal: [0.0, 1.0, 0.0],
-                                    light: [0.95 * cl[0], 0.95 * cl[1], 0.95 * cl[2]],
+                                    light: emissive
+                                        .unwrap_or([0.95 * cl[0], 0.95 * cl[1], 0.95 * cl[2]]),
                                     sky: 0.95 * cs,
                                 });
                             }
@@ -231,7 +249,10 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                             pos: [px, py, pz],
                             uv: tile_uv(tx, ty, u, v),
                             normal: nrm,
-                            light: [ao_f * fl[0], ao_f * fl[1], ao_f * fl[2]],
+                            // Emitter faces glow at full strength (no AO dimming);
+                            // ordinary faces keep their occluded block light.
+                            light: emissive
+                                .unwrap_or([ao_f * fl[0], ao_f * fl[1], ao_f * fl[2]]),
                             sky: ao_f * fs,
                         });
                     }

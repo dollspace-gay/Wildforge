@@ -23,6 +23,8 @@ pub struct Config {
     pub stark: bool,
     /// Draw the thin wireframe on the targeted block.
     pub outline: bool,
+    /// Bloom: overbright emitters and highlights bleed a soft glow.
+    pub bloom: bool,
 }
 
 impl Default for Config {
@@ -36,6 +38,7 @@ impl Default for Config {
             lights: 2,
             stark: true,
             outline: true,
+            bloom: true,
             appearance: crate::style::Style::default().pack(),
         }
     }
@@ -84,6 +87,7 @@ impl Config {
                 }
                 "darkness" => c.stark = v != "soft",
                 "outline" => c.outline = v != "off",
+                "bloom" => c.bloom = v != "off",
                 "appearance" => {
                     if let Ok(x) = v.parse::<u32>() {
                         c.appearance = x;
@@ -97,7 +101,7 @@ impl Config {
 
     pub fn to_text(&self) -> String {
         format!(
-            "volume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\npack={}\nlights={}\ndarkness={}\noutline={}\nappearance={}\n",
+            "volume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\npack={}\nlights={}\ndarkness={}\noutline={}\nbloom={}\nappearance={}\n",
             self.volume,
             self.sensitivity,
             self.view_dist,
@@ -106,6 +110,7 @@ impl Config {
             ["off", "on", "shadows"][self.lights.min(2) as usize],
             if self.stark { "stark" } else { "soft" },
             if self.outline { "on" } else { "off" },
+            if self.bloom { "on" } else { "off" },
             self.appearance,
         )
     }

@@ -150,6 +150,14 @@ melt, greenhouses); every hard shadow is presentation, and a
 settings row (DYNAMIC LIGHTS off / shadowless / full, DARKNESS
 stark / soft) scales it to your GPU and your nerves.
 
+The scene renders to a linear **HDR** buffer, so fire carries more
+energy than a screen can show — an emitter's own tile is pushed past
+pure white, and a **bloom** pass bleeds that overflow into a warm
+halo. A torch keeps its crisp pixel core and throws firelight glow
+around it; the effect keys strictly off what's brighter than white,
+so lit-but-not-glowing stone never smears. BLOOM is a settings toggle
+of its own.
+
 ## Surface relief
 
 Blocks can carry **parallax depth**: a second *material atlas* rides
