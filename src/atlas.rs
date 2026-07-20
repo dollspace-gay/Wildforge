@@ -238,6 +238,8 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("player_trousers", 236),
         ("player_boot", 237),
         ("player_hair_top", 238),
+        ("bucket", 239),
+        ("bucket_water", crate::style::EXTRA_BASE + 5),
         // Extra player bases live in the reserved region (style.rs
         // EXTRA_BASE) — the low builtin rows are full.
         ("player_hair_cropped", crate::style::EXTRA_BASE),
@@ -2700,6 +2702,40 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         }
         rgba(c, 0.9 + h01(px as i32, py as i32, 939) * 0.15, 255)
     });
+
+    // (239, EXTRA_BASE+5) the bucket, empty and carrying its cell of
+    // water: tin body tapering to the base, a wire handle over the top.
+    let bucket_px = |u: f32, v: f32, water: bool| -> [u8; 4] {
+        let du = (u - 0.5).abs();
+        let half = 0.30 - (v - 0.28).max(0.0) * 0.16;
+        let body = (0.28..=0.88).contains(&v) && du <= half;
+        let r = (du * du + (v - 0.28) * (v - 0.28)).sqrt();
+        let handle = v < 0.28 && (0.24..=0.30).contains(&r);
+        if !(body || handle) {
+            return [0, 0, 0, 0];
+        }
+        if handle {
+            return [88, 84, 80, 255];
+        }
+        if water && v < 0.42 && du <= half - 0.03 {
+            let g = 120.0 + ((u * 22.0).sin() * 0.5 + 0.5) * 30.0;
+            return [
+                (g * 0.35) as u8,
+                (g * 0.55) as u8,
+                (g * 1.5).min(255.0) as u8,
+                255,
+            ];
+        }
+        let sheen = 148.0 + ((u * 18.0).sin() * 0.5 + 0.5) * 34.0 - v * 40.0;
+        let rim = if v < 0.34 { 26.0 } else { 0.0 };
+        let g = (sheen + rim).clamp(0.0, 255.0);
+        [g as u8, g as u8, (g * 1.04).min(255.0) as u8, 255]
+    };
+    tf(239, &mut |_px, _py, u, v| bucket_px(u, v, false));
+    tf(
+        crate::style::EXTRA_BASE as u32 + 5,
+        &mut |_px, _py, u, v| bucket_px(u, v, true),
+    );
 
     // (EXTRA_BASE..) hair lengths: a tight crop, strands to the collar.
     let xb = crate::style::EXTRA_BASE as u32;

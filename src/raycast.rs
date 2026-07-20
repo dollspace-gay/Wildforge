@@ -11,6 +11,15 @@ pub struct Hit {
 }
 
 pub fn raycast(world: &World, origin: Vec3, dir: Vec3, max_dist: f32) -> Option<Hit> {
+    cast(world, origin, dir, max_dist, false)
+}
+
+/// Like `raycast`, but water is a hit too — what a bucket wants.
+pub fn raycast_water(world: &World, origin: Vec3, dir: Vec3, max_dist: f32) -> Option<Hit> {
+    cast(world, origin, dir, max_dist, true)
+}
+
+fn cast(world: &World, origin: Vec3, dir: Vec3, max_dist: f32, hit_water: bool) -> Option<Hit> {
     let dir = dir.normalize_or_zero();
     if dir == Vec3::ZERO {
         return None;
@@ -65,8 +74,8 @@ pub fn raycast(world: &World, origin: Vec3, dir: Vec3, max_dist: f32) -> Option<
     while t <= max_dist {
         let b = world.get_block(x, y, z);
         // Hit anything mineable: solids AND non-solid plants (cross blocks),
-        // but never water or air.
-        if b != crate::registry::AIR && !world.reg.is_water(b) {
+        // but never air — and water only when the caller wants it.
+        if b != crate::registry::AIR && (hit_water || !world.reg.is_water(b)) {
             return Some(Hit {
                 block: (x, y, z),
                 adjacent: prev,

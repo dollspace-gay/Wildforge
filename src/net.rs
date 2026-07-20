@@ -19,7 +19,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 pub const GAME_PORT: u16 = 27431;
 pub const BEACON_PORT: u16 = 27430;
 /// Bump when the protocol changes shape.
-pub const PROTOCOL: u32 = 8;
+pub const PROTOCOL: u32 = 9;
 
 // ---------------- protocol ----------------
 
@@ -83,6 +83,12 @@ pub enum C2S {
         y: i32,
         z: i32,
         block: u16,
+    },
+    /// Bucket dip: take a full water cell (the pour is a Place).
+    Scoop {
+        x: i32,
+        y: i32,
+        z: i32,
     },
     AttackMob {
         id: u32,

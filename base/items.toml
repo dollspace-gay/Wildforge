@@ -752,3 +752,15 @@ texture = "@cinnabar_powder"
 id = "manganese_powder"
 name = "Manganese Powder"
 texture = "@manganese_powder"
+
+[[item]]
+id = "bucket"
+name = "Bucket"
+texture = "@bucket"
+max_stack = 1
+
+[[item]]
+id = "bucket_water"
+name = "Water Bucket"
+texture = "@bucket_water"
+max_stack = 1

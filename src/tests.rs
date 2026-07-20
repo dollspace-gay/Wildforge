@@ -1684,6 +1684,24 @@ fn random_ticks_visit_a_bounded_cohort() {
 }
 
 #[test]
+fn bucket_items_registered_and_craftable() {
+    let reg = base_reg();
+    let bucket = it(&reg, "base:bucket");
+    let full = it(&reg, "base:bucket_water");
+    assert_eq!(reg.item(bucket).max_stack, 1);
+    assert_eq!(reg.item(full).max_stack, 1);
+    assert!(!reg.recipes_for(bucket).is_empty(), "iron buys a bucket");
+    // Both icons live in reserved atlas rows, clear of mod slots.
+    use crate::atlas::builtin_slots;
+    let slots = builtin_slots();
+    assert_eq!(slots.get("bucket"), Some(&239));
+    assert_eq!(
+        slots.get("bucket_water"),
+        Some(&(crate::style::EXTRA_BASE + 5))
+    );
+}
+
+#[test]
 fn summer_dries_shallow_water_but_not_deep() {
     let reg = base_reg();
     let mut w = test_world_with("evap", reg.clone());
@@ -5332,6 +5350,15 @@ fn content_graph_is_complete_and_obtainable() {
                 grew = true;
             }
         }
+        // The bucket: dip it in any water and it comes up full — a
+        // code path, like shears.
+        if let (Some(b), Some(f)) = (reg.item_id("base:bucket"), reg.item_id("base:bucket_water"))
+            && ok.contains(&b.0)
+            && !ok.contains(&f.0)
+        {
+            ok.insert(f.0);
+            grew = true;
+        }
         if let Some((sand, fuel, clear)) = reg.kiln_base
             && ok.contains(&sand.0)
             && ok.contains(&fuel.0)
@@ -5632,6 +5659,38 @@ fn loopback_join_stream_and_edit() {
         sim.world.get_block(200, far_y, 200),
         far_block,
         "beyond reach: request rejected"
+    );
+
+    // The bucket over the wire: a full cell scoops to air, a partial
+    // one is refused — no minting water from films. Both cells sit in
+    // walled pans so the flow tick can't redistribute them mid-test.
+    let stone = reg.block_id("base:stone").unwrap();
+    let wy = sim.world.surface_height(8, 8) + 3;
+    for (cx, cz) in [(8, 10), (11, 8)] {
+        sim.world.set_block(cx, wy - 1, cz, stone);
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            sim.world.set_block(cx + dx, wy - 1, cz + dz, stone);
+            sim.world.set_block(cx + dx, wy, cz + dz, stone);
+        }
+    }
+    sim.world.set_block(8, wy, 10, reg.water_block(0));
+    sim.world.set_block(11, wy, 8, reg.water_for_volume(3));
+    client.send(&C2S::Scoop { x: 8, y: wy, z: 10 });
+    client.send(&C2S::Scoop { x: 11, y: wy, z: 8 });
+    for _ in 0..30 {
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.06,
+        );
+        client.poll();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(sim.world.get_block(8, wy, 10), AIR, "full cell scooped");
+    assert_eq!(
+        reg.water_volume(sim.world.get_block(11, wy, 8)),
+        Some(3),
+        "partial cell refused: buckets can't mint water"
     );
 
     // Containers are transactional: a click carries the guest's cursor,

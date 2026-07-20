@@ -389,6 +389,11 @@ pattern = ["ii", ".t", ".t"]
 keys = { i = "base:iron_ingot", t = "base:stick" }
 output = "base:smith_hammer"
 
+[[recipe]]
+pattern = ["i.i", ".i."]
+keys = { i = "base:iron_ingot" }
+output = "base:bucket"
+
 [[bloomery]]
 charge = "base:iron_ingot"
 fuel = "base:charcoal"

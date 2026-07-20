@@ -742,8 +742,14 @@ impl Game {
         self.inventory = Inventory::new();
         self.armor = [None; 5];
         self.bow_draw = 0.0;
-        if std::env::var("WILDFORGE_GIVE").is_ok() {
+        if let Ok(extra) = std::env::var("WILDFORGE_GIVE") {
             let reg = self.reg.clone();
+            // Named items land first (hotbar slots), then the kit.
+            for name in extra.split(',').filter(|s| s.contains(':')) {
+                if let Some(item) = reg.item_id(name.trim()) {
+                    self.inventory.add(&reg, item, 1);
+                }
+            }
             for (name, n) in [
                 ("base:dirt", 64),
                 ("base:cobblestone", 32),
@@ -2768,6 +2774,69 @@ impl Game {
             REACH,
         );
         let held = self.inventory.slots[self.hotbar_sel].map(|s| s.item);
+
+        // The bucket: scoop a full water cell or pour it back — the
+        // cell moves with you, it never multiplies. Guests request and
+        // the host's echo applies the world side; the bucket swap is
+        // local (inventories are player-owned).
+        if held.is_some() && held == reg.item_id("base:bucket") {
+            if self.right_held
+                && self.action_cooldown <= 0.0
+                && let Some(w) = raycast::raycast_water(
+                    &self.server.world,
+                    self.camera.pos,
+                    self.camera.forward(),
+                    REACH,
+                )
+            {
+                let (x, y, z) = w.block;
+                if reg.water_volume(self.server.world.get_block(x, y, z)) == Some(8) {
+                    if let Some(r) = &self.remote {
+                        r.client.send(&net::C2S::Scoop { x, y, z });
+                    } else {
+                        self.server.world.set_block(x, y, z, AIR);
+                    }
+                    if let Some(full) = reg.item_id("base:bucket_water") {
+                        self.inventory.slots[self.hotbar_sel] = Some(ItemStack::new(&reg, full, 1));
+                    }
+                    self.action_cooldown = 0.25;
+                    self.sfx(Sfx::Splash);
+                }
+            }
+            return;
+        }
+        if held.is_some() && held == reg.item_id("base:bucket_water") {
+            if self.right_held
+                && self.action_cooldown <= 0.0
+                && let Some(h) = &hit
+            {
+                let (x, y, z) = h.adjacent;
+                if self.server.world.get_block(x, y, z) == AIR
+                    && !self.player.overlaps_block(x, y, z)
+                {
+                    let water = reg.water_block(0);
+                    if let Some(r) = &self.remote {
+                        if let Some(host_id) = r.host_block.get(&water.0) {
+                            r.client.send(&net::C2S::Place {
+                                x,
+                                y,
+                                z,
+                                block: *host_id,
+                            });
+                        }
+                    } else {
+                        self.server.world.set_block(x, y, z, water);
+                    }
+                    if let Some(empty) = reg.item_id("base:bucket") {
+                        self.inventory.slots[self.hotbar_sel] =
+                            Some(ItemStack::new(&reg, empty, 1));
+                    }
+                    self.action_cooldown = 0.25;
+                    self.sfx(Sfx::Splash);
+                }
+            }
+            return;
+        }
 
         // Bow: hold right to draw, release to loose (0.25 s minimum).
         let bow_def = held.and_then(|i| reg.item(i).bow.clone());

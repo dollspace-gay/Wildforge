@@ -432,6 +432,20 @@ impl HostSession {
                 server.world.add_ire(cost);
                 server.world.set_block(x, y, z, crate::registry::AIR);
             }
+            C2S::Scoop { x, y, z } => {
+                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                if (p - guest.pos).length() > REACH || guest.edits >= EDITS_PER_SEC {
+                    return;
+                }
+                // Only a full cell fills a bucket — partials would let
+                // a guest mint water out of films.
+                let b = server.world.get_block(x, y, z);
+                if server.world.reg.water_volume(b) != Some(8) {
+                    return;
+                }
+                guest.edits += 1;
+                server.world.set_block(x, y, z, crate::registry::AIR);
+            }
             C2S::Place { x, y, z, block } => {
                 let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
                 if (p - guest.pos).length() > REACH || guest.edits >= EDITS_PER_SEC {
