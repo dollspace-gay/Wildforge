@@ -5066,16 +5066,17 @@ impl Game {
         // Point lights: promote nearby emitters + the dynamic set.
         let mut dyn_lights = self.demo_lights.clone();
         // The held torch: your own body of light, real shadows and all.
+        // Anchored to the body center, never the facing — a camera-
+        // relative offset made the light orbit the head when turning,
+        // so shadows stuck then snapped with every look-around (and
+        // thrashed the cube cache). Remote helds anchor the same way.
         if self.in_world
             && let Some(stack) = self.inventory.slots[self.hotbar_sel]
             && let Some((color, range)) = self.held_glow(stack.item)
         {
-            let fwd = self.camera.forward();
-            let right = fwd.cross(Vec3::Y).normalize_or_zero();
-            let pos = self.camera.pos + right * 0.3 - Vec3::Y * 0.15;
             dyn_lights.push(lights::DynLight {
                 key: lights::Key::Held,
-                pos,
+                pos: self.camera.pos - Vec3::Y * 0.15,
                 color,
                 range,
             });
