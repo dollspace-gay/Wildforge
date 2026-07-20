@@ -272,7 +272,12 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub async fn new(window: Arc<Window>, atlas_data: Vec<u8>, atlas_px: u32) -> Renderer {
+    pub async fn new(
+        window: Arc<Window>,
+        atlas_data: Vec<u8>,
+        atlas_material: Vec<u8>,
+        atlas_px: u32,
+    ) -> Renderer {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let surface = instance.create_surface(window).expect("create surface");
@@ -346,37 +351,9 @@ impl Renderer {
         });
 
         // Texture atlas
-        let atlas_size = wgpu::Extent3d {
-            width: atlas_px,
-            height: atlas_px,
-            depth_or_array_layers: 1,
-        };
-        let atlas_tex = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("atlas"),
-            size: atlas_size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &atlas_tex,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &atlas_data,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(atlas_px * 4),
-                rows_per_image: Some(atlas_px),
-            },
-            atlas_size,
-        );
-        let atlas_view = atlas_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let atlas_view = upload_atlas(&device, &queue, &atlas_data, atlas_px, true, "atlas");
+        let material_view =
+            upload_atlas(&device, &queue, &atlas_material, atlas_px, false, "atlas-material");
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
@@ -402,22 +379,20 @@ impl Renderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
-            ],
-        });
-        let atlas_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &atlas_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&atlas_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
+                // The material atlas (parallax height + reserved channels).
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
                 },
             ],
         });
+        let atlas_bg = atlas_bind_group(&device, &atlas_bgl, &atlas_view, &material_view, &sampler);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shader"),
@@ -1076,52 +1051,11 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
     }
 
     /// Replace the atlas texture (hot reload).
-    pub fn set_atlas(&mut self, data: &[u8], px: u32) {
-        let size = wgpu::Extent3d {
-            width: px,
-            height: px,
-            depth_or_array_layers: 1,
-        };
-        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("atlas"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &tex,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            data,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(px * 4),
-                rows_per_image: Some(px),
-            },
-            size,
-        );
-        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-        self.atlas_bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &self.atlas_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.atlas_sampler),
-                },
-            ],
-        });
+    pub fn set_atlas(&mut self, data: &[u8], material: &[u8], px: u32) {
+        let color = upload_atlas(&self.device, &self.queue, data, px, true, "atlas");
+        let mat = upload_atlas(&self.device, &self.queue, material, px, false, "atlas-material");
+        self.atlas_bg =
+            atlas_bind_group(&self.device, &self.atlas_bgl, &color, &mat, &self.atlas_sampler);
     }
 
     pub fn resize(&mut self, w: u32, h: u32) {
@@ -1696,6 +1630,81 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
         }
         Ok(())
     }
+}
+
+/// Upload a square atlas image and return its view. `srgb` selects the color
+/// atlas (sRGB) vs the material atlas (linear data — height/normals).
+fn upload_atlas(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    data: &[u8],
+    px: u32,
+    srgb: bool,
+    label: &str,
+) -> wgpu::TextureView {
+    let size = wgpu::Extent3d {
+        width: px,
+        height: px,
+        depth_or_array_layers: 1,
+    };
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: if srgb {
+            wgpu::TextureFormat::Rgba8UnormSrgb
+        } else {
+            wgpu::TextureFormat::Rgba8Unorm
+        },
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &tex,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        data,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(px * 4),
+            rows_per_image: Some(px),
+        },
+        size,
+    );
+    tex.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// The group-1 bind group: color atlas (0), shared sampler (1), material atlas (2).
+fn atlas_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    color: &wgpu::TextureView,
+    material: &wgpu::TextureView,
+    sampler: &wgpu::Sampler,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("atlas-bg"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(color),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(material),
+            },
+        ],
+    })
 }
 
 fn create_depth(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> wgpu::TextureView {

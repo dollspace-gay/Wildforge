@@ -445,11 +445,12 @@ impl Game {
         // Dev override (never persisted): WILDFORGE_PACK=<id> selects a pack.
         let pack_override = std::env::var("WILDFORGE_PACK").ok();
         let active_pack = pack_override.clone().unwrap_or_else(|| config.pack.clone());
-        let (atlas_data, atlas_px, pack_warnings) =
+        let (atlas_data, atlas_material, atlas_px, pack_warnings) =
             atlas::build_atlas(&reg.tex_files, pack_source_of(&active_pack), &reg.tex_names);
         let renderer = pollster::block_on(renderer::Renderer::new(
             window.clone(),
             atlas_data,
+            atlas_material,
             atlas_px,
         ));
         let mut scripts = script::ScriptHost::new();
@@ -1074,6 +1075,44 @@ impl Game {
             if let Some(t) = reg.item_id("base:torch") {
                 self.inventory.add(&reg, t, 5);
             }
+        }
+
+        // Dev: a flat ice rink plus a low kerb, for parallax verification —
+        // grazing views across the ice show the crack grooves shift with the
+        // eye. Best on the procedural pack (WILDFORGE_PACK=none), whose @ice
+        // albedo matches the procedural height map.
+        if std::env::var("WILDFORGE_DEMO_ICE").is_ok()
+            && let Some(ice) = self.reg.block_id("base:ice")
+        {
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            for dx in [-8i32, 0, 8] {
+                for dz in [-8i32, 0, 8] {
+                    self.server
+                        .world
+                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                }
+            }
+            let yf = (-10..=10)
+                .flat_map(|dx| (-10..=10).map(move |dz| (dx, dz)))
+                .map(|(dx, dz)| self.server.world.surface_height(bx + dx, bz + dz))
+                .max()
+                .unwrap_or(spawn.y as i32);
+            for dx in -10..=10i32 {
+                for dz in -10..=10i32 {
+                    self.server.world.set_block(bx + dx, yf, bz + dz, ice);
+                }
+                // A short ice kerb at the far edge (relief on a vertical face too).
+                self.server.world.set_block(bx + dx, yf + 1, bz + 10, ice);
+                self.server.world.set_block(bx + dx, yf + 2, bz + 10, ice);
+            }
+            // Stand at the near edge, eye low over the surface for a grazing look.
+            let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.0, bz as f32 - 9.0);
+            self.player.pos = stand;
+            self.spawn_point = stand;
+            self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.camera.yaw = std::f32::consts::FRAC_PI_2; // face +z, across the rink
+            self.camera.pitch = -0.35;
         }
 
         // Dev: a warm light behind a wall with a doorway — light blares through
@@ -1861,7 +1900,7 @@ impl Game {
                         let _ = std::fs::write(p, bytes);
                     }
                     self.reg = Arc::new(registry::load(&cache));
-                    let (mut data, px, warns) = atlas::build_atlas(
+                    let (mut data, mat, px, warns) = atlas::build_atlas(
                         &self.reg.tex_files,
                         pack_source_of(&self.active_pack_id()),
                         &self.reg.tex_names,
@@ -1869,7 +1908,7 @@ impl Game {
                     atlas::season_tint(&mut data, px, self.server.world.season());
                     self.atlas_season = self.server.world.season();
                     self.pack_warnings = warns;
-                    self.renderer.set_atlas(&data, px);
+                    self.renderer.set_atlas(&data, &mat, px);
                     self.toast("Synced the host's mods.".to_string());
                 }
                 net::S2C::Welcome {
@@ -3535,7 +3574,7 @@ impl Game {
     /// Rebuild + swap the atlas for the currently selected texture pack and
     /// persist the choice. Registry/scripts are untouched — packs are art only.
     fn apply_pack(&mut self) {
-        let (mut data, px, warns) = atlas::build_atlas(
+        let (mut data, mat, px, warns) = atlas::build_atlas(
             &self.reg.tex_files,
             pack_source_of(&self.active_pack_id()),
             &self.reg.tex_names,
@@ -3547,7 +3586,7 @@ impl Game {
         };
         atlas::season_tint(&mut data, px, season);
         self.atlas_season = season;
-        self.renderer.set_atlas(&data, px);
+        self.renderer.set_atlas(&data, &mat, px);
         self.pack_warnings = warns;
         self.config.save();
     }
@@ -3555,7 +3594,7 @@ impl Game {
     fn reload_mods(&mut self, forced: bool) {
         let old = self.reg.clone();
         let new_reg = Arc::new(registry::load(std::path::Path::new("mods")));
-        let (mut atlas_data, atlas_px, warns) = atlas::build_atlas(
+        let (mut atlas_data, atlas_material, atlas_px, warns) = atlas::build_atlas(
             &new_reg.tex_files,
             pack_source_of(&self.active_pack_id()),
             &new_reg.tex_names,
@@ -3568,7 +3607,7 @@ impl Game {
         atlas::season_tint(&mut atlas_data, atlas_px, season);
         self.atlas_season = season;
         self.pack_warnings = warns;
-        self.renderer.set_atlas(&atlas_data, atlas_px);
+        self.renderer.set_atlas(&atlas_data, &atlas_material, atlas_px);
 
         // Remap items by name (old registry -> new); unknown items vanish.
         let remap_item =
@@ -4365,7 +4404,7 @@ impl Game {
         }
         // The turning of the season repaints the leaves.
         if self.in_world && self.server.world.season() != self.atlas_season {
-            let (mut data, px, warns) = atlas::build_atlas(
+            let (mut data, mat, px, warns) = atlas::build_atlas(
                 &self.reg.tex_files,
                 pack_source_of(&self.active_pack_id()),
                 &self.reg.tex_names,
@@ -4373,7 +4412,7 @@ impl Game {
             atlas::season_tint(&mut data, px, self.server.world.season());
             self.atlas_season = self.server.world.season();
             self.pack_warnings = warns;
-            self.renderer.set_atlas(&data, px);
+            self.renderer.set_atlas(&data, &mat, px);
         }
 
         // Hot reload: poll the mods + packs trees once a second.

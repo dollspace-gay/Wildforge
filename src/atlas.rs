@@ -388,12 +388,19 @@ pub fn build_atlas(
     tex_files: &[(u16, std::path::PathBuf)],
     pack: Option<PackSource>,
     tex_names: &[(String, u16)],
-) -> (Vec<u8>, u32, Vec<String>) {
+) -> (Vec<u8>, Vec<u8>, u32, Vec<String>) {
     let (mut img, px) = load_or_build();
     let tp = px / ATLAS_TILES;
+    // The material atlas (parallax height etc.) is procedural + pack-aware: any
+    // slot a pack overrides with its own albedo gets its material reset to flat,
+    // so our procedural grooves never land under mismatched hand-drawn art.
+    let mut mat = build_material(px);
     for (slot, path) in tex_files {
         match load_tile_png(path) {
-            Some((data, w, h)) => blit_tile(&mut img, px, tp, *slot, &data, w, h),
+            Some((data, w, h)) => {
+                blit_tile(&mut img, px, tp, *slot, &data, w, h);
+                clear_material_slot(&mut mat, px, *slot);
+            }
             None => eprintln!("atlas: failed to load {}", path.display()),
         }
     }
@@ -405,7 +412,10 @@ pub fn build_atlas(
             warnings = warns;
             for (slot, path) in files {
                 match load_tile_png(&path) {
-                    Some((data, w, h)) => blit_tile(&mut img, px, tp, slot, &data, w, h),
+                    Some((data, w, h)) => {
+                        blit_tile(&mut img, px, tp, slot, &data, w, h);
+                        clear_material_slot(&mut mat, px, slot);
+                    }
                     None => warnings.push(format!("unreadable png: {}", path.display())),
                 }
             }
@@ -420,6 +430,7 @@ pub fn build_atlas(
                 };
                 if let Some((data, w, h)) = load_tile_bytes(bytes) {
                     blit_tile(&mut img, px, tp, *slot, &data, w, h);
+                    clear_material_slot(&mut mat, px, *slot);
                 }
             }
         }
@@ -432,7 +443,7 @@ pub fn build_atlas(
             Err(e) => eprintln!("atlas: tile export failed: {e}"),
         }
     }
-    (img, px, warnings)
+    (img, mat, px, warnings)
 }
 
 /// Derive the pre-tinted player variant tiles (style.rs layout) from
@@ -777,6 +788,81 @@ fn voronoi(u: f32, v: f32, cells: i32, salt: u32) -> (f32, f32, u32) {
         }
     }
     (d1, d2, id)
+}
+
+/// The **material atlas**: a second texture, same tile layout as the color
+/// atlas, carrying per-texel surface data (not color). Linear `Rgba8`, so it
+/// is NEVER sampled as sRGB.
+///
+/// Channel reservations (only R is consumed today):
+///   R = **height** for parallax. 1.0 (255) = surface top, 0.0 = deepest recess.
+///       The default fill is 255 (flat), so a tile with no material data is a
+///       parallax no-op — the opt-in is per-texture (author a non-flat R).
+///   G = reserved: tangent-space **normal.x** (0.5/128 = flat), for future
+///       normal mapping. Left flat for now.
+///   B = reserved: tangent-space **normal.y** (0.5/128 = flat).
+///   A = reserved: future **displacement / roughness / AO** — meaning TBD.
+///
+/// Populated procedurally here for built-in tiles that opt in (currently ice).
+/// Pack authors will later supply a companion `<name>_h.png` to give their own
+/// tiles material data; until then, and for any pack-overridden slot,
+/// `build_atlas` resets the slot to flat so procedural height never lands under
+/// a mismatched hand-drawn albedo.
+fn material_default() -> [u8; 4] {
+    [255, 128, 128, 0]
+}
+
+pub fn build_material(px: u32) -> Vec<u8> {
+    let tp = px / ATLAS_TILES;
+    let atlas_px = ATLAS_TILES * tp;
+    let mut img = vec![0u8; (atlas_px * atlas_px * 4) as usize];
+    for p in img.chunks_exact_mut(4) {
+        p.copy_from_slice(&material_default());
+    }
+    let mut mtile = |slot: u32, f: &mut dyn FnMut(f32, f32) -> [u8; 4]| {
+        let (tx, ty) = (slot % ATLAS_TILES, slot / ATLAS_TILES);
+        for py in 0..tp {
+            for px in 0..tp {
+                let u = (px as f32 + 0.5) / tp as f32;
+                let v = (py as f32 + 0.5) / tp as f32;
+                let x = tx * tp + px;
+                let y = ty * tp + py;
+                let i = ((y * atlas_px + x) * 4) as usize;
+                img[i..i + 4].copy_from_slice(&f(u, v));
+            }
+        }
+    };
+
+    // Ice (slot 40): the crack veins of the procedural @ice albedo cut down
+    // into the surface, so parallax makes them read as real grooves that shift
+    // with the viewpoint. Uses the SAME vein noise as the color tile so the
+    // recesses land exactly under the visible cracks.
+    mtile(40, &mut |u, v| {
+        let vein = (vnoise(u * 5.0, v * 5.0, 5, 53) - 0.5).abs();
+        // Deepest at a vein's center (~0.45), ramping back up to the surface
+        // over a soft wall; flat elsewhere.
+        let h = if vein < 0.06 {
+            0.45 + (vein / 0.06) * 0.55
+        } else {
+            1.0
+        };
+        [(h * 255.0) as u8, 128, 128, 0]
+    });
+    img
+}
+
+/// Reset one slot of the material atlas to flat (used when a pack overrides a
+/// slot's color, so procedural height never sits under a mismatched albedo).
+fn clear_material_slot(mat: &mut [u8], px: u32, slot: u16) {
+    let tp = px / ATLAS_TILES;
+    let (tx, ty) = (slot as u32 % ATLAS_TILES * tp, slot as u32 / ATLAS_TILES * tp);
+    let d = material_default();
+    for y in 0..tp {
+        for x in 0..tp {
+            let i = (((ty + y) * px + tx + x) * 4) as usize;
+            mat[i..i + 4].copy_from_slice(&d);
+        }
+    }
 }
 
 pub fn build_procedural(tp: u32) -> Vec<u8> {

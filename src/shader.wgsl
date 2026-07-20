@@ -31,6 +31,9 @@ const MAX_PT_LIGHTS: u32 = 8u;
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(1) @binding(0) var atlas_tex: texture_2d<f32>;
 @group(1) @binding(1) var atlas_smp: sampler;
+// Material atlas (linear): R = parallax height (1 = surface, 0 = deepest).
+// A flat tile (R = 1 everywhere) is a no-op, so parallax is opt-in per texture.
+@group(1) @binding(2) var material_tex: texture_2d<f32>;
 @group(2) @binding(0) var shadow_tex: texture_depth_2d;
 @group(2) @binding(1) var shadow_smp: sampler_comparison;
 @group(2) @binding(2) var pt_cube: texture_cube_array<f32>;
@@ -38,6 +41,11 @@ const MAX_PT_LIGHTS: u32 = 8u;
 @group(2) @binding(4) var pt_tr_cube: texture_cube_array<f32>;
 
 const SHADOW_RES: f32 = 2048.0;
+const ATLAS_TILES: f32 = 32.0;
+// Apparent displacement depth, in blocks (a face is one tile wide), so the uv
+// offset is scaled into a single tile's span and can't drag across tiles.
+const PARALLAX_DEPTH: f32 = 0.08;
+const PARALLAX_STEPS: i32 = 24;
 
 struct VsIn {
     @location(0) pos: vec3<f32>,
@@ -210,9 +218,65 @@ fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     return mix(color, u.sky.rgb, fog);
 }
 
+// Parallax occlusion mapping. Steps the tangent-space view ray through the
+// material atlas's height channel and returns the uv where the ray first dips
+// below the surface, so recessed detail (ice cracks) shifts with the eye.
+// A tangent frame is derived per-fragment from world/uv screen derivatives —
+// no per-vertex tangents needed. Flat tiles early-out for near-zero cost.
+fn parallax_uv(uv: vec2<f32>, world: vec3<f32>, normal: vec3<f32>) -> vec2<f32> {
+    // Derivatives must be evaluated in uniform control flow (before any branch).
+    let dpx = dpdx(world);
+    let dpy = dpdy(world);
+    let dux = dpdx(uv);
+    let duy = dpdy(uv);
+
+    let h0 = textureSampleLevel(material_tex, atlas_smp, uv, 0.0).r;
+    if (h0 > 0.995) {
+        return uv; // flat: no relief to march
+    }
+    let det = dux.x * duy.y - duy.x * dux.y;
+    if (abs(det) < 1e-9) {
+        return uv;
+    }
+    let r = 1.0 / det;
+    let n = normalize(normal);
+    let t = normalize((dpx * duy.y - dpy * dux.y) * r);
+    let b = normalize((dpy * dux.x - dpx * duy.x) * r);
+    // View direction (fragment -> eye) in tangent space.
+    let v = normalize(u.cam.xyz - world);
+    let vt = vec3<f32>(dot(v, t), dot(v, b), dot(v, n));
+    // Keep the march inside this tile's atlas cell so it never bleeds into a
+    // neighbour tile's texels.
+    let ts = 1.0 / ATLAS_TILES;
+    // Total uv shift across the full [0,1] depth: the depth (in blocks) mapped
+    // into one tile's uv span. Clamp grazing z so the offset can't blow up.
+    let vz = max(abs(vt.z), 0.25);
+    let p = vt.xy / vz * PARALLAX_DEPTH * ts;
+    let tmin = floor(uv / ts) * ts + ts * 0.02;
+    let tmax = tmin + ts - ts * 0.04;
+
+    // Steep parallax: walk down the depth layers until the sampled surface is
+    // above the ray. depth = 1 - height.
+    let layer = 1.0 / f32(PARALLAX_STEPS);
+    let duv = p * layer;
+    var cur_uv = uv;
+    var ray_depth = 0.0;
+    var surf_depth = 1.0 - h0;
+    for (var i = 0; i < PARALLAX_STEPS; i = i + 1) {
+        if (ray_depth >= surf_depth) {
+            break;
+        }
+        cur_uv = clamp(cur_uv - duv, tmin, tmax);
+        surf_depth = 1.0 - textureSampleLevel(material_tex, atlas_smp, cur_uv, 0.0).r;
+        ray_depth = ray_depth + layer;
+    }
+    return cur_uv;
+}
+
 @fragment
 fn fs_chunk(in: VsOut) -> @location(0) vec4<f32> {
-    let tex = textureSample(atlas_tex, atlas_smp, in.uv);
+    let uv = parallax_uv(in.uv, in.world, in.normal);
+    let tex = textureSample(atlas_tex, atlas_smp, uv);
     if (tex.a < 0.5) {
         discard; // alpha-tested item sprites share this pipeline
     }
