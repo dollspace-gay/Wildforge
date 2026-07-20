@@ -25,6 +25,7 @@ mod registry;
 mod renderer;
 mod script;
 mod server;
+mod style;
 #[cfg(test)]
 mod tests;
 mod ui;
@@ -69,6 +70,7 @@ enum Screen {
     Mods,
     Packs,
     Settings,
+    Appearance,
     ConfirmDelete,
     Playing,
     Inventory,
@@ -128,6 +130,8 @@ struct Remote {
     players: std::collections::HashMap<u32, (String, Vec3, f32)>,
     /// Wire item id each player holds (from Players snapshots).
     player_held: std::collections::HashMap<u32, u16>,
+    /// Packed Style per player (from Players snapshots).
+    player_style: std::collections::HashMap<u32, u32>,
     names: std::collections::HashMap<u32, String>,
     sleeping: bool,
     /// Interpolation spans keyed by player / mob id, plus the shared
@@ -297,6 +301,11 @@ struct Game {
     /// The point-light director: promotes emitters to shadow-casting
     /// lights, caches their cube maps (client presentation only).
     lights: lights::Director,
+    /// Walk-cycle phase per remote player id: (last pos, phase).
+    player_gait: std::collections::HashMap<u32, (Vec3, f32)>,
+    /// Your chosen look (config `appearance`, style.rs palettes).
+    style: style::Style,
+    appearance_from_pause: bool,
     /// Extra dev lights from demo hooks, fed to the director each frame.
     demo_lights: Vec<lights::DynLight>,
     auto_shot: Option<String>,
@@ -449,6 +458,7 @@ impl Game {
         let world = World::new(0, PathBuf::from("saves/.none"), reg.clone());
         let sim = server::Server::new(world, 0.3, 0x51ed_c0de);
         let spawn = Vec3::new(0.5, 80.0, 0.5);
+        let own_style = style::Style::unpack(config.appearance);
 
         let size = window.inner_size();
         let aspect = size.width as f32 / size.height.max(1) as f32;
@@ -567,6 +577,9 @@ impl Game {
             browse_back: Vec::new(),
             total_frames: 0,
             lights: lights::Director::new(),
+            player_gait: Default::default(),
+            style: own_style,
+            appearance_from_pause: false,
             demo_lights: Vec::new(),
             auto_shot: std::env::var("WILDFORGE_SHOT").ok(),
             last_frame: Instant::now(),
@@ -583,6 +596,7 @@ impl Game {
             Ok("mods") => g.screen = Screen::Mods,
             Ok("packs") => g.screen = Screen::Packs,
             Ok("settings") => g.screen = Screen::Settings,
+            Ok("appearance") => g.screen = Screen::Appearance,
             Ok("confirm") => {
                 g.pending_delete = if g.worlds.is_empty() { None } else { Some(0) };
                 g.screen = Screen::ConfirmDelete;
@@ -1771,7 +1785,7 @@ impl Game {
     fn join_server(&mut self, addr: std::net::SocketAddr) {
         let name = whoami();
         let hash = net::content_hash(std::path::Path::new("mods"));
-        match net::Client::connect(addr, name, hash) {
+        match net::Client::connect(addr, name, hash, self.style.pack()) {
             Ok(client) => {
                 self.remote = Some(Remote {
                     client,
@@ -1781,6 +1795,7 @@ impl Game {
                     host_block: Default::default(),
                     players: Default::default(),
                     player_held: Default::default(),
+                    player_style: Default::default(),
                     names: Default::default(),
                     sleeping: false,
                     player_lerp: Default::default(),
@@ -1923,11 +1938,12 @@ impl Game {
                     // New span: from wherever each player currently
                     // renders, toward the fresh snapshot.
                     let t = (r.player_age / r.player_interval.max(0.001)).clamp(0.0, 1.0);
-                    for (id, pos, yaw, held) in list {
+                    for (id, pos, yaw, held, pstyle) in list {
                         if id == r.my_id {
                             continue;
                         }
                         r.player_held.insert(id, held);
+                        r.player_style.insert(id, pstyle);
                         let cur = match r.player_lerp.get(&id) {
                             Some(l) => l.at(t),
                             None => (pos, yaw),
@@ -2499,6 +2515,42 @@ impl Game {
                 c.dirty = false;
             }
         }
+    }
+
+    /// The tile set dressing a humanoid for a given style.
+    fn humanoid_art(st: style::Style) -> mobs::HumanoidArt {
+        let b = |n: &str| *atlas::builtin_slots().get(n).unwrap_or(&0);
+        mobs::HumanoidArt {
+            skin: style::skin_tile(&st),
+            face: style::face_tile(&st),
+            hair: style::hair_tile(&st),
+            hair_top: style::hair_top_tile(&st),
+            shirt: style::shirt_tile(&st),
+            trousers: style::trouser_tile(&st),
+            boot: b("player_boot"),
+        }
+    }
+
+    /// How a held item renders in a remote hand.
+    fn held_art(&self, item: Option<ItemId>) -> mobs::HeldArt {
+        let Some(item) = item else {
+            return mobs::HeldArt::None;
+        };
+        let def = self.reg.item(item);
+        match def.places {
+            Some(b) if !self.reg.block(b).cross => mobs::HeldArt::Cube(self.reg.block(b).tiles),
+            _ => mobs::HeldArt::Sprite(def.icon),
+        }
+    }
+
+    /// Advance a remote player's walk phase from their motion.
+    fn gait_for(&mut self, id: u32, pos: Vec3, dt: f32) -> (f32, f32) {
+        let e = self.player_gait.entry(id).or_insert((pos, 0.0));
+        let hspeed = Vec3::new(pos.x - e.0.x, 0.0, pos.z - e.0.z).length() / dt.max(0.001);
+        e.0 = pos;
+        let amp = (hspeed / 3.5).clamp(0.0, 1.0);
+        e.1 += hspeed * dt * 3.2;
+        (e.1, amp)
     }
 
     /// The carried light of a held item, if any: an explicit item glow,
@@ -3901,10 +3953,11 @@ impl Game {
                     idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
                 }
             }
-            // Bare hand: your forearm (blue sleeve and all — the same
-            // body other players see) reaching in from the low right.
+            // Bare hand: your forearm — sleeve in your shirt color,
+            // hand in your skin tone (the same body others see).
             None => {
-                let skin = *atlas::builtin_slots().get("player_skin").unwrap_or(&0);
+                let skin = style::skin_tile(&self.style);
+                let sleeve = style::shirt_tile(&self.style);
                 let ty = pre_y(-0.30);
                 let tx = pre_x(-0.55);
                 let x2 = |q: Vec3| xf(ty(tx(q)));
@@ -3913,6 +3966,15 @@ impl Game {
                     idx,
                     &x2,
                     Vec3::new(-0.055, -0.09, -0.16),
+                    Vec3::new(0.055, 0.02, 0.10),
+                    [sleeve; 6],
+                    lum,
+                );
+                cube(
+                    verts,
+                    idx,
+                    &x2,
+                    Vec3::new(-0.055, -0.09, 0.10),
                     Vec3::new(0.055, 0.02, 0.26),
                     [skin; 6],
                     lum,
@@ -4108,7 +4170,13 @@ impl Game {
                         .unwrap_or(u16::MAX);
                     let fx = sess.pump(
                         &mut self.server,
-                        Some((self.player.pos, self.camera.yaw, self.host_sleeping, held)),
+                        Some((
+                            self.player.pos,
+                            self.camera.yaw,
+                            self.host_sleeping,
+                            held,
+                            self.style.pack(),
+                        )),
                         dt,
                     );
                     for f in fx {
@@ -4470,53 +4538,117 @@ impl Game {
         }
         // Cosmetic debris and dust ride the same batch.
         self.pool.emit(&mut entity_verts, &mut entity_idx);
-        // Fellow players, boxy and proud.
-        let skin = *atlas::builtin_slots().get("player_skin").unwrap_or(&0);
-        let face = *atlas::builtin_slots().get("player_face").unwrap_or(&0);
-        // Dev: a stand-in player a few blocks ahead (model iteration).
+        // Fellow players, dressed and striding.
+        // Dev: stand-ins a few blocks ahead — two styles side by side,
+        // mid-stride, one holding a torch (model iteration).
         if std::env::var("WILDFORGE_DEMO_PLAYER").is_ok() && self.in_world {
-            let px = self.player.pos.x.floor() + 0.5;
-            let pz = self.player.pos.z.floor() + 3.5;
-            let py = self
-                .server
-                .world
-                .surface_height(px.floor() as i32, pz.floor() as i32) as f32
-                + 1.0;
-            let at = Vec3::new(px, py, pz);
-            let lum = sample(&self.server.world, at);
-            mobs::emit_humanoid(
-                at,
-                std::f32::consts::PI,
-                skin,
-                face,
-                lum,
-                &mut entity_verts,
-                &mut entity_idx,
-            );
-        }
-        if let Some(r) = &self.remote {
-            for (_, pos, yaw) in r.players.values() {
-                let lum = sample(&self.server.world, *pos);
+            let torch_art = self.held_art(self.reg.item_id("base:torch"));
+            for (i, st) in [
+                style::Style::default(),
+                style::Style {
+                    skin: 4,
+                    hair: 3,
+                    shirt: 6,
+                    trousers: 1,
+                },
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let px = self.player.pos.x.floor() + 0.5 + (i as f32 * 2.0 - 1.0);
+                let pz = self.player.pos.z.floor() + 3.5;
+                let py = self
+                    .server
+                    .world
+                    .surface_height(px.floor() as i32, pz.floor() as i32)
+                    as f32
+                    + 1.0;
+                let at = Vec3::new(px, py, pz);
+                let lum = sample(&self.server.world, at);
+                let held = if i == 1 {
+                    torch_art
+                } else {
+                    mobs::HeldArt::None
+                };
                 mobs::emit_humanoid(
-                    *pos,
-                    *yaw,
-                    skin,
-                    face,
+                    at,
+                    std::f32::consts::PI,
+                    &Self::humanoid_art(st),
+                    (self.time_abs * 3.0, 0.8),
+                    held,
                     lum,
                     &mut entity_verts,
                     &mut entity_idx,
                 );
             }
         }
-        if let Some(hst) = &self.host {
-            for g in hst.guests.values() {
-                let (pos, yaw) = g.render_pos();
+        if self.remote.is_some() {
+            let entries: Vec<(u32, Vec3, f32)> = self
+                .remote
+                .as_ref()
+                .map(|r| {
+                    r.players
+                        .iter()
+                        .map(|(id, (_, p, y))| (*id, *p, *y))
+                        .collect()
+                })
+                .unwrap_or_default();
+            for (id, pos, yaw) in entries {
+                let gait = self.gait_for(id, pos, dt);
+                let (held, st) = {
+                    let r = self.remote.as_ref().unwrap();
+                    let held = r
+                        .player_held
+                        .get(&id)
+                        .and_then(|w| r.item_map.get(*w as usize).copied().flatten());
+                    let st = r
+                        .player_style
+                        .get(&id)
+                        .map(|v| style::Style::unpack(*v))
+                        .unwrap_or_default();
+                    (held, st)
+                };
                 let lum = sample(&self.server.world, pos);
                 mobs::emit_humanoid(
                     pos,
                     yaw,
-                    skin,
-                    face,
+                    &Self::humanoid_art(st),
+                    gait,
+                    self.held_art(held),
+                    lum,
+                    &mut entity_verts,
+                    &mut entity_idx,
+                );
+            }
+        }
+        if self.host.is_some() {
+            let entries: Vec<(u32, Vec3, f32, u16, u32)> = self
+                .host
+                .as_ref()
+                .map(|h| {
+                    h.guests
+                        .iter()
+                        .map(|(id, g)| {
+                            let (p, y) = g.render_pos();
+                            (*id, p, y, g.held, g.style)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            for (id, pos, yaw, held_wire, pstyle) in entries {
+                let gait = self.gait_for(id, pos, dt);
+                let held = if held_wire == u16::MAX {
+                    None
+                } else {
+                    Some(ItemId(held_wire))
+                };
+                let lum = sample(&self.server.world, pos);
+                mobs::emit_humanoid(
+                    pos,
+                    yaw,
+                    &Self::humanoid_art(style::Style::unpack(pstyle)),
+                    gait,
+                    self.held_art(held),
                     lum,
                     &mut entity_verts,
                     &mut entity_idx,
@@ -4799,6 +4931,22 @@ impl Game {
         let mut hand_verts = Vec::new();
         let mut hand_idx = Vec::new();
         self.emit_hand(&mut hand_verts, &mut hand_idx);
+        if self.screen == Screen::Appearance {
+            // Live preview: you, slowly turning, left of the swatches.
+            let f = self.camera.forward();
+            let rgt = f.cross(Vec3::Y).normalize_or_zero();
+            let feet = self.camera.pos + f * 2.6 - rgt * 0.9 - Vec3::Y * 1.35;
+            mobs::emit_humanoid(
+                feet,
+                self.time_abs * 0.8,
+                &Self::humanoid_art(self.style),
+                (self.time_abs * 2.2, 0.35),
+                self.held_art(self.inventory.slots[self.hotbar_sel].map(|st| st.item)),
+                ([0.95, 0.93, 0.90], 0.0),
+                &mut hand_verts,
+                &mut hand_idx,
+            );
+        }
 
         self.build_ui();
         // Screen-open ease: scale from 0.96 and fade in over ~140ms.
@@ -5085,10 +5233,28 @@ impl Game {
     }
 
     /// 0 = new world, 1 = settings, 2 = quit.
+    /// Two columns of four: left = play, right = meta.
     fn title_action_rect(&self, j: usize) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let base = self.title_row_y(self.worlds.len().min(6)) + 26.0;
-        (w / 2.0 - 150.0, base + j as f32 * 56.0, 300.0, 42.0)
+        let x = if j < 4 {
+            w / 2.0 - 310.0
+        } else {
+            w / 2.0 + 10.0
+        };
+        (x, base + (j % 4) as f32 * 56.0, 300.0, 42.0)
+    }
+
+    fn appearance_row_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (w / 2.0 + 40.0, h * 0.24 + i as f32 * 72.0, 260.0, 42.0)
+    }
+
+    fn appearance_back_rect(&self) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (w / 2.0 + 40.0, h * 0.24 + 4.0 * 72.0 + 16.0, 260.0, 42.0)
     }
 
     // ---- texture packs screen layout ----
@@ -5316,6 +5482,7 @@ impl Game {
                     "NEW SURVIVAL WORLD",
                     "NEW CREATIVE WORLD",
                     "JOIN GAME",
+                    "APPEARANCE",
                     "MODS",
                     "TEXTURE PACKS",
                     "SETTINGS",
@@ -5526,6 +5693,61 @@ impl Game {
                 }
                 let br = self.settings_back_rect();
                 Self::draw_button(&mut ui, br, "BACK", self.hit(br));
+                self.ui = ui;
+                return;
+            }
+            Screen::Appearance => {
+                ui.rect(0.0, 0.0, w, h, [0.02, 0.04, 0.08, 0.72]);
+                let tw = UiBatch::text_width(4.0, "APPEARANCE");
+                ui.text_shadow((w - tw) / 2.0, h * 0.10, 4.0, "APPEARANCE", [1.0; 4]);
+                let st = self.style;
+                let rows: [(&str, [f32; 3], String); 4] = [
+                    (
+                        "SKIN",
+                        style::SKIN_TONES[st.skin as usize],
+                        format!("TONE {}", st.skin + 1),
+                    ),
+                    (
+                        "HAIR",
+                        style::HAIR_COLORS[st.hair as usize],
+                        style::HAIR_NAMES[st.hair as usize].to_string(),
+                    ),
+                    (
+                        "SHIRT",
+                        style::SHIRT_COLORS[st.shirt as usize],
+                        style::SHIRT_NAMES[st.shirt as usize].to_string(),
+                    ),
+                    (
+                        "TROUSERS",
+                        style::TROUSER_COLORS[st.trousers as usize],
+                        style::TROUSER_NAMES[st.trousers as usize].to_string(),
+                    ),
+                ];
+                for (i, (label, c, name)) in rows.iter().enumerate() {
+                    let r = self.appearance_row_rect(i);
+                    ui.text_shadow(r.0 - 150.0, r.1 + 12.0, 2.0, label, [1.0; 4]);
+                    // The swatch itself, then the cycler button.
+                    ui.rect(r.0 - 56.0, r.1 + 2.0, 38.0, 38.0, [0.1, 0.1, 0.1, 1.0]);
+                    ui.rect(
+                        r.0 - 53.0,
+                        r.1 + 5.0,
+                        32.0,
+                        32.0,
+                        [c[0].min(1.0), c[1].min(1.0), c[2].min(1.0), 1.0],
+                    );
+                    Self::draw_button(&mut ui, r, name, self.hit(r));
+                }
+                let hint = "CLICK CYCLES - RIGHT-CLICK GOES BACK";
+                let hw = UiBatch::text_width(1.5, hint);
+                let hr = self.appearance_back_rect();
+                ui.text_shadow(
+                    hr.0 + (hr.2 - hw) / 2.0,
+                    hr.1 - 22.0,
+                    1.5,
+                    hint,
+                    [0.7, 0.7, 0.7, 1.0],
+                );
+                Self::draw_button(&mut ui, hr, "BACK", self.hit(hr));
                 self.ui = ui;
                 return;
             }
@@ -5829,6 +6051,7 @@ impl Game {
             | Screen::Packs
             | Screen::Join
             | Screen::Settings
+            | Screen::Appearance
             | Screen::ConfirmDelete => {}
             Screen::Furnace(pos) => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
@@ -6281,6 +6504,7 @@ impl Game {
                     mode,
                     &friends,
                     "SETTINGS",
+                    "APPEARANCE",
                     "SAVE AND QUIT TO TITLE",
                 ]
                 .iter()
@@ -7079,6 +7303,10 @@ impl Game {
                     self.set_screen(Screen::Settings);
                 } else if self.hit(self.menu_button_rect(4)) {
                     self.sfx(Sfx::Click);
+                    self.appearance_from_pause = true;
+                    self.set_screen(Screen::Appearance);
+                } else if self.hit(self.menu_button_rect(5)) {
+                    self.sfx(Sfx::Click);
                     self.quit_to_title();
                 } else {
                     for (row, (id, _)) in self.guest_rows().iter().enumerate() {
@@ -7128,16 +7356,20 @@ impl Game {
                     self.set_screen(Screen::Join);
                 } else if self.hit(self.title_action_rect(3)) {
                     self.sfx(Sfx::Click);
-                    self.set_screen(Screen::Mods);
+                    self.appearance_from_pause = false;
+                    self.set_screen(Screen::Appearance);
                 } else if self.hit(self.title_action_rect(4)) {
+                    self.sfx(Sfx::Click);
+                    self.set_screen(Screen::Mods);
+                } else if self.hit(self.title_action_rect(5)) {
                     self.sfx(Sfx::Click);
                     self.packs = atlas::discover_packs();
                     self.set_screen(Screen::Packs);
-                } else if self.hit(self.title_action_rect(5)) {
+                } else if self.hit(self.title_action_rect(6)) {
                     self.sfx(Sfx::Click);
                     self.settings_from_pause = false;
                     self.set_screen(Screen::Settings);
-                } else if self.hit(self.title_action_rect(6)) {
+                } else if self.hit(self.title_action_rect(7)) {
                     event_loop.exit();
                 }
             }
@@ -7337,6 +7569,39 @@ impl Game {
                     });
                 }
             }
+            Screen::Appearance => {
+                let lens: [usize; 4] = [
+                    style::SKIN_TONES.len(),
+                    style::HAIR_COLORS.len(),
+                    style::SHIRT_COLORS.len(),
+                    style::TROUSER_COLORS.len(),
+                ];
+                for (i, len) in lens.iter().enumerate() {
+                    if self.hit(self.appearance_row_rect(i)) {
+                        self.sfx(Sfx::Click);
+                        let n = *len as i32;
+                        let cur = match i {
+                            0 => &mut self.style.skin,
+                            1 => &mut self.style.hair,
+                            2 => &mut self.style.shirt,
+                            _ => &mut self.style.trousers,
+                        };
+                        let step = if right { -1 } else { 1 };
+                        *cur = ((*cur as i32 + step).rem_euclid(n)) as u8;
+                        self.config.appearance = self.style.pack();
+                        return;
+                    }
+                }
+                if self.hit(self.appearance_back_rect()) {
+                    self.sfx(Sfx::Click);
+                    self.config.save();
+                    self.set_screen(if self.appearance_from_pause {
+                        Screen::Paused
+                    } else {
+                        Screen::Title
+                    });
+                }
+            }
             Screen::ConfirmDelete => {
                 if self.hit(self.menu_button_rect(0)) {
                     self.sfx(Sfx::Click);
@@ -7386,6 +7651,14 @@ impl Game {
                 Screen::Settings => {
                     self.config.save();
                     self.set_screen(if self.settings_from_pause {
+                        Screen::Paused
+                    } else {
+                        Screen::Title
+                    });
+                }
+                Screen::Appearance => {
+                    self.config.save();
+                    self.set_screen(if self.appearance_from_pause {
                         Screen::Paused
                     } else {
                         Screen::Title

@@ -203,7 +203,7 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("charm_quiet", 200),
         ("charm_bark", 201),
         ("charm_hunger", 202),
-        ("player_skin", 203),
+        ("player_shirt", 203),
         ("player_face", 204),
         ("snowball", 205),
         ("rain_streak", 206),
@@ -233,6 +233,11 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("kiln_lit", 231),
         ("quern", 232),
         ("snow_trod", 233),
+        ("player_skin", 234),
+        ("player_hair", 235),
+        ("player_trousers", 236),
+        ("player_boot", 237),
+        ("player_hair_top", 238),
         ("unknown", 15),
         ("crack1", 16),
         ("crack2", 17),
@@ -411,6 +416,7 @@ pub fn build_atlas(
         }
         None => {}
     }
+    apply_player_variants(&mut img, px);
     if let Ok(dir) = std::env::var("WILDFORGE_EXPORT_TILES") {
         match export_tiles(std::path::Path::new(&dir), &img, px, tex_names) {
             Ok(n) => eprintln!("atlas: exported {n} tiles to {dir}"),
@@ -418,6 +424,62 @@ pub fn build_atlas(
         }
     }
     (img, px, warnings)
+}
+
+/// Derive the pre-tinted player variant tiles (style.rs layout) from
+/// the neutral bases: each palette color multiplies the base tile's
+/// pixels into a reserved slot at the top of the atlas. Runs after
+/// pack layering, so repainted bases carry their look into every
+/// variant; idempotent (reads bases, writes variants).
+pub fn apply_player_variants(img: &mut [u8], px: u32) {
+    use crate::style;
+    let tp = px / ATLAS_TILES;
+    let slots = builtin_slots();
+    let base = |name: &str| *slots.get(name).unwrap_or(&0);
+    let mut tint = |src: u16, dst: u16, c: [f32; 3]| {
+        let (sx, sy) = (src as u32 % ATLAS_TILES * tp, src as u32 / ATLAS_TILES * tp);
+        let (dx, dy) = (dst as u32 % ATLAS_TILES * tp, dst as u32 / ATLAS_TILES * tp);
+        for y in 0..tp {
+            for x in 0..tp {
+                let si = (((sy + y) * px + sx + x) * 4) as usize;
+                let di = (((dy + y) * px + dx + x) * 4) as usize;
+                for ch in 0..3 {
+                    img[di + ch] = (img[si + ch] as f32 * c[ch]).min(255.0) as u8;
+                }
+                img[di + 3] = img[si + 3];
+            }
+        }
+    };
+    for (i, c) in style::SKIN_TONES.iter().enumerate() {
+        let s = style::Style {
+            skin: i as u8,
+            ..Default::default()
+        };
+        tint(base("player_skin"), style::skin_tile(&s), *c);
+        tint(base("player_face"), style::face_tile(&s), *c);
+    }
+    for (i, c) in style::HAIR_COLORS.iter().enumerate() {
+        let s = style::Style {
+            hair: i as u8,
+            ..Default::default()
+        };
+        tint(base("player_hair"), style::hair_tile(&s), *c);
+        tint(base("player_hair_top"), style::hair_top_tile(&s), *c);
+    }
+    for (i, c) in style::SHIRT_COLORS.iter().enumerate() {
+        let s = style::Style {
+            shirt: i as u8,
+            ..Default::default()
+        };
+        tint(base("player_shirt"), style::shirt_tile(&s), *c);
+    }
+    for (i, c) in style::TROUSER_COLORS.iter().enumerate() {
+        let s = style::Style {
+            trousers: i as u8,
+            ..Default::default()
+        };
+        tint(base("player_trousers"), style::trouser_tile(&s), *c);
+    }
 }
 
 /// Dump every named tile as `<dir>/tiles/<name>.png` plus a stub pack.toml —
@@ -2254,28 +2316,37 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
     }
 
     // Player skin + face (remote players in multiplayer).
-    tf(203, &mut |px, py, _u, v| {
-        // Tunic over trousers.
-        let c = if v < 0.55 {
-            [70.0, 110.0, 140.0]
-        } else {
-            [80.0, 62.0, 46.0]
-        };
-        rgba(c, 0.9 + h01(px as i32, py as i32, 910) * 0.2, 255)
+    // Player bases are near-greyscale: build_atlas multiplies them by
+    // the style palettes into the reserved variant slots (see style.rs),
+    // so the default look is neutral and every part tints cleanly.
+    tf(203, &mut |px, py, u, v| {
+        // Shirt: woven fabric, soft fold shading, a hem line.
+        let t = fbm(u, v, 5, 903);
+        let mut g = 200.0 + t * 30.0;
+        let fold = ((u * 9.0).sin() * 0.5 + (v * 6.0 + u * 2.0).sin() * 0.5) * 9.0;
+        g += fold;
+        if v > 0.9 {
+            g *= 0.82; // hem
+        }
+        rgba(
+            [g, g * 0.985, g * 0.96],
+            0.9 + h01(px as i32, py as i32, 910) * 0.15,
+            255,
+        )
     });
     tf(204, &mut |px, py, u, v| {
-        let mut c = [224.0, 188.0, 152.0]; // skin
-        let eye = |cx: f32| (u - cx).abs() < 0.07 && (v - 0.42).abs() < 0.06;
-        if eye(0.30) || eye(0.70) {
-            c = [40.0, 50.0, 90.0];
+        // Face: plain skin base, simple dark eyes, the faintest mouth.
+        // Deliberately epicene — identity comes from the style palette.
+        let base = 225.0 + fbm(u, v, 4, 904) * 12.0;
+        let mut c = [base, base * 0.965, base * 0.93];
+        let eye = |cx: f32| (u - cx).abs() < 0.075 && (v - 0.44).abs() < 0.05;
+        if eye(0.31) || eye(0.69) {
+            c = [38.0, 34.0, 34.0];
         }
-        if v < 0.22 {
-            c = [86.0, 62.0, 40.0]; // hair
+        if (u - 0.5).abs() < 0.10 && (v - 0.76).abs() < 0.02 {
+            c = [base * 0.72, base * 0.66, base * 0.63]; // soft mouth
         }
-        if (u - 0.5).abs() < 0.14 && (v - 0.74).abs() < 0.025 {
-            c = [150.0, 110.0, 90.0]; // mouth
-        }
-        rgba(c, speck(px, py, 911, 0.04), 255)
+        rgba(c, speck(px, py, 911, 0.03), 255)
     });
 
     // (13,12) snowball: a packed white ball, blue-shadowed.
@@ -2542,6 +2613,65 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             c = mix3(c, [196.0, 206.0, 224.0], 0.75);
         }
         rgba(c, speck(px, py, 51, 0.03) * emboss(px, py, tp), 255)
+    });
+
+    // (234) plain skin: head sides/back/top under hair, hands.
+    tf(234, &mut |px, py, u, v| {
+        let base = 225.0 + fbm(u, v, 4, 934) * 12.0;
+        rgba(
+            [base, base * 0.965, base * 0.93],
+            speck(px, py, 935, 0.03),
+            255,
+        )
+    });
+    // (235) hair, side band: strands over the brow, alpha-cut below.
+    tf(235, &mut |_px, _py, u, v| {
+        let edge = 0.33 + ((u * 24.0).sin() * 0.5 + (u * 7.0).sin() * 0.5) * 0.06;
+        if v > edge {
+            return [0, 0, 0, 0];
+        }
+        let strand = 195.0 + ((u * 40.0).sin() * 0.5 + 0.5) * 45.0 - v * 30.0;
+        [
+            strand as u8,
+            (strand * 0.97) as u8,
+            (strand * 0.94) as u8,
+            255,
+        ]
+    });
+    // (238) hair, crown: full coverage for the head's top face.
+    tf(238, &mut |_px, _py, u, v| {
+        let strand = 200.0 + (((u + v) * 34.0).sin() * 0.5 + 0.5) * 40.0;
+        [
+            strand as u8,
+            (strand * 0.97) as u8,
+            (strand * 0.94) as u8,
+            255,
+        ]
+    });
+    // (236) trousers: plain weave with a side seam.
+    tf(236, &mut |px, py, u, v| {
+        let t = fbm(u, v, 5, 936);
+        let mut g = 195.0 + t * 25.0 + ((v * 14.0).sin()) * 5.0;
+        if (u - 0.08).abs() < 0.03 {
+            g *= 0.85; // seam
+        }
+        rgba(
+            [g, g * 0.99, g * 0.97],
+            0.9 + h01(px as i32, py as i32, 937) * 0.12,
+            255,
+        )
+    });
+    // (237) boots: worn leather with a darker sole — fixed, untinted.
+    tf(237, &mut |px, py, u, v| {
+        let t = fbm(u, v, 4, 938);
+        let mut c = mix3([74.0, 56.0, 40.0], [96.0, 74.0, 52.0], t);
+        if v > 0.72 {
+            c = [46.0, 41.0, 37.0]; // sole
+        }
+        if v < 0.18 && (u * 10.0).sin() > 0.3 {
+            c = [58.0, 45.0, 34.0]; // lacing hint
+        }
+        rgba(c, 0.9 + h01(px as i32, py as i32, 939) * 0.15, 255)
     });
 
     // (232) quern top: a millstone with a center eye and sweep grooves.

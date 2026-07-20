@@ -716,43 +716,199 @@ impl Mob {
     }
 }
 
-/// A remote player's body: a boxy humanoid at `pos` facing `yaw`.
-/// (Same box math as mob models; static pose, name tag drawn by the UI.)
+/// Which tiles dress a humanoid — resolved from a player's Style
+/// (pre-tinted variant slots; see style.rs).
+pub struct HumanoidArt {
+    pub skin: u16,
+    pub face: u16,
+    pub hair: u16,
+    pub hair_top: u16,
+    pub shirt: u16,
+    pub trousers: u16,
+    pub boot: u16,
+}
+
+/// What (if anything) the humanoid holds in its right hand.
+#[derive(Clone, Copy)]
+pub enum HeldArt {
+    None,
+    /// A placeable block: mini cube with the block's face tiles.
+    Cube([u16; 6]),
+    /// Anything else: the item's icon as a small sprite.
+    Sprite(u16),
+}
+
+/// A player's body: Steve-proportioned boxes on a 16px-per-block
+/// grid, ~29px (1.81 blocks) tall to match the hitbox. `gait` is
+/// (phase, amplitude): legs and arms swing in opposition, hinged at
+/// hip and shoulder. Hands are their own skin-toned boxes; hair is
+/// an alpha-cut overlay box; the held item rides the right hand.
+#[allow(clippy::too_many_arguments)]
 pub fn emit_humanoid(
     pos: Vec3,
     yaw: f32,
-    tile: u16,
-    face: u16,
+    art: &HumanoidArt,
+    gait: (f32, f32),
+    held: HeldArt,
     lum: ([f32; 3], f32),
     verts: &mut Vec<Vertex>,
     idx: &mut Vec<u32>,
 ) {
-    // (size px, at px, is_head)
-    let boxes: [([f32; 3], [f32; 3], bool); 6] = [
-        ([2.0, 6.0, 2.0], [-1.5, 0.0, 0.0], false),
-        ([2.0, 6.0, 2.0], [1.5, 0.0, 0.0], false),
-        ([6.0, 6.0, 3.0], [0.0, 6.0, 0.0], false),
-        ([2.0, 6.0, 2.0], [-4.0, 6.0, 0.0], false),
-        ([2.0, 6.0, 2.0], [4.0, 6.0, 0.0], false),
-        ([5.0, 5.0, 5.0], [0.0, 12.0, 0.0], true),
-    ];
     let (syaw, cyaw) = (yaw + std::f32::consts::PI).sin_cos();
+    let (phase, amp) = gait;
+    let leg = phase.sin() * 0.55 * amp;
+    let arm = -phase.sin() * 0.45 * amp;
     let ts = 1.0 / ATLAS_TILES as f32;
     let inset = ts / 32.0;
-    for (size, at, is_head) in boxes {
+
+    // (size px, base [x, y_base, z], tiles, swing rad, pivot y px, skip bottom)
+    struct Part {
+        size: [f32; 3],
+        at: [f32; 3],
+        tiles: [u16; 6],
+        swing: f32,
+        pivot: f32,
+        skip_bottom: bool,
+    }
+    let all = |t: u16| [t; 6];
+    let head_tiles = [art.skin, art.skin, art.skin, art.skin, art.skin, art.face];
+    let hair_tiles = [
+        art.hair,
+        art.hair,
+        art.hair_top,
+        art.hair,
+        art.hair,
+        art.hair,
+    ];
+    let parts = [
+        // Boots and legs share the hip hinge so they swing as one limb.
+        Part {
+            size: [3.0, 3.0, 3.0],
+            at: [-1.5, 0.0, 0.0],
+            tiles: all(art.boot),
+            swing: leg,
+            pivot: 12.0,
+            skip_bottom: false,
+        },
+        Part {
+            size: [3.0, 3.0, 3.0],
+            at: [1.5, 0.0, 0.0],
+            tiles: all(art.boot),
+            swing: -leg,
+            pivot: 12.0,
+            skip_bottom: false,
+        },
+        Part {
+            size: [3.0, 9.0, 3.0],
+            at: [-1.5, 3.0, 0.0],
+            tiles: all(art.trousers),
+            swing: leg,
+            pivot: 12.0,
+            skip_bottom: false,
+        },
+        Part {
+            size: [3.0, 9.0, 3.0],
+            at: [1.5, 3.0, 0.0],
+            tiles: all(art.trousers),
+            swing: -leg,
+            pivot: 12.0,
+            skip_bottom: false,
+        },
+        Part {
+            size: [8.0, 10.0, 4.0],
+            at: [0.0, 12.0, 0.0],
+            tiles: all(art.shirt),
+            swing: 0.0,
+            pivot: 0.0,
+            skip_bottom: false,
+        },
+        // Sleeves from the shoulder, skin-toned hands at their ends.
+        Part {
+            size: [3.0, 9.0, 3.0],
+            at: [-5.5, 13.0, 0.0],
+            tiles: all(art.shirt),
+            swing: -arm,
+            pivot: 22.0,
+            skip_bottom: false,
+        },
+        Part {
+            size: [3.0, 9.0, 3.0],
+            at: [5.5, 13.0, 0.0],
+            tiles: all(art.shirt),
+            swing: arm,
+            pivot: 22.0,
+            skip_bottom: false,
+        },
+        Part {
+            size: [3.0, 3.0, 3.0],
+            at: [-5.5, 10.0, 0.0],
+            tiles: all(art.skin),
+            swing: -arm,
+            pivot: 22.0,
+            skip_bottom: false,
+        },
+        Part {
+            size: [3.0, 3.0, 3.0],
+            at: [5.5, 10.0, 0.0],
+            tiles: all(art.skin),
+            swing: arm,
+            pivot: 22.0,
+            skip_bottom: false,
+        },
+        Part {
+            size: [7.0, 7.0, 7.0],
+            at: [0.0, 22.0, 0.0],
+            tiles: head_tiles,
+            swing: 0.0,
+            pivot: 0.0,
+            skip_bottom: false,
+        },
+        // Hair: a slightly inflated alpha-cut shell over the head.
+        Part {
+            size: [7.7, 7.7, 7.7],
+            at: [0.0, 21.8, 0.0],
+            tiles: hair_tiles,
+            swing: 0.0,
+            pivot: 0.0,
+            skip_bottom: true,
+        },
+    ];
+
+    let mut emit_box = |size: [f32; 3],
+                        at: [f32; 3],
+                        tiles: [u16; 6],
+                        swing: f32,
+                        pivot_px: f32,
+                        skip_bottom: bool| {
         let (hx, hy, hz) = (size[0] / 32.0, size[1] / 32.0, size[2] / 32.0);
         let center = Vec3::new(at[0] / 16.0, at[1] / 16.0 + hy, at[2] / 16.0);
+        let pivot = pivot_px / 16.0;
+        let (ss, cs) = swing.sin_cos();
         for f in 0..6 {
-            let t = if is_head && f == 5 { face } else { tile };
+            if skip_bottom && f == 3 {
+                continue;
+            }
+            let t = tiles[f];
             let (tx, ty) = (t as u32 % ATLAS_TILES, t as u32 / ATLAS_TILES);
             let n = NORMALS[f];
-            let (nx, nz) = (n[0] as f32, n[2] as f32);
-            let normal = [nx * cyaw + nz * syaw, n[1] as f32, -nx * syaw + nz * cyaw];
+            let (mut ny, mut nz) = (n[1] as f32, n[2] as f32);
+            if swing != 0.0 {
+                let (y0, z0) = (ny, nz);
+                ny = y0 * cs - z0 * ss;
+                nz = y0 * ss + z0 * cs;
+            }
+            let nx = n[0] as f32;
+            let normal = [nx * cyaw + nz * syaw, ny, -nx * syaw + nz * cyaw];
             let base = verts.len() as u32;
             for c in CORNERS[f].iter() {
                 let lx = center.x + (c[0] - 0.5) * 2.0 * hx;
-                let ly = center.y + (c[1] - 0.5) * 2.0 * hy;
-                let lz = center.z + (c[2] - 0.5) * 2.0 * hz;
+                let mut ly = center.y + (c[1] - 0.5) * 2.0 * hy;
+                let mut lz = center.z + (c[2] - 0.5) * 2.0 * hz;
+                if swing != 0.0 {
+                    let (dy, dz) = (ly - pivot, lz - center.z);
+                    ly = pivot + dy * cs - dz * ss;
+                    lz = center.z + dy * ss + dz * cs;
+                }
                 let wx = lx * cyaw + lz * syaw;
                 let wz = -lx * syaw + lz * cyaw;
                 let (u, v) = match f {
@@ -772,6 +928,96 @@ pub fn emit_humanoid(
                 });
             }
             idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
+    };
+
+    for p in parts {
+        emit_box(p.size, p.at, p.tiles, p.swing, p.pivot, p.skip_bottom);
+    }
+
+    // The held item rides the right hand: swung by the arm, held a
+    // touch forward of the palm (model forward is local -Z).
+    let hand_center = {
+        let pivot = 22.0 / 16.0;
+        let (ss, cs) = arm.sin_cos();
+        let (hy0, hz0) = (10.0 / 16.0 + 1.5 / 16.0, -3.5 / 16.0);
+        let dy = hy0 - pivot;
+        Vec3::new(5.5 / 16.0, pivot + dy * cs - hz0 * ss, dy * ss + hz0 * cs)
+    };
+    let mut emit_held_quad = |corners: [(Vec3, f32, f32); 4], slot: u16| {
+        let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
+        let base = verts.len() as u32;
+        for (lp, u, v) in corners {
+            let wx = lp.x * cyaw + lp.z * syaw;
+            let wz = -lp.x * syaw + lp.z * cyaw;
+            verts.push(Vertex {
+                pos: [pos.x + wx, pos.y + lp.y, pos.z + wz],
+                uv: [
+                    tx as f32 * ts + inset + u * (ts - 2.0 * inset),
+                    ty as f32 * ts + inset + v * (ts - 2.0 * inset),
+                ],
+                normal: [0.0, 0.0, 0.0],
+                light: lum.0,
+                sky: lum.1,
+            });
+        }
+        idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    };
+    match held {
+        HeldArt::None => {}
+        HeldArt::Cube(tiles) => {
+            let h = 2.2 / 16.0;
+            for f in 0..6 {
+                let (u0, v0, corners) = (0.0, 0.0, CORNERS[f]);
+                let _ = (u0, v0);
+                let quad = [0, 1, 2, 3].map(|i| {
+                    let c = corners[i];
+                    let lp = hand_center
+                        + Vec3::new(
+                            (c[0] - 0.5) * 2.0 * h,
+                            (c[1] - 0.5) * 2.0 * h,
+                            (c[2] - 0.5) * 2.0 * h,
+                        );
+                    let (u, v) = match f {
+                        0 | 1 => (c[2], 1.0 - c[1]),
+                        4 | 5 => (c[0], 1.0 - c[1]),
+                        _ => (c[0], c[2]),
+                    };
+                    (lp, u, v)
+                });
+                emit_held_quad(quad, tiles[f]);
+            }
+        }
+        HeldArt::Sprite(icon) => {
+            let h = 4.5 / 16.0;
+            for (dx, dz) in [(1.0f32, 0.0f32), (0.0, 1.0)] {
+                for flip in [false, true] {
+                    let sgn = if flip { -1.0 } else { 1.0 };
+                    let quad = [
+                        (
+                            hand_center + Vec3::new(-h * sgn * dx, -h, -h * sgn * dz),
+                            0.0,
+                            1.0,
+                        ),
+                        (
+                            hand_center + Vec3::new(h * sgn * dx, -h, h * sgn * dz),
+                            1.0,
+                            1.0,
+                        ),
+                        (
+                            hand_center + Vec3::new(h * sgn * dx, h, h * sgn * dz),
+                            1.0,
+                            0.0,
+                        ),
+                        (
+                            hand_center + Vec3::new(-h * sgn * dx, h, -h * sgn * dz),
+                            0.0,
+                            0.0,
+                        ),
+                    ];
+                    emit_held_quad(quad, icon);
+                }
+            }
         }
     }
 }

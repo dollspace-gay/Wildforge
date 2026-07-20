@@ -138,8 +138,17 @@ TILES = {
     "bronze_chestplate": ("sprite", "a polished golden-bronze metal chestplate with rivets"),
     "bronze_leggings": ("sprite", "golden-bronze metal plate leggings"),
     "bronze_boots": ("sprite", "a pair of golden-bronze metal boots"),
-    "player_skin": ("face", "simple blue tunic cloth over brown trousers, flat game-character clothing texture"),
-    "player_face": ("head", "a friendly human face: two blue eyes, small mouth, brown hair across the top. Light skin."),
+    # Player tiles are tint bases: near-greyscale, multiplied by each
+    # player's chosen palette at atlas build (style.rs). The script
+    # desaturates them after generation (GREY_TILES below); paint form
+    # and shading, not color. The face must read gender-neutral.
+    "player_shirt": ("face", "plain woven fabric with soft fold shading, light grey, flat clothing texture"),
+    "player_face": ("head", "a neutral friendly androgynous face, epicene, simple dark eyes, tiny subtle mouth, NO facial hair, NO hair on the head, plain pale grey-toned skin"),
+    "player_skin": ("face", "plain smooth pale grey skin texture, very subtle tonal variation, flat"),
+    # (player_hair / player_hair_top stay procedural: they need an
+    # alpha-cut fringe the model can't paint reliably.)
+    "player_trousers": ("face", "plain woven trouser fabric, light grey, a single vertical seam line, flat clothing texture"),
+    "player_boot": ("face", "worn brown leather boot texture with a darker sole strip along the bottom edge, flat"),
     "mossy_cobblestone": ("tile", "grey cobblestone heavily overgrown with green moss patches"),
     "cracked_masonry": ("tile", "old dressed stone brickwork with deep jagged cracks"),
     "packed_earth": ("tile", "dark trodden packed earth floor with small stones"),
@@ -377,6 +386,11 @@ def resize_sprite(img, px_out):
     return img
 
 
+# Player tint bases are desaturated after generation (style palettes
+# multiply over them at atlas build).
+GREY_TILES = {"player_shirt", "player_face", "player_skin", "player_trousers"}
+
+
 def process(img, cat):
     img = img.convert("RGBA")
     w, h = img.size
@@ -460,6 +474,11 @@ def main():
         prompt = styles[cat].format(frag)
         try:
             img = process(generate(prompt), cat)
+            if name in GREY_TILES:
+                # Tint bases: strip the model's color drift, keep form.
+                a = img.getchannel("A")
+                img = img.convert("L").convert("RGBA")
+                img.putalpha(a)
             img.save(out)
             done += 1
             print(f"ok {name}")

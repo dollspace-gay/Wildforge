@@ -19,7 +19,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 pub const GAME_PORT: u16 = 27431;
 pub const BEACON_PORT: u16 = 27430;
 /// Bump when the protocol changes shape.
-pub const PROTOCOL: u32 = 6;
+pub const PROTOCOL: u32 = 7;
 
 // ---------------- protocol ----------------
 
@@ -64,6 +64,8 @@ pub enum C2S {
         protocol: u32,
         name: String,
         content_hash: u64,
+        /// Packed appearance Style (style.rs) — how others draw you.
+        style: u32,
     },
     Move {
         pos: Vec3,
@@ -184,9 +186,9 @@ pub enum S2C {
         z: i32,
         id: u16,
     },
-    /// (id, pos, yaw, held wire item id) for every player, host
-    /// included (u16::MAX = empty hand). Datagram.
-    Players(Vec<(u32, Vec3, f32, u16)>),
+    /// (id, pos, yaw, held wire item id, packed style) for every
+    /// player, host included (u16::MAX = empty hand). Datagram.
+    Players(Vec<(u32, Vec3, f32, u16, u32)>),
     Mobs(Vec<MobSnap>),
     Bolts(Vec<BoltSnap>),
     /// Airborne gravity blocks (sand mid-tumble). Datagram.
@@ -252,6 +254,7 @@ pub enum HostEvent {
         id: u32,
         name: String,
         content_hash: u64,
+        style: u32,
     },
     Msg {
         id: u32,
@@ -418,6 +421,7 @@ async fn accept_loop(
                 protocol,
                 name,
                 content_hash,
+                style,
             }) = decode(&first)
             else {
                 return;
@@ -438,6 +442,7 @@ async fn accept_loop(
                 id,
                 name,
                 content_hash,
+                style,
             });
 
             // Writer task.
@@ -541,7 +546,12 @@ impl rustls::client::danger::ServerCertVerifier for TrustAny {
 }
 
 impl Client {
-    pub fn connect(addr: SocketAddr, name: String, content_hash: u64) -> std::io::Result<Client> {
+    pub fn connect(
+        addr: SocketAddr,
+        name: String,
+        content_hash: u64,
+        style: u32,
+    ) -> std::io::Result<Client> {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -575,6 +585,7 @@ impl Client {
             protocol: PROTOCOL,
             name,
             content_hash,
+            style,
         });
         let _ = rel_tx.send(hello);
         rt.spawn(write_loop(send, rel_rx));

@@ -3644,6 +3644,7 @@ fn net_protocol_round_trips() {
             protocol: 2,
             name: "doll".into(),
             content_hash: 42,
+            style: 0x0102_0304,
         },
         C2S::Move {
             pos: Vec3::new(1.5, 80.0, -3.5),
@@ -5181,22 +5182,40 @@ fn loopback_join_stream_and_edit() {
     let mut sess = crate::mp::HostSession::start_on("loop".into(), 0).expect("host binds");
     let port = sess.net.port;
 
-    // Guest connects over localhost.
+    // Guest connects over localhost, wearing a chosen look.
+    let host_held = reg.item_id("base:torch").unwrap().0;
+    let host_style = crate::style::Style {
+        skin: 1,
+        hair: 2,
+        shirt: 3,
+        trousers: 4,
+    }
+    .pack();
+    let guest_style = crate::style::Style {
+        skin: 4,
+        hair: 6,
+        shirt: 8,
+        trousers: 2,
+    };
     let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
     let mut client =
-        crate::net::Client::connect(addr, "tester".into(), sess.content_hash).expect("connect");
+        crate::net::Client::connect(addr, "tester".into(), sess.content_hash, guest_style.pack())
+            .expect("connect");
 
     // Pump both sides until the Welcome lands.
     let ground = sim.world.surface_height(8, 8) as f32 + 1.0;
     let gpos = Vec3::new(8.5, ground, 8.5);
     let mut welcome = None;
     let mut torch_wire: Option<usize> = None;
-    let mut held_echo: Option<(u16, u16)> = None; // (host's, ours)
-    let host_held = reg.item_id("base:torch").unwrap().0;
+    let mut held_echo: Option<((u16, u32), (u16, u32))> = None;
     let mut got_chunk = false;
     let mut chunk_data: Option<(i32, i32, Vec<u8>)> = None;
     for _ in 0..200 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.06,
+        );
         for msg in client.poll() {
             match msg {
                 S2C::Welcome {
@@ -5259,7 +5278,11 @@ fn loopback_join_stream_and_edit() {
     let mut echoed = false;
     let mut given = false;
     for _ in 0..200 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.06,
+        );
         for msg in client.poll() {
             match msg {
                 S2C::BlockSet {
@@ -5270,10 +5293,10 @@ fn loopback_join_stream_and_edit() {
                 } if yy == y => echoed = true,
                 S2C::Give { .. } => given = true,
                 S2C::Players(list) => {
-                    // Held items ride the snapshot: the host's torch and
-                    // our own held id, round-tripped.
-                    let host = list.iter().find(|p| p.0 == 0).map(|p| p.3);
-                    let me = list.iter().find(|p| p.0 != 0).map(|p| p.3);
+                    // Held items and styles ride the snapshot: the
+                    // host's and our own, round-tripped.
+                    let host = list.iter().find(|p| p.0 == 0).map(|p| (p.3, p.4));
+                    let me = list.iter().find(|p| p.0 != 0).map(|p| (p.3, p.4));
                     if let (Some(h), Some(m)) = (host, me) {
                         held_echo = Some((h, m));
                     }
@@ -5288,9 +5311,15 @@ fn loopback_join_stream_and_edit() {
     }
     assert_eq!(sim.world.get_block(9, y, 9), AIR, "host applied the break");
     assert!(echoed, "edit echoed to the guest");
-    let (h, m) = held_echo.expect("players snapshot carried held items");
+    let ((h, hst), (m, mst)) = held_echo.expect("players snapshot carried held items");
     assert_eq!(h, host_held, "host's torch visible to guests");
     assert_eq!(m as usize, torch_wire.unwrap(), "our held id round-trips");
+    assert_eq!(hst, host_style, "host style visible to guests");
+    assert_eq!(
+        crate::style::Style::unpack(mst),
+        guest_style,
+        "our chosen style round-trips through Hello and the snapshot"
+    );
     assert!(
         sess.guests
             .values()
@@ -5309,7 +5338,11 @@ fn loopback_join_stream_and_edit() {
         z: 200,
     });
     for _ in 0..30 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.06,
+        );
         client.poll();
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
@@ -5329,7 +5362,11 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::OpenContainer { x: 10, y: cy, z: 8 });
     let mut opened = false;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.06,
+        );
         for msg in client.poll() {
             if matches!(msg, S2C::Container { x: 10, kind: 0, .. }) {
                 opened = true;
@@ -5365,7 +5402,11 @@ fn loopback_join_stream_and_edit() {
     });
     let mut cursor_back = None;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.06,
+        );
         for msg in client.poll() {
             if let S2C::HeldResult(Some(s)) = msg {
                 cursor_back = Some(s);
@@ -5390,7 +5431,11 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::SleepRequest);
     let mut dawned = false;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, true, host_held)), 0.06);
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, true, host_held, host_style)),
+            0.06,
+        );
         client.poll();
         if (sim.time_of_day - 0.3).abs() < 0.01 {
             dawned = true;
@@ -5404,7 +5449,11 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::Chat("hello".into()));
     let mut chatted = false;
     for _ in 0..100 {
-        let fx = sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
+        let fx = sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.06,
+        );
         if fx
             .iter()
             .any(|f| matches!(f, crate::mp::HostFx::Chat { .. }))
@@ -5431,7 +5480,11 @@ fn loopback_join_stream_and_edit() {
     });
     let (mut saw_falling, mut saw_land) = (false, false);
     for _ in 0..200 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.06,
+        );
         sim.advance(0.06, &[], &mut Vec::new());
         for msg in client.poll() {
             match msg {
@@ -5458,7 +5511,11 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::OpenContainer { x: 12, y: by, z: 8 });
     let mut got_kind3 = false;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.06,
+        );
         for msg in client.poll() {
             if matches!(msg, S2C::Container { kind: 3, .. }) {
                 got_kind3 = true;
@@ -5500,7 +5557,11 @@ fn loopback_join_stream_and_edit() {
     let lit = reg.block_id("base:bloomery_lit").unwrap();
     let mut is_lit = false;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.06,
+        );
         client.poll();
         if sim.world.get_block(12, by, 8) == lit {
             is_lit = true;
@@ -5529,7 +5590,11 @@ fn loopback_join_stream_and_edit() {
     }
     let mut bar = false;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.06,
+        );
         for msg in client.poll() {
             if let S2C::Give { item, .. } = msg
                 && item == ingot.0
@@ -5552,7 +5617,11 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::OpenContainer { x: 6, y: ky, z: 12 });
     let mut got_kind4 = false;
     for _ in 0..100 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, host_held)), 0.06);
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.06,
+        );
         for msg in client.poll() {
             if matches!(msg, S2C::Container { kind: 4, .. }) {
                 got_kind4 = true;
@@ -5570,7 +5639,11 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::SleepRequest);
     client.send(&C2S::SleepCancel);
     for _ in 0..30 {
-        sess.pump(&mut sim, Some((gpos, 0.0, true, host_held)), 0.06);
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, true, host_held, host_style)),
+            0.06,
+        );
         client.poll();
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
@@ -5593,8 +5666,8 @@ fn loopback_join_stream_and_edit() {
     }
     assert!(!client.is_connected(), "kicked guest disconnected");
     // Rejoining under the banned name never yields a Welcome.
-    let mut client2 =
-        crate::net::Client::connect(addr, "tester".into(), sess.content_hash).expect("reconnect");
+    let mut client2 = crate::net::Client::connect(addr, "tester".into(), sess.content_hash, 0)
+        .expect("reconnect");
     let mut turned_away = false;
     for _ in 0..150 {
         sess.pump(&mut sim, None, 0.06);
@@ -5855,4 +5928,130 @@ fn config_lights_and_darkness_roundtrip() {
     let c4 = Config::from_text("lights=banana\ndarkness=???\n");
     assert_eq!(c4.lights, 2, "unknown value falls back to full");
     assert!(c4.stark, "unknown darkness falls back to stark");
+}
+
+// ---------------- the player, seen ----------------
+
+#[test]
+fn player_style_packs_clamps_and_names_align() {
+    use crate::style::*;
+    // Every palette combination survives the u32 round trip.
+    for skin in 0..SKIN_TONES.len() as u8 {
+        for hair in 0..HAIR_COLORS.len() as u8 {
+            let s = Style {
+                skin,
+                hair,
+                shirt: (hair % SHIRT_COLORS.len() as u8),
+                trousers: (skin % TROUSER_COLORS.len() as u8),
+            };
+            assert_eq!(Style::unpack(s.pack()), s);
+        }
+    }
+    // Garbage clamps into range instead of exploding the palette index.
+    let wild = Style::unpack(u32::MAX);
+    assert!((wild.skin as usize) < SKIN_TONES.len());
+    assert!((wild.hair as usize) < HAIR_COLORS.len());
+    assert!((wild.shirt as usize) < SHIRT_COLORS.len());
+    assert!((wild.trousers as usize) < TROUSER_COLORS.len());
+    // Display names track their palettes.
+    assert_eq!(HAIR_NAMES.len(), HAIR_COLORS.len());
+    assert_eq!(SHIRT_NAMES.len(), SHIRT_COLORS.len());
+    assert_eq!(TROUSER_NAMES.len(), TROUSER_COLORS.len());
+    // Variant slots stay above the mod region (compile-time consts,
+    // but the relationship is the contract worth pinning).
+    let (base, span) = (VARIANT_BASE as u32, VARIANT_SLOTS as u32);
+    assert!(base >= crate::atlas::FIRST_FREE_SLOT as u32);
+    assert_eq!(base + span, 1024);
+
+    let c = crate::config::Config::from_text("appearance=66051\n");
+    assert_eq!(c.appearance, 66051, "appearance persists in config");
+}
+
+#[test]
+fn humanoid_stands_full_height_with_hands() {
+    use crate::mobs::{HeldArt, HumanoidArt, emit_humanoid};
+    let art = HumanoidArt {
+        skin: 1,
+        face: 2,
+        hair: 3,
+        hair_top: 4,
+        shirt: 5,
+        trousers: 6,
+        boot: 7,
+    };
+    let (mut verts, mut idx) = (Vec::new(), Vec::new());
+    emit_humanoid(
+        Vec3::ZERO,
+        0.0,
+        &art,
+        (0.0, 0.0),
+        HeldArt::None,
+        ([1.0; 3], 1.0),
+        &mut verts,
+        &mut idx,
+    );
+    let (mut lo, mut hi) = (f32::MAX, f32::MIN);
+    for v in &verts {
+        lo = lo.min(v.pos[1]);
+        hi = hi.max(v.pos[1]);
+    }
+    // The sinking bug, pinned: feet at the position, head at the hitbox.
+    assert!(lo > -0.01, "nothing below the feet (was: waist-deep)");
+    assert!(
+        (1.75..=1.87).contains(&(hi - lo)),
+        "full height, got {}",
+        hi - lo
+    );
+    // 11 parts minus the hair's skipped bottom face = 65 quads; hands
+    // and hair are present or this count collapses.
+    assert_eq!(idx.len() / 6, 65, "boots, hands, and hair all present");
+
+    // A held block adds its six faces to the right hand.
+    let (mut v2, mut i2) = (Vec::new(), Vec::new());
+    emit_humanoid(
+        Vec3::ZERO,
+        0.0,
+        &art,
+        (0.0, 0.0),
+        HeldArt::Cube([9; 6]),
+        ([1.0; 3], 1.0),
+        &mut v2,
+        &mut i2,
+    );
+    assert_eq!(i2.len() / 6, 71, "held cube rides the hand");
+}
+
+#[test]
+fn atlas_derives_tinted_player_variants() {
+    use crate::atlas::{ATLAS_TILES, apply_player_variants, build_procedural, builtin_slots};
+    use crate::style::{SKIN_TONES, Style, skin_tile};
+    let tp = 8u32;
+    let mut img = build_procedural(tp);
+    let px = ATLAS_TILES * tp;
+    apply_player_variants(&mut img, px);
+    let base = *builtin_slots().get("player_skin").unwrap();
+    let sample = |slot: u16, dx: u32, dy: u32| -> [u8; 4] {
+        let (tx, ty) = (
+            slot as u32 % ATLAS_TILES * tp + dx,
+            slot as u32 / ATLAS_TILES * tp + dy,
+        );
+        let i = ((ty * px + tx) * 4) as usize;
+        [img[i], img[i + 1], img[i + 2], img[i + 3]]
+    };
+    for (i, c) in SKIN_TONES.iter().enumerate() {
+        let st = Style {
+            skin: i as u8,
+            ..Default::default()
+        };
+        let b = sample(base, 3, 3);
+        let v = sample(skin_tile(&st), 3, 3);
+        for ch in 0..3 {
+            let want = (b[ch] as f32 * c[ch]).min(255.0) as u8;
+            assert!(
+                (v[ch] as i32 - want as i32).abs() <= 1,
+                "variant = base x palette (tone {i} ch {ch})"
+            );
+        }
+        assert_eq!(v[3], b[3], "alpha preserved");
+    }
 }

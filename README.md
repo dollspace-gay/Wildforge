@@ -87,7 +87,12 @@ every claim asserted, so the docs can't drift from the code.
   (v1) worlds migrate automatically.
 - **Multiplayer**: joining a host with different mods streams the
   host's data and textures to you automatically — nothing to install.
-  Scripts never leave the host.
+  Scripts never leave the host. Other players appear as full-height
+  characters with their **chosen appearance** (APPEARANCE on the
+  title or pause menu: skin tone, hair, shirt, trousers — palette
+  swatches with a live preview), walking with a real gait and
+  holding what they hold. The default look is deliberately
+  gender-neutral; identity is yours to pick.
 - Ships with `mods/gems` — a worked example adding deep ruby ore (tier-2
   gated), items, recipes, and a scripted milestone counter.
 
@@ -317,7 +322,12 @@ Drop-in re-skins, no recompiling and no mod required. Design doc:
 - **Format**: a folder in `packs/` with individual PNGs named by tile —
   `packs/<id>/tiles/stone.png`, `grass_top.png`, … (the same names mod
   TOML references as `@stone`). Mod art is addressable too:
-  `tiles/gems/ruby_ore.png` re-skins the gems mod's ruby ore. Any
+  `tiles/gems/ruby_ore.png` re-skins the gems mod's ruby ore. The
+  player is reskinnable too (`player_face.png`, `player_skin.png`,
+  `player_shirt.png`, `player_trousers.png`, `player_boot.png`,
+  `player_hair.png`, `player_hair_top.png`) — paint them mid-grey
+  where players' chosen colors should read true, since every
+  appearance tint multiplies over these bases. Any
   per-tile resolution; tiles you don't include keep their default art.
   Optional `pack.toml` supplies a display name and description.
 - **Selecting**: TEXTURE PACKS on the title screen lists every pack;

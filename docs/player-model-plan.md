@@ -1,6 +1,21 @@
 # The player, seen — model, skin, and appearance plan
 
-Drafted 2026-07-19. The current remote-player render is a half-scale
+Drafted and **IMPLEMENTED** 2026-07-19, all five stages. Notes vs.
+this spec: hair tiles stay procedural even in the gemini pack (the
+alpha-cut fringe is not something the image model paints reliably;
+everything else regenerated as desaturated tint bases with a
+scripted grey pass); the variant tiles live at slots 980–1023 (44:
+6 skins ×2 for faces, 8 hairs ×2 for the crown tile, 10 shirts, 6
+trousers) — derived from the bases *after* pack layering, so
+repainted bases carry into every color automatically; the title
+screen went two-column to fit the APPEARANCE button (which also
+fixed its long-standing overflow with many worlds); and the walk
+cycle/held-item work landed with the model rebuild rather than as a
+separate stage. The gemini face came out softly plush-friendly —
+epicene as ordered, more woodland companion than action figure,
+which suits the game.
+
+As drafted — the state this plan fixed: the remote-player render was a half-scale
 mannequin: ~1.05 blocks tall against a 1.8-block hitbox (it reads as
 waist-deep in the ground), every box face wrapped in one "tunic"
 tile, a face pasted on the head front, no hands, no animation, no

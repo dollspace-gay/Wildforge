@@ -17,6 +17,8 @@ pub struct Config {
     pub pack: String,
     /// Point lights: 0 = off, 1 = shadowless, 2 = hard shadows.
     pub lights: u8,
+    /// Packed player Style (style.rs) — how others see you.
+    pub appearance: u32,
     /// Ambient floor: true = stark (dark truly dark), false = soft.
     pub stark: bool,
 }
@@ -31,6 +33,7 @@ impl Default for Config {
             pack: "gemini".into(),
             lights: 2,
             stark: true,
+            appearance: crate::style::Style::default().pack(),
         }
     }
 }
@@ -77,6 +80,11 @@ impl Config {
                     }
                 }
                 "darkness" => c.stark = v != "soft",
+                "appearance" => {
+                    if let Ok(x) = v.parse::<u32>() {
+                        c.appearance = x;
+                    }
+                }
                 _ => {}
             }
         }
@@ -85,7 +93,7 @@ impl Config {
 
     pub fn to_text(&self) -> String {
         format!(
-            "volume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\npack={}\nlights={}\ndarkness={}\n",
+            "volume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\npack={}\nlights={}\ndarkness={}\nappearance={}\n",
             self.volume,
             self.sensitivity,
             self.view_dist,
@@ -93,6 +101,7 @@ impl Config {
             self.pack,
             ["off", "on", "shadows"][self.lights.min(2) as usize],
             if self.stark { "stark" } else { "soft" },
+            self.appearance,
         )
     }
 

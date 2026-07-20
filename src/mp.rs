@@ -21,6 +21,8 @@ pub struct Guest {
     pub sleeping: bool,
     /// Wire item id in hand (u16::MAX = empty), from Move packets.
     pub held: u16,
+    /// Packed appearance Style, from the Hello.
+    pub style: u32,
     sent_chunks: HashSet<(i32, i32)>,
     edits: u32,
     edit_window: f32,
@@ -115,15 +117,18 @@ impl HostSession {
     pub fn pump(
         &mut self,
         server: &mut Server,
-        host: Option<(Vec3, f32, bool, u16)>,
+        host: Option<(Vec3, f32, bool, u16, u32)>,
         dt: f32,
     ) -> Vec<HostFx> {
         let host_pos = host
-            .map(|(p, _, _, _)| p)
+            .map(|(p, _, _, _, _)| p)
             .unwrap_or(Vec3::new(0.5, 80.0, 0.5));
-        let host_yaw = host.map(|(_, y, _, _)| y).unwrap_or(0.0);
-        let host_sleeping = host.map(|(_, _, s, _)| s).unwrap_or(false);
-        let host_held = host.map(|(_, _, _, h)| h).unwrap_or(u16::MAX);
+        let host_yaw = host.map(|(_, y, _, _, _)| y).unwrap_or(0.0);
+        let host_sleeping = host.map(|(_, _, s, _, _)| s).unwrap_or(false);
+        let host_held = host.map(|(_, _, _, h, _)| h).unwrap_or(u16::MAX);
+        let host_style = host
+            .map(|(_, _, _, _, st)| st)
+            .unwrap_or(crate::style::Style::default().pack());
         let mut fx = Vec::new();
         for ev in self.net.poll() {
             match ev {
@@ -131,8 +136,9 @@ impl HostSession {
                     id,
                     name,
                     content_hash,
+                    style,
                 } => {
-                    self.on_join(server, id, name, content_hash, &mut fx);
+                    self.on_join(server, id, name, content_hash, style, &mut fx);
                 }
                 HostEvent::Left { id } => {
                     if let Some(g) = self.guests.remove(&id) {
@@ -217,10 +223,10 @@ impl HostSession {
             self.snapshot_timer = 0.0;
             let mut players = Vec::new();
             if host.is_some() {
-                players.push((0u32, host_pos, host_yaw, host_held));
+                players.push((0u32, host_pos, host_yaw, host_held, host_style));
             }
             for (id, g) in &self.guests {
-                players.push((*id, g.pos, g.yaw, g.held));
+                players.push((*id, g.pos, g.yaw, g.held, g.style));
             }
             self.net.broadcast_datagram(&S2C::Players(players));
             let mobs: Vec<MobSnap> = server
@@ -322,6 +328,7 @@ impl HostSession {
         id: u32,
         name: String,
         content_hash: u64,
+        style: u32,
         fx: &mut Vec<HostFx>,
     ) {
         if self.banned.contains(&name) {
@@ -364,6 +371,7 @@ impl HostSession {
                 container: None,
                 sleeping: false,
                 held: u16::MAX,
+                style,
                 sent_chunks: HashSet::new(),
                 edits: 0,
                 edit_window: 0.0,
