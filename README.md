@@ -150,6 +150,19 @@ melt, greenhouses); every hard shadow is presentation, and a
 settings row (DYNAMIC LIGHTS off / shadowless / full, DARKNESS
 stark / soft) scales it to your GPU and your nerves.
 
+## Surface relief
+
+Blocks can carry **parallax depth**: a second *material atlas* rides
+alongside the color one (same tiles, linear data), and its height
+channel drives per-fragment parallax occlusion mapping, so recessed
+detail shifts with the viewpoint instead of lying flat on the face.
+Ice is the first to use it — its cracks read as real grooves that
+slide as you move. The depth is opt-in *per texture*: a tile with no
+material data is untouched, and any tile a texture pack repaints has
+its relief reset, so procedural grooves never land under hand-drawn
+art. The material atlas reserves further channels for normal and
+displacement maps to come.
+
 ## Game feel
 
 The feedback skin, tuned to the game's quiet register: every effect
