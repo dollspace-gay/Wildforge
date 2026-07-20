@@ -1684,6 +1684,81 @@ fn random_ticks_visit_a_bounded_cohort() {
 }
 
 #[test]
+fn summer_dries_shallow_water_but_not_deep() {
+    let reg = base_reg();
+    let mut w = test_world_with("evap", reg.clone());
+    w.day = crate::world::SEASON_DAYS; // summer
+    let stone = b(&reg, "base:stone");
+    let h = w.surface_height(4, 4);
+    let y = h + 8;
+    // A walled 2x2 shallow pan, sky open.
+    for x in 2..=7 {
+        for z in 2..=7 {
+            w.set_block(x, y - 1, z, stone);
+            w.set_block(x, y, z, stone);
+        }
+    }
+    for (x, z) in [(4, 4), (5, 4), (4, 5), (5, 5)] {
+        w.set_block(x, y, z, reg.water_block(0));
+    }
+    // A deep walled shaft: three stacked cells, sky open.
+    for x in 10..=12 {
+        for z in 3..=5 {
+            for yy in (y - 3)..=y {
+                w.set_block(x, yy, z, stone);
+            }
+        }
+    }
+    for yy in (y - 2)..=y {
+        w.set_block(11, yy, 4, reg.water_block(0));
+    }
+    // An open spill: a lone film on flat ground.
+    w.set_block(9, y - 1, 9, stone);
+    w.set_block(9, y, 9, reg.water_for_volume(1));
+    let mut rng = 11u32;
+    for _ in 0..40_000 {
+        w.random_tick(&mut rng);
+        w.tick_water(1_000);
+    }
+    for (x, z) in [(4, 4), (5, 4), (4, 5), (5, 5)] {
+        assert_eq!(
+            reg.water_volume(w.get_block(x, y, z)),
+            Some(1),
+            "pan cell ({x},{z}) dried to a marshy film"
+        );
+    }
+    assert_eq!(
+        reg.water_volume(w.get_block(11, y, 4)),
+        Some(8),
+        "deep water is off the stove"
+    );
+    assert_eq!(w.get_block(9, y, 9), AIR, "open spills dry entirely");
+}
+
+#[test]
+fn rain_refills_surface_water() {
+    let reg = base_reg();
+    let mut w = test_world_with("rain", reg.clone());
+    w.day = crate::world::SEASON_DAYS; // summer: temperate columns rain
+    let stone = b(&reg, "base:stone");
+    let h = w.surface_height(4, 4);
+    let y = h + 8;
+    w.set_block(4, y - 1, 4, stone);
+    for (x, z) in [(3, 4), (5, 4), (4, 3), (4, 5)] {
+        w.set_block(x, y, z, stone);
+    }
+    w.set_block(4, y, 4, reg.water_for_volume(2));
+    for _ in 0..12 {
+        w.rain_fill(4, 4);
+    }
+    assert_eq!(
+        reg.water_volume(w.get_block(4, y, 4)),
+        Some(8),
+        "rain topped the cell back up to full"
+    );
+}
+
+#[test]
 fn reconcile_catches_up_an_absent_chunk() {
     let reg = base_reg();
     let dir = tmp_dir("reconcile");

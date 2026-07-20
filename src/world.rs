@@ -2354,6 +2354,38 @@ impl World {
                     if bl >= 12 || warm {
                         changes.push((wx, y, wz, AIR));
                     }
+                    continue;
+                }
+                // Summer sun dries shallow water: a hit drops the cell
+                // to a marshy film in a basin, or clears an open spill
+                // entirely. The cell and every water neighbor must be
+                // shallow — deep bodies are safe, and the sea can't be
+                // siphoned out through its beaches.
+                if season == 1
+                    && sky_open
+                    && let Some(v) = reg.water_volume(b)
+                    && self.get_block(wx, y + 1, wz) == AIR
+                    && self.generator.climate(wx, wz).t > -0.35
+                    && self.water_depth_at_most(wx, y, wz, 2)
+                    && [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                        .iter()
+                        .all(|&(dx, dz)| self.water_depth_at_most(wx + dx, y, wz + dz, 2))
+                {
+                    let contained = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                        .iter()
+                        .filter(|&&(dx, dz)| {
+                            let n = self.get_block(wx + dx, y, wz + dz);
+                            self.reg.is_solid(n) || self.reg.is_water(n)
+                        })
+                        .count()
+                        >= 3;
+                    if contained {
+                        if v > 1 {
+                            changes.push((wx, y, wz, reg.water_for_volume(1)));
+                        }
+                    } else {
+                        changes.push((wx, y, wz, AIR));
+                    }
                 }
             }
         }
@@ -2607,6 +2639,42 @@ impl World {
             return;
         }
         self.set_block(x, y + 1, z, layer);
+    }
+
+    /// Is the water column under (x, y, z) at most `d` cells deep?
+    /// Non-water counts as depth zero (air and solid never block).
+    fn water_depth_at_most(&self, x: i32, y: i32, z: i32, d: i32) -> bool {
+        let mut depth = 0;
+        let mut yy = y;
+        while self.reg.is_water(self.get_block(x, yy, z)) {
+            depth += 1;
+            if depth > d {
+                return false;
+            }
+            yy -= 1;
+        }
+        true
+    }
+
+    /// Rain refills the water it lands on: the first surface the
+    /// column offers, if partial water or a film, gains one unit —
+    /// ponds creep back toward full through a wet autumn.
+    pub fn rain_fill(&mut self, x: i32, z: i32) {
+        if self.snows_at(x, z) || !self.rains_at(x, z) {
+            return;
+        }
+        for y in (1..CHUNK_Y as i32).rev() {
+            let b = self.get_block(x, y, z);
+            if b == AIR {
+                continue;
+            }
+            if let Some(v) = self.reg.water_volume(b)
+                && v < 8
+            {
+                self.set_block(x, y, z, self.reg.water_for_volume(v + 1));
+            }
+            return;
+        }
     }
 
     /// Attempt to mature the sapling at this position. On success the

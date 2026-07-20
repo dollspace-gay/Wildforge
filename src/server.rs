@@ -162,8 +162,9 @@ impl Server {
             }
         }
 
-        // Falling snow settles: sprinkle layers onto exposed cold
-        // ground near players while precipitation lasts.
+        // Precipitation lands near players while it lasts: snow
+        // sprinkles layers onto exposed cold ground, rain tops up
+        // whatever surface water it finds.
         if self.world.weather.precipitating() && !players.is_empty() {
             self.snow_timer += dt;
             if self.snow_timer >= 0.25 {
@@ -178,6 +179,7 @@ impl Server {
                     let dz = ((rng >> 8) % 49) as i32 - 24;
                     let (x, z) = (p.x.floor() as i32 + dx, p.z.floor() as i32 + dz);
                     self.world.settle_snow(x, z);
+                    self.world.rain_fill(x, z);
                 }
                 self.rng = rng;
             }
