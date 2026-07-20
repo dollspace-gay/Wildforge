@@ -251,6 +251,25 @@ pub struct World {
 /// Ire tier names, index = tier.
 pub const IRE_TIERS: [&str; 4] = ["CALM", "UNEASY", "PROVOKED", "WRATHFUL"];
 
+/// Small-λ Poisson draw (Knuth's product method) on the sim's LCG
+/// stream — how many of the ticks a chunk missed actually landed.
+fn poisson(lambda: f64, r: &mut u32) -> u32 {
+    if lambda <= 0.0 {
+        return 0;
+    }
+    let l = (-lambda).exp();
+    let mut k = 0u32;
+    let mut p = 1.0f64;
+    loop {
+        *r = r.wrapping_mul(1664525).wrapping_add(1013904223);
+        p *= (*r >> 8) as f64 / (1 << 24) as f64;
+        if p <= l || k > 64 {
+            return k;
+        }
+        k += 1;
+    }
+}
+
 // ---------------- calendar & weather ----------------
 
 /// In-game days per season; four seasons make a 48-day year.
@@ -671,10 +690,19 @@ impl World {
             self.seed_wildlife(pos);
         }
         // A chunk seen for the first time is up to date; one loaded
-        // from disk keeps its old stamp (reconcile reads the gap).
+        // from disk keeps its old stamp (the gap below reads it).
+        let stamp = self.last_random.get(&(pos.x, pos.z)).copied();
         self.last_random.entry((pos.x, pos.z)).or_insert(self.clock);
         self.wake_seams(pos);
         self.relight_and_cascade(pos);
+        // The world lived while this chunk was away: catch it up.
+        if let Some(stamp) = stamp {
+            let gap = self.clock - stamp;
+            if gap > 60.0 {
+                self.reconcile_chunk(pos, gap);
+                self.last_random.insert((pos.x, pos.z), self.clock);
+            }
+        }
         true
     }
 
@@ -2346,6 +2374,202 @@ impl World {
     #[cfg(test)]
     pub fn chunk_stamp(&self, x: i32, z: i32) -> Option<f64> {
         self.last_random.get(&(x, z)).copied()
+    }
+
+    /// A chunk returning after an absence catches up in one sweep:
+    /// phase rules apply wholesale — it's winter, so the pond you
+    /// left liquid is simply frozen when you arrive — and crops
+    /// advance by a Poisson draw over the random ticks they missed,
+    /// integrated across the seasons the absence spanned. The water
+    /// cycle is deliberately not reconciled (it nets roughly zero
+    /// over a season); light-gated cases judge the plot as it stands
+    /// today — an accepted approximation.
+    fn reconcile_chunk(&mut self, pos: ChunkPos, elapsed: f64) {
+        let reg = self.reg.clone();
+        let ice = reg.block_id("base:ice");
+        let snow_layer = reg.block_id("base:snow_layer");
+        let snow_trod = reg.block_id("base:snow_layer_trod");
+        let farmland = reg.block_id("base:farmland");
+        let season = self.season();
+        let day_len = crate::server::DAY_LENGTH as f64;
+        // Sudden wholesale phase changes want a real absence behind
+        // them; short gaps stay with the gradual burst mechanism.
+        let phase = elapsed >= 2.0 * day_len;
+        // Expected random-tick visits per block per in-game day.
+        let ticks_per_day = 16.0 * day_len / (CHUNK_X * CHUNK_Z * CHUNK_Y) as f64;
+        // Deterministic per-(world, chunk, day) randomness.
+        let mut r = self
+            .seed
+            .wrapping_mul(31)
+            .wrapping_add(pos.x as u32)
+            .wrapping_mul(31)
+            .wrapping_add(pos.z as u32)
+            .wrapping_mul(31)
+            .wrapping_add(self.day);
+        // Seasons of the missed days, capped at two years back —
+        // beyond that the expectations saturate anyway.
+        let end_day = (self.clock / day_len) as i64;
+        let start_day = ((self.clock - elapsed) / day_len) as i64;
+        let days: Vec<usize> = (start_day..end_day)
+            .rev()
+            .take(96)
+            .map(|d| ((d.max(0) as u32 / SEASON_DAYS) % 4) as usize)
+            .collect();
+
+        // One pass over the chunk collects the cells the rules touch.
+        let mut interesting: Vec<(i32, i32, i32, BlockId)> = Vec::new();
+        if let Some(c) = self.chunks.get(&pos) {
+            for lx in 0..CHUNK_X {
+                for lz in 0..CHUNK_Z {
+                    for y in 1..CHUNK_Y {
+                        let b = c.get(lx, y, lz);
+                        if b == AIR {
+                            continue;
+                        }
+                        let d = reg.block(b);
+                        if d.crop_next.is_some()
+                            || d.sapling.is_some()
+                            || d.water_level == Some(0)
+                            || Some(b) == ice
+                            || Some(b) == snow_layer
+                            || Some(b) == snow_trod
+                        {
+                            interesting.push((
+                                pos.x * CHUNK_X as i32 + lx as i32,
+                                y as i32,
+                                pos.z * CHUNK_Z as i32 + lz as i32,
+                                b,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut changes = Vec::new();
+        let mut grow: Vec<(i32, i32, i32, u32)> = Vec::new();
+        let mut refunds = 0u32;
+        for (wx, y, wz, b) in interesting {
+            let d = reg.block(b);
+            if d.sapling.is_some() {
+                let e = days.len() as f64 * ticks_per_day * 0.02;
+                if poisson(e, &mut r) > 0 {
+                    r = r.wrapping_mul(1664525).wrapping_add(1013904223);
+                    grow.push((wx, y, wz, r));
+                }
+                continue;
+            }
+            if d.crop_next.is_some() {
+                let soil_ok = d.crop_any_soil || farmland == Some(self.get_block(wx, y - 1, wz));
+                if !soil_ok {
+                    continue;
+                }
+                let mut sum = 0.0;
+                for &s in &days {
+                    let mult = if d.crop_any_soil {
+                        if s == 1 || s == 2 { 1.0 } else { 0.0 }
+                    } else {
+                        match s {
+                            0 => 1.25,
+                            1 => 1.0,
+                            2 => 0.75,
+                            _ => 0.0,
+                        }
+                    };
+                    let mult = if mult == 0.0 && !d.crop_any_soil {
+                        let (bl, sl) = self.light_at(wx, y, wz);
+                        if sl < 15 && bl >= 10 {
+                            0.5
+                        } else if sl == 15
+                            && (1..=16).any(|dy| reg.block(self.get_block(wx, y + dy, wz)).glass)
+                        {
+                            0.75
+                        } else {
+                            0.0
+                        }
+                    } else {
+                        mult
+                    };
+                    sum += mult;
+                }
+                let k = poisson(ticks_per_day * d.crop_chance as f64 * sum, &mut r);
+                if k > 0 {
+                    let mut cur = b;
+                    for _ in 0..k {
+                        match reg.block(cur).crop_next {
+                            Some(n) => cur = n,
+                            None => break,
+                        }
+                    }
+                    if cur != b {
+                        // Reaching the final stage refunds ire, as a
+                        // live random tick would have.
+                        if reg.block(cur).crop_next.is_none() {
+                            refunds += 1;
+                        }
+                        changes.push((wx, y, wz, cur));
+                    }
+                }
+                continue;
+            }
+            if !phase {
+                continue;
+            }
+            let sky_open = self.light_at(wx, y + 1, wz).1 == 15;
+            if d.water_level == Some(0)
+                && season == 3
+                && sky_open
+                && self.get_block(wx, y + 1, wz) == AIR
+                && self.generator.climate(wx, wz).t < 0.35
+            {
+                if let Some(ice) = ice {
+                    changes.push((wx, y, wz, ice));
+                }
+                continue;
+            }
+            if Some(b) == ice
+                && (season == 0 || season == 1)
+                && sky_open
+                && self.generator.climate(wx, wz).t > -0.35
+            {
+                changes.push((wx, y, wz, reg.water_block(0)));
+                continue;
+            }
+            if Some(b) == snow_layer || Some(b) == snow_trod {
+                let (bl, _) = self.light_at(wx, y, wz);
+                let warm = season != 3 && self.generator.climate(wx, wz).t > -0.35;
+                if bl >= 12 || warm {
+                    changes.push((wx, y, wz, AIR));
+                }
+            }
+        }
+        // Batched apply: a frozen lake is many cells — one relight,
+        // not one per cell.
+        let any = !changes.is_empty();
+        for (x, y, z, nb) in changes {
+            let (lx, lz) = (
+                x.rem_euclid(CHUNK_X as i32) as usize,
+                z.rem_euclid(CHUNK_Z as i32) as usize,
+            );
+            if let Some(c) = self.chunks.get_mut(&pos) {
+                c.set(lx, y as usize, lz, nb);
+                c.dirty = true;
+                c.modified = true;
+                if self.log_edits {
+                    self.edit_log.push((x, y, z, nb));
+                }
+            }
+            self.wake_water(x, y, z);
+        }
+        if any {
+            self.relight_and_cascade(pos);
+        }
+        for _ in 0..refunds {
+            self.plant_ire(0.5);
+        }
+        for (x, y, z, rnd) in grow {
+            self.try_grow_sapling(x, y, z, rnd);
+        }
     }
 
     /// A footstep through a snow layer presses it into a trodden

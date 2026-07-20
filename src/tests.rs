@@ -1684,6 +1684,47 @@ fn random_ticks_visit_a_bounded_cohort() {
 }
 
 #[test]
+fn reconcile_catches_up_an_absent_chunk() {
+    let reg = base_reg();
+    let dir = tmp_dir("reconcile");
+    let mut w = World::new(42, dir.clone(), reg.clone());
+    for x in -1..=1 {
+        for z in -1..=1 {
+            w.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    let b = |n: &str| reg.block_id(n).unwrap();
+    let h = w.surface_height(4, 4);
+    // A supported sky-open pool (the shelf the live winter test uses)
+    // and a farmland strip about to miss three growing seasons.
+    for x in 0..8 {
+        w.set_block(x, h + 12, 12, b("base:planks"));
+        w.set_block(x, h + 13, 12, reg.water_block(0));
+        w.set_block(x, h + 6, 4, b("base:farmland"));
+        w.set_block(x, h + 7, 4, b("base:wheat_seeds"));
+    }
+    w.save_modified();
+
+    // Reopen the world a year later, in deep winter.
+    let mut w2 = World::load_or_create(dir, reg.clone());
+    w2.day = 3 * crate::world::SEASON_DAYS;
+    w2.clock = w2.day as f64 * 600.0;
+    for x in -1..=1 {
+        for z in -1..=1 {
+            w2.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    let iced = (0..8)
+        .filter(|&x| w2.get_block(x, h + 13, 12) == b("base:ice"))
+        .count();
+    assert!(iced >= 6, "the pool froze while you were away ({iced}/8)");
+    let grown = (0..8)
+        .filter(|&x| w2.get_block(x, h + 7, 4) != b("base:wheat_seeds"))
+        .count();
+    assert!(grown > 0, "crops advanced over the missed seasons");
+}
+
+#[test]
 fn water_defers_at_the_worlds_edge() {
     let reg = base_reg();
     let mut w = World::new(42, tmp_dir("borderwater"), reg.clone());
