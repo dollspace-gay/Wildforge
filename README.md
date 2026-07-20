@@ -113,6 +113,20 @@ into throwable snowballs (harmless, knockback — aim well), packs
 back into snow blocks, and melts under bright torchlight. Rain even
 soothes the wild: ire decays a quarter faster while the land drinks.
 
+## Finite water
+
+Water is volume, not paint. Every cell holds real units that fall,
+spread, and settle — breach a pond bank and the pond genuinely
+lowers; dig a channel to the sea and it fills because the sea is
+vast, not because it cheats. There is no infinite-source trick
+anywhere: the oceans are simply very large. Craft an iron **bucket**
+to carry a full cell of it (films refuse — you can't mint water from
+puddles). The year moves it too: shallow water dries to marshy films
+through a hot summer, autumn rain fills the beds back up, and winter
+owns the freeze. And the world keeps living while you're away —
+come back after seasons elsewhere and the lake you left liquid is
+simply frozen, the wheat you left green has grown.
+
 ## Light and shadow
 
 The world's fires are real lights now. Torches, lit bloomeries and

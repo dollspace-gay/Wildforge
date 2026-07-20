@@ -1,9 +1,41 @@
 # Living water, living world — finite fluids and the tick budget
 
-Drafted 2026-07-19. Decisions settled with dollspace: **everything
-finite — the oceans too** (no infinite water anywhere), **water
-cycle this pass** (evaporation + rain refill), **reconcile on load**
-(the world lives while you're away), **bucket this pass**.
+Drafted 2026-07-19, **IMPLEMENTED** 2026-07-20, all six stages.
+Decisions settled with dollspace: **everything finite — the oceans
+too** (no infinite water anywhere), **water cycle this pass**
+(evaporation + rain refill), **reconcile on load** (the world lives
+while you're away), **bucket this pass**.
+
+Notes vs. this spec, where the implementation knows better:
+
+- **Evaporation drops a cell to its film in one hit**, not one unit
+  at a time: at our per-block random-tick rate (a given block ticks
+  about once per seven in-game days) single units would never read.
+  A pond dries visibly because it has many cells, not because one
+  cell dries slowly.
+- **The depth guard became a connectivity guard**: the cell *and
+  every horizontal water neighbor* must be shallow (≤ 2 deep).
+  Depth alone wasn't enough — the equalizer would refill a dried
+  beach cell from the deep sea and the sun would siphon the ocean
+  out through its own shoreline.
+- "Sits in a depression" is judged as **≥ 3 of 4 horizontal
+  neighbors solid *or water*** — a pond interior counts as
+  contained even though its neighbors are wet.
+- **The scoop needed its own message** (`C2S::Scoop`, protocol 9):
+  the Break path rightly refuses fluids (no hardness), and scooping
+  demands a *full* cell so buckets can't mint water from films. The
+  pour stayed an ordinary Place into air, as planned.
+- Random ticks: K = 64, bursts clamp(elapsed × 16, 8, 256); stamps
+  ride a compact `stamps` sidecar of raw LE (x, z, time) triples
+  (matching the `aseeded` style, not postcard). `random_tick`
+  returns its sample count so tests can pin the O(K) bound.
+- Reconcile runs past a 60 s gap; the wholesale phase rules ask for
+  a 2-day absence so quick revisits keep their gradualism. Changes
+  apply batched — one relight per chunk, not one per frozen cell.
+  Final-stage crops refund ire exactly as a live tick would.
+- Two dev-tooling repairs rode along: DEMO_WATER now ensures its
+  chunks before staging (the silent-drop gotcha), and
+  WILDFORGE_GIVE takes named items to seed the hotbar for shots.
 
 The state this plan fixes: water is Minecraft-classic — eternal
 source blocks project flow levels 1–7 through `desired_flow`, so
