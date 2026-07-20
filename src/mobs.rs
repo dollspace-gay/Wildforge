@@ -716,16 +716,27 @@ impl Mob {
     }
 }
 
-/// Which tiles dress a humanoid — resolved from a player's Style
-/// (pre-tinted variant slots; see style.rs).
+/// Which tiles and shapes dress a humanoid — resolved from a
+/// player's Style (pre-tinted variant slots; see style.rs).
 pub struct HumanoidArt {
     pub skin: u16,
     pub face: u16,
-    pub hair: u16,
+    /// None = bald; otherwise the side-shell tile for the length.
+    pub hair: Option<u16>,
+    /// The shell's front (fringe) tile — short even when hair is long.
+    pub hair_front: u16,
     pub hair_top: u16,
+    /// None = clean-shaven; otherwise a face-band tile.
+    pub beard: Option<u16>,
     pub shirt: u16,
     pub trousers: u16,
     pub boot: u16,
+    /// Long hair adds a back panel to the collar.
+    pub long_hair: bool,
+    /// A knee-length skirt over leggings instead of bare trousers.
+    pub skirt: bool,
+    /// 0 slight, 1 standard, 2 broad — shoulder/arm width.
+    pub build: u8,
 }
 
 /// What (if anything) the humanoid holds in its right hand.
@@ -761,7 +772,12 @@ pub fn emit_humanoid(
     let ts = 1.0 / ATLAS_TILES as f32;
     let inset = ts / 32.0;
 
-    // (size px, base [x, y_base, z], tiles, swing rad, pivot y px, skip bottom)
+    // Build sets the silhouette: torso and arm width.
+    let tw = [7.2f32, 8.0, 9.0][art.build.min(2) as usize];
+    let aw = [2.6f32, 3.0, 3.5][art.build.min(2) as usize];
+    let ax = (tw + aw) / 2.0;
+
+    // (size px, base [x, y_base, z], tiles, swing rad, pivot y px)
     struct Part {
         size: [f32; 3],
         at: [f32; 3],
@@ -769,123 +785,102 @@ pub fn emit_humanoid(
         swing: f32,
         pivot: f32,
         skip_bottom: bool,
+        only_front: bool,
     }
     let all = |t: u16| [t; 6];
+    let part = |size: [f32; 3], at: [f32; 3], tiles: [u16; 6], swing: f32, pivot: f32| Part {
+        size,
+        at,
+        tiles,
+        swing,
+        pivot,
+        skip_bottom: false,
+        only_front: false,
+    };
     let head_tiles = [art.skin, art.skin, art.skin, art.skin, art.skin, art.face];
-    let hair_tiles = [
-        art.hair,
-        art.hair,
-        art.hair_top,
-        art.hair,
-        art.hair,
-        art.hair,
-    ];
-    let parts = [
+    let mut parts = vec![
         // Boots and legs share the hip hinge so they swing as one limb.
-        Part {
-            size: [3.0, 3.0, 3.0],
-            at: [-1.5, 0.0, 0.0],
-            tiles: all(art.boot),
-            swing: leg,
-            pivot: 12.0,
-            skip_bottom: false,
-        },
-        Part {
-            size: [3.0, 3.0, 3.0],
-            at: [1.5, 0.0, 0.0],
-            tiles: all(art.boot),
-            swing: -leg,
-            pivot: 12.0,
-            skip_bottom: false,
-        },
-        Part {
-            size: [3.0, 9.0, 3.0],
-            at: [-1.5, 3.0, 0.0],
-            tiles: all(art.trousers),
-            swing: leg,
-            pivot: 12.0,
-            skip_bottom: false,
-        },
-        Part {
-            size: [3.0, 9.0, 3.0],
-            at: [1.5, 3.0, 0.0],
-            tiles: all(art.trousers),
-            swing: -leg,
-            pivot: 12.0,
-            skip_bottom: false,
-        },
-        Part {
-            size: [8.0, 10.0, 4.0],
-            at: [0.0, 12.0, 0.0],
-            tiles: all(art.shirt),
-            swing: 0.0,
-            pivot: 0.0,
-            skip_bottom: false,
-        },
+        part([3.0, 3.0, 3.0], [-1.5, 0.0, 0.0], all(art.boot), leg, 12.0),
+        part([3.0, 3.0, 3.0], [1.5, 0.0, 0.0], all(art.boot), -leg, 12.0),
+        part(
+            [3.0, 9.0, 3.0],
+            [-1.5, 3.0, 0.0],
+            all(art.trousers),
+            leg,
+            12.0,
+        ),
+        part(
+            [3.0, 9.0, 3.0],
+            [1.5, 3.0, 0.0],
+            all(art.trousers),
+            -leg,
+            12.0,
+        ),
+        part([tw, 10.0, 4.0], [0.0, 12.0, 0.0], all(art.shirt), 0.0, 0.0),
         // Sleeves from the shoulder, skin-toned hands at their ends.
-        Part {
-            size: [3.0, 9.0, 3.0],
-            at: [-5.5, 13.0, 0.0],
-            tiles: all(art.shirt),
-            swing: -arm,
-            pivot: 22.0,
-            skip_bottom: false,
-        },
-        Part {
-            size: [3.0, 9.0, 3.0],
-            at: [5.5, 13.0, 0.0],
-            tiles: all(art.shirt),
-            swing: arm,
-            pivot: 22.0,
-            skip_bottom: false,
-        },
-        Part {
-            size: [3.0, 3.0, 3.0],
-            at: [-5.5, 10.0, 0.0],
-            tiles: all(art.skin),
-            swing: -arm,
-            pivot: 22.0,
-            skip_bottom: false,
-        },
-        Part {
-            size: [3.0, 3.0, 3.0],
-            at: [5.5, 10.0, 0.0],
-            tiles: all(art.skin),
-            swing: arm,
-            pivot: 22.0,
-            skip_bottom: false,
-        },
-        Part {
-            size: [7.0, 7.0, 7.0],
-            at: [0.0, 22.0, 0.0],
-            tiles: head_tiles,
-            swing: 0.0,
-            pivot: 0.0,
-            skip_bottom: false,
-        },
+        part([aw, 9.0, 3.0], [-ax, 13.0, 0.0], all(art.shirt), -arm, 22.0),
+        part([aw, 9.0, 3.0], [ax, 13.0, 0.0], all(art.shirt), arm, 22.0),
+        part([aw, 3.0, 3.0], [-ax, 10.0, 0.0], all(art.skin), -arm, 22.0),
+        part([aw, 3.0, 3.0], [ax, 10.0, 0.0], all(art.skin), arm, 22.0),
+        part([7.0, 7.0, 7.0], [0.0, 22.0, 0.0], head_tiles, 0.0, 0.0),
+    ];
+    if art.skirt {
+        // A knee-length flare over the leggings; legs swing beneath.
+        parts.push(part(
+            [tw + 1.5, 6.0, 5.5],
+            [0.0, 6.0, 0.0],
+            all(art.trousers),
+            0.0,
+            0.0,
+        ));
+    }
+    if let Some(h) = art.hair {
         // Hair: a slightly inflated alpha-cut shell over the head.
-        Part {
+        parts.push(Part {
             size: [7.7, 7.7, 7.7],
             at: [0.0, 21.8, 0.0],
-            tiles: hair_tiles,
+            tiles: [h, h, art.hair_top, h, h, art.hair_front],
             swing: 0.0,
             pivot: 0.0,
             skip_bottom: true,
-        },
-    ];
+            only_front: false,
+        });
+        if art.long_hair {
+            // The lengths fall behind the shoulders.
+            parts.push(part([7.4, 8.0, 1.6], [0.0, 14.0, 2.9], all(h), 0.0, 0.0));
+        }
+    }
+    if let Some(b) = art.beard {
+        // A face band a hair proud of the head, front only - drawn in
+        // face-tile coordinates so it sits on the mouth it belongs to.
+        parts.push(Part {
+            size: [7.4, 7.4, 7.4],
+            at: [0.0, 21.9, -0.5],
+            tiles: all(b),
+            swing: 0.0,
+            pivot: 0.0,
+            skip_bottom: false,
+            only_front: true,
+        });
+    }
 
+    #[allow(clippy::too_many_arguments)]
     let mut emit_box = |size: [f32; 3],
                         at: [f32; 3],
                         tiles: [u16; 6],
                         swing: f32,
                         pivot_px: f32,
-                        skip_bottom: bool| {
+                        skip_bottom: bool,
+                        only_front: bool| {
         let (hx, hy, hz) = (size[0] / 32.0, size[1] / 32.0, size[2] / 32.0);
         let center = Vec3::new(at[0] / 16.0, at[1] / 16.0 + hy, at[2] / 16.0);
         let pivot = pivot_px / 16.0;
         let (ss, cs) = swing.sin_cos();
         for f in 0..6 {
             if skip_bottom && f == 3 {
+                continue;
+            }
+            if only_front && f != 5 {
                 continue;
             }
             let t = tiles[f];
@@ -932,7 +927,15 @@ pub fn emit_humanoid(
     };
 
     for p in parts {
-        emit_box(p.size, p.at, p.tiles, p.swing, p.pivot, p.skip_bottom);
+        emit_box(
+            p.size,
+            p.at,
+            p.tiles,
+            p.swing,
+            p.pivot,
+            p.skip_bottom,
+            p.only_front,
+        );
     }
 
     // The held item rides the right hand: swung by the arm, held a
@@ -942,7 +945,7 @@ pub fn emit_humanoid(
         let (ss, cs) = arm.sin_cos();
         let (hy0, hz0) = (10.0 / 16.0 + 1.5 / 16.0, -3.5 / 16.0);
         let dy = hy0 - pivot;
-        Vec3::new(5.5 / 16.0, pivot + dy * cs - hz0 * ss, dy * ss + hz0 * cs)
+        Vec3::new(ax / 16.0, pivot + dy * cs - hz0 * ss, dy * ss + hz0 * cs)
     };
     let mut emit_held_quad = |corners: [(Vec3, f32, f32); 4], slot: u16| {
         let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);

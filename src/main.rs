@@ -2524,10 +2524,15 @@ impl Game {
             skin: style::skin_tile(&st),
             face: style::face_tile(&st),
             hair: style::hair_tile(&st),
+            hair_front: style::hair_front_tile(&st).unwrap_or(0),
             hair_top: style::hair_top_tile(&st),
+            beard: style::beard_tile(&st),
             shirt: style::shirt_tile(&st),
             trousers: style::trouser_tile(&st),
             boot: b("player_boot"),
+            long_hair: st.hair_style == 3,
+            skirt: st.legwear == 1,
+            build: st.build,
         }
     }
 
@@ -4544,12 +4549,20 @@ impl Game {
         if std::env::var("WILDFORGE_DEMO_PLAYER").is_ok() && self.in_world {
             let torch_art = self.held_art(self.reg.item_id("base:torch"));
             for (i, st) in [
-                style::Style::default(),
+                style::Style {
+                    hair_style: 3,
+                    legwear: 1,
+                    shirt: 3,
+                    ..Default::default()
+                },
                 style::Style {
                     skin: 4,
                     hair: 3,
                     shirt: 6,
                     trousers: 1,
+                    beard: 3,
+                    build: 2,
+                    ..Default::default()
                 },
             ]
             .into_iter()
@@ -5248,13 +5261,13 @@ impl Game {
     fn appearance_row_rect(&self, i: usize) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;
-        (w / 2.0 + 40.0, h * 0.24 + i as f32 * 72.0, 260.0, 42.0)
+        (w / 2.0 + 40.0, h * 0.18 + i as f32 * 58.0, 260.0, 42.0)
     }
 
     fn appearance_back_rect(&self) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;
-        (w / 2.0 + 40.0, h * 0.24 + 4.0 * 72.0 + 16.0, 260.0, 42.0)
+        (w / 2.0 + 40.0, h * 0.18 + 8.0 * 58.0 + 12.0, 260.0, 42.0)
     }
 
     // ---- texture packs screen layout ----
@@ -5701,40 +5714,62 @@ impl Game {
                 let tw = UiBatch::text_width(4.0, "APPEARANCE");
                 ui.text_shadow((w - tw) / 2.0, h * 0.10, 4.0, "APPEARANCE", [1.0; 4]);
                 let st = self.style;
-                let rows: [(&str, [f32; 3], String); 4] = [
+                // (label, swatch color if a color row, value name)
+                let rows: [(&str, Option<[f32; 3]>, String); 8] = [
                     (
                         "SKIN",
-                        style::SKIN_TONES[st.skin as usize],
+                        Some(style::SKIN_TONES[st.skin as usize]),
                         format!("TONE {}", st.skin + 1),
                     ),
                     (
                         "HAIR",
-                        style::HAIR_COLORS[st.hair as usize],
+                        Some(style::HAIR_COLORS[st.hair as usize]),
                         style::HAIR_NAMES[st.hair as usize].to_string(),
                     ),
                     (
+                        "LENGTH",
+                        None,
+                        style::HAIR_STYLE_NAMES[st.hair_style as usize].to_string(),
+                    ),
+                    (
+                        "FACIAL HAIR",
+                        None,
+                        style::BEARD_NAMES[st.beard as usize].to_string(),
+                    ),
+                    (
+                        "BUILD",
+                        None,
+                        style::BUILD_NAMES[st.build as usize].to_string(),
+                    ),
+                    (
                         "SHIRT",
-                        style::SHIRT_COLORS[st.shirt as usize],
+                        Some(style::SHIRT_COLORS[st.shirt as usize]),
                         style::SHIRT_NAMES[st.shirt as usize].to_string(),
                     ),
                     (
-                        "TROUSERS",
-                        style::TROUSER_COLORS[st.trousers as usize],
+                        "LEGWEAR",
+                        None,
+                        style::LEGWEAR_NAMES[st.legwear as usize].to_string(),
+                    ),
+                    (
+                        "LEG COLOR",
+                        Some(style::TROUSER_COLORS[st.trousers as usize]),
                         style::TROUSER_NAMES[st.trousers as usize].to_string(),
                     ),
                 ];
                 for (i, (label, c, name)) in rows.iter().enumerate() {
                     let r = self.appearance_row_rect(i);
-                    ui.text_shadow(r.0 - 150.0, r.1 + 12.0, 2.0, label, [1.0; 4]);
-                    // The swatch itself, then the cycler button.
-                    ui.rect(r.0 - 56.0, r.1 + 2.0, 38.0, 38.0, [0.1, 0.1, 0.1, 1.0]);
-                    ui.rect(
-                        r.0 - 53.0,
-                        r.1 + 5.0,
-                        32.0,
-                        32.0,
-                        [c[0].min(1.0), c[1].min(1.0), c[2].min(1.0), 1.0],
-                    );
+                    ui.text_shadow(r.0 - 190.0, r.1 + 12.0, 2.0, label, [1.0; 4]);
+                    if let Some(c) = c {
+                        ui.rect(r.0 - 56.0, r.1 + 2.0, 38.0, 38.0, [0.1, 0.1, 0.1, 1.0]);
+                        ui.rect(
+                            r.0 - 53.0,
+                            r.1 + 5.0,
+                            32.0,
+                            32.0,
+                            [c[0].min(1.0), c[1].min(1.0), c[2].min(1.0), 1.0],
+                        );
+                    }
                     Self::draw_button(&mut ui, r, name, self.hit(r));
                 }
                 let hint = "CLICK CYCLES - RIGHT-CLICK GOES BACK";
@@ -7570,10 +7605,14 @@ impl Game {
                 }
             }
             Screen::Appearance => {
-                let lens: [usize; 4] = [
+                let lens: [usize; 8] = [
                     style::SKIN_TONES.len(),
                     style::HAIR_COLORS.len(),
+                    style::HAIR_STYLE_NAMES.len(),
+                    style::BEARD_NAMES.len(),
+                    style::BUILD_NAMES.len(),
                     style::SHIRT_COLORS.len(),
+                    style::LEGWEAR_NAMES.len(),
                     style::TROUSER_COLORS.len(),
                 ];
                 for (i, len) in lens.iter().enumerate() {
@@ -7583,7 +7622,11 @@ impl Game {
                         let cur = match i {
                             0 => &mut self.style.skin,
                             1 => &mut self.style.hair,
-                            2 => &mut self.style.shirt,
+                            2 => &mut self.style.hair_style,
+                            3 => &mut self.style.beard,
+                            4 => &mut self.style.build,
+                            5 => &mut self.style.shirt,
+                            6 => &mut self.style.legwear,
                             _ => &mut self.style.trousers,
                         };
                         let step = if right { -1 } else { 1 };

@@ -15,6 +15,18 @@ separate stage. The gemini face came out softly plush-friendly —
 epicene as ordered, more woodland companion than action figure,
 which suits the game.
 
+**Amended same day** (dollspace: "people should be able to choose a
+gendered appearance and clothing, it should just default to
+neutral"): the style grew hair length (bald / cropped / short /
+long — long keeps the short fringe up front and falls at the sides
+and back), facial hair (none / moustache / trimmed / full, tinted
+with the hair color), legwear (trousers / knee-length skirt over
+leggings), and build (slight / standard / broad shoulders and
+arms). Everything still defaults to the neutral look; gendered
+reads are opt-in choices. The u32 repacked to bit fields (protocol
+8); variant tiles grew to 84 (940–1023) with the extra neutral
+bases at 932+; the APPEARANCE screen is eight rows.
+
 As drafted — the state this plan fixed: the remote-player render was a half-scale
 mannequin: ~1.05 blocks tall against a 1.8-block hitbox (it reads as
 waist-deep in the ground), every box face wrapped in one "tunic"

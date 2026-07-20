@@ -3768,11 +3768,16 @@ fn atlas_layout_is_slot_stable_at_32() {
         (u[0] > 180 && u[2] > 180) || (u[0] < 40 && u[2] < 40),
         "unknown checkerboard at slot {unk}: {u:?}"
     );
-    // Every builtin slot fits under the mod floor, and no two names share.
+    // Every builtin slot sits under the mod floor OR in the reserved
+    // player region at the top (extra bases + derived variants), and
+    // no two names share.
     let slots = builtin_slots();
     let mut seen = std::collections::HashSet::new();
     for (name, &slot) in slots.iter() {
-        assert!(slot < FIRST_FREE_SLOT, "{name} under FIRST_FREE_SLOT");
+        assert!(
+            slot < FIRST_FREE_SLOT || slot >= crate::style::EXTRA_BASE,
+            "{name} outside builtin/reserved regions"
+        );
         assert!(seen.insert(slot), "slot {slot} ({name}) is unique");
     }
     // A slot in the second half of the grid (impossible under 16x16)
@@ -5189,6 +5194,8 @@ fn loopback_join_stream_and_edit() {
         hair: 2,
         shirt: 3,
         trousers: 4,
+        beard: 3,
+        ..Default::default()
     }
     .pack();
     let guest_style = crate::style::Style {
@@ -5196,6 +5203,10 @@ fn loopback_join_stream_and_edit() {
         hair: 6,
         shirt: 8,
         trousers: 2,
+        hair_style: 3,
+        legwear: 1,
+        build: 0,
+        ..Default::default()
     };
     let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
     let mut client =
@@ -5935,16 +5946,24 @@ fn config_lights_and_darkness_roundtrip() {
 #[test]
 fn player_style_packs_clamps_and_names_align() {
     use crate::style::*;
-    // Every palette combination survives the u32 round trip.
+    // Every field combination survives the u32 round trip.
     for skin in 0..SKIN_TONES.len() as u8 {
         for hair in 0..HAIR_COLORS.len() as u8 {
-            let s = Style {
-                skin,
-                hair,
-                shirt: (hair % SHIRT_COLORS.len() as u8),
-                trousers: (skin % TROUSER_COLORS.len() as u8),
-            };
-            assert_eq!(Style::unpack(s.pack()), s);
+            for hair_style in 0..HAIR_STYLE_NAMES.len() as u8 {
+                for beard in 0..BEARD_NAMES.len() as u8 {
+                    let s = Style {
+                        skin,
+                        hair,
+                        shirt: (hair % SHIRT_COLORS.len() as u8),
+                        trousers: (skin % TROUSER_COLORS.len() as u8),
+                        hair_style,
+                        beard,
+                        legwear: skin % 2,
+                        build: hair % 3,
+                    };
+                    assert_eq!(Style::unpack(s.pack()), s);
+                }
+            }
         }
     }
     // Garbage clamps into range instead of exploding the palette index.
@@ -5953,6 +5972,10 @@ fn player_style_packs_clamps_and_names_align() {
     assert!((wild.hair as usize) < HAIR_COLORS.len());
     assert!((wild.shirt as usize) < SHIRT_COLORS.len());
     assert!((wild.trousers as usize) < TROUSER_COLORS.len());
+    assert!((wild.hair_style as usize) < HAIR_STYLE_NAMES.len());
+    assert!((wild.beard as usize) < BEARD_NAMES.len());
+    assert!((wild.legwear as usize) < LEGWEAR_NAMES.len());
+    assert!((wild.build as usize) < BUILD_NAMES.len());
     // Display names track their palettes.
     assert_eq!(HAIR_NAMES.len(), HAIR_COLORS.len());
     assert_eq!(SHIRT_NAMES.len(), SHIRT_COLORS.len());
@@ -5973,11 +5996,16 @@ fn humanoid_stands_full_height_with_hands() {
     let art = HumanoidArt {
         skin: 1,
         face: 2,
-        hair: 3,
+        hair: Some(3),
+        hair_front: 3,
         hair_top: 4,
+        beard: None,
         shirt: 5,
         trousers: 6,
         boot: 7,
+        long_hair: false,
+        skirt: false,
+        build: 1,
     };
     let (mut verts, mut idx) = (Vec::new(), Vec::new());
     emit_humanoid(
@@ -6019,6 +6047,53 @@ fn humanoid_stands_full_height_with_hands() {
         &mut i2,
     );
     assert_eq!(i2.len() / 6, 71, "held cube rides the hand");
+
+    // Shape choices add and remove real geometry.
+    let quads = |art: &HumanoidArt| {
+        let (mut v, mut i) = (Vec::new(), Vec::new());
+        emit_humanoid(
+            Vec3::ZERO,
+            0.0,
+            art,
+            (0.0, 0.0),
+            HeldArt::None,
+            ([1.0; 3], 1.0),
+            &mut v,
+            &mut i,
+        );
+        i.len() / 6
+    };
+    let base = HumanoidArt {
+        skin: 1,
+        face: 2,
+        hair: Some(3),
+        hair_front: 3,
+        hair_top: 4,
+        beard: None,
+        shirt: 5,
+        trousers: 6,
+        boot: 7,
+        long_hair: false,
+        skirt: false,
+        build: 1,
+    };
+    let bald = HumanoidArt { hair: None, ..base };
+    assert_eq!(quads(&bald), 60, "bald drops the hair shell");
+    let bearded = HumanoidArt {
+        beard: Some(8),
+        ..base
+    };
+    assert_eq!(quads(&bearded), 66, "a beard is one face band");
+    let long = HumanoidArt {
+        long_hair: true,
+        ..base
+    };
+    assert_eq!(quads(&long), 71, "long hair adds the back panel");
+    let skirted = HumanoidArt {
+        skirt: true,
+        ..base
+    };
+    assert_eq!(quads(&skirted), 71, "the skirt is a real box");
 }
 
 #[test]

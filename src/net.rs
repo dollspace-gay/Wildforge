@@ -19,7 +19,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 pub const GAME_PORT: u16 = 27431;
 pub const BEACON_PORT: u16 = 27430;
 /// Bump when the protocol changes shape.
-pub const PROTOCOL: u32 = 7;
+pub const PROTOCOL: u32 = 8;
 
 // ---------------- protocol ----------------
 
