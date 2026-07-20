@@ -1940,7 +1940,7 @@ fn wood_leaf_tiles_are_opaque_in_atlas() {
     // Regression: a tile painted past the row boundary once left spruce
     // leaves transparent (invisible canopies).
     let reg = base_reg();
-    let (img, px, _) = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
+    let (img, _mat, px, _) = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
     let tp = px / crate::atlas::ATLAS_TILES;
     for name in [
         "base:leaves",
@@ -1995,7 +1995,7 @@ fn atlas_builds_with_mod_texture() {
         "mod texture is pack-addressable by <mod_id>/<stem>: {:?}",
         reg.tex_names
     );
-    let (img, px, _) = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
+    let (img, _mat, px, _) = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
     let tp = px / crate::atlas::ATLAS_TILES;
     let tx = (slot as u32 % crate::atlas::ATLAS_TILES) * tp + tp / 2;
     let ty = (slot as u32 / crate::atlas::ATLAS_TILES) * tp + tp / 2;
@@ -2112,8 +2112,8 @@ fn pack_tile_override_applied_at_slot() {
     let pack = tmp_dir("packstone");
     std::fs::create_dir_all(pack.join("tiles")).unwrap();
     write_solid_png(&pack.join("tiles/stone.png"), 8, 8, [255, 0, 255, 255]);
-    let (base, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
-    let (img, px, warns) =
+    let (base, _mat, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
+    let (img, _mat, px, warns) =
         crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
     assert_eq!(px, bpx);
     assert!(warns.is_empty(), "no warnings: {warns:?}");
@@ -2149,10 +2149,10 @@ fn pack_overrides_mod_tile_by_name_and_wins() {
     );
 
     // Without the pack the mod's art lands in the slot...
-    let (img, px, _) = crate::atlas::build_atlas(&tex_files, None, &tex_names);
+    let (img, _mat, px, _) = crate::atlas::build_atlas(&tex_files, None, &tex_names);
     assert_eq!(tile_center(&img, px, slot), [0, 255, 0, 255]);
     // ...with the pack, the pack's art wins (layered last).
-    let (img, px, warns) = crate::atlas::build_atlas(
+    let (img, _mat, px, warns) = crate::atlas::build_atlas(
         &tex_files,
         Some(crate::atlas::PackSource::Dir(pack.clone())),
         &tex_names,
@@ -2171,8 +2171,8 @@ fn pack_unknown_and_unreadable_files_warn() {
     std::fs::create_dir_all(pack.join("tiles")).unwrap();
     write_solid_png(&pack.join("tiles/notatile.png"), 4, 4, [1, 2, 3, 255]);
     std::fs::write(pack.join("tiles/stone.png"), b"this is not a png").unwrap();
-    let (base, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
-    let (img, px, warns) =
+    let (base, _mat, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
+    let (img, _mat, px, warns) =
         crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
     assert_eq!(warns.len(), 2, "unknown name + unreadable png: {warns:?}");
     assert!(warns.iter().any(|w| w.contains("notatile")));
@@ -2220,7 +2220,7 @@ fn content_stamp_changes_on_pack_edit() {
 
 #[test]
 fn export_tiles_round_trip_reproduces_atlas() {
-    let (img, px, _) = crate::atlas::build_atlas(&[], None, &[]);
+    let (img, _mat, px, _) = crate::atlas::build_atlas(&[], None, &[]);
     let out = tmp_dir("packexport");
     let n = crate::atlas::export_tiles(&out, &img, px, &[]).unwrap();
     assert_eq!(
@@ -2231,7 +2231,7 @@ fn export_tiles_round_trip_reproduces_atlas() {
     assert!(out.join("pack.toml").exists(), "stub pack.toml written");
     assert!(out.join("tiles/stone.png").exists());
     // Selecting the exported skeleton as a pack reproduces the atlas exactly.
-    let (again, apx, warns) =
+    let (again, _mat, apx, warns) =
         crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(out.clone())), &[]);
     assert!(warns.is_empty(), "{warns:?}");
     assert_eq!(apx, px);
@@ -2658,8 +2658,8 @@ fn embedded_gemini_pack_applies_without_folder() {
     let tiles = crate::atlas::embedded_pack("gemini").expect("gemini compiled in");
     assert!(tiles.len() > 100, "full pack embedded, got {}", tiles.len());
     assert!(crate::atlas::embedded_pack("nope").is_none());
-    let (base, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
-    let (img, px, warns) =
+    let (base, _mat, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
+    let (img, _mat, px, warns) =
         crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Embedded(tiles)), &[]);
     assert!(warns.is_empty(), "{warns:?}");
     assert_eq!(px, bpx);
@@ -6476,6 +6476,48 @@ fn atlas_derives_tinted_player_variants() {
         }
         assert_eq!(v[3], b[3], "alpha preserved");
     }
+}
+
+/// The parallax material atlas: authored (recessed) height for ice, flat
+/// everywhere else, and — crucially — reset to flat wherever a pack repaints a
+/// tile, so procedural grooves never sit under mismatched hand-drawn albedo.
+#[test]
+fn material_atlas_authors_ice_and_pack_override_clears_it() {
+    use crate::atlas::{ATLAS_TILES, build_atlas, builtin_slots};
+    let ice = *builtin_slots().get("ice").unwrap();
+    let grass = *builtin_slots().get("grass_top").unwrap();
+    let tile_min_r = |mat: &[u8], px: u32, slot: u16| -> u8 {
+        let tp = px / ATLAS_TILES;
+        let (tx, ty) = (slot as u32 % ATLAS_TILES * tp, slot as u32 / ATLAS_TILES * tp);
+        let mut m = 255u8;
+        for y in 0..tp {
+            for x in 0..tp {
+                let i = (((ty + y) * px + tx + x) * 4) as usize;
+                m = m.min(mat[i]);
+            }
+        }
+        m
+    };
+
+    let (_img, mat, px, _) = build_atlas(&[], None, &[]);
+    assert_eq!(mat.len(), (px * px * 4) as usize, "material atlas is full-size");
+    // Flat tiles default to full height (255 = a parallax no-op).
+    assert_eq!(tile_center(&mat, px, grass)[0], 255, "plain tile is flat");
+    assert!(
+        tile_min_r(&mat, px, ice) < 200,
+        "ice authors recessed grooves"
+    );
+
+    // A pack repainting ice must flatten its material.
+    let pack = tmp_dir("packice");
+    std::fs::create_dir_all(pack.join("tiles")).unwrap();
+    write_solid_png(&pack.join("tiles/ice.png"), 8, 8, [200, 220, 255, 255]);
+    let (_img2, mat2, px2, _) = build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack)), &[]);
+    assert_eq!(
+        tile_min_r(&mat2, px2, ice),
+        255,
+        "pack-overridden ice has flat material (no mismatched parallax)"
+    );
 }
 
 /// The shaders are only compiled by naga at device-init time, so a typo in the
