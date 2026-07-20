@@ -3775,7 +3775,7 @@ fn atlas_layout_is_slot_stable_at_32() {
     let mut seen = std::collections::HashSet::new();
     for (name, &slot) in slots.iter() {
         assert!(
-            slot < FIRST_FREE_SLOT || slot >= crate::style::EXTRA_BASE,
+            !(FIRST_FREE_SLOT..crate::style::EXTRA_BASE).contains(&slot),
             "{name} outside builtin/reserved regions"
         );
         assert!(seen.insert(slot), "slot {slot} ({name}) is unique");

@@ -240,11 +240,11 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("player_hair_top", 238),
         // Extra player bases live in the reserved region (style.rs
         // EXTRA_BASE) — the low builtin rows are full.
-        ("player_hair_cropped", 932),
-        ("player_hair_long", 933),
-        ("player_moustache", 934),
-        ("player_beard_trim", 935),
-        ("player_beard_full", 936),
+        ("player_hair_cropped", crate::style::EXTRA_BASE),
+        ("player_hair_long", crate::style::EXTRA_BASE + 1),
+        ("player_moustache", crate::style::EXTRA_BASE + 2),
+        ("player_beard_trim", crate::style::EXTRA_BASE + 3),
+        ("player_beard_full", crate::style::EXTRA_BASE + 4),
         ("unknown", 15),
         ("crack1", 16),
         ("crack2", 17),
@@ -2701,8 +2701,9 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, 0.9 + h01(px as i32, py as i32, 939) * 0.15, 255)
     });
 
-    // (932/933) hair lengths: a tight crop, and strands to the collar.
-    tf(932, &mut |_px, _py, u, v| {
+    // (EXTRA_BASE..) hair lengths: a tight crop, strands to the collar.
+    let xb = crate::style::EXTRA_BASE as u32;
+    tf(xb, &mut |_px, _py, u, v| {
         let edge = 0.16 + ((u * 21.0).sin() * 0.5 + 0.5) * 0.05;
         if v > edge {
             return [0, 0, 0, 0];
@@ -2715,7 +2716,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             255,
         ]
     });
-    tf(933, &mut |_px, _py, u, v| {
+    tf(xb + 1, &mut |_px, _py, u, v| {
         let edge = 0.88 + ((u * 17.0).sin() * 0.5 + 0.5) * 0.10;
         if v > edge {
             return [0, 0, 0, 0];
@@ -2728,9 +2729,9 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             255,
         ]
     });
-    // (934-936) facial hair bands, drawn in FACE tile coordinates so
-    // they sit right on the head front: moustache, trimmed, full.
-    tf(934, &mut |_px, _py, u, v| {
+    // Facial hair bands, drawn in FACE tile coordinates so they sit
+    // right on the head front: moustache, trimmed, full.
+    tf(xb + 2, &mut |_px, _py, u, v| {
         let band = (0.30..=0.70).contains(&u) && (0.64..=0.745).contains(&v);
         if !band {
             return [0, 0, 0, 0];
@@ -2743,9 +2744,9 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             255,
         ]
     });
-    tf(935, &mut |_px, _py, u, v| {
+    tf(xb + 3, &mut |_px, _py, u, v| {
         // A jawline outline: thin sides + chin strip, mouth open.
-        let side = (u < 0.16 || u > 0.84) && v > 0.55;
+        let side = !(0.16..=0.84).contains(&u) && v > 0.55;
         let chin = v > 0.86;
         let mouth = (0.36..=0.64).contains(&u) && v < 0.92;
         if !(side || (chin && !mouth)) {
@@ -2759,7 +2760,7 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
             255,
         ]
     });
-    tf(936, &mut |_px, _py, u, v| {
+    tf(xb + 4, &mut |_px, _py, u, v| {
         // The full beard: cheeks to chin, a notch for the mouth.
         let ragged = 0.58 + ((u * 26.0).sin() * 0.5 + 0.5) * 0.06;
         let mouth = (0.40..=0.60).contains(&u) && (0.70..=0.78).contains(&v);
