@@ -1528,10 +1528,40 @@ fn player_falls_lands_and_jumps() {
     assert!(gain > 1.0 && gain < 2.0, "jump height {gain}");
 }
 
+/// Sum every loaded water cell's volume (units, 8 per full cell).
+fn total_water(w: &World) -> u32 {
+    let mut sum = 0u32;
+    for c in w.chunks.values() {
+        for lx in 0..crate::chunk::CHUNK_X {
+            for lz in 0..crate::chunk::CHUNK_Z {
+                for y in 0..CHUNK_Y {
+                    if let Some(v) = w.reg.water_volume(c.get(lx, y, lz)) {
+                        sum += v as u32;
+                    }
+                }
+            }
+        }
+    }
+    sum
+}
+
+fn settle_water(w: &mut World) {
+    for _ in 0..400 {
+        if !w.tick_water(100_000) {
+            break;
+        }
+    }
+}
+
 #[test]
-fn water_flows_and_recedes() {
+fn water_conserves_and_spreads_finite() {
     let reg = base_reg();
-    let mut w = test_world_with("flow", reg.clone());
+    assert_eq!(reg.water_volume(reg.water_block(0)), Some(8));
+    assert_eq!(reg.water_volume(reg.water_block(7)), Some(1));
+    assert_eq!(reg.water_for_volume(8), reg.water_block(0));
+    assert_eq!(reg.water_for_volume(0), AIR);
+
+    let mut w = test_world_with("finitewater", reg.clone());
     let h = w.surface_height(4, 4);
     let y = h + 5;
     let stone = b(&reg, "base:stone");
@@ -1540,24 +1570,111 @@ fn water_flows_and_recedes() {
             w.set_block(x, y - 1, z, stone);
         }
     }
-    let water = b(&reg, "base:water");
-    w.set_block(4, y, 4, water);
-    for _ in 0..200 {
-        if !w.tick_water(10_000) {
-            break;
+    let before = total_water(&w);
+    w.set_block(4, y, 4, reg.water_block(0));
+    settle_water(&mut w);
+    assert_eq!(total_water(&w), before + 8, "volume neither made nor lost");
+    // One cell can't stay full on open ground: it spread into a film.
+    assert!(reg.water_volume(w.get_block(4, y, 4)).unwrap_or(0) < 8);
+}
+
+#[test]
+fn water_equalizes_within_the_band() {
+    let reg = base_reg();
+    let mut w = test_world_with("equalize", reg.clone());
+    let h = w.surface_height(4, 4);
+    let y = h + 5;
+    let stone = b(&reg, "base:stone");
+    // A sealed two-cell trench.
+    for x in 3..=6 {
+        for z in 3..=5 {
+            for yy in (y - 1)..=y {
+                w.set_block(x, yy, z, stone);
+            }
         }
     }
-    assert_eq!(reg.water_level(w.get_block(5, y, 4)), Some(1));
-    assert_eq!(reg.water_level(w.get_block(11, y, 4)), Some(7));
-    assert_eq!(w.get_block(12, y, 4), AIR);
-    // Remove the source: dries up.
-    w.set_block(4, y, 4, stone);
-    for _ in 0..200 {
-        if !w.tick_water(10_000) {
-            break;
+    w.set_block(4, y, 4, AIR);
+    w.set_block(5, y, 4, AIR);
+    w.set_block(4, y, 4, reg.water_block(0));
+    settle_water(&mut w);
+    let a = reg.water_volume(w.get_block(4, y, 4)).unwrap_or(0);
+    let c = reg.water_volume(w.get_block(5, y, 4)).unwrap_or(0);
+    assert_eq!(a + c, 8, "the trench holds all 8 units");
+    assert!(a.abs_diff(c) < 2, "levels equalized: {a} vs {c}");
+}
+
+#[test]
+fn breached_pond_drains_only_what_left() {
+    let reg = base_reg();
+    let mut w = test_world_with("breach", reg.clone());
+    let h = w.surface_height(8, 8);
+    let y = h + 6;
+    let stone = b(&reg, "base:stone");
+    // A platform, a walled basin on it, a full 3x3 pond inside.
+    for x in 0..=16 {
+        for z in 0..=16 {
+            w.set_block(x, y - 1, z, stone);
         }
     }
-    assert!(!reg.is_water(w.get_block(6, y, 4)));
+    for x in 6..=10 {
+        for z in 6..=10 {
+            if x == 6 || x == 10 || z == 6 || z == 10 {
+                w.set_block(x, y, z, stone);
+            }
+        }
+    }
+    for x in 7..=9 {
+        for z in 7..=9 {
+            w.set_block(x, y, z, reg.water_block(0));
+        }
+    }
+    settle_water(&mut w);
+    assert_eq!(reg.water_volume(w.get_block(8, y, 8)), Some(8));
+    let total = total_water(&w);
+    // Breach the rim: the pond genuinely lowers, nothing duplicates.
+    w.set_block(10, y, 8, AIR);
+    settle_water(&mut w);
+    assert_eq!(total_water(&w), total, "no volume created by the breach");
+    assert!(
+        reg.water_volume(w.get_block(8, y, 8)).unwrap_or(0) < 8,
+        "the pond actually dropped"
+    );
+    assert!(
+        (11..=14).any(|x| reg.is_water(w.get_block(x, y, 8))),
+        "water escaped through the breach"
+    );
+}
+
+#[test]
+fn water_defers_at_the_worlds_edge() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("borderwater"), reg.clone());
+    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    let stone = b(&reg, "base:stone");
+    let y = 250;
+    // A shelf against the +x seam, walled on every loaded side.
+    w.set_block(15, y - 1, 4, stone);
+    w.set_block(14, y, 4, stone);
+    w.set_block(15, y, 3, stone);
+    w.set_block(15, y, 5, stone);
+    w.set_block(15, y, 4, reg.water_block(0));
+    for _ in 0..50 {
+        w.tick_water(10_000);
+    }
+    assert_eq!(
+        reg.water_volume(w.get_block(15, y, 4)),
+        Some(8),
+        "water waits at the ungenerated seam instead of vanishing"
+    );
+    // The neighbor generates: the seam wakes and the flow resumes.
+    w.ensure_chunk(ChunkPos { x: 1, z: 0 });
+    let t1 = total_water(&w);
+    settle_water(&mut w);
+    assert_eq!(total_water(&w), t1, "crossing the seam conserved volume");
+    assert!(
+        reg.water_volume(w.get_block(15, y, 4)).unwrap_or(0) < 8,
+        "the seam wake resumed the flow"
+    );
 }
 
 #[test]

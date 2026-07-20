@@ -636,6 +636,7 @@ impl World {
         if self.mob_seeded.insert((pos.x, pos.z)) {
             self.seed_wildlife(pos);
         }
+        self.wake_seams(pos);
         self.relight_and_cascade(pos);
         true
     }
@@ -2938,26 +2939,69 @@ impl World {
         }
     }
 
-    fn desired_flow(&self, x: i32, y: i32, z: i32) -> Option<u8> {
-        let reg = &self.reg;
-        if reg.is_water(self.get_block(x, y + 1, z)) {
-            return Some(1);
-        }
-        let mut best: Option<u8> = None;
+    /// Wake water across a fresh chunk's seams: flow deferred at the
+    /// edge of the generated world resumes here. Only genuine
+    /// differentials queue — a flat ocean seam schedules nothing.
+    fn wake_seams(&mut self, pos: ChunkPos) {
+        let mut wake = Vec::new();
         for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let n = self.get_block(x + dx, y, z + dz);
-            if let Some(l) = reg.water_level(n)
-                && reg.is_solid(self.get_block(x + dx, y - 1, z + dz))
-            {
-                best = Some(best.map_or(l, |b| b.min(l)));
+            let np = ChunkPos {
+                x: pos.x + dx,
+                z: pos.z + dz,
+            };
+            if !self.chunks.contains_key(&np) {
+                continue;
+            }
+            let n = if dx != 0 { CHUNK_Z } else { CHUNK_X } as i32;
+            for i in 0..n {
+                // World coords of the facing cells on each side.
+                let (ax, az) = if dx != 0 {
+                    (
+                        pos.x * CHUNK_X as i32 + if dx == 1 { CHUNK_X as i32 - 1 } else { 0 },
+                        pos.z * CHUNK_Z as i32 + i,
+                    )
+                } else {
+                    (
+                        pos.x * CHUNK_X as i32 + i,
+                        pos.z * CHUNK_Z as i32 + if dz == 1 { CHUNK_Z as i32 - 1 } else { 0 },
+                    )
+                };
+                let (bx, bz) = (ax + dx, az + dz);
+                for y in 1..CHUNK_Y as i32 {
+                    if let (Some(a), Some(b)) = (
+                        self.flow_potential(ax, y, az),
+                        self.flow_potential(bx, y, bz),
+                    ) && a.abs_diff(b) >= 2
+                    {
+                        wake.push(if a > b { (ax, y, az) } else { (bx, y, bz) });
+                    }
+                }
             }
         }
-        match best {
-            Some(l) if l < 7 => Some(l + 1),
-            _ => None,
+        for (x, y, z) in wake {
+            self.schedule_water(x, y, z);
         }
     }
 
+    /// Volume for flow comparisons: water carries its units, air can
+    /// receive (0), anything else opts out of flow entirely.
+    fn flow_potential(&self, x: i32, y: i32, z: i32) -> Option<u8> {
+        let b = self.get_block(x, y, z);
+        if self.reg.is_air(b) {
+            Some(0)
+        } else {
+            self.reg.water_volume(b)
+        }
+    }
+
+    /// Finite water (docs/water-and-ticks-plan.md): each level encodes
+    /// volume — level 0 is 8 units, level 7 a 1-unit film. On wake a
+    /// cell falls as far as it can, then equalizes toward its lowest
+    /// horizontal neighbor with a 2-unit hysteresis so the queue always
+    /// quiesces. Volume moves; it is never created or destroyed. Flow
+    /// toward ungenerated chunks defers (set_block there silently
+    /// drops the write) — `wake_seams` resumes it when the neighbor
+    /// generates.
     pub fn tick_water(&mut self, budget: usize) -> bool {
         let mut changed = false;
         for _ in 0..budget {
@@ -2966,59 +3010,40 @@ impl World {
             };
             self.water_queued.remove(&pos);
             let (x, y, z) = pos;
-            let b = self.get_block(x, y, z);
-            let level = self.reg.water_level(b);
-
-            match level {
-                Some(0) => {
-                    if self.reg.is_air(self.get_block(x, y - 1, z)) {
-                        let f = self.reg.water_block(1);
-                        self.set_block(x, y - 1, z, f);
-                        changed = true;
-                    } else {
-                        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                            if self.reg.is_air(self.get_block(x + dx, y, z + dz))
-                                && self.desired_flow(x + dx, y, z + dz).is_some()
-                            {
-                                self.schedule_water(x + dx, y, z + dz);
-                            }
-                        }
-                    }
+            let Some(v) = self.reg.water_volume(self.get_block(x, y, z)) else {
+                continue;
+            };
+            // Fall first, greedily (below is always in our own chunk).
+            if y > 0
+                && let Some(nv) = self.flow_potential(x, y - 1, z)
+                && nv < 8
+            {
+                let t = v.min(8 - nv);
+                self.set_block(x, y - 1, z, self.reg.water_for_volume(nv + t));
+                self.set_block(x, y, z, self.reg.water_for_volume(v - t));
+                changed = true;
+                continue;
+            }
+            // Equalize toward the lowest loaded horizontal neighbor.
+            let mut best: Option<(i32, i32, u8)> = None;
+            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let (nx, nz) = (x + dx, z + dz);
+                if !self.chunks.contains_key(&ChunkPos::of_world(nx, nz)) {
+                    continue; // the world's edge: defer, don't spill
                 }
-                Some(l) => match self.desired_flow(x, y, z) {
-                    Some(want) if want != l => {
-                        let f = self.reg.water_block(want);
-                        self.set_block(x, y, z, f);
-                        changed = true;
-                    }
-                    None => {
-                        self.set_block(x, y, z, AIR);
-                        changed = true;
-                    }
-                    _ => {
-                        if self.reg.is_air(self.get_block(x, y - 1, z)) {
-                            let f = self.reg.water_block(1);
-                            self.set_block(x, y - 1, z, f);
-                            changed = true;
-                        } else if l < 7 {
-                            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                                if self.reg.is_air(self.get_block(x + dx, y, z + dz))
-                                    && self.desired_flow(x + dx, y, z + dz).is_some()
-                                {
-                                    self.schedule_water(x + dx, y, z + dz);
-                                }
-                            }
-                        }
-                    }
-                },
-                None if self.reg.is_air(b) => {
-                    if let Some(want) = self.desired_flow(x, y, z) {
-                        let f = self.reg.water_block(want);
-                        self.set_block(x, y, z, f);
-                        changed = true;
-                    }
+                if let Some(nv) = self.flow_potential(nx, y, nz)
+                    && best.is_none_or(|(_, _, b)| nv < b)
+                {
+                    best = Some((nx, nz, nv));
                 }
-                None => {}
+            }
+            if let Some((nx, nz, nv)) = best
+                && v >= nv + 2
+            {
+                let t = ((v - nv) / 2).max(1);
+                self.set_block(nx, y, nz, self.reg.water_for_volume(nv + t));
+                self.set_block(x, y, z, self.reg.water_for_volume(v - t));
+                changed = true;
             }
         }
         changed

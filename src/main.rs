@@ -833,6 +833,14 @@ impl Game {
         // Dev: drop a water source on a pillar ahead of spawn to watch it flow.
         if std::env::var("WILDFORGE_DEMO_WATER").is_ok() {
             let (bx, bz) = (spawn.x as i32 - 6, spawn.z as i32 - 14);
+            for cx in -1..=1 {
+                for cz in -1..=1 {
+                    self.server.world.ensure_chunk(crate::chunk::ChunkPos {
+                        x: bx.div_euclid(16) + cx,
+                        z: bz.div_euclid(16) + cz,
+                    });
+                }
+            }
             let by = self.server.world.surface_height(bx, bz);
             let stone = self.reg.block_id("base:stone").unwrap_or(AIR);
             let water = self.reg.block_id("base:water").unwrap_or(AIR);

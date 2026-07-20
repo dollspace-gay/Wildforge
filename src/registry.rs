@@ -415,6 +415,22 @@ impl Registry {
         }
     }
 
+    /// Finite-water volume of a cell: level 0 holds 8 units, level 7
+    /// holds 1. None for anything that isn't water.
+    #[inline]
+    pub fn water_volume(&self, id: BlockId) -> Option<u8> {
+        self.block(id).water_level.map(|l| 8 - l)
+    }
+
+    /// The block holding `v` units of water; 0 units is air.
+    pub fn water_for_volume(&self, v: u8) -> BlockId {
+        if v == 0 {
+            AIR
+        } else {
+            self.water_ids[(8 - v.min(8)) as usize]
+        }
+    }
+
     /// Seconds to break `block` holding `held`.
     pub fn effective_hardness(&self, block: BlockId, held: Option<ItemId>) -> Option<f32> {
         let d = self.block(block);
