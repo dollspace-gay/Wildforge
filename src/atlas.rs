@@ -437,6 +437,15 @@ pub fn build_atlas(
         None => {}
     }
     apply_player_variants(&mut img, px);
+    // Rock/masonry get parallax relief from their own albedo luminance, so cave
+    // walls and cobble read as 3D and catch light in their crevices. Derived from
+    // the final atlas, so it tracks the active pack automatically.
+    for slot in [
+        *builtin_slots().get("stone").unwrap_or(&3),
+        *builtin_slots().get("cobblestone").unwrap_or(&4),
+    ] {
+        derive_luminance_height(&img, &mut mat, px, slot);
+    }
     if let Ok(dir) = std::env::var("WILDFORGE_EXPORT_TILES") {
         match export_tiles(std::path::Path::new(&dir), &img, px, tex_names) {
             Ok(n) => eprintln!("atlas: exported {n} tiles to {dir}"),
@@ -794,22 +803,24 @@ fn voronoi(u: f32, v: f32, cells: i32, salt: u32) -> (f32, f32, u32) {
 /// atlas, carrying per-texel surface data (not color). Linear `Rgba8`, so it
 /// is NEVER sampled as sRGB.
 ///
-/// Channel reservations (only R is consumed today):
+/// Channel meanings (surface normals live in their OWN standard-format atlas —
+/// a planned separate texture — so a dropped-in RGB normal map needs no channel
+/// surgery; this atlas carries scalar surface data):
 ///   R = **height** for parallax. 1.0 (255) = surface top, 0.0 = deepest recess.
 ///       The default fill is 255 (flat), so a tile with no material data is a
 ///       parallax no-op — the opt-in is per-texture (author a non-flat R).
-///   G = reserved: tangent-space **normal.x** (0.5/128 = flat), for future
-///       normal mapping. Left flat for now.
-///   B = reserved: tangent-space **normal.y** (0.5/128 = flat).
-///   A = reserved: future **displacement / roughness / AO** — meaning TBD.
+///   G = **interior/subsurface mask** for multilayer parallax. 0 = none (default).
+///       A second stratum (ice bubbles) that parallaxes at a deeper offset than
+///       the surface, so the layers slide past each other with the viewpoint.
+///   B = reserved (future scalar: roughness / metallic).
+///   A = reserved (future scalar: AO / emission-mask).
 ///
 /// Populated procedurally here for built-in tiles that opt in (currently ice).
-/// Pack authors will later supply a companion `<name>_h.png` to give their own
-/// tiles material data; until then, and for any pack-overridden slot,
-/// `build_atlas` resets the slot to flat so procedural height never lands under
-/// a mismatched hand-drawn albedo.
+/// Pack authors will later supply companion maps for their own tiles; until
+/// then, and for any pack-overridden slot, `build_atlas` resets the slot to
+/// flat so procedural data never lands under a mismatched hand-drawn albedo.
 fn material_default() -> [u8; 4] {
-    [255, 128, 128, 0]
+    [255, 0, 0, 0]
 }
 
 pub fn build_material(px: u32) -> Vec<u8> {
@@ -838,17 +849,36 @@ pub fn build_material(px: u32) -> Vec<u8> {
     // with the viewpoint. Uses the SAME vein noise as the color tile so the
     // recesses land exactly under the visible cracks.
     mtile(40, &mut |u, v| {
+        // R = smooth surface. G = the INTERNAL structure layer, present
+        // EVERYWHERE (a > 0 floor also flags "this tile has an interior"): a soft
+        // cloudy density with brighter fracture veins. Seen through the
+        // translucent surface and parallaxed to depth. fbm/vnoise are periodic,
+        // so it wraps seamlessly into one continuous layer across blocks.
+        let cloud = fbm(u, v, 3, 61);
         let vein = (vnoise(u * 5.0, v * 5.0, 5, 53) - 0.5).abs();
-        // Deepest at a vein's center (~0.45), ramping back up to the surface
-        // over a soft wall; flat elsewhere.
-        let h = if vein < 0.06 {
-            0.45 + (vein / 0.06) * 0.55
-        } else {
-            1.0
-        };
-        [(h * 255.0) as u8, 128, 128, 0]
+        let crack = if vein < 0.04 { 1.0 - vein / 0.04 } else { 0.0 };
+        let g = (0.30 + 0.40 * cloud + 0.60 * crack).min(1.0);
+        [255, (g * 255.0) as u8, 0, 0]
     });
     img
+}
+
+/// Derive a parallax height field for a tile from its albedo **luminance**
+/// (bright = raised surface, dark = recessed). A cheap, general way to give an
+/// existing texture relief without authoring a height map — rock/cobble use it so
+/// cave walls and masonry catch light in their crevices. Run on the FINAL albedo,
+/// so it matches whatever pack tile is showing (no clear-on-override needed).
+fn derive_luminance_height(img: &[u8], mat: &mut [u8], px: u32, slot: u16) {
+    let tp = px / ATLAS_TILES;
+    let (tx, ty) = (slot as u32 % ATLAS_TILES * tp, slot as u32 / ATLAS_TILES * tp);
+    for y in 0..tp {
+        for x in 0..tp {
+            let i = (((ty + y) * px + tx + x) * 4) as usize;
+            let l = 0.299 * img[i] as f32 + 0.587 * img[i + 1] as f32 + 0.114 * img[i + 2] as f32;
+            mat[i] = l as u8; // R = height; G/B/A stay flat (no interior layer)
+            mat[i + 1] = 0;
+        }
+    }
 }
 
 /// Reset one slot of the material atlas to flat (used when a pack overrides a
@@ -1152,20 +1182,13 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 51, 0.03) * emboss(px, py, tp), 255)
     });
     tile(40, &mut |px, py, u, v| {
-        // ice: pale glossy blue with lighter crack veins.
+        // ice: a smooth glacial surface. The cracks are NOT painted here — they
+        // live in the material atlas as an internal layer (parallaxed deeper and
+        // seen through this surface), so the albedo stays clean and the fractures
+        // read as depth, not a flat overlay.
         let t = fbm(u, v, 4, 52);
-        let mut c = mix3([148.0, 186.0, 224.0], [190.0, 220.0, 246.0], t);
-        let vein = (vnoise(u * 5.0, v * 5.0, 5, 53) - 0.5).abs();
-        if vein < 0.04 {
-            c = mix3(c, [235.0, 245.0, 255.0], 0.8);
-        }
-        // Diagonal gloss band.
-        let gloss = ((u + v) * std::f32::consts::TAU * 1.5).sin();
-        rgba(
-            c,
-            (1.0 + gloss * 0.04) * speck(px, py, 54, 0.02) * emboss(px, py, tp),
-            255,
-        )
+        let c = mix3([150.0, 190.0, 226.0], [184.0, 214.0, 244.0], t);
+        rgba(c, speck(px, py, 54, 0.02) * emboss(px, py, tp), 255)
     });
     tile(41, &mut |px, py, u, _v| {
         // cactus side: vertical ribs with pale spines.

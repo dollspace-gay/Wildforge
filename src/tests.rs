@@ -6486,14 +6486,16 @@ fn material_atlas_authors_ice_and_pack_override_clears_it() {
     use crate::atlas::{ATLAS_TILES, build_atlas, builtin_slots};
     let ice = *builtin_slots().get("ice").unwrap();
     let grass = *builtin_slots().get("grass_top").unwrap();
-    let tile_min_r = |mat: &[u8], px: u32, slot: u16| -> u8 {
+    let stone = *builtin_slots().get("stone").unwrap();
+    // Min or max of one channel across a tile.
+    let chan = |mat: &[u8], px: u32, slot: u16, c: usize, want_max: bool| -> u8 {
         let tp = px / ATLAS_TILES;
         let (tx, ty) = (slot as u32 % ATLAS_TILES * tp, slot as u32 / ATLAS_TILES * tp);
-        let mut m = 255u8;
+        let mut m: u8 = if want_max { 0 } else { 255 };
         for y in 0..tp {
             for x in 0..tp {
                 let i = (((ty + y) * px + tx + x) * 4) as usize;
-                m = m.min(mat[i]);
+                m = if want_max { m.max(mat[i + c]) } else { m.min(mat[i + c]) };
             }
         }
         m
@@ -6501,23 +6503,26 @@ fn material_atlas_authors_ice_and_pack_override_clears_it() {
 
     let (_img, mat, px, _) = build_atlas(&[], None, &[]);
     assert_eq!(mat.len(), (px * px * 4) as usize, "material atlas is full-size");
-    // Flat tiles default to full height (255 = a parallax no-op).
-    assert_eq!(tile_center(&mat, px, grass)[0], 255, "plain tile is flat");
-    assert!(
-        tile_min_r(&mat, px, ice) < 200,
-        "ice authors recessed grooves"
+    // Plain tile: flat height (R=255), no interior layer (G=0).
+    assert_eq!(
+        tile_center(&mat, px, grass),
+        [255, 0, 0, 0],
+        "plain tile is flat with no interior"
     );
+    // Ice: a smooth surface (flat R) but a continuous internal layer everywhere
+    // (G floored above 0), which the shader parallaxes and veils.
+    assert_eq!(chan(&mat, px, ice, 0, false), 255, "ice surface is smooth (flat R)");
+    assert!(chan(&mat, px, ice, 1, false) > 0, "ice has a continuous interior layer (G > 0)");
+    // Rock gets parallax relief derived from its own albedo luminance (R varies).
+    assert!(chan(&mat, px, stone, 0, false) < 240, "stone has luminance relief in R");
 
-    // A pack repainting ice must flatten its material.
+    // A pack repainting ice must flatten its material — no interior under the
+    // mismatched hand-drawn albedo.
     let pack = tmp_dir("packice");
     std::fs::create_dir_all(pack.join("tiles")).unwrap();
     write_solid_png(&pack.join("tiles/ice.png"), 8, 8, [200, 220, 255, 255]);
     let (_img2, mat2, px2, _) = build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack)), &[]);
-    assert_eq!(
-        tile_min_r(&mat2, px2, ice),
-        255,
-        "pack-overridden ice has flat material (no mismatched parallax)"
-    );
+    assert_eq!(chan(&mat2, px2, ice, 1, true), 0, "pack-overridden ice has no interior layer");
 }
 
 /// The shaders are only compiled by naga at device-init time, so a typo in the
