@@ -160,16 +160,26 @@ of its own.
 
 ## Surface relief
 
-Blocks can carry **parallax depth**: a second *material atlas* rides
-alongside the color one (same tiles, linear data), and its height
-channel drives per-fragment parallax occlusion mapping, so recessed
-detail shifts with the viewpoint instead of lying flat on the face.
-Ice is the first to use it — its cracks read as real grooves that
-slide as you move. The depth is opt-in *per texture*: a tile with no
-material data is untouched, and any tile a texture pack repaints has
-its relief reset, so procedural grooves never land under hand-drawn
-art. The material atlas reserves further channels for normal and
-displacement maps to come.
+Blocks carry surface data in a second *material atlas* beside the color
+one (same tiles, linear data), which drives two effects — both opt-in
+*per texture*, both untouched on tiles a pack repaints:
+
+- **Relief lighting.** The material's height channel feeds parallax
+  occlusion mapping *and* a height-derived surface normal, so recessed
+  detail shifts with the viewpoint **and** catches light on its walls:
+  a cobblestone wall's stones bulge and its mortar pools shadow under a
+  torch, cave rock reads as rough. Rock and cobble get their height for
+  free from their own albedo luminance — no hand-authored map needed.
+- **Translucent interior.** A block can also declare an *internal*
+  layer that sits below a see-through surface and parallaxes deeper than
+  it, so you look *into* the material and the structure slides beneath
+  the top as you move. **Ice** uses it: a smooth surface over a cloudy
+  internal lattice of frost fractures, suspended at depth.
+
+The material atlas reserves further channels for authored normal and
+displacement maps to come; surface normals will live in their own
+standard-format atlas so a stock normal map drops in without channel
+surgery.
 
 ## Game feel
 
