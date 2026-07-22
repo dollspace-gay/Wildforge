@@ -25,9 +25,14 @@ Three things the sheets get wrong, all handled here:
   from its bottom row, and reports the seam against a shuffled baseline so you
   can see whether the crop actually tiles.
 * **The normal map is rarely a unit field.** Models hallucinate normals rather
-  than deriving them, so lengths drift and some texels even face backwards.
-  We renormalize, clamp z to the front hemisphere, and — when a height panel is
-  present — check the encoded handedness against the height gradient and say so.
+  than deriving them, so lengths drift and some texels even face backwards. We
+  renormalize and fold z back to the front hemisphere here, at import, and
+  report what had to be repaired — the engine assumes a well-formed map rather
+  than fixing one up on every fragment forever.
+
+The handedness of the normal map is *reported*, never acted on: the engine's
+contract is plain OpenGL/+Y, and a map is passed through untouched unless you
+pass `--flip-green` yourself.
 
 Usage:
 
@@ -132,12 +137,15 @@ def cut_cell(panel: np.ndarray, col: int, row: int, cols: int, rows: int, oy: in
 
 
 def detect_handedness(normal: np.ndarray, height: np.ndarray) -> tuple[str, float]:
-    """Correlate the encoded green against the height gradient.
+    """Correlate the encoded green against the height gradient — as a *report*.
 
-    Returns (convention, |correlation|). A generated normal map is only loosely
-    tied to its own height map, so the magnitude is usually modest — it is the
-    *sign* that decides the convention, and the magnitude that says how much to
-    trust it.
+    Returns (convention, |correlation|). This deliberately does not decide
+    anything: a generated normal map is only loosely tied to its own height map,
+    so the correlation is typically weak (0.3 on the reference sheet), and
+    silently inverting an axis on that evidence is how you end up with a
+    pipeline that works for one image and quietly mangles the next. The engine
+    assumes the standard convention; pass --flip-green if this says otherwise
+    and you agree.
     """
     h = height.astype(float).mean(axis=2) / 255.0
     ny = normal[:, :, 1].astype(float) / 255.0 * 2 - 1
@@ -152,17 +160,29 @@ def resample(panel: np.ndarray, size: int, area: bool) -> np.ndarray:
     return np.asarray(im.resize((size, size), Image.BOX if area else Image.NEAREST))
 
 
-def clean_normal(n: np.ndarray, flip_green: bool) -> np.ndarray:
-    """Decode, optionally flip green, force a unit front-facing field, re-encode."""
+def clean_normal(n: np.ndarray, flip_green: bool) -> tuple[np.ndarray, str]:
+    """Decode, optionally flip green, force a unit front-facing field, re-encode.
+
+    Asset sanitation lives here rather than in the shader: the engine assumes a
+    well-formed map, and anything that has to be repaired should be repaired
+    once, at import, where it can be reported — not papered over on every
+    fragment forever. Returns the encoded map and a line describing what needed
+    fixing (nothing, for a normal map that was already well formed).
+    """
     v = n.astype(np.float32) / 255.0 * 2 - 1
     if flip_green:
         v[:, :, 1] = -v[:, :, 1]
+    length = np.linalg.norm(v, axis=2)
+    back = int((v[:, :, 2] < 0.05).sum())
     # A hallucinated map can point *into* the surface; that is never meaningful
     # tangent-space data, so fold it back to the front hemisphere before
     # normalizing rather than letting it flip a lit face inside out.
     v[:, :, 2] = np.maximum(v[:, :, 2], 0.05)
     v /= np.maximum(np.linalg.norm(v, axis=2, keepdims=True), 1e-6)
-    return np.clip((v + 1) * 0.5 * 255.0 + 0.5, 0, 255).astype(np.uint8)
+    note = f"|n| was {length.mean():.2f} mean / {length.min():.2f} min"
+    if back:
+        note += f", {back} texel(s) faced backwards"
+    return np.clip((v + 1) * 0.5 * 255.0 + 0.5, 0, 255).astype(np.uint8), note
 
 
 def main() -> int:
@@ -185,8 +205,11 @@ def main() -> int:
     )
     ap.add_argument("--size", type=int, default=128, help="output tile size in px (default 128)")
     ap.add_argument("--crop", default="best", choices=["best", "top", "center", "bottom"])
-    ap.add_argument("--flip-green", action="store_true", help="force a DirectX-convention flip")
-    ap.add_argument("--no-flip", action="store_true", help="never flip, whatever detection says")
+    ap.add_argument(
+        "--flip-green",
+        action="store_true",
+        help="invert green: the source is a DirectX/-Y map and the engine wants OpenGL/+Y",
+    )
     args = ap.parse_args()
 
     try:
@@ -240,13 +263,18 @@ def main() -> int:
         print(f"grid: {cols}x{rows} cells of ~{cw}x{ch} at origin ({ox},{oy})")
         cut = lambda p, c, r: cut_cell(p, c, r, cols, rows, oy, ox)  # noqa: E731
 
+    # Report the apparent convention; never act on it. The engine's contract is
+    # plain OpenGL/+Y, so the default is to pass the map through untouched and
+    # let a human decide, rather than silently inverting an axis.
     flip = args.flip_green
-    if "normal" in panels and "height" in panels and not args.no_flip and not args.flip_green:
+    if "normal" in panels and "height" in panels:
         n, h = panels["normal"], panels["height"]
         side = min(n.shape[1], h.shape[1])
         conv, strength = detect_handedness(n[:, :side], h[:, :side])
-        flip = conv == DIRECTX
-        print(f"normal convention: {conv} (|corr| {strength:.2f} against height) -> flip_green={flip}")
+        print(f"normal convention looks like {conv} (|corr| {strength:.2f} against height)")
+        if conv == DIRECTX and not flip:
+            print("  -> pass --flip-green if you agree; writing it through unflipped for now")
+    print(f"green flip: {'yes (--flip-green)' if flip else 'no (engine expects OpenGL/+Y)'}")
 
     args.out.mkdir(parents=True, exist_ok=True)
     suffix = {"albedo": "", "height": "_h", "normal": "_n"}
@@ -255,7 +283,8 @@ def main() -> int:
             cell = cut(panel, col, row)
             out = resample(cell, args.size, area=args.size < min(cell.shape[:2]))
             if kind == "normal":
-                out = clean_normal(out, flip)
+                out, note = clean_normal(out, flip)
+                print(f"  {name}_n: {note}")
             elif kind == "height":
                 out = np.repeat(out.mean(axis=2, keepdims=True).astype(np.uint8), 3, axis=2)
             path = args.out / f"{name}{suffix[kind]}.png"

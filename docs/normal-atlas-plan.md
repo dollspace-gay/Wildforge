@@ -106,10 +106,25 @@ an image model produces. Three things those sheets get wrong, all handled:
   cutting *through* the mortar is what makes a cell tile against itself
   invisibly even though its opposite edges don't match numerically.
 - **The normal map is not a unit field.** Models hallucinate normals rather than
-  deriving them: on the reference, `|n|` averages 0.87 and `n.z` reaches −0.73.
-  We renormalize and clamp to the front hemisphere. Handedness is detected by
-  correlating green against the height gradient (the reference came out OpenGL,
-  so it needed no flip).
+  deriving them: on the reference, `|n|` averages 0.87 and 50 texels of
+  `stone_n` face backwards outright. The importer renormalizes, folds z back to
+  the front hemisphere, and *prints what it had to repair*.
+
+Handedness is **reported, never acted on**. Correlating green against the height
+gradient says which convention a map looks like, but on generated art that
+correlation is weak (0.32 here) — inverting an axis on that evidence is how you
+get a pipeline tuned to one image that quietly mangles the next. The engine's
+contract is plain OpenGL/+Y; a map passes through untouched unless you pass
+`--flip-green` yourself. (The reference is OpenGL, so it needed no flip.)
+
+**Sanitation lives at import, not in the shader.** The engine assumes a
+well-formed map: the only decode-time guard is against a degenerate zero-length
+texel, which would normalize to NaN. An earlier draft clamped z to the front
+hemisphere in the shader too — but that was the one line in the engine that
+existed because of this specific image, it is dead code for anything the
+importer has touched (min decoded z on the shipped tiles is 0.059 and 0.302,
+both above the old 0.05 threshold), and a malformed map should *look* wrong
+rather than be silently repaired on every fragment forever.
 
 The height and normal panels are only loosely consistent with each other
 (corr 0.47 / 0.32) — they were generated, not derived. That is fine here: each

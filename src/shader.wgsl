@@ -331,9 +331,13 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
         // Green is negated: OpenGL maps measure y up the image, while our
         // bitangent runs down it (tile row 0 is v = 0). That one sign is the
         // whole difference between the OpenGL and DirectX conventions.
-        // z is held off zero so a hallucinated back-facing texel can't invert
-        // the face, and xy is scaled by the authored strength.
-        let un = normalize(vec3<f32>(dec.x, -dec.y, max(dec.z, 0.05)));
+        // Otherwise the map is taken as authored — a malformed one should look
+        // wrong, not be silently repaired here every frame; sanitizing belongs
+        // at import. The only guard is against a degenerate (zero-length)
+        // texel, which would normalize to NaN.
+        let v = vec3<f32>(dec.x, -dec.y, dec.z);
+        let len2 = dot(v, v);
+        let un = select(vec3<f32>(0.0, 0.0, 1.0), v * inverseSqrt(max(len2, 1e-12)), len2 > 1e-6);
         n_ts = normalize(vec3<f32>(un.xy * nrm_amt, un.z));
     } else if (h0 < 0.995) {
         // Height-gradient normal at the displaced point (central differences).
