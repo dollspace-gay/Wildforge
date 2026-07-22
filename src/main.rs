@@ -1107,7 +1107,13 @@ impl Game {
                 self.server.world.set_block(bx + dx, yf + 2, bz + 10, ice);
             }
             // Stand at the near edge, eye low over the surface for a grazing look.
-            let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.0, bz as f32 - 9.0);
+            // WILDFORGE_DEMO_STRAFE shifts the stand sideways (same look dir) for
+            // parallax sweeps — pure translation shows the layers slide.
+            let strafe: f32 = std::env::var("WILDFORGE_DEMO_STRAFE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.0);
+            let stand = Vec3::new(bx as f32 + 0.5 + strafe, yf as f32 + 1.0, bz as f32 - 9.0);
             self.player.pos = stand;
             self.spawn_point = stand;
             self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
