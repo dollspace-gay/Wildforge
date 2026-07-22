@@ -176,10 +176,17 @@ one (same tiles, linear data), which drives two effects — both opt-in
   the top as you move. **Ice** uses it: a smooth surface over a cloudy
   internal lattice of frost fractures, suspended at depth.
 
-The material atlas reserves further channels for authored normal and
-displacement maps to come; surface normals will live in their own
-standard-format atlas so a stock normal map drops in without channel
-surgery.
+- **Authored normal maps.** A pack can drop a companion map beside any
+  tile — `stone.png` plus `stone_n.png` (normal) and `stone_h.png`
+  (height) — and that tile lights by what its author drew instead of
+  what the engine could infer. Normals live in their own atlas in the
+  standard OpenGL tangent-space encoding, so a stock or
+  model-generated map works unmodified. Height-derived relief stays the
+  free default for everything that doesn't ship one.
+
+The `hewn` pack is the worked example, and
+`tools/split_material_sheet.py` turns the albedo/height/normal contact
+sheet an image model gives you into the three files a pack wants.
 
 ## Game feel
 

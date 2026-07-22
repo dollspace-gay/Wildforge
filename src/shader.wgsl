@@ -31,9 +31,15 @@ const MAX_PT_LIGHTS: u32 = 8u;
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(1) @binding(0) var atlas_tex: texture_2d<f32>;
 @group(1) @binding(1) var atlas_smp: sampler;
-// Material atlas (linear): R = parallax height (1 = surface, 0 = deepest).
-// A flat tile (R = 1 everywhere) is a no-op, so parallax is opt-in per texture.
+// Material atlas (linear): R = parallax height (1 = surface, 0 = deepest),
+// G = interior mask, B = authored-normal strength (0 = none).
+// A flat tile (R = 1, G = 0, B = 0) is a no-op, so all of it is opt-in per texture.
 @group(1) @binding(2) var material_tex: texture_2d<f32>;
+// Normal atlas (linear): tangent-space normals in the standard OpenGL / +Y
+// encoding, so a stock or model-generated map drops in unmodified. Flat (128,
+// 128, 255) wherever nothing is authored; material.b says where that is, so the
+// plain-tile early-out never has to read this texture.
+@group(1) @binding(3) var normal_tex: texture_2d<f32>;
 @group(2) @binding(0) var shadow_tex: texture_depth_2d;
 @group(2) @binding(1) var shadow_smp: sampler_comparison;
 @group(2) @binding(2) var pt_cube: texture_cube_array<f32>;
@@ -267,8 +273,13 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
     let mat0 = textureSampleLevel(material_tex, atlas_smp, uv, 0.0);
     let h0 = mat0.r;
     let g0 = mat0.g;
-    // Truly flat: smooth surface (R~1) AND no interior layer (G~0) — nothing to do.
-    if (h0 > 0.995 && g0 < 0.01) {
+    // Authored-normal strength. Constant across a tile in practice (the atlas
+    // flags whole slots), so reading it at the undisplaced uv is safe and keeps
+    // the plain-tile test to this one texture fetch.
+    let nrm_amt = mat0.b;
+    // Truly flat: smooth surface (R~1), no interior layer (G~0), no authored
+    // normal (B~0) — nothing to do.
+    if (h0 > 0.995 && g0 < 0.01 && nrm_amt < 0.004) {
         return out;
     }
     let det = dux.x * duy.y - duy.x * dux.y;
@@ -307,15 +318,33 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
             ray_depth = ray_depth + layer;
         }
         out.uv = cur_uv;
+    }
+
+    // The detail normal, in tangent space, read at the parallax-displaced point.
+    // An authored map wins over the height gradient: it carries detail the height
+    // field never had (a chisel bevel inside one flat-toned face) and it is what
+    // the texture's author actually meant. Height-derived stays the free default.
+    var n_ts = vec3<f32>(0.0, 0.0, 1.0);
+    if (nrm_amt > 0.004) {
+        let enc = textureSampleLevel(normal_tex, atlas_smp, clamp(cur_uv, tmin, tmax), 0.0).xyz;
+        let dec = enc * 2.0 - 1.0;
+        // Green is negated: OpenGL maps measure y up the image, while our
+        // bitangent runs down it (tile row 0 is v = 0). That one sign is the
+        // whole difference between the OpenGL and DirectX conventions.
+        // z is held off zero so a hallucinated back-facing texel can't invert
+        // the face, and xy is scaled by the authored strength.
+        let un = normalize(vec3<f32>(dec.x, -dec.y, max(dec.z, 0.05)));
+        n_ts = normalize(vec3<f32>(un.xy * nrm_amt, un.z));
+    } else if (h0 < 0.995) {
         // Height-gradient normal at the displaced point (central differences).
         let texel = 1.0 / vec2<f32>(textureDimensions(material_tex, 0));
         let hl = textureSampleLevel(material_tex, atlas_smp, clamp(cur_uv - vec2<f32>(texel.x, 0.0), tmin, tmax), 0.0).r;
         let hr = textureSampleLevel(material_tex, atlas_smp, clamp(cur_uv + vec2<f32>(texel.x, 0.0), tmin, tmax), 0.0).r;
         let hd = textureSampleLevel(material_tex, atlas_smp, clamp(cur_uv - vec2<f32>(0.0, texel.y), tmin, tmax), 0.0).r;
         let hu = textureSampleLevel(material_tex, atlas_smp, clamp(cur_uv + vec2<f32>(0.0, texel.y), tmin, tmax), 0.0).r;
-        let n_ts = normalize(vec3<f32>((hl - hr) * NORMAL_STRENGTH, (hd - hu) * NORMAL_STRENGTH, 1.0));
-        out.normal = normalize(t * n_ts.x + b * n_ts.y + n * n_ts.z);
+        n_ts = normalize(vec3<f32>((hl - hr) * NORMAL_STRENGTH, (hd - hu) * NORMAL_STRENGTH, 1.0));
     }
+    out.normal = normalize(t * n_ts.x + b * n_ts.y + n * n_ts.z);
     // The internal stratum sits INTERIOR_DEPTH deeper than the (possibly smooth)
     // surface, so it shifts further along the view ray. The crack pattern is
     // periodic, so we WRAP the sample within this tile's cell (nearest-filtered,

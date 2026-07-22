@@ -294,6 +294,7 @@ impl Renderer {
         window: Arc<Window>,
         atlas_data: Vec<u8>,
         atlas_material: Vec<u8>,
+        atlas_normal: Vec<u8>,
         atlas_px: u32,
     ) -> Renderer {
         let size = window.inner_size();
@@ -372,6 +373,8 @@ impl Renderer {
         let atlas_view = upload_atlas(&device, &queue, &atlas_data, atlas_px, true, "atlas");
         let material_view =
             upload_atlas(&device, &queue, &atlas_material, atlas_px, false, "atlas-material");
+        let normal_view =
+            upload_atlas(&device, &queue, &atlas_normal, atlas_px, false, "atlas-normal");
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
@@ -408,9 +411,27 @@ impl Renderer {
                     },
                     count: None,
                 },
+                // The normal atlas (authored tangent-space normals).
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
-        let atlas_bg = atlas_bind_group(&device, &atlas_bgl, &atlas_view, &material_view, &sampler);
+        let atlas_bg = atlas_bind_group(
+            &device,
+            &atlas_bgl,
+            &atlas_view,
+            &material_view,
+            &normal_view,
+            &sampler,
+        );
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shader"),
@@ -1219,12 +1240,19 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
         r
     }
 
-    /// Replace the atlas texture (hot reload).
-    pub fn set_atlas(&mut self, data: &[u8], material: &[u8], px: u32) {
+    /// Replace the atlas textures (hot reload).
+    pub fn set_atlas(&mut self, data: &[u8], material: &[u8], normal: &[u8], px: u32) {
         let color = upload_atlas(&self.device, &self.queue, data, px, true, "atlas");
         let mat = upload_atlas(&self.device, &self.queue, material, px, false, "atlas-material");
-        self.atlas_bg =
-            atlas_bind_group(&self.device, &self.atlas_bgl, &color, &mat, &self.atlas_sampler);
+        let nrm = upload_atlas(&self.device, &self.queue, normal, px, false, "atlas-normal");
+        self.atlas_bg = atlas_bind_group(
+            &self.device,
+            &self.atlas_bgl,
+            &color,
+            &mat,
+            &nrm,
+            &self.atlas_sampler,
+        );
     }
 
     pub fn resize(&mut self, w: u32, h: u32) {
@@ -1923,12 +1951,14 @@ fn upload_atlas(
     tex.create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-/// The group-1 bind group: color atlas (0), shared sampler (1), material atlas (2).
+/// The group-1 bind group: color atlas (0), shared sampler (1), material atlas
+/// (2), normal atlas (3).
 fn atlas_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
     color: &wgpu::TextureView,
     material: &wgpu::TextureView,
+    normal: &wgpu::TextureView,
     sampler: &wgpu::Sampler,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1946,6 +1976,10 @@ fn atlas_bind_group(
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: wgpu::BindingResource::TextureView(material),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(normal),
             },
         ],
     })

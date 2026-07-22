@@ -340,12 +340,58 @@ pub fn discover_packs() -> Vec<PackInfo> {
     packs
 }
 
-/// Find recognized tile PNGs under `<pack>/tiles/`: (slot, path), plus
-/// warnings for files that match no known tile name.
+/// A companion map: surface data authored alongside a tile's albedo, in its own
+/// PNG next to it (`stone.png` + `stone_h.png` + `stone_n.png`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MapKind {
+    /// Parallax height. Greyscale: white = surface, black = deepest recess.
+    Height,
+    /// Tangent-space normal, standard OpenGL / +Y ("green up") encoding.
+    Normal,
+}
+
+/// Recognize a pack file stem as either a tile or one of its companion maps.
+///
+/// A real tile name always wins, so a hypothetical tile literally called
+/// `foo_n` keeps its slot instead of being read as `foo`'s normal map.
+fn classify_tile_file(
+    stem: &str,
+    names: &std::collections::HashMap<String, u16>,
+) -> Option<(u16, Option<MapKind>)> {
+    if let Some(slot) = names.get(stem) {
+        return Some((*slot, None));
+    }
+    for (suffix, kind) in [
+        ("_h", MapKind::Height),
+        ("_height", MapKind::Height),
+        ("_n", MapKind::Normal),
+        ("_normal", MapKind::Normal),
+    ] {
+        if let Some(base) = stem.strip_suffix(suffix)
+            && let Some(slot) = names.get(base)
+        {
+            return Some((*slot, Some(kind)));
+        }
+    }
+    None
+}
+
+/// What a pack's `tiles/` folder turned out to hold.
+#[derive(Default)]
+pub struct PackFiles {
+    /// Albedo tiles: the slot each PNG repaints.
+    pub tiles: Vec<(u16, std::path::PathBuf)>,
+    /// Companion maps authored beside an albedo (`stone_n.png`, `stone_h.png`).
+    pub maps: Vec<(u16, MapKind, std::path::PathBuf)>,
+    /// Files matching no known tile name.
+    pub warnings: Vec<String>,
+}
+
+/// Find recognized tile PNGs under `<pack>/tiles/`.
 pub fn scan_pack(
     pack_dir: &std::path::Path,
     names: &std::collections::HashMap<String, u16>,
-) -> (Vec<(u16, std::path::PathBuf)>, Vec<String>) {
+) -> PackFiles {
     fn walk(dir: &std::path::Path, acc: &mut Vec<std::path::PathBuf>) {
         let Ok(rd) = std::fs::read_dir(dir) else {
             return;
@@ -363,7 +409,7 @@ pub fn scan_pack(
     let mut all = Vec::new();
     walk(&root, &mut all);
     all.sort();
-    let (mut files, mut warns) = (Vec::new(), Vec::new());
+    let mut out = PackFiles::default();
     for p in all {
         let rel = p
             .strip_prefix(&root)
@@ -373,32 +419,54 @@ pub fn scan_pack(
         let Some(name) = rel.strip_suffix(".png") else {
             continue;
         };
-        match names.get(name) {
-            Some(slot) => files.push((*slot, p)),
-            None => warns.push(format!("{rel}: no tile named \"{name}\"")),
+        match classify_tile_file(name, names) {
+            Some((slot, None)) => out.tiles.push((slot, p)),
+            Some((slot, Some(kind))) => out.maps.push((slot, kind, p)),
+            None => out
+                .warnings
+                .push(format!("{rel}: no tile named \"{name}\"")),
         }
     }
-    (files, warns)
+    out
+}
+
+/// Every texture the chunk shader binds, built together so they can never fall
+/// out of layout sync. All three share the same tile grid and side length.
+pub struct Atlas {
+    /// Albedo, sampled as sRGB.
+    pub color: Vec<u8>,
+    /// Scalar surface data (height / interior / authored-normal flag). Linear.
+    pub material: Vec<u8>,
+    /// Tangent-space normals, OpenGL encoding. Linear. Flat where unauthored.
+    pub normal: Vec<u8>,
+    /// Side length of each atlas in px (all three are `px` x `px`).
+    pub px: u32,
+    pub warnings: Vec<String>,
 }
 
 /// Build the atlas in layers: procedural/assets base, then mod PNGs, then
 /// the active texture pack's tiles last (the explicit user choice wins, but
-/// only for tiles the pack ships). Returns (pixels, side px, pack warnings).
+/// only for tiles the pack ships). Companion maps (`<tile>_h`, `<tile>_n`) are
+/// applied after all albedo layering, so they survive the material reset their
+/// own albedo triggers.
 pub fn build_atlas(
     tex_files: &[(u16, std::path::PathBuf)],
     pack: Option<PackSource>,
     tex_names: &[(String, u16)],
-) -> (Vec<u8>, Vec<u8>, u32, Vec<String>) {
+) -> Atlas {
     let (mut img, px) = load_or_build();
     let tp = px / ATLAS_TILES;
     // The material atlas (parallax height etc.) is procedural + pack-aware: any
     // slot a pack overrides with its own albedo gets its material reset to flat,
     // so our procedural grooves never land under mismatched hand-drawn art.
     let mut mat = build_material(px);
+    let mut nrm = build_normal(px);
+    // Companion maps found along the way; applied last, over the final albedo.
+    let mut maps: Vec<(u16, MapKind, SrcTile)> = Vec::new();
     for (slot, path) in tex_files {
         match load_tile_png(path) {
-            Some((data, w, h)) => {
-                blit_tile(&mut img, px, tp, *slot, &data, w, h);
+            Some(src) => {
+                blit_tile(&mut img, px, tp, *slot, &src);
                 clear_material_slot(&mut mat, px, *slot);
             }
             None => eprintln!("atlas: failed to load {}", path.display()),
@@ -408,14 +476,20 @@ pub fn build_atlas(
     match pack {
         Some(PackSource::Dir(dir)) => {
             let names = tile_names(tex_names);
-            let (files, warns) = scan_pack(&dir, &names);
-            warnings = warns;
-            for (slot, path) in files {
+            let found = scan_pack(&dir, &names);
+            warnings = found.warnings;
+            for (slot, path) in found.tiles {
                 match load_tile_png(&path) {
-                    Some((data, w, h)) => {
-                        blit_tile(&mut img, px, tp, slot, &data, w, h);
+                    Some(src) => {
+                        blit_tile(&mut img, px, tp, slot, &src);
                         clear_material_slot(&mut mat, px, slot);
                     }
+                    None => warnings.push(format!("unreadable png: {}", path.display())),
+                }
+            }
+            for (slot, kind, path) in found.maps {
+                match load_tile_png(&path) {
+                    Some(src) => maps.push((slot, kind, src)),
                     None => warnings.push(format!("unreadable png: {}", path.display())),
                 }
             }
@@ -425,26 +499,46 @@ pub fn build_atlas(
             for (name, bytes) in tiles {
                 // Names the current registry doesn't know (e.g. a mod's
                 // tile with that mod removed) skip silently.
-                let Some(slot) = names.get(*name) else {
+                let Some((slot, kind)) = classify_tile_file(name, &names) else {
                     continue;
                 };
-                if let Some((data, w, h)) = load_tile_bytes(bytes) {
-                    blit_tile(&mut img, px, tp, *slot, &data, w, h);
-                    clear_material_slot(&mut mat, px, *slot);
+                let Some(src) = load_tile_bytes(bytes) else {
+                    continue;
+                };
+                match kind {
+                    None => {
+                        blit_tile(&mut img, px, tp, slot, &src);
+                        clear_material_slot(&mut mat, px, slot);
+                    }
+                    Some(kind) => maps.push((slot, kind, src)),
                 }
             }
         }
         None => {}
     }
     apply_player_variants(&mut img, px);
+    // Authored companion maps land here, after every albedo layer has settled.
+    let mut authored_height = std::collections::HashSet::new();
+    for (slot, kind, src) in &maps {
+        match kind {
+            MapKind::Height => {
+                blit_height(&mut mat, px, tp, *slot, src);
+                authored_height.insert(*slot);
+            }
+            MapKind::Normal => blit_normal(&mut nrm, &mut mat, px, tp, *slot, src),
+        }
+    }
     // Rock/masonry get parallax relief from their own albedo luminance, so cave
     // walls and cobble read as 3D and catch light in their crevices. Derived from
-    // the final atlas, so it tracks the active pack automatically.
+    // the final atlas, so it tracks the active pack automatically — but an
+    // authored height map is the better source, so it wins.
     for slot in [
         *builtin_slots().get("stone").unwrap_or(&3),
         *builtin_slots().get("cobblestone").unwrap_or(&4),
     ] {
-        derive_luminance_height(&img, &mut mat, px, slot);
+        if !authored_height.contains(&slot) {
+            derive_luminance_height(&img, &mut mat, px, slot);
+        }
     }
     if let Ok(dir) = std::env::var("WILDFORGE_EXPORT_TILES") {
         match export_tiles(std::path::Path::new(&dir), &img, px, tex_names) {
@@ -452,7 +546,13 @@ pub fn build_atlas(
             Err(e) => eprintln!("atlas: tile export failed: {e}"),
         }
     }
-    (img, mat, px, warnings)
+    Atlas {
+        color: img,
+        material: mat,
+        normal: nrm,
+        px,
+        warnings,
+    }
 }
 
 /// Derive the pre-tinted player variant tiles (style.rs layout) from
@@ -568,18 +668,23 @@ pub fn export_tiles(
     Ok(named.len())
 }
 
-fn load_tile_png(path: &std::path::Path) -> Option<(Vec<u8>, u32, u32)> {
+/// A decoded source PNG, at whatever resolution it was authored.
+pub struct SrcTile {
+    px: Vec<u8>,
+    w: u32,
+    h: u32,
+}
+
+fn load_tile_png(path: &std::path::Path) -> Option<SrcTile> {
     let f = std::fs::File::open(path).ok()?;
     load_tile_reader(png::Decoder::new(std::io::BufReader::new(f)))
 }
 
-fn load_tile_bytes(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
+fn load_tile_bytes(bytes: &[u8]) -> Option<SrcTile> {
     load_tile_reader(png::Decoder::new(std::io::Cursor::new(bytes)))
 }
 
-fn load_tile_reader<R: std::io::BufRead + std::io::Seek>(
-    dec: png::Decoder<R>,
-) -> Option<(Vec<u8>, u32, u32)> {
+fn load_tile_reader<R: std::io::BufRead + std::io::Seek>(dec: png::Decoder<R>) -> Option<SrcTile> {
     let mut reader = dec.read_info().ok()?;
     let mut buf = vec![0u8; reader.output_buffer_size()?];
     let info = reader.next_frame(&mut buf).ok()?;
@@ -595,20 +700,83 @@ fn load_tile_reader<R: std::io::BufRead + std::io::Seek>(
         }
         _ => return None,
     };
-    Some((rgba, info.width, info.height))
+    Some(SrcTile {
+        px: rgba,
+        w: info.width,
+        h: info.height,
+    })
 }
 
-/// Nearest-neighbor blit of an arbitrary-size tile into an atlas slot.
-fn blit_tile(img: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &[u8], sw: u32, sh: u32) {
-    let tx = (slot as u32 % ATLAS_TILES) * tp;
-    let ty = (slot as u32 / ATLAS_TILES) * tp;
+/// Resample an arbitrary-size RGBA tile to `tp` x `tp`.
+///
+/// Upscaling stays **nearest**, which is the whole chunky-pixel look. Downscaling
+/// **box-averages** the source texels that map to each destination texel: point
+/// sampling a 128px tile into a 32px atlas keeps only 1 texel in 16, which turns
+/// fine detail into noise — merely ugly for albedo, but ruinous for a normal map,
+/// where the discarded neighbours are exactly what defines the surface and the
+/// surviving noise sparkles under a moving light. RGB is averaged weighted by
+/// alpha so fully transparent texels can't bleed their color into an edge.
+fn resample_tile(dst: &mut [u8], tp: u32, src: &SrcTile) {
+    let (sw, sh) = (src.w, src.h);
+    let src = &src.px;
     for y in 0..tp {
         for x in 0..tp {
-            let sx = (x * sw / tp).min(sw - 1);
-            let sy = (y * sh / tp).min(sh - 1);
-            let si = ((sy * sw + sx) * 4) as usize;
+            let (x0, x1) = (
+                x * sw / tp,
+                ((x + 1) * sw / tp).max(x * sw / tp + 1).min(sw),
+            );
+            let (y0, y1) = (
+                y * sh / tp,
+                ((y + 1) * sh / tp).max(y * sh / tp + 1).min(sh),
+            );
+            let di = ((y * tp + x) * 4) as usize;
+            if x1 - x0 <= 1 && y1 - y0 <= 1 {
+                let si = ((y0.min(sh - 1) * sw + x0.min(sw - 1)) * 4) as usize;
+                dst[di..di + 4].copy_from_slice(&src[si..si + 4]);
+                continue;
+            }
+            let (mut rgb, mut a, mut wsum, mut n) = ([0f32; 3], 0f32, 0f32, 0f32);
+            for sy in y0..y1 {
+                for sx in x0..x1 {
+                    let si = ((sy * sw + sx) * 4) as usize;
+                    let w = src[si + 3] as f32;
+                    for c in 0..3 {
+                        rgb[c] += src[si + c] as f32 * w;
+                    }
+                    a += w;
+                    wsum += w;
+                    n += 1.0;
+                }
+            }
+            for c in 0..3 {
+                // All-transparent: fall back to the flat mean so the color is
+                // still something sane rather than black.
+                dst[di + c] = if wsum > 0.0 {
+                    (rgb[c] / wsum) as u8
+                } else {
+                    let sum: f32 = (y0..y1)
+                        .flat_map(|sy| (x0..x1).map(move |sx| (sy, sx)))
+                        .map(|(sy, sx)| src[(((sy * sw + sx) * 4) as usize) + c] as f32)
+                        .sum();
+                    (sum / n) as u8
+                };
+            }
+            dst[di + 3] = (a / n) as u8;
+        }
+    }
+}
+
+/// Blit an arbitrary-size tile into an atlas slot, resampled to fit.
+fn blit_tile(img: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &SrcTile) {
+    let tx = (slot as u32 % ATLAS_TILES) * tp;
+    let ty = (slot as u32 / ATLAS_TILES) * tp;
+    let mut tile = vec![0u8; (tp * tp * 4) as usize];
+    resample_tile(&mut tile, tp, src);
+    for y in 0..tp {
+        for x in 0..tp {
+            let si = ((y * tp + x) * 4) as usize;
             let di = (((ty + y) * atlas_px + tx + x) * 4) as usize;
-            img[di..di + 4].copy_from_slice(&src[si..si + 4]);
+            img[di..di + 4].copy_from_slice(&tile[si..si + 4]);
         }
     }
 }
@@ -812,7 +980,11 @@ fn voronoi(u: f32, v: f32, cells: i32, salt: u32) -> (f32, f32, u32) {
 ///   G = **interior/subsurface mask** for multilayer parallax. 0 = none (default).
 ///       A second stratum (ice bubbles) that parallaxes at a deeper offset than
 ///       the surface, so the layers slide past each other with the viewpoint.
-///   B = reserved (future scalar: roughness / metallic).
+///   B = **authored-normal strength**. 0 (default) = no authored normal, so the
+///       shader falls back to the height-gradient normal it derives itself.
+///       > 0 selects the normal atlas at this texel, scaled by this value. It
+///       lives here rather than in the normal atlas's own alpha so the shader's
+///       "is this tile plain?" early-out stays a single texture read.
 ///   A = reserved (future scalar: AO / emission-mask).
 ///
 /// Populated procedurally here for built-in tiles that opt in (currently ice).
@@ -863,6 +1035,75 @@ pub fn build_material(px: u32) -> Vec<u8> {
     img
 }
 
+/// The **normal atlas**: tangent-space surface normals, same tile layout as the
+/// color atlas, linear `Rgba8` (never sRGB). Deliberately a plain standard-format
+/// texture rather than channels borrowed from the material atlas, so a stock,
+/// downloaded, or model-generated normal map drops in with no channel surgery.
+///
+/// Encoding is the common **OpenGL / +Y ("green up")** convention: green
+/// brightens where the surface tilts toward the *top* of the tile image. Since
+/// Wildforge stores tiles top-row-first — its bitangent runs *down* the image —
+/// the shader negates green on decode. That negation is the entire difference
+/// between the two conventions, so a DirectX map is a green flip away
+/// (`tools/split_material_sheet.py --flip-green`).
+///
+/// Default fill is flat (+Z). Which texels are actually *authored* is recorded
+/// in the material atlas's B channel, not here; see `build_material`.
+fn normal_default() -> [u8; 4] {
+    [128, 128, 255, 255]
+}
+
+pub fn build_normal(px: u32) -> Vec<u8> {
+    let tp = px / ATLAS_TILES;
+    let atlas_px = ATLAS_TILES * tp;
+    let mut img = vec![0u8; (atlas_px * atlas_px * 4) as usize];
+    for p in img.chunks_exact_mut(4) {
+        p.copy_from_slice(&normal_default());
+    }
+    img
+}
+
+/// Apply an authored height map (`<tile>_h.png`) to one slot's material R.
+/// Greyscale in, so any channel would do; luminance keeps a tinted map sane.
+/// G/B/A are left alone — a tile can carry both a height and a normal map.
+fn blit_height(mat: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &SrcTile) {
+    let mut tile = vec![0u8; (tp * tp * 4) as usize];
+    resample_tile(&mut tile, tp, src);
+    let (tx, ty) = (
+        slot as u32 % ATLAS_TILES * tp,
+        slot as u32 / ATLAS_TILES * tp,
+    );
+    for y in 0..tp {
+        for x in 0..tp {
+            let s = ((y * tp + x) * 4) as usize;
+            let d = (((ty + y) * atlas_px + tx + x) * 4) as usize;
+            let l =
+                0.299 * tile[s] as f32 + 0.587 * tile[s + 1] as f32 + 0.114 * tile[s + 2] as f32;
+            mat[d] = l as u8;
+        }
+    }
+}
+
+/// Apply an authored normal map (`<tile>_n.png`) to one slot, and flag those
+/// texels in the material atlas's B channel so the shader knows to read it.
+fn blit_normal(nrm: &mut [u8], mat: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &SrcTile) {
+    let mut tile = vec![0u8; (tp * tp * 4) as usize];
+    resample_tile(&mut tile, tp, src);
+    let (tx, ty) = (
+        slot as u32 % ATLAS_TILES * tp,
+        slot as u32 / ATLAS_TILES * tp,
+    );
+    for y in 0..tp {
+        for x in 0..tp {
+            let s = ((y * tp + x) * 4) as usize;
+            let d = (((ty + y) * atlas_px + tx + x) * 4) as usize;
+            nrm[d..d + 3].copy_from_slice(&tile[s..s + 3]);
+            nrm[d + 3] = 255;
+            mat[d + 2] = 255; // full-strength authored normal
+        }
+    }
+}
+
 /// Derive a parallax height field for a tile from its albedo **luminance**
 /// (bright = raised surface, dark = recessed). A cheap, general way to give an
 /// existing texture relief without authoring a height map — rock/cobble use it so
@@ -870,7 +1111,10 @@ pub fn build_material(px: u32) -> Vec<u8> {
 /// so it matches whatever pack tile is showing (no clear-on-override needed).
 fn derive_luminance_height(img: &[u8], mat: &mut [u8], px: u32, slot: u16) {
     let tp = px / ATLAS_TILES;
-    let (tx, ty) = (slot as u32 % ATLAS_TILES * tp, slot as u32 / ATLAS_TILES * tp);
+    let (tx, ty) = (
+        slot as u32 % ATLAS_TILES * tp,
+        slot as u32 / ATLAS_TILES * tp,
+    );
     for y in 0..tp {
         for x in 0..tp {
             let i = (((ty + y) * px + tx + x) * 4) as usize;
@@ -885,7 +1129,10 @@ fn derive_luminance_height(img: &[u8], mat: &mut [u8], px: u32, slot: u16) {
 /// slot's color, so procedural height never sits under a mismatched albedo).
 fn clear_material_slot(mat: &mut [u8], px: u32, slot: u16) {
     let tp = px / ATLAS_TILES;
-    let (tx, ty) = (slot as u32 % ATLAS_TILES * tp, slot as u32 / ATLAS_TILES * tp);
+    let (tx, ty) = (
+        slot as u32 % ATLAS_TILES * tp,
+        slot as u32 / ATLAS_TILES * tp,
+    );
     let d = material_default();
     for y in 0..tp {
         for x in 0..tp {

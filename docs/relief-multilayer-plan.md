@@ -61,12 +61,13 @@ Getting the interior to read took three fixes, each from a real observation:
 |---|---|
 | R | parallax **height** (255 = surface, 0 = deepest); luminance-derived for rock |
 | G | **interior mask** for the translucent layer (0 = none) |
-| B / A | reserved (scalar surface data — roughness / AO / …) |
+| B | **authored-normal strength** (0 = none) — added by the normal-atlas slice |
+| A | reserved (scalar surface data — roughness / AO / …) |
 
-Surface **normals** deliberately do *not* live here — they'll get their own
+Surface **normals** deliberately do *not* live here — they got their own
 standard tangent-space RGB atlas so a stock/downloaded/AI normal map drops in
 with no channel surgery (derived-from-height is the free default; an authored
-normal overrides it).
+normal overrides it). See [normal-atlas-plan.md](normal-atlas-plan.md).
 
 ## Deliberately deferred
 
