@@ -271,8 +271,18 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
     if (h0 > 0.995 && g0 < 0.01) {
         return out;
     }
+    // Is the uv basis usable? The test has to be scale-free. `det` has units of
+    // (uv per pixel) squared, so it shrinks with the square of how much screen a
+    // tile covers — walk up to a wall and a perfectly healthy basis reaches 1e-10,
+    // which an absolute threshold reads as degenerate. That flattened the relief
+    // on everything nearer than ~0.4 blocks at 720p (and ~1.0 at 1440p, since the
+    // cutoff scales with resolution), with the boundary tracing a constant-depth
+    // line across the surface: a diagonal seam that slid with the camera.
+    // What actually matters is whether the two derivative vectors are
+    // near-PARALLEL (a zero-area mapping), and 1e-6 of their magnitudes is also
+    // about where f32 cancellation leaves `det` meaningless anyway.
     let det = dux.x * duy.y - duy.x * dux.y;
-    if (abs(det) < 1e-9) {
+    if (abs(det) <= 1e-6 * length(dux) * length(duy)) {
         return out;
     }
     let r = 1.0 / det;
