@@ -48,6 +48,10 @@ pub enum SimEvent {
 pub struct Server {
     pub world: World,
     pub time_of_day: f32,
+    /// Hold `time_of_day` still. Set for headless captures, where the sun
+    /// drifting by however long the machine took to reach the capture frame
+    /// showed up as a small global brightness difference between runs.
+    pub freeze_clock: bool,
     /// Simulation randomness — separate from client/UI randomness.
     pub rng: u32,
     accum: f32,
@@ -73,6 +77,7 @@ impl Server {
         Server {
             world,
             time_of_day,
+            freeze_clock: false,
             rng,
             accum: 0.0,
             water_timer: 0.0,
@@ -109,13 +114,16 @@ impl Server {
     }
 
     fn step(&mut self, dt: f32, players: &[PlayerCtx], events: &mut Vec<SimEvent>) {
-        // The clock, the wild's ire, and dawn.
-        let before = self.time_of_day;
-        self.time_of_day = (self.time_of_day + dt / DAY_LENGTH) % 1.0;
-        if self.time_of_day < before {
-            self.world.day = self.world.day.wrapping_add(1);
+        // The clock, the wild's ire, and dawn. A frozen clock holds the sun
+        // still (headless capture); everything else still ticks.
+        if !self.freeze_clock {
+            let before = self.time_of_day;
+            self.time_of_day = (self.time_of_day + dt / DAY_LENGTH) % 1.0;
+            if self.time_of_day < before {
+                self.world.day = self.world.day.wrapping_add(1);
+            }
+            self.world.clock = Server::clock_of(self.world.day, self.time_of_day);
         }
-        self.world.clock = Server::clock_of(self.world.day, self.time_of_day);
         self.step_weather(dt, events);
         if self.world.tick_ire(dt / DAY_LENGTH) {
             let refund = self.world.accept_offerings();
