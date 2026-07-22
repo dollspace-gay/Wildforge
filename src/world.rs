@@ -578,6 +578,15 @@ impl World {
     pub fn load_or_create(save_dir: PathBuf, reg: Arc<Registry>) -> World {
         let (seed, mode, ire, day, weather) = read_world_meta_full(&save_dir);
         let seed = seed.unwrap_or_else(|| {
+            // Dev: WILDFORGE_SEED pins the seed of a *newly created* world, so a
+            // scene can be rebuilt from scratch instead of having to preserve a
+            // save. An existing world always keeps the seed in its world.toml.
+            if let Some(s) = std::env::var("WILDFORGE_SEED")
+                .ok()
+                .and_then(|v| v.parse().ok())
+            {
+                return s;
+            }
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as u32)

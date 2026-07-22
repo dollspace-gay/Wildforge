@@ -60,6 +60,13 @@ use world::World;
 
 const GEN_BUDGET: usize = 4; // chunk generations per frame (256-tall gen is pricey)
 const MESH_BUDGET: usize = 6; // chunk remeshes per frame
+// Headless capture: settled frames required before shooting, and a hard ceiling
+// so a world that never quiesces still yields a (flagged) shot.
+const SHOT_SETTLE_FRAMES: u64 = 10;
+// Fixed sim step per frame while capturing, so tick count is a function of
+// frame count alone.
+const SHOT_FIXED_DT: f32 = 1.0 / 60.0;
+const SHOT_MAX_FRAMES: u64 = 3000;
 const REACH: f32 = 5.0;
 const MAX_HEALTH: f32 = 14.0; // base half-hearts (7 hearts)
 const MAX_AIR: f32 = 15.0; // seconds of breath
@@ -298,6 +305,10 @@ struct Game {
     browse_back: Vec<(ItemId, bool)>,
 
     total_frames: u64,
+    /// Consecutive frames with no chunk work left, and the frame a headless
+    /// capture fired on (so we exit once it has been written).
+    settled_frames: u64,
+    shot_at: Option<u64>,
     /// The point-light director: promotes emitters to shadow-casting
     /// lights, caches their cube maps (client presentation only).
     lights: lights::Director,
@@ -536,11 +547,20 @@ impl Game {
             damage_flash: 0.0,
             fall_start: None,
             spawn_point: spawn,
-            rng: 0x1234_5678
-                ^ std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.subsec_nanos())
-                    .unwrap_or(0),
+            // Seeds the sim's RNG (mob wander, spawns) when a world is
+            // entered. A headless capture takes a fixed seed so those land in
+            // the same place every run — with wall-clock nanos the terrain and
+            // lighting matched exactly but the animals had each wandered
+            // somewhere slightly different.
+            rng: if std::env::var("WILDFORGE_SHOT").is_ok() {
+                0x1234_5678
+            } else {
+                0x1234_5678
+                    ^ std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.subsec_nanos())
+                        .unwrap_or(0)
+            },
             reg,
             scripts,
             toasts: Vec::new(),
@@ -577,6 +597,8 @@ impl Game {
             browse_view: None,
             browse_back: Vec::new(),
             total_frames: 0,
+            settled_frames: 0,
+            shot_at: None,
             lights: lights::Director::new(),
             player_gait: Default::default(),
             style: own_style,
@@ -867,6 +889,14 @@ impl Game {
             && let Ok(t) = t.parse::<f32>()
         {
             self.server.time_of_day = t.fract();
+        }
+        // A headless capture pins the sun. Sim time advances with the wall
+        // clock, so a faster machine reached the capture frame with the sun
+        // less far along — a small global brightness shift between runs that
+        // contaminates any A/B comparison of surface lighting. Interactive play
+        // is untouched: WILDFORGE_TIME on its own still just sets the start.
+        if self.auto_shot.is_some() {
+            self.server.freeze_clock = true;
         }
         // Dev: force camera look ("yaw,pitch" in radians) for framed captures.
         self.apply_look_env();
@@ -2564,6 +2594,49 @@ impl Game {
         }
     }
 
+    /// Chunks still owed generation or a remesh — the same two queues
+    /// `stream_chunks` works through, which are budgeted per frame and so
+    /// finish at a wall-clock-dependent moment. Zero means the visible world
+    /// has stopped changing and a capture will be reproducible.
+    fn chunk_work_pending(&self) -> usize {
+        if !self.in_world {
+            return 0;
+        }
+        let pcx = (self.player.pos.x.floor() as i32).div_euclid(CHUNK_X as i32);
+        let pcz = (self.player.pos.z.floor() as i32).div_euclid(CHUNK_X as i32);
+        let vd = self.config.view_dist;
+        let has = |x: i32, z: i32| {
+            self.server
+                .world
+                .chunks
+                .contains_key(&ChunkPos { x, z })
+        };
+        let mut pending = 0;
+        for dx in -vd..=vd {
+            for dz in -vd..=vd {
+                if !has(pcx + dx, pcz + dz) {
+                    pending += 1;
+                }
+            }
+        }
+        // Dirty chunks only count once all four neighbours exist, matching the
+        // filter in stream_chunks — otherwise a chunk at the view edge that can
+        // never be meshed would keep the world "unsettled" forever.
+        pending += self
+            .server
+            .world
+            .chunks
+            .iter()
+            .filter(|(p, c)| {
+                c.dirty
+                    && [(-1, 0), (1, 0), (0, -1), (0, 1)]
+                        .iter()
+                        .all(|(dx, dz)| has(p.x + dx, p.z + dz))
+            })
+            .count();
+        pending
+    }
+
     fn stream_chunks(&mut self) {
         let pcx = (self.player.pos.x.floor() as i32).div_euclid(CHUNK_X as i32);
         let pcz = (self.player.pos.z.floor() as i32).div_euclid(CHUNK_X as i32);
@@ -4193,7 +4266,16 @@ impl Game {
 
     fn update(&mut self) {
         let now = Instant::now();
-        let dt = (now - self.last_frame).as_secs_f32().min(0.05);
+        // A headless capture advances the sim by a fixed step per frame instead
+        // of by measured wall-clock time. Otherwise the number of sim ticks
+        // reached by the capture frame depends on how fast the machine got
+        // there, and anything that moves — wandering animals, water, particles
+        // — sits somewhere slightly different in every run.
+        let dt = if self.auto_shot.is_some() {
+            SHOT_FIXED_DT
+        } else {
+            (now - self.last_frame).as_secs_f32().min(0.05)
+        };
         self.last_frame = now;
         self.time_abs += dt;
 
@@ -5309,15 +5391,49 @@ impl Game {
         // the world is meshed, then exits.
         self.total_frames += 1;
         if let Some(path) = self.auto_shot.clone() {
-            let shot_frame: u64 = std::env::var("WILDFORGE_SHOT_FRAME")
+            // Capture once the world has stopped changing, not at a fixed
+            // frame. Chunk generation and remeshing are budgeted per frame, so
+            // "frame 240" caught however much world the machine happened to
+            // have built by then, and distant terrain differed between runs of
+            // the very same scene. WILDFORGE_SHOT_FRAME forces the old
+            // fixed-frame behaviour for anything that wants a specific moment.
+            let forced: Option<u64> = std::env::var("WILDFORGE_SHOT_FRAME")
                 .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(240);
-            if self.total_frames == shot_frame {
-                eprintln!("fps at capture: {}", self.fps);
-                self.renderer.pending_screenshot = Some(path);
-            } else if self.total_frames > shot_frame + 1 {
-                std::process::exit(0);
+                .and_then(|v| v.parse().ok());
+            if self.chunk_work_pending() == 0 {
+                self.settled_frames += 1;
+            } else {
+                self.settled_frames = 0;
+            }
+            let ready = match forced {
+                Some(f) => self.total_frames >= f,
+                // A few settled frames of margin so the last uploads have
+                // landed, and a ceiling so a world that never settles still
+                // produces a shot rather than hanging.
+                None => {
+                    self.settled_frames >= SHOT_SETTLE_FRAMES
+                        || self.total_frames >= SHOT_MAX_FRAMES
+                }
+            };
+            match self.shot_at {
+                Some(at) if self.total_frames > at + 1 => std::process::exit(0),
+                None if ready => {
+                    eprintln!(
+                        "capture at frame {} ({}), fps {}",
+                        self.total_frames,
+                        if forced.is_some() {
+                            "forced frame".to_string()
+                        } else if self.settled_frames >= SHOT_SETTLE_FRAMES {
+                            format!("world settled {} frames", self.settled_frames)
+                        } else {
+                            "TIMED OUT, world still changing".to_string()
+                        },
+                        self.fps
+                    );
+                    self.renderer.pending_screenshot = Some(path);
+                    self.shot_at = Some(self.total_frames);
+                }
+                _ => {}
             }
         }
 

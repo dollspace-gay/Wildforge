@@ -6897,6 +6897,41 @@ fn material_atlas_authors_ice_and_pack_override_clears_it() {
     assert_eq!(chan(&mat2, px2, ice, 1, true), 0, "pack-overridden ice has no interior layer");
 }
 
+/// A headless capture pins the sun so runs are comparable, but it must not
+/// pause the world — the point is a reproducible frame, not a frozen sim.
+#[test]
+fn frozen_clock_holds_the_sun_without_stopping_the_sim() {
+    let reg = std::sync::Arc::new(crate::registry::load(std::path::Path::new("mods")));
+    let mk = || {
+        let w = crate::world::World::new(7, tmp_dir("freeze"), reg.clone());
+        crate::server::Server::new(w, 0.3, 42)
+    };
+    let step = |sv: &mut crate::server::Server| {
+        for _ in 0..40 {
+            sv.advance(crate::server::TICK, &[], &mut Vec::new());
+        }
+    };
+
+    let mut running = mk();
+    let t0 = running.time_of_day;
+    step(&mut running);
+    assert!(
+        running.time_of_day > t0,
+        "the clock runs normally when nothing freezes it"
+    );
+
+    let mut frozen = mk();
+    frozen.freeze_clock = true;
+    let t0 = frozen.time_of_day;
+    let weather0 = frozen.world.weather_timer;
+    step(&mut frozen);
+    assert_eq!(frozen.time_of_day, t0, "a frozen clock holds the sun exactly");
+    assert!(
+        frozen.world.weather_timer > weather0,
+        "but the rest of the sim keeps ticking"
+    );
+}
+
 /// The shaders are only compiled by naga at device-init time, so a typo in the
 /// WGSL would ship undetected by `cargo build`/`test`. Parse and validate both
 /// shader files here to fail loudly at CI instead of on someone's screen.
