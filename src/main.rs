@@ -1161,7 +1161,15 @@ impl Game {
             for dy in 1..=3i32 {
                 self.server.world.set_block(bx + 3, yf + dy, bz - 4, stone);
             }
-            let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.0, bz as f32 + 4.0);
+            // WILDFORGE_DEMO_DIST: how far in front of the wall to stand, for
+            // walking the camera up to it (near-field parallax checks).
+            let dist: f32 = std::env::var("WILDFORGE_DEMO_DIST")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(12.0);
+            // Measured from the wall's FRONT face (the blocks at bz-8 span z to
+            // bz-7), so dist is the gap you actually see.
+            let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.0, bz as f32 - 7.0 + dist);
             self.player.pos = stand;
             self.spawn_point = stand;
             self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
