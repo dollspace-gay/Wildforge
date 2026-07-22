@@ -164,8 +164,14 @@ impl HostSession {
 
         // Authoritative block edits out.
         if !server.world.edit_log.is_empty() {
-            for (x, y, z, b) in std::mem::take(&mut server.world.edit_log) {
-                self.net.broadcast(&S2C::BlockSet { x, y, z, id: b.0 });
+            for (x, y, z, b, meta) in std::mem::take(&mut server.world.edit_log) {
+                self.net.broadcast(&S2C::BlockSet {
+                    x,
+                    y,
+                    z,
+                    id: b.0,
+                    meta,
+                });
             }
         }
         // Items owed to guests (arrow recovery, mining, mob drops,

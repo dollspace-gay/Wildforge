@@ -7,6 +7,8 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use glam::Vec3;
+
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
 use crate::inventory::ItemStack;
 use crate::mobs::{Mob, MobEvent, ProjHit, Projectile};
@@ -238,7 +240,7 @@ pub struct World {
     pub weather_timer: f32,
     /// Host mode: record block edits for broadcasting.
     pub log_edits: bool,
-    pub edit_log: Vec<(i32, i32, i32, BlockId)>,
+    pub edit_log: Vec<(i32, i32, i32, BlockId, u8)>,
     /// Gravity blocks currently airborne.
     pub falling: Vec<FallingBlock>,
     /// (guest id, stack) owed over the wire: mining drops, kill loot,
@@ -1714,12 +1716,12 @@ impl World {
     fn try_load_chunk(&self, pos: ChunkPos) -> Option<Chunk> {
         let data = fs::read(self.chunk_file(pos)).ok()?;
         let mut chunk = Chunk::new();
-        let out = chunk.raw_mut();
-        let mut o = 0;
-
-        if !data.starts_with(b"WFC3") {
+        let is_v4 = data.starts_with(b"WFC4");
+        if !is_v4 && !data.starts_with(b"WFC3") {
             return None; // pre-256-height save: regenerate
         }
+        let out = chunk.raw_mut();
+        let mut o = 0;
         // (count u16, id u16) pairs, remapped through the palette.
         let mut i = 4;
         while i + 4 <= data.len() && o < out.len() {
@@ -1738,18 +1740,36 @@ impl World {
         if o != out.len() {
             return None; // corrupt; regenerate
         }
+        // WFC4 metadata plane: (count u16, value u8) runs. Absent in WFC3, where
+        // the plane stays all-zero.
+        if is_v4 {
+            let meta = chunk.meta_raw_mut();
+            let mut mo = 0;
+            while i + 3 <= data.len() && mo < meta.len() {
+                let count = u16::from_le_bytes([data[i], data[i + 1]]) as usize;
+                let val = data[i + 2];
+                let end = (mo + count).min(meta.len());
+                meta[mo..end].fill(val);
+                mo = end;
+                i += 3;
+            }
+        }
         chunk.dirty = true;
         chunk.modified = true;
         Some(chunk)
     }
 
-    /// WFC3 RLE bytes for a chunk — the save format, reused as the wire
-    /// format for multiplayer chunk streaming.
+    /// WFC4 RLE bytes for a chunk — the save format, reused as the wire
+    /// format for multiplayer chunk streaming. Layout: magic `b"WFC4"`, then a
+    /// block section of `(count u16, id u16)` runs filling every voxel, then a
+    /// metadata section of `(count u16, value u8)` runs filling every voxel.
+    /// The older `WFC3` format (block section only) still loads with metadata
+    /// defaulting to zero.
     pub fn chunk_rle(&self, pos: ChunkPos) -> Option<Vec<u8>> {
         let chunk = self.chunks.get(&pos)?;
         let raw = chunk.raw();
         let mut buf: Vec<u8> = Vec::with_capacity(4096);
-        buf.extend_from_slice(b"WFC3");
+        buf.extend_from_slice(b"WFC4");
         let mut i = 0;
         while i < raw.len() {
             let b = raw[i];
@@ -1761,13 +1781,28 @@ impl World {
             buf.extend_from_slice(&b.to_le_bytes());
             i += run;
         }
+        // Metadata plane: (count u16, value u8) runs. Almost always a single
+        // run of zeros, so this costs 3 bytes for chunks with no sub-voxels.
+        let meta = chunk.meta_raw();
+        let mut i = 0;
+        while i < meta.len() {
+            let m = meta[i];
+            let mut run = 1usize;
+            while i + run < meta.len() && meta[i + run] == m && run < u16::MAX as usize {
+                run += 1;
+            }
+            buf.extend_from_slice(&(run as u16).to_le_bytes());
+            buf.push(m);
+            i += run;
+        }
         Some(buf)
     }
 
     /// Insert a network-streamed chunk, remapping host block ids to
     /// local ones. Relights and marks for remesh.
     pub fn insert_remote_chunk(&mut self, pos: ChunkPos, rle: &[u8], remap: &[BlockId]) {
-        if !rle.starts_with(b"WFC3") {
+        let is_v4 = rle.starts_with(b"WFC4");
+        if !is_v4 && !rle.starts_with(b"WFC3") {
             return;
         }
         let mut chunk = Chunk::new();
@@ -1782,6 +1817,19 @@ impl World {
             out[o..end].fill(id.0);
             o = end;
             i += 4;
+        }
+        // WFC4 metadata plane (see `chunk_rle`). Not remapped — meta is id-agnostic.
+        if is_v4 {
+            let meta = chunk.meta_raw_mut();
+            let mut mo = 0;
+            while i + 3 <= rle.len() && mo < meta.len() {
+                let count = u16::from_le_bytes([rle[i], rle[i + 1]]) as usize;
+                let val = rle[i + 2];
+                let end = (mo + count).min(meta.len());
+                meta[mo..end].fill(val);
+                mo = end;
+                i += 3;
+            }
         }
         chunk.dirty = true;
         self.chunks.insert(pos, chunk);
@@ -2139,7 +2187,106 @@ impl World {
         }
     }
 
-    pub fn set_block(&mut self, x: i32, y: i32, z: i32, b: BlockId) {
+    /// Metadata byte at a world position (octant mask for `sub_voxel` blocks).
+    /// Unloaded/out-of-range reads as 0.
+    pub fn get_meta(&self, x: i32, y: i32, z: i32) -> u8 {
+        if y < 0 || y >= CHUNK_Y as i32 {
+            return 0;
+        }
+        let pos = ChunkPos::of_world(x, z);
+        match self.chunks.get(&pos) {
+            Some(c) => c.meta(
+                x.rem_euclid(CHUNK_X as i32) as usize,
+                y as usize,
+                z.rem_euclid(CHUNK_Z as i32) as usize,
+            ),
+            None => 0,
+        }
+    }
+
+    // ---------------- sub-voxel sand: angle-of-repose flow ----------------
+    //
+    // Sand is displaced not by stamping footprints but by relaxing slopes:
+    // while a player disturbs it, octants slide from higher half-columns to
+    // adjacent lower ones until the local drop is within the repose limit. Flat
+    // sand has no slope, so it never churns; a dune face sloughs down and
+    // settles around the player. Volume is conserved and sand only ever lands
+    // on a supported surface (bottom-up packing, so nothing floats).
+    //
+    // Coordinates: half-columns (a,b) = (2x+qx, 2z+qz) at half-block spacing;
+    // octant heights w = 2*cellY+oy; octant bit = (oy<<2)|(qz<<1)|qx.
+
+    #[inline]
+    fn sand_oct(&self, sand: BlockId, a: i32, b: i32, w: i32) -> bool {
+        if w < 0 {
+            return false;
+        }
+        let (x, qx) = (a.div_euclid(2), a.rem_euclid(2) as u32);
+        let (z, qz) = (b.div_euclid(2), b.rem_euclid(2) as u32);
+        let (cy, oy) = (w.div_euclid(2), w.rem_euclid(2) as u32);
+        self.get_block(x, cy, z) == sand
+            && self.get_meta(x, cy, z) & (1 << ((oy << 2) | (qz << 1) | qx)) != 0
+    }
+
+    /// Top-surface height of a half-column (octant height of the next free
+    /// slot) near cell row `ref_y`: one past the topmost sand octant, or the
+    /// top of the highest solid ground if the column carries no sand. Used to
+    /// compare neighboring column heights for repose.
+    fn sand_surface(&self, sand: BlockId, a: i32, b: i32, ref_y: i32) -> i32 {
+        let (x, z) = (a.div_euclid(2), b.div_euclid(2));
+        for w in ((ref_y - 4) * 2..=(ref_y + 4) * 2 + 1).rev() {
+            if self.sand_oct(sand, a, b, w) {
+                return w + 1;
+            }
+        }
+        for cy in ((ref_y - 4)..=(ref_y + 4)).rev() {
+            if self.reg.is_solid(self.get_block(x, cy, z)) {
+                return 2 * (cy + 1);
+            }
+        }
+        i32::MIN / 2 // void column: effectively infinitely low
+    }
+
+    /// Fast sub-voxel mask write: the block id is unchanged, so opacity can't
+    /// change and no relight is needed — just remesh (this cell and any bordered
+    /// neighbor) and log the edit. This is what keeps sand flow cheap.
+    fn set_mask_fast(&mut self, x: i32, y: i32, z: i32, id: BlockId, mask: u8) {
+        let pos = ChunkPos::of_world(x, z);
+        let lx = x.rem_euclid(CHUNK_X as i32) as usize;
+        let lz = z.rem_euclid(CHUNK_Z as i32) as usize;
+        if let Some(c) = self.chunks.get_mut(&pos) {
+            c.set_meta(lx, y as usize, lz, mask);
+            c.dirty = true;
+            c.modified = true;
+            if self.log_edits {
+                self.edit_log.push((x, y, z, id, mask));
+            }
+        }
+        let mut touch = |dx: i32, dz: i32| {
+            let np = ChunkPos {
+                x: pos.x + dx,
+                z: pos.z + dz,
+            };
+            if let Some(c) = self.chunks.get_mut(&np) {
+                c.dirty = true;
+            }
+        };
+        if lx == 0 {
+            touch(-1, 0);
+        } else if lx == CHUNK_X - 1 {
+            touch(1, 0);
+        }
+        if lz == 0 {
+            touch(0, -1);
+        } else if lz == CHUNK_Z - 1 {
+            touch(0, 1);
+        }
+    }
+
+    /// Place a block + metadata with no relight or side effects, for bulk scene
+    /// building; the caller relights the region afterward. Marks the cell and
+    /// bordered neighbor chunks dirty for remesh.
+    pub fn set_block_quiet(&mut self, x: i32, y: i32, z: i32, b: BlockId, meta: u8) {
         if y < 0 || y >= CHUNK_Y as i32 {
             return;
         }
@@ -2148,10 +2295,240 @@ impl World {
         let lz = z.rem_euclid(CHUNK_Z as i32) as usize;
         if let Some(c) = self.chunks.get_mut(&pos) {
             c.set(lx, y as usize, lz, b);
+            c.set_meta(lx, y as usize, lz, meta);
+            c.dirty = true;
+            c.modified = true;
+        }
+        let mut touch = |dx: i32, dz: i32| {
+            let np = ChunkPos {
+                x: pos.x + dx,
+                z: pos.z + dz,
+            };
+            if let Some(c) = self.chunks.get_mut(&np) {
+                c.dirty = true;
+            }
+        };
+        if lx == 0 {
+            touch(-1, 0);
+        } else if lx == CHUNK_X - 1 {
+            touch(1, 0);
+        }
+        if lz == 0 {
+            touch(0, -1);
+        } else if lz == CHUNK_Z - 1 {
+            touch(0, 1);
+        }
+    }
+
+    /// Move one octant from the top of half-column `c` onto the surface of the
+    /// lower half-column `n`. No-op (false) if c's top is ground not sand, or if
+    /// `avoid` (a player AABB as min/max) would be buried by the landing octant.
+    fn flow_octant(
+        &mut self,
+        sand: BlockId,
+        c: (i32, i32),
+        n: (i32, i32),
+        ref_y: i32,
+        avoid: Option<([f32; 3], [f32; 3])>,
+    ) -> bool {
+        let wtop = self.sand_surface(sand, c.0, c.1, ref_y) - 1;
+        if !self.sand_oct(sand, c.0, c.1, wtop) {
+            return false;
+        }
+        // Where the grain will land (n is a different half-column, so removing
+        // c's top doesn't change it).
+        let ns = self.sand_surface(sand, n.0, n.1, ref_y);
+        let (nx, nqx) = (n.0.div_euclid(2), n.0.rem_euclid(2) as u32);
+        let (nz, nqz) = (n.1.div_euclid(2), n.1.rem_euclid(2) as u32);
+        let (ncy, noy) = (ns.div_euclid(2), ns.rem_euclid(2) as u32);
+        // Don't shed sand into water: it would replace the water with a partial
+        // sand cell (air where the water was). Sand piles at the shoreline.
+        if self.reg.is_water(self.get_block(nx, ncy, nz)) {
+            return false;
+        }
+        // Never pile sand into the space a player occupies (no entombment).
+        if let Some((lo, hi)) = avoid {
+            let o = [
+                nx as f32 + nqx as f32 * 0.5,
+                ncy as f32 + noy as f32 * 0.5,
+                nz as f32 + nqz as f32 * 0.5,
+            ];
+            let hits = o[0] < hi[0]
+                && o[0] + 0.5 > lo[0]
+                && o[1] < hi[1]
+                && o[1] + 0.5 > lo[1]
+                && o[2] < hi[2]
+                && o[2] + 0.5 > lo[2];
+            if hits {
+                return false;
+            }
+        }
+        // Remove from c's top.
+        let (cx, cqx) = (c.0.div_euclid(2), c.0.rem_euclid(2) as u32);
+        let (cz, cqz) = (c.1.div_euclid(2), c.1.rem_euclid(2) as u32);
+        let (ccy, coy) = (wtop.div_euclid(2), wtop.rem_euclid(2) as u32);
+        let cbit = 1u8 << ((coy << 2) | (cqz << 1) | cqx);
+        let cmask = self.get_meta(cx, ccy, cz) & !cbit;
+        if cmask == 0 {
+            self.set_block(cx, ccy, cz, AIR); // cell destroyed: opacity change, relight
+        } else {
+            self.set_mask_fast(cx, ccy, cz, sand, cmask);
+        }
+        // Add to n's surface.
+        let nbit = 1u8 << ((noy << 2) | (nqz << 1) | nqx);
+        if self.get_block(nx, ncy, nz) == sand {
+            let nmask = self.get_meta(nx, ncy, nz) | nbit;
+            self.set_mask_fast(nx, ncy, nz, sand, nmask);
+        } else {
+            self.set_block_meta(nx, ncy, nz, sand, nbit); // new cell: relight
+        }
+        true
+    }
+
+    /// One relaxation pass over the half-columns within `radius` cells of
+    /// (cx,cz): each column sheds one octant to its lowest neighbor if the
+    /// surface drop exceeds `repose` octants. `repose = 0` flows toward flat;
+    /// larger values leave gentle dunes standing. The general settling
+    /// primitive — exercised by tests now, and the basis for ambient
+    /// `random_tick` settling. Volume-conserving, host-only.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn relax_sand(
+        &mut self,
+        sand: BlockId,
+        cx: i32,
+        cz: i32,
+        ref_y: i32,
+        radius: i32,
+        repose: i32,
+    ) -> bool {
+        if self.remote {
+            return false;
+        }
+        let mut moved = false;
+        for a in (2 * (cx - radius))..=(2 * (cx + radius) + 1) {
+            for b in (2 * (cz - radius))..=(2 * (cz + radius) + 1) {
+                let sc = self.sand_surface(sand, a, b, ref_y);
+                let mut best = sc;
+                let mut target = None;
+                for (da, db) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    let ns = self.sand_surface(sand, a + da, b + db, ref_y);
+                    if ns < best {
+                        best = ns;
+                        target = Some((a + da, b + db));
+                    }
+                }
+                if let Some(n) = target
+                    && sc - best > repose
+                {
+                    moved |= self.flow_octant(sand, (a, b), n, ref_y, None);
+                }
+            }
+        }
+        moved
+    }
+
+    /// Sand only shifts where the player has actually been. A half-column is
+    /// eligible only if its cell — or a 4-neighbor cell — was recently stood on
+    /// (`touched`), so the player can never displace sand they've logically
+    /// never contacted (e.g. a wall approached but not climbed, or backed away
+    /// from). Eligible columns near the player shed one octant toward their
+    /// lowest neighbor — never into the player's box (no entombment) and never
+    /// sand well above the feet (a ceiling / tall wall). An airborne player is
+    /// on nothing. Volume-conserving, host-only; returns whether sand moved.
+    pub fn disturb_sand_touched(
+        &mut self,
+        sand: BlockId,
+        feet: Vec3,
+        touched: &HashMap<(i32, i32), f32>,
+    ) -> bool {
+        if self.remote {
+            return false;
+        }
+        let fx = feet.x.floor() as i32;
+        let fz = feet.z.floor() as i32;
+        let ref_y = (feet.y - 0.05).floor() as i32;
+        // Grounded on sand? (an airborne/jumping player touches nothing).
+        if self.get_block(fx, ref_y, fz) != sand {
+            return false;
+        }
+        // The player box, so flow never lands inside it (PLAYER_HALF_W, HEIGHT).
+        let avoid = (
+            [feet.x - 0.3, feet.y, feet.z - 0.3],
+            [feet.x + 0.3, feet.y + 1.8, feet.z + 0.3],
+        );
+        // Only disturb sand near the feet — never a ceiling or a tall wall
+        // above the player (its top surface is well overhead). Octant height of
+        // the standing surface, plus one block of climbable-lip headroom.
+        let foot_h = (feet.y * 2.0).round() as i32 + 2;
+        const R: f32 = 2.0;
+        let mut moved = false;
+        let a_lo = ((feet.x - R) * 2.0).floor() as i32;
+        let a_hi = ((feet.x + R) * 2.0).floor() as i32;
+        let b_lo = ((feet.z - R) * 2.0).floor() as i32;
+        let b_hi = ((feet.z + R) * 2.0).floor() as i32;
+        for a in a_lo..=a_hi {
+            for b in b_lo..=b_hi {
+                // Eligible only if this cell — or a 4-neighbor — was stood on.
+                let (cx, cz) = (a.div_euclid(2), b.div_euclid(2));
+                let eligible = touched.contains_key(&(cx, cz))
+                    || touched.contains_key(&(cx - 1, cz))
+                    || touched.contains_key(&(cx + 1, cz))
+                    || touched.contains_key(&(cx, cz - 1))
+                    || touched.contains_key(&(cx, cz + 1));
+                if !eligible {
+                    continue;
+                }
+                // Shed to the lowest neighbor; if the player blocks that landing,
+                // try the next-lowest so the sand settles to the side of them.
+                let sc = self.sand_surface(sand, a, b, ref_y);
+                if sc > foot_h {
+                    continue; // sand well above the feet (ceiling / tall wall) stays put
+                }
+                let mut nbrs: [((i32, i32), i32); 4] = [
+                    ((a - 1, b), self.sand_surface(sand, a - 1, b, ref_y)),
+                    ((a + 1, b), self.sand_surface(sand, a + 1, b, ref_y)),
+                    ((a, b - 1), self.sand_surface(sand, a, b - 1, ref_y)),
+                    ((a, b + 1), self.sand_surface(sand, a, b + 1, ref_y)),
+                ];
+                nbrs.sort_by_key(|&(_, ns)| ns);
+                for (n, ns) in nbrs {
+                    if ns >= sc {
+                        break; // no lower neighbor remains
+                    }
+                    if self.flow_octant(sand, (a, b), n, ref_y, Some(avoid)) {
+                        moved = true;
+                        break;
+                    }
+                }
+            }
+        }
+        moved
+    }
+
+    pub fn set_block(&mut self, x: i32, y: i32, z: i32, b: BlockId) {
+        // A freshly placed sub-voxel block starts as a full cube (all octants
+        // set); mask deltas come later via `set_block_meta`. Ordinary blocks
+        // carry no metadata.
+        let meta = if self.reg.block(b).sub_voxel { 0xFF } else { 0 };
+        self.set_block_meta(x, y, z, b, meta);
+    }
+
+    /// Like `set_block` but writes an explicit metadata byte (octant mask for
+    /// `sub_voxel` blocks). `set_block` delegates here with a default mask.
+    pub fn set_block_meta(&mut self, x: i32, y: i32, z: i32, b: BlockId, meta: u8) {
+        if y < 0 || y >= CHUNK_Y as i32 {
+            return;
+        }
+        let pos = ChunkPos::of_world(x, z);
+        let lx = x.rem_euclid(CHUNK_X as i32) as usize;
+        let lz = z.rem_euclid(CHUNK_Z as i32) as usize;
+        if let Some(c) = self.chunks.get_mut(&pos) {
+            c.set(lx, y as usize, lz, b);
+            c.set_meta(lx, y as usize, lz, meta);
             c.dirty = true;
             c.modified = true;
             if self.log_edits {
-                self.edit_log.push((x, y, z, b));
+                self.edit_log.push((x, y, z, b, meta));
             }
         }
         let mut touch = |dx: i32, dz: i32| {
@@ -2588,7 +2965,7 @@ impl World {
                 c.dirty = true;
                 c.modified = true;
                 if self.log_edits {
-                    self.edit_log.push((x, y, z, nb));
+                    self.edit_log.push((x, y, z, nb, 0));
                 }
             }
             self.wake_water(x, y, z);

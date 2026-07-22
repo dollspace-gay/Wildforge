@@ -1115,6 +1115,69 @@ impl Game {
             self.camera.pitch = -0.35;
         }
 
+        // Dev: a sub-voxel `surface_sand` dune for the octant sand feature —
+        // walk up it and the face sloughs down and settles around you (the flat
+        // margin stays put). Best on WILDFORGE_PACK=none (its @sand albedo
+        // matches). Grazing light (low sun / WILDFORGE_TIME) reads the relief.
+        if std::env::var("WILDFORGE_DEMO_SAND").is_ok()
+            && let Some(sand) = self.reg.block_id("base:surface_sand")
+        {
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            for dx in [-18i32, -9, 0, 9, 18] {
+                for dz in [-18i32, -9, 0, 9, 18] {
+                    self.server
+                        .world
+                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                }
+            }
+            let yf = (-18..=18)
+                .flat_map(|dx| (-18..=18).map(move |dz| (dx, dz)))
+                .map(|(dx, dz)| self.server.world.surface_height(bx + dx, bz + dz))
+                .max()
+                .unwrap_or(spawn.y as i32);
+            for dx in -18..=18i32 {
+                for dz in -18..=18i32 {
+                    // A cone of sand: a flat 1-block margin (t=2 octant layers)
+                    // rising to a ~5-block peak, gaining half a block per cell.
+                    // Quiet placement (no per-block relight) — relit once below.
+                    let d = dx.abs().max(dz.abs());
+                    let t = 2 + (8 - d).max(0);
+                    for h in 0..=10 {
+                        self.server
+                            .world
+                            .set_block_quiet(bx + dx, yf + h, bz + dz, AIR, 0);
+                    }
+                    let full = t / 2;
+                    for h in 0..full {
+                        self.server
+                            .world
+                            .set_block_quiet(bx + dx, yf + h, bz + dz, sand, 0xFF);
+                    }
+                    if t % 2 == 1 {
+                        self.server
+                            .world
+                            .set_block_quiet(bx + dx, yf + full, bz + dz, sand, 0x0F);
+                    }
+                }
+            }
+            // One relight over the built region (the quiet sets skipped it).
+            for dx in [-18i32, -9, 0, 9, 18] {
+                for dz in [-18i32, -9, 0, 9, 18] {
+                    self.server
+                        .world
+                        .relight_and_cascade(ChunkPos::of_world(bx + dx, bz + dz));
+                }
+            }
+            // Stand on the flat margin, facing the dune; walk forward to climb.
+            let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.0, bz as f32 - 15.0);
+            self.player.pos = stand;
+            self.spawn_point = stand;
+            self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.camera.yaw = std::f32::consts::FRAC_PI_2; // face +z, toward the dune
+            self.camera.pitch = -0.15;
+        }
+
         // Dev: a warm light behind a wall with a doorway — light blares through
         // the gap onto the near floor while the wall and the corners beside it
         // stay dark. Pair with WILDFORGE_AMBIENT=0.03,0.03,0.04.
@@ -1971,14 +2034,14 @@ impl Game {
                         .world
                         .insert_remote_chunk(ChunkPos { x, z }, &rle, &r.block_map);
                 }
-                net::S2C::BlockSet { x, y, z, id } => {
+                net::S2C::BlockSet { x, y, z, id, meta } => {
                     let local = r
                         .block_map
                         .get(id as usize)
                         .copied()
                         .unwrap_or(self.reg.unknown_block);
                     let old = self.server.world.get_block(x, y, z);
-                    self.server.world.set_block(x, y, z, local);
+                    self.server.world.set_block_meta(x, y, z, local, meta);
                     self.server.world.pending_drops.clear();
                     // Someone broke something: the world crumbles for
                     // everyone watching.
