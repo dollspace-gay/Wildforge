@@ -108,6 +108,7 @@ pub struct Generator {
     mushroom: BlockId,
     stone: BlockId,
     sand: BlockId,
+    surface_sand: BlockId,
     gravel: BlockId,
     water: BlockId,
     log: BlockId,
@@ -190,6 +191,7 @@ impl Generator {
             mushroom: b("base:wild_mushroom"),
             stone: b("base:stone"),
             sand: b("base:sand"),
+            surface_sand: b("base:surface_sand"),
             gravel: b("base:gravel"),
             water: b("base:water"),
             log: b("base:log"),
@@ -467,6 +469,7 @@ impl Generator {
 
         self.plant_ores(&mut c, pos, reg);
         self.plant_trees(&mut c, pos, &heights, &biomes);
+        self.dust_sand(&mut c, pos, &heights);
 
         // Bedrock floor.
         for lx in 0..CHUNK_X {
@@ -519,6 +522,69 @@ impl Generator {
 
     fn height_hint(&self, heights: &[[i32; CHUNK_Z]; CHUNK_X], lx: usize, lz: usize) -> i32 {
         heights[lx][lz]
+    }
+
+    /// A subtle sub-voxel "dusting" of `surface_sand` over dry sand surfaces
+    /// (deserts, beaches, sandy scrub). It reads as thin drifts that pool
+    /// between ridges and thin out on high ground — a coherent low-frequency
+    /// field sampled per half-cell sub-column (so edges fade over half-blocks
+    /// rather than snapping per cell), never a full layer. Chunk-local.
+    fn dust_sand(&self, c: &mut Chunk, pos: ChunkPos, heights: &[[i32; CHUNK_Z]; CHUNK_X]) {
+        // Tunables (subtle by design): higher THRESHOLD = barer; the field is
+        // ~[-0.7,0.7], so most of the biome stays clean.
+        const FREQ: f64 = 0.05;
+        const THRESHOLD: f64 = 0.28;
+        const SECOND_LAYER: f64 = 0.42; // extra depth for the middle of a drift
+        let bx = pos.x * CHUNK_X as i32;
+        let bz = pos.z * CHUNK_Z as i32;
+        for lx in 0..CHUNK_X {
+            for lz in 0..CHUNK_Z {
+                let h = heights[lx][lz];
+                if h < 1 || (h + 1) as usize >= CHUNK_Y {
+                    continue;
+                }
+                // Only dry sand surfaces, and only where nothing already sits on
+                // top (skip water, plants, trunks placed by earlier passes).
+                if c.get(lx, h as usize, lz) != self.sand || c.get(lx, (h + 1) as usize, lz) != AIR
+                {
+                    continue;
+                }
+                // Local hollowness (3x3 within the chunk): sand pools where the
+                // column sits below its neighbours, thins on ridges.
+                let mut sum = 0i32;
+                let mut cnt = 0i32;
+                for dx in -1..=1i32 {
+                    for dz in -1..=1i32 {
+                        let (nx, nz) = (lx as i32 + dx, lz as i32 + dz);
+                        if (0..CHUNK_X as i32).contains(&nx) && (0..CHUNK_Z as i32).contains(&nz) {
+                            sum += heights[nx as usize][nz as usize];
+                            cnt += 1;
+                        }
+                    }
+                }
+                let hollow = (sum as f64 / cnt as f64 - h as f64).clamp(-2.0, 3.0) * 0.12;
+                // Sample the drift field per half-cell sub-column for a soft edge.
+                let mut mask = 0u8;
+                for qz in 0..2u32 {
+                    for qx in 0..2u32 {
+                        let sx = (bx + lx as i32) as f64 + 0.5 * qx as f64 + 0.25;
+                        let sz = (bz + lz as i32) as f64 + 0.5 * qz as f64 + 0.25;
+                        let cover = self.detail.get([sx * FREQ, sz * FREQ]) + hollow - THRESHOLD;
+                        if cover > 0.0 {
+                            let col = (qz << 1) | qx;
+                            mask |= 1 << col; // bottom octant
+                            if cover > SECOND_LAYER {
+                                mask |= 1 << (4 | col); // second layer in deep drifts
+                            }
+                        }
+                    }
+                }
+                if mask != 0 {
+                    c.set(lx, (h + 1) as usize, lz, self.surface_sand);
+                    c.set_meta(lx, (h + 1) as usize, lz, mask);
+                }
+            }
+        }
     }
 
     fn plant_trees(

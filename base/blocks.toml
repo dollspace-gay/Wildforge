@@ -41,6 +41,20 @@ hardness = 0.6
 tool = "shovel"
 falls = true
 
+# Sub-voxel sand skin: an octant occupancy mask (2x2x2) in the metadata byte.
+# Placed full; displaced into partial masks as players walk over it. Reuses the
+# sand texture — no new art.
+[[block]]
+id = "surface_sand"
+name = "Surface Sand"
+texture = "@sand"
+hardness = 0.6
+tool = "shovel"
+sub_voxel = true
+# Drops nothing for now: an octant cell holds anywhere from 1/8 to a full
+# block, so a whole-block drop wouldn't conserve volume. (Later: a bucket.)
+drops = "none"
+
 [[block]]
 id = "gravel"
 name = "Gravel"

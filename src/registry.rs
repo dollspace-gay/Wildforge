@@ -62,6 +62,10 @@ pub struct BlockDef {
     pub height: Option<f32>,
     /// Falls when unsupported.
     pub falls: bool,
+    /// Sub-voxel geometry: the per-voxel metadata byte is an octant occupancy
+    /// mask (2x2x2, bit o = octant o filled). Meshed and collided as up to 8
+    /// half-cubes instead of one full cube.
+    pub sub_voxel: bool,
     /// Glazing: a glass roof is a greenhouse.
     pub glass: bool,
     /// Per-channel block-light pass-through (stained glass).
@@ -573,6 +577,9 @@ struct BlockToml {
     /// Gravity: detaches and falls when unsupported (sand, gravel).
     #[serde(default)]
     falls: bool,
+    /// Sub-voxel octant geometry (2x2x2 occupancy mask in the metadata byte).
+    #[serde(default)]
+    sub_voxel: bool,
     /// Counts as glazing: passes sky light and makes greenhouses.
     #[serde(default)]
     glass: bool,
@@ -1229,6 +1236,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         brush: None,
         height: None,
         falls: false,
+        sub_voxel: false,
         glass: false,
         light_filter: [true; 3],
         light_rgb: [0, 0, 0],
@@ -1368,6 +1376,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 brush: None,
                 height: b.height.map(|h| h.clamp(0.05, 1.0)),
                 falls: b.falls,
+                sub_voxel: b.sub_voxel,
                 glass: b.glass,
                 light_filter: b
                     .light_filter
@@ -1636,6 +1645,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         brush: None,
         height: None,
         falls: false,
+        sub_voxel: false,
         glass: false,
         light_filter: [true; 3],
         light_rgb: [0, 0, 0],

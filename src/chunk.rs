@@ -10,6 +10,11 @@ pub const SEA_LEVEL: i32 = 64;
 pub struct Chunk {
     /// Indexed [x][z][y] flattened: (x * CHUNK_Z + z) * CHUNK_Y + y
     blocks: Vec<u16>,
+    /// Per-voxel metadata byte, same indexing. Meaning is block-defined; for
+    /// `sub_voxel` blocks it is an octant occupancy mask (bit o = octant o
+    /// filled, o = (oy<<2)|(oz<<1)|ox). Zero for ordinary full-cube blocks.
+    /// Unlike the light planes this IS gameplay state and is saved.
+    meta: Vec<u8>,
     /// Torch/emitter light per channel (r,g,b), each 0..15, same indexing.
     /// Derived — never saved.
     light_block: Vec<[u8; 3]>,
@@ -24,6 +29,7 @@ impl Chunk {
         let n = CHUNK_X * CHUNK_Y * CHUNK_Z;
         Chunk {
             blocks: vec![0; n],
+            meta: vec![0; n],
             light_block: vec![[0; 3]; n],
             light_sky: vec![0; n],
             dirty: true,
@@ -76,6 +82,25 @@ impl Chunk {
 
     pub fn raw_mut(&mut self) -> &mut [u16] {
         &mut self.blocks
+    }
+
+    /// Metadata byte at a cell (octant mask for `sub_voxel` blocks).
+    #[inline]
+    pub fn meta(&self, x: usize, y: usize, z: usize) -> u8 {
+        self.meta[Self::idx(x, y, z)]
+    }
+
+    #[inline]
+    pub fn set_meta(&mut self, x: usize, y: usize, z: usize, m: u8) {
+        self.meta[Self::idx(x, y, z)] = m;
+    }
+
+    pub fn meta_raw(&self) -> &[u8] {
+        &self.meta
+    }
+
+    pub fn meta_raw_mut(&mut self) -> &mut [u8] {
+        &mut self.meta
     }
 }
 

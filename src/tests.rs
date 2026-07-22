@@ -1,5 +1,6 @@
 //! Headless tests: engine mechanics + all four mod-system phases.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -134,7 +135,7 @@ fn pre_v3_saves_regenerate_cleanly() {
     w.set_block(1, 100, 1, b(&reg, "base:planks"));
     w.save_modified();
     let bytes = std::fs::read(w.save_dir_for_test().join("c.0.0.wfc")).unwrap();
-    assert!(bytes.starts_with(b"WFC3"), "saves are written as v3 now");
+    assert!(bytes.starts_with(b"WFC4"), "saves are written as v4 now");
 }
 
 #[test]
@@ -196,6 +197,375 @@ fn set_block_roundtrip_and_cross_chunk_access() {
     assert_eq!(w.get_block(3, 70, 3), planks);
     w.set_block(-1, 70, -1, b(&reg, "base:cobblestone"));
     assert_eq!(w.get_block(-1, 70, -1), b(&reg, "base:cobblestone"));
+}
+
+// ---------------- sub-voxel octant blocks ----------------
+
+#[test]
+fn octant_meta_roundtrips_through_save() {
+    let reg = base_reg();
+    let mut w = test_world_with("octsave", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    // A partial octant mask must survive the WFC4 save/load path.
+    w.set_block_meta(2, 75, 2, sand, 0b1010_0101);
+    // set_block on a sub-voxel block defaults to a full cube.
+    w.set_block(3, 75, 3, sand);
+    w.save_modified();
+
+    let mut w2 = World::load_or_create(w.save_dir_for_test(), reg.clone());
+    for x in -2..=2 {
+        for z in -2..=2 {
+            w2.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    assert_eq!(w2.get_block(2, 75, 2), sand);
+    assert_eq!(w2.get_meta(2, 75, 2), 0b1010_0101, "octant mask persisted");
+    assert_eq!(
+        w2.get_meta(3, 75, 3),
+        0xFF,
+        "placed sub-voxel block is full"
+    );
+}
+
+#[test]
+fn octant_mesh_emits_per_filled_octant() {
+    let reg = base_reg();
+    let mut w = test_world_with("octmesh", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let pos = ChunkPos { x: 0, z: 0 };
+    // An isolated cell high in the air: every neighbor is air, so each octant's
+    // three outward faces draw and the three inward faces cull against siblings.
+    let (x, y, z) = (8, 200, 8);
+    let base = crate::mesher::mesh_chunk(&w, pos).opaque_verts.len();
+
+    // One octant → a full 6-faced half-cube (4 verts per face).
+    w.set_block_meta(x, y, z, sand, 0b0000_0001);
+    let one = crate::mesher::mesh_chunk(&w, pos).opaque_verts.len();
+    assert_eq!(one - base, 6 * 4, "single octant = 6 faces");
+
+    // Full mask → the merge fast path collapses it to a plain 6-faced cube.
+    w.set_block(x, y, z, sand);
+    let full = crate::mesher::mesh_chunk(&w, pos).opaque_verts.len();
+    assert_eq!(full - base, 6 * 4, "full mask merges to 6 cube faces");
+}
+
+#[test]
+fn octant_collision_is_sub_cell() {
+    let reg = base_reg();
+    let mut w = test_world_with("octcol", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let idle = Input {
+        forward: 0.0,
+        strafe: 0.0,
+        jump: false,
+        sprint: false,
+    };
+    let y = 190; // air, well above terrain
+
+    // Full block: the player rests on its top face at y+1.
+    w.set_block(0, y, 0, sand);
+    let mut p = Player::new(Vec3::new(0.5, y as f32 + 5.0, 0.5));
+    for _ in 0..400 {
+        p.update(&w, &idle, Vec3::Z, Vec3::X, 1.0 / 60.0);
+    }
+    assert!(p.on_ground, "landed on full sub-voxel block");
+    assert!(
+        (p.pos.y - (y as f32 + 1.0)).abs() < 0.05,
+        "top at y+1, got {}",
+        p.pos.y
+    );
+
+    // Bottom half only (octants with oy=0): the player sinks to y+0.5.
+    w.set_block_meta(0, y, 0, sand, 0b0000_1111);
+    let mut p2 = Player::new(Vec3::new(0.5, y as f32 + 5.0, 0.5));
+    for _ in 0..400 {
+        p2.update(&w, &idle, Vec3::Z, Vec3::X, 1.0 / 60.0);
+    }
+    assert!(p2.on_ground, "landed on bottom-half block");
+    assert!(
+        (p2.pos.y - (y as f32 + 0.5)).abs() < 0.05,
+        "top at y+0.5, got {}",
+        p2.pos.y
+    );
+}
+
+/// Total octant volume across a region (popcount of every sand cell's mask).
+fn sand_volume(w: &World, sand: crate::registry::BlockId, y: i32) -> u32 {
+    let mut n = 0;
+    for x in -8..9 {
+        for z in -8..9 {
+            for yy in (y - 4)..(y + 6) {
+                if w.get_block(x, yy, z) == sand {
+                    n += w.get_meta(x, yy, z).count_ones();
+                }
+            }
+        }
+    }
+    n
+}
+
+#[test]
+fn relax_flat_sand_is_stable() {
+    let reg = base_reg();
+    let mut w = test_world_with("flatsand", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let y = 100;
+    // A wide flat pad; its interior has no slope, so nothing should flow.
+    for x in -4..=4 {
+        for z in -4..=4 {
+            w.set_block(x, y, z, sand);
+        }
+    }
+    let before = sand_volume(&w, sand, y);
+    let moved = w.relax_sand(sand, 0, 0, y, 1, 0);
+    assert!(!moved, "flat sand has no slope, so it never churns");
+    assert_eq!(sand_volume(&w, sand, y), before, "volume unchanged");
+}
+
+#[test]
+fn relax_slope_flows_downhill_conserving() {
+    let reg = base_reg();
+    let mut w = test_world_with("slopesand", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let stone = b(&reg, "base:stone");
+    let y = 100;
+    // A stone floor, then a compact sand tower rising 3 cells above it.
+    for x in -1..=6 {
+        for z in -1..=3 {
+            w.set_block(x, y - 1, z, stone);
+        }
+    }
+    for x in 0..=1 {
+        for z in 0..=1 {
+            for h in 0..3 {
+                w.set_block(x, y + h, z, sand);
+            }
+        }
+    }
+    let before = sand_volume(&w, sand, y);
+    assert!(
+        (2..=5).all(|x| w.get_block(x, y, 0) != sand),
+        "the floor beside the tower starts bare"
+    );
+    // Disturb repeatedly: the tower slumps and spreads across the floor.
+    for _ in 0..40 {
+        w.relax_sand(sand, 2, 1, y, 5, 0);
+    }
+    assert_eq!(sand_volume(&w, sand, y), before, "volume is conserved");
+    let spread = (2..=5).any(|x| (0..=1).any(|z| w.get_block(x, y, z) == sand));
+    assert!(spread, "sand flowed downhill onto the bare floor");
+    assert!(
+        w.get_block(0, y + 2, 0) != sand,
+        "the tower's peak came down"
+    );
+}
+
+#[test]
+fn walking_player_slumps_a_lip_via_sim() {
+    let reg = base_reg();
+    let mut w = test_world_with("walklip", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let y = 100;
+    // A flat sand pad with a one-cell lip across the path.
+    for x in -3..=9 {
+        for z in -3..=3 {
+            w.set_block(x, y, z, sand);
+        }
+    }
+    for x in 1..=2 {
+        for z in -3..=3 {
+            w.set_block(x, y + 1, z, sand); // the lip
+        }
+    }
+    let lip_cells = |w: &World| -> usize {
+        (1..=2)
+            .flat_map(|x| (-3..=3).map(move |z| (x, z)))
+            .filter(|&(x, z)| w.get_meta(x, y + 1, z) == 0xFF)
+            .count()
+    };
+    let before = sand_volume(&w, sand, y);
+    let lip0 = lip_cells(&w);
+
+    let mut sv = crate::server::Server::new(w, 0.3, 42);
+    // Walk +x across the lip; it falls behind the walker and slumps into the wake.
+    let mut px = 0.5f32;
+    for _ in 0..70 {
+        px += 0.1;
+        let ctx = crate::server::PlayerCtx {
+            pos: Vec3::new(px, y as f32 + 1.0, 0.5),
+            spawn: Vec3::ZERO,
+            attackable: false,
+            aggro_mod: 0.0,
+        };
+        sv.advance(crate::server::TICK, &[ctx], &mut Vec::new());
+    }
+    assert_eq!(
+        sand_volume(&sv.world, sand, y),
+        before,
+        "the walk conserves sand"
+    );
+    assert!(
+        lip_cells(&sv.world) < lip0,
+        "the lip slumped as the walker passed it"
+    );
+}
+
+#[test]
+fn airborne_player_does_not_disturb_sand() {
+    let reg = base_reg();
+    let mut w = test_world_with("airborne", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let stone = b(&reg, "base:stone");
+    let y = 100;
+    for x in -1..=3 {
+        for z in -1..=3 {
+            w.set_block(x, y - 1, z, stone);
+        }
+    }
+    // A sand tower that WOULD flow if a grounded player disturbed it.
+    for h in 0..3 {
+        w.set_block(1, y + h, 1, sand);
+    }
+    let before = sand_volume(&w, sand, y);
+    // Feet well above the sand: airborne, so nothing is in contact.
+    let touched = HashMap::from([((1, 1), 1.0f32)]);
+    let moved = w.disturb_sand_touched(sand, Vec3::new(1.5, (y + 5) as f32, 1.5), &touched);
+    assert!(!moved, "a jumping player touches no sand");
+    assert_eq!(sand_volume(&w, sand, y), before, "nothing moved");
+}
+
+#[test]
+fn wake_leaves_sand_ahead_untouched() {
+    let reg = base_reg();
+    let mut w = test_world_with("ahead", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let y = 100;
+    for x in -2..=6 {
+        for z in -2..=2 {
+            w.set_block(x, y, z, sand);
+        }
+    }
+    // A lip AHEAD of the player, in their +x travel direction.
+    for z in -2..=2 {
+        w.set_block(2, y + 1, z, sand);
+    }
+    let before = sand_volume(&w, sand, y);
+    let lip_before = w.get_meta(2, y + 1, 0);
+    // The player has stood only on cell (0,0); the lip at cell (2,0) is neither
+    // stood on nor adjacent to it, so it must not move.
+    let touched = HashMap::from([((0, 0), 1.0f32)]);
+    let feet = Vec3::new(0.5, (y + 1) as f32, 0.5);
+    for _ in 0..30 {
+        w.disturb_sand_touched(sand, feet, &touched);
+    }
+    assert_eq!(sand_volume(&w, sand, y), before, "volume conserved");
+    assert_eq!(
+        w.get_meta(2, y + 1, 0),
+        lip_before,
+        "sand the player never touched (nor next to) is left alone"
+    );
+}
+
+#[test]
+fn wake_leaves_a_tall_wall_standing() {
+    let reg = base_reg();
+    let mut w = test_world_with("wall", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let y = 100;
+    for x in -3..=3 {
+        for z in -3..=3 {
+            w.set_block(x, y, z, sand);
+        }
+    }
+    // A 3-cell-tall wall behind the player, well above their feet (a "ceiling"
+    // when walked under / a wall backed away from).
+    for h in 1..=3 {
+        for z in -1..=1 {
+            w.set_block(-1, y + h, z, sand);
+        }
+    }
+    let before = sand_volume(&w, sand, y);
+    let wall_top = w.get_block(-1, y + 3, 0);
+    // Player stood on cell (0,0); the wall at cell (-1,0) is adjacent (so
+    // eligible), but its top is well above the feet and must not fall.
+    let touched = HashMap::from([((0, 0), 1.0f32)]);
+    let feet = Vec3::new(0.5, (y + 1) as f32, 0.5);
+    for _ in 0..40 {
+        w.disturb_sand_touched(sand, feet, &touched);
+    }
+    assert_eq!(sand_volume(&w, sand, y), before, "volume conserved");
+    assert_eq!(
+        w.get_block(-1, y + 3, 0),
+        wall_top,
+        "sand well above the player does not fall"
+    );
+}
+
+#[test]
+fn sand_does_not_flow_into_water() {
+    let reg = base_reg();
+    let mut w = test_world_with("sandwater", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let stone = b(&reg, "base:stone");
+    let water = b(&reg, "base:water");
+    let y = 100;
+    for x in -1..=3 {
+        for z in -1..=1 {
+            w.set_block(x, y - 1, z, stone);
+        }
+    }
+    // A sand tower the player stands on, with water right beside it (lower).
+    for h in 0..3 {
+        w.set_block(0, y + h, 0, sand);
+    }
+    w.set_block(1, y, 0, water);
+    let before = sand_volume(&w, sand, y);
+    let touched = HashMap::from([((0, 0), 1.0f32)]);
+    let feet = Vec3::new(0.5, (y + 3) as f32, 0.5);
+    for _ in 0..40 {
+        w.disturb_sand_touched(sand, feet, &touched);
+    }
+    assert_eq!(
+        w.get_block(1, y, 0),
+        water,
+        "the water is not replaced by sand"
+    );
+    assert_eq!(
+        sand_volume(&w, sand, y),
+        before,
+        "sand is conserved (it piles on land, not lost into the water)"
+    );
+}
+
+#[test]
+fn flow_never_buries_the_player() {
+    let reg = base_reg();
+    let mut w = test_world_with("nobury", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let y = 100;
+    // Flat sand, plus a lip BEHIND the player's +x travel (so it's in the wake).
+    for x in -3..=3 {
+        for z in -3..=3 {
+            w.set_block(x, y, z, sand);
+        }
+    }
+    for zz in -1..=1 {
+        w.set_block(-1, y + 1, zz, sand); // lip at x=-1, behind the walker
+    }
+    let before = sand_volume(&w, sand, y);
+    // Player stood on cell (0,0); the lip at cell (-1,0) is adjacent, so it can
+    // shed — but its downhill side is the player's own cell.
+    let touched = HashMap::from([((0, 0), 1.0f32)]);
+    let feet = Vec3::new(0.5, (y + 1) as f32, 0.5);
+    for _ in 0..40 {
+        w.disturb_sand_touched(sand, feet, &touched);
+    }
+    assert_eq!(sand_volume(&w, sand, y), before, "volume conserved");
+    // No octant ever landed in the player's body: their cell stays clear.
+    assert!(
+        w.get_meta(0, y + 1, 0) == 0 || w.get_block(0, y + 1, 0) != sand,
+        "sand never piled into the player's space"
+    );
 }
 
 // ---------------- phase 2: data mods ----------------
@@ -3982,6 +4352,7 @@ fn net_protocol_round_trips() {
             y: 2,
             z: 3,
             id: 9,
+            meta: 0,
         },
         S2C::TimeIre {
             time: 0.5,
@@ -5599,6 +5970,7 @@ fn loopback_join_stream_and_edit() {
                     y: yy,
                     z: 9,
                     id: 0,
+                    ..
                 } if yy == y => echoed = true,
                 S2C::Give { .. } => given = true,
                 S2C::Players(list) => {
@@ -6544,3 +6916,5 @@ fn wgsl_shaders_validate() {
         .unwrap_or_else(|e| panic!("{name}: WGSL validation failed: {e:?}"));
     }
 }
+
+

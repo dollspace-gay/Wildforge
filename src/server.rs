@@ -6,9 +6,12 @@
 //! The client side (rendering, input, UI, sounds) drives this with
 //! `advance()` and applies the returned `SimEvent`s as presentation.
 
+use std::collections::HashMap;
+
 use glam::Vec3;
 
 use crate::mobs::MobEvent;
+use crate::registry::BlockId;
 use crate::world::{Weather, World};
 
 /// Fixed simulation rate. Rendering runs faster and interpol- er, copes.
@@ -52,11 +55,19 @@ pub struct Server {
     random_timer: f32,
     snow_timer: f32,
     prev_tier: usize,
+    /// Sub-voxel sand block (if registered), per-player walk tracking (fire
+    /// once per stride of travel), and the cells recently stood on → time-to-
+    /// live, so sand only ever shifts where a player has actually walked.
+    sand_id: Option<BlockId>,
+    sand_prev: Vec<Vec3>,
+    sand_accum: Vec<f32>,
+    sand_touched: HashMap<(i32, i32), f32>,
 }
 
 impl Server {
     pub fn new(world: World, time_of_day: f32, rng: u32) -> Server {
         let prev_tier = world.ire_tier();
+        let sand_id = world.reg.block_id("base:surface_sand");
         let mut world = world;
         world.clock = Server::clock_of(world.day, time_of_day);
         Server {
@@ -68,6 +79,10 @@ impl Server {
             random_timer: 0.0,
             snow_timer: 0.0,
             prev_tier,
+            sand_id,
+            sand_prev: Vec::new(),
+            sand_accum: Vec::new(),
+            sand_touched: HashMap::new(),
         }
     }
 
@@ -127,6 +142,9 @@ impl Server {
         // Machines and gravity.
         self.world.tick_entities(dt);
         self.world.tick_falling(dt);
+
+        // Players disturb sub-voxel sand: it sloughs where they've walked.
+        self.disturb_sand(dt, players);
 
         // Creatures: wildlife, wardens, spawning, projectiles.
         let dl = self.daylight();
@@ -192,6 +210,53 @@ impl Server {
             let mut rng = self.rng;
             self.world.random_tick(&mut rng);
             self.rng = rng;
+        }
+    }
+
+    /// Players disturb sub-voxel sand only by *moving*, and only where they've
+    /// actually walked: the cell under each grounded player is recorded as
+    /// "stood on" (with a short time-to-live), and each stride sloughs the sand
+    /// in those touched cells and their neighbors. Sand a player never stepped
+    /// on (or next to) never moves; a stationary player rests. Host-authorit-
+    /// ative; the resulting mask edits ride the `BlockSet` broadcast.
+    fn disturb_sand(&mut self, dt: f32, players: &[PlayerCtx]) {
+        let Some(sand) = self.sand_id else { return };
+        if self.world.remote {
+            return;
+        }
+        // Age out old footfalls.
+        self.sand_touched.retain(|_, ttl| {
+            *ttl -= dt;
+            *ttl > 0.0
+        });
+        if self.sand_prev.len() != players.len() {
+            self.sand_prev = players.iter().map(|p| p.pos).collect();
+            self.sand_accum = vec![0.0; players.len()];
+        }
+        const STRIDE: f32 = 0.5; // fire (and thus remesh) once per half-block walked
+        const TOUCH_TTL: f32 = 1.5;
+        for (i, p) in players.iter().enumerate() {
+            let (prev, cur) = (self.sand_prev[i], p.pos);
+            self.sand_prev[i] = cur;
+            // Record the cell under the feet as stood-on, if it's sand.
+            let fx = cur.x.floor() as i32;
+            let fz = cur.z.floor() as i32;
+            let fy = (cur.y - 0.05).floor() as i32;
+            if self.world.get_block(fx, fy, fz) == sand {
+                self.sand_touched.insert((fx, fz), TOUCH_TTL);
+            }
+            let (dx, dz) = (cur.x - prev.x, cur.z - prev.z);
+            let dist = (dx * dx + dz * dz).sqrt();
+            if dist < 1e-4 {
+                continue; // standing still: sand rests
+            }
+            self.sand_accum[i] += dist;
+            if self.sand_accum[i] < STRIDE {
+                continue;
+            }
+            self.sand_accum[i] = 0.0;
+            self.world
+                .disturb_sand_touched(sand, cur, &self.sand_touched);
         }
     }
 
