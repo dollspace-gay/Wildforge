@@ -2310,7 +2310,9 @@ fn wood_leaf_tiles_are_opaque_in_atlas() {
     // Regression: a tile painted past the row boundary once left spruce
     // leaves transparent (invisible canopies).
     let reg = base_reg();
-    let (img, _mat, px, _) = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
+    let atlas = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
+    let img = atlas.color;
+    let px = atlas.px;
     let tp = px / crate::atlas::ATLAS_TILES;
     for name in [
         "base:leaves",
@@ -2365,7 +2367,9 @@ fn atlas_builds_with_mod_texture() {
         "mod texture is pack-addressable by <mod_id>/<stem>: {:?}",
         reg.tex_names
     );
-    let (img, _mat, px, _) = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
+    let atlas = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
+    let img = atlas.color;
+    let px = atlas.px;
     let tp = px / crate::atlas::ATLAS_TILES;
     let tx = (slot as u32 % crate::atlas::ATLAS_TILES) * tp + tp / 2;
     let ty = (slot as u32 / crate::atlas::ATLAS_TILES) * tp + tp / 2;
@@ -2482,9 +2486,14 @@ fn pack_tile_override_applied_at_slot() {
     let pack = tmp_dir("packstone");
     std::fs::create_dir_all(pack.join("tiles")).unwrap();
     write_solid_png(&pack.join("tiles/stone.png"), 8, 8, [255, 0, 255, 255]);
-    let (base, _mat, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
-    let (img, _mat, px, warns) =
+    let atlas = crate::atlas::build_atlas(&[], None, &[]);
+    let base = atlas.color;
+    let bpx = atlas.px;
+    let atlas =
         crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
+    let img = atlas.color;
+    let px = atlas.px;
+    let warns = atlas.warnings;
     assert_eq!(px, bpx);
     assert!(warns.is_empty(), "no warnings: {warns:?}");
     let stone = *crate::atlas::builtin_slots().get("stone").unwrap();
@@ -2519,14 +2528,19 @@ fn pack_overrides_mod_tile_by_name_and_wins() {
     );
 
     // Without the pack the mod's art lands in the slot...
-    let (img, _mat, px, _) = crate::atlas::build_atlas(&tex_files, None, &tex_names);
+    let atlas = crate::atlas::build_atlas(&tex_files, None, &tex_names);
+    let img = atlas.color;
+    let px = atlas.px;
     assert_eq!(tile_center(&img, px, slot), [0, 255, 0, 255]);
     // ...with the pack, the pack's art wins (layered last).
-    let (img, _mat, px, warns) = crate::atlas::build_atlas(
+    let atlas = crate::atlas::build_atlas(
         &tex_files,
         Some(crate::atlas::PackSource::Dir(pack.clone())),
         &tex_names,
     );
+    let img = atlas.color;
+    let px = atlas.px;
+    let warns = atlas.warnings;
     assert!(warns.is_empty(), "{warns:?}");
     assert_eq!(
         tile_center(&img, px, slot),
@@ -2541,9 +2555,14 @@ fn pack_unknown_and_unreadable_files_warn() {
     std::fs::create_dir_all(pack.join("tiles")).unwrap();
     write_solid_png(&pack.join("tiles/notatile.png"), 4, 4, [1, 2, 3, 255]);
     std::fs::write(pack.join("tiles/stone.png"), b"this is not a png").unwrap();
-    let (base, _mat, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
-    let (img, _mat, px, warns) =
+    let atlas = crate::atlas::build_atlas(&[], None, &[]);
+    let base = atlas.color;
+    let bpx = atlas.px;
+    let atlas =
         crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
+    let img = atlas.color;
+    let px = atlas.px;
+    let warns = atlas.warnings;
     assert_eq!(warns.len(), 2, "unknown name + unreadable png: {warns:?}");
     assert!(warns.iter().any(|w| w.contains("notatile")));
     let stone = *crate::atlas::builtin_slots().get("stone").unwrap();
@@ -2590,7 +2609,9 @@ fn content_stamp_changes_on_pack_edit() {
 
 #[test]
 fn export_tiles_round_trip_reproduces_atlas() {
-    let (img, _mat, px, _) = crate::atlas::build_atlas(&[], None, &[]);
+    let atlas = crate::atlas::build_atlas(&[], None, &[]);
+    let img = atlas.color;
+    let px = atlas.px;
     let out = tmp_dir("packexport");
     let n = crate::atlas::export_tiles(&out, &img, px, &[]).unwrap();
     assert_eq!(
@@ -2601,8 +2622,11 @@ fn export_tiles_round_trip_reproduces_atlas() {
     assert!(out.join("pack.toml").exists(), "stub pack.toml written");
     assert!(out.join("tiles/stone.png").exists());
     // Selecting the exported skeleton as a pack reproduces the atlas exactly.
-    let (again, _mat, apx, warns) =
+    let atlas =
         crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(out.clone())), &[]);
+    let again = atlas.color;
+    let apx = atlas.px;
+    let warns = atlas.warnings;
     assert!(warns.is_empty(), "{warns:?}");
     assert_eq!(apx, px);
     assert_eq!(again, img, "export -> re-import is the identity");
@@ -3028,9 +3052,14 @@ fn embedded_gemini_pack_applies_without_folder() {
     let tiles = crate::atlas::embedded_pack("gemini").expect("gemini compiled in");
     assert!(tiles.len() > 100, "full pack embedded, got {}", tiles.len());
     assert!(crate::atlas::embedded_pack("nope").is_none());
-    let (base, _mat, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
-    let (img, _mat, px, warns) =
+    let atlas = crate::atlas::build_atlas(&[], None, &[]);
+    let base = atlas.color;
+    let bpx = atlas.px;
+    let atlas =
         crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Embedded(tiles)), &[]);
+    let img = atlas.color;
+    let px = atlas.px;
+    let warns = atlas.warnings;
     assert!(warns.is_empty(), "{warns:?}");
     assert_eq!(px, bpx);
     let stone = *crate::atlas::builtin_slots().get("stone").unwrap();
@@ -6862,19 +6891,32 @@ fn material_atlas_authors_ice_and_pack_override_clears_it() {
     // Min or max of one channel across a tile.
     let chan = |mat: &[u8], px: u32, slot: u16, c: usize, want_max: bool| -> u8 {
         let tp = px / ATLAS_TILES;
-        let (tx, ty) = (slot as u32 % ATLAS_TILES * tp, slot as u32 / ATLAS_TILES * tp);
+        let (tx, ty) = (
+            slot as u32 % ATLAS_TILES * tp,
+            slot as u32 / ATLAS_TILES * tp,
+        );
         let mut m: u8 = if want_max { 0 } else { 255 };
         for y in 0..tp {
             for x in 0..tp {
                 let i = (((ty + y) * px + tx + x) * 4) as usize;
-                m = if want_max { m.max(mat[i + c]) } else { m.min(mat[i + c]) };
+                m = if want_max {
+                    m.max(mat[i + c])
+                } else {
+                    m.min(mat[i + c])
+                };
             }
         }
         m
     };
 
-    let (_img, mat, px, _) = build_atlas(&[], None, &[]);
-    assert_eq!(mat.len(), (px * px * 4) as usize, "material atlas is full-size");
+    let atlas = build_atlas(&[], None, &[]);
+    let mat = atlas.material;
+    let px = atlas.px;
+    assert_eq!(
+        mat.len(),
+        (px * px * 4) as usize,
+        "material atlas is full-size"
+    );
     // Plain tile: flat height (R=255), no interior layer (G=0).
     assert_eq!(
         tile_center(&mat, px, grass),
@@ -6883,18 +6925,189 @@ fn material_atlas_authors_ice_and_pack_override_clears_it() {
     );
     // Ice: a smooth surface (flat R) but a continuous internal layer everywhere
     // (G floored above 0), which the shader parallaxes and veils.
-    assert_eq!(chan(&mat, px, ice, 0, false), 255, "ice surface is smooth (flat R)");
-    assert!(chan(&mat, px, ice, 1, false) > 0, "ice has a continuous interior layer (G > 0)");
+    assert_eq!(
+        chan(&mat, px, ice, 0, false),
+        255,
+        "ice surface is smooth (flat R)"
+    );
+    assert!(
+        chan(&mat, px, ice, 1, false) > 0,
+        "ice has a continuous interior layer (G > 0)"
+    );
     // Rock gets parallax relief derived from its own albedo luminance (R varies).
-    assert!(chan(&mat, px, stone, 0, false) < 240, "stone has luminance relief in R");
+    assert!(
+        chan(&mat, px, stone, 0, false) < 240,
+        "stone has luminance relief in R"
+    );
 
     // A pack repainting ice must flatten its material — no interior under the
     // mismatched hand-drawn albedo.
     let pack = tmp_dir("packice");
     std::fs::create_dir_all(pack.join("tiles")).unwrap();
     write_solid_png(&pack.join("tiles/ice.png"), 8, 8, [200, 220, 255, 255]);
-    let (_img2, mat2, px2, _) = build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack)), &[]);
-    assert_eq!(chan(&mat2, px2, ice, 1, true), 0, "pack-overridden ice has no interior layer");
+    let atlas = build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack)), &[]);
+    let mat2 = atlas.material;
+    let px2 = atlas.px;
+    assert_eq!(
+        chan(&mat2, px2, ice, 1, true),
+        0,
+        "pack-overridden ice has no interior layer"
+    );
+}
+
+/// Write a two-tone checkerboard with `cell`-px squares — a texture whose mean
+/// and whose point samples differ maximally, so a resampling bug is unmissable.
+fn write_checker_png(path: &std::path::Path, side: u32, cell: u32, a: [u8; 4], b: [u8; 4]) {
+    let mut px = Vec::with_capacity((side * side * 4) as usize);
+    for y in 0..side {
+        for x in 0..side {
+            px.extend_from_slice(if ((x / cell) + (y / cell)).is_multiple_of(2) {
+                &a
+            } else {
+                &b
+            });
+        }
+    }
+    let mut data = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut data, side, side);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().unwrap().write_image_data(&px).unwrap();
+    }
+    std::fs::write(path, data).unwrap();
+}
+
+/// Companion maps: a pack ships `<tile>_n.png` / `<tile>_h.png` beside its
+/// albedo and gets authored normals and parallax height for that tile. Covers
+/// the whole convention — where the data lands, the material-B flag that tells
+/// the shader to read it, that an authored height beats the luminance-derived
+/// one, and that a real tile name still wins over the suffix rule.
+#[test]
+fn pack_companion_maps_author_normals_and_height() {
+    use crate::atlas::{ATLAS_TILES, build_atlas, builtin_slots};
+    let stone = *builtin_slots().get("stone").unwrap();
+    let grass = *builtin_slots().get("grass_top").unwrap();
+    let chan_uniform = |img: &[u8], px: u32, slot: u16, c: usize| -> Option<u8> {
+        let tp = px / ATLAS_TILES;
+        let (tx, ty) = (
+            slot as u32 % ATLAS_TILES * tp,
+            slot as u32 / ATLAS_TILES * tp,
+        );
+        let first = img[(((ty) * px + tx) * 4) as usize + c];
+        for y in 0..tp {
+            for x in 0..tp {
+                let i = (((ty + y) * px + tx + x) * 4) as usize;
+                if img[i + c] != first {
+                    return None;
+                }
+            }
+        }
+        Some(first)
+    };
+
+    // Nothing authored: the normal atlas is flat everywhere and material B — the
+    // "read the normal atlas here" flag — is clear, so every existing tile keeps
+    // the height-derived normal it had before.
+    let base = build_atlas(&[], None, &[]);
+    assert_eq!(base.normal.len(), (base.px * base.px * 4) as usize);
+    assert!(
+        base.normal
+            .chunks_exact(4)
+            .all(|p| p == [128, 128, 255, 255]),
+        "unauthored normal atlas is flat +Z"
+    );
+    assert!(
+        base.material.chunks_exact(4).all(|p| p[2] == 0),
+        "material B (authored-normal flag) is clear until something authors one"
+    );
+
+    let pack = tmp_dir("packmaps");
+    std::fs::create_dir_all(pack.join("tiles")).unwrap();
+    write_solid_png(&pack.join("tiles/stone.png"), 8, 8, [90, 90, 90, 255]);
+    write_solid_png(&pack.join("tiles/stone_n.png"), 8, 8, [180, 60, 240, 255]);
+    write_solid_png(&pack.join("tiles/stone_h.png"), 8, 8, [64, 64, 64, 255]);
+    let a = build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
+    assert!(
+        a.warnings.is_empty(),
+        "companion maps are not stray files: {:?}",
+        a.warnings
+    );
+    assert_eq!(
+        tile_center(&a.normal, a.px, stone),
+        [180, 60, 240, 255],
+        "authored normal lands in the normal atlas"
+    );
+    assert_eq!(
+        chan_uniform(&a.material, a.px, stone, 2),
+        Some(255),
+        "the whole slot is flagged as carrying an authored normal"
+    );
+    assert_eq!(
+        chan_uniform(&a.material, a.px, stone, 0),
+        Some(64),
+        "authored height wins over the albedo-luminance height stone would get"
+    );
+    assert_eq!(
+        chan_uniform(&a.material, a.px, grass, 2),
+        Some(0),
+        "a tile with no companion map is untouched"
+    );
+    assert_eq!(
+        tile_center(&a.normal, a.px, grass),
+        [128, 128, 255, 255],
+        "and keeps a flat normal"
+    );
+
+    // Precedence: if the registry actually has a tile called `stone_n`, that
+    // tile owns the file — the suffix rule must not steal it for stone's normal.
+    let names = vec![("stone_n".to_string(), 20u16)];
+    let b = build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack)), &names);
+    assert_eq!(
+        tile_center(&b.color, b.px, 20),
+        [180, 60, 240, 255],
+        "a real tile named stone_n claims stone_n.png as its albedo"
+    );
+    assert_eq!(
+        tile_center(&b.normal, b.px, stone),
+        [128, 128, 255, 255],
+        "so stone gets no authored normal"
+    );
+}
+
+/// Pack tiles finer than the atlas must be box-averaged, not point-sampled.
+/// Dropping 15 of every 16 texels merely blurs an albedo, but it turns a normal
+/// map into noise — the discarded neighbours are what define the surface.
+#[test]
+fn finer_pack_tiles_are_averaged_down_not_point_sampled() {
+    use crate::atlas::{ATLAS_TILES, build_atlas, builtin_slots};
+    let stone = *builtin_slots().get("stone").unwrap();
+    let pack = tmp_dir("packfine");
+    std::fs::create_dir_all(pack.join("tiles")).unwrap();
+    let base = build_atlas(&[], None, &[]);
+    let tp = base.px / ATLAS_TILES;
+    // One checker cell per source texel, at 4x the atlas tile size: every
+    // destination texel covers a 4x4 block holding exactly 8 black and 8 white.
+    write_checker_png(
+        &pack.join("tiles/stone.png"),
+        tp * 4,
+        1,
+        [0, 0, 0, 255],
+        [255, 255, 255, 255],
+    );
+    let a = build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack)), &[]);
+    let tx = stone as u32 % ATLAS_TILES * tp;
+    let ty = stone as u32 / ATLAS_TILES * tp;
+    for y in 0..tp {
+        for x in 0..tp {
+            let i = (((ty + y) * a.px + tx + x) * 4) as usize;
+            assert!(
+                (a.color[i] as i32 - 127).abs() <= 1,
+                "texel ({x},{y}) = {} — a point sample would be 0 or 255",
+                a.color[i]
+            );
+        }
+    }
 }
 
 /// A headless capture pins the sun so runs are comparable, but it must not

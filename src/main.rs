@@ -456,13 +456,15 @@ impl Game {
         // Dev override (never persisted): WILDFORGE_PACK=<id> selects a pack.
         let pack_override = std::env::var("WILDFORGE_PACK").ok();
         let active_pack = pack_override.clone().unwrap_or_else(|| config.pack.clone());
-        let (atlas_data, atlas_material, atlas_px, pack_warnings) =
+        let atlas =
             atlas::build_atlas(&reg.tex_files, pack_source_of(&active_pack), &reg.tex_names);
+        let pack_warnings = atlas.warnings;
         let renderer = pollster::block_on(renderer::Renderer::new(
             window.clone(),
-            atlas_data,
-            atlas_material,
-            atlas_px,
+            atlas.color,
+            atlas.material,
+            atlas.normal,
+            atlas.px,
         ));
         let mut scripts = script::ScriptHost::new();
         scripts.load_mods(&script_mod_dirs(&reg));
@@ -1149,6 +1151,60 @@ impl Game {
             self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
             self.camera.yaw = std::f32::consts::FRAC_PI_2; // face +z, across the rink
             self.camera.pitch = -0.35;
+        }
+
+        // Dev: a stone wall lit from the side, for the authored normal atlas.
+        // Best on WILDFORGE_PACK=hewn, whose stone ships a companion normal +
+        // height map; on any other pack the same wall shows the luminance-derived
+        // relief instead, which is the comparison worth looking at.
+        if std::env::var("WILDFORGE_DEMO_ROCK").is_ok()
+            && let Some(stone) = self.reg.block_id("base:stone")
+        {
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            for dx in [-8i32, 0, 8] {
+                for dz in [-8i32, 0, 8] {
+                    self.server
+                        .world
+                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                }
+            }
+            let yf = (-10..=10)
+                .flat_map(|dx| (-10..=10).map(move |dz| (dx, dz)))
+                .map(|(dx, dz)| self.server.world.surface_height(bx + dx, bz + dz))
+                .max()
+                .unwrap_or(spawn.y as i32);
+            // A flat court plus a tall wall, and a free-standing pillar in front
+            // of it. The floor reads relief at a grazing angle, the wall reads it
+            // face-on, and the pillar gives a lit face beside a shaded one.
+            // The sun always leans +z (main.rs sun_dir), so the wall goes at -z
+            // and we look back at it: that puts its +z face — the one we can
+            // see — into the light instead of permanent shade.
+            for dx in -10..=10i32 {
+                for dz in -10..=10i32 {
+                    self.server.world.set_block(bx + dx, yf, bz + dz, stone);
+                }
+                for dy in 1..=6i32 {
+                    self.server.world.set_block(bx + dx, yf + dy, bz - 8, stone);
+                }
+            }
+            for dy in 1..=3i32 {
+                self.server.world.set_block(bx + 3, yf + dy, bz - 4, stone);
+            }
+            // WILDFORGE_DEMO_DIST: how far in front of the wall to stand, for
+            // walking the camera up to it (near-field parallax checks).
+            let dist: f32 = std::env::var("WILDFORGE_DEMO_DIST")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(12.0);
+            // Measured from the wall's FRONT face (the blocks at bz-8 span z to
+            // bz-7), so dist is the gap you actually see.
+            let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.0, bz as f32 - 7.0 + dist);
+            self.player.pos = stand;
+            self.spawn_point = stand;
+            self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.camera.yaw = -std::f32::consts::FRAC_PI_2; // face -z, at the wall
+            self.camera.pitch = -0.10;
         }
 
         // Dev: a sub-voxel `surface_sand` dune for the octant sand feature —
@@ -1999,15 +2055,16 @@ impl Game {
                         let _ = std::fs::write(p, bytes);
                     }
                     self.reg = Arc::new(registry::load(&cache));
-                    let (mut data, mat, px, warns) = atlas::build_atlas(
+                    let mut a = atlas::build_atlas(
                         &self.reg.tex_files,
                         pack_source_of(&self.active_pack_id()),
                         &self.reg.tex_names,
                     );
-                    atlas::season_tint(&mut data, px, self.server.world.season());
+                    atlas::season_tint(&mut a.color, a.px, self.server.world.season());
                     self.atlas_season = self.server.world.season();
-                    self.pack_warnings = warns;
-                    self.renderer.set_atlas(&data, &mat, px);
+                    self.pack_warnings = a.warnings;
+                    self.renderer
+                        .set_atlas(&a.color, &a.material, &a.normal, a.px);
                     self.toast("Synced the host's mods.".to_string());
                 }
                 net::S2C::Welcome {
@@ -3716,7 +3773,7 @@ impl Game {
     /// Rebuild + swap the atlas for the currently selected texture pack and
     /// persist the choice. Registry/scripts are untouched — packs are art only.
     fn apply_pack(&mut self) {
-        let (mut data, mat, px, warns) = atlas::build_atlas(
+        let mut a = atlas::build_atlas(
             &self.reg.tex_files,
             pack_source_of(&self.active_pack_id()),
             &self.reg.tex_names,
@@ -3726,17 +3783,18 @@ impl Game {
         } else {
             1
         };
-        atlas::season_tint(&mut data, px, season);
+        atlas::season_tint(&mut a.color, a.px, season);
         self.atlas_season = season;
-        self.renderer.set_atlas(&data, &mat, px);
-        self.pack_warnings = warns;
+        self.renderer
+            .set_atlas(&a.color, &a.material, &a.normal, a.px);
+        self.pack_warnings = a.warnings;
         self.config.save();
     }
 
     fn reload_mods(&mut self, forced: bool) {
         let old = self.reg.clone();
         let new_reg = Arc::new(registry::load(std::path::Path::new("mods")));
-        let (mut atlas_data, atlas_material, atlas_px, warns) = atlas::build_atlas(
+        let mut a = atlas::build_atlas(
             &new_reg.tex_files,
             pack_source_of(&self.active_pack_id()),
             &new_reg.tex_names,
@@ -3746,10 +3804,11 @@ impl Game {
         } else {
             1
         };
-        atlas::season_tint(&mut atlas_data, atlas_px, season);
+        atlas::season_tint(&mut a.color, a.px, season);
         self.atlas_season = season;
-        self.pack_warnings = warns;
-        self.renderer.set_atlas(&atlas_data, &atlas_material, atlas_px);
+        self.pack_warnings = a.warnings;
+        self.renderer
+            .set_atlas(&a.color, &a.material, &a.normal, a.px);
 
         // Remap items by name (old registry -> new); unknown items vanish.
         let remap_item =
@@ -4555,15 +4614,16 @@ impl Game {
         }
         // The turning of the season repaints the leaves.
         if self.in_world && self.server.world.season() != self.atlas_season {
-            let (mut data, mat, px, warns) = atlas::build_atlas(
+            let mut a = atlas::build_atlas(
                 &self.reg.tex_files,
                 pack_source_of(&self.active_pack_id()),
                 &self.reg.tex_names,
             );
-            atlas::season_tint(&mut data, px, self.server.world.season());
+            atlas::season_tint(&mut a.color, a.px, self.server.world.season());
             self.atlas_season = self.server.world.season();
-            self.pack_warnings = warns;
-            self.renderer.set_atlas(&data, &mat, px);
+            self.pack_warnings = a.warnings;
+            self.renderer
+                .set_atlas(&a.color, &a.material, &a.normal, a.px);
         }
 
         // Hot reload: poll the mods + packs trees once a second.
