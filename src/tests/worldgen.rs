@@ -1093,38 +1093,49 @@ fn rivers_lakes_and_magma_chambers() {
     let reg = base_reg();
     let mut w = World::new(42, tmp_dir("hydro"), reg.clone());
 
-    // A river or lake above sea level, found through the same helper
-    // worldgen uses, then generated and verified wet.
-    let mut wet = None;
+    // Rivers and lakes above sea level, found through the same helper
+    // worldgen uses. Terraced fills leave honest dry washes where a
+    // reach lip outruns its floor, so try several wet candidates.
+    let mut candidates: Vec<(i32, i32, i32)> = Vec::new();
     'r: for r in 1..400 {
         let d = r * 16;
         for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
             if let Some(fill) = w.generator.water_features(x, z)
                 && fill > crate::chunk::SEA_LEVEL + 3
+                && candidates
+                    .iter()
+                    .all(|&(ax, az, _)| (ax - x).abs() + (az - z).abs() > 200)
             {
-                wet = Some((x, z, fill));
-                break 'r;
-            }
-        }
-    }
-    let (x, z, fill) = wet.expect("a river or lake above the sea");
-    let cp = ChunkPos::of_world(x, z);
-    for dx in -1..=1 {
-        for dz in -1..=1 {
-            w.ensure_chunk(ChunkPos {
-                x: cp.x + dx,
-                z: cp.z + dz,
-            });
-        }
-    }
-    let mut water_cells = 0;
-    for dx in -6..=6 {
-        for dz in -6..=6 {
-            for y in crate::chunk::SEA_LEVEL + 2..=fill + 2 {
-                if reg.is_water(w.get_block(x + dx, y, z + dz)) {
-                    water_cells += 1;
+                candidates.push((x, z, fill));
+                if candidates.len() >= 6 {
+                    break 'r;
                 }
             }
+        }
+    }
+    assert!(!candidates.is_empty(), "rivers or lakes above the sea");
+    let mut water_cells = 0;
+    for (x, z, fill) in candidates {
+        let cp = ChunkPos::of_world(x, z);
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                w.ensure_chunk(ChunkPos {
+                    x: cp.x + dx,
+                    z: cp.z + dz,
+                });
+            }
+        }
+        for dx in -6..=6 {
+            for dz in -6..=6 {
+                for y in crate::chunk::SEA_LEVEL + 2..=fill + 2 {
+                    if reg.is_water(w.get_block(x + dx, y, z + dz)) {
+                        water_cells += 1;
+                    }
+                }
+            }
+        }
+        if water_cells > 4 {
+            break;
         }
     }
     assert!(
@@ -1191,4 +1202,44 @@ fn print_biome_atlas() {
             );
         }
     }
+}
+
+#[test]
+fn rivers_settle_instead_of_churning() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("riversettle"), reg.clone());
+    // Find a river above the sea and load a 3x3 of chunks around it —
+    // ensure_chunk's seam wake is exactly what set real rivers off.
+    let mut wet = None;
+    'r: for r in 1..400 {
+        let d = r * 16;
+        for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
+            if let Some(fill) = w.generator.water_features(x, z)
+                && fill > crate::chunk::SEA_LEVEL + 3
+            {
+                wet = Some((x, z));
+                break 'r;
+            }
+        }
+    }
+    let (x, z) = wet.expect("a river above the sea");
+    let cp = ChunkPos::of_world(x, z);
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            w.ensure_chunk(ChunkPos {
+                x: cp.x + dx,
+                z: cp.z + dz,
+            });
+        }
+    }
+    // Terraced reaches shed a little water at their lips, then rest.
+    // Before the fix this loop never went quiet.
+    let mut quiet = false;
+    for _ in 0..300 {
+        if !w.tick_water(10_000) {
+            quiet = true;
+            break;
+        }
+    }
+    assert!(quiet, "the river settles instead of churning forever");
 }

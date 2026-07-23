@@ -668,6 +668,7 @@ impl World {
         let pos = ChunkPos::of_world(x, z);
         let lx = x.rem_euclid(CHUNK_X as i32) as usize;
         let lz = z.rem_euclid(CHUNK_Z as i32) as usize;
+        let old = self.get_block(x, y, z);
         if let Some(c) = self.chunks.get_mut(&pos) {
             c.set(lx, y as usize, lz, b);
             c.set_meta(lx, y as usize, lz, meta);
@@ -725,7 +726,17 @@ impl World {
                 self.set_block(x, y + 1, z, AIR);
             }
         }
-        self.relight_and_cascade(pos);
+        // A fluid changing level within its own family carries zero
+        // light consequence (every level shares one cost, lava's every
+        // level emits alike) — skip the full-chunk relight that was
+        // making a settling river cost thousands of BFS passes a
+        // second. Air/solid boundaries still relight as ever.
+        let fluid_level_only = self.reg.is_fluid(old)
+            && self.reg.is_fluid(b)
+            && self.reg.is_lava(old) == self.reg.is_lava(b);
+        if !fluid_level_only {
+            self.relight_and_cascade(pos);
+        }
         // A changed block invalidates any machine state living there.
         if let Some(e) = self.block_entities.remove(&(x, y, z)) {
             let spilled: Vec<ItemStack> = match e {

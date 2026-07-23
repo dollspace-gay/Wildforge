@@ -520,7 +520,14 @@ impl Generator {
                 carve += t * t * 8.0;
                 if riv.abs() < w {
                     carve += 3.0;
-                    fill = Some((pre - carve) as i32 + 3);
+                    // Terraced reaches: quantize the fill so each
+                    // stretch of river is dead level, dropping in
+                    // discrete falls. A smooth per-column fill left
+                    // sloped water fighting the equalizer forever —
+                    // the whole river churned (relights, remeshes)
+                    // from the moment a seam woke it.
+                    let f = (pre - carve) as i32 + 3;
+                    fill = Some(f - f.rem_euclid(4));
                 }
             }
             let lk = self.lakenoise.get([wx as f64 / 300.0, wz as f64 / 300.0]) as f32;
@@ -528,6 +535,7 @@ impl Generator {
                 let t = ((lk - 0.58) / 0.42).min(1.0);
                 carve += t * 10.0;
                 let f2 = (pre - 2.0) as i32;
+                let f2 = f2 - f2.rem_euclid(4);
                 fill = Some(fill.map_or(f2, |f| f.max(f2)));
             }
         }
