@@ -672,10 +672,13 @@ impl Game {
     fn build_and_render_frame(&mut self, dt: f32, now: Instant) {
         // Day/night: daylight factor from a sun curve (full day on menus).
         let sun = (self.server.time_of_day * std::f32::consts::TAU).sin();
-        // 0.12 floor: moonlit surfaces stay navigable; torch light is
-        // unaffected (its own vertex channel).
+        // Near-black floor: night is now carried by the moon (below), not a flat
+        // ambient, so a new-moon night goes genuinely dark while a full moon
+        // stays navigable. Torch light is unaffected (its own vertex channel).
+        // This is the render brightness only; the sim's own daylight() (mob
+        // spawns etc.) keeps its 0.12 floor untouched.
         let daylight = if self.in_world {
-            (sun * 2.5 + 0.5).clamp(0.12, 1.0)
+            (sun * 2.5 + 0.5).clamp(0.02, 1.0)
         } else {
             1.0
         };
@@ -696,18 +699,48 @@ impl Game {
         let ang = self.server.time_of_day * std::f32::consts::TAU;
         let elev = ang.sin(); // 1 at noon, -1 at midnight
         let horiz = ang.cos(); // +1 dawn -> 0 noon -> -1 dusk
-        let sun_dir = Vec3::new(horiz * 0.8, elev.max(0.05) + 0.15, 0.45).normalize();
-        // Same azimuth/tilt, but the true elevation (dips below the horizon at
-        // night) so the sky gradient can actually set and darken. Lighting keeps
-        // the clamped `sun_dir` above.
+        // Warm sun, clamped just over the horizon so its shadow never
+        // degenerates while it's the active light.
+        let warm_sun_dir = Vec3::new(horiz * 0.8, elev.max(0.05) + 0.15, 0.45).normalize();
+        // Same azimuth/tilt but the true elevation (dips below the horizon at
+        // night), so the sky gradient can actually set and darken.
         let sun_dir_true = Vec3::new(horiz * 0.8, elev, 0.45).normalize();
         let sun_vis = elev.clamp(0.0, 1.0).sqrt(); // 0 below horizon
         // Golden hour: the sun's hue warms from near-white at noon to deep
         // orange as it nears the horizon.
         let noon = Vec3::new(1.0, 0.96, 0.86);
         let horizon = Vec3::new(1.0, 0.54, 0.26);
-        let mut sun_col = horizon.lerp(noon, elev.clamp(0.0, 1.0).sqrt()) * (0.64 * sun_vis);
+        let warm_sun_col = horizon.lerp(noon, sun_vis) * (0.64 * sun_vis);
         let mut amb_col = Vec3::new(0.60, 0.68, 0.82) * (0.42 * daylight);
+
+        // Moon: rides the anti-solar arc (up while the sun is down), cold and
+        // dim, its strength set by the deterministic lunar phase — a new moon is
+        // near-dark, a full moon lights the night. Clamped like the sun so its
+        // shadow holds up.
+        let illum = if self.in_world {
+            self.server.world.moon_illumination()
+        } else {
+            0.0
+        };
+        let moon_elev = -elev;
+        let moon_horiz = -horiz;
+        let moon_dir = Vec3::new(moon_horiz * 0.8, moon_elev.max(0.05) + 0.15, 0.45).normalize();
+        let moon_vis = moon_elev.clamp(0.0, 1.0).sqrt() * illum;
+        // A strong, distinctly cold key so full-moon-lit faces clearly read as
+        // lit — paired with a near-nothing fill (below) so shadows stay genuinely
+        // dark. High contrast, a real directional light, not a flat ambient lift.
+        let moon_col = Vec3::new(0.45, 0.60, 1.0) * (0.42 * moon_vis);
+        // Barely any cold fill: enough that shadowed faces read as cold-dark
+        // rather than dead black, but not enough to wash out the shadows.
+        amb_col += Vec3::new(0.015, 0.022, 0.05) * moon_vis;
+
+        // Surface lighting uses whichever body is dominant as the single
+        // directional light, so the shadow map follows it for free: warm sun
+        // while it's up, cold moon once it sets. Both intensities have faded to
+        // ~zero at the crossover, so the swap is invisible. (The sky gradient
+        // tracks the true sun via `sun_dir_true`, independently.)
+        let sun_dir = if elev > 0.0 { warm_sun_dir } else { moon_dir };
+        let mut sun_col = if elev > 0.0 { warm_sun_col } else { moon_col };
 
         // Weather gloom: fronts dim the direct sun hard and the ambient
         // gently, gray the sky, and pull the fog in. Lerped over ~10 s

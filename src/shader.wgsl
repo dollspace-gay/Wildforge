@@ -127,7 +127,9 @@ fn sample_shadow(world: vec3<f32>, ndl: f32) -> f32 {
     var sum = 0.0;
     for (var dy = -1; dy <= 1; dy = dy + 1) {
         for (var dx = -1; dx <= 1; dx = dx + 1) {
-            let off = vec2<f32>(f32(dx), f32(dy)) * texel;
+            // Half-texel spread: a tighter penumbra so contact shadows read
+            // crisply where geometry meets the ground, not as a soft blob.
+            let off = vec2<f32>(f32(dx), f32(dy)) * texel * 0.5;
             sum = sum + textureSampleCompare(shadow_tex, shadow_smp, uv + off, ref_depth);
         }
     }
@@ -270,9 +272,11 @@ fn sky_radiance(rd_in: vec3<f32>) -> vec3<f32> {
     let day_horizon = vec3<f32>(0.66, 0.79, 0.94);
     let day_sky = mix(day_horizon, day_zenith, pow(up, 0.55));
 
-    // Night palette: near-black navy, a touch lighter at the horizon.
-    let night_zenith = vec3<f32>(0.008, 0.012, 0.030);
-    let night_horizon = vec3<f32>(0.020, 0.030, 0.065);
+    // Night palette: near-black, a hair of cold navy at the horizon. Kept this
+    // dark so a moonlit *surface* out-reads the sky instead of the sky glowing
+    // brighter than the ground it lights.
+    let night_zenith = vec3<f32>(0.001, 0.0016, 0.005);
+    let night_horizon = vec3<f32>(0.0025, 0.0045, 0.012);
     let night_sky = mix(night_horizon, night_zenith, pow(up, 0.7));
 
     // Sun elevation drives the day/night crossfade.
@@ -297,6 +301,14 @@ fn sky_radiance(rd_in: vec3<f32>) -> vec3<f32> {
     // A tight amber core right at the sun, pushed past 1.0 so bloom glares it.
     let core = pow(hb, 6.0) * pow(sun_side, 3.0) * twilight;
     col += vec3<f32>(1.0, 0.55, 0.20) * (core * 1.4);
+
+    // A thin cold limn on the horizon where the sun set / will rise. It fades
+    // with the sun's depth below the horizon — strong just after sunset / before
+    // sunrise, essentially gone by deep midnight — and hugs the horizon line
+    // tightly, so a dead-of-night sky stays near-black.
+    let limn_amt = smoothstep(-0.55, -0.03, se);
+    let limn = pow(hb, 12.0) * sun_side * limn_amt;
+    col += vec3<f32>(0.03, 0.07, 0.16) * limn;
 
     // Soft warm halo around the sun (no hard disc yet).
     let mu = max(dot(rd, sd), 0.0);

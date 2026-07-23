@@ -213,6 +213,13 @@ impl Game {
         {
             self.server.time_of_day = t.fract();
         }
+        // Dev: force the calendar day, to land on a specific moon phase
+        // (day % LUNAR_DAYS; 0 = new, 4 = full at the default cycle length).
+        if let Ok(d) = std::env::var("WILDFORGE_DAY")
+            && let Ok(d) = d.parse::<u32>()
+        {
+            self.server.world.day = d;
+        }
         if self.auto_shot.is_some() {
             self.server.freeze_clock = true;
         }

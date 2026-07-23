@@ -266,6 +266,63 @@ pub struct World {
 /// Ire tier names, index = tier.
 pub const IRE_TIERS: [&str; 4] = ["CALM", "UNEASY", "PROVOKED", "WRATHFUL"];
 
+/// Length of a full lunar cycle (new -> full -> new), in calendar days.
+pub const LUNAR_DAYS: u32 = 8;
+
+/// A named lunar phase band. The moon's lit fraction is continuous
+/// (`World::moon_illumination`); these eight discrete bands are what game
+/// systems and the UI gate on, because a named phase is far more predictable
+/// for the player than a raw float.
+///
+/// INFRASTRUCTURE HOOK: nothing keys off the moon yet. The phase is exposed
+/// deterministically (a pure function of the persisted calendar day, so every
+/// client and replay agrees) so later work can hang mechanics off it — hostile
+/// spawns, rituals once a magic system exists, or resources that can only be
+/// harvested (or gain special effects) on a given phase. Read it; don't wire
+/// gameplay to it here.
+// Hook API: the named-phase surface is exposed for future mechanics and isn't
+// consumed inside the engine yet.
+#[allow(dead_code)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MoonPhase {
+    New,
+    WaxingCrescent,
+    FirstQuarter,
+    WaxingGibbous,
+    Full,
+    WaningGibbous,
+    LastQuarter,
+    WaningCrescent,
+}
+
+#[allow(dead_code)]
+impl MoonPhase {
+    /// The eight bands in cycle order, index = day-into-cycle.
+    const ORDER: [MoonPhase; 8] = [
+        MoonPhase::New,
+        MoonPhase::WaxingCrescent,
+        MoonPhase::FirstQuarter,
+        MoonPhase::WaxingGibbous,
+        MoonPhase::Full,
+        MoonPhase::WaningGibbous,
+        MoonPhase::LastQuarter,
+        MoonPhase::WaningCrescent,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            MoonPhase::New => "NEW MOON",
+            MoonPhase::WaxingCrescent => "WAXING CRESCENT",
+            MoonPhase::FirstQuarter => "FIRST QUARTER",
+            MoonPhase::WaxingGibbous => "WAXING GIBBOUS",
+            MoonPhase::Full => "FULL MOON",
+            MoonPhase::WaningGibbous => "WANING GIBBOUS",
+            MoonPhase::LastQuarter => "LAST QUARTER",
+            MoonPhase::WaningCrescent => "WANING CRESCENT",
+        }
+    }
+}
+
 /// Result of one authoritative block break. Presentation decides how a local
 /// drop is animated; guest drops are queued directly by the host adapter.
 pub struct BlockBreak {
@@ -350,6 +407,27 @@ impl Weather {
 pub const MOB_CAP: usize = 200;
 
 impl World {
+    /// Position in the lunar cycle, 0..1 (0 = new moon, 0.5 = full moon). A
+    /// pure, deterministic function of the persisted calendar `day`, so every
+    /// client and every replay agrees. Constant across a given day (it steps at
+    /// dawn), so "tonight is a full moon" is a fixed, plannable fact.
+    pub fn moon_cycle(&self) -> f32 {
+        (self.day % LUNAR_DAYS) as f32 / LUNAR_DAYS as f32
+    }
+
+    /// Illuminated fraction of the moon, 0..1 (0 = new/dark, 1 = full/bright).
+    /// Drives moonlight strength and the disc's lit sliver.
+    pub fn moon_illumination(&self) -> f32 {
+        0.5 * (1.0 - (self.moon_cycle() * std::f32::consts::TAU).cos())
+    }
+
+    /// The named phase band for the current day — the discrete signal game
+    /// systems should gate on. See [`MoonPhase`]. (Hook API; unused in-engine.)
+    #[allow(dead_code)]
+    pub fn moon_phase(&self) -> MoonPhase {
+        MoonPhase::ORDER[(self.day % LUNAR_DAYS) as usize]
+    }
+
     pub fn new(seed: u32, save_dir: PathBuf, reg: Arc<Registry>) -> World {
         World {
             chunks: HashMap::new(),
