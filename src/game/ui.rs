@@ -38,7 +38,10 @@ impl Game {
         let h = self.renderer.config.height as f32;
         let panel_w = 9.0 * Self::SLOT;
         let x0 = (w - panel_w) / 2.0;
-        let grid_y = h / 2.0 - 2.0 * Self::SLOT;
+        // The complete inventory card (equipment above, storage below) is
+        // vertically centered. The old offset centered only the storage rows,
+        // leaving the paper doll stranded near the corner of the screen.
+        let grid_y = h / 2.0 + 16.0;
         if i < HOTBAR_SLOTS {
             (
                 x0 + i as f32 * Self::SLOT,
@@ -57,9 +60,41 @@ impl Game {
         }
     }
 
-    pub(super) fn inventory_avatar_x(&self) -> f32 {
-        let (grid_x, _, _, _) = self.inv_slot_rect(HOTBAR_SLOTS);
-        (grid_x * 0.5).clamp(160.0, 300.0)
+    /// Unified inventory card containing identity, gear, crafting and storage.
+    pub(super) fn inventory_panel_rect(&self) -> (f32, f32, f32, f32) {
+        let (grid_x, grid_y, _, _) = self.inv_slot_rect(HOTBAR_SLOTS);
+        (
+            grid_x - 134.0,
+            grid_y - 248.0,
+            9.0 * Self::SLOT + 268.0,
+            464.0,
+        )
+    }
+
+    pub(super) fn inventory_avatar_rect(&self) -> (f32, f32, f32, f32) {
+        let (panel_x, panel_y, _, _) = self.inventory_panel_rect();
+        (panel_x + 70.0, panel_y + 48.0, 170.0, 184.0)
+    }
+
+    pub(super) fn inventory_avatar_center(&self) -> (f32, f32) {
+        let (x, y, width, _) = self.inventory_avatar_rect();
+        (x + width * 0.5, y + 82.0)
+    }
+
+    /// Header controls use one source of geometry for drawing and hit-testing.
+    pub(super) fn inventory_tab_rect(&self, tab: usize) -> (f32, f32, f32, f32) {
+        let (x, y, width, _) = self.inventory_panel_rect();
+        let (button_width, right_pad) = match tab {
+            0 => (74.0, 228.0),
+            1 => (98.0, 124.0),
+            _ => (112.0, 8.0),
+        };
+        (
+            x + width - right_pad - button_width,
+            y + 9.0,
+            button_width,
+            28.0,
+        )
     }
 
     pub(super) fn menu_button_rect(&self, i: usize) -> (f32, f32, f32, f32) {
@@ -370,8 +405,8 @@ impl Game {
     pub(super) fn craft_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
         let n = self.interaction.craft_size;
         let (sx, sy, _, _) = self.inv_slot_rect(HOTBAR_SLOTS); // storage top-left
-        let y0 = sy - (n as f32) * Self::SLOT - 16.0;
-        let x0 = sx + 1.5 * Self::SLOT;
+        let y0 = sy - (n as f32) * Self::SLOT - 26.0;
+        let x0 = sx + 4.25 * Self::SLOT;
         (
             x0 + (i % n) as f32 * Self::SLOT,
             y0 + (i / n) as f32 * Self::SLOT,
@@ -1025,222 +1060,228 @@ impl Game {
             );
         }
 
-        // Hotbar.
-        for i in 0..HOTBAR_SLOTS {
-            let mut r = self.hotbar_rect(i);
-            // Selection bounce: 1.0 -> 1.12 -> 1.0 over ~120ms.
-            if i == self.input.hotbar_sel && self.presentation.sel_bounce < 1.0 {
-                let t = self.presentation.sel_bounce;
-                let sc = 1.0 + 0.12 * (t * std::f32::consts::PI).sin();
-                let (cx, cy) = (r.0 + r.2 / 2.0, r.1 + r.3 / 2.0);
-                r = (cx - r.2 / 2.0 * sc, cy - r.3 / 2.0 * sc, r.2 * sc, r.3 * sc);
+        // Keep gameplay instrumentation in gameplay. Inventory and container
+        // screens already present those objects directly; repeating the
+        // hotbar, vitals, chat, and nameplates behind them creates two
+        // competing visual hierarchies.
+        if self.ui_state.screen == Screen::Playing {
+            // Hotbar.
+            for i in 0..HOTBAR_SLOTS {
+                let mut r = self.hotbar_rect(i);
+                // Selection bounce: 1.0 -> 1.12 -> 1.0 over ~120ms.
+                if i == self.input.hotbar_sel && self.presentation.sel_bounce < 1.0 {
+                    let t = self.presentation.sel_bounce;
+                    let sc = 1.0 + 0.12 * (t * std::f32::consts::PI).sin();
+                    let (cx, cy) = (r.0 + r.2 / 2.0, r.1 + r.3 / 2.0);
+                    r = (cx - r.2 / 2.0 * sc, cy - r.3 / 2.0 * sc, r.2 * sc, r.3 * sc);
+                }
+                Self::draw_slot(
+                    &self.content.reg,
+                    &mut ui,
+                    r,
+                    self.inventory.slots[i],
+                    i == self.input.hotbar_sel,
+                    false,
+                );
+                // Pickup pulse: one bright cycle over the receiving slot.
+                let p = self.presentation.slot_pulse[i];
+                if p > 0.0 {
+                    let a = (p / 0.18) * 0.35;
+                    ui.rect(
+                        r.0 + 1.0,
+                        r.1 + 1.0,
+                        r.2 - 2.0,
+                        r.3 - 2.0,
+                        [1.0, 1.0, 0.9, a],
+                    );
+                }
             }
-            Self::draw_slot(
-                &self.content.reg,
-                &mut ui,
-                r,
-                self.inventory.slots[i],
-                i == self.input.hotbar_sel,
-                false,
-            );
-            // Pickup pulse: one bright cycle over the receiving slot.
-            let p = self.presentation.slot_pulse[i];
-            if p > 0.0 {
-                let a = (p / 0.18) * 0.35;
-                ui.rect(
-                    r.0 + 1.0,
-                    r.1 + 1.0,
-                    r.2 - 2.0,
-                    r.3 - 2.0,
-                    [1.0, 1.0, 0.9, a],
+            // Ghost icons fly from the pickup point to their slot.
+            for &(icon, (fx, fy), slot, age) in &self.presentation.ui_flies {
+                let t = (age / 0.22).min(1.0);
+                let t = t * t; // ease-in quad
+                let r = self.hotbar_rect(slot);
+                let (tx, ty) = (r.0 + r.2 / 2.0, r.1 + r.3 / 2.0);
+                let x = fx + (tx - fx) * t;
+                let y = fy + (ty - fy) * t;
+                let sz = 28.0 * (1.0 - 0.4 * t);
+                ui.tile(
+                    x - sz / 2.0,
+                    y - sz / 2.0,
+                    sz,
+                    sz,
+                    icon,
+                    [1.0, 1.0, 1.0, 0.9 * (1.0 - t * 0.5)],
                 );
             }
-        }
-        // Ghost icons fly from the pickup point to their slot.
-        for &(icon, (fx, fy), slot, age) in &self.presentation.ui_flies {
-            let t = (age / 0.22).min(1.0);
-            let t = t * t; // ease-in quad
-            let r = self.hotbar_rect(slot);
-            let (tx, ty) = (r.0 + r.2 / 2.0, r.1 + r.3 / 2.0);
-            let x = fx + (tx - fx) * t;
-            let y = fy + (ty - fy) * t;
-            let sz = 28.0 * (1.0 - 0.4 * t);
-            ui.tile(
-                x - sz / 2.0,
-                y - sz / 2.0,
-                sz,
-                sz,
-                icon,
-                [1.0, 1.0, 1.0, 0.9 * (1.0 - t * 0.5)],
-            );
-        }
-        // Selected item name above the hotbar.
-        if let Some(s) = self.inventory.slots[self.input.hotbar_sel] {
-            let name = &self.content.reg.item(s.item).label.to_uppercase();
-            let tw = UiBatch::text_width(2.0, name);
-            let (hx0, hy0) = self.hotbar_origin();
-            ui.text_shadow(
-                hx0 + (9.0 * Self::SLOT - tw) / 2.0,
-                hy0 - 56.0,
-                2.0,
-                name,
-                [1.0; 4],
-            );
-        }
+            // Selected item name above the hotbar.
+            if let Some(s) = self.inventory.slots[self.input.hotbar_sel] {
+                let name = &self.content.reg.item(s.item).label.to_uppercase();
+                let tw = UiBatch::text_width(2.0, name);
+                let (hx0, hy0) = self.hotbar_origin();
+                ui.text_shadow(
+                    hx0 + (9.0 * Self::SLOT - tw) / 2.0,
+                    hy0 - 56.0,
+                    2.0,
+                    name,
+                    [1.0; 4],
+                );
+            }
 
-        // Hearts above the hotbar (count follows max health).
-        let (hx, hy) = self.hotbar_origin();
-        let hs = 2.6;
-        let hearts = if self.creative {
-            0
-        } else {
-            (self.max_health() / 2.0).ceil() as i32
-        };
-        let clock = self.total_frames as f32 / 60.0;
-        for i in 0..hearts {
-            let kind = if self.survival.health >= (i * 2 + 2) as f32 {
-                2
-            } else if self.survival.health >= (i * 2 + 1) as f32 {
-                1
-            } else {
+            // Hearts above the hotbar (count follows max health).
+            let (hx, hy) = self.hotbar_origin();
+            let hs = 2.6;
+            let hearts = if self.creative {
                 0
-            };
-            let wobble = if self.presentation.juice && self.survival.health <= 6.0 && kind > 0 {
-                (clock * 9.0 + i as f32 * 1.7).sin() * 2.0
             } else {
-                0.0
+                (self.max_health() / 2.0).ceil() as i32
             };
-            ui.heart(hx + i as f32 * 8.0 * hs, hy - 24.0 + wobble, hs, kind);
-        }
-        // Armor pips above the hearts, only while wearing any.
-        let ap = if self.creative {
-            0
-        } else {
-            self.armor_points()
-        };
-        for i in 0..ap.min(15) {
-            let x = hx + i as f32 * 6.0 * hs * 0.8;
-            ui.rect(x, hy - 48.0, 4.0 * hs, 4.0 * hs, [0.75, 0.72, 0.6, 0.95]);
-        }
-        // Hunger pips, right-aligned above the hotbar.
-        let pips = (self.survival.hunger / 2.0).ceil() as i32;
-        for i in 0..if self.creative { 0 } else { 10 } {
-            let x = hx + 9.0 * Self::SLOT - (i + 1) as f32 * 8.0 * hs;
-            let a = if i < pips { 1.0 } else { 0.25 };
-            ui.rect(
-                x,
-                hy - 24.0 + 4.0,
-                6.0 * hs * 0.7,
-                5.0 * hs * 0.7,
-                [0.85, 0.55, 0.2, a],
-            );
-        }
-        // Bow draw near the crosshair (red until min draw, then filling).
-        if self.interaction.bow_draw > 0.0 {
-            let t = ((self.interaction.bow_draw - 0.25) / 0.75).clamp(0.0, 1.0);
-            ui.rect(
-                w / 2.0 - 30.0,
-                h / 2.0 + 24.0,
-                60.0,
-                6.0,
-                [0.1, 0.1, 0.1, 0.8],
-            );
-            let col = if self.interaction.bow_draw < 0.25 {
-                [0.7, 0.3, 0.2, 0.95]
+            let clock = self.total_frames as f32 / 60.0;
+            for i in 0..hearts {
+                let kind = if self.survival.health >= (i * 2 + 2) as f32 {
+                    2
+                } else if self.survival.health >= (i * 2 + 1) as f32 {
+                    1
+                } else {
+                    0
+                };
+                let wobble = if self.presentation.juice && self.survival.health <= 6.0 && kind > 0 {
+                    (clock * 9.0 + i as f32 * 1.7).sin() * 2.0
+                } else {
+                    0.0
+                };
+                ui.heart(hx + i as f32 * 8.0 * hs, hy - 24.0 + wobble, hs, kind);
+            }
+            // Armor pips above the hearts, only while wearing any.
+            let ap = if self.creative {
+                0
             } else {
-                [0.75, 0.9, 0.5, 0.95]
+                self.armor_points()
             };
-            ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0 * t.max(0.06), 6.0, col);
-        }
-        // Chat entry line.
-        if self.multiplayer.chat_open {
-            ui.rect(12.0, h - 46.0, w * 0.5, 30.0, [0.0, 0.0, 0.0, 0.7]);
-            let line = format!("SAY: {}_", self.multiplayer.chat_text.to_uppercase());
-            ui.text_shadow(18.0, h - 40.0, 2.0, &line, [1.0; 4]);
-        }
-        // Other players: world-space identity labels with distance fading,
-        // screen clipping, and terrain occlusion.
-        if let Some(r) = &self.multiplayer.remote {
-            for (name, pos, _) in r.players.values() {
-                self.draw_world_nameplate(&mut ui, name, *pos, w, h);
+            for i in 0..ap.min(15) {
+                let x = hx + i as f32 * 6.0 * hs * 0.8;
+                ui.rect(x, hy - 48.0, 4.0 * hs, 4.0 * hs, [0.75, 0.72, 0.6, 0.95]);
             }
-        }
-        if let Some(hst) = &self.multiplayer.host {
-            for g in hst.guests.values() {
-                self.draw_world_nameplate(&mut ui, &g.name, g.render_pos().0, w, h);
-            }
-        }
-        if std::env::var("WILDFORGE_DEMO_PLAYER").is_ok() && self.in_world {
-            for (i, name) in ["ROWAN", "MICA"].iter().enumerate() {
-                let px = self.player.pos.x.floor() + 0.5 + (i as f32 * 2.0 - 1.0);
-                let pz = self.player.pos.z.floor() + 3.5;
-                let py = self.server.world.surface_height(px as i32, pz as i32) as f32 + 1.0;
-                self.draw_world_nameplate(&mut ui, name, Vec3::new(px, py, pz), w, h);
-            }
-        }
-        // Brushing progress near the crosshair.
-        if self.interaction.anvil_work > 0.0 {
-            let t = (self.interaction.anvil_work / 2.0).min(1.0);
-            ui.rect(
-                w / 2.0 - 30.0,
-                h / 2.0 + 24.0,
-                60.0,
-                6.0,
-                [0.1, 0.1, 0.1, 0.8],
-            );
-            ui.rect(
-                w / 2.0 - 30.0,
-                h / 2.0 + 24.0,
-                60.0 * t,
-                6.0,
-                [0.85, 0.85, 0.9, 0.95],
-            );
-        }
-        if self.interaction.brushing > 0.0 {
-            let t = (self.interaction.brushing / 1.5).min(1.0);
-            ui.rect(
-                w / 2.0 - 30.0,
-                h / 2.0 + 24.0,
-                60.0,
-                6.0,
-                [0.1, 0.1, 0.1, 0.8],
-            );
-            ui.rect(
-                w / 2.0 - 30.0,
-                h / 2.0 + 24.0,
-                60.0 * t,
-                6.0,
-                [0.75, 0.7, 0.5, 0.95],
-            );
-        }
-        // Eat progress near the crosshair.
-        if self.survival.eating > 0.0
-            && let Some(f) = self.inventory.slots[self.input.hotbar_sel]
-                .and_then(|s| self.content.reg.item(s.item).food.clone())
-        {
-            let t = (self.survival.eating / f.eat_time).min(1.0);
-            ui.rect(
-                w / 2.0 - 30.0,
-                h / 2.0 + 24.0,
-                60.0,
-                6.0,
-                [0.1, 0.1, 0.1, 0.8],
-            );
-            ui.rect(
-                w / 2.0 - 30.0,
-                h / 2.0 + 24.0,
-                60.0 * t,
-                6.0,
-                [0.9, 0.8, 0.3, 0.95],
-            );
-        }
-
-        // Air bubbles (right-aligned above hotbar) when submerged.
-        if self.survival.air < MAX_AIR && !self.creative {
-            let n = (self.survival.air / MAX_AIR * 10.0).ceil() as usize;
-            for i in 0..n {
+            // Hunger pips, right-aligned above the hotbar.
+            let pips = (self.survival.hunger / 2.0).ceil() as i32;
+            for i in 0..if self.creative { 0 } else { 10 } {
                 let x = hx + 9.0 * Self::SLOT - (i + 1) as f32 * 8.0 * hs;
-                ui.bubble(x, hy - 16.0 * hs - 8.0, hs);
+                let a = if i < pips { 1.0 } else { 0.25 };
+                ui.rect(
+                    x,
+                    hy - 24.0 + 4.0,
+                    6.0 * hs * 0.7,
+                    5.0 * hs * 0.7,
+                    [0.85, 0.55, 0.2, a],
+                );
+            }
+            // Bow draw near the crosshair (red until min draw, then filling).
+            if self.interaction.bow_draw > 0.0 {
+                let t = ((self.interaction.bow_draw - 0.25) / 0.75).clamp(0.0, 1.0);
+                ui.rect(
+                    w / 2.0 - 30.0,
+                    h / 2.0 + 24.0,
+                    60.0,
+                    6.0,
+                    [0.1, 0.1, 0.1, 0.8],
+                );
+                let col = if self.interaction.bow_draw < 0.25 {
+                    [0.7, 0.3, 0.2, 0.95]
+                } else {
+                    [0.75, 0.9, 0.5, 0.95]
+                };
+                ui.rect(w / 2.0 - 30.0, h / 2.0 + 24.0, 60.0 * t.max(0.06), 6.0, col);
+            }
+            // Chat entry line.
+            if self.multiplayer.chat_open {
+                ui.rect(12.0, h - 46.0, w * 0.5, 30.0, [0.0, 0.0, 0.0, 0.7]);
+                let line = format!("SAY: {}_", self.multiplayer.chat_text.to_uppercase());
+                ui.text_shadow(18.0, h - 40.0, 2.0, &line, [1.0; 4]);
+            }
+            // Other players: world-space identity labels with distance fading,
+            // screen clipping, and terrain occlusion.
+            if let Some(r) = &self.multiplayer.remote {
+                for (name, pos, _) in r.players.values() {
+                    self.draw_world_nameplate(&mut ui, name, *pos, w, h);
+                }
+            }
+            if let Some(hst) = &self.multiplayer.host {
+                for g in hst.guests.values() {
+                    self.draw_world_nameplate(&mut ui, &g.name, g.render_pos().0, w, h);
+                }
+            }
+            if std::env::var("WILDFORGE_DEMO_PLAYER").is_ok() && self.in_world {
+                for (i, name) in ["ROWAN", "MICA"].iter().enumerate() {
+                    let px = self.player.pos.x.floor() + 0.5 + (i as f32 * 2.0 - 1.0);
+                    let pz = self.player.pos.z.floor() + 3.5;
+                    let py = self.server.world.surface_height(px as i32, pz as i32) as f32 + 1.0;
+                    self.draw_world_nameplate(&mut ui, name, Vec3::new(px, py, pz), w, h);
+                }
+            }
+            // Brushing progress near the crosshair.
+            if self.interaction.anvil_work > 0.0 {
+                let t = (self.interaction.anvil_work / 2.0).min(1.0);
+                ui.rect(
+                    w / 2.0 - 30.0,
+                    h / 2.0 + 24.0,
+                    60.0,
+                    6.0,
+                    [0.1, 0.1, 0.1, 0.8],
+                );
+                ui.rect(
+                    w / 2.0 - 30.0,
+                    h / 2.0 + 24.0,
+                    60.0 * t,
+                    6.0,
+                    [0.85, 0.85, 0.9, 0.95],
+                );
+            }
+            if self.interaction.brushing > 0.0 {
+                let t = (self.interaction.brushing / 1.5).min(1.0);
+                ui.rect(
+                    w / 2.0 - 30.0,
+                    h / 2.0 + 24.0,
+                    60.0,
+                    6.0,
+                    [0.1, 0.1, 0.1, 0.8],
+                );
+                ui.rect(
+                    w / 2.0 - 30.0,
+                    h / 2.0 + 24.0,
+                    60.0 * t,
+                    6.0,
+                    [0.75, 0.7, 0.5, 0.95],
+                );
+            }
+            // Eat progress near the crosshair.
+            if self.survival.eating > 0.0
+                && let Some(f) = self.inventory.slots[self.input.hotbar_sel]
+                    .and_then(|s| self.content.reg.item(s.item).food.clone())
+            {
+                let t = (self.survival.eating / f.eat_time).min(1.0);
+                ui.rect(
+                    w / 2.0 - 30.0,
+                    h / 2.0 + 24.0,
+                    60.0,
+                    6.0,
+                    [0.1, 0.1, 0.1, 0.8],
+                );
+                ui.rect(
+                    w / 2.0 - 30.0,
+                    h / 2.0 + 24.0,
+                    60.0 * t,
+                    6.0,
+                    [0.9, 0.8, 0.3, 0.95],
+                );
+            }
+
+            // Air bubbles (right-aligned above hotbar) when submerged.
+            if self.survival.air < MAX_AIR && !self.creative {
+                let n = (self.survival.air / MAX_AIR * 10.0).ceil() as usize;
+                for i in 0..n {
+                    let x = hx + 9.0 * Self::SLOT - (i + 1) as f32 * 8.0 * hs;
+                    ui.bubble(x, hy - 16.0 * hs - 8.0, hs);
+                }
             }
         }
 
@@ -1541,195 +1582,7 @@ impl Game {
                 return;
             }
             Screen::Inventory => {
-                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
-                let title = if self.interaction.craft_size == 3 {
-                    "CRAFTING"
-                } else {
-                    "INVENTORY"
-                };
-                let tw = UiBatch::text_width(3.0, title);
-                let (c0x, c0y, _, _) = self.craft_slot_rect(0);
-                ui.text_shadow((w - tw) / 2.0, c0y - 40.0, 3.0, title, [1.0; 4]);
-                let avatar_x = self.inventory_avatar_x();
-                let (active_name, social_name) = self.selected_multiplayer_name();
-                let name_width = UiBatch::text_width(1.75, &active_name);
-                ui.rect(
-                    avatar_x - name_width * 0.5 - 7.0,
-                    c0y - 101.0,
-                    name_width + 14.0,
-                    19.0,
-                    [0.01, 0.02, 0.03, 0.72],
-                );
-                ui.text_shadow(
-                    avatar_x - name_width * 0.5,
-                    c0y - 97.0,
-                    1.75,
-                    &active_name,
-                    [0.72, 1.0, 0.78, 1.0],
-                );
-                if social_name
-                    && let Some(handle) = self
-                        .atproto_account
-                        .as_ref()
-                        .and_then(|account| account.handle.as_deref())
-                {
-                    let mut handle = format!("@{handle}");
-                    if handle.chars().count() > 40 {
-                        handle = format!("{}...", handle.chars().take(37).collect::<String>());
-                    }
-                    let handle_width = UiBatch::text_width(1.25, &handle);
-                    ui.text_shadow(
-                        avatar_x - handle_width * 0.5,
-                        c0y - 77.0,
-                        1.25,
-                        &handle,
-                        [0.65, 0.78, 1.0, 1.0],
-                    );
-                }
-                for i in 0..TOTAL_SLOTS {
-                    let r = self.inv_slot_rect(i);
-                    let hover = self.hit(r);
-                    Self::draw_slot(
-                        &self.content.reg,
-                        &mut ui,
-                        r,
-                        self.inventory.slots[i],
-                        i == self.input.hotbar_sel,
-                        hover,
-                    );
-                }
-                // The status card: nutrition, health bonus, the wild's
-                // mood, and the calendar. It sits below the paper doll so
-                // both remain readable at the default 1280x720 window size.
-                let status_y = h - 224.0;
-                ui.rect(8.0, status_y, 384.0, 216.0, [0.02, 0.03, 0.05, 0.62]);
-                let names = ["GRAIN", "VEG", "FRUIT", "FUNGI", "PROT"];
-                let cols = [
-                    [0.85, 0.7, 0.25, 1.0],
-                    [0.35, 0.75, 0.3, 1.0],
-                    [0.85, 0.3, 0.3, 1.0],
-                    [0.6, 0.45, 0.3, 1.0],
-                    [0.8, 0.4, 0.35, 1.0],
-                ];
-                for i in 0..5 {
-                    let y = status_y + 16.0 + i as f32 * 24.0;
-                    ui.text_shadow(24.0, y, 1.5, names[i], [1.0; 4]);
-                    ui.rect(176.0, y, 128.0, 10.0, [0.12, 0.12, 0.12, 0.9]);
-                    let v = self.survival.nutrition[i] / 100.0;
-                    ui.rect(176.0, y, 128.0 * v, 10.0, cols[i]);
-                    if self.survival.nutrition[i] >= 40.0 {
-                        ui.text_shadow(312.0, y, 1.5, "+", [0.6, 1.0, 0.6, 1.0]);
-                    }
-                }
-                let bonus = (self.max_health() - MAX_HEALTH) as i32 / 2;
-                ui.text_shadow(
-                    24.0,
-                    status_y + 144.0,
-                    1.5,
-                    &format!("MAX HEALTH +{bonus}"),
-                    [1.0; 4],
-                );
-                // The wild's ire: tier word + vine meter.
-                let tier = self.server.world.ire_tier();
-                let tier_col = [
-                    [0.45, 0.75, 0.4, 1.0],
-                    [0.8, 0.75, 0.35, 1.0],
-                    [0.9, 0.55, 0.25, 1.0],
-                    [0.9, 0.3, 0.25, 1.0],
-                ][tier];
-                ui.text_shadow(24.0, status_y + 168.0, 1.5, "THE WILD", [1.0; 4]);
-                ui.rect(
-                    176.0,
-                    status_y + 168.0,
-                    128.0,
-                    10.0,
-                    [0.12, 0.12, 0.12, 0.9],
-                );
-                ui.rect(
-                    176.0,
-                    status_y + 168.0,
-                    self.server.world.ire * 1.28,
-                    10.0,
-                    tier_col,
-                );
-                ui.text_shadow(
-                    312.0,
-                    status_y + 168.0,
-                    1.5,
-                    world::IRE_TIERS[tier],
-                    tier_col,
-                );
-                // The calendar: day count and where the season stands.
-                let w2 = &self.server.world;
-                let third =
-                    ["EARLY", "MID", "LATE"][((w2.season_progress() * 3.0) as usize).min(2)];
-                ui.text_shadow(
-                    24.0,
-                    status_y + 192.0,
-                    1.5,
-                    &format!(
-                        "DAY {} - {third} {}",
-                        w2.day + 1,
-                        world::SEASONS[w2.season()]
-                    ),
-                    [0.85, 0.9, 1.0, 1.0],
-                );
-                // Armor column: head/chest/legs/feet.
-                for (i, label) in ["H", "C", "L", "B", "*"].iter().enumerate() {
-                    let r = self.armor_slot_rect(i);
-                    Self::draw_slot(
-                        &self.content.reg,
-                        &mut ui,
-                        r,
-                        self.survival.armor[i],
-                        false,
-                        self.hit(r),
-                    );
-                    if self.survival.armor[i].is_none() {
-                        ui.text_shadow(
-                            r.0 + r.2 / 2.0 - 5.0,
-                            r.1 + r.3 / 2.0 - 7.0,
-                            2.0,
-                            label,
-                            [0.55, 0.55, 0.55, 0.8],
-                        );
-                    }
-                }
-                // Craft grid, arrow, result.
-                let n2 = self.interaction.craft_size * self.interaction.craft_size;
-                for i in 0..n2 {
-                    let r = self.craft_slot_rect(i);
-                    Self::draw_slot(
-                        &self.content.reg,
-                        &mut ui,
-                        r,
-                        self.interaction.craft_grid[i],
-                        false,
-                        self.hit(r),
-                    );
-                }
-                let rr = self.result_slot_rect();
-                ui.text_shadow(rr.0 - 34.0, rr.1 + 16.0, 2.5, "-", [1.0; 4]);
-                ui.text_shadow(rr.0 - 24.0, rr.1 + 14.0, 2.5, ">", [1.0; 4]);
-                let result = crafting::match_recipe(
-                    &self.content.reg,
-                    &self.interaction.craft_grid[..n2],
-                    self.interaction.craft_size,
-                )
-                .map(|r| ItemStack::new(&self.content.reg, r.output, r.count));
-                Self::draw_slot(&self.content.reg, &mut ui, rr, result, false, self.hit(rr));
-                let _ = c0x;
-                self.draw_browser(&mut ui);
-                // Stack on the cursor.
-                if let Some(s) = self.ui_state.held_stack {
-                    let (cx, cy) = self.input.ui_cursor;
-                    let icon = self.content.reg.item(s.item).icon;
-                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
-                    if s.count > 1 {
-                        let txt = format!("{}", s.count);
-                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &txt, [1.0; 4]);
-                    }
-                }
+                self.draw_inventory_screen(&mut ui);
             }
             Screen::Paused => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.6]);

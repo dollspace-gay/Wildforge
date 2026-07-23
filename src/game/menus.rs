@@ -9,13 +9,41 @@ impl Game {
         }
         match self.ui_state.screen {
             Screen::Inventory => {
-                if self.browser_click(right) {
+                if self.hit(self.inventory_tab_rect(0)) {
+                    self.sfx(Sfx::Click);
+                    self.ui_state.inventory_status_open = false;
+                    self.ui_state.inventory_browser_open = false;
+                    self.ui_state.search_focus = false;
+                    self.ui_state.browse_view = None;
                     return;
                 }
-                for i in 0..5 {
-                    if self.hit(self.armor_slot_rect(i)) {
-                        self.armor_click(i);
-                        return;
+                if self.hit(self.inventory_tab_rect(1)) {
+                    self.sfx(Sfx::Click);
+                    self.ui_state.inventory_status_open = true;
+                    self.ui_state.inventory_browser_open = false;
+                    self.ui_state.search_focus = false;
+                    self.ui_state.browse_view = None;
+                    return;
+                }
+                if self.hit(self.inventory_tab_rect(2)) {
+                    self.sfx(Sfx::Click);
+                    self.ui_state.inventory_browser_open = !self.ui_state.inventory_browser_open;
+                    self.ui_state.inventory_status_open = false;
+                    if !self.ui_state.inventory_browser_open {
+                        self.ui_state.search_focus = false;
+                        self.ui_state.browse_view = None;
+                    }
+                    return;
+                }
+                if self.ui_state.inventory_browser_open && self.browser_click(right) {
+                    return;
+                }
+                if !self.ui_state.inventory_status_open {
+                    for i in 0..5 {
+                        if self.hit(self.armor_slot_rect(i)) {
+                            self.armor_click(i);
+                            return;
+                        }
                     }
                 }
                 for i in 0..TOTAL_SLOTS {
@@ -24,14 +52,16 @@ impl Game {
                         return;
                     }
                 }
-                for i in 0..self.interaction.craft_size * self.interaction.craft_size {
-                    if self.hit(self.craft_slot_rect(i)) {
-                        self.inventory_click(true, i, right);
-                        return;
+                if !self.ui_state.inventory_status_open {
+                    for i in 0..self.interaction.craft_size * self.interaction.craft_size {
+                        if self.hit(self.craft_slot_rect(i)) {
+                            self.inventory_click(true, i, right);
+                            return;
+                        }
                     }
-                }
-                if self.hit(self.result_slot_rect()) {
-                    self.result_click();
+                    if self.hit(self.result_slot_rect()) {
+                        self.result_click();
+                    }
                 }
             }
             Screen::Paused => {

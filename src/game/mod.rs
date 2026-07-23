@@ -8,6 +8,7 @@ mod content;
 mod frame;
 mod input;
 mod interaction;
+mod inventory_ui;
 mod keymap;
 mod menus;
 mod remote;
@@ -180,6 +181,8 @@ struct UiState {
     browse_page: usize,
     browse_view: Option<(ItemId, bool)>,
     browse_back: Vec<(ItemId, bool)>,
+    inventory_status_open: bool,
+    inventory_browser_open: bool,
     appearance_from_pause: bool,
     account_name: String,
     account_handle: String,
@@ -207,6 +210,8 @@ impl Default for UiState {
             browse_page: 0,
             browse_view: None,
             browse_back: Vec::new(),
+            inventory_status_open: false,
+            inventory_browser_open: false,
             appearance_from_pause: false,
             account_name: String::new(),
             account_handle: String::new(),

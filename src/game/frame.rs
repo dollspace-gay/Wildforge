@@ -1260,15 +1260,16 @@ impl Game {
                 &mut hand_verts,
                 &mut hand_idx,
             );
-        } else if self.ui_state.screen == Screen::Inventory {
+        } else if self.ui_state.screen == Screen::Inventory && !self.ui_state.inventory_status_open
+        {
             // Inventory paper doll: the active local identity gets a body,
             // not just a line of account text on a settings screen.
-            let depth = 5.0;
+            // A slightly deeper preview camera keeps the full body inside its
+            // UI frame instead of letting the feet hang into the storage rows.
+            let depth = 6.25;
             let w = self.renderer.config.width as f32;
             let h = self.renderer.config.height as f32;
-            let (_, craft_y, _, _) = self.craft_slot_rect(0);
-            let center_x = self.inventory_avatar_x();
-            let center_y = craft_y + self.interaction.craft_size as f32 * Self::SLOT * 0.5 + 6.0;
+            let (center_x, center_y) = self.inventory_avatar_center();
             let ndc_x = center_x / w * 2.0 - 1.0;
             let ndc_y = 1.0 - center_y / h * 2.0;
             let half_h = (self.camera.fovy * 0.5).tan() * depth;
