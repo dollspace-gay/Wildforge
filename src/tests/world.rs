@@ -391,6 +391,33 @@ fn pre_v3_saves_regenerate_cleanly() {
 }
 
 #[test]
+fn palette_less_v3_chunks_keep_their_legacy_numeric_ids() {
+    let reg = base_reg();
+    let dir = tmp_dir("palette-less-v3");
+    std::fs::write(dir.join("seed"), "42").unwrap();
+    let stone = b(&reg, "base:stone");
+    let mut data = Vec::new();
+    data.extend_from_slice(b"WFC3");
+    let total = 16 * 16 * 256usize;
+    let mut left = total;
+    while left > 0 {
+        let run = left.min(u16::MAX as usize) as u16;
+        data.extend_from_slice(&run.to_le_bytes());
+        data.extend_from_slice(&stone.0.to_le_bytes());
+        left -= run as usize;
+    }
+    std::fs::write(dir.join("c.0.0.wfc"), data).unwrap();
+
+    let mut w = World::load_or_create(dir, reg.clone());
+    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    assert_eq!(
+        w.get_block(4, 60, 4),
+        stone,
+        "a missing palette must not turn an entire legacy chunk into the placeholder"
+    );
+}
+
+#[test]
 fn unknown_palette_entries_become_placeholder() {
     let reg = base_reg();
     let dir = tmp_dir("unknown");
