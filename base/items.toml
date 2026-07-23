@@ -770,3 +770,8 @@ id = "bucket_lava"
 name = "Lava Bucket"
 texture = "bucket_lava.png"
 max_stack = 1
+
+[[item]]
+id = "sulfur"
+name = "Sulfur"
+texture = "sulfur.png"

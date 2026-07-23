@@ -843,3 +843,12 @@ hardness = 3.0
 tool = "pickaxe"
 light = 11
 light_color = [1.0, 0.45, 0.12]
+
+[[block]]
+id = "sulfur_ore"
+name = "Sulfur"
+texture = "sulfur_ore.png"
+hardness = 2.2
+tool = "pickaxe"
+drops = "base:sulfur"
+drop_count = 2

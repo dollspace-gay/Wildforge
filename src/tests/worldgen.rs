@@ -763,3 +763,81 @@ fn strata_layer_the_world_sanely() {
         sample.len()
     );
 }
+
+#[test]
+fn volcanoes_rise_pool_and_dress() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("volcano"), reg.clone());
+    // Find the nearest deterministic volcano to the origin.
+    let mut found = None;
+    'search: for r in 0..30 {
+        let d = r * 96;
+        for (x, z) in [
+            (d, 0),
+            (-d, 0),
+            (0, d),
+            (0, -d),
+            (d, d),
+            (-d, -d),
+            (d, -d),
+            (-d, d),
+        ] {
+            if let Some(v) = w.generator.volcano_near(x, z) {
+                found = Some(v);
+                break 'search;
+            }
+        }
+    }
+    let v = found.expect("a volcano within the search ring");
+    println!(
+        "volcano at ({}, {}) r={} h={}",
+        v.x, v.z, v.radius, v.height
+    );
+    let vc = ChunkPos::of_world(v.x, v.z);
+    for dx in -3..=3 {
+        for dz in -3..=3 {
+            w.ensure_chunk(ChunkPos {
+                x: vc.x + dx,
+                z: vc.z + dz,
+            });
+        }
+    }
+    // The cone rises well above the surrounding country.
+    let rim = w.surface_height(v.x + v.crater_r() as i32 + 1, v.z);
+    let baseline = w.surface_height(v.x + v.radius as i32 + 24, v.z);
+    assert!(
+        rim > baseline + 15,
+        "the cone rises: rim {rim} vs baseline {baseline}"
+    );
+    // The crater pools lava behind an obsidian rim.
+    let b = |n: &str| reg.block_id(n).unwrap();
+    let mut lava_cells = 0;
+    let mut obsidian_cells = 0;
+    let mut sulfur_cells = 0;
+    let mut basalt_cells = 0;
+    let scan = v.radius as i32;
+    for dx in -scan..=scan {
+        for dz in -scan..=scan {
+            let (x, z) = (v.x + dx, v.z + dz);
+            for y in 40..CHUNK_Y as i32 {
+                let blk = w.get_block(x, y, z);
+                if reg.is_lava(blk) {
+                    lava_cells += 1;
+                } else if blk == b("base:obsidian") {
+                    obsidian_cells += 1;
+                } else if blk == b("base:sulfur_ore") {
+                    sulfur_cells += 1;
+                } else if blk == b("base:basalt") {
+                    basalt_cells += 1;
+                }
+            }
+        }
+    }
+    assert!(lava_cells > 30, "the crater pools lava ({lava_cells})");
+    assert!(obsidian_cells > 10, "an obsidian rim ({obsidian_cells})");
+    assert!(
+        sulfur_cells > 3,
+        "sulfur crusts the flanks ({sulfur_cells})"
+    );
+    assert!(basalt_cells > 3000, "the cone is basalt ({basalt_cells})");
+}

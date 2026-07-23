@@ -72,6 +72,44 @@ impl Spline {
     }
 }
 
+/// A deterministic volcano: center, reach, and rise. The cone stamps
+/// the terrain spline; the crater dips it back; generate() pools the
+/// crater with lava and dresses rim and flanks.
+#[derive(Clone, Copy)]
+pub struct Volcano {
+    pub x: i32,
+    pub z: i32,
+    pub radius: f32,
+    pub height: f32,
+}
+
+impl Volcano {
+    pub fn dist(&self, wx: i32, wz: i32) -> f32 {
+        (((wx - self.x).pow(2) + (wz - self.z).pow(2)) as f32).sqrt()
+    }
+
+    /// Cone strength 0..1 at a column (1 = the crater's heart).
+    pub fn strength(&self, wx: i32, wz: i32) -> f32 {
+        (1.0 - self.dist(wx, wz) / self.radius).max(0.0)
+    }
+
+    pub fn crater_r(&self) -> f32 {
+        7.0 + self.radius * 0.07
+    }
+
+    /// Height added to the terrain offset at a column.
+    fn cone(&self, wx: i32, wz: i32) -> f32 {
+        let d = self.dist(wx, wz);
+        let t = (1.0 - d / self.radius).max(0.0);
+        let mut cone = self.height * t.powf(1.6);
+        let cr = self.crater_r();
+        if d < cr {
+            cone -= (1.0 - d / cr) * self.height * 0.30;
+        }
+        cone
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Climate {
     pub t: f32,
@@ -142,6 +180,9 @@ pub struct Generator {
     /// Every interior rock (for cave carving and surface scans).
     rocks: [BlockId; 11],
     lava: BlockId,
+    obsidian: BlockId,
+    magma_vent: BlockId,
+    sulfur_ore: BlockId,
     bandwarp: Perlin,
     granite3d: Perlin,
 }
@@ -251,6 +292,9 @@ impl Generator {
                 b("base:carbonatite"),
             ],
             lava: b("base:lava"),
+            obsidian: b("base:obsidian"),
+            magma_vent: b("base:magma_vent"),
+            sulfur_ore: b("base:sulfur_ore"),
             bandwarp: p(40),
             granite3d: p(42),
         }
@@ -303,8 +347,53 @@ impl Generator {
         // Mountains rise inland only; ridges concentrate them into ranges.
         let land = ((cl.c + 0.15) / 0.35).clamp(0.0, 1.0);
         let mtn = self.mountain_amp.at(cl.e) * (0.35 + 0.65 * cl.r) * land;
-        let offset = (base + mtn).min(CHUNK_Y as f32 - 26.0);
+        let mut offset = (base + mtn).min(CHUNK_Y as f32 - 26.0);
+        // A volcano stamps its cone onto the spline terrain, crater
+        // bowl and all.
+        if let Some(v) = self.volcano_near(wx, wz) {
+            offset = (offset + v.cone(wx, wz)).min(CHUNK_Y as f32 - 20.0);
+        }
         (offset, self.factor_spline.at(cl.e))
+    }
+
+    /// The volcano whose reach covers a column, if any: deterministic
+    /// per region cell, so every chunk agrees without communication.
+    /// Land and coastal shelves only — volcanic islands are welcome,
+    /// the deep ocean floor is not.
+    pub fn volcano_near(&self, wx: i32, wz: i32) -> Option<Volcano> {
+        const REGION: i32 = 384;
+        let rx = wx.div_euclid(REGION);
+        let rz = wz.div_euclid(REGION);
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                let (cx, cz) = (rx + dx, rz + dz);
+                let h = hash2(self.seed ^ 0x70_1ca0, cx, cz);
+                if !h.is_multiple_of(5) {
+                    continue;
+                }
+                let margin = 90;
+                let ox = (h >> 8) % (REGION - 2 * margin) as u32 + margin as u32;
+                let oz = (h >> 17) % (REGION - 2 * margin) as u32 + margin as u32;
+                let center_x = cx * REGION + ox as i32;
+                let center_z = cz * REGION + oz as i32;
+                if self.climate(center_x, center_z).c < -0.2 {
+                    continue;
+                }
+                let v = Volcano {
+                    x: center_x,
+                    z: center_z,
+                    radius: 44.0 + (h % 28) as f32,
+                    height: 52.0 + ((h >> 4) % 32) as f32,
+                };
+                let d = v.dist(wx, wz);
+                // Generous cutoff: dressing probes chunk corners and
+                // must never miss a flank column at the border.
+                if d < v.radius + 12.0 {
+                    return Some(v);
+                }
+            }
+        }
+        None
     }
 
     /// Cheap surface estimate (spline offset) for spawn search and tooling.
@@ -386,10 +475,14 @@ impl Generator {
         ]
     }
 
-    /// The rock for a solid cell: granite intrusions override the
-    /// stack, their contact halo cooks the sediment it touches, and
-    /// the bands decide the rest.
-    fn rock_at(&self, y: i32, bands: &[i32; 5], gm: f32) -> BlockId {
+    /// The rock for a solid cell: volcanoes build in basalt (with
+    /// carbonatite dikes threading their plumbing), granite
+    /// intrusions override the stack, their contact halo cooks the
+    /// sediment it touches, and the bands decide the rest.
+    fn rock_at(&self, y: i32, bands: &[i32; 5], gm: f32, vol: f32, dike: bool) -> BlockId {
+        if vol > 0.24 && y > bands[1] {
+            return if dike { self.carbonatite } else { self.basalt };
+        }
         if gm > 0.0 {
             return self.granite;
         }
@@ -465,11 +558,18 @@ impl Generator {
                 if !(0..CHUNK_X as i32).contains(&lx) || !(0..CHUNK_Z as i32).contains(&lz) {
                     continue;
                 }
-                let bands = self.strata_bands(bx + lx, bz + lz);
+                let (wx, wz) = (bx + lx, bz + lz);
+                let bands = self.strata_bands(wx, wz);
+                let vol = self
+                    .volcano_near(wx, wz)
+                    .map(|v| v.strength(wx, wz))
+                    .unwrap_or(0.0);
+                let dike =
+                    vol > 0.05 && self.detail.get([wx as f64 / 13.0, wz as f64 / 13.0]) > 0.58;
                 for y in 1..CHUNK_Y as i32 {
                     let solid = Self::lat_density(&lat, lx, y, lz) > 0.0;
                     let b = if solid {
-                        self.rock_at(y, &bands, Self::lat_density(&lat_g, lx, y, lz))
+                        self.rock_at(y, &bands, Self::lat_density(&lat_g, lx, y, lz), vol, dike)
                     } else if y <= SEA_LEVEL {
                         self.water
                     } else {
@@ -561,7 +661,13 @@ impl Generator {
                     }
                 } else if snowcap {
                     (Some(self.snow), None)
-                } else if biome == Biome::Mountains || steep {
+                } else if biome == Biome::Mountains
+                    || steep
+                    || self
+                        .volcano_near(wx, wz)
+                        .is_some_and(|v| v.strength(wx, wz) > 0.28)
+                {
+                    // Bare rock: mountains, cliffs, volcano flanks.
                     (None, None)
                 } else {
                     let beach = top <= SEA_LEVEL + 1;
@@ -593,6 +699,45 @@ impl Generator {
                 // Frozen ocean surface.
                 if biome == Biome::Arctic && c.get(lx, SEA_LEVEL as usize, lz) == self.water {
                     c.set(lx, SEA_LEVEL as usize, lz, self.ice);
+                }
+            }
+        }
+
+        // Volcano dressing: the crater pools with lava behind an
+        // obsidian rim; magma vents stud the inner wall; sulfur
+        // crusts the flanks. All deterministic from the volcano's
+        // region hash, so chunk borders agree.
+        let probe = [(8, 8), (0, 0), (15, 0), (0, 15), (15, 15)]
+            .iter()
+            .find_map(|&(qx, qz)| self.volcano_near(bx + qx, bz + qz));
+        if let Some(v) = probe {
+            let pool_y = self.column_params(v.x, v.z).0 as i32 + 4;
+            let cr = v.crater_r();
+            for (lx, hrow) in heights.iter().enumerate() {
+                for (lz, &top) in hrow.iter().enumerate() {
+                    let (wx, wz) = (bx + lx as i32, bz + lz as i32);
+                    let d = v.dist(wx, wz);
+                    if d >= v.radius {
+                        continue;
+                    }
+                    if d < cr - 0.5 {
+                        for y in (top + 1).max(2)..=pool_y.min(CHUNK_Y as i32 - 2) {
+                            if c.get(lx, y as usize, lz) == AIR {
+                                c.set(lx, y as usize, lz, self.lava);
+                            }
+                        }
+                    } else if d < cr + 1.8 {
+                        if top > 0 {
+                            c.set(lx, top as usize, lz, self.obsidian);
+                        }
+                    } else if top > 0 {
+                        let h = hash2(self.seed ^ 0xbe27, wx, wz);
+                        if d < cr + 4.0 && h.is_multiple_of(11) {
+                            c.set(lx, top as usize, lz, self.magma_vent);
+                        } else if d > cr + 4.0 && d < v.radius * 0.72 && h.is_multiple_of(29) {
+                            c.set(lx, top as usize, lz, self.sulfur_ore);
+                        }
+                    }
                 }
             }
         }
