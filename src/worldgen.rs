@@ -203,6 +203,8 @@ pub struct Generator {
     sulfur_ore: BlockId,
     bandwarp: Perlin,
     granite3d: Perlin,
+    rivernoise: Perlin,
+    lakenoise: Perlin,
 }
 
 fn hash2(seed: u32, x: i32, z: i32) -> u32 {
@@ -317,6 +319,8 @@ impl Generator {
             sulfur_ore: b("base:sulfur_ore"),
             bandwarp: p(40),
             granite3d: p(42),
+            rivernoise: p(50),
+            lakenoise: p(51),
         }
     }
 
@@ -462,14 +466,62 @@ impl Generator {
         }
     }
 
-    fn column_params(&self, wx: i32, wz: i32) -> (f32, f32) {
-        let cl = self.climate(wx, wz);
+    /// Terrain offset before hydrology: continents, worn highlands,
+    /// and plate relief.
+    fn base_offset(&self, cl: &Climate) -> f32 {
         let base = self.offset_base.at(cl.c);
         // Old erosion mountains stay as worn highlands; the young
         // dramatic ranges belong to the plate boundaries now.
         let land = ((cl.c + 0.15) / 0.35).clamp(0.0, 1.0);
         let mtn = self.mountain_amp.at(cl.e) * (0.35 + 0.65 * cl.r) * land * 0.45;
-        let mut offset = (base + mtn + self.plate_relief(&cl)).clamp(6.0, CHUNK_Y as f32 - 22.0);
+        base + mtn + self.plate_relief(cl)
+    }
+
+    /// Rivers and lakes for a column: how deep the water has cut the
+    /// terrain, and the local fill level (a river or lake acts as a
+    /// local sea level in the shape pass). Rivers widen toward the
+    /// coast; lakes press hollows into the flats; rift valleys that
+    /// sag below sea level flood into rift seas on their own.
+    pub fn hydrology(&self, wx: i32, wz: i32, cl: &Climate, pre: f32) -> (f32, Option<i32>) {
+        let mut carve = 0.0f32;
+        let mut fill: Option<i32> = None;
+        if pre > SEA_LEVEL as f32 - 2.0 && cl.c > -0.05 {
+            let riv = self.rivernoise.get([wx as f64 / 620.0, wz as f64 / 620.0]) as f32;
+            let w = 0.012 + 0.010 * (0.6 - cl.c).clamp(0.0, 1.0);
+            let shoulder = w * 3.2;
+            if riv.abs() < shoulder {
+                let t = 1.0 - riv.abs() / shoulder;
+                carve += t * t * 8.0;
+                if riv.abs() < w {
+                    carve += 3.0;
+                    fill = Some((pre - carve) as i32 + 3);
+                }
+            }
+            let lk = self.lakenoise.get([wx as f64 / 300.0, wz as f64 / 300.0]) as f32;
+            if lk > 0.58 && pre > SEA_LEVEL as f32 + 2.0 && pre < 120.0 {
+                let t = ((lk - 0.58) / 0.42).min(1.0);
+                carve += t * 10.0;
+                let f2 = (pre - 2.0) as i32;
+                fill = Some(fill.map_or(f2, |f| f.max(f2)));
+            }
+        }
+        (carve, fill)
+    }
+
+    /// The local water level a river or lake gives a column, if any
+    /// (tests and tooling; generate() computes the same inline).
+    #[cfg(test)]
+    pub fn water_features(&self, wx: i32, wz: i32) -> Option<i32> {
+        let cl = self.climate(wx, wz);
+        let pre = self.base_offset(&cl);
+        self.hydrology(wx, wz, &cl, pre).1
+    }
+
+    fn column_params(&self, wx: i32, wz: i32) -> (f32, f32) {
+        let cl = self.climate(wx, wz);
+        let pre = self.base_offset(&cl);
+        let (carve, _) = self.hydrology(wx, wz, &cl, pre);
+        let mut offset = (pre - carve).clamp(6.0, CHUNK_Y as f32 - 22.0);
         // A volcano stamps its cone onto the spline terrain, crater
         // bowl and all.
         if let Some(v) = self.volcano_near(wx, wz) {
@@ -693,6 +745,7 @@ impl Generator {
 
         // Stage 1: shape. Track pre-carve solid tops for the 18x18 ring.
         let mut shape_top = [[0i32; RING]; RING];
+        let mut fills = [[0i32; CHUNK_Z]; CHUNK_X];
         for rx in 0..RING as i32 {
             for rz in 0..RING as i32 {
                 let (lx, lz) = (rx - 1, rz - 1);
@@ -715,11 +768,17 @@ impl Generator {
                     .unwrap_or(0.0);
                 let dike =
                     vol > 0.05 && self.detail.get([wx as f64 / 13.0, wz as f64 / 13.0]) > 0.58;
+                // Rivers and lakes flood their carve as a local sea.
+                let cl = self.climate(wx, wz);
+                let pre = self.base_offset(&cl);
+                let (_, fill) = self.hydrology(wx, wz, &cl, pre);
+                let fill_y = fill.unwrap_or(0).max(SEA_LEVEL);
+                fills[lx as usize][lz as usize] = fill_y;
                 for y in 1..CHUNK_Y as i32 {
                     let solid = Self::lat_density(&lat, lx, y, lz) > 0.0;
                     let b = if solid {
                         self.rock_at(y, &bands, Self::lat_density(&lat_g, lx, y, lz), vol, dike)
-                    } else if y <= SEA_LEVEL {
+                    } else if y <= fill_y {
                         self.water
                     } else {
                         AIR
@@ -793,7 +852,7 @@ impl Generator {
                     slope = slope.max((h0 - n).abs());
                 }
                 let steep = slope >= 3;
-                let underwater = top < SEA_LEVEL - 1;
+                let underwater = top < fills[lx][lz].max(SEA_LEVEL) - 1;
                 let snowcap = top >= 170
                     || (biome == Biome::Mountains
                         && top >= 150
@@ -845,6 +904,17 @@ impl Generator {
                     }
                 }
 
+                // Mountain springs: rare seeps on high steep ground,
+                // a still pool the size of a footprint.
+                if top > 110
+                    && steep
+                    && top + 1 < CHUNK_Y as i32 - 1
+                    && hash2(self.seed ^ 0x59a1, wx, wz).is_multiple_of(211)
+                    && c.get(lx, (top + 1) as usize, lz) == AIR
+                {
+                    c.set(lx, top as usize, lz, self.water);
+                }
+
                 // Frozen ocean surface.
                 if biome == Biome::Arctic && c.get(lx, SEA_LEVEL as usize, lz) == self.water {
                     c.set(lx, SEA_LEVEL as usize, lz, self.ice);
@@ -868,6 +938,19 @@ impl Generator {
                     let d = v.dist(wx, wz);
                     if d >= v.radius {
                         continue;
+                    }
+                    // The magma chamber beneath: an ellipsoid half-full
+                    // of lava, feeding the throat above.
+                    let ch_r = (v.radius * 0.33).min(20.0);
+                    if d < ch_r {
+                        for y in 12..=28i32 {
+                            let dy = (y - 20) as f32 / 8.0;
+                            let dh = d / ch_r;
+                            if dh * dh + dy * dy < 1.0 {
+                                let b = if y < 20 { self.lava } else { AIR };
+                                c.set(lx, y as usize, lz, b);
+                            }
+                        }
                     }
                     if d < cr - 0.5 {
                         for y in (top + 1).max(2)..=pool_y.min(CHUNK_Y as i32 - 2) {

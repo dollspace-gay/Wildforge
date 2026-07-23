@@ -543,22 +543,41 @@ fn wild_food_generates_per_biome() {
     let reg = base_reg();
     let g = Generator::new(42, &reg);
     let has = |biome: Biome, blocks: &[&str], name: &str| -> bool {
-        let (x, z) = find_biome(&g, biome).unwrap();
-        let cp = ChunkPos::of_world(x, z);
-        let mut w = World::new(42, tmp_dir(name), reg.clone());
+        // The plate map can make the first biome hit a sliver; try a
+        // few well-separated patches before giving up.
+        let mut anchors: Vec<(i32, i32)> = Vec::new();
+        for r in 0..200 {
+            let d = r * 24;
+            for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
+                if g.biome(x, z) == biome
+                    && anchors
+                        .iter()
+                        .all(|&(ax, az)| (ax - x).abs() + (az - z).abs() > 400)
+                {
+                    anchors.push((x, z));
+                }
+            }
+            if anchors.len() >= 3 {
+                break;
+            }
+        }
         let ids: Vec<_> = blocks.iter().filter_map(|n| reg.block_id(n)).collect();
-        for dx in -4..=4 {
-            for dz in -4..=4 {
-                let p = ChunkPos {
-                    x: cp.x + dx,
-                    z: cp.z + dz,
-                };
-                w.ensure_chunk(p);
-                for lx in 0..16 {
-                    for lz in 0..16 {
-                        for y in 64..140 {
-                            if ids.contains(&w.get_block(p.x * 16 + lx, y, p.z * 16 + lz)) {
-                                return true;
+        for (ai, (x, z)) in anchors.into_iter().enumerate() {
+            let cp = ChunkPos::of_world(x, z);
+            let mut w = World::new(42, tmp_dir(&format!("{name}{ai}")), reg.clone());
+            for dx in -4..=4 {
+                for dz in -4..=4 {
+                    let p = ChunkPos {
+                        x: cp.x + dx,
+                        z: cp.z + dz,
+                    };
+                    w.ensure_chunk(p);
+                    for lx in 0..16 {
+                        for lz in 0..16 {
+                            for y in 64..140 {
+                                if ids.contains(&w.get_block(p.x * 16 + lx, y, p.z * 16 + lz)) {
+                                    return true;
+                                }
                             }
                         }
                     }
@@ -1063,4 +1082,83 @@ fn ores_stay_in_their_host_rocks() {
             "gold stays in its veins ({gold_neighbors_quartz}/{gold_n})"
         );
     }
+}
+
+#[test]
+fn rivers_lakes_and_magma_chambers() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("hydro"), reg.clone());
+
+    // A river or lake above sea level, found through the same helper
+    // worldgen uses, then generated and verified wet.
+    let mut wet = None;
+    'r: for r in 1..400 {
+        let d = r * 16;
+        for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
+            if let Some(fill) = w.generator.water_features(x, z)
+                && fill > crate::chunk::SEA_LEVEL + 3
+            {
+                wet = Some((x, z, fill));
+                break 'r;
+            }
+        }
+    }
+    let (x, z, fill) = wet.expect("a river or lake above the sea");
+    let cp = ChunkPos::of_world(x, z);
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            w.ensure_chunk(ChunkPos {
+                x: cp.x + dx,
+                z: cp.z + dz,
+            });
+        }
+    }
+    let mut water_cells = 0;
+    for dx in -6..=6 {
+        for dz in -6..=6 {
+            for y in crate::chunk::SEA_LEVEL + 2..=fill + 2 {
+                if reg.is_water(w.get_block(x + dx, y, z + dz)) {
+                    water_cells += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        water_cells > 4,
+        "fresh water fills the carve ({water_cells})"
+    );
+
+    // The volcano's magma chamber: lava under the throat.
+    let mut found = None;
+    'v: for r in 0..30 {
+        let d = r * 96;
+        for (x, z) in [
+            (d, 0),
+            (-d, 0),
+            (0, d),
+            (0, -d),
+            (d, d),
+            (-d, -d),
+            (d, -d),
+            (-d, d),
+        ] {
+            if let Some(v) = w.generator.volcano_near(x, z) {
+                found = Some(v);
+                break 'v;
+            }
+        }
+    }
+    let v = found.expect("a volcano within the search ring");
+    w.ensure_chunk(ChunkPos::of_world(v.x, v.z));
+    let mut chamber = 0;
+    for dx in -8..=8 {
+        for dz in -8..=8 {
+            for y in 12..20 {
+                if reg.is_lava(w.get_block(v.x + dx, y, v.z + dz)) {
+                    chamber += 1;
+                }
+            }
+        }
+    }
+    assert!(chamber > 30, "a magma chamber breathes below ({chamber})");
 }
