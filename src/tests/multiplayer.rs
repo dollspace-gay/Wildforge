@@ -127,7 +127,7 @@ fn remote_roles_are_authorized_by_the_host_not_the_client_ui() {
         None,
     )
     .unwrap();
-    let _target = crate::net::Client::connect(
+    let mut target = crate::net::Client::connect(
         addr,
         "Target".into(),
         sess.content_hash,
@@ -200,6 +200,36 @@ fn remote_roles_are_authorized_by_the_host_not_the_client_ui() {
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
     assert_eq!(sess.guest_role(target_id), Some(Role::Moderator));
+
+    // The same authorized request path applies a durable mute, and the host
+    // rejects the target's next chat packet instead of broadcasting it.
+    let _ = actor.poll();
+    let _ = target.poll();
+    actor.send(&C2S::Moderate {
+        target: target_id,
+        action: ModerationAction::Mute { seconds: 600 },
+    });
+    for _ in 0..20 {
+        sess.pump(&mut sim, None, 0.05);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert!(actor.poll().iter().any(|message| {
+        matches!(message, S2C::Toast(text) if text.contains("muted for 600 seconds"))
+    }));
+    target.send(&C2S::Chat("this must not be broadcast".into()));
+    for _ in 0..20 {
+        sess.pump(&mut sim, None, 0.05);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert!(
+        target
+            .poll()
+            .iter()
+            .any(|message| { matches!(message, S2C::Toast(text) if text.contains("muted")) })
+    );
+    assert!(!actor.poll().iter().any(|message| {
+        matches!(message, S2C::Chat { msg, .. } if msg == "this must not be broadcast")
+    }));
 
     actor.send(&C2S::Moderate {
         target: target_id,

@@ -176,8 +176,8 @@ production-ready:
 | Linux browser link/revoke | Callback completes; exact device record writes, verifies, deletes, and fails live verification after deletion | Pending consenting account |
 | Windows browser link/revoke | Same sequence, including browser handoff and callback firewall behavior | Partial: browser link/callback and write succeeded in user testing; exact public type/key/rkey read-back from the current Bluesky PDS passed 2026-07-23; revoke/firewall path not signed off |
 | Independent PDS | Link/write/fetch/revoke succeeds outside the common Bluesky PDS | Pending provider/account |
-| Outage and handle change | Cached badge is visible only within grace; DID maps to the same `PlayerId` after handle/PDS change | Pending live-provider exercise |
-| Local UX | First run, offline solo, LAN local join, moderation, unlink, and lost-device wording are understandable end to end | Partial: isolated graphical first-run smoke proposed an editable name while leaving `profile_complete=no`; local unlink and LAN/moderation paths have automated coverage; final human wording/playtest sign-off remains |
+| Outage and handle change | Cached badge is visible only within grace; DID maps to the same `PlayerId` after handle/PDS change | Partial: deterministic cache-expiry, handle-change, PDS-migration, and profile-mapping tests pass; a live-provider mutation/outage exercise remains |
+| Local UX | First run, offline solo, LAN local join, moderation, unlink, and lost-device wording are understandable end to end | Passed 2026-07-23: graphical fresh/linked Accounts and pre-connect policy screens were reviewed; a fresh network namespace with only a down loopback interface saved a local profile and created a solo world; local unlink, LAN, and host-authorized moderation paths pass automated tests |
 
 Do not substitute personal tokens in automated tests or commit captured OAuth
 state to satisfy these rows.

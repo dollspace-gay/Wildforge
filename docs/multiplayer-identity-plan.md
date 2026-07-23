@@ -838,6 +838,9 @@ The code-side qualification was repeated on 2026-07-23 with Rust/Cargo 1.96.0:
 | Normal dependency graph | 530 unique package lines versus 252 on `origin/main` (278 added) |
 | Dedicated-host smoke | Fresh isolated world started, wrote a persistent host key/settings, and answered `help`, `players`, and `identity` console commands |
 | Production OAuth metadata | Repository-owned GitHub Pages deployment; exact body and JSON content type verified at the document's `client_id` |
+| Offline local-only smoke | In a fresh network namespace with only a down loopback interface, the graphical first-run flow saved an editable local name and created a survival world |
+| Identity UI smoke | Fresh and linked Accounts screens, recovery/privacy wording, and the Join screen's pre-connect `ATPROTO REQUIRED` policy label were inspected graphically |
+| Common-PDS public proof | The existing browser-linked record was resolved from its DID's current Bluesky PDS and its exact record type, device key, and key-derived rkey were read back without credentials or mutation |
 
 The dependency measurement prompted replacing the Jacquard umbrella crate with
 only `jacquard-common`, `jacquard-identity`, and `jacquard-oauth`. OAuth state
