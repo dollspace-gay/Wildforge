@@ -63,6 +63,10 @@ fn all_seven_biomes_exist_and_are_deterministic() {
         Biome::Scrubland,
         Biome::Taiga,
         Biome::Arctic,
+        Biome::Swamp,
+        Biome::Savanna,
+        Biome::Tundra,
+        Biome::Badlands,
     ] {
         let (x, z) = find_biome(&g, biome)
             .unwrap_or_else(|| panic!("{biome:?} not found within search radius"));
@@ -1161,4 +1165,30 @@ fn rivers_lakes_and_magma_chambers() {
         }
     }
     assert!(chamber > 30, "a magma chamber breathes below ({chamber})");
+}
+
+/// Dev tooling, not a check: prints where to find each biome for a
+/// given seed (screenshot framing). Run with:
+/// cargo test print_biome_atlas -- --ignored --nocapture
+#[test]
+#[ignore]
+fn print_biome_atlas() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    for biome in [
+        Biome::Jungle,
+        Biome::Swamp,
+        Biome::Savanna,
+        Biome::Tundra,
+        Biome::Badlands,
+        Biome::Mountains,
+    ] {
+        if let Some((x, z)) = find_biome(&g, biome) {
+            println!(
+                "{}: ({x}, {z}) est {}",
+                biome.name(),
+                g.surface_estimate(x, z)
+            );
+        }
+    }
 }

@@ -267,6 +267,7 @@ BLOCKS_EXTRA = {
                          speckle=(250, 248, 244), speckle_n=30),
     "magma_vent": dict(base=(70, 50, 46), dark=(40, 26, 24),
                        speckle=(255, 140, 40), speckle_n=26),
+    "mud": dict(base=(96, 76, 58), dark=(62, 48, 36), bands=0.15),
 }
 
 

@@ -1025,3 +1025,10 @@ texture = "crystal_glass.png"
 hardness = 0.5
 opaque = false
 glass = true
+
+[[block]]
+id = "mud"
+name = "Mud"
+texture = "mud.png"
+hardness = 0.7
+tool = "shovel"

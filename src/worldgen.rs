@@ -20,6 +20,10 @@ pub enum Biome {
     Taiga,
     Arctic,
     Mountains,
+    Swamp,
+    Savanna,
+    Tundra,
+    Badlands,
 }
 
 impl Biome {
@@ -33,12 +37,20 @@ impl Biome {
             Biome::Taiga => "Taiga",
             Biome::Arctic => "Arctic",
             Biome::Mountains => "Mountains",
+            Biome::Swamp => "Swamp",
+            Biome::Savanna => "Savanna",
+            Biome::Tundra => "Tundra",
+            Biome::Badlands => "Badlands",
         }
     }
 }
 
 /// (biome, temperature, humidity, continentalness, erosion) centroids.
-const CENTROIDS: [(Biome, f32, f32, f32, f32); 8] = [
+const CENTROIDS: [(Biome, f32, f32, f32, f32); 12] = [
+    (Biome::Swamp, 0.45, 0.75, 0.12, 0.75),
+    (Biome::Savanna, 0.75, -0.25, 0.3, 0.55),
+    (Biome::Tundra, -0.62, -0.35, 0.3, 0.45),
+    (Biome::Badlands, 0.85, -0.55, 0.35, -0.1),
     (Biome::Plains, 0.1, -0.2, 0.3, 0.6),
     (Biome::Forest, 0.1, 0.4, 0.3, 0.2),
     (Biome::Jungle, 0.7, 0.7, 0.3, 0.3),
@@ -195,6 +207,7 @@ pub struct Generator {
     carbonatite: BlockId,
     /// Every interior rock (for cave carving and surface scans).
     rocks: [BlockId; 11],
+    mud: BlockId,
     lava: BlockId,
     obsidian: BlockId,
     quartz_block: BlockId,
@@ -311,6 +324,7 @@ impl Generator {
                 b("base:kimberlite"),
                 b("base:carbonatite"),
             ],
+            mud: b("base:mud"),
             lava: b("base:lava"),
             obsidian: b("base:obsidian"),
             quartz_block: b("base:quartz_block"),
@@ -468,13 +482,25 @@ impl Generator {
 
     /// Terrain offset before hydrology: continents, worn highlands,
     /// and plate relief.
-    fn base_offset(&self, cl: &Climate) -> f32 {
+    /// Hot, dry, rugged inland climate: mesa country.
+    fn is_badlands(cl: &Climate) -> bool {
+        cl.t > 0.7 && cl.h < -0.4 && cl.c > 0.1
+    }
+
+    fn base_offset(&self, wx: i32, wz: i32, cl: &Climate) -> f32 {
         let base = self.offset_base.at(cl.c);
         // Old erosion mountains stay as worn highlands; the young
         // dramatic ranges belong to the plate boundaries now.
         let land = ((cl.c + 0.15) / 0.35).clamp(0.0, 1.0);
         let mtn = self.mountain_amp.at(cl.e) * (0.35 + 0.65 * cl.r) * land * 0.45;
-        base + mtn + self.plate_relief(cl)
+        let mut off = base + mtn + self.plate_relief(cl);
+        if Self::is_badlands(cl) {
+            // Stepped mesas: quantized plateaus whose bare walls show
+            // the sandstone banding.
+            let m = self.detail.get([wx as f64 / 140.0, wz as f64 / 140.0]) as f32;
+            off += ((m * 3.0).floor().clamp(0.0, 2.0)) * 11.0;
+        }
+        off
     }
 
     /// Rivers and lakes for a column: how deep the water has cut the
@@ -513,13 +539,13 @@ impl Generator {
     #[cfg(test)]
     pub fn water_features(&self, wx: i32, wz: i32) -> Option<i32> {
         let cl = self.climate(wx, wz);
-        let pre = self.base_offset(&cl);
+        let pre = self.base_offset(wx, wz, &cl);
         self.hydrology(wx, wz, &cl, pre).1
     }
 
     fn column_params(&self, wx: i32, wz: i32) -> (f32, f32) {
         let cl = self.climate(wx, wz);
-        let pre = self.base_offset(&cl);
+        let pre = self.base_offset(wx, wz, &cl);
         let (carve, _) = self.hydrology(wx, wz, &cl, pre);
         let mut offset = (pre - carve).clamp(6.0, CHUNK_Y as f32 - 22.0);
         // A volcano stamps its cone onto the spline terrain, crater
@@ -667,12 +693,13 @@ impl Generator {
         } else {
             0.0
         };
+        let mesa = if Self::is_badlands(&cl) { 42.0 } else { 0.0 };
         [
             (8.0 + w1 * 3.0) as i32,
             (34.0 + w1 * 7.0 + fold * 0.5) as i32,
             (50.0 + w2 * 5.0 + wet * 5.0 + fold) as i32,
             (68.0 + w1 * 6.0 + fold) as i32,
-            (92.0 + w2 * 9.0 - wet * 6.0 + fold) as i32,
+            (92.0 + w2 * 9.0 - wet * 6.0 + fold + mesa) as i32,
         ]
     }
 
@@ -770,7 +797,7 @@ impl Generator {
                     vol > 0.05 && self.detail.get([wx as f64 / 13.0, wz as f64 / 13.0]) > 0.58;
                 // Rivers and lakes flood their carve as a local sea.
                 let cl = self.climate(wx, wz);
-                let pre = self.base_offset(&cl);
+                let pre = self.base_offset(wx, wz, &cl);
                 let (_, fill) = self.hydrology(wx, wz, &cl, pre);
                 let fill_y = fill.unwrap_or(0).max(SEA_LEVEL);
                 fills[lx as usize][lz as usize] = fill_y;
@@ -879,10 +906,22 @@ impl Generator {
                     (None, None)
                 } else {
                     let beach = top <= SEA_LEVEL + 1;
+                    let patch = self.detail.get([wx as f64 / 9.0, wz as f64 / 9.0]) as f32;
                     match biome {
                         Biome::Desert => (Some(self.sand), Some(self.sand)),
                         Biome::Scrubland if scrub_sandy => (Some(self.sand), Some(self.sand)),
                         Biome::Arctic => (Some(self.snow), Some(self.dirt)),
+                        // Mesa country bares its sandstone bones.
+                        Biome::Badlands => (None, None),
+                        // Frozen barrens: snow, dirt, and gravel patches.
+                        Biome::Tundra if patch > 0.22 => (Some(self.snow), Some(self.dirt)),
+                        Biome::Tundra if patch < -0.3 => (Some(self.gravel), Some(self.gravel)),
+                        Biome::Tundra => (Some(self.dirt), Some(self.dirt)),
+                        // Wetlands: standing pools and mud between grass.
+                        Biome::Swamp if patch > 0.34 && !beach => {
+                            (Some(self.water), Some(self.mud))
+                        }
+                        Biome::Swamp if patch < -0.22 => (Some(self.mud), Some(self.mud)),
                         _ if beach => (Some(self.sand), Some(self.sand)),
                         _ => (Some(self.grass), Some(self.dirt)),
                     }
@@ -1260,20 +1299,42 @@ impl Generator {
                 let wz = bz + lz as i32;
                 let biome = biomes[lx][lz];
                 let density = match biome {
-                    Biome::Jungle => 34,
+                    Biome::Jungle => 22,
                     Biome::Taiga => 70,
                     Biome::Forest => 97,
                     Biome::Scrubland => 240,
+                    Biome::Savanna => 150,
+                    Biome::Swamp => 130,
                     Biome::Plains => 550,
                     Biome::Desert => 190, // cacti
-                    Biome::Arctic | Biome::Mountains => 0,
+                    Biome::Arctic | Biome::Mountains | Biome::Tundra | Biome::Badlands => 0,
                 };
+                // Jungle floor: dense undergrowth independent of trees.
+                if biome == Biome::Jungle {
+                    let ur = hash2(self.seed ^ 0x0f01, wx, wz);
+                    if ur.is_multiple_of(7) {
+                        let h2 = self.height_hint(heights, lx, lz);
+                        if h2 > SEA_LEVEL + 1
+                            && h2 + 2 < CHUNK_Y as i32
+                            && c.get(lx, h2 as usize, lz) == self.grass
+                            && c.get(lx, (h2 + 1) as usize, lz) == AIR
+                        {
+                            let cover = if ur.is_multiple_of(21) {
+                                self.mushroom
+                            } else {
+                                self.jungle_bush
+                            };
+                            c.set(lx, (h2 + 1) as usize, lz, cover);
+                        }
+                    }
+                }
                 // Wild food plants roll independently of trees (~1/70 cols).
                 let food_roll = hash2(self.seed ^ 0x5eed, wx, wz);
                 if food_roll.is_multiple_of(70) && biome != Biome::Desert {
                     let h2 = self.height_hint(heights, lx, lz);
                     let plant = match biome {
-                        Biome::Plains => self.wild_wheat,
+                        Biome::Plains | Biome::Savanna => self.wild_wheat,
+                        Biome::Swamp => self.mushroom,
                         Biome::Forest => {
                             if food_roll.is_multiple_of(2) {
                                 self.wild_carrot
@@ -1330,13 +1391,13 @@ impl Generator {
                 let (wood, leaf) = match biome {
                     Biome::Taiga => (self.spruce_log, self.spruce_leaves),
                     Biome::Jungle => (self.jungle_log, self.jungle_leaves),
-                    Biome::Scrubland => (self.acacia_log, self.acacia_leaves),
+                    Biome::Scrubland | Biome::Savanna => (self.acacia_log, self.acacia_leaves),
                     Biome::Forest if rnd % 10 < 3 => (self.birch_log, self.birch_leaves),
                     _ => (self.log, self.leaves),
                 };
 
                 match biome {
-                    Biome::Scrubland => {
+                    Biome::Scrubland | Biome::Savanna => {
                         c.set(lx, base as usize, lz, wood);
                         for dx in -1i32..=1 {
                             for dz in -1i32..=1 {
@@ -1377,8 +1438,14 @@ impl Generator {
                     }
                     _ => {
                         let jungle = biome == Biome::Jungle;
+                        // Jungle canopy rides high — and one tree in
+                        // seven is an emergent towering over the rest.
                         let trunk_h = if jungle {
-                            6 + (rnd % 3) as i32
+                            if rnd.is_multiple_of(7) {
+                                13 + (rnd % 4) as i32
+                            } else {
+                                8 + (rnd % 4) as i32
+                            }
                         } else {
                             4 + (rnd % 3) as i32
                         };
