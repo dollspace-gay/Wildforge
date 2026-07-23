@@ -12,6 +12,7 @@ mod inventory_ui;
 mod keymap;
 mod menus;
 mod remote;
+mod roster_ui;
 mod session;
 mod status;
 mod streaming;
@@ -154,6 +155,7 @@ struct MultiplayerState {
     pending_join_disclosure: Option<std::net::SocketAddr>,
     chat_open: bool,
     chat_text: String,
+    roster_open: bool,
     move_timer: f32,
     tick_accum: f32,
 }
@@ -328,6 +330,7 @@ impl PresentationState {
 struct Remote {
     client: net::Client,
     my_id: u32,
+    role: identity::Role,
     /// Host block id -> local block id.
     block_map: Vec<crate::registry::BlockId>,
     /// Host item id -> local item id.

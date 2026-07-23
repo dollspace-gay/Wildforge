@@ -66,7 +66,10 @@ unban <player-uuid>
 
 The windowed pause menu exposes the same connected-player identity summary,
 kick, mute, timed/permanent ban, allowlist, and role operations with a
-confirmation click for disruptive actions. Durable changes are appended to
+confirmation click for disruptive actions. Connected moderators and admins
+receive the applicable controls too, but the host independently authorizes
+every request from its durable role store; hiding or forging a client control
+cannot grant authority. Durable changes are appended to
 `saves/<world>/moderation/audit.log`. Bans target the PlayerId and every linked
 principal, never a display name. IP throttles are deliberately only a soft
 handshake-abuse signal.
@@ -90,9 +93,11 @@ handshake-abuse signal.
   record stops live verification; a server may show `VERIFIED/CACHED` only
   within its configured outage grace.
 - A verified server learns the DID and can resolve public account metadata.
-  Peers receive only a verification badge. Social display-name and avatar
-  preferences are separate opt-ins. Avatar download/rendering is intentionally
-  deferred; no remote image is fetched in the render loop.
+  Peers receive a verification badge and, only when separately enabled, the
+  player's current public handle. The DID is never roster data. Social display
+  name, handle sharing, and avatar preferences are separate opt-ins. Avatar
+  download/rendering is intentionally deferred; no remote image is fetched in
+  the render loop. Hold Tab in multiplayer to inspect the complete roster.
 - Back up `identity/player-ed25519.pk8` and, for hosts,
   `identity/server-ed25519.pk8` as secrets. Never publish either file. The
   public fingerprints, PlayerIds, DIDs, and binding records are not secrets.
@@ -126,6 +131,10 @@ or DPoP. The native loopback client profile is used by the binary; the
 production deployment
 payload is `docs/atproto-oauth-client-metadata.json` and must be published at
 its exact HTTPS `client_id` before a hosted-metadata release profile is enabled.
+The production document is served from the `gh-pages` branch's `/docs` folder
+at
+`https://dollspace-gay.github.io/Wildforge/atproto-oauth-client-metadata.json`;
+the JSON identifies that same URL as its `client_id`.
 Linux tests, strict lints, and the `x86_64-pc-windows-gnu` cross-check pass.
 Default tests use local fixtures and mock OAuth/verifier inputs and never
 mutate a public account. Interactive browser handoff plus
@@ -135,11 +144,11 @@ release smoke test because it requires a consenting account and provider.
 Dependency cost is intentionally isolated behind `identity::atproto`; the
 direct production graph adds 278 unique package lines over `origin/main` in
 the recorded Cargo-tree measurement (530 versus 252), but no second game
-runtime or central Wildforge service. The unstripped Linux release binary is
-35,564,408 bytes on Rust 1.96.0. Using the three required Jacquard component
-crates instead of its umbrella crate removed 31 packages from the first
-measurement. Join verification is bounded to eight seconds and successful
-proofs are cached per server/world.
+runtime or central Wildforge service. The 2026-07-23 unstripped Linux release
+binary is 35,589,240 bytes on Rust 1.96.0. Using the three required Jacquard
+component crates instead of its umbrella crate removed 31 packages from the
+first measurement. Join verification is bounded to eight seconds and
+successful proofs are cached per server/world.
 
 ## Release qualification matrix
 
@@ -152,9 +161,9 @@ The default build/test gate is safe to run without public credentials:
 | Server-owned inventory/movement and full roster | Automated loopback tests |
 | OAuth flow and failures | Mock PAR/PKCE/DPoP/nonce, state/issuer/replay/cancel, subject, scope, and redaction tests |
 | Binding mismatch, PDS migration, cache expiry/limit, SSRF policy | Automated pure verifier tests |
-| Linux build/lints | `cargo test --all-targets --no-fail-fast` (193 passed, 1 diagnostic ignored); `cargo clippy --all-targets -- -D warnings` |
+| Linux build/lints | `cargo test --all-targets --no-fail-fast` (204 passed, 1 diagnostic ignored); `cargo clippy --all-targets --all-features -- -D warnings` |
 | Windows dependency/build compatibility | `cargo check --target x86_64-pc-windows-gnu` |
-| Dependency/release size | 530 vs 252 normal package lines; 35,564,408-byte unstripped Linux release binary |
+| Dependency/release size | 530 vs 252 normal package lines; 35,589,240-byte unstripped Linux release binary |
 | Headless hosting | Isolated release-binary smoke created host key/settings and exercised `help`, `players`, and `identity` |
 
 The following checks require a consenting account, graphical browser, or
@@ -163,12 +172,12 @@ production-ready:
 
 | Manual check | Pass condition | Status |
 |---|---|---|
-| Publish OAuth metadata | Exact checked-in JSON is available over HTTPS at its `client_id` with JSON content type | Pending deployment |
+| Publish OAuth metadata | Exact checked-in JSON is available over HTTPS at its `client_id` with JSON content type | Passed 2026-07-23 via repository-owned GitHub Pages |
 | Linux browser link/revoke | Callback completes; exact device record writes, verifies, deletes, and fails live verification after deletion | Pending consenting account |
-| Windows browser link/revoke | Same sequence, including browser handoff and callback firewall behavior | Pending Windows interactive run |
+| Windows browser link/revoke | Same sequence, including browser handoff and callback firewall behavior | Partial: browser link/callback and write succeeded in user testing; exact public type/key/rkey read-back from the current Bluesky PDS passed 2026-07-23; revoke/firewall path not signed off |
 | Independent PDS | Link/write/fetch/revoke succeeds outside the common Bluesky PDS | Pending provider/account |
-| Outage and handle change | Cached badge is visible only within grace; DID maps to the same `PlayerId` after handle/PDS change | Pending live-provider exercise |
-| Local UX | First run, offline solo, LAN local join, moderation, unlink, and lost-device wording are understandable end to end | Pending release-candidate playtest |
+| Outage and handle change | Cached badge is visible only within grace; DID maps to the same `PlayerId` after handle/PDS change | Partial: deterministic cache-expiry, handle-change, PDS-migration, and profile-mapping tests pass; a live-provider mutation/outage exercise remains |
+| Local UX | First run, offline solo, LAN local join, moderation, unlink, and lost-device wording are understandable end to end | Passed 2026-07-23: graphical fresh/linked Accounts and pre-connect policy screens were reviewed; a fresh network namespace with only a down loopback interface saved a local profile and created a solo world; local unlink, LAN, and host-authorized moderation paths pass automated tests |
 
 Do not substitute personal tokens in automated tests or commit captured OAuth
 state to satisfy these rows.

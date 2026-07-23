@@ -70,6 +70,11 @@ struct StoredProfile {
     cursor: Option<StoredStack>,
     first_seen: u64,
     last_seen: u64,
+    /// Time of the write represented by this file. Because the file is
+    /// atomically replaced, a stored value is necessarily the last successful
+    /// profile save.
+    #[serde(default)]
+    last_saved_at: u64,
 }
 
 #[derive(Deserialize)]
@@ -437,6 +442,7 @@ fn legacy_local_to_runtime(
 }
 
 fn runtime_to_stored(player: &PlayerRuntime, reg: &Registry) -> StoredProfile {
+    let saved_at = now();
     let stacks = |slots: &[Option<ItemStack>]| {
         slots
             .iter()
@@ -464,7 +470,8 @@ fn runtime_to_stored(player: &PlayerRuntime, reg: &Registry) -> StoredProfile {
         armor: stacks(&player.armor),
         cursor: stored_stack(0, player.cursor, reg),
         first_seen: player.first_seen,
-        last_seen: now(),
+        last_seen: saved_at,
+        last_saved_at: saved_at,
     }
 }
 
@@ -605,6 +612,16 @@ mod tests {
             let item = reg.item_id("base:torch").unwrap();
             profile.inventory.slots[0] = Some(ItemStack::new(&reg, item, 3));
             store.save(&profile, &reg).unwrap();
+            let stored: StoredProfile = toml::from_str(
+                &std::fs::read_to_string(
+                    root.join("players")
+                        .join(format!("{}.toml", profile.player_id)),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert!(stored.last_saved_at > 0);
+            assert_eq!(stored.last_seen, stored.last_saved_at);
             profile.player_id
         };
         let mut store = ProfileStore::load(root).unwrap();

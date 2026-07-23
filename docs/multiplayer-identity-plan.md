@@ -12,15 +12,23 @@ The central decision is:
 > accept local identities or require a portable, verified ATProto identity.
 > Display names are labels; they are never account keys.
 
-Implementation status: the Pass 0 architecture decision and all Pass 1/2 code
-are in tree. The selected proof is an ATProto repository device-binding record
-in the project-controlled `gay.dollspace.wildforge.device` namespace, verified
-from the DID-authorized PDS with an explicitly documented provider-trust
-boundary. The default suite is offline and deterministic. Browser consent plus
-live write/fetch/revoke checks on common and independent PDS providers remain a
-release qualification gate because they require real consenting accounts; they
-are not silently claimed as automated coverage. Operational details, recovery,
-console commands, cache policy, and that interactive matrix are recorded in
+Implementation status: the Pass 0 architecture decision and all locally
+implementable Pass 1/2 work are in tree. A 2026-07-23 completion pass added the
+hold-Tab roster, verification/handle privacy controls, host-enforced remote
+moderator requests, last-successful-save metadata, and the remaining
+identity/transport/host/roster module seams. The selected proof is an ATProto
+repository device-binding record in the project-controlled
+`gay.dollspace.wildforge.device` namespace, verified from the DID-authorized
+PDS with an explicitly documented provider-trust boundary. The default suite
+is offline and deterministic.
+
+Live provider exercises are qualification work, not code that can be
+truthfully completed by an offline test suite. Browser consent plus live
+write/fetch/revoke checks on common and independent PDS providers remain
+release gates because they require real consenting accounts. Production
+metadata is served from the repository-owned GitHub Pages endpoint recorded in
+the qualification table. Operational details, recovery, commands, cache
+policy, and the interactive matrix are recorded in
 `multiplayer-identity-operations.md`.
 
 This gives public communities persistent moderation identities without making
@@ -470,7 +478,8 @@ future design explicitly addresses consent, appeals, and abuse of shared lists.
 - Linking is explicit and reversible; local play never starts an OAuth flow.
 - Before joining an ATProto-required server, UI explains that the operator can
   resolve the DID to public profile information.
-- Other peers receive a verification badge, not automatically the full DID.
+- Other peers receive a verification badge, never the DID. A public handle is
+  included only when its owner enables the independent sharing preference.
 - Social display name and avatar import are separately opt-in.
 - Profile responses and identity documents are cached with bounded lifetimes;
   handle changes never change the account key.
@@ -494,15 +503,15 @@ enum C2S {
         protocol: u32,
         display_name: String,
         device_public_key: Vec<u8>,
-        atproto: Option<AtprotoClaim>,
         content_hash: u64,
         style: u32,
         client_nonce: [u8; 32],
     },
     Authenticate {
         signature: Vec<u8>,
-        atproto_proof: Option<AtprotoBindingRef>,
+        atproto: Option<AtprotoClaim> // DID, binding rkey, share-handle choice
     },
+    Moderate { target: u32, action: ModerationAction },
     // Existing authenticated gameplay requests follow.
 }
 
@@ -515,9 +524,11 @@ enum S2C {
     },
     Welcome {
         connection_id: u32,
+        your_role: Role,
         roster: Vec<PlayerPresence>,
         // Existing world/bootstrap fields follow.
     },
+    RoleChanged { role: Role },
     Refused(Refusal),
     // Existing state/events follow.
 }
@@ -564,6 +575,13 @@ src/multiplayer/
 
 The exact move sequence follows `modularization-plan.md`; identity work should
 not combine a mechanical file move with protocol redesign in the same review.
+
+The landed tree keeps the historical `identity.rs`, `net.rs`, and `mp.rs`
+module names as small compatibility facades while placing implementations in
+`identity/local.rs`, `identity/atproto.rs`, `net/protocol.rs`,
+`net/handshake.rs`, `net/transport.rs`, `multiplayer/host.rs`,
+`multiplayer/roster.rs`, `multiplayer/profiles.rs`,
+`multiplayer/moderation.rs`, and `multiplayer/settings.rs`.
 
 Dependency direction:
 
@@ -689,15 +707,16 @@ The landed responsibilities map to the passes as follows:
 
 | Pass concern | Implemented boundary/evidence |
 |---|---|
-| Local identity, names, and migration | `identity.rs`, Accounts first-run flow, and identity migration tests |
+| Local identity, names, and migration | `identity.rs`, `identity/local.rs`, Accounts first-run flow, and identity migration tests |
 | Persistent host trust and authenticated handshake | `net/handshake.rs`, pre-auth budgets in `net/protocol.rs`, host-key/transcript/rate-limit tests |
-| Wire DTO ownership | `net/protocol.rs`; transport remains the public `net` facade |
-| Server-owned profile and survival state | `multiplayer/profiles.rs`, authoritative intent handling in `mp.rs`, reconnect/loopback tests |
-| Moderation and server policy | `multiplayer/moderation.rs`, `multiplayer/settings.rs`, windowed controls, dedicated console, persistence tests |
+| Wire DTO ownership | `net/protocol.rs`; `net.rs` is the facade and `net/transport.rs` owns QUIC, framing, and discovery |
+| Server-owned profile and survival state | `multiplayer/profiles.rs`, authoritative intent handling in `multiplayer/host.rs`, reconnect/loopback tests |
+| Moderation and server policy | `multiplayer/moderation.rs`, `multiplayer/settings.rs`, host-enforced remote role requests, windowed controls, dedicated console, persistence/integration tests |
 | Optional ATProto link and revocation | `identity/atproto.rs`, Jacquard OAuth, pre-authorization DID pinning, immediate public write read-back, confirmed-delete revocation, checked-in Lexicon/metadata payloads, and Accounts progress/revoke/unlink UI |
 | Public proof and cache | DID/PDS resolver, exact device-record verifier, bidirectional current-handle resolution, bounded per-world cache with zero-grace support, migration/revocation/outage tests |
-| Privacy | DID omitted from `Hello` and all local-policy joins; explicit pre-join disclosure confirmation; peers receive only verification state |
-| Platform/build gates | 193 passing all-target tests (one diagnostic ignored), strict Clippy, native release build, dependency-graph measurement, and `x86_64-pc-windows-gnu` cross-check |
+| Privacy | DID omitted from `Hello` and all local-policy joins; explicit pre-join disclosure confirmation; peers receive a badge plus an optional, separately enabled handle |
+| Roster and profile metadata | Hold Tab shows every current player and visible verification state; profiles atomically record `last_saved_at` |
+| Platform/build gates | 204 passing all-target tests (one diagnostic ignored), strict Clippy, native release build, dependency-graph measurement, and `x86_64-pc-windows-gnu` cross-check |
 
 The implementation deliberately stops short of avatar download/rendering. The
 preference is stored separately so adding the bounded image pipeline later does
@@ -807,17 +826,21 @@ not change identity or admission semantics.
 
 ## Qualification record
 
-The code-side qualification was repeated on 2026-07-22 with Rust/Cargo 1.96.0:
+The code-side qualification was repeated on 2026-07-23 with Rust/Cargo 1.96.0:
 
 | Gate | Result |
 |---|---|
-| `cargo test --all-targets --no-fail-fast` | 193 passed, 0 failed, 1 intentionally ignored diagnostic |
-| `cargo clippy --all-targets -- -D warnings` | Passed |
+| `cargo test --all-targets --no-fail-fast` | 204 passed, 0 failed, 1 intentionally ignored diagnostic |
+| `cargo clippy --all-targets --all-features -- -D warnings` | Passed |
 | `cargo fmt --all -- --check` and `git diff --check` | Passed |
 | `cargo check --target x86_64-pc-windows-gnu` | Passed |
-| `cargo build --release` | Passed; unstripped Linux binary 35,564,408 bytes |
+| `cargo build --release` | Passed; unstripped Linux binary 35,589,240 bytes |
 | Normal dependency graph | 530 unique package lines versus 252 on `origin/main` (278 added) |
 | Dedicated-host smoke | Fresh isolated world started, wrote a persistent host key/settings, and answered `help`, `players`, and `identity` console commands |
+| Production OAuth metadata | Repository-owned GitHub Pages deployment; exact body and JSON content type verified at the document's `client_id` |
+| Offline local-only smoke | In a fresh network namespace with only a down loopback interface, the graphical first-run flow saved an editable local name and created a survival world |
+| Identity UI smoke | Fresh and linked Accounts screens, recovery/privacy wording, and the Join screen's pre-connect `ATPROTO REQUIRED` policy label were inspected graphically |
+| Common-PDS public proof | The existing browser-linked record was resolved from its DID's current Bluesky PDS and its exact record type, device key, and key-derived rkey were read back without credentials or mutation |
 
 The dependency measurement prompted replacing the Jacquard umbrella crate with
 only `jacquard-common`, `jacquard-identity`, and `jacquard-oauth`. OAuth state

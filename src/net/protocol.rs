@@ -5,10 +5,10 @@ use std::time::Duration;
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
-use crate::identity::{AdmissionPolicy, IdentityPolicy};
+use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 13;
+pub const PROTOCOL: u32 = 14;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -67,6 +67,7 @@ pub struct BoltSnap {
 pub struct AtprotoClaim {
     pub did: String,
     pub binding: String,
+    pub share_handle: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
@@ -82,6 +83,17 @@ pub struct PlayerPresence {
     pub display_name: String,
     pub verified: bool,
     pub cached_verification: bool,
+    /// Public ATProto handle, disclosed only when that player opted in.
+    pub handle: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModerationAction {
+    Kick,
+    Mute { seconds: u64 },
+    Ban { seconds: Option<u64> },
+    Allow,
+    CycleRole,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
@@ -230,6 +242,10 @@ pub enum C2S {
     SleepRequest,
     SleepCancel,
     Chat(String),
+    Moderate {
+        target: u32,
+        action: ModerationAction,
+    },
     Bye,
 }
 
@@ -251,6 +267,7 @@ pub enum S2C {
         /// Host item-id -> name.
         items: Vec<String>,
         your_id: u32,
+        your_role: Role,
         roster: Vec<PlayerPresence>,
         spawn: Vec3,
         world_name: String,
@@ -323,6 +340,9 @@ pub enum S2C {
     Left {
         id: u32,
     },
+    RoleChanged {
+        role: Role,
+    },
 }
 
 pub fn encode<T: Serialize>(message: &T) -> Vec<u8> {
@@ -382,6 +402,7 @@ mod tests {
             atproto: Some(AtprotoClaim {
                 did: format!("did:web:{}", "a".repeat(500)),
                 binding: format!("device-{}", "b".repeat(64)),
+                share_handle: true,
             }),
         });
         assert!(largest_stock_auth.len() < PREAUTH_FRAME_MAX);

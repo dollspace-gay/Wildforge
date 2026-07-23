@@ -83,6 +83,11 @@ impl Game {
                 self.multiplayer.chat_open = true;
                 self.multiplayer.chat_text.clear();
             }
+            KeyCode::Tab => {
+                self.multiplayer.roster_open = pressed
+                    && self.ui_state.screen == Screen::Playing
+                    && (self.multiplayer.host.is_some() || self.multiplayer.remote.is_some());
+            }
             KeyCode::F5 if pressed => {
                 self.reload_mods(true);
             }

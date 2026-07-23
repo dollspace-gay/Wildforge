@@ -90,6 +90,10 @@ pub struct AtprotoAccount {
     pub use_social_display_name: bool,
     #[serde(default)]
     pub use_social_avatar: bool,
+    /// Explicit opt-in to disclose the public ATProto handle to other players.
+    /// Verification itself only exposes a badge by default.
+    #[serde(default)]
+    pub share_social_handle: bool,
     pub profile_display_name: Option<String>,
     pub avatar_url: Option<String>,
 }
@@ -132,6 +136,7 @@ impl AtprotoAccount {
         AtprotoClaim {
             did: self.did.to_string(),
             binding: self.binding.clone(),
+            share_handle: self.share_social_handle,
         }
     }
 
@@ -264,6 +269,7 @@ pub fn link_account(root: &Path, input: &str, public_key: [u8; 32]) -> io::Resul
             linked_at: now(),
             use_social_display_name: false,
             use_social_avatar: false,
+            share_social_handle: false,
             profile_display_name: profile
                 .as_ref()
                 .and_then(|value| value.display_name.clone()),
@@ -1038,6 +1044,10 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(
+            hosted.get("client_id").and_then(serde_json::Value::as_str),
+            Some("https://dollspace-gay.github.io/Wildforge/atproto-oauth-client-metadata.json")
+        );
+        assert_eq!(
             hosted.get("scope").and_then(serde_json::Value::as_str),
             Some("atproto repo:gay.dollspace.wildforge.device")
         );
@@ -1063,6 +1073,7 @@ mod tests {
             linked_at: 7,
             use_social_display_name: false,
             use_social_avatar: false,
+            share_social_handle: false,
             profile_display_name: Some("Moss".into()),
             avatar_url: None,
         };
@@ -1072,10 +1083,12 @@ mod tests {
         assert!(!text.contains("access_token"));
         assert!(!text.contains("refresh_token"));
         assert!(!text.contains("dpop"));
-        assert_eq!(
-            AtprotoAccount::load(&root).unwrap().unwrap().did,
-            account.did
-        );
+        let loaded = AtprotoAccount::load(&root).unwrap().unwrap();
+        assert_eq!(loaded.did, account.did);
+        assert!(!loaded.claim().share_handle);
+        let mut shared = loaded;
+        shared.share_social_handle = true;
+        assert!(shared.claim().share_handle);
 
         std::fs::write(&path, text.replace(&"ab".repeat(32), "not-a-public-key")).unwrap();
         assert_eq!(
@@ -1091,6 +1104,32 @@ mod tests {
                 .kind(),
             io::ErrorKind::InvalidData
         );
+    }
+
+    #[test]
+    fn local_unlink_is_idempotent_and_removes_only_local_metadata() {
+        let root =
+            std::env::temp_dir().join(format!("wildforge-atproto-unlink-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let account = AtprotoAccount {
+            did: AtprotoDid::parse("did:plc:unlinkaccount").unwrap(),
+            handle: Some("unlink.example".into()),
+            binding: "device-unlink".into(),
+            device_public_key: "cd".repeat(32),
+            linked_at: 8,
+            use_social_display_name: true,
+            use_social_avatar: true,
+            share_social_handle: true,
+            profile_display_name: Some("Unlink".into()),
+            avatar_url: Some("https://cdn.example/avatar.png".into()),
+        };
+        account.save(&root).unwrap();
+        assert!(AtprotoAccount::load(&root).unwrap().is_some());
+
+        AtprotoAccount::unlink_local(&root).unwrap();
+        assert!(AtprotoAccount::load(&root).unwrap().is_none());
+        AtprotoAccount::unlink_local(&root).unwrap();
     }
 }
 

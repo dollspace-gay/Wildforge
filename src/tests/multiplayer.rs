@@ -38,6 +38,10 @@ fn net_protocol_round_trips() {
         },
         C2S::CloseContainer,
         C2S::Chat("hello wild".into()),
+        C2S::Moderate {
+            target: 9,
+            action: crate::net::ModerationAction::Mute { seconds: 600 },
+        },
         C2S::SleepRequest,
     ];
     for m in &c2s {
@@ -98,6 +102,147 @@ fn net_protocol_round_trips() {
         let back: S2C = decode(&encode(m)).expect("s2c decodes");
         assert_eq!(format!("{m:?}"), format!("{back:?}"));
     }
+}
+
+#[test]
+fn remote_roles_are_authorized_by_the_host_not_the_client_ui() {
+    use crate::identity::Role;
+    use crate::net::{C2S, ModerationAction, S2C};
+
+    let reg = base_reg();
+    let world = test_world_with("mp-remote-roles", reg);
+    let mut sim = crate::server::Server::new(world, 0.3, 5);
+    let mut sess = crate::mp::HostSession::start_on("remote-roles".into(), 0).unwrap();
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", sess.net.port).parse().unwrap();
+    let actor_identity =
+        crate::identity::LocalIdentity::load_or_create(&tmp_dir("remote-role-actor")).unwrap();
+    let target_identity =
+        crate::identity::LocalIdentity::load_or_create(&tmp_dir("remote-role-target")).unwrap();
+    let mut actor = crate::net::Client::connect(
+        addr,
+        "Actor".into(),
+        sess.content_hash,
+        0,
+        &actor_identity,
+        None,
+    )
+    .unwrap();
+    let mut target = crate::net::Client::connect(
+        addr,
+        "Target".into(),
+        sess.content_hash,
+        0,
+        &target_identity,
+        None,
+    )
+    .unwrap();
+
+    for _ in 0..200 {
+        sess.pump(&mut sim, None, 0.05);
+        let _ = actor.poll();
+        if sess.guests.len() == 2 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(sess.guests.len(), 2);
+    let actor_id = sess
+        .guests
+        .iter()
+        .find_map(|(id, guest)| (guest.name == "ACTOR").then_some(*id))
+        .unwrap();
+    let target_id = sess
+        .guests
+        .iter()
+        .find_map(|(id, guest)| (guest.name == "TARGET").then_some(*id))
+        .unwrap();
+
+    // A forged privileged packet from an ordinary player changes nothing.
+    actor.send(&C2S::Moderate {
+        target: target_id,
+        action: ModerationAction::Kick,
+    });
+    for _ in 0..20 {
+        sess.pump(&mut sim, None, 0.05);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert!(sess.guests.contains_key(&target_id));
+    assert!(actor.poll().iter().any(|message| {
+        matches!(message, S2C::Toast(text) if text.contains("does not permit"))
+    }));
+
+    // A moderator still cannot grant roles.
+    assert!(
+        sess.set_guest_role(actor_id, Role::Moderator, "test owner")
+            .unwrap()
+    );
+    actor.send(&C2S::Moderate {
+        target: target_id,
+        action: ModerationAction::CycleRole,
+    });
+    for _ in 0..20 {
+        sess.pump(&mut sim, None, 0.05);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(sess.guest_role(target_id), Some(Role::Player));
+
+    // An admin request is accepted, persisted, and reflected to the target.
+    assert!(
+        sess.set_guest_role(actor_id, Role::Admin, "test owner")
+            .unwrap()
+    );
+    actor.send(&C2S::Moderate {
+        target: target_id,
+        action: ModerationAction::CycleRole,
+    });
+    for _ in 0..20 {
+        sess.pump(&mut sim, None, 0.05);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(sess.guest_role(target_id), Some(Role::Moderator));
+
+    // The same authorized request path applies a durable mute, and the host
+    // rejects the target's next chat packet instead of broadcasting it.
+    let _ = actor.poll();
+    let _ = target.poll();
+    actor.send(&C2S::Moderate {
+        target: target_id,
+        action: ModerationAction::Mute { seconds: 600 },
+    });
+    for _ in 0..20 {
+        sess.pump(&mut sim, None, 0.05);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert!(actor.poll().iter().any(|message| {
+        matches!(message, S2C::Toast(text) if text.contains("muted for 600 seconds"))
+    }));
+    target.send(&C2S::Chat("this must not be broadcast".into()));
+    for _ in 0..20 {
+        sess.pump(&mut sim, None, 0.05);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert!(
+        target
+            .poll()
+            .iter()
+            .any(|message| { matches!(message, S2C::Toast(text) if text.contains("muted")) })
+    );
+    assert!(!actor.poll().iter().any(|message| {
+        matches!(message, S2C::Chat { msg, .. } if msg == "this must not be broadcast")
+    }));
+
+    actor.send(&C2S::Moderate {
+        target: target_id,
+        action: ModerationAction::Kick,
+    });
+    for _ in 0..20 {
+        sess.pump(&mut sim, None, 0.05);
+        if !sess.guests.contains_key(&target_id) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert!(!sess.guests.contains_key(&target_id));
 }
 
 #[test]
