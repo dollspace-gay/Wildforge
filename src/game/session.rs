@@ -216,6 +216,19 @@ impl Game {
         if self.auto_shot.is_some() {
             self.server.freeze_clock = true;
         }
+        // Dev: WILDFORGE_HELD=<item> puts an item in the selected hotbar slot,
+        // so a headless run can hold a torch — the held-light path is otherwise
+        // only reachable by playing.
+        if let Ok(name) = std::env::var("WILDFORGE_HELD") {
+            let reg = self.content.reg.clone();
+            match reg.item_id(&name).or_else(|| reg.item_id(&format!("base:{name}"))) {
+                Some(item) => {
+                    self.inventory.slots[self.input.hotbar_sel] =
+                        Some(ItemStack::new(&reg, item, 1));
+                }
+                None => eprintln!("WILDFORGE_HELD: no item named {name:?}"),
+            }
+        }
         // Dev: force camera look ("yaw,pitch" in radians) for framed captures.
         self.apply_look_env();
         // Dev: WILDFORGE_SCREEN=inventory opens the pack in-world for

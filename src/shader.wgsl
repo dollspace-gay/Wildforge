@@ -218,7 +218,16 @@ fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f3
             let atten = a * a;
             var shadow_pt = 1.0;
             var tint = vec3<f32>(1.0);
-            if (u.pt_misc[i].z > 0.5) {
+            // A light sitting on the camera — your own held torch — skips its
+            // shadow test. It can't cast a shadow onto any surface you can see:
+            // anything occluded from a light at the eye is occluded from the eye
+            // too. Its shadow map only ever produced self-shadow acne, a false
+            // dark bar that grazed across the floor and slid with the player
+            // (the held light hovers ~1.5 above the floor, so the floor is
+            // edge-on to it and a distance-only cube-map compare self-occludes).
+            // Remote players' torches are at their position, not yours, so they
+            // still cast real shadows.
+            if (u.pt_misc[i].z > 0.5 && distance(lp, u.cam.xyz) > 0.5) {
                 // Cube distance map, hard or soft (per-light radius).
                 shadow_pt = point_shadow(i, world, to_light, d, range);
                 // Stained transmission: panes between light and fragment
