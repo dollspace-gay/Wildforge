@@ -125,6 +125,24 @@ pub struct Generator {
     snow: BlockId,
     ice: BlockId,
     cactus: BlockId,
+    // Strata (minerals & geology): the rock families.
+    sandstone: BlockId,
+    limestone: BlockId,
+    shale: BlockId,
+    granite: BlockId,
+    marble: BlockId,
+    slate: BlockId,
+    quartzite: BlockId,
+    basalt: BlockId,
+    // Stages 3-4 (volcanoes, pipes) consume these.
+    #[allow(dead_code)]
+    kimberlite: BlockId,
+    #[allow(dead_code)]
+    carbonatite: BlockId,
+    /// Every interior rock (for cave carving and surface scans).
+    rocks: [BlockId; 11],
+    bandwarp: Perlin,
+    granite3d: Perlin,
 }
 
 fn hash2(seed: u32, x: i32, z: i32) -> u32 {
@@ -208,7 +226,38 @@ impl Generator {
             snow: b("base:snow"),
             ice: b("base:ice"),
             cactus: b("base:cactus"),
+            sandstone: b("base:sandstone"),
+            limestone: b("base:limestone"),
+            shale: b("base:shale"),
+            granite: b("base:granite"),
+            marble: b("base:marble"),
+            slate: b("base:slate"),
+            quartzite: b("base:quartzite"),
+            basalt: b("base:basalt"),
+            kimberlite: b("base:kimberlite"),
+            carbonatite: b("base:carbonatite"),
+            rocks: [
+                b("base:stone"),
+                b("base:sandstone"),
+                b("base:limestone"),
+                b("base:shale"),
+                b("base:granite"),
+                b("base:marble"),
+                b("base:slate"),
+                b("base:quartzite"),
+                b("base:basalt"),
+                b("base:kimberlite"),
+                b("base:carbonatite"),
+            ],
+            bandwarp: p(40),
+            granite3d: p(42),
         }
+    }
+
+    /// Is this block one of the interior rock family? (What caves may
+    /// carve and surface scans read through.)
+    fn is_rock(&self, b: BlockId) -> bool {
+        b != AIR && self.rocks.contains(&b)
     }
 
     pub fn climate(&self, wx: i32, wz: i32) -> Climate {
@@ -282,12 +331,16 @@ impl Generator {
 
     /// Sample density on a 4x8x4 lattice covering the chunk plus a 4-block
     /// apron, so border columns interpolate identically to their neighbors.
-    fn sample_lattice(&self, pos: ChunkPos) -> Vec<f32> {
+    /// The second channel is the granite intrusion margin: distance past
+    /// the (depth-loosening) pluton threshold, baked in so interpolation
+    /// carries the widening-with-depth shape for free.
+    fn sample_lattice(&self, pos: ChunkPos) -> (Vec<f32>, Vec<f32>) {
         const NX: usize = 7; // x/z: -4, 0, 4, 8, 12, 16, 20
         const NY: usize = CHUNK_Y / 8 + 1;
         let bx = pos.x * CHUNK_X as i32 - 4;
         let bz = pos.z * CHUNK_Z as i32 - 4;
         let mut lat = vec![0f32; NX * NX * NY];
+        let mut lat_g = vec![0f32; NX * NX * NY];
         for ix in 0..NX {
             for iz in 0..NX {
                 let wx = bx + ix as i32 * 4;
@@ -295,12 +348,73 @@ impl Generator {
                 let (offset, factor) = self.column_params(wx, wz);
                 for iy in 0..NY {
                     let y = (iy * 8) as f64;
-                    lat[(ix * NX + iz) * NY + iy] =
-                        self.density_at(wx as f64, y, wz as f64, offset, factor);
+                    let i = (ix * NX + iz) * NY + iy;
+                    lat[i] = self.density_at(wx as f64, y, wz as f64, offset, factor);
+                    let g = self
+                        .granite3d
+                        .get([wx as f64 / 230.0, y / 150.0, wz as f64 / 230.0])
+                        as f32;
+                    // Plutons widen downward: the threshold tightens
+                    // with altitude, so intrusions taper as they rise.
+                    let thr = 0.40 + y as f32 * 0.0012;
+                    lat_g[i] = g - thr;
                 }
             }
         }
-        lat
+        (lat, lat_g)
+    }
+
+    /// Per-column stratigraphy: the top of each layer, gently warped
+    /// so bedding drifts instead of ruling straight lines. Returns
+    /// (basalt_top, basement_top, shale_top, limestone_top,
+    /// sandstone_top); above the last it's basement again — mountain
+    /// cores read as uplifted stone.
+    fn strata_bands(&self, wx: i32, wz: i32) -> [i32; 5] {
+        let x = wx as f64;
+        let z = wz as f64;
+        let w1 = self.bandwarp.get([x / 260.0, z / 260.0]) as f32;
+        let w2 = self.bandwarp.get([x / 170.0 + 7.3, z / 170.0 - 2.1]) as f32;
+        let wet = self.climate(wx, wz).h;
+        [
+            (8.0 + w1 * 3.0) as i32,
+            (34.0 + w1 * 7.0) as i32,
+            (50.0 + w2 * 5.0 + wet * 5.0) as i32,
+            (68.0 + w1 * 6.0) as i32,
+            (92.0 + w2 * 9.0 - wet * 6.0) as i32,
+        ]
+    }
+
+    /// The rock for a solid cell: granite intrusions override the
+    /// stack, their contact halo cooks the sediment it touches, and
+    /// the bands decide the rest.
+    fn rock_at(&self, y: i32, bands: &[i32; 5], gm: f32) -> BlockId {
+        if gm > 0.0 {
+            return self.granite;
+        }
+        let sediment = if y < bands[0] {
+            return self.basalt;
+        } else if y < bands[1] {
+            return self.stone;
+        } else if y < bands[2] {
+            self.shale
+        } else if y < bands[3] {
+            self.limestone
+        } else if y < bands[4] {
+            self.sandstone
+        } else {
+            return self.stone;
+        };
+        // Contact metamorphism: close enough to a pluton to bake.
+        if gm > -0.08 {
+            if sediment == self.shale {
+                return self.slate;
+            }
+            if sediment == self.limestone {
+                return self.marble;
+            }
+            return self.quartzite;
+        }
+        sediment
     }
 
     /// Trilinear interpolation of the lattice at block coords relative to the
@@ -331,7 +445,7 @@ impl Generator {
         let mut c = Chunk::new();
         let bx = pos.x * CHUNK_X as i32;
         let bz = pos.z * CHUNK_Z as i32;
-        let lat = self.sample_lattice(pos);
+        let (lat, lat_g) = self.sample_lattice(pos);
 
         // Stage 1: shape. Track pre-carve solid tops for the 18x18 ring.
         let mut shape_top = [[0i32; RING]; RING];
@@ -349,10 +463,11 @@ impl Generator {
                 if !(0..CHUNK_X as i32).contains(&lx) || !(0..CHUNK_Z as i32).contains(&lz) {
                     continue;
                 }
+                let bands = self.strata_bands(bx + lx, bz + lz);
                 for y in 1..CHUNK_Y as i32 {
                     let solid = Self::lat_density(&lat, lx, y, lz) > 0.0;
                     let b = if solid {
-                        self.stone
+                        self.rock_at(y, &bands, Self::lat_density(&lat_g, lx, y, lz))
                     } else if y <= SEA_LEVEL {
                         self.water
                     } else {
@@ -370,7 +485,7 @@ impl Generator {
                 let wz = (bz + lz) as f64;
                 let top = shape_top[(lx + 1) as usize][(lz + 1) as usize];
                 for y in 5..top.min(CHUNK_Y as i32 - 1) {
-                    if c.get(lx as usize, y as usize, lz as usize) != self.stone {
+                    if !self.is_rock(c.get(lx as usize, y as usize, lz as usize)) {
                         continue;
                     }
                     let depth = (top - y).max(0) as f32;
@@ -406,7 +521,7 @@ impl Generator {
 
                 // Post-carve top solid.
                 let mut top = shape_top[lx + 1][lz + 1];
-                while top > 0 && c.get(lx, top as usize, lz) != self.stone {
+                while top > 0 && !self.is_rock(c.get(lx, top as usize, lz)) {
                     top -= 1;
                 }
                 heights[lx][lz] = top;
@@ -427,36 +542,42 @@ impl Generator {
                         && self.detail.get([wx as f64 * 0.11, wz as f64 * 0.11]) > -0.2);
 
                 let scrub_sandy = self.detail.get([wx as f64 * 0.03, wz as f64 * 0.03]) > 0.15;
-                let (top_b, under_b) = if underwater {
+                // None = leave the natural rock exposed (bare mountains,
+                // steep faces — the strata read in the cliffs).
+                let (top_b, under_b): (Option<BlockId>, Option<BlockId>) = if underwater {
                     if top < SEA_LEVEL - 14 {
-                        (self.gravel, self.gravel)
+                        (Some(self.gravel), Some(self.gravel))
                     } else {
-                        (self.sand, self.sand)
+                        (Some(self.sand), Some(self.sand))
                     }
                 } else if snowcap {
-                    (self.snow, self.stone)
+                    (Some(self.snow), None)
                 } else if biome == Biome::Mountains || steep {
-                    (self.stone, self.stone)
+                    (None, None)
                 } else {
                     let beach = top <= SEA_LEVEL + 1;
                     match biome {
-                        Biome::Desert => (self.sand, self.sand),
-                        Biome::Scrubland if scrub_sandy => (self.sand, self.sand),
-                        Biome::Arctic => (self.snow, self.dirt),
-                        _ if beach => (self.sand, self.sand),
-                        _ => (self.grass, self.dirt),
+                        Biome::Desert => (Some(self.sand), Some(self.sand)),
+                        Biome::Scrubland if scrub_sandy => (Some(self.sand), Some(self.sand)),
+                        Biome::Arctic => (Some(self.snow), Some(self.dirt)),
+                        _ if beach => (Some(self.sand), Some(self.sand)),
+                        _ => (Some(self.grass), Some(self.dirt)),
                     }
                 };
 
                 // Apply to the consecutive solid run from the top.
-                if top > 0 && top_b != self.stone {
-                    c.set(lx, top as usize, lz, top_b);
-                    for d in 1..=3i32 {
-                        let y = top - d;
-                        if y <= 0 || c.get(lx, y as usize, lz) != self.stone {
-                            break;
+                if top > 0
+                    && let Some(tb) = top_b
+                {
+                    c.set(lx, top as usize, lz, tb);
+                    if let Some(ub) = under_b {
+                        for d in 1..=3i32 {
+                            let y = top - d;
+                            if y <= 0 || !self.is_rock(c.get(lx, y as usize, lz)) {
+                                break;
+                            }
+                            c.set(lx, y as usize, lz, ub);
                         }
-                        c.set(lx, y as usize, lz, under_b);
                     }
                 }
 
@@ -507,13 +628,31 @@ impl Generator {
                     {
                         c.set(x as usize, y as usize, z as usize, ore.block);
                     }
-                    match next() % 6 {
-                        0 => x += 1,
-                        1 => x -= 1,
-                        2 => y += 1,
-                        3 => y -= 1,
-                        4 => z += 1,
-                        _ => z -= 1,
+                    match ore.shape {
+                        // Round pockets: drift any direction.
+                        crate::registry::VeinShape::Walk => match next() % 6 {
+                            0 => x += 1,
+                            1 => x -= 1,
+                            2 => y += 1,
+                            3 => y -= 1,
+                            4 => z += 1,
+                            _ => z -= 1,
+                        },
+                        // Flat lenses: spread wide, climb grudgingly.
+                        crate::registry::VeinShape::Seam => match next() % 9 {
+                            0 | 1 => x += 1,
+                            2 | 3 => x -= 1,
+                            4 | 5 => z += 1,
+                            6 | 7 => z -= 1,
+                            _ => y += if next() % 2 == 0 { 1 } else { -1 },
+                        },
+                        // Near-vertical streaks: climb hard, wander little.
+                        crate::registry::VeinShape::Streak => match next() % 6 {
+                            0..=2 => y += 1,
+                            3 => y -= 1,
+                            4 => x += if next() % 2 == 0 { 1 } else { -1 },
+                            _ => z += if next() % 2 == 0 { 1 } else { -1 },
+                        },
                     }
                 }
             }

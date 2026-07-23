@@ -616,3 +616,41 @@ glass = "base:red_glass"
 [[kiln]]
 powder = "base:manganese_powder"
 glass = "base:violet_glass"
+
+# ---- minerals & geology: dressed stone ----
+
+[[recipe]]
+pattern = ["rr", "rr"]
+keys = { r = "base:sandstone" }
+output = "base:sandstone_bricks"
+count = 4
+
+[[recipe]]
+pattern = ["rr", "rr"]
+keys = { r = "base:limestone" }
+output = "base:limestone_bricks"
+count = 4
+
+[[recipe]]
+pattern = ["rr", "rr"]
+keys = { r = "base:granite" }
+output = "base:granite_bricks"
+count = 4
+
+[[recipe]]
+pattern = ["rr", "rr"]
+keys = { r = "base:marble" }
+output = "base:marble_bricks"
+count = 4
+
+[[recipe]]
+pattern = ["rr", "rr"]
+keys = { r = "base:slate" }
+output = "base:slate_bricks"
+count = 4
+
+[[recipe]]
+pattern = ["rr", "rr"]
+keys = { r = "base:basalt" }
+output = "base:basalt_bricks"
+count = 4

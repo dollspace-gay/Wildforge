@@ -682,3 +682,84 @@ fn ruins_generate_deterministically() {
         "structure placement is deterministic"
     );
 }
+
+#[test]
+fn strata_layer_the_world_sanely() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("strata"), reg.clone());
+    for x in -3..=3 {
+        for z in -3..=3 {
+            w.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    let b = |n: &str| reg.block_id(n).unwrap();
+    let (sandstone, limestone, shale) = (b("base:sandstone"), b("base:limestone"), b("base:shale"));
+    let (granite, marble, basalt) = (b("base:granite"), b("base:marble"), b("base:basalt"));
+
+    let mut count = std::collections::HashMap::new();
+    let mut y_sum = std::collections::HashMap::new();
+    let mut marble_cells = Vec::new();
+    for x in -48..48 {
+        for z in -48..48 {
+            for y in 1..140 {
+                let blk = w.get_block(x, y, z);
+                *count.entry(blk).or_insert(0u32) += 1;
+                *y_sum.entry(blk).or_insert(0i64) += y as i64;
+                if blk == marble && marble_cells.len() < 400 {
+                    marble_cells.push((x, y, z));
+                }
+            }
+        }
+    }
+    let n = |blk| count.get(&blk).copied().unwrap_or(0);
+    for (name, blk) in [
+        ("sandstone", sandstone),
+        ("limestone", limestone),
+        ("shale", shale),
+        ("granite", granite),
+        ("basalt", basalt),
+    ] {
+        assert!(n(blk) > 500, "{name} present in the sample ({})", n(blk));
+    }
+    // Basalt floods only the deeps.
+    let mean = |blk| y_sum.get(&blk).copied().unwrap_or(0) as f64 / n(blk).max(1) as f64;
+    assert!(
+        mean(basalt) < 14.0,
+        "basalt is a deep layer ({})",
+        mean(basalt)
+    );
+    // The sedimentary stack is ordered: shale under limestone under
+    // sandstone.
+    assert!(
+        mean(shale) < mean(limestone) && mean(limestone) < mean(sandstone),
+        "bedding order holds: {:.1} < {:.1} < {:.1}",
+        mean(shale),
+        mean(limestone),
+        mean(sandstone)
+    );
+    // Marble is contact rock: granite bakes it, so granite is near.
+    assert!(!marble_cells.is_empty(), "contact marble exists");
+    let mut hits = 0;
+    let sample: Vec<_> = marble_cells.iter().step_by(7).take(30).collect();
+    for &&(mx, my, mz) in &sample {
+        let mut near = false;
+        'scan: for dx in -16i32..=16 {
+            for dy in -16i32..=16 {
+                for dz in -16i32..=16 {
+                    if w.get_block(mx + dx, my + dy, mz + dz) == granite {
+                        near = true;
+                        break 'scan;
+                    }
+                }
+            }
+        }
+        if near {
+            hits += 1;
+        }
+    }
+    assert!(
+        hits * 10 >= sample.len() * 8,
+        "marble hugs granite ({hits}/{} within 16 blocks)",
+        sample.len()
+    );
+}

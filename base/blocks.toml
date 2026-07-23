@@ -703,3 +703,125 @@ texture = "@violet_glass"
 hardness = 0.4
 opaque = false
 glass = true
+
+# ---- minerals & geology: the rock families ----
+
+[[block]]
+id = "sandstone"
+name = "Sandstone"
+texture = "sandstone.png"
+hardness = 1.6
+tool = "pickaxe"
+
+[[block]]
+id = "limestone"
+name = "Limestone"
+texture = "limestone.png"
+hardness = 1.7
+tool = "pickaxe"
+
+[[block]]
+id = "shale"
+name = "Shale"
+texture = "shale.png"
+hardness = 1.4
+tool = "pickaxe"
+
+[[block]]
+id = "granite"
+name = "Granite"
+texture = "granite.png"
+hardness = 2.4
+tool = "pickaxe"
+
+[[block]]
+id = "marble"
+name = "Marble"
+texture = "marble.png"
+hardness = 2.0
+tool = "pickaxe"
+
+[[block]]
+id = "slate"
+name = "Slate"
+texture = "slate.png"
+hardness = 1.8
+tool = "pickaxe"
+
+[[block]]
+id = "quartzite"
+name = "Quartzite"
+texture = "quartzite.png"
+hardness = 2.6
+tool = "pickaxe"
+
+[[block]]
+id = "basalt"
+name = "Basalt"
+texture = "basalt.png"
+hardness = 2.6
+tool = "pickaxe"
+
+[[block]]
+id = "obsidian"
+name = "Obsidian"
+texture = "obsidian.png"
+hardness = 10.0
+tool = "pickaxe"
+min_tier = 4
+
+[[block]]
+id = "kimberlite"
+name = "Kimberlite"
+texture = "kimberlite.png"
+hardness = 2.8
+tool = "pickaxe"
+
+[[block]]
+id = "carbonatite"
+name = "Carbonatite"
+texture = "carbonatite.png"
+hardness = 2.0
+tool = "pickaxe"
+
+[[block]]
+id = "sandstone_bricks"
+name = "Sandstone Bricks"
+texture = "sandstone_bricks.png"
+hardness = 1.8
+tool = "pickaxe"
+
+[[block]]
+id = "limestone_bricks"
+name = "Limestone Bricks"
+texture = "limestone_bricks.png"
+hardness = 1.9
+tool = "pickaxe"
+
+[[block]]
+id = "granite_bricks"
+name = "Granite Bricks"
+texture = "granite_bricks.png"
+hardness = 2.6
+tool = "pickaxe"
+
+[[block]]
+id = "marble_bricks"
+name = "Marble Bricks"
+texture = "marble_bricks.png"
+hardness = 2.2
+tool = "pickaxe"
+
+[[block]]
+id = "slate_bricks"
+name = "Slate Bricks"
+texture = "slate_bricks.png"
+hardness = 2.0
+tool = "pickaxe"
+
+[[block]]
+id = "basalt_bricks"
+name = "Basalt Bricks"
+texture = "basalt_bricks.png"
+hardness = 2.8
+tool = "pickaxe"

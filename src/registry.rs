@@ -284,6 +284,17 @@ pub struct WorkedDef {
     pub count: u32,
 }
 
+/// How a mineral deposit grows from its seed cell.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VeinShape {
+    /// The classic drunk walk — roughly round pockets.
+    Walk,
+    /// A flat lens: long in x/z, grudging in y (coal seams).
+    Seam,
+    /// A near-vertical streak (quartz veins and their gold).
+    Streak,
+}
+
 #[derive(Clone, Debug)]
 pub struct OreFeature {
     pub block: BlockId,
@@ -292,6 +303,7 @@ pub struct OreFeature {
     pub per_chunk: u32,
     pub y_min: i32,
     pub y_max: i32,
+    pub shape: VeinShape,
 }
 
 /// One weighted entry in a loot table.
@@ -869,6 +881,8 @@ struct FeatureToml {
     per_chunk: Option<u32>,
     #[serde(default)]
     y_range: Option<[i32; 2]>,
+    #[serde(default)]
+    shape: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -1064,7 +1078,10 @@ fn base_mod() -> RawMod {
             id: "base".into(),
             name: "Wildforge".into(),
             version: env!("CARGO_PKG_VERSION").into(),
-            path: None,
+            // The TOML is embedded, but PNG tiles resolve from the
+            // repo's base/ directory like any mod's (the game runs
+            // from the repo root; the README says as much).
+            path: Some(std::path::PathBuf::from("base")),
             has_script: false,
             error: None,
         },
@@ -1277,8 +1294,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             errs.push(format!("missing texture {spec}"));
             return crate::atlas::UNKNOWN_SLOT;
         }
-        if next_slot >= 256 {
-            errs.push("texture atlas full (256 tiles)".into());
+        // Mod tiles own FIRST_FREE_SLOT up to the reserved player
+        // rows at the top of the 32-wide atlas (a stale 256 cap from
+        // the 16-wide era once lived here).
+        if next_slot >= crate::style::EXTRA_BASE {
+            errs.push("texture atlas full".into());
             return crate::atlas::UNKNOWN_SLOT;
         }
         let slot = next_slot;
@@ -2030,6 +2050,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             per_chunk: f.per_chunk.unwrap_or(6).clamp(0, 64),
             y_min: y0,
             y_max: y1,
+            shape: match f.shape.as_deref() {
+                Some("seam") => VeinShape::Seam,
+                Some("streak") => VeinShape::Streak,
+                _ => VeinShape::Walk,
+            },
         });
     }
 
