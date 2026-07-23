@@ -852,3 +852,21 @@ hardness = 2.2
 tool = "pickaxe"
 drops = "base:sulfur"
 drop_count = 2
+
+[[block]]
+id = "quartz_block"
+name = "Quartz Crystal"
+texture = "quartz_block.png"
+hardness = 2.4
+tool = "pickaxe"
+drops = "base:quartz_shard"
+drop_count = 2
+
+[[block]]
+id = "amethyst_block"
+name = "Amethyst"
+texture = "amethyst_block.png"
+hardness = 2.4
+tool = "pickaxe"
+drops = "base:amethyst_shard"
+drop_count = 2

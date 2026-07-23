@@ -172,15 +172,14 @@ pub struct Generator {
     slate: BlockId,
     quartzite: BlockId,
     basalt: BlockId,
-    // Stages 3-4 (volcanoes, pipes) consume these.
-    #[allow(dead_code)]
     kimberlite: BlockId,
-    #[allow(dead_code)]
     carbonatite: BlockId,
     /// Every interior rock (for cave carving and surface scans).
     rocks: [BlockId; 11],
     lava: BlockId,
     obsidian: BlockId,
+    quartz_block: BlockId,
+    amethyst_block: BlockId,
     magma_vent: BlockId,
     sulfur_ore: BlockId,
     bandwarp: Perlin,
@@ -293,6 +292,8 @@ impl Generator {
             ],
             lava: b("base:lava"),
             obsidian: b("base:obsidian"),
+            quartz_block: b("base:quartz_block"),
+            amethyst_block: b("base:amethyst_block"),
             magma_vent: b("base:magma_vent"),
             sulfur_ore: b("base:sulfur_ore"),
             bandwarp: p(40),
@@ -742,6 +743,8 @@ impl Generator {
             }
         }
 
+        self.plant_pipe(&mut c, pos, &heights);
+        self.plant_geode(&mut c, pos);
         self.plant_ores(&mut c, pos, reg);
         self.plant_trees(&mut c, pos, &heights, &biomes);
         self.dust_sand(&mut c, pos, &heights);
@@ -755,6 +758,137 @@ impl Generator {
         c.dirty = true;
         c.modified = false;
         c
+    }
+
+    /// The kimberlite pipe rolled for a chunk, if any: (local cx, cz,
+    /// breaches_surface). Roughly one chunk in four hundred; the pipe
+    /// fits inside its chunk's footprint by construction.
+    pub fn pipe_at(&self, pos: ChunkPos) -> Option<(usize, usize, bool)> {
+        let h = hash2(self.seed ^ 0x8d1a, pos.x, pos.z);
+        if !h.is_multiple_of(397) {
+            return None;
+        }
+        let cx = 6 + ((h >> 8) % 5) as usize;
+        let cz = 6 + ((h >> 16) % 5) as usize;
+        Some((cx, cz, (h >> 24) % 10 < 3))
+    }
+
+    /// A kimberlite pipe: a carrot of deep rock punched up through
+    /// every stratum — wide near the top, a thread at depth. Most are
+    /// blind (topped below the surface, found by mining); the ones
+    /// that breach weather into a blue-ground stain, the prospector's
+    /// tell. Diamonds only ever live inside these (the ore feature
+    /// replaces kimberlite and nothing else).
+    fn plant_pipe(&self, c: &mut Chunk, pos: ChunkPos, heights: &[[i32; CHUNK_Z]; CHUNK_X]) {
+        let Some((cx, cz, breach)) = self.pipe_at(pos) else {
+            return;
+        };
+        let h = hash2(self.seed ^ 0x8d1a, pos.x, pos.z);
+        let surf = heights[cx][cz];
+        let top_y = if breach {
+            surf
+        } else {
+            (surf - 6 - ((h >> 26) % 12) as i32).max(20)
+        };
+        for y in 2..=top_y {
+            let t = y as f32 / top_y as f32;
+            let r = 1.2 + t * t * 3.6;
+            let ri = r.ceil() as i32;
+            for dx in -ri..=ri {
+                for dz in -ri..=ri {
+                    if ((dx * dx + dz * dz) as f32) > r * r {
+                        continue;
+                    }
+                    let (lx, lz) = (cx as i32 + dx, cz as i32 + dz);
+                    if !(0..CHUNK_X as i32).contains(&lx) || !(0..CHUNK_Z as i32).contains(&lz) {
+                        continue;
+                    }
+                    if self.is_rock(c.get(lx as usize, y as usize, lz as usize)) {
+                        c.set(lx as usize, y as usize, lz as usize, self.kimberlite);
+                    }
+                }
+            }
+        }
+        if breach {
+            // Blue ground: the weathered pipe stains the topsoil.
+            for dx in -5i32..=5 {
+                for dz in -5i32..=5 {
+                    let (lx, lz) = (cx as i32 + dx, cz as i32 + dz);
+                    if !(0..CHUNK_X as i32).contains(&lx) || !(0..CHUNK_Z as i32).contains(&lz) {
+                        continue;
+                    }
+                    if dx * dx + dz * dz <= 20
+                        && hash2(self.seed ^ 0xb1e, pos.x * 16 + lx, pos.z * 16 + lz)
+                            .is_multiple_of(2)
+                    {
+                        let top = heights[lx as usize][lz as usize];
+                        if top > 0 {
+                            c.set(lx as usize, top as usize, lz as usize, self.kimberlite);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The geode rolled for a chunk, if any: (local cx, cz, cy, r).
+    pub fn geode_at(&self, pos: ChunkPos) -> Option<(usize, usize, i32, i32)> {
+        let h = hash2(self.seed ^ 0x6e0d, pos.x, pos.z);
+        if !h.is_multiple_of(89) {
+            return None;
+        }
+        let cx = 5 + ((h >> 8) % 7) as usize;
+        let cz = 5 + ((h >> 16) % 7) as usize;
+        let cy = 46 + ((h >> 24) % 26) as i32;
+        let r = 3 + ((h >> 5) % 3) as i32;
+        Some((cx, cz, cy, r))
+    }
+
+    /// A limestone geode: a rough quartz shell around an amethyst
+    /// lining around a void — crack one open with a torch in hand.
+    fn plant_geode(&self, c: &mut Chunk, pos: ChunkPos) {
+        let Some((cx, cz, cy, r)) = self.geode_at(pos) else {
+            return;
+        };
+        // Only real limestone country hosts them.
+        let heart = c.get(cx, cy as usize, cz);
+        if heart != self.limestone && heart != self.marble {
+            return;
+        }
+        let h = hash2(self.seed ^ 0x6e0d, pos.x, pos.z);
+        for dx in -r..=r {
+            for dy in -r..=r {
+                for dz in -r..=r {
+                    let d2 = dx * dx + dy * dy + dz * dz;
+                    if d2 > r * r {
+                        continue;
+                    }
+                    let (lx, y, lz) = (cx as i32 + dx, cy + dy, cz as i32 + dz);
+                    if !(0..CHUNK_X as i32).contains(&lx)
+                        || !(0..CHUNK_Z as i32).contains(&lz)
+                        || y < 2
+                        || y >= CHUNK_Y as i32 - 1
+                    {
+                        continue;
+                    }
+                    if !self.is_rock(c.get(lx as usize, y as usize, lz as usize)) {
+                        continue;
+                    }
+                    let b = if d2 > (r - 1) * (r - 1) {
+                        self.quartz_block
+                    } else if d2 > (r - 2) * (r - 2) {
+                        if hash2(h, dx * 31 + dy, dz * 17 + dy).is_multiple_of(3) {
+                            self.quartz_block
+                        } else {
+                            self.amethyst_block
+                        }
+                    } else {
+                        AIR
+                    };
+                    c.set(lx as usize, y as usize, lz as usize, b);
+                }
+            }
+        }
     }
 
     /// Data-driven ore veins from mod features, deterministic per chunk.

@@ -775,3 +775,13 @@ max_stack = 1
 id = "sulfur"
 name = "Sulfur"
 texture = "sulfur.png"
+
+[[item]]
+id = "quartz_shard"
+name = "Quartz"
+texture = "quartz_shard.png"
+
+[[item]]
+id = "amethyst_shard"
+name = "Amethyst"
+texture = "amethyst_shard.png"

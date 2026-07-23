@@ -841,3 +841,82 @@ fn volcanoes_rise_pool_and_dress() {
     );
     assert!(basalt_cells > 3000, "the cone is basalt ({basalt_cells})");
 }
+
+#[test]
+fn pipes_and_geodes_seed_the_deep() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("pipes"), reg.clone());
+    let b = |n: &str| reg.block_id(n).unwrap();
+
+    // A kimberlite pipe, found by the locator, generated, and shaped
+    // like a carrot: wide near its top, a thread at depth.
+    let mut pipe = None;
+    'p: for x in -40..=40 {
+        for z in -40..=40 {
+            let cp = ChunkPos { x, z };
+            if w.generator.pipe_at(cp).is_some() {
+                pipe = Some(cp);
+                break 'p;
+            }
+        }
+    }
+    let cp = pipe.expect("a pipe within the search square");
+    w.ensure_chunk(cp);
+    let kim = b("base:kimberlite");
+    let count_at = |w: &World, y: i32| -> i32 {
+        let mut n = 0;
+        for lx in 0..16 {
+            for lz in 0..16 {
+                if w.get_block(cp.x * 16 + lx, y, cp.z * 16 + lz) == kim {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+    let total: i32 = (2..200).map(|y| count_at(&w, y)).sum();
+    assert!(total > 80, "the pipe has body ({total} cells)");
+    let deep = count_at(&w, 8);
+    let shallow_y = (2..200).rev().find(|&y| count_at(&w, y) > 0).unwrap();
+    let shallow = count_at(&w, shallow_y - 4);
+    assert!(
+        deep <= shallow,
+        "carrot profile: {deep} at depth vs {shallow} near the top"
+    );
+
+    // A geode: quartz shell, amethyst lining, hollow heart.
+    let mut placed = false;
+    let mut tried = 0;
+    'g: for x in -60..=60 {
+        for z in -60..=60 {
+            let cp = ChunkPos { x, z };
+            if w.generator.geode_at(cp).is_none() {
+                continue;
+            }
+            tried += 1;
+            if tried > 14 {
+                break 'g;
+            }
+            w.ensure_chunk(cp);
+            let mut amethyst = 0;
+            let mut quartz = 0;
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    for y in 40..80 {
+                        let blk = w.get_block(cp.x * 16 + lx, y, cp.z * 16 + lz);
+                        if blk == b("base:amethyst_block") {
+                            amethyst += 1;
+                        } else if blk == b("base:quartz_block") {
+                            quartz += 1;
+                        }
+                    }
+                }
+            }
+            if amethyst > 4 && quartz > 8 {
+                placed = true;
+                break 'g;
+            }
+        }
+    }
+    assert!(placed, "a geode placed in limestone country");
+}
