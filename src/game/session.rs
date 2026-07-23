@@ -75,6 +75,12 @@ impl Game {
             world.settle_spawn(Vec3::new(sx as f32 + 0.5, sy as f32 + 0.2, sz as f32 + 0.5));
 
         self.renderer.clear_chunks();
+        // Background generators for this world's seed (heavy terrain
+        // math off the main thread; guests never generate).
+        self.gen_pool = Some(crate::game::streaming::GenPool::new(
+            world.seed,
+            self.content.reg.clone(),
+        ));
         self.server = server::Server::new(world, 0.3, self.rng ^ 0x5ee1);
         self.player = Player::new(spawn);
         self.survival.spawn_point = spawn;

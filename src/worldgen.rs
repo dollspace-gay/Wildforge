@@ -424,9 +424,14 @@ impl Generator {
     }
 
     pub fn biome(&self, wx: i32, wz: i32) -> Biome {
-        let cl = self.climate(wx, wz);
+        self.biome_from(&self.climate(wx, wz))
+    }
+
+    /// Biome from an already-computed climate (the generator's inner
+    /// loops read climate once per column and reuse it everywhere).
+    pub fn biome_from(&self, cl: &Climate) -> Biome {
         // A young fold range is Mountains whatever the climate says.
-        if self.plate_relief(&cl) > 30.0 {
+        if self.plate_relief(cl) > 30.0 {
             return Biome::Mountains;
         }
         let mut best = Biome::Plains;
@@ -581,14 +586,30 @@ impl Generator {
                 let oz = (h >> 17) % (REGION - 2 * margin) as u32 + margin as u32;
                 let center_x = cx * REGION + ox as i32;
                 let center_z = cz * REGION + oz as i32;
-                let cl = self.climate(center_x, center_z);
-                if cl.c < -0.2 {
+                let v = Volcano {
+                    x: center_x,
+                    z: center_z,
+                    radius: 44.0 + (h % 28) as f32,
+                    height: 52.0 + ((h >> 4) % 32) as f32,
+                };
+                // Distance first: this runs for every column of every
+                // chunk, and almost every candidate is out of reach —
+                // nothing heavier than hashes may run before this line.
+                // (An earlier version computed full climate per
+                // candidate and singlehandedly tanked worldgen.)
+                let d = v.dist(wx, wz);
+                if d >= v.radius + 12.0 {
                     continue;
                 }
                 // Volcanoes follow the plate map: subduction arcs run
                 // thick with them, rifts leak a few, plate interiors
-                // almost none — hotspots are the rare exception.
-                let tec = &cl.tec;
+                // almost none. Tectonics is hash-and-math (no perlin);
+                // the deep-ocean gate rides the crust kind, which is
+                // what continentalness mostly is anyway.
+                let tec = self.tectonics(center_x, center_z);
+                if tec.oceanic && tec.boundary_dist > 260.0 {
+                    continue; // abyssal plate interior: no hotspots
+                }
                 let subduction = tec.boundary_dist < 260.0
                     && tec.convergence > 0.1
                     && (tec.oceanic || tec.neighbor_oceanic);
@@ -603,18 +624,7 @@ impl Generator {
                 if !h.is_multiple_of(odds) {
                     continue;
                 }
-                let v = Volcano {
-                    x: center_x,
-                    z: center_z,
-                    radius: 44.0 + (h % 28) as f32,
-                    height: 52.0 + ((h >> 4) % 32) as f32,
-                };
-                let d = v.dist(wx, wz);
-                // Generous cutoff: dressing probes chunk corners and
-                // must never miss a flank column at the border.
-                if d < v.radius + 12.0 {
-                    return Some(v);
-                }
+                return Some(v);
             }
         }
         None
@@ -684,12 +694,11 @@ impl Generator {
     /// (basalt_top, basement_top, shale_top, limestone_top,
     /// sandstone_top); above the last it's basement again — mountain
     /// cores read as uplifted stone.
-    fn strata_bands(&self, wx: i32, wz: i32) -> [i32; 5] {
+    fn strata_bands(&self, wx: i32, wz: i32, cl: &Climate) -> [i32; 5] {
         let x = wx as f64;
         let z = wz as f64;
         let w1 = self.bandwarp.get([x / 260.0, z / 260.0]) as f32;
         let w2 = self.bandwarp.get([x / 170.0 + 7.3, z / 170.0 - 2.1]) as f32;
-        let cl = self.climate(wx, wz);
         let wet = cl.h;
         // Two plates smushed together: near a convergent boundary the
         // bedding buckles into fold trains — anticlines and synclines
@@ -701,7 +710,7 @@ impl Generator {
         } else {
             0.0
         };
-        let mesa = if Self::is_badlands(&cl) { 42.0 } else { 0.0 };
+        let mesa = if Self::is_badlands(cl) { 42.0 } else { 0.0 };
         [
             (8.0 + w1 * 3.0) as i32,
             (34.0 + w1 * 7.0 + fold * 0.5) as i32,
@@ -796,7 +805,9 @@ impl Generator {
                     continue;
                 }
                 let (wx, wz) = (bx + lx, bz + lz);
-                let bands = self.strata_bands(wx, wz);
+                // One climate read serves bands, hydrology, and rock.
+                let cl = self.climate(wx, wz);
+                let bands = self.strata_bands(wx, wz, &cl);
                 let vol = self
                     .volcano_near(wx, wz)
                     .map(|v| v.strength(wx, wz))
@@ -804,7 +815,6 @@ impl Generator {
                 let dike =
                     vol > 0.05 && self.detail.get([wx as f64 / 13.0, wz as f64 / 13.0]) > 0.58;
                 // Rivers and lakes flood their carve as a local sea.
-                let cl = self.climate(wx, wz);
                 let pre = self.base_offset(wx, wz, &cl);
                 let (_, fill) = self.hydrology(wx, wz, &cl, pre);
                 let fill_y = fill.unwrap_or(0).max(SEA_LEVEL);
@@ -868,7 +878,8 @@ impl Generator {
             for lz in 0..CHUNK_Z {
                 let wx = bx + lx as i32;
                 let wz = bz + lz as i32;
-                let biome = self.biome(wx, wz);
+                let cl = self.climate(wx, wz);
+                let biome = self.biome_from(&cl);
                 biomes[lx][lz] = biome;
 
                 // Post-carve top solid.

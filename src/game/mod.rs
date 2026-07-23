@@ -384,6 +384,7 @@ struct Game {
     in_world: bool,
     /// (name, seed) of every world under saves/.
     worlds: Vec<(String, u32)>,
+    gen_pool: Option<streaming::GenPool>,
     creative: bool,
     flying: bool,
     last_space: f32,
@@ -603,6 +604,7 @@ impl Game {
             audio,
             in_world: false,
             worlds: Vec::new(),
+            gen_pool: None,
             creative: false,
             flying: false,
             last_space: -9.0,
