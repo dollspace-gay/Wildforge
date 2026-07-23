@@ -370,4 +370,20 @@ mod tests {
         assert_eq!(hello_protocol(&old), Some(7));
         assert!(decode::<C2S>(&old).is_none());
     }
+
+    #[test]
+    fn authentication_and_gameplay_frames_have_separate_hard_budgets() {
+        assert_eq!(PREAUTH_FRAME_MAX, 4 * 1024);
+        assert_eq!(CLIENT_FRAME_MAX, 64 * 1024);
+        assert_eq!(AUTH_TIMEOUT, Duration::from_secs(5));
+
+        let largest_stock_auth = encode(&C2S::Authenticate {
+            signature: vec![0; 64],
+            atproto: Some(AtprotoClaim {
+                did: format!("did:web:{}", "a".repeat(500)),
+                binding: format!("device-{}", "b".repeat(64)),
+            }),
+        });
+        assert!(largest_stock_auth.len() < PREAUTH_FRAME_MAX);
+    }
 }

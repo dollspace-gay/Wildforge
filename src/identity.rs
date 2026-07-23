@@ -88,7 +88,13 @@ impl AtprotoDid {
     pub fn parse(value: &str) -> Result<Self, IdentityError> {
         let value = value.trim();
         if value.len() > 512
+            || !value.is_ascii()
             || !(value.starts_with("did:plc:") || value.starts_with("did:web:"))
+            || jacquard_common::types::did::validate_did(value).is_err()
+            || value
+                .split_once(':')
+                .and_then(|(_, rest)| rest.split_once(':'))
+                .is_none_or(|(_, identifier)| identifier.is_empty())
             || value.chars().any(char::is_whitespace)
         {
             return Err(IdentityError::Did);
@@ -101,6 +107,23 @@ impl AtprotoDid {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    pub fn short(&self) -> String {
+        const MAX: usize = 24;
+        if self.0.len() <= MAX {
+            return self.0.clone();
+        }
+        let prefix = if self.0.starts_with("did:plc:") {
+            "did:plc:"
+        } else {
+            "did:web:"
+        };
+        let remaining = MAX.saturating_sub(prefix.len() + 1);
+        format!(
+            "{prefix}{}…",
+            &self.0[prefix.len()..prefix.len() + remaining]
+        )
     }
 }
 

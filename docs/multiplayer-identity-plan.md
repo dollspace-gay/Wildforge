@@ -694,10 +694,10 @@ The landed responsibilities map to the passes as follows:
 | Wire DTO ownership | `net/protocol.rs`; transport remains the public `net` facade |
 | Server-owned profile and survival state | `multiplayer/profiles.rs`, authoritative intent handling in `mp.rs`, reconnect/loopback tests |
 | Moderation and server policy | `multiplayer/moderation.rs`, `multiplayer/settings.rs`, windowed controls, dedicated console, persistence tests |
-| Optional ATProto link and revocation | `identity/atproto.rs`, Jacquard OAuth, checked-in Lexicon/metadata payloads, Accounts progress/revoke/unlink UI |
-| Public proof and cache | DID/PDS resolver, exact device-record verifier, bounded per-world cache, migration/revocation/outage tests |
+| Optional ATProto link and revocation | `identity/atproto.rs`, Jacquard OAuth, pre-authorization DID pinning, immediate public write read-back, confirmed-delete revocation, checked-in Lexicon/metadata payloads, and Accounts progress/revoke/unlink UI |
+| Public proof and cache | DID/PDS resolver, exact device-record verifier, bidirectional current-handle resolution, bounded per-world cache with zero-grace support, migration/revocation/outage tests |
 | Privacy | DID omitted from `Hello` and all local-policy joins; explicit pre-join disclosure confirmation; peers receive only verification state |
-| Platform/build gates | native Linux suite and `x86_64-pc-windows-gnu` cross-check |
+| Platform/build gates | 193 passing all-target tests (one diagnostic ignored), strict Clippy, native release build, dependency-graph measurement, and `x86_64-pc-windows-gnu` cross-check |
 
 The implementation deliberately stops short of avatar download/rendering. The
 preference is stored separately so adding the bounded image pipeline later does
@@ -804,3 +804,34 @@ not change identity or admission semantics.
 5. Stop the first integration at DID, handle, social display name, and
    verification status. Store the independent avatar opt-in but defer the
    bounded download/decode/render pipeline.
+
+## Qualification record
+
+The code-side qualification was repeated on 2026-07-22 with Rust/Cargo 1.96.0:
+
+| Gate | Result |
+|---|---|
+| `cargo test --all-targets --no-fail-fast` | 193 passed, 0 failed, 1 intentionally ignored diagnostic |
+| `cargo clippy --all-targets -- -D warnings` | Passed |
+| `cargo fmt --all -- --check` and `git diff --check` | Passed |
+| `cargo check --target x86_64-pc-windows-gnu` | Passed |
+| `cargo build --release` | Passed; unstripped Linux binary 35,564,408 bytes |
+| Normal dependency graph | 530 unique package lines versus 252 on `origin/main` (278 added) |
+| Dedicated-host smoke | Fresh isolated world started, wrote a persistent host key/settings, and answered `help`, `players`, and `identity` console commands |
+
+The dependency measurement prompted replacing the Jacquard umbrella crate with
+only `jacquard-common`, `jacquard-identity`, and `jacquard-oauth`. OAuth state
+and credentials now remain in an in-memory store for the one-time operation;
+the application writes no temporary OAuth token file. The component split
+removed 31 packages and about 1.7 MiB from the measured unstripped release
+binary compared with the first implementation in this branch. The remaining
+increase is substantial but accounted for: it is the maintained OAuth, DPoP,
+identity-resolution, DNS, browser-loopback, and cryptography surface selected
+instead of implementing those security protocols locally.
+
+The default suite includes a Wildforge-owned mock OAuth server/client boundary.
+It proves PAR, PKCE, DPoP and nonce retry, exact scope, callback state and
+issuer checks, replay rejection, cancellation handling, malformed and
+wrong-identity `sub` rejection, denied scope, and token redaction. Live browser
+and repository tests remain the explicitly manual release gates listed in
+`multiplayer-identity-operations.md`.

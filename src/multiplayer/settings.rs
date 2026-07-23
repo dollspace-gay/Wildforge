@@ -55,3 +55,52 @@ impl ServerSettings {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(name: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "wildforge-server-settings-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn defaults_are_local_first_and_persisted() {
+        let root = fixture("defaults");
+        let settings = ServerSettings::load_or_create(&root).unwrap();
+        assert_eq!(settings.identity, IdentityPolicy::Local);
+        assert_eq!(settings.admission, AdmissionPolicy::Open);
+        assert_eq!(settings.port, crate::net::GAME_PORT);
+        assert_eq!(settings.verification_grace_secs, 3_600);
+        let text = std::fs::read_to_string(root.join("server.toml")).unwrap();
+        assert!(text.contains("identity = \"local\""));
+        assert!(text.contains("admission = \"open\""));
+    }
+
+    #[test]
+    fn cache_grace_can_be_disabled_and_is_capped_at_seven_days() {
+        let root = fixture("grace");
+        std::fs::write(
+            root.join("server.toml"),
+            "verification_grace_secs = 0\nidentity = \"atproto_required\"\n",
+        )
+        .unwrap();
+        let disabled = ServerSettings::load_or_create(&root).unwrap();
+        assert_eq!(disabled.verification_grace_secs, 0);
+        assert_eq!(disabled.identity, IdentityPolicy::AtprotoRequired);
+
+        std::fs::write(
+            root.join("server.toml"),
+            "verification_grace_secs = 999999999\n",
+        )
+        .unwrap();
+        let capped = ServerSettings::load_or_create(&root).unwrap();
+        assert_eq!(capped.verification_grace_secs, 7 * 24 * 60 * 60);
+    }
+}

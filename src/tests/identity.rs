@@ -16,11 +16,18 @@ fn display_names_match_the_renderer_and_collide_case_insensitively() {
         DisplayName::parse("Moss Keeper").unwrap().collision_key(),
         name.collision_key()
     );
+    assert_eq!(
+        DisplayName::parse("abcdefghijklmnop").unwrap().as_str(),
+        "ABCDEFGHIJKLMNOP"
+    );
     for bad in [
         "",
         "   ",
         "name_with_gap",
         "line\nbreak",
+        "tab\tname",
+        "nul\0name",
+        "bidi\u{202e}name",
         "zero\u{200b}width",
         "é",
         "abcdefghijklmnopq",
@@ -40,7 +47,16 @@ fn typed_identity_ids_round_trip() {
     let did = AtprotoDid::parse("did:plc:abcdefghijklmnopqrstuvwxyz").unwrap();
     let principal = Principal::Atproto(did.clone());
     assert_eq!(principal.storage_key(), format!("atproto:{did}"));
+    let encoded = postcard::to_allocvec(&principal).unwrap();
+    assert_eq!(
+        postcard::from_bytes::<Principal>(&encoded).unwrap(),
+        principal
+    );
+    assert!(did.short().starts_with("did:plc:"));
+    assert!(did.short().chars().count() <= 24);
     assert!(AtprotoDid::parse("https://bsky.app/profile/a").is_err());
+    assert!(AtprotoDid::parse("did:plc:").is_err());
+    assert!(AtprotoDid::parse("did:web:møss.example").is_err());
 }
 
 #[test]

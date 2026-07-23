@@ -875,3 +875,104 @@ fn atproto_required_refuses_a_local_client_before_admission() {
             .all(|event| !matches!(event, crate::net::HostEvent::Joined { .. }))
     );
 }
+
+#[test]
+fn welcome_precedes_any_authenticated_gameplay_message() {
+    use crate::net::{C2S, S2C};
+
+    let reg = base_reg();
+    let world = test_world_with("mp-auth-order", reg);
+    let mut sim = crate::server::Server::new(world, 0.3, 7);
+    let mut session = crate::mp::HostSession::start_on("auth-order".into(), 0).unwrap();
+    let identity =
+        crate::identity::LocalIdentity::load_or_create(&tmp_dir("auth-order-client")).unwrap();
+    let address: std::net::SocketAddr = format!("127.0.0.1:{}", session.net.port).parse().unwrap();
+    let mut client =
+        crate::net::Client::connect(address, "Fern".into(), 0, 0, &identity, None).unwrap();
+    // Queue gameplay immediately after Authenticate, before the host's game
+    // loop has processed the authenticated Join event.
+    client.send(&C2S::Chat("too early to overtake welcome".into()));
+
+    let mut order = Vec::new();
+    for _ in 0..200 {
+        session.pump(&mut sim, None, 0.05);
+        for message in client.poll() {
+            match message {
+                S2C::Welcome { .. } => order.push("welcome"),
+                S2C::Chat { .. } => order.push("chat"),
+                _ => {}
+            }
+        }
+        if order.contains(&"welcome") && order.contains(&"chat") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(order, ["welcome", "chat"]);
+}
+
+#[test]
+fn loopback_reconnect_reopens_the_same_server_profile() {
+    use crate::net::S2C;
+
+    let reg = base_reg();
+    let world = test_world_with("mp-reconnect", reg.clone());
+    let mut sim = crate::server::Server::new(world, 0.3, 7);
+    let mut session = crate::mp::HostSession::start_on("reconnect".into(), 0).unwrap();
+    let identity =
+        crate::identity::LocalIdentity::load_or_create(&tmp_dir("reconnect-client")).unwrap();
+    let address: std::net::SocketAddr = format!("127.0.0.1:{}", session.net.port).parse().unwrap();
+    let mut first =
+        crate::net::Client::connect(address, "Fern".into(), 0, 0, &identity, None).unwrap();
+    for _ in 0..200 {
+        session.pump(&mut sim, None, 0.05);
+        if first
+            .poll()
+            .iter()
+            .any(|message| matches!(message, S2C::Welcome { .. }))
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let first_connection = *session.guests.keys().next().unwrap();
+    let player_id = session.guests[&first_connection].player_id;
+    let torch = reg.item_id("base:torch").unwrap();
+    session
+        .guests
+        .get_mut(&first_connection)
+        .unwrap()
+        .inventory
+        .slots[0] = Some(ItemStack::new(&reg, torch, 6));
+    // Exercise the protocol's graceful disconnect while the client's writer
+    // runtime is still alive. Relying only on Drop races the queued Bye
+    // against QUIC shutdown under a highly parallel test run.
+    first.send(&crate::net::C2S::Bye);
+    for _ in 0..1_000 {
+        session.pump(&mut sim, None, 0.05);
+        if session.guests.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(session.guests.is_empty());
+    drop(first);
+
+    let mut second =
+        crate::net::Client::connect(address, "New Name".into(), 0, 0, &identity, None).unwrap();
+    for _ in 0..200 {
+        session.pump(&mut sim, None, 0.05);
+        if second
+            .poll()
+            .iter()
+            .any(|message| matches!(message, S2C::Welcome { .. }))
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let guest = session.guests.values().next().unwrap();
+    assert_eq!(guest.player_id, player_id);
+    assert_eq!(guest.inventory.slots[0].unwrap().count, 6);
+    assert_eq!(guest.name, "NEW NAME");
+}

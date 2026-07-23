@@ -153,6 +153,7 @@ impl PlayerRuntime {
 pub(super) struct ProfileStore {
     root: PathBuf,
     by_principal: HashMap<String, PlayerId>,
+    index_dirty: bool,
     // Populated by the first open and used only for best-effort Drop/kick
     // saves where the caller cannot conveniently pass the active registry.
     registry: Option<std::sync::Arc<Registry>>,
@@ -174,15 +175,20 @@ impl ProfileStore {
                 format!("unsupported player index version {}", index.version),
             ));
         }
-        Ok(Self {
+        let mut store = Self {
             root,
             by_principal: index
                 .link
                 .into_iter()
                 .map(|link| (link.principal.storage_key(), link.player_id))
                 .collect(),
+            index_dirty: false,
             registry: None,
-        })
+        };
+        if store.repair_index_from_profiles()? {
+            store.save_index()?;
+        }
+        Ok(store)
     }
 
     pub fn open_or_create(
@@ -216,17 +222,6 @@ impl ProfileStore {
             Some(id) => id,
             None => PlayerId::random()?,
         };
-        let mut index_changed = false;
-        for principal in principals {
-            let key = principal.storage_key();
-            if self.by_principal.get(&key) != Some(&player_id) {
-                self.by_principal.insert(key, player_id);
-                index_changed = true;
-            }
-        }
-        if index_changed {
-            self.save_index()?;
-        }
         let path = self.profile_path(player_id);
         let mut runtime = match std::fs::read_to_string(&path) {
             Ok(text) => match toml::from_str::<StoredProfile>(&text) {
@@ -281,7 +276,28 @@ impl ProfileStore {
             runtime.display_name = display_name.to_string();
         }
         runtime.style = style;
+        // Persist the profile and its complete principal set first. If the
+        // subsequent index write is interrupted, load() reconstructs the
+        // missing links from this authoritative profile instead of assigning
+        // a second PlayerId on reconnect.
         self.save(&runtime, reg)?;
+        let mut index_changed = false;
+        for principal in principals {
+            let key = principal.storage_key();
+            if self.by_principal.get(&key) != Some(&player_id) {
+                self.by_principal.insert(key, player_id);
+                index_changed = true;
+            }
+        }
+        self.index_dirty |= index_changed;
+        if self.index_dirty {
+            // Keep the recovered/new mapping in memory if persistence fails:
+            // that prevents a retry in this process from inventing another
+            // profile. The dirty bit retries the index write on the next open,
+            // and load() can always reconstruct it from the durable profile.
+            self.save_index()?;
+            self.index_dirty = false;
+        }
         Ok(runtime)
     }
 
@@ -316,6 +332,65 @@ impl ProfileStore {
 
     fn profile_path(&self, id: PlayerId) -> PathBuf {
         self.root.join(format!("{id}.toml"))
+    }
+
+    /// Profiles carry their own principal list so an interrupted profile/index
+    /// pair can be recovered without inventing a new PlayerId. Stale index
+    /// links whose profile is missing are dropped; conflicting ownership is a
+    /// hard error requiring operator intervention.
+    fn repair_index_from_profiles(&mut self) -> io::Result<bool> {
+        let mut changed = false;
+        let root = self.root.clone();
+        self.by_principal.retain(|_, player_id| {
+            let exists = root.join(format!("{player_id}.toml")).is_file();
+            changed |= !exists;
+            exists
+        });
+        for entry in std::fs::read_dir(&self.root)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.file_name().and_then(|name| name.to_str()) == Some("index.toml")
+                || path.extension().and_then(|ext| ext.to_str()) != Some("toml")
+            {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path)?;
+            let Ok(profile) = toml::from_str::<StoredProfile>(&text) else {
+                // A legacy local profile has no principal list. Its explicit
+                // migration index remains authoritative until first save.
+                continue;
+            };
+            if profile.version != 1 {
+                continue;
+            }
+            let expected = self.profile_path(profile.player_id);
+            if path != expected {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "player profile id does not match filename: {}",
+                        path.display()
+                    ),
+                ));
+            }
+            for principal in profile.principals {
+                let key = principal.storage_key();
+                match self.by_principal.get(&key) {
+                    Some(existing) if *existing != profile.player_id => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::AlreadyExists,
+                            format!("principal {key} is claimed by two player profiles"),
+                        ));
+                    }
+                    Some(_) => {}
+                    None => {
+                        self.by_principal.insert(key, profile.player_id);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        Ok(changed)
     }
 }
 
@@ -573,6 +648,22 @@ mod tests {
             )
             .unwrap();
         assert_eq!(linked.player_id, first.player_id);
+        let torch = reg.item_id("base:torch").unwrap();
+        let mut linked = linked;
+        linked.inventory.slots[0] = Some(ItemStack::new(&reg, torch, 5));
+        store.save(&linked, &reg).unwrap();
+        let second_device = store
+            .open_or_create(
+                &[did.clone(), device(4)],
+                &DisplayName::parse("Renamed").unwrap(),
+                1,
+                Vec3::ZERO,
+                &reg,
+            )
+            .unwrap();
+        assert_eq!(second_device.player_id, first.player_id);
+        assert_eq!(second_device.inventory.slots[0].unwrap().count, 5);
+        assert_eq!(second_device.display_name, "RENAMED");
         let second = store
             .open_or_create(
                 &[device(3)],
@@ -593,6 +684,145 @@ mod tests {
             )
             .err()
             .unwrap();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+    }
+
+    #[test]
+    fn missing_index_is_rebuilt_from_authoritative_profiles() {
+        let (root, reg) = fixture("index-recovery");
+        let principal = device(8);
+        let player_id = {
+            let mut store = ProfileStore::load(root.clone()).unwrap();
+            store
+                .open_or_create(
+                    std::slice::from_ref(&principal),
+                    &DisplayName::parse("Moss").unwrap(),
+                    0,
+                    Vec3::ZERO,
+                    &reg,
+                )
+                .unwrap()
+                .player_id
+        };
+        std::fs::remove_file(root.join("players/index.toml")).unwrap();
+        std::fs::write(root.join("players/.index.toml.interrupted.tmp"), "partial").unwrap();
+
+        let mut recovered = ProfileStore::load(root.clone()).unwrap();
+        let profile = recovered
+            .open_or_create(
+                std::slice::from_ref(&principal),
+                &DisplayName::parse("Moss").unwrap(),
+                0,
+                Vec3::ZERO,
+                &reg,
+            )
+            .unwrap();
+        assert_eq!(profile.player_id, player_id);
+        let index: ProfileIndex =
+            toml::from_str(&std::fs::read_to_string(root.join("players/index.toml")).unwrap())
+                .unwrap();
+        assert!(
+            index
+                .link
+                .iter()
+                .any(|link| { link.principal == principal && link.player_id == player_id })
+        );
+    }
+
+    #[test]
+    fn failed_index_write_retries_without_creating_a_second_profile() {
+        let (root, reg) = fixture("index-write-retry");
+        let principal = device(10);
+        let mut store = ProfileStore::load(root.clone()).unwrap();
+        let index_path = root.join("players/index.toml");
+        std::fs::create_dir(&index_path).unwrap();
+
+        assert!(
+            store
+                .open_or_create(
+                    std::slice::from_ref(&principal),
+                    &DisplayName::parse("Moss").unwrap(),
+                    0,
+                    Vec3::ZERO,
+                    &reg,
+                )
+                .is_err()
+        );
+        std::fs::remove_dir(&index_path).unwrap();
+        let recovered = store
+            .open_or_create(
+                std::slice::from_ref(&principal),
+                &DisplayName::parse("Moss").unwrap(),
+                0,
+                Vec3::ZERO,
+                &reg,
+            )
+            .unwrap();
+        let profile_files = std::fs::read_dir(root.join("players"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry.path().extension().and_then(|ext| ext.to_str()) == Some("toml")
+                    && entry.file_name() != "index.toml"
+            })
+            .count();
+        assert_eq!(profile_files, 1);
+        assert_eq!(
+            store.by_principal.get(&principal.storage_key()).copied(),
+            Some(recovered.player_id)
+        );
+    }
+
+    #[test]
+    fn legacy_profile_is_upgraded_and_conflicting_index_ownership_is_rejected() {
+        let (root, reg) = fixture("schema-recovery");
+        let principal = device(9);
+        let player_id = PlayerId::random().unwrap();
+        let players = root.join("players");
+        std::fs::create_dir_all(&players).unwrap();
+        let index = ProfileIndex {
+            version: 1,
+            link: vec![ProfileLink {
+                principal: principal.clone(),
+                player_id,
+            }],
+        };
+        std::fs::write(
+            players.join("index.toml"),
+            toml::to_string_pretty(&index).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            players.join(format!("{player_id}.toml")),
+            "pos = [3.0, 70.0, 4.0]\nyaw = 1.0\npitch = 0.25\nhealth = 11.0\nhunger = 17.0\nnutrition = [1.0, 2.0, 3.0, 4.0, 5.0]\nhotbar = 2\n",
+        )
+        .unwrap();
+
+        let mut store = ProfileStore::load(root.clone()).unwrap();
+        let upgraded = store
+            .open_or_create(
+                std::slice::from_ref(&principal),
+                &DisplayName::parse("Legacy").unwrap(),
+                3,
+                Vec3::ZERO,
+                &reg,
+            )
+            .unwrap();
+        assert_eq!(upgraded.player_id, player_id);
+        assert_eq!(upgraded.pos, Vec3::new(3.0, 70.0, 4.0));
+        assert_eq!(upgraded.health, 11.0);
+        let profile_path = players.join(format!("{player_id}.toml"));
+        let text = std::fs::read_to_string(&profile_path).unwrap();
+        let mut duplicate: StoredProfile = toml::from_str(&text).unwrap();
+        assert_eq!(duplicate.version, 1);
+
+        duplicate.player_id = PlayerId::random().unwrap();
+        std::fs::write(
+            players.join(format!("{}.toml", duplicate.player_id)),
+            toml::to_string_pretty(&duplicate).unwrap(),
+        )
+        .unwrap();
+        let error = ProfileStore::load(root).err().unwrap();
         assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
     }
 }

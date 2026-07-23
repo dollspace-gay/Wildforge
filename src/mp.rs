@@ -22,8 +22,8 @@ use crate::net::{
 };
 use crate::server::Server;
 use crate::world::{BlockEntity, World};
-use moderation::ModerationStore;
 pub use moderation::Role;
+use moderation::{BanIdentity, ModerationStore};
 use profiles::{PlayerRuntime, ProfileStore};
 pub use settings::ServerSettings;
 
@@ -35,6 +35,7 @@ pub struct Guest {
     pub name: String,
     pub principal: Principal,
     pub verification_cached: bool,
+    pub verified_handle: Option<String>,
     pub pos: Vec3,
     pub yaw: f32,
     pub container: Option<(i32, i32, i32)>,
@@ -120,12 +121,17 @@ struct AuthenticatedJoin {
     principal: Principal,
     principals: Vec<Principal>,
     verification_cached: bool,
+    verified_handle: Option<String>,
     content_hash: u64,
     style: u32,
 }
 
 const REACH: f32 = 7.0;
 const EDITS_PER_SEC: u32 = 10;
+
+fn shares_principal(left: &[Principal], right: &[Principal]) -> bool {
+    left.iter().any(|principal| right.contains(principal))
+}
 
 impl HostSession {
     pub fn start(world_name: String) -> std::io::Result<HostSession> {
@@ -264,6 +270,7 @@ impl HostSession {
                     principal,
                     principals,
                     verification_cached,
+                    verified_handle,
                     content_hash,
                     style,
                 } => {
@@ -275,6 +282,7 @@ impl HostSession {
                             principal,
                             principals,
                             verification_cached,
+                            verified_handle,
                             content_hash,
                             style,
                         },
@@ -539,6 +547,7 @@ impl HostSession {
             principal,
             principals,
             verification_cached,
+            verified_handle,
             content_hash,
             style,
         } = join;
@@ -551,12 +560,11 @@ impl HostSession {
             self.net.kick(id);
             return;
         }
-        if self.guests.values().any(|guest| {
-            guest
-                .principals
-                .iter()
-                .any(|connected| principals.contains(connected))
-        }) {
+        if self
+            .guests
+            .values()
+            .any(|guest| shares_principal(&guest.principals, &principals))
+        {
             self.net.send(
                 id,
                 &S2C::Refused(Refusal::new(
@@ -703,6 +711,7 @@ impl HostSession {
                 name: name.clone(),
                 principal,
                 verification_cached,
+                verified_handle,
                 pos: runtime.pos,
                 yaw: runtime.yaw,
                 container: None,
@@ -790,9 +799,12 @@ impl HostSession {
             .as_mut()
             .ok_or_else(|| std::io::Error::other("moderation store is not initialized"))?;
         moderation.ban(
-            g.player_id,
-            &g.principals,
-            &g.name,
+            BanIdentity {
+                player_id: g.player_id,
+                principals: &g.principals,
+                display_name: &g.name,
+                handle: g.verified_handle.as_deref(),
+            },
             reason,
             created_by,
             duration_secs,
@@ -859,7 +871,26 @@ impl HostSession {
             guest.player_id,
             match &guest.principal {
                 Principal::LocalDevice(device) => format!("device {}", device.short()),
-                Principal::Atproto(did) => format!("ATProto {did}"),
+                Principal::Atproto(did) => match &guest.verified_handle {
+                    Some(handle) => format!(
+                        "@{handle} / {}{}",
+                        did.short(),
+                        if guest.verification_cached {
+                            " (cached proof)"
+                        } else {
+                            ""
+                        }
+                    ),
+                    None => format!(
+                        "ATProto {}{}",
+                        did.short(),
+                        if guest.verification_cached {
+                            " (cached proof)"
+                        } else {
+                            ""
+                        }
+                    ),
+                },
             },
             role
         ))
@@ -1778,4 +1809,22 @@ pub fn block_remap(world: &World, palette: &[String]) -> Vec<crate::registry::Bl
 /// Build the host-id -> local-id item remap (unknown items map to None).
 pub fn item_remap(world: &World, items: &[String]) -> Vec<Option<crate::registry::ItemId>> {
     items.iter().map(|name| world.reg.item_id(name)).collect()
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    use crate::identity::{AtprotoDid, DeviceKeyId};
+
+    #[test]
+    fn two_devices_for_one_did_share_an_active_principal() {
+        let did = Principal::Atproto(AtprotoDid::parse("did:plc:sharedaccount").unwrap());
+        let first = vec![did.clone(), Principal::LocalDevice(DeviceKeyId([1; 32]))];
+        let second = vec![did, Principal::LocalDevice(DeviceKeyId([2; 32]))];
+        assert!(shares_principal(&first, &second));
+        assert!(!shares_principal(
+            &first,
+            &[Principal::LocalDevice(DeviceKeyId([3; 32]))]
+        ));
+    }
 }

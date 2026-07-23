@@ -48,6 +48,7 @@ pub enum HostEvent {
         principal: Principal,
         principals: Vec<Principal>,
         verification_cached: bool,
+        verified_handle: Option<String>,
         content_hash: u64,
         style: u32,
     },
@@ -369,39 +370,45 @@ async fn accept_loop(
                 return;
             }
             let local = Principal::LocalDevice(DeviceKeyId::of_public_key(&device_public_key));
-            let (principal, principals, verification_cached) = match atproto.as_ref() {
-                Some(claim) => match proof_cache.verify(claim, &device_public_key).await {
-                    Ok(verified) => {
-                        let online = Principal::Atproto(verified.did);
-                        (online.clone(), vec![online, local.clone()], verified.cached)
-                    }
-                    Err(error) => {
+            let (principal, principals, verification_cached, verified_handle) =
+                match atproto.as_ref() {
+                    Some(claim) => match proof_cache.verify(claim, &device_public_key).await {
+                        Ok(verified) => {
+                            let online = Principal::Atproto(verified.did);
+                            (
+                                online.clone(),
+                                vec![online, local.clone()],
+                                verified.cached,
+                                verified.handle,
+                            )
+                        }
+                        Err(error) => {
+                            let _ = write_frame(
+                                &mut send,
+                                &encode(&S2C::Refused(Refusal::new(
+                                    RefusalCode::Authentication,
+                                    format!("ATProto device binding did not verify: {error}"),
+                                ))),
+                            )
+                            .await;
+                            conn.close(5u32.into(), b"ATProto verification failed");
+                            return;
+                        }
+                    },
+                    None if identity_policy == IdentityPolicy::AtprotoRequired => {
                         let _ = write_frame(
                             &mut send,
                             &encode(&S2C::Refused(Refusal::new(
-                                RefusalCode::Authentication,
-                                format!("ATProto device binding did not verify: {error}"),
+                                RefusalCode::VerificationRequired,
+                                "this server requires a linked ATProto account",
                             ))),
                         )
                         .await;
-                        conn.close(5u32.into(), b"ATProto verification failed");
+                        conn.close(3u32.into(), b"verification required");
                         return;
                     }
-                },
-                None if identity_policy == IdentityPolicy::AtprotoRequired => {
-                    let _ = write_frame(
-                        &mut send,
-                        &encode(&S2C::Refused(Refusal::new(
-                            RefusalCode::VerificationRequired,
-                            "this server requires a linked ATProto account",
-                        ))),
-                    )
-                    .await;
-                    conn.close(3u32.into(), b"verification required");
-                    return;
-                }
-                None => (local.clone(), vec![local], false),
-            };
+                    None => (local.clone(), vec![local], false, None),
+                };
             let (tx, rx) = unbounded_channel::<HostOutbound>();
             let _ = peers.send((
                 id,
@@ -416,6 +423,7 @@ async fn accept_loop(
                 principal,
                 principals,
                 verification_cached,
+                verified_handle,
                 content_hash,
                 style,
             });
@@ -907,6 +915,25 @@ mod security_tests {
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
         assert!(error.to_string().contains("host identity changed"));
         assert_eq!(std::fs::read_to_string(path).unwrap(), before);
+    }
+
+    #[test]
+    fn persisted_host_key_recreates_the_same_certificate_fingerprint() {
+        let root = std::env::temp_dir().join(format!(
+            "wildforge-persistent-host-key-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let key_path = root.join("server-ed25519.pk8");
+        let first_key = crate::identity::load_or_create_ed25519_pkcs8(&key_path).unwrap();
+        let second_key = crate::identity::load_or_create_ed25519_pkcs8(&key_path).unwrap();
+        assert_eq!(first_key, second_key);
+        let (first_cert, _) = handshake::certificate_from_pkcs8(first_key).unwrap();
+        let (second_cert, _) = handshake::certificate_from_pkcs8(second_key).unwrap();
+        assert_eq!(
+            crate::identity::sha256(first_cert.as_ref()),
+            crate::identity::sha256(second_cert.as_ref())
+        );
     }
 
     #[test]

@@ -123,6 +123,13 @@ pub struct ModerationStore {
     mutes: Vec<MuteRecord>,
 }
 
+pub struct BanIdentity<'a> {
+    pub player_id: PlayerId,
+    pub principals: &'a [Principal],
+    pub display_name: &'a str,
+    pub handle: Option<&'a str>,
+}
+
 impl ModerationStore {
     pub fn load(world: &Path) -> io::Result<Self> {
         let root = world.join("moderation");
@@ -203,9 +210,7 @@ impl ModerationStore {
 
     pub fn ban(
         &mut self,
-        player_id: PlayerId,
-        principals: &[Principal],
-        display_name: &str,
+        identity: BanIdentity<'_>,
         reason: &str,
         created_by: &str,
         duration_secs: Option<u64>,
@@ -213,36 +218,36 @@ impl ModerationStore {
         let created_at = now();
         let expires_at = duration_secs.map(|duration| created_at.saturating_add(duration));
         self.bans.retain(|ban| {
-            ban.player_id != Some(player_id)
+            ban.player_id != Some(identity.player_id)
                 && ban
                     .principal
                     .as_ref()
-                    .is_none_or(|principal| !principals.contains(principal))
+                    .is_none_or(|principal| !identity.principals.contains(principal))
         });
         self.bans.push(BanRecord {
             principal: None,
-            player_id: Some(player_id),
+            player_id: Some(identity.player_id),
             reason: clean(reason, 160),
             created_at,
             created_by: clean(created_by, 80),
             expires_at,
-            last_handle: None,
-            last_display_name: Some(clean(display_name, 32)),
+            last_handle: identity.handle.map(|value| clean(value, 253)),
+            last_display_name: Some(clean(identity.display_name, 32)),
         });
-        for principal in principals {
+        for principal in identity.principals {
             self.bans.push(BanRecord {
                 principal: Some(principal.clone()),
-                player_id: Some(player_id),
+                player_id: Some(identity.player_id),
                 reason: clean(reason, 160),
                 created_at,
                 created_by: clean(created_by, 80),
                 expires_at,
-                last_handle: None,
-                last_display_name: Some(clean(display_name, 32)),
+                last_handle: identity.handle.map(|value| clean(value, 253)),
+                last_display_name: Some(clean(identity.display_name, 32)),
             });
         }
         self.save_bans()?;
-        self.audit(created_by, "ban", &player_id.to_string(), reason)
+        self.audit(created_by, "ban", &identity.player_id.to_string(), reason)
     }
 
     pub fn unban_player(&mut self, player_id: PlayerId, by: &str) -> io::Result<bool> {
@@ -470,14 +475,25 @@ mod tests {
             .unwrap();
         assert!(store.role(&principal).can_moderate());
         assert!(!store.role(&principal).can_administer());
+        assert!(Role::Owner.can_moderate() && Role::Owner.can_administer());
+        assert!(Role::Admin.can_moderate() && Role::Admin.can_administer());
+        assert!(Role::Moderator.can_moderate() && !Role::Moderator.can_administer());
+        assert!(!Role::Player.can_moderate() && !Role::Player.can_administer());
+        store
+            .mute(principal.clone(), "cool down", "owner", Some(0))
+            .unwrap();
+        assert!(!store.is_muted(&principal));
 
         // A zero-duration ban expires immediately; a permanent one survives
         // reload and is removed by PlayerId, including its principal copies.
         store
             .ban(
-                player,
-                std::slice::from_ref(&principal),
-                "MOSS",
+                BanIdentity {
+                    player_id: player,
+                    principals: std::slice::from_ref(&principal),
+                    display_name: "MOSS",
+                    handle: Some("moss.example"),
+                },
                 "test",
                 "owner",
                 Some(0),
@@ -492,9 +508,12 @@ mod tests {
             .unwrap();
         store
             .ban(
-                player,
-                std::slice::from_ref(&principal),
-                "MOSS",
+                BanIdentity {
+                    player_id: player,
+                    principals: std::slice::from_ref(&principal),
+                    display_name: "MOSS",
+                    handle: Some("moss.example"),
+                },
                 "spam",
                 "owner",
                 None,
@@ -513,6 +532,12 @@ mod tests {
 
         let mut reloaded = ModerationStore::load(&root).unwrap();
         assert_eq!(reloaded.role(&principal), Role::Moderator);
+        assert!(
+            reloaded
+                .bans
+                .iter()
+                .all(|record| record.last_handle.as_deref() == Some("moss.example"))
+        );
         assert!(reloaded.unban_player(player, "owner").unwrap());
         reloaded
             .admit(&[principal], Some(player), AdmissionPolicy::Open)
@@ -520,6 +545,7 @@ mod tests {
         let audit = std::fs::read_to_string(root.join("moderation/audit.log")).unwrap();
         assert!(audit.contains("\tallow\t"));
         assert!(audit.contains("\trole\t"));
+        assert!(audit.contains("\tmute\t"));
         assert!(audit.contains("\tban\t"));
         assert!(audit.contains("\tunban\t"));
     }

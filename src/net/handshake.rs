@@ -68,14 +68,7 @@ pub(super) fn server_certificate() -> io::Result<(
     let (cert_der, key_bytes) = {
         let key_path = crate::identity::identity_dir().join("server-ed25519.pk8");
         let key_bytes = load_or_create_ed25519_pkcs8(&key_path)?;
-        let private = rustls::pki_types::PrivatePkcs8KeyDer::from(key_bytes.clone());
-        let key_pair = rcgen::KeyPair::from_pkcs8_der_and_sign_algo(&private, &rcgen::PKCS_ED25519)
-            .map_err(io::Error::other)?;
-        let cert = rcgen::CertificateParams::new(vec!["wildforge".into()])
-            .map_err(io::Error::other)?
-            .self_signed(&key_pair)
-            .map_err(io::Error::other)?;
-        (cert.der().clone(), key_bytes)
+        certificate_from_pkcs8(key_bytes)?
     };
 
     let fingerprint = sha256(cert_der.as_ref());
@@ -84,6 +77,19 @@ pub(super) fn server_certificate() -> io::Result<(
         rustls::pki_types::PrivatePkcs8KeyDer::from(key_bytes),
         fingerprint,
     ))
+}
+
+pub(super) fn certificate_from_pkcs8(
+    key_bytes: Vec<u8>,
+) -> io::Result<(rustls::pki_types::CertificateDer<'static>, Vec<u8>)> {
+    let private = rustls::pki_types::PrivatePkcs8KeyDer::from(key_bytes.clone());
+    let key_pair = rcgen::KeyPair::from_pkcs8_der_and_sign_algo(&private, &rcgen::PKCS_ED25519)
+        .map_err(io::Error::other)?;
+    let cert = rcgen::CertificateParams::new(vec!["wildforge".into()])
+        .map_err(io::Error::other)?
+        .self_signed(&key_pair)
+        .map_err(io::Error::other)?;
+    Ok((cert.der().clone(), key_bytes))
 }
 
 pub(super) fn peer_certificate_fingerprint(connection: &quinn::Connection) -> io::Result<[u8; 32]> {

@@ -20,9 +20,11 @@ being migrated and is removed only after the new path saves successfully.
 The Accounts screen can link ATProto. OAuth runs in the browser with PKCE,
 PAR, DPoP, state/issuer/sub validation supplied by Jacquard. Wildforge asks for
 only `atproto repo:gay.dollspace.wildforge.device`, writes one public
-device-binding record, logs out, deletes the temporary token store, and keeps
-only non-secret DID/handle/profile preferences in `identity/atproto.toml`.
-OAuth tokens never enter a game packet, world, log, or server.
+device-binding record, reads it back through the same public route a server
+will use, logs out, and drops the in-memory OAuth store. It keeps only the
+non-secret DID, handle, device public key, binding record key, and profile
+preferences in `identity/atproto.toml`. OAuth tokens are never written to disk
+and never enter a game packet, world, log, or server.
 
 ## Server policy
 
@@ -80,10 +82,13 @@ handshake-abuse signal.
   still-linked ATProto account can authorize a new device record and recover
   the same server profile. Otherwise an operator must perform a deliberate
   profile/principal recovery; copying inventory is never automatic.
-- **Revoke this device** reauthenticates and deletes the public binding record.
-  **Unlink locally** only removes local metadata and clearly warns that the
-  remote record may remain. A deleted record stops live verification; a server
-  may show `VERIFIED/CACHED` only within its configured outage grace.
+- **Revoke this device** reauthenticates, deletes the public binding record,
+  and re-fetches it with a bounded retry. Local metadata is removed only after
+  the PDS returns a definite `RecordNotFound`; network or verifier errors leave
+  it intact so the player can retry. **Unlink locally** only removes local
+  metadata and clearly warns that the remote record may remain. A deleted
+  record stops live verification; a server may show `VERIFIED/CACHED` only
+  within its configured outage grace.
 - A verified server learns the DID and can resolve public account metadata.
   Peers receive only a verification badge. Social display-name and avatar
   preferences are separate opt-ins. Avatar download/rendering is intentionally
@@ -110,20 +115,31 @@ answers, caps responses at 64 KiB, and bounds connect/total time. Communities
 that require cryptographic repository proofs should keep the server private
 until a signed-CAR verifier replaces this mode.
 
-Jacquard 0.12.1 was selected instead of implementing OAuth or DPoP. The native
-loopback client profile is used by the binary; the production deployment
+Handles are display metadata, never account keys. A handle found in the DID
+document is shown only when its DNS TXT or public HTTPS handle resolution maps
+back to the same DID. Handle resolution runs alongside proof lookup with its
+own short timeout, so unavailable handle infrastructure does not invalidate an
+otherwise valid device proof.
+
+Jacquard 0.12.1 component crates were selected instead of implementing OAuth
+or DPoP. The native loopback client profile is used by the binary; the
+production deployment
 payload is `docs/atproto-oauth-client-metadata.json` and must be published at
 its exact HTTPS `client_id` before a hosted-metadata release profile is enabled.
-Linux tests and the `x86_64-pc-windows-gnu` cross-check pass. Default tests use
-local fixtures and pure verifier inputs and never mutate a public account.
-Interactive browser handoff plus write/fetch/revoke against a common and
-independent PDS remains a release smoke test because it requires a consenting
-account and provider.
+Linux tests, strict lints, and the `x86_64-pc-windows-gnu` cross-check pass.
+Default tests use local fixtures and mock OAuth/verifier inputs and never
+mutate a public account. Interactive browser handoff plus
+write/fetch/revoke/re-fetch against a common and independent PDS remains a
+release smoke test because it requires a consenting account and provider.
 
 Dependency cost is intentionally isolated behind `identity::atproto`; the
-direct production graph adds Jacquard and reqwest but no second game runtime or
-central Wildforge service. Join verification is bounded to eight seconds and
-successful proofs are cached per server/world.
+direct production graph adds 278 unique package lines over `origin/main` in
+the recorded Cargo-tree measurement (530 versus 252), but no second game
+runtime or central Wildforge service. The unstripped Linux release binary is
+35,564,408 bytes on Rust 1.96.0. Using the three required Jacquard component
+crates instead of its umbrella crate removed 31 packages from the first
+measurement. Join verification is bounded to eight seconds and successful
+proofs are cached per server/world.
 
 ## Release qualification matrix
 
@@ -134,9 +150,12 @@ The default build/test gate is safe to run without public credentials:
 | Local identity, migration, signatures, profile mapping | Automated unit tests |
 | Handshake transcript, host-key change, old protocol, abuse budget | Automated unit/loopback tests |
 | Server-owned inventory/movement and full roster | Automated loopback tests |
-| Binding mismatch, PDS migration, cache expiry, SSRF policy | Automated pure verifier tests |
-| Linux build/lints | `cargo test --lib`; `cargo clippy --all-targets -- -D warnings` |
+| OAuth flow and failures | Mock PAR/PKCE/DPoP/nonce, state/issuer/replay/cancel, subject, scope, and redaction tests |
+| Binding mismatch, PDS migration, cache expiry/limit, SSRF policy | Automated pure verifier tests |
+| Linux build/lints | `cargo test --all-targets --no-fail-fast` (193 passed, 1 diagnostic ignored); `cargo clippy --all-targets -- -D warnings` |
 | Windows dependency/build compatibility | `cargo check --target x86_64-pc-windows-gnu` |
+| Dependency/release size | 530 vs 252 normal package lines; 35,564,408-byte unstripped Linux release binary |
+| Headless hosting | Isolated release-binary smoke created host key/settings and exercised `help`, `players`, and `identity` |
 
 The following checks require a consenting account, graphical browser, or
 operator judgment and must be signed off before labeling the integration

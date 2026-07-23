@@ -11,19 +11,25 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use jacquard::common::types::ident::AtIdentifier;
-use jacquard::common::types::nsid::Nsid;
-use jacquard::common::types::recordkey::RecordKey;
-use jacquard::common::types::value::to_data;
-use jacquard::common::xrpc::XrpcClient;
-use jacquard::common::xrpc::atproto::{DeleteRecord, PutRecord};
-use jacquard::oauth::atproto::AtprotoClientMetadata;
-use jacquard::oauth::client::OAuthClient;
-use jacquard::oauth::loopback::{LoopbackConfig, LoopbackPort};
-use jacquard::oauth::scopes::Scopes;
-use jacquard::oauth::session::ClientData;
-use jacquard::oauth::types::AuthorizeOptions;
+use jacquard_common::types::handle::Handle;
+use jacquard_common::types::ident::AtIdentifier;
+use jacquard_common::types::nsid::Nsid;
+use jacquard_common::types::recordkey::RecordKey;
+use jacquard_common::types::value::to_data;
+use jacquard_common::xrpc::XrpcClient;
+use jacquard_common::xrpc::atproto::{DeleteRecord, PutRecord};
+use jacquard_identity::JacquardResolver;
+use jacquard_identity::resolver::{HandleStep, IdentityResolver, ResolverOptions};
+use jacquard_oauth::atproto::AtprotoClientMetadata;
+use jacquard_oauth::authstore::MemoryAuthStore;
+use jacquard_oauth::client::OAuthClient;
+use jacquard_oauth::loopback::{LoopbackConfig, LoopbackPort};
+use jacquard_oauth::resolver::OAuthResolver;
+use jacquard_oauth::scopes::Scopes;
+use jacquard_oauth::session::ClientData;
+use jacquard_oauth::types::AuthorizeOptions;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 
 use super::{AtprotoDid, DeviceKeyId, atomic_write, encode_hex};
 use crate::net::AtprotoClaim;
@@ -33,12 +39,52 @@ use crate::net::AtprotoClaim;
 pub const BINDING_COLLECTION: &str = "gay.dollspace.wildforge.device";
 const RECORD_TYPE: &str = "gay.dollspace.wildforge.device";
 const MAX_IDENTITY_BYTES: usize = 64 * 1024;
+const MAX_CACHED_PROOFS: usize = 512;
+const LIVE_VERIFY_TIMEOUT: Duration = Duration::from_secs(8);
+const HANDLE_VERIFY_TIMEOUT: Duration = Duration::from_secs(2);
+
+#[derive(Debug)]
+enum PublicJsonError {
+    NotFound,
+    Other(String),
+}
+
+impl std::fmt::Display for PublicJsonError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => f.write_str("identity record was not found"),
+            Self::Other(message) => f.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for PublicJsonError {}
+
+#[derive(Debug)]
+enum ProofError {
+    BindingAbsent,
+    Other(String),
+}
+
+impl std::fmt::Display for ProofError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BindingAbsent => f.write_str("ATProto binding record was not found"),
+            Self::Other(message) => f.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for ProofError {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AtprotoAccount {
     pub did: AtprotoDid,
     pub handle: Option<String>,
     pub binding: String,
+    /// Public (not secret) key written into this account's binding record.
+    #[serde(default)]
+    pub device_public_key: String,
     pub linked_at: u64,
     #[serde(default)]
     pub use_social_display_name: bool,
@@ -62,6 +108,14 @@ impl AtprotoAccount {
                 // Re-parse to reject hand-edited values that bypass the newtype's constructor.
                 AtprotoDid::parse(account.did.as_str())
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                if !account.device_public_key.is_empty()
+                    && super::decode_hex::<32>(&account.device_public_key).is_none()
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "invalid linked device public key",
+                    ));
+                }
                 Ok(Some(account))
             }
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
@@ -100,6 +154,27 @@ struct DeviceBinding<'a> {
     label: &'a str,
 }
 
+fn oauth_client_data() -> io::Result<ClientData<SmolStr>> {
+    let scopes = Scopes::new(SmolStr::new(format!("atproto repo:{BINDING_COLLECTION}")))
+        .map_err(|e| io::Error::other(redact(&e.to_string())))?;
+    Ok(ClientData {
+        keyset: None,
+        config: AtprotoClientMetadata::new_localhost(None, Some(scopes)),
+    })
+}
+
+fn validate_oauth_subject(expected: Option<&str>, subject: &str) -> io::Result<AtprotoDid> {
+    let subject = AtprotoDid::parse(subject)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    if expected.is_some_and(|expected| expected != subject.as_str()) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "OAuth token subject does not match the identity resolved before authorization",
+        ));
+    }
+    Ok(subject)
+}
+
 /// Complete one browser/loopback OAuth flow, write the device record, discard
 /// the session, and persist only non-secret account metadata.
 pub fn link_account(root: &Path, input: &str, public_key: [u8; 32]) -> io::Result<AtprotoAccount> {
@@ -111,27 +186,24 @@ pub fn link_account(root: &Path, input: &str, public_key: [u8; 32]) -> io::Resul
         ));
     }
     std::fs::create_dir_all(root)?;
-    let token_path = root.join("atproto-oauth.json");
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()?;
     let result = runtime.block_on(async {
-        let store = jacquard::client::FileAuthStore::try_new(&token_path)
-            .map_err(|e| io::Error::other(redact(&e.to_string())))?;
-        restrict_secret(&token_path)?;
-        let scopes = Scopes::new(jacquard::SmolStr::new(format!(
-            "atproto repo:{BINDING_COLLECTION}"
-        )))
-        .map_err(|e| io::Error::other(redact(&e.to_string())))?;
-        let oauth = OAuthClient::new(
-            store,
-            ClientData {
-                keyset: None,
-                config: AtprotoClientMetadata::new_localhost(None, Some(scopes)),
-            },
-            reqwest::Client::new(),
-        );
+        let store = MemoryAuthStore::new();
+        let oauth = OAuthClient::new(store, oauth_client_data()?, reqwest::Client::new());
+        // Resolve an identity hint before opening the browser. Jacquard checks
+        // issuer ownership of the returned `sub`; Wildforge additionally
+        // binds that subject to the handle/DID the player selected. A bare
+        // PDS/entryway URL intentionally has no preselected account.
+        let expected_did = oauth
+            .client
+            .resolve_oauth(input)
+            .await
+            .map_err(|error| io::Error::other(redact(&error.to_string())))?
+            .1
+            .map(|document| document.id.to_string());
         let session = oauth
             .login_with_local_server(
                 input,
@@ -145,8 +217,7 @@ pub fn link_account(root: &Path, input: &str, public_key: [u8; 32]) -> io::Resul
             .map_err(|e| io::Error::other(redact(&e.to_string())))?;
         let (did, _) = session.session_info().await;
         let did_text = did.to_string();
-        let parsed_did = AtprotoDid::parse(&did_text)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let parsed_did = validate_oauth_subject(expected_did.as_deref(), &did_text)?;
         let device_id = DeviceKeyId::of_public_key(&public_key);
         let rkey = format!("device-{device_id}");
         let key_text = encode_hex(&public_key);
@@ -175,12 +246,21 @@ pub fn link_account(root: &Path, input: &str, public_key: [u8; 32]) -> io::Resul
         response
             .into_output()
             .map_err(|e| io::Error::other(redact(&e.to_string())))?;
+        // Do not report a successful link until the public repository path a
+        // game server will use can read back this exact device record.
+        let verified_handle = verify_live_bounded(&parsed_did, &rkey, &key_text)
+            .await
+            .map_err(io::Error::other)?;
         let profile = fetch_public_profile(&did_text).await.ok();
         let _ = session.logout().await;
         Ok::<_, io::Error>(AtprotoAccount {
             did: parsed_did,
-            handle: profile.as_ref().and_then(|value| value.handle.clone()),
+            handle: profile
+                .as_ref()
+                .and_then(|value| value.handle.clone())
+                .or(verified_handle),
             binding: rkey,
+            device_public_key: key_text,
             linked_at: now(),
             use_social_display_name: false,
             use_social_avatar: false,
@@ -190,7 +270,6 @@ pub fn link_account(root: &Path, input: &str, public_key: [u8; 32]) -> io::Resul
             avatar_url: profile.and_then(|value| value.avatar),
         })
     });
-    let _ = std::fs::remove_file(&token_path);
     let account = result?;
     account.save(root)?;
     Ok(account)
@@ -200,27 +279,19 @@ pub fn link_account(root: &Path, input: &str, public_key: [u8; 32]) -> io::Resul
 /// metadata. If the remote delete fails, local unlink is not reported as a
 /// revocation; callers may explicitly choose `unlink_local` instead.
 pub fn revoke_account(root: &Path, input: &str, account: &AtprotoAccount) -> io::Result<()> {
-    let token_path = root.join("atproto-oauth.json");
+    if account.device_public_key.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "this legacy account link has no device key; relink before revoking",
+        ));
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()?;
     let result = runtime.block_on(async {
-        let store = jacquard::client::FileAuthStore::try_new(&token_path)
-            .map_err(|e| io::Error::other(redact(&e.to_string())))?;
-        restrict_secret(&token_path)?;
-        let scopes = Scopes::new(jacquard::SmolStr::new(format!(
-            "atproto repo:{BINDING_COLLECTION}"
-        )))
-        .map_err(|e| io::Error::other(redact(&e.to_string())))?;
-        let oauth = OAuthClient::new(
-            store,
-            ClientData {
-                keyset: None,
-                config: AtprotoClientMetadata::new_localhost(None, Some(scopes)),
-            },
-            reqwest::Client::new(),
-        );
+        let store = MemoryAuthStore::new();
+        let oauth = OAuthClient::new(store, oauth_client_data()?, reqwest::Client::new());
         let session = oauth
             .login_with_local_server(
                 input,
@@ -254,10 +325,13 @@ pub fn revoke_account(root: &Path, input: &str, account: &AtprotoAccount) -> io:
         response
             .into_output()
             .map_err(|e| io::Error::other(redact(&e.to_string())))?;
+        // Re-fetch through the same public path used by game servers. A
+        // successful verification here means revocation has not taken effect
+        // yet and local metadata must remain linked.
+        confirm_binding_deleted(&account.did, &account.binding, &account.device_public_key).await?;
         let _ = session.logout().await;
         Ok::<_, io::Error>(())
     });
-    let _ = std::fs::remove_file(token_path);
     result?;
     AtprotoAccount::unlink_local(root)
 }
@@ -266,6 +340,7 @@ pub fn revoke_account(root: &Path, input: &str, account: &AtprotoAccount) -> io:
 pub struct VerifiedBinding {
     pub did: AtprotoDid,
     pub cached: bool,
+    pub handle: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -274,6 +349,8 @@ struct CachedBinding {
     binding: String,
     public_key: String,
     verified_at: u64,
+    #[serde(default)]
+    handle: Option<String>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -291,7 +368,7 @@ pub struct ProofCache {
 
 impl ProofCache {
     pub fn load(path: PathBuf, grace_secs: u64) -> io::Result<Self> {
-        let cache = match std::fs::read_to_string(&path) {
+        let mut cache = match std::fs::read_to_string(&path) {
             Ok(text) => toml::from_str::<CacheFile>(&text).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -307,6 +384,10 @@ impl ProofCache {
                 "unsupported ATProto proof cache version",
             ));
         }
+        let changed = normalize_cache(&mut cache.proof, grace_secs, now());
+        if changed {
+            save_cache(&path, &cache.proof)?;
+        }
         Ok(Self {
             path,
             grace_secs,
@@ -321,8 +402,8 @@ impl ProofCache {
     ) -> Result<VerifiedBinding, String> {
         let did = AtprotoDid::parse(&claim.did).map_err(|e| e.to_string())?;
         let key = encode_hex(public_key);
-        match verify_live(&did, &claim.binding, &key).await {
-            Ok(()) => {
+        match verify_live_bounded(&did, &claim.binding, &key).await {
+            Ok(handle) => {
                 let mut entries = self.entries.lock().map_err(|_| "proof cache poisoned")?;
                 entries.retain(|entry| {
                     !(entry.did == did.as_str()
@@ -334,21 +415,29 @@ impl ProofCache {
                     binding: claim.binding.clone(),
                     public_key: key,
                     verified_at: now(),
+                    handle: handle.clone(),
                 });
                 entries.retain(|entry| now().saturating_sub(entry.verified_at) <= self.grace_secs);
-                if entries.len() > 512 {
-                    let remove = entries.len() - 512;
-                    entries.drain(..remove);
-                }
+                normalize_cache(&mut entries, self.grace_secs, now());
                 save_cache(&self.path, &entries).map_err(|e| e.to_string())?;
-                Ok(VerifiedBinding { did, cached: false })
+                Ok(VerifiedBinding {
+                    did,
+                    cached: false,
+                    handle,
+                })
             }
             Err(live_error) => {
                 let entries = self.entries.lock().map_err(|_| "proof cache poisoned")?;
-                if has_cached_proof(&entries, &did, &claim.binding, &key, self.grace_secs, now()) {
-                    Ok(VerifiedBinding { did, cached: true })
+                if let Some(handle) =
+                    cached_proof(&entries, &did, &claim.binding, &key, self.grace_secs, now())
+                {
+                    Ok(VerifiedBinding {
+                        did,
+                        cached: true,
+                        handle,
+                    })
                 } else {
-                    Err(live_error)
+                    Err(live_error.to_string())
                 }
             }
         }
@@ -368,16 +457,27 @@ struct GetRecordEnvelope {
     value: BindingValue,
 }
 
-async fn verify_live(did: &AtprotoDid, binding: &str, key: &str) -> Result<(), String> {
-    RecordKey::<jacquard::common::types::recordkey::Rkey>::any_owned(binding)
-        .map_err(|_| "invalid ATProto binding record key")?;
-    let document_url = did_document_url(did)?;
-    let document: serde_json::Value = get_public_limited_json(document_url).await?;
+async fn verify_live(
+    did: &AtprotoDid,
+    binding: &str,
+    key: &str,
+) -> Result<Option<String>, ProofError> {
+    RecordKey::<jacquard_common::types::recordkey::Rkey>::any_owned(binding)
+        .map_err(|_| ProofError::Other("invalid ATProto binding record key".into()))?;
+    let document_url = did_document_url(did).map_err(ProofError::Other)?;
+    let document: serde_json::Value = get_public_limited_json(document_url)
+        .await
+        .map_err(|error| ProofError::Other(error.to_string()))?;
     if document.get("id").and_then(|value| value.as_str()) != Some(did.as_str()) {
-        return Err("resolved DID document has the wrong id".into());
+        return Err(ProofError::Other(
+            "resolved DID document has the wrong id".into(),
+        ));
     }
-    let endpoint = pds_endpoint(&document).ok_or("DID document has no ATProto PDS service")?;
-    let mut endpoint = reqwest::Url::parse(&endpoint).map_err(|_| "invalid PDS endpoint")?;
+    let handle_candidate = handle_from_document(&document);
+    let endpoint = pds_endpoint(&document)
+        .ok_or_else(|| ProofError::Other("DID document has no ATProto PDS service".into()))?;
+    let mut endpoint = reqwest::Url::parse(&endpoint)
+        .map_err(|_| ProofError::Other("invalid PDS endpoint".into()))?;
     endpoint.set_path("/xrpc/com.atproto.repo.getRecord");
     endpoint.set_query(None);
     endpoint
@@ -385,11 +485,56 @@ async fn verify_live(did: &AtprotoDid, binding: &str, key: &str) -> Result<(), S
         .append_pair("repo", did.as_str())
         .append_pair("collection", BINDING_COLLECTION)
         .append_pair("rkey", binding);
-    let envelope: GetRecordEnvelope = get_public_limited_json(endpoint).await?;
+    let handle_check = async {
+        let handle = handle_candidate?;
+        tokio::time::timeout(HANDLE_VERIFY_TIMEOUT, handle_matches_did(&handle, did))
+            .await
+            .ok()
+            .filter(|matches| *matches)
+            .map(|_| handle)
+    };
+    let (envelope, handle) = tokio::join!(get_public_limited_json(endpoint), handle_check);
+    let envelope: GetRecordEnvelope = match envelope {
+        Ok(envelope) => envelope,
+        Err(PublicJsonError::NotFound) => return Err(ProofError::BindingAbsent),
+        Err(PublicJsonError::Other(error)) => return Err(ProofError::Other(error)),
+    };
     if !binding_matches(&envelope, key) {
-        return Err("ATProto binding record does not match this device key".into());
+        return Err(ProofError::Other(
+            "ATProto binding record does not match this device key".into(),
+        ));
     }
-    Ok(())
+    Ok(handle)
+}
+
+async fn verify_live_bounded(
+    did: &AtprotoDid,
+    binding: &str,
+    key: &str,
+) -> Result<Option<String>, ProofError> {
+    tokio::time::timeout(LIVE_VERIFY_TIMEOUT, verify_live(did, binding, key))
+        .await
+        .unwrap_or_else(|_| Err(ProofError::Other("ATProto verification timed out".into())))
+}
+
+async fn confirm_binding_deleted(did: &AtprotoDid, binding: &str, key: &str) -> io::Result<()> {
+    for delay in [0, 200, 600] {
+        if delay > 0 {
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+        }
+        match verify_live_bounded(did, binding, key).await {
+            Err(ProofError::BindingAbsent) => return Ok(()),
+            Err(ProofError::Other(error)) => {
+                return Err(io::Error::other(format!(
+                    "could not confirm device-binding deletion: {error}"
+                )));
+            }
+            Ok(_) => {}
+        }
+    }
+    Err(io::Error::other(
+        "device binding is still publicly verifiable after deletion",
+    ))
 }
 
 fn binding_matches(envelope: &GetRecordEnvelope, key: &str) -> bool {
@@ -397,21 +542,77 @@ fn binding_matches(envelope: &GetRecordEnvelope, key: &str) -> bool {
         && envelope.value.device_public_key.eq_ignore_ascii_case(key)
 }
 
-fn has_cached_proof(
+fn cached_proof(
     entries: &[CachedBinding],
     did: &AtprotoDid,
     binding: &str,
     key: &str,
     grace_secs: u64,
     at: u64,
-) -> bool {
-    grace_secs > 0
-        && entries.iter().any(|entry| {
-            entry.did == did.as_str()
-                && entry.binding == binding
-                && entry.public_key == key
-                && at.saturating_sub(entry.verified_at) <= grace_secs
+) -> Option<Option<String>> {
+    (grace_secs > 0)
+        .then(|| {
+            entries.iter().find(|entry| {
+                entry.did == did.as_str()
+                    && entry.binding == binding
+                    && entry.public_key == key
+                    && at.saturating_sub(entry.verified_at) <= grace_secs
+            })
         })
+        .flatten()
+        .map(|entry| entry.handle.clone())
+}
+
+fn normalize_cache(entries: &mut Vec<CachedBinding>, grace_secs: u64, at: u64) -> bool {
+    let before = entries.len();
+    let before_order: Vec<u64> = entries.iter().map(|entry| entry.verified_at).collect();
+    if grace_secs == 0 {
+        entries.clear();
+        return before != 0;
+    }
+    entries.retain(|entry| at.saturating_sub(entry.verified_at) <= grace_secs);
+    entries.sort_by_key(|entry| entry.verified_at);
+    if entries.len() > MAX_CACHED_PROOFS {
+        entries.drain(..entries.len() - MAX_CACHED_PROOFS);
+    }
+    entries.len() != before
+        || entries
+            .iter()
+            .map(|entry| entry.verified_at)
+            .ne(before_order)
+}
+
+fn handle_from_document(document: &serde_json::Value) -> Option<String> {
+    document
+        .get("alsoKnownAs")?
+        .as_array()?
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .filter_map(|value| value.strip_prefix("at://"))
+        .find_map(|value| Handle::new(value).ok())
+        .map(|handle| handle.to_string())
+}
+
+async fn handle_matches_did(handle: &str, did: &AtprotoDid) -> bool {
+    let Ok(handle) = Handle::<SmolStr>::new_owned(handle) else {
+        return false;
+    };
+    let options = ResolverOptions {
+        handle_order: vec![HandleStep::DnsTxt],
+        public_fallback_for_handle: false,
+        ..ResolverOptions::default()
+    };
+    let resolver = JacquardResolver::new_dns(reqwest::Client::new(), options);
+    if let Ok(resolved) = resolver.resolve_handle(&handle).await {
+        return resolved.as_str() == did.as_str();
+    }
+
+    let Ok(url) = reqwest::Url::parse(&format!("https://{handle}/.well-known/atproto-did")) else {
+        return false;
+    };
+    get_public_limited_text(url)
+        .await
+        .is_ok_and(|resolved| resolved.trim() == did.as_str())
 }
 
 fn did_document_url(did: &AtprotoDid) -> Result<reqwest::Url, String> {
@@ -513,37 +714,66 @@ fn public_ip(ip: IpAddr) -> bool {
 async fn get_limited_json<T: for<'de> Deserialize<'de>>(
     client: &reqwest::Client,
     url: reqwest::Url,
-) -> Result<T, String> {
+) -> Result<T, PublicJsonError> {
     let response = client
         .get(url)
         .send()
         .await
-        .map_err(|e| redact(&e.to_string()))?;
-    if !response.status().is_success() {
-        return Err(format!("identity endpoint returned {}", response.status()));
-    }
+        .map_err(|e| PublicJsonError::Other(redact(&e.to_string())))?;
+    let status = response.status();
     if response
         .content_length()
         .is_some_and(|length| length > MAX_IDENTITY_BYTES as u64)
     {
-        return Err("identity response is too large".into());
+        return Err(PublicJsonError::Other(
+            "identity response is too large".into(),
+        ));
     }
-    let bytes = response.bytes().await.map_err(|e| redact(&e.to_string()))?;
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| PublicJsonError::Other(redact(&e.to_string())))?;
     if bytes.len() > MAX_IDENTITY_BYTES {
-        return Err("identity response is too large".into());
+        return Err(PublicJsonError::Other(
+            "identity response is too large".into(),
+        ));
     }
-    serde_json::from_slice(&bytes).map_err(|_| "identity endpoint returned invalid JSON".into())
+    if !status.is_success() {
+        if response_is_not_found(status, &bytes) {
+            return Err(PublicJsonError::NotFound);
+        }
+        return Err(PublicJsonError::Other(format!(
+            "identity endpoint returned {status}"
+        )));
+    }
+    serde_json::from_slice(&bytes)
+        .map_err(|_| PublicJsonError::Other("identity endpoint returned invalid JSON".into()))
+}
+
+fn response_is_not_found(status: reqwest::StatusCode, bytes: &[u8]) -> bool {
+    status == reqwest::StatusCode::NOT_FOUND
+        || serde_json::from_slice::<serde_json::Value>(bytes)
+            .ok()
+            .and_then(|value| value.get("error")?.as_str().map(str::to_owned))
+            .is_some_and(|error| error == "RecordNotFound")
 }
 
 async fn get_public_limited_json<T: for<'de> Deserialize<'de>>(
     url: reqwest::Url,
-) -> Result<T, String> {
+) -> Result<T, PublicJsonError> {
+    let client = public_client(&url).await?;
+    get_limited_json(&client, url).await
+}
+
+async fn public_client(url: &reqwest::Url) -> Result<reqwest::Client, PublicJsonError> {
     let host = url
         .host_str()
-        .ok_or("identity endpoint has no host")?
+        .ok_or_else(|| PublicJsonError::Other("identity endpoint has no host".into()))?
         .to_owned();
-    let addresses = public_addresses(&url).await?;
-    let client = reqwest::Client::builder()
+    let addresses = public_addresses(url)
+        .await
+        .map_err(PublicJsonError::Other)?;
+    reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(4))
         .timeout(Duration::from_secs(8))
         // Redirects need a fresh address-policy check. Reject them instead of
@@ -555,8 +785,41 @@ async fn get_public_limited_json<T: for<'de> Deserialize<'de>>(
         .resolve_to_addrs(&host, &addresses)
         .user_agent("Wildforge/0.1 ATProto verifier")
         .build()
-        .map_err(|error| error.to_string())?;
-    get_limited_json(&client, url).await
+        .map_err(|error| PublicJsonError::Other(error.to_string()))
+}
+
+async fn get_public_limited_text(url: reqwest::Url) -> Result<String, PublicJsonError> {
+    let client = public_client(&url).await?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| PublicJsonError::Other(redact(&error.to_string())))?;
+    let status = response.status();
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_IDENTITY_BYTES as u64)
+    {
+        return Err(PublicJsonError::Other(
+            "identity response is too large".into(),
+        ));
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| PublicJsonError::Other(redact(&error.to_string())))?;
+    if !status.is_success() {
+        return Err(PublicJsonError::Other(format!(
+            "identity endpoint returned {status}"
+        )));
+    }
+    if bytes.len() > MAX_IDENTITY_BYTES {
+        return Err(PublicJsonError::Other(
+            "identity response is too large".into(),
+        ));
+    }
+    String::from_utf8(bytes.to_vec())
+        .map_err(|_| PublicJsonError::Other("identity endpoint returned invalid UTF-8".into()))
 }
 
 #[derive(Deserialize)]
@@ -571,7 +834,9 @@ async fn fetch_public_profile(did: &str) -> Result<PublicProfile, String> {
     let mut url = reqwest::Url::parse("https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile")
         .map_err(|e| e.to_string())?;
     url.query_pairs_mut().append_pair("actor", did);
-    get_public_limited_json(url).await
+    get_public_limited_json(url)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 fn save_cache(path: &Path, entries: &[CachedBinding]) -> io::Result<()> {
@@ -610,19 +875,6 @@ fn redact(message: &str) -> String {
         .join(" ")
 }
 
-fn restrict_secret(path: &Path) -> io::Result<()> {
-    #[cfg(not(unix))]
-    let _ = path;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut permissions = std::fs::metadata(path)?.permissions();
-        permissions.set_mode(0o600);
-        std::fs::set_permissions(path, permissions)?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -645,6 +897,15 @@ mod tests {
             },
         };
         assert!(!binding_matches(&wrong_type, &key));
+        assert!(response_is_not_found(
+            reqwest::StatusCode::BAD_REQUEST,
+            br#"{"error":"RecordNotFound"}"#
+        ));
+        assert!(response_is_not_found(reqwest::StatusCode::NOT_FOUND, b""));
+        assert!(!response_is_not_found(
+            reqwest::StatusCode::BAD_GATEWAY,
+            b""
+        ));
     }
 
     #[test]
@@ -655,31 +916,63 @@ mod tests {
             binding: "device-a".into(),
             public_key: "03".repeat(32),
             verified_at: 100,
+            handle: Some("moss.example".into()),
         }];
-        assert!(has_cached_proof(
-            &entries,
-            &did,
-            "device-a",
-            &"03".repeat(32),
-            60,
-            160,
-        ));
-        assert!(!has_cached_proof(
-            &entries,
-            &did,
-            "device-a",
-            &"03".repeat(32),
-            60,
-            161,
-        ));
-        assert!(!has_cached_proof(
-            &entries,
-            &did,
-            "revoked-record",
-            &"03".repeat(32),
-            60,
-            120,
-        ));
+        assert_eq!(
+            cached_proof(&entries, &did, "device-a", &"03".repeat(32), 60, 160,),
+            Some(Some("moss.example".into()))
+        );
+        assert_eq!(
+            cached_proof(&entries, &did, "device-a", &"03".repeat(32), 60, 161,),
+            None
+        );
+        assert_eq!(
+            cached_proof(&entries, &did, "revoked-record", &"03".repeat(32), 60, 120,),
+            None
+        );
+        assert_eq!(
+            cached_proof(&entries, &did, "device-a", &"03".repeat(32), 0, 100,),
+            None
+        );
+    }
+
+    #[test]
+    fn proof_cache_is_pruned_on_load_and_persisted_at_its_hard_limit() {
+        let root =
+            std::env::temp_dir().join(format!("wildforge-proof-cache-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("proofs.toml");
+        let at = now();
+        let proof: Vec<CachedBinding> = (0..(MAX_CACHED_PROOFS + 4))
+            .map(|index| CachedBinding {
+                did: format!("did:plc:cache{index}"),
+                binding: format!("device-{index}"),
+                public_key: format!("{index:064x}"),
+                verified_at: at.saturating_sub((MAX_CACHED_PROOFS + 4 - index) as u64),
+                handle: None,
+            })
+            .collect();
+        save_cache(&path, &proof).unwrap();
+
+        let loaded = ProofCache::load(path.clone(), 3_600).unwrap();
+        let entries = loaded.entries.lock().unwrap();
+        assert_eq!(entries.len(), MAX_CACHED_PROOFS);
+        assert!(
+            entries
+                .windows(2)
+                .all(|pair| { pair[0].verified_at <= pair[1].verified_at })
+        );
+        drop(entries);
+        let persisted: CacheFile =
+            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(persisted.version, 1);
+        assert_eq!(persisted.proof.len(), MAX_CACHED_PROOFS);
+
+        let disabled = ProofCache::load(path.clone(), 0).unwrap();
+        assert!(disabled.entries.lock().unwrap().is_empty());
+        let persisted: CacheFile = toml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert!(persisted.proof.is_empty());
     }
 
     #[test]
@@ -705,8 +998,102 @@ mod tests {
     }
 
     #[test]
+    fn did_document_handle_is_validated() {
+        let document = serde_json::json!({
+            "alsoKnownAs": [
+                "https://example.invalid/profile",
+                "at://moss.garden"
+            ]
+        });
+        assert_eq!(
+            handle_from_document(&document).as_deref(),
+            Some("moss.garden")
+        );
+        let invalid = serde_json::json!({"alsoKnownAs": ["at://not a handle"]});
+        assert_eq!(handle_from_document(&invalid), None);
+    }
+
+    #[test]
     fn oauth_errors_redact_codes_and_tokens() {
         let message = redact("failed code=secret access_token=secret harmless");
         assert_eq!(message, "failed [redacted] [redacted] harmless");
     }
+
+    #[test]
+    fn oauth_metadata_requests_only_the_binding_scope_and_dpop() {
+        let client = oauth_client_data().unwrap();
+        let wire = jacquard_oauth::atproto::atproto_client_metadata(&client.config, &None).unwrap();
+        assert_eq!(
+            wire.scope.as_ref().map(AsRef::as_ref),
+            Some("atproto repo:gay.dollspace.wildforge.device")
+        );
+        assert_eq!(wire.dpop_bound_access_tokens, Some(true));
+        assert_eq!(
+            wire.token_endpoint_auth_method.as_ref().map(AsRef::as_ref),
+            Some("none")
+        );
+
+        let hosted: serde_json::Value = serde_json::from_str(include_str!(
+            "../../docs/atproto-oauth-client-metadata.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            hosted.get("scope").and_then(serde_json::Value::as_str),
+            Some("atproto repo:gay.dollspace.wildforge.device")
+        );
+        assert_eq!(
+            hosted
+                .get("dpop_bound_access_tokens")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn persisted_account_metadata_contains_no_oauth_credentials() {
+        let root =
+            std::env::temp_dir().join(format!("wildforge-atproto-account-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let account = AtprotoAccount {
+            did: AtprotoDid::parse("did:plc:account").unwrap(),
+            handle: Some("moss.example".into()),
+            binding: "device-a".into(),
+            device_public_key: "ab".repeat(32),
+            linked_at: 7,
+            use_social_display_name: false,
+            use_social_avatar: false,
+            profile_display_name: Some("Moss".into()),
+            avatar_url: None,
+        };
+        account.save(&root).unwrap();
+        let path = root.join("atproto.toml");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("access_token"));
+        assert!(!text.contains("refresh_token"));
+        assert!(!text.contains("dpop"));
+        assert_eq!(
+            AtprotoAccount::load(&root).unwrap().unwrap().did,
+            account.did
+        );
+
+        std::fs::write(&path, text.replace(&"ab".repeat(32), "not-a-public-key")).unwrap();
+        assert_eq!(
+            AtprotoAccount::load(&root).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+
+        let mut legacy = account;
+        legacy.device_public_key.clear();
+        assert_eq!(
+            revoke_account(&root, "moss.example", &legacy)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
 }
+
+#[cfg(test)]
+#[path = "oauth_conformance.rs"]
+mod oauth_conformance;
