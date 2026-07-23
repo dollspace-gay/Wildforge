@@ -8,27 +8,25 @@ fn net_protocol_round_trips() {
     let c2s = [
         C2S::Hello {
             protocol: 2,
-            name: "doll".into(),
+            display_name: "DOLL".into(),
+            device_public_key: [3; 32],
+            client_nonce: [4; 32],
             content_hash: 42,
             style: 0x0102_0304,
+        },
+        C2S::Authenticate {
+            signature: vec![5; 64],
+            atproto: None,
         },
         C2S::Move {
             pos: Vec3::new(1.5, 80.0, -3.5),
             yaw: 1.2,
-            held: u16::MAX,
+            hotbar: 2,
+            sprint: true,
         },
         C2S::Break { x: 1, y: 2, z: 3 },
-        C2S::Place {
-            x: -9,
-            y: 70,
-            z: 4,
-            block: 7,
-        },
-        C2S::AttackMob {
-            id: 3,
-            dmg: 8.0,
-            from: Vec3::ZERO,
-        },
+        C2S::Place { x: -9, y: 70, z: 4 },
+        C2S::AttackMob { id: 3 },
         C2S::FeedMob { id: 12 },
         C2S::BrushBlock { x: 4, y: 30, z: -2 },
         C2S::ContainerClick {
@@ -37,11 +35,6 @@ fn net_protocol_round_trips() {
             z: 3,
             slot: 4,
             right: true,
-            held: Some(crate::net::StackSnap {
-                item: 9,
-                count: 3,
-                durability: 17,
-            }),
         },
         C2S::CloseContainer,
         C2S::Chat("hello wild".into()),
@@ -54,6 +47,12 @@ fn net_protocol_round_trips() {
         assert_eq!(format!("{m:?}"), format!("{back:?}"));
     }
     let s2c = [
+        S2C::Challenge {
+            nonce: [7; 32],
+            server_fingerprint: [8; 32],
+            identity_policy: crate::identity::IdentityPolicy::Local,
+            admission_policy: crate::identity::AdmissionPolicy::Open,
+        },
         S2C::BlockSet {
             x: 1,
             y: 2,
@@ -134,9 +133,17 @@ fn loopback_join_stream_and_edit() {
         ..Default::default()
     };
     let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-    let mut client =
-        crate::net::Client::connect(addr, "tester".into(), sess.content_hash, guest_style.pack())
-            .expect("connect");
+    let identity = crate::identity::LocalIdentity::load_or_create(&tmp_dir("mp-client-id"))
+        .expect("test identity");
+    let mut client = crate::net::Client::connect(
+        addr,
+        "tester".into(),
+        sess.content_hash,
+        guest_style.pack(),
+        &identity,
+        None,
+    )
+    .expect("connect");
 
     // Pump both sides until the Welcome lands.
     let ground = sim.world.surface_height(8, 8) as f32 + 1.0;
@@ -164,12 +171,11 @@ fn loopback_join_stream_and_edit() {
                     assert!(your_id > 0);
                     torch_wire = items.iter().position(|n| n == "base:torch");
                     welcome = Some(palette);
-                    // Tell the host where we stand (and that we carry a
-                    // torch — remote held lights ride the Move packet).
                     client.send(&C2S::Move {
-                        pos: gpos,
+                        pos: Vec3::new(0.5, 80.0, 0.5),
                         yaw: 0.0,
-                        held: torch_wire.expect("torch on the wire") as u16,
+                        hotbar: 0,
+                        sprint: false,
                     });
                 }
                 S2C::Chunk { x, z, rle } => {
@@ -188,6 +194,38 @@ fn loopback_join_stream_and_edit() {
     }
     let palette = welcome.expect("welcome arrived");
     assert!(got_chunk, "chunks streamed to the guest");
+
+    // Tests may seed server-owned state, but the wire no longer can. Put the
+    // guest near the fixture and give it a real selected torch on the host.
+    let gid = *sess.guests.keys().next().expect("guest admitted");
+    {
+        let guest = sess.guests.get_mut(&gid).unwrap();
+        guest.pos = gpos;
+        let torch = reg.item_id("base:torch").unwrap();
+        guest.inventory.slots[0] = Some(ItemStack::new(&reg, torch, 4));
+        guest.hotbar = 0;
+        guest.held = torch.0;
+    }
+    client.send(&C2S::Move {
+        pos: gpos,
+        yaw: 0.0,
+        hotbar: 0,
+        sprint: false,
+    });
+    client.send(&C2S::Move {
+        pos: gpos + Vec3::new(100.0, 40.0, 100.0),
+        yaw: 0.0,
+        hotbar: 0,
+        sprint: true,
+    });
+    for _ in 0..5 {
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.05,
+        );
+    }
+    assert_eq!(sess.guests[&gid].pos, gpos, "teleport intent is rejected");
 
     // The streamed chunk decodes into an identical remote chunk.
     let (cx, cz, rle) = chunk_data.unwrap();
@@ -303,6 +341,8 @@ fn loopback_join_stream_and_edit() {
     }
     sim.world.set_block(8, wy, 10, reg.water_block(0));
     sim.world.set_block(11, wy, 8, reg.water_for_volume(3));
+    let bucket = reg.item_id("base:bucket").unwrap();
+    sess.guests.get_mut(&gid).unwrap().inventory.slots[0] = Some(ItemStack::new(&reg, bucket, 1));
     client.send(&C2S::Scoop { x: 8, y: wy, z: 10 });
     client.send(&C2S::Scoop { x: 11, y: wy, z: 8 });
     for _ in 0..30 {
@@ -321,9 +361,8 @@ fn loopback_join_stream_and_edit() {
         "partial cell refused: buckets can't mint water"
     );
 
-    // Containers are transactional: a click carries the guest's cursor,
-    // the host applies it and echoes both halves. A worn tool keeps its
-    // durability through the round trip (the old flow repaired it).
+    // Containers are transactional. The server owns the cursor; the packet
+    // contains only which slot was clicked. A worn tool keeps its durability.
     let chest = reg.block_id("base:chest").expect("chest exists");
     let sword = reg.item_id("base:bronze_sword").expect("sword exists");
     let cy = sim.world.surface_height(8, 8) + 1;
@@ -347,18 +386,18 @@ fn loopback_join_stream_and_edit() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert!(opened, "chest opened over the wire");
-    // Deposit a worn sword into slot 2...
+    // Seed the authoritative cursor, deposit a worn sword into slot 2...
+    sess.guests.get_mut(&gid).unwrap().cursor = Some(ItemStack {
+        item: sword,
+        count: 1,
+        durability: 7,
+    });
     client.send(&C2S::ContainerClick {
         x: 10,
         y: cy,
         z: 8,
         slot: 2,
         right: false,
-        held: Some(crate::net::StackSnap {
-            item: sword.0,
-            count: 1,
-            durability: 7,
-        }),
     });
     // ...then immediately pick it back up.
     client.send(&C2S::ContainerClick {
@@ -367,7 +406,6 @@ fn loopback_join_stream_and_edit() {
         z: 8,
         slot: 2,
         right: false,
-        held: None,
     });
     let mut cursor_back = None;
     for _ in 0..100 {
@@ -498,30 +536,14 @@ fn loopback_join_stream_and_edit() {
     assert!(got_kind3, "bloomery streams as container kind 3");
     let iron = reg.item_id("base:iron_ingot").unwrap();
     let coal = reg.item_id("base:charcoal").unwrap();
-    client.send(&C2S::ContainerClick {
-        x: 12,
-        y: by,
-        z: 8,
-        slot: 0,
-        right: false,
-        held: Some(crate::net::StackSnap {
-            item: iron.0,
-            count: 2,
-            durability: 0,
-        }),
-    });
-    client.send(&C2S::ContainerClick {
-        x: 12,
-        y: by,
-        z: 8,
-        slot: 4,
-        right: false,
-        held: Some(crate::net::StackSnap {
-            item: coal.0,
-            count: 2,
-            durability: 0,
-        }),
-    });
+    if let Some(crate::world::BlockEntity::Bloomery(state)) =
+        sim.world.block_entity_mut(&(12, by, 8))
+    {
+        state.charge[0] = Some(ItemStack::new(&reg, iron, 2));
+        state.fuel[0] = Some(ItemStack::new(&reg, coal, 2));
+    }
+    let ember = reg.item_id("base:ember").unwrap();
+    sess.guests.get_mut(&gid).unwrap().inventory.slots[1] = Some(ItemStack::new(&reg, ember, 1));
     client.send(&C2S::LightBloomery { x: 12, y: by, z: 8 });
     let lit = reg.block_id("base:bloomery_lit").unwrap();
     let mut is_lit = false;
@@ -544,18 +566,77 @@ fn loopback_join_stream_and_edit() {
     sim.world.set_block(11, by, 10, anvil);
     let bloom = reg.item_id("base:steel_bloom").unwrap();
     let ingot = reg.item_id("base:steel_ingot").unwrap();
+    {
+        let guest = sess.guests.get_mut(&gid).unwrap();
+        guest.inventory.slots[0] = Some(ItemStack::new(&reg, bloom, 1));
+        guest.hotbar = 0;
+    }
     client.send(&C2S::AnvilPut {
         x: 11,
         y: by,
         z: 10,
-        item: bloom.0,
     });
-    for _ in 0..3 {
+    for _ in 0..100 {
+        sess.pump(
+            &mut sim,
+            Some((gpos, 0.0, false, host_held, host_style)),
+            0.06,
+        );
+        client.poll();
+        if matches!(
+            sim.world.block_entity(&(11, by, 10)),
+            Some(crate::world::BlockEntity::Anvil(state)) if state.bloom.is_some()
+        ) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(matches!(
+        sim.world.block_entity(&(11, by, 10)),
+        Some(crate::world::BlockEntity::Anvil(state)) if state.bloom.is_some()
+    ));
+    let hammer = reg.item_id("base:smith_hammer").expect("smith hammer");
+    sess.guests.get_mut(&gid).unwrap().inventory.slots[0] = Some(ItemStack::new(&reg, hammer, 1));
+    for expected_strikes in 1..=3 {
         client.send(&C2S::AnvilStrike {
             x: 11,
             y: by,
             z: 10,
         });
+        for _ in 0..100 {
+            sess.pump(
+                &mut sim,
+                Some((gpos, 0.0, false, host_held, host_style)),
+                0.06,
+            );
+            let observed = match sim.world.block_entity(&(11, by, 10)) {
+                Some(crate::world::BlockEntity::Anvil(state)) => state.strikes,
+                _ => 0,
+            };
+            if observed == expected_strikes || expected_strikes == 3 && observed == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let observed = match sim.world.block_entity(&(11, by, 10)) {
+            Some(crate::world::BlockEntity::Anvil(state)) => state.strikes,
+            _ => 0,
+        };
+        assert!(
+            observed == expected_strikes || expected_strikes == 3 && observed == 0,
+            "authoritative anvil reached strike {expected_strikes}, observed {observed}"
+        );
+        // A human click cannot arrive faster than the authoritative action
+        // cooldown. Advance it before queuing the next strike so this test
+        // checks the work result rather than deliberately rate-limited input.
+        for _ in 0..7 {
+            sess.pump(
+                &mut sim,
+                Some((gpos, 0.0, false, host_held, host_style)),
+                0.06,
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
     }
     let mut bar = false;
     for _ in 0..100 {
@@ -621,7 +702,7 @@ fn loopback_join_stream_and_edit() {
         "host sleeping alone after a cancel must not dawn"
     );
 
-    // Kick: the guest is dropped and the name is banned for the session.
+    // Kick: the guest is dropped and its authenticated principal is banned.
     let gid = *sess.guests.keys().next().expect("guest present");
     assert!(sess.kick_guest(gid).is_some());
     assert!(sess.guests.is_empty(), "kicked guest removed");
@@ -634,16 +715,23 @@ fn loopback_join_stream_and_edit() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert!(!client.is_connected(), "kicked guest disconnected");
-    // Rejoining under the banned name never yields a Welcome.
-    let mut client2 = crate::net::Client::connect(addr, "tester".into(), sess.content_hash, 0)
-        .expect("reconnect");
+    // Rejoining with the banned key never yields a Welcome, even after rename.
+    let mut client2 = crate::net::Client::connect(
+        addr,
+        "another name".into(),
+        sess.content_hash,
+        0,
+        &identity,
+        None,
+    )
+    .expect("reconnect");
     let mut turned_away = false;
     for _ in 0..150 {
         sess.pump(&mut sim, None, 0.06);
         for msg in client2.poll() {
             match msg {
                 S2C::Refused(_) => turned_away = true,
-                S2C::Welcome { .. } => panic!("banned name re-admitted"),
+                S2C::Welcome { .. } => panic!("banned principal re-admitted"),
                 _ => {}
             }
         }
@@ -653,6 +741,137 @@ fn loopback_join_stream_and_edit() {
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    assert!(turned_away, "banned name turned away");
-    assert!(sess.guests.is_empty(), "banned name never becomes a guest");
+    assert!(turned_away, "banned principal turned away");
+    assert!(
+        sess.guests.is_empty(),
+        "banned principal never becomes a guest"
+    );
+}
+
+#[test]
+fn late_join_gets_complete_roster_and_duplicate_name_is_refused() {
+    use crate::net::{RefusalCode, S2C};
+    let reg = base_reg();
+    let world = test_world_with("mp-roster", reg);
+    let mut sim = crate::server::Server::new(world, 0.3, 7);
+    let mut sess = crate::mp::HostSession::start_on_with_policy(
+        "roster".into(),
+        0,
+        Some(crate::identity::DisplayName::parse("Host").unwrap()),
+        crate::identity::IdentityPolicy::Local,
+        crate::identity::AdmissionPolicy::Open,
+    )
+    .unwrap();
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", sess.net.port).parse().unwrap();
+    let first_identity =
+        crate::identity::LocalIdentity::load_or_create(&tmp_dir("roster-one")).unwrap();
+    let mut first = crate::net::Client::connect(
+        addr,
+        "Fern".into(),
+        sess.content_hash,
+        0,
+        &first_identity,
+        None,
+    )
+    .unwrap();
+    for _ in 0..100 {
+        sess.pump(&mut sim, None, 0.05);
+        if first
+            .poll()
+            .iter()
+            .any(|message| matches!(message, S2C::Welcome { .. }))
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(sess.guests.len(), 1);
+
+    let second_identity =
+        crate::identity::LocalIdentity::load_or_create(&tmp_dir("roster-two")).unwrap();
+    let mut second = crate::net::Client::connect(
+        addr,
+        "Moss".into(),
+        sess.content_hash,
+        0,
+        &second_identity,
+        None,
+    )
+    .unwrap();
+    let mut names = Vec::new();
+    for _ in 0..100 {
+        sess.pump(&mut sim, None, 0.05);
+        for message in second.poll() {
+            if let S2C::Welcome { roster, .. } = message {
+                names = roster
+                    .into_iter()
+                    .map(|presence| presence.display_name)
+                    .collect();
+            }
+        }
+        if !names.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    names.sort();
+    assert_eq!(names, ["FERN", "HOST", "MOSS"]);
+
+    let third_identity =
+        crate::identity::LocalIdentity::load_or_create(&tmp_dir("roster-three")).unwrap();
+    let mut duplicate = crate::net::Client::connect(
+        addr,
+        "mOsS".into(),
+        sess.content_hash,
+        0,
+        &third_identity,
+        None,
+    )
+    .unwrap();
+    let mut refused = false;
+    for _ in 0..100 {
+        sess.pump(&mut sim, None, 0.05);
+        refused |= duplicate.poll().iter().any(|message| {
+            matches!(
+                message,
+                S2C::Refused(refusal) if refusal.code == RefusalCode::NameInUse
+            )
+        });
+        if refused {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(refused);
+    assert_eq!(sess.guests.len(), 2);
+}
+
+#[test]
+fn atproto_required_refuses_a_local_client_before_admission() {
+    let mut host = crate::net::Host::start(
+        "required-policy-test".into(),
+        0,
+        crate::identity::IdentityPolicy::AtprotoRequired,
+        crate::identity::AdmissionPolicy::Open,
+        0,
+    )
+    .unwrap();
+    let identity =
+        crate::identity::LocalIdentity::load_or_create(&tmp_dir("required-local")).unwrap();
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", host.port).parse().unwrap();
+    let error = crate::net::Client::connect(addr, "Fern".into(), 0, 0, &identity, None)
+        .err()
+        .expect("required policy refuses an unlinked local client");
+    assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+    assert!(
+        error
+            .to_string()
+            .contains("requires a linked ATProto account")
+    );
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert!(
+        host.poll()
+            .iter()
+            .all(|event| !matches!(event, crate::net::HostEvent::Joined { .. }))
+    );
 }

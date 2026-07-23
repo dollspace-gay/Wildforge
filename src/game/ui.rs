@@ -91,12 +91,32 @@ impl Game {
     pub(super) fn title_action_rect(&self, j: usize) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let base = self.title_row_y(self.worlds.len().min(6)) + 26.0;
-        let x = if j < 4 {
+        let x = if j < 5 {
             w / 2.0 - 310.0
         } else {
             w / 2.0 + 10.0
         };
-        (x, base + (j % 4) as f32 * 56.0, 300.0, 42.0)
+        let row = if j < 5 { j } else { j - 5 };
+        (x, base + row as f32 * 56.0, 300.0, 42.0)
+    }
+
+    pub(super) fn account_field_rect(&self, row: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (w / 2.0 - 40.0, h * 0.20 + row as f32 * 64.0, 340.0, 38.0)
+    }
+
+    pub(super) fn account_button_rect(&self, button: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        let column = button / 4;
+        let row = button % 4;
+        (
+            w / 2.0 - 310.0 + column as f32 * 320.0,
+            h * 0.42 + row as f32 * 56.0,
+            300.0,
+            42.0,
+        )
     }
 
     pub(super) fn appearance_row_rect(&self, i: usize) -> (f32, f32, f32, f32) {
@@ -299,6 +319,7 @@ impl Game {
     }
 
     pub(super) fn build_ui(&mut self) {
+        self.poll_account_task();
         let mut ui = std::mem::replace(&mut self.ui, UiBatch::new());
         ui.clear();
         ui.press_dip = self.presentation.juice && self.presentation.press_dip > 0.0;
@@ -341,6 +362,7 @@ impl Game {
                     "NEW SURVIVAL WORLD",
                     "NEW CREATIVE WORLD",
                     "JOIN GAME",
+                    "ACCOUNTS",
                     "APPEARANCE",
                     "MODS",
                     "TEXTURE PACKS",
@@ -352,6 +374,154 @@ impl Game {
                 {
                     let r = self.title_action_rect(j);
                     Self::draw_button(&mut ui, r, label, self.hit(r));
+                }
+                self.ui = ui;
+                return;
+            }
+            Screen::Accounts => {
+                ui.rect(0.0, 0.0, w, h, [0.02, 0.05, 0.1, 0.82]);
+                let title = if self.config.profile_complete {
+                    "ACCOUNTS"
+                } else {
+                    "CREATE LOCAL PROFILE"
+                };
+                let tw = UiBatch::text_width(4.0, title);
+                ui.text_shadow((w - tw) / 2.0, h * 0.07, 4.0, title, [1.0; 4]);
+                ui.text_shadow(
+                    w / 2.0 - 310.0,
+                    h * 0.14,
+                    1.5,
+                    "LOCAL PLAY NEVER REQUIRES AN ONLINE ACCOUNT. NAMES ARE LABELS, NOT SAVE KEYS.",
+                    [0.75, 0.85, 0.75, 1.0],
+                );
+                for (row, label, value) in [
+                    (
+                        0usize,
+                        "WILDFORGE NAME",
+                        self.ui_state.account_name.as_str(),
+                    ),
+                    (
+                        1usize,
+                        "ATPROTO HANDLE OR DID",
+                        self.ui_state.account_handle.as_str(),
+                    ),
+                ] {
+                    let r = self.account_field_rect(row);
+                    ui.text_shadow(w / 2.0 - 310.0, r.1 + 8.0, 1.5, label, [1.0; 4]);
+                    ui.rect(r.0, r.1, r.2, r.3, [0.08, 0.08, 0.08, 0.98]);
+                    ui.text_shadow(r.0 + 8.0, r.1 + 8.0, 2.0, &value.to_uppercase(), [1.0; 4]);
+                    if self.ui_state.account_focus as usize == row {
+                        ui.rect(r.0, r.1 + r.3 - 3.0, r.2, 3.0, [0.6, 1.0, 0.6, 1.0]);
+                    }
+                }
+                let device = format!("LOCAL DEVICE {}", self.identity.device_id().short());
+                ui.text_shadow(w / 2.0 - 310.0, h * 0.35, 1.5, &device, [0.7; 4]);
+                let linked = self.atproto_account.as_ref();
+                let labels = [
+                    "SAVE LOCAL NAME".to_string(),
+                    if linked.is_some() {
+                        "REFRESH / RELINK ATPROTO"
+                    } else {
+                        "LINK ATPROTO"
+                    }
+                    .to_string(),
+                    format!(
+                        "SOCIAL DISPLAY NAME: {}",
+                        if linked.is_some_and(|a| a.use_social_display_name) {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    ),
+                    format!(
+                        "SOCIAL AVATAR: {}",
+                        if linked.is_some_and(|a| a.use_social_avatar) {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    ),
+                    "REVOKE THIS DEVICE".to_string(),
+                    "UNLINK LOCALLY".to_string(),
+                    if self.config.profile_complete {
+                        "BACK"
+                    } else {
+                        "SAVE A NAME TO CONTINUE"
+                    }
+                    .to_string(),
+                ];
+                for (i, label) in labels.iter().enumerate() {
+                    let r = self.account_button_rect(i);
+                    Self::draw_button(&mut ui, r, label, self.hit(r));
+                }
+                if let Some(account) = linked {
+                    let account_line = format!(
+                        "LINKED: {} / {}  (OTHER PLAYERS SEE ONLY A VERIFIED BADGE)",
+                        account.handle.as_deref().unwrap_or("NO CURRENT HANDLE"),
+                        account.did
+                    );
+                    ui.text_shadow(
+                        w / 2.0 - 310.0,
+                        h * 0.86,
+                        1.25,
+                        &account_line.to_uppercase(),
+                        [0.6, 1.0, 0.7, 1.0],
+                    );
+                }
+                if !self.ui_state.account_status.is_empty() {
+                    ui.text_shadow(
+                        w / 2.0 - 310.0,
+                        h * 0.91,
+                        1.25,
+                        &self.ui_state.account_status,
+                        [1.0, 0.75, 0.5, 1.0],
+                    );
+                }
+                ui.text_shadow(
+                    w / 2.0 - 310.0,
+                    h * 0.95,
+                    1.0,
+                    "LINKING WRITES A PUBLIC DEVICE RECORD. A VERIFIED SERVER CAN RESOLVE YOUR DID AND PUBLIC PROFILE.",
+                    [0.65, 0.65, 0.65, 1.0],
+                );
+                self.ui = ui;
+                return;
+            }
+            Screen::Moderation(id) => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.78]);
+                let title = "PLAYER MODERATION";
+                let tw = UiBatch::text_width(4.0, title);
+                ui.text_shadow((w - tw) / 2.0, h * 0.08, 4.0, title, [1.0; 4]);
+                let summary = self
+                    .multiplayer
+                    .host
+                    .as_ref()
+                    .and_then(|host| host.guest_identity_summary(id))
+                    .unwrap_or_else(|| "PLAYER DISCONNECTED".into());
+                ui.text_shadow(
+                    w / 2.0 - 360.0,
+                    h * 0.18,
+                    1.5,
+                    &summary.to_uppercase(),
+                    [0.8; 4],
+                );
+                let labels = [
+                    "KICK",
+                    "MUTE 10 MINUTES",
+                    "BAN 1 HOUR",
+                    "BAN PERMANENTLY",
+                    "ADD TO ALLOWLIST",
+                    "CYCLE ROLE",
+                    "BACK",
+                ];
+                for (i, label) in labels.iter().enumerate() {
+                    let r = self.menu_button_rect(i);
+                    let label = if self.ui_state.moderation_confirm == Some(i as u8) {
+                        format!("CONFIRM {label}")
+                    } else {
+                        (*label).to_string()
+                    };
+                    Self::draw_button(&mut ui, r, &label, self.hit(r));
                 }
                 self.ui = ui;
                 return;
@@ -458,7 +628,7 @@ impl Game {
                 if let Some(d) = &mut self.multiplayer.discovery {
                     d.poll();
                 }
-                let found: Vec<(std::net::SocketAddr, String)> = self
+                let found: Vec<net::DiscoveredServer> = self
                     .multiplayer
                     .discovery
                     .as_ref()
@@ -473,14 +643,20 @@ impl Game {
                         [0.7, 0.7, 0.7, 1.0],
                     );
                 }
-                for (i, (addr, name)) in found.iter().take(5).enumerate() {
+                for (i, found) in found.iter().take(5).enumerate() {
                     let r = (w / 2.0 - 220.0, h * 0.20 + i as f32 * 56.0, 440.0, 42.0);
                     Self::draw_button(
                         &mut ui,
                         r,
-                        &format!("{} - {}", name.to_uppercase(), addr),
+                        &format!("{} - {}", found.name.to_uppercase(), found.addr),
                         self.hit(r),
                     );
+                    let policy = match found.identity {
+                        identity::IdentityPolicy::AtprotoRequired => "VERIFIED ATPROTO REQUIRED",
+                        identity::IdentityPolicy::AtprotoOptional => "ATPROTO OPTIONAL",
+                        identity::IdentityPolicy::Local => "LOCAL IDENTITIES ACCEPTED",
+                    };
+                    ui.text_shadow(r.0 + 8.0, r.1 + 29.0, 1.0, policy, [0.65, 0.85, 0.65, 1.0]);
                 }
                 // The searching line occupies one row when the list is
                 // empty; the click handler mirrors this formula.
@@ -946,6 +1122,8 @@ impl Game {
         match self.ui_state.screen {
             Screen::Playing
             | Screen::Title
+            | Screen::Accounts
+            | Screen::Moderation(_)
             | Screen::Mods
             | Screen::Packs
             | Screen::Join
@@ -1379,7 +1557,11 @@ impl Game {
                     "MODE: SURVIVAL"
                 };
                 let friends = match &self.multiplayer.host {
-                    Some(h) => format!("FRIENDS: {} CONNECTED", h.guests.len()),
+                    Some(h) => format!(
+                        "FRIENDS: {} CONNECTED ({})",
+                        h.guests.len(),
+                        h.identity_policy.as_str().to_uppercase()
+                    ),
                     None if self.multiplayer.remote.is_some() => "CONNECTED AS GUEST".to_string(),
                     None => "OPEN TO FRIENDS".to_string(),
                 };
@@ -1407,7 +1589,7 @@ impl Game {
                         &name.to_uppercase(),
                         [0.9, 0.9, 0.9, 1.0],
                     );
-                    Self::draw_button(&mut ui, r, "KICK", self.hit(r));
+                    Self::draw_button(&mut ui, r, "MANAGE", self.hit(r));
                 }
             }
             Screen::Dead => {

@@ -485,11 +485,11 @@ impl Game {
                         server::SimEvent::PlayerHit { who, dmg, from } => {
                             if who == 0 && self.multiplayer.remote.is_none() {
                                 self.hurt_player_from_wild(dmg, from);
-                            } else if let Some(sess) = &self.multiplayer.host {
+                            } else if let Some(sess) = &mut self.multiplayer.host {
                                 // Guests are listed after the host.
                                 let ids: Vec<u32> = sess.guests.keys().copied().collect();
                                 if let Some(gid) = ids.get(who.saturating_sub(1)) {
-                                    sess.net.send(*gid, &net::S2C::Hit { dmg, from });
+                                    sess.hurt_guest(*gid, dmg, from);
                                 }
                             }
                         }

@@ -47,6 +47,45 @@ impl ApplicationHandler for App {
                 game.camera.aspect = size.width as f32 / size.height.max(1) as f32;
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                // First-run/profile and ATProto account text entry. OAuth
+                // itself runs on a worker so the render/event loop stays live.
+                if game.ui_state.screen == Screen::Accounts && event.state.is_pressed() {
+                    match event.physical_key {
+                        PhysicalKey::Code(KeyCode::Tab) => {
+                            game.ui_state.account_focus = 1 - game.ui_state.account_focus;
+                        }
+                        PhysicalKey::Code(KeyCode::Backspace) => {
+                            if game.ui_state.account_focus == 0 {
+                                game.ui_state.account_name.pop();
+                            } else {
+                                game.ui_state.account_handle.pop();
+                            }
+                        }
+                        _ => {
+                            if let Some(t) = &event.text {
+                                for ch in t.chars() {
+                                    if game.ui_state.account_focus == 0
+                                        && (ch.is_ascii_alphanumeric()
+                                            || matches!(ch, ' ' | '-' | '.'))
+                                        && game.ui_state.account_name.chars().count()
+                                            < identity::DISPLAY_NAME_MAX
+                                    {
+                                        game.ui_state.account_name.push(ch);
+                                    } else if game.ui_state.account_focus == 1
+                                        && (ch.is_ascii_alphanumeric()
+                                            || matches!(ch, '.' | ':' | '-' | '@'))
+                                        && game.ui_state.account_handle.len() < 255
+                                    {
+                                        game.ui_state.account_handle.push(ch);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
+                        return;
+                    }
+                }
                 // Join-screen IP entry.
                 if game.ui_state.screen == Screen::Join && event.state.is_pressed() {
                     match event.physical_key {
@@ -88,7 +127,7 @@ impl ApplicationHandler for App {
                             game.multiplayer.chat_open = false;
                             game.multiplayer.chat_text.clear();
                             if !msg.is_empty() {
-                                let me = whoami();
+                                let me = game.config.display_name.clone();
                                 if let Some(r) = &game.multiplayer.remote {
                                     r.client.send(&net::C2S::Chat(msg.clone()));
                                 } else if let Some(h) = &game.multiplayer.host {

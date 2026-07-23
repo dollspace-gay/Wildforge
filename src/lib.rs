@@ -14,6 +14,7 @@ mod crafting;
 mod dedicated;
 mod entity;
 mod game;
+mod identity;
 mod inventory;
 mod lights;
 mod mesher;

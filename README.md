@@ -486,8 +486,10 @@ Drop-in re-skins, no recompiling and no mod required. Design doc:
   fruit (right-click cacti), jungle fruit bushes. Furnace bakes potatoes,
   roasts mushrooms, and bread/forest stew reward cooking; food data
   (`food = { hunger, nutrition = {...} }`) is fully moddable
-- **Player persistence**: position, health, hunger, nutrition, and
-  inventory now save with the world (`player.toml`)
+- **Player persistence**: position, health, hunger, nutrition, and inventory
+  save under a server-issued `players/<player-id>.toml`; display names are
+  never save keys. Existing `player.toml` files migrate with a backup-first
+  atomic write.
 - **Death**: your inventory scatters as drops; respawn at the world spawn
 - **HUD**: hotbar with icons/counts, hearts, air bubbles, item name popup,
   damage vignette — all drawn with a procedural 5×7 pixel font (zero assets)
@@ -579,6 +581,18 @@ One binary, no server jar, ever:
   the LAN and accepts direct connections (QUIC on port 27431 —
   encrypted transport, pure Rust). A **headless dedicated host** is the
   same executable: `wildforge --server <world>`.
+- **Local-first identity**: first run asks for an editable Wildforge name and
+  generates a persistent device key. The OS account name is never silently
+  sent. Reconnects, saves, roles, allowlists, mutes, and bans use authenticated
+  principals and a server-owned PlayerId, not the mutable label.
+- **Optional ATProto account**: the Accounts screen can use browser OAuth to
+  bind this device to any supported ATProto DID. Solo/LAN remains offline and
+  free; individual servers choose `local`, `atproto_optional`, or
+  `atproto_required`. OAuth tokens stay on the client and are deleted after
+  the one-time binding write. Peers see a verification badge, not the DID.
+- **Persistent host trust**: host certificates survive restarts and clients
+  pin them on first use. A changed key is refused visibly rather than accepted
+  silently. LAN rows advertise identity/admission policy before connection.
 - **Join**: title screen → **JOIN GAME** — LAN-discovered worlds
   listed live, or type an IP. On join the host streams its palette
   and, if your mods differ, **its entire mods folder** — you play with
@@ -591,6 +605,11 @@ One binary, no server jar, ever:
   and render through interpolation, so everything glides instead of
   stuttering. Shared chests and furnaces use transactional clicks —
   full cursor semantics, and a worn tool stays exactly as worn.
+- **Public-server controls**: bounded pre-auth frames/time, connection and
+  per-principal command/chat rates, complete rosters, principal/PlayerId bans,
+  timed mutes/bans, allowlists, roles, and an audit log. Windowed hosts manage
+  connected players from pause; dedicated hosts use stdin commands. See
+  `docs/multiplayer-identity-operations.md` for policy and recovery details.
 - **Shared world, shared ire** — one meter for the whole camp; your
   friend's clearcut is your Wrathful night. Mob AI hunts the nearest
   player; drops from your kills and digs arrive in *your* inventory.

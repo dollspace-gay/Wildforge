@@ -30,6 +30,8 @@ const MAX_AIR: f32 = 15.0; // seconds of breath
 #[derive(Clone, Copy, PartialEq)]
 enum Screen {
     Title,
+    Accounts,
+    Moderation(u32),
     Mods,
     Packs,
     Settings,
@@ -45,17 +47,6 @@ enum Screen {
     Join,
     Paused,
     Dead,
-}
-
-/// Player name for multiplayer: config-free, from the OS user.
-fn whoami() -> String {
-    std::env::var("WILDFORGE_NAME")
-        .or_else(|_| std::env::var("USER"))
-        .or_else(|_| std::env::var("USERNAME"))
-        .unwrap_or_else(|_| "player".into())
-        .chars()
-        .take(16)
-        .collect()
 }
 
 /// One snapshot-smoothing span: render glides from -> to over the
@@ -159,6 +150,7 @@ struct MultiplayerState {
     discovery: Option<net::Discovery>,
     join_ip: String,
     join_status: String,
+    pending_join_disclosure: Option<std::net::SocketAddr>,
     chat_open: bool,
     chat_text: String,
     move_timer: f32,
@@ -189,6 +181,17 @@ struct UiState {
     browse_view: Option<(ItemId, bool)>,
     browse_back: Vec<(ItemId, bool)>,
     appearance_from_pause: bool,
+    account_name: String,
+    account_handle: String,
+    account_focus: u8,
+    account_status: String,
+    account_task: Option<std::sync::mpsc::Receiver<AccountTaskResult>>,
+    moderation_confirm: Option<u8>,
+}
+
+enum AccountTaskResult {
+    Linked(Result<identity::atproto::AtprotoAccount, String>),
+    Revoked(Result<(), String>),
 }
 
 impl Default for UiState {
@@ -205,6 +208,12 @@ impl Default for UiState {
             browse_view: None,
             browse_back: Vec::new(),
             appearance_from_pause: false,
+            account_name: String::new(),
+            account_handle: String::new(),
+            account_focus: 0,
+            account_status: String::new(),
+            account_task: None,
+            moderation_confirm: None,
         }
     }
 }
@@ -358,6 +367,8 @@ struct Game {
     // Menus / meta
     content: ContentRuntime,
     multiplayer: MultiplayerState,
+    identity: identity::LocalIdentity,
+    atproto_account: Option<identity::atproto::AtprotoAccount>,
     config: Config,
     audio: Option<Audio>,
     in_world: bool,
@@ -497,6 +508,13 @@ impl Game {
         }
         std::fs::create_dir_all("packs").ok();
         let config = Config::load();
+        let identity = identity::LocalIdentity::load_or_create(&identity::identity_dir())
+            .expect("load or create local identity");
+        let atproto_account = identity::atproto::AtprotoAccount::load(&identity::identity_dir())
+            .unwrap_or_else(|error| {
+                eprintln!("identity: could not load ATProto link: {error}");
+                None
+            });
         // Dev override (never persisted): WILDFORGE_PACK=<id> selects a pack.
         let pack_override = std::env::var("WILDFORGE_PACK").ok();
         let active_pack = pack_override.clone().unwrap_or_else(|| config.pack.clone());
@@ -569,6 +587,8 @@ impl Game {
                 pack_override,
             },
             multiplayer: MultiplayerState::default(),
+            identity,
+            atproto_account,
             config,
             audio,
             in_world: false,
@@ -589,6 +609,25 @@ impl Game {
             ui: UiBatch::new(),
         };
         g.content.mods_stamp = content_tree_stamp();
+        g.ui_state.account_name = g.config.display_name.clone();
+        // Migration convenience only: the old implicit name is proposed in
+        // an editable local field. It is neither saved nor transmitted until
+        // the player explicitly presses SAVE LOCAL NAME.
+        if !g.config.profile_complete {
+            for key in ["WILDFORGE_NAME", "USER", "USERNAME"] {
+                if let Ok(value) = std::env::var(key)
+                    && let Ok(name) = identity::DisplayName::parse(&value)
+                {
+                    g.ui_state.account_name = name.to_string();
+                    break;
+                }
+            }
+        }
+        g.ui_state.account_handle = g
+            .atproto_account
+            .as_ref()
+            .and_then(|account| account.handle.clone())
+            .unwrap_or_default();
         g.apply_config();
         g.refresh_worlds();
         // Dev/headless: open a specific menu screen for UI verification.
@@ -597,6 +636,7 @@ impl Game {
             Ok("packs") => g.ui_state.screen = Screen::Packs,
             Ok("settings") => g.ui_state.screen = Screen::Settings,
             Ok("appearance") => g.ui_state.screen = Screen::Appearance,
+            Ok("accounts") => g.ui_state.screen = Screen::Accounts,
             Ok("confirm") => {
                 g.ui_state.pending_delete = if g.worlds.is_empty() { None } else { Some(0) };
                 g.ui_state.screen = Screen::ConfirmDelete;
@@ -606,6 +646,9 @@ impl Game {
                 g.ui_state.screen = Screen::Join;
             }
             _ => {}
+        }
+        if !g.config.profile_complete && std::env::var("WILDFORGE_SCREEN").is_err() {
+            g.ui_state.screen = Screen::Accounts;
         }
         g
     }

@@ -3,13 +3,110 @@
 use super::*;
 
 impl Game {
+    fn apply_remote_player_state(
+        &mut self,
+        remote: &Remote,
+        state: net::PlayerStateSnap,
+        initial: bool,
+    ) {
+        if initial {
+            self.player = Player::new(state.pos);
+            self.camera.pos = state.pos + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.camera.yaw = state.yaw;
+            self.camera.pitch = state.pitch;
+        }
+        self.survival.spawn_point = state.spawn;
+        self.inventory = Inventory::new();
+        for (index, stack) in state.inventory.into_iter().enumerate() {
+            if index >= TOTAL_SLOTS {
+                break;
+            }
+            self.inventory.slots[index] = stack.and_then(|stack| {
+                Some(ItemStack {
+                    item: *remote.item_map.get(stack.item as usize)?.as_ref()?,
+                    count: stack.count,
+                    durability: stack.durability,
+                })
+            });
+        }
+        self.survival.armor = [None; 5];
+        for (index, stack) in state.armor.into_iter().enumerate() {
+            if index >= self.survival.armor.len() {
+                break;
+            }
+            self.survival.armor[index] = stack.and_then(|stack| {
+                Some(ItemStack {
+                    item: *remote.item_map.get(stack.item as usize)?.as_ref()?,
+                    count: stack.count,
+                    durability: stack.durability,
+                })
+            });
+        }
+        self.ui_state.held_stack = state.cursor.and_then(|stack| {
+            Some(ItemStack {
+                item: *remote.item_map.get(stack.item as usize)?.as_ref()?,
+                count: stack.count,
+                durability: stack.durability,
+            })
+        });
+        self.survival.health = state.health;
+        self.survival.hunger = state.hunger;
+        self.survival.nutrition = state.nutrition;
+        self.input.hotbar_sel = (state.hotbar as usize).min(HOTBAR_SLOTS - 1);
+    }
+
     /// Join a host: blocks briefly for the QUIC handshake, then the
     /// Welcome/ModFiles flow finishes in remote_pump.
+    pub(super) fn request_join(
+        &mut self,
+        addr: std::net::SocketAddr,
+        advertised_policy: Option<identity::IdentityPolicy>,
+    ) {
+        let could_disclose_atproto = self.atproto_account.is_some()
+            && advertised_policy != Some(identity::IdentityPolicy::Local);
+        if could_disclose_atproto && self.multiplayer.pending_join_disclosure != Some(addr) {
+            self.multiplayer.pending_join_disclosure = Some(addr);
+            self.multiplayer.join_status =
+                "SERVER MAY RESOLVE YOUR PUBLIC DID - CLICK AGAIN".into();
+            return;
+        }
+        self.multiplayer.pending_join_disclosure = None;
+        self.multiplayer.join_status = "CONNECTING...".into();
+        self.join_server(addr);
+    }
+
     pub(super) fn join_server(&mut self, addr: std::net::SocketAddr) {
-        let name = whoami();
+        let name = self
+            .atproto_account
+            .as_ref()
+            .filter(|account| account.use_social_display_name)
+            .and_then(|account| account.profile_display_name.as_deref())
+            .and_then(|name| identity::DisplayName::parse(name).ok())
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| self.config.display_name.clone());
         let hash = net::content_hash(std::path::Path::new("mods"));
-        match net::Client::connect(addr, name, hash, self.style.pack()) {
+        match net::Client::connect(
+            addr,
+            name,
+            hash,
+            self.style.pack(),
+            &self.identity,
+            self.atproto_account.as_ref(),
+        ) {
             Ok(client) => {
+                let policy = match client.identity_policy {
+                    identity::IdentityPolicy::AtprotoRequired => {
+                        "VERIFIED ATPROTO REQUIRED; SERVER CAN RESOLVE YOUR PUBLIC PROFILE"
+                    }
+                    identity::IdentityPolicy::AtprotoOptional => {
+                        "LOCAL OR ATPROTO IDENTITY ACCEPTED"
+                    }
+                    identity::IdentityPolicy::Local => "LOCAL IDENTITIES ACCEPTED",
+                };
+                let admission = match client.admission_policy {
+                    identity::AdmissionPolicy::Open => "OPEN ADMISSION",
+                    identity::AdmissionPolicy::Allowlist => "ALLOWLIST ONLY",
+                };
                 self.multiplayer.remote = Some(Remote {
                     client,
                     my_id: 0,
@@ -28,7 +125,7 @@ impl Game {
                     mob_age: 0.0,
                     mob_interval: 0.05,
                 });
-                self.multiplayer.join_status = "CONNECTED - SYNCING...".to_string();
+                self.multiplayer.join_status = format!("{policy} - {admission} - SYNCING...");
             }
             Err(e) => {
                 self.multiplayer.join_status = format!("FAILED: {e}").to_uppercase();
@@ -50,6 +147,7 @@ impl Game {
         let msgs = r.client.poll();
         for msg in msgs {
             match msg {
+                net::S2C::Challenge { .. } => {}
                 net::S2C::ModFiles(files) => {
                     // The host's content, cached and loaded as ours.
                     let cache = PathBuf::from("saves/.remote/mods");
@@ -85,18 +183,33 @@ impl Game {
                     palette,
                     items,
                     your_id,
-                    spawn,
+                    roster,
+                    spawn: _,
                     world_name,
+                    player_state,
                 } => {
                     let mut world = World::new(
                         seed,
-                        PathBuf::from("saves/.remote/profile"),
+                        PathBuf::from("saves/.remote/world-cache"),
                         self.content.reg.clone(),
                     );
                     world.set_remote(true);
                     world.mode = mode.clone();
                     world.ire = ire;
                     r.my_id = your_id;
+                    if roster
+                        .iter()
+                        .find(|presence| presence.id == your_id)
+                        .is_some_and(|presence| presence.cached_verification)
+                    {
+                        self.toast(
+                            "ATProto verified from the server's bounded outage cache.".into(),
+                        );
+                    }
+                    r.names = roster
+                        .into_iter()
+                        .map(|presence| (presence.id, presence_label(&presence)))
+                        .collect();
                     r.block_map = mp::block_remap(&world, &palette);
                     r.item_map = mp::item_remap(&world, &items);
                     r.host_block = r
@@ -107,16 +220,9 @@ impl Game {
                         .collect();
                     self.server = server::Server::new(world, time, 7);
                     self.renderer.clear_chunks();
-                    self.player = Player::new(spawn);
-                    self.survival.spawn_point = spawn;
-                    self.camera.pos = spawn + Vec3::new(0.0, EYE_HEIGHT, 0.0);
-                    self.inventory = Inventory::new();
-                    self.survival.armor = [None; 5];
-                    self.survival.health = MAX_HEALTH;
-                    self.survival.hunger = 20.0;
+                    self.apply_remote_player_state(&r, player_state, true);
                     self.creative = mode == "creative";
                     self.in_world = true;
-                    self.load_player(&PathBuf::from("saves/.remote/profile"));
                     self.set_screen(Screen::Playing);
                     self.toast(format!("Joined {}.", world_name.to_uppercase()));
                 }
@@ -124,10 +230,11 @@ impl Game {
                     if self.in_world {
                         // Kicked mid-game: a clean exit, not a broken
                         // half-local world.
-                        self.toast(format!("Removed by host: {why}"));
+                        self.toast(format!("Removed by host: {}", why.detail));
                         self.quit_to_title();
                     } else {
-                        self.multiplayer.join_status = format!("REFUSED: {why}").to_uppercase();
+                        self.multiplayer.join_status =
+                            format!("REFUSED: {}", why.detail).to_uppercase();
                         self.multiplayer.remote = None;
                     }
                     return;
@@ -299,6 +406,9 @@ impl Game {
                         }
                     }
                 }
+                net::S2C::PlayerState(state) => {
+                    self.apply_remote_player_state(&r, state, false);
+                }
                 net::S2C::Container {
                     x,
                     y,
@@ -408,10 +518,10 @@ impl Game {
                 }
                 net::S2C::Toast(msg) => self.toast(msg),
                 net::S2C::Chat { from, msg } => self.toast(format!("{from}: {msg}")),
-                net::S2C::Joined { id, name } => {
-                    r.names.insert(id, name.clone());
-                    if id != r.my_id {
-                        self.toast(format!("{name} joined."));
+                net::S2C::Joined { presence } => {
+                    r.names.insert(presence.id, presence_label(&presence));
+                    if presence.id != r.my_id {
+                        self.toast(format!("{} joined.", presence.display_name));
                     }
                 }
                 net::S2C::Left { id } => {
@@ -457,17 +567,24 @@ impl Game {
             self.multiplayer.move_timer += dt;
             if self.multiplayer.move_timer >= 0.05 {
                 self.multiplayer.move_timer = 0.0;
-                let held = self.inventory.slots[self.input.hotbar_sel]
-                    .and_then(|st| r.item_map.iter().position(|m| *m == Some(st.item)))
-                    .map(|i| i as u16)
-                    .unwrap_or(u16::MAX);
                 r.client.send_datagram(&net::C2S::Move {
                     pos: self.player.pos,
                     yaw: self.camera.yaw,
-                    held,
+                    hotbar: self.input.hotbar_sel as u8,
+                    sprint: self.input.keys.sprint,
                 });
             }
         }
         self.multiplayer.remote = Some(r);
+    }
+}
+
+fn presence_label(presence: &net::PlayerPresence) -> String {
+    if presence.cached_verification {
+        format!("{} [VERIFIED/CACHED]", presence.display_name)
+    } else if presence.verified {
+        format!("{} [VERIFIED]", presence.display_name)
+    } else {
+        presence.display_name.clone()
     }
 }

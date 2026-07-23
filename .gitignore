@@ -3,6 +3,7 @@
 
 # Player data and local settings
 /saves/
+/identity/
 config.txt
 
 # Screenshots and scratch output

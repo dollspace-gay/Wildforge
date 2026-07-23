@@ -1,0 +1,12 @@
+{
+  "client_id": "https://dollspace.gay/wildforge/oauth-client-metadata.json",
+  "client_name": "Wildforge",
+  "client_uri": "https://dollspace.gay/",
+  "application_type": "native",
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "redirect_uris": ["http://127.0.0.1/oauth/callback", "http://[::1]/oauth/callback"],
+  "scope": "atproto repo:gay.dollspace.wildforge.device",
+  "token_endpoint_auth_method": "none",
+  "dpop_bound_access_tokens": true
+}

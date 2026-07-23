@@ -10,6 +10,11 @@ with full cursor semantics, guest feeding and brushing). Mobs carry
 stable wire ids; guests target by id, never by racy index. Friend-code
 rendezvous remains v2/out-of-repo as specified. Loopback-tested.
 
+> **Identity follow-up:** the name-claim, per-name save, kick, whitelist, and
+> transport-trust assumptions recorded here describe the implemented friends
+> prototype. `multiplayer-identity-plan.md` supersedes them for persistent
+> local profiles, optional ATProto accounts, and public-server moderation.
+
 ## Dependencies
 
 `quinn` (QUIC: encryption via rustls, reliable streams + unreliable

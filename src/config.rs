@@ -4,6 +4,10 @@ use std::path::PathBuf;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Config {
+    /// Local Wildforge display name. It is presentation, never an account key.
+    pub display_name: String,
+    /// Set only after the player explicitly accepts an editable local name.
+    pub profile_complete: bool,
     /// Master volume 0..1.
     pub volume: f32,
     /// Mouse sensitivity multiplier.
@@ -30,6 +34,8 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Config {
         Config {
+            display_name: "PLAYER".into(),
+            profile_complete: false,
             volume: 0.7,
             sensitivity: 1.0,
             view_dist: 7,
@@ -57,6 +63,12 @@ impl Config {
             };
             let (k, v) = (k.trim(), v.trim());
             match k {
+                "display_name" => {
+                    if let Ok(name) = crate::identity::DisplayName::parse(v) {
+                        c.display_name = name.to_string();
+                    }
+                }
+                "profile_complete" => c.profile_complete = v == "yes",
                 "volume" => {
                     if let Ok(x) = v.parse::<f32>() {
                         c.volume = x.clamp(0.0, 1.0);
@@ -101,7 +113,9 @@ impl Config {
 
     pub fn to_text(&self) -> String {
         format!(
-            "volume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\npack={}\nlights={}\ndarkness={}\noutline={}\nbloom={}\nappearance={}\n",
+            "display_name={}\nprofile_complete={}\nvolume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\npack={}\nlights={}\ndarkness={}\noutline={}\nbloom={}\nappearance={}\n",
+            self.display_name,
+            if self.profile_complete { "yes" } else { "no" },
             self.volume,
             self.sensitivity,
             self.view_dist,
