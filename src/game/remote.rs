@@ -204,6 +204,7 @@ impl Game {
                         self.content.reg.clone(),
                     );
                     world.set_remote(true);
+                    self.gen_pool = None; // chunks come by wire
                     world.mode = mode.clone();
                     world.ire = ire;
                     r.my_id = your_id;

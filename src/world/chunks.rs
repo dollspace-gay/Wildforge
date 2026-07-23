@@ -12,7 +12,30 @@ impl World {
         }
         let loaded = self.try_load_chunk(pos);
         let fresh = loaded.is_none();
-        let mut chunk = loaded.unwrap_or_else(|| self.generator.generate(pos, &self.reg));
+        let chunk = loaded.unwrap_or_else(|| self.generator.generate(pos, &self.reg));
+        self.adopt_chunk(pos, chunk, fresh);
+        true
+    }
+
+    /// Adopt a chunk generated elsewhere (a background worker). A
+    /// saved copy on disk always wins over the worker's fresh terrain,
+    /// and an already-present chunk drops the offering — generation is
+    /// pure, so a worker chunk equals what ensure_chunk would build.
+    pub fn adopt_generated(&mut self, pos: ChunkPos, chunk: Chunk) -> bool {
+        if self.chunks.contains_key(&pos) || self.remote {
+            return false;
+        }
+        if let Some(saved) = self.try_load_chunk(pos) {
+            self.adopt_chunk(pos, saved, false);
+        } else {
+            self.adopt_chunk(pos, chunk, true);
+        }
+        true
+    }
+
+    /// The main-thread half of chunk arrival: bedrock heal, insert,
+    /// structures, wildlife, stamps, seam wake, light, reconcile.
+    fn adopt_chunk(&mut self, pos: ChunkPos, mut chunk: Chunk, fresh: bool) {
         // The floor reseals on load: any hole in the bedrock (a
         // creative dig, an old bug) heals when the chunk comes back.
         // Idempotent — set() doesn't mark the chunk modified.
@@ -50,7 +73,6 @@ impl World {
                 self.last_random.insert((pos.x, pos.z), self.clock);
             }
         }
-        true
     }
 
     // ---------------- ruins ----------------

@@ -1243,3 +1243,53 @@ fn rivers_settle_instead_of_churning() {
     }
     assert!(quiet, "the river settles instead of churning forever");
 }
+
+/// Dev tooling: coarse load-path timing. Run with:
+/// cargo test --release bench_load_path -- --ignored --nocapture
+#[test]
+#[ignore]
+fn bench_load_path() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    let t0 = std::time::Instant::now();
+    for i in 0..50 {
+        let _ = g.generate(ChunkPos { x: i, z: -i }, &reg);
+    }
+    let gen_dt = t0.elapsed();
+    let mut w = World::new(42, tmp_dir("bench"), reg.clone());
+    let t1 = std::time::Instant::now();
+    for i in 0..50 {
+        w.ensure_chunk(ChunkPos { x: i, z: -i });
+    }
+    let ensure = t1.elapsed();
+    println!(
+        "generate: {:?}/chunk   ensure (gen+light+seams): {:?}/chunk",
+        gen_dt / 50,
+        ensure / 50
+    );
+}
+
+#[test]
+fn adopted_worker_chunks_match_ensure() {
+    let reg = base_reg();
+    let mut a = World::new(42, tmp_dir("adopt-a"), reg.clone());
+    let mut b2 = World::new(42, tmp_dir("adopt-b"), reg.clone());
+    let pos = ChunkPos { x: 3, z: -2 };
+    a.ensure_chunk(pos);
+    // Generation is pure: a worker's chunk equals the sync path.
+    let chunk = b2.generator.generate(pos, &reg);
+    assert!(b2.adopt_generated(pos, chunk));
+    assert_eq!(a.chunks()[&pos].raw(), b2.chunks()[&pos].raw());
+    // A saved copy on disk beats the worker's fresh terrain.
+    let stone = b(&reg, "base:stone");
+    a.set_block(3 * 16 + 4, 200, -2 * 16 + 4, stone);
+    a.save_modified();
+    let mut c = World::load_or_create(a.save_dir_for_test(), reg.clone());
+    let fresh = c.generator.generate(pos, &reg);
+    assert!(c.adopt_generated(pos, fresh));
+    assert_eq!(
+        c.get_block(3 * 16 + 4, 200, -2 * 16 + 4),
+        stone,
+        "disk wins over the worker"
+    );
+}
