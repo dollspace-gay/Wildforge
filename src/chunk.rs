@@ -1,4 +1,4 @@
-//! Chunk storage: 16x16 column of blocks, 128 tall (early-alpha Minecraft dimensions).
+//! Chunk storage: 16x16 columns of blocks, 256 cells tall.
 
 use crate::registry::BlockId;
 

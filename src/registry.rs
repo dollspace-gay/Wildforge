@@ -190,6 +190,8 @@ pub struct ProjectileDef {
 #[derive(Clone, Debug)]
 pub struct AnimalDef {
     pub name: String, // "base:deer"
+    // Parsed content metadata retained for diagnostics and future UI labels.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub label: String,
     /// Lowercase biome names this species spawns in.
     pub biomes: Vec<String>,
@@ -306,6 +308,9 @@ pub struct LootEntry {
 /// Special chars: '.' = leave terrain, '~' = force air, 'C' = loot chest.
 #[derive(Clone, Debug)]
 pub struct StructureDef {
+    // Stable qualified id retained even though generation currently iterates
+    // the resolved templates directly.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub name: String,
     pub biomes: Vec<String>,
     /// 1-in-N chunks (per matching biome).
@@ -403,6 +408,7 @@ impl Registry {
         self.block(id).water_level.is_some()
     }
 
+    #[cfg(test)]
     #[inline]
     pub fn water_level(&self, id: BlockId) -> Option<u8> {
         self.block(id).water_level

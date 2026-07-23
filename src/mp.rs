@@ -163,8 +163,8 @@ impl HostSession {
         }
 
         // Authoritative block edits out.
-        if !server.world.edit_log.is_empty() {
-            for (x, y, z, b, meta) in std::mem::take(&mut server.world.edit_log) {
+        if !server.world.edits().is_empty() {
+            for (x, y, z, b, meta) in server.world.take_edits() {
                 self.net.broadcast(&S2C::BlockSet {
                     x,
                     y,
@@ -176,7 +176,7 @@ impl HostSession {
         }
         // Items owed to guests (arrow recovery, mining, mob drops,
         // brush finds) — full stacks so durability crosses the wire.
-        for (owner, s) in std::mem::take(&mut server.world.pending_gives) {
+        for (owner, s) in server.world.take_pending_gives() {
             self.net.send(
                 owner,
                 &S2C::Give {
@@ -237,7 +237,7 @@ impl HostSession {
             self.net.broadcast_datagram(&S2C::Players(players));
             let mobs: Vec<MobSnap> = server
                 .world
-                .mobs
+                .mobs()
                 .iter()
                 .map(|m| MobSnap {
                     id: m.id,
@@ -252,7 +252,7 @@ impl HostSession {
             self.net.broadcast_datagram(&S2C::Mobs(mobs));
             let bolts: Vec<net::BoltSnap> = server
                 .world
-                .projectiles
+                .projectiles()
                 .iter()
                 .map(|p| net::BoltSnap {
                     pos: p.pos,
@@ -265,7 +265,7 @@ impl HostSession {
             // Sent even when empty so guests clear their last tumble.
             let falls: Vec<net::FallSnap> = server
                 .world
-                .falling
+                .falling_blocks()
                 .iter()
                 .map(|f| net::FallSnap {
                     pos: f.pos,
@@ -425,18 +425,12 @@ impl HostSession {
                     return;
                 }
                 guest.edits += 1;
-                let b = server.world.get_block(x, y, z);
-                if b == crate::registry::AIR || server.world.reg.block(b).hardness.is_none() {
+                let Some(result) = server.world.break_block((x, y, z), None, true, true) else {
                     return;
+                };
+                if let Some(stack) = result.drop {
+                    server.world.queue_give(id, stack);
                 }
-                // Drops go straight to the breaker over the wire.
-                if let Some((item, n)) = server.world.reg.drops_for(b, None) {
-                    let stack = ItemStack::new(&server.world.reg, item, n);
-                    server.world.pending_gives.push((id, stack));
-                }
-                let cost = server.world.ire_for_block(b);
-                server.world.add_ire(cost);
-                server.world.set_block(x, y, z, crate::registry::AIR);
             }
             C2S::Scoop { x, y, z } => {
                 let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
@@ -457,17 +451,12 @@ impl HostSession {
                 if (p - guest.pos).length() > REACH || guest.edits >= EDITS_PER_SEC {
                     return;
                 }
-                let Some(def) = server.world.reg.blocks.get(block as usize) else {
-                    return;
-                };
-                if server.world.get_block(x, y, z) != crate::registry::AIR {
-                    return;
-                }
-                let _ = def;
-                guest.edits += 1;
-                server
+                if server
                     .world
-                    .set_block(x, y, z, crate::registry::BlockId(block));
+                    .place_block((x, y, z), crate::registry::BlockId(block))
+                {
+                    guest.edits += 1;
+                }
             }
             C2S::AttackMob {
                 id: mob_id,
@@ -478,10 +467,11 @@ impl HostSession {
                 // race deaths/spawns and strike the wrong creature.
                 let dmg = dmg.clamp(0.0, 16.0);
                 let gpos = guest.pos;
-                if let Some(m) = server.world.mobs.iter_mut().find(|m| m.id == mob_id)
+                let reg = server.world.reg.clone();
+                if let Some(m) = server.world.mob_by_id_mut(mob_id)
                     && (m.pos - gpos).length() <= REACH
                 {
-                    let def = server.world.reg.animals[m.species].clone();
+                    let def = reg.animals[m.species].clone();
                     m.hurt(&def, dmg, from);
                     m.last_hit_by = id;
                     if !def.hostile {
@@ -491,8 +481,9 @@ impl HostSession {
             }
             C2S::FeedMob { id: mob_id } => {
                 let gpos = guest.pos;
-                if let Some(m) = server.world.mobs.iter_mut().find(|m| m.id == mob_id) {
-                    let def = &server.world.reg.animals[m.species];
+                let reg = server.world.reg.clone();
+                if let Some(m) = server.world.mob_by_id_mut(mob_id) {
+                    let def = &reg.animals[m.species];
                     if (m.pos - gpos).length() <= REACH
                         && !def.hostile
                         && def.breed_food.is_some()
@@ -518,7 +509,7 @@ impl HostSession {
                 let found = server.world.brush_block(x, y, z, &mut r);
                 server.rng = r;
                 if let Some(stack) = found {
-                    server.world.pending_gives.push((id, stack));
+                    server.world.queue_give(id, stack);
                 }
             }
             C2S::FireArrow {
@@ -532,7 +523,7 @@ impl HostSession {
                     return;
                 }
                 let arrow = server.world.reg.item_id("base:arrow");
-                server.world.projectiles.push(crate::mobs::Projectile {
+                server.world.spawn_projectile(crate::mobs::Projectile {
                     pos,
                     vel: vel.clamp_length_max(40.0),
                     tile,
@@ -557,17 +548,14 @@ impl HostSession {
                     Some("kiln") => 4,
                     _ => return,
                 };
-                let entry = server
-                    .world
-                    .block_entities
-                    .entry((x, y, z))
-                    .or_insert_with(|| match kind {
-                        0 => BlockEntity::Chest(Default::default()),
-                        1 => BlockEntity::Furnace(Default::default()),
-                        3 => BlockEntity::Bloomery(Default::default()),
-                        4 => BlockEntity::Kiln(Default::default()),
-                        _ => BlockEntity::Offering(Default::default()),
-                    });
+                let default = match kind {
+                    0 => BlockEntity::Chest(Default::default()),
+                    1 => BlockEntity::Furnace(Default::default()),
+                    3 => BlockEntity::Bloomery(Default::default()),
+                    4 => BlockEntity::Kiln(Default::default()),
+                    _ => BlockEntity::Offering(Default::default()),
+                };
+                let entry = server.world.ensure_block_entity((x, y, z), default);
                 if let BlockEntity::Chest(c) = entry
                     && c.wild_owned
                 {
@@ -644,7 +632,7 @@ impl HostSession {
                 let stack = ItemStack::new(&server.world.reg, crate::registry::ItemId(item), 1);
                 if !server.world.anvil_put((x, y, z), stack) {
                     // Rejected: the trusted-consumed item goes back.
-                    server.world.pending_gives.push((id, stack));
+                    server.world.queue_give(id, stack);
                 }
             }
             C2S::AnvilStrike { x, y, z } => {
@@ -653,7 +641,7 @@ impl HostSession {
                     return;
                 }
                 if let Some(out) = server.world.anvil_strike((x, y, z)) {
-                    server.world.pending_gives.push((id, out));
+                    server.world.queue_give(id, out);
                 }
             }
             C2S::AnvilTake { x, y, z } => {
@@ -662,7 +650,7 @@ impl HostSession {
                     return;
                 }
                 if let Some(b) = server.world.anvil_take((x, y, z)) {
-                    server.world.pending_gives.push((id, b));
+                    server.world.queue_give(id, b);
                 }
             }
             C2S::SleepRequest => {
@@ -695,6 +683,10 @@ impl HostSession {
         held: Option<ItemStack>,
     ) {
         let reg = server.world.reg.clone();
+        let bloomery_chain = reg.bloomery.first().cloned();
+        let kiln_base = reg.kiln_base;
+        let kiln_powders: Vec<crate::registry::ItemId> =
+            reg.kiln.iter().map(|(powder, _)| *powder).collect();
         if self
             .guests
             .get(&id)
@@ -702,7 +694,7 @@ impl HostSession {
         {
             return;
         }
-        let Some(entity) = server.world.block_entities.get_mut(&pos) else {
+        let Some(entity) = server.world.block_entity_mut(&pos) else {
             return;
         };
         let mut held = held;
@@ -711,8 +703,8 @@ impl HostSession {
                 // Sealed while firing; charge takes ore-chain items,
                 // the bank takes its fuel. Taking out is always fine.
                 if !bl.lit && slot < 8 {
-                    let chain = server.world.reg.bloomery.first().cloned();
-                    let want = chain.map(|c| if slot < 4 { c.charge } else { c.fuel });
+                    let want = bloomery_chain
+                        .map(|chain| if slot < 4 { chain.charge } else { chain.fuel });
                     let s = if slot < 4 {
                         &mut bl.charge[slot]
                     } else {
@@ -729,13 +721,10 @@ impl HostSession {
                 // Sealed while firing. Sand slots 0-3, powder 4, fuel
                 // 5-8; puts validate against the kiln tables.
                 if !kl.lit && slot < 9 {
-                    let base = server.world.reg.kiln_base;
-                    let powders: Vec<crate::registry::ItemId> =
-                        server.world.reg.kiln.iter().map(|(p, _)| *p).collect();
                     let ok_put = |it: crate::registry::ItemId| match slot {
-                        0..=3 => base.map(|(sa, _, _)| sa) == Some(it),
-                        4 => powders.contains(&it),
-                        _ => base.map(|(_, fu, _)| fu) == Some(it),
+                        0..=3 => kiln_base.map(|(sand, _, _)| sand) == Some(it),
+                        4 => kiln_powders.contains(&it),
+                        _ => kiln_base.map(|(_, fuel, _)| fuel) == Some(it),
                     };
                     let s = match slot {
                         0..=3 => &mut kl.sand[slot],
@@ -812,7 +801,7 @@ impl HostSession {
     }
 
     fn send_container(&mut self, server: &Server, id: u32, pos: (i32, i32, i32)) {
-        let Some(entity) = server.world.block_entities.get(&pos) else {
+        let Some(entity) = server.world.block_entity(&pos) else {
             return;
         };
         let snap = |s: &Option<ItemStack>| {

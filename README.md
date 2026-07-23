@@ -13,6 +13,37 @@ collision (a voxel world doesn't need a general-purpose physics engine).
 cargo run --release
 ```
 
+## Architecture
+
+Wildforge is one Cargo package with a deliberately small public surface: the
+binary hands startup to the library, and the library owns the custom engine.
+The internal dependency direction is:
+
+```text
+platform/app -> client Game -> Server simulation -> World/content
+                         |             |
+                         v             v
+                      renderer      networking adapter
+```
+
+- `game/` owns client orchestration and its input, UI, survival, interaction,
+  presentation, multiplayer, and content-runtime state.
+- `server.rs` is the fixed-step authority shared by solo play, windowed hosts,
+  and the dedicated server. Guests consume snapshots and send requests; they
+  do not generate or save authoritative chunks.
+- `world/` owns spatial state and the block-mutation side effects for chunks,
+  persistence, machines, ecology, fluids, lighting, and the calendar.
+- `renderer/` consumes frame data and meshes. GPU state and cosmetic random
+  streams never feed back into simulation.
+- `net.rs` owns wire values; `mp.rs` translates guest requests into the same
+  authoritative World operations used by local play.
+- `atlas/`, `registry.rs`, and `script.rs` form the content pipeline, using
+  stable names at persistence and synchronization boundaries.
+
+The rationale, compatibility constraints, and two-pass refactor record live
+in [the modularization plan](docs/modularization-plan.md). A separate reusable
+engine crate is intentionally deferred until there is a second real consumer.
+
 ### WSL2 / WSLg note
 
 WSLg cannot truly capture the mouse: the host Windows cursor can neither be
@@ -570,22 +601,3 @@ One binary, no server jar, ever:
 - Under it all: the **sim/client split** — `server::Server` steps the
   world at a fixed 30 Hz whether one player or eight are in it.
   Singleplayer is just a server with one local player.
-
-## Architecture
-
-| Module | Role |
-|---|---|
-| `main.rs` | winit event loop, input, chunk streaming, day/night, HUD title |
-| `world.rs` | chunk map, block get/set, dirty tracking, save/load |
-| `worldgen.rs` | Perlin heightmap, caves, trees |
-| `chunk.rs` | 16×128×16 block storage |
-| `mesher.rs` | visible-face extraction, AO, opaque + water meshes |
-| `renderer.rs` | wgpu device/surface, pipelines, per-chunk GPU buffers |
-| `shader.wgsl` | chunk/water/line shaders, fog, daylight |
-| `physics.rs` | player AABB movement & collision |
-| `raycast.rs` | Amanatides–Woo voxel traversal |
-| `atlas.rs` | procedural block textures |
-| `camera.rs` | first-person camera |
-
-Tests (`cargo test`) cover worldgen determinism, save/load round-trips,
-raycast targeting, and physics (landing, walls, jump height).

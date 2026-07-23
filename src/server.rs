@@ -172,7 +172,7 @@ impl Server {
                     events.push(SimEvent::PlayerHit { who, dmg, from })
                 }
                 MobEvent::Cast(proj) => {
-                    self.world.projectiles.push(proj);
+                    self.world.spawn_projectile(proj);
                     events.push(SimEvent::BoltCast);
                 }
                 MobEvent::Bred => events.push(SimEvent::Bred),
@@ -229,7 +229,7 @@ impl Server {
     /// ative; the resulting mask edits ride the `BlockSet` broadcast.
     fn disturb_sand(&mut self, dt: f32, players: &[PlayerCtx]) {
         let Some(sand) = self.sand_id else { return };
-        if self.world.remote {
+        if self.world.is_remote() {
             return;
         }
         // Age out old footfalls.
