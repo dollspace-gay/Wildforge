@@ -119,12 +119,9 @@ impl Game {
         let Some(arrow_id) = arrow_id else { return };
         let dir = self.camera.forward();
         if let Some(r) = &self.multiplayer.remote {
-            r.client.send(&net::C2S::FireArrow {
-                pos: self.camera.pos + dir * 0.4,
-                vel: dir * bow.speed * (0.6 + 0.4 * charge),
-                dmg: bow.damage * (0.45 + 0.55 * charge),
-                tile: reg.item(arrow_id).icon,
-                recover: !self.creative,
+            r.client.send(&net::C2S::FireProjectile {
+                direction: dir,
+                charge,
             });
             if !self.creative {
                 self.inventory.wear_tool(&reg, self.input.hotbar_sel);
@@ -288,17 +285,10 @@ impl Game {
                 if self.server.world.get_block(x, y, z) == AIR
                     && !self.player.overlaps_block(x, y, z)
                 {
-                    let water = reg.water_block(0);
                     if let Some(r) = &self.multiplayer.remote {
-                        if let Some(host_id) = r.host_block.get(&water.0) {
-                            r.client.send(&net::C2S::Place {
-                                x,
-                                y,
-                                z,
-                                block: *host_id,
-                            });
-                        }
+                        r.client.send(&net::C2S::Place { x, y, z });
                     } else {
+                        let water = reg.water_block(0);
                         self.server.world.place_block((x, y, z), water);
                     }
                     if let Some(empty) = reg.item_id("base:bucket") {
@@ -485,19 +475,13 @@ impl Game {
             if self.input.attack_cooldown <= 0.0 {
                 self.input.attack_cooldown = 0.35;
                 self.presentation.swing = 1.0;
-                let dmg = held.map(|i| reg.item(i).damage).unwrap_or(1.0);
                 let Some(mob) = self.server.world.mob(mi) else {
                     return;
                 };
                 let (sp, mob_id, mob_pos) = (mob.species, mob.id, mob.pos);
                 let pitch = reg.animals[sp].sound_pitch;
-                let from = self.camera.pos;
                 if let Some(r) = &self.multiplayer.remote {
-                    r.client.send(&net::C2S::AttackMob {
-                        id: mob_id,
-                        dmg,
-                        from,
-                    });
+                    r.client.send(&net::C2S::AttackMob { id: mob_id });
                     if let Some(mob) = self.server.world.mob_mut(mi) {
                         mob.hurt_flash = 0.35; // feedback
                     }
@@ -516,7 +500,8 @@ impl Game {
                 }
                 let def = reg.animals[sp].clone();
                 if let Some(mob) = self.server.world.mob_mut(mi) {
-                    mob.hurt(&def, dmg, from);
+                    let dmg = held.map(|i| reg.item(i).damage).unwrap_or(1.0);
+                    mob.hurt(&def, dmg, self.camera.pos);
                 }
                 if self.presentation.juice {
                     self.presentation.hitch = 0.06;
@@ -760,18 +745,15 @@ impl Game {
             {
                 let item = held.unwrap();
                 let dir = self.camera.forward();
-                let pos = self.camera.pos + dir * 0.4;
-                let vel = dir * speed;
-                let tile = reg.item(item).icon;
                 if let Some(rc) = &self.multiplayer.remote {
-                    rc.client.send(&net::C2S::FireArrow {
-                        pos,
-                        vel,
-                        dmg: 0.0,
-                        tile,
-                        recover: false,
+                    rc.client.send(&net::C2S::FireProjectile {
+                        direction: dir,
+                        charge: 1.0,
                     });
                 } else {
+                    let pos = self.camera.pos + dir * 0.4;
+                    let vel = dir * speed;
+                    let tile = reg.item(item).icon;
                     self.server.world.spawn_projectile(mobs::Projectile {
                         pos,
                         vel,
@@ -941,15 +923,8 @@ impl Game {
                     let consumed =
                         self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some();
                     if allow && consumed && self.multiplayer.remote.is_some() {
-                        if let Some(r) = &self.multiplayer.remote
-                            && let Some(host_id) = r.host_block.get(&block.0)
-                        {
-                            r.client.send(&net::C2S::Place {
-                                x,
-                                y,
-                                z,
-                                block: *host_id,
-                            });
+                        if let Some(r) = &self.multiplayer.remote {
+                            r.client.send(&net::C2S::Place { x, y, z });
                         }
                         self.input.action_cooldown = 0.22;
                         self.sfx(Sfx::Place);

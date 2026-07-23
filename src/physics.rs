@@ -145,7 +145,7 @@ impl Player {
         self.move_axis(world, Vec3::new(0.0, d.y, 0.0));
     }
 
-    fn collides(&self, world: &World, pos: Vec3) -> bool {
+    pub(crate) fn collides(&self, world: &World, pos: Vec3) -> bool {
         let min = pos - Vec3::new(PLAYER_HALF_W, 0.0, PLAYER_HALF_W);
         let max = pos + Vec3::new(PLAYER_HALF_W, PLAYER_HEIGHT, PLAYER_HALF_W);
         let (x0, x1) = (min.x.floor() as i32, max.x.floor() as i32);

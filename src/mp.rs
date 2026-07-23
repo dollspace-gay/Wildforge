@@ -3,18 +3,39 @@
 //! world back. Shared by the windowed host (pause menu → OPEN TO
 //! FRIENDS) and the headless `--server` — one code path.
 
+#[path = "multiplayer/moderation.rs"]
+mod moderation;
+#[path = "multiplayer/profiles.rs"]
+mod profiles;
+#[path = "multiplayer/settings.rs"]
+mod settings;
+
 use std::collections::{HashMap, HashSet};
 
 use glam::Vec3;
 
 use crate::chunk::ChunkPos;
-use crate::inventory::{ItemStack, click_stack};
-use crate::net::{self, C2S, HostEvent, MobSnap, S2C, StackSnap};
+use crate::identity::{AdmissionPolicy, DisplayName, IdentityPolicy, Principal};
+use crate::inventory::{HOTBAR_SLOTS, ItemStack, click_stack};
+use crate::net::{
+    self, C2S, HostEvent, MobSnap, PlayerPresence, Refusal, RefusalCode, S2C, StackSnap,
+};
 use crate::server::Server;
 use crate::world::{BlockEntity, World};
+pub use moderation::Role;
+use moderation::{BanIdentity, ModerationStore};
+use profiles::{PlayerRuntime, ProfileStore};
+pub use settings::ServerSettings;
 
 pub struct Guest {
+    pub player_id: crate::identity::PlayerId,
+    pub principals: Vec<Principal>,
+    pub previous_names: Vec<String>,
+    pub first_seen: u64,
     pub name: String,
+    pub principal: Principal,
+    pub verification_cached: bool,
+    pub verified_handle: Option<String>,
     pub pos: Vec3,
     pub yaw: f32,
     pub container: Option<(i32, i32, i32)>,
@@ -23,6 +44,27 @@ pub struct Guest {
     pub held: u16,
     /// Packed appearance Style, from the Hello.
     pub style: u32,
+    pub inventory: crate::inventory::Inventory,
+    pub armor: [Option<ItemStack>; 5],
+    pub health: f32,
+    pub hunger: f32,
+    pub nutrition: [f32; 5],
+    pub spawn: Vec3,
+    pub pitch: f32,
+    pub hotbar: usize,
+    pub cursor: Option<ItemStack>,
+    pub craft_grid: [Option<ItemStack>; 9],
+    has_moved: bool,
+    sprinting: bool,
+    action_cooldown: f32,
+    since_damage: f32,
+    regen_timer: f32,
+    starve_timer: f32,
+    chat_count: u8,
+    chat_window: f32,
+    command_count: u16,
+    command_window: f32,
+    airborne_rise: f32,
     sent_chunks: HashSet<(i32, i32)>,
     edits: u32,
     edit_window: f32,
@@ -61,28 +103,118 @@ pub struct HostSession {
     pub guests: HashMap<u32, Guest>,
     pub content_hash: u64,
     pub world_name: String,
-    /// Names kicked this session: refused if they reconnect.
-    banned: HashSet<String>,
+    pub identity_policy: IdentityPolicy,
+    pub admission_policy: AdmissionPolicy,
+    host_name: Option<String>,
+    profiles: Option<ProfileStore>,
+    moderation: Option<ModerationStore>,
+    /// Principals kicked this session: refused if they reconnect.
+    banned: HashSet<Principal>,
     snapshot_timer: f32,
     state_timer: f32,
     container_timer: f32,
 }
 
+struct AuthenticatedJoin {
+    id: u32,
+    display_name: DisplayName,
+    principal: Principal,
+    principals: Vec<Principal>,
+    verification_cached: bool,
+    verified_handle: Option<String>,
+    content_hash: u64,
+    style: u32,
+}
+
 const REACH: f32 = 7.0;
 const EDITS_PER_SEC: u32 = 10;
 
+fn shares_principal(left: &[Principal], right: &[Principal]) -> bool {
+    left.iter().any(|principal| right.contains(principal))
+}
+
 impl HostSession {
     pub fn start(world_name: String) -> std::io::Result<HostSession> {
-        Self::start_on(world_name, net::GAME_PORT)
+        Self::start_configured(world_name, None)
+    }
+
+    fn start_configured(
+        world_name: String,
+        host_name: Option<DisplayName>,
+    ) -> std::io::Result<HostSession> {
+        let settings =
+            ServerSettings::load_or_create(&std::path::PathBuf::from("saves").join(&world_name))?;
+        Self::start_on_with_settings(
+            world_name,
+            settings.port,
+            host_name,
+            settings.identity,
+            settings.admission,
+            settings.verification_grace_secs,
+        )
+    }
+
+    pub fn start_windowed(
+        world_name: String,
+        host_name: DisplayName,
+    ) -> std::io::Result<HostSession> {
+        Self::start_configured(world_name, Some(host_name))
     }
 
     /// Tests and second-hosts bind an OS-assigned port with 0.
+    #[cfg(test)]
     pub fn start_on(world_name: String, port: u16) -> std::io::Result<HostSession> {
+        Self::start_on_with_policy(
+            world_name,
+            port,
+            None,
+            IdentityPolicy::Local,
+            AdmissionPolicy::Open,
+        )
+    }
+
+    #[cfg(test)]
+    pub fn start_on_with_policy(
+        world_name: String,
+        port: u16,
+        host_name: Option<DisplayName>,
+        identity_policy: IdentityPolicy,
+        admission_policy: AdmissionPolicy,
+    ) -> std::io::Result<HostSession> {
+        Self::start_on_with_settings(
+            world_name,
+            port,
+            host_name,
+            identity_policy,
+            admission_policy,
+            3_600,
+        )
+    }
+
+    fn start_on_with_settings(
+        world_name: String,
+        port: u16,
+        host_name: Option<DisplayName>,
+        identity_policy: IdentityPolicy,
+        admission_policy: AdmissionPolicy,
+        verification_grace_secs: u64,
+    ) -> std::io::Result<HostSession> {
         Ok(HostSession {
-            net: net::Host::start(world_name.clone(), port)?,
+            net: net::Host::start(
+                world_name.clone(),
+                port,
+                identity_policy,
+                admission_policy,
+                verification_grace_secs,
+            )?,
             guests: HashMap::new(),
             content_hash: net::content_hash(std::path::Path::new("mods")),
             world_name,
+            identity_policy,
+            admission_policy,
+            host_name: host_name.map(|name| name.to_string()),
+            profiles: None,
+            moderation: None,
             banned: HashSet::new(),
             snapshot_timer: 0.0,
             state_timer: 0.0,
@@ -134,14 +266,37 @@ impl HostSession {
             match ev {
                 HostEvent::Joined {
                     id,
-                    name,
+                    display_name,
+                    principal,
+                    principals,
+                    verification_cached,
+                    verified_handle,
                     content_hash,
                     style,
                 } => {
-                    self.on_join(server, id, name, content_hash, style, &mut fx);
+                    self.on_join(
+                        server,
+                        AuthenticatedJoin {
+                            id,
+                            display_name,
+                            principal,
+                            principals,
+                            verification_cached,
+                            verified_handle,
+                            content_hash,
+                            style,
+                        },
+                        &mut fx,
+                    );
                 }
                 HostEvent::Left { id } => {
                     if let Some(g) = self.guests.remove(&id) {
+                        if let Some(profiles) = &self.profiles
+                            && let Err(e) =
+                                profiles.save(&PlayerRuntime::from_guest(&g), &server.world.reg)
+                        {
+                            eprintln!("profiles: save {} failed: {e}", g.name);
+                        }
                         self.net.broadcast(&S2C::Left { id });
                         fx.push(HostFx::Left(g.name));
                     }
@@ -153,6 +308,8 @@ impl HostSession {
         }
 
         // Rate-limit windows + movement interpolation clocks.
+        let creative = server.world.mode == "creative";
+        let mut survival_changed = Vec::new();
         for g in self.guests.values_mut() {
             g.edit_window += dt;
             if g.edit_window >= 1.0 {
@@ -160,6 +317,57 @@ impl HostSession {
                 g.edits = 0;
             }
             g.net_age += dt;
+            g.action_cooldown = (g.action_cooldown - dt).max(0.0);
+            g.since_damage += dt;
+            g.chat_window += dt;
+            if g.chat_window >= 10.0 {
+                g.chat_window = 0.0;
+                g.chat_count = 0;
+            }
+            g.command_window += dt;
+            if g.command_window >= 1.0 {
+                g.command_window = 0.0;
+                g.command_count = 0;
+            }
+            if !creative {
+                let old = (g.health, g.hunger, g.nutrition);
+                let drain = 0.01 + if g.sprinting { 0.02 } else { 0.0 };
+                g.hunger = (g.hunger - drain * dt).max(0.0);
+                for value in &mut g.nutrition {
+                    *value = (*value - dt * 0.01).max(0.0);
+                }
+                let max_health =
+                    14.0 + g.nutrition.iter().filter(|&&value| value >= 40.0).count() as f32 * 2.0;
+                g.health = g.health.min(max_health);
+                if g.hunger >= 17.0 && g.health < max_health && g.since_damage > 4.0 {
+                    g.regen_timer += dt;
+                    if g.regen_timer >= 3.0 {
+                        g.regen_timer = 0.0;
+                        g.health = (g.health + 1.0).min(max_health);
+                        g.hunger = (g.hunger - 0.5).max(0.0);
+                    }
+                }
+                if g.hunger <= 0.0 {
+                    g.starve_timer += dt;
+                    if g.starve_timer >= 4.0 {
+                        g.starve_timer = 0.0;
+                        if g.health > 2.0 {
+                            g.health -= 1.0;
+                        }
+                    }
+                } else {
+                    g.starve_timer = 0.0;
+                }
+                if old != (g.health, g.hunger, g.nutrition) {
+                    survival_changed.push(g.player_id);
+                }
+            }
+        }
+        if self.state_timer + dt >= 1.0 && !survival_changed.is_empty() {
+            let ids: Vec<u32> = self.guests.keys().copied().collect();
+            for id in ids {
+                self.send_player_state(id);
+            }
         }
 
         // Authoritative block edits out.
@@ -177,6 +385,9 @@ impl HostSession {
         // Items owed to guests (arrow recovery, mining, mob drops,
         // brush finds) — full stacks so durability crosses the wire.
         for (owner, s) in server.world.take_pending_gives() {
+            if let Some(guest) = self.guests.get_mut(&owner) {
+                let _ = guest.inventory.add_stack(&server.world.reg, s);
+            }
             self.net.send(
                 owner,
                 &S2C::Give {
@@ -185,6 +396,7 @@ impl HostSession {
                     durability: s.durability,
                 },
             );
+            self.send_player_state(owner);
         }
 
         // Chunk streaming toward each guest.
@@ -328,21 +540,121 @@ impl HostSession {
         fx
     }
 
-    fn on_join(
-        &mut self,
-        server: &Server,
-        id: u32,
-        name: String,
-        content_hash: u64,
-        style: u32,
-        fx: &mut Vec<HostFx>,
-    ) {
-        if self.banned.contains(&name) {
-            self.net.send(id, &S2C::Refused("kicked by host".into()));
+    fn on_join(&mut self, server: &Server, join: AuthenticatedJoin, fx: &mut Vec<HostFx>) {
+        let AuthenticatedJoin {
+            id,
+            display_name,
+            principal,
+            principals,
+            verification_cached,
+            verified_handle,
+            content_hash,
+            style,
+        } = join;
+        let name = display_name.to_string();
+        if self.banned.contains(&principal) {
+            self.net.send(
+                id,
+                &S2C::Refused(Refusal::new(RefusalCode::Banned, "banned by host")),
+            );
+            self.net.kick(id);
+            return;
+        }
+        if self
+            .guests
+            .values()
+            .any(|guest| shares_principal(&guest.principals, &principals))
+        {
+            self.net.send(
+                id,
+                &S2C::Refused(Refusal::new(
+                    RefusalCode::AlreadyConnected,
+                    "this identity is already connected",
+                )),
+            );
+            self.net.kick(id);
+            return;
+        }
+        if self
+            .guests
+            .values()
+            .filter_map(|guest| DisplayName::parse(&guest.name).ok())
+            .any(|other| other.collision_key() == display_name.collision_key())
+            || self
+                .host_name
+                .as_deref()
+                .and_then(|host| DisplayName::parse(host).ok())
+                .is_some_and(|host| host.collision_key() == display_name.collision_key())
+        {
+            self.net.send(
+                id,
+                &S2C::Refused(Refusal::new(
+                    RefusalCode::NameInUse,
+                    "that display name is already in use",
+                )),
+            );
+            self.net.kick(id);
+            return;
+        }
+        let world_root = server.world.save_dir_for_saving();
+        if self.profiles.is_none() {
+            self.profiles = match ProfileStore::load(world_root.clone()) {
+                Ok(store) => Some(store),
+                Err(e) => {
+                    self.refuse_server_error(id, "player profile store", &e);
+                    return;
+                }
+            };
+        }
+        if self.moderation.is_none() {
+            self.moderation = match ModerationStore::load(&world_root) {
+                Ok(store) => Some(store),
+                Err(e) => {
+                    self.refuse_server_error(id, "moderation store", &e);
+                    return;
+                }
+            };
+        }
+        if let Err(refusal) = self.moderation.as_mut().unwrap().check_bans(&principals) {
+            self.net.send(id, &S2C::Refused(refusal));
             self.net.kick(id);
             return;
         }
         let reg = &server.world.reg;
+        let runtime = match self.profiles.as_mut().unwrap().open_or_create(
+            &principals,
+            &display_name,
+            style,
+            Vec3::new(0.5, 80.0, 0.5),
+            reg,
+        ) {
+            Ok(runtime) => runtime,
+            Err(e) => {
+                let code = if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    RefusalCode::ProfileConflict
+                } else {
+                    RefusalCode::Server
+                };
+                self.net.send(
+                    id,
+                    &S2C::Refused(Refusal::new(
+                        code,
+                        format!("player profile could not be opened: {e}"),
+                    )),
+                );
+                self.net.kick(id);
+                return;
+            }
+        };
+        if let Err(refusal) = self.moderation.as_mut().unwrap().admit(
+            &runtime.principals,
+            Some(runtime.player_id),
+            self.admission_policy,
+        ) {
+            self.net.send(id, &S2C::Refused(refusal));
+            self.net.kick(id);
+            return;
+        }
         if content_hash != self.content_hash {
             // Stream the mods dir so the guest can match us exactly.
             let files = net::collect_mod_files(std::path::Path::new("mods"));
@@ -350,6 +662,28 @@ impl HostSession {
         }
         let palette: Vec<String> = reg.blocks.iter().map(|b| b.name.clone()).collect();
         let items: Vec<String> = reg.items.iter().map(|i| i.name.clone()).collect();
+        let mut roster = Vec::new();
+        if let Some(host_name) = &self.host_name {
+            roster.push(PlayerPresence {
+                id: 0,
+                display_name: host_name.clone(),
+                verified: false,
+                cached_verification: false,
+            });
+        }
+        roster.extend(self.guests.iter().map(|(id, guest)| PlayerPresence {
+            id: *id,
+            display_name: guest.name.clone(),
+            verified: matches!(guest.principal, Principal::Atproto(_)),
+            cached_verification: guest.verification_cached,
+        }));
+        let presence = PlayerPresence {
+            id,
+            display_name: name.clone(),
+            verified: matches!(principal, Principal::Atproto(_)),
+            cached_verification: verification_cached,
+        };
+        roster.push(presence.clone());
         self.net.send(
             id,
             &S2C::Welcome {
@@ -360,24 +694,51 @@ impl HostSession {
                 palette,
                 items,
                 your_id: id,
-                spawn: Vec3::new(0.5, 80.0, 0.5), // corrected by first chunks
+                roster,
+                spawn: runtime.pos,
                 world_name: self.world_name.clone(),
+                player_state: runtime.to_snap(),
             },
         );
-        self.net.broadcast(&S2C::Joined {
-            id,
-            name: name.clone(),
-        });
+        self.net.broadcast(&S2C::Joined { presence });
         self.guests.insert(
             id,
             Guest {
+                player_id: runtime.player_id,
+                principals: runtime.principals,
+                previous_names: runtime.previous_names,
+                first_seen: runtime.first_seen,
                 name: name.clone(),
-                pos: Vec3::new(0.5, 80.0, 0.5),
-                yaw: 0.0,
+                principal,
+                verification_cached,
+                verified_handle,
+                pos: runtime.pos,
+                yaw: runtime.yaw,
                 container: None,
                 sleeping: false,
-                held: u16::MAX,
-                style,
+                held: runtime.held,
+                style: runtime.style,
+                inventory: runtime.inventory,
+                armor: runtime.armor,
+                health: runtime.health,
+                hunger: runtime.hunger,
+                nutrition: runtime.nutrition,
+                spawn: runtime.spawn,
+                pitch: runtime.pitch,
+                hotbar: runtime.hotbar,
+                cursor: runtime.cursor,
+                craft_grid: [None; 9],
+                has_moved: false,
+                sprinting: false,
+                action_cooldown: 0.0,
+                since_damage: 100.0,
+                regen_timer: 0.0,
+                starve_timer: 0.0,
+                chat_count: 0,
+                chat_window: 0.0,
+                command_count: 0,
+                command_window: 0.0,
+                airborne_rise: 0.0,
                 sent_chunks: HashSet::new(),
                 edits: 0,
                 edit_window: 0.0,
@@ -389,29 +750,287 @@ impl HostSession {
         fx.push(HostFx::Joined(name));
     }
 
+    fn refuse_server_error(&mut self, id: u32, area: &str, error: &std::io::Error) {
+        self.net.send(
+            id,
+            &S2C::Refused(Refusal::new(
+                RefusalCode::Server,
+                format!("{area} could not be opened: {error}"),
+            )),
+        );
+        self.net.kick(id);
+    }
+
     /// Kick a guest and refuse them for the rest of the session.
     pub fn kick_guest(&mut self, id: u32) -> Option<String> {
         let g = self.guests.remove(&id)?;
-        self.banned.insert(g.name.clone());
-        self.net.send(id, &S2C::Refused("kicked by host".into()));
+        if let Some(profiles) = &self.profiles
+            && let Err(e) = profiles.save(&PlayerRuntime::from_guest(&g), profiles.registry_hint())
+        {
+            eprintln!("profiles: save {} failed after kick: {e}", g.name);
+        }
+        self.banned.extend(g.principals.iter().cloned());
+        self.net.send(
+            id,
+            &S2C::Refused(Refusal::new(RefusalCode::Kicked, "kicked by host")),
+        );
         self.net.broadcast(&S2C::Left { id });
         self.net.kick(id);
         Some(g.name)
+    }
+
+    /// Persistently ban a connected profile and each credential currently
+    /// attached to it, then disconnect it.
+    pub fn ban_guest(
+        &mut self,
+        id: u32,
+        reason: &str,
+        duration_secs: Option<u64>,
+        created_by: &str,
+    ) -> std::io::Result<Option<String>> {
+        let Some(g) = self.guests.remove(&id) else {
+            return Ok(None);
+        };
+        if let Some(profiles) = &self.profiles {
+            profiles.save(&PlayerRuntime::from_guest(&g), profiles.registry_hint())?;
+        }
+        let moderation = self
+            .moderation
+            .as_mut()
+            .ok_or_else(|| std::io::Error::other("moderation store is not initialized"))?;
+        moderation.ban(
+            BanIdentity {
+                player_id: g.player_id,
+                principals: &g.principals,
+                display_name: &g.name,
+                handle: g.verified_handle.as_deref(),
+            },
+            reason,
+            created_by,
+            duration_secs,
+        )?;
+        self.net
+            .send(id, &S2C::Refused(Refusal::new(RefusalCode::Banned, reason)));
+        self.net.broadcast(&S2C::Left { id });
+        self.net.kick(id);
+        Ok(Some(g.name))
+    }
+
+    pub fn allow_guest(&mut self, id: u32, by: &str) -> std::io::Result<bool> {
+        let Some(g) = self.guests.get(&id) else {
+            return Ok(false);
+        };
+        let Some(moderation) = self.moderation.as_mut() else {
+            return Ok(false);
+        };
+        for principal in &g.principals {
+            moderation.allow_principal(principal.clone(), by)?;
+        }
+        moderation.allow_player(g.player_id, by)?;
+        Ok(true)
+    }
+
+    pub fn set_guest_role(&mut self, id: u32, role: Role, by: &str) -> std::io::Result<bool> {
+        let Some(g) = self.guests.get(&id) else {
+            return Ok(false);
+        };
+        let Some(moderation) = self.moderation.as_mut() else {
+            return Ok(false);
+        };
+        moderation.set_role(g.principal.clone(), role, by)?;
+        Ok(true)
+    }
+
+    pub fn mute_guest(
+        &mut self,
+        id: u32,
+        reason: &str,
+        duration_secs: Option<u64>,
+        by: &str,
+    ) -> std::io::Result<bool> {
+        let Some(g) = self.guests.get(&id) else {
+            return Ok(false);
+        };
+        let Some(moderation) = self.moderation.as_mut() else {
+            return Ok(false);
+        };
+        moderation.mute(g.principal.clone(), reason, by, duration_secs)?;
+        Ok(true)
+    }
+
+    pub fn guest_identity_summary(&self, id: u32) -> Option<String> {
+        let guest = self.guests.get(&id)?;
+        let role = self
+            .moderation
+            .as_ref()
+            .map(|store| store.role(&guest.principal))
+            .unwrap_or_default();
+        Some(format!(
+            "{} | player {} | {} | role {:?}",
+            guest.name,
+            guest.player_id,
+            match &guest.principal {
+                Principal::LocalDevice(device) => format!("device {}", device.short()),
+                Principal::Atproto(did) => match &guest.verified_handle {
+                    Some(handle) => format!(
+                        "@{handle} / {}{}",
+                        did.short(),
+                        if guest.verification_cached {
+                            " (cached proof)"
+                        } else {
+                            ""
+                        }
+                    ),
+                    None => format!(
+                        "ATProto {}{}",
+                        did.short(),
+                        if guest.verification_cached {
+                            " (cached proof)"
+                        } else {
+                            ""
+                        }
+                    ),
+                },
+            },
+            role
+        ))
+    }
+
+    pub fn guest_role(&self, id: u32) -> Option<Role> {
+        let guest = self.guests.get(&id)?;
+        Some(
+            self.moderation
+                .as_ref()
+                .map(|store| store.role(&guest.principal))
+                .unwrap_or_default(),
+        )
+    }
+
+    pub fn unban_player(
+        &mut self,
+        player_id: crate::identity::PlayerId,
+        by: &str,
+    ) -> std::io::Result<bool> {
+        if self.moderation.is_none() {
+            self.moderation = Some(ModerationStore::load(
+                &std::path::PathBuf::from("saves").join(&self.world_name),
+            )?);
+        }
+        let moderation = self
+            .moderation
+            .as_mut()
+            .ok_or_else(|| std::io::Error::other("moderation store is not initialized"))?;
+        moderation.unban_player(player_id, by)
+    }
+
+    /// Apply simulation damage to server-owned survival state. The `Hit`
+    /// packet is presentation; the following `PlayerState` is the authority.
+    pub fn hurt_guest(&mut self, id: u32, amount: f32, from: Vec3) {
+        let Some(guest) = self.guests.get_mut(&id) else {
+            return;
+        };
+        if guest.health <= 0.0 {
+            return;
+        }
+        let armor_points: u32 = guest
+            .armor
+            .iter()
+            .flatten()
+            .filter_map(|stack| server_item_armor_points(stack, self.profiles.as_ref()))
+            .sum();
+        // This mirrors local survival: each point blocks four percent, capped.
+        let reduced = amount.max(0.0) * (1.0 - armor_points.min(15) as f32 * 0.04);
+        if armor_points > 0
+            && let Some(registry) = self.profiles.as_ref().map(ProfileStore::registry_hint)
+        {
+            for armor in &mut guest.armor {
+                if let Some(stack) = armor {
+                    if registry.item(stack.item).durability == 0 {
+                        continue;
+                    }
+                    stack.durability = stack.durability.saturating_sub(1);
+                    if stack.durability == 0 {
+                        *armor = None;
+                    }
+                }
+            }
+        }
+        guest.health = (guest.health - reduced).max(0.0);
+        guest.since_damage = 0.0;
+        if guest.health <= 0.0 {
+            let _ = guest.inventory.drain();
+            guest.armor = [None; 5];
+            guest.cursor = None;
+            guest.craft_grid = [None; 9];
+            refresh_held(guest);
+        }
+        self.net.send(id, &S2C::Hit { dmg: reduced, from });
+        self.send_player_state(id);
     }
 
     fn on_msg(&mut self, server: &mut Server, id: u32, msg: C2S, fx: &mut Vec<HostFx>) {
         let Some(guest) = self.guests.get_mut(&id) else {
             return;
         };
+        if !matches!(&msg, C2S::Move { .. }) {
+            if guest.command_count >= 80 {
+                return;
+            }
+            guest.command_count += 1;
+        }
         match msg {
-            C2S::Hello { .. } | C2S::Bye => {}
-            C2S::Move { pos, yaw, held } => {
+            C2S::Hello { .. } | C2S::Authenticate { .. } | C2S::Bye => {}
+            C2S::Move {
+                pos,
+                yaw,
+                hotbar,
+                sprint,
+            } => {
+                let elapsed = guest.net_age.clamp(0.03, 0.3);
+                let delta = pos - guest.pos;
+                let horizontal = Vec3::new(delta.x, 0.0, delta.z).length();
+                let probe = crate::physics::Player::new(pos);
+                let grounded = server.world.reg.is_solid(server.world.get_block(
+                    pos.x.floor() as i32,
+                    (pos.y - 0.05).floor() as i32,
+                    pos.z.floor() as i32,
+                ));
+                let in_water = server.world.reg.is_water(server.world.get_block(
+                    pos.x.floor() as i32,
+                    (pos.y + 0.6).floor() as i32,
+                    pos.z.floor() as i32,
+                ));
+                let airborne_rise = if grounded || in_water {
+                    0.0
+                } else {
+                    guest.airborne_rise + delta.y.max(0.0)
+                };
+                let valid = pos.is_finite()
+                    && yaw.is_finite()
+                    && hotbar < HOTBAR_SLOTS as u8
+                    && !probe.collides(&server.world, pos)
+                    && airborne_rise <= 2.4
+                    && (guest.has_moved
+                        && horizontal <= 8.0 * elapsed + 0.35
+                        && delta.y.abs() <= 14.0 * elapsed + 0.75
+                        || !guest.has_moved && delta.length() <= 3.0);
+                if !valid {
+                    self.net.send(
+                        id,
+                        &S2C::PlayerState(PlayerRuntime::from_guest(guest).to_snap()),
+                    );
+                    return;
+                }
                 guest.render_from = guest.render_pos();
                 guest.net_interval = guest.net_age.clamp(0.03, 0.3);
                 guest.net_age = 0.0;
                 guest.pos = pos;
                 guest.yaw = yaw;
-                guest.held = held;
+                guest.hotbar = hotbar as usize;
+                guest.sprinting = sprint && guest.hunger >= 6.0;
+                guest.airborne_rise = airborne_rise;
+                guest.has_moved = true;
+                refresh_held(guest);
                 // Guests leave footprints too; the edit echoes to all.
                 server.world.tread(
                     pos.x.floor() as i32,
@@ -425,12 +1044,31 @@ impl HostSession {
                     return;
                 }
                 guest.edits += 1;
-                let Some(result) = server.world.break_block((x, y, z), None, true, true) else {
+                let creative = server.world.mode == "creative";
+                let held = guest.inventory.slots[guest.hotbar].map(|stack| stack.item);
+                let sheared = held.is_some_and(|item| server.world.reg.item(item).shears)
+                    && server
+                        .world
+                        .reg
+                        .block(server.world.get_block(x, y, z))
+                        .name
+                        .contains("leaves");
+                let Some(result) =
+                    server
+                        .world
+                        .break_block((x, y, z), held, !creative && !sheared, !creative)
+                else {
                     return;
                 };
+                if !creative {
+                    guest.hunger = (guest.hunger - 0.008).max(0.0);
+                    guest.inventory.wear_tool(&server.world.reg, guest.hotbar);
+                }
+                refresh_held(guest);
                 if let Some(stack) = result.drop {
                     server.world.queue_give(id, stack);
                 }
+                self.send_player_state(id);
             }
             C2S::Scoop { x, y, z } => {
                 let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
@@ -443,29 +1081,75 @@ impl HostSession {
                 if server.world.reg.water_volume(b) != Some(8) {
                     return;
                 }
+                let Some(empty) = server.world.reg.item_id("base:bucket") else {
+                    return;
+                };
+                if server.world.mode != "creative"
+                    && guest.inventory.slots[guest.hotbar].map(|stack| stack.item) != Some(empty)
+                {
+                    return;
+                }
                 guest.edits += 1;
                 server.world.set_block(x, y, z, crate::registry::AIR);
+                if server.world.mode != "creative"
+                    && let Some(full) = server.world.reg.item_id("base:bucket_water")
+                {
+                    guest.inventory.slots[guest.hotbar] =
+                        Some(ItemStack::new(&server.world.reg, full, 1));
+                    refresh_held(guest);
+                    self.send_player_state(id);
+                }
             }
-            C2S::Place { x, y, z, block } => {
+            C2S::Place { x, y, z } => {
                 let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
                 if (p - guest.pos).length() > REACH || guest.edits >= EDITS_PER_SEC {
                     return;
                 }
-                if server
-                    .world
-                    .place_block((x, y, z), crate::registry::BlockId(block))
-                {
-                    guest.edits += 1;
+                let selected = guest.inventory.slots[guest.hotbar];
+                let creative = server.world.mode == "creative";
+                let block = selected
+                    .and_then(|stack| server.world.reg.item(stack.item).places)
+                    .or_else(|| {
+                        let full = server.world.reg.item_id("base:bucket_water")?;
+                        (selected.map(|stack| stack.item) == Some(full))
+                            .then(|| server.world.reg.water_block(0))
+                    });
+                let Some(block) = block else { return };
+                let overlaps = {
+                    let player = crate::physics::Player::new(guest.pos);
+                    player.overlaps_block(x, y, z)
+                };
+                if overlaps || !server.world.place_block((x, y, z), block) {
+                    return;
+                }
+                guest.edits += 1;
+                if !creative {
+                    if selected.map(|stack| stack.item)
+                        == server.world.reg.item_id("base:bucket_water")
+                    {
+                        if let Some(empty) = server.world.reg.item_id("base:bucket") {
+                            guest.inventory.slots[guest.hotbar] =
+                                Some(ItemStack::new(&server.world.reg, empty, 1));
+                        }
+                    } else {
+                        guest.inventory.take_one(guest.hotbar);
+                    }
+                    refresh_held(guest);
+                    self.send_player_state(id);
                 }
             }
-            C2S::AttackMob {
-                id: mob_id,
-                dmg,
-                from,
-            } => {
+            C2S::AttackMob { id: mob_id } => {
                 // Stable ids: snapshots lag the sim, so an index would
                 // race deaths/spawns and strike the wrong creature.
-                let dmg = dmg.clamp(0.0, 16.0);
+                if guest.action_cooldown > 0.0 {
+                    return;
+                }
+                guest.action_cooldown = 0.35;
+                let dmg = guest.inventory.slots[guest.hotbar]
+                    .map(|stack| server.world.reg.item(stack.item).damage)
+                    .unwrap_or(1.0)
+                    .clamp(0.0, 16.0);
+                let from = guest.pos + Vec3::new(0.0, 1.6, 0.0);
                 let gpos = guest.pos;
                 let reg = server.world.reg.clone();
                 if let Some(m) = server.world.mob_by_id_mut(mob_id)
@@ -476,6 +1160,12 @@ impl HostSession {
                     m.last_hit_by = id;
                     if !def.hostile {
                         server.world.add_ire(2.0);
+                    }
+                    if server.world.mode != "creative" {
+                        guest.hunger = (guest.hunger - 0.01).max(0.0);
+                        guest.inventory.wear_tool(&reg, guest.hotbar);
+                        refresh_held(guest);
+                        self.send_player_state(id);
                     }
                 }
             }
@@ -490,9 +1180,16 @@ impl HostSession {
                         && m.growth >= 1.0
                         && m.breed_cd <= 0.0
                         && !m.fed
+                        && guest.inventory.slots[guest.hotbar].map(|stack| stack.item)
+                            == def.breed_food
                     {
                         m.fed = true;
                         m.calm = 30.0;
+                        if server.world.mode != "creative" {
+                            guest.inventory.take_one(guest.hotbar);
+                            refresh_held(guest);
+                            self.send_player_state(id);
+                        }
                     }
                 }
             }
@@ -505,34 +1202,71 @@ impl HostSession {
                 if server.world.reg.block(b).brush.is_none() {
                     return;
                 }
+                if !guest.inventory.slots[guest.hotbar]
+                    .is_some_and(|stack| server.world.reg.item(stack.item).brush_tool)
+                {
+                    return;
+                }
                 let mut r = server.rng;
                 let found = server.world.brush_block(x, y, z, &mut r);
                 server.rng = r;
                 if let Some(stack) = found {
                     server.world.queue_give(id, stack);
                 }
+                if server.world.mode != "creative" {
+                    guest.inventory.wear_tool(&server.world.reg, guest.hotbar);
+                    refresh_held(guest);
+                    self.send_player_state(id);
+                }
             }
-            C2S::FireArrow {
-                pos,
-                vel,
-                dmg,
-                tile,
-                recover,
-            } => {
-                if (pos - guest.pos).length() > 3.0 {
+            C2S::FireProjectile { direction, charge } => {
+                if guest.action_cooldown > 0.0 || !direction.is_finite() || direction.length() < 0.5
+                {
                     return;
                 }
-                let arrow = server.world.reg.item_id("base:arrow");
+                let direction = direction.normalize();
+                let selected = guest.inventory.slots[guest.hotbar];
+                let Some(selected) = selected else { return };
+                let def = server.world.reg.item(selected.item).clone();
+                let creative = server.world.mode == "creative";
+                let (speed, damage, tile, drop_item) = if let Some(bow) = def.bow {
+                    let Some(ammo) =
+                        take_ammo(&mut guest.inventory, &server.world.reg, "arrow", creative)
+                    else {
+                        return;
+                    };
+                    let charge = charge.clamp(0.0, 1.0);
+                    if !creative {
+                        guest.inventory.wear_tool(&server.world.reg, guest.hotbar);
+                    }
+                    (
+                        bow.speed * (0.6 + 0.4 * charge),
+                        bow.damage * (0.45 + 0.55 * charge),
+                        server.world.reg.item(ammo).icon,
+                        (!creative).then_some(ammo),
+                    )
+                } else if let Some(speed) = def.throw_speed {
+                    if !creative {
+                        guest.inventory.take_one(guest.hotbar);
+                    }
+                    (speed, 0.0, def.icon, None)
+                } else {
+                    return;
+                };
+                guest.action_cooldown = 0.25;
+                let pos = guest.pos + Vec3::new(0.0, 1.6, 0.0) + direction * 0.4;
                 server.world.spawn_projectile(crate::mobs::Projectile {
                     pos,
-                    vel: vel.clamp_length_max(40.0),
+                    vel: direction * speed.min(40.0),
                     tile,
-                    damage: dmg.clamp(0.0, 12.0),
+                    damage: damage.clamp(0.0, 12.0),
                     age: 0.0,
                     from_player: true,
-                    drop_item: if recover { arrow } else { None },
+                    drop_item,
                     owner: id,
                 });
+                refresh_held(guest);
+                self.send_player_state(id);
             }
             C2S::OpenContainer { x, y, z } => {
                 let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
@@ -575,22 +1309,8 @@ impl HostSession {
                 z,
                 slot,
                 right,
-                held,
             } => {
-                // The cursor is guest-owned (trusted-friends model, like
-                // the guest's whole inventory); a click is a transaction
-                // between it and the host-owned container.
-                let held = held.and_then(|h| {
-                    ((h.item as usize) < server.world.reg.items.len()
-                        && h.count > 0
-                        && h.count <= 99)
-                        .then_some(ItemStack {
-                            item: crate::registry::ItemId(h.item),
-                            count: h.count,
-                            durability: h.durability,
-                        })
-                });
-                self.container_click(server, id, (x, y, z), slot as usize, right, held);
+                self.container_click(server, id, (x, y, z), slot as usize, right);
             }
             C2S::CloseContainer => {
                 guest.container = None;
@@ -600,13 +1320,33 @@ impl HostSession {
                 if (p - guest.pos).length() > REACH {
                     return;
                 }
+                let ember = server.world.reg.item_id("base:ember");
+                if server.world.mode != "creative"
+                    && !guest
+                        .inventory
+                        .slots
+                        .iter()
+                        .flatten()
+                        .any(|stack| Some(stack.item) == ember)
+                {
+                    return;
+                }
                 let b = server.world.get_block(x, y, z);
                 let res = match server.world.reg.block(b).interaction.as_deref() {
                     Some("kiln") => server.world.light_kiln(x, y, z),
                     _ => server.world.light_bloomery(x, y, z),
                 };
                 match res {
-                    Ok(()) => self.send_container(server, id, (x, y, z)),
+                    Ok(()) => {
+                        if server.world.mode != "creative"
+                            && let Some(ember) = server.world.reg.item_id("base:ember")
+                            && take_item(&mut guest.inventory, ember)
+                        {
+                            refresh_held(guest);
+                            self.send_player_state(id);
+                        }
+                        self.send_container(server, id, (x, y, z));
+                    }
                     Err(e) => self.net.send(id, &S2C::Toast(e.into())),
                 }
             }
@@ -615,24 +1355,38 @@ impl HostSession {
                 if (p - guest.pos).length() > REACH {
                     return;
                 }
-                match server.world.try_light_clamp(x, y, z) {
-                    Ok(n) => self
-                        .net
-                        .send(id, &S2C::Toast(format!("The clamp smolders ({n} logs)."))),
-                    Err(e) => self.net.send(id, &S2C::Toast(e.into())),
-                }
-            }
-            C2S::AnvilPut { x, y, z, item } => {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                if (p - guest.pos).length() > REACH
-                    || (item as usize) >= server.world.reg.items.len()
+                if server.world.mode != "creative"
+                    && guest.inventory.slots[guest.hotbar].map(|stack| stack.item)
+                        != server.world.reg.item_id("base:ember")
                 {
                     return;
                 }
-                let stack = ItemStack::new(&server.world.reg, crate::registry::ItemId(item), 1);
-                if !server.world.anvil_put((x, y, z), stack) {
-                    // Rejected: the trusted-consumed item goes back.
-                    server.world.queue_give(id, stack);
+                match server.world.try_light_clamp(x, y, z) {
+                    Ok(n) => {
+                        if server.world.mode != "creative" {
+                            guest.inventory.take_one(guest.hotbar);
+                            refresh_held(guest);
+                            self.send_player_state(id);
+                        }
+                        self.net
+                            .send(id, &S2C::Toast(format!("The clamp smolders ({n} logs).")));
+                    }
+                    Err(e) => self.net.send(id, &S2C::Toast(e.into())),
+                }
+            }
+            C2S::AnvilPut { x, y, z } => {
+                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                if (p - guest.pos).length() > REACH {
+                    return;
+                }
+                let Some(stack) = guest.inventory.slots[guest.hotbar] else {
+                    return;
+                };
+                let one = ItemStack { count: 1, ..stack };
+                if server.world.anvil_put((x, y, z), one) && server.world.mode != "creative" {
+                    guest.inventory.take_one(guest.hotbar);
+                    refresh_held(guest);
+                    self.send_player_state(id);
                 }
             }
             C2S::AnvilStrike { x, y, z } => {
@@ -640,9 +1394,23 @@ impl HostSession {
                 if (p - guest.pos).length() > REACH {
                     return;
                 }
+                if guest.action_cooldown > 0.0 {
+                    return;
+                }
+                guest.action_cooldown = 0.35;
+                let has_hammer = guest.inventory.slots[guest.hotbar]
+                    .is_some_and(|stack| server.world.reg.item(stack.item).hammer);
+                if !has_hammer && server.world.mode != "creative" {
+                    return;
+                }
+                if has_hammer && server.world.mode != "creative" {
+                    guest.inventory.wear_tool(&server.world.reg, guest.hotbar);
+                    refresh_held(guest);
+                }
                 if let Some(out) = server.world.anvil_strike((x, y, z)) {
                     server.world.queue_give(id, out);
                 }
+                self.send_player_state(id);
             }
             C2S::AnvilTake { x, y, z } => {
                 let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
@@ -659,7 +1427,126 @@ impl HostSession {
             C2S::SleepCancel => {
                 guest.sleeping = false;
             }
+            C2S::InventoryClick { area, slot, right } => {
+                let slot = slot as usize;
+                let reg = &server.world.reg;
+                match area {
+                    net::InventoryArea::Inventory if slot < guest.inventory.slots.len() => {
+                        let (value, cursor) =
+                            click_stack(reg, guest.inventory.slots[slot], guest.cursor, right);
+                        guest.inventory.slots[slot] = value;
+                        guest.cursor = cursor;
+                    }
+                    net::InventoryArea::Craft if slot < guest.craft_grid.len() => {
+                        let (value, cursor) =
+                            click_stack(reg, guest.craft_grid[slot], guest.cursor, right);
+                        guest.craft_grid[slot] = value;
+                        guest.cursor = cursor;
+                    }
+                    net::InventoryArea::Armor if slot < guest.armor.len() => {
+                        match (guest.cursor, guest.armor[slot]) {
+                            (Some(cursor), current) => {
+                                let fits = if slot == 4 {
+                                    reg.item(cursor.item).charm.is_some()
+                                } else {
+                                    reg.item(cursor.item).armor.map(|(kind, _)| kind as usize)
+                                        == Some(slot)
+                                };
+                                if fits {
+                                    guest.armor[slot] = Some(cursor);
+                                    guest.cursor = current;
+                                }
+                            }
+                            (None, Some(current)) => {
+                                guest.armor[slot] = None;
+                                guest.cursor = Some(current);
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => return,
+                }
+                refresh_held(guest);
+                self.send_player_state(id);
+            }
+            C2S::CraftResult { size } => {
+                let size = size as usize;
+                if !(2..=3).contains(&size) {
+                    return;
+                }
+                let Some(recipe) = crate::crafting::match_recipe(
+                    &server.world.reg,
+                    &guest.craft_grid[..size * size],
+                    size,
+                ) else {
+                    return;
+                };
+                let output = ItemStack::new(&server.world.reg, recipe.output, recipe.count);
+                match guest.cursor {
+                    None => guest.cursor = Some(output),
+                    Some(cursor)
+                        if cursor.can_merge(&server.world.reg, &output)
+                            && cursor.count + output.count
+                                <= server.world.reg.item(cursor.item).max_stack =>
+                    {
+                        guest.cursor = Some(ItemStack {
+                            count: cursor.count + output.count,
+                            ..cursor
+                        });
+                    }
+                    _ => return,
+                }
+                crate::crafting::consume(&mut guest.craft_grid[..size * size]);
+                self.send_player_state(id);
+            }
+            C2S::EatSelected => {
+                let Some(stack) = guest.inventory.slots[guest.hotbar] else {
+                    return;
+                };
+                let Some(food) = server.world.reg.item(stack.item).food.clone() else {
+                    return;
+                };
+                let wants = guest.hunger < 19.5
+                    || food
+                        .nutrition
+                        .iter()
+                        .zip(&guest.nutrition)
+                        .any(|(add, value)| *add > 0.0 && *value < 99.0);
+                if !wants {
+                    return;
+                }
+                guest.hunger = (guest.hunger + food.hunger).min(20.0);
+                for (value, add) in guest.nutrition.iter_mut().zip(&food.nutrition) {
+                    *value = (*value + add).min(100.0);
+                }
+                if server.world.mode != "creative" {
+                    guest.inventory.take_one(guest.hotbar);
+                }
+                refresh_held(guest);
+                self.send_player_state(id);
+            }
+            C2S::Respawn => {
+                if guest.health > 0.0 {
+                    return;
+                }
+                guest.pos = guest.spawn;
+                guest.health = 14.0;
+                guest.hunger = 20.0;
+                guest.since_damage = 100.0;
+                self.send_player_state(id);
+            }
             C2S::Chat(msg) => {
+                if guest.chat_count >= 5
+                    || self
+                        .moderation
+                        .as_ref()
+                        .is_some_and(|store| store.is_muted(&guest.principal))
+                {
+                    self.net
+                        .send(id, &S2C::Toast("Chat is rate-limited or muted.".into()));
+                    return;
+                }
+                guest.chat_count += 1;
                 let msg: String = msg.chars().take(200).collect();
                 let from = guest.name.clone();
                 self.net.broadcast(&S2C::Chat {
@@ -668,6 +1555,15 @@ impl HostSession {
                 });
                 fx.push(HostFx::Chat { from, msg });
             }
+        }
+    }
+
+    fn send_player_state(&self, id: u32) {
+        if let Some(guest) = self.guests.get(&id) {
+            self.net.send(
+                id,
+                &S2C::PlayerState(PlayerRuntime::from_guest(guest).to_snap()),
+            );
         }
     }
 
@@ -680,7 +1576,6 @@ impl HostSession {
         pos: (i32, i32, i32),
         slot: usize,
         right: bool,
-        held: Option<ItemStack>,
     ) {
         let reg = server.world.reg.clone();
         let bloomery_chain = reg.bloomery.first().cloned();
@@ -697,7 +1592,7 @@ impl HostSession {
         let Some(entity) = server.world.block_entity_mut(&pos) else {
             return;
         };
-        let mut held = held;
+        let mut held = self.guests.get(&id).and_then(|guest| guest.cursor);
         match entity {
             BlockEntity::Bloomery(bl) => {
                 // Sealed while firing; charge takes ore-chain items,
@@ -796,7 +1691,11 @@ impl HostSession {
             count: s.count,
             durability: s.durability,
         });
+        if let Some(guest) = self.guests.get_mut(&id) {
+            guest.cursor = held;
+        }
         self.net.send(id, &S2C::HeldResult(snap));
+        self.send_player_state(id);
         self.send_container(server, id, pos);
     }
 
@@ -856,6 +1755,49 @@ impl HostSession {
     }
 }
 
+fn refresh_held(guest: &mut Guest) {
+    guest.held = guest.inventory.slots[guest.hotbar]
+        .map(|stack| stack.item.0)
+        .unwrap_or(u16::MAX);
+}
+
+fn server_item_armor_points(stack: &ItemStack, profiles: Option<&ProfileStore>) -> Option<u32> {
+    profiles?
+        .registry_hint()
+        .item(stack.item)
+        .armor
+        .map(|(_, points)| points)
+}
+
+fn take_item(inventory: &mut crate::inventory::Inventory, item: crate::registry::ItemId) -> bool {
+    let Some(slot) = inventory
+        .slots
+        .iter()
+        .position(|stack| stack.is_some_and(|stack| stack.item == item))
+    else {
+        return false;
+    };
+    inventory.take_one(slot).is_some()
+}
+
+fn take_ammo(
+    inventory: &mut crate::inventory::Inventory,
+    reg: &crate::registry::Registry,
+    class: &str,
+    creative: bool,
+) -> Option<crate::registry::ItemId> {
+    let item = inventory
+        .slots
+        .iter()
+        .flatten()
+        .find(|stack| reg.item(stack.item).ammo.as_deref() == Some(class))?
+        .item;
+    if !creative {
+        let _ = take_item(inventory, item);
+    }
+    Some(item)
+}
+
 /// Build the host-id -> local-id block remap from a Welcome palette.
 pub fn block_remap(world: &World, palette: &[String]) -> Vec<crate::registry::BlockId> {
     palette
@@ -867,4 +1809,22 @@ pub fn block_remap(world: &World, palette: &[String]) -> Vec<crate::registry::Bl
 /// Build the host-id -> local-id item remap (unknown items map to None).
 pub fn item_remap(world: &World, items: &[String]) -> Vec<Option<crate::registry::ItemId>> {
     items.iter().map(|name| world.reg.item_id(name)).collect()
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    use crate::identity::{AtprotoDid, DeviceKeyId};
+
+    #[test]
+    fn two_devices_for_one_did_share_an_active_principal() {
+        let did = Principal::Atproto(AtprotoDid::parse("did:plc:sharedaccount").unwrap());
+        let first = vec![did.clone(), Principal::LocalDevice(DeviceKeyId([1; 32]))];
+        let second = vec![did, Principal::LocalDevice(DeviceKeyId([2; 32]))];
+        assert!(shares_principal(&first, &second));
+        assert!(!shares_principal(
+            &first,
+            &[Principal::LocalDevice(DeviceKeyId([3; 32]))]
+        ));
+    }
 }

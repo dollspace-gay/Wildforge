@@ -105,6 +105,9 @@ impl Game {
     }
 
     pub(super) fn respawn(&mut self) {
+        if let Some(remote) = &self.multiplayer.remote {
+            remote.client.send(&net::C2S::Respawn);
+        }
         self.player = Player::new(self.survival.spawn_point);
         // A dug-out or collapsed spawn column: come to on the first
         // ground below instead of free-falling to a second death.

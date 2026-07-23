@@ -73,7 +73,9 @@ impl Game {
                             .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_else(|| "world".into());
-                        match mp::HostSession::start(wname) {
+                        let host_name = identity::DisplayName::parse(&self.config.display_name)
+                            .expect("configured display name is valid");
+                        match mp::HostSession::start_windowed(wname, host_name) {
                             Ok(sess) => {
                                 self.server.world.set_edit_logging(true);
                                 self.toast(format!(
@@ -100,14 +102,70 @@ impl Game {
                     for (row, (id, _)) in self.guest_rows().iter().enumerate() {
                         if self.hit(self.kick_rect(row)) {
                             self.sfx(Sfx::Click);
-                            if let Some(h) = &mut self.multiplayer.host
-                                && let Some(name) = h.kick_guest(*id)
-                            {
-                                self.toast(format!("{name} was kicked."));
-                            }
+                            self.ui_state.moderation_confirm = None;
+                            self.set_screen(Screen::Moderation(*id));
                             break;
                         }
                     }
+                }
+            }
+            Screen::Moderation(id) => {
+                for action in 0..6 {
+                    if !self.hit(self.menu_button_rect(action)) {
+                        continue;
+                    }
+                    self.sfx(Sfx::Click);
+                    // Disconnecting and ban actions require a second click.
+                    if action <= 3 && self.ui_state.moderation_confirm != Some(action as u8) {
+                        self.ui_state.moderation_confirm = Some(action as u8);
+                        return;
+                    }
+                    self.ui_state.moderation_confirm = None;
+                    let result = if let Some(host) = &mut self.multiplayer.host {
+                        match action {
+                            0 => Ok(host.kick_guest(id).map(|name| format!("{name} kicked"))),
+                            1 => host
+                                .mute_guest(id, "windowed host mute", Some(600), "host")
+                                .map(|changed| {
+                                    changed.then_some("player muted for 10 minutes".into())
+                                }),
+                            2 => host
+                                .ban_guest(id, "windowed host timed ban", Some(3600), "host")
+                                .map(|name| name.map(|name| format!("{name} banned for one hour"))),
+                            3 => host
+                                .ban_guest(id, "windowed host permanent ban", None, "host")
+                                .map(|name| name.map(|name| format!("{name} permanently banned"))),
+                            4 => host.allow_guest(id, "host").map(|changed| {
+                                changed.then_some("player added to allowlist".into())
+                            }),
+                            _ => {
+                                let next = match host.guest_role(id).unwrap_or_default() {
+                                    mp::Role::Player => mp::Role::Moderator,
+                                    mp::Role::Moderator => mp::Role::Admin,
+                                    mp::Role::Admin | mp::Role::Owner => mp::Role::Player,
+                                };
+                                host.set_guest_role(id, next, "host").map(|changed| {
+                                    changed.then_some(format!("role set to {next:?}"))
+                                })
+                            }
+                        }
+                    } else {
+                        Ok(None)
+                    };
+                    match result {
+                        Ok(Some(message)) => self.toast(message),
+                        Ok(None) => self.toast("Player is no longer connected.".into()),
+                        Err(error) => self.toast(format!("Moderation failed: {error}")),
+                    }
+                    if matches!(action, 0 | 2 | 3) {
+                        self.set_screen(Screen::Paused);
+                    }
+                    return;
+                }
+                if self.hit(self.menu_button_rect(6)) {
+                    self.sfx(Sfx::Click);
+                    self.ui_state.moderation_confirm = None;
+                    self.set_screen(Screen::Paused);
                 }
             }
             Screen::Dead => {
@@ -144,21 +202,77 @@ impl Game {
                     self.set_screen(Screen::Join);
                 } else if self.hit(self.title_action_rect(3)) {
                     self.sfx(Sfx::Click);
-                    self.ui_state.appearance_from_pause = false;
-                    self.set_screen(Screen::Appearance);
+                    self.ui_state.account_name = self.config.display_name.clone();
+                    self.set_screen(Screen::Accounts);
                 } else if self.hit(self.title_action_rect(4)) {
                     self.sfx(Sfx::Click);
-                    self.set_screen(Screen::Mods);
+                    self.ui_state.appearance_from_pause = false;
+                    self.set_screen(Screen::Appearance);
                 } else if self.hit(self.title_action_rect(5)) {
+                    self.sfx(Sfx::Click);
+                    self.set_screen(Screen::Mods);
+                } else if self.hit(self.title_action_rect(6)) {
                     self.sfx(Sfx::Click);
                     self.content.packs = atlas::discover_packs();
                     self.set_screen(Screen::Packs);
-                } else if self.hit(self.title_action_rect(6)) {
+                } else if self.hit(self.title_action_rect(7)) {
                     self.sfx(Sfx::Click);
                     self.ui_state.settings_from_pause = false;
                     self.set_screen(Screen::Settings);
-                } else if self.hit(self.title_action_rect(7)) {
+                } else if self.hit(self.title_action_rect(8)) {
                     event_loop.exit();
+                }
+            }
+            Screen::Accounts => {
+                if self.hit(self.account_field_rect(0)) {
+                    self.ui_state.account_focus = 0;
+                    return;
+                }
+                if self.hit(self.account_field_rect(1)) {
+                    self.ui_state.account_focus = 1;
+                    return;
+                }
+                if self.hit(self.account_button_rect(0)) {
+                    match identity::DisplayName::parse(&self.ui_state.account_name) {
+                        Ok(name) => {
+                            self.config.display_name = name.to_string();
+                            self.ui_state.account_name = name.to_string();
+                            self.config.profile_complete = true;
+                            self.config.save();
+                            self.ui_state.account_status = "LOCAL PROFILE SAVED".into();
+                        }
+                        Err(error) => {
+                            self.ui_state.account_status = error.to_string().to_uppercase()
+                        }
+                    }
+                } else if self.hit(self.account_button_rect(1)) {
+                    self.start_account_link();
+                } else if self.hit(self.account_button_rect(2)) {
+                    if let Some(account) = &mut self.atproto_account {
+                        account.use_social_display_name = !account.use_social_display_name;
+                        let _ = account.save(&identity::identity_dir());
+                    }
+                } else if self.hit(self.account_button_rect(3)) {
+                    if let Some(account) = &mut self.atproto_account {
+                        account.use_social_avatar = !account.use_social_avatar;
+                        let _ = account.save(&identity::identity_dir());
+                    }
+                } else if self.hit(self.account_button_rect(4)) {
+                    self.start_account_revoke();
+                } else if self.hit(self.account_button_rect(5)) {
+                    match identity::atproto::AtprotoAccount::unlink_local(&identity::identity_dir())
+                    {
+                        Ok(()) => {
+                            self.atproto_account = None;
+                            self.ui_state.account_status =
+                                "LOCAL LINK REMOVED; REMOTE DEVICE RECORD MAY STILL EXIST".into();
+                        }
+                        Err(error) => {
+                            self.ui_state.account_status = format!("UNLINK FAILED: {error}")
+                        }
+                    }
+                } else if self.hit(self.account_button_rect(6)) && self.config.profile_complete {
+                    self.set_screen(Screen::Title);
                 }
             }
             Screen::Mods => {
@@ -289,23 +403,23 @@ impl Game {
                 if self.hit(self.pack_back_rect()) {
                     self.sfx(Sfx::Click);
                     self.multiplayer.discovery = None;
+                    self.multiplayer.pending_join_disclosure = None;
                     self.set_screen(Screen::Title);
                     return;
                 }
                 let w = self.renderer.config.width as f32;
                 let h = self.renderer.config.height as f32;
-                let found: Vec<(std::net::SocketAddr, String)> = self
+                let found: Vec<net::DiscoveredServer> = self
                     .multiplayer
                     .discovery
                     .as_ref()
                     .map(|d| d.found.clone())
                     .unwrap_or_default();
-                for (i, (addr, _)) in found.iter().take(5).enumerate() {
+                for (i, found) in found.iter().take(5).enumerate() {
                     let r = (w / 2.0 - 220.0, h * 0.20 + i as f32 * 56.0, 440.0, 42.0);
                     if self.hit(r) {
                         self.sfx(Sfx::Click);
-                        self.multiplayer.join_status = "CONNECTING...".to_string();
-                        self.join_server(*addr);
+                        self.request_join(found.addr, Some(found.identity));
                         return;
                     }
                 }
@@ -321,8 +435,7 @@ impl Game {
                     };
                     match addr {
                         Some(a) => {
-                            self.multiplayer.join_status = "CONNECTING...".to_string();
-                            self.join_server(a);
+                            self.request_join(a, None);
                         }
                         None => self.multiplayer.join_status = "BAD ADDRESS".to_string(),
                     }
@@ -426,6 +539,86 @@ impl Game {
                 }
             }
             Screen::Playing => {}
+        }
+    }
+
+    fn start_account_link(&mut self) {
+        if self.ui_state.account_task.is_some() {
+            return;
+        }
+        let input = self.ui_state.account_handle.trim().to_string();
+        if input.is_empty() {
+            self.ui_state.account_status = "ENTER A HANDLE OR DID FIRST".into();
+            return;
+        }
+        let root = identity::identity_dir();
+        let public_key = self.identity.public_key();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.ui_state.account_task = Some(rx);
+        self.ui_state.account_status = "OPENING BROWSER - WAITING FOR OAUTH CALLBACK...".into();
+        std::thread::spawn(move || {
+            let result = identity::atproto::link_account(&root, &input, public_key)
+                .map_err(|error| error.to_string());
+            let _ = tx.send(AccountTaskResult::Linked(result));
+        });
+    }
+
+    fn start_account_revoke(&mut self) {
+        if self.ui_state.account_task.is_some() {
+            return;
+        }
+        let Some(account) = self.atproto_account.clone() else {
+            self.ui_state.account_status = "NO ATPROTO ACCOUNT IS LINKED".into();
+            return;
+        };
+        let input = if self.ui_state.account_handle.trim().is_empty() {
+            account.did.to_string()
+        } else {
+            self.ui_state.account_handle.trim().to_string()
+        };
+        let root = identity::identity_dir();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.ui_state.account_task = Some(rx);
+        self.ui_state.account_status = "REAUTHENTICATE IN BROWSER TO REVOKE THIS DEVICE...".into();
+        std::thread::spawn(move || {
+            let result = identity::atproto::revoke_account(&root, &input, &account)
+                .map_err(|error| error.to_string());
+            let _ = tx.send(AccountTaskResult::Revoked(result));
+        });
+    }
+
+    pub(super) fn poll_account_task(&mut self) {
+        let result = self
+            .ui_state
+            .account_task
+            .as_ref()
+            .and_then(|receiver| receiver.try_recv().ok());
+        let Some(result) = result else { return };
+        self.ui_state.account_task = None;
+        match result {
+            AccountTaskResult::Linked(Ok(account)) => {
+                let approved_as = account
+                    .profile_display_name
+                    .as_deref()
+                    .or(account.handle.as_deref())
+                    .unwrap_or(account.did.as_str())
+                    .to_uppercase();
+                self.ui_state.account_handle = account
+                    .handle
+                    .clone()
+                    .unwrap_or_else(|| account.did.to_string());
+                self.atproto_account = Some(account);
+                self.ui_state.account_status =
+                    format!("APPROVED AS {approved_as} - DEVICE BINDING RECORD WRITTEN");
+            }
+            AccountTaskResult::Revoked(Ok(())) => {
+                self.atproto_account = None;
+                self.ui_state.account_status = "DEVICE BINDING REVOKED AND ACCOUNT UNLINKED".into();
+            }
+            AccountTaskResult::Linked(Err(error)) | AccountTaskResult::Revoked(Err(error)) => {
+                self.ui_state.account_status =
+                    format!("OAUTH/PROVIDER ERROR: {error}").to_uppercase();
+            }
         }
     }
 }

@@ -20,6 +20,17 @@ impl Game {
     }
 
     pub(super) fn inventory_click(&mut self, craft: bool, slot: usize, right: bool) {
+        if let Some(remote) = &self.multiplayer.remote {
+            remote.client.send(&net::C2S::InventoryClick {
+                area: if craft {
+                    net::InventoryArea::Craft
+                } else {
+                    net::InventoryArea::Inventory
+                },
+                slot: slot as u8,
+                right,
+            });
+        }
         let cur = self.slot_get(craft, slot);
         let (new_slot, new_held) =
             inventory::click_stack(&self.content.reg, cur, self.ui_state.held_stack, right);
@@ -29,6 +40,11 @@ impl Game {
 
     /// Click the craft result slot: take the output, consume ingredients.
     pub(super) fn result_click(&mut self) {
+        if let Some(remote) = &self.multiplayer.remote {
+            remote.client.send(&net::C2S::CraftResult {
+                size: self.interaction.craft_size as u8,
+            });
+        }
         let reg = self.content.reg.clone();
         let n2 = self.interaction.craft_size * self.interaction.craft_size;
         let Some(recipe) = crafting::match_recipe(
@@ -285,6 +301,13 @@ impl Game {
     }
 
     pub(super) fn armor_click(&mut self, i: usize) {
+        if let Some(remote) = &self.multiplayer.remote {
+            remote.client.send(&net::C2S::InventoryClick {
+                area: net::InventoryArea::Armor,
+                slot: i as u8,
+                right: false,
+            });
+        }
         let reg = self.content.reg.clone();
         match (self.ui_state.held_stack, self.survival.armor[i]) {
             (Some(h), cur) => {
@@ -343,18 +366,12 @@ impl Game {
         let Some(r) = &self.multiplayer.remote else {
             return;
         };
-        let held = self.ui_state.held_stack.map(|h| net::StackSnap {
-            item: h.item.0, // same content: local ids match host ids
-            count: h.count,
-            durability: h.durability,
-        });
         r.client.send(&net::C2S::ContainerClick {
             x: pos.0,
             y: pos.1,
             z: pos.2,
             slot: slot as u8,
             right,
-            held,
         });
     }
 

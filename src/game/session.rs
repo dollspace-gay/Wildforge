@@ -1034,7 +1034,7 @@ impl Game {
     }
 
     pub(super) fn save_player(&self) {
-        if !self.in_world {
+        if !self.in_world || self.multiplayer.remote.is_some() {
             return;
         }
         use std::fmt::Write as _;
@@ -1077,10 +1077,13 @@ impl Game {
                 );
             }
         }
-        let _ = std::fs::write(
-            self.server.world.save_dir_for_saving().join("player.toml"),
-            out,
-        );
+        let world = self.server.world.save_dir_for_saving();
+        match identity::local_profile_path(&world, self.identity.device_id())
+            .and_then(|path| identity::atomic_write(&path, out.as_bytes(), false))
+        {
+            Ok(()) => identity::finish_local_profile_migration(&world),
+            Err(error) => eprintln!("identity: player profile save failed: {error}"),
+        }
     }
 
     pub(super) fn load_player(&mut self, dir: &std::path::Path) -> bool {
@@ -1103,12 +1106,19 @@ impl Game {
             hotbar: usize,
             #[serde(default)]
             spawn: Option<[f32; 3]>,
-            #[serde(default)]
+            #[serde(default, alias = "inventory")]
             slot: Vec<SlotT>,
             #[serde(default)]
             armor: Vec<SlotT>,
         }
-        let Ok(text) = std::fs::read_to_string(dir.join("player.toml")) else {
+        let path = match identity::local_profile_path(dir, self.identity.device_id()) {
+            Ok(path) => path,
+            Err(error) => {
+                eprintln!("identity: player profile migration failed: {error}");
+                return false;
+            }
+        };
+        let Ok(text) = std::fs::read_to_string(path) else {
             return false;
         };
         let Ok(p) = toml::from_str::<P>(&text) else {
@@ -1154,7 +1164,6 @@ impl Game {
         self.multiplayer.host_sleeping = false;
         self.server.world.set_edit_logging(false);
         if self.multiplayer.remote.is_some() {
-            self.save_player(); // guest profile under saves/.remote/profile
             self.multiplayer.remote = None;
             self.renderer.clear_chunks();
             self.server = server::Server::new(

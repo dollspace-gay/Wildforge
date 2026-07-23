@@ -27,6 +27,54 @@ fn base_registry_has_vanilla_content() {
 }
 
 #[test]
+fn every_base_content_entry_has_a_real_texture() {
+    let reg = base_reg();
+    assert_no_missing_textures(&reg);
+    let base = reg.mods.iter().find(|entry| entry.id == "base").unwrap();
+    assert_eq!(base.error, None, "base content resolution errors");
+}
+
+#[test]
+fn every_shipped_mod_content_entry_has_a_real_texture() {
+    let mods = Path::new(env!("CARGO_MANIFEST_DIR")).join("mods");
+    let reg = registry::load(&mods);
+    assert_no_missing_textures(&reg);
+    let errors: Vec<_> = reg
+        .mods
+        .iter()
+        .filter_map(|entry| entry.error.as_ref().map(|error| (&entry.id, error)))
+        .collect();
+    assert!(
+        errors.is_empty(),
+        "shipped mod resolution errors: {errors:?}"
+    );
+}
+
+fn assert_no_missing_textures(reg: &Registry) {
+    let unknown = crate::atlas::UNKNOWN_SLOT;
+    let missing_blocks: Vec<_> = reg
+        .blocks
+        .iter()
+        .filter(|block| block.name != "base:unknown" && block.tiles.contains(&unknown))
+        .map(|block| block.name.as_str())
+        .collect();
+    let missing_items: Vec<_> = reg
+        .items
+        .iter()
+        .filter(|item| item.icon == unknown)
+        .map(|item| item.name.as_str())
+        .collect();
+    assert!(
+        missing_blocks.is_empty(),
+        "blocks using the missing-texture tile: {missing_blocks:?}"
+    );
+    assert!(
+        missing_items.is_empty(),
+        "items using the missing-texture tile: {missing_items:?}"
+    );
+}
+
+#[test]
 fn registry_tool_rules() {
     let reg = base_reg();
     let stone = b(&reg, "base:stone");

@@ -54,6 +54,12 @@ impl Game {
                     self.multiplayer.discovery = None;
                     self.set_screen(Screen::Title);
                 }
+                Screen::Accounts if self.config.profile_complete => self.set_screen(Screen::Title),
+                Screen::Accounts => {}
+                Screen::Moderation(_) => {
+                    self.ui_state.moderation_confirm = None;
+                    self.set_screen(Screen::Paused);
+                }
                 Screen::Title | Screen::Dead => {}
             },
             KeyCode::KeyE if pressed && self.in_world => match self.ui_state.screen {

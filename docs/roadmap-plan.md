@@ -81,6 +81,11 @@ lessons.
 
 ## 3. Multiplayer
 
+> The original name-claim/account notes in this roadmap are superseded by
+> `multiplayer-identity-plan.md`: local profiles remain first-class, ATProto
+> linking is optional globally, and individual public servers may require a
+> verified DID for admission and durable moderation.
+
 The explicit design brief: **do not repeat Minecraft's mistakes.**
 The failures to design against, and our answers:
 

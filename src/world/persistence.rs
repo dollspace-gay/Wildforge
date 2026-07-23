@@ -58,7 +58,11 @@ impl World {
     /// Map every stored numeric id to a current runtime id via string names.
     pub(super) fn read_palette_remap(&self) -> Vec<BlockId> {
         let Ok(text) = fs::read_to_string(self.save_dir.join("palette")) else {
-            return Vec::new();
+            // WFC3 saves from before named palettes stored the then-current
+            // registry ids directly. Treating a missing palette as an empty
+            // remap turns every cell, including air, into base:unknown and
+            // produces solid chunk-height magenta pillars.
+            return self.identity_palette_remap();
         };
         let mut remap = Vec::new();
         for line in text.lines() {
@@ -76,7 +80,17 @@ impl World {
                 .block_id(name.trim())
                 .unwrap_or(self.reg.unknown_block);
         }
-        remap
+        if remap.is_empty() {
+            self.identity_palette_remap()
+        } else {
+            remap
+        }
+    }
+
+    fn identity_palette_remap(&self) -> Vec<BlockId> {
+        (0..self.reg.blocks.len())
+            .map(|id| BlockId(id as u16))
+            .collect()
     }
 
     /// Write the current registry as this world's palette (runtime ids are

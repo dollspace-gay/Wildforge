@@ -1,0 +1,30 @@
+{
+  "lexicon": 1,
+  "id": "gay.dollspace.wildforge.device",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["devicePublicKey", "createdAt", "label"],
+        "properties": {
+          "devicePublicKey": {
+            "type": "string",
+            "minLength": 64,
+            "maxLength": 64,
+            "description": "Lowercase hex Ed25519 public key used by a Wildforge installation."
+          },
+          "createdAt": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80
+          }
+        }
+      }
+    }
+  }
+}
