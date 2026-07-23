@@ -30,8 +30,17 @@ fn raycast_hits_placed_block_with_correct_adjacent() {
 
 #[test]
 fn player_falls_lands_and_jumps() {
-    let w = test_world("fall");
-    let h = w.surface_height(4, 4);
+    let mut w = test_world("fall");
+    // A built platform in open sky: the plate map decides where the
+    // sea is, so physics tests bring their own ground.
+    let reg = w.reg.clone();
+    let stone = reg.block_id("base:stone").unwrap();
+    for x in 2..=6 {
+        for z in 2..=6 {
+            w.set_block(x, 119, z, stone);
+        }
+    }
+    let h = 119;
     let mut p = Player::new(Vec3::new(4.5, h as f32 + 6.0, 4.5));
     let idle = Input {
         forward: 0.0,

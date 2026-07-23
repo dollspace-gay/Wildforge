@@ -110,6 +110,24 @@ impl Volcano {
     }
 }
 
+/// A static tectonic reading for a column: nothing moves and nothing
+/// quakes, but the land remembers the pressure — which plate it sits
+/// on, how far the nearest boundary lies, and how hard the two sides
+/// press together there.
+#[derive(Clone, Copy)]
+pub struct Tectonics {
+    /// Approximate distance to the nearest plate boundary, in blocks.
+    pub boundary_dist: f32,
+    /// Closing speed across that boundary: positive plates collide
+    /// (fold mountains), negative plates part (rifts).
+    pub convergence: f32,
+    /// Coordinate along the boundary (phase for fold trains).
+    pub along: f32,
+    /// Crust kinds on each side: oceanic plates ride low.
+    pub oceanic: bool,
+    pub neighbor_oceanic: bool,
+}
+
 #[derive(Clone, Copy)]
 pub struct Climate {
     pub t: f32,
@@ -118,6 +136,7 @@ pub struct Climate {
     pub e: f32,
     /// Folded ridges 0..1 (1 = ridge crest).
     pub r: f32,
+    pub tec: Tectonics,
 }
 
 pub struct Generator {
@@ -307,20 +326,91 @@ impl Generator {
         b != AIR && self.rocks.contains(&b)
     }
 
+    const PLATE_SIZE: f64 = 1400.0;
+
+    fn plate_center(&self, px: i32, pz: i32) -> (f64, f64) {
+        let h = hash2(self.seed ^ 0x91a7e, px, pz);
+        (
+            (px as f64 + 0.15 + ((h & 0xffff) as f64 / 65536.0) * 0.7) * Self::PLATE_SIZE,
+            (pz as f64 + 0.15 + (((h >> 16) & 0xffff) as f64 / 65536.0) * 0.7) * Self::PLATE_SIZE,
+        )
+    }
+
+    fn plate_vel(&self, px: i32, pz: i32) -> (f32, f32) {
+        let a = (hash2(self.seed ^ 0x7ec70, px, pz) % 6283) as f32 / 1000.0;
+        (a.cos(), a.sin())
+    }
+
+    fn plate_oceanic(&self, px: i32, pz: i32) -> bool {
+        hash2(self.seed ^ 0x0c00, px, pz) % 10 < 4
+    }
+
+    /// The static plate map: jittered-grid Voronoi cells, each with a
+    /// deterministic (conceptual) drift vector and crust kind. Nearest
+    /// two centers give the boundary; the closing speed across it
+    /// decides fold ranges, trenches, and rifts.
+    pub fn tectonics(&self, wx: i32, wz: i32) -> Tectonics {
+        let gx = (wx as f64 / Self::PLATE_SIZE).floor() as i32;
+        let gz = (wz as f64 / Self::PLATE_SIZE).floor() as i32;
+        let mut best = (f64::MAX, 0i32, 0i32);
+        let mut second = (f64::MAX, 0i32, 0i32);
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                let (px, pz) = (gx + dx, gz + dz);
+                let (cx, cz) = self.plate_center(px, pz);
+                let d = (cx - wx as f64).hypot(cz - wz as f64);
+                if d < best.0 {
+                    second = best;
+                    best = (d, px, pz);
+                } else if d < second.0 {
+                    second = (d, px, pz);
+                }
+            }
+        }
+        let (ax, az) = self.plate_center(best.1, best.2);
+        let (bx, bz) = self.plate_center(second.1, second.2);
+        let (mut nx, mut nz) = ((bx - ax) as f32, (bz - az) as f32);
+        let nl = (nx * nx + nz * nz).sqrt().max(1e-3);
+        nx /= nl;
+        nz /= nl;
+        let (vax, vaz) = self.plate_vel(best.1, best.2);
+        let (vbx, vbz) = self.plate_vel(second.1, second.2);
+        Tectonics {
+            boundary_dist: ((second.0 - best.0) * 0.5) as f32,
+            convergence: ((vax - vbx) * nx + (vaz - vbz) * nz) * 0.5,
+            along: wx as f32 * -nz + wz as f32 * nx,
+            oceanic: self.plate_oceanic(best.1, best.2),
+            neighbor_oceanic: self.plate_oceanic(second.1, second.2),
+        }
+    }
+
     pub fn climate(&self, wx: i32, wz: i32) -> Climate {
         let x = wx as f64;
         let z = wz as f64;
-        let c = self.cont.get([x / 900.0, z / 900.0]) as f32;
+        let tec = self.tectonics(wx, wz);
+        // Continents are plate-shaped now: crust kind sets the base
+        // level, blended across boundaries, with the old perlin as
+        // coastline wiggle and inland variety.
+        let crust = |oceanic: bool| if oceanic { -0.62 } else { 0.28 };
+        let own = crust(tec.oceanic);
+        let other = crust(tec.neighbor_oceanic);
+        let blend = (tec.boundary_dist / 260.0).clamp(0.0, 1.0);
+        let base_c = own * blend + (own + other) * 0.5 * (1.0 - blend);
+        let c = base_c + self.cont.get([x / 900.0, z / 900.0]) as f32 * 0.45;
         let e = self.ero.get([x / 700.0 + 13.5, z / 700.0 - 7.2]) as f32;
         let r_raw = self.ridge.get([x / 400.0 - 3.3, z / 400.0 + 21.7]) as f32;
         let r = 1.0 - (2.0 * r_raw.abs() - 1.0).abs(); // folded, 0..1
         let t = self.temperature.get([x * 0.0026, z * 0.0026]) as f32;
         let h = self.moisture.get([x * 0.0026 + 31.7, z * 0.0026 - 17.3]) as f32;
-        Climate { t, h, c, e, r }
+        Climate { t, h, c, e, r, tec }
     }
 
     pub fn biome(&self, wx: i32, wz: i32) -> Biome {
         let cl = self.climate(wx, wz);
+        // A young fold range is Mountains whatever the climate says.
+        if self.plate_relief(&cl) > 30.0 {
+            return Biome::Mountains;
+        }
         let mut best = Biome::Plains;
         let mut best_d = f32::MAX;
         for (biome, t, h, c, e) in CENTROIDS {
@@ -342,17 +432,48 @@ impl Generator {
     }
 
     /// Spline-driven terrain parameters for a column: (offset, factor).
+    /// Plate-driven relief for a column: fold ranges where continents
+    /// collide, coastal ranges and offshore trenches at subduction
+    /// zones, sunken valleys where plates part. Positive adds height,
+    /// negative digs.
+    fn plate_relief(&self, cl: &Climate) -> f32 {
+        let tec = &cl.tec;
+        let land = ((cl.c + 0.15) / 0.35).clamp(0.0, 1.0);
+        let belt = (-(tec.boundary_dist / 80.0).powi(2)).exp();
+        if tec.convergence > 0.12 {
+            if !tec.oceanic && !tec.neighbor_oceanic {
+                // Continent meets continent: the big fold ranges,
+                // crests rippling along the boundary.
+                let ripple = 0.8 + 0.2 * (tec.along / 90.0).sin();
+                tec.convergence * 115.0 * belt * ripple * land
+            } else if tec.oceanic {
+                // The diving side dips into a trench offshore.
+                -14.0 * belt * tec.convergence
+            } else {
+                // Subduction throws a coastal range on the overriding
+                // plate (its volcano arc is weighted separately).
+                tec.convergence * 70.0 * belt * land
+            }
+        } else if tec.convergence < -0.12 {
+            // Rift valley: the land sags where plates part.
+            tec.convergence * 16.0 * belt
+        } else {
+            0.0
+        }
+    }
+
     fn column_params(&self, wx: i32, wz: i32) -> (f32, f32) {
         let cl = self.climate(wx, wz);
         let base = self.offset_base.at(cl.c);
-        // Mountains rise inland only; ridges concentrate them into ranges.
+        // Old erosion mountains stay as worn highlands; the young
+        // dramatic ranges belong to the plate boundaries now.
         let land = ((cl.c + 0.15) / 0.35).clamp(0.0, 1.0);
-        let mtn = self.mountain_amp.at(cl.e) * (0.35 + 0.65 * cl.r) * land;
-        let mut offset = (base + mtn).min(CHUNK_Y as f32 - 26.0);
+        let mtn = self.mountain_amp.at(cl.e) * (0.35 + 0.65 * cl.r) * land * 0.45;
+        let mut offset = (base + mtn + self.plate_relief(&cl)).clamp(6.0, CHUNK_Y as f32 - 22.0);
         // A volcano stamps its cone onto the spline terrain, crater
         // bowl and all.
         if let Some(v) = self.volcano_near(wx, wz) {
-            offset = (offset + v.cone(wx, wz)).min(CHUNK_Y as f32 - 20.0);
+            offset = (offset + v.cone(wx, wz)).min(CHUNK_Y as f32 - 18.0);
         }
         (offset, self.factor_spline.at(cl.e))
     }
@@ -369,15 +490,31 @@ impl Generator {
             for dz in -1..=1 {
                 let (cx, cz) = (rx + dx, rz + dz);
                 let h = hash2(self.seed ^ 0x70_1ca0, cx, cz);
-                if !h.is_multiple_of(5) {
-                    continue;
-                }
                 let margin = 90;
                 let ox = (h >> 8) % (REGION - 2 * margin) as u32 + margin as u32;
                 let oz = (h >> 17) % (REGION - 2 * margin) as u32 + margin as u32;
                 let center_x = cx * REGION + ox as i32;
                 let center_z = cz * REGION + oz as i32;
-                if self.climate(center_x, center_z).c < -0.2 {
+                let cl = self.climate(center_x, center_z);
+                if cl.c < -0.2 {
+                    continue;
+                }
+                // Volcanoes follow the plate map: subduction arcs run
+                // thick with them, rifts leak a few, plate interiors
+                // almost none — hotspots are the rare exception.
+                let tec = &cl.tec;
+                let subduction = tec.boundary_dist < 260.0
+                    && tec.convergence > 0.1
+                    && (tec.oceanic || tec.neighbor_oceanic);
+                let rift = tec.boundary_dist < 220.0 && tec.convergence < -0.1;
+                let odds = if subduction {
+                    2
+                } else if rift {
+                    5
+                } else {
+                    16
+                };
+                if !h.is_multiple_of(odds) {
                     continue;
                 }
                 let v = Volcano {
@@ -466,13 +603,24 @@ impl Generator {
         let z = wz as f64;
         let w1 = self.bandwarp.get([x / 260.0, z / 260.0]) as f32;
         let w2 = self.bandwarp.get([x / 170.0 + 7.3, z / 170.0 - 2.1]) as f32;
-        let wet = self.climate(wx, wz).h;
+        let cl = self.climate(wx, wz);
+        let wet = cl.h;
+        // Two plates smushed together: near a convergent boundary the
+        // bedding buckles into fold trains — anticlines and synclines
+        // marching along the range, so cliff faces show bent strata.
+        let tec = &cl.tec;
+        let fold = if tec.convergence > 0.12 && !tec.oceanic && !tec.neighbor_oceanic {
+            let belt = (-(tec.boundary_dist / 110.0).powi(2)).exp();
+            tec.convergence * belt * 26.0 * (tec.along / 24.0 + w1).sin()
+        } else {
+            0.0
+        };
         [
             (8.0 + w1 * 3.0) as i32,
-            (34.0 + w1 * 7.0) as i32,
-            (50.0 + w2 * 5.0 + wet * 5.0) as i32,
-            (68.0 + w1 * 6.0) as i32,
-            (92.0 + w2 * 9.0 - wet * 6.0) as i32,
+            (34.0 + w1 * 7.0 + fold * 0.5) as i32,
+            (50.0 + w2 * 5.0 + wet * 5.0 + fold) as i32,
+            (68.0 + w1 * 6.0 + fold) as i32,
+            (92.0 + w2 * 9.0 - wet * 6.0 + fold) as i32,
         ]
     }
 

@@ -982,9 +982,9 @@ fn sky_light_surface_cave_and_roof_opening() {
     let reg = base_reg();
     let mut w = test_world("lightsky");
     let stone = reg.block_id("base:stone").unwrap();
-    // Open surface reads full sky.
-    let y = w.surface_height(2, 2);
-    assert_eq!(w.light_at(2, y + 1, 2).1, 15, "surface is full daylight");
+    // Open surface reads full sky (a built block, sea-proof).
+    w.set_block(2, 140, 2, stone);
+    assert_eq!(w.light_at(2, 141, 2).1, 15, "surface is full daylight");
     // Sealed box: no sky inside; opening the roof floods it.
     for x in 20..29 {
         for z in 20..29 {
@@ -1548,7 +1548,13 @@ fn weather_and_season_touch_the_sim() {
         .iter()
         .position(|a| !a.hostile && a.breed_food.is_some())
         .expect("breedable wildlife");
-    let y = w.surface_height(4, 4) as f32 + 1.05;
+    let stone2 = reg.block_id("base:stone").unwrap();
+    for x in 2..=7 {
+        for z in 2..=7 {
+            w.set_block(x, 139, z, stone2);
+        }
+    }
+    let y = 140.05f32;
     let before = w.mob_count();
     for dx in 0..2 {
         let mut m = crate::mobs::Mob::new(wild, glam::Vec3::new(4.5 + dx as f32, y, 4.5), 0.0);

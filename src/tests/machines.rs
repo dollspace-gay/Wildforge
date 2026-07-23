@@ -261,7 +261,7 @@ fn glass_smelts_passes_light_and_grows_winter_crops() {
 
     let mut w = test_world_with("gw-glass", reg.clone());
     let b = |n: &str| reg.block_id(n).unwrap();
-    let h = w.surface_height(4, 4);
+    let h = 120; // open sky, sea-proof
     // Sky light passes a glass roof (BFS treats it like leaves).
     w.set_block(4, h + 5, 4, glass);
     let (_, sl) = w.light_at(4, h + 1, 4);

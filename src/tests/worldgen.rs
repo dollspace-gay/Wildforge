@@ -87,14 +87,24 @@ fn all_seven_biomes_exist_and_are_deterministic() {
 fn desert_has_sand_surface_and_cacti() {
     let reg = base_reg();
     let g = Generator::new(42, &reg);
-    let (x, z) = find_biome(&g, Biome::Desert).unwrap();
-    // Find a dry desert column (above sea level).
+    // Search rings directly for a solid inland desert column: the
+    // plate map makes some deserts coastal or boundary-broken.
     let mut spot = None;
-    'scan: for dx in 0..64 {
-        for dz in 0..64 {
-            let (cx, cz) = (x + dx, z + dz);
+    'scan: for r in 0..400 {
+        let d = r * 24;
+        for (cx, cz) in [
+            (d, 0),
+            (-d, 0),
+            (0, d),
+            (0, -d),
+            (d, d),
+            (-d, -d),
+            (d, -d),
+            (-d, d),
+        ] {
             if g.biome(cx, cz) == Biome::Desert
-                && g.surface_estimate(cx, cz) > crate::chunk::SEA_LEVEL + 1
+                && g.surface_estimate(cx, cz) > crate::chunk::SEA_LEVEL + 8
+                && g.tectonics(cx, cz).boundary_dist > 160.0
             {
                 spot = Some((cx, cz));
                 break 'scan;
@@ -297,10 +307,43 @@ fn mountains_rise_above_plains() {
         }
         best
     };
-    let m = sample_max(Biome::Mountains);
     let p = sample_max(Biome::Plains);
-    assert!(m > 130, "mountains should reach high ({m})");
-    assert!(m > p + 30, "mountains ({m}) far above plains ({p})");
+    // The young ranges live on convergent continental boundaries now;
+    // hunt one through the plate map and measure its crest.
+    let mut m = 0;
+    'tect: for r in 0..60 {
+        let d = r * 128;
+        for (x, z) in [
+            (d, 0),
+            (-d, 0),
+            (0, d),
+            (0, -d),
+            (d, d),
+            (-d, -d),
+            (d, -d),
+            (-d, d),
+        ] {
+            let tec = g.tectonics(x, z);
+            let cl = g.climate(x, z);
+            if tec.convergence > 0.25
+                && tec.boundary_dist < 60.0
+                && !tec.oceanic
+                && !tec.neighbor_oceanic
+                && cl.c > 0.1
+            {
+                for dx in -48..=48 {
+                    for dz in -48..=48 {
+                        m = m.max(g.surface_estimate(x + dx * 2, z + dz * 2));
+                    }
+                }
+                if m > 150 {
+                    break 'tect;
+                }
+            }
+        }
+    }
+    assert!(m > 150, "fold ranges should reach high ({m})");
+    assert!(m > p + 30, "ranges ({m}) far above plains ({p})");
 }
 
 #[test]
@@ -312,7 +355,7 @@ fn oceans_exist_and_fill_with_water() {
     'outer: for r in 0..300 {
         let d = r * 24;
         for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
-            if g.surface_estimate(x, z) < 55 {
+            if g.surface_estimate(x, z) < 46 {
                 spot = Some((x, z));
                 break 'outer;
             }
