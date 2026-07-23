@@ -90,6 +90,10 @@ pub struct AtprotoAccount {
     pub use_social_display_name: bool,
     #[serde(default)]
     pub use_social_avatar: bool,
+    /// Explicit opt-in to disclose the public ATProto handle to other players.
+    /// Verification itself only exposes a badge by default.
+    #[serde(default)]
+    pub share_social_handle: bool,
     pub profile_display_name: Option<String>,
     pub avatar_url: Option<String>,
 }
@@ -132,6 +136,7 @@ impl AtprotoAccount {
         AtprotoClaim {
             did: self.did.to_string(),
             binding: self.binding.clone(),
+            share_handle: self.share_social_handle,
         }
     }
 
@@ -264,6 +269,7 @@ pub fn link_account(root: &Path, input: &str, public_key: [u8; 32]) -> io::Resul
             linked_at: now(),
             use_social_display_name: false,
             use_social_avatar: false,
+            share_social_handle: false,
             profile_display_name: profile
                 .as_ref()
                 .and_then(|value| value.display_name.clone()),
@@ -1063,6 +1069,7 @@ mod tests {
             linked_at: 7,
             use_social_display_name: false,
             use_social_avatar: false,
+            share_social_handle: false,
             profile_display_name: Some("Moss".into()),
             avatar_url: None,
         };
@@ -1072,10 +1079,12 @@ mod tests {
         assert!(!text.contains("access_token"));
         assert!(!text.contains("refresh_token"));
         assert!(!text.contains("dpop"));
-        assert_eq!(
-            AtprotoAccount::load(&root).unwrap().unwrap().did,
-            account.did
-        );
+        let loaded = AtprotoAccount::load(&root).unwrap().unwrap();
+        assert_eq!(loaded.did, account.did);
+        assert!(!loaded.claim().share_handle);
+        let mut shared = loaded;
+        shared.share_social_handle = true;
+        assert!(shared.claim().share_handle);
 
         std::fs::write(&path, text.replace(&"ab".repeat(32), "not-a-public-key")).unwrap();
         assert_eq!(

@@ -116,14 +116,22 @@ impl Game {
 
     /// Guest (id, name) rows in a stable order for the pause menu.
     pub(super) fn guest_rows(&self) -> Vec<(u32, String)> {
-        let Some(h) = &self.multiplayer.host else {
-            return Vec::new();
+        let mut rows: Vec<(u32, String)> = if let Some(h) = &self.multiplayer.host {
+            h.guests
+                .iter()
+                .map(|(id, g)| (*id, g.public_label()))
+                .collect()
+        } else if let Some(r) = &self.multiplayer.remote
+            && r.role.can_moderate()
+        {
+            r.names
+                .iter()
+                .filter(|(id, _)| **id != 0 && **id != r.my_id)
+                .map(|(id, name)| (*id, name.clone()))
+                .collect()
+        } else {
+            Vec::new()
         };
-        let mut rows: Vec<(u32, String)> = h
-            .guests
-            .iter()
-            .map(|(id, g)| (*id, g.name.clone()))
-            .collect();
         rows.sort_by_key(|(id, _)| *id);
         rows
     }
@@ -154,10 +162,23 @@ impl Game {
         else {
             return;
         };
-        let label = name
-            .split_once(" [")
-            .map_or(name, |(display_name, _)| display_name)
-            .to_uppercase();
+        // Keep world labels compact even when the roster includes an opted-in
+        // handle. The roster is the detail surface; the world needs a readable
+        // display name and a small verification signal.
+        let label = if let Some((identity, verification)) = name.split_once(" [") {
+            let display_name = identity
+                .split_once(" @")
+                .map_or(identity, |(display_name, _)| display_name);
+            let badge = if verification.starts_with("VERIFIED/CACHED") {
+                "V*"
+            } else {
+                "V"
+            };
+            format!("{display_name} [{badge}]")
+        } else {
+            name.to_owned()
+        }
+        .to_uppercase();
         let scale = if distance < 24.0 { 1.5 } else { 1.25 };
         let alpha = ((64.0 - distance) / 16.0).clamp(0.35, 1.0);
         let text_width = UiBatch::text_width(scale, &label);
@@ -574,6 +595,14 @@ impl Game {
                             "OFF"
                         }
                     ),
+                    format!(
+                        "SHARE ATPROTO HANDLE: {}",
+                        if linked.is_some_and(|a| a.share_social_handle) {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    ),
                     "REVOKE THIS DEVICE".to_string(),
                     "UNLINK LOCALLY".to_string(),
                     if self.config.profile_complete {
@@ -623,10 +652,12 @@ impl Game {
                         &profile_line.to_uppercase(),
                         [0.6, 1.0, 0.7, 1.0],
                     );
-                    let did_line = format!(
-                        "LINKED ID: {}  (OTHER PLAYERS SEE ONLY A VERIFIED BADGE)",
-                        account.did.short()
-                    );
+                    let disclosure = if account.share_social_handle {
+                        "OTHER PLAYERS SEE YOUR VERIFIED BADGE AND PUBLIC HANDLE"
+                    } else {
+                        "OTHER PLAYERS SEE ONLY A VERIFIED BADGE"
+                    };
+                    let did_line = format!("LINKED ID: {}  ({disclosure})", account.did.short());
                     ui.text_shadow(
                         w / 2.0 - 310.0,
                         h * 0.85,
@@ -664,6 +695,13 @@ impl Game {
                     .host
                     .as_ref()
                     .and_then(|host| host.guest_identity_summary(id))
+                    .or_else(|| {
+                        let remote = self.multiplayer.remote.as_ref()?;
+                        remote
+                            .names
+                            .get(&id)
+                            .map(|name| format!("{name} | YOUR ROLE {:?}", remote.role))
+                    })
                     .unwrap_or_else(|| "PLAYER DISCONNECTED".into());
                 ui.text_shadow(
                     w / 2.0 - 360.0,
@@ -1207,7 +1245,7 @@ impl Game {
             }
             if let Some(hst) = &self.multiplayer.host {
                 for g in hst.guests.values() {
-                    self.draw_world_nameplate(&mut ui, &g.name, g.render_pos().0, w, h);
+                    self.draw_world_nameplate(&mut ui, &g.public_label(), g.render_pos().0, w, h);
                 }
             }
             if std::env::var("WILDFORGE_DEMO_PLAYER").is_ok() && self.in_world {
@@ -1283,6 +1321,7 @@ impl Game {
                     ui.bubble(x, hy - 16.0 * hs - 8.0, hs);
                 }
             }
+            self.draw_roster_overlay(&mut ui, w);
         }
 
         match self.ui_state.screen {

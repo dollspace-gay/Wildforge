@@ -66,7 +66,10 @@ unban <player-uuid>
 
 The windowed pause menu exposes the same connected-player identity summary,
 kick, mute, timed/permanent ban, allowlist, and role operations with a
-confirmation click for disruptive actions. Durable changes are appended to
+confirmation click for disruptive actions. Connected moderators and admins
+receive the applicable controls too, but the host independently authorizes
+every request from its durable role store; hiding or forging a client control
+cannot grant authority. Durable changes are appended to
 `saves/<world>/moderation/audit.log`. Bans target the PlayerId and every linked
 principal, never a display name. IP throttles are deliberately only a soft
 handshake-abuse signal.
@@ -90,9 +93,11 @@ handshake-abuse signal.
   record stops live verification; a server may show `VERIFIED/CACHED` only
   within its configured outage grace.
 - A verified server learns the DID and can resolve public account metadata.
-  Peers receive only a verification badge. Social display-name and avatar
-  preferences are separate opt-ins. Avatar download/rendering is intentionally
-  deferred; no remote image is fetched in the render loop.
+  Peers receive a verification badge and, only when separately enabled, the
+  player's current public handle. The DID is never roster data. Social display
+  name, handle sharing, and avatar preferences are separate opt-ins. Avatar
+  download/rendering is intentionally deferred; no remote image is fetched in
+  the render loop. Hold Tab in multiplayer to inspect the complete roster.
 - Back up `identity/player-ed25519.pk8` and, for hosts,
   `identity/server-ed25519.pk8` as secrets. Never publish either file. The
   public fingerprints, PlayerIds, DIDs, and binding records are not secrets.
@@ -135,11 +140,11 @@ release smoke test because it requires a consenting account and provider.
 Dependency cost is intentionally isolated behind `identity::atproto`; the
 direct production graph adds 278 unique package lines over `origin/main` in
 the recorded Cargo-tree measurement (530 versus 252), but no second game
-runtime or central Wildforge service. The unstripped Linux release binary is
-35,564,408 bytes on Rust 1.96.0. Using the three required Jacquard component
-crates instead of its umbrella crate removed 31 packages from the first
-measurement. Join verification is bounded to eight seconds and successful
-proofs are cached per server/world.
+runtime or central Wildforge service. The 2026-07-23 unstripped Linux release
+binary is 35,589,240 bytes on Rust 1.96.0. Using the three required Jacquard
+component crates instead of its umbrella crate removed 31 packages from the
+first measurement. Join verification is bounded to eight seconds and
+successful proofs are cached per server/world.
 
 ## Release qualification matrix
 
@@ -152,9 +157,9 @@ The default build/test gate is safe to run without public credentials:
 | Server-owned inventory/movement and full roster | Automated loopback tests |
 | OAuth flow and failures | Mock PAR/PKCE/DPoP/nonce, state/issuer/replay/cancel, subject, scope, and redaction tests |
 | Binding mismatch, PDS migration, cache expiry/limit, SSRF policy | Automated pure verifier tests |
-| Linux build/lints | `cargo test --all-targets --no-fail-fast` (193 passed, 1 diagnostic ignored); `cargo clippy --all-targets -- -D warnings` |
+| Linux build/lints | `cargo test --all-targets --no-fail-fast` (203 passed, 1 diagnostic ignored); `cargo clippy --all-targets --all-features -- -D warnings` |
 | Windows dependency/build compatibility | `cargo check --target x86_64-pc-windows-gnu` |
-| Dependency/release size | 530 vs 252 normal package lines; 35,564,408-byte unstripped Linux release binary |
+| Dependency/release size | 530 vs 252 normal package lines; 35,589,240-byte unstripped Linux release binary |
 | Headless hosting | Isolated release-binary smoke created host key/settings and exercised `help`, `players`, and `identity` |
 
 The following checks require a consenting account, graphical browser, or
@@ -163,9 +168,9 @@ production-ready:
 
 | Manual check | Pass condition | Status |
 |---|---|---|
-| Publish OAuth metadata | Exact checked-in JSON is available over HTTPS at its `client_id` with JSON content type | Pending deployment |
+| Publish OAuth metadata | Exact checked-in JSON is available over HTTPS at its `client_id` with JSON content type | Blocked: HTTPS endpoint unreachable on 2026-07-23 |
 | Linux browser link/revoke | Callback completes; exact device record writes, verifies, deletes, and fails live verification after deletion | Pending consenting account |
-| Windows browser link/revoke | Same sequence, including browser handoff and callback firewall behavior | Pending Windows interactive run |
+| Windows browser link/revoke | Same sequence, including browser handoff and callback firewall behavior | Partial: browser link/callback succeeded in user testing; revoke and firewall path not signed off |
 | Independent PDS | Link/write/fetch/revoke succeeds outside the common Bluesky PDS | Pending provider/account |
 | Outage and handle change | Cached badge is visible only within grace; DID maps to the same `PlayerId` after handle/PDS change | Pending live-provider exercise |
 | Local UX | First run, offline solo, LAN local join, moderation, unlink, and lost-device wording are understandable end to end | Pending release-candidate playtest |

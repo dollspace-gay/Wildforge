@@ -179,6 +179,22 @@ impl Game {
                                 })
                             }
                         }
+                    } else if let Some(remote) = &self.multiplayer.remote {
+                        let moderation_action = match action {
+                            0 => net::ModerationAction::Kick,
+                            1 => net::ModerationAction::Mute { seconds: 600 },
+                            2 => net::ModerationAction::Ban {
+                                seconds: Some(3600),
+                            },
+                            3 => net::ModerationAction::Ban { seconds: None },
+                            4 => net::ModerationAction::Allow,
+                            _ => net::ModerationAction::CycleRole,
+                        };
+                        remote.client.send(&net::C2S::Moderate {
+                            target: id,
+                            action: moderation_action,
+                        });
+                        Ok(Some("Moderation request sent to the host.".into()))
                     } else {
                         Ok(None)
                     };
@@ -288,8 +304,13 @@ impl Game {
                         let _ = account.save(&identity::identity_dir());
                     }
                 } else if self.hit(self.account_button_rect(4)) {
-                    self.start_account_revoke();
+                    if let Some(account) = &mut self.atproto_account {
+                        account.share_social_handle = !account.share_social_handle;
+                        let _ = account.save(&identity::identity_dir());
+                    }
                 } else if self.hit(self.account_button_rect(5)) {
+                    self.start_account_revoke();
+                } else if self.hit(self.account_button_rect(6)) {
                     match identity::atproto::AtprotoAccount::unlink_local(&identity::identity_dir())
                     {
                         Ok(()) => {
@@ -301,7 +322,7 @@ impl Game {
                             self.ui_state.account_status = format!("UNLINK FAILED: {error}")
                         }
                     }
-                } else if self.hit(self.account_button_rect(6)) && self.config.profile_complete {
+                } else if self.hit(self.account_button_rect(7)) && self.config.profile_complete {
                     self.set_screen(Screen::Title);
                 }
             }

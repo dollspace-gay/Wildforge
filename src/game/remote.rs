@@ -118,6 +118,7 @@ impl Game {
                 self.multiplayer.remote = Some(Remote {
                     client,
                     my_id: 0,
+                    role: identity::Role::Player,
                     block_map: Vec::new(),
                     item_map: Vec::new(),
                     host_block: Default::default(),
@@ -191,6 +192,7 @@ impl Game {
                     palette,
                     items,
                     your_id,
+                    your_role,
                     roster,
                     spawn: _,
                     world_name,
@@ -205,6 +207,7 @@ impl Game {
                     world.mode = mode.clone();
                     world.ire = ire;
                     r.my_id = your_id;
+                    r.role = your_role;
                     if roster
                         .iter()
                         .find(|presence| presence.id == your_id)
@@ -539,6 +542,10 @@ impl Game {
                         self.toast(format!("{n} left."));
                     }
                 }
+                net::S2C::RoleChanged { role } => {
+                    r.role = role;
+                    self.toast(format!("Your server role is now {role:?}."));
+                }
             }
         }
         // Snapshot smoothing: glide players and mobs along their spans,
@@ -588,11 +595,39 @@ impl Game {
 }
 
 fn presence_label(presence: &net::PlayerPresence) -> String {
+    let handle = presence
+        .handle
+        .as_deref()
+        .map(|handle| format!(" @{handle}"))
+        .unwrap_or_default();
     if presence.cached_verification {
-        format!("{} [VERIFIED/CACHED]", presence.display_name)
+        format!("{}{handle} [VERIFIED/CACHED]", presence.display_name)
     } else if presence.verified {
-        format!("{} [VERIFIED]", presence.display_name)
+        format!("{}{handle} [VERIFIED]", presence.display_name)
     } else {
         presence.display_name.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roster_labels_only_show_an_explicitly_disclosed_handle() {
+        let private = net::PlayerPresence {
+            id: 1,
+            display_name: "MOSS".into(),
+            verified: true,
+            cached_verification: false,
+            handle: None,
+        };
+        assert_eq!(presence_label(&private), "MOSS [VERIFIED]");
+
+        let public = net::PlayerPresence {
+            handle: Some("moss.example".into()),
+            ..private
+        };
+        assert_eq!(presence_label(&public), "MOSS @moss.example [VERIFIED]");
     }
 }

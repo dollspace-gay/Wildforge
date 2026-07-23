@@ -8,30 +8,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::identity::{AdmissionPolicy, PlayerId, Principal};
+use crate::identity::{AdmissionPolicy, PlayerId, Principal, Role};
 use crate::net::{Refusal, RefusalCode};
-
-#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Role {
-    Owner,
-    Admin,
-    Moderator,
-    #[default]
-    Player,
-}
-
-impl Role {
-    #[cfg(test)]
-    pub fn can_moderate(self) -> bool {
-        matches!(self, Self::Owner | Self::Admin | Self::Moderator)
-    }
-
-    #[cfg(test)]
-    pub fn can_administer(self) -> bool {
-        matches!(self, Self::Owner | Self::Admin)
-    }
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BanRecord {
