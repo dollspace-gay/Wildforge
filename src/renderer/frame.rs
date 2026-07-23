@@ -31,10 +31,16 @@ impl Renderer {
             proj * view
         };
 
+        let inv_view_proj = f.view_proj.inverse();
         let uniforms = Uniforms {
             view_proj: f.view_proj.to_cols_array_2d(),
             cam: [f.cam_pos.x, f.cam_pos.y, f.cam_pos.z, f.fog_dist],
-            sky: [self.sky_color[0], self.sky_color[1], self.sky_color[2], 1.0],
+            sky: [
+                self.sky_color[0],
+                self.sky_color[1],
+                self.sky_color[2],
+                f.gloom,
+            ],
             misc: [
                 if f.underwater { 1.0 } else { 0.0 },
                 f.daylight,
@@ -72,6 +78,8 @@ impl Renderer {
                 }
                 a
             },
+            inv_view_proj: inv_view_proj.to_cols_array_2d(),
+            sun_dir_true: [f.sun_dir_true.x, f.sun_dir_true.y, f.sun_dir_true.z, 0.0],
         };
         self.entity_vbuf.upload(
             &self.device,
@@ -355,6 +363,10 @@ impl Renderer {
             pass.set_bind_group(0, &self.uniform_bg, &[]);
             pass.set_bind_group(1, &self.atlas_bg, &[]);
             pass.set_bind_group(2, &self.shadow_bg, &[]);
+
+            // Background sky gradient (fills every pixel; terrain paints over).
+            pass.set_pipeline(&self.sky_pipeline);
+            pass.draw(0..3, 0..1);
 
             // Opaque terrain (frustum-culled)
             let planes = frustum_planes(&f.view_proj);

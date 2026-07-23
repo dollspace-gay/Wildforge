@@ -2,7 +2,8 @@ struct Uniforms {
     view_proj: mat4x4<f32>,
     // xyz = camera pos, w = fog distance
     cam: vec4<f32>,
-    // rgb = sky/fog color, a unused
+    // rgb = flat sky/overcast color (fog far target under cloud), a = weather
+    // gloom 0..1 (blends the gradient toward the flat overcast color)
     sky: vec4<f32>,
     // x = underwater (0/1), y = daylight, zw = screen size in pixels
     misc: vec4<f32>,
@@ -24,6 +25,13 @@ struct Uniforms {
     // per light: x = flood-suppression scale, y = its range,
     // z = shadows enabled, w unused
     pt_misc: array<vec4<f32>, 8>,
+    // Inverse view-projection: unprojects fullscreen NDC to world rays for
+    // the procedural sky pass.
+    inv_view_proj: mat4x4<f32>,
+    // xyz = true (unclamped) direction toward the sun, dipping below the
+    // horizon at night; drives the sky gradient. The lighting sun_dir above
+    // stays clamped just over the horizon so shadows never degenerate. w unused.
+    sun_dir_true: vec4<f32>,
 };
 
 const MAX_PT_LIGHTS: u32 = 8u;
@@ -246,10 +254,100 @@ fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f3
     return max(sun + amb + torch + direct, vec3<f32>(u.amb_col.a));
 }
 
+// Procedural sky radiance along a world-space view direction `rd`. An analytic
+// gradient (horizon -> zenith) whose day/night mix, warm twilight band, and sun
+// halo are all driven by the true sun elevation, so one function feeds both the
+// visible sky and the fog far-color. Sun/moon discs and stars land in later
+// slices; this is the dome and its color.
+fn sky_radiance(rd_in: vec3<f32>) -> vec3<f32> {
+    let rd = normalize(rd_in);
+    let sd = normalize(u.sun_dir_true.xyz);
+    let up = clamp(rd.y, 0.0, 1.0);
+    let se = sd.y; // sun elevation, -1..1
+
+    // Day palette: deep blue zenith -> pale horizon.
+    let day_zenith = vec3<f32>(0.18, 0.40, 0.78);
+    let day_horizon = vec3<f32>(0.66, 0.79, 0.94);
+    let day_sky = mix(day_horizon, day_zenith, pow(up, 0.55));
+
+    // Night palette: near-black navy, a touch lighter at the horizon.
+    let night_zenith = vec3<f32>(0.008, 0.012, 0.030);
+    let night_horizon = vec3<f32>(0.020, 0.030, 0.065);
+    let night_sky = mix(night_horizon, night_zenith, pow(up, 0.7));
+
+    // Sun elevation drives the day/night crossfade.
+    let day = smoothstep(-0.12, 0.18, se);
+    var col = mix(night_sky, day_sky, day);
+
+    // Twilight: how strongly dusk/dawn is in play (peaks with the sun near the
+    // horizon).
+    let twilight = smoothstep(0.35, 0.0, se) * smoothstep(-0.32, 0.03, se);
+    // Azimuthal proximity to the sun (horizontal only) and height above horizon.
+    let hb = 1.0 - up; // 0 at zenith, 1 at horizon
+    let az = dot(normalize(vec3<f32>(rd.x, 0.0, rd.z)), normalize(vec3<f32>(sd.x, 0.0, sd.z)));
+    let sun_side = max(az, 0.0);
+
+    // First dim and cool-drain the whole dome at dusk, so the horizon fire has
+    // something dark to read against instead of washing into bright blue.
+    col *= 1.0 - 0.5 * twilight;
+    // A molten orange band *replaces* the horizon color (mix, so it wins instead
+    // of washing to white), spread along the horizon and biased toward the sun.
+    let band_w = pow(hb, 3.0) * (0.30 + 0.70 * sun_side) * twilight;
+    col = mix(col, vec3<f32>(1.0, 0.32, 0.06), clamp(band_w, 0.0, 0.90));
+    // A tight amber core right at the sun, pushed past 1.0 so bloom glares it.
+    let core = pow(hb, 6.0) * pow(sun_side, 3.0) * twilight;
+    col += vec3<f32>(1.0, 0.55, 0.20) * (core * 1.4);
+
+    // Soft warm halo around the sun (no hard disc yet).
+    let mu = max(dot(rd, sd), 0.0);
+    col += u.sun_col.rgb * (pow(mu, 8.0) * 0.55 * day);
+
+    // Weather gloom flattens the dome toward the precomputed overcast gray.
+    col = mix(col, u.sky.rgb, smoothstep(0.0, 0.85, u.sky.a));
+    return col;
+}
+
 fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     let dist = distance(world.xz, u.cam.xz);
     let fog = smoothstep(u.cam.w * 0.72, u.cam.w * 0.98, dist);
-    return mix(color, u.sky.rgb, fog);
+    // Underwater keeps the flat watery fog color; above water, distant terrain
+    // dissolves into the sky gradient along its own view ray.
+    let rd = normalize(world - u.cam.xyz);
+    let far = select(sky_radiance(rd), u.sky.rgb, u.misc.x > 0.5);
+    return mix(color, far, fog);
+}
+
+// Fullscreen background sky. A single oversized triangle; the view ray is the
+// unprojected NDC. Drawn first in the main pass with depth-write off, so terrain
+// paints over it.
+struct SkyOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) ray: vec3<f32>,
+};
+
+@vertex
+fn vs_sky(@builtin(vertex_index) vi: u32) -> SkyOut {
+    var p = array<vec2<f32>, 3>(
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>(3.0, -1.0),
+        vec2<f32>(-1.0, 3.0),
+    );
+    let ndc = p[vi];
+    var o: SkyOut;
+    o.clip = vec4<f32>(ndc, 1.0, 1.0);
+    let near = u.inv_view_proj * vec4<f32>(ndc, 0.0, 1.0);
+    let far = u.inv_view_proj * vec4<f32>(ndc, 1.0, 1.0);
+    o.ray = far.xyz / far.w - near.xyz / near.w;
+    return o;
+}
+
+@fragment
+fn fs_sky(in: SkyOut) -> @location(0) vec4<f32> {
+    if (u.misc.x > 0.5) {
+        // Underwater: keep the flat watery background.
+        return vec4<f32>(u.sky.rgb, 1.0);
+    }
+    return vec4<f32>(sky_radiance(in.ray), 1.0);
 }
 
 struct Surface {

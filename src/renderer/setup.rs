@@ -541,6 +541,49 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
             Some(depth_state(true)),
             HDR_FORMAT,
         );
+        // Background sky: a fullscreen triangle (no vertex buffer) drawn first
+        // in the main pass. Depth-write off + compare Always fills every pixel
+        // at the far plane; terrain then paints over it. Shares the chunk
+        // layout so it reads the same uniform group.
+        let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sky"),
+            layout: Some(&chunk_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_sky"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_sky"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: HDR_FORMAT,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
         let water_pipeline = make_pipeline(
             "water",
             "vs_chunk",
@@ -923,6 +966,7 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
             atlas_bgl,
             atlas_sampler: sampler,
             chunk_pipeline,
+            sky_pipeline,
             water_pipeline,
             line_world_pipeline,
             line_screen_pipeline,

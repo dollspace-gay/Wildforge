@@ -697,6 +697,10 @@ impl Game {
         let elev = ang.sin(); // 1 at noon, -1 at midnight
         let horiz = ang.cos(); // +1 dawn -> 0 noon -> -1 dusk
         let sun_dir = Vec3::new(horiz * 0.8, elev.max(0.05) + 0.15, 0.45).normalize();
+        // Same azimuth/tilt, but the true elevation (dips below the horizon at
+        // night) so the sky gradient can actually set and darken. Lighting keeps
+        // the clamped `sun_dir` above.
+        let sun_dir_true = Vec3::new(horiz * 0.8, elev, 0.45).normalize();
         let sun_vis = elev.clamp(0.0, 1.0).sqrt(); // 0 below horizon
         // Golden hour: the sun's hue warms from near-white at noon to deep
         // orange as it nears the horizon.
@@ -1428,6 +1432,8 @@ impl Game {
             underwater,
             daylight,
             sun_dir,
+            sun_dir_true,
+            gloom,
             sun_col,
             amb_col,
             ambient_floor,
