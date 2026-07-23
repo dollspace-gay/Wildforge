@@ -221,7 +221,10 @@ impl Game {
         // only reachable by playing.
         if let Ok(name) = std::env::var("WILDFORGE_HELD") {
             let reg = self.content.reg.clone();
-            match reg.item_id(&name).or_else(|| reg.item_id(&format!("base:{name}"))) {
+            match reg
+                .item_id(&name)
+                .or_else(|| reg.item_id(&format!("base:{name}")))
+            {
                 Some(item) => {
                     self.inventory.slots[self.input.hotbar_sel] =
                         Some(ItemStack::new(&reg, item, 1));

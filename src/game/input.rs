@@ -102,6 +102,15 @@ impl Game {
                 }
             }
         }
+        if screen == Screen::Inventory {
+            self.ui_state.inventory_status_open = false;
+            // Creative mode uses the browser as its item source. In survival
+            // it is secondary help, so keep it tucked away until requested.
+            self.ui_state.inventory_browser_open = self.creative;
+        } else {
+            self.ui_state.search_focus = false;
+            self.ui_state.browse_view = None;
+        }
         self.ui_state.screen = screen;
         let playing = screen == Screen::Playing;
         if playing {

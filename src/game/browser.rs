@@ -4,10 +4,16 @@ use super::*;
 
 impl Game {
     pub(super) fn browser_origin(&self) -> (f32, f32) {
-        (
-            self.renderer.config.width as f32 - Self::BCOLS as f32 * Self::BSLOT - 20.0,
-            96.0,
-        )
+        let width = self.renderer.config.width as f32;
+        let browser_width = Self::BCOLS as f32 * Self::BSLOT;
+        let right_aligned = width - browser_width - 20.0;
+        let x = if self.ui_state.screen == Screen::Inventory {
+            let (panel_x, _, panel_width, _) = self.inventory_panel_rect();
+            (panel_x + panel_width + 16.0).min(right_aligned)
+        } else {
+            right_aligned
+        };
+        (x.max(20.0), 96.0)
     }
 
     pub(super) fn browser_cell(&self, i: usize) -> (f32, f32, f32, f32) {
@@ -37,6 +43,14 @@ impl Game {
 
     pub(super) fn draw_browser(&self, ui: &mut UiBatch) {
         let reg = &self.content.reg;
+        let (panel_x, panel_y) = self.browser_origin();
+        ui.rect(
+            panel_x - 10.0,
+            panel_y - 44.0,
+            Self::BCOLS as f32 * Self::BSLOT + 20.0,
+            Self::BROWS as f32 * Self::BSLOT + 88.0,
+            [0.04, 0.05, 0.06, 0.88],
+        );
         let sr = self.browser_search_rect();
         ui.rect(sr.0, sr.1, sr.2, sr.3, [0.08, 0.08, 0.08, 0.95]);
         let caret = if self.ui_state.search_focus && (self.time_abs * 2.0) as i32 % 2 == 0 {

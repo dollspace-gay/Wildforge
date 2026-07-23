@@ -289,15 +289,25 @@ impl Game {
         )
     }
 
-    /// Armor column: right of the storage grid — head, chest, legs, feet.
+    /// Armor column beside the paper doll — head, chest, legs, feet, then charm.
     pub(super) fn armor_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
-        let (x0, y0, _, _) = self.inv_slot_rect(HOTBAR_SLOTS);
-        (
-            x0 + 9.0 * Self::SLOT + 14.0,
-            y0 + i as f32 * Self::SLOT,
-            Self::SLOT,
-            Self::SLOT,
-        )
+        let (panel_x, panel_y, _, _) = self.inventory_panel_rect();
+        if i == 4 {
+            let (avatar_x, avatar_y, avatar_w, avatar_h) = self.inventory_avatar_rect();
+            (
+                avatar_x + avatar_w + 8.0,
+                avatar_y + avatar_h - Self::SLOT,
+                Self::SLOT,
+                Self::SLOT,
+            )
+        } else {
+            (
+                panel_x + 16.0,
+                panel_y + 48.0 + i as f32 * Self::SLOT,
+                Self::SLOT,
+                Self::SLOT,
+            )
+        }
     }
 
     pub(super) fn armor_click(&mut self, i: usize) {

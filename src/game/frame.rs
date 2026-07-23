@@ -8,13 +8,19 @@ fn local_sim_should_advance(paused: bool, hosting: bool) -> bool {
     !paused || hosting
 }
 
+const VIEWMODEL_SLEEVE_MIN: Vec3 = Vec3::new(-0.055, -0.09, -0.46);
+const VIEWMODEL_SLEEVE_MAX: Vec3 = Vec3::new(0.055, 0.02, 0.10);
+const VIEWMODEL_HAND_MIN: Vec3 = Vec3::new(-0.055, -0.09, 0.10);
+const VIEWMODEL_HAND_MAX: Vec3 = Vec3::new(0.055, 0.02, 0.26);
+
 impl Game {
     /// First-person viewmodel: your arm, or the block/item it holds,
     /// anchored low-right of the camera, walk-bobbed, and swung on use.
     /// Emitted in world space; the renderer draws it depth-cleared so
     /// it never sinks into a wall you're standing against.
     pub(super) fn emit_hand(&self, verts: &mut Vec<mesher::Vertex>, idx: &mut Vec<u32>) {
-        if !self.in_world || self.survival.health <= 0.0 {
+        if !self.in_world || self.survival.health <= 0.0 || self.ui_state.screen != Screen::Playing
+        {
             return;
         }
         let reg = self.content.reg.clone();
@@ -49,7 +55,7 @@ impl Game {
             / 4.0;
         let bob_x = self.presentation.hand_bob.sin() * 0.02 * moving;
         let bob_y = -(self.presentation.hand_bob * 2.0).sin().abs() * 0.025 * moving;
-        let mut anchor = self.camera.pos + f * 0.60 + r * (0.38 + bob_x) + u * (-0.38 + bob_y);
+        let mut anchor = self.camera.pos + f * 0.60 + r * (0.47 + bob_x) + u * (-0.46 + bob_y);
         // Swing sweeps toward where you're aiming; a drawn bow comes
         // toward center.
         anchor += (f * 0.08 - u * 0.05 - r * 0.08) * arc;
@@ -220,8 +226,8 @@ impl Game {
                     verts,
                     idx,
                     &x2,
-                    Vec3::new(-0.055, -0.09, -0.16),
-                    Vec3::new(0.055, 0.02, 0.10),
+                    VIEWMODEL_SLEEVE_MIN,
+                    VIEWMODEL_SLEEVE_MAX,
                     [sleeve; 6],
                     lum,
                 );
@@ -229,8 +235,8 @@ impl Game {
                     verts,
                     idx,
                     &x2,
-                    Vec3::new(-0.055, -0.09, 0.10),
-                    Vec3::new(0.055, 0.02, 0.26),
+                    VIEWMODEL_HAND_MIN,
+                    VIEWMODEL_HAND_MAX,
                     [skin; 6],
                     lum,
                 );
@@ -1254,6 +1260,38 @@ impl Game {
                 &mut hand_verts,
                 &mut hand_idx,
             );
+        } else if self.ui_state.screen == Screen::Inventory && !self.ui_state.inventory_status_open
+        {
+            // Inventory paper doll: the active local identity gets a body,
+            // not just a line of account text on a settings screen.
+            // A slightly deeper preview camera keeps the full body inside its
+            // UI frame instead of letting the feet hang into the storage rows.
+            let depth = 6.25;
+            let w = self.renderer.config.width as f32;
+            let h = self.renderer.config.height as f32;
+            let (center_x, center_y) = self.inventory_avatar_center();
+            let ndc_x = center_x / w * 2.0 - 1.0;
+            let ndc_y = 1.0 - center_y / h * 2.0;
+            let half_h = (self.camera.fovy * 0.5).tan() * depth;
+            let f = self.camera.forward();
+            let rgt = f.cross(Vec3::Y).normalize_or_zero();
+            let up = rgt.cross(f).normalize_or_zero();
+            let body_center = self.camera.pos
+                + f * depth
+                + rgt * (ndc_x * half_h * self.camera.aspect)
+                + up * (ndc_y * half_h);
+            let feet = body_center - Vec3::Y * 0.91;
+            let face_camera = -std::f32::consts::FRAC_PI_2 - self.camera.yaw;
+            mobs::emit_humanoid(
+                feet,
+                face_camera,
+                &Self::humanoid_art(self.style),
+                (0.0, 0.0),
+                self.held_art(self.inventory.slots[self.input.hotbar_sel].map(|st| st.item)),
+                ([0.95, 0.93, 0.90], 0.0),
+                &mut hand_verts,
+                &mut hand_idx,
+            );
         }
 
         self.build_ui();
@@ -1510,12 +1548,17 @@ impl Game {
 
 #[cfg(test)]
 mod characterization {
-    use super::local_sim_should_advance;
+    use super::{VIEWMODEL_HAND_MIN, VIEWMODEL_SLEEVE_MAX, local_sim_should_advance};
 
     #[test]
     fn pausing_stops_solo_sim_but_not_a_windowed_host() {
         assert!(!local_sim_should_advance(true, false));
         assert!(local_sim_should_advance(true, true));
         assert!(local_sim_should_advance(false, false));
+    }
+
+    #[test]
+    fn bare_viewmodel_skin_meets_the_sleeve() {
+        assert_eq!(VIEWMODEL_SLEEVE_MAX.z, VIEWMODEL_HAND_MIN.z);
     }
 }
