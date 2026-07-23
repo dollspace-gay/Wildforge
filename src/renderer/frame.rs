@@ -460,10 +460,14 @@ impl Renderer {
         // The bright pass clears bloom_a even with bloom off, so the composite
         // always samples a defined texture (times a zero intensity).
         let bloom_on = f.bloom > 0.0;
+        // Night factor for the composite's cold grade: ramps 0 -> 1 as daylight
+        // falls from ~dusk (0.30) to deep night (0.05), so the sunset's warm
+        // sky is never cooled — only true night is.
+        let night = ((0.30 - f.daylight) / 0.25).clamp(0.0, 1.0);
         self.queue.write_buffer(
             &self.post_params_buf,
             0,
-            bytemuck::cast_slice(&[f.bloom.max(0.0), 0.0f32, 0.0, 0.0]),
+            bytemuck::cast_slice(&[f.bloom.max(0.0), night, 0.0, 0.0]),
         );
         {
             let mut bp = post_pass(&mut encoder, "bloom-bright", &self.post.bloom_a);

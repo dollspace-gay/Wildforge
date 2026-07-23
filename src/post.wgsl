@@ -79,6 +79,18 @@ fn fs_blur_v(in: FsQuad) -> @location(0) vec4<f32> {
 fn fs_composite(in: FsQuad) -> @location(0) vec4<f32> {
     let scene = textureSampleLevel(tex0, samp, in.uv, 0.0).rgb;
     let bloom = textureSampleLevel(tex1, samp, in.uv, 0.0).rgb;
-    let c = clamp(scene + bloom * post.p.x, vec3<f32>(0.0), vec3<f32>(1.0));
+    var c = clamp(scene + bloom * post.p.x, vec3<f32>(0.0), vec3<f32>(1.0));
+    // Night color-grade (post.p.y = night factor, 0 by day .. 1 deep night):
+    // slightly desaturate and cool the image toward blue so a moonlit scene
+    // reads unmistakably cold even where surface albedo (green grass) can't take
+    // a blue tint from light alone. Weighted toward the darker pixels, so warm
+    // firelight/torches keep their hue and stay cozy.
+    let night = post.p.y;
+    if (night > 0.001) {
+        let lum = dot(c, vec3<f32>(0.299, 0.587, 0.114));
+        let cold = mix(vec3<f32>(lum), c, 0.75) * vec3<f32>(0.82, 0.94, 1.18);
+        let dark = 1.0 - smoothstep(0.15, 0.75, lum);
+        c = mix(c, cold, night * dark * 0.7);
+    }
     return vec4<f32>(c, 1.0);
 }
