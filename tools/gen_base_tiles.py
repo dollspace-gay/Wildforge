@@ -151,6 +151,11 @@ def item(name, body, edge, shape="lump"):
     elif shape == "lens":
         d.ellipse([9, 9, 23, 23], fill=body + (110,), outline=edge + (255,))
         d.arc([11, 11, 21, 21], 200, 320, fill=(255, 255, 255, 220))
+    elif shape == "pick":
+        d.line([(8, 24), (20, 12)], fill=(122, 84, 48, 255), width=2)
+        d.arc([8, 4, 28, 22], 210, 340, fill=body + (255,), width=3)
+        d.point((10, 9), fill=edge + (255,))
+        d.point((26, 13), fill=edge + (255,))
     elif shape == "prism":
         d.polygon([(16, 7), (25, 24), (7, 24)], fill=body + (120,),
                   outline=edge + (255,))
@@ -240,6 +245,7 @@ ITEMS = [
     ("quartz_crucible", (228, 224, 216), (160, 156, 150), "crucible"),
     ("charged_crucible", (176, 168, 172), (100, 96, 104), "crucible"),
     ("crystal_lens", (210, 230, 240), (140, 170, 190), "lens"),
+    ("diamond_tipped_pick", (200, 240, 245), (120, 190, 210), "pick"),
     ("crystal_prism", (215, 232, 242), (145, 172, 192), "prism"),
 ]
 

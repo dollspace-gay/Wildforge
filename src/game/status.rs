@@ -38,8 +38,16 @@ impl Game {
         }
         let maxh = self.max_health();
         self.survival.health = self.survival.health.min(maxh);
-        // Food-gated regen (replaces free idle regen).
-        if self.survival.hunger >= 17.0
+        // Food-gated regen (replaces free idle regen). Raw pitchblende
+        // in your pack quietly pauses it — a whisper, not a mechanic;
+        // ground powder and fired glass are safe.
+        let cursed = self
+            .content
+            .reg
+            .item_id("base:raw_pitchblende")
+            .is_some_and(|p| self.inventory.slots.iter().flatten().any(|s| s.item == p));
+        if !cursed
+            && self.survival.hunger >= 17.0
             && self.survival.health < maxh
             && self.survival.since_damage > 4.0
         {

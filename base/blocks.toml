@@ -959,3 +959,69 @@ tool = "pickaxe"
 requires_tool = true
 min_tier = 3
 drops = "base:bastnasite"
+
+# ---- minerals & geology: the new glass ----
+
+[[block]]
+id = "green_glass"
+light_filter = [0, 1, 0]
+name = "Emerald Glass"
+texture = "green_glass.png"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "cranberry_glass"
+light_filter = [1, 0, 0]
+name = "Cranberry Glass"
+texture = "cranberry_glass.png"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "yellow_glass"
+light_filter = [1, 1, 0]
+name = "Yellow Glass"
+texture = "yellow_glass.png"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "milk_glass"
+light_filter = [1, 1, 1]
+name = "Milk Glass"
+texture = "milk_glass.png"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "rose_glass"
+light_filter = [1, 0, 1]
+name = "Rose Glass"
+texture = "rose_glass.png"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "glow_glass"
+light_filter = [0, 1, 0]
+name = "Glowglass"
+texture = "glow_glass.png"
+hardness = 0.4
+opaque = false
+glass = true
+light = 7
+light_color = [0.45, 1.0, 0.5]
+
+[[block]]
+id = "crystal_glass"
+name = "Crystal Glass"
+texture = "crystal_glass.png"
+hardness = 0.5
+opaque = false
+glass = true

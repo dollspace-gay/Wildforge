@@ -75,7 +75,18 @@ impl World {
     /// What the wild values: its own materials most, then life given.
     pub fn offering_value(&self, s: &ItemStack) -> f32 {
         let d = self.reg.item(s.item);
-        let per = if [
+        let per = if d.name == "base:diamond" {
+            // The wild prizes what the deep earth surrenders rarest.
+            6.0
+        } else if [
+            "base:amethyst_shard",
+            "base:gold_ingot",
+            "base:silver_ingot",
+        ]
+        .contains(&d.name.as_str())
+        {
+            3.0
+        } else if [
             "base:heartwood",
             "base:living_wood",
             "base:ember",

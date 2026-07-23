@@ -683,3 +683,102 @@ input = "base:charged_crucible"
 output = "base:silver_ingot"
 time = 12.0
 spit = { item = "base:lead_ingot", count = 2 }
+
+# ---- minerals & geology: powders, glass, and fine work ----
+
+[[worked]]
+input = "base:raw_chromite"
+output = "base:chrome_powder"
+station = "quern"
+tool = "none"
+strikes = 2
+count = 2
+
+[[worked]]
+input = "base:raw_tin"
+output = "base:tin_powder"
+station = "quern"
+tool = "none"
+strikes = 2
+count = 2
+
+[[worked]]
+input = "base:raw_pitchblende"
+output = "base:uranium_powder"
+station = "quern"
+tool = "none"
+strikes = 3
+count = 2
+
+[[worked]]
+input = "base:monazite_grit"
+output = "base:rare_earth_powder"
+station = "quern"
+tool = "none"
+strikes = 3
+count = 2
+
+[[worked]]
+input = "base:bastnasite"
+output = "base:rare_earth_powder"
+station = "quern"
+tool = "none"
+strikes = 3
+count = 3
+
+[[kiln]]
+powder = "base:chrome_powder"
+glass = "base:green_glass"
+
+[[kiln]]
+powder = "base:raw_gold"
+glass = "base:cranberry_glass"
+
+[[kiln]]
+powder = "base:silver_ingot"
+glass = "base:yellow_glass"
+
+[[kiln]]
+powder = "base:tin_powder"
+glass = "base:milk_glass"
+
+[[kiln]]
+powder = "base:rare_earth_powder"
+glass = "base:rose_glass"
+
+[[kiln]]
+powder = "base:uranium_powder"
+glass = "base:glow_glass"
+
+# Leaded crystal: cupellation lead colors nothing — it clarifies.
+[[kiln]]
+powder = "base:lead_ingot"
+glass = "base:crystal_glass"
+
+# Fine glasswork: crystal cut with a diamond. Optics starts here.
+[[recipe]]
+pattern = [".g.", "gdg", ".g."]
+keys = { g = "base:crystal_glass", d = "base:diamond" }
+output = "base:crystal_lens"
+
+[[recipe]]
+pattern = ["d..", "gg.", "ggg"]
+keys = { g = "base:crystal_glass", d = "base:diamond" }
+output = "base:crystal_prism"
+
+# A diamond tips a steel pick: the one tier-6 gate.
+[[recipe]]
+pattern = ["d", "p"]
+keys = { d = "base:diamond", p = "base:steel_pickaxe" }
+output = "base:diamond_tipped_pick"
+
+# Coal: found fuel, and the bloomery accepts it beside charcoal.
+[[fuel]]
+item = "base:coal"
+burn = 25.0
+speed = 1.25
+
+[[bloomery]]
+charge = "base:iron_ingot"
+fuel = "base:coal"
+bloom = "base:steel_bloom"

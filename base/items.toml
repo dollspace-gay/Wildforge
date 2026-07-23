@@ -852,3 +852,42 @@ id = "charged_crucible"
 name = "Charged Crucible"
 texture = "charged_crucible.png"
 max_stack = 1
+
+[[item]]
+id = "chrome_powder"
+name = "Chrome Powder"
+texture = "chrome_powder.png"
+
+[[item]]
+id = "tin_powder"
+name = "Tin Powder"
+texture = "tin_powder.png"
+
+[[item]]
+id = "uranium_powder"
+name = "Uranium Powder"
+texture = "uranium_powder.png"
+
+[[item]]
+id = "rare_earth_powder"
+name = "Rare-Earth Powder"
+texture = "rare_earth_powder.png"
+
+[[item]]
+id = "crystal_lens"
+name = "Crystal Lens"
+texture = "crystal_lens.png"
+
+[[item]]
+id = "crystal_prism"
+name = "Crystal Prism"
+texture = "crystal_prism.png"
+
+[[item]]
+id = "diamond_tipped_pick"
+name = "Diamond-Tipped Pick"
+texture = "diamond_tipped_pick.png"
+tool = "pickaxe"
+tool_speed = 24.0
+tool_tier = 6
+durability = 1600
