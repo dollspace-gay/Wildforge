@@ -756,4 +756,72 @@ impl World {
         }
         0
     }
+
+    /// Can a player body stand with its feet in cell y? Feet and
+    /// head clear of solids, solid ground directly underfoot.
+    fn standable(&self, x: i32, y: i32, z: i32) -> bool {
+        self.reg.is_solid(self.get_block(x, y - 1, z))
+            && !self.reg.is_solid(self.get_block(x, y, z))
+            && !self.reg.is_solid(self.get_block(x, y + 1, z))
+    }
+
+    /// Resolve a requested standing position into one a body can
+    /// actually occupy. Saved spawns go stale — a bedroll gets built
+    /// over, terrain regenerates under an old save — and a player
+    /// placed inside a hill is simply stuck. A valid spot returns
+    /// unchanged; otherwise the nearest clear opening in the column
+    /// wins (downward on ties, matching the old come-to-ground rule),
+    /// then a ring of neighbor columns, then the column surface.
+    pub fn settle_spawn(&mut self, want: Vec3) -> Vec3 {
+        let (x, z) = (want.x.floor() as i32, want.z.floor() as i32);
+        self.ensure_chunk(ChunkPos::of_world(x, z));
+        let feet = (want.y.floor() as i32).clamp(1, CHUNK_Y as i32 - 2);
+        if self.standable(x, feet, z) {
+            return want;
+        }
+        for d in 1..CHUNK_Y as i32 {
+            for y in [feet - d, feet + d] {
+                if y >= 1 && y < CHUNK_Y as i32 - 1 && self.standable(x, y, z) {
+                    return Vec3::new(want.x, y as f32 + 0.2, want.z);
+                }
+            }
+        }
+        // The column offers nothing (filled sky-to-bedrock): walk
+        // outward for the nearest column with open ground.
+        for r in 1..=8i32 {
+            for dz in -r..=r {
+                for dx in -r..=r {
+                    if dx.abs() != r && dz.abs() != r {
+                        continue;
+                    }
+                    let (nx, nz) = (x + dx, z + dz);
+                    self.ensure_chunk(ChunkPos::of_world(nx, nz));
+                    let y = self.surface_height(nx, nz) + 1;
+                    if y < CHUNK_Y as i32 - 1 && self.standable(nx, y, nz) {
+                        return Vec3::new(nx as f32 + 0.5, y as f32 + 0.2, nz as f32 + 0.5);
+                    }
+                }
+            }
+        }
+        // Last resort: on top of whatever this column calls surface.
+        let y = self.surface_height(x, z) + 1;
+        Vec3::new(want.x, y as f32 + 0.2, want.z)
+    }
+
+    /// Free a restored *position* only if it is embedded in solid.
+    /// Unlike `settle_spawn`, a legitimate mid-air or mid-swim save
+    /// passes through untouched — physics owns falling and floating;
+    /// this only rescues a body inside a hill.
+    pub fn free_position(&mut self, pos: Vec3) -> Vec3 {
+        let (x, z) = (pos.x.floor() as i32, pos.z.floor() as i32);
+        self.ensure_chunk(ChunkPos::of_world(x, z));
+        let feet = (pos.y.floor() as i32).clamp(1, CHUNK_Y as i32 - 2);
+        let embedded = self.reg.is_solid(self.get_block(x, feet, z))
+            || self.reg.is_solid(self.get_block(x, feet + 1, z));
+        if embedded {
+            self.settle_spawn(pos)
+        } else {
+            pos
+        }
+    }
 }

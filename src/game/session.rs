@@ -71,7 +71,8 @@ impl Game {
             best
         };
         let sy = world.surface_height(sx, sz) + 1;
-        let spawn = Vec3::new(sx as f32 + 0.5, sy as f32 + 0.2, sz as f32 + 0.5);
+        let spawn =
+            world.settle_spawn(Vec3::new(sx as f32 + 0.5, sy as f32 + 0.2, sz as f32 + 0.5));
 
         self.renderer.clear_chunks();
         self.server = server::Server::new(world, 0.3, self.rng ^ 0x5ee1);
@@ -160,6 +161,14 @@ impl Game {
                 );
                 let h = self.server.world.surface_height(px, pz);
                 self.player.pos.y = h as f32 + 1.05;
+                self.player.vel = Vec3::ZERO;
+            }
+            // And a save whose terrain changed underneath it (built
+            // over, regenerated) comes back beside the hill, not in
+            // it. Mid-air/mid-swim saves pass through untouched.
+            let freed = self.server.world.free_position(self.player.pos);
+            if freed != self.player.pos {
+                self.player.pos = freed;
                 self.player.vel = Vec3::ZERO;
             }
         }

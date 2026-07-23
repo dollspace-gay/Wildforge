@@ -565,7 +565,7 @@ impl HostSession {
         fx
     }
 
-    fn on_join(&mut self, server: &Server, join: AuthenticatedJoin, fx: &mut Vec<HostFx>) {
+    fn on_join(&mut self, server: &mut Server, join: AuthenticatedJoin, fx: &mut Vec<HostFx>) {
         let AuthenticatedJoin {
             id,
             display_name,
@@ -646,13 +646,13 @@ impl HostSession {
             self.net.kick(id);
             return;
         }
-        let reg = &server.world.reg;
-        let runtime = match self.profiles.as_mut().unwrap().open_or_create(
+        let reg = server.world.reg.clone();
+        let mut runtime = match self.profiles.as_mut().unwrap().open_or_create(
             &principals,
             &display_name,
             style,
             Vec3::new(0.5, 80.0, 0.5),
-            reg,
+            &reg,
         ) {
             Ok(runtime) => runtime,
             Err(e) => {
@@ -672,6 +672,11 @@ impl HostSession {
                 return;
             }
         };
+        // A saved position goes stale — terrain regenerated under an old
+        // world, or someone built over the spot. Free it before the
+        // guest materializes inside a hill (mid-air and mid-swim saves
+        // pass through untouched).
+        runtime.pos = server.world.free_position(runtime.pos);
         if let Err(refusal) = self.moderation.as_mut().unwrap().admit(
             &runtime.principals,
             Some(runtime.player_id),
@@ -1562,7 +1567,8 @@ impl HostSession {
                 if guest.health > 0.0 {
                     return;
                 }
-                guest.pos = guest.spawn;
+                // The saved spawn may be buried or dug out by now.
+                guest.pos = server.world.settle_spawn(guest.spawn);
                 guest.health = 14.0;
                 guest.hunger = 20.0;
                 guest.since_damage = 100.0;
