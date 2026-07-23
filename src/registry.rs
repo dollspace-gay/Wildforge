@@ -264,6 +264,9 @@ pub struct SmeltDef {
     pub input: Ingredient,
     pub output: ItemId,
     pub time: f32,
+    /// Byproduct spat out the furnace mouth as item drops (cupellation:
+    /// the silver stays in the slot, the lead pours out).
+    pub spit: Option<(ItemId, u32)>,
 }
 
 /// A bloomery batch chain: charge + fuel fire into blooms.
@@ -861,6 +864,15 @@ struct SmeltToml {
     output: String,
     #[serde(default)]
     time: Option<f32>,
+    #[serde(default)]
+    spit: Option<SpitToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct SpitToml {
+    item: String,
+    #[serde(default)]
+    count: Option<u32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -1845,10 +1857,15 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             resolve_ing(&reg, &modid, &s.input),
             lookup_item(&reg, &modid, &s.output),
         ) {
+            let spit = s.spit.as_ref().and_then(|sp| {
+                lookup_item(&reg, &modid, &sp.item)
+                    .map(|it| (it, sp.count.unwrap_or(1).clamp(1, 16)))
+            });
             reg.smelts.push(SmeltDef {
                 input,
                 output,
                 time: s.time.unwrap_or(8.0),
+                spit,
             });
         }
     }

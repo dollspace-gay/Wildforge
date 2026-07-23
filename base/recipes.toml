@@ -654,3 +654,32 @@ pattern = ["rr", "rr"]
 keys = { r = "base:basalt" }
 output = "base:basalt_bricks"
 count = 4
+
+# ---- minerals & geology: smelts and cupellation ----
+
+[[smelt]]
+input = "base:raw_gold"
+output = "base:gold_ingot"
+
+# Plain galena gives lead; the silver hides inside it.
+[[smelt]]
+input = "base:raw_galena"
+output = "base:lead_ingot"
+
+# Quartz fires into single-use cupellation crucibles.
+[[smelt]]
+input = "base:quartz_shard"
+output = "base:quartz_crucible"
+
+# Cupellation: pack galena into a crucible, fire it — silver in the
+# slot, the lead pours out the mouth, the cupel is spent.
+[[recipe]]
+pattern = ["gg", "gc"]
+keys = { g = "base:raw_galena", c = "base:quartz_crucible" }
+output = "base:charged_crucible"
+
+[[smelt]]
+input = "base:charged_crucible"
+output = "base:silver_ingot"
+time = 12.0
+spit = { item = "base:lead_ingot", count = 2 }

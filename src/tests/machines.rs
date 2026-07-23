@@ -645,3 +645,42 @@ fn quern_grinds_minerals_and_kiln_colors_glass() {
         );
     }
 }
+
+#[test]
+fn cupellation_splits_silver_from_lead() {
+    use crate::world::{BlockEntity, FurnaceState};
+    let reg = base_reg();
+    let mut w = test_world_with("cupel", reg.clone());
+    let pos = (2, 80, 2);
+    w.set_block(pos.0, pos.1, pos.2, b(&reg, "base:furnace"));
+    let charged = it(&reg, "base:charged_crucible");
+    let log = it(&reg, "base:log");
+    w.insert_block_entity(
+        pos,
+        BlockEntity::Furnace(FurnaceState {
+            input: Some(ItemStack::new(&reg, charged, 1)),
+            fuel: Some(ItemStack::new(&reg, log, 2)),
+            ..Default::default()
+        }),
+    );
+    for _ in 0..140 {
+        w.tick_entities(0.1);
+    }
+    let Some(BlockEntity::Furnace(f)) = w.block_entity(&pos) else {
+        panic!("furnace")
+    };
+    assert_eq!(
+        f.output.unwrap().item,
+        it(&reg, "base:silver_ingot"),
+        "silver lands in the slot"
+    );
+    assert!(f.input.is_none(), "the cupel is spent");
+    let lead = it(&reg, "base:lead_ingot");
+    let spat: u32 = w
+        .take_pending_drops()
+        .into_iter()
+        .filter(|(p, s)| *p == pos && s.item == lead)
+        .map(|(_, s)| s.count)
+        .sum();
+    assert_eq!(spat, 2, "the lead pours out the mouth");
+}

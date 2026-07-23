@@ -153,7 +153,10 @@ impl World {
         self.tick_kilns(dt);
         self.tick_clamps(dt);
         let reg = self.reg.clone();
-        for e in self.block_entities.values_mut() {
+        // Byproducts pour out the furnace mouth (cupellation lead);
+        // collected here because the entity map is borrowed.
+        let mut spat: Vec<((i32, i32, i32), ItemStack)> = Vec::new();
+        for (&fpos, e) in self.block_entities.iter_mut() {
             let BlockEntity::Furnace(f) = e else { continue };
             let smelt = f.input.and_then(|s| reg.smelt_for(s.item)).cloned();
             let output_ok = |f: &FurnaceState, out: crate::registry::ItemId| match f.output {
@@ -202,6 +205,9 @@ impl World {
                             },
                             None => ItemStack::new(&reg, s.output, 1),
                         });
+                        if let Some((item, count)) = s.spit {
+                            spat.push((fpos, ItemStack::new(&reg, item, count)));
+                        }
                     }
                 } else {
                     f.progress = 0.0;
@@ -210,6 +216,7 @@ impl World {
                 f.progress = (f.progress - dt * 2.0).max(0.0);
             }
         }
+        self.pending_drops.extend(spat);
     }
 
     // ---- block entity persistence (by item name, mod-change safe) ----

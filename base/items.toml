@@ -825,3 +825,30 @@ texture = "monazite_grit.png"
 id = "bastnasite"
 name = "Bastnasite"
 texture = "bastnasite.png"
+
+[[item]]
+id = "gold_ingot"
+name = "Gold Ingot"
+texture = "gold_ingot.png"
+
+[[item]]
+id = "lead_ingot"
+name = "Lead Ingot"
+texture = "lead_ingot.png"
+
+[[item]]
+id = "silver_ingot"
+name = "Silver Ingot"
+texture = "silver_ingot.png"
+
+[[item]]
+id = "quartz_crucible"
+name = "Quartz Crucible"
+texture = "quartz_crucible.png"
+max_stack = 8
+
+[[item]]
+id = "charged_crucible"
+name = "Charged Crucible"
+texture = "charged_crucible.png"
+max_stack = 1
