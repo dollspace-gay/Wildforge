@@ -716,7 +716,7 @@ The landed responsibilities map to the passes as follows:
 | Public proof and cache | DID/PDS resolver, exact device-record verifier, bidirectional current-handle resolution, bounded per-world cache with zero-grace support, migration/revocation/outage tests |
 | Privacy | DID omitted from `Hello` and all local-policy joins; explicit pre-join disclosure confirmation; peers receive a badge plus an optional, separately enabled handle |
 | Roster and profile metadata | Hold Tab shows every current player and visible verification state; profiles atomically record `last_saved_at` |
-| Platform/build gates | 203 passing all-target tests (one diagnostic ignored), strict Clippy, native release build, dependency-graph measurement, and `x86_64-pc-windows-gnu` cross-check |
+| Platform/build gates | 204 passing all-target tests (one diagnostic ignored), strict Clippy, native release build, dependency-graph measurement, and `x86_64-pc-windows-gnu` cross-check |
 
 The implementation deliberately stops short of avatar download/rendering. The
 preference is stored separately so adding the bounded image pipeline later does
@@ -830,7 +830,7 @@ The code-side qualification was repeated on 2026-07-23 with Rust/Cargo 1.96.0:
 
 | Gate | Result |
 |---|---|
-| `cargo test --all-targets --no-fail-fast` | 203 passed, 0 failed, 1 intentionally ignored diagnostic |
+| `cargo test --all-targets --no-fail-fast` | 204 passed, 0 failed, 1 intentionally ignored diagnostic |
 | `cargo clippy --all-targets --all-features -- -D warnings` | Passed |
 | `cargo fmt --all -- --check` and `git diff --check` | Passed |
 | `cargo check --target x86_64-pc-windows-gnu` | Passed |

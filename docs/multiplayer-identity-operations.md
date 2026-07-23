@@ -161,7 +161,7 @@ The default build/test gate is safe to run without public credentials:
 | Server-owned inventory/movement and full roster | Automated loopback tests |
 | OAuth flow and failures | Mock PAR/PKCE/DPoP/nonce, state/issuer/replay/cancel, subject, scope, and redaction tests |
 | Binding mismatch, PDS migration, cache expiry/limit, SSRF policy | Automated pure verifier tests |
-| Linux build/lints | `cargo test --all-targets --no-fail-fast` (203 passed, 1 diagnostic ignored); `cargo clippy --all-targets --all-features -- -D warnings` |
+| Linux build/lints | `cargo test --all-targets --no-fail-fast` (204 passed, 1 diagnostic ignored); `cargo clippy --all-targets --all-features -- -D warnings` |
 | Windows dependency/build compatibility | `cargo check --target x86_64-pc-windows-gnu` |
 | Dependency/release size | 530 vs 252 normal package lines; 35,589,240-byte unstripped Linux release binary |
 | Headless hosting | Isolated release-binary smoke created host key/settings and exercised `help`, `players`, and `identity` |
@@ -174,10 +174,10 @@ production-ready:
 |---|---|---|
 | Publish OAuth metadata | Exact checked-in JSON is available over HTTPS at its `client_id` with JSON content type | Passed 2026-07-23 via repository-owned GitHub Pages |
 | Linux browser link/revoke | Callback completes; exact device record writes, verifies, deletes, and fails live verification after deletion | Pending consenting account |
-| Windows browser link/revoke | Same sequence, including browser handoff and callback firewall behavior | Partial: browser link/callback succeeded in user testing; revoke and firewall path not signed off |
+| Windows browser link/revoke | Same sequence, including browser handoff and callback firewall behavior | Partial: browser link/callback and write succeeded in user testing; exact public type/key/rkey read-back from the current Bluesky PDS passed 2026-07-23; revoke/firewall path not signed off |
 | Independent PDS | Link/write/fetch/revoke succeeds outside the common Bluesky PDS | Pending provider/account |
 | Outage and handle change | Cached badge is visible only within grace; DID maps to the same `PlayerId` after handle/PDS change | Pending live-provider exercise |
-| Local UX | First run, offline solo, LAN local join, moderation, unlink, and lost-device wording are understandable end to end | Pending release-candidate playtest |
+| Local UX | First run, offline solo, LAN local join, moderation, unlink, and lost-device wording are understandable end to end | Partial: isolated graphical first-run smoke proposed an editable name while leaving `profile_complete=no`; local unlink and LAN/moderation paths have automated coverage; final human wording/playtest sign-off remains |
 
 Do not substitute personal tokens in automated tests or commit captured OAuth
 state to satisfy these rows.
