@@ -41,6 +41,15 @@ impl ItemEntity {
         if self.age > DESPAWN {
             return false;
         }
+        // Lava eats what falls in.
+        let at = world.get_block(
+            self.pos.x.floor() as i32,
+            self.pos.y.floor() as i32,
+            self.pos.z.floor() as i32,
+        );
+        if world.reg.is_lava(at) {
+            return false;
+        }
         self.vel.y -= 16.0 * dt;
         self.vel.y = self.vel.y.max(-30.0);
         // Horizontal drag.

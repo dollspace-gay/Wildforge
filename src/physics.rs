@@ -53,13 +53,13 @@ impl Player {
     fn head_in_water(&self, world: &World) -> bool {
         let e = self.eye();
         let b = world.get_block(e.x.floor() as i32, e.y.floor() as i32, e.z.floor() as i32);
-        world.reg.is_water(b)
+        world.reg.is_fluid(b)
     }
 
     fn body_in_water(&self, world: &World) -> bool {
         let p = self.pos + Vec3::new(0.0, 0.6, 0.0);
         let b = world.get_block(p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32);
-        world.reg.is_water(b)
+        world.reg.is_fluid(b)
     }
 
     pub fn update(&mut self, world: &World, input: &Input, flat_fwd: Vec3, right: Vec3, dt: f32) {

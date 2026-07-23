@@ -103,6 +103,7 @@ impl World {
                 // belts; spring gives the lakes back.
                 let sky_open = self.light_at(wx, y + 1, wz).1 == 15;
                 if d.water_level == Some(0)
+                    && !d.lava
                     && season == 3
                     && sky_open
                     && self.get_block(wx, y + 1, wz) == AIR
@@ -236,7 +237,7 @@ impl World {
                         let d = reg.block(b);
                         if d.crop_next.is_some()
                             || d.sapling.is_some()
-                            || d.water_level == Some(0)
+                            || (d.water_level == Some(0) && !d.lava)
                             || Some(b) == ice
                             || Some(b) == snow_layer
                             || Some(b) == snow_trod
@@ -324,6 +325,7 @@ impl World {
             }
             let sky_open = self.light_at(wx, y + 1, wz).1 == 15;
             if d.water_level == Some(0)
+                && !d.lava
                 && season == 3
                 && sky_open
                 && self.get_block(wx, y + 1, wz) == AIR

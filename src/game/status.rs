@@ -38,8 +38,16 @@ impl Game {
         }
         let maxh = self.max_health();
         self.survival.health = self.survival.health.min(maxh);
-        // Food-gated regen (replaces free idle regen).
-        if self.survival.hunger >= 17.0
+        // Food-gated regen (replaces free idle regen). Raw pitchblende
+        // in your pack quietly pauses it — a whisper, not a mechanic;
+        // ground powder and fired glass are safe.
+        let cursed = self
+            .content
+            .reg
+            .item_id("base:raw_pitchblende")
+            .is_some_and(|p| self.inventory.slots.iter().flatten().any(|s| s.item == p));
+        if !cursed
+            && self.survival.hunger >= 17.0
             && self.survival.health < maxh
             && self.survival.since_damage > 4.0
         {
@@ -138,6 +146,24 @@ impl Game {
         if self.player.pos.y < -8.0 && self.survival.since_damage >= 0.4 {
             self.survival.killed_by_wild = false;
             self.damage(4.0);
+        }
+
+        // Lava burns fast — you can struggle (fluids are swimmable),
+        // but every half-second in the fire costs dearly.
+        let feet = self.server.world.get_block(
+            self.player.pos.x.floor() as i32,
+            (self.player.pos.y + 0.4).floor() as i32,
+            self.player.pos.z.floor() as i32,
+        );
+        if self.content.reg.is_lava(feet) {
+            self.survival.burn_timer += dt;
+            if self.survival.burn_timer >= 0.5 {
+                self.survival.burn_timer = 0.0;
+                self.survival.killed_by_wild = false;
+                self.damage(3.0);
+            }
+        } else {
+            self.survival.burn_timer = 0.0;
         }
 
         // Drowning.

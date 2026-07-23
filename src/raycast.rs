@@ -75,7 +75,7 @@ fn cast(world: &World, origin: Vec3, dir: Vec3, max_dist: f32, hit_water: bool) 
         let b = world.get_block(x, y, z);
         // Hit anything mineable: solids AND non-solid plants (cross blocks),
         // but never air — and water only when the caller wants it.
-        if b != crate::registry::AIR && (hit_water || !world.reg.is_water(b)) {
+        if b != crate::registry::AIR && (hit_water || !world.reg.is_fluid(b)) {
             return Some(Hit {
                 block: (x, y, z),
                 adjacent: prev,

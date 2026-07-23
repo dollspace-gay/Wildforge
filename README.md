@@ -158,6 +158,51 @@ owns the freeze. And the world keeps living while you're away —
 come back after seasons elsewhere and the lake you left liquid is
 simply frozen, the wheat you left green has grown.
 
+## Minerals & geology
+
+The ground earns its keep. Uniform stone gave way to **rock
+families**: a sedimentary stack (sandstone over limestone over
+shale) rides on basement stone, granite plutons punch up through the
+bedding, and their contact halos bake marble, slate, and quartzite —
+all real blocks, so the strata read in every cliff and every one
+dresses into bricks. **Where you dig finally matters**: coal seams
+lens through shale, gold flecks visible quartz veins and nothing
+else, galena hides in cooked limestone, chromite runs the deep
+basalt, and **diamonds exist only in kimberlite pipes** — rare
+carrot-shaped intrusions, mostly blind, sometimes betrayed by a
+blue-ground stain in the soil. **Volcanoes** rise on deterministic
+ground: basalt cones threaded with carbonatite dikes (the rare-earth
+host), sulfur-crusted flanks, and a crater pooling **real finite
+lava** — the second fluid, on the water engine's rails: it creeps,
+it burns, it hardens to obsidian or basalt where water meets it, and
+it rides the same iron bucket. Underneath it all, sealed magma
+pockets wait to be mined into.
+
+The land itself follows natural law now: a static **plate map**
+shapes the continents — fold ranges rise where continents collide
+(their strata visibly buckled by the collision), trenches and
+volcano arcs mark the subduction zones, rift valleys sag where
+plates part. **Rivers** carve from the ranges to the sea, **lakes**
+and **rift seas** fill the hollows, mountain **springs** seep on
+high ground, and every volcano conceals a **magma chamber**. New
+country to cross: **swamps** of standing pools and mud, **savanna**
+under acacia, frozen **tundra** barrens, and **badlands** mesas
+banded in sandstone — while the **jungle** finally earns its name
+with a towering double canopy and a floor of undergrowth.
+
+The chain pays off in process: galena smelts to lead with the silver
+locked inside — **cupellation** through kiln-quartz crucibles splits
+it, silver in the slot and lead pouring out the furnace mouth. The
+kiln's palette grows to eleven colors from real chemistry (chrome
+emerald, colloidal-gold cranberry, silver yellow, tin milk,
+neodymium rose, and emissive **glowglass** from ground pitchblende
+that lights its room and tints every beam through it) plus **leaded
+crystal**, which a diamond cuts into the first lenses and prisms.
+Coal fires the bloomery beside charcoal; a diamond tips a steel pick
+for the one tier-6 gate; rare earths wait in monazite sands and
+carbonatite as feedstock for the technology arc to come. No diamond
+armor, ever.
+
 ## Light and shadow
 
 The world's fires are real lights now. Torches, lit bloomeries and

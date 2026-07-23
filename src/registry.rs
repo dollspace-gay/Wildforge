@@ -42,6 +42,8 @@ pub struct BlockDef {
     pub min_tier: u8,
     /// 0 = fluid source, 1..=7 flowing levels. None = not a fluid.
     pub water_level: Option<u8>,
+    /// True for the lava chain (water_level then means lava volume).
+    pub lava: bool,
     /// Render as two crossed quads instead of a cube (plants).
     pub cross: bool,
     /// Crop: (final stage block advances no further). tick advances stages.
@@ -262,6 +264,9 @@ pub struct SmeltDef {
     pub input: Ingredient,
     pub output: ItemId,
     pub time: f32,
+    /// Byproduct spat out the furnace mouth as item drops (cupellation:
+    /// the silver stays in the slot, the lead pours out).
+    pub spit: Option<(ItemId, u32)>,
 }
 
 /// A bloomery batch chain: charge + fuel fire into blooms.
@@ -284,6 +289,17 @@ pub struct WorkedDef {
     pub count: u32,
 }
 
+/// How a mineral deposit grows from its seed cell.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VeinShape {
+    /// The classic drunk walk — roughly round pockets.
+    Walk,
+    /// A flat lens: long in x/z, grudging in y (coal seams).
+    Seam,
+    /// A near-vertical streak (quartz veins and their gold).
+    Streak,
+}
+
 #[derive(Clone, Debug)]
 pub struct OreFeature {
     pub block: BlockId,
@@ -292,6 +308,7 @@ pub struct OreFeature {
     pub per_chunk: u32,
     pub y_min: i32,
     pub y_max: i32,
+    pub shape: VeinShape,
 }
 
 /// One weighted entry in a loot table.
@@ -341,6 +358,8 @@ pub struct Registry {
     pub item_by_name: HashMap<String, ItemId>,
     /// water_ids[level] — source at 0, flows 1..=7.
     pub water_ids: [BlockId; 8],
+    /// lava_ids[level] — the lava chain, same layout as water_ids.
+    pub lava_ids: [BlockId; 8],
     pub unknown_block: BlockId,
     pub mods: Vec<ModInfo>,
     pub smelts: Vec<SmeltDef>,
@@ -405,6 +424,19 @@ impl Registry {
 
     #[inline]
     pub fn is_water(&self, id: BlockId) -> bool {
+        let d = self.block(id);
+        d.water_level.is_some() && !d.lava
+    }
+
+    #[inline]
+    pub fn is_lava(&self, id: BlockId) -> bool {
+        self.block(id).lava
+    }
+
+    /// Any finite fluid — what renders translucent, what rays pass
+    /// through, what a bucket can dip.
+    #[inline]
+    pub fn is_fluid(&self, id: BlockId) -> bool {
         self.block(id).water_level.is_some()
     }
 
@@ -426,9 +458,31 @@ impl Registry {
     }
 
     /// Finite-water volume of a cell: level 0 holds 8 units, level 7
-    /// holds 1. None for anything that isn't water.
+    /// holds 1. None for anything that isn't water (lava included).
     #[inline]
     pub fn water_volume(&self, id: BlockId) -> Option<u8> {
+        let d = self.block(id);
+        if d.lava {
+            None
+        } else {
+            d.water_level.map(|l| 8 - l)
+        }
+    }
+
+    /// Finite-lava volume of a cell (the same 8-unit scale).
+    #[inline]
+    pub fn lava_volume(&self, id: BlockId) -> Option<u8> {
+        let d = self.block(id);
+        if d.lava {
+            d.water_level.map(|l| 8 - l)
+        } else {
+            None
+        }
+    }
+
+    /// Volume of either fluid — the bucket doesn't care which.
+    #[inline]
+    pub fn fluid_volume(&self, id: BlockId) -> Option<u8> {
         self.block(id).water_level.map(|l| 8 - l)
     }
 
@@ -438,6 +492,15 @@ impl Registry {
             AIR
         } else {
             self.water_ids[(8 - v.min(8)) as usize]
+        }
+    }
+
+    /// The block holding `v` units of lava; 0 units is air.
+    pub fn lava_for_volume(&self, v: u8) -> BlockId {
+        if v == 0 {
+            AIR
+        } else {
+            self.lava_ids[(8 - v.min(8)) as usize]
         }
     }
 
@@ -557,6 +620,8 @@ struct BlockToml {
     min_tier: u8,
     #[serde(default)]
     water: Option<u8>,
+    #[serde(default)]
+    lava: Option<u8>,
     #[serde(default)]
     cross: bool,
     #[serde(default)]
@@ -799,6 +864,15 @@ struct SmeltToml {
     output: String,
     #[serde(default)]
     time: Option<f32>,
+    #[serde(default)]
+    spit: Option<SpitToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct SpitToml {
+    item: String,
+    #[serde(default)]
+    count: Option<u32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -869,6 +943,8 @@ struct FeatureToml {
     per_chunk: Option<u32>,
     #[serde(default)]
     y_range: Option<[i32; 2]>,
+    #[serde(default)]
+    shape: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -1064,7 +1140,10 @@ fn base_mod() -> RawMod {
             id: "base".into(),
             name: "Wildforge".into(),
             version: env!("CARGO_PKG_VERSION").into(),
-            path: None,
+            // The TOML is embedded, but PNG tiles resolve from the
+            // repo's base/ directory like any mod's (the game runs
+            // from the repo root; the README says as much).
+            path: Some(std::path::PathBuf::from("base")),
             has_script: false,
             error: None,
         },
@@ -1199,6 +1278,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         block_by_name: HashMap::new(),
         item_by_name: HashMap::new(),
         water_ids: [AIR; 8],
+        lava_ids: [AIR; 8],
         unknown_block: AIR,
         mods: Vec::new(),
         smelts: Vec::new(),
@@ -1231,6 +1311,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         interaction: None,
         min_tier: 0,
         water_level: None,
+        lava: false,
         cross: false,
         crop_next: None,
         crop_chance: 0.0,
@@ -1277,8 +1358,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             errs.push(format!("missing texture {spec}"));
             return crate::atlas::UNKNOWN_SLOT;
         }
-        if next_slot >= 256 {
-            errs.push("texture atlas full (256 tiles)".into());
+        // Mod tiles own FIRST_FREE_SLOT up to the reserved player
+        // rows at the top of the 32-wide atlas (a stale 256 cap from
+        // the 16-wide era once lived here).
+        if next_slot >= crate::style::EXTRA_BASE {
+            errs.push("texture atlas full".into());
             return crate::atlas::UNKNOWN_SLOT;
         }
         let slot = next_slot;
@@ -1353,7 +1437,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 }
             };
             let id = BlockId(reg.blocks.len() as u16);
-            let is_fluid = b.water.is_some();
+            let is_fluid = b.water.is_some() || b.lava.is_some();
             reg.blocks.push(BlockDef {
                 name: full.clone(),
                 label: b.name.clone().unwrap_or_else(|| b.id.clone()),
@@ -1370,7 +1454,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 opaque: b.opaque && !is_fluid,
                 interaction: b.interaction.clone(),
                 min_tier: b.min_tier,
-                water_level: b.water,
+                water_level: b.water.or(b.lava),
+                lava: b.lava.is_some(),
                 cross: b.cross,
                 crop_next: None,
                 crop_chance: 0.0,
@@ -1438,9 +1523,14 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 let target = if b.crop.is_some() { target } else { id };
                 pending_harvests.push((raw.info.id.clone(), target, h.clone()));
             }
-            if b.water == Some(0) {
-                // Auto-register the 7 flowing variants.
-                reg.water_ids[0] = id;
+            if b.water == Some(0) || b.lava == Some(0) {
+                // Auto-register the 7 flowing variants (either fluid).
+                let ids = if b.lava.is_some() {
+                    &mut reg.lava_ids
+                } else {
+                    &mut reg.water_ids
+                };
+                ids[0] = id;
                 for l in 1..=7u8 {
                     let fid = BlockId(reg.blocks.len() as u16);
                     let mut def = reg.blocks[id.0 as usize].clone();
@@ -1448,7 +1538,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     def.water_level = Some(l);
                     reg.block_by_name.insert(def.name.clone(), fid);
                     reg.blocks.push(def);
-                    reg.water_ids[l as usize] = fid;
+                    ids[l as usize] = fid;
                 }
             }
             if b.item && !is_fluid {
@@ -1640,6 +1730,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         interaction: None,
         min_tier: 0,
         water_level: None,
+        lava: false,
         cross: false,
         crop_next: None,
         crop_chance: 0.0,
@@ -1766,10 +1857,15 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             resolve_ing(&reg, &modid, &s.input),
             lookup_item(&reg, &modid, &s.output),
         ) {
+            let spit = s.spit.as_ref().and_then(|sp| {
+                lookup_item(&reg, &modid, &sp.item)
+                    .map(|it| (it, sp.count.unwrap_or(1).clamp(1, 16)))
+            });
             reg.smelts.push(SmeltDef {
                 input,
                 output,
                 time: s.time.unwrap_or(8.0),
+                spit,
             });
         }
     }
@@ -2030,6 +2126,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             per_chunk: f.per_chunk.unwrap_or(6).clamp(0, 64),
             y_min: y0,
             y_max: y1,
+            shape: match f.shape.as_deref() {
+                Some("seam") => VeinShape::Seam,
+                Some("streak") => VeinShape::Streak,
+                _ => VeinShape::Walk,
+            },
         });
     }
 

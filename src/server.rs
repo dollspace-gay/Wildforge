@@ -56,6 +56,7 @@ pub struct Server {
     pub rng: u32,
     accum: f32,
     water_timer: f32,
+    lava_timer: f32,
     random_timer: f32,
     snow_timer: f32,
     prev_tier: usize,
@@ -81,6 +82,7 @@ impl Server {
             rng,
             accum: 0.0,
             water_timer: 0.0,
+            lava_timer: 0.0,
             random_timer: 0.0,
             snow_timer: 0.0,
             prev_tier,
@@ -145,6 +147,12 @@ impl Server {
         while self.water_timer >= 0.2 {
             self.water_timer -= 0.2;
             self.world.tick_water(512);
+        }
+        // Lava creeps at a quarter of that pace.
+        self.lava_timer += dt;
+        while self.lava_timer >= 0.8 {
+            self.lava_timer -= 0.8;
+            self.world.tick_lava(256);
         }
 
         // Machines and gravity.

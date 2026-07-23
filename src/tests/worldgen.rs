@@ -63,6 +63,10 @@ fn all_seven_biomes_exist_and_are_deterministic() {
         Biome::Scrubland,
         Biome::Taiga,
         Biome::Arctic,
+        Biome::Swamp,
+        Biome::Savanna,
+        Biome::Tundra,
+        Biome::Badlands,
     ] {
         let (x, z) = find_biome(&g, biome)
             .unwrap_or_else(|| panic!("{biome:?} not found within search radius"));
@@ -87,14 +91,24 @@ fn all_seven_biomes_exist_and_are_deterministic() {
 fn desert_has_sand_surface_and_cacti() {
     let reg = base_reg();
     let g = Generator::new(42, &reg);
-    let (x, z) = find_biome(&g, Biome::Desert).unwrap();
-    // Find a dry desert column (above sea level).
+    // Search rings directly for a solid inland desert column: the
+    // plate map makes some deserts coastal or boundary-broken.
     let mut spot = None;
-    'scan: for dx in 0..64 {
-        for dz in 0..64 {
-            let (cx, cz) = (x + dx, z + dz);
+    'scan: for r in 0..400 {
+        let d = r * 24;
+        for (cx, cz) in [
+            (d, 0),
+            (-d, 0),
+            (0, d),
+            (0, -d),
+            (d, d),
+            (-d, -d),
+            (d, -d),
+            (-d, d),
+        ] {
             if g.biome(cx, cz) == Biome::Desert
-                && g.surface_estimate(cx, cz) > crate::chunk::SEA_LEVEL + 1
+                && g.surface_estimate(cx, cz) > crate::chunk::SEA_LEVEL + 8
+                && g.tectonics(cx, cz).boundary_dist > 160.0
             {
                 spot = Some((cx, cz));
                 break 'scan;
@@ -297,10 +311,43 @@ fn mountains_rise_above_plains() {
         }
         best
     };
-    let m = sample_max(Biome::Mountains);
     let p = sample_max(Biome::Plains);
-    assert!(m > 130, "mountains should reach high ({m})");
-    assert!(m > p + 30, "mountains ({m}) far above plains ({p})");
+    // The young ranges live on convergent continental boundaries now;
+    // hunt one through the plate map and measure its crest.
+    let mut m = 0;
+    'tect: for r in 0..60 {
+        let d = r * 128;
+        for (x, z) in [
+            (d, 0),
+            (-d, 0),
+            (0, d),
+            (0, -d),
+            (d, d),
+            (-d, -d),
+            (d, -d),
+            (-d, d),
+        ] {
+            let tec = g.tectonics(x, z);
+            let cl = g.climate(x, z);
+            if tec.convergence > 0.25
+                && tec.boundary_dist < 60.0
+                && !tec.oceanic
+                && !tec.neighbor_oceanic
+                && cl.c > 0.1
+            {
+                for dx in -48..=48 {
+                    for dz in -48..=48 {
+                        m = m.max(g.surface_estimate(x + dx * 2, z + dz * 2));
+                    }
+                }
+                if m > 150 {
+                    break 'tect;
+                }
+            }
+        }
+    }
+    assert!(m > 150, "fold ranges should reach high ({m})");
+    assert!(m > p + 30, "ranges ({m}) far above plains ({p})");
 }
 
 #[test]
@@ -312,7 +359,7 @@ fn oceans_exist_and_fill_with_water() {
     'outer: for r in 0..300 {
         let d = r * 24;
         for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
-            if g.surface_estimate(x, z) < 55 {
+            if g.surface_estimate(x, z) < 46 {
                 spot = Some((x, z));
                 break 'outer;
             }
@@ -500,22 +547,41 @@ fn wild_food_generates_per_biome() {
     let reg = base_reg();
     let g = Generator::new(42, &reg);
     let has = |biome: Biome, blocks: &[&str], name: &str| -> bool {
-        let (x, z) = find_biome(&g, biome).unwrap();
-        let cp = ChunkPos::of_world(x, z);
-        let mut w = World::new(42, tmp_dir(name), reg.clone());
+        // The plate map can make the first biome hit a sliver; try a
+        // few well-separated patches before giving up.
+        let mut anchors: Vec<(i32, i32)> = Vec::new();
+        for r in 0..200 {
+            let d = r * 24;
+            for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
+                if g.biome(x, z) == biome
+                    && anchors
+                        .iter()
+                        .all(|&(ax, az)| (ax - x).abs() + (az - z).abs() > 400)
+                {
+                    anchors.push((x, z));
+                }
+            }
+            if anchors.len() >= 3 {
+                break;
+            }
+        }
         let ids: Vec<_> = blocks.iter().filter_map(|n| reg.block_id(n)).collect();
-        for dx in -4..=4 {
-            for dz in -4..=4 {
-                let p = ChunkPos {
-                    x: cp.x + dx,
-                    z: cp.z + dz,
-                };
-                w.ensure_chunk(p);
-                for lx in 0..16 {
-                    for lz in 0..16 {
-                        for y in 64..140 {
-                            if ids.contains(&w.get_block(p.x * 16 + lx, y, p.z * 16 + lz)) {
-                                return true;
+        for (ai, (x, z)) in anchors.into_iter().enumerate() {
+            let cp = ChunkPos::of_world(x, z);
+            let mut w = World::new(42, tmp_dir(&format!("{name}{ai}")), reg.clone());
+            for dx in -4..=4 {
+                for dz in -4..=4 {
+                    let p = ChunkPos {
+                        x: cp.x + dx,
+                        z: cp.z + dz,
+                    };
+                    w.ensure_chunk(p);
+                    for lx in 0..16 {
+                        for lz in 0..16 {
+                            for y in 64..140 {
+                                if ids.contains(&w.get_block(p.x * 16 + lx, y, p.z * 16 + lz)) {
+                                    return true;
+                                }
                             }
                         }
                     }
@@ -598,8 +664,10 @@ fn iron_ore_generates_in_band() {
             if *b == ore.0 {
                 found += 1;
                 let y = i % 256;
-                if !(1..=54).contains(&y) {
-                    out_of_band += 1; // random-walk veins drift up to 5
+                // Basement iron (4..48) plus the banded seams in shale
+                // (40..62); either kind of vein drifts a little.
+                if !(1..=70).contains(&y) {
+                    out_of_band += 1;
                 }
             }
         }
@@ -681,4 +749,446 @@ fn ruins_generate_deterministically() {
         w.chunks().get(&pos).unwrap().raw()[idx],
         "structure placement is deterministic"
     );
+}
+
+#[test]
+fn strata_layer_the_world_sanely() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("strata"), reg.clone());
+    for x in -3..=3 {
+        for z in -3..=3 {
+            w.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    let b = |n: &str| reg.block_id(n).unwrap();
+    let (sandstone, limestone, shale) = (b("base:sandstone"), b("base:limestone"), b("base:shale"));
+    let (granite, marble, basalt) = (b("base:granite"), b("base:marble"), b("base:basalt"));
+
+    let mut count = std::collections::HashMap::new();
+    let mut y_sum = std::collections::HashMap::new();
+    let mut marble_cells = Vec::new();
+    for x in -48..48 {
+        for z in -48..48 {
+            for y in 1..140 {
+                let blk = w.get_block(x, y, z);
+                *count.entry(blk).or_insert(0u32) += 1;
+                *y_sum.entry(blk).or_insert(0i64) += y as i64;
+                if blk == marble && marble_cells.len() < 400 {
+                    marble_cells.push((x, y, z));
+                }
+            }
+        }
+    }
+    let n = |blk| count.get(&blk).copied().unwrap_or(0);
+    for (name, blk) in [
+        ("sandstone", sandstone),
+        ("limestone", limestone),
+        ("shale", shale),
+        ("granite", granite),
+        ("basalt", basalt),
+    ] {
+        assert!(n(blk) > 500, "{name} present in the sample ({})", n(blk));
+    }
+    // Basalt floods only the deeps.
+    let mean = |blk| y_sum.get(&blk).copied().unwrap_or(0) as f64 / n(blk).max(1) as f64;
+    assert!(
+        mean(basalt) < 14.0,
+        "basalt is a deep layer ({})",
+        mean(basalt)
+    );
+    // The sedimentary stack is ordered: shale under limestone under
+    // sandstone.
+    assert!(
+        mean(shale) < mean(limestone) && mean(limestone) < mean(sandstone),
+        "bedding order holds: {:.1} < {:.1} < {:.1}",
+        mean(shale),
+        mean(limestone),
+        mean(sandstone)
+    );
+    // Marble is contact rock: granite bakes it, so granite is near.
+    assert!(!marble_cells.is_empty(), "contact marble exists");
+    let mut hits = 0;
+    let sample: Vec<_> = marble_cells.iter().step_by(7).take(30).collect();
+    for &&(mx, my, mz) in &sample {
+        let mut near = false;
+        'scan: for dx in -16i32..=16 {
+            for dy in -16i32..=16 {
+                for dz in -16i32..=16 {
+                    if w.get_block(mx + dx, my + dy, mz + dz) == granite {
+                        near = true;
+                        break 'scan;
+                    }
+                }
+            }
+        }
+        if near {
+            hits += 1;
+        }
+    }
+    assert!(
+        hits * 10 >= sample.len() * 8,
+        "marble hugs granite ({hits}/{} within 16 blocks)",
+        sample.len()
+    );
+}
+
+#[test]
+fn volcanoes_rise_pool_and_dress() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("volcano"), reg.clone());
+    // Find the nearest deterministic volcano to the origin.
+    let mut found = None;
+    'search: for r in 0..30 {
+        let d = r * 96;
+        for (x, z) in [
+            (d, 0),
+            (-d, 0),
+            (0, d),
+            (0, -d),
+            (d, d),
+            (-d, -d),
+            (d, -d),
+            (-d, d),
+        ] {
+            if let Some(v) = w.generator.volcano_near(x, z) {
+                found = Some(v);
+                break 'search;
+            }
+        }
+    }
+    let v = found.expect("a volcano within the search ring");
+    println!(
+        "volcano at ({}, {}) r={} h={}",
+        v.x, v.z, v.radius, v.height
+    );
+    let vc = ChunkPos::of_world(v.x, v.z);
+    for dx in -3..=3 {
+        for dz in -3..=3 {
+            w.ensure_chunk(ChunkPos {
+                x: vc.x + dx,
+                z: vc.z + dz,
+            });
+        }
+    }
+    // The cone rises well above the surrounding country.
+    let rim = w.surface_height(v.x + v.crater_r() as i32 + 1, v.z);
+    let baseline = w.surface_height(v.x + v.radius as i32 + 24, v.z);
+    assert!(
+        rim > baseline + 15,
+        "the cone rises: rim {rim} vs baseline {baseline}"
+    );
+    // The crater pools lava behind an obsidian rim.
+    let b = |n: &str| reg.block_id(n).unwrap();
+    let mut lava_cells = 0;
+    let mut obsidian_cells = 0;
+    let mut sulfur_cells = 0;
+    let mut basalt_cells = 0;
+    let scan = v.radius as i32;
+    for dx in -scan..=scan {
+        for dz in -scan..=scan {
+            let (x, z) = (v.x + dx, v.z + dz);
+            for y in 40..CHUNK_Y as i32 {
+                let blk = w.get_block(x, y, z);
+                if reg.is_lava(blk) {
+                    lava_cells += 1;
+                } else if blk == b("base:obsidian") {
+                    obsidian_cells += 1;
+                } else if blk == b("base:sulfur_ore") {
+                    sulfur_cells += 1;
+                } else if blk == b("base:basalt") {
+                    basalt_cells += 1;
+                }
+            }
+        }
+    }
+    assert!(lava_cells > 30, "the crater pools lava ({lava_cells})");
+    assert!(obsidian_cells > 10, "an obsidian rim ({obsidian_cells})");
+    assert!(
+        sulfur_cells > 3,
+        "sulfur crusts the flanks ({sulfur_cells})"
+    );
+    assert!(basalt_cells > 3000, "the cone is basalt ({basalt_cells})");
+}
+
+#[test]
+fn pipes_and_geodes_seed_the_deep() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("pipes"), reg.clone());
+    let b = |n: &str| reg.block_id(n).unwrap();
+
+    // A kimberlite pipe, found by the locator, generated, and shaped
+    // like a carrot: wide near its top, a thread at depth.
+    let mut pipe = None;
+    'p: for x in -40..=40 {
+        for z in -40..=40 {
+            let cp = ChunkPos { x, z };
+            if w.generator.pipe_at(cp).is_some() {
+                pipe = Some(cp);
+                break 'p;
+            }
+        }
+    }
+    let cp = pipe.expect("a pipe within the search square");
+    w.ensure_chunk(cp);
+    let kim = b("base:kimberlite");
+    let count_at = |w: &World, y: i32| -> i32 {
+        let mut n = 0;
+        for lx in 0..16 {
+            for lz in 0..16 {
+                if w.get_block(cp.x * 16 + lx, y, cp.z * 16 + lz) == kim {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+    let total: i32 = (2..200).map(|y| count_at(&w, y)).sum();
+    assert!(total > 80, "the pipe has body ({total} cells)");
+    let deep = count_at(&w, 8);
+    let shallow_y = (2..200).rev().find(|&y| count_at(&w, y) > 0).unwrap();
+    let shallow = count_at(&w, shallow_y - 4);
+    assert!(
+        deep <= shallow,
+        "carrot profile: {deep} at depth vs {shallow} near the top"
+    );
+
+    // A geode: quartz shell, amethyst lining, hollow heart.
+    let mut placed = false;
+    let mut tried = 0;
+    'g: for x in -60..=60 {
+        for z in -60..=60 {
+            let cp = ChunkPos { x, z };
+            if w.generator.geode_at(cp).is_none() {
+                continue;
+            }
+            tried += 1;
+            if tried > 14 {
+                break 'g;
+            }
+            w.ensure_chunk(cp);
+            let mut amethyst = 0;
+            let mut quartz = 0;
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    for y in 40..80 {
+                        let blk = w.get_block(cp.x * 16 + lx, y, cp.z * 16 + lz);
+                        if blk == b("base:amethyst_block") {
+                            amethyst += 1;
+                        } else if blk == b("base:quartz_block") {
+                            quartz += 1;
+                        }
+                    }
+                }
+            }
+            if amethyst > 4 && quartz > 8 {
+                placed = true;
+                break 'g;
+            }
+        }
+    }
+    assert!(placed, "a geode placed in limestone country");
+}
+
+#[test]
+fn ores_stay_in_their_host_rocks() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("hosts"), reg.clone());
+    for x in -4..=4 {
+        for z in -4..=4 {
+            w.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    let b = |n: &str| reg.block_id(n).unwrap();
+    let coal = b("base:coal_ore");
+    let gold = b("base:gold_quartz");
+    let quartz = b("base:quartz_vein");
+    let diamond = b("base:diamond_ore");
+    let shale = b("base:shale");
+    let slate = b("base:slate");
+    let kim = b("base:kimberlite");
+    let mut coal_n = 0;
+    let mut quartz_n = 0;
+    let (mut coal_hosted, mut gold_neighbors_quartz) = (0, 0);
+    let mut gold_n = 0;
+    for x in -72..72 {
+        for z in -72..72 {
+            for y in 1..90 {
+                let blk = w.get_block(x, y, z);
+                if blk == coal {
+                    coal_n += 1;
+                    // A coal cell should sit in shale country: some
+                    // neighbor is shale (or its cooked twin).
+                    let hosted = [
+                        (1, 0, 0),
+                        (-1, 0, 0),
+                        (0, 1, 0),
+                        (0, -1, 0),
+                        (0, 0, 1),
+                        (0, 0, -1),
+                    ]
+                    .iter()
+                    .any(|&(dx, dy, dz)| {
+                        let n = w.get_block(x + dx, y + dy, z + dz);
+                        n == shale || n == slate || n == coal
+                    });
+                    if hosted {
+                        coal_hosted += 1;
+                    }
+                } else if blk == quartz {
+                    quartz_n += 1;
+                } else if blk == gold {
+                    gold_n += 1;
+                    let near = [
+                        (1, 0, 0),
+                        (-1, 0, 0),
+                        (0, 1, 0),
+                        (0, -1, 0),
+                        (0, 0, 1),
+                        (0, 0, -1),
+                    ]
+                    .iter()
+                    .any(|&(dx, dy, dz)| {
+                        let n = w.get_block(x + dx, y + dy, z + dz);
+                        n == quartz || n == gold
+                    });
+                    if near {
+                        gold_neighbors_quartz += 1;
+                    }
+                } else if blk == diamond {
+                    // Diamonds only ever sit inside kimberlite.
+                    let near_kim = [
+                        (1, 0, 0),
+                        (-1, 0, 0),
+                        (0, 1, 0),
+                        (0, -1, 0),
+                        (0, 0, 1),
+                        (0, 0, -1),
+                    ]
+                    .iter()
+                    .any(|&(dx, dy, dz)| {
+                        let n = w.get_block(x + dx, y + dy, z + dz);
+                        n == kim || n == diamond
+                    });
+                    assert!(near_kim, "diamond outside kimberlite at ({x},{y},{z})");
+                }
+            }
+        }
+    }
+    assert!(coal_n > 30, "coal seams exist ({coal_n})");
+    assert!(quartz_n > 20, "quartz veins exist ({quartz_n})");
+    assert!(
+        coal_hosted * 10 >= coal_n * 8,
+        "coal keeps shale company ({coal_hosted}/{coal_n})"
+    );
+    if gold_n > 0 {
+        assert!(
+            gold_neighbors_quartz * 10 >= gold_n * 7,
+            "gold stays in its veins ({gold_neighbors_quartz}/{gold_n})"
+        );
+    }
+}
+
+#[test]
+fn rivers_lakes_and_magma_chambers() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("hydro"), reg.clone());
+
+    // A river or lake above sea level, found through the same helper
+    // worldgen uses, then generated and verified wet.
+    let mut wet = None;
+    'r: for r in 1..400 {
+        let d = r * 16;
+        for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
+            if let Some(fill) = w.generator.water_features(x, z)
+                && fill > crate::chunk::SEA_LEVEL + 3
+            {
+                wet = Some((x, z, fill));
+                break 'r;
+            }
+        }
+    }
+    let (x, z, fill) = wet.expect("a river or lake above the sea");
+    let cp = ChunkPos::of_world(x, z);
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            w.ensure_chunk(ChunkPos {
+                x: cp.x + dx,
+                z: cp.z + dz,
+            });
+        }
+    }
+    let mut water_cells = 0;
+    for dx in -6..=6 {
+        for dz in -6..=6 {
+            for y in crate::chunk::SEA_LEVEL + 2..=fill + 2 {
+                if reg.is_water(w.get_block(x + dx, y, z + dz)) {
+                    water_cells += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        water_cells > 4,
+        "fresh water fills the carve ({water_cells})"
+    );
+
+    // The volcano's magma chamber: lava under the throat.
+    let mut found = None;
+    'v: for r in 0..30 {
+        let d = r * 96;
+        for (x, z) in [
+            (d, 0),
+            (-d, 0),
+            (0, d),
+            (0, -d),
+            (d, d),
+            (-d, -d),
+            (d, -d),
+            (-d, d),
+        ] {
+            if let Some(v) = w.generator.volcano_near(x, z) {
+                found = Some(v);
+                break 'v;
+            }
+        }
+    }
+    let v = found.expect("a volcano within the search ring");
+    w.ensure_chunk(ChunkPos::of_world(v.x, v.z));
+    let mut chamber = 0;
+    for dx in -8..=8 {
+        for dz in -8..=8 {
+            for y in 12..20 {
+                if reg.is_lava(w.get_block(v.x + dx, y, v.z + dz)) {
+                    chamber += 1;
+                }
+            }
+        }
+    }
+    assert!(chamber > 30, "a magma chamber breathes below ({chamber})");
+}
+
+/// Dev tooling, not a check: prints where to find each biome for a
+/// given seed (screenshot framing). Run with:
+/// cargo test print_biome_atlas -- --ignored --nocapture
+#[test]
+#[ignore]
+fn print_biome_atlas() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    for biome in [
+        Biome::Jungle,
+        Biome::Swamp,
+        Biome::Savanna,
+        Biome::Tundra,
+        Biome::Badlands,
+        Biome::Mountains,
+    ] {
+        if let Some((x, z)) = find_biome(&g, biome) {
+            println!(
+                "{}: ({x}, {z}) est {}",
+                biome.name(),
+                g.surface_estimate(x, z)
+            );
+        }
+    }
 }

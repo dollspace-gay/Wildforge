@@ -1114,11 +1114,16 @@ impl HostSession {
                     return;
                 }
                 // Only a full cell fills a bucket — partials would let
-                // a guest mint water out of films.
+                // a guest mint fluid out of films. Either fluid dips.
                 let b = server.world.get_block(x, y, z);
-                if server.world.reg.water_volume(b) != Some(8) {
+                if server.world.reg.fluid_volume(b) != Some(8) {
                     return;
                 }
+                let full_name = if server.world.reg.is_lava(b) {
+                    "base:bucket_lava"
+                } else {
+                    "base:bucket_water"
+                };
                 let Some(empty) = server.world.reg.item_id("base:bucket") else {
                     return;
                 };
@@ -1130,7 +1135,7 @@ impl HostSession {
                 guest.edits += 1;
                 server.world.set_block(x, y, z, crate::registry::AIR);
                 if server.world.mode != "creative"
-                    && let Some(full) = server.world.reg.item_id("base:bucket_water")
+                    && let Some(full) = server.world.reg.item_id(full_name)
                 {
                     guest.inventory.slots[guest.hotbar] =
                         Some(ItemStack::new(&server.world.reg, full, 1));
@@ -1148,9 +1153,15 @@ impl HostSession {
                 let block = selected
                     .and_then(|stack| server.world.reg.item(stack.item).places)
                     .or_else(|| {
-                        let full = server.world.reg.item_id("base:bucket_water")?;
-                        (selected.map(|stack| stack.item) == Some(full))
-                            .then(|| server.world.reg.water_block(0))
+                        let item = selected.map(|stack| stack.item)?;
+                        let reg = &server.world.reg;
+                        if Some(item) == reg.item_id("base:bucket_water") {
+                            Some(reg.water_block(0))
+                        } else if Some(item) == reg.item_id("base:bucket_lava") {
+                            Some(reg.lava_for_volume(8))
+                        } else {
+                            None
+                        }
                     });
                 let Some(block) = block else { return };
                 let overlaps = {
@@ -1162,9 +1173,10 @@ impl HostSession {
                 }
                 guest.edits += 1;
                 if !creative {
-                    if selected.map(|stack| stack.item)
-                        == server.world.reg.item_id("base:bucket_water")
-                    {
+                    let held_item = selected.map(|stack| stack.item);
+                    let full_bucket = held_item == server.world.reg.item_id("base:bucket_water")
+                        || held_item == server.world.reg.item_id("base:bucket_lava");
+                    if full_bucket {
                         if let Some(empty) = server.world.reg.item_id("base:bucket") {
                             guest.inventory.slots[guest.hotbar] =
                                 Some(ItemStack::new(&server.world.reg, empty, 1));

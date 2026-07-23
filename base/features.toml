@@ -1,26 +1,60 @@
+# Ore distribution (minerals & geology): every deposit names its
+# host rock, so where you dig finally matters. Order matters once:
+# quartz veins plant before the gold that lives inside them.
+
+# -- the bronze age stays findable: copper broad, tin generous --
+
 [[feature]]
 type = "ore"
 block = "base:copper_ore"
 replaces = "base:stone"
 vein_size = 7
-per_chunk = 8
+per_chunk = 6
 y_range = [8, 72]
+
+# Porphyry copper: volcanic country runs rich.
+[[feature]]
+type = "ore"
+block = "base:copper_ore"
+replaces = "base:basalt"
+vein_size = 6
+per_chunk = 4
+y_range = [2, 200]
 
 [[feature]]
 type = "ore"
 block = "base:tin_ore"
 replaces = "base:stone"
-vein_size = 5
-per_chunk = 5
+vein_size = 4
+per_chunk = 3
 y_range = [8, 56]
+
+# Cassiterite hugs the granite margins.
+[[feature]]
+type = "ore"
+block = "base:tin_ore"
+replaces = "base:granite"
+vein_size = 5
+per_chunk = 4
+y_range = [8, 64]
 
 [[feature]]
 type = "ore"
 block = "base:iron_ore"
 replaces = "base:stone"
 vein_size = 6
-per_chunk = 4
+per_chunk = 3
 y_range = [4, 48]
+
+# Banded iron through the sedimentary stack.
+[[feature]]
+type = "ore"
+block = "base:iron_ore"
+replaces = "base:shale"
+shape = "seam"
+vein_size = 8
+per_chunk = 3
+y_range = [40, 62]
 
 [[feature]]
 type = "ore"
@@ -34,9 +68,18 @@ y_range = [4, 24]
 type = "ore"
 block = "base:cinnabar_ore"
 replaces = "base:stone"
-vein_size = 4
-per_chunk = 2
+vein_size = 3
+per_chunk = 1
 y_range = [16, 40]
+
+# Cinnabar loves hot ground.
+[[feature]]
+type = "ore"
+block = "base:cinnabar_ore"
+replaces = "base:basalt"
+vein_size = 4
+per_chunk = 3
+y_range = [2, 200]
 
 [[feature]]
 type = "ore"
@@ -45,3 +88,107 @@ replaces = "base:stone"
 vein_size = 3
 per_chunk = 2
 y_range = [4, 16]
+
+# -- the new roster --
+
+# Coal seams: flat lenses in the shale beds.
+[[feature]]
+type = "ore"
+block = "base:coal_ore"
+replaces = "base:shale"
+shape = "seam"
+vein_size = 14
+per_chunk = 4
+y_range = [40, 64]
+
+# Quartz veins streak the basement (planted before their gold).
+[[feature]]
+type = "ore"
+block = "base:quartz_vein"
+shape = "streak"
+replaces = "base:stone"
+vein_size = 14
+per_chunk = 2
+y_range = [8, 52]
+
+[[feature]]
+type = "ore"
+block = "base:quartz_vein"
+shape = "streak"
+replaces = "base:granite"
+vein_size = 12
+per_chunk = 2
+y_range = [8, 70]
+
+# Native gold flecks the quartz, nothing else.
+[[feature]]
+type = "ore"
+block = "base:gold_quartz"
+replaces = "base:quartz_vein"
+vein_size = 4
+per_chunk = 3
+y_range = [8, 70]
+
+# Galena in the cooked limestone of granite contacts (a thinner
+# fallback in plain limestone keeps it findable).
+[[feature]]
+type = "ore"
+block = "base:galena_ore"
+replaces = "base:marble"
+vein_size = 6
+per_chunk = 4
+y_range = [40, 80]
+
+[[feature]]
+type = "ore"
+block = "base:galena_ore"
+replaces = "base:limestone"
+vein_size = 4
+per_chunk = 1
+y_range = [48, 70]
+
+# Chromite in the deep basalt flood and volcanic bodies.
+[[feature]]
+type = "ore"
+block = "base:chromite_ore"
+replaces = "base:basalt"
+vein_size = 4
+per_chunk = 2
+y_range = [2, 200]
+
+# Diamonds exist only inside kimberlite pipes.
+[[feature]]
+type = "ore"
+block = "base:diamond_ore"
+replaces = "base:kimberlite"
+vein_size = 3
+per_chunk = 6
+y_range = [2, 90]
+
+# Pitchblende deep in granite country (tier-6 gated at the block).
+[[feature]]
+type = "ore"
+block = "base:pitchblende_ore"
+replaces = "base:granite"
+vein_size = 3
+per_chunk = 2
+y_range = [2, 36]
+
+# Monazite placers: seams in beach and riverbed sand.
+[[feature]]
+type = "ore"
+block = "base:monazite_sand"
+replaces = "base:sand"
+shape = "seam"
+vein_size = 8
+per_chunk = 2
+y_range = [56, 68]
+
+# Bastnasite threads the carbonatite dikes of volcanic country.
+[[feature]]
+type = "ore"
+block = "base:bastnasite_ore"
+replaces = "base:carbonatite"
+vein_size = 5
+per_chunk = 4
+y_range = [40, 200]

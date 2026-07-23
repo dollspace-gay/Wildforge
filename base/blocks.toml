@@ -703,3 +703,332 @@ texture = "@violet_glass"
 hardness = 0.4
 opaque = false
 glass = true
+
+# ---- minerals & geology: the rock families ----
+
+[[block]]
+id = "sandstone"
+name = "Sandstone"
+texture = "sandstone.png"
+hardness = 1.6
+tool = "pickaxe"
+
+[[block]]
+id = "limestone"
+name = "Limestone"
+texture = "limestone.png"
+hardness = 1.7
+tool = "pickaxe"
+
+[[block]]
+id = "shale"
+name = "Shale"
+texture = "shale.png"
+hardness = 1.4
+tool = "pickaxe"
+
+[[block]]
+id = "granite"
+name = "Granite"
+texture = "granite.png"
+hardness = 2.4
+tool = "pickaxe"
+
+[[block]]
+id = "marble"
+name = "Marble"
+texture = "marble.png"
+hardness = 2.0
+tool = "pickaxe"
+
+[[block]]
+id = "slate"
+name = "Slate"
+texture = "slate.png"
+hardness = 1.8
+tool = "pickaxe"
+
+[[block]]
+id = "quartzite"
+name = "Quartzite"
+texture = "quartzite.png"
+hardness = 2.6
+tool = "pickaxe"
+
+[[block]]
+id = "basalt"
+name = "Basalt"
+texture = "basalt.png"
+hardness = 2.6
+tool = "pickaxe"
+
+[[block]]
+id = "obsidian"
+name = "Obsidian"
+texture = "obsidian.png"
+hardness = 10.0
+tool = "pickaxe"
+min_tier = 4
+
+[[block]]
+id = "kimberlite"
+name = "Kimberlite"
+texture = "kimberlite.png"
+hardness = 2.8
+tool = "pickaxe"
+
+[[block]]
+id = "carbonatite"
+name = "Carbonatite"
+texture = "carbonatite.png"
+hardness = 2.0
+tool = "pickaxe"
+
+[[block]]
+id = "sandstone_bricks"
+name = "Sandstone Bricks"
+texture = "sandstone_bricks.png"
+hardness = 1.8
+tool = "pickaxe"
+
+[[block]]
+id = "limestone_bricks"
+name = "Limestone Bricks"
+texture = "limestone_bricks.png"
+hardness = 1.9
+tool = "pickaxe"
+
+[[block]]
+id = "granite_bricks"
+name = "Granite Bricks"
+texture = "granite_bricks.png"
+hardness = 2.6
+tool = "pickaxe"
+
+[[block]]
+id = "marble_bricks"
+name = "Marble Bricks"
+texture = "marble_bricks.png"
+hardness = 2.2
+tool = "pickaxe"
+
+[[block]]
+id = "slate_bricks"
+name = "Slate Bricks"
+texture = "slate_bricks.png"
+hardness = 2.0
+tool = "pickaxe"
+
+[[block]]
+id = "basalt_bricks"
+name = "Basalt Bricks"
+texture = "basalt_bricks.png"
+hardness = 2.8
+tool = "pickaxe"
+
+[[block]]
+id = "lava"
+name = "Lava"
+texture = "lava.png"
+lava = 0
+item = false
+light = 13
+light_color = [1.0, 0.55, 0.16]
+
+[[block]]
+id = "magma_vent"
+name = "Magma Vent"
+texture = "magma_vent.png"
+hardness = 3.0
+tool = "pickaxe"
+light = 11
+light_color = [1.0, 0.45, 0.12]
+
+[[block]]
+id = "sulfur_ore"
+name = "Sulfur"
+texture = "sulfur_ore.png"
+hardness = 2.2
+tool = "pickaxe"
+drops = "base:sulfur"
+drop_count = 2
+
+[[block]]
+id = "quartz_block"
+name = "Quartz Crystal"
+texture = "quartz_block.png"
+hardness = 2.4
+tool = "pickaxe"
+drops = "base:quartz_shard"
+drop_count = 2
+
+[[block]]
+id = "amethyst_block"
+name = "Amethyst"
+texture = "amethyst_block.png"
+hardness = 2.4
+tool = "pickaxe"
+drops = "base:amethyst_shard"
+drop_count = 2
+
+# ---- minerals & geology: the ore roster ----
+
+[[block]]
+id = "coal_ore"
+name = "Coal Seam"
+texture = "coal_ore.png"
+hardness = 4.0
+tool = "pickaxe"
+requires_tool = true
+drops = "base:coal"
+
+[[block]]
+id = "quartz_vein"
+name = "Quartz Vein"
+texture = "quartz_vein.png"
+hardness = 5.0
+tool = "pickaxe"
+requires_tool = true
+drops = "base:quartz_shard"
+
+[[block]]
+id = "gold_quartz"
+name = "Gold in Quartz"
+texture = "gold_quartz.png"
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 3
+drops = "base:raw_gold"
+bonus_drop = { item = "base:quartz_shard", chance = 0.5 }
+
+[[block]]
+id = "galena_ore"
+name = "Galena"
+texture = "galena_ore.png"
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 3
+drops = "base:raw_galena"
+
+[[block]]
+id = "chromite_ore"
+name = "Chromite"
+texture = "chromite_ore.png"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 4
+drops = "base:raw_chromite"
+
+[[block]]
+id = "diamond_ore"
+name = "Diamond in Kimberlite"
+texture = "diamond_ore.png"
+hardness = 8.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 5
+drops = "base:diamond"
+
+[[block]]
+id = "pitchblende_ore"
+name = "Pitchblende"
+texture = "pitchblende_ore.png"
+hardness = 8.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 6
+drops = "base:raw_pitchblende"
+
+[[block]]
+id = "monazite_sand"
+name = "Monazite Sand"
+texture = "monazite_sand.png"
+hardness = 0.8
+tool = "shovel"
+drops = "base:monazite_grit"
+
+[[block]]
+id = "bastnasite_ore"
+name = "Bastnasite"
+texture = "bastnasite_ore.png"
+hardness = 5.5
+tool = "pickaxe"
+requires_tool = true
+min_tier = 3
+drops = "base:bastnasite"
+
+# ---- minerals & geology: the new glass ----
+
+[[block]]
+id = "green_glass"
+light_filter = [0, 1, 0]
+name = "Emerald Glass"
+texture = "green_glass.png"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "cranberry_glass"
+light_filter = [1, 0, 0]
+name = "Cranberry Glass"
+texture = "cranberry_glass.png"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "yellow_glass"
+light_filter = [1, 1, 0]
+name = "Yellow Glass"
+texture = "yellow_glass.png"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "milk_glass"
+light_filter = [1, 1, 1]
+name = "Milk Glass"
+texture = "milk_glass.png"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "rose_glass"
+light_filter = [1, 0, 1]
+name = "Rose Glass"
+texture = "rose_glass.png"
+hardness = 0.4
+opaque = false
+glass = true
+
+[[block]]
+id = "glow_glass"
+light_filter = [0, 1, 0]
+name = "Glowglass"
+texture = "glow_glass.png"
+hardness = 0.4
+opaque = false
+glass = true
+light = 7
+light_color = [0.45, 1.0, 0.5]
+
+[[block]]
+id = "crystal_glass"
+name = "Crystal Glass"
+texture = "crystal_glass.png"
+hardness = 0.5
+opaque = false
+glass = true
+
+[[block]]
+id = "mud"
+name = "Mud"
+texture = "mud.png"
+hardness = 0.7
+tool = "shovel"

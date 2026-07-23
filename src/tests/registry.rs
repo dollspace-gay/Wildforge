@@ -1230,14 +1230,16 @@ fn content_graph_is_complete_and_obtainable() {
                 grew = true;
             }
         }
-        // The bucket: dip it in any water and it comes up full — a
-        // code path, like shears.
-        if let (Some(b), Some(f)) = (reg.item_id("base:bucket"), reg.item_id("base:bucket_water"))
-            && ok.contains(&b.0)
-            && !ok.contains(&f.0)
-        {
-            ok.insert(f.0);
-            grew = true;
+        // The bucket: dip it in any fluid and it comes up full — a
+        // code path, like shears. Water and lava alike.
+        for full_name in ["base:bucket_water", "base:bucket_lava"] {
+            if let (Some(b), Some(f)) = (reg.item_id("base:bucket"), reg.item_id(full_name))
+                && ok.contains(&b.0)
+                && !ok.contains(&f.0)
+            {
+                ok.insert(f.0);
+                grew = true;
+            }
         }
         if let Some((sand, fuel, clear)) = reg.kiln_base
             && ok.contains(&sand.0)
@@ -1289,4 +1291,41 @@ fn content_graph_is_complete_and_obtainable() {
             assert!(ok.contains(&bf.0), "breed food for {} unobtainable", a.name);
         }
     }
+}
+
+#[test]
+fn the_glass_cabinet_is_complete() {
+    let reg = base_reg();
+    // Eleven colors plus crystal, each fed by its mineral.
+    for (powder, glass) in [
+        ("base:verdigris_powder", "base:teal_glass"),
+        ("base:ochre_powder", "base:amber_glass"),
+        ("base:cobalt_powder", "base:blue_glass"),
+        ("base:cinnabar_powder", "base:red_glass"),
+        ("base:manganese_powder", "base:violet_glass"),
+        ("base:chrome_powder", "base:green_glass"),
+        ("base:raw_gold", "base:cranberry_glass"),
+        ("base:silver_ingot", "base:yellow_glass"),
+        ("base:tin_powder", "base:milk_glass"),
+        ("base:rare_earth_powder", "base:rose_glass"),
+        ("base:uranium_powder", "base:glow_glass"),
+        ("base:lead_ingot", "base:crystal_glass"),
+    ] {
+        let p = it(&reg, powder);
+        let gi = it(&reg, glass);
+        assert!(
+            reg.kiln.iter().any(|(kp, kg)| *kp == p && *kg == gi),
+            "the kiln knows {powder} -> {glass}"
+        );
+        assert!(reg.block(b(&reg, glass)).glass, "{glass} is glass");
+    }
+    // Glowglass emits; crystal is clear of tint filters.
+    let glow = b(&reg, "base:glow_glass");
+    assert!(reg.block(glow).light_emit >= 6, "glowglass glows");
+    let crystal = b(&reg, "base:crystal_glass");
+    assert_eq!(
+        reg.block(crystal).light_filter,
+        [true, true, true],
+        "crystal filters nothing"
+    );
 }
