@@ -1044,6 +1044,12 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(
+            hosted.get("client_id").and_then(serde_json::Value::as_str),
+            Some(
+                "https://dollspace-gay.github.io/Wildforge/atproto-oauth-client-metadata.json"
+            )
+        );
+        assert_eq!(
             hosted.get("scope").and_then(serde_json::Value::as_str),
             Some("atproto repo:gay.dollspace.wildforge.device")
         );

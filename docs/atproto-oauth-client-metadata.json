@@ -1,7 +1,7 @@
 {
-  "client_id": "https://dollspace.gay/wildforge/oauth-client-metadata.json",
+  "client_id": "https://dollspace-gay.github.io/Wildforge/atproto-oauth-client-metadata.json",
   "client_name": "Wildforge",
-  "client_uri": "https://dollspace.gay/",
+  "client_uri": "https://github.com/dollspace-gay/Wildforge",
   "application_type": "native",
   "grant_types": ["authorization_code", "refresh_token"],
   "response_types": ["code"],

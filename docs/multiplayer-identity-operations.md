@@ -131,6 +131,10 @@ or DPoP. The native loopback client profile is used by the binary; the
 production deployment
 payload is `docs/atproto-oauth-client-metadata.json` and must be published at
 its exact HTTPS `client_id` before a hosted-metadata release profile is enabled.
+The production document is served from the `gh-pages` branch's `/docs` folder
+at
+`https://dollspace-gay.github.io/Wildforge/atproto-oauth-client-metadata.json`;
+the JSON identifies that same URL as its `client_id`.
 Linux tests, strict lints, and the `x86_64-pc-windows-gnu` cross-check pass.
 Default tests use local fixtures and mock OAuth/verifier inputs and never
 mutate a public account. Interactive browser handoff plus
@@ -168,7 +172,7 @@ production-ready:
 
 | Manual check | Pass condition | Status |
 |---|---|---|
-| Publish OAuth metadata | Exact checked-in JSON is available over HTTPS at its `client_id` with JSON content type | Blocked: HTTPS endpoint unreachable on 2026-07-23 |
+| Publish OAuth metadata | Exact checked-in JSON is available over HTTPS at its `client_id` with JSON content type | Passed 2026-07-23 via repository-owned GitHub Pages |
 | Linux browser link/revoke | Callback completes; exact device record writes, verifies, deletes, and fails live verification after deletion | Pending consenting account |
 | Windows browser link/revoke | Same sequence, including browser handoff and callback firewall behavior | Partial: browser link/callback succeeded in user testing; revoke and firewall path not signed off |
 | Independent PDS | Link/write/fetch/revoke succeeds outside the common Bluesky PDS | Pending provider/account |

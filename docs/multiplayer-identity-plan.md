@@ -22,14 +22,14 @@ repository device-binding record in the project-controlled
 PDS with an explicitly documented provider-trust boundary. The default suite
 is offline and deterministic.
 
-Live deployment and provider exercises are qualification work, not code that
-can be truthfully completed by an offline test suite. Browser consent plus live
+Live provider exercises are qualification work, not code that can be
+truthfully completed by an offline test suite. Browser consent plus live
 write/fetch/revoke checks on common and independent PDS providers remain
-release gates because they require real consenting accounts. The production
-metadata URL was also unreachable during the 2026-07-23 qualification run and
-must be deployed before enabling a hosted-metadata release profile. Operational
-details, recovery, commands, cache policy, and the interactive matrix are
-recorded in `multiplayer-identity-operations.md`.
+release gates because they require real consenting accounts. Production
+metadata is served from the repository-owned GitHub Pages endpoint recorded in
+the qualification table. Operational details, recovery, commands, cache
+policy, and the interactive matrix are recorded in
+`multiplayer-identity-operations.md`.
 
 This gives public communities persistent moderation identities without making
 players buy an account from Wildforge, while keeping the one-binary,
@@ -837,7 +837,7 @@ The code-side qualification was repeated on 2026-07-23 with Rust/Cargo 1.96.0:
 | `cargo build --release` | Passed; unstripped Linux binary 35,589,240 bytes |
 | Normal dependency graph | 530 unique package lines versus 252 on `origin/main` (278 added) |
 | Dedicated-host smoke | Fresh isolated world started, wrote a persistent host key/settings, and answered `help`, `players`, and `identity` console commands |
-| Production OAuth metadata | `https://dollspace.gay/wildforge/oauth-client-metadata.json` did not accept an HTTPS connection; deployment remains required |
+| Production OAuth metadata | Repository-owned GitHub Pages deployment; exact body and JSON content type verified at the document's `client_id` |
 
 The dependency measurement prompted replacing the Jacquard umbrella crate with
 only `jacquard-common`, `jacquard-identity`, and `jacquard-oauth`. OAuth state
