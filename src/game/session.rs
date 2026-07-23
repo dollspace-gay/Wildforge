@@ -494,6 +494,55 @@ impl Game {
             self.camera.pitch = -0.35;
         }
 
+        // Dev: a dark chamber with a glowglass window and a torch behind
+        // it — emissive glass plus the transmission tint in one frame.
+        if std::env::var("WILDFORGE_DEMO_GLOWGLASS").is_ok()
+            && let Some(glow) = self.content.reg.block_id("base:glow_glass")
+        {
+            let stone = self.content.reg.block_id("base:stone").unwrap_or(AIR);
+            let torch = self.content.reg.block_id("base:torch").unwrap_or(AIR);
+            let (bx, bz) = (spawn.x as i32, spawn.z as i32 + 8);
+            for dx in [-8i32, 0, 8] {
+                for dz in [-8i32, 0, 8] {
+                    self.server
+                        .world
+                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                }
+            }
+            let yf = (-5..=5)
+                .flat_map(|dx| (-4..=4).map(move |dz| (dx, dz)))
+                .map(|(dx, dz)| self.server.world.surface_height(bx + dx, bz + dz))
+                .max()
+                .unwrap_or(spawn.y as i32);
+            for dx in -4..=4i32 {
+                for dz in -3..=3i32 {
+                    for dy in 0..=4i32 {
+                        let edge = dx.abs() == 4 || dz.abs() == 3 || dy == 0 || dy == 4;
+                        let b = if edge { stone } else { AIR };
+                        self.server
+                            .world
+                            .set_block(bx + dx, yf + 1 + dy, bz + dz, b);
+                    }
+                }
+            }
+            // The window in the far wall, glowing green.
+            for dx in -2..=2i32 {
+                for dy in 2..=3i32 {
+                    self.server
+                        .world
+                        .set_block(bx + dx, yf + 1 + dy, bz + 3, glow);
+                }
+            }
+            // A torch on the outside sill: its beam crosses the pane.
+            self.server.world.set_block(bx, yf + 2, bz + 5, torch);
+            let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.2, bz as f32 - 1.5);
+            self.player.pos = stand;
+            self.survival.spawn_point = stand;
+            self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.camera.yaw = std::f32::consts::FRAC_PI_2;
+            self.camera.pitch = 0.05;
+        }
+
         // Dev: a stone wall lit from the side for authored-normal verification.
         if std::env::var("WILDFORGE_DEMO_ROCK").is_ok()
             && let Some(stone) = self.content.reg.block_id("base:stone")

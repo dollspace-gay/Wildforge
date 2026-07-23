@@ -1,5 +1,37 @@
 # Minerals & geology — the ground earns its keep
 
+Drafted 2026-07-23, **IMPLEMENTED** 2026-07-23, all eight stages.
+Notes vs. this spec, where the implementation knew better:
+
+- **Crucibles fire in the furnace**, not the kiln — a one-line smelt
+  beside new kiln plumbing wasn't a contest; any hot chamber fires a
+  cupel. The kiln's colorant slot, though, took over more than
+  planned: **raw gold**, the **silver ingot**, and the **lead
+  ingot** ride it directly (cranberry, yellow, crystal) — so yellow
+  glass and crystal both genuinely require the cupellation chain.
+- **Magma pockets are sealed chambers**, not open lava caves: where
+  the deep cheese noise merely swells, the rock holds lava you mine
+  into — better drama, and the open-cave threshold almost never
+  fired below y 11 anyway.
+- **Crystal clarity is the tile's alpha** (45 vs ~90 for common
+  glass) plus the blended pass's existing sun glint — no shader
+  work needed.
+- Both rare-earth ores grind to one shared powder as planned;
+  bastnasite drops its own lump (richer per grind than monazite).
+- Volcanoes keep the existing snowcap rule at altitude — a
+  snow-shouldered cone with a glowing crater reads exactly right.
+- The base mod now ships PNG tiles through the standard mod-texture
+  pipeline (`base/textures/`, `tools/gen_base_tiles.py`, 62 tiles),
+  which also lifted a stale 256-slot mod-texture cap from the
+  16-wide atlas era. `ModInfo.path` for base points at the repo's
+  `base/` dir (the game runs from the repo root; README says so).
+- Geode/pipe/volcano locators (`pipe_at`, `geode_at`,
+  `volcano_near`) are pub so tests find structures without
+  generating hundreds of chunks.
+- The remaining aspirational screenshot (a cracked geode in situ)
+  is deferred to reveal material; strata terraces, the volcano
+  cone with its glowing crater, and the glowglass chamber shipped.
+
 Drafted 2026-07-23. Decisions settled with dollspace: **full strata**
 (real rock families replace uniform stone), **finite lava this pass**
 (second fluid on the water engine's rails), **diamonds are craft
