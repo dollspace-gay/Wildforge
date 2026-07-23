@@ -1701,3 +1701,95 @@ fn snow_trod_swaps_persists_melts_and_drops() {
         "remote worlds wait for the echo"
     );
 }
+
+#[test]
+fn settle_spawn_frees_buried_and_dug_out_spawns() {
+    let reg = base_reg();
+    let mut w = test_world_with("settlespawn", reg.clone());
+    let stone = b(&reg, "base:stone");
+    let h = w.surface_height(4, 4);
+
+    // A valid standing spot comes back untouched (bedroll exactness).
+    let stand = Vec3::new(4.5, (h + 1) as f32 + 0.2, 4.5);
+    assert_eq!(w.settle_spawn(stand), stand);
+
+    // Built over: a hill grows across the spawn cells. The player
+    // must come out of the solid, standing on real ground.
+    for y in (h + 1)..=(h + 6) {
+        w.set_block(4, y, 4, stone);
+    }
+    let freed = w.settle_spawn(stand);
+    let fy = freed.y.floor() as i32;
+    assert!(!reg.is_solid(w.get_block(4, fy, 4)), "feet clear");
+    assert!(!reg.is_solid(w.get_block(4, fy + 1, 4)), "head clear");
+    assert!(reg.is_solid(w.get_block(4, fy - 1, 4)), "ground underfoot");
+
+    // Dug out: the floor under a high spawn is mined away — settle
+    // down to the first real floor instead of leaving a free-fall.
+    let (px, pz) = (10, 10);
+    let ph = w.surface_height(px, pz);
+    w.set_block(px, ph + 8, pz, stone);
+    let perch = Vec3::new(px as f32 + 0.5, (ph + 9) as f32 + 0.2, pz as f32 + 0.5);
+    assert_eq!(w.settle_spawn(perch), perch, "platform stand is valid");
+    w.set_block(px, ph + 8, pz, AIR);
+    let landed = w.settle_spawn(perch);
+    let ly = landed.y.floor() as i32;
+    assert!(ly < ph + 9, "came down off the vanished platform");
+    assert!(
+        reg.is_solid(w.get_block(px, ly - 1, pz)),
+        "onto real ground"
+    );
+
+    // A column sealed solid from bedrock to sky: walk to a neighbor
+    // column rather than teleporting into the fill.
+    let (qx, qz) = (20, 20);
+    let qh = w.surface_height(qx, qz);
+    for y in 1..crate::chunk::CHUNK_Y as i32 - 1 {
+        w.set_block(qx, y, qz, stone);
+    }
+    let sealed = Vec3::new(qx as f32 + 0.5, (qh + 1) as f32 + 0.2, qz as f32 + 0.5);
+    let moved = w.settle_spawn(sealed);
+    let (mx, mz) = (moved.x.floor() as i32, moved.z.floor() as i32);
+    let my = moved.y.floor() as i32;
+    assert!((mx, mz) != (qx, qz), "left the sealed column");
+    assert!(!reg.is_solid(w.get_block(mx, my, mz)), "feet clear");
+    assert!(
+        reg.is_solid(w.get_block(mx, my - 1, mz)),
+        "ground underfoot"
+    );
+}
+
+#[test]
+fn free_position_rescues_embedded_but_leaves_air_and_water_alone() {
+    let reg = base_reg();
+    let mut w = test_world_with("freepos", reg.clone());
+    let stone = b(&reg, "base:stone");
+    let h = w.surface_height(4, 4);
+
+    // Embedded in a hill: rescued to clear cells.
+    for y in (h + 1)..=(h + 5) {
+        w.set_block(4, y, 4, stone);
+    }
+    let buried = Vec3::new(4.5, (h + 2) as f32 + 0.2, 4.5);
+    let freed = w.free_position(buried);
+    let fy = freed.y.floor() as i32;
+    assert!(!reg.is_solid(w.get_block(4, fy, 4)), "feet freed");
+    assert!(!reg.is_solid(w.get_block(4, fy + 1, 4)), "head freed");
+
+    // A legitimate mid-air save is not touched (physics owns falling).
+    let midair = Vec3::new(10.5, (h + 20) as f32, 10.5);
+    assert_eq!(w.free_position(midair), midair);
+
+    // A swimmer stays floating where they saved: build a water shaft
+    // and confirm no teleport to its floor.
+    for y in (h + 1)..=(h + 4) {
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            w.set_block(15 + dx, y, 15 + dz, stone);
+        }
+    }
+    for y in (h + 1)..=(h + 4) {
+        w.set_block(15, y, 15, reg.water_block(0));
+    }
+    let swimming = Vec3::new(15.5, (h + 3) as f32 + 0.5, 15.5);
+    assert_eq!(w.free_position(swimming), swimming, "swimmers float on");
+}

@@ -108,25 +108,11 @@ impl Game {
         if let Some(remote) = &self.multiplayer.remote {
             remote.client.send(&net::C2S::Respawn);
         }
-        self.player = Player::new(self.survival.spawn_point);
-        // A dug-out or collapsed spawn column: come to on the first
-        // ground below instead of free-falling to a second death.
-        let (sx, sz) = (
-            self.survival.spawn_point.x.floor() as i32,
-            self.survival.spawn_point.z.floor() as i32,
-        );
-        self.server.world.ensure_chunk(ChunkPos::of_world(sx, sz));
-        let sy = (self.survival.spawn_point.y.floor() as i32).clamp(0, chunk::CHUNK_Y as i32 - 1);
-        let ground = (0..=sy).rev().find(|&y| {
-            self.content
-                .reg
-                .is_solid(self.server.world.get_block(sx, y, sz))
-        });
-        if let Some(g) = ground
-            && self.survival.spawn_point.y - g as f32 > 4.0
-        {
-            self.player.pos.y = g as f32 + 1.05;
-        }
+        // The stored spawn can be stale in both directions — built
+        // over (you'd wake inside a hill) or dug out (you'd wake in
+        // free fall). Settle it into a real standing spot first.
+        let spawn = self.server.world.settle_spawn(self.survival.spawn_point);
+        self.player = Player::new(spawn);
         self.survival.health = self.max_health();
         self.survival.hunger = 20.0;
         self.survival.air = MAX_AIR;
