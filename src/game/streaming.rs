@@ -3,6 +3,43 @@
 use super::*;
 
 impl Game {
+    /// Outstanding generation/remesh work used to settle deterministic
+    /// headless captures before the screenshot fires.
+    pub(super) fn chunk_work_pending(&self) -> usize {
+        if !self.in_world {
+            return 0;
+        }
+        let pcx = (self.player.pos.x.floor() as i32).div_euclid(CHUNK_X as i32);
+        let pcz = (self.player.pos.z.floor() as i32).div_euclid(CHUNK_X as i32);
+        let vd = self.config.view_dist;
+        let mut pending = 0;
+        for dx in -vd..=vd {
+            for dz in -vd..=vd {
+                if !self.server.world.has_chunk(ChunkPos {
+                    x: pcx + dx,
+                    z: pcz + dz,
+                }) {
+                    pending += 1;
+                }
+            }
+        }
+        pending
+            + self
+                .server
+                .world
+                .dirty_chunks()
+                .into_iter()
+                .filter(|pos| {
+                    [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().all(|(dx, dz)| {
+                        self.server.world.has_chunk(ChunkPos {
+                            x: pos.x + dx,
+                            z: pos.z + dz,
+                        })
+                    })
+                })
+                .count()
+    }
+
     pub(super) fn stream_chunks(&mut self) {
         let pcx = (self.player.pos.x.floor() as i32).div_euclid(CHUNK_X as i32);
         let pcz = (self.player.pos.z.floor() as i32).div_euclid(CHUNK_X as i32);

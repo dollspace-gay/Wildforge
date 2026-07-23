@@ -189,6 +189,36 @@ around it; the effect keys strictly off what's brighter than white,
 so lit-but-not-glowing stone never smears. BLOOM is a settings toggle
 of its own.
 
+## Surface relief
+
+Blocks carry surface data in a second *material atlas* beside the color
+one (same tiles, linear data), which drives two effects — both opt-in
+*per texture*, both untouched on tiles a pack repaints:
+
+- **Relief lighting.** The material's height channel feeds parallax
+  occlusion mapping *and* a height-derived surface normal, so recessed
+  detail shifts with the viewpoint **and** catches light on its walls:
+  a cobblestone wall's stones bulge and its mortar pools shadow under a
+  torch, cave rock reads as rough. Rock and cobble get their height for
+  free from their own albedo luminance — no hand-authored map needed.
+- **Translucent interior.** A block can also declare an *internal*
+  layer that sits below a see-through surface and parallaxes deeper than
+  it, so you look *into* the material and the structure slides beneath
+  the top as you move. **Ice** uses it: a smooth surface over a cloudy
+  internal lattice of frost fractures, suspended at depth.
+
+- **Authored normal maps.** A pack can drop a companion map beside any
+  tile — `stone.png` plus `stone_n.png` (normal) and `stone_h.png`
+  (height) — and that tile lights by what its author drew instead of
+  what the engine could infer. Normals live in their own atlas in the
+  standard OpenGL tangent-space encoding, so a stock or
+  model-generated map works unmodified. Height-derived relief stays the
+  free default for everything that doesn't ship one.
+
+The `hewn` pack is the worked example, and
+`tools/split_material_sheet.py` turns the albedo/height/normal contact
+sheet an image model gives you into the three files a pack wants.
+
 ## Game feel
 
 The feedback skin, tuned to the game's quiet register: every effect

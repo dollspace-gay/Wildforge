@@ -65,15 +65,16 @@ impl Game {
                         let _ = std::fs::write(p, bytes);
                     }
                     self.content.reg = Arc::new(registry::load(&cache));
-                    let (mut data, px, warns) = atlas::build_atlas(
+                    let mut atlas = atlas::build_atlas(
                         &self.content.reg.tex_files,
                         pack_source_of(&self.active_pack_id()),
                         &self.content.reg.tex_names,
                     );
-                    atlas::season_tint(&mut data, px, self.server.world.season());
+                    atlas::season_tint(&mut atlas.color, atlas.px, self.server.world.season());
                     self.presentation.atlas_season = self.server.world.season();
-                    self.content.pack_warnings = warns;
-                    self.renderer.set_atlas(&data, px);
+                    self.content.pack_warnings = atlas.warnings;
+                    self.renderer
+                        .set_atlas(&atlas.color, &atlas.material, &atlas.normal, atlas.px);
                     self.toast("Synced the host's mods.".to_string());
                 }
                 net::S2C::Welcome {
@@ -136,14 +137,14 @@ impl Game {
                         .world
                         .insert_remote_chunk(ChunkPos { x, z }, &rle, &r.block_map);
                 }
-                net::S2C::BlockSet { x, y, z, id } => {
+                net::S2C::BlockSet { x, y, z, id, meta } => {
                     let local = r
                         .block_map
                         .get(id as usize)
                         .copied()
                         .unwrap_or(self.content.reg.unknown_block);
                     let old = self.server.world.get_block(x, y, z);
-                    self.server.world.set_block(x, y, z, local);
+                    self.server.world.set_block_meta(x, y, z, local, meta);
                     self.server.world.clear_pending_drops();
                     // Someone broke something: the world crumbles for
                     // everyone watching.

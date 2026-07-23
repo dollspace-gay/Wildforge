@@ -1,6 +1,295 @@
 //! World persistence, block mutation, ticks, fluids, lighting, and weather.
 
 use super::*;
+use std::collections::HashMap;
+
+#[test]
+fn octant_meta_roundtrips_through_save() {
+    let reg = base_reg();
+    let mut world = test_world_with("octsave", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    world.set_block_meta(2, 75, 2, sand, 0b1010_0101);
+    world.set_block(3, 75, 3, sand);
+    world.save_modified();
+
+    let mut loaded = World::load_or_create(world.save_dir_for_test(), reg);
+    for x in -2..=2 {
+        for z in -2..=2 {
+            loaded.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    assert_eq!(loaded.get_meta(2, 75, 2), 0b1010_0101);
+    assert_eq!(loaded.get_meta(3, 75, 3), 0xff);
+}
+
+#[test]
+fn octant_mesh_emits_per_filled_octant() {
+    let reg = base_reg();
+    let mut world = test_world_with("octmesh", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let pos = ChunkPos { x: 0, z: 0 };
+    let (x, y, z) = (8, 200, 8);
+    let baseline = crate::mesher::mesh_chunk(&world, pos).opaque_verts.len();
+    world.set_block_meta(x, y, z, sand, 1);
+    let one = crate::mesher::mesh_chunk(&world, pos).opaque_verts.len();
+    assert_eq!(one - baseline, 6 * 4);
+    world.set_block(x, y, z, sand);
+    let full = crate::mesher::mesh_chunk(&world, pos).opaque_verts.len();
+    assert_eq!(full - baseline, 6 * 4);
+}
+
+#[test]
+fn octant_collision_is_sub_cell() {
+    let reg = base_reg();
+    let mut world = test_world_with("octcol", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let idle = Input {
+        forward: 0.0,
+        strafe: 0.0,
+        jump: false,
+        sprint: false,
+    };
+    let y = 190;
+    world.set_block(0, y, 0, sand);
+    let mut player = Player::new(Vec3::new(0.5, y as f32 + 5.0, 0.5));
+    for _ in 0..400 {
+        player.update(&world, &idle, Vec3::Z, Vec3::X, 1.0 / 60.0);
+    }
+    assert!(player.on_ground);
+    assert!((player.pos.y - (y as f32 + 1.0)).abs() < 0.05);
+
+    world.set_block_meta(0, y, 0, sand, 0b0000_1111);
+    let mut player = Player::new(Vec3::new(0.5, y as f32 + 5.0, 0.5));
+    for _ in 0..400 {
+        player.update(&world, &idle, Vec3::Z, Vec3::X, 1.0 / 60.0);
+    }
+    assert!(player.on_ground);
+    assert!((player.pos.y - (y as f32 + 0.5)).abs() < 0.05);
+}
+
+fn sand_volume(world: &World, sand: crate::registry::BlockId, y: i32) -> u32 {
+    let mut volume = 0;
+    for x in -8..9 {
+        for z in -8..9 {
+            for yy in (y - 4)..(y + 6) {
+                if world.get_block(x, yy, z) == sand {
+                    volume += world.get_meta(x, yy, z).count_ones();
+                }
+            }
+        }
+    }
+    volume
+}
+
+#[test]
+fn relax_flat_sand_is_stable() {
+    let reg = base_reg();
+    let mut world = test_world_with("flatsand", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let y = 100;
+    for x in -4..=4 {
+        for z in -4..=4 {
+            world.set_block(x, y, z, sand);
+        }
+    }
+    let before = sand_volume(&world, sand, y);
+    assert!(!world.relax_sand(sand, 0, 0, y, 1, 0));
+    assert_eq!(sand_volume(&world, sand, y), before);
+}
+
+#[test]
+fn relax_slope_flows_downhill_conserving() {
+    let reg = base_reg();
+    let mut world = test_world_with("slopesand", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let stone = b(&reg, "base:stone");
+    let y = 100;
+    for x in -1..=6 {
+        for z in -1..=3 {
+            world.set_block(x, y - 1, z, stone);
+        }
+    }
+    for x in 0..=1 {
+        for z in 0..=1 {
+            for height in 0..3 {
+                world.set_block(x, y + height, z, sand);
+            }
+        }
+    }
+    let before = sand_volume(&world, sand, y);
+    for _ in 0..40 {
+        world.relax_sand(sand, 2, 1, y, 5, 0);
+    }
+    assert_eq!(sand_volume(&world, sand, y), before);
+    assert!((2..=5).any(|x| (0..=1).any(|z| world.get_block(x, y, z) == sand)));
+    assert_ne!(world.get_block(0, y + 2, 0), sand);
+}
+
+#[test]
+fn walking_player_slumps_a_lip_via_sim() {
+    let reg = base_reg();
+    let mut world = test_world_with("walklip", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let y = 100;
+    for x in -3..=9 {
+        for z in -3..=3 {
+            world.set_block(x, y, z, sand);
+        }
+    }
+    for x in 1..=2 {
+        for z in -3..=3 {
+            world.set_block(x, y + 1, z, sand);
+        }
+    }
+    let lip_cells = |world: &World| {
+        (1..=2)
+            .flat_map(|x| (-3..=3).map(move |z| (x, z)))
+            .filter(|&(x, z)| world.get_meta(x, y + 1, z) == 0xff)
+            .count()
+    };
+    let before = sand_volume(&world, sand, y);
+    let lip_before = lip_cells(&world);
+    let mut server = crate::server::Server::new(world, 0.3, 42);
+    let mut x = 0.5;
+    for _ in 0..70 {
+        x += 0.1;
+        server.advance(
+            crate::server::TICK,
+            &[crate::server::PlayerCtx {
+                pos: Vec3::new(x, y as f32 + 1.0, 0.5),
+                spawn: Vec3::ZERO,
+                attackable: false,
+                aggro_mod: 0.0,
+            }],
+            &mut Vec::new(),
+        );
+    }
+    assert_eq!(sand_volume(&server.world, sand, y), before);
+    assert!(lip_cells(&server.world) < lip_before);
+}
+
+#[test]
+fn airborne_player_does_not_disturb_sand() {
+    let reg = base_reg();
+    let mut world = test_world_with("airborne", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let stone = b(&reg, "base:stone");
+    let y = 100;
+    for x in -1..=3 {
+        for z in -1..=3 {
+            world.set_block(x, y - 1, z, stone);
+        }
+    }
+    for height in 0..3 {
+        world.set_block(1, y + height, 1, sand);
+    }
+    let before = sand_volume(&world, sand, y);
+    let touched = HashMap::from([((1, 1), 1.0)]);
+    assert!(!world.disturb_sand_touched(sand, Vec3::new(1.5, (y + 5) as f32, 1.5), &touched,));
+    assert_eq!(sand_volume(&world, sand, y), before);
+}
+
+#[test]
+fn wake_leaves_sand_ahead_untouched() {
+    let reg = base_reg();
+    let mut world = test_world_with("ahead", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let y = 100;
+    for x in -2..=6 {
+        for z in -2..=2 {
+            world.set_block(x, y, z, sand);
+        }
+    }
+    for z in -2..=2 {
+        world.set_block(2, y + 1, z, sand);
+    }
+    let before = sand_volume(&world, sand, y);
+    let lip_before = world.get_meta(2, y + 1, 0);
+    let touched = HashMap::from([((0, 0), 1.0)]);
+    let feet = Vec3::new(0.5, (y + 1) as f32, 0.5);
+    for _ in 0..30 {
+        world.disturb_sand_touched(sand, feet, &touched);
+    }
+    assert_eq!(sand_volume(&world, sand, y), before);
+    assert_eq!(world.get_meta(2, y + 1, 0), lip_before);
+}
+
+#[test]
+fn wake_leaves_a_tall_wall_standing() {
+    let reg = base_reg();
+    let mut world = test_world_with("wall", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let y = 100;
+    for x in -3..=3 {
+        for z in -3..=3 {
+            world.set_block(x, y, z, sand);
+        }
+    }
+    for height in 1..=3 {
+        for z in -1..=1 {
+            world.set_block(-1, y + height, z, sand);
+        }
+    }
+    let before = sand_volume(&world, sand, y);
+    let touched = HashMap::from([((0, 0), 1.0)]);
+    let feet = Vec3::new(0.5, (y + 1) as f32, 0.5);
+    for _ in 0..40 {
+        world.disturb_sand_touched(sand, feet, &touched);
+    }
+    assert_eq!(sand_volume(&world, sand, y), before);
+    assert_eq!(world.get_block(-1, y + 3, 0), sand);
+}
+
+#[test]
+fn sand_does_not_flow_into_water() {
+    let reg = base_reg();
+    let mut world = test_world_with("sandwater", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let stone = b(&reg, "base:stone");
+    let water = b(&reg, "base:water");
+    let y = 100;
+    for x in -1..=3 {
+        for z in -1..=1 {
+            world.set_block(x, y - 1, z, stone);
+        }
+    }
+    for height in 0..3 {
+        world.set_block(0, y + height, 0, sand);
+    }
+    world.set_block(1, y, 0, water);
+    let before = sand_volume(&world, sand, y);
+    let touched = HashMap::from([((0, 0), 1.0)]);
+    let feet = Vec3::new(0.5, (y + 3) as f32, 0.5);
+    for _ in 0..40 {
+        world.disturb_sand_touched(sand, feet, &touched);
+    }
+    assert_eq!(world.get_block(1, y, 0), water);
+    assert_eq!(sand_volume(&world, sand, y), before);
+}
+
+#[test]
+fn flow_never_buries_the_player() {
+    let reg = base_reg();
+    let mut world = test_world_with("nobury", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let y = 100;
+    for x in -3..=3 {
+        for z in -3..=3 {
+            world.set_block(x, y, z, sand);
+        }
+    }
+    for z in -1..=1 {
+        world.set_block(-1, y + 1, z, sand);
+    }
+    let before = sand_volume(&world, sand, y);
+    let touched = HashMap::from([((0, 0), 1.0)]);
+    let feet = Vec3::new(0.5, (y + 1) as f32, 0.5);
+    for _ in 0..40 {
+        world.disturb_sand_touched(sand, feet, &touched);
+    }
+    assert_eq!(sand_volume(&world, sand, y), before);
+    assert!(world.get_meta(0, y + 1, 0) == 0 || world.get_block(0, y + 1, 0) != sand);
+}
 
 #[test]
 fn block_edit_fans_out_through_one_authoritative_boundary() {
@@ -21,7 +310,7 @@ fn block_edit_fans_out_through_one_authoritative_boundary() {
     w.set_block(0, 200, 4, stone);
     assert_eq!(w.get_block(0, 200, 4), stone);
     assert!(w.chunks()[&here].dirty && w.chunks()[&west].dirty);
-    assert_eq!(w.edits().last(), Some(&(0, 200, 4, stone)));
+    assert_eq!(w.edits().last(), Some(&(0, 200, 4, stone, 0)));
 
     let chest = b(&reg, "base:chest");
     let stick = it(&reg, "base:stick");
@@ -98,7 +387,7 @@ fn pre_v3_saves_regenerate_cleanly() {
     w.set_block(1, 100, 1, b(&reg, "base:planks"));
     w.save_modified();
     let bytes = std::fs::read(w.save_dir_for_test().join("c.0.0.wfc")).unwrap();
-    assert!(bytes.starts_with(b"WFC3"), "saves are written as v3 now");
+    assert!(bytes.starts_with(b"WFC4"), "saves are written as v4 now");
 }
 
 #[test]

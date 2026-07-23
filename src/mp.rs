@@ -164,8 +164,14 @@ impl HostSession {
 
         // Authoritative block edits out.
         if !server.world.edits().is_empty() {
-            for (x, y, z, b) in server.world.take_edits() {
-                self.net.broadcast(&S2C::BlockSet { x, y, z, id: b.0 });
+            for (x, y, z, b, meta) in server.world.take_edits() {
+                self.net.broadcast(&S2C::BlockSet {
+                    x,
+                    y,
+                    z,
+                    id: b.0,
+                    meta,
+                });
             }
         }
         // Items owed to guests (arrow recovery, mining, mob drops,

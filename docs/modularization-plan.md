@@ -49,9 +49,10 @@ cosmetic randomness or GPU state back into world behavior.
   internal API; it does not create a separately versioned engine crate.
 - **No gameplay changes in either pass.** If a discovered behavior deserves a
   fix, record it and land it separately so the refactor remains reviewable.
-- **No save or wire changes.** `WFC3`, palettes, player/entity files, mod
-  storage, protocol 9, message cadence, and host/guest trust semantics remain
-  byte- and behavior-compatible.
+- **No save or wire changes introduced by this refactor.** The current `WFC4`
+  metadata format (with `WFC3` read compatibility), palettes, player/entity
+  files, mod storage, protocol 10, message cadence, and host/guest trust
+  semantics remain byte- and behavior-compatible with the refactor baseline.
 - **No speculative abstractions.** A trait needs more than one real
   implementation or a demonstrated testing seam. A new state object must own
   an invariant, not merely shorten a field list.
@@ -235,7 +236,7 @@ src/world/
   mod.rs                # World and shared domain types, core block access
   calendar.rs           # weather/season/ire/offering rules
   chunks.rs             # ensure/load chunks, structures, remote chunk insert
-  persistence.rs        # metadata, palettes, WFC3, entities, mobs, stamps
+  persistence.rs        # metadata, palettes, WFC4/WFC3, entities, mobs, stamps
   lighting.rs           # RGB block light, skylight, relight cascades
   fluids.rs             # finite-water queue and flow
   machines.rs           # furnaces, bloomery, kiln, clamp, anvil, falling blocks
@@ -365,7 +366,7 @@ tests where the existing suite is too broad or indirect:
 - container transactions remain identical between local and remote paths.
 
 Prefer observable assertions over tests of private call order. Golden bytes
-are appropriate for the protocol and WFC3 codec; state snapshots are better
+are appropriate for the protocol and WFC4 codec; state snapshots are better
 for simulation behavior.
 
 ### 2. Extract cohesive client state
@@ -629,8 +630,9 @@ interior-mutability workarounds.
 ### Verification record
 
 The baseline before structural work was 138 passing tests and one ignored
-diagnostic. The completed tree has 143 tests: 142 pass and the same diagnostic
-remains ignored. New characterization coverage protects pause/host behavior,
+diagnostic. After reconciling the completed refactor with the current engine,
+the tree has 158 tests: 157 pass and the same diagnostic remains ignored. New
+characterization coverage protects pause/host behavior,
 guest-world authority, simulation/presentation RNG separation, and the complete
 fan-out of an authoritative block edit.
 
@@ -639,7 +641,7 @@ Final automated gates:
 ```text
 cargo fmt --all -- --check                         PASS
 cargo clippy --all-targets --all-features -- -D warnings  PASS
-cargo test                                         PASS (142 passed, 1 ignored)
+cargo test                                         PASS (157 passed, 1 ignored)
 git diff --check                                   PASS
 ```
 
@@ -652,7 +654,7 @@ Runtime smoke evidence:
   metadata in an isolated save root;
 - protocol and windowed-host loopback join/stream/edit behavior passed the
   in-process networking test;
-- WFC3/palette/remap, metadata, block entities and machines, mobs, and registry
+- WFC4/WFC3 palette/remap, metadata, block entities and machines, mobs, and registry
   hot-remap save/reload paths passed their round-trip tests.
 
 The smoke runs used disposable directories and did not modify repository save

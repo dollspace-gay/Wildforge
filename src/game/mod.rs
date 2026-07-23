@@ -20,6 +20,9 @@ mod ui;
 use crate::*;
 const GEN_BUDGET: usize = 4; // chunk generations per frame (256-tall gen is pricey)
 const MESH_BUDGET: usize = 6; // chunk remeshes per frame
+const SHOT_SETTLE_FRAMES: u64 = 10;
+const SHOT_FIXED_DT: f32 = 1.0 / 60.0;
+const SHOT_MAX_FRAMES: u64 = 3000;
 const REACH: f32 = 5.0;
 const MAX_HEALTH: f32 = 14.0; // base half-hearts (7 hearts)
 const MAX_AIR: f32 = 15.0; // seconds of breath
@@ -366,6 +369,8 @@ struct Game {
     time_abs: f32,
 
     total_frames: u64,
+    settled_frames: u64,
+    shot_at: Option<u64>,
     /// Your chosen look (config `appearance`, style.rs palettes).
     style: style::Style,
     auto_shot: Option<String>,
@@ -495,12 +500,15 @@ impl Game {
         // Dev override (never persisted): WILDFORGE_PACK=<id> selects a pack.
         let pack_override = std::env::var("WILDFORGE_PACK").ok();
         let active_pack = pack_override.clone().unwrap_or_else(|| config.pack.clone());
-        let (atlas_data, atlas_px, pack_warnings) =
+        let atlas =
             atlas::build_atlas(&reg.tex_files, pack_source_of(&active_pack), &reg.tex_names);
+        let pack_warnings = atlas.warnings;
         let renderer = pollster::block_on(renderer::Renderer::new(
             window.clone(),
-            atlas_data,
-            atlas_px,
+            atlas.color,
+            atlas.material,
+            atlas.normal,
+            atlas.px,
         ));
         let mut scripts = script::ScriptHost::new();
         scripts.load_mods(&script_mod_dirs(&reg));
@@ -542,11 +550,15 @@ impl Game {
             survival: SurvivalState::new(spawn),
             interaction: InteractionState::default(),
             presentation: PresentationState::new(),
-            rng: 0x1234_5678
-                ^ std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.subsec_nanos())
-                    .unwrap_or(0),
+            rng: if std::env::var("WILDFORGE_SHOT").is_ok() {
+                0x1234_5678
+            } else {
+                0x1234_5678
+                    ^ std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.subsec_nanos())
+                        .unwrap_or(0)
+            },
             content: ContentRuntime {
                 reg,
                 scripts,
@@ -566,6 +578,8 @@ impl Game {
             last_space: -9.0,
             time_abs: 0.0,
             total_frames: 0,
+            settled_frames: 0,
+            shot_at: None,
             style: own_style,
             auto_shot: std::env::var("WILDFORGE_SHOT").ok(),
             last_frame: Instant::now(),

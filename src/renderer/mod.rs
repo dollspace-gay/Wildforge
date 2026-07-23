@@ -18,6 +18,7 @@ mod resources;
 mod setup;
 
 use post::*;
+use resources::{atlas_bind_group, upload_atlas};
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]

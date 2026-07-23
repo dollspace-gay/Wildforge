@@ -8,6 +8,9 @@ pub const PLAYER_HALF_W: f32 = 0.3;
 pub const PLAYER_HEIGHT: f32 = 1.8;
 pub const EYE_HEIGHT: f32 = 1.62;
 
+/// How high the player auto-steps when walking into a low ledge (octant sand,
+/// slabs). Below a full block so 1-tall walls still stop you.
+const STEP_HEIGHT: f32 = 0.55;
 const GRAVITY: f32 = 28.0;
 const JUMP_SPEED: f32 = 8.6;
 const WALK_SPEED: f32 = 4.4;
@@ -110,10 +113,11 @@ impl Player {
 
         // Move axis-by-axis with collision resolution.
         let d = self.vel * dt;
+        let was_ground = self.on_ground;
         self.on_ground = false;
         self.pushed_wall = false;
-        self.move_axis(world, Vec3::new(d.x, 0.0, 0.0));
-        self.move_axis(world, Vec3::new(0.0, 0.0, d.z));
+        self.walk_axis(world, Vec3::new(d.x, 0.0, 0.0), was_ground);
+        self.walk_axis(world, Vec3::new(0.0, 0.0, d.z), was_ground);
         self.move_axis(world, Vec3::new(0.0, d.y, 0.0));
 
         // Void safety: respawn above surface if fallen out.
@@ -150,13 +154,66 @@ impl Player {
         for x in x0..=x1 {
             for y in y0..=y1 {
                 for z in z0..=z1 {
-                    if world.reg.is_solid(world.get_block(x, y, z)) {
+                    let b = world.get_block(x, y, z);
+                    if !world.reg.is_solid(b) {
+                        continue;
+                    }
+                    if !world.reg.block(b).sub_voxel {
                         return true;
+                    }
+                    // Sub-voxel block: collide against each filled octant's
+                    // half-cube instead of the whole cell.
+                    let mask = world.get_meta(x, y, z);
+                    for o in 0..8u32 {
+                        if mask & (1 << o) == 0 {
+                            continue;
+                        }
+                        let ox = (o & 1) as f32 * 0.5;
+                        let oz = ((o >> 1) & 1) as f32 * 0.5;
+                        let oy = ((o >> 2) & 1) as f32 * 0.5;
+                        let bmin = Vec3::new(x as f32 + ox, y as f32 + oy, z as f32 + oz);
+                        if min.x < bmin.x + 0.5
+                            && max.x > bmin.x
+                            && min.y < bmin.y + 0.5
+                            && max.y > bmin.y
+                            && min.z < bmin.z + 0.5
+                            && max.z > bmin.z
+                        {
+                            return true;
+                        }
                     }
                 }
             }
         }
         false
+    }
+
+    /// Horizontal move with auto-step: if blocked while grounded, try lifting up
+    /// to `STEP_HEIGHT`, re-advancing, and settling onto a low ledge (octant
+    /// sand, slabs). Falls back to the plain slide if that gains no ground.
+    fn walk_axis(&mut self, world: &World, delta: Vec3, grounded: bool) {
+        let start = self.pos;
+        self.move_axis(world, delta);
+        let advanced = (self.pos - start).dot(delta);
+        let wanted = delta.dot(delta);
+        if !grounded || advanced + 1e-4 >= wanted {
+            return; // moved freely, or airborne — no stepping
+        }
+        let flat = self.pos;
+        let flat_ground = self.on_ground;
+        let lifted = start + Vec3::new(0.0, STEP_HEIGHT, 0.0);
+        if self.collides(world, lifted) {
+            return; // no headroom to step
+        }
+        self.pos = lifted;
+        self.move_axis(world, delta);
+        self.on_ground = false;
+        self.move_axis(world, Vec3::new(0.0, -STEP_HEIGHT, 0.0));
+        // Keep the step only if it landed on a ledge farther along than the slide.
+        if !(self.on_ground && (self.pos - start).dot(delta) > advanced + 1e-4) {
+            self.pos = flat;
+            self.on_ground = flat_ground;
+        }
     }
 
     fn move_axis(&mut self, world: &World, delta: Vec3) {

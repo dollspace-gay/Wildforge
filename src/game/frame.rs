@@ -253,7 +253,11 @@ impl Game {
 
     fn begin_frame(&mut self) -> (Instant, f32, bool) {
         let now = Instant::now();
-        let dt = (now - self.last_frame).as_secs_f32().min(0.05);
+        let dt = if self.auto_shot.is_some() {
+            SHOT_FIXED_DT
+        } else {
+            (now - self.last_frame).as_secs_f32().min(0.05)
+        };
         self.last_frame = now;
         self.time_abs += dt;
 
@@ -559,15 +563,16 @@ impl Game {
     fn refresh_content_and_toasts(&mut self, dt: f32) {
         // The turning of the season repaints the leaves.
         if self.in_world && self.server.world.season() != self.presentation.atlas_season {
-            let (mut data, px, warns) = atlas::build_atlas(
+            let mut atlas = atlas::build_atlas(
                 &self.content.reg.tex_files,
                 pack_source_of(&self.active_pack_id()),
                 &self.content.reg.tex_names,
             );
-            atlas::season_tint(&mut data, px, self.server.world.season());
+            atlas::season_tint(&mut atlas.color, atlas.px, self.server.world.season());
             self.presentation.atlas_season = self.server.world.season();
-            self.content.pack_warnings = warns;
-            self.renderer.set_atlas(&data, px);
+            self.content.pack_warnings = atlas.warnings;
+            self.renderer
+                .set_atlas(&atlas.color, &atlas.material, &atlas.normal, atlas.px);
         }
 
         // Hot reload: poll the mods + packs trees once a second.
@@ -1413,15 +1418,40 @@ impl Game {
         // the world is meshed, then exits.
         self.total_frames += 1;
         if let Some(path) = self.auto_shot.clone() {
-            let shot_frame: u64 = std::env::var("WILDFORGE_SHOT_FRAME")
+            let forced: Option<u64> = std::env::var("WILDFORGE_SHOT_FRAME")
                 .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(240);
-            if self.total_frames == shot_frame {
-                eprintln!("fps at capture: {}", self.fps);
-                self.renderer.pending_screenshot = Some(path);
-            } else if self.total_frames > shot_frame + 1 {
-                std::process::exit(0);
+                .and_then(|v| v.parse().ok());
+            if self.chunk_work_pending() == 0 {
+                self.settled_frames += 1;
+            } else {
+                self.settled_frames = 0;
+            }
+            let ready = match forced {
+                Some(frame) => self.total_frames >= frame,
+                None => {
+                    self.settled_frames >= SHOT_SETTLE_FRAMES
+                        || self.total_frames >= SHOT_MAX_FRAMES
+                }
+            };
+            match self.shot_at {
+                Some(at) if self.total_frames > at + 1 => std::process::exit(0),
+                None if ready => {
+                    eprintln!(
+                        "capture at frame {} ({}), fps {}",
+                        self.total_frames,
+                        if forced.is_some() {
+                            "forced frame".to_string()
+                        } else if self.settled_frames >= SHOT_SETTLE_FRAMES {
+                            format!("world settled {} frames", self.settled_frames)
+                        } else {
+                            "TIMED OUT, world still changing".to_string()
+                        },
+                        self.fps
+                    );
+                    self.renderer.pending_screenshot = Some(path);
+                    self.shot_at = Some(self.total_frames);
+                }
+                _ => {}
             }
         }
 

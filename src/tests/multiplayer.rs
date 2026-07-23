@@ -59,6 +59,7 @@ fn net_protocol_round_trips() {
             y: 2,
             z: 3,
             id: 9,
+            meta: 0,
         },
         S2C::TimeIre {
             time: 0.5,
@@ -225,6 +226,7 @@ fn loopback_join_stream_and_edit() {
                     y: yy,
                     z: 9,
                     id: 0,
+                    ..
                 } if yy == y => echoed = true,
                 S2C::Give { .. } => given = true,
                 S2C::Players(list) => {

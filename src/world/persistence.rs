@@ -7,6 +7,12 @@ impl World {
     pub fn load_or_create(save_dir: PathBuf, reg: Arc<Registry>) -> World {
         let (seed, mode, ire, day, weather) = read_world_meta_full(&save_dir);
         let seed = seed.unwrap_or_else(|| {
+            if let Some(seed) = std::env::var("WILDFORGE_SEED")
+                .ok()
+                .and_then(|value| value.parse().ok())
+            {
+                return seed;
+            }
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as u32)

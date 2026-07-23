@@ -64,7 +64,18 @@ pub(crate) const CORNERS: [[[f32; 3]; 4]; 6] = [
 /// Minecraft-ish face brightness: top 1.0, bottom 0.5, Z sides 0.8, X sides 0.6.
 pub(crate) const FACE_SHADE: [f32; 6] = [0.6, 0.6, 1.0, 0.5, 0.8, 0.8];
 
+/// Octant bits a neighbor must have set on the side facing cube face f to fully
+/// cover it (used to cull a merged full sand face against a full neighbor).
+/// Order matches NORMALS: +X,-X,+Y,-Y,+Z,-Z. Bit o = (oy<<2)|(oz<<1)|ox.
+const FACE_COVER_MASK: [u8; 6] = [0x55, 0xAA, 0x0F, 0xF0, 0x33, 0xCC];
+
 fn should_draw(reg: &Registry, b: BlockId, n: BlockId) -> bool {
+    // A sub-voxel neighbor only partially fills the shared face, so it must
+    // never cull ours — otherwise the block beneath a sand octant (e.g. grass)
+    // shows a see-through hole where the octant doesn't cover it.
+    if reg.block(n).sub_voxel {
+        return true;
+    }
     if reg.is_water(b) {
         return n == AIR;
     }
@@ -100,6 +111,17 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
             world.get_block(bx + lx, y, bz + lz)
         }
     };
+    // Octant mask of a neighbor cell, for sub-voxel face culling across borders.
+    let get_meta = |lx: i32, y: i32, lz: i32| -> u8 {
+        if y < 0 || y >= CHUNK_Y as i32 {
+            return 0;
+        }
+        if lx >= 0 && lx < CHUNK_X as i32 && lz >= 0 && lz < CHUNK_Z as i32 {
+            chunk.meta(lx as usize, y as usize, lz as usize)
+        } else {
+            world.get_meta(bx + lx, y, bz + lz)
+        }
+    };
     // Light of the cell a face looks into: block rgb + sky, each 0..1.
     let light = |lx: i32, y: i32, lz: i32| -> ([f32; 3], f32) {
         if y < 0 {
@@ -117,6 +139,21 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
             [b[0] as f32 / 15.0, b[1] as f32 / 15.0, b[2] as f32 / 15.0],
             sk as f32 / 15.0,
         )
+    };
+    // Light for a sub-voxel face looking into cell (lx,y,lz). A sub-voxel block
+    // is opaque, so its cell stores no light even where it is hollow; climb up
+    // out of the sand into the open air above (these pockets are top-lit) so
+    // carved interiors and risers beside partial neighbors aren't left black.
+    let face_light = |lx: i32, mut y: i32, lz: i32| -> ([f32; 3], f32) {
+        for _ in 0..4 {
+            let b = get(lx, y, lz);
+            if b != AIR && reg.block(b).sub_voxel {
+                y += 1;
+            } else {
+                break;
+            }
+        }
+        light(lx, y, lz)
     };
 
     let tile_uv = |tx: u32, ty: u32, u: f32, v: f32| -> [f32; 2] {
@@ -196,6 +233,143 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                     }
                     continue;
                 }
+                if def.sub_voxel {
+                    // Octant occupancy: emit up to 8 half-cubes. A face is
+                    // skipped when the adjacent half-cell is filled — a sibling
+                    // octant in this block, or the facing octant of a sub-voxel
+                    // neighbor — or when an opaque neighbor cube covers it.
+                    let mask = chunk.meta(lx as usize, y as usize, lz as usize);
+                    // Fast path: a fully-filled cell is just a cube — 6 merged
+                    // faces instead of 24 octant quarters (the common case for
+                    // placed/interior sand; keeps meshes ~4x lighter).
+                    if mask == 0xFF {
+                        for face in 0..6 {
+                            let nrm = NORMALS[face];
+                            let nb = get(lx + nrm[0], y + nrm[1], lz + nrm[2]);
+                            let covered = if nb == AIR {
+                                false
+                            } else if reg.block(nb).sub_voxel {
+                                let nm = get_meta(lx + nrm[0], y + nrm[1], lz + nrm[2]);
+                                nm & FACE_COVER_MASK[face] == FACE_COVER_MASK[face]
+                            } else {
+                                reg.is_opaque(nb)
+                            };
+                            if covered {
+                                continue;
+                            }
+                            let (fl, fs) = face_light(lx + nrm[0], y + nrm[1], lz + nrm[2]);
+                            let slot = def.tiles[face];
+                            let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
+                            let nf = [nrm[0] as f32, nrm[1] as f32, nrm[2] as f32];
+                            let base = m.opaque_verts.len() as u32;
+                            for c in CORNERS[face].iter() {
+                                let (u, v) = match face {
+                                    0 | 1 => (c[2], 1.0 - c[1]),
+                                    4 | 5 => (c[0], 1.0 - c[1]),
+                                    _ => (c[0], c[2]),
+                                };
+                                m.opaque_verts.push(Vertex {
+                                    pos: [
+                                        (bx + lx) as f32 + c[0],
+                                        y as f32 + c[1],
+                                        (bz + lz) as f32 + c[2],
+                                    ],
+                                    uv: tile_uv(tx, ty, u, v),
+                                    normal: nf,
+                                    light: emissive.unwrap_or(fl),
+                                    sky: fs,
+                                });
+                            }
+                            m.opaque_idx.extend_from_slice(&[
+                                base,
+                                base + 1,
+                                base + 2,
+                                base,
+                                base + 2,
+                                base + 3,
+                            ]);
+                        }
+                        continue;
+                    }
+                    for o in 0..8u32 {
+                        if mask & (1 << o) == 0 {
+                            continue;
+                        }
+                        let ox = (o & 1) as i32;
+                        let oz = ((o >> 1) & 1) as i32;
+                        let oy = ((o >> 2) & 1) as i32;
+                        for face in 0..6 {
+                            let nrm = NORMALS[face];
+                            let (nox, noy, noz) = (ox + nrm[0], oy + nrm[1], oz + nrm[2]);
+                            let crossing = !(0..=1).contains(&nox)
+                                || !(0..=1).contains(&noy)
+                                || !(0..=1).contains(&noz);
+                            let (fl, fs) = if crossing {
+                                // Boundary face: cull against the neighbor block.
+                                let nb = get(lx + nrm[0], y + nrm[1], lz + nrm[2]);
+                                if nb != AIR {
+                                    if reg.block(nb).sub_voxel {
+                                        let nmask = get_meta(lx + nrm[0], y + nrm[1], lz + nrm[2]);
+                                        let fo = ((noy.rem_euclid(2) as u32) << 2)
+                                            | ((noz.rem_euclid(2) as u32) << 1)
+                                            | (nox.rem_euclid(2) as u32);
+                                        if nmask & (1 << fo) != 0 {
+                                            continue;
+                                        }
+                                    } else if reg.is_opaque(nb) {
+                                        continue;
+                                    }
+                                }
+                                face_light(lx + nrm[0], y + nrm[1], lz + nrm[2])
+                            } else {
+                                // Internal face: hidden if the sibling is filled.
+                                let so = ((noy as u32) << 2) | ((noz as u32) << 1) | (nox as u32);
+                                if mask & (1 << so) != 0 {
+                                    continue;
+                                }
+                                // Exposed interior pocket: lit from the open air
+                                // above, not this solid cell's own (dark) light.
+                                face_light(lx, y, lz)
+                            };
+                            let slot = def.tiles[face];
+                            let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
+                            let nf = [nrm[0] as f32, nrm[1] as f32, nrm[2] as f32];
+                            let base = m.opaque_verts.len() as u32;
+                            for c in CORNERS[face].iter() {
+                                let ib = [
+                                    c[0] * 0.5 + ox as f32 * 0.5,
+                                    c[1] * 0.5 + oy as f32 * 0.5,
+                                    c[2] * 0.5 + oz as f32 * 0.5,
+                                ];
+                                let (u, v) = match face {
+                                    0 | 1 => (ib[2], 1.0 - ib[1]),
+                                    4 | 5 => (ib[0], 1.0 - ib[1]),
+                                    _ => (ib[0], ib[2]),
+                                };
+                                m.opaque_verts.push(Vertex {
+                                    pos: [
+                                        (bx + lx) as f32 + ib[0],
+                                        y as f32 + ib[1],
+                                        (bz + lz) as f32 + ib[2],
+                                    ],
+                                    uv: tile_uv(tx, ty, u, v),
+                                    normal: nf,
+                                    light: emissive.unwrap_or(fl),
+                                    sky: fs,
+                                });
+                            }
+                            m.opaque_idx.extend_from_slice(&[
+                                base,
+                                base + 1,
+                                base + 2,
+                                base,
+                                base + 2,
+                                base + 3,
+                            ]);
+                        }
+                    }
+                    continue;
+                }
                 let water = reg.is_water(b);
                 // Glass rides the blended pipeline: translucent tint,
                 // and panes catch the water shader's sun glint.
@@ -221,7 +395,10 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                     let slot = reg.block(b).tiles[face];
                     let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
                     let nrm = [n[0] as f32, n[1] as f32, n[2] as f32];
-                    let (fl, fs) = light(lx + n[0], y + n[1], lz + n[2]);
+                    // `face_light` (not `light`) so a face looking into an opaque
+                    // sub-voxel cell (e.g. grass under a sand octant) is lit by the
+                    // open air above it, not that cell's dark stored light.
+                    let (fl, fs) = face_light(lx + n[0], y + n[1], lz + n[2]);
 
                     let mut ao = [3u8; 4];
                     if !water {
@@ -300,7 +477,11 @@ fn corner_ao(
         _ => ([1, 0, 0], [0, 1, 0]),
     };
     let occl = |dx: i32, dy: i32, dz: i32| -> bool {
-        reg.is_opaque(get(p[0] + n[0] + dx, p[1] + n[1] + dy, p[2] + n[2] + dz))
+        // A sub-voxel neighbor only partially covers the cell, so it must not
+        // ambient-occlude a full face (else an octant of sand darkens the whole
+        // grass block below it).
+        let bb = get(p[0] + n[0] + dx, p[1] + n[1] + dy, p[2] + n[2] + dz);
+        reg.is_opaque(bb) && !reg.block(bb).sub_voxel
     };
     let mut out = [3u8; 4];
     for (ci, c) in CORNERS[face].iter().enumerate() {

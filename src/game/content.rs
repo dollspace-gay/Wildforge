@@ -14,7 +14,7 @@ impl Game {
     /// Rebuild + swap the atlas for the currently selected texture pack and
     /// persist the choice. Registry/scripts are untouched — packs are art only.
     pub(super) fn apply_pack(&mut self) {
-        let (mut data, px, warns) = atlas::build_atlas(
+        let mut atlas = atlas::build_atlas(
             &self.content.reg.tex_files,
             pack_source_of(&self.active_pack_id()),
             &self.content.reg.tex_names,
@@ -24,10 +24,11 @@ impl Game {
         } else {
             1
         };
-        atlas::season_tint(&mut data, px, season);
+        atlas::season_tint(&mut atlas.color, atlas.px, season);
         self.presentation.atlas_season = season;
-        self.renderer.set_atlas(&data, px);
-        self.content.pack_warnings = warns;
+        self.renderer
+            .set_atlas(&atlas.color, &atlas.material, &atlas.normal, atlas.px);
+        self.content.pack_warnings = atlas.warnings;
         self.config.save();
     }
 
@@ -36,7 +37,7 @@ impl Game {
     pub(super) fn reload_mods(&mut self, forced: bool) {
         let old = self.content.reg.clone();
         let new_reg = Arc::new(registry::load(std::path::Path::new("mods")));
-        let (mut atlas_data, atlas_px, warns) = atlas::build_atlas(
+        let mut atlas = atlas::build_atlas(
             &new_reg.tex_files,
             pack_source_of(&self.active_pack_id()),
             &new_reg.tex_names,
@@ -46,10 +47,11 @@ impl Game {
         } else {
             1
         };
-        atlas::season_tint(&mut atlas_data, atlas_px, season);
+        atlas::season_tint(&mut atlas.color, atlas.px, season);
         self.presentation.atlas_season = season;
-        self.content.pack_warnings = warns;
-        self.renderer.set_atlas(&atlas_data, atlas_px);
+        self.content.pack_warnings = atlas.warnings;
+        self.renderer
+            .set_atlas(&atlas.color, &atlas.material, &atlas.normal, atlas.px);
 
         // Remap items by name (old registry -> new); unknown items vanish.
         let remap_item =

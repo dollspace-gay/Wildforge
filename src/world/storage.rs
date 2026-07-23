@@ -1,4 +1,4 @@
-//! Mob/chunk persistence, WFC3 streaming, saves, and registry remapping.
+//! Mob/chunk persistence, WFC4 streaming, saves, and registry remapping.
 
 use super::*;
 
@@ -85,12 +85,12 @@ impl World {
     pub(super) fn try_load_chunk(&self, pos: ChunkPos) -> Option<Chunk> {
         let data = fs::read(self.chunk_file(pos)).ok()?;
         let mut chunk = Chunk::new();
-        let out = chunk.raw_mut();
-        let mut o = 0;
-
-        if !data.starts_with(b"WFC3") {
+        let is_v4 = data.starts_with(b"WFC4");
+        if !is_v4 && !data.starts_with(b"WFC3") {
             return None; // pre-256-height save: regenerate
         }
+        let out = chunk.raw_mut();
+        let mut o = 0;
         // (count u16, id u16) pairs, remapped through the palette.
         let mut i = 4;
         while i + 4 <= data.len() && o < out.len() {
@@ -109,18 +109,30 @@ impl World {
         if o != out.len() {
             return None; // corrupt; regenerate
         }
+        if is_v4 {
+            let meta = chunk.meta_raw_mut();
+            let mut offset = 0;
+            while i + 3 <= data.len() && offset < meta.len() {
+                let count = u16::from_le_bytes([data[i], data[i + 1]]) as usize;
+                let value = data[i + 2];
+                let end = (offset + count).min(meta.len());
+                meta[offset..end].fill(value);
+                offset = end;
+                i += 3;
+            }
+        }
         chunk.dirty = true;
         chunk.modified = true;
         Some(chunk)
     }
 
-    /// WFC3 RLE bytes for a chunk — the save format, reused as the wire
-    /// format for multiplayer chunk streaming.
+    /// WFC4 block and metadata RLE, also used for multiplayer chunk streaming.
+    /// WFC3 remains readable with an all-zero metadata plane.
     pub fn chunk_rle(&self, pos: ChunkPos) -> Option<Vec<u8>> {
         let chunk = self.chunks.get(&pos)?;
         let raw = chunk.raw();
         let mut buf: Vec<u8> = Vec::with_capacity(4096);
-        buf.extend_from_slice(b"WFC3");
+        buf.extend_from_slice(b"WFC4");
         let mut i = 0;
         while i < raw.len() {
             let b = raw[i];
@@ -132,13 +144,26 @@ impl World {
             buf.extend_from_slice(&b.to_le_bytes());
             i += run;
         }
+        let meta = chunk.meta_raw();
+        let mut i = 0;
+        while i < meta.len() {
+            let value = meta[i];
+            let mut run = 1usize;
+            while i + run < meta.len() && meta[i + run] == value && run < u16::MAX as usize {
+                run += 1;
+            }
+            buf.extend_from_slice(&(run as u16).to_le_bytes());
+            buf.push(value);
+            i += run;
+        }
         Some(buf)
     }
 
     /// Insert a network-streamed chunk, remapping host block ids to
     /// local ones. Relights and marks for remesh.
     pub fn insert_remote_chunk(&mut self, pos: ChunkPos, rle: &[u8], remap: &[BlockId]) {
-        if !rle.starts_with(b"WFC3") {
+        let is_v4 = rle.starts_with(b"WFC4");
+        if !is_v4 && !rle.starts_with(b"WFC3") {
             return;
         }
         let mut chunk = Chunk::new();
@@ -153,6 +178,18 @@ impl World {
             out[o..end].fill(id.0);
             o = end;
             i += 4;
+        }
+        if is_v4 {
+            let meta = chunk.meta_raw_mut();
+            let mut offset = 0;
+            while i + 3 <= rle.len() && offset < meta.len() {
+                let count = u16::from_le_bytes([rle[i], rle[i + 1]]) as usize;
+                let value = rle[i + 2];
+                let end = (offset + count).min(meta.len());
+                meta[offset..end].fill(value);
+                offset = end;
+                i += 3;
+            }
         }
         chunk.dirty = true;
         self.chunks.insert(pos, chunk);

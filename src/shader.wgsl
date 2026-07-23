@@ -31,6 +31,15 @@ const MAX_PT_LIGHTS: u32 = 8u;
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(1) @binding(0) var atlas_tex: texture_2d<f32>;
 @group(1) @binding(1) var atlas_smp: sampler;
+// Material atlas (linear): R = parallax height (1 = surface, 0 = deepest),
+// G = interior mask, B = authored-normal strength (0 = none).
+// A flat tile (R = 1, G = 0, B = 0) is a no-op, so all of it is opt-in per texture.
+@group(1) @binding(2) var material_tex: texture_2d<f32>;
+// Normal atlas (linear): tangent-space normals in the standard OpenGL / +Y
+// encoding, so a stock or model-generated map drops in unmodified. Flat (128,
+// 128, 255) wherever nothing is authored; material.b says where that is, so the
+// plain-tile early-out never has to read this texture.
+@group(1) @binding(3) var normal_tex: texture_2d<f32>;
 @group(2) @binding(0) var shadow_tex: texture_depth_2d;
 @group(2) @binding(1) var shadow_smp: sampler_comparison;
 @group(2) @binding(2) var pt_cube: texture_cube_array<f32>;
@@ -38,6 +47,25 @@ const MAX_PT_LIGHTS: u32 = 8u;
 @group(2) @binding(4) var pt_tr_cube: texture_cube_array<f32>;
 
 const SHADOW_RES: f32 = 2048.0;
+const ATLAS_TILES: f32 = 32.0;
+// Apparent displacement depth, in blocks (a face is one tile wide), so the uv
+// offset is scaled into a single tile's span and can't drag across tiles.
+const PARALLAX_DEPTH: f32 = 0.08;
+const PARALLAX_STEPS: i32 = 24;
+// How hard the height gradient tilts the surface normal (relief lighting).
+const NORMAL_STRENGTH: f32 = 4.0;
+// Multilayer: the internal crack stratum sits this many blocks below the smooth
+// surface, so it parallaxes further and slides beneath it (depth, not overlay).
+// The interior wraps within its (periodic) tile, so depth is unconstrained by
+// the tile size now — this sets how far the internal layer slides under the surface.
+const INTERIOR_DEPTH: f32 = 0.30;
+// How opaque the surface veil is over the interior: 1 = surface only, 0 = interior
+// only. The interior is always partly visible through it (real translucency).
+const SURFACE_VEIL: f32 = 0.45;
+// The interior is the block's own lit colour, modulated by its internal
+// structure (G): dimmer/clearer in the gaps, brighter/frosted where dense.
+const INTERIOR_LO: f32 = 0.35;
+const INTERIOR_HI: f32 = 1.9;
 
 struct VsIn {
     @location(0) pos: vec3<f32>,
@@ -148,18 +176,23 @@ fn point_shadow(i: u32, world: vec3<f32>, to_light: vec3<f32>, d: f32, range: f3
 
 // Full lit multiplier (per channel) for a world-space surface. A near-zero
 // normal marks pre-shaded billboards/entities, which keep the old flat model.
-fn world_light(normal: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) -> vec3<f32> {
+// `normal` is the flat geometric face normal (drives the stylized per-face
+// shade and ambient); `detail_n` is the relief-perturbed normal (drives the
+// directional sun and point-light N·L, so grooves self-shade). They're equal
+// for flat surfaces and non-relief geometry.
+fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) -> vec3<f32> {
     if (dot(normal, normal) < 0.25) {
         // Pre-shaded billboards/entities: colored block light or grayscale sky,
         // whichever is brighter per channel, over a small floor.
         return max(max(light, vec3<f32>(sky * u.misc.y)), vec3<f32>(u.amb_col.a));
     }
     let n = normalize(normal);
+    let dn = normalize(detail_n);
     let fs = face_shade(n);
     // Warm sun: direct, gated by sky visibility, surface orientation, and the
     // shadow map (cast shadows). Ambient/torch are unaffected, so shadowed
     // ground fills with cool sky light instead of going black.
-    let ndl = max(dot(n, u.sun_dir.xyz), 0.0);
+    let ndl = max(dot(dn, u.sun_dir.xyz), 0.0);
     let shadow = sample_shadow(world, ndl);
     let sun = sky * ndl * shadow * u.sun_col.rgb;
     // Cool sky fill.
@@ -180,7 +213,7 @@ fn world_light(normal: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) 
         suppress = suppress + u.pt_col[i].rgb * sup;
         if (d < range) {
             let ldir = to_light / max(d, 1e-3);
-            let ndl2 = max(dot(n, ldir), 0.0);
+            let ndl2 = max(dot(dn, ldir), 0.0);
             let a = clamp(1.0 - d / range, 0.0, 1.0);
             let atten = a * a;
             var shadow_pt = 1.0;
@@ -210,13 +243,151 @@ fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     return mix(color, u.sky.rgb, fog);
 }
 
+struct Surface {
+    uv: vec2<f32>,
+    // World-space normal, tilted by the height gradient so relief catches light.
+    normal: vec3<f32>,
+    // uv for the deeper interior stratum (parallaxed further than the surface,
+    // wrapped within the tile so the periodic crack layer scrolls seamlessly).
+    interior_uv: vec2<f32>,
+};
+
+// Parallax occlusion mapping + a height-derived surface normal. Steps the
+// tangent-space view ray through the material atlas's height channel to find
+// the displaced uv, then reads the local height gradient there to perturb the
+// normal — so recessed detail (ice cracks) both shifts with the eye AND catches
+// directional light on its walls. The tangent frame comes from world/uv screen
+// derivatives (no per-vertex tangents). Flat tiles early-out for near-zero cost.
+fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surface {
+    var out: Surface;
+    out.uv = uv;
+    out.normal = geo_n;
+    out.interior_uv = uv;
+
+    // Derivatives must be evaluated in uniform control flow (before any branch).
+    let dpx = dpdx(world);
+    let dpy = dpdy(world);
+    let dux = dpdx(uv);
+    let duy = dpdy(uv);
+
+    let mat0 = textureSampleLevel(material_tex, atlas_smp, uv, 0.0);
+    let h0 = mat0.r;
+    let g0 = mat0.g;
+    // Authored-normal strength. Constant across a tile in practice (the atlas
+    // flags whole slots), so reading it at the undisplaced uv is safe and keeps
+    // the plain-tile test to this one texture fetch.
+    let nrm_amt = mat0.b;
+    // Truly flat: smooth surface (R~1), no interior layer (G~0), no authored
+    // normal (B~0) — nothing to do.
+    if (h0 > 0.995 && g0 < 0.01 && nrm_amt < 0.004) {
+        return out;
+    }
+    // Is the uv basis usable? The test has to be scale-free. `det` has units of
+    // (uv per pixel) squared, so it shrinks with the square of how much screen a
+    // tile covers — walk up to a wall and a perfectly healthy basis reaches 1e-10,
+    // which an absolute threshold reads as degenerate. That flattened the relief
+    // on everything nearer than ~0.4 blocks at 720p (and ~1.0 at 1440p, since the
+    // cutoff scales with resolution), with the boundary tracing a constant-depth
+    // line across the surface: a diagonal seam that slid with the camera.
+    // What actually matters is whether the two derivative vectors are
+    // near-PARALLEL (a zero-area mapping), and 1e-6 of their magnitudes is also
+    // about where f32 cancellation leaves `det` meaningless anyway.
+    let det = dux.x * duy.y - duy.x * dux.y;
+    if (abs(det) <= 1e-6 * length(dux) * length(duy)) {
+        return out;
+    }
+    let r = 1.0 / det;
+    let n = normalize(geo_n);
+    let t = normalize((dpx * duy.y - dpy * dux.y) * r);
+    let b = normalize((dpy * dux.x - dpx * duy.x) * r);
+    // View direction (fragment -> eye) in tangent space.
+    let v = normalize(u.cam.xyz - world);
+    let vt = vec3<f32>(dot(v, t), dot(v, b), dot(v, n));
+    let ts = 1.0 / ATLAS_TILES;
+    // Per-block uv shift direction; clamp grazing z so it can't blow up. Keep the
+    // march inside this tile's atlas cell so it never bleeds into a neighbour.
+    let vz = max(abs(vt.z), 0.25);
+    let dir = vt.xy / vz * ts;
+    let tmin = floor(uv / ts) * ts + ts * 0.02;
+    let tmax = tmin + ts - ts * 0.04;
+
+    var cur_uv = uv;
+    // Surface relief: only when the surface height itself has structure (R < 1).
+    if (h0 < 0.995) {
+        let p = dir * PARALLAX_DEPTH;
+        let layer = 1.0 / f32(PARALLAX_STEPS);
+        let duv = p * layer;
+        var ray_depth = 0.0;
+        var surf_depth = 1.0 - h0;
+        for (var i = 0; i < PARALLAX_STEPS; i = i + 1) {
+            if (ray_depth >= surf_depth) {
+                break;
+            }
+            cur_uv = clamp(cur_uv - duv, tmin, tmax);
+            surf_depth = 1.0 - textureSampleLevel(material_tex, atlas_smp, cur_uv, 0.0).r;
+            ray_depth = ray_depth + layer;
+        }
+        out.uv = cur_uv;
+    }
+
+    // The detail normal, in tangent space, read at the parallax-displaced point.
+    // An authored map wins over the height gradient: it carries detail the height
+    // field never had (a chisel bevel inside one flat-toned face) and it is what
+    // the texture's author actually meant. Height-derived stays the free default.
+    var n_ts = vec3<f32>(0.0, 0.0, 1.0);
+    if (nrm_amt > 0.004) {
+        let enc = textureSampleLevel(normal_tex, atlas_smp, clamp(cur_uv, tmin, tmax), 0.0).xyz;
+        let dec = enc * 2.0 - 1.0;
+        // Green is negated: OpenGL maps measure y up the image, while our
+        // bitangent runs down it (tile row 0 is v = 0). That one sign is the
+        // whole difference between the OpenGL and DirectX conventions.
+        // Otherwise the map is taken as authored — a malformed one should look
+        // wrong, not be silently repaired here every frame; sanitizing belongs
+        // at import. The only guard is against a degenerate (zero-length)
+        // texel, which would normalize to NaN.
+        let v = vec3<f32>(dec.x, -dec.y, dec.z);
+        let len2 = dot(v, v);
+        let un = select(vec3<f32>(0.0, 0.0, 1.0), v * inverseSqrt(max(len2, 1e-12)), len2 > 1e-6);
+        n_ts = normalize(vec3<f32>(un.xy * nrm_amt, un.z));
+    } else if (h0 < 0.995) {
+        // Height-gradient normal at the displaced point (central differences).
+        let texel = 1.0 / vec2<f32>(textureDimensions(material_tex, 0));
+        let hl = textureSampleLevel(material_tex, atlas_smp, clamp(cur_uv - vec2<f32>(texel.x, 0.0), tmin, tmax), 0.0).r;
+        let hr = textureSampleLevel(material_tex, atlas_smp, clamp(cur_uv + vec2<f32>(texel.x, 0.0), tmin, tmax), 0.0).r;
+        let hd = textureSampleLevel(material_tex, atlas_smp, clamp(cur_uv - vec2<f32>(0.0, texel.y), tmin, tmax), 0.0).r;
+        let hu = textureSampleLevel(material_tex, atlas_smp, clamp(cur_uv + vec2<f32>(0.0, texel.y), tmin, tmax), 0.0).r;
+        n_ts = normalize(vec3<f32>((hl - hr) * NORMAL_STRENGTH, (hd - hu) * NORMAL_STRENGTH, 1.0));
+    }
+    out.normal = normalize(t * n_ts.x + b * n_ts.y + n * n_ts.z);
+    // The internal stratum sits INTERIOR_DEPTH deeper than the (possibly smooth)
+    // surface, so it shifts further along the view ray. The crack pattern is
+    // periodic, so we WRAP the sample within this tile's cell (nearest-filtered,
+    // no bleed) instead of clamping: the pattern scrolls seamlessly and reads as
+    // one continuous layer at depth across every block — no edge clamp, no pop.
+    let tile_origin = floor(uv / ts) * ts;
+    out.interior_uv = tile_origin + fract((cur_uv - dir * INTERIOR_DEPTH - tile_origin) / ts) * ts;
+    return out;
+}
+
 @fragment
 fn fs_chunk(in: VsOut) -> @location(0) vec4<f32> {
-    let tex = textureSample(atlas_tex, atlas_smp, in.uv);
+    let s = parallax_surface(in.uv, in.world, in.normal);
+    let tex = textureSample(atlas_tex, atlas_smp, s.uv);
     if (tex.a < 0.5) {
         discard; // alpha-tested item sprites share this pipeline
     }
-    var rgb = tex.rgb * world_light(in.normal, in.light, in.sky, in.world);
+    let surface_lit = tex.rgb * world_light(in.normal, s.normal, in.light, in.sky, in.world);
+    var rgb = surface_lit;
+    // Multilayer as a real translucent composite: the surface is a partial veil,
+    // and the interior — present everywhere the material declares it (G floored
+    // > 0), the block's own colour modulated by its structure — sits deeper and
+    // parallaxes beneath. So you see THROUGH the surface to the structure sliding
+    // under it, not a stencil painted on top. Untouched where there's no interior.
+    let structure = textureSampleLevel(material_tex, atlas_smp, s.interior_uv, 0.0).g;
+    if (structure > 0.02) {
+        let interior = surface_lit * mix(INTERIOR_LO, INTERIOR_HI, structure);
+        rgb = mix(interior, surface_lit, SURFACE_VEIL);
+    }
     rgb = apply_fog(rgb, in.world);
     if (u.misc.x > 0.5) {
         rgb = mix(rgb, vec3<f32>(0.1, 0.2, 0.5), 0.55);
@@ -227,7 +398,7 @@ fn fs_chunk(in: VsOut) -> @location(0) vec4<f32> {
 @fragment
 fn fs_water(in: VsOut) -> @location(0) vec4<f32> {
     let tex = textureSample(atlas_tex, atlas_smp, in.uv);
-    var rgb = tex.rgb * world_light(in.normal, in.light, in.sky, in.world);
+    var rgb = tex.rgb * world_light(in.normal, in.normal, in.light, in.sky, in.world);
     // Sun specular glint: a sharp Blinn-Phong highlight where the sun reflects
     // into the eye, gated by sky visibility and cast shadows.
     if (dot(in.normal, in.normal) > 0.25) {

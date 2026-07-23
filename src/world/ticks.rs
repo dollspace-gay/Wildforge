@@ -363,7 +363,7 @@ impl World {
                 c.dirty = true;
                 c.modified = true;
                 if self.log_edits {
-                    self.edit_log.push((x, y, z, nb));
+                    self.edit_log.push((x, y, z, nb, 0));
                 }
             }
             self.wake_water(x, y, z);

@@ -84,12 +84,51 @@ pub fn discover_packs() -> Vec<PackInfo> {
     packs
 }
 
-/// Find recognized tile PNGs under `<pack>/tiles/`: (slot, path), plus
-/// warnings for files that match no known tile name.
+/// A companion map authored alongside a tile's albedo.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MapKind {
+    /// Parallax height. White is the surface; black is the deepest recess.
+    Height,
+    /// Tangent-space normal using OpenGL's positive-green convention.
+    Normal,
+}
+
+/// Recognize a pack file stem as an albedo tile or companion map.
+fn classify_tile_file(
+    stem: &str,
+    names: &std::collections::HashMap<String, u16>,
+) -> Option<(u16, Option<MapKind>)> {
+    if let Some(slot) = names.get(stem) {
+        return Some((*slot, None));
+    }
+    for (suffix, kind) in [
+        ("_h", MapKind::Height),
+        ("_height", MapKind::Height),
+        ("_n", MapKind::Normal),
+        ("_normal", MapKind::Normal),
+    ] {
+        if let Some(base) = stem.strip_suffix(suffix)
+            && let Some(slot) = names.get(base)
+        {
+            return Some((*slot, Some(kind)));
+        }
+    }
+    None
+}
+
+/// What a pack's `tiles/` folder contains.
+#[derive(Default)]
+pub struct PackFiles {
+    pub tiles: Vec<(u16, std::path::PathBuf)>,
+    pub maps: Vec<(u16, MapKind, std::path::PathBuf)>,
+    pub warnings: Vec<String>,
+}
+
+/// Find recognized tile PNGs and companion maps under `<pack>/tiles/`.
 pub fn scan_pack(
     pack_dir: &std::path::Path,
     names: &std::collections::HashMap<String, u16>,
-) -> (Vec<(u16, std::path::PathBuf)>, Vec<String>) {
+) -> PackFiles {
     fn walk(dir: &std::path::Path, acc: &mut Vec<std::path::PathBuf>) {
         let Ok(rd) = std::fs::read_dir(dir) else {
             return;
@@ -107,7 +146,7 @@ pub fn scan_pack(
     let mut all = Vec::new();
     walk(&root, &mut all);
     all.sort();
-    let (mut files, mut warns) = (Vec::new(), Vec::new());
+    let mut out = PackFiles::default();
     for p in all {
         let rel = p
             .strip_prefix(&root)
@@ -117,27 +156,47 @@ pub fn scan_pack(
         let Some(name) = rel.strip_suffix(".png") else {
             continue;
         };
-        match names.get(name) {
-            Some(slot) => files.push((*slot, p)),
-            None => warns.push(format!("{rel}: no tile named \"{name}\"")),
+        match classify_tile_file(name, names) {
+            Some((slot, None)) => out.tiles.push((slot, p)),
+            Some((slot, Some(kind))) => out.maps.push((slot, kind, p)),
+            None => out
+                .warnings
+                .push(format!("{rel}: no tile named \"{name}\"")),
         }
     }
-    (files, warns)
+    out
+}
+
+/// The synchronized color, material, and normal textures consumed by the
+/// chunk shader.
+pub struct Atlas {
+    pub color: Vec<u8>,
+    pub material: Vec<u8>,
+    pub normal: Vec<u8>,
+    pub px: u32,
+    pub warnings: Vec<String>,
 }
 
 /// Build the atlas in layers: procedural/assets base, then mod PNGs, then
 /// the active texture pack's tiles last (the explicit user choice wins, but
-/// only for tiles the pack ships). Returns (pixels, side px, pack warnings).
+/// only for tiles the pack ships). Companion maps are applied after albedo
+/// layering so an albedo replacement cannot clear its own maps.
 pub fn build_atlas(
     tex_files: &[(u16, std::path::PathBuf)],
     pack: Option<PackSource>,
     tex_names: &[(String, u16)],
-) -> (Vec<u8>, u32, Vec<String>) {
+) -> Atlas {
     let (mut img, px) = load_or_build();
     let tp = px / ATLAS_TILES;
+    let mut mat = build_material(px);
+    let mut nrm = build_normal(px);
+    let mut maps: Vec<(u16, MapKind, SrcTile)> = Vec::new();
     for (slot, path) in tex_files {
         match load_tile_png(path) {
-            Some((data, w, h)) => blit_tile(&mut img, px, tp, *slot, &data, w, h),
+            Some(src) => {
+                blit_tile(&mut img, px, tp, *slot, &src);
+                clear_material_slot(&mut mat, px, *slot);
+            }
             None => eprintln!("atlas: failed to load {}", path.display()),
         }
     }
@@ -145,11 +204,20 @@ pub fn build_atlas(
     match pack {
         Some(PackSource::Dir(dir)) => {
             let names = tile_names(tex_names);
-            let (files, warns) = scan_pack(&dir, &names);
-            warnings = warns;
-            for (slot, path) in files {
+            let found = scan_pack(&dir, &names);
+            warnings = found.warnings;
+            for (slot, path) in found.tiles {
                 match load_tile_png(&path) {
-                    Some((data, w, h)) => blit_tile(&mut img, px, tp, slot, &data, w, h),
+                    Some(src) => {
+                        blit_tile(&mut img, px, tp, slot, &src);
+                        clear_material_slot(&mut mat, px, slot);
+                    }
+                    None => warnings.push(format!("unreadable png: {}", path.display())),
+                }
+            }
+            for (slot, kind, path) in found.maps {
+                match load_tile_png(&path) {
+                    Some(src) => maps.push((slot, kind, src)),
                     None => warnings.push(format!("unreadable png: {}", path.display())),
                 }
             }
@@ -159,24 +227,55 @@ pub fn build_atlas(
             for (name, bytes) in tiles {
                 // Names the current registry doesn't know (e.g. a mod's
                 // tile with that mod removed) skip silently.
-                let Some(slot) = names.get(*name) else {
+                let Some((slot, kind)) = classify_tile_file(name, &names) else {
                     continue;
                 };
-                if let Some((data, w, h)) = load_tile_bytes(bytes) {
-                    blit_tile(&mut img, px, tp, *slot, &data, w, h);
+                let Some(src) = load_tile_bytes(bytes) else {
+                    continue;
+                };
+                match kind {
+                    None => {
+                        blit_tile(&mut img, px, tp, slot, &src);
+                        clear_material_slot(&mut mat, px, slot);
+                    }
+                    Some(kind) => maps.push((slot, kind, src)),
                 }
             }
         }
         None => {}
     }
     apply_player_variants(&mut img, px);
+    let mut authored_height = std::collections::HashSet::new();
+    for (slot, kind, src) in &maps {
+        match kind {
+            MapKind::Height => {
+                blit_height(&mut mat, px, tp, *slot, src);
+                authored_height.insert(*slot);
+            }
+            MapKind::Normal => blit_normal(&mut nrm, &mut mat, px, tp, *slot, src),
+        }
+    }
+    for slot in [
+        *builtin_slots().get("stone").unwrap_or(&3),
+        *builtin_slots().get("cobblestone").unwrap_or(&4),
+    ] {
+        if !authored_height.contains(&slot) {
+            derive_luminance_height(&img, &mut mat, px, slot);
+        }
+    }
     if let Ok(dir) = std::env::var("WILDFORGE_EXPORT_TILES") {
         match export_tiles(std::path::Path::new(&dir), &img, px, tex_names) {
             Ok(n) => eprintln!("atlas: exported {n} tiles to {dir}"),
             Err(e) => eprintln!("atlas: tile export failed: {e}"),
         }
     }
-    (img, px, warnings)
+    Atlas {
+        color: img,
+        material: mat,
+        normal: nrm,
+        px,
+        warnings,
+    }
 }
 
 /// Derive the pre-tinted player variant tiles (style.rs layout) from
@@ -292,18 +391,23 @@ pub fn export_tiles(
     Ok(named.len())
 }
 
-fn load_tile_png(path: &std::path::Path) -> Option<(Vec<u8>, u32, u32)> {
+/// A decoded source PNG at its authored resolution.
+pub struct SrcTile {
+    px: Vec<u8>,
+    w: u32,
+    h: u32,
+}
+
+fn load_tile_png(path: &std::path::Path) -> Option<SrcTile> {
     let f = std::fs::File::open(path).ok()?;
     load_tile_reader(png::Decoder::new(std::io::BufReader::new(f)))
 }
 
-fn load_tile_bytes(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
+fn load_tile_bytes(bytes: &[u8]) -> Option<SrcTile> {
     load_tile_reader(png::Decoder::new(std::io::Cursor::new(bytes)))
 }
 
-fn load_tile_reader<R: std::io::BufRead + std::io::Seek>(
-    dec: png::Decoder<R>,
-) -> Option<(Vec<u8>, u32, u32)> {
+fn load_tile_reader<R: std::io::BufRead + std::io::Seek>(dec: png::Decoder<R>) -> Option<SrcTile> {
     let mut reader = dec.read_info().ok()?;
     let mut buf = vec![0u8; reader.output_buffer_size()?];
     let info = reader.next_frame(&mut buf).ok()?;
@@ -319,20 +423,139 @@ fn load_tile_reader<R: std::io::BufRead + std::io::Seek>(
         }
         _ => return None,
     };
-    Some((rgba, info.width, info.height))
+    Some(SrcTile {
+        px: rgba,
+        w: info.width,
+        h: info.height,
+    })
 }
 
-/// Nearest-neighbor blit of an arbitrary-size tile into an atlas slot.
-fn blit_tile(img: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &[u8], sw: u32, sh: u32) {
-    let tx = (slot as u32 % ATLAS_TILES) * tp;
-    let ty = (slot as u32 / ATLAS_TILES) * tp;
+/// Resample an arbitrary-size RGBA tile. Upscaling stays nearest-neighbor;
+/// downscaling box-averages to keep normal maps stable under moving light.
+fn resample_tile(dst: &mut [u8], tp: u32, src: &SrcTile) {
+    let (sw, sh) = (src.w, src.h);
+    let src = &src.px;
     for y in 0..tp {
         for x in 0..tp {
-            let sx = (x * sw / tp).min(sw - 1);
-            let sy = (y * sh / tp).min(sh - 1);
-            let si = ((sy * sw + sx) * 4) as usize;
+            let (x0, x1) = (
+                x * sw / tp,
+                ((x + 1) * sw / tp).max(x * sw / tp + 1).min(sw),
+            );
+            let (y0, y1) = (
+                y * sh / tp,
+                ((y + 1) * sh / tp).max(y * sh / tp + 1).min(sh),
+            );
+            let di = ((y * tp + x) * 4) as usize;
+            if x1 - x0 <= 1 && y1 - y0 <= 1 {
+                let si = ((y0.min(sh - 1) * sw + x0.min(sw - 1)) * 4) as usize;
+                dst[di..di + 4].copy_from_slice(&src[si..si + 4]);
+                continue;
+            }
+            let (mut rgb, mut a, mut wsum, mut n) = ([0f32; 3], 0f32, 0f32, 0f32);
+            for sy in y0..y1 {
+                for sx in x0..x1 {
+                    let si = ((sy * sw + sx) * 4) as usize;
+                    let w = src[si + 3] as f32;
+                    for c in 0..3 {
+                        rgb[c] += src[si + c] as f32 * w;
+                    }
+                    a += w;
+                    wsum += w;
+                    n += 1.0;
+                }
+            }
+            for c in 0..3 {
+                dst[di + c] = if wsum > 0.0 {
+                    (rgb[c] / wsum) as u8
+                } else {
+                    let sum: f32 = (y0..y1)
+                        .flat_map(|sy| (x0..x1).map(move |sx| (sy, sx)))
+                        .map(|(sy, sx)| src[(((sy * sw + sx) * 4) as usize) + c] as f32)
+                        .sum();
+                    (sum / n) as u8
+                };
+            }
+            dst[di + 3] = (a / n) as u8;
+        }
+    }
+}
+
+fn blit_tile(img: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &SrcTile) {
+    let tx = (slot as u32 % ATLAS_TILES) * tp;
+    let ty = (slot as u32 / ATLAS_TILES) * tp;
+    let mut tile = vec![0u8; (tp * tp * 4) as usize];
+    resample_tile(&mut tile, tp, src);
+    for y in 0..tp {
+        for x in 0..tp {
+            let si = ((y * tp + x) * 4) as usize;
             let di = (((ty + y) * atlas_px + tx + x) * 4) as usize;
-            img[di..di + 4].copy_from_slice(&src[si..si + 4]);
+            img[di..di + 4].copy_from_slice(&tile[si..si + 4]);
+        }
+    }
+}
+
+fn blit_height(mat: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &SrcTile) {
+    let mut tile = vec![0u8; (tp * tp * 4) as usize];
+    resample_tile(&mut tile, tp, src);
+    let (tx, ty) = (
+        slot as u32 % ATLAS_TILES * tp,
+        slot as u32 / ATLAS_TILES * tp,
+    );
+    for y in 0..tp {
+        for x in 0..tp {
+            let s = ((y * tp + x) * 4) as usize;
+            let d = (((ty + y) * atlas_px + tx + x) * 4) as usize;
+            let l =
+                0.299 * tile[s] as f32 + 0.587 * tile[s + 1] as f32 + 0.114 * tile[s + 2] as f32;
+            mat[d] = l as u8;
+        }
+    }
+}
+
+fn blit_normal(nrm: &mut [u8], mat: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &SrcTile) {
+    let mut tile = vec![0u8; (tp * tp * 4) as usize];
+    resample_tile(&mut tile, tp, src);
+    let (tx, ty) = (
+        slot as u32 % ATLAS_TILES * tp,
+        slot as u32 / ATLAS_TILES * tp,
+    );
+    for y in 0..tp {
+        for x in 0..tp {
+            let s = ((y * tp + x) * 4) as usize;
+            let d = (((ty + y) * atlas_px + tx + x) * 4) as usize;
+            nrm[d..d + 3].copy_from_slice(&tile[s..s + 3]);
+            nrm[d + 3] = 255;
+            mat[d + 2] = 255;
+        }
+    }
+}
+
+fn derive_luminance_height(img: &[u8], mat: &mut [u8], px: u32, slot: u16) {
+    let tp = px / ATLAS_TILES;
+    let (tx, ty) = (
+        slot as u32 % ATLAS_TILES * tp,
+        slot as u32 / ATLAS_TILES * tp,
+    );
+    for y in 0..tp {
+        for x in 0..tp {
+            let i = (((ty + y) * px + tx + x) * 4) as usize;
+            let l = 0.299 * img[i] as f32 + 0.587 * img[i + 1] as f32 + 0.114 * img[i + 2] as f32;
+            mat[i] = l as u8;
+            mat[i + 1] = 0;
+        }
+    }
+}
+
+fn clear_material_slot(mat: &mut [u8], px: u32, slot: u16) {
+    let tp = px / ATLAS_TILES;
+    let (tx, ty) = (
+        slot as u32 % ATLAS_TILES * tp,
+        slot as u32 / ATLAS_TILES * tp,
+    );
+    for y in 0..tp {
+        for x in 0..tp {
+            let i = (((ty + y) * px + tx + x) * 4) as usize;
+            mat[i..i + 4].copy_from_slice(&[255, 0, 0, 0]);
         }
     }
 }

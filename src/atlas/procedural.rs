@@ -126,6 +126,52 @@ fn voronoi(u: f32, v: f32, cells: i32, salt: u32) -> (f32, f32, u32) {
     (d1, d2, id)
 }
 
+/// Material texture sharing the color atlas layout. R is parallax height, G is
+/// the interior layer, B selects authored normals, and A is reserved.
+pub fn build_material(px: u32) -> Vec<u8> {
+    let tp = px / ATLAS_TILES;
+    let atlas_px = ATLAS_TILES * tp;
+    let mut img = vec![0u8; (atlas_px * atlas_px * 4) as usize];
+    for pixel in img.chunks_exact_mut(4) {
+        pixel.copy_from_slice(&[255, 0, 0, 0]);
+    }
+    let mut mtile = |slot: u32, f: &mut dyn FnMut(f32, f32) -> [u8; 4]| {
+        let (tx, ty) = (slot % ATLAS_TILES, slot / ATLAS_TILES);
+        for py in 0..tp {
+            for px in 0..tp {
+                let u = (px as f32 + 0.5) / tp as f32;
+                let v = (py as f32 + 0.5) / tp as f32;
+                let x = tx * tp + px;
+                let y = ty * tp + py;
+                let i = ((y * atlas_px + x) * 4) as usize;
+                img[i..i + 4].copy_from_slice(&f(u, v));
+            }
+        }
+    };
+
+    // Ice carries a parallaxed cloudy/fractured interior under a smooth color
+    // surface. The periodic noise keeps the layer seamless across blocks.
+    mtile(40, &mut |u, v| {
+        let cloud = fbm(u, v, 3, 61);
+        let vein = (vnoise(u * 5.0, v * 5.0, 5, 53) - 0.5).abs();
+        let crack = if vein < 0.04 { 1.0 - vein / 0.04 } else { 0.0 };
+        let g = (0.30 + 0.40 * cloud + 0.60 * crack).min(1.0);
+        [255, (g * 255.0) as u8, 0, 0]
+    });
+    img
+}
+
+/// Tangent-space OpenGL normal texture sharing the color atlas layout.
+pub fn build_normal(px: u32) -> Vec<u8> {
+    let tp = px / ATLAS_TILES;
+    let atlas_px = ATLAS_TILES * tp;
+    let mut img = vec![0u8; (atlas_px * atlas_px * 4) as usize];
+    for pixel in img.chunks_exact_mut(4) {
+        pixel.copy_from_slice(&[128, 128, 255, 255]);
+    }
+    img
+}
+
 pub fn build_procedural(tp: u32) -> Vec<u8> {
     let atlas_px = ATLAS_TILES * tp;
     let mut img = vec![0u8; (atlas_px * atlas_px * 4) as usize];
@@ -413,20 +459,11 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         rgba(c, speck(px, py, 51, 0.03) * emboss(px, py, tp), 255)
     });
     tile(40, &mut |px, py, u, v| {
-        // ice: pale glossy blue with lighter crack veins.
+        // Smooth glacial surface; fractures live in the material atlas's
+        // deeper interior layer rather than being painted onto this albedo.
         let t = fbm(u, v, 4, 52);
-        let mut c = mix3([148.0, 186.0, 224.0], [190.0, 220.0, 246.0], t);
-        let vein = (vnoise(u * 5.0, v * 5.0, 5, 53) - 0.5).abs();
-        if vein < 0.04 {
-            c = mix3(c, [235.0, 245.0, 255.0], 0.8);
-        }
-        // Diagonal gloss band.
-        let gloss = ((u + v) * std::f32::consts::TAU * 1.5).sin();
-        rgba(
-            c,
-            (1.0 + gloss * 0.04) * speck(px, py, 54, 0.02) * emboss(px, py, tp),
-            255,
-        )
+        let c = mix3([150.0, 190.0, 226.0], [184.0, 214.0, 244.0], t);
+        rgba(c, speck(px, py, 54, 0.02) * emboss(px, py, tp), 255)
     });
     tile(41, &mut |px, py, u, _v| {
         // cactus side: vertical ribs with pale spines.

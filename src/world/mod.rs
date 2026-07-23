@@ -7,6 +7,8 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use glam::Vec3;
+
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
 use crate::inventory::ItemStack;
 use crate::mobs::{Mob, MobEvent, ProjHit, Projectile};
@@ -23,6 +25,7 @@ mod machine_tick;
 mod machines;
 mod persistence;
 mod storage;
+mod substrate;
 mod ticks;
 
 /// Per-block persistent state for interactive machines.
@@ -250,7 +253,7 @@ pub struct World {
     pub weather_timer: f32,
     /// Host mode: record block edits for broadcasting.
     log_edits: bool,
-    edit_log: Vec<(i32, i32, i32, BlockId)>,
+    edit_log: Vec<(i32, i32, i32, BlockId, u8)>,
     /// Gravity blocks currently airborne.
     falling: Vec<FallingBlock>,
     /// (guest id, stack) owed over the wire: mining drops, kill loot,
@@ -387,16 +390,20 @@ impl World {
         self.remote = remote;
     }
 
+    pub fn is_remote(&self) -> bool {
+        self.remote
+    }
+
     /// Enable or disable the authoritative block-edit journal.
     pub fn set_edit_logging(&mut self, enabled: bool) {
         self.log_edits = enabled;
     }
 
-    pub fn edits(&self) -> &[(i32, i32, i32, BlockId)] {
+    pub fn edits(&self) -> &[(i32, i32, i32, BlockId, u8)] {
         &self.edit_log
     }
 
-    pub fn take_edits(&mut self) -> Vec<(i32, i32, i32, BlockId)> {
+    pub fn take_edits(&mut self) -> Vec<(i32, i32, i32, BlockId, u8)> {
         std::mem::take(&mut self.edit_log)
     }
 
@@ -517,6 +524,22 @@ impl World {
         }
     }
 
+    /// Metadata byte at a world position (octant mask for sub-voxel blocks).
+    pub fn get_meta(&self, x: i32, y: i32, z: i32) -> u8 {
+        if y < 0 || y >= CHUNK_Y as i32 {
+            return 0;
+        }
+        let pos = ChunkPos::of_world(x, z);
+        match self.chunks.get(&pos) {
+            Some(chunk) => chunk.meta(
+                x.rem_euclid(CHUNK_X as i32) as usize,
+                y as usize,
+                z.rem_euclid(CHUNK_Z as i32) as usize,
+            ),
+            None => 0,
+        }
+    }
+
     pub fn break_block(
         &mut self,
         pos: (i32, i32, i32),
@@ -551,6 +574,12 @@ impl World {
     }
 
     pub fn set_block(&mut self, x: i32, y: i32, z: i32, b: BlockId) {
+        let meta = if self.reg.block(b).sub_voxel { 0xff } else { 0 };
+        self.set_block_meta(x, y, z, b, meta);
+    }
+
+    /// Set a block with an explicit metadata byte.
+    pub fn set_block_meta(&mut self, x: i32, y: i32, z: i32, b: BlockId, meta: u8) {
         if y < 0 || y >= CHUNK_Y as i32 {
             return;
         }
@@ -559,10 +588,11 @@ impl World {
         let lz = z.rem_euclid(CHUNK_Z as i32) as usize;
         if let Some(c) = self.chunks.get_mut(&pos) {
             c.set(lx, y as usize, lz, b);
+            c.set_meta(lx, y as usize, lz, meta);
             c.dirty = true;
             c.modified = true;
             if self.log_edits {
-                self.edit_log.push((x, y, z, b));
+                self.edit_log.push((x, y, z, b, meta));
             }
         }
         let mut touch = |dx: i32, dz: i32| {

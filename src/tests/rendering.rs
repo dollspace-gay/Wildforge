@@ -7,7 +7,9 @@ fn wood_leaf_tiles_are_opaque_in_atlas() {
     // Regression: a tile painted past the row boundary once left spruce
     // leaves transparent (invisible canopies).
     let reg = base_reg();
-    let (img, px, _) = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
+    let atlas = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
+    let img = atlas.color;
+    let px = atlas.px;
     let tp = px / crate::atlas::ATLAS_TILES;
     for name in [
         "base:leaves",
@@ -62,7 +64,9 @@ fn atlas_builds_with_mod_texture() {
         "mod texture is pack-addressable by <mod_id>/<stem>: {:?}",
         reg.tex_names
     );
-    let (img, px, _) = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
+    let atlas = crate::atlas::build_atlas(&reg.tex_files, None, &reg.tex_names);
+    let img = atlas.color;
+    let px = atlas.px;
     let tp = px / crate::atlas::ATLAS_TILES;
     let tx = (slot as u32 % crate::atlas::ATLAS_TILES) * tp + tp / 2;
     let ty = (slot as u32 / crate::atlas::ATLAS_TILES) * tp + tp / 2;
@@ -120,9 +124,14 @@ fn pack_tile_override_applied_at_slot() {
     let pack = tmp_dir("packstone");
     std::fs::create_dir_all(pack.join("tiles")).unwrap();
     write_solid_png(&pack.join("tiles/stone.png"), 8, 8, [255, 0, 255, 255]);
-    let (base, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
-    let (img, px, warns) =
+    let atlas = crate::atlas::build_atlas(&[], None, &[]);
+    let base = atlas.color;
+    let bpx = atlas.px;
+    let atlas =
         crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
+    let img = atlas.color;
+    let px = atlas.px;
+    let warns = atlas.warnings;
     assert_eq!(px, bpx);
     assert!(warns.is_empty(), "no warnings: {warns:?}");
     let stone = *crate::atlas::builtin_slots().get("stone").unwrap();
@@ -157,14 +166,19 @@ fn pack_overrides_mod_tile_by_name_and_wins() {
     );
 
     // Without the pack the mod's art lands in the slot...
-    let (img, px, _) = crate::atlas::build_atlas(&tex_files, None, &tex_names);
+    let atlas = crate::atlas::build_atlas(&tex_files, None, &tex_names);
+    let img = atlas.color;
+    let px = atlas.px;
     assert_eq!(tile_center(&img, px, slot), [0, 255, 0, 255]);
     // ...with the pack, the pack's art wins (layered last).
-    let (img, px, warns) = crate::atlas::build_atlas(
+    let atlas = crate::atlas::build_atlas(
         &tex_files,
         Some(crate::atlas::PackSource::Dir(pack.clone())),
         &tex_names,
     );
+    let img = atlas.color;
+    let px = atlas.px;
+    let warns = atlas.warnings;
     assert!(warns.is_empty(), "{warns:?}");
     assert_eq!(
         tile_center(&img, px, slot),
@@ -179,9 +193,14 @@ fn pack_unknown_and_unreadable_files_warn() {
     std::fs::create_dir_all(pack.join("tiles")).unwrap();
     write_solid_png(&pack.join("tiles/notatile.png"), 4, 4, [1, 2, 3, 255]);
     std::fs::write(pack.join("tiles/stone.png"), b"this is not a png").unwrap();
-    let (base, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
-    let (img, px, warns) =
+    let atlas = crate::atlas::build_atlas(&[], None, &[]);
+    let base = atlas.color;
+    let bpx = atlas.px;
+    let atlas =
         crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
+    let img = atlas.color;
+    let px = atlas.px;
+    let warns = atlas.warnings;
     assert_eq!(warns.len(), 2, "unknown name + unreadable png: {warns:?}");
     assert!(warns.iter().any(|w| w.contains("notatile")));
     let stone = *crate::atlas::builtin_slots().get("stone").unwrap();
@@ -228,7 +247,9 @@ fn content_stamp_changes_on_pack_edit() {
 
 #[test]
 fn export_tiles_round_trip_reproduces_atlas() {
-    let (img, px, _) = crate::atlas::build_atlas(&[], None, &[]);
+    let atlas = crate::atlas::build_atlas(&[], None, &[]);
+    let img = atlas.color;
+    let px = atlas.px;
     let out = tmp_dir("packexport");
     let n = crate::atlas::export_tiles(&out, &img, px, &[]).unwrap();
     assert_eq!(
@@ -239,8 +260,11 @@ fn export_tiles_round_trip_reproduces_atlas() {
     assert!(out.join("pack.toml").exists(), "stub pack.toml written");
     assert!(out.join("tiles/stone.png").exists());
     // Selecting the exported skeleton as a pack reproduces the atlas exactly.
-    let (again, apx, warns) =
+    let atlas =
         crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Dir(out.clone())), &[]);
+    let again = atlas.color;
+    let apx = atlas.px;
+    let warns = atlas.warnings;
     assert!(warns.is_empty(), "{warns:?}");
     assert_eq!(apx, px);
     assert_eq!(again, img, "export -> re-import is the identity");
@@ -251,9 +275,14 @@ fn embedded_gemini_pack_applies_without_folder() {
     let tiles = crate::atlas::embedded_pack("gemini").expect("gemini compiled in");
     assert!(tiles.len() > 100, "full pack embedded, got {}", tiles.len());
     assert!(crate::atlas::embedded_pack("nope").is_none());
-    let (base, bpx, _) = crate::atlas::build_atlas(&[], None, &[]);
-    let (img, px, warns) =
+    let atlas = crate::atlas::build_atlas(&[], None, &[]);
+    let base = atlas.color;
+    let bpx = atlas.px;
+    let atlas =
         crate::atlas::build_atlas(&[], Some(crate::atlas::PackSource::Embedded(tiles)), &[]);
+    let img = atlas.color;
+    let px = atlas.px;
+    let warns = atlas.warnings;
     assert!(warns.is_empty(), "{warns:?}");
     assert_eq!(px, bpx);
     let stone = *crate::atlas::builtin_slots().get("stone").unwrap();
@@ -752,4 +781,198 @@ fn wgsl_shaders_validate() {
         .validate(&module)
         .unwrap_or_else(|e| panic!("{name}: WGSL validation failed: {e:?}"));
     }
+}
+
+#[test]
+fn material_atlas_authors_ice_and_pack_override_clears_it() {
+    use crate::atlas::{ATLAS_TILES, build_atlas, builtin_slots};
+    let ice = *builtin_slots().get("ice").unwrap();
+    let grass = *builtin_slots().get("grass_top").unwrap();
+    let stone = *builtin_slots().get("stone").unwrap();
+    let channel_extreme = |material: &[u8], px: u32, slot: u16, channel: usize, maximum: bool| {
+        let tile_px = px / ATLAS_TILES;
+        let (tx, ty) = (
+            slot as u32 % ATLAS_TILES * tile_px,
+            slot as u32 / ATLAS_TILES * tile_px,
+        );
+        let mut result = if maximum { 0 } else { 255 };
+        for y in 0..tile_px {
+            for x in 0..tile_px {
+                let index = (((ty + y) * px + tx + x) * 4) as usize;
+                result = if maximum {
+                    result.max(material[index + channel])
+                } else {
+                    result.min(material[index + channel])
+                };
+            }
+        }
+        result
+    };
+
+    let atlas = build_atlas(&[], None, &[]);
+    assert_eq!(atlas.material.len(), (atlas.px * atlas.px * 4) as usize);
+    assert_eq!(
+        tile_center(&atlas.material, atlas.px, grass),
+        [255, 0, 0, 0]
+    );
+    assert_eq!(
+        channel_extreme(&atlas.material, atlas.px, ice, 0, false),
+        255
+    );
+    assert!(channel_extreme(&atlas.material, atlas.px, ice, 1, false) > 0);
+    assert!(channel_extreme(&atlas.material, atlas.px, stone, 0, false) < 240);
+
+    let pack = tmp_dir("packice");
+    std::fs::create_dir_all(pack.join("tiles")).unwrap();
+    write_solid_png(&pack.join("tiles/ice.png"), 8, 8, [200, 220, 255, 255]);
+    let atlas = build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack)), &[]);
+    assert_eq!(channel_extreme(&atlas.material, atlas.px, ice, 1, true), 0);
+}
+
+fn write_checker_png(
+    path: &std::path::Path,
+    side: u32,
+    cell: u32,
+    first: [u8; 4],
+    second: [u8; 4],
+) {
+    let mut pixels = Vec::with_capacity((side * side * 4) as usize);
+    for y in 0..side {
+        for x in 0..side {
+            pixels.extend_from_slice(if ((x / cell) + (y / cell)).is_multiple_of(2) {
+                &first
+            } else {
+                &second
+            });
+        }
+    }
+    let mut data = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut data, side, side);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder
+            .write_header()
+            .unwrap()
+            .write_image_data(&pixels)
+            .unwrap();
+    }
+    std::fs::write(path, data).unwrap();
+}
+
+#[test]
+fn pack_companion_maps_author_normals_and_height() {
+    use crate::atlas::{ATLAS_TILES, build_atlas, builtin_slots};
+    let stone = *builtin_slots().get("stone").unwrap();
+    let grass = *builtin_slots().get("grass_top").unwrap();
+    let uniform_channel = |image: &[u8], px: u32, slot: u16, channel: usize| {
+        let tile_px = px / ATLAS_TILES;
+        let (tx, ty) = (
+            slot as u32 % ATLAS_TILES * tile_px,
+            slot as u32 / ATLAS_TILES * tile_px,
+        );
+        let first = image[((ty * px + tx) * 4) as usize + channel];
+        for y in 0..tile_px {
+            for x in 0..tile_px {
+                let index = (((ty + y) * px + tx + x) * 4) as usize;
+                if image[index + channel] != first {
+                    return None;
+                }
+            }
+        }
+        Some(first)
+    };
+
+    let base = build_atlas(&[], None, &[]);
+    assert!(
+        base.normal
+            .chunks_exact(4)
+            .all(|pixel| pixel == [128, 128, 255, 255])
+    );
+    assert!(base.material.chunks_exact(4).all(|pixel| pixel[2] == 0));
+
+    let pack = tmp_dir("packmaps");
+    std::fs::create_dir_all(pack.join("tiles")).unwrap();
+    write_solid_png(&pack.join("tiles/stone.png"), 8, 8, [90, 90, 90, 255]);
+    write_solid_png(&pack.join("tiles/stone_n.png"), 8, 8, [180, 60, 240, 255]);
+    write_solid_png(&pack.join("tiles/stone_h.png"), 8, 8, [64, 64, 64, 255]);
+    let atlas = build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack.clone())), &[]);
+    assert!(atlas.warnings.is_empty(), "{:?}", atlas.warnings);
+    assert_eq!(
+        tile_center(&atlas.normal, atlas.px, stone),
+        [180, 60, 240, 255]
+    );
+    assert_eq!(
+        uniform_channel(&atlas.material, atlas.px, stone, 2),
+        Some(255)
+    );
+    assert_eq!(
+        uniform_channel(&atlas.material, atlas.px, stone, 0),
+        Some(64)
+    );
+    assert_eq!(
+        uniform_channel(&atlas.material, atlas.px, grass, 2),
+        Some(0)
+    );
+
+    let names = vec![("stone_n".to_string(), 20)];
+    let atlas = build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack)), &names);
+    assert_eq!(tile_center(&atlas.color, atlas.px, 20), [180, 60, 240, 255]);
+    assert_eq!(
+        tile_center(&atlas.normal, atlas.px, stone),
+        [128, 128, 255, 255]
+    );
+}
+
+#[test]
+fn finer_pack_tiles_are_averaged_down_not_point_sampled() {
+    use crate::atlas::{ATLAS_TILES, build_atlas, builtin_slots};
+    let stone = *builtin_slots().get("stone").unwrap();
+    let pack = tmp_dir("packfine");
+    std::fs::create_dir_all(pack.join("tiles")).unwrap();
+    let base = build_atlas(&[], None, &[]);
+    let tile_px = base.px / ATLAS_TILES;
+    write_checker_png(
+        &pack.join("tiles/stone.png"),
+        tile_px * 4,
+        1,
+        [0, 0, 0, 255],
+        [255, 255, 255, 255],
+    );
+    let atlas = build_atlas(&[], Some(crate::atlas::PackSource::Dir(pack)), &[]);
+    let tx = stone as u32 % ATLAS_TILES * tile_px;
+    let ty = stone as u32 / ATLAS_TILES * tile_px;
+    for y in 0..tile_px {
+        for x in 0..tile_px {
+            let index = (((ty + y) * atlas.px + tx + x) * 4) as usize;
+            assert!((atlas.color[index] as i32 - 127).abs() <= 1);
+        }
+    }
+}
+
+#[test]
+fn frozen_clock_holds_the_sun_without_stopping_the_sim() {
+    let reg = base_reg();
+    let make = || {
+        let world = World::new(7, tmp_dir("freeze"), reg.clone());
+        crate::server::Server::new(world, 0.3, 42)
+    };
+    let step = |server: &mut crate::server::Server| {
+        for _ in 0..40 {
+            server.advance(crate::server::TICK, &[], &mut Vec::new());
+        }
+    };
+
+    let mut running = make();
+    let start = running.time_of_day;
+    step(&mut running);
+    assert!(running.time_of_day > start);
+
+    let mut frozen = make();
+    frozen.freeze_clock = true;
+    let start = frozen.time_of_day;
+    let weather = frozen.world.weather_timer;
+    step(&mut frozen);
+    assert_eq!(frozen.time_of_day, start);
+    assert!(frozen.world.weather_timer > weather);
 }

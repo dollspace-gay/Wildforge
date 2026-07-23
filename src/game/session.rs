@@ -213,6 +213,9 @@ impl Game {
         {
             self.server.time_of_day = t.fract();
         }
+        if self.auto_shot.is_some() {
+            self.server.freeze_clock = true;
+        }
         // Dev: force camera look ("yaw,pitch" in radians) for framed captures.
         self.apply_look_env();
         // Dev: WILDFORGE_SCREEN=inventory opens the pack in-world for
@@ -420,6 +423,143 @@ impl Game {
             if let Some(t) = reg.item_id("base:torch") {
                 self.inventory.add(&reg, t, 5);
             }
+        }
+
+        // Dev: a flat ice rink plus a low kerb for parallax verification.
+        if std::env::var("WILDFORGE_DEMO_ICE").is_ok()
+            && let Some(ice) = self.content.reg.block_id("base:ice")
+        {
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            for dx in [-8i32, 0, 8] {
+                for dz in [-8i32, 0, 8] {
+                    self.server
+                        .world
+                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                }
+            }
+            let yf = (-10..=10)
+                .flat_map(|dx| (-10..=10).map(move |dz| (dx, dz)))
+                .map(|(dx, dz)| self.server.world.surface_height(bx + dx, bz + dz))
+                .max()
+                .unwrap_or(spawn.y as i32);
+            for dx in -10..=10i32 {
+                for dz in -10..=10i32 {
+                    self.server.world.set_block(bx + dx, yf, bz + dz, ice);
+                }
+                self.server.world.set_block(bx + dx, yf + 1, bz + 10, ice);
+                self.server.world.set_block(bx + dx, yf + 2, bz + 10, ice);
+            }
+            let strafe: f32 = std::env::var("WILDFORGE_DEMO_STRAFE")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0.0);
+            let stand = Vec3::new(bx as f32 + 0.5 + strafe, yf as f32 + 1.0, bz as f32 - 9.0);
+            self.player.pos = stand;
+            self.survival.spawn_point = stand;
+            self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.camera.yaw = std::f32::consts::FRAC_PI_2;
+            self.camera.pitch = -0.35;
+        }
+
+        // Dev: a stone wall lit from the side for authored-normal verification.
+        if std::env::var("WILDFORGE_DEMO_ROCK").is_ok()
+            && let Some(stone) = self.content.reg.block_id("base:stone")
+        {
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            for dx in [-8i32, 0, 8] {
+                for dz in [-8i32, 0, 8] {
+                    self.server
+                        .world
+                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                }
+            }
+            let yf = (-10..=10)
+                .flat_map(|dx| (-10..=10).map(move |dz| (dx, dz)))
+                .map(|(dx, dz)| self.server.world.surface_height(bx + dx, bz + dz))
+                .max()
+                .unwrap_or(spawn.y as i32);
+            for dx in -10..=10i32 {
+                for dz in -10..=10i32 {
+                    self.server.world.set_block(bx + dx, yf, bz + dz, stone);
+                }
+                for dy in 1..=6i32 {
+                    self.server.world.set_block(bx + dx, yf + dy, bz - 8, stone);
+                }
+            }
+            for dy in 1..=3i32 {
+                self.server.world.set_block(bx + 3, yf + dy, bz - 4, stone);
+            }
+            let dist: f32 = std::env::var("WILDFORGE_DEMO_DIST")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(12.0);
+            let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.0, bz as f32 - 7.0 + dist);
+            self.player.pos = stand;
+            self.survival.spawn_point = stand;
+            self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.camera.yaw = -std::f32::consts::FRAC_PI_2;
+            self.camera.pitch = -0.10;
+        }
+
+        // Dev: a sub-voxel surface-sand dune for octant substrate checks.
+        if std::env::var("WILDFORGE_DEMO_SAND").is_ok()
+            && let Some(sand) = self.content.reg.block_id("base:surface_sand")
+        {
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            for dx in [-18i32, -9, 0, 9, 18] {
+                for dz in [-18i32, -9, 0, 9, 18] {
+                    self.server
+                        .world
+                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                }
+            }
+            let yf = (-18..=18)
+                .flat_map(|dx| (-18..=18).map(move |dz| (dx, dz)))
+                .map(|(dx, dz)| self.server.world.surface_height(bx + dx, bz + dz))
+                .max()
+                .unwrap_or(spawn.y as i32);
+            for dx in -18..=18i32 {
+                for dz in -18..=18i32 {
+                    let distance = dx.abs().max(dz.abs());
+                    let layers = 2 + (8 - distance).max(0);
+                    for height in 0..=10 {
+                        self.server
+                            .world
+                            .set_block_quiet(bx + dx, yf + height, bz + dz, AIR, 0);
+                    }
+                    let full = layers / 2;
+                    for height in 0..full {
+                        self.server.world.set_block_quiet(
+                            bx + dx,
+                            yf + height,
+                            bz + dz,
+                            sand,
+                            0xff,
+                        );
+                    }
+                    if layers % 2 == 1 {
+                        self.server
+                            .world
+                            .set_block_quiet(bx + dx, yf + full, bz + dz, sand, 0x0f);
+                    }
+                }
+            }
+            for dx in [-18i32, -9, 0, 9, 18] {
+                for dz in [-18i32, -9, 0, 9, 18] {
+                    self.server
+                        .world
+                        .relight_and_cascade(ChunkPos::of_world(bx + dx, bz + dz));
+                }
+            }
+            let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.0, bz as f32 - 15.0);
+            self.player.pos = stand;
+            self.survival.spawn_point = stand;
+            self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.camera.yaw = std::f32::consts::FRAC_PI_2;
+            self.camera.pitch = -0.15;
         }
 
         // Dev: a warm light behind a wall with a doorway — light blares through
