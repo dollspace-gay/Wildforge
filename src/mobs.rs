@@ -775,7 +775,10 @@ pub fn emit_humanoid(
     // Build sets the silhouette: torso and arm width.
     let tw = [7.2f32, 8.0, 9.0][art.build.min(2) as usize];
     let aw = [2.6f32, 3.0, 3.5][art.build.min(2) as usize];
-    let ax = (tw + aw) / 2.0;
+    // Sink the shoulder slightly into the torso instead of joining two
+    // independently rasterized boxes on one mathematically exact edge. The
+    // overlap prevents a daylight crack at rest and while the arm pivots.
+    let ax = (tw + aw) / 2.0 - 0.35;
 
     // (size px, base [x, y_base, z], tiles, swing rad, pivot y px)
     struct Part {

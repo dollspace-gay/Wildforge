@@ -597,12 +597,19 @@ impl Game {
         self.ui_state.account_task = None;
         match result {
             AccountTaskResult::Linked(Ok(account)) => {
+                let approved_as = account
+                    .profile_display_name
+                    .as_deref()
+                    .or(account.handle.as_deref())
+                    .unwrap_or(account.did.as_str())
+                    .to_uppercase();
                 self.ui_state.account_handle = account
                     .handle
                     .clone()
                     .unwrap_or_else(|| account.did.to_string());
                 self.atproto_account = Some(account);
-                self.ui_state.account_status = "APPROVED - DEVICE BINDING RECORD WRITTEN".into();
+                self.ui_state.account_status =
+                    format!("APPROVED AS {approved_as} - DEVICE BINDING RECORD WRITTEN");
             }
             AccountTaskResult::Revoked(Ok(())) => {
                 self.atproto_account = None;

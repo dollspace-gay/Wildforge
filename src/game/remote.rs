@@ -3,6 +3,21 @@
 use super::*;
 
 impl Game {
+    /// The name this client will present to a multiplayer host, plus whether
+    /// it came from the explicitly enabled ATProto profile preference.
+    pub(super) fn selected_multiplayer_name(&self) -> (String, bool) {
+        if let Some(name) = self
+            .atproto_account
+            .as_ref()
+            .filter(|account| account.use_social_display_name)
+            .and_then(|account| account.profile_display_name.as_deref())
+            .and_then(|name| identity::DisplayName::parse(name).ok())
+        {
+            return (name.to_string(), true);
+        }
+        (self.config.display_name.clone(), false)
+    }
+
     fn apply_remote_player_state(
         &mut self,
         remote: &Remote,
@@ -76,14 +91,7 @@ impl Game {
     }
 
     pub(super) fn join_server(&mut self, addr: std::net::SocketAddr) {
-        let name = self
-            .atproto_account
-            .as_ref()
-            .filter(|account| account.use_social_display_name)
-            .and_then(|account| account.profile_display_name.as_deref())
-            .and_then(|name| identity::DisplayName::parse(name).ok())
-            .map(|name| name.to_string())
-            .unwrap_or_else(|| self.config.display_name.clone());
+        let (name, _) = self.selected_multiplayer_name();
         let hash = net::content_hash(std::path::Path::new("mods"));
         match net::Client::connect(
             addr,

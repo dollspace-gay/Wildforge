@@ -338,6 +338,27 @@ impl Game {
                     "WILDFORGE",
                     [1.0, 0.95, 0.7, 1.0],
                 );
+                let (active_name, social_name) = self.selected_multiplayer_name();
+                let identity_line = format!(
+                    "PLAYING AS {active_name}{}",
+                    if self.atproto_account.is_some() {
+                        if social_name {
+                            "  [ATPROTO PROFILE]"
+                        } else {
+                            "  [ATPROTO LINKED / LOCAL NAME]"
+                        }
+                    } else {
+                        ""
+                    }
+                );
+                let iw = UiBatch::text_width(1.5, &identity_line);
+                ui.text_shadow(
+                    (w - iw) / 2.0,
+                    h * 0.205,
+                    1.5,
+                    &identity_line,
+                    [0.65, 1.0, 0.72, 1.0],
+                );
                 if self.worlds.is_empty() {
                     let msg = "NO WORLDS YET - CREATE ONE";
                     let mw = UiBatch::text_width(2.0, msg);
@@ -414,7 +435,11 @@ impl Game {
                         ui.rect(r.0, r.1 + r.3 - 3.0, r.2, 3.0, [0.6, 1.0, 0.6, 1.0]);
                     }
                 }
-                let device = format!("LOCAL DEVICE {}", self.identity.device_id().short());
+                let device = format!(
+                    "LOCAL PROFILE: {}  /  DEVICE {}",
+                    self.config.display_name,
+                    self.identity.device_id().short()
+                );
                 ui.text_shadow(w / 2.0 - 310.0, h * 0.35, 1.5, &device, [0.7; 4]);
                 let linked = self.atproto_account.as_ref();
                 let labels = [
@@ -455,16 +480,50 @@ impl Game {
                     Self::draw_button(&mut ui, r, label, self.hit(r));
                 }
                 if let Some(account) = linked {
-                    let account_line = format!(
-                        "LINKED: {} / {}  (OTHER PLAYERS SEE ONLY A VERIFIED BADGE)",
-                        account.handle.as_deref().unwrap_or("NO CURRENT HANDLE"),
-                        account.did
+                    let (active_name, social_name) = self.selected_multiplayer_name();
+                    let join_line = format!(
+                        "MULTIPLAYER NAME: {active_name}  ({})",
+                        if social_name {
+                            "ATPROTO PROFILE"
+                        } else {
+                            "LOCAL PROFILE"
+                        }
                     );
                     ui.text_shadow(
                         w / 2.0 - 310.0,
-                        h * 0.86,
+                        h * 0.77,
+                        1.5,
+                        &join_line,
+                        [1.0, 0.95, 0.72, 1.0],
+                    );
+                    let profile_line = format!(
+                        "ATPROTO PROFILE: {}{}",
+                        account
+                            .profile_display_name
+                            .as_deref()
+                            .unwrap_or("NO DISPLAY NAME PUBLISHED"),
+                        account
+                            .handle
+                            .as_deref()
+                            .map(|handle| format!("  (@{handle})"))
+                            .unwrap_or_default()
+                    );
+                    ui.text_shadow(
+                        w / 2.0 - 310.0,
+                        h * 0.81,
                         1.25,
-                        &account_line.to_uppercase(),
+                        &profile_line.to_uppercase(),
+                        [0.6, 1.0, 0.7, 1.0],
+                    );
+                    let did_line = format!(
+                        "LINKED ID: {}  (OTHER PLAYERS SEE ONLY A VERIFIED BADGE)",
+                        account.did.short()
+                    );
+                    ui.text_shadow(
+                        w / 2.0 - 310.0,
+                        h * 0.85,
+                        1.25,
+                        &did_line.to_uppercase(),
                         [0.6, 1.0, 0.7, 1.0],
                     );
                 }

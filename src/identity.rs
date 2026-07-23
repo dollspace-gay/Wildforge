@@ -452,13 +452,43 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8], secret: bool) -> io::Resul
     let result = (|| {
         file.write_all(bytes)?;
         file.sync_all()?;
-        fs::rename(&temp, path)
+        replace_file(&temp, path)
     })();
     drop(file);
     if result.is_err() {
         let _ = fs::remove_file(&temp);
     }
     result
+}
+
+#[cfg(not(windows))]
+fn replace_file(temp: &Path, path: &Path) -> io::Result<()> {
+    fs::rename(temp, path)
+}
+
+#[cfg(windows)]
+fn replace_file(temp: &Path, path: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+    };
+
+    let source: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    // SAFETY: both buffers are NUL-terminated UTF-16 paths and remain alive
+    // for the duration of the call.
+    let moved = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if moved == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
 fn atomic_create_secret(path: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -478,9 +508,23 @@ fn atomic_create_secret(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let result = (|| {
         file.write_all(bytes)?;
         file.sync_all()?;
-        match fs::hard_link(&temp, path) {
+        #[cfg(unix)]
+        let publish = fs::hard_link(&temp, path);
+        // Creating a hard link is not supported on every filesystem Windows
+        // can launch the game from (including some network, removable, and
+        // compatibility filesystems). A same-directory rename is still
+        // atomic on Windows and refuses to replace an existing destination.
+        #[cfg(windows)]
+        let publish = fs::rename(&temp, path);
+        #[cfg(not(any(unix, windows)))]
+        let publish = fs::hard_link(&temp, path);
+        match publish {
             Ok(()) => Ok(()),
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+            Err(e)
+                if e.kind() == io::ErrorKind::AlreadyExists || cfg!(windows) && path.exists() =>
+            {
+                Ok(())
+            }
             Err(e) => Err(e),
         }
     })();
