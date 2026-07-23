@@ -825,3 +825,21 @@ name = "Basalt Bricks"
 texture = "basalt_bricks.png"
 hardness = 2.8
 tool = "pickaxe"
+
+[[block]]
+id = "lava"
+name = "Lava"
+texture = "lava.png"
+lava = 0
+item = false
+light = 13
+light_color = [1.0, 0.55, 0.16]
+
+[[block]]
+id = "magma_vent"
+name = "Magma Vent"
+texture = "magma_vent.png"
+hardness = 3.0
+tool = "pickaxe"
+light = 11
+light_color = [1.0, 0.45, 0.12]

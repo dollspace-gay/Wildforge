@@ -1230,14 +1230,16 @@ fn content_graph_is_complete_and_obtainable() {
                 grew = true;
             }
         }
-        // The bucket: dip it in any water and it comes up full — a
-        // code path, like shears.
-        if let (Some(b), Some(f)) = (reg.item_id("base:bucket"), reg.item_id("base:bucket_water"))
-            && ok.contains(&b.0)
-            && !ok.contains(&f.0)
-        {
-            ok.insert(f.0);
-            grew = true;
+        // The bucket: dip it in any fluid and it comes up full — a
+        // code path, like shears. Water and lava alike.
+        for full_name in ["base:bucket_water", "base:bucket_lava"] {
+            if let (Some(b), Some(f)) = (reg.item_id("base:bucket"), reg.item_id(full_name))
+                && ok.contains(&b.0)
+                && !ok.contains(&f.0)
+            {
+                ok.insert(f.0);
+                grew = true;
+            }
         }
         if let Some((sand, fuel, clear)) = reg.kiln_base
             && ok.contains(&sand.0)

@@ -141,6 +141,7 @@ pub struct Generator {
     carbonatite: BlockId,
     /// Every interior rock (for cave carving and surface scans).
     rocks: [BlockId; 11],
+    lava: BlockId,
     bandwarp: Perlin,
     granite3d: Perlin,
 }
@@ -249,6 +250,7 @@ impl Generator {
                 b("base:kimberlite"),
                 b("base:carbonatite"),
             ],
+            lava: b("base:lava"),
             bandwarp: p(40),
             granite3d: p(42),
         }
@@ -502,7 +504,14 @@ impl Generator {
                         .spag2
                         .get([wx / 70.0 + 41.0, yf / 55.0, wz / 70.0 - 13.0])
                         as f32;
-                    if ch > cheese_thr || (s1.abs() < w && s2.abs() < w) {
+                    if y < 11 && ch > 0.32 {
+                        // Deep magma pockets: where the cheese noise
+                        // merely swells, the rock holds lava instead
+                        // of opening — sealed chambers you mine into.
+                        // Settled full cells, never queued, until
+                        // something breaks the crust.
+                        c.set(lx as usize, y as usize, lz as usize, self.lava);
+                    } else if ch > cheese_thr || (s1.abs() < w && s2.abs() < w) {
                         c.set(lx as usize, y as usize, lz as usize, AIR);
                     }
                 }

@@ -219,6 +219,8 @@ pub struct World {
     load_remap: Vec<BlockId>,
     water_queue: VecDeque<(i32, i32, i32)>,
     water_queued: HashSet<(i32, i32, i32)>,
+    lava_queue: VecDeque<(i32, i32, i32)>,
+    lava_queued: HashSet<(i32, i32, i32)>,
     /// Absolute sim-time in seconds (day * DAY_LENGTH + time-of-day),
     /// mirrored from the Server every tick so chunk load and random
     /// ticks share one clock.
@@ -438,6 +440,8 @@ impl World {
             load_remap: Vec::new(),
             water_queue: VecDeque::new(),
             water_queued: HashSet::new(),
+            lava_queue: VecDeque::new(),
+            lava_queued: HashSet::new(),
             clock: 0.0,
             last_random: HashMap::new(),
             block_entities: HashMap::new(),

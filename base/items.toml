@@ -764,3 +764,9 @@ id = "bucket_water"
 name = "Water Bucket"
 texture = "@bucket_water"
 max_stack = 1
+
+[[item]]
+id = "bucket_lava"
+name = "Lava Bucket"
+texture = "bucket_lava.png"
+max_stack = 1

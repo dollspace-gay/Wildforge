@@ -76,12 +76,12 @@ fn should_draw(reg: &Registry, b: BlockId, n: BlockId) -> bool {
     if reg.block(n).sub_voxel {
         return true;
     }
-    if reg.is_water(b) {
+    if reg.is_fluid(b) {
         return n == AIR;
     }
     if !reg.is_opaque(b) {
         // Leaf-like blocks: draw faces between different non-opaque blocks.
-        return !reg.is_opaque(n) && n != b && !reg.is_water(n);
+        return !reg.is_opaque(n) && n != b && !reg.is_fluid(n);
     }
     !reg.is_opaque(n)
 }
@@ -370,13 +370,13 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                     }
                     continue;
                 }
-                let water = reg.is_water(b);
+                let water = reg.is_fluid(b);
                 // Glass rides the blended pipeline: translucent tint,
                 // and panes catch the water shader's sun glint.
                 let blended = water || reg.block(b).glass;
                 // Water surface height falls with flow level (unless the
                 // block above is also water — then it's a full column).
-                let top_drop = if water && !reg.is_water(get(lx, y + 1, lz)) {
+                let top_drop = if water && !reg.is_fluid(get(lx, y + 1, lz)) {
                     1.0 - reg.water_height(b)
                 } else if let Some(h) = reg.block(b).height {
                     // Thin slabs (snow layers): the top face and every

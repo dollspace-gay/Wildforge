@@ -140,6 +140,24 @@ impl Game {
             self.damage(4.0);
         }
 
+        // Lava burns fast — you can struggle (fluids are swimmable),
+        // but every half-second in the fire costs dearly.
+        let feet = self.server.world.get_block(
+            self.player.pos.x.floor() as i32,
+            (self.player.pos.y + 0.4).floor() as i32,
+            self.player.pos.z.floor() as i32,
+        );
+        if self.content.reg.is_lava(feet) {
+            self.survival.burn_timer += dt;
+            if self.survival.burn_timer >= 0.5 {
+                self.survival.burn_timer = 0.0;
+                self.survival.killed_by_wild = false;
+                self.damage(3.0);
+            }
+        } else {
+            self.survival.burn_timer = 0.0;
+        }
+
         // Drowning.
         if self.player.head_underwater(&self.server.world) {
             self.survival.air -= dt;

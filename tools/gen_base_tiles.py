@@ -310,6 +310,14 @@ def main():
     for name, tint, alpha, glow in GLASSES:
         glass(name, tint, alpha, glow).save(OUT / f"{name}.png")
     lava_tile().save(OUT / "lava.png")
+    # The lava bucket: the tin bucket silhouette, molten fill.
+    bl = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(bl)
+    d.polygon([(9, 12), (23, 12), (20, 24), (12, 24)], fill=(150, 150, 158, 255),
+              outline=(90, 90, 96, 255))
+    d.ellipse([9, 9, 23, 14], fill=(255, 120, 30, 255), outline=(90, 90, 96, 255))
+    d.arc([6, 2, 26, 14], 200, 340, fill=(110, 108, 104, 255))
+    bl.save(OUT / "bucket_lava.png")
     print(f"wrote {len(list(OUT.glob('*.png')))} tiles to {OUT}")
 
 

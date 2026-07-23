@@ -260,13 +260,20 @@ impl Game {
                 )
             {
                 let (x, y, z) = w.block;
-                if reg.water_volume(self.server.world.get_block(x, y, z)) == Some(8) {
+                let b = self.server.world.get_block(x, y, z);
+                // Either fluid fills the bucket — a full cell only.
+                if reg.fluid_volume(b) == Some(8) {
+                    let full_item = if reg.is_lava(b) {
+                        reg.item_id("base:bucket_lava")
+                    } else {
+                        reg.item_id("base:bucket_water")
+                    };
                     if let Some(r) = &self.multiplayer.remote {
                         r.client.send(&net::C2S::Scoop { x, y, z });
                     } else {
                         self.server.world.set_block(x, y, z, AIR);
                     }
-                    if let Some(full) = reg.item_id("base:bucket_water") {
+                    if let Some(full) = full_item {
                         self.inventory.slots[self.input.hotbar_sel] =
                             Some(ItemStack::new(&reg, full, 1));
                     }
@@ -290,6 +297,31 @@ impl Game {
                     } else {
                         let water = reg.water_block(0);
                         self.server.world.place_block((x, y, z), water);
+                    }
+                    if let Some(empty) = reg.item_id("base:bucket") {
+                        self.inventory.slots[self.input.hotbar_sel] =
+                            Some(ItemStack::new(&reg, empty, 1));
+                    }
+                    self.input.action_cooldown = 0.25;
+                    self.sfx(Sfx::Splash);
+                }
+            }
+            return;
+        }
+        if held.is_some() && held == reg.item_id("base:bucket_lava") {
+            if self.input.right_held
+                && self.input.action_cooldown <= 0.0
+                && let Some(h) = &hit
+            {
+                let (x, y, z) = h.adjacent;
+                if self.server.world.get_block(x, y, z) == AIR
+                    && !self.player.overlaps_block(x, y, z)
+                {
+                    if let Some(r) = &self.multiplayer.remote {
+                        r.client.send(&net::C2S::Place { x, y, z });
+                    } else {
+                        let lava = reg.lava_for_volume(8);
+                        self.server.world.place_block((x, y, z), lava);
                     }
                     if let Some(empty) = reg.item_id("base:bucket") {
                         self.inventory.slots[self.input.hotbar_sel] =
