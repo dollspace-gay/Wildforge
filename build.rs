@@ -21,9 +21,32 @@ fn walk(dir: &Path, root: &Path, entries: &mut Vec<(String, String)>) {
     }
 }
 
+fn embed(dir: &str, static_name: &str, doc: &str, out_file: &str, out: &str) {
+    let mut entries = Vec::new();
+    walk(Path::new(dir), Path::new(dir), &mut entries);
+    let mut src = format!(
+        "/// (tile name, png bytes) {doc}\npub static {static_name}: &[(&str, &[u8])] = &[\n"
+    );
+    for (name, path) in &entries {
+        src.push_str(&format!("    ({name:?}, include_bytes!({path:?})),\n"));
+    }
+    src.push_str("];\n");
+    fs::write(Path::new(out).join(out_file), src).unwrap();
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=packs/gemini/tiles");
+    println!("cargo:rerun-if-changed=base/textures");
     let out = env::var("OUT_DIR").unwrap();
+    // Base-mod tiles ride inside the binary so a copied exe works from
+    // any working directory; files on disk still override at load.
+    embed(
+        "base/textures",
+        "BASE_TILES",
+        "for the base mod's shipped art.",
+        "base_tiles.rs",
+        &out,
+    );
     let mut entries = Vec::new();
     walk(
         Path::new("packs/gemini/tiles"),

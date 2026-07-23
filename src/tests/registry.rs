@@ -1329,3 +1329,23 @@ fn the_glass_cabinet_is_complete() {
         "crystal filters nothing"
     );
 }
+
+#[test]
+fn base_tiles_ship_inside_the_binary() {
+    // Every PNG in base/textures is embedded at build time: a copied
+    // exe must run from any working directory without the repo.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("base/textures");
+    let mut n = 0;
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
+        let p = e.path();
+        if p.extension().is_some_and(|x| x == "png") {
+            let stem = p.file_stem().unwrap().to_string_lossy();
+            assert!(
+                crate::atlas::embedded_base_tile(&stem).is_some(),
+                "{stem} embedded"
+            );
+            n += 1;
+        }
+    }
+    assert!(n > 50, "the base art shipped ({n})");
+}

@@ -1354,7 +1354,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             return crate::atlas::UNKNOWN_SLOT;
         };
         let path = dir.join("textures").join(spec);
-        if !path.exists() {
+        let stem = spec.strip_suffix(".png").unwrap_or(spec);
+        let embedded =
+            dir.as_os_str() == "base" && crate::atlas::embedded_base_tile(stem).is_some();
+        if !path.exists() && !embedded {
             errs.push(format!("missing texture {spec}"));
             return crate::atlas::UNKNOWN_SLOT;
         }
