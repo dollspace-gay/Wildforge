@@ -30,7 +30,7 @@ struct Uniforms {
     sun_dir: [f32; 4],
     sun_col: [f32; 4],
     amb_col: [f32; 4],
-    light_vp: [[f32; 4]; 4],
+    light_vp: [[[f32; 4]; 4]; SHADOW_CASCADES],
     /// x = active point-light count.
     pt_count: [u32; 4],
     /// Per light: xyz = world position, w = range.
@@ -50,6 +50,18 @@ struct Uniforms {
 
 /// Sun shadow-map resolution (square). Keep in sync with SHADOW_RES in the shader.
 const SHADOW_RES: u32 = 2048;
+
+/// Number of sun shadow cascades (tightest first). Keep in sync with the
+/// shader's SHADOW_CASCADES and the `light_vp` array length.
+const SHADOW_CASCADES: usize = 3;
+
+/// World half-extent of each cascade's ortho box, tightest first: a dense near
+/// map for crisp contact/indoor beams, out to a wide map that keeps distant
+/// shadows.
+const CASCADE_RADII: [f32; SHADOW_CASCADES] = [16.0, 48.0, 128.0];
+
+/// Bytes per per-cascade shadow uniform slot (256 = min dynamic-offset align).
+const CASCADE_STRIDE: u64 = 256;
 
 /// Max shadow-casting/accumulated point lights per frame. Keep in sync with the
 /// shader's MAX_PT_LIGHTS.
@@ -269,7 +281,9 @@ pub struct Renderer {
     line_screen_pipeline: wgpu::RenderPipeline,
     ui_pipeline: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
-    shadow_view: wgpu::TextureView,
+    shadow_layer_views: Vec<wgpu::TextureView>, // one per cascade, render targets
+    shadow_casc_buf: wgpu::Buffer,  // per-cascade light_vp, dynamic-offset addressed
+    shadow_casc_bg: wgpu::BindGroup,
     shadow_bg: wgpu::BindGroup,
 
     // Point-light distance cube maps (one cube = 6 layers per light).

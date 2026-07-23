@@ -248,6 +248,25 @@ impl Game {
                 None => eprintln!("WILDFORGE_HELD: no item named {name:?}"),
             }
         }
+        // Dev: WILDFORGE_POS="x,y,z" teleports to an exact spot (reproducing
+        // reported coordinates). Runs after load so it wins.
+        if let Ok(s) = std::env::var("WILDFORGE_POS") {
+            let p: Vec<f32> = s.split(',').filter_map(|v| v.trim().parse().ok()).collect();
+            if p.len() == 3 {
+                let cp = ChunkPos::of_world(p[0] as i32, p[2] as i32);
+                for dx in -2..=2 {
+                    for dz in -2..=2 {
+                        self.server.world.ensure_chunk(ChunkPos {
+                            x: cp.x + dx,
+                            z: cp.z + dz,
+                        });
+                    }
+                }
+                self.player.pos = Vec3::new(p[0], p[1], p[2]);
+                self.player.vel = Vec3::ZERO;
+                self.camera.pos = self.player.pos + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            }
+        }
         // Dev: force camera look ("yaw,pitch" in radians) for framed captures.
         self.apply_look_env();
         // Dev: WILDFORGE_SCREEN=inventory opens the pack in-world for
@@ -297,8 +316,10 @@ impl Game {
                 self.server.world.set_block(bx + 5, y + 2, bz, r);
             }
         }
-        // Dev (temporary): a fully enclosed stone room with one 1-wide door,
-        // for checking how much skylight/ambient leaks into interiors.
+        // Dev: an enclosed cobblestone room with a 1-wide door and a 2x2 east
+        // window, for eyeballing interior lighting — the sky occlusion (walls go
+        // dark away from the openings) and the cascaded-shadow sunbeam that
+        // tracks across the floor through the window. `=torch` also plants one.
         if std::env::var("WILDFORGE_DEMO_ROOM").is_ok() {
             if let Some(stone) = self.content.reg.block_id("base:cobblestone") {
                 let (bx, bz) = (spawn.x as i32, spawn.z as i32);
@@ -316,8 +337,16 @@ impl Game {
                 // A 1-wide, 2-tall door in the +z wall.
                 self.server.world.set_block(bx, fy + 1, bz + 4, AIR);
                 self.server.world.set_block(bx, fy + 2, bz + 4, AIR);
-                // A planted torch on the floor, off to one side.
-                if let Some(torch) = self.content.reg.block_id("base:torch") {
+                // A 2x2 window high in the +x (east) wall — the morning sun throws
+                // a bright quad onto the floor that tracks across it.
+                for wy in 3..=4 {
+                    for wz in -1..=0 {
+                        self.server.world.set_block(bx + 4, fy + wy, bz + wz, AIR);
+                    }
+                }
+                if std::env::var("WILDFORGE_DEMO_ROOM").as_deref() == Ok("torch")
+                    && let Some(torch) = self.content.reg.block_id("base:torch")
+                {
                     self.server.world.set_block(bx + 2, fy + 1, bz, torch);
                 }
                 // Stand the player inside (this world has a saved position).

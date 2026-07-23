@@ -14,8 +14,9 @@ struct Uniforms {
     // rgb = cool sky-ambient fill, already scaled by daylight;
     // a = the ambient floor (the stark<->soft darkness knob)
     amb_col: vec4<f32>,
-    // world -> sun light-space clip, for shadow-map lookup
-    light_vp: mat4x4<f32>,
+    // world -> sun light-space clip, one per shadow cascade (tightest/densest
+    // first). A fragment samples the first cascade whose box contains it.
+    light_vp: array<mat4x4<f32>, 3>,
     // x = active point-light count
     pt_count: vec4<u32>,
     // per light: xyz = world position, w = range
@@ -51,13 +52,14 @@ const MAX_PT_LIGHTS: u32 = 8u;
 // 128, 255) wherever nothing is authored; material.b says where that is, so the
 // plain-tile early-out never has to read this texture.
 @group(1) @binding(3) var normal_tex: texture_2d<f32>;
-@group(2) @binding(0) var shadow_tex: texture_depth_2d;
+@group(2) @binding(0) var shadow_tex: texture_depth_2d_array;
 @group(2) @binding(1) var shadow_smp: sampler_comparison;
 @group(2) @binding(2) var pt_cube: texture_cube_array<f32>;
 @group(2) @binding(3) var pt_smp: sampler;
 @group(2) @binding(4) var pt_tr_cube: texture_cube_array<f32>;
 
 const SHADOW_RES: f32 = 2048.0;
+const SHADOW_CASCADES: u32 = 3u;
 const ATLAS_TILES: f32 = 32.0;
 // Apparent displacement depth, in blocks (a face is one tile wide), so the uv
 // offset is scaled into a single tile's span and can't drag across tiles.
@@ -108,35 +110,32 @@ fn vs_chunk(in: VsIn) -> VsOut {
 }
 
 // Depth-only pass from the sun's point of view: positions into light-space
-// clip. Reuses the chunk vertex buffer (only location 0 is read).
-@vertex
-fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
-    return u.light_vp * vec4<f32>(pos, 1.0);
-}
-
-// Fraction of the sun reaching a world point (1 = lit, 0 = fully shadowed),
-// 3x3 PCF with a slope-scaled bias. `ndl` is the surface's sun incidence.
-fn sample_shadow(world: vec3<f32>, ndl: f32) -> f32 {
-    let lc = u.light_vp * vec4<f32>(world, 1.0);
-    let p = lc.xyz / lc.w;
-    let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
-    // Outside the shadow map (or behind the light) -> treat as lit.
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || p.z > 1.0 || p.z < 0.0) {
-        return 1.0;
-    }
+// Sun visibility at a world point. Returns (shadow, coverage): shadow is the
+// lit fraction 1..0 (3x3 PCF, half-texel spread, slope-scaled bias); coverage
+// is 1 if the point fell inside a cascade (the shadow map is authoritative) or
+// 0 if it's beyond the farthest cascade (caller falls back to the sky mask).
+// Cascades are tested tightest-first, so near geometry uses the densest map.
+fn sample_shadow(world: vec3<f32>, ndl: f32) -> vec2<f32> {
     let bias = clamp(0.0016 * tan(acos(clamp(ndl, 0.0, 1.0))), 0.0004, 0.004);
-    let ref_depth = p.z - bias;
     let texel = 1.0 / SHADOW_RES;
-    var sum = 0.0;
-    for (var dy = -1; dy <= 1; dy = dy + 1) {
-        for (var dx = -1; dx <= 1; dx = dx + 1) {
-            // Half-texel spread: a tighter penumbra so contact shadows read
-            // crisply where geometry meets the ground, not as a soft blob.
-            let off = vec2<f32>(f32(dx), f32(dy)) * texel * 0.5;
-            sum = sum + textureSampleCompare(shadow_tex, shadow_smp, uv + off, ref_depth);
+    for (var c = 0u; c < SHADOW_CASCADES; c = c + 1u) {
+        let lc = u.light_vp[c] * vec4<f32>(world, 1.0);
+        let p = lc.xyz / lc.w;
+        let uv = vec2<f32>(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || p.z > 1.0 || p.z < 0.0) {
+            continue; // not in this cascade; try the next (wider) one
         }
+        let ref_depth = p.z - bias;
+        var sum = 0.0;
+        for (var dy = -1; dy <= 1; dy = dy + 1) {
+            for (var dx = -1; dx <= 1; dx = dx + 1) {
+                let off = vec2<f32>(f32(dx), f32(dy)) * texel * 0.5;
+                sum = sum + textureSampleCompareLevel(shadow_tex, shadow_smp, uv + off, i32(c), ref_depth);
+            }
+        }
+        return vec2<f32>(sum / 9.0, 1.0);
     }
-    return sum / 9.0;
+    return vec2<f32>(1.0, 0.0); // beyond all cascades
 }
 
 // Minecraft-style face brightness from a normal: top 1.0, bottom 0.5,
@@ -222,8 +221,14 @@ fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f3
     // shadow map (cast shadows). Ambient/torch are unaffected, so shadowed
     // ground fills with cool sky light instead of going black.
     let ndl = max(dot(dn, u.sun_dir.xyz), 0.0);
-    let shadow = sample_shadow(world, ndl);
-    let sun = sky * ndl * shadow * u.sun_col.rgb;
+    let sh = sample_shadow(world, ndl);
+    // Where a cascade covers this fragment (sh.y = 1) the shadow map is
+    // authoritative, so the sun is gated by the map alone — a sunbeam through a
+    // window lights an interior floor at full strength. Beyond the cascades
+    // (sh.y = 0) fall back to the baked skylight mask so distant unshadowed
+    // caves don't catch false sun.
+    let sun_gate = mix(sky, 1.0, sh.y);
+    let sun = sun_gate * ndl * sh.x * u.sun_col.rgb;
     // Sky fill: the actual sky color from the direction this (relief-perturbed)
     // surface faces. So a face pointing at the sunset warms, one at the zenith
     // cools, and relief bumps pick up different sky directions. Gated by a
@@ -550,7 +555,7 @@ fn fs_water(in: VsOut) -> @location(0) vec4<f32> {
         let v = normalize(u.cam.xyz - in.world);
         let h = normalize(u.sun_dir.xyz + v);
         let spec = pow(max(dot(n, h), 0.0), 64.0);
-        let sun_lit = in.sky * sample_shadow(in.world, max(dot(n, u.sun_dir.xyz), 0.0));
+        let sun_lit = in.sky * sample_shadow(in.world, max(dot(n, u.sun_dir.xyz), 0.0)).x;
         rgb = rgb + spec * sun_lit * u.sun_col.rgb * 1.6;
     }
     rgb = apply_fog(rgb, in.world);
