@@ -109,6 +109,18 @@ impl World {
         if o != out.len() {
             return None; // corrupt; regenerate
         }
+        if out.iter().all(|&block| block == self.reg.unknown_block.0) {
+            // The old palette-less-save bug decoded even air as the
+            // placeholder and could then persist a solid 16x16x256 magenta
+            // tower. No legitimate chunk can contain only unknown blocks;
+            // its original contents are already unrecoverable, so regenerate
+            // terrain instead of keeping the poisoned chunk forever.
+            eprintln!(
+                "world: regenerating all-placeholder chunk {},{}",
+                pos.x, pos.z
+            );
+            return None;
+        }
         if is_v4 {
             let meta = chunk.meta_raw_mut();
             let mut offset = 0;

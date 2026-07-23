@@ -427,20 +427,49 @@ fn unknown_palette_entries_become_placeholder() {
     let mut data = Vec::new();
     data.extend_from_slice(b"WFC3");
     let total = 16 * 16 * 256usize;
-    let mut left = total;
-    while left > 0 {
-        let run = left.min(u16::MAX as usize) as u16;
-        data.extend_from_slice(&run.to_le_bytes());
-        data.extend_from_slice(&1u16.to_le_bytes());
-        left -= run as usize;
+    for (count, id) in [(60u16, 0u16), (1, 1), ((total - 61) as u16, 0)] {
+        data.extend_from_slice(&count.to_le_bytes());
+        data.extend_from_slice(&id.to_le_bytes());
     }
     let _ = std::fs::write(dir.join("c.0.0.wfc"), data);
     let mut w = World::load_or_create(dir, reg.clone());
     w.ensure_chunk(ChunkPos { x: 0, z: 0 });
     assert_eq!(
-        w.get_block(4, 60, 4),
+        w.get_block(0, 60, 0),
         reg.unknown_block,
         "missing mod blocks must become the placeholder, not corrupt"
+    );
+    assert_eq!(w.get_block(0, 61, 0), AIR);
+}
+
+#[test]
+fn all_placeholder_chunks_regenerate_instead_of_becoming_obelisks() {
+    let reg = base_reg();
+    let dir = tmp_dir("placeholder-obelisk");
+    std::fs::write(dir.join("seed"), "42").unwrap();
+    std::fs::write(
+        dir.join("palette"),
+        format!("{} base:unknown\n", reg.unknown_block.0),
+    )
+    .unwrap();
+    let mut data = Vec::new();
+    data.extend_from_slice(b"WFC3");
+    let total = 16 * 16 * 256usize;
+    let mut left = total;
+    while left > 0 {
+        let run = left.min(u16::MAX as usize) as u16;
+        data.extend_from_slice(&run.to_le_bytes());
+        data.extend_from_slice(&reg.unknown_block.0.to_le_bytes());
+        left -= run as usize;
+    }
+    std::fs::write(dir.join("c.0.0.wfc"), data).unwrap();
+
+    let mut w = World::load_or_create(dir, reg.clone());
+    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    assert_ne!(
+        w.get_block(4, 60, 4),
+        reg.unknown_block,
+        "a chunk poisoned by the palette-less-save bug should regenerate"
     );
 }
 
