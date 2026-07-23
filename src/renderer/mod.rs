@@ -40,6 +40,10 @@ struct Uniforms {
     /// Per light: x = suppression scale, y = suppression range,
     /// z = shadows enabled, w unused.
     pt_misc: [[f32; 4]; MAX_PT_LIGHTS],
+    /// Inverse view-projection: unprojects NDC to world rays for the sky pass.
+    inv_view_proj: [[f32; 4]; 4],
+    /// xyz = true (unclamped) sun direction for the sky gradient; w unused.
+    sun_dir_true: [f32; 4],
 }
 
 /// Sun shadow-map resolution (square). Keep in sync with SHADOW_RES in the shader.
@@ -148,8 +152,14 @@ pub struct FrameInput<'a> {
     pub fog_dist: f32,
     pub underwater: bool,
     pub daylight: f32,
-    /// Normalized direction toward the sun (world space).
+    /// Normalized direction toward the sun (world space), clamped just over the
+    /// horizon so shadows never degenerate.
     pub sun_dir: Vec3,
+    /// True (unclamped) sun direction, dipping below the horizon at night;
+    /// drives the sky gradient only.
+    pub sun_dir_true: Vec3,
+    /// Weather gloom 0..1 (blends the sky gradient toward the overcast gray).
+    pub gloom: f32,
     /// Warm direct-sun color, already scaled by daylight.
     pub sun_col: Vec3,
     /// Cool sky-ambient color, already scaled by daylight.
@@ -249,6 +259,7 @@ pub struct Renderer {
     atlas_sampler: wgpu::Sampler,
 
     chunk_pipeline: wgpu::RenderPipeline,
+    sky_pipeline: wgpu::RenderPipeline,
     water_pipeline: wgpu::RenderPipeline,
     line_world_pipeline: wgpu::RenderPipeline,
     line_screen_pipeline: wgpu::RenderPipeline,
