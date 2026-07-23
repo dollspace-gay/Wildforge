@@ -321,3 +321,36 @@ existing `tools/gen_texture_pack.py` flow, run on request).
    (lens, prism), offering values, pitchblende whisper.
 8. **Docs & screenshots** — README section, plan marked
    IMPLEMENTED, full gate green.
+
+
+## Continuation (same PR): worldgen follows natural law
+
+Requested and implemented 2026-07-23, three commits on top of the
+eight stages:
+
+- **Plate tectonics, standing still**: a jittered-Voronoi plate map
+  (deterministic centers, conceptual drift vectors, oceanic vs
+  continental crust) shapes the continents; convergent continental
+  boundaries raise fold ranges whose **strata visibly buckle into
+  anticline/syncline trains** (two plates smushed together, as
+  ordered); subduction zones dig trenches, raise coastal ranges, and
+  concentrate the volcanoes; parting plates sag into rift valleys.
+  Old erosion mountains remain as worn highlands at half strength.
+  Peaks reach ~234 within CHUNK_Y=256 — build height was NOT raised:
+  +25%% chunk memory for mostly air failed the memory-efficiency
+  test; the altitude cap moved instead.
+- **Hydrology**: rivers carve winding valleys that widen toward the
+  coast and flood as a local sea level (gorges upstream, broad
+  water down, dry washes where the floor outruns the fill); lake
+  blobs press hollows into the flats; rift valleys below sea level
+  flood into rift seas free; mountain seeps pool on steep high
+  ground; every volcano hides an ellipsoid magma chamber half-full
+  of lava. River and lake beds gravel through the underwater
+  surface rules.
+- **Biomes**: Swamp, Savanna, Tundra, Badlands (stepped mesas with
+  the sandstone banding climbing their bare walls). The jungle
+  doubled its density, lifted its canopy (emergent giants 1-in-7),
+  and grew a floor of undergrowth. The 42-seed origin plate is
+  pinned continental by hash-salt choice so the test-suite's
+  fixed-coordinate builds stand on land; tests that only need
+  physics bring their own platforms now.

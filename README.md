@@ -178,6 +178,18 @@ it burns, it hardens to obsidian or basalt where water meets it, and
 it rides the same iron bucket. Underneath it all, sealed magma
 pockets wait to be mined into.
 
+The land itself follows natural law now: a static **plate map**
+shapes the continents — fold ranges rise where continents collide
+(their strata visibly buckled by the collision), trenches and
+volcano arcs mark the subduction zones, rift valleys sag where
+plates part. **Rivers** carve from the ranges to the sea, **lakes**
+and **rift seas** fill the hollows, mountain **springs** seep on
+high ground, and every volcano conceals a **magma chamber**. New
+country to cross: **swamps** of standing pools and mud, **savanna**
+under acacia, frozen **tundra** barrens, and **badlands** mesas
+banded in sandstone — while the **jungle** finally earns its name
+with a towering double canopy and a floor of undergrowth.
+
 The chain pays off in process: galena smelts to lead with the silver
 locked inside — **cupellation** through kiln-quartz crucibles splits
 it, silver in the slot and lead pouring out the furnace mouth. The
