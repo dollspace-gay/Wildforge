@@ -77,7 +77,7 @@ impl Projectile {
             return ProjHit::Block;
         }
         if self.from_player {
-            for (i, m) in world.mobs.iter().enumerate() {
+            for (i, m) in world.mobs().iter().enumerate() {
                 let Some(def) = world.reg.animals.get(m.species) else {
                     continue;
                 };

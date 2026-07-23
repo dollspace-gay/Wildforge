@@ -79,7 +79,7 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
     let bx = pos.x * CHUNK_X as i32;
     let bz = pos.z * CHUNK_Z as i32;
     let reg = &world.reg;
-    let chunk = world.chunks.get(&pos).expect("meshing missing chunk");
+    let chunk = world.chunk(pos).expect("meshing missing chunk");
 
     let mut m = ChunkMesh {
         opaque_verts: Vec::new(),
@@ -176,8 +176,11 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                                     // Cross-quads have no single face; treat as
                                     // upward-lit vegetation.
                                     normal: [0.0, 1.0, 0.0],
-                                    light: emissive
-                                        .unwrap_or([0.95 * cl[0], 0.95 * cl[1], 0.95 * cl[2]]),
+                                    light: emissive.unwrap_or([
+                                        0.95 * cl[0],
+                                        0.95 * cl[1],
+                                        0.95 * cl[2],
+                                    ]),
                                     sky: 0.95 * cs,
                                 });
                             }
@@ -251,8 +254,7 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                             normal: nrm,
                             // Emitter faces glow at full strength (no AO dimming);
                             // ordinary faces keep their occluded block light.
-                            light: emissive
-                                .unwrap_or([ao_f * fl[0], ao_f * fl[1], ao_f * fl[2]]),
+                            light: emissive.unwrap_or([ao_f * fl[0], ao_f * fl[1], ao_f * fl[2]]),
                             sky: ao_f * fs,
                         });
                     }

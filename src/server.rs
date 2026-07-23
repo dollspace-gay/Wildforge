@@ -146,7 +146,7 @@ impl Server {
                     events.push(SimEvent::PlayerHit { who, dmg, from })
                 }
                 MobEvent::Cast(proj) => {
-                    self.world.projectiles.push(proj);
+                    self.world.spawn_projectile(proj);
                     events.push(SimEvent::BoltCast);
                 }
                 MobEvent::Bred => events.push(SimEvent::Bred),
