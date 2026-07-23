@@ -1,6 +1,24 @@
 //! UI layout, drawing, and screen composition.
 
 use super::*;
+use glam::Mat4;
+
+fn project_world_label(
+    view_proj: Mat4,
+    point: Vec3,
+    width: f32,
+    height: f32,
+) -> Option<(f32, f32)> {
+    let clip = view_proj * point.extend(1.0);
+    if clip.w <= 0.05 {
+        return None;
+    }
+    let ndc = clip.truncate() / clip.w;
+    if ndc.x.abs() > 1.0 || ndc.y.abs() > 1.0 || !ndc.is_finite() {
+        return None;
+    }
+    Some(((ndc.x * 0.5 + 0.5) * width, (0.5 - ndc.y * 0.5) * height))
+}
 
 impl Game {
     pub(super) fn hotbar_origin(&self) -> (f32, f32) {
@@ -39,6 +57,11 @@ impl Game {
         }
     }
 
+    pub(super) fn inventory_avatar_x(&self) -> f32 {
+        let (grid_x, _, _, _) = self.inv_slot_rect(HOTBAR_SLOTS);
+        (grid_x * 0.5).clamp(160.0, 300.0)
+    }
+
     pub(super) fn menu_button_rect(&self, i: usize) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;
@@ -68,6 +91,56 @@ impl Game {
             .collect();
         rows.sort_by_key(|(id, _)| *id);
         rows
+    }
+
+    fn draw_world_nameplate(
+        &self,
+        ui: &mut UiBatch,
+        name: &str,
+        feet: Vec3,
+        width: f32,
+        height: f32,
+    ) {
+        let head = feet + Vec3::new(0.0, 2.12, 0.0);
+        let sight = head - self.camera.pos;
+        let distance = sight.length();
+        if !(1.0..=64.0).contains(&distance)
+            || raycast::raycast(
+                &self.server.world,
+                self.camera.pos,
+                sight,
+                (distance - 0.3).max(0.0),
+            )
+            .is_some()
+        {
+            return;
+        }
+        let Some((sx, sy)) = project_world_label(self.camera.view_proj(), head, width, height)
+        else {
+            return;
+        };
+        let label = name
+            .split_once(" [")
+            .map_or(name, |(display_name, _)| display_name)
+            .to_uppercase();
+        let scale = if distance < 24.0 { 1.5 } else { 1.25 };
+        let alpha = ((64.0 - distance) / 16.0).clamp(0.35, 1.0);
+        let text_width = UiBatch::text_width(scale, &label);
+        let text_y = sy - 9.0 * scale;
+        ui.rect(
+            sx - text_width * 0.5 - 4.0,
+            text_y - 3.0,
+            text_width + 8.0,
+            7.0 * scale + 6.0,
+            [0.01, 0.01, 0.015, 0.52 * alpha],
+        );
+        ui.text_shadow(
+            sx - text_width * 0.5,
+            text_y,
+            scale,
+            &label,
+            [1.0, 1.0, 1.0, alpha],
+        );
     }
 
     // ---- title screen layout ----
@@ -1085,31 +1158,24 @@ impl Game {
             let line = format!("SAY: {}_", self.multiplayer.chat_text.to_uppercase());
             ui.text_shadow(18.0, h - 40.0, 2.0, &line, [1.0; 4]);
         }
-        // Remote players: name tags projected into the world.
+        // Other players: world-space identity labels with distance fading,
+        // screen clipping, and terrain occlusion.
         if let Some(r) = &self.multiplayer.remote {
-            let vp = self.camera.view_proj();
             for (name, pos, _) in r.players.values() {
-                let head = *pos + Vec3::new(0.0, 2.1, 0.0);
-                let clip = vp * head.extend(1.0);
-                if clip.w > 0.5 {
-                    let sx = (clip.x / clip.w * 0.5 + 0.5) * w;
-                    let sy = (0.5 - clip.y / clip.w * 0.5) * h;
-                    let tw2 = UiBatch::text_width(1.5, &name.to_uppercase());
-                    ui.text_shadow(sx - tw2 / 2.0, sy, 1.5, &name.to_uppercase(), [1.0; 4]);
-                }
+                self.draw_world_nameplate(&mut ui, name, *pos, w, h);
             }
         }
         if let Some(hst) = &self.multiplayer.host {
-            let vp = self.camera.view_proj();
             for g in hst.guests.values() {
-                let head = g.render_pos().0 + Vec3::new(0.0, 2.1, 0.0);
-                let clip = vp * head.extend(1.0);
-                if clip.w > 0.5 {
-                    let sx = (clip.x / clip.w * 0.5 + 0.5) * w;
-                    let sy = (0.5 - clip.y / clip.w * 0.5) * h;
-                    let tw2 = UiBatch::text_width(1.5, &g.name.to_uppercase());
-                    ui.text_shadow(sx - tw2 / 2.0, sy, 1.5, &g.name.to_uppercase(), [1.0; 4]);
-                }
+                self.draw_world_nameplate(&mut ui, &g.name, g.render_pos().0, w, h);
+            }
+        }
+        if std::env::var("WILDFORGE_DEMO_PLAYER").is_ok() && self.in_world {
+            for (i, name) in ["ROWAN", "MICA"].iter().enumerate() {
+                let px = self.player.pos.x.floor() + 0.5 + (i as f32 * 2.0 - 1.0);
+                let pz = self.player.pos.z.floor() + 3.5;
+                let py = self.server.world.surface_height(px as i32, pz as i32) as f32 + 1.0;
+                self.draw_world_nameplate(&mut ui, name, Vec3::new(px, py, pz), w, h);
             }
         }
         // Brushing progress near the crosshair.
@@ -1484,6 +1550,42 @@ impl Game {
                 let tw = UiBatch::text_width(3.0, title);
                 let (c0x, c0y, _, _) = self.craft_slot_rect(0);
                 ui.text_shadow((w - tw) / 2.0, c0y - 40.0, 3.0, title, [1.0; 4]);
+                let avatar_x = self.inventory_avatar_x();
+                let (active_name, social_name) = self.selected_multiplayer_name();
+                let name_width = UiBatch::text_width(1.75, &active_name);
+                ui.rect(
+                    avatar_x - name_width * 0.5 - 7.0,
+                    c0y - 101.0,
+                    name_width + 14.0,
+                    19.0,
+                    [0.01, 0.02, 0.03, 0.72],
+                );
+                ui.text_shadow(
+                    avatar_x - name_width * 0.5,
+                    c0y - 97.0,
+                    1.75,
+                    &active_name,
+                    [0.72, 1.0, 0.78, 1.0],
+                );
+                if social_name
+                    && let Some(handle) = self
+                        .atproto_account
+                        .as_ref()
+                        .and_then(|account| account.handle.as_deref())
+                {
+                    let mut handle = format!("@{handle}");
+                    if handle.chars().count() > 40 {
+                        handle = format!("{}...", handle.chars().take(37).collect::<String>());
+                    }
+                    let handle_width = UiBatch::text_width(1.25, &handle);
+                    ui.text_shadow(
+                        avatar_x - handle_width * 0.5,
+                        c0y - 77.0,
+                        1.25,
+                        &handle,
+                        [0.65, 0.78, 1.0, 1.0],
+                    );
+                }
                 for i in 0..TOTAL_SLOTS {
                     let r = self.inv_slot_rect(i);
                     let hover = self.hit(r);
@@ -1497,10 +1599,10 @@ impl Game {
                     );
                 }
                 // The status card: nutrition, health bonus, the wild's
-                // mood, and the calendar — parked in the screen's upper
-                // left where nothing else lives, on an 8px grid with a
-                // real label column so nothing overlaps.
-                ui.rect(8.0, 8.0, 384.0, 216.0, [0.02, 0.03, 0.05, 0.62]);
+                // mood, and the calendar. It sits below the paper doll so
+                // both remain readable at the default 1280x720 window size.
+                let status_y = h - 224.0;
+                ui.rect(8.0, status_y, 384.0, 216.0, [0.02, 0.03, 0.05, 0.62]);
                 let names = ["GRAIN", "VEG", "FRUIT", "FUNGI", "PROT"];
                 let cols = [
                     [0.85, 0.7, 0.25, 1.0],
@@ -1510,7 +1612,7 @@ impl Game {
                     [0.8, 0.4, 0.35, 1.0],
                 ];
                 for i in 0..5 {
-                    let y = 24.0 + i as f32 * 24.0;
+                    let y = status_y + 16.0 + i as f32 * 24.0;
                     ui.text_shadow(24.0, y, 1.5, names[i], [1.0; 4]);
                     ui.rect(176.0, y, 128.0, 10.0, [0.12, 0.12, 0.12, 0.9]);
                     let v = self.survival.nutrition[i] / 100.0;
@@ -1520,7 +1622,13 @@ impl Game {
                     }
                 }
                 let bonus = (self.max_health() - MAX_HEALTH) as i32 / 2;
-                ui.text_shadow(24.0, 152.0, 1.5, &format!("MAX HEALTH +{bonus}"), [1.0; 4]);
+                ui.text_shadow(
+                    24.0,
+                    status_y + 144.0,
+                    1.5,
+                    &format!("MAX HEALTH +{bonus}"),
+                    [1.0; 4],
+                );
                 // The wild's ire: tier word + vine meter.
                 let tier = self.server.world.ire_tier();
                 let tier_col = [
@@ -1529,17 +1637,35 @@ impl Game {
                     [0.9, 0.55, 0.25, 1.0],
                     [0.9, 0.3, 0.25, 1.0],
                 ][tier];
-                ui.text_shadow(24.0, 176.0, 1.5, "THE WILD", [1.0; 4]);
-                ui.rect(176.0, 176.0, 128.0, 10.0, [0.12, 0.12, 0.12, 0.9]);
-                ui.rect(176.0, 176.0, self.server.world.ire * 1.28, 10.0, tier_col);
-                ui.text_shadow(312.0, 176.0, 1.5, world::IRE_TIERS[tier], tier_col);
+                ui.text_shadow(24.0, status_y + 168.0, 1.5, "THE WILD", [1.0; 4]);
+                ui.rect(
+                    176.0,
+                    status_y + 168.0,
+                    128.0,
+                    10.0,
+                    [0.12, 0.12, 0.12, 0.9],
+                );
+                ui.rect(
+                    176.0,
+                    status_y + 168.0,
+                    self.server.world.ire * 1.28,
+                    10.0,
+                    tier_col,
+                );
+                ui.text_shadow(
+                    312.0,
+                    status_y + 168.0,
+                    1.5,
+                    world::IRE_TIERS[tier],
+                    tier_col,
+                );
                 // The calendar: day count and where the season stands.
                 let w2 = &self.server.world;
                 let third =
                     ["EARLY", "MID", "LATE"][((w2.season_progress() * 3.0) as usize).min(2)];
                 ui.text_shadow(
                     24.0,
-                    200.0,
+                    status_y + 192.0,
                     1.5,
                     &format!(
                         "DAY {} - {third} {}",
@@ -1696,4 +1822,22 @@ impl Game {
     }
 
     // ---------- Menu / inventory clicks ----------
+}
+
+#[cfg(test)]
+mod characterization {
+    use super::project_world_label;
+    use glam::{Mat4, Vec3};
+
+    #[test]
+    fn world_labels_project_to_pixels_and_clip_offscreen_points() {
+        assert_eq!(
+            project_world_label(Mat4::IDENTITY, Vec3::ZERO, 800.0, 600.0),
+            Some((400.0, 300.0))
+        );
+        assert_eq!(
+            project_world_label(Mat4::IDENTITY, Vec3::new(2.0, 0.0, 0.0), 800.0, 600.0),
+            None
+        );
+    }
 }
