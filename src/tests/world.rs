@@ -337,6 +337,53 @@ fn block_edit_fans_out_through_one_authoritative_boundary() {
 }
 
 #[test]
+fn removing_a_torch_leaves_no_residual_block_light() {
+    let reg = base_reg();
+    let mut w = test_world_with("torch_residual", reg.clone());
+    let torch = b(&reg, "base:torch");
+    // A chunk corner: the torch (light 14) glows into all four chunks that
+    // meet here, so removing it must drain every one of them.
+    let (tx, ty, tz) = (15, 100, 15);
+
+    // Baseline block light over the region the torch can possibly touch.
+    let region = |f: &mut dyn FnMut(i32, i32, i32)| {
+        for x in (tx - 16)..=(tx + 16) {
+            for y in (ty - 16)..=(ty + 16) {
+                for z in (tz - 16)..=(tz + 16) {
+                    f(x, y, z);
+                }
+            }
+        }
+    };
+    let mut before: HashMap<(i32, i32, i32), [u8; 3]> = HashMap::new();
+    region(&mut |x, y, z| {
+        before.insert((x, y, z), w.light_rgb_at(x, y, z).0);
+    });
+
+    w.set_block(tx, ty, tz, torch);
+    assert!(
+        w.light_rgb_at(tx, ty, tz).0[0] > 0,
+        "torch lights its own cell"
+    );
+    assert!(
+        w.light_rgb_at(tx + 3, ty, tz + 3).0[0] > 0,
+        "glow crosses the seam into the diagonal chunk"
+    );
+
+    w.set_block(tx, ty, tz, AIR);
+
+    // Every cell must return to exactly its pre-torch block light.
+    region(&mut |x, y, z| {
+        let now = w.light_rgb_at(x, y, z).0;
+        assert_eq!(
+            now,
+            before[&(x, y, z)],
+            "residual block light at {x},{y},{z}: {now:?}"
+        );
+    });
+}
+
+#[test]
 fn remote_world_neither_generates_nor_saves_authoritative_state() {
     let reg = base_reg();
     let dir = tmp_dir("remote-authority");

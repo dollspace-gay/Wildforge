@@ -248,15 +248,27 @@ impl World {
     }
 
     /// Relight a chunk and let changes ripple to loaded neighbors until the
-    /// light field settles (light reaches at most ~1 chunk, so this is
-    /// short); every changed chunk is marked for remesh.
+    /// light field settles; every changed chunk is marked for remesh.
+    ///
+    /// Removing a bright light is the demanding case. `relight_chunk` rebuilds
+    /// a chunk from scratch but seeds across seams from its neighbors' *stored*
+    /// light — which, right after a removal, still holds the dead light's glow.
+    /// So the just-cleared chunk gets re-seeded from that stale glow and the
+    /// cascade has to peel it back one level at a time, each pass draining the
+    /// seam by the propagation cost. A level-`L` light therefore needs up to
+    /// `L` visits of a chunk to fully drain, so the cap must clear the 0..15
+    /// light range — the old cap of 4 stranded a faint residual bar near the
+    /// seam (visible as a lingering red patch when a torch was mined). Each
+    /// pass is monotone — values only fall during a removal — so this
+    /// converges; the cap is a safety net a couple of levels above the max.
     pub fn relight_and_cascade(&mut self, start: ChunkPos) {
+        const MAX_VISITS: u32 = 18; // > the 15-level light range, with headroom
         let mut queue = VecDeque::from([start]);
         let mut visits: HashMap<(i32, i32), u32> = HashMap::new();
         while let Some(p) = queue.pop_front() {
             let v = visits.entry((p.x, p.z)).or_insert(0);
-            if *v >= 4 {
-                continue; // safety cap; converges long before this
+            if *v >= MAX_VISITS {
+                continue; // safety cap; converges below this
             }
             *v += 1;
             if !self.chunks.contains_key(&p) {
