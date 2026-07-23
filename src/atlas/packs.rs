@@ -3,6 +3,13 @@
 use super::*;
 
 include!(concat!(env!("OUT_DIR"), "/gemini_pack.rs"));
+include!(concat!(env!("OUT_DIR"), "/base_tiles.rs"));
+
+/// The embedded copy of a base-mod tile, by file stem — the fallback
+/// when the exe runs somewhere base/textures/ isn't.
+pub fn embedded_base_tile(stem: &str) -> Option<&'static [u8]> {
+    BASE_TILES.iter().find(|(n, _)| *n == stem).map(|(_, b)| *b)
+}
 
 /// Built-in packs compiled into the binary (currently just gemini).
 pub fn embedded_pack(id: &str) -> Option<&'static [(&'static str, &'static [u8])]> {
@@ -192,7 +199,14 @@ pub fn build_atlas(
     let mut nrm = build_normal(px);
     let mut maps: Vec<(u16, MapKind, SrcTile)> = Vec::new();
     for (slot, path) in tex_files {
-        match load_tile_png(path) {
+        let src = load_tile_png(path).or_else(|| {
+            // A missing file may still ship inside the binary (base
+            // tiles embedded at build time).
+            path.file_stem()
+                .and_then(|s| embedded_base_tile(&s.to_string_lossy()))
+                .and_then(load_tile_bytes)
+        });
+        match src {
             Some(src) => {
                 blit_tile(&mut img, px, tp, *slot, &src);
                 clear_material_slot(&mut mat, px, *slot);
