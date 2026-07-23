@@ -32,6 +32,9 @@ struct Uniforms {
     // horizon at night; drives the sky gradient. The lighting sun_dir above
     // stays clamped just over the horizon so shadows never degenerate. w unused.
     sun_dir_true: vec4<f32>,
+    // Sky irradiance as 9 RGB spherical-harmonic coefficients (cosine-convolved
+    // to a diffuse light multiplier). Evaluated per-normal for the ambient fill.
+    sh: array<vec4<f32>, 9>,
 };
 
 const MAX_PT_LIGHTS: u32 = 8u;
@@ -146,6 +149,22 @@ fn face_shade(n: vec3<f32>) -> f32 {
     return 0.6;
 }
 
+// Sky ambient irradiance in the direction `n` (a diffuse light multiplier),
+// reconstructed from the 9 SH coefficients. The basis order/constants match the
+// CPU projection in sky.rs. Clamped non-negative (SH can ring below zero).
+fn sh_irradiance(n: vec3<f32>) -> vec3<f32> {
+    var c = u.sh[0].rgb * 0.282095;
+    c += u.sh[1].rgb * (0.488603 * n.y);
+    c += u.sh[2].rgb * (0.488603 * n.z);
+    c += u.sh[3].rgb * (0.488603 * n.x);
+    c += u.sh[4].rgb * (1.092548 * n.x * n.y);
+    c += u.sh[5].rgb * (1.092548 * n.y * n.z);
+    c += u.sh[6].rgb * (0.315392 * (3.0 * n.z * n.z - 1.0));
+    c += u.sh[7].rgb * (1.092548 * n.x * n.z);
+    c += u.sh[8].rgb * (0.546274 * (n.x * n.x - n.y * n.y));
+    return max(c, vec3<f32>(0.0));
+}
+
 // Per-fragment pseudo-random value in [0,1) from a world position (stable
 // under camera motion, so the dithered penumbra doesn't crawl).
 fn hash12(p: vec2<f32>) -> f32 {
@@ -205,8 +224,14 @@ fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f3
     let ndl = max(dot(dn, u.sun_dir.xyz), 0.0);
     let shadow = sample_shadow(world, ndl);
     let sun = sky * ndl * shadow * u.sun_col.rgb;
-    // Cool sky fill.
-    let amb = sky * fs * u.amb_col.rgb;
+    // Sky fill: the actual sky color from the direction this (relief-perturbed)
+    // surface faces. So a face pointing at the sunset warms, one at the zenith
+    // cools, and relief bumps pick up different sky directions. Gated by a
+    // concave power of the voxel skylight: the scalar mask over-reports how much
+    // sky a partially-enclosed surface sees (it can't tell a wide-open hemisphere
+    // from a sliver through a door), so squaring-and-then-some makes interiors
+    // fall dark while open sky (mask ~1) stays full.
+    let amb = pow(sky, 2.5) * sh_irradiance(dn);
     // Hard-edged colored point lights: range-attenuated N·L, summed, gated
     // by the distance cube maps. Each promoted light also cancels its own
     // soft flood-fill wrap (suppression) so the hard shadow reads — the

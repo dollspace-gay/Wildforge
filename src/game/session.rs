@@ -297,6 +297,35 @@ impl Game {
                 self.server.world.set_block(bx + 5, y + 2, bz, r);
             }
         }
+        // Dev (temporary): a fully enclosed stone room with one 1-wide door,
+        // for checking how much skylight/ambient leaks into interiors.
+        if std::env::var("WILDFORGE_DEMO_ROOM").is_ok() {
+            if let Some(stone) = self.content.reg.block_id("base:cobblestone") {
+                let (bx, bz) = (spawn.x as i32, spawn.z as i32);
+                let fy = self.server.world.surface_height(bx, bz);
+                for dx in -4..=4 {
+                    for dz in -4..=4 {
+                        for dy in 0..=6 {
+                            let shell =
+                                dx == -4 || dx == 4 || dz == -4 || dz == 4 || dy == 0 || dy == 6;
+                            let b = if shell { stone } else { AIR };
+                            self.server.world.set_block(bx + dx, fy + dy, bz + dz, b);
+                        }
+                    }
+                }
+                // A 1-wide, 2-tall door in the +z wall.
+                self.server.world.set_block(bx, fy + 1, bz + 4, AIR);
+                self.server.world.set_block(bx, fy + 2, bz + 4, AIR);
+                // A planted torch on the floor, off to one side.
+                if let Some(torch) = self.content.reg.block_id("base:torch") {
+                    self.server.world.set_block(bx + 2, fy + 1, bz, torch);
+                }
+                // Stand the player inside (this world has a saved position).
+                self.player.pos =
+                    Vec3::new(bx as f32 + 0.5, (fy + 1) as f32 + 0.2, bz as f32 - 2.5);
+                self.camera.pos = self.player.pos + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            }
+        }
         // Dev: two pillars on a grey floor lit by a blue and a red dynamic
         // point light (sharp per-light shadows). Pair with
         // WILDFORGE_AMBIENT=0.05,0.05,0.05 for stark contrast.

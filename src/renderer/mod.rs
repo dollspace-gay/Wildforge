@@ -44,6 +44,8 @@ struct Uniforms {
     inv_view_proj: [[f32; 4]; 4],
     /// xyz = true (unclamped) sun direction for the sky gradient; w unused.
     sun_dir_true: [f32; 4],
+    /// Sky irradiance as 9 RGB SH coefficients (diffuse light multiplier).
+    sh: [[f32; 4]; 9],
 }
 
 /// Sun shadow-map resolution (square). Keep in sync with SHADOW_RES in the shader.
@@ -160,6 +162,8 @@ pub struct FrameInput<'a> {
     pub sun_dir_true: Vec3,
     /// Weather gloom 0..1 (blends the sky gradient toward the overcast gray).
     pub gloom: f32,
+    /// Sky ambient as 9 RGB SH coefficients (see `sky::project`).
+    pub sh_ambient: [Vec3; 9],
     /// Warm direct-sun color, already scaled by daylight.
     pub sun_col: Vec3,
     /// Cool sky-ambient color, already scaled by daylight.

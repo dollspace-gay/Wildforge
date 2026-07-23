@@ -80,6 +80,13 @@ impl Renderer {
             },
             inv_view_proj: inv_view_proj.to_cols_array_2d(),
             sun_dir_true: [f.sun_dir_true.x, f.sun_dir_true.y, f.sun_dir_true.z, 0.0],
+            sh: {
+                let mut a = [[0.0f32; 4]; 9];
+                for (i, c) in f.sh_ambient.iter().enumerate() {
+                    a[i] = [c.x, c.y, c.z, 0.0];
+                }
+                a
+            },
         };
         self.entity_vbuf.upload(
             &self.device,
