@@ -236,6 +236,7 @@ ITEMS = [
     ("rare_earth_powder", (216, 150, 170), (150, 90, 115), "powder"),
     ("tin_powder", (210, 214, 222), (140, 145, 155), "powder"),
     ("monazite_grit", (180, 144, 100), (120, 92, 60), "powder"),
+    ("bastnasite", (196, 130, 90), (130, 82, 52), "lump"),
     ("quartz_crucible", (228, 224, 216), (160, 156, 150), "crucible"),
     ("charged_crucible", (176, 168, 172), (100, 96, 104), "crucible"),
     ("crystal_lens", (210, 230, 240), (140, 170, 190), "lens"),

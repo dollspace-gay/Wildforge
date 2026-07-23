@@ -870,3 +870,92 @@ hardness = 2.4
 tool = "pickaxe"
 drops = "base:amethyst_shard"
 drop_count = 2
+
+# ---- minerals & geology: the ore roster ----
+
+[[block]]
+id = "coal_ore"
+name = "Coal Seam"
+texture = "coal_ore.png"
+hardness = 4.0
+tool = "pickaxe"
+requires_tool = true
+drops = "base:coal"
+
+[[block]]
+id = "quartz_vein"
+name = "Quartz Vein"
+texture = "quartz_vein.png"
+hardness = 5.0
+tool = "pickaxe"
+requires_tool = true
+drops = "base:quartz_shard"
+
+[[block]]
+id = "gold_quartz"
+name = "Gold in Quartz"
+texture = "gold_quartz.png"
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 3
+drops = "base:raw_gold"
+bonus_drop = { item = "base:quartz_shard", chance = 0.5 }
+
+[[block]]
+id = "galena_ore"
+name = "Galena"
+texture = "galena_ore.png"
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 3
+drops = "base:raw_galena"
+
+[[block]]
+id = "chromite_ore"
+name = "Chromite"
+texture = "chromite_ore.png"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 4
+drops = "base:raw_chromite"
+
+[[block]]
+id = "diamond_ore"
+name = "Diamond in Kimberlite"
+texture = "diamond_ore.png"
+hardness = 8.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 5
+drops = "base:diamond"
+
+[[block]]
+id = "pitchblende_ore"
+name = "Pitchblende"
+texture = "pitchblende_ore.png"
+hardness = 8.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 6
+drops = "base:raw_pitchblende"
+
+[[block]]
+id = "monazite_sand"
+name = "Monazite Sand"
+texture = "monazite_sand.png"
+hardness = 0.8
+tool = "shovel"
+drops = "base:monazite_grit"
+
+[[block]]
+id = "bastnasite_ore"
+name = "Bastnasite"
+texture = "bastnasite_ore.png"
+hardness = 5.5
+tool = "pickaxe"
+requires_tool = true
+min_tier = 3
+drops = "base:bastnasite"

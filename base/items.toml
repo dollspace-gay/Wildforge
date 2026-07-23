@@ -785,3 +785,43 @@ texture = "quartz_shard.png"
 id = "amethyst_shard"
 name = "Amethyst"
 texture = "amethyst_shard.png"
+
+[[item]]
+id = "coal"
+name = "Coal"
+texture = "coal.png"
+
+[[item]]
+id = "raw_gold"
+name = "Raw Gold"
+texture = "raw_gold.png"
+
+[[item]]
+id = "raw_galena"
+name = "Raw Galena"
+texture = "raw_galena.png"
+
+[[item]]
+id = "raw_chromite"
+name = "Raw Chromite"
+texture = "raw_chromite.png"
+
+[[item]]
+id = "diamond"
+name = "Diamond"
+texture = "diamond.png"
+
+[[item]]
+id = "raw_pitchblende"
+name = "Pitchblende"
+texture = "raw_pitchblende.png"
+
+[[item]]
+id = "monazite_grit"
+name = "Monazite Grit"
+texture = "monazite_grit.png"
+
+[[item]]
+id = "bastnasite"
+name = "Bastnasite"
+texture = "bastnasite.png"

@@ -598,8 +598,10 @@ fn iron_ore_generates_in_band() {
             if *b == ore.0 {
                 found += 1;
                 let y = i % 256;
-                if !(1..=54).contains(&y) {
-                    out_of_band += 1; // random-walk veins drift up to 5
+                // Basement iron (4..48) plus the banded seams in shale
+                // (40..62); either kind of vein drifts a little.
+                if !(1..=70).contains(&y) {
+                    out_of_band += 1;
                 }
             }
         }
@@ -919,4 +921,103 @@ fn pipes_and_geodes_seed_the_deep() {
         }
     }
     assert!(placed, "a geode placed in limestone country");
+}
+
+#[test]
+fn ores_stay_in_their_host_rocks() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("hosts"), reg.clone());
+    for x in -4..=4 {
+        for z in -4..=4 {
+            w.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    let b = |n: &str| reg.block_id(n).unwrap();
+    let coal = b("base:coal_ore");
+    let gold = b("base:gold_quartz");
+    let quartz = b("base:quartz_vein");
+    let diamond = b("base:diamond_ore");
+    let shale = b("base:shale");
+    let slate = b("base:slate");
+    let kim = b("base:kimberlite");
+    let mut coal_n = 0;
+    let mut quartz_n = 0;
+    let (mut coal_hosted, mut gold_neighbors_quartz) = (0, 0);
+    let mut gold_n = 0;
+    for x in -72..72 {
+        for z in -72..72 {
+            for y in 1..90 {
+                let blk = w.get_block(x, y, z);
+                if blk == coal {
+                    coal_n += 1;
+                    // A coal cell should sit in shale country: some
+                    // neighbor is shale (or its cooked twin).
+                    let hosted = [
+                        (1, 0, 0),
+                        (-1, 0, 0),
+                        (0, 1, 0),
+                        (0, -1, 0),
+                        (0, 0, 1),
+                        (0, 0, -1),
+                    ]
+                    .iter()
+                    .any(|&(dx, dy, dz)| {
+                        let n = w.get_block(x + dx, y + dy, z + dz);
+                        n == shale || n == slate || n == coal
+                    });
+                    if hosted {
+                        coal_hosted += 1;
+                    }
+                } else if blk == quartz {
+                    quartz_n += 1;
+                } else if blk == gold {
+                    gold_n += 1;
+                    let near = [
+                        (1, 0, 0),
+                        (-1, 0, 0),
+                        (0, 1, 0),
+                        (0, -1, 0),
+                        (0, 0, 1),
+                        (0, 0, -1),
+                    ]
+                    .iter()
+                    .any(|&(dx, dy, dz)| {
+                        let n = w.get_block(x + dx, y + dy, z + dz);
+                        n == quartz || n == gold
+                    });
+                    if near {
+                        gold_neighbors_quartz += 1;
+                    }
+                } else if blk == diamond {
+                    // Diamonds only ever sit inside kimberlite.
+                    let near_kim = [
+                        (1, 0, 0),
+                        (-1, 0, 0),
+                        (0, 1, 0),
+                        (0, -1, 0),
+                        (0, 0, 1),
+                        (0, 0, -1),
+                    ]
+                    .iter()
+                    .any(|&(dx, dy, dz)| {
+                        let n = w.get_block(x + dx, y + dy, z + dz);
+                        n == kim || n == diamond
+                    });
+                    assert!(near_kim, "diamond outside kimberlite at ({x},{y},{z})");
+                }
+            }
+        }
+    }
+    assert!(coal_n > 30, "coal seams exist ({coal_n})");
+    assert!(quartz_n > 20, "quartz veins exist ({quartz_n})");
+    assert!(
+        coal_hosted * 10 >= coal_n * 8,
+        "coal keeps shale company ({coal_hosted}/{coal_n})"
+    );
+    if gold_n > 0 {
+        assert!(
+            gold_neighbors_quartz * 10 >= gold_n * 7,
+            "gold stays in its veins ({gold_neighbors_quartz}/{gold_n})"
+        );
+    }
 }
