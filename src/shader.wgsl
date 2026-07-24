@@ -298,25 +298,34 @@ fn dda_transmit(world: vec3<f32>, normal: vec3<f32>, tgt: vec3<f32>) -> vec3<f32
 fn point_shadow_dda(world: vec3<f32>, normal: vec3<f32>, lp: vec3<f32>, radius: f32) -> vec3<f32> {
     let center = dda_transmit(world, normal, lp);
     if (radius < 0.01) { return center; }
-    // Disk basis perpendicular to the light direction.
+    // Disk basis perpendicular to the light direction. It rotates smoothly with
+    // the light direction across neighbouring fragments, so the sample pattern
+    // stays coherent — no per-fragment random rotation (that made the penumbra a
+    // noisy Monte-Carlo estimate that crawled and flickered as the radius moved).
     let ld = normalize(lp - world);
     let up0 = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(ld.y) > 0.99);
     let tang = normalize(cross(up0, ld));
     let bitang = cross(ld, tang);
-    let rot = hash12(world.xz + world.yx) * 6.2831853;
-    // Early out: if a probe on each side of the disk agrees with the centre,
-    // this fragment is well inside umbra or full light — skip the fan.
-    let e = (tang * cos(rot) + bitang * sin(rot)) * radius;
-    if (all(dda_transmit(world, normal, lp + e) == center)
-        && all(dda_transmit(world, normal, lp - e) == center)) {
+    // Early out: probe the four cardinal edges of the disk. If all agree with
+    // the centre ray, this fragment is solidly in umbra or full light — skip the
+    // fan. Four directions (not one axis) so a penumbra crossing either axis is
+    // never missed and hardened.
+    let et = tang * radius;
+    let eb = bitang * radius;
+    if (all(dda_transmit(world, normal, lp + et) == center)
+        && all(dda_transmit(world, normal, lp - et) == center)
+        && all(dda_transmit(world, normal, lp + eb) == center)
+        && all(dda_transmit(world, normal, lp - eb) == center)) {
         return center;
     }
-    // Penumbra: average a Vogel-spiral fan of samples across the disk.
-    let N = 12;
+    // Penumbra: average a fixed Vogel-spiral fan across the light disk. Fixed
+    // (unrotated) so the soft edge is a smooth, stable gradient; the source is
+    // small (a flame), so the band is thin and never wraps around a block.
+    let N = 16;
     var sum = vec3<f32>(0.0);
     for (var s = 0; s < N; s = s + 1) {
         let rr = sqrt((f32(s) + 0.5) / f32(N));
-        let th = f32(s) * 2.399963 + rot;
+        let th = f32(s) * 2.399963;
         let off = (tang * cos(th) + bitang * sin(th)) * (rr * radius);
         sum = sum + dda_transmit(world, normal, lp + off);
     }
