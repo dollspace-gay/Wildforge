@@ -72,6 +72,13 @@ impl World {
             buf.extend_from_slice(&z.to_le_bytes());
         }
         let _ = fs::write(self.save_dir.join("aseeded"), buf);
+        // Player-touched chunk marks: same shape.
+        let mut pt = Vec::with_capacity(self.player_touched.len() * 8);
+        for (x, z) in &self.player_touched {
+            pt.extend_from_slice(&x.to_le_bytes());
+            pt.extend_from_slice(&z.to_le_bytes());
+        }
+        let _ = fs::write(self.save_dir.join("ptouched"), pt);
     }
 
     pub(super) fn load_mobs(&mut self) {
@@ -159,6 +166,13 @@ impl World {
                 let x = i32::from_le_bytes([p[0], p[1], p[2], p[3]]);
                 let z = i32::from_le_bytes([p[4], p[5], p[6], p[7]]);
                 self.mob_seeded.insert((x, z));
+            }
+        }
+        if let Ok(data) = fs::read(self.save_dir.join("ptouched")) {
+            for p in data.chunks_exact(8) {
+                let x = i32::from_le_bytes([p[0], p[1], p[2], p[3]]);
+                let z = i32::from_le_bytes([p[4], p[5], p[6], p[7]]);
+                self.player_touched.insert((x, z));
             }
         }
     }

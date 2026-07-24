@@ -2296,3 +2296,71 @@ fn the_stone_states_its_season_and_doubles_it() {
         "unwanted still counts, singly ({refund2})"
     );
 }
+
+#[test]
+fn the_green_tide_seeds_only_natural_kind_ground() {
+    use crate::world::SEASON_DAYS;
+    let reg = base_reg();
+    let mut w = test_world_with("greentide", reg.clone());
+    w.day = SEASON_DAYS; // summer: growth season
+    // Force chunk (0,0) UNMODIFIED after our stage-setting: we build
+    // via raw grass/log placement then clear the flag through save.
+    let grass = b(&reg, "base:grass");
+    let log = b(&reg, "base:log");
+    let sy = 140;
+    for x in 0..16 {
+        for z in 0..16 {
+            w.set_block(x, sy, z, grass);
+        }
+    }
+    for dy in 1..=4 {
+        w.set_block(8, sy + dy, 8, log);
+    }
+    // Blessed country; set_block is the sim's hand, not a player's,
+    // so the chunk stays natural in the green tide's eyes.
+    for _ in 0..10 {
+        w.plant_ire_at(8, 8, 1.0);
+    }
+    let mut rng = 11u32;
+    for _ in 0..6000 {
+        w.random_tick(&mut rng);
+    }
+    let mut saplings = 0;
+    for x in 0..16 {
+        for z in 0..16 {
+            if reg.block(w.get_block(x, sy + 1, z)).sapling.is_some() {
+                saplings += 1;
+            }
+        }
+    }
+    assert!(saplings >= 1, "the forest thickens ({saplings})");
+    assert!(saplings <= 8, "but never marches ({saplings})");
+    // The same ground, resented: nothing seeds.
+    let mut w2 = test_world_with("greentide2", reg.clone());
+    w2.day = SEASON_DAYS;
+    for x in 0..16 {
+        for z in 0..16 {
+            w2.set_block(x, sy, z, grass);
+        }
+    }
+    for dy in 1..=4 {
+        w2.set_block(8, sy + dy, 8, log);
+    }
+    for _ in 0..10 {
+        w2.add_ire_at(8, 8, 1.0);
+    }
+    // (chunk stays modified anyway - doubly barred)
+    let mut rng2 = 11u32;
+    for _ in 0..3000 {
+        w2.random_tick(&mut rng2);
+    }
+    let mut saplings2 = 0;
+    for x in 0..16 {
+        for z in 0..16 {
+            if reg.block(w2.get_block(x, sy + 1, z)).sapling.is_some() {
+                saplings2 += 1;
+            }
+        }
+    }
+    assert_eq!(saplings2, 0, "angry or touched ground stays bare");
+}

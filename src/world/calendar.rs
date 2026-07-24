@@ -119,6 +119,32 @@ impl World {
         if self.day_progress >= 1.0 {
             self.day_progress -= 1.0;
             self.plant_ire_today = 0.0;
+            // The wild forgives, slowly: a cell held deeply blessed
+            // for a full season earns ONE wildlife reseed — its
+            // hunted-out chunks roll again when next visited.
+            let blessed: Vec<(i32, i32)> = self
+                .regional_ire
+                .iter()
+                .filter(|(_, v)| **v < -10.0)
+                .map(|(c, _)| *c)
+                .collect();
+            for cell in blessed {
+                let streak = self.blessed_streak.entry(cell).or_insert(0);
+                *streak += 1;
+                if *streak >= SEASON_DAYS {
+                    self.blessed_streak.remove(&cell);
+                    let (cx0, cz0) = (cell.0 * 16, cell.1 * 16);
+                    for dx in 0..16 {
+                        for dz in 0..16 {
+                            self.mob_seeded.remove(&(cx0 + dx, cz0 + dz));
+                        }
+                    }
+                    self.whispers
+                        .push("The land breathes. Something returns.".to_string());
+                }
+            }
+            self.blessed_streak
+                .retain(|c, _| self.regional_ire.get(c).is_some_and(|&v| v < -10.0));
             return true;
         }
         false

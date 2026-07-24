@@ -260,6 +260,12 @@ pub struct World {
     pub(crate) regional_ire: HashMap<(i32, i32), f32>,
     /// Lines the wild wants spoken (drained by the game as toasts).
     pub whispers: Vec<String>,
+    /// Days each cell has held deeply blessed (session-scoped; the
+    /// reseed clock restarts on load — the wild forgives the patient).
+    blessed_streak: HashMap<(i32, i32), u32>,
+    /// Chunks a player's hands have edited (placed or broken blocks):
+    /// the green tide never seeds ground people made their own.
+    pub(crate) player_touched: HashSet<(i32, i32)>,
     /// Absolute sim-time in seconds (day * DAY_LENGTH + time-of-day),
     /// mirrored from the Server every tick so chunk load and random
     /// ticks share one clock.
@@ -490,6 +496,8 @@ impl World {
             perish_accum: 0.0,
             regional_ire: HashMap::new(),
             whispers: Vec::new(),
+            blessed_streak: HashMap::new(),
+            player_touched: HashSet::new(),
             mobs: Vec::new(),
             projectiles: Vec::new(),
             hostile_spawn_timer: 0.0,
@@ -686,6 +694,8 @@ impl World {
         award_drop: bool,
         affect_ire: bool,
     ) -> Option<BlockBreak> {
+        let cp = ChunkPos::of_world(pos.0, pos.2);
+        self.player_touched.insert((cp.x, cp.z));
         let block = self.get_block(pos.0, pos.1, pos.2);
         if block == AIR || self.reg.block(block).hardness.is_none() {
             return None;
@@ -703,6 +713,8 @@ impl World {
     }
 
     pub fn place_block(&mut self, pos: (i32, i32, i32), block: BlockId) -> bool {
+        let cp = ChunkPos::of_world(pos.0, pos.2);
+        self.player_touched.insert((cp.x, cp.z));
         if self.reg.blocks.get(block.0 as usize).is_none()
             || self.get_block(pos.0, pos.1, pos.2) != AIR
         {

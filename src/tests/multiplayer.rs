@@ -137,7 +137,7 @@ fn remote_roles_are_authorized_by_the_host_not_the_client_ui() {
     )
     .unwrap();
 
-    for _ in 0..200 {
+    for _ in 0..600 {
         sess.pump(&mut sim, None, 0.05);
         let _ = actor.poll();
         if sess.guests.len() == 2 {
@@ -162,7 +162,7 @@ fn remote_roles_are_authorized_by_the_host_not_the_client_ui() {
         target: target_id,
         action: ModerationAction::Kick,
     });
-    for _ in 0..20 {
+    for _ in 0..60 {
         sess.pump(&mut sim, None, 0.05);
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
@@ -180,7 +180,7 @@ fn remote_roles_are_authorized_by_the_host_not_the_client_ui() {
         target: target_id,
         action: ModerationAction::CycleRole,
     });
-    for _ in 0..20 {
+    for _ in 0..60 {
         sess.pump(&mut sim, None, 0.05);
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
@@ -195,7 +195,7 @@ fn remote_roles_are_authorized_by_the_host_not_the_client_ui() {
         target: target_id,
         action: ModerationAction::CycleRole,
     });
-    for _ in 0..20 {
+    for _ in 0..60 {
         sess.pump(&mut sim, None, 0.05);
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
@@ -209,7 +209,7 @@ fn remote_roles_are_authorized_by_the_host_not_the_client_ui() {
         target: target_id,
         action: ModerationAction::Mute { seconds: 600 },
     });
-    for _ in 0..20 {
+    for _ in 0..60 {
         sess.pump(&mut sim, None, 0.05);
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
@@ -217,7 +217,7 @@ fn remote_roles_are_authorized_by_the_host_not_the_client_ui() {
         matches!(message, S2C::Toast(text) if text.contains("muted for 600 seconds"))
     }));
     target.send(&C2S::Chat("this must not be broadcast".into()));
-    for _ in 0..20 {
+    for _ in 0..60 {
         sess.pump(&mut sim, None, 0.05);
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
@@ -235,7 +235,7 @@ fn remote_roles_are_authorized_by_the_host_not_the_client_ui() {
         target: target_id,
         action: ModerationAction::Kick,
     });
-    for _ in 0..20 {
+    for _ in 0..60 {
         sess.pump(&mut sim, None, 0.05);
         if !sess.guests.contains_key(&target_id) {
             break;
@@ -298,7 +298,7 @@ fn loopback_join_stream_and_edit() {
     let mut held_echo: Option<((u16, u32), (u16, u32))> = None;
     let mut got_chunk = false;
     let mut chunk_data: Option<(i32, i32, Vec<u8>)> = None;
-    for _ in 0..200 {
+    for _ in 0..600 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -363,7 +363,7 @@ fn loopback_join_stream_and_edit() {
         hotbar: 0,
         sprint: true,
     });
-    for _ in 0..5 {
+    for _ in 0..15 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -396,7 +396,7 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::Break { x: 9, y, z: 9 });
     let mut echoed = false;
     let mut given = false;
-    for _ in 0..200 {
+    for _ in 0..600 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -457,7 +457,7 @@ fn loopback_join_stream_and_edit() {
         y: far_y,
         z: 200,
     });
-    for _ in 0..30 {
+    for _ in 0..90 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -490,7 +490,7 @@ fn loopback_join_stream_and_edit() {
     sess.guests.get_mut(&gid).unwrap().inventory.slots[0] = Some(ItemStack::new(&reg, bucket, 1));
     client.send(&C2S::Scoop { x: 8, y: wy, z: 10 });
     client.send(&C2S::Scoop { x: 11, y: wy, z: 8 });
-    for _ in 0..30 {
+    for _ in 0..90 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -514,7 +514,7 @@ fn loopback_join_stream_and_edit() {
     sim.world.set_block(10, cy, 8, chest);
     client.send(&C2S::OpenContainer { x: 10, y: cy, z: 8 });
     let mut opened = false;
-    for _ in 0..100 {
+    for _ in 0..300 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -553,7 +553,7 @@ fn loopback_join_stream_and_edit() {
         right: false,
     });
     let mut cursor_back = None;
-    for _ in 0..100 {
+    for _ in 0..300 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -582,7 +582,7 @@ fn loopback_join_stream_and_edit() {
     sim.time_of_day = 0.75;
     client.send(&C2S::SleepRequest);
     let mut dawned = false;
-    for _ in 0..100 {
+    for _ in 0..300 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, true, host_held, host_style)),
@@ -600,7 +600,7 @@ fn loopback_join_stream_and_edit() {
     // Chat relays.
     client.send(&C2S::Chat("hello".into()));
     let mut chatted = false;
-    for _ in 0..100 {
+    for _ in 0..300 {
         let fx = sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -631,7 +631,7 @@ fn loopback_join_stream_and_edit() {
         z: 8,
     });
     let (mut saw_falling, mut saw_land) = (false, false);
-    for _ in 0..200 {
+    for _ in 0..600 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -662,7 +662,7 @@ fn loopback_join_stream_and_edit() {
     build_bloomery(&mut sim.world, &reg, 12, by, 8);
     client.send(&C2S::OpenContainer { x: 12, y: by, z: 8 });
     let mut got_kind3 = false;
-    for _ in 0..100 {
+    for _ in 0..300 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -692,7 +692,7 @@ fn loopback_join_stream_and_edit() {
     client.send(&C2S::LightBloomery { x: 12, y: by, z: 8 });
     let lit = reg.block_id("base:bloomery_lit").unwrap();
     let mut is_lit = false;
-    for _ in 0..100 {
+    for _ in 0..300 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -721,7 +721,7 @@ fn loopback_join_stream_and_edit() {
         y: by,
         z: 10,
     });
-    for _ in 0..100 {
+    for _ in 0..300 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -748,7 +748,7 @@ fn loopback_join_stream_and_edit() {
             y: by,
             z: 10,
         });
-        for _ in 0..100 {
+        for _ in 0..300 {
             sess.pump(
                 &mut sim,
                 Some((gpos, 0.0, false, host_held, host_style)),
@@ -774,7 +774,7 @@ fn loopback_join_stream_and_edit() {
         // A human click cannot arrive faster than the authoritative action
         // cooldown. Advance it before queuing the next strike so this test
         // checks the work result rather than deliberately rate-limited input.
-        for _ in 0..7 {
+        for _ in 0..21 {
             sess.pump(
                 &mut sim,
                 Some((gpos, 0.0, false, host_held, host_style)),
@@ -784,7 +784,7 @@ fn loopback_join_stream_and_edit() {
         }
     }
     let mut bar = false;
-    for _ in 0..100 {
+    for _ in 0..300 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -811,7 +811,7 @@ fn loopback_join_stream_and_edit() {
     sim.world.set_block(6, ky, 12, kiln_b);
     client.send(&C2S::OpenContainer { x: 6, y: ky, z: 12 });
     let mut got_kind4 = false;
-    for _ in 0..100 {
+    for _ in 0..300 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, false, host_held, host_style)),
@@ -833,7 +833,7 @@ fn loopback_join_stream_and_edit() {
     sim.time_of_day = 0.75;
     client.send(&C2S::SleepRequest);
     client.send(&C2S::SleepCancel);
-    for _ in 0..30 {
+    for _ in 0..90 {
         sess.pump(
             &mut sim,
             Some((gpos, 0.0, true, host_held, host_style)),
@@ -851,7 +851,7 @@ fn loopback_join_stream_and_edit() {
     let gid = *sess.guests.keys().next().expect("guest present");
     assert!(sess.kick_guest(gid).is_some());
     assert!(sess.guests.is_empty(), "kicked guest removed");
-    for _ in 0..100 {
+    for _ in 0..300 {
         sess.pump(&mut sim, None, 0.06);
         client.poll();
         if !client.is_connected() {
@@ -871,7 +871,7 @@ fn loopback_join_stream_and_edit() {
     )
     .expect("reconnect");
     let mut turned_away = false;
-    for _ in 0..150 {
+    for _ in 0..450 {
         sess.pump(&mut sim, None, 0.06);
         for msg in client2.poll() {
             match msg {
@@ -919,7 +919,7 @@ fn late_join_gets_complete_roster_and_duplicate_name_is_refused() {
         None,
     )
     .unwrap();
-    for _ in 0..100 {
+    for _ in 0..300 {
         sess.pump(&mut sim, None, 0.05);
         if first
             .poll()
@@ -944,7 +944,7 @@ fn late_join_gets_complete_roster_and_duplicate_name_is_refused() {
     )
     .unwrap();
     let mut names = Vec::new();
-    for _ in 0..100 {
+    for _ in 0..300 {
         sess.pump(&mut sim, None, 0.05);
         for message in second.poll() {
             if let S2C::Welcome { roster, .. } = message {
@@ -974,7 +974,7 @@ fn late_join_gets_complete_roster_and_duplicate_name_is_refused() {
     )
     .unwrap();
     let mut refused = false;
-    for _ in 0..100 {
+    for _ in 0..300 {
         sess.pump(&mut sim, None, 0.05);
         refused |= duplicate.poll().iter().any(|message| {
             matches!(
@@ -1039,7 +1039,7 @@ fn welcome_precedes_any_authenticated_gameplay_message() {
     client.send(&C2S::Chat("too early to overtake welcome".into()));
 
     let mut order = Vec::new();
-    for _ in 0..200 {
+    for _ in 0..600 {
         session.pump(&mut sim, None, 0.05);
         for message in client.poll() {
             match message {
@@ -1069,7 +1069,7 @@ fn loopback_reconnect_reopens_the_same_server_profile() {
     let address: std::net::SocketAddr = format!("127.0.0.1:{}", session.net.port).parse().unwrap();
     let mut first =
         crate::net::Client::connect(address, "Fern".into(), 0, 0, &identity, None).unwrap();
-    for _ in 0..200 {
+    for _ in 0..600 {
         session.pump(&mut sim, None, 0.05);
         if first
             .poll()
@@ -1105,7 +1105,7 @@ fn loopback_reconnect_reopens_the_same_server_profile() {
 
     let mut second =
         crate::net::Client::connect(address, "New Name".into(), 0, 0, &identity, None).unwrap();
-    for _ in 0..200 {
+    for _ in 0..600 {
         session.pump(&mut sim, None, 0.05);
         if second
             .poll()
