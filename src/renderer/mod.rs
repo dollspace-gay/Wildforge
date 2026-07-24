@@ -246,6 +246,8 @@ pub struct GpuChunk {
 }
 
 pub struct Renderer {
+    /// The adapter the GPU work actually landed on (diagnostics).
+    pub adapter_name: String,
     pub surface: wgpu::Surface<'static>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,

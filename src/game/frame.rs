@@ -430,6 +430,13 @@ impl Game {
     }
 
     fn advance_session_authority(&mut self, dt: f32, paused: bool) {
+        let t0 = std::time::Instant::now();
+        self.advance_session_authority_inner(dt, paused);
+        let ms = t0.elapsed().as_secs_f32() * 1000.0;
+        self.frame_ms.0 = self.frame_ms.0 * 0.95 + ms * 0.05;
+    }
+
+    fn advance_session_authority_inner(&mut self, dt: f32, paused: bool) {
         if !self.in_world && self.multiplayer.remote.is_some() {
             self.remote_pump(dt);
         }
@@ -1458,6 +1465,7 @@ impl Game {
         let frame_vp = self.camera.view_proj();
         let frame_cam = self.camera.pos;
         self.camera.pos = saved_cam;
+        let render_t0 = std::time::Instant::now();
         match self.renderer.render(FrameInput {
             view_proj: frame_vp,
             cam_pos: frame_cam,
@@ -1483,7 +1491,10 @@ impl Game {
             // How much of the isolated overbright energy bleeds back as glow.
             bloom: if self.config.bloom { 1.5 } else { 0.0 },
         }) {
-            Ok(()) => {}
+            Ok(()) => {
+                let ms = render_t0.elapsed().as_secs_f32() * 1000.0;
+                self.frame_ms.1 = self.frame_ms.1 * 0.95 + ms * 0.05;
+            }
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
                 let size = self.window.inner_size();
                 self.renderer.resize(size.width, size.height);
@@ -1552,8 +1563,11 @@ impl Game {
                 String::new()
             };
             self.window.set_title(&format!(
-                "Wildforge — {} fps | XYZ {:.1} / {:.1} / {:.1}{biome}{}",
+                "Wildforge — {} fps (sim {:.1}ms, draw {:.1}ms, {}) | XYZ {:.1} / {:.1} / {:.1}{biome}{}",
                 self.fps,
+                self.frame_ms.0,
+                self.frame_ms.1,
+                self.renderer.adapter_name,
                 p.x,
                 p.y,
                 p.z,
