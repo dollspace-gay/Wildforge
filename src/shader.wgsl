@@ -60,7 +60,7 @@ const MAX_PT_LIGHTS: u32 = 8u;
 
 const SHADOW_RES: f32 = 2048.0;
 const SHADOW_CASCADES: u32 = 3u;
-const ATLAS_TILES: f32 = 32.0;
+const ATLAS_TILES: f32 = 64.0; // keep in sync with atlas::ATLAS_TILES
 // Apparent displacement depth, in blocks (a face is one tile wide), so the uv
 // offset is scaled into a single tile's span and can't drag across tiles.
 const PARALLAX_DEPTH: f32 = 0.08;

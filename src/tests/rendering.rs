@@ -330,9 +330,9 @@ fn model_boxes_can_carry_their_own_texture() {
 }
 
 #[test]
-fn atlas_layout_is_slot_stable_at_32() {
+fn atlas_layout_is_slot_stable() {
     use crate::atlas::{ATLAS_TILES, FIRST_FREE_SLOT, build_procedural, builtin_slots};
-    assert_eq!(ATLAS_TILES, 32, "the atlas grew");
+    assert_eq!(ATLAS_TILES, 64, "the atlas is a 64x64 grid (4096 slots)");
     let tp = 8u32;
     let img = build_procedural(tp);
     let px = ATLAS_TILES * tp;
@@ -616,7 +616,11 @@ fn player_style_packs_clamps_and_names_align() {
     // but the relationship is the contract worth pinning).
     let (base, span) = (VARIANT_BASE as u32, VARIANT_SLOTS as u32);
     assert!(base >= crate::atlas::FIRST_FREE_SLOT as u32);
-    assert_eq!(base + span, 1024);
+    assert_eq!(
+        base + span,
+        crate::atlas::ATLAS_TILES * crate::atlas::ATLAS_TILES,
+        "variants cap the grid, wherever it ends"
+    );
 
     let c = crate::config::Config::from_text("appearance=66051\n");
     assert_eq!(c.appearance, 66051, "appearance persists in config");

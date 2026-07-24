@@ -46,6 +46,9 @@ pub struct BlockDef {
     pub lava: bool,
     /// Render as two crossed quads instead of a cube (plants).
     pub cross: bool,
+    /// Custom mesh: "obelisk" (tapered pillar) or "signboard"
+    /// (board on a post). Render-only; collision stays the cube.
+    pub shape: Option<String>,
     /// Crop: (final stage block advances no further). tick advances stages.
     pub crop_next: Option<BlockId>,
     pub crop_chance: f32,
@@ -631,6 +634,8 @@ struct BlockToml {
     lava: Option<u8>,
     #[serde(default)]
     cross: bool,
+    #[serde(default)]
+    shape: Option<String>,
     #[serde(default)]
     crop: Option<CropToml>,
     #[serde(default)]
@@ -1326,6 +1331,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         water_level: None,
         lava: false,
         cross: false,
+        shape: None,
         crop_next: None,
         crop_chance: 0.0,
         crop_any_soil: false,
@@ -1473,6 +1479,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 water_level: b.water.or(b.lava),
                 lava: b.lava.is_some(),
                 cross: b.cross,
+                shape: b.shape.clone(),
                 crop_next: None,
                 crop_chance: 0.0,
                 crop_any_soil: b.crop.as_ref().is_some_and(|c| c.any_soil),
@@ -1748,6 +1755,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         water_level: None,
         lava: false,
         cross: false,
+        shape: None,
         crop_next: None,
         crop_chance: 0.0,
         crop_any_soil: false,

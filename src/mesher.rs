@@ -233,6 +233,68 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                     }
                     continue;
                 }
+                if let Some(shape) = def.shape.as_deref() {
+                    // Custom silhouettes: boxes emitted by hand, lit
+                    // from the cell (these blocks are non-opaque).
+                    let (cl, cs) = light(lx, y, lz);
+                    let slot = def.tiles[0];
+                    let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
+                    let (wx, wy, wz) = ((bx + lx) as f32, y as f32, (bz + lz) as f32);
+                    let lit = emissive.unwrap_or([0.85 * cl[0], 0.85 * cl[1], 0.85 * cl[2]]);
+                    let sky_l = 0.85 * cs;
+                    // One textured box: min/max corners in block space.
+                    let mut boxed = |x0: f32, y0: f32, z0: f32, x1: f32, y1: f32, z1: f32| {
+                        for face in 0..6 {
+                            let nrm = NORMALS[face];
+                            let nf = [nrm[0] as f32, nrm[1] as f32, nrm[2] as f32];
+                            let base = m.opaque_verts.len() as u32;
+                            for c in CORNERS[face].iter() {
+                                let px = wx + x0 + c[0] * (x1 - x0);
+                                let py = wy + y0 + c[1] * (y1 - y0);
+                                let pz = wz + z0 + c[2] * (z1 - z0);
+                                let (u, v) = match face {
+                                    0 | 1 => (z0 + c[2] * (z1 - z0), 1.0 - (y0 + c[1] * (y1 - y0))),
+                                    4 | 5 => (x0 + c[0] * (x1 - x0), 1.0 - (y0 + c[1] * (y1 - y0))),
+                                    _ => (x0 + c[0] * (x1 - x0), z0 + c[2] * (z1 - z0)),
+                                };
+                                m.opaque_verts.push(Vertex {
+                                    pos: [px, py, pz],
+                                    uv: tile_uv(tx, ty, u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)),
+                                    normal: nf,
+                                    light: lit,
+                                    sky: sky_l,
+                                });
+                            }
+                            m.opaque_idx.extend_from_slice(&[
+                                base,
+                                base + 1,
+                                base + 2,
+                                base,
+                                base + 2,
+                                base + 3,
+                            ]);
+                        }
+                    };
+                    match shape {
+                        "obelisk" => {
+                            // A standing stone half again a block
+                            // tall: plinth, tapering shaft, and a
+                            // pyramidion reaching into the air above
+                            // (visual only; collision stays the cell).
+                            boxed(0.20, 0.0, 0.20, 0.80, 0.12, 0.80);
+                            boxed(0.32, 0.12, 0.32, 0.68, 1.05, 0.68);
+                            boxed(0.36, 1.05, 0.36, 0.64, 1.45, 0.64);
+                            boxed(0.42, 1.45, 0.42, 0.58, 1.62, 0.58);
+                        }
+                        "signboard" => {
+                            // A post with a broad reading board.
+                            boxed(0.44, 0.0, 0.44, 0.56, 0.5, 0.56);
+                            boxed(0.06, 0.5, 0.42, 0.94, 0.96, 0.58);
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
                 if def.sub_voxel {
                     // Octant occupancy: emit up to 8 half-cubes. A face is
                     // skipped when the adjacent half-cell is filled — a sibling
