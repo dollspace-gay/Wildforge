@@ -168,6 +168,11 @@ def item(name, body, edge, shape="lump"):
         d.line([(14, 14), (18, 14)], fill=edge + (255,), width=2)
         d.line([(8, 15), (13, 15)], fill=edge + (255,))
         d.line([(19, 15), (24, 15)], fill=edge + (255,))
+    elif shape == "boat":
+        d.polygon([(4, 14), (28, 14), (24, 22), (8, 22)], fill=body + (255,),
+                  outline=edge + (255,))
+        d.line([(4, 14), (28, 14)], fill=edge + (255,), width=2)
+        d.rectangle([14, 16, 18, 18], fill=edge + (255,))
     elif shape == "sign":
         d.rectangle([6, 8, 26, 18], fill=body + (255,), outline=edge + (255,))
         d.rectangle([15, 18, 17, 26], fill=edge + (255,))
@@ -210,6 +215,7 @@ ROCKS = {
     "waystone": dict(base=(126, 130, 140), dark=(88, 92, 104),
                      veins=(196, 214, 230)),
     "stall_counter": dict(base=(158, 116, 68), dark=(112, 78, 42), bands=0.5),
+    "boat_hull": dict(base=(150, 106, 58), dark=(104, 70, 36), bands=0.6),
     "shale": dict(base=(120, 118, 122), dark=(84, 82, 90), bands=0.55),
     "granite": dict(base=(188, 172, 160), dark=(140, 124, 116),
                     speckle=(224, 216, 208), speckle_n=40),
@@ -283,6 +289,7 @@ ITEMS = [
     ("lead", (160, 108, 62), (110, 70, 36), "lead"),
     ("saddlebags", (122, 80, 44), (82, 52, 26), "bags"),
     ("sign", (146, 108, 62), (96, 68, 36), "sign"),
+    ("boat", (150, 106, 58), (100, 66, 32), "boat"),
 ]
 
 GLASSES = [

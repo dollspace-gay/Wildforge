@@ -671,6 +671,40 @@ impl Game {
                     dt,
                 );
             }
+            // Aboard a boat: the hull carries you — float at the
+            // surface, glide fast, and the boat glues underneath.
+            // Jump steps off.
+            if let Some(bid) = self.interaction.riding {
+                let gone = self.server.world.mob_by_id(bid).is_none();
+                if gone || input.jump {
+                    if !gone && self.multiplayer.remote.is_some() {
+                        if let Some(rc) = &self.multiplayer.remote {
+                            rc.client.send(&net::C2S::RideMob {
+                                id: bid,
+                                mount: false,
+                            });
+                        }
+                    } else if let Some(m) = self.server.world.mob_by_id_mut(bid) {
+                        m.ridden_by = None;
+                    }
+                    self.interaction.riding = None;
+                    self.player.vel.y = self.player.vel.y.max(4.0);
+                } else {
+                    if self.player.in_water {
+                        // Buoyant hull: ride the surface, shed drag.
+                        self.player.vel.y = self.player.vel.y.max(1.2);
+                        self.player.vel.x *= 1.9;
+                        self.player.vel.z *= 1.9;
+                    }
+                    let at = self.player.pos - Vec3::new(0.0, 0.35, 0.0);
+                    let yaw = self.camera.yaw;
+                    if let Some(m) = self.server.world.mob_by_id_mut(bid) {
+                        m.pos = at;
+                        m.vel = Vec3::ZERO;
+                        m.yaw = -yaw + std::f32::consts::FRAC_PI_2;
+                    }
+                }
+            }
             if !was_in_water && self.player.in_water && fall_speed < -4.0 {
                 self.sfx(Sfx::Splash);
             }

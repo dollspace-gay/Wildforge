@@ -208,6 +208,11 @@ pub enum C2S {
     OpenMobCargo {
         id: u32,
     },
+    /// Board or leave a vehicle mob (the boat follows its rider).
+    RideMob {
+        id: u32,
+        mount: bool,
+    },
     /// Buy one item from a market stall (host validates everything).
     StallBuy {
         x: i32,

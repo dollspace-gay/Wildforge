@@ -558,6 +558,25 @@ impl HostSession {
                 }
             }
         }
+        // Vehicles follow their riders exactly (the rider's client
+        // owns their motion; the boat is presentation that floats).
+        {
+            let riders: Vec<(u32, Vec3)> =
+                self.guests.iter().map(|(gid, g)| (*gid, g.pos)).collect();
+            for m in server.world.mobs_mut() {
+                if let Some(rid) = m.ridden_by
+                    && rid != 0
+                {
+                    match riders.iter().find(|(gid, _)| *gid == rid) {
+                        Some((_, at)) => {
+                            m.pos = *at - Vec3::new(0.0, 0.35, 0.0);
+                            m.vel = Vec3::ZERO;
+                        }
+                        None => m.ridden_by = None,
+                    }
+                }
+            }
+        }
         self.state_timer += dt;
         if self.state_timer >= 1.0 {
             self.state_timer = 0.0;
@@ -1381,6 +1400,19 @@ impl HostSession {
                 }
                 self.net.send(id, &S2C::HeldResult(snap));
                 self.send_mob_cargo(server, id, mob_id);
+            }
+            C2S::RideMob { id: mob_id, mount } => {
+                let gpos = guest.pos;
+                let reg = server.world.reg.clone();
+                if let Some(m) = server.world.mob_by_id_mut(mob_id)
+                    && reg.animals[m.species].vehicle
+                {
+                    if mount && m.ridden_by.is_none() && (m.pos - gpos).length() <= REACH {
+                        m.ridden_by = Some(id);
+                    } else if !mount && m.ridden_by == Some(id) {
+                        m.ridden_by = None;
+                    }
+                }
             }
             C2S::StallBuy { x, y, z } => {
                 let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);

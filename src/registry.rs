@@ -234,6 +234,8 @@ pub struct AnimalDef {
     pub breed_food: Option<ItemId>,
     /// Tamed carriers accept saddlebags (deer, boar).
     pub carrier: bool,
+    /// A rideable vehicle (boats): no breeding, no ire, spawned by item.
+    pub vehicle: bool,
 }
 
 /// A recipe slot requirement: one exact item, or any member of a tag.
@@ -843,6 +845,8 @@ struct AnimalToml {
     breed_food: Option<String>,
     #[serde(default)]
     carrier: bool,
+    #[serde(default)]
+    vehicle: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -2014,6 +2018,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 .as_ref()
                 .and_then(|f| lookup_item(&reg, &modid, f)),
             carrier: a.carrier,
+            vehicle: a.vehicle,
             projectile: a.projectile.as_ref().map(|pr| ProjectileDef {
                 tile: proj_tile.unwrap_or(crate::atlas::UNKNOWN_SLOT),
                 damage: pr.damage,

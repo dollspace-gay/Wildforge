@@ -193,6 +193,8 @@ pub struct Mob {
     pub cargo: Option<Box<[Option<crate::inventory::ItemStack>; 12]>>,
     /// Player currently leading this mob (PlayerCtx id; None = loose).
     pub led_by: Option<u32>,
+    /// Player riding this vehicle (PlayerCtx id; transient).
+    pub ridden_by: Option<u32>,
 }
 
 fn r01(rng: &mut u32) -> f32 {
@@ -241,6 +243,7 @@ impl Mob {
             tame_need: 0,
             cargo: None,
             led_by: None,
+            ridden_by: None,
         }
     }
 

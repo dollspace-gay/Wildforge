@@ -952,3 +952,9 @@ id = "saddlebags"
 name = "Saddlebags"
 texture = "@saddlebags"
 max_stack = 4
+
+[[item]]
+id = "boat"
+name = "Boat"
+texture = "@boat"
+max_stack = 1

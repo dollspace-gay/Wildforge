@@ -268,10 +268,11 @@ impl Game {
             }
             let m = self.server.world.remove_mob(i);
             let def = &reg.animals[m.species];
-            if !def.hostile {
+            if !def.hostile && !def.vehicle {
                 // The wild counts its dead — wardens are not
                 // individuals, and a TAMED animal is a household loss,
                 // not a wild one (though betrayal is still noticed).
+                // Vehicles are lumber; the wild never mourns a boat.
                 self.server.world.add_ire(if m.tamed { 1.0 } else { 2.0 });
             }
             self.sfx(Sfx::MobDeath(def.sound_pitch));
@@ -335,6 +336,36 @@ impl Game {
         let held = self.inventory.slots[self.input.hotbar_sel].map(|s| s.item);
 
         // The bucket: scoop a full water cell or pour it back — the
+        // A boat in hand launches onto struck water.
+        if held.is_some()
+            && held == reg.item_id("base:boat")
+            && self.input.right_held
+            && self.input.action_cooldown <= 0.0
+            && let Some(w) = raycast::raycast_water(
+                &self.server.world,
+                self.camera.pos,
+                self.camera.forward(),
+                REACH,
+            )
+        {
+            let (x, y, z) = w.block;
+            if reg.is_water(self.server.world.get_block(x, y, z))
+                && let Some(bi) = reg.animal_id("base:boat")
+                && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
+            {
+                let mut boat = mobs::Mob::new(
+                    bi,
+                    Vec3::new(x as f32 + 0.5, y as f32 + 0.8, z as f32 + 0.5),
+                    self.camera.yaw,
+                );
+                boat.health = reg.animals[bi].health;
+                boat.tamed = true; // vehicles are born ours
+                self.server.world.spawn_mob(boat);
+                self.sfx(Sfx::Place);
+                self.input.action_cooldown = 0.5;
+                return;
+            }
+        }
         // cell moves with you, it never multiplies. Guests request and
         // the host's echo applies the world side; the bucket swap is
         // local (inventories are player-owned).
@@ -886,6 +917,28 @@ impl Game {
                     self.input.action_cooldown = 0.4;
                     self.sfx(Sfx::Place);
                     return;
+                }
+                // Step aboard a vehicle (empty-handed).
+                if def.vehicle && held.is_none() {
+                    let free = self
+                        .server
+                        .world
+                        .mob_by_id(mob_id)
+                        .is_some_and(|m| m.ridden_by.is_none());
+                    if free {
+                        if let Some(rc) = &self.multiplayer.remote {
+                            rc.client.send(&net::C2S::RideMob {
+                                id: mob_id,
+                                mount: true,
+                            });
+                        } else if let Some(m) = self.server.world.mob_by_id_mut(mob_id) {
+                            m.ridden_by = Some(0);
+                        }
+                        self.interaction.riding = Some(mob_id);
+                        self.toast("Aboard. Jump to step off.".to_string());
+                        self.input.action_cooldown = 0.4;
+                        return;
+                    }
                 }
                 // Open the pack.
                 if tamed && has_cargo {

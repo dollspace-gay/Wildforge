@@ -7,7 +7,6 @@ impl World {
         &self.mobs
     }
 
-    #[cfg(test)]
     pub(crate) fn mobs_mut(&mut self) -> &mut Vec<Mob> {
         &mut self.mobs
     }

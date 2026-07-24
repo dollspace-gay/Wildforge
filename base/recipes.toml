@@ -854,3 +854,10 @@ output = "base:waystone"
 pattern = ["ppp", "l.l"]
 keys = { p = "#base:planks", l = "base:leather" }
 output = "base:stall_counter"
+
+# Boats (trade & travel, stage 4): the coast opens. Tin tacks hold
+# the hull - the bronze age builds its own harbors.
+[[recipe]]
+pattern = ["p.p", "ppp"]
+keys = { p = "#base:planks" }
+output = "base:boat"

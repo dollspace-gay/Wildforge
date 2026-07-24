@@ -255,6 +255,8 @@ struct InteractionState {
     /// Waystones this player has touched: (name, x, z). Loaded from a
     /// per-world sidecar; purely local knowledge, never synced.
     attuned: Vec<(String, i32, i32)>,
+    /// The vehicle under us (mob id), if we're aboard one.
+    riding: Option<u32>,
 }
 
 impl Default for InteractionState {
@@ -270,6 +272,7 @@ impl Default for InteractionState {
             items: Vec::new(),
             breaking: None,
             attuned: Vec::new(),
+            riding: None,
         }
     }
 }
