@@ -1625,3 +1625,160 @@ fn wild_food_and_game_are_scarce() {
         "wildlife stays sparse over 100 chunks ({animals})"
     );
 }
+
+/// Dev tooling: how uneven is the geology at play scale? For a spread
+/// of land points, the distance to the nearest regional resource:
+/// plutons (tin, pitchblende), volcanoes (carbonatite, obsidian),
+/// kimberlite pipes (diamonds; breached = surface-findable), geodes,
+/// and desert sand (monazite). Shale/limestone-hosted ores (iron,
+/// coal, galena) and stone/basalt hosts (copper, quartz) are banded
+/// by DEPTH under every column, so distance is not their cost.
+/// Run: cargo test --release print_resource_census -- --ignored --nocapture
+#[test]
+#[ignore]
+fn print_resource_census() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    let ring_dist = |hit: &mut dyn FnMut(i32, i32) -> bool,
+                     x0: i32,
+                     z0: i32,
+                     step: i32,
+                     cap: i32|
+     -> Option<i32> {
+        if hit(x0, z0) {
+            return Some(0);
+        }
+        let mut r = step;
+        while r <= cap {
+            let mut i = -r;
+            while i <= r {
+                for (px, pz) in [
+                    (x0 + i, z0 - r),
+                    (x0 + i, z0 + r),
+                    (x0 - r, z0 + i),
+                    (x0 + r, z0 + i),
+                ] {
+                    if hit(px, pz) {
+                        return Some(r);
+                    }
+                }
+                i += step;
+            }
+            r += step;
+        }
+        None
+    };
+    // ~30 land points on a spiral out to ~24k blocks.
+    let mut pts: Vec<(i32, i32)> = Vec::new();
+    let mut i = 0;
+    while pts.len() < 30 && i < 400 {
+        i += 1;
+        let r = 700.0 + 60.0 * i as f64;
+        let a = i as f64 * 2.399963;
+        let (x, z) = ((r * a.cos()) as i32, (r * a.sin()) as i32);
+        if g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 2 {
+            pts.push((x, z));
+        }
+    }
+    println!("census over {} land points:", pts.len());
+    let report = |name: &str, ds: Vec<Option<i32>>| {
+        let mut found: Vec<i32> = ds.iter().flatten().copied().collect();
+        found.sort_unstable();
+        let miss = ds.len() - found.len();
+        if found.is_empty() {
+            println!("{name:>10}: none found from any point");
+            return;
+        }
+        println!(
+            "{name:>10}: median {:>5}  p90 {:>5}  max {:>5}  (beyond cap: {miss})",
+            found[found.len() / 2],
+            found[(found.len() * 9 / 10).min(found.len() - 1)],
+            found[found.len() - 1]
+        );
+    };
+    report(
+        "pluton",
+        pts.iter()
+            .map(|&(x, z)| ring_dist(&mut |px, pz| g.pluton_at(px, pz), x, z, 32, 4000))
+            .collect(),
+    );
+    report(
+        "volcano",
+        pts.iter()
+            .map(|&(x, z)| {
+                ring_dist(
+                    &mut |px, pz| g.volcano_near(px, pz).is_some(),
+                    x,
+                    z,
+                    64,
+                    6000,
+                )
+            })
+            .collect(),
+    );
+    report(
+        "pipe",
+        pts.iter()
+            .map(|&(x, z)| {
+                let cp = ChunkPos::of_world(x, z);
+                ring_dist(
+                    &mut |cx, cz| g.pipe_at(ChunkPos { x: cx, z: cz }).is_some(),
+                    cp.x,
+                    cp.z,
+                    1,
+                    120,
+                )
+                .map(|c| c * 16)
+            })
+            .collect(),
+    );
+    report(
+        "pipe-open",
+        pts.iter()
+            .map(|&(x, z)| {
+                let cp = ChunkPos::of_world(x, z);
+                ring_dist(
+                    &mut |cx, cz| {
+                        g.pipe_at(ChunkPos { x: cx, z: cz })
+                            .is_some_and(|(_, _, b)| b)
+                    },
+                    cp.x,
+                    cp.z,
+                    1,
+                    120,
+                )
+                .map(|c| c * 16)
+            })
+            .collect(),
+    );
+    report(
+        "geode",
+        pts.iter()
+            .map(|&(x, z)| {
+                let cp = ChunkPos::of_world(x, z);
+                ring_dist(
+                    &mut |cx, cz| g.geode_at(ChunkPos { x: cx, z: cz }).is_some(),
+                    cp.x,
+                    cp.z,
+                    1,
+                    60,
+                )
+                .map(|c| c * 16)
+            })
+            .collect(),
+    );
+    report(
+        "desert",
+        pts.iter()
+            .map(|&(x, z)| {
+                ring_dist(
+                    &mut |px, pz| g.biome(px, pz) == Biome::Desert,
+                    x,
+                    z,
+                    128,
+                    9000,
+                )
+            })
+            .collect(),
+    );
+}
