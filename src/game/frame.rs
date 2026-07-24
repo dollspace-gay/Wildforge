@@ -437,6 +437,15 @@ impl Game {
     }
 
     fn advance_session_authority_inner(&mut self, dt: f32, paused: bool) {
+        // The full world save rides a timer now, not the unload path.
+        if self.in_world && self.multiplayer.remote.is_none() {
+            self.autosave -= dt;
+            if self.autosave <= 0.0 {
+                self.autosave = 20.0;
+                self.server.world.settle_falling();
+                self.server.world.save_modified();
+            }
+        }
         if !self.in_world && self.multiplayer.remote.is_some() {
             self.remote_pump(dt);
         }
