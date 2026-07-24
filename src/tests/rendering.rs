@@ -976,3 +976,46 @@ fn frozen_clock_holds_the_sun_without_stopping_the_sim() {
     assert_eq!(frozen.time_of_day, start);
     assert!(frozen.world.weather_timer > weather);
 }
+
+#[test]
+fn fluid_surfaces_stitch_at_shared_corners() {
+    // Two adjacent water cells of different volumes must meet: the
+    // thin cell's top corners on the shared edge rise to the full
+    // cell's surface, so the water reads as one connected sheet
+    // instead of disconnected tiles with gaps between their rims.
+    let reg = base_reg();
+    let mut w = test_world_with("stitch", reg.clone());
+    let stone = b(&reg, "base:stone");
+    let y = 200;
+    for x in 0..8 {
+        for z in 0..8 {
+            w.set_block(x, y, z, stone);
+        }
+    }
+    let full = reg.water_block(0); // volume 8, surface 8/9
+    let thin = reg.water_block(5); // volume 3, surface 3/9
+    w.set_block(2, y + 1, 2, full);
+    w.set_block(3, y + 1, 2, thin);
+    let mesh = crate::mesher::mesh_chunk(&w, ChunkPos { x: 0, z: 0 });
+    let has = |x: f32, py: f32, z: f32| {
+        mesh.water_verts.iter().any(|v| {
+            (v.pos[0] - x).abs() < 1e-4
+                && (v.pos[1] - py).abs() < 1e-4
+                && (v.pos[2] - z).abs() < 1e-4
+        })
+    };
+    let ys = (y + 1) as f32;
+    // Shared edge corners sit at the full cell's height...
+    assert!(has(3.0, ys + 8.0 / 9.0, 2.0), "near shared corner stitched");
+    assert!(has(3.0, ys + 8.0 / 9.0, 3.0), "far shared corner stitched");
+    // ...while the thin cell's outer edge keeps its own height.
+    assert!(
+        has(4.0, ys + 3.0 / 9.0, 2.0),
+        "outer corner keeps thin height"
+    );
+    // No thin-cell rim hangs at full height on the outer edge.
+    assert!(
+        !has(4.0, ys + 8.0 / 9.0, 2.0),
+        "no floating rim on the thin side"
+    );
+}
