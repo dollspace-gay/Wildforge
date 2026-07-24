@@ -21,6 +21,8 @@ impl Renderer {
             })
             .await
             .expect("no GPU adapter found");
+        let info = adapter.get_info();
+        let adapter_name = format!("{} [{:?}]", info.name, info.backend);
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,
@@ -1021,6 +1023,7 @@ fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
         let ui_vbuf = DynBuf::new(&device, wgpu::BufferUsages::VERTEX);
 
         let mut r = Renderer {
+            adapter_name,
             surface,
             device,
             queue,
@@ -1043,6 +1046,7 @@ fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
             shadow_casc_bg,
             shadow_bg,
             pt_cached: [None; MAX_PT_LIGHTS],
+            pt_progress: [0; MAX_PT_LIGHTS],
             pt_shadow_pipeline,
             pt_tr_pipeline,
             pt_face_views,

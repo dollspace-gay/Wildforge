@@ -400,6 +400,8 @@ struct Game {
     last_title: Instant,
     frames: u32,
     fps: u32,
+    /// Smoothed frame-section times in ms: (authority, render).
+    frame_ms: (f32, f32),
     ui: UiBatch,
 }
 
@@ -618,6 +620,7 @@ impl Game {
             last_title: Instant::now(),
             frames: 0,
             fps: 0,
+            frame_ms: (0.0, 0.0),
             ui: UiBatch::new(),
         };
         g.content.mods_stamp = content_tree_stamp();

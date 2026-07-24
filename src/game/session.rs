@@ -326,40 +326,39 @@ impl Game {
         // window, for eyeballing interior lighting — the sky occlusion (walls go
         // dark away from the openings) and the cascaded-shadow sunbeam that
         // tracks across the floor through the window. `=torch` also plants one.
-        if std::env::var("WILDFORGE_DEMO_ROOM").is_ok() {
-            if let Some(stone) = self.content.reg.block_id("base:cobblestone") {
-                let (bx, bz) = (spawn.x as i32, spawn.z as i32);
-                let fy = self.server.world.surface_height(bx, bz);
-                for dx in -4..=4 {
-                    for dz in -4..=4 {
-                        for dy in 0..=6 {
-                            let shell =
-                                dx == -4 || dx == 4 || dz == -4 || dz == 4 || dy == 0 || dy == 6;
-                            let b = if shell { stone } else { AIR };
-                            self.server.world.set_block(bx + dx, fy + dy, bz + dz, b);
-                        }
+        if std::env::var("WILDFORGE_DEMO_ROOM").is_ok()
+            && let Some(stone) = self.content.reg.block_id("base:cobblestone")
+        {
+            let (bx, bz) = (spawn.x as i32, spawn.z as i32);
+            let fy = self.server.world.surface_height(bx, bz);
+            for dx in -4..=4 {
+                for dz in -4..=4 {
+                    for dy in 0..=6 {
+                        let shell =
+                            dx == -4 || dx == 4 || dz == -4 || dz == 4 || dy == 0 || dy == 6;
+                        let b = if shell { stone } else { AIR };
+                        self.server.world.set_block(bx + dx, fy + dy, bz + dz, b);
                     }
                 }
-                // A 1-wide, 2-tall door in the +z wall.
-                self.server.world.set_block(bx, fy + 1, bz + 4, AIR);
-                self.server.world.set_block(bx, fy + 2, bz + 4, AIR);
-                // A 2x2 window high in the +x (east) wall — the morning sun throws
-                // a bright quad onto the floor that tracks across it.
-                for wy in 3..=4 {
-                    for wz in -1..=0 {
-                        self.server.world.set_block(bx + 4, fy + wy, bz + wz, AIR);
-                    }
-                }
-                if std::env::var("WILDFORGE_DEMO_ROOM").as_deref() == Ok("torch")
-                    && let Some(torch) = self.content.reg.block_id("base:torch")
-                {
-                    self.server.world.set_block(bx + 2, fy + 1, bz, torch);
-                }
-                // Stand the player inside (this world has a saved position).
-                self.player.pos =
-                    Vec3::new(bx as f32 + 0.5, (fy + 1) as f32 + 0.2, bz as f32 - 2.5);
-                self.camera.pos = self.player.pos + Vec3::new(0.0, EYE_HEIGHT, 0.0);
             }
+            // A 1-wide, 2-tall door in the +z wall.
+            self.server.world.set_block(bx, fy + 1, bz + 4, AIR);
+            self.server.world.set_block(bx, fy + 2, bz + 4, AIR);
+            // A 2x2 window high in the +x (east) wall — the morning sun throws
+            // a bright quad onto the floor that tracks across it.
+            for wy in 3..=4 {
+                for wz in -1..=0 {
+                    self.server.world.set_block(bx + 4, fy + wy, bz + wz, AIR);
+                }
+            }
+            if std::env::var("WILDFORGE_DEMO_ROOM").as_deref() == Ok("torch")
+                && let Some(torch) = self.content.reg.block_id("base:torch")
+            {
+                self.server.world.set_block(bx + 2, fy + 1, bz, torch);
+            }
+            // Stand the player inside (this world has a saved position).
+            self.player.pos = Vec3::new(bx as f32 + 0.5, (fy + 1) as f32 + 0.2, bz as f32 - 2.5);
+            self.camera.pos = self.player.pos + Vec3::new(0.0, EYE_HEIGHT, 0.0);
         }
         // Dev: two pillars on a grey floor lit by a blue and a red dynamic
         // point light (sharp per-light shadows). Pair with

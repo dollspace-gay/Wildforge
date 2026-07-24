@@ -262,6 +262,8 @@ pub struct GpuChunk {
 }
 
 pub struct Renderer {
+    /// The adapter the GPU work actually landed on (diagnostics).
+    pub adapter_name: String,
     pub surface: wgpu::Surface<'static>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -282,7 +284,7 @@ pub struct Renderer {
     ui_pipeline: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
     shadow_layer_views: Vec<wgpu::TextureView>, // one per cascade, render targets
-    shadow_casc_buf: wgpu::Buffer,  // per-cascade light_vp, dynamic-offset addressed
+    shadow_casc_buf: wgpu::Buffer,              // per-cascade light_vp, dynamic-offset addressed
     shadow_casc_bg: wgpu::BindGroup,
     shadow_bg: wgpu::BindGroup,
 
@@ -290,6 +292,8 @@ pub struct Renderer {
     // pt_cached remembers (key, epoch) per slot; a slot's 6 faces
     // re-render only when that changes (the static-light cache).
     pt_cached: [Option<(u64, u64)>; MAX_PT_LIGHTS],
+    /// Faces already rebuilt for a cube mid-amortization (0..6).
+    pt_progress: [u8; MAX_PT_LIGHTS],
     pt_shadow_pipeline: wgpu::RenderPipeline,
     pt_tr_pipeline: wgpu::RenderPipeline,
     pt_face_views: Vec<wgpu::TextureView>, // 6 * MAX_PT_LIGHTS render targets
