@@ -403,6 +403,9 @@ struct Game {
     /// Last world-cell origin the DDA occupancy grid was rebuilt for (None
     /// until first build). Rebuilt when the camera crosses an OCC_STEP.
     occ_last_origin: Option<[i32; 3]>,
+    /// A chunk within the DDA occupancy grid's reach remeshed (a block edit),
+    /// so the grid is stale and must be rebuilt even if the camera hasn't moved.
+    occ_dirty: bool,
     /// Your chosen look (config `appearance`, style.rs palettes).
     style: style::Style,
     auto_shot: Option<String>,
@@ -625,6 +628,7 @@ impl Game {
             time_abs: 0.0,
             total_frames: 0,
             occ_last_origin: None,
+            occ_dirty: false,
             settled_frames: 0,
             shot_at: None,
             style: own_style,
