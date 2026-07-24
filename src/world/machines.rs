@@ -184,6 +184,35 @@ impl World {
         self.check_stack(x, y, z, &mouth)
     }
 
+    /// Validate a market stall at its counter: two log posts (two
+    /// tall) flanking the counter along either axis, bridged by a
+    /// three-wide awning of solid or glass at post-top height. A
+    /// stall trades only while it stands (trade & travel, stage 3).
+    pub fn check_stall(&self, x: i32, y: i32, z: i32) -> bool {
+        let logs = self.reg.tags.get("base:logs").cloned().unwrap_or_default();
+        let is_log = |b: BlockId| {
+            self.reg
+                .item_id(&self.reg.block(b).name)
+                .is_some_and(|i| logs.contains(&i))
+        };
+        let awning_ok = |b: BlockId| self.reg.is_solid(b) || self.reg.block(b).glass;
+        'axes: for (dx, dz) in [(1, 0), (0, 1)] {
+            for side in [-1, 1] {
+                let (px, pz) = (x + dx * side, z + dz * side);
+                if !is_log(self.get_block(px, y, pz)) || !is_log(self.get_block(px, y + 1, pz)) {
+                    continue 'axes;
+                }
+            }
+            for i in -1..=1 {
+                if !awning_ok(self.get_block(x + dx * i, y + 2, z + dz * i)) {
+                    continue 'axes;
+                }
+            }
+            return true;
+        }
+        false
+    }
+
     /// The shared shell scan: the stack is the stack; the mouth block
     /// decides the craft.
     pub(super) fn check_stack(

@@ -934,3 +934,52 @@ fn signs_hold_their_words_through_save_and_load() {
     assert_eq!(found[0].1.lines[0], "SALT FAIR");
     assert_eq!(found[0].1.lines[2], "NE 400");
 }
+
+#[test]
+fn stall_validates_and_persists_its_shop() {
+    use crate::world::{BlockEntity, StallState};
+    let reg = base_reg();
+    let dir = tmp_dir("stall");
+    let counter = b(&reg, "base:stall_counter");
+    let log = b(&reg, "base:log");
+    let planks = b(&reg, "base:planks");
+    let salt = it(&reg, "base:salt_crystal");
+    let silver = it(&reg, "base:silver_ingot");
+    {
+        let mut w = World::new(42, dir.clone(), reg.clone());
+        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        let y = 200;
+        w.set_block(4, y, 4, counter);
+        assert!(!w.check_stall(4, y, 4), "a bare counter is not a stall");
+        // Posts and awning along x.
+        for side in [-1i32, 1] {
+            w.set_block(4 + side, y, 4, log);
+            w.set_block(4 + side, y + 1, 4, log);
+        }
+        for i in -1i32..=1 {
+            w.set_block(4 + i, y + 2, 4, planks);
+        }
+        assert!(w.check_stall(4, y, 4), "posts + awning make the stall");
+        // Break the awning: trading stops.
+        w.set_block(4, y + 2, 4, AIR);
+        assert!(!w.check_stall(4, y, 4), "no awning, no stall");
+        w.set_block(4, y + 2, 4, planks);
+        let mut st = StallState {
+            owner: [7; 16],
+            owner_name: "DOLL".to_string(),
+            ..Default::default()
+        };
+        st.goods[0] = Some(ItemStack::new(&reg, salt, 20));
+        st.price = Some(ItemStack::new(&reg, silver, 1));
+        w.insert_block_entity((4, y, 4), BlockEntity::Stall(st));
+        w.save_modified();
+    }
+    let w = World::load_or_create(dir, reg.clone());
+    let Some(BlockEntity::Stall(st)) = w.block_entity(&(4, 200, 4)) else {
+        panic!("the stall persisted");
+    };
+    assert_eq!(st.owner, [7; 16], "ownership survives");
+    assert_eq!(st.owner_name, "DOLL");
+    assert_eq!(st.goods[0].unwrap().count, 20);
+    assert_eq!(st.price.unwrap().item, silver, "the price template holds");
+}

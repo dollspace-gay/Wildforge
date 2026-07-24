@@ -1095,3 +1095,12 @@ hardness = 4.0
 tool = "pickaxe"
 drops = "self"
 interaction = "waystone"
+
+[[block]]
+id = "stall_counter"
+name = "Stall Counter"
+texture = "@stall_counter"
+hardness = 1.5
+tool = "axe"
+drops = "self"
+interaction = "stall"

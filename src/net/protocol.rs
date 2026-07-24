@@ -208,6 +208,12 @@ pub enum C2S {
     OpenMobCargo {
         id: u32,
     },
+    /// Buy one item from a market stall (host validates everything).
+    StallBuy {
+        x: i32,
+        y: i32,
+        z: i32,
+    },
     /// Write a placed sign or waystone (host validates and broadcasts).
     SetSign {
         x: i32,

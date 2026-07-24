@@ -74,6 +74,7 @@ impl Game {
                 | Screen::Bloomery(_)
                 | Screen::Kiln(_)
                 | Screen::MobCargo(_)
+                | Screen::Stall(_)
         ) && let Some(r) = &self.multiplayer.remote
         {
             r.client.send(&net::C2S::CloseContainer);
@@ -88,6 +89,7 @@ impl Game {
                     | Screen::Bloomery(_)
                     | Screen::Kiln(_)
                     | Screen::MobCargo(_)
+                    | Screen::Stall(_)
             )
         {
             let mut back: Vec<ItemStack> = self.ui_state.held_stack.take().into_iter().collect();

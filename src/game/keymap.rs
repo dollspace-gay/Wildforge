@@ -28,7 +28,8 @@ impl Game {
                 | Screen::Offering(_)
                 | Screen::Bloomery(_)
                 | Screen::Kiln(_)
-                | Screen::MobCargo(_) => self.set_screen(Screen::Playing),
+                | Screen::MobCargo(_)
+                | Screen::Stall(_) => self.set_screen(Screen::Playing),
                 Screen::SignEdit(pos) => self.commit_sign(pos),
                 Screen::Paused => self.set_screen(Screen::Playing),
                 Screen::Settings => {
@@ -75,7 +76,8 @@ impl Game {
                 | Screen::Offering(_)
                 | Screen::Bloomery(_)
                 | Screen::Kiln(_)
-                | Screen::MobCargo(_) => self.set_screen(Screen::Playing),
+                | Screen::MobCargo(_)
+                | Screen::Stall(_) => self.set_screen(Screen::Playing),
                 _ => {}
             },
             KeyCode::KeyT

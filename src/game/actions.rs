@@ -1100,6 +1100,39 @@ impl Game {
                     self.set_screen(Screen::Offering(h.block));
                     return;
                 }
+                Some("stall") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.3;
+                    self.input.right_held = false;
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::OpenContainer {
+                            x: h.block.0,
+                            y: h.block.1,
+                            z: h.block.2,
+                        });
+                        return;
+                    }
+                    // First open claims an unowned counter for the
+                    // local player (the host's stall, by identity).
+                    let my_id = identity::local_player_id(
+                        &self.server.world.save_dir_for_saving(),
+                        self.identity.device_id(),
+                    )
+                    .map(|p| p.0)
+                    .unwrap_or([0; 16]);
+                    let my_name = self.config.display_name.clone();
+                    let e = self.server.world.ensure_block_entity(
+                        h.block,
+                        world::BlockEntity::Stall(Default::default()),
+                    );
+                    if let world::BlockEntity::Stall(st) = e
+                        && st.owner == [0; 16]
+                    {
+                        st.owner = my_id;
+                        st.owner_name = my_name;
+                    }
+                    self.set_screen(Screen::Stall(h.block));
+                    return;
+                }
                 Some("sign") if self.input.action_cooldown <= 0.0 => {
                     // Reopen the editor with what's written.
                     self.input.action_cooldown = 0.3;

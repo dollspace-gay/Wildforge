@@ -847,3 +847,10 @@ count = 3
 pattern = ["b", "s", "s"]
 keys = { b = "base:bronze_ingot", s = "base:stone" }
 output = "base:waystone"
+
+# The market stall (trade & travel, stage 3): a counter that only
+# trades under its posts and awning - a place, not a vending block.
+[[recipe]]
+pattern = ["ppp", "l.l"]
+keys = { p = "#base:planks", l = "base:leather" }
+output = "base:stall_counter"

@@ -1629,6 +1629,72 @@ impl Game {
                 self.ui = ui;
                 return;
             }
+            Screen::Stall(pos) => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
+                let mine = self.multiplayer.remote.is_none() && self.stall_is_mine(pos);
+                let (slots, owner_name, remote_mine) = {
+                    match self.server.world.block_entity(&pos) {
+                        Some(world::BlockEntity::Stall(st)) => {
+                            let mut v: Vec<Option<ItemStack>> = st.goods.to_vec();
+                            v.push(st.price);
+                            v.extend(st.till.iter().copied());
+                            (v, st.owner_name.clone(), st.owner == [1; 16])
+                        }
+                        _ => (vec![None; 13], String::new(), false),
+                    }
+                };
+                let mine = mine || remote_mine;
+                let title = if owner_name.is_empty() {
+                    "MARKET STALL".to_string()
+                } else {
+                    format!("{}'S STALL", owner_name.to_uppercase())
+                };
+                let tw = UiBatch::text_width(3.0, &title);
+                ui.text_shadow((w - tw) / 2.0, h / 2.0 - 300.0, 3.0, &title, [1.0; 4]);
+                ui.text_shadow(w / 2.0 - 150.0, h / 2.0 - 278.0, 1.5, "GOODS", [1.0; 4]);
+                ui.text_shadow(
+                    w / 2.0 - 150.0,
+                    h / 2.0 - 196.0,
+                    1.5,
+                    "PRICE EACH",
+                    [1.0; 4],
+                );
+                if mine {
+                    ui.text_shadow(w / 2.0 - 150.0, h / 2.0 - 114.0, 1.5, "TILL", [1.0; 4]);
+                }
+                for (i, s) in slots.iter().enumerate() {
+                    if !mine && i >= 7 {
+                        break; // the till is the owner's business
+                    }
+                    let r = self.stall_slot_rect(i);
+                    Self::draw_slot(&self.content.reg, &mut ui, r, *s, false, self.hit(r));
+                }
+                if !mine {
+                    let br = self.stall_buy_rect();
+                    Self::draw_button(&mut ui, br, "BUY", self.hit(br));
+                }
+                for i in 0..TOTAL_SLOTS {
+                    let r = self.inv_slot_rect(i);
+                    Self::draw_slot(
+                        &self.content.reg,
+                        &mut ui,
+                        r,
+                        self.inventory.slots[i],
+                        i == self.input.hotbar_sel,
+                        self.hit(r),
+                    );
+                }
+                if let Some(s) = self.ui_state.held_stack {
+                    let (cx, cy) = self.input.ui_cursor;
+                    let icon = self.content.reg.item(s.item).icon;
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
+                    if s.count > 1 {
+                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
+                    }
+                }
+                self.ui = ui;
+                return;
+            }
             Screen::MobCargo(id) => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
                 let title = "SADDLEBAGS";

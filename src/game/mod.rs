@@ -50,6 +50,8 @@ enum Screen {
     MobCargo(u32),
     /// Writing a placed sign or waystone.
     SignEdit((i32, i32, i32)),
+    /// A market stall: the owner manages, everyone else shops.
+    Stall((i32, i32, i32)),
     Join,
     Paused,
     Dead,

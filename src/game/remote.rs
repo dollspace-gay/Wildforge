@@ -501,6 +501,23 @@ impl Game {
                             }
                             world::BlockEntity::Kiln(k)
                         }
+                        6 => {
+                            let mut st = world::StallState::default();
+                            for (i, sl) in slots.iter().enumerate().take(13) {
+                                let stk = conv(sl);
+                                match i {
+                                    0..=5 => st.goods[i] = stk,
+                                    6 => st.price = stk,
+                                    _ => st.till[i - 7] = stk,
+                                }
+                            }
+                            // aux[0] carries "you own this" — marked
+                            // with a sentinel owner so the UI knows.
+                            if aux.first().copied().unwrap_or(0.0) > 0.5 {
+                                st.owner = [1; 16];
+                            }
+                            world::BlockEntity::Stall(st)
+                        }
                         3 | 5 => {
                             let secs = if kind == 5 {
                                 world::FORGE_FIRE_SECS
@@ -541,6 +558,7 @@ impl Game {
                             3 => Screen::Bloomery(pos),
                             4 => Screen::Kiln(pos),
                             5 => Screen::Bloomery(pos),
+                            6 => Screen::Stall(pos),
                             _ => Screen::Offering(pos),
                         });
                     }

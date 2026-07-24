@@ -87,6 +87,18 @@ struct LocalProfileLink {
     player_id: PlayerId,
 }
 
+/// The local player's stable server-shaped id for this world (the same
+/// link the profile path uses — creating it if this is a first visit).
+pub fn local_player_id(world: &Path, device: DeviceKeyId) -> io::Result<PlayerId> {
+    let path = local_profile_path(world, device)?;
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    PlayerId::parse(stem)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "unparsable player id"))
+}
+
 /// Return the authenticated local player's server-shaped profile path,
 /// migrating the historical `player.toml` without using its display name.
 /// The original remains until a new profile save succeeds.

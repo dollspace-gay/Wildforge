@@ -209,6 +209,7 @@ ROCKS = {
                    veins=(250, 248, 244)),
     "waystone": dict(base=(126, 130, 140), dark=(88, 92, 104),
                      veins=(196, 214, 230)),
+    "stall_counter": dict(base=(158, 116, 68), dark=(112, 78, 42), bands=0.5),
     "shale": dict(base=(120, 118, 122), dark=(84, 82, 90), bands=0.55),
     "granite": dict(base=(188, 172, 160), dark=(140, 124, 116),
                     speckle=(224, 216, 208), speckle_n=40),
