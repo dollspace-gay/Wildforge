@@ -400,6 +400,169 @@ impl Game {
         // Dev: a dusk campsite for the README hero shot — torch posts
         // throwing hard shadows across the grass, a blue-glass lantern
         // staining its pool, a chest and anvil for life.
+        // Dev: the whole trade arc in one clearing — stall (stocked),
+        // sign, waystone, saddlebagged deer, and a boat on a dug pond.
+        if std::env::var("WILDFORGE_DEMO_TRADE").is_ok() {
+            let b = |n: &str| self.content.reg.block_id(n);
+            let reg2 = self.content.reg.clone();
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            for dx in [-16i32, 0, 16] {
+                for dz in [-16i32, 0, 16] {
+                    self.server
+                        .world
+                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                }
+            }
+            let y = self.server.world.surface_height(bx, bz);
+            // Clear and floor the clearing.
+            if let Some(grass) = b("base:grass") {
+                for dx in -10..=10i32 {
+                    for dz in -4..=14i32 {
+                        let (x, z) = (bx + dx, bz + dz);
+                        self.server.world.set_block(x, y, z, grass);
+                        for h in 1..=8 {
+                            if self.server.world.get_block(x, y + h, z) != AIR {
+                                self.server.world.set_block(x, y + h, z, AIR);
+                            }
+                        }
+                    }
+                }
+            }
+            // The stall, stocked and priced.
+            if let (Some(counter), Some(log), Some(planks)) =
+                (b("base:stall_counter"), b("base:log"), b("base:planks"))
+            {
+                let (sx, sz) = (bx - 4, bz + 6);
+
+                self.server.world.set_block(sx, y + 1, sz, counter);
+                for side in [-1i32, 1] {
+                    self.server.world.set_block(sx + side, y + 1, sz, log);
+                    self.server.world.set_block(sx + side, y + 2, sz, log);
+                }
+                for i in -1i32..=1 {
+                    self.server.world.set_block(sx + i, y + 3, sz, planks);
+                }
+                let mut st = crate::world::StallState {
+                    owner: [7; 16],
+                    owner_name: "MERI".to_string(),
+                    ..Default::default()
+                };
+                if let (Some(salt), Some(silver)) = (
+                    reg2.item_id("base:salted_meat"),
+                    reg2.item_id("base:silver_ingot"),
+                ) {
+                    st.goods[0] = Some(ItemStack::new(&reg2, salt, 12));
+                    st.price = Some(ItemStack::new(&reg2, silver, 1));
+                }
+                self.server
+                    .world
+                    .insert_block_entity((sx, y + 1, sz), crate::world::BlockEntity::Stall(st));
+            }
+            // A sign and a named waystone.
+            if let Some(sign) = b("base:sign") {
+                self.server.world.set_block(bx, y + 1, bz + 6, sign);
+                self.server.world.insert_block_entity(
+                    (bx, y + 1, bz + 6),
+                    crate::world::BlockEntity::Sign(crate::world::SignState {
+                        lines: [
+                            "SALT FAIR".to_string(),
+                            "PRICES".to_string(),
+                            "ASK MERI".to_string(),
+                        ],
+                    }),
+                );
+            }
+            if let Some(ws) = b("base:waystone") {
+                self.server.world.set_block(bx + 3, y + 1, bz + 6, ws);
+                self.server.world.insert_block_entity(
+                    (bx + 3, y + 1, bz + 6),
+                    crate::world::BlockEntity::Sign(crate::world::SignState {
+                        lines: ["THREE PINES".to_string(), String::new(), String::new()],
+                    }),
+                );
+            }
+            // A saddlebagged deer at the hitching post.
+            if let Some(di) = reg2.animal_id("base:deer") {
+                let mut deer = crate::mobs::Mob::new(
+                    di,
+                    glam::Vec3::new(bx as f32 + 5.5, y as f32 + 1.0, bz as f32 + 7.5),
+                    2.4,
+                );
+                deer.health = reg2.animals[di].health;
+                deer.tamed = true;
+                deer.calm = 100000.0;
+                deer.cargo = Some(Default::default());
+                self.server.world.spawn_mob(deer);
+            }
+            // A dug pond with a boat riding it.
+            if let (Some(water), Some(dirt), Some(bi)) =
+                (b("base:water"), b("base:dirt"), reg2.animal_id("base:boat"))
+            {
+                for dx in 6..=9i32 {
+                    for dz in 0..=3i32 {
+                        // A sealed bowl: solid under the water so the
+                        // pond can't drain into a cave.
+                        self.server.world.set_block(bx + dx, y - 1, bz + dz, dirt);
+                        self.server.world.set_block(bx + dx, y, bz + dz, water);
+                    }
+                }
+                let mut boat = crate::mobs::Mob::new(
+                    bi,
+                    glam::Vec3::new(bx as f32 + 7.5, y as f32 + 0.9, bz as f32 + 1.5),
+                    0.8,
+                );
+                boat.health = reg2.animals[bi].health;
+                boat.tamed = true;
+                self.server.world.spawn_mob(boat);
+            }
+            // Screen shortcuts want the scene to exist first.
+            match std::env::var("WILDFORGE_SCREEN").as_deref() {
+                Ok("stall") => self.set_screen(Screen::Stall((bx - 4, y + 1, bz + 6))),
+                Ok("signedit") => {
+                    self.ui_state.sign_lines =
+                        ["SALT FAIR".to_string(), "PRICES".to_string(), String::new()];
+                    self.ui_state.sign_line = 2;
+                    self.set_screen(Screen::SignEdit((bx, y + 1, bz + 6)));
+                }
+                Ok("mobcargo") => {
+                    // Ids are sim-assigned: run one tick so the demo
+                    // deer exists on the wire before we key by id.
+                    let mut rng = 1u32;
+                    let _ = self.server.world.tick_mobs(
+                        &[crate::server::PlayerCtx {
+                            id: 0,
+                            pos: spawn,
+                            spawn,
+                            attackable: false,
+                            aggro_mod: 0.0,
+                        }],
+                        1.0,
+                        0.01,
+                        &mut rng,
+                    );
+                    let id = self
+                        .server
+                        .world
+                        .mobs()
+                        .iter()
+                        .find(|m| m.cargo.is_some() && m.id != 0)
+                        .map(|m| m.id);
+                    if let Some(id) = id {
+                        // A little salt rides along for the screenshot.
+                        if let Some(salt) = reg2.item_id("base:salt_crystal")
+                            && let Some(m) = self.server.world.mob_by_id_mut(id)
+                            && let Some(cargo) = m.cargo.as_mut()
+                        {
+                            cargo[0] = Some(ItemStack::new(&reg2, salt, 24));
+                            cargo[5] = Some(ItemStack::new(&reg2, salt, 8));
+                        }
+                        self.set_screen(Screen::MobCargo(id));
+                    }
+                }
+                _ => {}
+            }
+        }
         if std::env::var("WILDFORGE_DEMO_CAMP").is_ok() {
             let b = |n: &str| self.content.reg.block_id(n);
             let bx = spawn.x as i32;

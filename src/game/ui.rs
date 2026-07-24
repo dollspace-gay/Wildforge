@@ -1277,7 +1277,9 @@ impl Game {
                     if l.is_empty() {
                         continue;
                     }
-                    let feet = at - Vec3::new(0.0, 1.0 + i as f32 * 0.34, 0.0);
+                    // Every line's head stays above the post itself,
+                    // or the sign block occludes its own lower lines.
+                    let feet = at - Vec3::new(0.0, 0.32 + i as f32 * 0.3, 0.0);
                     self.draw_world_nameplate(&mut ui, &l.to_uppercase(), feet, w, h);
                 }
             }

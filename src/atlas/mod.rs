@@ -254,20 +254,6 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("crack2", 17),
         ("crack3", 18),
         ("crack4", 19),
-        ("prospect_pick", 20),
-        ("halite", 21),
-        ("salt_crystal", 22),
-        ("salted_meat", 23),
-        ("spoiled_mush", 24),
-        ("survey_cairn", 25),
-        ("leather_strip", 26),
-        ("lead", 27),
-        ("saddlebags", 28),
-        ("sign", 29),
-        ("waystone", 30),
-        ("stall_counter", 31),
-        ("boat", 95),
-        ("boat_hull", 215),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))

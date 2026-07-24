@@ -916,45 +916,45 @@ durability = 1600
 [[item]]
 id = "prospect_pick"
 name = "Prospector's Pick"
-texture = "@prospect_pick"
+texture = "prospect_pick.png"
 durability = 96
 
 [[item]]
 id = "salt_crystal"
 name = "Salt"
-texture = "@salt_crystal"
+texture = "salt_crystal.png"
 
 [[item]]
 id = "salted_meat"
 name = "Salted Meat"
-texture = "@salted_meat"
+texture = "salted_meat.png"
 food = { hunger = 7, eat_time = 1.6, nutrition = { protein = 15 } }
 durability = 7200
 
 [[item]]
 id = "spoiled_mush"
 name = "Spoiled Mush"
-texture = "@spoiled_mush"
+texture = "spoiled_mush.png"
 
 [[item]]
 id = "leather_strip"
 name = "Leather Strip"
-texture = "@leather_strip"
+texture = "leather_strip.png"
 
 [[item]]
 id = "lead"
 name = "Lead"
-texture = "@lead"
+texture = "lead.png"
 max_stack = 8
 
 [[item]]
 id = "saddlebags"
 name = "Saddlebags"
-texture = "@saddlebags"
+texture = "saddlebags.png"
 max_stack = 4
 
 [[item]]
 id = "boat"
 name = "Boat"
-texture = "@boat"
+texture = "boat.png"
 max_stack = 1
