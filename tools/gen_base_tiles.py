@@ -156,6 +156,11 @@ def item(name, body, edge, shape="lump"):
         d.arc([8, 4, 28, 22], 210, 340, fill=body + (255,), width=3)
         d.point((10, 9), fill=edge + (255,))
         d.point((26, 13), fill=edge + (255,))
+    elif shape == "cairn":
+        for (x0, y0, x1, y1) in [(9, 20, 23, 26), (11, 14, 21, 20), (13, 9, 19, 14)]:
+            d.rectangle([x0, y0, x1, y1], fill=body + (255,), outline=edge + (255,))
+        d.point((12, 22), fill=edge + (255,))
+        d.point((18, 17), fill=edge + (255,))
     elif shape == "prism":
         d.polygon([(16, 7), (25, 24), (7, 24)], fill=body + (120,),
                   outline=edge + (255,))
@@ -253,6 +258,7 @@ ITEMS = [
     ("salt_crystal", (240, 240, 236), (190, 190, 184), "lump"),
     ("salted_meat", (170, 96, 88), (216, 214, 208), "lump"),
     ("spoiled_mush", (110, 116, 72), (74, 78, 48), "lump"),
+    ("survey_cairn", (168, 168, 172), (110, 110, 116), "cairn"),
 ]
 
 GLASSES = [

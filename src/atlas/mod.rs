@@ -259,6 +259,7 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("salt_crystal", 22),
         ("salted_meat", 23),
         ("spoiled_mush", 24),
+        ("survey_cairn", 25),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))

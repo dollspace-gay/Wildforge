@@ -1,5 +1,39 @@
 # Economy — scarcity, capital, and the reasons to trade
 
+Drafted 2026-07-23, **IMPLEMENTED** 2026-07-24, all six stages.
+Notes vs. this spec, where the implementation knew better:
+
+- **Pipe rarity is 1/90,000 chunks, not the drafted 1/6,000** — the
+  draft's example number didn't match its own band. Poisson math
+  (median nearest = √(ln2·N/π) chunks) says 1/6,000 lands at ~620
+  blocks; hitting the 2,000–5,000 treasure band takes ~1/90,000
+  (measured median 2,416, p90 3,872). The band was the intent; the
+  example was wrong.
+- **Batholith provinces**: raising the pluton noise threshold alone
+  barely moved the census (the noise frequency keeps blobs
+  everywhere). A coarse province gate over the same noise (knee
+  0.44, slope 1.8) puts granite country at median 512 / p90 960.
+  Tin also thins to chance-gated traces in plain stone (bootstrap,
+  never supply) with vein country only along granite.
+- **The kiln barn became the glassworks**: there is no ceramics
+  chain yet, so the kiln's capital upgrade is the chimney itself —
+  same three-course check as the forge, shared code. Rainproof,
+  double fuel reach. A future pottery chain can ride the same shell.
+- **Survey maps became survey cairns**: item stacks carry no
+  arbitrary data, so the knowledge artifact lives in-world — a
+  placeable cairn that costs a prospector's strike to raise (pick in
+  pack, wears) and reads the land free for anyone thereafter.
+  Readings are pure functions of seed and position, so cairns store
+  nothing and sync nowhere.
+- **Freshness rides the durability field** — `ItemStack::new`
+  initializes it from the item def, the wear bar reads as freshness,
+  and no save or protocol format changed. Legacy stacks (durability
+  0 on a perishable) initialize fresh on first sweep instead of
+  rotting.
+- Along the way: bloomeries, kilns, and forges became right-click
+  openable in singleplayer and for the host — previously only guests
+  could reach those screens (via OpenContainer).
+
 Drafted 2026-07-23. Decisions settled with dollspace: **no dedicated
 classes** (specialization emerges from infrastructure, never from
 locks on the player), **solo play stays fully viable** (a generalist

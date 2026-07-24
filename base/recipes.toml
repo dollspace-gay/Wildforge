@@ -808,3 +808,13 @@ pattern = ["m", "s"]
 keys = { m = "#base:raw_meats", s = "base:salt_crystal" }
 output = "base:salted_meat"
 count = 1
+
+# Survey cairns: knowledge as artifact (economy plan, stage 6).
+# Raising one takes a prospector's strike - the pick must be in your
+# pack and it wears - but once it stands, ANYONE can read the land
+# from it. The surveyor pays the travel; readers pay the surveyor.
+[[recipe]]
+pattern = ["s", "s"]
+keys = { s = "base:stone" }
+output = "base:survey_cairn"
+count = 2

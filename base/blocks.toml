@@ -1064,3 +1064,14 @@ tool = "pickaxe"
 drops = "base:salt_crystal"
 drop_count = 2
 item = false
+
+[[block]]
+id = "survey_cairn"
+name = "Survey Cairn"
+texture = "@survey_cairn"
+cross = true
+hardness = 0.4
+solid = false
+opaque = false
+drops = "self"
+interaction = "survey"
