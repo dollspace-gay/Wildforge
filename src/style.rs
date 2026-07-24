@@ -144,7 +144,9 @@ const HAIR_FAMS: u16 = 7;
 /// skins ×6, faces ×6, hair-tinted ×(7×8), shirts ×10, trousers ×6
 /// = 84 variant slots at the very top of the atlas.
 pub const VARIANT_SLOTS: u16 = N_SKIN * 2 + HAIR_FAMS * N_HAIR + N_SHIRT + N_TROUSERS;
-pub const VARIANT_BASE: u16 = 1024 - VARIANT_SLOTS;
+/// Variants sit at the very top of the atlas grid, wherever it ends.
+pub const VARIANT_BASE: u16 =
+    (crate::atlas::ATLAS_TILES * crate::atlas::ATLAS_TILES) as u16 - VARIANT_SLOTS;
 /// Extra neutral base tiles (painters live here, below the variants).
 pub const EXTRA_BASE: u16 = VARIANT_BASE - 8;
 

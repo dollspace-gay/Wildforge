@@ -9,7 +9,8 @@
 //! All UV math in the game uses tile fractions (1/16 of the atlas), so any
 //! square atlas whose side is a multiple of 16 works.
 
-pub const ATLAS_TILES: u32 = 32;
+// Keep in sync with ATLAS_TILES in shader.wgsl.
+pub const ATLAS_TILES: u32 = 64;
 /// Atlas slot = row * 16 + col. Rows 0-2 are built-in procedural tiles.
 pub const UNKNOWN_SLOT: u16 = 15;
 pub const CRACK_SLOT: u16 = 16; // stages 16..=19
