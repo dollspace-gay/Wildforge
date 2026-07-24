@@ -211,7 +211,13 @@ impl Renderer {
             });
             sp.set_pipeline(&self.shadow_pipeline);
             sp.set_bind_group(0, &self.uniform_bg, &[]);
-            for gpu in self.chunks.values() {
+            // The ortho box only covers ~90 blocks around the camera —
+            // chunks beyond it can't cast into the map, so don't draw
+            // them (with a big view distance this was most of them).
+            for (pos, gpu) in &self.chunks {
+                if !chunk_in_range(*pos, f.cam_pos, 120.0) {
+                    continue;
+                }
                 if let Some(m) = &gpu.opaque {
                     sp.set_vertex_buffer(0, m.vbuf.slice(..));
                     sp.set_index_buffer(m.ibuf.slice(..), wgpu::IndexFormat::Uint32);

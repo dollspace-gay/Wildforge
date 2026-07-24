@@ -21,6 +21,8 @@ impl Renderer {
             })
             .await
             .expect("no GPU adapter found");
+        let info = adapter.get_info();
+        let adapter_name = format!("{} [{:?}]", info.name, info.backend);
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,
@@ -955,6 +957,7 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
         let ui_vbuf = DynBuf::new(&device, wgpu::BufferUsages::VERTEX);
 
         let mut r = Renderer {
+            adapter_name,
             surface,
             device,
             queue,
