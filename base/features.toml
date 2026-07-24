@@ -2,7 +2,9 @@
 # host rock, so where you dig finally matters. Order matters once:
 # quartz veins plant before the gold that lives inside them.
 
-# -- the bronze age stays findable: copper broad, tin generous --
+# -- the bronze age: copper broad; tin is TRACES in plain stone
+# (enough to bootstrap a tool or two anywhere, never a supply) and
+# vein country only along granite margins -- the first regional good.
 
 [[feature]]
 type = "ore"
@@ -25,8 +27,9 @@ y_range = [2, 200]
 type = "ore"
 block = "base:tin_ore"
 replaces = "base:stone"
-vein_size = 4
-per_chunk = 3
+vein_size = 3
+per_chunk = 1
+chance = 0.15
 y_range = [8, 56]
 
 # Cassiterite hugs the granite margins.

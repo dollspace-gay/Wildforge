@@ -784,11 +784,50 @@ fn strata_layer_the_world_sanely() {
         ("sandstone", sandstone),
         ("limestone", limestone),
         ("shale", shale),
-        ("granite", granite),
         ("basalt", basalt),
     ] {
         assert!(n(blk) > 500, "{name} present in the sample ({})", n(blk));
     }
+    // Granite is a regional good now (batholith provinces): find
+    // granite country with the pluton probe, sample there.
+    let mut prov = None;
+    'g: for r in 0..80 {
+        let d = r * 64;
+        for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
+            if w.generator.pluton_at(x, z) {
+                prov = Some((x, z));
+                break 'g;
+            }
+        }
+    }
+    let (gx, gz) = prov.expect("a batholith province within range");
+    let gp = ChunkPos::of_world(gx, gz);
+    for dx in -2..=2 {
+        for dz in -2..=2 {
+            w.ensure_chunk(ChunkPos {
+                x: gp.x + dx,
+                z: gp.z + dz,
+            });
+        }
+    }
+    let mut n_granite = 0u32;
+    for dx in -32..32 {
+        for dz in -32..32 {
+            for y in 1..140 {
+                let blk = w.get_block(gx + dx, y, gz + dz);
+                if blk == granite {
+                    n_granite += 1;
+                }
+                if blk == marble && marble_cells.len() < 400 {
+                    marble_cells.push((gx + dx, y, gz + dz));
+                }
+            }
+        }
+    }
+    assert!(
+        n_granite > 500,
+        "granite present in its province ({n_granite})"
+    );
     // Basalt floods only the deeps.
     let mean = |blk| y_sum.get(&blk).copied().unwrap_or(0) as f64 / n(blk).max(1) as f64;
     assert!(
@@ -918,9 +957,11 @@ fn pipes_and_geodes_seed_the_deep() {
 
     // A kimberlite pipe, found by the locator, generated, and shaped
     // like a carrot: wide near its top, a thread at depth.
+    // Treasure-band rarity: the locator is cheap (a hash), so the
+    // search square is simply large now.
     let mut pipe = None;
-    'p: for x in -40..=40 {
-        for z in -40..=40 {
+    'p: for x in -400..=400 {
+        for z in -400..=400 {
             let cp = ChunkPos { x, z };
             if w.generator.pipe_at(cp).is_some() {
                 pipe = Some(cp);
@@ -1726,7 +1767,7 @@ fn print_resource_census() {
                     cp.x,
                     cp.z,
                     1,
-                    120,
+                    400,
                 )
                 .map(|c| c * 16)
             })
@@ -1780,5 +1821,111 @@ fn print_resource_census() {
                 )
             })
             .collect(),
+    );
+}
+
+#[test]
+fn regional_resources_hold_their_distance_bands() {
+    // Economy plan stage 1: commons under every column; regionals a
+    // real hike; treasures an expedition. Locator-based so it stays
+    // fast — this is the geological counterpart of the food census.
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    let pts: [(i32, i32); 6] = [
+        (500, 700),
+        (-4200, 2600),
+        (7300, -1900),
+        (-2800, -6400),
+        (9800, 5200),
+        (-8600, -700),
+    ];
+    let chunk_dist = |hit: &dyn Fn(i32, i32) -> bool, x: i32, z: i32, cap: i32| -> i32 {
+        let cp = ChunkPos::of_world(x, z);
+        if hit(cp.x, cp.z) {
+            return 0;
+        }
+        for r in 1..=cap {
+            let mut i = -r;
+            while i <= r {
+                for (px, pz) in [
+                    (cp.x + i, cp.z - r),
+                    (cp.x + i, cp.z + r),
+                    (cp.x - r, cp.z + i),
+                    (cp.x + r, cp.z + i),
+                ] {
+                    if hit(px, pz) {
+                        return r * 16;
+                    }
+                }
+                i += 1;
+            }
+        }
+        cap * 16
+    };
+    let mut pipe_d: Vec<i32> = pts
+        .iter()
+        .map(|&(x, z)| {
+            chunk_dist(
+                &|cx, cz| g.pipe_at(ChunkPos { x: cx, z: cz }).is_some(),
+                x,
+                z,
+                500,
+            )
+        })
+        .collect();
+    pipe_d.sort_unstable();
+    let pipe_med = pipe_d[pipe_d.len() / 2];
+    assert!(
+        (1200..=6500).contains(&pipe_med),
+        "pipes stay treasure-band (median {pipe_med})"
+    );
+    let mut geode_d: Vec<i32> = pts
+        .iter()
+        .map(|&(x, z)| {
+            chunk_dist(
+                &|cx, cz| g.geode_at(ChunkPos { x: cx, z: cz }).is_some(),
+                x,
+                z,
+                80,
+            )
+        })
+        .collect();
+    geode_d.sort_unstable();
+    let geode_med = geode_d[geode_d.len() / 2];
+    assert!(
+        (48..=700).contains(&geode_med),
+        "geodes stay a local luxury (median {geode_med})"
+    );
+    // Plutons: probe columns on a coarse ring walk.
+    let mut plu_d: Vec<i32> = pts
+        .iter()
+        .map(|&(x, z)| {
+            let mut d = 4000;
+            'r: for r in 0..60 {
+                let rr = r * 64;
+                let mut i = -rr;
+                while i <= rr {
+                    for (px, pz) in [
+                        (x + i, z - rr),
+                        (x + i, z + rr),
+                        (x - rr, z + i),
+                        (x + rr, z + i),
+                    ] {
+                        if g.pluton_at(px, pz) {
+                            d = rr;
+                            break 'r;
+                        }
+                    }
+                    i += 64;
+                }
+            }
+            d
+        })
+        .collect();
+    plu_d.sort_unstable();
+    let plu_med = plu_d[plu_d.len() / 2];
+    assert!(
+        (200..=2200).contains(&plu_med),
+        "batholiths stay regional (median {plu_med})"
     );
 }
