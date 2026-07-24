@@ -254,6 +254,7 @@ impl Game {
                 None => eprintln!("WILDFORGE_HELD: no item named {name:?}"),
             }
         }
+        self.load_attunements();
         // Dev: WILDFORGE_POS="x,y,z" teleports to an exact spot (reproducing
         // reported coordinates). Runs after load so it wins.
         if let Ok(s) = std::env::var("WILDFORGE_POS") {

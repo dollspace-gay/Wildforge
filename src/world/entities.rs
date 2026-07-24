@@ -105,6 +105,16 @@ impl World {
                     }
                     let _ = writeln!(out);
                 }
+                BlockEntity::Sign(sg) => {
+                    let esc = |l: &str| l.replace(['\\', '"'], "");
+                    let _ = writeln!(
+                        out,
+                        "[[sign]]\npos = [{x}, {y}, {z}]\nlines = [\"{}\", \"{}\", \"{}\"]\n",
+                        esc(&sg.lines[0]),
+                        esc(&sg.lines[1]),
+                        esc(&sg.lines[2])
+                    );
+                }
                 BlockEntity::Clamp(c) => {
                     let logs: Vec<String> = c
                         .logs
@@ -220,6 +230,12 @@ impl World {
             slot: Vec<ChestSlotT>,
         }
         #[derive(Deserialize)]
+        struct SignT {
+            pos: [i32; 3],
+            #[serde(default)]
+            lines: Vec<String>,
+        }
+        #[derive(Deserialize)]
         struct ClampT {
             pos: [i32; 3],
             timer: f32,
@@ -252,6 +268,8 @@ impl World {
             kiln: Vec<BloomeryT>,
             #[serde(default)]
             forge: Vec<BloomeryT>,
+            #[serde(default)]
+            sign: Vec<SignT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else {
             return;
@@ -372,6 +390,14 @@ impl World {
             }
             self.block_entities
                 .insert((fo.pos[0], fo.pos[1], fo.pos[2]), BlockEntity::Forge(state));
+        }
+        for sg in parsed.sign {
+            let mut state = SignState::default();
+            for (i, l) in sg.lines.into_iter().take(3).enumerate() {
+                state.lines[i] = l;
+            }
+            self.block_entities
+                .insert((sg.pos[0], sg.pos[1], sg.pos[2]), BlockEntity::Sign(state));
         }
         for cl in parsed.clamp {
             self.block_entities.insert(

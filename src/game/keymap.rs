@@ -29,6 +29,7 @@ impl Game {
                 | Screen::Bloomery(_)
                 | Screen::Kiln(_)
                 | Screen::MobCargo(_) => self.set_screen(Screen::Playing),
+                Screen::SignEdit(pos) => self.commit_sign(pos),
                 Screen::Paused => self.set_screen(Screen::Playing),
                 Screen::Settings => {
                     self.config.save();

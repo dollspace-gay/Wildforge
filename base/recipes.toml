@@ -835,3 +835,15 @@ output = "base:lead"
 pattern = ["sls", "p.p"]
 keys = { s = "base:leather_strip", l = "base:leather", p = "#base:planks" }
 output = "base:saddlebags"
+
+# Signs and waystones (trade & travel, stage 2): places get names.
+[[recipe]]
+pattern = ["ppp", "ppp", ".t."]
+keys = { p = "#base:planks", t = "base:stick" }
+output = "base:sign"
+count = 3
+
+[[recipe]]
+pattern = ["b", "s", "s"]
+keys = { b = "base:bronze_ingot", s = "base:stone" }
+output = "base:waystone"

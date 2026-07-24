@@ -48,6 +48,8 @@ enum Screen {
     Kiln((i32, i32, i32)),
     /// A tamed carrier's saddlebags, keyed by mob id.
     MobCargo(u32),
+    /// Writing a placed sign or waystone.
+    SignEdit((i32, i32, i32)),
     Join,
     Paused,
     Dead,
@@ -187,6 +189,9 @@ struct UiState {
     dragging_slider: Option<usize>,
     search: String,
     search_focus: bool,
+    /// Sign editor buffer (three short lines) and the active line.
+    sign_lines: [String; 3],
+    sign_line: usize,
     browse_page: usize,
     browse_view: Option<(ItemId, bool)>,
     browse_back: Vec<(ItemId, bool)>,
@@ -216,6 +221,8 @@ impl Default for UiState {
             dragging_slider: None,
             search: String::new(),
             search_focus: false,
+            sign_lines: Default::default(),
+            sign_line: 0,
             browse_page: 0,
             browse_view: None,
             browse_back: Vec::new(),
@@ -243,6 +250,9 @@ struct InteractionState {
     craft_size: usize,
     items: Vec<ItemEntity>,
     breaking: Option<((i32, i32, i32), f32)>,
+    /// Waystones this player has touched: (name, x, z). Loaded from a
+    /// per-world sidecar; purely local knowledge, never synced.
+    attuned: Vec<(String, i32, i32)>,
 }
 
 impl Default for InteractionState {
@@ -257,6 +267,7 @@ impl Default for InteractionState {
             craft_size: 2,
             items: Vec::new(),
             breaking: None,
+            attuned: Vec::new(),
         }
     }
 }

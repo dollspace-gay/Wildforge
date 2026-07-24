@@ -168,6 +168,11 @@ def item(name, body, edge, shape="lump"):
         d.line([(14, 14), (18, 14)], fill=edge + (255,), width=2)
         d.line([(8, 15), (13, 15)], fill=edge + (255,))
         d.line([(19, 15), (24, 15)], fill=edge + (255,))
+    elif shape == "sign":
+        d.rectangle([6, 8, 26, 18], fill=body + (255,), outline=edge + (255,))
+        d.rectangle([15, 18, 17, 26], fill=edge + (255,))
+        for yy in (11, 14):
+            d.line([(9, yy), (23, yy)], fill=edge + (255,))
     elif shape == "cairn":
         for (x0, y0, x1, y1) in [(9, 20, 23, 26), (11, 14, 21, 20), (13, 9, 19, 14)]:
             d.rectangle([x0, y0, x1, y1], fill=body + (255,), outline=edge + (255,))
@@ -202,6 +207,8 @@ ROCKS = {
     "limestone": dict(base=(205, 200, 184), dark=(166, 160, 142), bands=0.2),
     "halite": dict(base=(236, 232, 226), dark=(198, 192, 186), bands=0.35,
                    veins=(250, 248, 244)),
+    "waystone": dict(base=(126, 130, 140), dark=(88, 92, 104),
+                     veins=(196, 214, 230)),
     "shale": dict(base=(120, 118, 122), dark=(84, 82, 90), bands=0.55),
     "granite": dict(base=(188, 172, 160), dark=(140, 124, 116),
                     speckle=(224, 216, 208), speckle_n=40),
@@ -274,6 +281,7 @@ ITEMS = [
     ("leather_strip", (146, 96, 54), (100, 62, 32), "strip"),
     ("lead", (160, 108, 62), (110, 70, 36), "lead"),
     ("saddlebags", (122, 80, 44), (82, 52, 26), "bags"),
+    ("sign", (146, 108, 62), (96, 68, 36), "sign"),
 ]
 
 GLASSES = [

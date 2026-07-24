@@ -1075,3 +1075,23 @@ solid = false
 opaque = false
 drops = "self"
 interaction = "survey"
+
+[[block]]
+id = "sign"
+name = "Sign"
+texture = "@sign"
+cross = true
+hardness = 0.4
+solid = false
+opaque = false
+drops = "self"
+interaction = "sign"
+
+[[block]]
+id = "waystone"
+name = "Waystone"
+texture = "@waystone"
+hardness = 4.0
+tool = "pickaxe"
+drops = "self"
+interaction = "waystone"

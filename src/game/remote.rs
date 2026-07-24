@@ -421,6 +421,12 @@ impl Game {
                 net::S2C::PlayerState(state) => {
                     self.apply_remote_player_state(&r, state, false);
                 }
+                net::S2C::SignText { x, y, z, lines } => {
+                    self.server.world.insert_block_entity(
+                        (x, y, z),
+                        world::BlockEntity::Sign(world::SignState { lines }),
+                    );
+                }
                 net::S2C::MobCargo { id, slots } => {
                     // The host's pack truth: mirror it onto the local
                     // snapshot mob and open the screen if we asked.

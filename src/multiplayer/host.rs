@@ -766,6 +766,16 @@ impl HostSession {
             },
         );
         self.net.broadcast(&S2C::Joined { presence });
+        // The named world arrives with its names: every sign and
+        // waystone, so travelers read them without asking.
+        let signs: Vec<((i32, i32, i32), [String; 3])> = server
+            .world
+            .sign_texts()
+            .map(|(p, st)| (p, st.lines.clone()))
+            .collect();
+        for ((x, y, z), lines) in signs {
+            self.net.send(id, &S2C::SignText { x, y, z, lines });
+        }
         self.guests.insert(
             id,
             Guest {
@@ -1372,6 +1382,29 @@ impl HostSession {
                 self.net.send(id, &S2C::HeldResult(snap));
                 self.send_mob_cargo(server, id, mob_id);
             }
+            C2S::SetSign { x, y, z, lines } => {
+                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                if (p - guest.pos).length() > REACH {
+                    return;
+                }
+                let b = server.world.get_block(x, y, z);
+                let station = server.world.reg.block(b).interaction.as_deref();
+                if !matches!(station, Some("sign") | Some("waystone")) {
+                    return;
+                }
+                let mut lines = lines;
+                for l in lines.iter_mut() {
+                    l.truncate(14);
+                    l.retain(|c| c.is_ascii_alphanumeric() || " :_-'".contains(c));
+                }
+                server.world.insert_block_entity(
+                    (x, y, z),
+                    BlockEntity::Sign(crate::world::SignState {
+                        lines: lines.clone(),
+                    }),
+                );
+                self.net.broadcast(&S2C::SignText { x, y, z, lines });
+            }
             C2S::BrushBlock { x, y, z } => {
                 let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
                 if (p - guest.pos).length() > REACH {
@@ -1904,7 +1937,7 @@ impl HostSession {
                     }
                 }
             }
-            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) => {}
+            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) | BlockEntity::Sign(_) => {}
             BlockEntity::Chest(c) => {
                 if slot < c.slots.len() {
                     let (ns, nh) = click_stack(&reg, c.slots[slot], held, right);
@@ -1968,6 +2001,16 @@ impl HostSession {
         self.net.send(id, &S2C::HeldResult(snap));
         self.send_player_state(id);
         self.send_container(server, id, pos);
+    }
+
+    /// Push a host-authored sign edit to every guest.
+    pub fn broadcast_sign(&mut self, pos: (i32, i32, i32), lines: &[String; 3]) {
+        self.net.broadcast(&S2C::SignText {
+            x: pos.0,
+            y: pos.1,
+            z: pos.2,
+            lines: lines.clone(),
+        });
     }
 
     fn send_mob_cargo(&mut self, server: &Server, id: u32, mob_id: u32) {
@@ -2039,7 +2082,7 @@ impl HostSession {
                     f.progress / crate::world::FORGE_FIRE_SECS,
                 ],
             ),
-            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) => return,
+            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) | BlockEntity::Sign(_) => return,
         };
         self.net.send(
             id,

@@ -416,6 +416,7 @@ impl Game {
                     }
                 }
             }
+            Screen::SignEdit(_) => {}
             Screen::MobCargo(id) => {
                 for i in 0..12 {
                     if self.hit(self.mob_cargo_slot_rect(i)) {

@@ -22,6 +22,77 @@ impl Game {
         self.sfx(Sfx::Click);
     }
 
+    /// The attunement sidecar for the current world (local knowledge —
+    /// what this player's feet have actually touched).
+    fn attune_path(&self) -> std::path::PathBuf {
+        self.server.world.save_dir_for_saving().join("attuned.tsv")
+    }
+
+    pub(super) fn load_attunements(&mut self) {
+        self.interaction.attuned.clear();
+        if let Ok(text) = std::fs::read_to_string(self.attune_path()) {
+            for l in text.lines() {
+                let mut parts = l.splitn(3, '\t');
+                if let (Some(x), Some(z), Some(name)) = (
+                    parts.next().and_then(|v| v.parse().ok()),
+                    parts.next().and_then(|v| v.parse().ok()),
+                    parts.next(),
+                ) {
+                    self.interaction.attuned.push((name.to_string(), x, z));
+                }
+            }
+        }
+    }
+
+    fn save_attunements(&self) {
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        for (name, x, z) in &self.interaction.attuned {
+            let _ = writeln!(out, "{x}\t{z}\t{name}");
+        }
+        let _ = std::fs::create_dir_all("saves");
+        let _ = std::fs::write(self.attune_path(), out);
+    }
+
+    /// Touch a waystone: learn it, then hear where the others stand.
+    pub(super) fn read_waystone(&mut self, pos: (i32, i32, i32)) {
+        let name = match self.server.world.block_entity(&pos) {
+            Some(world::BlockEntity::Sign(sg)) if !sg.lines[0].is_empty() => sg.lines[0].clone(),
+            _ => {
+                self.toast("The stone is unnamed. Write it first.".to_string());
+                return;
+            }
+        };
+        let known = self
+            .interaction
+            .attuned
+            .iter()
+            .any(|(_, x, z)| (*x, *z) == (pos.0, pos.2));
+        if !known {
+            self.interaction.attuned.push((name.clone(), pos.0, pos.2));
+            self.save_attunements();
+            self.toast(format!("The stone at {name} knows you now."));
+        }
+        let mut lines: Vec<String> = Vec::new();
+        for (other, x, z) in &self.interaction.attuned {
+            if (*x, *z) == (pos.0, pos.2) {
+                continue;
+            }
+            let d = (((x - pos.0).pow(2) + (z - pos.2).pow(2)) as f32).sqrt() as i32;
+            lines.push(format!(
+                "{}: ~{d} blocks {}",
+                other.to_uppercase(),
+                Self::octant((x - pos.0, z - pos.2))
+            ));
+        }
+        if lines.is_empty() {
+            self.toast("It hums alone. Touch other stones.".to_string());
+        }
+        for l in lines {
+            self.toast(l);
+        }
+    }
+
     /// Bedroll: sleep to dawn if it's night and the wild is far enough.
     /// In multiplayer, dawn waits for everyone (the sleep vote).
     pub(super) fn try_sleep(&mut self) {

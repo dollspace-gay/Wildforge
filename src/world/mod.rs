@@ -41,6 +41,13 @@ pub enum BlockEntity {
     Anvil(AnvilState),
     Kiln(KilnState),
     Forge(BloomeryState),
+    /// Three short lines on a post (a waystone uses line 0 as its name).
+    Sign(SignState),
+}
+
+#[derive(Default, Clone)]
+pub struct SignState {
+    pub lines: [String; 3],
 }
 
 /// The steelworks stack: a batch of charge + fuel, fired for half a
@@ -523,6 +530,14 @@ impl World {
         self.pending_drops.clear();
     }
 
+    /// Every sign and waystone with its text (world rendering, join sync).
+    pub fn sign_texts(&self) -> impl Iterator<Item = ((i32, i32, i32), &SignState)> {
+        self.block_entities.iter().filter_map(|(&p, e)| match e {
+            BlockEntity::Sign(s) => Some((p, s)),
+            _ => None,
+        })
+    }
+
     /// Queue an item drop at a cell (spawned by the game loop).
     pub fn push_drop(&mut self, at: (i32, i32, i32), stack: ItemStack) {
         self.pending_drops.push((at, stack));
@@ -780,6 +795,7 @@ impl World {
                 BlockEntity::Offering(o) => o.slots.into_iter().flatten().collect(),
                 BlockEntity::Bloomery(b) => b.charge.into_iter().chain(b.fuel).flatten().collect(),
                 BlockEntity::Forge(f) => f.charge.into_iter().chain(f.fuel).flatten().collect(),
+                BlockEntity::Sign(_) => Vec::new(),
                 BlockEntity::Clamp(_) => Vec::new(), // the burn dies with it
                 BlockEntity::Anvil(a) => a.bloom.into_iter().collect(),
                 BlockEntity::Kiln(k) => k

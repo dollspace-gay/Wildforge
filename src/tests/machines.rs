@@ -904,3 +904,33 @@ fn chimneyed_kiln_is_a_glassworks() {
         .sum();
     assert_eq!(sand_left, 4, "the unfired sand keeps");
 }
+
+#[test]
+fn signs_hold_their_words_through_save_and_load() {
+    use crate::world::{BlockEntity, SignState};
+    let reg = base_reg();
+    let dir = tmp_dir("signsave");
+    {
+        let mut w = World::new(42, dir.clone(), reg.clone());
+        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        let sign = b(&reg, "base:sign");
+        let sy = w.surface_height(4, 4);
+        w.set_block(4, sy + 1, 4, sign);
+        w.insert_block_entity(
+            (4, sy + 1, 4),
+            BlockEntity::Sign(SignState {
+                lines: [
+                    "SALT FAIR".to_string(),
+                    "PRICES".to_string(),
+                    "NE 400".to_string(),
+                ],
+            }),
+        );
+        w.save_modified();
+    }
+    let w = World::load_or_create(dir, reg.clone());
+    let found: Vec<_> = w.sign_texts().collect();
+    assert_eq!(found.len(), 1, "the sign persisted");
+    assert_eq!(found[0].1.lines[0], "SALT FAIR");
+    assert_eq!(found[0].1.lines[2], "NE 400");
+}

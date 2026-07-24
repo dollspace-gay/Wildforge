@@ -208,6 +208,13 @@ pub enum C2S {
     OpenMobCargo {
         id: u32,
     },
+    /// Write a placed sign or waystone (host validates and broadcasts).
+    SetSign {
+        x: i32,
+        y: i32,
+        z: i32,
+        lines: [String; 3],
+    },
     /// One transactional click in a mob's pack.
     MobCargoClick {
         id: u32,
@@ -340,6 +347,13 @@ pub enum S2C {
         /// Live machine state: furnace [progress, burn_left,
         /// burn_total], bloomery/kiln [lit, progress 0..1].
         aux: Vec<f32>,
+    },
+    /// Sign text (broadcast on set; the full set arrives on join).
+    SignText {
+        x: i32,
+        y: i32,
+        z: i32,
+        lines: [String; 3],
     },
     /// A mob pack's contents (sent on open and after each change).
     MobCargo {

@@ -73,25 +73,53 @@ impl Game {
 
     /// Read the country at a spot and toast it: the prospector's
     /// verdict, shared by pick strikes and standing survey cairns.
+    /// Compass octant of a world-space offset ("north" is -z).
+    pub(super) fn octant(d: (i32, i32)) -> &'static str {
+        if d == (0, 0) {
+            return "here";
+        }
+        let a = (d.0 as f32).atan2(-(d.1 as f32)).to_degrees();
+        let names = [
+            "north",
+            "northeast",
+            "east",
+            "southeast",
+            "south",
+            "southwest",
+            "west",
+            "northwest",
+        ];
+        names[(((a + 382.5) / 45.0) as usize) % 8]
+    }
+
+    /// Commit the sign editor: write the entity (host) or send it
+    /// (guest), then return to play.
+    pub(super) fn commit_sign(&mut self, pos: (i32, i32, i32)) {
+        let lines = self.ui_state.sign_lines.clone();
+        if let Some(rc) = &self.multiplayer.remote {
+            rc.client.send(&net::C2S::SetSign {
+                x: pos.0,
+                y: pos.1,
+                z: pos.2,
+                lines: lines.clone(),
+            });
+        }
+        // Local worlds and hosts apply directly (the host broadcast
+        // happens on the C2S path for guests' own edits).
+        if self.multiplayer.remote.is_none() {
+            self.server
+                .world
+                .insert_block_entity(pos, world::BlockEntity::Sign(world::SignState { lines }));
+            if let Some(hst) = &mut self.multiplayer.host {
+                hst.broadcast_sign(pos, &self.ui_state.sign_lines);
+            }
+        }
+        self.set_screen(Screen::Playing);
+    }
+
     pub(super) fn toast_prospect(&mut self, bx: i32, bz: i32) {
         let r = self.server.world.generator.prospect(bx, bz);
-        let octant = |d: (i32, i32)| -> &'static str {
-            if d == (0, 0) {
-                return "here";
-            }
-            let a = (d.0 as f32).atan2(-(d.1 as f32)).to_degrees();
-            let names = [
-                "north",
-                "northeast",
-                "east",
-                "southeast",
-                "south",
-                "southwest",
-                "west",
-                "northwest",
-            ];
-            names[(((a + 382.5) / 45.0) as usize) % 8]
-        };
+        let octant = |d: (i32, i32)| -> &'static str { Self::octant(d) };
         let mut lines: Vec<String> = Vec::new();
         match r.pluton {
             Some((0, _)) => lines.push("Granite country underfoot.".into()),
@@ -1072,6 +1100,24 @@ impl Game {
                     self.set_screen(Screen::Offering(h.block));
                     return;
                 }
+                Some("sign") if self.input.action_cooldown <= 0.0 => {
+                    // Reopen the editor with what's written.
+                    self.input.action_cooldown = 0.3;
+                    self.input.right_held = false;
+                    let cur = match self.server.world.block_entity(&h.block) {
+                        Some(world::BlockEntity::Sign(sg)) => sg.lines.clone(),
+                        _ => Default::default(),
+                    };
+                    self.ui_state.sign_lines = cur;
+                    self.ui_state.sign_line = 0;
+                    self.set_screen(Screen::SignEdit(h.block));
+                    return;
+                }
+                Some("waystone") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.4;
+                    self.read_waystone(h.block);
+                    return;
+                }
                 Some("survey") if self.input.action_cooldown <= 0.0 => {
                     // A raised cairn is bought knowledge: anyone reads
                     // the surveyor's ground, no pick required.
@@ -1166,6 +1212,12 @@ impl Game {
                     }
                     if allow && consumed {
                         self.server.world.place_block((x, y, z), block);
+                        // A fresh sign or waystone wants its words.
+                        if matches!(bd.interaction.as_deref(), Some("sign") | Some("waystone")) {
+                            self.ui_state.sign_lines = Default::default();
+                            self.ui_state.sign_line = 0;
+                            self.set_screen(Screen::SignEdit((x, y, z)));
+                        }
                         if bd.crop_next.is_some() {
                             // The wild notices things growing where you walk.
                             self.server.world.plant_ire(0.2);
