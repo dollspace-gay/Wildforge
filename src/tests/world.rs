@@ -2057,3 +2057,153 @@ fn glaze_dries_while_marsh_pockets_keep_their_film() {
         "rain seeds a film in a dry pothole"
     );
 }
+
+#[test]
+fn pools_level_through_a_submerged_gap() {
+    // Two wells share a wall; the breach sits at the bottom layer,
+    // below both surfaces once the low side backs up. Equalization
+    // alone stalls there (every layer at the gap is full) — pressure
+    // has to carry the difference, and the surfaces must meet.
+    let reg = base_reg();
+    let mut w = test_world_with("utube", reg.clone());
+    let stone = b(&reg, "base:stone");
+    let y = 200;
+    // Solid 7x4 block from y..y+5, wells carved at x 1..=2 and 4..=5.
+    for x in 0..7 {
+        for z in 0..4 {
+            for yy in y..=y + 5 {
+                w.set_block(x, yy, z, stone);
+            }
+        }
+    }
+    for z in 1..=2 {
+        for x in [1, 2, 4, 5] {
+            for yy in y + 1..=y + 5 {
+                w.set_block(x, yy, z, AIR);
+            }
+        }
+    }
+    // A holds four blocks of water, B one.
+    for z in 1..=2 {
+        for x in [1, 2] {
+            for yy in y + 1..=y + 4 {
+                w.set_block(x, yy, z, reg.water_block(0));
+            }
+        }
+        for x in [4, 5] {
+            w.set_block(x, y + 1, z, reg.water_block(0));
+        }
+    }
+    while w.tick_water(10_000) {}
+    // Knock one wall block out of the bottom layer. The wall above
+    // the hole stays: this link is a sealed-top pipe mouth.
+    w.set_block(3, y + 1, 1, AIR);
+    let mut quiet = false;
+    for _ in 0..4000 {
+        if !w.tick_water(10_000) {
+            quiet = true;
+            break;
+        }
+    }
+    assert!(quiet, "the linked pools settle");
+    // Column heads across both wells and the gap must agree within
+    // the 2-unit hysteresis: the surfaces have met.
+    let head = |w: &World, x: i32, z: i32| -> i64 {
+        let mut h = 0;
+        for yy in y + 1..=y + 5 {
+            if let Some(v) = reg.water_volume(w.get_block(x, yy, z)) {
+                h = yy as i64 * 8 + v as i64;
+            }
+        }
+        h
+    };
+    let cols: Vec<i64> = [
+        (1, 1),
+        (2, 1),
+        (1, 2),
+        (2, 2),
+        (4, 1),
+        (5, 1),
+        (4, 2),
+        (5, 2),
+    ]
+    .iter()
+    .map(|&(x, z)| head(&w, x, z))
+    .collect();
+    let (lo, hi) = (*cols.iter().min().unwrap(), *cols.iter().max().unwrap());
+    assert!(hi > 0, "water survived");
+    assert!(hi - lo <= 2, "pressure levels the pools (heads {lo}..{hi})");
+    // And the low side genuinely rose: from one block to over two.
+    assert!(
+        head(&w, 5, 2) >= (y as i64 + 2) * 8,
+        "the far well rose ({})",
+        head(&w, 5, 2)
+    );
+}
+
+#[test]
+fn saved_mid_drain_pools_resume_leveling() {
+    // Quit the game mid-drain and the queues die with the session;
+    // the load sweep must notice the head cliff at the gap and set
+    // the pools leveling again.
+    let reg = base_reg();
+    let dir = tmp_dir("utube-resume");
+    let y = 200;
+    {
+        let mut w = World::new(7, dir.clone(), reg.clone());
+        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        let stone = b(&reg, "base:stone");
+        for x in 0..7 {
+            for z in 0..4 {
+                for yy in y..=y + 5 {
+                    w.set_block(x, yy, z, stone);
+                }
+            }
+        }
+        for z in 1..=2 {
+            for x in [1, 2, 4, 5] {
+                for yy in y + 1..=y + 5 {
+                    w.set_block(x, yy, z, AIR);
+                }
+            }
+        }
+        for z in 1..=2 {
+            for x in [1, 2] {
+                for yy in y + 1..=y + 4 {
+                    w.set_block(x, yy, z, reg.water_block(0));
+                }
+            }
+            for x in [4, 5] {
+                w.set_block(x, y + 1, z, reg.water_block(0));
+            }
+        }
+        while w.tick_water(10_000) {}
+        w.set_block(3, y + 1, 1, AIR);
+        w.tick_water(50); // a few strokes of the pour, then quit
+        w.unload_chunk(ChunkPos { x: 0, z: 0 });
+    }
+    let mut w = World::new(7, dir, reg.clone());
+    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    let mut quiet = false;
+    for _ in 0..4000 {
+        if !w.tick_water(10_000) {
+            quiet = true;
+            break;
+        }
+    }
+    assert!(quiet, "the reloaded pools settle");
+    let head = |x: i32, z: i32| -> i64 {
+        let mut h = 0;
+        for yy in y + 1..=y + 5 {
+            if let Some(v) = reg.water_volume(w.get_block(x, yy, z)) {
+                h = yy as i64 * 8 + v as i64;
+            }
+        }
+        h
+    };
+    let (a, b2) = (head(1, 1), head(5, 2));
+    assert!(
+        (a - b2).abs() <= 2,
+        "reload resumes the leveling (heads {a} vs {b2})"
+    );
+}

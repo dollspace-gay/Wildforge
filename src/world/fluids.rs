@@ -121,12 +121,39 @@ impl World {
                         wake.push((x, wy, z));
                         continue;
                     }
+                    let class = |cx: usize, cy: usize, cz: usize| -> u8 {
+                        if cy + 1 >= CHUNK_Y {
+                            return 1;
+                        }
+                        let a = c.get(cx, cy + 1, cz);
+                        if self.reg.is_water(a) {
+                            0
+                        } else if self.reg.is_air(a) {
+                            1
+                        } else {
+                            2
+                        }
+                    };
                     for (dx, dz) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
                         let (nx, nz) = (lx as i32 + dx, lz as i32 + dz);
-                        if !(0..CHUNK_X as i32).contains(&nx)
-                            || !(0..CHUNK_Z as i32).contains(&nz)
-                            || !self.reg.is_air(c.get(nx as usize, y, nz as usize))
+                        if !(0..CHUNK_X as i32).contains(&nx) || !(0..CHUNK_Z as i32).contains(&nz)
                         {
+                            continue;
+                        }
+                        // A wet neighbor under a different roof — open
+                        // sky here, water or rock there — marks a head
+                        // cliff or a pipe mouth: the junctions of a
+                        // drain saved mid-pour. Settled sealed worlds
+                        // have none. Air neighbors take the potential
+                        // check below instead.
+                        if !self.reg.is_air(c.get(nx as usize, y, nz as usize)) {
+                            if self.reg.is_water(c.get(lx, y, lz))
+                                && self.reg.is_water(c.get(nx as usize, y, nz as usize))
+                                && class(lx, y, lz) != class(nx as usize, y, nz as usize)
+                            {
+                                wake.push((bx + lx as i32, y as i32, bz + lz as i32));
+                                break;
+                            }
                             continue;
                         }
                         let (ax, az) = (bx + nx, bz + nz);
@@ -302,10 +329,82 @@ impl World {
                 self.set_block(nx, y, nz, self.reg.water_for_volume(nv + t));
                 self.set_block(x, y, z, self.reg.water_for_volume(v - t));
                 changed = true;
+                continue;
+            }
+            // Communicating vessels: nothing moved locally, so this
+            // cell serves as a junction between the columns it
+            // touches. When their surfaces disagree, volume crosses
+            // from the tallest column's top to the lowest's — pools
+            // connected below the waterline level out even though
+            // every layer at the link is full. Each transfer strictly
+            // shrinks the head gap, so the queue still quiesces, and
+            // a column capped by rock neither rises nor donates from
+            // above (the recorded no-pressure limit now covers only
+            // fully roofed plumbing).
+            // A column receives at its partial top, or in the air
+            // above a full one; capped by rock, it can only donate.
+            let open = |cx: i32, cz: i32, top: (i32, u8, i64)| -> bool {
+                top.1 < 8
+                    || (top.0 + 1 < CHUNK_Y as i32 && self.get_block(cx, top.0 + 1, cz) == AIR)
+            };
+            let own = self.water_column_top(x, y, z);
+            let mut donor = (x, z, own);
+            let mut recv = if open(x, z, own) {
+                Some((x, z, own))
+            } else {
+                None
+            };
+            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let (nx, nz) = (x + dx, z + dz);
+                if !self.chunks.contains_key(&ChunkPos::of_world(nx, nz))
+                    || !self.reg.is_water(self.get_block(nx, y, nz))
+                {
+                    continue;
+                }
+                let col = (nx, nz, self.water_column_top(nx, y, nz));
+                if col.2.2 > donor.2.2 {
+                    donor = col;
+                }
+                if open(nx, nz, col.2)
+                    && recv.is_none_or(|r: (i32, i32, (i32, u8, i64))| col.2.2 < r.2.2)
+                {
+                    recv = Some(col);
+                }
+            }
+            let (dx_, dz_, (dty, dtv, dh)) = donor;
+            if let Some((rx_, rz_, (rty, rtv, rh))) = recv
+                && dh >= rh + 2
+            {
+                let (ry, rv) = if rtv < 8 { (rty, rtv) } else { (rty + 1, 0) };
+                let t = ((dh - rh) / 2).min(dtv as i64).min(8 - rv as i64) as u8;
+                self.set_block(rx_, ry, rz_, self.reg.water_for_volume(rv + t));
+                self.set_block(dx_, dty, dz_, self.reg.water_for_volume(dtv - t));
+                // Keep conducting until the heads meet.
+                self.schedule_water(x, y, z);
+                changed = true;
             }
         }
         self.flush_fluid_relights();
         changed
+    }
+
+    /// The open top of a water column: ascend from a wet cell to the
+    /// highest connected water above it. Returns (top y, top volume,
+    /// head) where head counts total height in volume units — the
+    /// quantity pressure equalizes between touching columns.
+    fn water_column_top(&self, x: i32, y: i32, z: i32) -> (i32, u8, i64) {
+        let mut ty = y;
+        let mut tv = self
+            .reg
+            .water_volume(self.get_block(x, y, z))
+            .unwrap_or_default();
+        while ty + 1 < CHUNK_Y as i32
+            && let Some(nv) = self.reg.water_volume(self.get_block(x, ty + 1, z))
+        {
+            ty += 1;
+            tv = nv;
+        }
+        (ty, tv, ty as i64 * 8 + tv as i64)
     }
 
     /// End-of-tick light settlement: every chunk a fluid front touched

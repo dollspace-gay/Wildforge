@@ -76,9 +76,16 @@ Rules on wake (replacing `desired_flow`):
    the existing 512-cells-per-200 ms budget — big bodies take real
    time to drain, which reads as right.
 
-**No pressure in v1** (recorded limitation): a sealed U-tube will
-not push water up the far side; equalization travels along the
-surface only. Future-work line, not a blocker.
+**Pressure via column heads** (v2): a woken cell that can't move
+locally serves as a junction between the open columns it touches —
+volume crosses from the tallest column's top to the lowest's until
+their heads meet, so pools connected below the waterline level out
+(break a dam under both surfaces and they equalize). Every
+transfer strictly shrinks the head gap, so the queue still
+quiesces. Remaining limitation: a column capped by rock neither
+rises nor donates from above, so a fully roofed pipe longer than
+one block conducts only downhill — sealed plumbing still doesn't
+siphon.
 
 ## The ocean is finite too
 
