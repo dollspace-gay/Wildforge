@@ -508,51 +508,93 @@ impl Generator {
         off
     }
 
-    /// Rivers and lakes for a column: how deep the water has cut the
-    /// terrain, and the local fill level (a river or lake acts as a
-    /// local sea level in the shape pass). Rivers widen toward the
-    /// coast; lakes press hollows into the flats; rift valleys that
-    /// sag below sea level flood into rift seas on their own.
-    pub fn hydrology(&self, wx: i32, wz: i32, cl: &Climate, pre: f32) -> (f32, Option<i32>) {
+    /// Raw waterline math for one column, before sealing: the carve,
+    /// the candidate water level, and whether the column sits close
+    /// enough to a channel or lake basin that sealing must look at it
+    /// (gates the neighbor probes — the margins cover the one-block
+    /// noise gradient to the true water zones).
+    fn hydro_raw(&self, wx: i32, wz: i32, cl: &Climate, pre: f32) -> (f32, Option<i32>, bool) {
         let mut carve = 0.0f32;
-        let mut fill: Option<i32> = None;
+        let mut level: Option<i32> = None;
+        let mut near = false;
         if pre > SEA_LEVEL as f32 - 2.0 && cl.c > -0.05 {
             let riv = self.rivernoise.get([wx as f64 / 620.0, wz as f64 / 620.0]) as f32;
             let w = 0.012 + 0.010 * (0.6 - cl.c).clamp(0.0, 1.0);
             let shoulder = w * 3.2;
             if riv.abs() < shoulder {
+                near = true;
                 let t = 1.0 - riv.abs() / shoulder;
                 carve += t * t * 8.0;
                 if riv.abs() < w {
                     carve += 3.0;
                     // Terraced reaches: quantize the fill so each
                     // stretch of river is dead level, dropping in
-                    // discrete falls. A smooth per-column fill left
-                    // sloped water fighting the equalizer forever —
-                    // the whole river churned (relights, remeshes)
-                    // from the moment a seam woke it. On steep runs
-                    // the quantized level can sit at or under the
-                    // channel floor: leave those stretches as dry
-                    // washes and step pools instead of scrappy
-                    // one-deep sheets.
+                    // discrete falls; on steep runs the level lands
+                    // at or under the channel floor and the stretch
+                    // stays a dry wash between step pools.
                     let floor = (pre - carve) as i32;
                     let f = floor + 3;
                     let f = f - f.rem_euclid(4);
                     if f > floor {
-                        fill = Some(f);
+                        level = Some(f);
                     }
                 }
             }
             let lk = self.lakenoise.get([wx as f64 / 300.0, wz as f64 / 300.0]) as f32;
+            if lk > 0.56 {
+                near = true;
+            }
             if lk > 0.58 && pre > SEA_LEVEL as f32 + 2.0 && pre < 120.0 {
                 let t = ((lk - 0.58) / 0.42).min(1.0);
                 carve += t * 10.0;
                 let f2 = (pre - 2.0) as i32;
                 let f2 = f2 - f2.rem_euclid(4);
-                fill = Some(fill.map_or(f2, |f| f.max(f2)));
+                level = Some(level.map_or(f2, |f| f.max(f2)));
             }
         }
-        (carve, fill)
+        (carve, level, near)
+    }
+
+    /// Rivers and lakes for a column: how deep the water has cut the
+    /// terrain, the fill level (a river or lake acts as a local sea
+    /// level in the shape pass), and the armor level. Every pool is
+    /// sealed by construction: a column whose raw water level drops on
+    /// any side becomes a rock weir instead of water, and a dry column
+    /// beside water is armored — its non-solid cells below the tallest
+    /// adjacent pool become native rock, so 3D-noise wobble and the
+    /// shoulder carve can never leave a bank below the waterline. A
+    /// woken pool has nowhere to shed: no thin films creeping over the
+    /// sand, no floating shelves meeting edge-on. All decisions read
+    /// only raw per-column math, so chunks agree without communication.
+    pub fn hydrology(
+        &self,
+        wx: i32,
+        wz: i32,
+        cl: &Climate,
+        pre: f32,
+    ) -> (f32, Option<i32>, Option<i32>) {
+        let (carve, level, near) = self.hydro_raw(wx, wz, cl, pre);
+        if !near {
+            return (carve, None, None);
+        }
+        let mut step_down = false;
+        let mut tallest: Option<i32> = None;
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let (nx, nz) = (wx + dx, wz + dz);
+            let ncl = self.climate(nx, nz);
+            let npre = self.base_offset(nx, nz, &ncl);
+            let (_, nlevel, _) = self.hydro_raw(nx, nz, &ncl, npre);
+            match (nlevel, level) {
+                (Some(nf), Some(f)) if nf < f => step_down = true,
+                (Some(nf), None) => tallest = Some(tallest.map_or(nf, |t: i32| t.max(nf))),
+                _ => {}
+            }
+        }
+        match level {
+            Some(f) if step_down => (carve, None, Some(f)),
+            Some(f) => (carve, Some(f), None),
+            None => (carve, None, tallest),
+        }
     }
 
     /// The local water level a river or lake gives a column, if any
@@ -564,10 +606,18 @@ impl Generator {
         self.hydrology(wx, wz, &cl, pre).1
     }
 
+    /// The armor level sealing a column, if any (tests and tooling).
+    #[cfg(test)]
+    pub fn armor_at(&self, wx: i32, wz: i32) -> Option<i32> {
+        let cl = self.climate(wx, wz);
+        let pre = self.base_offset(wx, wz, &cl);
+        self.hydrology(wx, wz, &cl, pre).2
+    }
+
     fn column_params(&self, wx: i32, wz: i32) -> (f32, f32) {
         let cl = self.climate(wx, wz);
         let pre = self.base_offset(wx, wz, &cl);
-        let (carve, _) = self.hydrology(wx, wz, &cl, pre);
+        let (carve, _, _) = self.hydro_raw(wx, wz, &cl, pre);
         let mut offset = (pre - carve).clamp(6.0, CHUNK_Y as f32 - 22.0);
         // A volcano stamps its cone onto the spline terrain, crater
         // bowl and all.
@@ -798,6 +848,7 @@ impl Generator {
         // Stage 1: shape. Track pre-carve solid tops for the 18x18 ring.
         let mut shape_top = [[0i32; RING]; RING];
         let mut fills = [[0i32; CHUNK_Z]; CHUNK_X];
+        let mut armors = [[0i32; CHUNK_Z]; CHUNK_X];
         for rx in 0..RING as i32 {
             for rz in 0..RING as i32 {
                 let (lx, lz) = (rx - 1, rz - 1);
@@ -824,11 +875,13 @@ impl Generator {
                     vol > 0.05 && self.detail.get([wx as f64 / 13.0, wz as f64 / 13.0]) > 0.58;
                 // Rivers and lakes flood their carve as a local sea.
                 let pre = self.base_offset(wx, wz, &cl);
-                let (_, fill) = self.hydrology(wx, wz, &cl, pre);
+                let (_, fill, armor) = self.hydrology(wx, wz, &cl, pre);
                 let fill_y = fill.unwrap_or(0).max(SEA_LEVEL);
+                let armor_y = armor.unwrap_or(0);
                 fills[lx as usize][lz as usize] = fill_y;
+                armors[lx as usize][lz as usize] = armor_y;
                 for y in 1..CHUNK_Y as i32 {
-                    let solid = Self::lat_density(&lat, lx, y, lz) > 0.0;
+                    let solid = Self::lat_density(&lat, lx, y, lz) > 0.0 || y <= armor_y;
                     let b = if solid {
                         self.rock_at(y, &bands, Self::lat_density(&lat_g, lx, y, lz), vol, dike)
                     } else if y <= fill_y {
@@ -890,8 +943,9 @@ impl Generator {
                 let biome = self.biome_from(&cl);
                 biomes[lx][lz] = biome;
 
-                // Post-carve top solid.
-                let mut top = shape_top[lx + 1][lz + 1];
+                // Post-carve top solid (an armored bank can stand
+                // above the density top — start the scan at its crest).
+                let mut top = shape_top[lx + 1][lz + 1].max(armors[lx][lz]);
                 while top > 0 && !self.is_rock(c.get(lx, top as usize, lz)) {
                     top -= 1;
                 }
