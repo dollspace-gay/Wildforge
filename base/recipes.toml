@@ -782,3 +782,39 @@ speed = 1.25
 charge = "base:iron_ingot"
 fuel = "base:coal"
 bloom = "base:steel_bloom"
+
+# The forge: the first workshop. A building, not a block - the mouth
+# wants the bloomery's firebrick stack, three more courses of chimney,
+# and a stone anvil beside it before it fires (economy plan, leg 2).
+[[recipe]]
+pattern = ["i.i", "fff", "fff"]
+keys = { i = "base:iron_ingot", f = "base:firebrick" }
+output = "base:forge"
+
+# The prospector's pick: a bronze instrument, not a mining tool.
+# Strike bare rock and it reads the country - granite provinces,
+# volcanic fields, blue ground - knowledge being the one good a
+# surveyor can sell without swinging at anything (economy plan).
+[[recipe]]
+pattern = ["bb.", ".t.", ".t."]
+keys = { b = "base:bronze_ingot", t = "base:stick" }
+output = "base:prospect_pick"
+
+# Salting: the first preservation chain (economy plan, leg 3). Any
+# raw meat packed in salt keeps twelve days where fresh keeps a day
+# and a half - and salt country earns a trade identity.
+[[recipe]]
+pattern = ["m", "s"]
+keys = { m = "#base:raw_meats", s = "base:salt_crystal" }
+output = "base:salted_meat"
+count = 1
+
+# Survey cairns: knowledge as artifact (economy plan, stage 6).
+# Raising one takes a prospector's strike - the pick must be in your
+# pack and it wears - but once it stands, ANYONE can read the land
+# from it. The surveyor pays the travel; readers pay the surveyor.
+[[recipe]]
+pattern = ["s", "s"]
+keys = { s = "base:stone" }
+output = "base:survey_cairn"
+count = 2

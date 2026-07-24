@@ -71,6 +71,59 @@ impl Game {
         Some((color * 1.8 * (emit / 14.0), emit + 2.0))
     }
 
+    /// Read the country at a spot and toast it: the prospector's
+    /// verdict, shared by pick strikes and standing survey cairns.
+    pub(super) fn toast_prospect(&mut self, bx: i32, bz: i32) {
+        let r = self.server.world.generator.prospect(bx, bz);
+        let octant = |d: (i32, i32)| -> &'static str {
+            if d == (0, 0) {
+                return "here";
+            }
+            let a = (d.0 as f32).atan2(-(d.1 as f32)).to_degrees();
+            let names = [
+                "north",
+                "northeast",
+                "east",
+                "southeast",
+                "south",
+                "southwest",
+                "west",
+                "northwest",
+            ];
+            names[(((a + 382.5) / 45.0) as usize) % 8]
+        };
+        let mut lines: Vec<String> = Vec::new();
+        match r.pluton {
+            Some((0, _)) => lines.push("Granite country underfoot.".into()),
+            Some((d, dir)) => lines.push(format!("Granite country ~{d} blocks {}.", octant(dir))),
+            None => lines.push("No batholith in the pick's reach.".into()),
+        }
+        if let Some((d, dir)) = r.volcano {
+            if d == 0 {
+                lines.push("Volcanic ground — you're standing on it.".into());
+            } else {
+                lines.push(format!("Volcanic rock ~{d} blocks {}.", octant(dir)));
+            }
+        }
+        if let Some((d, dir)) = r.pipe {
+            if d == 0 {
+                lines.push("BLUE GROUND. A pipe under this very spot.".into());
+            } else {
+                lines.push(format!("Blue ground! A pipe ~{d} blocks {}.", octant(dir)));
+            }
+        }
+        if let Some((d, dir)) = r.geode {
+            if d == 0 {
+                lines.push("A hollow ring underfoot — geode.".into());
+            } else {
+                lines.push(format!("A hollow ring ~{d} blocks {}.", octant(dir)));
+            }
+        }
+        for l in lines {
+            self.toast(l);
+        }
+    }
+
     /// Break-sound family for a block, from its tool class.
     pub(super) fn break_mat(&self, b: registry::BlockId) -> BreakMat {
         match self.content.reg.block(b).tool {
@@ -771,6 +824,22 @@ impl Game {
                     return;
                 }
             }
+            // The prospector's pick: strike bare rock, read the country.
+            if held == reg.item_id("base:prospect_pick")
+                && let Some(hb) = &hit
+            {
+                let (bx, by, bz) = hb.block;
+                let tb = self.server.world.get_block(bx, by, bz);
+                if self.server.world.reg.is_solid(tb) {
+                    self.toast_prospect(bx, bz);
+                    if !self.creative {
+                        self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                    }
+                    self.sfx(Sfx::Bolt(1.2));
+                    self.input.action_cooldown = 0.8;
+                    return;
+                }
+            }
             // Throwables (snowballs): loosed from the hand.
             if let Some(speed) = held.and_then(|i| reg.item(i).throw_speed)
                 && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
@@ -921,6 +990,44 @@ impl Game {
                     self.set_screen(Screen::Offering(h.block));
                     return;
                 }
+                Some("survey") if self.input.action_cooldown <= 0.0 => {
+                    // A raised cairn is bought knowledge: anyone reads
+                    // the surveyor's ground, no pick required.
+                    self.toast_prospect(h.block.0, h.block.2);
+                    self.sfx(Sfx::Click);
+                    self.input.action_cooldown = 0.6;
+                    return;
+                }
+                Some(station @ ("bloomery" | "kiln" | "forge"))
+                    if self.input.action_cooldown <= 0.0 =>
+                {
+                    self.input.action_cooldown = 0.3;
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::OpenContainer {
+                            x: h.block.0,
+                            y: h.block.1,
+                            z: h.block.2,
+                        });
+                        return;
+                    }
+                    let (default, screen) = match station {
+                        "kiln" => (
+                            world::BlockEntity::Kiln(Default::default()),
+                            Screen::Kiln(h.block),
+                        ),
+                        "forge" => (
+                            world::BlockEntity::Forge(Default::default()),
+                            Screen::Bloomery(h.block),
+                        ),
+                        _ => (
+                            world::BlockEntity::Bloomery(Default::default()),
+                            Screen::Bloomery(h.block),
+                        ),
+                    };
+                    self.server.world.ensure_block_entity(h.block, default);
+                    self.set_screen(screen);
+                    return;
+                }
                 _ => {}
             }
             let (x, y, z) = h.adjacent;
@@ -928,6 +1035,19 @@ impl Game {
                 self.inventory.slots[self.input.hotbar_sel].and_then(|s| reg.item(s.item).places);
             if let Some(block) = place {
                 let bd = reg.block(block);
+                // A survey cairn is raised with a prospector's strike:
+                // the pick must be in the pack, and it wears.
+                if Some(block) == reg.block_id("base:survey_cairn") && !self.creative {
+                    let pick = reg.item_id("base:prospect_pick");
+                    let slot = (0..TOTAL_SLOTS)
+                        .find(|&i| self.inventory.slots[i].map(|s| Some(s.item)) == Some(pick));
+                    let Some(slot) = slot else {
+                        self.toast("Raising a cairn takes a prospector's pick.".to_string());
+                        self.input.action_cooldown = 0.4;
+                        return;
+                    };
+                    self.inventory.wear_tool(&reg, slot);
+                }
                 let needs_farmland = bd.crop_next.is_some() && !bd.crop_any_soil;
                 let soil = self.server.world.get_block(x, y - 1, z);
                 if needs_farmland && Some(soil) != reg.block_id("base:farmland") {

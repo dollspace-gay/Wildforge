@@ -240,6 +240,8 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("player_hair_top", 238),
         ("bucket", 239),
         ("bucket_water", crate::style::EXTRA_BASE + 5),
+        ("forge", crate::style::EXTRA_BASE + 6),
+        ("forge_lit", crate::style::EXTRA_BASE + 7),
         // Extra player bases live in the reserved region (style.rs
         // EXTRA_BASE) — the low builtin rows are full.
         ("player_hair_cropped", crate::style::EXTRA_BASE),
@@ -252,6 +254,12 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("crack2", 17),
         ("crack3", 18),
         ("crack4", 19),
+        ("prospect_pick", 20),
+        ("halite", 21),
+        ("salt_crystal", 22),
+        ("salted_meat", 23),
+        ("spoiled_mush", 24),
+        ("survey_cairn", 25),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))

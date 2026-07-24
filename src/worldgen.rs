@@ -88,6 +88,16 @@ impl Spline {
 /// the terrain spline; the crater dips it back; generate() pools the
 /// crater with lava and dresses rim and flanks.
 #[derive(Clone, Copy)]
+/// What a prospecting strike reveals: each regional feature's rough
+/// distance in blocks and the offset it was found at (for a compass
+/// direction), or None past the pick's reach.
+pub struct ProspectReading {
+    pub pluton: Option<(i32, (i32, i32))>,
+    pub volcano: Option<(i32, (i32, i32))>,
+    pub pipe: Option<(i32, (i32, i32))>,
+    pub geode: Option<(i32, (i32, i32))>,
+}
+
 pub struct Volcano {
     pub x: i32,
     pub z: i32,
@@ -607,19 +617,77 @@ impl Generator {
     }
 
     /// Does a granite pluton intrude this column at mineable depth?
-    /// Mirrors sample_lattice's threshold math (tests and tooling —
-    /// the resource census measures how far apart plutons really are).
-    #[cfg(test)]
+    /// Mirrors sample_lattice's threshold math. The census measures
+    /// with it; the prospecting pick reads with it.
     pub fn pluton_at(&self, wx: i32, wz: i32) -> bool {
+        let prov = self
+            .granite3d
+            .get([wx as f64 / 1400.0, 77.7, wz as f64 / 1400.0]) as f32;
+        let prov_pen = (0.44 - prov).max(0.0) * 1.8;
         for y in [16.0f64, 32.0, 48.0, 64.0] {
             let g = self
                 .granite3d
                 .get([wx as f64 / 230.0, y / 150.0, wz as f64 / 230.0]) as f32;
-            if g > 0.40 + y as f32 * 0.0012 {
+            if g > 0.55 + prov_pen + y as f32 * 0.0012 {
                 return true;
             }
         }
         false
+    }
+
+    /// One prospecting reading: what regional geology lies near this
+    /// spot, and roughly which way. Everything here is a pure function
+    /// of seed and position — the pick reveals, it never rolls.
+    /// Detection reaches are deliberately shorter than the rarity
+    /// bands: mapping a region takes a SWEEP of readings (surveying is
+    /// work, which is what makes a finished survey worth trading).
+    pub fn prospect(&self, wx: i32, wz: i32) -> ProspectReading {
+        let ring = |step: i32, cap: i32, hit: &dyn Fn(i32, i32) -> bool| {
+            if hit(wx, wz) {
+                return Some((0, (0, 0)));
+            }
+            let mut r = step;
+            while r <= cap {
+                let mut i = -r;
+                while i <= r {
+                    for (dx, dz) in [(i, -r), (i, r), (-r, i), (r, i)] {
+                        if hit(wx + dx, wz + dz) {
+                            return Some((r, (dx, dz)));
+                        }
+                    }
+                    i += step;
+                }
+                r += step;
+            }
+            None
+        };
+        let cp = ChunkPos::of_world(wx, wz);
+        let chunk_ring = |cap: i32, hit: &dyn Fn(ChunkPos) -> bool| {
+            if hit(cp) {
+                return Some((0, (0, 0)));
+            }
+            for r in 1..=cap {
+                let mut i = -r;
+                while i <= r {
+                    for (dx, dz) in [(i, -r), (i, r), (-r, i), (r, i)] {
+                        if hit(ChunkPos {
+                            x: cp.x + dx,
+                            z: cp.z + dz,
+                        }) {
+                            return Some((r * 16, (dx * 16, dz * 16)));
+                        }
+                    }
+                    i += 1;
+                }
+            }
+            None
+        };
+        ProspectReading {
+            pluton: ring(64, 1216, &|x, z| self.pluton_at(x, z)),
+            volcano: ring(64, 1216, &|x, z| self.volcano_near(x, z).is_some()),
+            pipe: chunk_ring(24, &|p| self.pipe_at(p).is_some()),
+            geode: chunk_ring(12, &|p| self.geode_at(p).is_some()),
+        }
     }
 
     /// The armor level sealing a column, if any (tests and tooling).
@@ -688,12 +756,16 @@ impl Generator {
                     && tec.convergence > 0.1
                     && (tec.oceanic || tec.neighbor_oceanic);
                 let rift = tec.boundary_dist < 220.0 && tec.convergence < -0.1;
+                // Regional-band odds (economy plan): volcanic arcs
+                // stay volcanic, plate interiors go quiet — volcanic
+                // goods (carbonatite, obsidian, sulfur) are what arc
+                // country trades away.
                 let odds = if subduction {
                     2
                 } else if rift {
-                    5
+                    8
                 } else {
-                    16
+                    48
                 };
                 if !h.is_multiple_of(odds) {
                     continue;
@@ -745,6 +817,16 @@ impl Generator {
                 let wx = bx + ix as i32 * 4;
                 let wz = bz + iz as i32 * 4;
                 let (offset, factor) = self.column_params(wx, wz);
+                // Batholith provinces: a coarse gate over the pluton
+                // noise. Inside a province intrusions abound; outside,
+                // the threshold climbs out of reach — granite country
+                // is a REGION you travel to (economy plan, leg 1),
+                // not a backyard given.
+                let prov = self
+                    .granite3d
+                    .get([wx as f64 / 1400.0, 77.7, wz as f64 / 1400.0])
+                    as f32;
+                let prov_pen = (0.44 - prov).max(0.0) * 1.8;
                 for iy in 0..NY {
                     let y = (iy * 8) as f64;
                     let i = (ix * NX + iz) * NY + iy;
@@ -755,7 +837,7 @@ impl Generator {
                         as f32;
                     // Plutons widen downward: the threshold tightens
                     // with altitude, so intrusions taper as they rise.
-                    let thr = 0.40 + y as f32 * 0.0012;
+                    let thr = 0.55 + prov_pen + y as f32 * 0.0012;
                     lat_g[i] = g - thr;
                 }
             }
@@ -1132,7 +1214,10 @@ impl Generator {
     /// fits inside its chunk's footprint by construction.
     pub fn pipe_at(&self, pos: ChunkPos) -> Option<(usize, usize, bool)> {
         let h = hash2(self.seed ^ 0x8d1a, pos.x, pos.z);
-        if !h.is_multiple_of(397) {
+        // Treasure-band rarity (economy plan): a pipe is a multi-km
+        // expedition and a famous site, not a backyard curiosity —
+        // median nearest ~2.3 km (was 1/397, ~150 blocks).
+        if !h.is_multiple_of(90_000) {
             return None;
         }
         let cx = 6 + ((h >> 8) % 5) as usize;
@@ -1201,7 +1286,9 @@ impl Generator {
     /// The geode rolled for a chunk, if any: (local cx, cz, cy, r).
     pub fn geode_at(&self, pos: ChunkPos) -> Option<(usize, usize, i32, i32)> {
         let h = hash2(self.seed ^ 0x6e0d, pos.x, pos.z);
-        if !h.is_multiple_of(89) {
+        // Uncommon local luxury (economy plan): median nearest ~200
+        // blocks (was 1/89, ~70).
+        if !h.is_multiple_of(700) {
             return None;
         }
         let cx = 5 + ((h >> 8) % 7) as usize;
@@ -1267,6 +1354,9 @@ impl Generator {
                 rng >> 8
             };
             for _ in 0..ore.per_chunk {
+                if ore.chance < 1.0 && (next() as f32 / (1 << 24) as f32) >= ore.chance {
+                    continue;
+                }
                 let (mut x, mut y, mut z) = (
                     (next() % CHUNK_X as u32) as i32,
                     ore.y_min + (next() % (ore.y_max - ore.y_min).max(1) as u32) as i32,

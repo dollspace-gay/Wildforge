@@ -2121,6 +2121,45 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         &mut |_px, _py, u, v| bucket_px(u, v, true),
     );
 
+    // (EXTRA_BASE+6/+7) the forge mouth, cold and lit: firebrick
+    // around an iron-banded arch — the bloomery's big sibling.
+    for (slot, lit) in [
+        (crate::style::EXTRA_BASE as u32 + 6, false),
+        (crate::style::EXTRA_BASE as u32 + 7, true),
+    ] {
+        tf(slot, &mut |px, py, u, v| {
+            let dx = u - 0.5;
+            let arch = dx * dx * 1.8 + (v - 0.72) * (v - 0.72) < 0.075 && v > 0.34;
+            let band = (v - 0.36).abs() < 0.045 || ((dx.abs() - 0.30).abs() < 0.035 && v > 0.36);
+            if arch && !band {
+                if lit {
+                    let t = fbm(u, v, 3, 977);
+                    rgba(
+                        mix3([255.0, 120.0, 20.0], [255.0, 225.0, 120.0], t),
+                        1.0,
+                        255,
+                    )
+                } else {
+                    rgba([20.0, 16.0, 15.0], speck(px, py, 979, 0.1), 255)
+                }
+            } else if band {
+                let rivet =
+                    ((u * 8.0).fract() - 0.5).abs() < 0.1 && ((v * 8.0).fract() - 0.5).abs() < 0.1;
+                let g = if rivet { 96.0 } else { 62.0 };
+                rgba([g, g, g + 4.0], speck(px, py, 983, 0.06), 255)
+            } else {
+                let t = fbm(u, v, 4, 971);
+                let seam = (v * 4.0).fract() < 0.14 || (u * 4.0).fract() < 0.14;
+                let c = if seam {
+                    [40.0, 22.0, 20.0]
+                } else {
+                    mix3([120.0, 52.0, 38.0], [156.0, 76.0, 48.0], t)
+                };
+                rgba(c, speck(px, py, 973, 0.08), 255)
+            }
+        });
+    }
+
     // (EXTRA_BASE..) hair lengths: a tight crop, strands to the collar.
     let xb = crate::style::EXTRA_BASE as u32;
     tf(xb, &mut |_px, _py, u, v| {

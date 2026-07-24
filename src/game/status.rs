@@ -32,6 +32,38 @@ impl Game {
             drain += 0.02;
         }
         self.survival.hunger = (self.survival.hunger - drain * dt).max(0.0);
+        // Food carried in the pack ages (economy plan, leg 3): every
+        // 20 s each perishable stack loses that much freshness — no
+        // cellar in a backpack — rotting to mush at zero. A legacy
+        // stack from before freshness initializes instead of rotting.
+        self.survival.perish_accum += dt;
+        if self.survival.perish_accum >= 20.0 {
+            self.survival.perish_accum -= 20.0;
+            let reg = self.content.reg.clone();
+            let mush = reg.item_id("base:spoiled_mush");
+            let age = |s: &mut Option<ItemStack>| {
+                let Some(st) = s else { return };
+                let full = reg.item(st.item).durability;
+                if reg.item(st.item).food.is_none() || full == 0 {
+                    return;
+                }
+                if st.durability == 0 {
+                    st.durability = full;
+                } else if st.durability <= 20 {
+                    *s = mush.map(|m| {
+                        let mut sp = ItemStack::new(&reg, m, 1);
+                        sp.count = st.count;
+                        sp
+                    });
+                } else {
+                    st.durability -= 20;
+                }
+            };
+            for s in self.inventory.slots.iter_mut() {
+                age(s);
+            }
+            age(&mut self.ui_state.held_stack);
+        }
         // Nutrition decays slowly (~full to empty over long play).
         for n in self.survival.nutrition.iter_mut() {
             *n = (*n - dt * 0.01).max(0.0);

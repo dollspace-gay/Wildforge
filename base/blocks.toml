@@ -1032,3 +1032,46 @@ name = "Mud"
 texture = "mud.png"
 hardness = 0.7
 tool = "shovel"
+
+[[block]]
+id = "forge"
+name = "Forge"
+texture = { top = "@firebrick", side = "@forge" }
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+interaction = "forge"
+
+[[block]]
+id = "forge_lit"
+name = "Forge"
+texture = { top = "@firebrick", side = "@forge_lit" }
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+interaction = "forge"
+light = 11
+light_color = [1.0, 0.55, 0.2]
+drops = "base:forge"
+item = false
+
+[[block]]
+id = "halite"
+name = "Rock Salt"
+texture = "@halite"
+hardness = 1.2
+tool = "pickaxe"
+drops = "base:salt_crystal"
+drop_count = 2
+item = false
+
+[[block]]
+id = "survey_cairn"
+name = "Survey Cairn"
+texture = "@survey_cairn"
+cross = true
+hardness = 0.4
+solid = false
+opaque = false
+drops = "self"
+interaction = "survey"

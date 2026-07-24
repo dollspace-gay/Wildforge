@@ -121,6 +121,7 @@ pub struct HostSession {
     snapshot_timer: f32,
     state_timer: f32,
     container_timer: f32,
+    perish_timer: f32,
 }
 
 struct AuthenticatedJoin {
@@ -242,6 +243,7 @@ impl HostSession {
             snapshot_timer: 0.0,
             state_timer: 0.0,
             container_timer: 0.0,
+            perish_timer: 0.0,
         })
     }
 
@@ -523,6 +525,34 @@ impl HostSession {
                 .collect();
             for (id, pos) in open {
                 self.send_container(server, id, pos);
+            }
+        }
+        // Guest inventory mirrors age like everyone else's pack, so a
+        // relog can't refresh yesterday's venison.
+        self.perish_timer += dt;
+        if self.perish_timer >= 20.0 {
+            self.perish_timer -= 20.0;
+            let reg = server.world.reg.clone();
+            let mush = reg.item_id("base:spoiled_mush");
+            for g in self.guests.values_mut() {
+                for s in g.inventory.slots.iter_mut() {
+                    let Some(st) = s else { continue };
+                    let full = reg.item(st.item).durability;
+                    if reg.item(st.item).food.is_none() || full == 0 {
+                        continue;
+                    }
+                    if st.durability == 0 {
+                        st.durability = full;
+                    } else if st.durability <= 20 {
+                        *s = mush.map(|m| {
+                            let mut sp = ItemStack::new(&reg, m, 1);
+                            sp.count = st.count;
+                            sp
+                        });
+                    } else {
+                        st.durability -= 20;
+                    }
+                }
             }
         }
         self.state_timer += dt;
@@ -1330,6 +1360,7 @@ impl HostSession {
                     Some("offering") => 2,
                     Some("bloomery") => 3,
                     Some("kiln") => 4,
+                    Some("forge") => 5,
                     _ => return,
                 };
                 let default = match kind {
@@ -1337,6 +1368,7 @@ impl HostSession {
                     1 => BlockEntity::Furnace(Default::default()),
                     3 => BlockEntity::Bloomery(Default::default()),
                     4 => BlockEntity::Kiln(Default::default()),
+                    5 => BlockEntity::Forge(Default::default()),
                     _ => BlockEntity::Offering(Default::default()),
                 };
                 let entry = server.world.ensure_block_entity((x, y, z), default);
@@ -1384,6 +1416,7 @@ impl HostSession {
                 let b = server.world.get_block(x, y, z);
                 let res = match server.world.reg.block(b).interaction.as_deref() {
                     Some("kiln") => server.world.light_kiln(x, y, z),
+                    Some("forge") => server.world.light_forge(x, y, z),
                     _ => server.world.light_bloomery(x, y, z),
                 };
                 match res {
@@ -1748,6 +1781,29 @@ impl HostSession {
                     }
                 }
             }
+            BlockEntity::Forge(fo) => {
+                // Sealed while firing; charge takes anything with a
+                // smelt, the bank takes anything that burns.
+                if !fo.lit && slot < 8 {
+                    let ok_put = |it: crate::registry::ItemId| {
+                        if slot < 4 {
+                            reg.smelts.iter().any(|sm| sm.input.matches(it))
+                        } else {
+                            reg.fuel_value(it).is_some()
+                        }
+                    };
+                    let s = if slot < 4 {
+                        &mut fo.charge[slot]
+                    } else {
+                        &mut fo.fuel[slot - 4]
+                    };
+                    if held.is_none() || held.map(|h| ok_put(h.item)) == Some(true) {
+                        let (ns, nh) = click_stack(&reg, *s, held, right);
+                        *s = ns;
+                        held = nh;
+                    }
+                }
+            }
             BlockEntity::Clamp(_) | BlockEntity::Anvil(_) => {}
             BlockEntity::Chest(c) => {
                 if slot < c.slots.len() {
@@ -1852,6 +1908,14 @@ impl HostSession {
                 vec![
                     if k.lit { 1.0 } else { 0.0 },
                     k.progress / crate::world::KILN_FIRE_SECS,
+                ],
+            ),
+            BlockEntity::Forge(f) => (
+                5,
+                f.charge.iter().chain(f.fuel.iter()).map(snap).collect(),
+                vec![
+                    if f.lit { 1.0 } else { 0.0 },
+                    f.progress / crate::world::FORGE_FIRE_SECS,
                 ],
             ),
             BlockEntity::Clamp(_) | BlockEntity::Anvil(_) => return,

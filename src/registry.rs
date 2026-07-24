@@ -309,6 +309,9 @@ pub struct OreFeature {
     pub y_min: i32,
     pub y_max: i32,
     pub shape: VeinShape,
+    /// Per-vein roll probability: 1.0 plants every roll, fractions
+    /// thin a host down to traces (the bronze bootstrap lives here).
+    pub chance: f32,
 }
 
 /// One weighted entry in a loot table.
@@ -945,6 +948,8 @@ struct FeatureToml {
     y_range: Option<[i32; 2]>,
     #[serde(default)]
     shape: Option<String>,
+    #[serde(default)]
+    chance: Option<f32>,
 }
 
 #[derive(Deserialize, Default)]
@@ -2134,6 +2139,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 Some("streak") => VeinShape::Streak,
                 _ => VeinShape::Walk,
             },
+            chance: f.chance.unwrap_or(1.0).clamp(0.0, 1.0),
         });
     }
 

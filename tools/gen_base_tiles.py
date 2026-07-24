@@ -156,6 +156,11 @@ def item(name, body, edge, shape="lump"):
         d.arc([8, 4, 28, 22], 210, 340, fill=body + (255,), width=3)
         d.point((10, 9), fill=edge + (255,))
         d.point((26, 13), fill=edge + (255,))
+    elif shape == "cairn":
+        for (x0, y0, x1, y1) in [(9, 20, 23, 26), (11, 14, 21, 20), (13, 9, 19, 14)]:
+            d.rectangle([x0, y0, x1, y1], fill=body + (255,), outline=edge + (255,))
+        d.point((12, 22), fill=edge + (255,))
+        d.point((18, 17), fill=edge + (255,))
     elif shape == "prism":
         d.polygon([(16, 7), (25, 24), (7, 24)], fill=body + (120,),
                   outline=edge + (255,))
@@ -183,6 +188,8 @@ def glass(name, tint, alpha=90, glow=False):
 ROCKS = {
     "sandstone": dict(base=(216, 196, 150), dark=(178, 156, 110), bands=0.45),
     "limestone": dict(base=(205, 200, 184), dark=(166, 160, 142), bands=0.2),
+    "halite": dict(base=(236, 232, 226), dark=(198, 192, 186), bands=0.35,
+                   veins=(250, 248, 244)),
     "shale": dict(base=(120, 118, 122), dark=(84, 82, 90), bands=0.55),
     "granite": dict(base=(188, 172, 160), dark=(140, 124, 116),
                     speckle=(224, 216, 208), speckle_n=40),
@@ -247,6 +254,11 @@ ITEMS = [
     ("crystal_lens", (210, 230, 240), (140, 170, 190), "lens"),
     ("diamond_tipped_pick", (200, 240, 245), (120, 190, 210), "pick"),
     ("crystal_prism", (215, 232, 242), (145, 172, 192), "prism"),
+    ("prospect_pick", (198, 166, 92), (128, 100, 52), "pick"),
+    ("salt_crystal", (240, 240, 236), (190, 190, 184), "lump"),
+    ("salted_meat", (170, 96, 88), (216, 214, 208), "lump"),
+    ("spoiled_mush", (110, 116, 72), (74, 78, 48), "lump"),
+    ("survey_cairn", (168, 168, 172), (110, 110, 116), "cairn"),
 ]
 
 GLASSES = [

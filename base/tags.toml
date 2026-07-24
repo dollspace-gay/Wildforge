@@ -34,3 +34,13 @@ items = [
 [[tag]]
 id = "hides"
 items = ["base:hide"]
+
+[[tag]]
+id = "raw_meats"
+items = [
+  "base:raw_venison",
+  "base:raw_boar",
+  "base:raw_chevon",
+  "base:raw_fowl",
+  "base:raw_rabbit",
+]
