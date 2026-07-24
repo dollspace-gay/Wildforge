@@ -21,6 +21,9 @@ pub struct Config {
     pub pack: String,
     /// Point lights: 0 = off, 1 = shadowless, 2 = hard shadows.
     pub lights: u8,
+    /// How point-light shadows are computed: true = exact voxel-grid march
+    /// (no self-shadow acne), false = the legacy distance cube map.
+    pub point_grid: bool,
     /// Packed player Style (style.rs) — how others see you.
     pub appearance: u32,
     /// Ambient floor: true = stark (dark truly dark), false = soft.
@@ -42,6 +45,7 @@ impl Default for Config {
             fov: 75.0,
             pack: "gemini".into(),
             lights: 2,
+            point_grid: true,
             stark: true,
             outline: true,
             bloom: true,
@@ -97,6 +101,7 @@ impl Config {
                         _ => 2,
                     }
                 }
+                "point_shadows" => c.point_grid = v != "cube",
                 "darkness" => c.stark = v != "soft",
                 "outline" => c.outline = v != "off",
                 "bloom" => c.bloom = v != "off",
@@ -113,7 +118,7 @@ impl Config {
 
     pub fn to_text(&self) -> String {
         format!(
-            "display_name={}\nprofile_complete={}\nvolume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\npack={}\nlights={}\ndarkness={}\noutline={}\nbloom={}\nappearance={}\n",
+            "display_name={}\nprofile_complete={}\nvolume={:.2}\nsensitivity={:.2}\nview_dist={}\nfov={:.0}\npack={}\nlights={}\npoint_shadows={}\ndarkness={}\noutline={}\nbloom={}\nappearance={}\n",
             self.display_name,
             if self.profile_complete { "yes" } else { "no" },
             self.volume,
@@ -122,6 +127,7 @@ impl Config {
             self.fov,
             self.pack,
             ["off", "on", "shadows"][self.lights.min(2) as usize],
+            if self.point_grid { "grid" } else { "cube" },
             if self.stark { "stark" } else { "soft" },
             if self.outline { "on" } else { "off" },
             if self.bloom { "on" } else { "off" },

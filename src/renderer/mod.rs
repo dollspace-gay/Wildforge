@@ -46,7 +46,15 @@ struct Uniforms {
     sun_dir_true: [f32; 4],
     /// Sky irradiance as 9 RGB SH coefficients (diffuse light multiplier).
     sh: [[f32; 4]; 9],
+    /// World-cell coordinate of occupancy texel (0,0,0). xyz used; w unused.
+    occ_origin: [i32; 4],
 }
+
+/// Side of the cubic voxel-occupancy grid uploaded for DDA point-light shadows.
+pub const OCC_GRID: usize = 128;
+/// Snap granularity of the occupancy grid origin (world cells). The grid is
+/// rebuilt only when the camera crosses one of these steps.
+pub const OCC_STEP: i32 = 16;
 
 /// Sun shadow-map resolution (square). Keep in sync with SHADOW_RES in the shader.
 const SHADOW_RES: u32 = 2048;
@@ -182,6 +190,13 @@ pub struct FrameInput<'a> {
     pub amb_col: Vec3,
     /// Absolute darkness floor (stark ~0.04, soft ~0.12).
     pub ambient_floor: f32,
+    /// Point-light shadows via voxel-grid DDA instead of the distance cube map.
+    pub dda_shadow: bool,
+    /// World-cell coordinate of occupancy texel (0,0,0) this frame.
+    pub occ_origin: [i32; 3],
+    /// New occupancy grid (OCC_GRID³ bytes, 1 = opaque) to upload, or None to
+    /// keep the current one. Set only when the origin region changed.
+    pub occ_update: Option<&'a [u8]>,
     /// Dynamic colored point lights (accumulated in the chunk shader).
     pub point_lights: &'a [PointLight],
     pub outline: Option<(i32, i32, i32)>,
@@ -287,6 +302,8 @@ pub struct Renderer {
     shadow_casc_buf: wgpu::Buffer,              // per-cascade light_vp, dynamic-offset addressed
     shadow_casc_bg: wgpu::BindGroup,
     shadow_bg: wgpu::BindGroup,
+    // Voxel occupancy grid for DDA point-light shadows (OCC_GRID³, R8Uint).
+    occ_tex: wgpu::Texture,
 
     // Point-light distance cube maps (one cube = 6 layers per light).
     // pt_cached remembers (key, epoch) per slot; a slot's 6 faces

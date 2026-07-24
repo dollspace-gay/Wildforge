@@ -17,7 +17,8 @@ struct Uniforms {
     // world -> sun light-space clip, one per shadow cascade (tightest/densest
     // first). A fragment samples the first cascade whose box contains it.
     light_vp: array<mat4x4<f32>, 3>,
-    // x = active point-light count
+    // x = active point-light count, z = shadow-debug viz mode (dev), w = 1 when
+    // point-light shadows use the voxel-grid DDA instead of the distance cube.
     pt_count: vec4<u32>,
     // per light: xyz = world position, w = range
     pt_pos: array<vec4<f32>, 8>,
@@ -36,9 +37,12 @@ struct Uniforms {
     // Sky irradiance as 9 RGB spherical-harmonic coefficients (cosine-convolved
     // to a diffuse light multiplier). Evaluated per-normal for the ambient fill.
     sh: array<vec4<f32>, 9>,
+    // World-cell coordinate of occupancy texel (0,0,0). xyz used; w unused.
+    occ_origin: vec4<i32>,
 };
 
 const MAX_PT_LIGHTS: u32 = 8u;
+const OCC_GRID: i32 = 128;
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(1) @binding(0) var atlas_tex: texture_2d<f32>;
@@ -57,6 +61,10 @@ const MAX_PT_LIGHTS: u32 = 8u;
 @group(2) @binding(2) var pt_cube: texture_cube_array<f32>;
 @group(2) @binding(3) var pt_smp: sampler;
 @group(2) @binding(4) var pt_tr_cube: texture_cube_array<f32>;
+// Voxel occupancy grid (R8Uint, 1 = opaque full block) covering a cube of the
+// world around the camera, for exact point-light shadow marching. u.occ_origin
+// is the world-cell coordinate of texel (0,0,0).
+@group(2) @binding(5) var occ_tex: texture_3d<u32>;
 
 const SHADOW_RES: f32 = 2048.0;
 const SHADOW_CASCADES: u32 = 3u;
@@ -206,6 +214,128 @@ fn point_shadow(i: u32, world: vec3<f32>, to_light: vec3<f32>, d: f32, range: f3
     return occ / f32(N);
 }
 
+// Which cube face a direction samples (+X 0, -X 1, +Y 2, -Y 3, +Z 4, -Z 5).
+// Debug only: lets the shadow viz show where cube-face seams fall.
+fn cube_face(dir: vec3<f32>) -> i32 {
+    let a = abs(dir);
+    if (a.x >= a.y && a.x >= a.z) { return select(1, 0, dir.x > 0.0); }
+    if (a.y >= a.z) { return select(3, 2, dir.y > 0.0); }
+    return select(5, 4, dir.z > 0.0);
+}
+
+// Six distinct colors for the cube faces (debug viz mode 3).
+fn face_color(f: i32) -> vec3<f32> {
+    switch (f) {
+        case 0: { return vec3<f32>(1.0, 0.2, 0.2); } // +X red
+        case 1: { return vec3<f32>(0.4, 0.0, 0.0); } // -X dark red
+        case 2: { return vec3<f32>(0.2, 1.0, 0.2); } // +Y green
+        case 3: { return vec3<f32>(0.0, 0.4, 0.0); } // -Y dark green
+        case 4: { return vec3<f32>(0.3, 0.4, 1.0); } // +Z blue
+        default: { return vec3<f32>(0.0, 0.1, 0.4); } // -Z dark blue
+    }
+}
+
+// Occupancy sample for a world cell: RGBA8 where a = class (255 opaque full
+// block, 128 glass, 0 air) and rgb = the glass's per-channel light filter
+// (stained-glass tint). Cells outside the grid read as open air.
+fn occ_at(cell: vec3<i32>) -> vec4<u32> {
+    let local = cell - u.occ_origin.xyz;
+    if (any(local < vec3<i32>(0)) || any(local >= vec3<i32>(OCC_GRID))) {
+        return vec4<u32>(0u);
+    }
+    return textureLoad(occ_tex, local, 0);
+}
+
+// Per-channel transmittance from a receiver surface to a point `target`, marched
+// cell-by-cell through the voxel grid (Amanatides-Woo). Opaque cells drop it to
+// zero; glass cells multiply in their filter tint (real per-pane Beer-Lambert),
+// so a shadow cast through red glass comes out red. No depth compare, no bias:
+// the march starts a hair off the surface along its geometric normal, so the
+// fragment's own cell is never entered and a lit face can't self-shadow. The
+// target's own cell is excluded too. vec3(1) = fully lit, vec3(0) = blocked.
+fn dda_transmit(world: vec3<f32>, normal: vec3<f32>, tgt: vec3<f32>) -> vec3<f32> {
+    let start = world + normal * 0.03;
+    let to_t = tgt - start;
+    let dist = length(to_t);
+    if (dist < 1e-3) { return vec3<f32>(1.0); }
+    let dir = to_t / dist;
+    let stepf = sign(dir);
+    let stepi = vec3<i32>(stepf);
+    let ad = abs(dir);
+    let tDelta = 1.0 / max(ad, vec3<f32>(1e-8));
+    // Ray distance to the first cell boundary on each axis (upper if stepping
+    // positive, lower if negative). Axes with ~zero dir never cross: push far.
+    let cell0 = floor(start);
+    let next = cell0 + max(stepf, vec3<f32>(0.0));
+    var tMax = (next - start) / dir;
+    tMax = select(tMax, vec3<f32>(1e30), ad < vec3<f32>(1e-8));
+    var cell = vec3<i32>(cell0);
+    let tgt_cell = vec3<i32>(floor(tgt));
+    var trans = vec3<f32>(1.0);
+    for (var s = 0; s < 96; s = s + 1) {
+        let tEnter = min(tMax.x, min(tMax.y, tMax.z));
+        if (tEnter >= dist) { return trans; } // next boundary is past the target
+        if (tMax.x <= tMax.y && tMax.x <= tMax.z) {
+            cell.x += stepi.x; tMax.x += tDelta.x;
+        } else if (tMax.y <= tMax.z) {
+            cell.y += stepi.y; tMax.y += tDelta.y;
+        } else {
+            cell.z += stepi.z; tMax.z += tDelta.z;
+        }
+        if (all(cell == tgt_cell)) { return trans; } // reached the target's cell
+        let s4 = occ_at(cell);
+        if (s4.a == 255u) { return vec3<f32>(0.0); } // opaque
+        if (s4.a == 128u) {                          // glass: multiply its tint
+            trans = trans * (vec3<f32>(s4.rgb) / 255.0);
+            if (trans.r + trans.g + trans.b < 0.01) { return vec3<f32>(0.0); }
+        }
+    }
+    return trans;
+}
+
+// Soft point-light transmittance: treats the light as a disk of the given world
+// radius facing the receiver and averages grid-march rays to points spread
+// across it, so shadow edges get a physically-widening penumbra (broad far from
+// the caster, tight at contact) — and tinted panes soften the same way. Fully
+// lit and fully shadowed regions early out to a single ray; only the penumbra
+// pays for the full fan. radius 0 is a hard point light — one exact ray.
+fn point_shadow_dda(world: vec3<f32>, normal: vec3<f32>, lp: vec3<f32>, radius: f32) -> vec3<f32> {
+    let center = dda_transmit(world, normal, lp);
+    if (radius < 0.01) { return center; }
+    // Disk basis perpendicular to the light direction. It rotates smoothly with
+    // the light direction across neighbouring fragments, so the sample pattern
+    // stays coherent — no per-fragment random rotation (that made the penumbra a
+    // noisy Monte-Carlo estimate that crawled and flickered as the radius moved).
+    let ld = normalize(lp - world);
+    let up0 = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(ld.y) > 0.99);
+    let tang = normalize(cross(up0, ld));
+    let bitang = cross(ld, tang);
+    // Early out: probe the four cardinal edges of the disk. If all agree with
+    // the centre ray, this fragment is solidly in umbra or full light — skip the
+    // fan. Four directions (not one axis) so a penumbra crossing either axis is
+    // never missed and hardened.
+    let et = tang * radius;
+    let eb = bitang * radius;
+    if (all(dda_transmit(world, normal, lp + et) == center)
+        && all(dda_transmit(world, normal, lp - et) == center)
+        && all(dda_transmit(world, normal, lp + eb) == center)
+        && all(dda_transmit(world, normal, lp - eb) == center)) {
+        return center;
+    }
+    // Penumbra: average a fixed Vogel-spiral fan across the light disk. Fixed
+    // (unrotated) so the soft edge is a smooth, stable gradient; the source is
+    // small (a flame), so the band is thin and never wraps around a block.
+    let N = 16;
+    var sum = vec3<f32>(0.0);
+    for (var s = 0; s < N; s = s + 1) {
+        let rr = sqrt((f32(s) + 0.5) / f32(N));
+        let th = f32(s) * 2.399963;
+        let off = (tang * cos(th) + bitang * sin(th)) * (rr * radius);
+        sum = sum + dda_transmit(world, normal, lp + off);
+    }
+    return sum / f32(N);
+}
+
 // Full lit multiplier (per channel) for a world-space surface. A near-zero
 // normal marks pre-shaded billboards/entities, which keep the old flat model.
 // `normal` is the flat geometric face normal (drives the stylized per-face
@@ -241,10 +371,17 @@ fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f3
     // from a sliver through a door), so squaring-and-then-some makes interiors
     // fall dark while open sky (mask ~1) stays full.
     let amb = pow(sky, 2.5) * sh_irradiance(dn);
-    // Hard-edged colored point lights: range-attenuated N·L, summed, gated
-    // by the distance cube maps. Each promoted light also cancels its own
-    // soft flood-fill wrap (suppression) so the hard shadow reads — the
-    // sim's flood values are untouched; this is render-side only.
+    // Hard-edged colored point lights: range-attenuated N·L, summed, gated by
+    // the shadow term (voxel-grid DDA or the distance cube map). Each promoted
+    // light also cancels its own baked flood-fill wrap (suppression) so its hard
+    // shadow reads; the sim's flood values are untouched (render-side only).
+    // Shadow-debug viz (WILDFORGE_SHADOW_DEBUG): 0 off, else capture the
+    // most-occluded contributing torch's shadow decision for the override below.
+    let dbg = u.pt_count.z;
+    var dbg_hit = false;
+    var dbg_shadow = 1.0;
+    var dbg_margin = 1e9;
+    var dbg_face = -1;
     var direct = vec3<f32>(0.0);
     var suppress = vec3<f32>(0.0);
     let count = min(u.pt_count.x, MAX_PT_LIGHTS);
@@ -260,8 +397,7 @@ fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f3
             let ndl2 = max(dot(dn, ldir), 0.0);
             let a = clamp(1.0 - d / range, 0.0, 1.0);
             let atten = a * a;
-            var shadow_pt = 1.0;
-            var tint = vec3<f32>(1.0);
+            var shadow_rgb = vec3<f32>(1.0);
             // A light sitting on the camera — your own held torch — skips its
             // shadow test. It can't cast a shadow onto any surface you can see:
             // anything occluded from a light at the eye is occluded from the eye
@@ -272,20 +408,66 @@ fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f3
             // Remote players' torches are at their position, not yours, so they
             // still cast real shadows.
             if (u.pt_misc[i].z > 0.5 && distance(lp, u.cam.xyz) > 0.5) {
-                // Cube distance map, hard or soft (per-light radius).
-                shadow_pt = point_shadow(i, world, to_light, d, range);
-                // Stained transmission: panes between light and fragment
-                // multiply in their color (a small margin keeps a pane
-                // from tinting its own surface).
-                let tr = textureSampleLevel(pt_tr_cube, pt_smp, -to_light, i32(i), 0.0);
-                if (tr.a <= d - 0.1) {
-                    tint = tr.rgb;
+                if (u.pt_count.w != 0u) {
+                    // Exact voxel-grid march — no cube map, no acne. Returns a
+                    // per-channel transmittance, so glass panes tint the shadow.
+                    shadow_rgb = point_shadow_dda(world, n, lp, u.pt_misc[i].w);
+                } else {
+                    // Cube distance map, hard or soft (per-light radius).
+                    let sp = point_shadow(i, world, to_light, d, range);
+                    // Stained transmission: panes between light and fragment
+                    // multiply in their color (a small margin keeps a pane
+                    // from tinting its own surface).
+                    var tint = vec3<f32>(1.0);
+                    let tr = textureSampleLevel(pt_tr_cube, pt_smp, -to_light, i32(i), 0.0);
+                    if (tr.a <= d - 0.1) {
+                        tint = tr.rgb;
+                    }
+                    shadow_rgb = vec3<f32>(sp) * tint;
+                }
+                // Debug: for a light that faces this fragment, remember the
+                // strongest occlusion (mean channel) for the viz override.
+                if (dbg != 0u && ndl2 > 0.001) {
+                    let sc = dot(shadow_rgb, vec3<f32>(1.0)) * (1.0 / 3.0);
+                    if (sc < dbg_shadow) {
+                        let nearest = textureSampleLevel(pt_cube, pt_smp, -to_light, i32(i), 0.0).r;
+                        dbg_hit = true;
+                        dbg_shadow = sc;
+                        dbg_margin = nearest - d; // cube-only; meaningless under DDA
+                        dbg_face = cube_face(-to_light);
+                    }
                 }
             }
-            direct = direct + u.pt_col[i].rgb * (atten * ndl2 * shadow_pt * tint);
+            direct = direct + u.pt_col[i].rgb * (atten * ndl2) * shadow_rgb;
         }
     }
-    // Steady (colored) torch light, minus each promoted light's estimate.
+    // Shadow-debug override: replace the shading with a diagnostic color.
+    if (dbg != 0u) {
+        if (!dbg_hit) { return vec3<f32>(0.02); } // no torch faces here
+        if (dbg == 1u) {
+            // Mode 1: red where the cube shadow occludes, dim grey where lit.
+            return vec3<f32>(1.0 - dbg_shadow, dbg_shadow * 0.25, dbg_shadow * 0.25);
+        }
+        if (dbg == 2u) {
+            // Mode 2: raw shadow factor, grayscale (1 lit .. 0 occluded).
+            return vec3<f32>(dbg_shadow);
+        }
+        if (dbg == 3u) {
+            // Mode 3: which cube face this fragment sampled.
+            return face_color(dbg_face);
+        }
+        // Mode 4: depth-compare margin (nearest - d). Blue = fragment sits in
+        // front of the stored occluder (lit, with slack). Green = razor edge
+        // (|margin| tiny → a bias tweak would flip it). Red = fragment sits
+        // BEHIND the stored occluder by a real distance → a gross/structural
+        // mismatch no bias can close. Brightness scales with the gap.
+        let m = dbg_margin;
+        if (m < -0.03) { return vec3<f32>(clamp(-m, 0.05, 1.0), 0.0, 0.0); }
+        if (m > 0.03) { return vec3<f32>(0.0, 0.0, clamp(m * 0.25, 0.05, 1.0)); }
+        return vec3<f32>(0.0, 1.0, 0.0);
+    }
+    // Steady (colored) torch light from the baked voxel flood, minus each
+    // promoted light's estimate.
     let torch = max(light - suppress, vec3<f32>(0.0)) * fs;
     return max(sun + amb + torch + direct, vec3<f32>(u.amb_col.a));
 }
@@ -528,6 +710,10 @@ fn fs_chunk(in: VsOut) -> @location(0) vec4<f32> {
     let tex = textureSample(atlas_tex, atlas_smp, s.uv);
     if (tex.a < 0.5) {
         discard; // alpha-tested item sprites share this pipeline
+    }
+    if (u.pt_count.z != 0u) {
+        // Shadow-debug viz: bypass albedo/fog so the diagnostic color is pure.
+        return vec4<f32>(world_light(in.normal, s.normal, in.light, in.sky, in.world), 1.0);
     }
     let surface_lit = tex.rgb * world_light(in.normal, s.normal, in.light, in.sky, in.world);
     var rgb = surface_lit;

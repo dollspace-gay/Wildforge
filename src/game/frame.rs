@@ -8,6 +8,20 @@ fn local_sim_should_advance(paused: bool, hosting: bool) -> bool {
     !paused || hosting
 }
 
+/// Point-light shadows via voxel-grid DDA (config `point_shadows=grid`) rather
+/// than the legacy distance cube map. WILDFORGE_DDA_SHADOW=0/1 forces either
+/// path for A/B testing, overriding the setting; read once.
+fn dda_shadow_enabled(from_config: bool) -> bool {
+    use std::sync::OnceLock;
+    static E: OnceLock<Option<bool>> = OnceLock::new();
+    let override_ = *E.get_or_init(|| {
+        std::env::var("WILDFORGE_DDA_SHADOW")
+            .ok()
+            .map(|s| s.trim() != "0")
+    });
+    override_.unwrap_or(from_config)
+}
+
 const VIEWMODEL_SLEEVE_MIN: Vec3 = Vec3::new(-0.055, -0.09, -0.46);
 const VIEWMODEL_SLEEVE_MAX: Vec3 = Vec3::new(0.055, 0.02, 0.10);
 const VIEWMODEL_HAND_MIN: Vec3 = Vec3::new(-0.055, -0.09, 0.10);
@@ -1554,6 +1568,42 @@ impl Game {
         let frame_vp = self.camera.view_proj();
         let frame_cam = self.camera.pos;
         self.camera.pos = saved_cam;
+
+        // Voxel occupancy grid for DDA point-light shadows. The origin snaps to
+        // OCC_STEP and keeps the camera near the cube's centre; we only rebuild
+        // (a full region scan) when the camera crosses into a new snapped cell.
+        let dda_shadow = dda_shadow_enabled(self.config.point_grid);
+        let occ_origin = {
+            let g = crate::renderer::OCC_GRID as i32;
+            let s = crate::renderer::OCC_STEP;
+            let snap = |v: f32| (v / s as f32).floor() as i32 * s;
+            [
+                snap(frame_cam.x) - g / 2,
+                snap(frame_cam.y) - g / 2,
+                snap(frame_cam.z) - g / 2,
+            ]
+        };
+        let occ_grid: Option<Vec<u8>> = if dda_shadow
+            && (self.occ_last_origin != Some(occ_origin) || self.occ_dirty)
+        {
+            let occ_t0 = std::time::Instant::now();
+            let g = crate::renderer::OCC_GRID;
+            let mut buf = vec![0u8; g * g * g * 4];
+            self.server.world.fill_occupancy(occ_origin, g, &mut buf);
+            self.occ_last_origin = Some(occ_origin);
+            self.occ_dirty = false;
+            if std::env::var("WILDFORGE_DEBUG").is_ok() {
+                eprintln!(
+                    "occ rebuild {}³ in {:.2}ms",
+                    g,
+                    occ_t0.elapsed().as_secs_f32() * 1000.0
+                );
+            }
+            Some(buf)
+        } else {
+            None
+        };
+
         let render_t0 = std::time::Instant::now();
         match self.renderer.render(FrameInput {
             view_proj: frame_vp,
@@ -1568,6 +1618,9 @@ impl Game {
             sun_col,
             amb_col,
             ambient_floor,
+            dda_shadow,
+            occ_origin,
+            occ_update: occ_grid.as_deref(),
             point_lights: &point_lights,
             outline,
             entity_verts: &entity_verts,
@@ -1615,7 +1668,7 @@ impl Game {
                 Some(at) if self.total_frames > at + 1 => std::process::exit(0),
                 None if ready => {
                     eprintln!(
-                        "capture at frame {} ({}), fps {}",
+                        "capture at frame {} ({}), fps {}, sim {:.2}ms draw {:.2}ms",
                         self.total_frames,
                         if forced.is_some() {
                             "forced frame".to_string()
@@ -1624,7 +1677,9 @@ impl Game {
                         } else {
                             "TIMED OUT, world still changing".to_string()
                         },
-                        self.fps
+                        self.fps,
+                        self.frame_ms.0,
+                        self.frame_ms.1,
                     );
                     self.renderer.pending_screenshot = Some(path);
                     self.shot_at = Some(self.total_frames);
