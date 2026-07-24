@@ -124,6 +124,40 @@ impl World {
         false
     }
 
+    /// The season's appetite: what the wild wants brought this time
+    /// of year, and how it says so. Fixed to the calendar — players
+    /// learn the year, not a dice roll.
+    pub fn season_want(&self) -> (usize, &'static str) {
+        match self.season() {
+            0 => (0, "The wild stirs. Seeds and saplings are welcome."),
+            1 => (1, "The wild thirsts. Carried water is welcome."),
+            2 => (2, "The wild gathers. First fruits are welcome."),
+            _ => (3, "The wild hungers. Food is welcome."),
+        }
+    }
+
+    /// Does a stack satisfy the season's want?
+    pub fn satisfies_want(&self, want: usize, s: &ItemStack) -> bool {
+        let d = self.reg.item(s.item);
+        match want {
+            // Spring: things that grow — saplings and plantables.
+            0 => {
+                d.name.ends_with("_sapling")
+                    || d.places
+                        .is_some_and(|b| self.reg.block(b).crop_next.is_some())
+            }
+            // Summer: water, carried by hand.
+            1 => d.name == "base:bucket_water",
+            // Autumn: the harvest's produce (plant nutrition).
+            2 => d
+                .food
+                .as_ref()
+                .is_some_and(|f| f.nutrition[..4].iter().any(|&n| n > 0.0)),
+            // Winter: anything that feeds.
+            _ => d.food.is_some(),
+        }
+    }
+
     /// What the wild values: its own materials most, then life given.
     pub fn offering_value(&self, s: &ItemStack) -> f32 {
         let d = self.reg.item(s.item);
@@ -163,21 +197,32 @@ impl World {
     /// Dawn: the wild takes everything left on offering stones. Items are
     /// consumed regardless; the refund is capped at 10 per dawn.
     pub fn accept_offerings(&mut self) -> f32 {
-        let mut taken: Vec<ItemStack> = Vec::new();
-        for e in self.block_entities.values_mut() {
+        let (want, _) = self.season_want();
+        let mut taken: Vec<((i32, i32), ItemStack)> = Vec::new();
+        for (&(x, _, z), e) in self.block_entities.iter_mut() {
             let BlockEntity::Offering(o) = e else {
                 continue;
             };
             for slot in o.slots.iter_mut() {
                 if let Some(s) = slot.take() {
-                    taken.push(s);
+                    taken.push(((x, z), s));
                 }
             }
         }
         if taken.is_empty() {
             return 0.0;
         }
-        let value: f32 = taken.iter().map(|s| self.offering_value(s)).sum();
+        // The season's want counts double — a bonus for listening,
+        // never a penalty — and every stone credits its own valley.
+        let mut value = 0.0f32;
+        for ((x, z), s) in &taken {
+            let mut v = self.offering_value(s);
+            if self.satisfies_want(want, s) {
+                v *= 2.0;
+            }
+            value += v;
+            self.charge_cell(*x, *z, -v.min(6.0));
+        }
         let refund = value.min(10.0);
         self.add_ire(-refund);
         refund

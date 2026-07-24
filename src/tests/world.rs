@@ -2247,3 +2247,52 @@ fn the_land_remembers_where() {
         w.regional_ire_at(100, 100)
     );
 }
+
+#[test]
+fn the_stone_states_its_season_and_doubles_it() {
+    use crate::world::{BlockEntity, OfferingState, SEASON_DAYS};
+    let reg = base_reg();
+    let mut w = test_world_with("wants", reg.clone());
+    w.day = 3 * SEASON_DAYS; // winter: the wild hungers
+    let (want, line) = w.season_want();
+    assert_eq!(want, 3);
+    assert!(line.contains("Food"), "the stone speaks plainly: {line}");
+    let bread = it(&reg, "base:bread");
+    let stone_ore = it(&reg, "base:raw_copper");
+    assert!(
+        w.satisfies_want(want, &ItemStack::new(&reg, bread, 1)),
+        "bread feeds"
+    );
+    assert!(
+        !w.satisfies_want(want, &ItemStack::new(&reg, stone_ore, 1)),
+        "ore does not"
+    );
+    // A wanted offering credits double, and the stone's own valley
+    // remembers the kindness.
+    let sy = w.surface_height(4, 4);
+    let mut o = OfferingState::default();
+    o.slots[0] = Some(ItemStack::new(&reg, bread, 2));
+    w.insert_block_entity((4, sy + 1, 4), BlockEntity::Offering(o));
+    w.ire = 50.0;
+    let refund = w.accept_offerings();
+    // bread: hunger 6 -> 1.5 value each, doubled = 3.0 x2 loaves = 6.
+    assert!(
+        (refund - 6.0).abs() < 0.01,
+        "winter bread counts double ({refund})"
+    );
+    assert!(
+        w.regional_ire_at(4, 4) <= -5.9,
+        "the valley remembers ({})",
+        w.regional_ire_at(4, 4)
+    );
+    // Out of season the same loaves count single.
+    w.day = SEASON_DAYS; // summer wants water, not bread
+    let mut o2 = OfferingState::default();
+    o2.slots[0] = Some(ItemStack::new(&reg, bread, 2));
+    w.insert_block_entity((4, sy + 1, 4), BlockEntity::Offering(o2));
+    let refund2 = w.accept_offerings();
+    assert!(
+        (refund2 - 3.0).abs() < 0.01,
+        "unwanted still counts, singly ({refund2})"
+    );
+}
