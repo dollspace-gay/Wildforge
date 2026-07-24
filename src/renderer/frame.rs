@@ -224,15 +224,27 @@ impl Renderer {
         // distance into its 6 cube faces (range-culled to the light's
         // reach). The cache makes static scenes free: a slot re-renders
         // only when its (key, epoch) changed since the cube was drawn.
+        // Rebuilds are amortized under a global per-frame face budget —
+        // several lights invalidating at once (a walk through a lit
+        // camp) used to stack ~50 passes into one frame and blow the
+        // vsync deadline; now the update spreads across frames, each
+        // face serving its old picture until replaced.
+        let mut face_budget = 6usize;
         for (li, l) in f.point_lights.iter().take(MAX_PT_LIGHTS).enumerate() {
             if !l.shadows {
                 continue;
             }
             if self.pt_cached[li] == Some((l.key, l.epoch)) {
+                self.pt_progress[li] = 0;
                 continue;
             }
-            self.pt_cached[li] = Some((l.key, l.epoch));
-            for face in 0..6 {
+            if face_budget == 0 {
+                continue;
+            }
+            while self.pt_progress[li] < 6 && face_budget > 0 {
+                let face = self.pt_progress[li] as usize;
+                self.pt_progress[li] += 1;
+                face_budget -= 1;
                 let layer = li * 6 + face;
                 let mut pp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("pt-shadow"),
@@ -328,6 +340,12 @@ impl Renderer {
                         tp.draw_indexed(0..m.count, 0, 0..1);
                     }
                 }
+            }
+            // Only a fully rebuilt cube claims the cache; a partial one
+            // resumes next frame from where it stopped.
+            if self.pt_progress[li] >= 6 {
+                self.pt_cached[li] = Some((l.key, l.epoch));
+                self.pt_progress[li] = 0;
             }
         }
 

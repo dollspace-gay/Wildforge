@@ -975,6 +975,7 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
             shadow_view,
             shadow_bg,
             pt_cached: [None; MAX_PT_LIGHTS],
+            pt_progress: [0; MAX_PT_LIGHTS],
             pt_shadow_pipeline,
             pt_tr_pipeline,
             pt_face_views,
