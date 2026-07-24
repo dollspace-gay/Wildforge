@@ -8,12 +8,18 @@ fn local_sim_should_advance(paused: bool, hosting: bool) -> bool {
     !paused || hosting
 }
 
-/// Dev toggle (WILDFORGE_DDA_SHADOW=1): point-light shadows via voxel-grid
-/// DDA instead of the distance cube map. Read once.
-fn dda_shadow_enabled() -> bool {
+/// Point-light shadows via voxel-grid DDA (config `point_shadows=grid`) rather
+/// than the legacy distance cube map. WILDFORGE_DDA_SHADOW=0/1 forces either
+/// path for A/B testing, overriding the setting; read once.
+fn dda_shadow_enabled(from_config: bool) -> bool {
     use std::sync::OnceLock;
-    static E: OnceLock<bool> = OnceLock::new();
-    *E.get_or_init(|| std::env::var("WILDFORGE_DDA_SHADOW").as_deref() == Ok("1"))
+    static E: OnceLock<Option<bool>> = OnceLock::new();
+    let override_ = *E.get_or_init(|| {
+        std::env::var("WILDFORGE_DDA_SHADOW")
+            .ok()
+            .map(|s| s.trim() != "0")
+    });
+    override_.unwrap_or(from_config)
 }
 
 const VIEWMODEL_SLEEVE_MIN: Vec3 = Vec3::new(-0.055, -0.09, -0.46);
@@ -1496,7 +1502,7 @@ impl Game {
         // Voxel occupancy grid for DDA point-light shadows. The origin snaps to
         // OCC_STEP and keeps the camera near the cube's centre; we only rebuild
         // (a full region scan) when the camera crosses into a new snapped cell.
-        let dda_shadow = dda_shadow_enabled();
+        let dda_shadow = dda_shadow_enabled(self.config.point_grid);
         let occ_origin = {
             let g = crate::renderer::OCC_GRID as i32;
             let s = crate::renderer::OCC_STEP;

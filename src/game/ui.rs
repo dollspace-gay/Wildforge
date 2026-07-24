@@ -286,12 +286,26 @@ impl Game {
     }
 
     /// The toggle rows under the sliders (lights, darkness, outline).
+    /// Top of the toggle stack: directly under the four sliders.
+    fn settings_toggles_top(h: f32) -> f32 {
+        h * 0.30 + 4.0 * 64.0
+    }
+
+    /// Vertical step between settings toggles. The designed 56 wherever there's
+    /// room; on a short window it compresses (down to a 2px gap) so five rows
+    /// plus BACK still land on screen instead of running off the bottom.
+    fn settings_step(h: f32) -> f32 {
+        const ROWS: f32 = 5.0;
+        let avail = h - Self::settings_toggles_top(h) - 50.0;
+        (avail / (ROWS + 1.0)).clamp(44.0, 56.0)
+    }
+
     pub(super) fn settings_toggle_rect(&self, i: usize) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;
         (
             w / 2.0 - 20.0,
-            h * 0.30 + 4.0 * 64.0 - 8.0 + i as f32 * 56.0,
+            Self::settings_toggles_top(h) - 8.0 + i as f32 * Self::settings_step(h),
             300.0,
             42.0,
         )
@@ -302,7 +316,7 @@ impl Game {
         let h = self.renderer.config.height as f32;
         (
             w / 2.0 - 150.0,
-            h * 0.30 + 4.0 * 64.0 + 4.0 * 56.0 + 8.0,
+            Self::settings_toggles_top(h) + 5.0 * Self::settings_step(h) + 8.0,
             300.0,
             42.0,
         )
@@ -926,6 +940,10 @@ impl Game {
                     (
                         "DYNAMIC LIGHTS",
                         ["OFF", "ON", "+SHADOWS"][self.config.lights.min(2) as usize],
+                    ),
+                    (
+                        "TORCH SHADOWS",
+                        if self.config.point_grid { "GRID" } else { "CUBE" },
                     ),
                     ("DARKNESS", if self.config.stark { "STARK" } else { "SOFT" }),
                     (

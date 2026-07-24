@@ -509,15 +509,20 @@ impl Game {
                 }
                 if self.hit(self.settings_toggle_rect(1)) {
                     self.sfx(Sfx::Click);
-                    self.config.stark = !self.config.stark;
+                    self.config.point_grid = !self.config.point_grid;
                     return;
                 }
                 if self.hit(self.settings_toggle_rect(2)) {
                     self.sfx(Sfx::Click);
-                    self.config.outline = !self.config.outline;
+                    self.config.stark = !self.config.stark;
                     return;
                 }
                 if self.hit(self.settings_toggle_rect(3)) {
+                    self.sfx(Sfx::Click);
+                    self.config.outline = !self.config.outline;
+                    return;
+                }
+                if self.hit(self.settings_toggle_rect(4)) {
                     self.sfx(Sfx::Click);
                     self.config.bloom = !self.config.bloom;
                     return;
