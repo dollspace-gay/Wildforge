@@ -195,6 +195,11 @@ pub struct Mob {
     pub led_by: Option<u32>,
     /// Player riding this vehicle (PlayerCtx id; transient).
     pub ridden_by: Option<u32>,
+    /// A warden that only watches (the warning before the hunt).
+    pub watcher: bool,
+    pub watch_timer: f32,
+    /// The cell's grievance when the watching began.
+    pub watch_baseline: f32,
 }
 
 fn r01(rng: &mut u32) -> f32 {
@@ -244,6 +249,9 @@ impl Mob {
             cargo: None,
             led_by: None,
             ridden_by: None,
+            watcher: false,
+            watch_timer: 0.0,
+            watch_baseline: 0.0,
         }
     }
 
@@ -366,6 +374,7 @@ impl Mob {
         // Wardens take notice (the quiet charm shortens their attention).
         if let Some((_, p)) = prey
             && def.hostile
+            && !self.watcher
             && self.state != MobState::Hunt
         {
             let range = (def.aggro_range + p.aggro_mod).max(2.0);
@@ -398,6 +407,27 @@ impl Mob {
                     events.push(MobEvent::LeadSnapped(self.pos));
                 }
             }
+        }
+        // A watcher only watches: it faces whoever is nearest, gives
+        // ground if crowded, and counts the seconds. The hunt is
+        // someone else's decision (ecology grades the vigil).
+        if self.watcher && !led_active {
+            self.watch_timer += dt;
+            if let Some((_, near)) = nearest {
+                let mut to = near.pos - self.pos;
+                to.y = 0.0;
+                let d2 = to.length_squared();
+                if d2 > 0.01 {
+                    let dir = to.normalize();
+                    self.yaw = dir.x.atan2(dir.z);
+                    if d2 < 8.0 * 8.0 {
+                        wish = -dir * def.speed * 0.4;
+                    }
+                }
+            }
+            self.state = MobState::Idle;
+            self.state_timer = self.state_timer.max(0.5);
+            led_active = true; // skip the state machine below
         }
         // State transitions + wish velocity.
         if !led_active {

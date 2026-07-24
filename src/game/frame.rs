@@ -558,6 +558,33 @@ impl Game {
                         .items
                         .push(ItemEntity::new(center, v, s.item, s.count));
                 }
+                // The wild's whispers reach the ear as toasts.
+                for line in std::mem::take(&mut self.server.world.whispers) {
+                    self.toast(line);
+                }
+                // Crossing into marked country: one line per region
+                // per session, hostile or blessed.
+                let cell = world::World::ire_cell(
+                    self.player.pos.x.floor() as i32,
+                    self.player.pos.z.floor() as i32,
+                );
+                if self.presentation.last_ire_cell != Some(cell) {
+                    self.presentation.last_ire_cell = Some(cell);
+                    let standing = self.server.world.regional_ire_at(
+                        self.player.pos.x.floor() as i32,
+                        self.player.pos.z.floor() as i32,
+                    );
+                    if standing.abs() >= 8.0 && self.presentation.whispered_cells.insert(cell) {
+                        self.toast(
+                            if standing > 0.0 {
+                                "The trees here remember the axe."
+                            } else {
+                                "This ground knows you."
+                            }
+                            .to_string(),
+                        );
+                    }
+                }
                 // Close container screens if their block vanished.
                 if let Screen::Furnace(pos)
                 | Screen::Chest(pos)
@@ -879,7 +906,15 @@ impl Game {
             } else if self.in_world && self.presentation.juice && daylight < 0.25 {
                 // The night bed: crickets while the wild is calm; a low
                 // hush once it turns wrathful. The ire meter, diegetic.
-                Some(audio::Ambience::Night(self.server.world.ire_tier() < 2))
+                Some(audio::Ambience::Night(
+                    // The night bed reads the land underfoot: crickets
+                    // in tended country, the wrathful hush where the
+                    // ground remembers (legible escalation, stage 2).
+                    self.server.world.ire_tier_at(
+                        self.player.pos.x.floor() as i32,
+                        self.player.pos.z.floor() as i32,
+                    ) < 2,
+                ))
             } else {
                 None
             };

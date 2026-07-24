@@ -258,6 +258,8 @@ pub struct World {
     /// The land's memory: per-256-block-cell standing (±20), charged
     /// by taking, credited by tending, fading over days.
     pub(crate) regional_ire: HashMap<(i32, i32), f32>,
+    /// Lines the wild wants spoken (drained by the game as toasts).
+    pub whispers: Vec<String>,
     /// Absolute sim-time in seconds (day * DAY_LENGTH + time-of-day),
     /// mirrored from the Server every tick so chunk load and random
     /// ticks share one clock.
@@ -487,6 +489,7 @@ impl World {
             pending_drops: Vec::new(),
             perish_accum: 0.0,
             regional_ire: HashMap::new(),
+            whispers: Vec::new(),
             mobs: Vec::new(),
             projectiles: Vec::new(),
             hostile_spawn_timer: 0.0,
