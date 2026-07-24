@@ -1,5 +1,34 @@
 # Trade & travel — the economy becomes something people do
 
+Drafted 2026-07-24, **IMPLEMENTED** 2026-07-24, all four stages.
+Notes vs. this spec, where the implementation knew better:
+
+- **Pack-animal ownership is deferred**: tamed animals are household
+  commons (no per-animal PlayerId). Ownership landed where a
+  mechanic actually needs it — the stall. The betrayal rule keys on
+  tamed-ness, not ownership.
+- **One pack size**: mob cargo is 12 slots for deer, boar, AND
+  boats (the drafted 18-slot cargo boat wasn't worth a second
+  container shape; boats simply take the same saddlebags).
+- **The boat is a vehicle species on the mob spine**, not a bespoke
+  entity: mob persistence, guest snapshots, ids, and stage 1's
+  cargo all came free, and the existing bob-to-surface physics IS
+  the flotation. Riders own their motion — the hull glues under its
+  rider (host-side for guests) — so no vehicle snapshot stream
+  exists at all. Recipe is plain planks (a rowboat needs no bronze;
+  the tin-tack flavor died in review).
+- **Sign text ships with the join handshake**, so the drafted
+  ReadSign request never needed to exist.
+- **Attunements live in `attuned.tsv` in the world dir** (guests
+  get the shared `.remote` dir per connection — local knowledge,
+  loosely scoped, honestly disposable).
+- **A lead consumed on attach returns on release**; quitting
+  mid-lead loses the strip (recorded, deliberate).
+- Bonus fix: mob saves wrote integral floats as TOML integers,
+  which the strict parser refused — any animal at a whole-number
+  coordinate silently voided the whole wildlife file on load.
+  Found by the saddlebag round-trip test; fixed with float syntax.
+
 Drafted 2026-07-24. Decisions settled with dollspace: **markets are a
 market stall multiblock** (our own, in the forge/bloomery validation
 tradition — not floating chest-shops), pack animals before boats,
