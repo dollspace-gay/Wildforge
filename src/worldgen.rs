@@ -530,9 +530,17 @@ impl Generator {
                     // discrete falls. A smooth per-column fill left
                     // sloped water fighting the equalizer forever —
                     // the whole river churned (relights, remeshes)
-                    // from the moment a seam woke it.
-                    let f = (pre - carve) as i32 + 3;
-                    fill = Some(f - f.rem_euclid(4));
+                    // from the moment a seam woke it. On steep runs
+                    // the quantized level can sit at or under the
+                    // channel floor: leave those stretches as dry
+                    // washes and step pools instead of scrappy
+                    // one-deep sheets.
+                    let floor = (pre - carve) as i32;
+                    let f = floor + 3;
+                    let f = f - f.rem_euclid(4);
+                    if f > floor {
+                        fill = Some(f);
+                    }
                 }
             }
             let lk = self.lakenoise.get([wx as f64 / 300.0, wz as f64 / 300.0]) as f32;

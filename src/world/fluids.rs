@@ -62,6 +62,19 @@ impl World {
                 };
                 let (bx, bz) = (ax + dx, az + dz);
                 for y in 1..CHUNK_Y as i32 {
+                    // Only fluid-meets-AIR differentials wake: a hole
+                    // beside the sea must flood, but stepped worldgen
+                    // water (a terraced river crossing the border)
+                    // stays stepped until something actually disturbs
+                    // it. Waking water-vs-water here set every steep
+                    // river cascading on load — endless sim churn and
+                    // remeshes, and the surface looked like broken
+                    // glass while it sloshed.
+                    let (ba, bb) = (self.get_block(ax, y, az), self.get_block(bx, y, bz));
+                    let (a_air, b_air) = (self.reg.is_air(ba), self.reg.is_air(bb));
+                    if a_air == b_air {
+                        continue;
+                    }
                     if let (Some(a), Some(b)) = (
                         self.flow_potential(ax, y, az),
                         self.flow_potential(bx, y, bz),
