@@ -64,6 +64,11 @@ impl World {
         let stamp = self.last_random.get(&(pos.x, pos.z)).copied();
         self.last_random.entry((pos.x, pos.z)).or_insert(self.clock);
         self.wake_seams(pos);
+        // A chunk back from disk may hold water saved mid-flow (or
+        // stranded by older, unsealed worldgen): set it settling again.
+        if !fresh {
+            self.wake_stale_fluids(pos);
+        }
         self.relight_and_cascade(pos);
         // The world lived while this chunk was away: catch it up.
         if let Some(stamp) = stamp {

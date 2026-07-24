@@ -97,6 +97,64 @@ impl World {
         }
     }
 
+    /// One sweep over a chunk returned from disk: wake any fluid saved
+    /// mid-flow — hanging over air, or beside same-height air with a
+    /// real potential differential. A settled, sealed chunk schedules
+    /// nothing; water stranded by older unsealed worldgen (or saved
+    /// mid-pour) resumes settling instead of hanging frozen until some
+    /// edit happens to touch it. Border pairs are wake_seams' business.
+    pub(super) fn wake_stale_fluids(&mut self, pos: ChunkPos) {
+        let bx = pos.x * CHUNK_X as i32;
+        let bz = pos.z * CHUNK_Z as i32;
+        let Some(c) = self.chunks.get(&pos) else {
+            return;
+        };
+        let mut wake = Vec::new();
+        for lx in 0..CHUNK_X {
+            for lz in 0..CHUNK_Z {
+                for y in 1..CHUNK_Y {
+                    if !self.reg.is_fluid(c.get(lx, y, lz)) {
+                        continue;
+                    }
+                    let (x, wy, z) = (bx + lx as i32, y as i32, bz + lz as i32);
+                    if self.reg.is_air(c.get(lx, y - 1, lz)) {
+                        wake.push((x, wy, z));
+                        continue;
+                    }
+                    for (dx, dz) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+                        let (nx, nz) = (lx as i32 + dx, lz as i32 + dz);
+                        if !(0..CHUNK_X as i32).contains(&nx)
+                            || !(0..CHUNK_Z as i32).contains(&nz)
+                            || !self.reg.is_air(c.get(nx as usize, y, nz as usize))
+                        {
+                            continue;
+                        }
+                        let (ax, az) = (bx + nx, bz + nz);
+                        if let (Some(a), Some(b)) = (
+                            self.flow_potential(x, wy, z),
+                            self.flow_potential(ax, wy, az),
+                        ) && a.abs_diff(b) >= 2
+                        {
+                            wake.push((x, wy, z));
+                            break;
+                        } else if let (Some(a), Some(b)) = (
+                            self.lava_potential(x, wy, z),
+                            self.lava_potential(ax, wy, az),
+                        ) && a.abs_diff(b) >= 3
+                        {
+                            wake.push((x, wy, z));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        for (x, y, z) in wake {
+            self.schedule_water(x, y, z);
+            self.schedule_lava(x, y, z);
+        }
+    }
+
     /// Fire meets water: the lava cell hardens — obsidian when full,
     /// basalt when partial — and the touching water flashes away (the
     /// one documented exception to water conservation: the steam

@@ -374,16 +374,41 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                 // Glass rides the blended pipeline: translucent tint,
                 // and panes catch the water shader's sun glint.
                 let blended = water || reg.block(b).glass;
-                // Water surface height falls with flow level (unless the
-                // block above is also water — then it's a full column).
-                let top_drop = if water && !reg.is_fluid(get(lx, y + 1, lz)) {
-                    1.0 - reg.water_height(b)
-                } else if let Some(h) = reg.block(b).height {
-                    // Thin slabs (snow layers): the top face and every
-                    // side's upper corners drop to the declared height.
-                    1.0 - h
+                // A fluid surface takes each top corner from the tallest
+                // fluid among the four cells sharing it (full height if
+                // any of them continues upward), so neighboring cells at
+                // different volumes meet exactly instead of rendering as
+                // disconnected tiles with gaps between their rims.
+                let same = |n: BlockId| reg.is_fluid(n) && reg.is_lava(n) == reg.is_lava(b);
+                let surf: Option<[f32; 4]> = if water && !same(get(lx, y + 1, lz)) {
+                    let mut hs = [0f32; 4];
+                    for cx in 0..2i32 {
+                        for cz in 0..2i32 {
+                            let mut h = reg.water_height(b);
+                            for (dx, dz) in [(cx - 1, cz - 1), (cx - 1, cz), (cx, cz - 1), (cx, cz)]
+                            {
+                                let nb = get(lx + dx, y, lz + dz);
+                                if !same(nb) {
+                                    continue;
+                                }
+                                if same(get(lx + dx, y + 1, lz + dz)) {
+                                    h = 1.0;
+                                    break;
+                                }
+                                h = h.max(reg.water_height(nb));
+                            }
+                            hs[(cx * 2 + cz) as usize] = h;
+                        }
+                    }
+                    Some(hs)
                 } else {
-                    0.0
+                    None
+                };
+                // Thin slabs (snow layers): the top face and every
+                // side's upper corners drop to the declared height.
+                let top_drop = match reg.block(b).height {
+                    Some(h) if !water => 1.0 - h,
+                    _ => 0.0,
                 };
 
                 for face in 0..6 {
@@ -417,7 +442,10 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                         let mut py = y as f32 + c[1];
                         let pz = (bz + lz) as f32 + c[2];
                         if c[1] > 0.5 {
-                            py -= top_drop;
+                            match surf {
+                                Some(hs) => py = y as f32 + hs[c[0] as usize * 2 + c[2] as usize],
+                                None => py -= top_drop,
+                            }
                         }
                         let (u, v) = match face {
                             0 | 1 => (c[2], 1.0 - c[1]),

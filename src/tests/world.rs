@@ -1894,3 +1894,41 @@ fn magma_pools_the_deep_chambers() {
         "deep cheese chambers pool magma ({lava_cells})"
     );
 }
+
+#[test]
+fn stale_saved_water_wakes_on_load() {
+    // Water saved in an unstable pose (a full cube whose sides face
+    // air — what pre-seal worldgen left behind) must resume settling
+    // when its chunk returns from disk, not hang frozen forever.
+    let reg = base_reg();
+    let dir = tmp_dir("stalewake");
+    let y = 180;
+    {
+        let mut w = World::new(7, dir.clone(), reg.clone());
+        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        // A 3x3 stone shelf holding one exposed full water cube.
+        for x in 3..=5 {
+            for z in 3..=5 {
+                w.set_block(x, y, z, b(&reg, "base:stone"));
+            }
+        }
+        w.set_block(4, y + 1, 4, reg.water_block(0));
+        // Unload without ticking: the save captures it mid-flow, and
+        // this world's pending queues die with it.
+        w.unload_chunk(ChunkPos { x: 0, z: 0 });
+    }
+    let mut w = World::new(7, dir, reg.clone());
+    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    let mut quiet = false;
+    for _ in 0..200 {
+        if !w.tick_water(10_000) {
+            quiet = true;
+            break;
+        }
+    }
+    assert!(quiet, "reloaded water settles");
+    assert!(
+        reg.water_volume(w.get_block(4, y + 1, 4)).unwrap_or(0) < 8,
+        "the stranded cube spread instead of hanging as a square"
+    );
+}
