@@ -349,7 +349,9 @@ impl World {
         }
         self.hostile_spawn_timer = 0.0;
         let reg = self.reg.clone();
-        let tier = self.ire_tier();
+        // The tier as THIS ground feels it: an angry forest hunts
+        // harder, a tended valley softer, wherever the world's mood.
+        let tier = self.ire_tier_at(player.x.floor() as i32, player.z.floor() as i32);
         let mut budget = [2usize, 6, 10, 14][tier];
         if self.weather == Weather::Storm && tier >= 2 {
             budget += 1; // dark skies are cover
@@ -391,7 +393,10 @@ impl World {
                 .animals
                 .iter()
                 .enumerate()
-                .filter(|(_, d)| d.hostile && self.ire >= d.ire_min)
+                .filter(|(_, d)| {
+                    let local = (self.ire + self.regional_ire_at(x, z) * 3.0).clamp(0.0, 100.0);
+                    d.hostile && local >= d.ire_min
+                })
                 .filter_map(|(i, d)| {
                     if d.biomes.iter().any(|b| b == "underground") {
                         // A random depth with a 2-tall air pocket.

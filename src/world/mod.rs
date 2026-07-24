@@ -255,6 +255,9 @@ pub struct World {
     pending_relight: HashSet<ChunkPos>,
     /// Accumulator for the food-freshness sweep (containers).
     perish_accum: f32,
+    /// The land's memory: per-256-block-cell standing (±20), charged
+    /// by taking, credited by tending, fading over days.
+    pub(crate) regional_ire: HashMap<(i32, i32), f32>,
     /// Absolute sim-time in seconds (day * DAY_LENGTH + time-of-day),
     /// mirrored from the Server every tick so chunk load and random
     /// ticks share one clock.
@@ -483,6 +486,7 @@ impl World {
             block_entities: HashMap::new(),
             pending_drops: Vec::new(),
             perish_accum: 0.0,
+            regional_ire: HashMap::new(),
             mobs: Vec::new(),
             projectiles: Vec::new(),
             hostile_spawn_timer: 0.0,
@@ -689,7 +693,7 @@ impl World {
             .map(|(item, count)| ItemStack::new(&self.reg, item, count));
         if affect_ire {
             let cost = self.ire_for_block(block);
-            self.add_ire(cost);
+            self.add_ire_at(pos.0, pos.2, cost);
         }
         self.set_block(pos.0, pos.1, pos.2, AIR);
         Some(BlockBreak { block, drop })

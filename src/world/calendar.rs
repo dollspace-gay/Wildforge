@@ -28,13 +28,60 @@ impl World {
 
     // ---------------- ire (reciprocity) ----------------
 
+    /// The regional ledger's cell for a position (~256-block country).
+    pub fn ire_cell(x: i32, z: i32) -> (i32, i32) {
+        (x >> 8, z >> 8)
+    }
+
+    /// The land's local standing: negative is tended, positive is
+    /// aggrieved, clamped to a grudge the wild can actually hold.
+    pub fn regional_ire_at(&self, x: i32, z: i32) -> f32 {
+        self.regional_ire
+            .get(&Self::ire_cell(x, z))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    fn charge_cell(&mut self, x: i32, z: i32, amt: f32) {
+        let cell = Self::ire_cell(x, z);
+        let e = self.regional_ire.entry(cell).or_insert(0.0);
+        *e = (*e + amt).clamp(-20.0, 20.0);
+        if e.abs() < 0.01 {
+            self.regional_ire.remove(&cell);
+        }
+    }
+
+    /// Taking, placed: the world remembers, and so does the valley.
+    pub fn add_ire_at(&mut self, x: i32, z: i32, amt: f32) {
+        self.add_ire(amt);
+        self.charge_cell(x, z, amt);
+    }
+
+    /// Mending, placed: the global refund keeps its daily cap, but the
+    /// valley always notices the hands that tend it.
+    pub fn plant_ire_at(&mut self, x: i32, z: i32, amt: f32) {
+        self.plant_ire(amt);
+        self.charge_cell(x, z, -amt);
+    }
+
     pub fn ire_tier(&self) -> usize {
-        match self.ire {
+        Self::tier_of(self.ire)
+    }
+
+    fn tier_of(ire: f32) -> usize {
+        match ire {
             x if x < 20.0 => 0,
             x if x < 50.0 => 1,
             x if x < 80.0 => 2,
             _ => 3,
         }
+    }
+
+    /// The tier as this ground feels it: the world's mood shifted by
+    /// the local ledger (±20 regional ≈ ±2 tiers — an angry forest is
+    /// menacing, not lethal; a tended valley forgives a lot).
+    pub fn ire_tier_at(&self, x: i32, z: i32) -> usize {
+        Self::tier_of((self.ire + self.regional_ire_at(x, z) * 3.0).clamp(0.0, 100.0))
     }
 
     pub fn add_ire(&mut self, amt: f32) {
@@ -63,6 +110,11 @@ impl World {
             4.0
         };
         self.add_ire(-decay * day_frac);
+        // Grudges and gratitude both fade (2 per day toward zero).
+        self.regional_ire.retain(|_, v| {
+            *v -= v.signum() * (2.0 * day_frac).min(v.abs());
+            v.abs() >= 0.01
+        });
         self.day_progress += day_frac;
         if self.day_progress >= 1.0 {
             self.day_progress -= 1.0;

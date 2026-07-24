@@ -273,7 +273,10 @@ impl Game {
                 // individuals, and a TAMED animal is a household loss,
                 // not a wild one (though betrayal is still noticed).
                 // Vehicles are lumber; the wild never mourns a boat.
-                self.server.world.add_ire(if m.tamed { 1.0 } else { 2.0 });
+                let (mx, mz) = (m.pos.x.floor() as i32, m.pos.z.floor() as i32);
+                self.server
+                    .world
+                    .add_ire_at(mx, mz, if m.tamed { 1.0 } else { 2.0 });
             }
             self.sfx(Sfx::MobDeath(def.sound_pitch));
             let (tile, at) = (def.tile, m.pos + Vec3::new(0.0, 0.5, 0.0));
@@ -1130,7 +1133,7 @@ impl Game {
                         && c.wild_owned
                     {
                         c.wild_owned = false;
-                        self.server.world.add_ire(1.0);
+                        self.server.world.add_ire_at(h.block.0, h.block.2, 1.0);
                         self.toast("The wild keeps its trophies.".to_string());
                     }
                     self.set_screen(Screen::Chest(h.block));
@@ -1306,7 +1309,7 @@ impl Game {
                         }
                         if bd.crop_next.is_some() {
                             // The wild notices things growing where you walk.
-                            self.server.world.plant_ire(0.2);
+                            self.server.world.plant_ire_at(x, z, 0.2);
                         }
                         self.input.action_cooldown = 0.22;
                         self.sfx(Sfx::Place);

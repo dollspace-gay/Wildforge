@@ -207,7 +207,7 @@ impl World {
         for (x, y, z, b) in changes {
             // A crop reaching its final stage refunds ire (capped daily).
             if self.reg.block(b).crop_next.is_none() {
-                self.plant_ire(0.5);
+                self.plant_ire_at(x, z, 0.5);
             }
             self.set_block(x, y, z, b);
         }
@@ -416,7 +416,8 @@ impl World {
             self.relight_and_cascade(pos);
         }
         for _ in 0..refunds {
-            self.plant_ire(0.5);
+            // Reconciled growth credits the chunk's own country.
+            self.plant_ire_at(pos.x * 16 + 8, pos.z * 16 + 8, 0.5);
         }
         for (x, y, z, rnd) in grow {
             self.try_grow_sapling(x, y, z, rnd);
@@ -517,7 +518,7 @@ impl World {
             return false;
         };
         if self.grow_tree(x, y, z, &species, rnd) {
-            self.add_ire(-2.0);
+            self.add_ire_at(x, z, -2.0);
             true
         } else {
             false

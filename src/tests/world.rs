@@ -2209,3 +2209,41 @@ fn saved_mid_drain_pools_resume_leveling() {
         "reload resumes the leveling (heads {a} vs {b2})"
     );
 }
+
+#[test]
+fn the_land_remembers_where() {
+    let reg = base_reg();
+    let dir = tmp_dir("rire");
+    {
+        let mut w = World::new(42, dir.clone(), reg.clone());
+        // A clearcut in one valley, a garden in another.
+        for _ in 0..40 {
+            w.add_ire_at(100, 100, 1.0);
+        }
+        for _ in 0..40 {
+            w.plant_ire_at(3000, 3000, 1.0);
+        }
+        assert_eq!(w.regional_ire_at(100, 100), 20.0, "grudge clamps at 20");
+        assert_eq!(w.regional_ire_at(3000, 3000), -20.0, "grace clamps at -20");
+        assert_eq!(w.regional_ire_at(100, 3000), 0.0, "elsewhere is neutral");
+        // The same world mood feels different on different ground.
+        w.ire = 30.0; // globally tier 1
+        assert_eq!(w.ire_tier(), 1);
+        assert_eq!(w.ire_tier_at(100, 100), 3, "the angry forest hunts");
+        assert_eq!(w.ire_tier_at(3000, 3000), 0, "the tended valley forgives");
+        // Grudges fade: a full day decays 2 points.
+        w.tick_ire(1.0);
+        assert!(
+            (w.regional_ire_at(100, 100) - 18.0).abs() < 0.01,
+            "decay toward zero ({})",
+            w.regional_ire_at(100, 100)
+        );
+        w.save_modified();
+    }
+    let w = World::load_or_create(dir, reg);
+    assert!(
+        w.regional_ire_at(100, 100) > 17.0,
+        "the ledger persists ({})",
+        w.regional_ire_at(100, 100)
+    );
+}
