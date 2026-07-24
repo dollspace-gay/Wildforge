@@ -348,8 +348,8 @@ hardness = 0.4
 solid = false
 opaque = false
 drops = "self"
-crop = { stages = 2, next_chance = 0.06, stage_textures = ["@bush_fruited"], any_soil = true }
-harvest = { item = "base:berry", count = 2, becomes = "base:berry_bush" }
+crop = { stages = 2, next_chance = 0.02, stage_textures = ["@bush_fruited"], any_soil = true }
+harvest = { item = "base:berry", count = 1, becomes = "base:berry_bush" }
 
 [[block]]
 id = "wild_mushroom"
@@ -371,8 +371,8 @@ hardness = 0.4
 solid = false
 opaque = false
 drops = "self"
-crop = { stages = 2, next_chance = 0.06, stage_textures = ["@bush_fruited"], any_soil = true }
-harvest = { item = "base:jungle_fruit", count = 2, becomes = "base:jungle_bush" }
+crop = { stages = 2, next_chance = 0.02, stage_textures = ["@bush_fruited"], any_soil = true }
+harvest = { item = "base:jungle_fruit", count = 1, becomes = "base:jungle_bush" }
 
 [[block]]
 id = "torch"

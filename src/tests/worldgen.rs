@@ -1579,3 +1579,49 @@ fn print_lake_transect() {
         }
     }
 }
+
+#[test]
+fn wild_food_and_game_are_scarce() {
+    // The forage economy: wild food arrives in occasional patches and
+    // wildlife in occasional small groups — enough to survive on
+    // while traveling, nowhere near enough to skip agriculture. This
+    // pins the density band both ways.
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("scarcity"), reg.clone());
+    let food: Vec<crate::registry::BlockId> = [
+        "base:wheat_seeds/stage2",
+        "base:carrot_crop/stage1",
+        "base:berry_bush/stage1",
+        "base:potato_crop/stage1",
+        "base:wild_mushroom",
+        "base:jungle_bush/stage1",
+    ]
+    .iter()
+    .filter_map(|n| reg.block_id(n))
+    .collect();
+    let mut plants = 0;
+    for cx in -5..5 {
+        for cz in -5..5 {
+            w.ensure_chunk(ChunkPos { x: cx, z: cz });
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    for y in 60..150 {
+                        if food.contains(&w.get_block(cx * 16 + lx, y, cz * 16 + lz)) {
+                            plants += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(plants >= 4, "forage patches exist ({plants} plants)");
+    assert!(
+        plants <= 90,
+        "wild food stays scarce over 100 chunks ({plants} plants)"
+    );
+    let animals = w.mob_count();
+    assert!(
+        animals <= 40,
+        "wildlife stays sparse over 100 chunks ({animals})"
+    );
+}
