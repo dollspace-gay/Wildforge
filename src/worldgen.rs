@@ -1390,17 +1390,18 @@ impl Generator {
                     Biome::Desert => 190, // cacti
                     Biome::Arctic | Biome::Mountains | Biome::Tundra | Biome::Badlands => 0,
                 };
-                // Jungle floor: dense undergrowth independent of trees.
+                // Jungle floor: undergrowth independent of trees —
+                // lush, but no longer an endless buffet.
                 if biome == Biome::Jungle {
                     let ur = hash2(self.seed ^ 0x0f01, wx, wz);
-                    if ur.is_multiple_of(7) {
+                    if ur.is_multiple_of(16) {
                         let h2 = self.height_hint(heights, lx, lz);
                         if h2 > SEA_LEVEL + 1
                             && h2 + 2 < CHUNK_Y as i32
                             && c.get(lx, h2 as usize, lz) == self.grass
                             && c.get(lx, (h2 + 1) as usize, lz) == AIR
                         {
-                            let cover = if ur.is_multiple_of(21) {
+                            let cover = if ur.is_multiple_of(48) {
                                 self.mushroom
                             } else {
                                 self.jungle_bush
@@ -1409,9 +1410,15 @@ impl Generator {
                         }
                     }
                 }
-                // Wild food plants roll independently of trees (~1/70 cols).
+                // Wild food plants grow in scattered forage patches: a
+                // coarse cell rolls for a patch, and only inside one do
+                // columns roll for a plant (~1/384 overall, arriving as
+                // clusters of a handful). Finding a berry patch or a
+                // stand of wild wheat is a real find — and a seed
+                // source — instead of groceries every few steps.
                 let food_roll = hash2(self.seed ^ 0x5eed, wx, wz);
-                if food_roll.is_multiple_of(70) && biome != Biome::Desert {
+                let patch = hash2(self.seed ^ 0xf00d, wx >> 4, wz >> 4).is_multiple_of(8);
+                if patch && food_roll.is_multiple_of(48) && biome != Biome::Desert {
                     let h2 = self.height_hint(heights, lx, lz);
                     let plant = match biome {
                         Biome::Plains | Biome::Savanna => self.wild_wheat,
