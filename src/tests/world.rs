@@ -805,8 +805,8 @@ fn summer_dries_shallow_water_but_not_deep() {
     for (x, z) in [(4, 4), (5, 4), (4, 5), (5, 5)] {
         assert_eq!(
             reg.water_volume(w.get_block(x, y, z)),
-            Some(1),
-            "pan cell ({x},{z}) dried to a marshy film"
+            None,
+            "pan cell ({x},{z}) dried through (films persist only in 3-walled pockets)"
         );
     }
     assert_eq!(
@@ -1930,5 +1930,130 @@ fn stale_saved_water_wakes_on_load() {
     assert!(
         reg.water_volume(w.get_block(4, y + 1, 4)).unwrap_or(0) < 8,
         "the stranded cube spread instead of hanging as a square"
+    );
+}
+
+#[test]
+fn breached_pool_pours_over_the_edge() {
+    // Break a dam and the pool should empty through the gap: the drop
+    // rule pushes even the last unit over an edge (the moved water
+    // falls, so it can never slosh back), leaving at most a thin
+    // glaze on cells with no path to a fall.
+    let reg = base_reg();
+    let mut w = test_world_with("breach", reg.clone());
+    let stone = b(&reg, "base:stone");
+    let y = 200;
+    // 7x7 sky platform, 5x5 wall ring, 3x3 pool of full water.
+    for x in 0..7 {
+        for z in 0..7 {
+            w.set_block(x, y, z, stone);
+        }
+    }
+    for x in 1..6 {
+        for z in 1..6 {
+            if x == 1 || x == 5 || z == 1 || z == 5 {
+                w.set_block(x, y + 1, z, stone);
+            }
+        }
+    }
+    for x in 2..5 {
+        for z in 2..5 {
+            w.set_block(x, y + 1, z, reg.water_block(0));
+        }
+    }
+    while w.tick_water(10_000) {}
+    w.set_block(3, y + 1, 1, AIR); // the breach
+    let mut quiet = false;
+    for _ in 0..2000 {
+        if !w.tick_water(10_000) {
+            quiet = true;
+            break;
+        }
+    }
+    assert!(quiet, "the breached pool settles");
+    let total = |w: &World| -> u32 {
+        let mut sum = 0u32;
+        for x in -1..8 {
+            for z in -1..8 {
+                sum += reg.water_volume(w.get_block(x, y + 1, z)).unwrap_or(0) as u32;
+            }
+        }
+        sum
+    };
+    // 72 units started; the pour takes the majority with it, leaving
+    // only the shallow hysteresis gradient behind.
+    let left = total(&w);
+    assert!(
+        left <= 36,
+        "pool mostly drained through the breach ({left} left)"
+    );
+    // The apron ring borders the platform rim on every side: the drop
+    // rule empties it completely — even the last unit goes over.
+    for x in 0..7 {
+        assert_eq!(
+            reg.water_volume(w.get_block(x, y + 1, 0)),
+            None,
+            "apron cell ({x},0) drained dry"
+        );
+    }
+    // Then the sun finishes the job: the residue is shallow and open,
+    // so it draws down and dries through — the basin empties fully.
+    w.day = crate::world::SEASON_DAYS; // summer
+    let mut rng = 5u32;
+    for _ in 0..40_000 {
+        w.random_tick(&mut rng);
+        w.tick_water(1_000);
+    }
+    assert_eq!(total(&w), 0, "the breached basin dries out completely");
+}
+
+#[test]
+fn glaze_dries_while_marsh_pockets_keep_their_film() {
+    let reg = base_reg();
+    let mut w = test_world_with("glaze", reg.clone());
+    w.day = 2 * crate::world::SEASON_DAYS; // autumn: not summer, not winter
+    let stone = b(&reg, "base:stone");
+    let y = 200;
+    // An open film sheet on a flat slab — a drained pool's residue...
+    for x in 0..8 {
+        for z in 0..8 {
+            w.set_block(x, y, z, stone);
+        }
+    }
+    for x in 2..6 {
+        for z in 2..6 {
+            w.set_block(x, y + 1, z, reg.water_for_volume(1));
+        }
+    }
+    // ...and a solid-walled pocket holding a marsh film.
+    for x in 10..13 {
+        for z in 0..3 {
+            w.set_block(x, y, z, stone);
+            w.set_block(x, y + 1, z, stone);
+        }
+    }
+    w.set_block(11, y + 1, 1, reg.water_for_volume(1));
+    let mut rng = 7u32;
+    for _ in 0..30_000 {
+        w.random_tick(&mut rng);
+    }
+    let sheet: u32 = (2..6)
+        .flat_map(|x| (2..6).map(move |z| (x, z)))
+        .map(|(x, z)| reg.water_volume(w.get_block(x, y + 1, z)).unwrap_or(0) as u32)
+        .sum();
+    assert_eq!(sheet, 0, "the open glaze dries away");
+    assert_eq!(
+        reg.water_volume(w.get_block(11, y + 1, 1)),
+        Some(1),
+        "the walled marsh keeps its film for the rain"
+    );
+    // And rain can start a pond from nothing in a walled pocket: dry
+    // the pocket by hand, then let a shower find it.
+    w.set_block(11, y + 1, 1, AIR);
+    w.rain_fill(11, 1);
+    assert_eq!(
+        reg.water_volume(w.get_block(11, y + 1, 1)),
+        Some(1),
+        "rain seeds a film in a dry pothole"
     );
 }

@@ -259,17 +259,41 @@ impl World {
                 continue;
             }
             // Equalize toward the lowest loaded horizontal neighbor.
+            // A neighbor over a drop — air beside us with room in the
+            // cell below it — drains without hysteresis: the moved
+            // water leaves this layer for good (it falls before it
+            // could ever slosh back), so even the last unit goes over
+            // the edge and a breached pool empties instead of
+            // stranding a lip. Only as much as the cell below can
+            // swallow moves, keeping the push one-way.
             let mut best: Option<(i32, i32, u8)> = None;
+            let mut drop: Option<(i32, i32, u8)> = None;
             for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                 let (nx, nz) = (x + dx, z + dz);
                 if !self.chunks.contains_key(&ChunkPos::of_world(nx, nz)) {
                     continue; // the world's edge: defer, don't spill
                 }
-                if let Some(nv) = self.flow_potential(nx, y, nz)
-                    && best.is_none_or(|(_, _, b)| nv < b)
-                {
+                let Some(nv) = self.flow_potential(nx, y, nz) else {
+                    continue;
+                };
+                if best.is_none_or(|(_, _, b)| nv < b) {
                     best = Some((nx, nz, nv));
                 }
+                if nv == 0
+                    && y > 0
+                    && let Some(bv) = self.flow_potential(nx, y - 1, nz)
+                    && bv < 8
+                    && drop.is_none_or(|(_, _, r)| 8 - bv > r)
+                {
+                    drop = Some((nx, nz, 8 - bv));
+                }
+            }
+            if let Some((nx, nz, room)) = drop {
+                let t = v.min(room);
+                self.set_block(nx, y, nz, self.reg.water_for_volume(t));
+                self.set_block(x, y, z, self.reg.water_for_volume(v - t));
+                changed = true;
+                continue;
             }
             if let Some((nx, nz, nv)) = best
                 && v >= nv + 2
@@ -335,17 +359,36 @@ impl World {
                 changed = true;
                 continue;
             }
+            // Same drop rule as water: a pour over an edge is one-way,
+            // so it ignores the creep hysteresis.
             let mut best: Option<(i32, i32, u8)> = None;
+            let mut drop: Option<(i32, i32, u8)> = None;
             for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                 let (nx, nz) = (x + dx, z + dz);
                 if !self.chunks.contains_key(&ChunkPos::of_world(nx, nz)) {
                     continue;
                 }
-                if let Some(nv) = self.lava_potential(nx, y, nz)
-                    && best.is_none_or(|(_, _, b)| nv < b)
-                {
+                let Some(nv) = self.lava_potential(nx, y, nz) else {
+                    continue;
+                };
+                if best.is_none_or(|(_, _, b)| nv < b) {
                     best = Some((nx, nz, nv));
                 }
+                if nv == 0
+                    && y > 0
+                    && let Some(bv) = self.lava_potential(nx, y - 1, nz)
+                    && bv < 8
+                    && drop.is_none_or(|(_, _, r)| 8 - bv > r)
+                {
+                    drop = Some((nx, nz, 8 - bv));
+                }
+            }
+            if let Some((nx, nz, room)) = drop {
+                let t = v.min(room);
+                self.set_block(nx, y, nz, self.reg.lava_for_volume(t));
+                self.set_block(x, y, z, self.reg.lava_for_volume(v - t));
+                changed = true;
+                continue;
             }
             if let Some((nx, nz, nv)) = best
                 && v >= nv + 3
