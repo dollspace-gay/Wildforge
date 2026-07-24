@@ -563,6 +563,66 @@ impl Game {
                 _ => {}
             }
         }
+        // Dev: the wild arc in one frame — a smoking rack curing cuts
+        // over a torch, and a watcher warden at the treeline.
+        if std::env::var("WILDFORGE_DEMO_WILD").is_ok() {
+            let b = |n: &str| self.content.reg.block_id(n);
+            let reg2 = self.content.reg.clone();
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            let y = self.server.world.surface_height(bx, bz);
+            if let Some(grass) = b("base:grass") {
+                for dx in -8..=8i32 {
+                    for dz in -2..=16i32 {
+                        let (x, z) = (bx + dx, bz + dz);
+                        self.server.world.set_block(x, y, z, grass);
+                        for hh in 1..=6 {
+                            if self.server.world.get_block(x, y + hh, z) != AIR {
+                                self.server.world.set_block(x, y + hh, z, AIR);
+                            }
+                        }
+                    }
+                }
+            }
+            if let (Some(rack), Some(torch)) = (b("base:smoking_rack"), b("base:torch")) {
+                self.server.world.set_block(bx - 2, y + 1, bz + 4, torch);
+                self.server.world.set_block(bx - 2, y + 2, bz + 4, rack);
+                let mut sm = crate::world::SmokerState::default();
+                if let (Some(raw), Some(smoked)) = (
+                    reg2.item_id("base:raw_venison"),
+                    reg2.item_id("base:smoked_meat"),
+                ) {
+                    sm.meat[0] = Some(ItemStack::new(&reg2, raw, 1));
+                    sm.meat[1] = Some(ItemStack::new(&reg2, smoked, 1));
+                }
+                self.server.world.insert_block_entity(
+                    (bx - 2, y + 2, bz + 4),
+                    crate::world::BlockEntity::Smoker(sm),
+                );
+            }
+            // Aggrieved country and its watcher, mid-vigil. A torch
+            // line marks the settlement's edge; the wild stands just
+            // beyond it.
+            for _ in 0..12 {
+                self.server.world.add_ire_at(bx, bz, 1.0);
+            }
+            if let Some(torch) = b("base:torch") {
+                for dx in [0i32, 3, 6] {
+                    self.server.world.set_block(bx + dx, y + 1, bz + 11, torch);
+                }
+            }
+            if let Some(ti) = reg2.animals.iter().position(|a| a.hostile) {
+                let mut w = crate::mobs::Mob::new(
+                    ti,
+                    glam::Vec3::new(bx as f32 + 3.5, y as f32 + 1.0, bz as f32 + 13.5),
+                    3.4,
+                );
+                w.health = reg2.animals[ti].health;
+                w.watcher = true;
+                w.watch_baseline = self.server.world.regional_ire_at(bx, bz);
+                self.server.world.spawn_mob(w);
+            }
+        }
         if std::env::var("WILDFORGE_DEMO_CAMP").is_ok() {
             let b = |n: &str| self.content.reg.block_id(n);
             let bx = spawn.x as i32;

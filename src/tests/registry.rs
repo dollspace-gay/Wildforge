@@ -1246,6 +1246,18 @@ fn content_graph_is_complete_and_obtainable() {
                 grew = true;
             }
         }
+        // Smoked meat: raw cuts cure on a rack over a torch - a code
+        // path (tick_smokers), like the freshness sweep below.
+        if let Some(sm) = reg.item_id("base:smoked_meat")
+            && !ok.contains(&sm.0)
+            && reg
+                .tags
+                .get("base:raw_meats")
+                .is_some_and(|t| t.iter().any(|i| ok.contains(&i.0)))
+        {
+            ok.insert(sm.0);
+            grew = true;
+        }
         // Spoiled mush: any perishable food left too long becomes it -
         // a code path (the freshness sweep), like the bucket dip.
         if let Some(m) = reg.item_id("base:spoiled_mush")

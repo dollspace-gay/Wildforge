@@ -45,7 +45,18 @@ pub enum BlockEntity {
     Sign(SignState),
     /// A market stall counter: goods, a price, and the owner's till.
     Stall(StallState),
+    /// A smoking rack: raw cuts curing over a live torch.
+    Smoker(SmokerState),
 }
+
+#[derive(Default)]
+pub struct SmokerState {
+    pub meat: [Option<ItemStack>; 4],
+    pub progress: f32,
+}
+
+/// A rack-load of cuts cures in four minutes over a steady flame.
+pub const SMOKE_SECS: f32 = 240.0;
 
 #[derive(Default)]
 pub struct StallState {
@@ -835,6 +846,7 @@ impl World {
                     .chain([st.price])
                     .flatten()
                     .collect(),
+                BlockEntity::Smoker(sm) => sm.meat.into_iter().flatten().collect(),
                 BlockEntity::Clamp(_) => Vec::new(), // the burn dies with it
                 BlockEntity::Anvil(a) => a.bloom.into_iter().collect(),
                 BlockEntity::Kiln(k) => k

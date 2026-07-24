@@ -1189,6 +1189,58 @@ impl Game {
                     self.set_screen(Screen::Stall(h.block));
                     return;
                 }
+                Some("smoker") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.35;
+                    let raws = reg.tags.get("base:raw_meats").cloned().unwrap_or_default();
+                    let holding_raw = held.is_some_and(|h| raws.contains(&h));
+                    let e = self.server.world.ensure_block_entity(
+                        h.block,
+                        world::BlockEntity::Smoker(Default::default()),
+                    );
+                    let world::BlockEntity::Smoker(sm) = e else {
+                        return;
+                    };
+                    if holding_raw {
+                        if let Some(slot) = sm.meat.iter_mut().find(|s| s.is_none()) {
+                            let item = held.unwrap();
+                            if self.creative
+                                || self.inventory.take_one(self.input.hotbar_sel).is_some()
+                            {
+                                *slot = Some(ItemStack::new(&reg, item, 1));
+                                self.sfx(Sfx::Place);
+                                let torch_below = Some(self.server.world.get_block(
+                                    h.block.0,
+                                    h.block.1 - 1,
+                                    h.block.2,
+                                )) == reg.block_id("base:torch");
+                                if !torch_below {
+                                    self.toast(
+                                        "The rack wants a torch burning beneath.".to_string(),
+                                    );
+                                }
+                            }
+                        } else {
+                            self.toast("The rack is full.".to_string());
+                        }
+                        return;
+                    }
+                    // Empty-handed (or otherwise): take the cuts back.
+                    let mut took: Option<ItemStack> = None;
+                    if let world::BlockEntity::Smoker(sm) =
+                        self.server.world.block_entity_mut(&h.block).unwrap()
+                        && let Some(slot) = sm.meat.iter_mut().rev().find(|s| s.is_some())
+                    {
+                        took = slot.take();
+                    }
+                    if let Some(st) = took {
+                        let left = self.inventory.add_stack(&reg, st);
+                        if left > 0 {
+                            self.drop_stack(ItemStack { count: left, ..st });
+                        }
+                        self.sfx(Sfx::Pickup);
+                    }
+                    return;
+                }
                 Some("sign") if self.input.action_cooldown <= 0.0 => {
                     // Reopen the editor with what's written.
                     self.input.action_cooldown = 0.3;

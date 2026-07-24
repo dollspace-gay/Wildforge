@@ -44,3 +44,11 @@ items = [
   "base:raw_fowl",
   "base:raw_rabbit",
 ]
+
+[[tag]]
+id = "pickling_veg"
+items = [
+  "base:carrot",
+  "base:potato",
+  "base:mushroom",
+]

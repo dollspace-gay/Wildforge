@@ -861,3 +861,25 @@ output = "base:stall_counter"
 pattern = ["p.p", "ppp"]
 keys = { p = "#base:planks" }
 output = "base:boat"
+
+# The clay chain (wild arc, stage 5): shallows give clay, any hot
+# chamber fires the crock (the cupel precedent), and the crock packs
+# the pickling brine - preservation's second regional identity, and
+# a ceramics demand that never saturates (the crock is consumed).
+[[smelt]]
+input = "base:clay_ball"
+output = "base:crock"
+time = 6.0
+
+[[recipe]]
+pattern = ["vvv", "sc."]
+keys = { v = "#base:pickling_veg", s = "base:salt_crystal", c = "base:crock" }
+output = "base:pickles"
+count = 3
+
+# The smoker: a rack over a live torch - the woodland answer to salt
+# country. Load raw cuts, come back to smoked ones.
+[[recipe]]
+pattern = ["ppp", "t.t"]
+keys = { p = "#base:planks", t = "base:stick" }
+output = "base:smoking_rack"

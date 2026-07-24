@@ -141,6 +141,25 @@ impl World {
                     }
                     let _ = writeln!(out);
                 }
+                BlockEntity::Smoker(sm) => {
+                    let _ = writeln!(
+                        out,
+                        "[[smoker]]\npos = [{x}, {y}, {z}]\nprogress = {:?}",
+                        sm.progress
+                    );
+                    for (i, st) in sm.meat.iter().enumerate() {
+                        if let Some(st) = st {
+                            let _ = writeln!(
+                                out,
+                                "[[smoker.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                self.reg.item(st.item).name,
+                                st.count,
+                                st.durability
+                            );
+                        }
+                    }
+                    let _ = writeln!(out);
+                }
                 BlockEntity::Clamp(c) => {
                     let logs: Vec<String> = c
                         .logs
@@ -272,6 +291,14 @@ impl World {
             slot: Vec<ChestSlotT>,
         }
         #[derive(Deserialize)]
+        struct SmokerT {
+            pos: [i32; 3],
+            #[serde(default)]
+            progress: f32,
+            #[serde(default)]
+            slot: Vec<ChestSlotT>,
+        }
+        #[derive(Deserialize)]
         struct ClampT {
             pos: [i32; 3],
             timer: f32,
@@ -308,6 +335,8 @@ impl World {
             sign: Vec<SignT>,
             #[serde(default)]
             stall: Vec<StallT>,
+            #[serde(default)]
+            smoker: Vec<SmokerT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else {
             return;
@@ -464,6 +493,27 @@ impl World {
             }
             self.block_entities
                 .insert((st.pos[0], st.pos[1], st.pos[2]), BlockEntity::Stall(state));
+        }
+        for sm in parsed.smoker {
+            let mut state = SmokerState {
+                progress: sm.progress,
+                ..Default::default()
+            };
+            for sl in sm.slot {
+                if sl.index < 4
+                    && let Some(item) = self.reg.item_id(&sl.item)
+                {
+                    state.meat[sl.index] = Some(ItemStack {
+                        item,
+                        count: sl.count,
+                        durability: sl.durability,
+                    });
+                }
+            }
+            self.block_entities.insert(
+                (sm.pos[0], sm.pos[1], sm.pos[2]),
+                BlockEntity::Smoker(state),
+            );
         }
         for cl in parsed.clamp {
             self.block_entities.insert(

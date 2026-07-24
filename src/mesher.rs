@@ -286,6 +286,18 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                             boxed(0.36, 1.05, 0.36, 0.64, 1.45, 0.64);
                             boxed(0.42, 1.45, 0.42, 0.58, 1.62, 0.58);
                         }
+                        "rack" => {
+                            // Four legs under a slatted tray: smoke
+                            // needs somewhere to rise through.
+                            for (lx0, lz0) in
+                                [(0.12, 0.12), (0.76, 0.12), (0.12, 0.76), (0.76, 0.76)]
+                            {
+                                boxed(lx0, 0.0, lz0, lx0 + 0.12, 0.72, lz0 + 0.12);
+                            }
+                            boxed(0.04, 0.72, 0.04, 0.96, 0.86, 0.32);
+                            boxed(0.04, 0.72, 0.40, 0.96, 0.86, 0.60);
+                            boxed(0.04, 0.72, 0.68, 0.96, 0.86, 0.96);
+                        }
                         "signboard" => {
                             // A post with a broad reading board.
                             boxed(0.44, 0.0, 0.44, 0.56, 0.5, 0.56);

@@ -958,3 +958,28 @@ id = "boat"
 name = "Boat"
 texture = "boat.png"
 max_stack = 1
+
+[[item]]
+id = "clay_ball"
+name = "Clay"
+texture = "clay_ball.png"
+
+[[item]]
+id = "crock"
+name = "Crock"
+texture = "crock.png"
+max_stack = 16
+
+[[item]]
+id = "pickles"
+name = "Pickles"
+texture = "pickles.png"
+food = { hunger = 5, eat_time = 1.2, nutrition = { vegetable = 18 } }
+durability = 6000
+
+[[item]]
+id = "smoked_meat"
+name = "Smoked Meat"
+texture = "smoked_meat.png"
+food = { hunger = 7, eat_time = 1.6, nutrition = { protein = 15 } }
+durability = 3600

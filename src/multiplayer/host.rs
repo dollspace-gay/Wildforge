@@ -2111,7 +2111,10 @@ impl HostSession {
                     }
                 }
             }
-            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) | BlockEntity::Sign(_) => {}
+            BlockEntity::Clamp(_)
+            | BlockEntity::Anvil(_)
+            | BlockEntity::Sign(_)
+            | BlockEntity::Smoker(_) => {}
             BlockEntity::Chest(c) => {
                 if slot < c.slots.len() {
                     let (ns, nh) = click_stack(&reg, c.slots[slot], held, right);
@@ -2268,7 +2271,10 @@ impl HostSession {
                 }
                 (6, slots, vec![if owner { 1.0 } else { 0.0 }])
             }
-            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) | BlockEntity::Sign(_) => return,
+            BlockEntity::Clamp(_)
+            | BlockEntity::Anvil(_)
+            | BlockEntity::Sign(_)
+            | BlockEntity::Smoker(_) => return,
         };
         self.net.send(
             id,
