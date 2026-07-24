@@ -43,6 +43,8 @@ pub struct Guest {
     pub pos: Vec3,
     pub yaw: f32,
     pub container: Option<(i32, i32, i32)>,
+    /// The mob pack this guest has open (host-validated).
+    pub mob_cargo: Option<u32>,
     pub sleeping: bool,
     /// Wire item id in hand (u16::MAX = empty), from Move packets.
     pub held: u16,
@@ -256,8 +258,9 @@ impl HostSession {
         if let Some(h) = host {
             out.push(h);
         }
-        for g in self.guests.values() {
+        for (id, g) in self.guests.iter() {
             out.push(crate::server::PlayerCtx {
+                id: *id,
                 pos: g.pos,
                 spawn: g.pos,
                 attackable: true,
@@ -778,6 +781,7 @@ impl HostSession {
                 pos: runtime.pos,
                 yaw: runtime.yaw,
                 container: None,
+                mob_cargo: None,
                 sleeping: false,
                 held: runtime.held,
                 style: runtime.style,
@@ -1254,16 +1258,22 @@ impl HostSession {
                 let reg = server.world.reg.clone();
                 if let Some(m) = server.world.mob_by_id_mut(mob_id) {
                     let def = &reg.animals[m.species];
+                    let can_breed = m.breed_cd <= 0.0 && !m.fed;
+                    let can_tame = !m.tamed;
                     if (m.pos - gpos).length() <= REACH
                         && !def.hostile
                         && def.breed_food.is_some()
                         && m.growth >= 1.0
-                        && m.breed_cd <= 0.0
-                        && !m.fed
+                        && (can_breed || can_tame)
                         && guest.inventory.slots[guest.hotbar].map(|stack| stack.item)
                             == def.breed_food
                     {
-                        m.fed = true;
+                        if can_tame {
+                            m.feed_tame();
+                        }
+                        if can_breed {
+                            m.fed = true;
+                        }
                         m.calm = 30.0;
                         if server.world.mode != "creative" {
                             guest.inventory.take_one(guest.hotbar);
@@ -1272,6 +1282,95 @@ impl HostSession {
                         }
                     }
                 }
+            }
+            C2S::LeadMob { id: mob_id } => {
+                let gpos = guest.pos;
+                let lead = server.world.reg.item_id("base:lead");
+                let holding = guest.inventory.slots[guest.hotbar].map(|s| s.item);
+                if let Some(m) = server.world.mob_by_id_mut(mob_id)
+                    && m.tamed
+                    && m.led_by.is_none()
+                    && (m.pos - gpos).length() <= REACH
+                    && holding == lead
+                {
+                    m.led_by = Some(id);
+                    if server.world.mode != "creative"
+                        && let Some(lead) = lead
+                    {
+                        take_item(&mut guest.inventory, lead);
+                        refresh_held(guest);
+                    }
+                } else if let Some(m) = server.world.mob_by_id_mut(mob_id)
+                    && m.led_by == Some(id)
+                {
+                    // Second use releases; the strip comes back.
+                    m.led_by = None;
+                    if let Some(lead) = lead {
+                        let reg = server.world.reg.clone();
+                        let _ = guest.inventory.add(&reg, lead, 1);
+                        refresh_held(guest);
+                    }
+                }
+            }
+            C2S::SaddleMob { id: mob_id } => {
+                let gpos = guest.pos;
+                let reg = server.world.reg.clone();
+                let bags = reg.item_id("base:saddlebags");
+                let holding = guest.inventory.slots[guest.hotbar].map(|s| s.item);
+                if let Some(m) = server.world.mob_by_id_mut(mob_id)
+                    && m.tamed
+                    && reg.animals[m.species].carrier
+                    && m.cargo.is_none()
+                    && (m.pos - gpos).length() <= REACH
+                    && holding == bags
+                {
+                    m.cargo = Some(Default::default());
+                    if server.world.mode != "creative"
+                        && let Some(bags) = bags
+                    {
+                        take_item(&mut guest.inventory, bags);
+                        refresh_held(guest);
+                    }
+                }
+            }
+            C2S::OpenMobCargo { id: mob_id } => {
+                let gpos = guest.pos;
+                if let Some(m) = server.world.mob_by_id(mob_id)
+                    && m.tamed
+                    && m.cargo.is_some()
+                    && (m.pos - gpos).length() <= REACH
+                {
+                    guest.mob_cargo = Some(mob_id);
+                    self.send_mob_cargo(server, id, mob_id);
+                }
+            }
+            C2S::MobCargoClick {
+                id: mob_id,
+                slot,
+                right,
+            } => {
+                if guest.mob_cargo != Some(mob_id) || slot >= 12 {
+                    return;
+                }
+                let reg = server.world.reg.clone();
+                let mut held = guest.cursor;
+                if let Some(m) = server.world.mob_by_id_mut(mob_id)
+                    && let Some(cargo) = m.cargo.as_mut()
+                {
+                    let (ns, nh) = click_stack(&reg, cargo[slot as usize], held, right);
+                    cargo[slot as usize] = ns;
+                    held = nh;
+                }
+                let snap = held.map(|s| StackSnap {
+                    item: s.item.0,
+                    count: s.count,
+                    durability: s.durability,
+                });
+                if let Some(g) = self.guests.get_mut(&id) {
+                    g.cursor = held;
+                }
+                self.net.send(id, &S2C::HeldResult(snap));
+                self.send_mob_cargo(server, id, mob_id);
             }
             C2S::BrushBlock { x, y, z } => {
                 let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
@@ -1396,6 +1495,7 @@ impl HostSession {
             }
             C2S::CloseContainer => {
                 guest.container = None;
+                guest.mob_cargo = None;
             }
             C2S::LightBloomery { x, y, z } => {
                 let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
@@ -1868,6 +1968,27 @@ impl HostSession {
         self.net.send(id, &S2C::HeldResult(snap));
         self.send_player_state(id);
         self.send_container(server, id, pos);
+    }
+
+    fn send_mob_cargo(&mut self, server: &Server, id: u32, mob_id: u32) {
+        let Some(slots) = server
+            .world
+            .mob_by_id(mob_id)
+            .and_then(|m| m.cargo.as_deref())
+        else {
+            return;
+        };
+        let slots = slots
+            .iter()
+            .map(|s| {
+                s.map(|s| StackSnap {
+                    item: s.item.0,
+                    count: s.count,
+                    durability: s.durability,
+                })
+            })
+            .collect();
+        self.net.send(id, &S2C::MobCargo { id: mob_id, slots });
     }
 
     fn send_container(&mut self, server: &Server, id: u32, pos: (i32, i32, i32)) {

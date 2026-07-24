@@ -796,6 +796,7 @@ fn charms_and_tablets_work() {
         &w,
         &def,
         &[crate::server::PlayerCtx {
+            id: 0,
             pos: player,
             spawn: Vec3::ZERO,
             attackable: true,
@@ -812,6 +813,7 @@ fn charms_and_tablets_work() {
         &w,
         &def,
         &[crate::server::PlayerCtx {
+            id: 0,
             pos: player,
             spawn: Vec3::ZERO,
             attackable: true,

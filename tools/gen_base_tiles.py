@@ -156,6 +156,18 @@ def item(name, body, edge, shape="lump"):
         d.arc([8, 4, 28, 22], 210, 340, fill=body + (255,), width=3)
         d.point((10, 9), fill=edge + (255,))
         d.point((26, 13), fill=edge + (255,))
+    elif shape == "strip":
+        d.line([(7, 24), (25, 8)], fill=body + (255,), width=3)
+        d.line([(7, 24), (25, 8)], fill=edge + (255,), width=1)
+    elif shape == "lead":
+        d.arc([6, 6, 26, 26], 300, 200, fill=body + (255,), width=2)
+        d.ellipse([20, 18, 26, 24], outline=edge + (255,), width=2)
+    elif shape == "bags":
+        d.rectangle([7, 12, 14, 22], fill=body + (255,), outline=edge + (255,))
+        d.rectangle([18, 12, 25, 22], fill=body + (255,), outline=edge + (255,))
+        d.line([(14, 14), (18, 14)], fill=edge + (255,), width=2)
+        d.line([(8, 15), (13, 15)], fill=edge + (255,))
+        d.line([(19, 15), (24, 15)], fill=edge + (255,))
     elif shape == "cairn":
         for (x0, y0, x1, y1) in [(9, 20, 23, 26), (11, 14, 21, 20), (13, 9, 19, 14)]:
             d.rectangle([x0, y0, x1, y1], fill=body + (255,), outline=edge + (255,))
@@ -259,6 +271,9 @@ ITEMS = [
     ("salted_meat", (170, 96, 88), (216, 214, 208), "lump"),
     ("spoiled_mush", (110, 116, 72), (74, 78, 48), "lump"),
     ("survey_cairn", (168, 168, 172), (110, 110, 116), "cairn"),
+    ("leather_strip", (146, 96, 54), (100, 62, 32), "strip"),
+    ("lead", (160, 108, 62), (110, 70, 36), "lead"),
+    ("saddlebags", (122, 80, 44), (82, 52, 26), "bags"),
 ]
 
 GLASSES = [

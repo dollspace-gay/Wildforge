@@ -21,6 +21,8 @@ pub const DAY_LENGTH: f32 = 600.0; // seconds per full day/night cycle
 /// What the simulation needs to know about a player this tick.
 #[derive(Clone, Copy)]
 pub struct PlayerCtx {
+    /// Stable identity for lead-following: 0 = host, guests their net id.
+    pub id: u32,
     pub pos: Vec3,
     pub spawn: Vec3,
     /// False in creative or while dead: the wild can't touch you.
@@ -184,6 +186,20 @@ impl Server {
                     events.push(SimEvent::BoltCast);
                 }
                 MobEvent::Bred => events.push(SimEvent::Bred),
+                MobEvent::LeadSnapped(at) => {
+                    if let Some(lead) = self.world.reg.item_id("base:lead") {
+                        let reg = self.world.reg.clone();
+                        let stack = crate::inventory::ItemStack::new(&reg, lead, 1);
+                        self.world.push_drop(
+                            (
+                                at.x.floor() as i32,
+                                at.y.floor() as i32,
+                                at.z.floor() as i32,
+                            ),
+                            stack,
+                        );
+                    }
+                }
             }
         }
         for (who, dmg) in self.world.tick_projectiles(players, dt) {

@@ -421,6 +421,24 @@ impl Game {
                 net::S2C::PlayerState(state) => {
                     self.apply_remote_player_state(&r, state, false);
                 }
+                net::S2C::MobCargo { id, slots } => {
+                    // The host's pack truth: mirror it onto the local
+                    // snapshot mob and open the screen if we asked.
+                    let mut cargo: Box<[Option<ItemStack>; 12]> = Default::default();
+                    for (i, sl) in slots.iter().enumerate().take(12) {
+                        cargo[i] = sl.as_ref().map(|sn| ItemStack {
+                            item: crate::registry::ItemId(sn.item),
+                            count: sn.count,
+                            durability: sn.durability,
+                        });
+                    }
+                    if let Some(m) = self.server.world.mob_by_id_mut(id) {
+                        m.cargo = Some(cargo);
+                    }
+                    if matches!(self.ui_state.screen, Screen::Playing) {
+                        self.set_screen(Screen::MobCargo(id));
+                    }
+                }
                 net::S2C::Container {
                     x,
                     y,

@@ -94,6 +94,46 @@ impl Game {
         )
     }
 
+    /// Mob pack slots: 12 in two rows of six.
+    pub(super) fn mob_cargo_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        let (col, row) = (i % 6, i / 6);
+        (
+            w / 2.0 - 3.0 * (Self::SLOT + 10.0) + col as f32 * (Self::SLOT + 10.0) + 5.0,
+            h / 2.0 - 250.0 + row as f32 * (Self::SLOT + 10.0),
+            Self::SLOT,
+            Self::SLOT,
+        )
+    }
+
+    /// One click in a mob's pack: local worlds mutate directly;
+    /// guests send the click and predict nothing (the host echoes).
+    pub(super) fn mob_cargo_click(&mut self, mob_id: u32, slot: usize, right: bool) {
+        if slot >= 12 {
+            return;
+        }
+        let reg = self.content.reg.clone();
+        if let Some(rc) = &self.multiplayer.remote {
+            rc.client.send(&net::C2S::MobCargoClick {
+                id: mob_id,
+                slot: slot as u8,
+                right,
+            });
+            return;
+        }
+        let held = self.ui_state.held_stack;
+        let Some(mob) = self.server.world.mob_by_id_mut(mob_id) else {
+            return;
+        };
+        let Some(cargo) = mob.cargo.as_mut() else {
+            return;
+        };
+        let (ns, nh) = inventory::click_stack(&reg, cargo[slot], held, right);
+        cargo[slot] = ns;
+        self.ui_state.held_stack = nh;
+    }
+
     pub(super) fn bloomery_light_rect(&self) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;

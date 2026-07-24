@@ -1568,6 +1568,43 @@ impl Game {
                 self.ui = ui;
                 return;
             }
+            Screen::MobCargo(id) => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
+                let title = "SADDLEBAGS";
+                let tw = UiBatch::text_width(3.0, title);
+                ui.text_shadow((w - tw) / 2.0, h / 2.0 - 300.0, 3.0, title, [1.0; 4]);
+                let slots: [Option<ItemStack>; 12] = self
+                    .server
+                    .world
+                    .mob_by_id(id)
+                    .and_then(|m| m.cargo.as_deref().copied())
+                    .unwrap_or_default();
+                for (i, s) in slots.iter().enumerate() {
+                    let r = self.mob_cargo_slot_rect(i);
+                    Self::draw_slot(&self.content.reg, &mut ui, r, *s, false, self.hit(r));
+                }
+                for i in 0..TOTAL_SLOTS {
+                    let r = self.inv_slot_rect(i);
+                    Self::draw_slot(
+                        &self.content.reg,
+                        &mut ui,
+                        r,
+                        self.inventory.slots[i],
+                        i == self.input.hotbar_sel,
+                        self.hit(r),
+                    );
+                }
+                if let Some(s) = self.ui_state.held_stack {
+                    let (cx, cy) = self.input.ui_cursor;
+                    let icon = self.content.reg.item(s.item).icon;
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
+                    if s.count > 1 {
+                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
+                    }
+                }
+                self.ui = ui;
+                return;
+            }
             Screen::Chest(pos) => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
                 let title = "CHEST";

@@ -19,9 +19,34 @@ impl World {
             }
             let _ = writeln!(
                 out,
-                "[[mob]]\nspecies = \"{}\"\npos = [{}, {}, {}]\nyaw = {}\nhealth = {}\nfed = {}\ngrowth = {}\n",
-                def.name, m.pos.x, m.pos.y, m.pos.z, m.yaw, m.health, m.fed, m.growth
+                "[[mob]]\nspecies = \"{}\"\npos = [{:?}, {:?}, {:?}]\nyaw = {:?}\nhealth = {:?}\nfed = {}\ngrowth = {:?}\ntamed = {}\ntame_fed = {}\ntame_need = {}\nsaddled = {}",
+                def.name,
+                m.pos.x,
+                m.pos.y,
+                m.pos.z,
+                m.yaw,
+                m.health,
+                m.fed,
+                m.growth,
+                m.tamed,
+                m.tame_fed,
+                m.tame_need,
+                m.cargo.is_some()
             );
+            if let Some(cargo) = &m.cargo {
+                for (i, st) in cargo.iter().enumerate() {
+                    if let Some(st) = st {
+                        let _ = writeln!(
+                            out,
+                            "[[mob.pack]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                            self.reg.item(st.item).name,
+                            st.count,
+                            st.durability
+                        );
+                    }
+                }
+            }
+            let _ = writeln!(out);
         }
         if out.is_empty() {
             let _ = fs::remove_file(self.mobs_path());
@@ -43,6 +68,14 @@ impl World {
             1.0
         }
         #[derive(Deserialize)]
+        struct PackT {
+            index: usize,
+            item: String,
+            count: u32,
+            #[serde(default)]
+            durability: u32,
+        }
+        #[derive(Deserialize)]
         struct MobT {
             species: String,
             pos: [f32; 3],
@@ -52,6 +85,16 @@ impl World {
             fed: bool,
             #[serde(default = "one")]
             growth: f32,
+            #[serde(default)]
+            tamed: bool,
+            #[serde(default)]
+            tame_fed: u8,
+            #[serde(default)]
+            tame_need: u8,
+            #[serde(default)]
+            saddled: bool,
+            #[serde(default)]
+            pack: Vec<PackT>,
         }
         #[derive(Deserialize)]
         struct FileT {
@@ -70,6 +113,24 @@ impl World {
                 m.health = t.health.min(self.reg.animals[si].health);
                 m.fed = t.fed;
                 m.growth = t.growth.clamp(0.05, 1.0);
+                m.tamed = t.tamed;
+                m.tame_fed = t.tame_fed;
+                m.tame_need = t.tame_need;
+                if t.saddled {
+                    let mut cargo: Box<[Option<ItemStack>; 12]> = Default::default();
+                    for sl in &t.pack {
+                        if sl.index < 12
+                            && let Some(item) = self.reg.item_id(&sl.item)
+                        {
+                            cargo[sl.index] = Some(ItemStack {
+                                item,
+                                count: sl.count,
+                                durability: sl.durability,
+                            });
+                        }
+                    }
+                    m.cargo = Some(cargo);
+                }
                 self.mobs.push(m);
             }
         }

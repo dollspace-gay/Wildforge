@@ -156,6 +156,7 @@ fn walking_player_slumps_a_lip_via_sim() {
         server.advance(
             crate::server::TICK,
             &[crate::server::PlayerCtx {
+                id: 0,
                 pos: Vec3::new(x, y as f32 + 1.0, 0.5),
                 spawn: Vec3::ZERO,
                 attackable: false,
@@ -1241,6 +1242,7 @@ fn server_ticks_at_fixed_rate_and_runs_the_world() {
     let world = test_world("simsplit");
     let mut sv = crate::server::Server::new(world, 0.3, 42);
     let ctx = crate::server::PlayerCtx {
+        id: 0,
         pos: Vec3::new(8.0, 80.0, 8.0),
         spawn: Vec3::new(-500.0, 70.0, -500.0),
         attackable: true,

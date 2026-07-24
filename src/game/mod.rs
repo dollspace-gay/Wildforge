@@ -46,6 +46,8 @@ enum Screen {
     Offering((i32, i32, i32)),
     Bloomery((i32, i32, i32)),
     Kiln((i32, i32, i32)),
+    /// A tamed carrier's saddlebags, keyed by mob id.
+    MobCargo(u32),
     Join,
     Paused,
     Dead,

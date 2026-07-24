@@ -457,6 +457,7 @@ impl Game {
                 self.remote_pump(dt);
             } else if local_sim_should_advance(paused, self.multiplayer.host.is_some()) {
                 let ctx = server::PlayerCtx {
+                    id: 0,
                     pos: self.player.pos,
                     spawn: self.survival.spawn_point,
                     attackable: self.survival.attackable(self.creative),

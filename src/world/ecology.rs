@@ -20,6 +20,10 @@ impl World {
         self.mobs.get_mut(index)
     }
 
+    pub fn mob_by_id(&self, id: u32) -> Option<&Mob> {
+        self.mobs.iter().find(|m| m.id == id)
+    }
+
     pub fn mob_by_id_mut(&mut self, id: u32) -> Option<&mut Mob> {
         self.mobs.iter_mut().find(|mob| mob.id == id)
     }

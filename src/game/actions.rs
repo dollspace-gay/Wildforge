@@ -241,12 +241,20 @@ impl Game {
             let m = self.server.world.remove_mob(i);
             let def = &reg.animals[m.species];
             if !def.hostile {
-                // The wild counts its dead — wardens are not individuals.
-                self.server.world.add_ire(2.0);
+                // The wild counts its dead — wardens are not
+                // individuals, and a TAMED animal is a household loss,
+                // not a wild one (though betrayal is still noticed).
+                self.server.world.add_ire(if m.tamed { 1.0 } else { 2.0 });
             }
             self.sfx(Sfx::MobDeath(def.sound_pitch));
             let (tile, at) = (def.tile, m.pos + Vec3::new(0.0, 0.5, 0.0));
             self.juice_burst(at, tile, 12, 2.0);
+            // A laden carrier spills its pack where it falls.
+            if let Some(cargo) = &m.cargo {
+                for st in cargo.iter().flatten() {
+                    self.drop_stack_at(*st, m.pos + Vec3::new(0.0, 0.6, 0.0));
+                }
+            }
             if m.growth < 1.0 {
                 continue; // the young return nothing (you monster)
             }
@@ -765,26 +773,100 @@ impl Game {
                 };
                 let (sp, mob_id, growth, breed_cd, fed) =
                     (mob.species, mob.id, mob.growth, mob.breed_cd, mob.fed);
+                let (tamed, led_by, has_cargo) = (mob.tamed, mob.led_by, mob.cargo.is_some());
                 let def = &reg.animals[sp];
+                let def_carrier = def.carrier;
+                let def_label = def.label.clone();
+                // Feeding: breeds as ever, and repeated meals TAME —
+                // a tamed animal never flees people and takes a lead.
                 if let (Some(bf), Some(h)) = (def.breed_food, held)
                     && bf == h
                     && !def.hostile
                     && growth >= 1.0
-                    && breed_cd <= 0.0
-                    && !fed
-                    && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
                 {
-                    // Guests request; setting fed locally is the
-                    // prediction until the snapshot echoes it.
-                    if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::FeedMob { id: mob_id });
+                    let can_breed = breed_cd <= 0.0 && !fed;
+                    let can_tame = !tamed;
+                    if (can_breed || can_tame)
+                        && (self.creative
+                            || self.inventory.take_one(self.input.hotbar_sel).is_some())
+                    {
+                        // Guests request; local change is the
+                        // prediction until the snapshot echoes it.
+                        if let Some(rc) = &self.multiplayer.remote {
+                            rc.client.send(&net::C2S::FeedMob { id: mob_id });
+                        }
+                        let mut now_tamed = false;
+                        if let Some(mob) = self.server.world.mob_mut(mi) {
+                            if can_tame {
+                                now_tamed = mob.feed_tame();
+                            }
+                            if can_breed {
+                                mob.fed = true;
+                            }
+                            mob.calm = 30.0;
+                        }
+                        if now_tamed {
+                            self.toast(format!("The {def_label} trusts you now."));
+                        }
+                        self.input.action_cooldown = 0.4;
+                        self.sfx(Sfx::Pickup);
+                        return;
                     }
+                }
+                // The lead: attach to a tamed animal, click again to
+                // release (the strip comes back).
+                if tamed && led_by == Some(0) && self.multiplayer.remote.is_none() {
                     if let Some(mob) = self.server.world.mob_mut(mi) {
-                        mob.fed = true;
-                        mob.calm = 30.0;
+                        mob.led_by = None;
+                    }
+                    if let Some(lead) = reg.item_id("base:lead") {
+                        let left = self.inventory.add(&reg, lead, 1);
+                        if left > 0 {
+                            self.drop_stack(ItemStack::new(&reg, lead, 1));
+                        }
                     }
                     self.input.action_cooldown = 0.4;
-                    self.sfx(Sfx::Pickup);
+                    self.sfx(Sfx::Click);
+                    return;
+                }
+                if tamed
+                    && led_by.is_none()
+                    && held == reg.item_id("base:lead")
+                    && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
+                {
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::LeadMob { id: mob_id });
+                    } else if let Some(mob) = self.server.world.mob_mut(mi) {
+                        mob.led_by = Some(0);
+                    }
+                    self.input.action_cooldown = 0.4;
+                    self.sfx(Sfx::Click);
+                    return;
+                }
+                // Saddlebags: a tamed carrier takes a pack.
+                if tamed
+                    && def_carrier
+                    && !has_cargo
+                    && held == reg.item_id("base:saddlebags")
+                    && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
+                {
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::SaddleMob { id: mob_id });
+                    } else if let Some(mob) = self.server.world.mob_mut(mi) {
+                        mob.cargo = Some(Default::default());
+                    }
+                    self.input.action_cooldown = 0.4;
+                    self.sfx(Sfx::Place);
+                    return;
+                }
+                // Open the pack.
+                if tamed && has_cargo {
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::OpenMobCargo { id: mob_id });
+                    } else {
+                        self.set_screen(Screen::MobCargo(mob_id));
+                    }
+                    self.input.action_cooldown = 0.3;
                     return;
                 }
             }

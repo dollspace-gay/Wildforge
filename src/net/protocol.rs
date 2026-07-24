@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 14;
+pub const PROTOCOL: u32 = 15;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -196,6 +196,24 @@ pub enum C2S {
     FeedMob {
         id: u32,
     },
+    /// Attach a held lead to a tamed mob (host consumes the lead).
+    LeadMob {
+        id: u32,
+    },
+    /// Strap held saddlebags onto a tamed carrier.
+    SaddleMob {
+        id: u32,
+    },
+    /// Open a tamed carrier's pack (host answers with MobCargo).
+    OpenMobCargo {
+        id: u32,
+    },
+    /// One transactional click in a mob's pack.
+    MobCargoClick {
+        id: u32,
+        slot: u8,
+        right: bool,
+    },
     /// Report a completed brush channel; the host validates and awards it.
     BrushBlock {
         x: i32,
@@ -322,6 +340,11 @@ pub enum S2C {
         /// Live machine state: furnace [progress, burn_left,
         /// burn_total], bloomery/kiln [lit, progress 0..1].
         aux: Vec<f32>,
+    },
+    /// A mob pack's contents (sent on open and after each change).
+    MobCargo {
+        id: u32,
+        slots: Vec<Option<StackSnap>>,
     },
     /// The authoritative cursor stack after an inventory/container click.
     HeldResult(Option<StackSnap>),

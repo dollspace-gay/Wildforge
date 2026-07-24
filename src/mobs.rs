@@ -25,6 +25,8 @@ pub enum MobState {
 
 /// Things a mob did this tick that the game loop must apply.
 pub enum MobEvent {
+    /// A lead stretched past its limit: drop the strip here.
+    LeadSnapped(Vec3),
     /// Contact damage: (player index, half-hearts, attacker position).
     HitPlayer(usize, f32, Vec3),
     /// A caster fired: projectile spawn.
@@ -181,6 +183,16 @@ pub struct Mob {
     pub growth: f32,
     /// Guest id that last struck this mob (0 = host); drops route there.
     pub last_hit_by: u32,
+    /// Domesticated: never flees players, never counts as the wild's
+    /// dead, follows a lead. Earned by repeated feeding.
+    pub tamed: bool,
+    /// Feedings toward taming, and the rolled requirement (0 = unrolled).
+    pub tame_fed: u8,
+    pub tame_need: u8,
+    /// Saddlebags: a carrier's 12-slot pack, spilled where it dies.
+    pub cargo: Option<Box<[Option<crate::inventory::ItemStack>; 12]>>,
+    /// Player currently leading this mob (PlayerCtx id; None = loose).
+    pub led_by: Option<u32>,
 }
 
 fn r01(rng: &mut u32) -> f32 {
@@ -224,7 +236,30 @@ impl Mob {
             breed_cd: 0.0,
             growth: 1.0,
             last_hit_by: 0,
+            tamed: false,
+            tame_fed: 0,
+            tame_need: 0,
+            cargo: None,
+            led_by: None,
         }
+    }
+
+    /// One taming meal: rolls the requirement on the first feeding
+    /// (3-5, deterministic per mob), counts up, and returns true the
+    /// moment trust lands.
+    pub fn feed_tame(&mut self) -> bool {
+        if self.tamed {
+            return false;
+        }
+        if self.tame_need == 0 {
+            self.tame_need = 3 + (self.id % 3) as u8;
+        }
+        self.tame_fed += 1;
+        if self.tame_fed >= self.tame_need {
+            self.tamed = true;
+            return true;
+        }
+        false
     }
 
     /// Take damage from an attacker at `from`: knockback, then panic
@@ -313,6 +348,7 @@ impl Mob {
         if let Some((_, near)) = nearest
             && def.flee_range > 0.0
             && !def.hostile
+            && !self.tamed
             && self.calm <= 0.0
             && self.state != MobState::Flee
         {
@@ -336,124 +372,153 @@ impl Mob {
             }
         }
 
-        // State transitions + wish velocity.
+        // A led animal walks after its handler and does nothing else.
+        // Too far and the lead snaps (the strip drops where it broke).
+        let mut led_active = false;
         let mut wish = Vec3::ZERO;
-        match self.state {
-            MobState::Idle => {
-                if self.state_timer <= 0.0 {
-                    if r01(rng) < 0.6 {
-                        let ang = r01(rng) * std::f32::consts::TAU;
-                        let dist = 4.0 + r01(rng) * 6.0;
-                        self.target = self.pos + Vec3::new(ang.sin() * dist, 0.0, ang.cos() * dist);
-                        self.state = MobState::Wander;
-                        self.state_timer = 6.0;
-                    } else {
-                        self.state_timer = 1.5 + r01(rng) * 3.0;
-                        self.yaw += (r01(rng) - 0.5) * 1.2;
-                    }
-                }
-            }
-            MobState::Wander => {
-                let mut to = self.target - self.pos;
-                to.y = 0.0;
-                if to.length_squared() < 0.6 || self.state_timer <= 0.0 {
-                    self.state = MobState::Idle;
-                    self.state_timer = 2.0 + r01(rng) * 3.0;
-                } else {
-                    let dir = to.normalize();
-                    self.yaw = dir.x.atan2(dir.z);
-                    // Don't wander into deep water: probe one block ahead.
-                    let probe = self.pos + dir * 1.2;
-                    let (px, pz) = (probe.x.floor() as i32, probe.z.floor() as i32);
-                    let py = self.pos.y.floor() as i32;
-                    let deep = world.reg.is_water(world.get_block(px, py - 1, pz))
-                        && world.reg.is_water(world.get_block(px, py - 2, pz));
-                    if deep {
-                        self.state = MobState::Idle;
-                        self.state_timer = 1.0;
-                    } else {
-                        wish = dir * def.speed * 0.6;
-                    }
-                }
-            }
-            MobState::Flee => {
-                if self.state_timer <= 0.0 {
-                    self.state = MobState::Idle;
-                    self.state_timer = 1.0 + r01(rng) * 2.0;
-                } else {
-                    let mut away = self.pos - self.target;
-                    away.y = 0.0;
-                    let dir = if away.length_squared() > 0.001 {
-                        away.normalize()
-                    } else {
-                        Vec3::new(self.yaw.sin(), 0.0, self.yaw.cos())
-                    };
-                    self.yaw = dir.x.atan2(dir.z);
-                    wish = dir * def.speed * 1.6;
-                }
-            }
-            MobState::Hunt => match prey {
-                None => {
-                    self.state = MobState::Idle;
-                    self.state_timer = 1.0;
-                }
-                Some((who, p)) => {
+        if let Some(pid) = self.led_by {
+            match players.iter().find(|p| p.id == pid) {
+                Some(p) if (p.pos - self.pos).length_squared() <= 12.0 * 12.0 => {
+                    led_active = true;
                     let mut to = p.pos - self.pos;
-                    let dist = to.length();
                     to.y = 0.0;
-                    let dir = if to.length_squared() > 0.001 {
-                        to.normalize()
+                    if to.length_squared() > 3.0 * 3.0 {
+                        let dir = to.normalize();
+                        self.yaw = dir.x.atan2(dir.z);
+                        wish = dir * def.speed * 0.75;
+                    }
+                    self.state = MobState::Idle;
+                    self.state_timer = self.state_timer.max(0.5);
+                }
+                _ => {
+                    self.led_by = None;
+                    events.push(MobEvent::LeadSnapped(self.pos));
+                }
+            }
+        }
+        // State transitions + wish velocity.
+        if !led_active {
+            match self.state {
+                MobState::Idle => {
+                    if self.state_timer <= 0.0 {
+                        if r01(rng) < 0.6 {
+                            let ang = r01(rng) * std::f32::consts::TAU;
+                            let dist = 4.0 + r01(rng) * 6.0;
+                            self.target =
+                                self.pos + Vec3::new(ang.sin() * dist, 0.0, ang.cos() * dist);
+                            self.state = MobState::Wander;
+                            self.state_timer = 6.0;
+                        } else {
+                            self.state_timer = 1.5 + r01(rng) * 3.0;
+                            self.yaw += (r01(rng) - 0.5) * 1.2;
+                        }
+                    }
+                }
+                MobState::Wander => {
+                    let mut to = self.target - self.pos;
+                    to.y = 0.0;
+                    if to.length_squared() < 0.6 || self.state_timer <= 0.0 {
+                        self.state = MobState::Idle;
+                        self.state_timer = 2.0 + r01(rng) * 3.0;
                     } else {
-                        Vec3::Z
-                    };
-                    self.yaw = dir.x.atan2(dir.z);
-                    // Losing everyone for ~8 s ends the hunt.
-                    if dist > def.aggro_range * 1.6 {
-                        self.lose_aggro += dt;
-                        if self.lose_aggro > 8.0 {
+                        let dir = to.normalize();
+                        self.yaw = dir.x.atan2(dir.z);
+                        // Don't wander into deep water: probe one block ahead.
+                        let probe = self.pos + dir * 1.2;
+                        let (px, pz) = (probe.x.floor() as i32, probe.z.floor() as i32);
+                        let py = self.pos.y.floor() as i32;
+                        let deep = world.reg.is_water(world.get_block(px, py - 1, pz))
+                            && world.reg.is_water(world.get_block(px, py - 2, pz));
+                        if deep {
                             self.state = MobState::Idle;
                             self.state_timer = 1.0;
-                        }
-                    } else {
-                        self.lose_aggro = 0.0;
-                    }
-                    match &def.projectile {
-                        Some(pr) => {
-                            // Casters hold their range and lob bolts.
-                            if dist > 11.0 {
-                                wish = dir * def.speed;
-                            } else if dist < 5.0 {
-                                wish = -dir * def.speed * 0.8;
-                            }
-                            if dist < 14.0 && self.cast_cd <= 0.0 {
-                                self.cast_cd = pr.cooldown;
-                                let muzzle = self.pos + Vec3::new(0.0, def.height * 0.7, 0.0);
-                                let aim =
-                                    (p.pos + Vec3::new(0.0, 0.9, 0.0) - muzzle).normalize_or_zero();
-                                events.push(MobEvent::Cast(Projectile {
-                                    pos: muzzle + aim * 0.6,
-                                    vel: aim * pr.speed,
-                                    tile: pr.tile,
-                                    damage: pr.damage,
-                                    age: 0.0,
-                                    from_player: false,
-                                    drop_item: None,
-                                    owner: 0,
-                                }));
-                            }
-                        }
-                        None => {
-                            wish = dir * def.speed * 1.2;
-                            // Contact swing with a cooldown.
-                            let dy = p.pos.y - self.pos.y;
-                            if dist < def.half_w + 0.9 && dy.abs() < 2.0 && self.attack_cd <= 0.0 {
-                                self.attack_cd = 1.0;
-                                events.push(MobEvent::HitPlayer(who, def.attack, self.pos));
-                            }
+                        } else {
+                            wish = dir * def.speed * 0.6;
                         }
                     }
                 }
-            },
+                MobState::Flee => {
+                    if self.state_timer <= 0.0 {
+                        self.state = MobState::Idle;
+                        self.state_timer = 1.0 + r01(rng) * 2.0;
+                    } else {
+                        let mut away = self.pos - self.target;
+                        away.y = 0.0;
+                        let dir = if away.length_squared() > 0.001 {
+                            away.normalize()
+                        } else {
+                            Vec3::new(self.yaw.sin(), 0.0, self.yaw.cos())
+                        };
+                        self.yaw = dir.x.atan2(dir.z);
+                        wish = dir * def.speed * 1.6;
+                    }
+                }
+                MobState::Hunt => match prey {
+                    None => {
+                        self.state = MobState::Idle;
+                        self.state_timer = 1.0;
+                    }
+                    Some((who, p)) => {
+                        let mut to = p.pos - self.pos;
+                        let dist = to.length();
+                        to.y = 0.0;
+                        let dir = if to.length_squared() > 0.001 {
+                            to.normalize()
+                        } else {
+                            Vec3::Z
+                        };
+                        self.yaw = dir.x.atan2(dir.z);
+                        // Losing everyone for ~8 s ends the hunt.
+                        if dist > def.aggro_range * 1.6 {
+                            self.lose_aggro += dt;
+                            if self.lose_aggro > 8.0 {
+                                self.state = MobState::Idle;
+                                self.state_timer = 1.0;
+                            }
+                        } else {
+                            self.lose_aggro = 0.0;
+                        }
+                        match &def.projectile {
+                            Some(pr) => {
+                                // Casters hold their range and lob bolts.
+                                if dist > 11.0 {
+                                    wish = dir * def.speed;
+                                } else if dist < 5.0 {
+                                    wish = -dir * def.speed * 0.8;
+                                }
+                                if dist < 14.0 && self.cast_cd <= 0.0 {
+                                    self.cast_cd = pr.cooldown;
+                                    let muzzle = self.pos + Vec3::new(0.0, def.height * 0.7, 0.0);
+                                    let aim = (p.pos + Vec3::new(0.0, 0.9, 0.0) - muzzle)
+                                        .normalize_or_zero();
+                                    events.push(MobEvent::Cast(Projectile {
+                                        pos: muzzle + aim * 0.6,
+                                        vel: aim * pr.speed,
+                                        tile: pr.tile,
+                                        damage: pr.damage,
+                                        age: 0.0,
+                                        from_player: false,
+                                        drop_item: None,
+                                        owner: 0,
+                                    }));
+                                }
+                            }
+                            None => {
+                                wish = dir * def.speed * 1.2;
+                                // Contact swing with a cooldown.
+                                let dy = p.pos.y - self.pos.y;
+                                if dist < def.half_w + 0.9
+                                    && dy.abs() < 2.0
+                                    && self.attack_cd <= 0.0
+                                {
+                                    self.attack_cd = 1.0;
+                                    events.push(MobEvent::HitPlayer(who, def.attack, self.pos));
+                                }
+                            }
+                        }
+                    }
+                },
+            }
         }
 
         // Physics: accelerate toward wish, gravity/buoyancy, collide per axis.

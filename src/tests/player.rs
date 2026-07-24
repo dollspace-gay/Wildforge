@@ -195,6 +195,7 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
         player_dmg += w
             .tick_projectiles(
                 &[crate::server::PlayerCtx {
+                    id: 0,
                     pos: far,
                     spawn: Vec3::ZERO,
                     attackable: true,
@@ -231,6 +232,7 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
     for _ in 0..40 {
         w.tick_projectiles(
             &[crate::server::PlayerCtx {
+                id: 0,
                 pos: far,
                 spawn: Vec3::ZERO,
                 attackable: true,

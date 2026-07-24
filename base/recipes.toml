@@ -818,3 +818,20 @@ pattern = ["s", "s"]
 keys = { s = "base:stone" }
 output = "base:survey_cairn"
 count = 2
+
+# Pack animals (trade & travel, stage 1): husbandry becomes logistics.
+[[recipe]]
+pattern = ["l"]
+keys = { l = "base:leather" }
+output = "base:leather_strip"
+count = 4
+
+[[recipe]]
+pattern = ["s", "s", "s"]
+keys = { s = "base:leather_strip" }
+output = "base:lead"
+
+[[recipe]]
+pattern = ["sls", "p.p"]
+keys = { s = "base:leather_strip", l = "base:leather", p = "#base:planks" }
+output = "base:saddlebags"

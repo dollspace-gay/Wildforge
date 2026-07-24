@@ -523,6 +523,11 @@ impl World {
         self.pending_drops.clear();
     }
 
+    /// Queue an item drop at a cell (spawned by the game loop).
+    pub fn push_drop(&mut self, at: (i32, i32, i32), stack: ItemStack) {
+        self.pending_drops.push((at, stack));
+    }
+
     pub fn take_pending_drops(&mut self) -> Vec<((i32, i32, i32), ItemStack)> {
         std::mem::take(&mut self.pending_drops)
     }

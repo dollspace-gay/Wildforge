@@ -27,7 +27,8 @@ impl Game {
                 | Screen::Chest(_)
                 | Screen::Offering(_)
                 | Screen::Bloomery(_)
-                | Screen::Kiln(_) => self.set_screen(Screen::Playing),
+                | Screen::Kiln(_)
+                | Screen::MobCargo(_) => self.set_screen(Screen::Playing),
                 Screen::Paused => self.set_screen(Screen::Playing),
                 Screen::Settings => {
                     self.config.save();
@@ -72,7 +73,8 @@ impl Game {
                 | Screen::Chest(_)
                 | Screen::Offering(_)
                 | Screen::Bloomery(_)
-                | Screen::Kiln(_) => self.set_screen(Screen::Playing),
+                | Screen::Kiln(_)
+                | Screen::MobCargo(_) => self.set_screen(Screen::Playing),
                 _ => {}
             },
             KeyCode::KeyT

@@ -416,6 +416,20 @@ impl Game {
                     }
                 }
             }
+            Screen::MobCargo(id) => {
+                for i in 0..12 {
+                    if self.hit(self.mob_cargo_slot_rect(i)) {
+                        self.mob_cargo_click(id, i, right);
+                        return;
+                    }
+                }
+                for i in 0..TOTAL_SLOTS {
+                    if self.hit(self.inv_slot_rect(i)) {
+                        self.inventory_click(false, i, right);
+                        return;
+                    }
+                }
+            }
             Screen::Chest(pos) => {
                 if self.browser_click(right) {
                     return;

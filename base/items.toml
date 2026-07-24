@@ -935,3 +935,20 @@ durability = 7200
 id = "spoiled_mush"
 name = "Spoiled Mush"
 texture = "@spoiled_mush"
+
+[[item]]
+id = "leather_strip"
+name = "Leather Strip"
+texture = "@leather_strip"
+
+[[item]]
+id = "lead"
+name = "Lead"
+texture = "@lead"
+max_stack = 8
+
+[[item]]
+id = "saddlebags"
+name = "Saddlebags"
+texture = "@saddlebags"
+max_stack = 4
