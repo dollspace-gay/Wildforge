@@ -759,3 +759,87 @@ fn forge_batch_smelts_with_thrifty_fuel_in_any_weather() {
         .sum();
     assert_eq!(minted, 8, "eight ingots spat at the mouth");
 }
+
+#[test]
+fn food_spoils_slower_in_a_cellar_and_salted_keeps() {
+    use crate::world::{BlockEntity, ChestState};
+    let reg = base_reg();
+    let mut w = test_world_with("perish", reg.clone());
+    let stone = b(&reg, "base:stone");
+    let meat = reg.item_id("base:raw_venison").unwrap();
+    let salted = reg.item_id("base:salted_meat").unwrap();
+    let mush = reg.item_id("base:spoiled_mush").unwrap();
+    let chest = b(&reg, "base:chest");
+    // A surface chest in daylight and a buried chest in the dark.
+    let sy = w.surface_height(4, 4);
+    w.set_block(4, sy + 1, 4, chest);
+    for dx in -1..=1 {
+        for dy in 0..=2 {
+            for dz in -1..=1 {
+                w.set_block(20 + dx, 40 + dy, 4 + dz, stone);
+            }
+        }
+    }
+    w.set_block(20, 41, 4, chest);
+    w.relight_and_cascade(crate::chunk::ChunkPos::of_world(20, 4));
+    let mut open = ChestState::default();
+    open.slots[0] = Some(ItemStack::new(&reg, meat, 4));
+    open.slots[1] = Some(ItemStack::new(&reg, salted, 4));
+    w.insert_block_entity((4, sy + 1, 4), BlockEntity::Chest(open));
+    let mut cellar = ChestState::default();
+    cellar.slots[0] = Some(ItemStack::new(&reg, meat, 4));
+    w.insert_block_entity((20, 41, 4), BlockEntity::Chest(cellar));
+    // Run 1000 seconds of container time.
+    for _ in 0..50 {
+        w.tick_entities(20.0);
+    }
+    let surface_meat = match w.block_entity(&(4, sy + 1, 4)) {
+        Some(BlockEntity::Chest(c)) => c.slots[0].unwrap(),
+        _ => panic!("chest"),
+    };
+    let cellar_meat = match w.block_entity(&(20, 41, 4)) {
+        Some(BlockEntity::Chest(c)) => c.slots[0].unwrap(),
+        _ => panic!("cellar chest"),
+    };
+    assert_eq!(
+        surface_meat.item, mush,
+        "raw venison (900 s) rots on the surface inside 1000 s"
+    );
+    assert_eq!(cellar_meat.item, meat, "the cellar kept it");
+    assert!(
+        cellar_meat.durability >= 900 - 300,
+        "cellar decay runs at quarter rate ({})",
+        cellar_meat.durability
+    );
+    let salted_left = match w.block_entity(&(4, sy + 1, 4)) {
+        Some(BlockEntity::Chest(c)) => c.slots[1].unwrap(),
+        _ => panic!("chest"),
+    };
+    assert_eq!(salted_left.item, salted, "salted meat shrugs at 1000 s");
+}
+
+#[test]
+fn legacy_food_stacks_initialize_instead_of_rotting() {
+    use crate::world::{BlockEntity, ChestState};
+    let reg = base_reg();
+    let mut w = test_world_with("legacy-food", reg.clone());
+    let berry = reg.item_id("base:berry").unwrap();
+    let chest = b(&reg, "base:chest");
+    let sy = w.surface_height(4, 4);
+    w.set_block(4, sy + 1, 4, chest);
+    let mut c = ChestState::default();
+    // A pre-freshness save: durability 0 on a perishable.
+    c.slots[0] = Some(ItemStack {
+        item: berry,
+        count: 5,
+        durability: 0,
+    });
+    w.insert_block_entity((4, sy + 1, 4), BlockEntity::Chest(c));
+    w.tick_entities(20.0);
+    let st = match w.block_entity(&(4, sy + 1, 4)) {
+        Some(BlockEntity::Chest(c)) => c.slots[0].unwrap(),
+        _ => panic!("chest"),
+    };
+    assert_eq!(st.item, berry, "legacy berries survive the sweep");
+    assert_eq!(st.durability, 1200, "and start their clock fresh");
+}

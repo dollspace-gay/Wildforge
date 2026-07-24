@@ -1241,6 +1241,19 @@ fn content_graph_is_complete_and_obtainable() {
                 grew = true;
             }
         }
+        // Spoiled mush: any perishable food left too long becomes it -
+        // a code path (the freshness sweep), like the bucket dip.
+        if let Some(m) = reg.item_id("base:spoiled_mush")
+            && !ok.contains(&m.0)
+            && reg
+                .items
+                .iter()
+                .enumerate()
+                .any(|(i, d)| d.food.is_some() && d.durability > 0 && ok.contains(&(i as u16)))
+        {
+            ok.insert(m.0);
+            grew = true;
+        }
         if let Some((sand, fuel, clear)) = reg.kiln_base
             && ok.contains(&sand.0)
             && ok.contains(&fuel.0)

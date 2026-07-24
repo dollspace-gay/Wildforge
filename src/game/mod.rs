@@ -108,6 +108,8 @@ struct SurvivalState {
     nutrition: [f32; 5],
     eating: f32,
     exhaustion_regen: f32,
+    /// Accumulator for the pack's food-freshness sweep.
+    perish_accum: f32,
     starve_timer: f32,
     air: f32,
     since_damage: f32,
@@ -128,6 +130,7 @@ impl SurvivalState {
             nutrition: [0.0; 5],
             eating: 0.0,
             exhaustion_regen: 0.0,
+            perish_accum: 0.0,
             starve_timer: 0.0,
             air: MAX_AIR,
             since_damage: 100.0,

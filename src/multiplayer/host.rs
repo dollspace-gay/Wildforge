@@ -121,6 +121,7 @@ pub struct HostSession {
     snapshot_timer: f32,
     state_timer: f32,
     container_timer: f32,
+    perish_timer: f32,
 }
 
 struct AuthenticatedJoin {
@@ -242,6 +243,7 @@ impl HostSession {
             snapshot_timer: 0.0,
             state_timer: 0.0,
             container_timer: 0.0,
+            perish_timer: 0.0,
         })
     }
 
@@ -523,6 +525,34 @@ impl HostSession {
                 .collect();
             for (id, pos) in open {
                 self.send_container(server, id, pos);
+            }
+        }
+        // Guest inventory mirrors age like everyone else's pack, so a
+        // relog can't refresh yesterday's venison.
+        self.perish_timer += dt;
+        if self.perish_timer >= 20.0 {
+            self.perish_timer -= 20.0;
+            let reg = server.world.reg.clone();
+            let mush = reg.item_id("base:spoiled_mush");
+            for g in self.guests.values_mut() {
+                for s in g.inventory.slots.iter_mut() {
+                    let Some(st) = s else { continue };
+                    let full = reg.item(st.item).durability;
+                    if reg.item(st.item).food.is_none() || full == 0 {
+                        continue;
+                    }
+                    if st.durability == 0 {
+                        st.durability = full;
+                    } else if st.durability <= 20 {
+                        *s = mush.map(|m| {
+                            let mut sp = ItemStack::new(&reg, m, 1);
+                            sp.count = st.count;
+                            sp
+                        });
+                    } else {
+                        st.durability -= 20;
+                    }
+                }
             }
         }
         self.state_timer += dt;

@@ -183,6 +183,8 @@ def glass(name, tint, alpha=90, glow=False):
 ROCKS = {
     "sandstone": dict(base=(216, 196, 150), dark=(178, 156, 110), bands=0.45),
     "limestone": dict(base=(205, 200, 184), dark=(166, 160, 142), bands=0.2),
+    "halite": dict(base=(236, 232, 226), dark=(198, 192, 186), bands=0.35,
+                   veins=(250, 248, 244)),
     "shale": dict(base=(120, 118, 122), dark=(84, 82, 90), bands=0.55),
     "granite": dict(base=(188, 172, 160), dark=(140, 124, 116),
                     speckle=(224, 216, 208), speckle_n=40),
@@ -248,6 +250,9 @@ ITEMS = [
     ("diamond_tipped_pick", (200, 240, 245), (120, 190, 210), "pick"),
     ("crystal_prism", (215, 232, 242), (145, 172, 192), "prism"),
     ("prospect_pick", (198, 166, 92), (128, 100, 52), "pick"),
+    ("salt_crystal", (240, 240, 236), (190, 190, 184), "lump"),
+    ("salted_meat", (170, 96, 88), (216, 214, 208), "lump"),
+    ("spoiled_mush", (110, 116, 72), (74, 78, 48), "lump"),
 ]
 
 GLASSES = [

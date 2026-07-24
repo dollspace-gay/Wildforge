@@ -799,3 +799,12 @@ output = "base:forge"
 pattern = ["bb.", ".t.", ".t."]
 keys = { b = "base:bronze_ingot", t = "base:stick" }
 output = "base:prospect_pick"
+
+# Salting: the first preservation chain (economy plan, leg 3). Any
+# raw meat packed in salt keeps twelve days where fresh keeps a day
+# and a half - and salt country earns a trade identity.
+[[recipe]]
+pattern = ["m", "s"]
+keys = { m = "#base:raw_meats", s = "base:salt_crystal" }
+output = "base:salted_meat"
+count = 1

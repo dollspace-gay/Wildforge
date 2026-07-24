@@ -195,3 +195,14 @@ replaces = "base:carbonatite"
 vein_size = 5
 per_chunk = 4
 y_range = [40, 200]
+
+# Evaporite beds: rock salt seams in the sandstone country - salting
+# needs salt, and salt country trades it (economy plan, leg 3).
+[[feature]]
+type = "ore"
+block = "base:halite"
+replaces = "base:sandstone"
+vein_size = 9
+per_chunk = 2
+shape = "seam"
+y_range = [70, 110]

@@ -233,6 +233,8 @@ pub struct World {
     /// per moved cell.
     fluid_batch: bool,
     pending_relight: HashSet<ChunkPos>,
+    /// Accumulator for the food-freshness sweep (containers).
+    perish_accum: f32,
     /// Absolute sim-time in seconds (day * DAY_LENGTH + time-of-day),
     /// mirrored from the Server every tick so chunk load and random
     /// ticks share one clock.
@@ -460,6 +462,7 @@ impl World {
             last_random: HashMap::new(),
             block_entities: HashMap::new(),
             pending_drops: Vec::new(),
+            perish_accum: 0.0,
             mobs: Vec::new(),
             projectiles: Vec::new(),
             hostile_spawn_timer: 0.0,

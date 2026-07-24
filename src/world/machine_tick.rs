@@ -169,6 +169,68 @@ impl World {
         }
     }
 
+    /// Food kept in containers ages (economy plan, leg 3): every
+    /// PERISH_SWEEP_SECS, each food stack loses that much freshness —
+    /// quartered in a cellar (dark and skylight-free, the cool rooms
+    /// people actually dig). At zero the stack turns to spoiled mush.
+    /// A legacy stack from before freshness (durability 0 on a
+    /// perishable) initializes to fresh instead of rotting.
+    pub(super) fn tick_perish(&mut self, dt: f32) {
+        const PERISH_SWEEP_SECS: f32 = 20.0;
+        self.perish_accum += dt;
+        if self.perish_accum < PERISH_SWEEP_SECS {
+            return;
+        }
+        self.perish_accum -= PERISH_SWEEP_SECS;
+        let reg = self.reg.clone();
+        let mush = reg.item_id("base:spoiled_mush");
+        let cellar_at: Vec<((i32, i32, i32), bool)> = self
+            .block_entities
+            .iter()
+            .filter(|(_, e)| matches!(e, BlockEntity::Chest(_) | BlockEntity::Offering(_)))
+            .map(|(&p, _)| p)
+            .map(|p| {
+                // Sample above the container: the block itself is
+                // opaque and always reads dark.
+                let (bl, sky) = self.light_at(p.0, p.1 + 1, p.2);
+                (p, sky == 0 && bl <= 3)
+            })
+            .collect();
+        for (pos, cellar) in cellar_at {
+            let step = if cellar {
+                PERISH_SWEEP_SECS / 4.0
+            } else {
+                PERISH_SWEEP_SECS
+            } as u32;
+            let Some(e) = self.block_entities.get_mut(&pos) else {
+                continue;
+            };
+            let slots: &mut [Option<ItemStack>] = match e {
+                BlockEntity::Chest(c) => &mut c.slots,
+                BlockEntity::Offering(o) => &mut o.slots,
+                _ => continue,
+            };
+            for s in slots.iter_mut() {
+                let Some(st) = s else { continue };
+                let full = reg.item(st.item).durability;
+                if reg.item(st.item).food.is_none() || full == 0 {
+                    continue;
+                }
+                if st.durability == 0 {
+                    st.durability = full; // legacy: starts fresh today
+                } else if st.durability <= step {
+                    *s = mush.map(|m| {
+                        let mut sp = ItemStack::new(&reg, m, 1);
+                        sp.count = st.count;
+                        sp
+                    });
+                } else {
+                    st.durability -= step;
+                }
+            }
+        }
+    }
+
     /// Smolder every clamp; venting burns the exposed log away.
     pub(super) fn tick_clamps(&mut self, dt: f32) {
         let keys: Vec<(i32, i32, i32)> = self
@@ -240,6 +302,7 @@ impl World {
         self.tick_kilns(dt);
         self.tick_forges(dt);
         self.tick_clamps(dt);
+        self.tick_perish(dt);
         let reg = self.reg.clone();
         // Byproducts pour out the furnace mouth (cupellation lead);
         // collected here because the entity map is borrowed.

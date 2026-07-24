@@ -1054,3 +1054,13 @@ light = 11
 light_color = [1.0, 0.55, 0.2]
 drops = "base:forge"
 item = false
+
+[[block]]
+id = "halite"
+name = "Rock Salt"
+texture = "@halite"
+hardness = 1.2
+tool = "pickaxe"
+drops = "base:salt_crystal"
+drop_count = 2
+item = false

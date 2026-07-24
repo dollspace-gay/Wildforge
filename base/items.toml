@@ -153,12 +153,14 @@ id = "bread"
 name = "Bread"
 texture = "@bread"
 food = { hunger = 6, eat_time = 1.6, nutrition = { grain = 22 } }
+durability = 2400
 
 [[item]]
 id = "berry"
 name = "Berries"
 texture = "@berry"
 food = { hunger = 3, eat_time = 0.9, nutrition = { fruit = 14 } }
+durability = 1200
 
 [[item]]
 id = "carrot"
@@ -166,6 +168,7 @@ name = "Carrot"
 texture = "@carrot"
 places = "base:carrot_crop"
 food = { hunger = 4, eat_time = 1.2, nutrition = { vegetable = 16 } }
+durability = 1800
 
 [[item]]
 id = "potato"
@@ -173,42 +176,49 @@ name = "Potato"
 texture = "@potato"
 places = "base:potato_crop"
 food = { hunger = 2, eat_time = 1.2, nutrition = { vegetable = 8 } }
+durability = 1800
 
 [[item]]
 id = "baked_potato"
 name = "Baked Potato"
 texture = "@baked_potato"
 food = { hunger = 6, eat_time = 1.4, nutrition = { vegetable = 24 } }
+durability = 2400
 
 [[item]]
 id = "mushroom"
 name = "Mushroom"
 texture = "@mushroom"
 food = { hunger = 2, eat_time = 1.0, nutrition = { fungi = 10 } }
+durability = 1500
 
 [[item]]
 id = "roasted_mushroom"
 name = "Roasted Mushroom"
 texture = "@roasted_mushroom"
 food = { hunger = 5, eat_time = 1.2, nutrition = { fungi = 24 } }
+durability = 2400
 
 [[item]]
 id = "cactus_fruit"
 name = "Cactus Fruit"
 texture = "@cactus_fruit"
 food = { hunger = 4, eat_time = 1.0, nutrition = { fruit = 16 } }
+durability = 1200
 
 [[item]]
 id = "jungle_fruit"
 name = "Jungle Fruit"
 texture = "@jungle_fruit"
 food = { hunger = 4, eat_time = 1.0, nutrition = { fruit = 16 } }
+durability = 900
 
 [[item]]
 id = "forest_stew"
 name = "Forest Stew"
 texture = "@stew"
 food = { hunger = 10, eat_time = 2.0, nutrition = { vegetable = 18, fungi = 18, fruit = 18 } }
+durability = 1500
 
 [[item]]
 id = "wood_hoe"
@@ -252,60 +262,70 @@ id = "raw_venison"
 name = "Raw Venison"
 texture = "@raw_venison"
 food = { hunger = 3, eat_time = 1.6, nutrition = { protein = 7 } }
+durability = 900
 
 [[item]]
 id = "cooked_venison"
 name = "Cooked Venison"
 texture = "@cooked_venison"
 food = { hunger = 8, eat_time = 1.6, nutrition = { protein = 18 } }
+durability = 2400
 
 [[item]]
 id = "raw_boar"
 name = "Raw Boar Meat"
 texture = "@raw_boar"
 food = { hunger = 3, eat_time = 1.6, nutrition = { protein = 7 } }
+durability = 900
 
 [[item]]
 id = "cooked_boar"
 name = "Cooked Boar Meat"
 texture = "@cooked_boar"
 food = { hunger = 8, eat_time = 1.6, nutrition = { protein = 18 } }
+durability = 2400
 
 [[item]]
 id = "raw_chevon"
 name = "Raw Chevon"
 texture = "@raw_chevon"
 food = { hunger = 3, eat_time = 1.6, nutrition = { protein = 7 } }
+durability = 900
 
 [[item]]
 id = "cooked_chevon"
 name = "Cooked Chevon"
 texture = "@cooked_chevon"
 food = { hunger = 7, eat_time = 1.6, nutrition = { protein = 16 } }
+durability = 2400
 
 [[item]]
 id = "raw_fowl"
 name = "Raw Fowl"
 texture = "@raw_fowl"
 food = { hunger = 2, eat_time = 1.4, nutrition = { protein = 6 } }
+durability = 900
 
 [[item]]
 id = "cooked_fowl"
 name = "Roast Fowl"
 texture = "@cooked_fowl"
 food = { hunger = 6, eat_time = 1.4, nutrition = { protein = 14 } }
+durability = 2400
 
 [[item]]
 id = "raw_rabbit"
 name = "Raw Rabbit"
 texture = "@raw_rabbit"
 food = { hunger = 2, eat_time = 1.4, nutrition = { protein = 5 } }
+durability = 900
 
 [[item]]
 id = "cooked_rabbit"
 name = "Cooked Rabbit"
 texture = "@cooked_rabbit"
 food = { hunger = 5, eat_time = 1.4, nutrition = { protein = 12 } }
+durability = 2400
 
 [[item]]
 id = "hide"
@@ -328,6 +348,7 @@ name = "Hearty Stew"
 texture = "@hearty_stew"
 max_stack = 16
 food = { hunger = 10, eat_time = 2.0, nutrition = { protein = 14, vegetable = 10, fungi = 10 } }
+durability = 1500
 
 # ---- weapons ----
 
@@ -897,3 +918,20 @@ id = "prospect_pick"
 name = "Prospector's Pick"
 texture = "@prospect_pick"
 durability = 96
+
+[[item]]
+id = "salt_crystal"
+name = "Salt"
+texture = "@salt_crystal"
+
+[[item]]
+id = "salted_meat"
+name = "Salted Meat"
+texture = "@salted_meat"
+food = { hunger = 7, eat_time = 1.6, nutrition = { protein = 15 } }
+durability = 7200
+
+[[item]]
+id = "spoiled_mush"
+name = "Spoiled Mush"
+texture = "@spoiled_mush"
