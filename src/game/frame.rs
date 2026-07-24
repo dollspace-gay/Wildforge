@@ -737,9 +737,10 @@ impl Game {
         // lit — paired with a near-nothing fill (below) so shadows stay genuinely
         // dark. High contrast, a real directional light, not a flat ambient lift.
         let moon_col = Vec3::new(0.45, 0.60, 1.0) * (0.42 * moon_vis);
-        // Barely any cold fill: enough that shadowed faces read as cold-dark
-        // rather than dead black, but not enough to wash out the shadows.
-        amb_col += Vec3::new(0.015, 0.022, 0.05) * moon_vis;
+        // Barely any cold fill, folded into the sky ambient below: enough that a
+        // full moon's shadowed faces read cold-dark rather than dead black, but
+        // not enough to wash out the shadows.
+        let moon_fill = Vec3::new(0.015, 0.022, 0.05) * moon_vis;
 
         // Surface lighting uses whichever body is dominant as the single
         // directional light, so the shadow map follows it for free: warm sun
@@ -796,6 +797,15 @@ impl Game {
                 self.sfx(Sfx::Thunder);
             }
         }
+
+        // Project the finished sky into SH ambient — the colored, directional
+        // fill light — from the same values that drive the visible dome.
+        let sh_ambient = crate::sky::project(&crate::sky::SkyParams {
+            sun_dir: sun_dir_true,
+            gloom,
+            overcast: Vec3::from_array(self.renderer.sky_color),
+            moon_fill,
+        });
 
         // The weather bed follows what's actually falling where you stand.
         if let Some(a) = &self.audio {
@@ -1475,6 +1485,7 @@ impl Game {
             sun_dir,
             sun_dir_true,
             gloom,
+            sh_ambient,
             sun_col,
             amb_col,
             ambient_floor,
