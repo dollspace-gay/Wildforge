@@ -1395,3 +1395,187 @@ fn bench_tick_parts() {
         evs.clear();
     });
 }
+
+#[test]
+fn river_pools_are_sealed() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("weirs"), reg.clone());
+    let mut candidates: Vec<(i32, i32)> = Vec::new();
+    'r: for r in 1..400 {
+        let d = r * 16;
+        for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
+            if let Some(fill) = w.generator.water_features(x, z)
+                && fill > crate::chunk::SEA_LEVEL + 3
+                && candidates
+                    .iter()
+                    .all(|&(ax, az)| (ax - x).abs() + (az - z).abs() > 300)
+            {
+                candidates.push((x, z));
+                if candidates.len() >= 4 {
+                    break 'r;
+                }
+            }
+        }
+    }
+    assert!(!candidates.is_empty(), "rivers above the sea exist");
+    let (mut water_cells, mut exposed) = (0, 0);
+    for (x, z) in candidates {
+        let cp = ChunkPos::of_world(x, z);
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                w.ensure_chunk(ChunkPos {
+                    x: cp.x + dx,
+                    z: cp.z + dz,
+                });
+            }
+        }
+        for dx in -10..=10 {
+            for dz in -10..=10 {
+                for y in crate::chunk::SEA_LEVEL + 2..200 {
+                    if !reg.is_water(w.get_block(x + dx, y, z + dz)) {
+                        continue;
+                    }
+                    water_cells += 1;
+                    for (nx, nz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        if w.get_block(x + dx + nx, y, z + dz + nz) == AIR {
+                            exposed += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(water_cells > 20, "pools hold water ({water_cells})");
+    // Sealed by construction: worldgen river water never meets air
+    // side-on (3D-density undercuts allow a rare stray, nothing more).
+    assert!(
+        exposed * 50 <= water_cells,
+        "pools are sealed: {exposed} exposed of {water_cells}"
+    );
+}
+
+#[test]
+#[ignore]
+fn print_weir_spots() {
+    let reg = base_reg();
+    let w = World::new(42, tmp_dir("weirspots"), reg);
+    for r in 1..400 {
+        let d = r * 16;
+        for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
+            let Some(f) = w.generator.water_features(x, z) else {
+                continue;
+            };
+            if f <= crate::chunk::SEA_LEVEL + 6 {
+                continue;
+            }
+            let mut weirs = 0;
+            for dx in -12i32..=12 {
+                for dz in -12i32..=12 {
+                    if w.generator.armor_at(x + dx, z + dz).is_some() {
+                        weirs += 1;
+                    }
+                }
+            }
+            if weirs > 8 {
+                println!("river fill {f} at ({x},{z}) with {weirs} armor cols nearby");
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn print_river_map() {
+    let reg = base_reg();
+    let w = World::new(42, tmp_dir("rivermap"), reg);
+    for z in (-200i32..=-80).step_by(2) {
+        let mut row = String::new();
+        for x in -60i32..=60 {
+            let f = w.generator.water_features(x, z);
+            let a = w.generator.armor_at(x, z);
+            let est = w.generator.surface_estimate(x, z);
+            row.push(match (f, a) {
+                (Some(l), _) if l > est => 'W',
+                (Some(_), _) => 'b',
+                (None, Some(_)) => '#',
+                _ => '.',
+            });
+        }
+        println!("z={z:>5} {row}");
+    }
+}
+
+#[test]
+fn lake_terraces_settle_sealed() {
+    // A broad terraced lake (two quantized pool levels and an armor
+    // dam between them). Before sealing, waking it shed sheets of
+    // partial water over the shores forever.
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("lakesettle"), reg.clone());
+    let cp = ChunkPos::of_world(-52, -158);
+    for dx in -2..=2 {
+        for dz in -2..=2 {
+            w.ensure_chunk(ChunkPos {
+                x: cp.x + dx,
+                z: cp.z + dz,
+            });
+        }
+    }
+    let mut quiet = false;
+    for _ in 0..400 {
+        if !w.tick_water(10_000) {
+            quiet = true;
+            break;
+        }
+    }
+    assert!(quiet, "the lake settles instead of churning");
+    // Once settled, the waterline still may not hang in the open: no
+    // water cell should sit beside same-height air (films/shelves).
+    let (mut cells, mut exposed) = (0, 0);
+    for x in -52 - 30..-52 + 30 {
+        for z in -158 - 30..-158 + 30 {
+            for y in crate::chunk::SEA_LEVEL + 2..140 {
+                if !reg.is_water(w.get_block(x, y, z)) {
+                    continue;
+                }
+                cells += 1;
+                for (nx, nz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    if w.get_block(x + nx, y, z + nz) == AIR {
+                        exposed += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert!(cells > 100, "the pools hold water ({cells})");
+    assert!(
+        exposed * 50 <= cells,
+        "settled pools stay sealed: {exposed} exposed of {cells}"
+    );
+}
+
+#[test]
+#[ignore]
+fn print_lake_transect() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("laketransect"), reg.clone());
+    let cp = ChunkPos::of_world(-52, -158);
+    for dx in -2..=2 {
+        for dz in -2..=2 {
+            w.ensure_chunk(ChunkPos {
+                x: cp.x + dx,
+                z: cp.z + dz,
+            });
+        }
+    }
+    for x in -52..-10 {
+        let z = -158;
+        for y in (70..86).rev() {
+            let b = w.get_block(x, y, z);
+            if b != AIR {
+                println!("({x},{y},{z}) {}", reg.block(b).name);
+                break;
+            }
+        }
+    }
+}

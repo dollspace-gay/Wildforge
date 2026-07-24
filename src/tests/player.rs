@@ -8,10 +8,12 @@ fn raycast_hits_nonsolid_plants() {
     let mut w = test_world_with("plantray", reg.clone());
     let h = w.surface_height(0, 0);
     let bush = b(&reg, "base:berry_bush");
-    w.set_block(3, h + 5, 0, bush);
-    let hit = raycast(&w, Vec3::new(0.5, h as f32 + 5.5, 0.5), Vec3::X, 6.0)
+    // Clear of the terrain: a lake-rim armor column near origin
+    // stands a few blocks over the surface here.
+    w.set_block(3, h + 10, 0, bush);
+    let hit = raycast(&w, Vec3::new(0.5, h as f32 + 10.5, 0.5), Vec3::X, 6.0)
         .expect("plants must be targetable");
-    assert_eq!(hit.block, (3, h + 5, 0));
+    assert_eq!(hit.block, (3, h + 10, 0));
     assert!(!reg.is_solid(bush), "bush stays non-solid for physics");
 }
 
