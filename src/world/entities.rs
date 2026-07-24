@@ -86,6 +86,25 @@ impl World {
                     }
                     let _ = writeln!(out);
                 }
+                BlockEntity::Forge(f) => {
+                    let _ = writeln!(
+                        out,
+                        "[[forge]]\npos = [{x}, {y}, {z}]\nlit = {}\nprogress = {}\ncore = [{}, {}, {}]",
+                        f.lit, f.progress, f.core.0, f.core.1, f.core.2
+                    );
+                    for (i, st) in f.charge.iter().chain(f.fuel.iter()).enumerate() {
+                        if let Some(st) = st {
+                            let _ = writeln!(
+                                out,
+                                "[[forge.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                self.reg.item(st.item).name,
+                                st.count,
+                                st.durability
+                            );
+                        }
+                    }
+                    let _ = writeln!(out);
+                }
                 BlockEntity::Clamp(c) => {
                     let logs: Vec<String> = c
                         .logs
@@ -231,6 +250,8 @@ impl World {
             anvil: Vec<AnvilT>,
             #[serde(default)]
             kiln: Vec<BloomeryT>,
+            #[serde(default)]
+            forge: Vec<BloomeryT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else {
             return;
@@ -325,6 +346,32 @@ impl World {
                 (bl.pos[0], bl.pos[1], bl.pos[2]),
                 BlockEntity::Bloomery(state),
             );
+        }
+        for fo in parsed.forge {
+            let mut state = BloomeryState {
+                lit: fo.lit,
+                progress: fo.progress,
+                core: fo.core.map(|c| (c[0], c[1], c[2])).unwrap_or_default(),
+                ..Default::default()
+            };
+            for sl in fo.slot {
+                if sl.index < 8
+                    && let Some(item) = self.reg.item_id(&sl.item)
+                {
+                    let st = Some(ItemStack {
+                        item,
+                        count: sl.count,
+                        durability: sl.durability,
+                    });
+                    if sl.index < 4 {
+                        state.charge[sl.index] = st;
+                    } else {
+                        state.fuel[sl.index - 4] = st;
+                    }
+                }
+            }
+            self.block_entities
+                .insert((fo.pos[0], fo.pos[1], fo.pos[2]), BlockEntity::Forge(state));
         }
         for cl in parsed.clamp {
             self.block_entities.insert(

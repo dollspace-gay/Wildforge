@@ -108,24 +108,37 @@ impl Game {
     pub(super) fn bloomery_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
         self.remote_container_notify(pos, slot, right);
         let reg = self.content.reg.clone();
-        let Some(world::BlockEntity::Bloomery(b)) = self.server.world.block_entity_mut(&pos) else {
-            return;
-        };
         // Mirror of the host rule: sealed while firing, charge takes
-        // the chain's ore, the bank takes its fuel; taking is free.
+        // what the station smelts, the bank takes its fuel; taking is
+        // free. The bloomery wants its chain; the forge takes any
+        // smeltable and any fuel.
+        let held = self.ui_state.held_stack;
+        let (b, ok) = match self.server.world.block_entity_mut(&pos) {
+            Some(world::BlockEntity::Bloomery(b)) => {
+                let chain = reg.bloomery.first().cloned();
+                let want = chain.map(|c| if slot < 4 { c.charge } else { c.fuel });
+                let ok = held.is_none() || held.map(|h| Some(h.item)) == Some(want);
+                (b, ok)
+            }
+            Some(world::BlockEntity::Forge(f)) => {
+                let ok = match held {
+                    None => true,
+                    Some(h) if slot < 4 => reg.smelts.iter().any(|sm| sm.input.matches(h.item)),
+                    Some(h) => reg.fuel_value(h.item).is_some(),
+                };
+                (f, ok)
+            }
+            _ => return,
+        };
         if b.lit || slot >= 8 {
             return;
         }
-        let chain = reg.bloomery.first().cloned();
-        let want = chain.map(|c| if slot < 4 { c.charge } else { c.fuel });
         let s = if slot < 4 {
             &mut b.charge[slot]
         } else {
             &mut b.fuel[slot - 4]
         };
-        if self.ui_state.held_stack.is_none()
-            || self.ui_state.held_stack.map(|h| Some(h.item)) == Some(want)
-        {
+        if ok {
             let (ns, nh) = inventory::click_stack(&reg, *s, self.ui_state.held_stack, right);
             *s = ns;
             self.ui_state.held_stack = nh;
@@ -154,17 +167,17 @@ impl Game {
             });
             return;
         }
-        let kilnish = self
+        let station = self
             .content
             .reg
             .block(self.server.world.get_block(pos.0, pos.1, pos.2))
             .interaction
-            .as_deref()
-            == Some("kiln");
-        let res = if kilnish {
-            self.server.world.light_kiln(pos.0, pos.1, pos.2)
-        } else {
-            self.server.world.light_bloomery(pos.0, pos.1, pos.2)
+            .clone();
+        let kilnish = station.as_deref() == Some("kiln");
+        let res = match station.as_deref() {
+            Some("kiln") => self.server.world.light_kiln(pos.0, pos.1, pos.2),
+            Some("forge") => self.server.world.light_forge(pos.0, pos.1, pos.2),
+            _ => self.server.world.light_bloomery(pos.0, pos.1, pos.2),
         };
         match res {
             Ok(()) => {

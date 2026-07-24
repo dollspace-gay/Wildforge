@@ -684,3 +684,78 @@ fn cupellation_splits_silver_from_lead() {
         .sum();
     assert_eq!(spat, 2, "the lead pours out the mouth");
 }
+
+#[test]
+fn forge_wants_its_whole_workshop() {
+    use crate::world::BlockEntity;
+    let reg = base_reg();
+    let mut w = test_world_with("forge-shape", reg.clone());
+    let my = 120;
+    build_forge(&mut w, &reg, 10, my, 10);
+    assert!(
+        w.check_forge(10, my, 10).is_some(),
+        "the workshop validates"
+    );
+    // No anvil, no forge.
+    w.set_block(9, my, 10, AIR);
+    assert!(w.check_forge(10, my, 10).is_none(), "the anvil is required");
+    let anvil = reg.block_id("base:stone_anvil").unwrap();
+    w.set_block(9, my, 10, anvil);
+    // A breached chimney course kills it too.
+    let fb = reg.block_id("base:firebrick").unwrap();
+    w.set_block(12, my + 4, 10, AIR);
+    assert!(
+        w.check_forge(10, my, 10).is_none(),
+        "the chimney is required"
+    );
+    w.set_block(12, my + 4, 10, fb);
+    assert!(w.check_forge(10, my, 10).is_some(), "repair re-validates");
+    // An uncharged forge refuses the ember.
+    w.insert_block_entity((10, my, 10), BlockEntity::Forge(Default::default()));
+    assert!(w.light_forge(10, my, 10).is_err(), "empty refuses to light");
+}
+
+#[test]
+fn forge_batch_smelts_with_thrifty_fuel_in_any_weather() {
+    use crate::world::{BlockEntity, BloomeryState, FORGE_FIRE_SECS, Weather};
+    let reg = base_reg();
+    let mut w = test_world_with("forge-fire", reg.clone());
+    let my = 120;
+    build_forge(&mut w, &reg, 10, my, 10);
+    // 8 raw copper + 4 charcoal: the batch smelts every ore and burns
+    // one fuel per two items — half what a furnace would ask.
+    let raw = reg.item_id("base:raw_copper").unwrap();
+    let ingot = reg.item_id("base:copper_ingot").unwrap();
+    let coal = reg.item_id("base:charcoal").unwrap();
+    let mut st = BloomeryState::default();
+    for i in 0..4 {
+        st.charge[i] = Some(ItemStack::new(&reg, raw, 2));
+    }
+    st.fuel[0] = Some(ItemStack::new(&reg, coal, 4));
+    st.fuel[1] = Some(ItemStack::new(&reg, coal, 4));
+    w.insert_block_entity((10, my, 10), BlockEntity::Forge(st));
+    assert!(w.light_forge(10, my, 10).is_ok(), "lights when charged");
+    // A storm means nothing to a chimneyed workshop.
+    w.weather = Weather::Storm;
+    let steps = (FORGE_FIRE_SECS / 0.5) as i32 + 4;
+    for _ in 0..steps {
+        w.tick_entities(0.5);
+    }
+    let Some(BlockEntity::Forge(f)) = w.block_entity(&(10, my, 10)) else {
+        panic!("forge survived");
+    };
+    assert!(!f.lit, "the firing ended despite the storm");
+    assert!(
+        f.charge.iter().all(|s| s.is_none()),
+        "the whole batch smelted"
+    );
+    let fuel_left: u32 = f.fuel.iter().flatten().map(|s| s.count).sum();
+    assert_eq!(fuel_left, 4, "8 items burned 4 fuel (2 per fuel)");
+    let minted: u32 = w
+        .pending_drops()
+        .iter()
+        .filter(|(_, s)| s.item == ingot)
+        .map(|(_, s)| s.count)
+        .sum();
+    assert_eq!(minted, 8, "eight ingots spat at the mouth");
+}

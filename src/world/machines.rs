@@ -87,6 +87,70 @@ impl World {
         self.check_stack(x, y, z, &mouth)
     }
 
+    /// Validate the forge: the firebrick stack with a forge mouth,
+    /// PLUS a chimney (three more courses of firebrick ring around an
+    /// open flue above the stack — rain never reaches the fire) and a
+    /// stone anvil within three blocks of the mouth. A building, not
+    /// a block: the workshop is the capital (economy plan, leg 2).
+    pub fn check_forge(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
+        let mouth = [
+            self.reg.block_id("base:forge"),
+            self.reg.block_id("base:forge_lit"),
+        ];
+        let core = self.check_stack(x, y, z, &mouth)?;
+        let fb = self.reg.block_id("base:firebrick")?;
+        let (cx, cy, cz) = core;
+        for ly in 3..6 {
+            if self.get_block(cx, cy + ly, cz) != AIR {
+                return None;
+            }
+            for rx in -1..=1 {
+                for rz in -1..=1 {
+                    if rx == 0 && rz == 0 {
+                        continue;
+                    }
+                    if self.get_block(cx + rx, cy + ly, cz + rz) != fb {
+                        return None;
+                    }
+                }
+            }
+        }
+        let anvil = self.reg.block_id("base:stone_anvil")?;
+        for dx in -3i32..=3 {
+            for dz in -3i32..=3 {
+                for dy in -1..=1 {
+                    if self.get_block(x + dx, y + dy, z + dz) == anvil {
+                        return Some(core);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Light a charged forge. Errors name what's missing.
+    pub fn light_forge(&mut self, x: i32, y: i32, z: i32) -> Result<(), &'static str> {
+        let core = self
+            .check_forge(x, y, z)
+            .ok_or("the forge wants its stack, chimney, and anvil")?;
+        let Some(BlockEntity::Forge(f)) = self.block_entities.get_mut(&(x, y, z)) else {
+            return Err("nothing charged");
+        };
+        if f.lit {
+            return Err("already firing");
+        }
+        let n_charge: u32 = f.charge.iter().flatten().map(|s| s.count).sum();
+        let n_fuel: u32 = f.fuel.iter().flatten().map(|s| s.count).sum();
+        if n_charge < 1 || n_fuel < 1 {
+            return Err("needs charge and fuel");
+        }
+        f.lit = true;
+        f.progress = 0.0;
+        f.core = core;
+        self.swap_block_keep_entity(x, y, z, "base:forge_lit");
+        Ok(())
+    }
+
     /// The same stack with a kiln in its mouth fires glass instead.
     pub fn check_kiln(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
         let mouth = [

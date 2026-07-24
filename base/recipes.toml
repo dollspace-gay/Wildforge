@@ -782,3 +782,11 @@ speed = 1.25
 charge = "base:iron_ingot"
 fuel = "base:coal"
 bloom = "base:steel_bloom"
+
+# The forge: the first workshop. A building, not a block - the mouth
+# wants the bloomery's firebrick stack, three more courses of chimney,
+# and a stone anvil beside it before it fires (economy plan, leg 2).
+[[recipe]]
+pattern = ["i.i", "fff", "fff"]
+keys = { i = "base:iron_ingot", f = "base:firebrick" }
+output = "base:forge"

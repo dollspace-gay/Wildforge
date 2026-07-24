@@ -1385,27 +1385,43 @@ impl Game {
             }
             Screen::Bloomery(pos) => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
-                let title = "BLOOMERY";
+                // The forge rides the bloomery screen: same slots,
+                // its own shell check and firing clock.
+                let forge = matches!(
+                    self.server.world.block_entity(&pos),
+                    Some(world::BlockEntity::Forge(_))
+                );
+                let title = if forge { "FORGE" } else { "BLOOMERY" };
                 let tw = UiBatch::text_width(3.0, title);
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 300.0, 3.0, title, [1.0; 4]);
                 let (slots, lit, progress, breached) = {
-                    let breached = self
-                        .server
-                        .world
-                        .check_bloomery(pos.0, pos.1, pos.2)
-                        .is_none();
+                    let breached = if forge {
+                        self.server.world.check_forge(pos.0, pos.1, pos.2).is_none()
+                    } else {
+                        self.server
+                            .world
+                            .check_bloomery(pos.0, pos.1, pos.2)
+                            .is_none()
+                    };
                     match self.server.world.block_entity(&pos) {
-                        Some(world::BlockEntity::Bloomery(b)) => {
+                        Some(world::BlockEntity::Bloomery(b))
+                        | Some(world::BlockEntity::Forge(b)) => {
                             let mut v = [None; 8];
                             v[..4].copy_from_slice(&b.charge);
                             v[4..].copy_from_slice(&b.fuel);
-                            (v, b.lit, b.progress / world::BLOOMERY_FIRE_SECS, breached)
+                            let secs = if forge {
+                                world::FORGE_FIRE_SECS
+                            } else {
+                                world::BLOOMERY_FIRE_SECS
+                            };
+                            (v, b.lit, b.progress / secs, breached)
                         }
                         _ => ([None; 8], false, 0.0, breached),
                     }
                 };
                 ui.text_shadow(w / 2.0 - 150.0, h / 2.0 - 268.0, 1.5, "CHARGE", [1.0; 4]);
-                ui.text_shadow(w / 2.0 - 150.0, h / 2.0 - 186.0, 1.5, "CHARCOAL", [1.0; 4]);
+                let fuel_label = if forge { "FUEL" } else { "CHARCOAL" };
+                ui.text_shadow(w / 2.0 - 150.0, h / 2.0 - 186.0, 1.5, fuel_label, [1.0; 4]);
                 for (i, s) in slots.iter().enumerate() {
                     let r = self.bloomery_slot_rect(i);
                     Self::draw_slot(&self.content.reg, &mut ui, r, *s, false, self.hit(r));
@@ -1432,7 +1448,11 @@ impl Game {
                         lr.0,
                         lr.1 + 44.0,
                         1.5,
-                        "THE STACK IS BREACHED",
+                        if forge {
+                            "WANTS STACK, CHIMNEY, ANVIL"
+                        } else {
+                            "THE STACK IS BREACHED"
+                        },
                         [1.0, 0.5, 0.4, 1.0],
                     );
                     Self::draw_button(&mut ui, lr, "LIGHT", false);

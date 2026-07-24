@@ -921,6 +921,36 @@ impl Game {
                     self.set_screen(Screen::Offering(h.block));
                     return;
                 }
+                Some(station @ ("bloomery" | "kiln" | "forge"))
+                    if self.input.action_cooldown <= 0.0 =>
+                {
+                    self.input.action_cooldown = 0.3;
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::OpenContainer {
+                            x: h.block.0,
+                            y: h.block.1,
+                            z: h.block.2,
+                        });
+                        return;
+                    }
+                    let (default, screen) = match station {
+                        "kiln" => (
+                            world::BlockEntity::Kiln(Default::default()),
+                            Screen::Kiln(h.block),
+                        ),
+                        "forge" => (
+                            world::BlockEntity::Forge(Default::default()),
+                            Screen::Bloomery(h.block),
+                        ),
+                        _ => (
+                            world::BlockEntity::Bloomery(Default::default()),
+                            Screen::Bloomery(h.block),
+                        ),
+                    };
+                    self.server.world.ensure_block_entity(h.block, default);
+                    self.set_screen(screen);
+                    return;
+                }
                 _ => {}
             }
             let (x, y, z) = h.adjacent;

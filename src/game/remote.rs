@@ -477,11 +477,15 @@ impl Game {
                             }
                             world::BlockEntity::Kiln(k)
                         }
-                        3 => {
+                        3 | 5 => {
+                            let secs = if kind == 5 {
+                                world::FORGE_FIRE_SECS
+                            } else {
+                                world::BLOOMERY_FIRE_SECS
+                            };
                             let mut b = world::BloomeryState {
                                 lit: aux.first().copied().unwrap_or(0.0) > 0.5,
-                                progress: aux.get(1).copied().unwrap_or(0.0)
-                                    * world::BLOOMERY_FIRE_SECS,
+                                progress: aux.get(1).copied().unwrap_or(0.0) * secs,
                                 ..Default::default()
                             };
                             for (i, s) in slots.iter().enumerate().take(8) {
@@ -491,7 +495,11 @@ impl Game {
                                     b.fuel[i - 4] = conv(s);
                                 }
                             }
-                            world::BlockEntity::Bloomery(b)
+                            if kind == 5 {
+                                world::BlockEntity::Forge(b)
+                            } else {
+                                world::BlockEntity::Bloomery(b)
+                            }
                         }
                         _ => {
                             let mut o = world::OfferingState::default();
@@ -508,6 +516,7 @@ impl Game {
                             1 => Screen::Furnace(pos),
                             3 => Screen::Bloomery(pos),
                             4 => Screen::Kiln(pos),
+                            5 => Screen::Bloomery(pos),
                             _ => Screen::Offering(pos),
                         });
                     }

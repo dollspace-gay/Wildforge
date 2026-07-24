@@ -40,6 +40,7 @@ pub enum BlockEntity {
     Clamp(ClampState),
     Anvil(AnvilState),
     Kiln(KilnState),
+    Forge(BloomeryState),
 }
 
 /// The steelworks stack: a batch of charge + fuel, fired for half a
@@ -93,6 +94,12 @@ pub struct FallingBlock {
 
 /// Half an in-game day of fire per batch.
 pub const BLOOMERY_FIRE_SECS: f32 = 300.0;
+/// The forge runs hotter and shorter than the open stack — capital
+/// pays for itself in wall-clock too (economy plan, leg 2).
+pub const FORGE_FIRE_SECS: f32 = 120.0;
+/// One fuel smelts this many charge items in a forge (a furnace
+/// burns roughly one per item — the chimney draft earns its keep).
+pub const FORGE_ITEMS_PER_FUEL: u32 = 2;
 /// Seconds of smolder per log in a charcoal clamp.
 pub const CLAMP_SECS_PER_LOG: f32 = 300.0;
 
@@ -764,6 +771,7 @@ impl World {
                 BlockEntity::Chest(c) => c.slots.into_iter().flatten().collect(),
                 BlockEntity::Offering(o) => o.slots.into_iter().flatten().collect(),
                 BlockEntity::Bloomery(b) => b.charge.into_iter().chain(b.fuel).flatten().collect(),
+                BlockEntity::Forge(f) => f.charge.into_iter().chain(f.fuel).flatten().collect(),
                 BlockEntity::Clamp(_) => Vec::new(), // the burn dies with it
                 BlockEntity::Anvil(a) => a.bloom.into_iter().collect(),
                 BlockEntity::Kiln(k) => k

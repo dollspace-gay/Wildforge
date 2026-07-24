@@ -275,6 +275,29 @@ fn build_bloomery(w: &mut World, reg: &Registry, mx: i32, my: i32, mz: i32) {
     w.set_block(mx, my, mz, mouth);
 }
 
+/// The forge: the bloomery shell with a forge mouth, three more
+/// courses of chimney over the core, and a stone anvil by the mouth.
+#[allow(dead_code)]
+fn build_forge(w: &mut World, reg: &Registry, mx: i32, my: i32, mz: i32) {
+    let fb = reg.block_id("base:firebrick").unwrap();
+    let mouth = reg.block_id("base:forge").unwrap();
+    let anvil = reg.block_id("base:stone_anvil").unwrap();
+    let (cx, cz) = (mx + 1, mz);
+    for ly in 0..6 {
+        for rx in -1..=1i32 {
+            for rz in -1..=1i32 {
+                if rx == 0 && rz == 0 {
+                    continue;
+                }
+                w.set_block(cx + rx, my + ly, cz + rz, fb);
+            }
+        }
+        w.set_block(cx, my + ly, cz, AIR);
+    }
+    w.set_block(mx, my, mz, mouth);
+    w.set_block(mx - 1, my, mz, anvil);
+}
+
 // ---------------- weather & seasons ----------------
 
 // ---------------- game feel (the juice layer) ----------------

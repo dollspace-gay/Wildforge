@@ -1032,3 +1032,25 @@ name = "Mud"
 texture = "mud.png"
 hardness = 0.7
 tool = "shovel"
+
+[[block]]
+id = "forge"
+name = "Forge"
+texture = { top = "@firebrick", side = "@forge" }
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+interaction = "forge"
+
+[[block]]
+id = "forge_lit"
+name = "Forge"
+texture = { top = "@firebrick", side = "@forge_lit" }
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+interaction = "forge"
+light = 11
+light_color = [1.0, 0.55, 0.2]
+drops = "base:forge"
+item = false
