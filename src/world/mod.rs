@@ -221,6 +221,11 @@ pub struct World {
     water_queued: HashSet<(i32, i32, i32)>,
     lava_queue: VecDeque<(i32, i32, i32)>,
     lava_queued: HashSet<(i32, i32, i32)>,
+    /// True while a fluid tick runs: air<->fluid relights batch into
+    /// pending_relight (one per chunk per tick) instead of cascading
+    /// per moved cell.
+    fluid_batch: bool,
+    pending_relight: HashSet<ChunkPos>,
     /// Absolute sim-time in seconds (day * DAY_LENGTH + time-of-day),
     /// mirrored from the Server every tick so chunk load and random
     /// ticks share one clock.
@@ -442,6 +447,8 @@ impl World {
             water_queued: HashSet::new(),
             lava_queue: VecDeque::new(),
             lava_queued: HashSet::new(),
+            fluid_batch: false,
+            pending_relight: HashSet::new(),
             clock: 0.0,
             last_random: HashMap::new(),
             block_entities: HashMap::new(),
@@ -730,11 +737,22 @@ impl World {
         // light consequence (every level shares one cost, lava's every
         // level emits alike) — skip the full-chunk relight that was
         // making a settling river cost thousands of BFS passes a
-        // second. Air/solid boundaries still relight as ever.
+        // second. During a fluid tick, air<->fluid transitions (an
+        // advancing or draining front) batch instead: each touched
+        // chunk relights once at the end of the tick, not once per
+        // moved cell — an ocean pouring into cave seams was costing
+        // 78ms per water tick in cascaded relights alone. Outside the
+        // ticks (a bucket pour, a block break) light stays immediate.
         let fluid_level_only = self.reg.is_fluid(old)
             && self.reg.is_fluid(b)
             && self.reg.is_lava(old) == self.reg.is_lava(b);
-        if !fluid_level_only {
+        let front_move = self.fluid_batch
+            && (self.reg.is_fluid(old) || self.reg.is_fluid(b))
+            && (self.reg.is_fluid(old) || self.reg.is_air(old))
+            && (self.reg.is_fluid(b) || self.reg.is_air(b));
+        if front_move {
+            self.pending_relight.insert(pos);
+        } else if !fluid_level_only {
             self.relight_and_cascade(pos);
         }
         // A changed block invalidates any machine state living there.

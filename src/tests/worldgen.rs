@@ -1293,3 +1293,105 @@ fn adopted_worker_chunks_match_ensure() {
         "disk wins over the worker"
     );
 }
+
+/// Dev tooling: settled-world per-tick sim cost, mob-heavy.
+/// cargo test --release bench_sim_tick -- --ignored --nocapture
+#[test]
+#[ignore]
+fn bench_sim_tick() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("simbench"), reg.clone());
+    for x in -6..=6 {
+        for z in -6..=6 {
+            w.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    println!("mobs after seeding 169 chunks: {}", w.mob_count());
+    let mut srv = crate::server::Server::new(w, 0.3, 7);
+    let players = [crate::server::PlayerCtx {
+        pos: glam::Vec3::new(8.0, 80.0, 8.0),
+        spawn: glam::Vec3::new(8.0, 80.0, 8.0),
+        attackable: true,
+        aggro_mod: 0.0,
+    }];
+    let mut evs = Vec::new();
+    // Warm up, then time 300 fixed ticks.
+    for _ in 0..30 {
+        srv.advance(1.0 / 30.0, &players, &mut evs);
+        evs.clear();
+    }
+    let t0 = std::time::Instant::now();
+    for _ in 0..300 {
+        srv.advance(1.0 / 30.0, &players, &mut evs);
+        evs.clear();
+    }
+    let per_tick = t0.elapsed() / 300;
+    // Isolate mobs: time tick_mobs alone.
+    let mut rng = 5u32;
+    let t1 = std::time::Instant::now();
+    for _ in 0..300 {
+        srv.world.tick_mobs(&players, 1.0, 1.0 / 30.0, &mut rng);
+    }
+    let mobs_only = t1.elapsed() / 300;
+    println!(
+        "advance: {per_tick:?}/tick   tick_mobs alone: {mobs_only:?}/tick   mobs: {}",
+        srv.world.mob_count()
+    );
+}
+
+/// Dev tooling: which part of the tick is eating the frame.
+/// cargo test --release bench_tick_parts -- --ignored --nocapture
+#[test]
+#[ignore]
+fn bench_tick_parts() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("tickparts"), reg.clone());
+    for x in -6..=6 {
+        for z in -6..=6 {
+            w.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    let mut srv = crate::server::Server::new(w, 0.3, 7);
+    let players = [crate::server::PlayerCtx {
+        pos: glam::Vec3::new(8.0, 80.0, 8.0),
+        spawn: glam::Vec3::new(8.0, 80.0, 8.0),
+        attackable: true,
+        aggro_mod: 0.0,
+    }];
+    let mut evs = Vec::new();
+    for _ in 0..30 {
+        srv.advance(1.0 / 30.0, &players, &mut evs);
+        evs.clear();
+    }
+    let time = |label: &str, f: &mut dyn FnMut()| {
+        let t = std::time::Instant::now();
+        for _ in 0..100 {
+            f();
+        }
+        println!("{label}: {:?}", t.elapsed() / 100);
+    };
+    let mut rng = 5u32;
+    time("tick_water(512)", &mut || {
+        srv.world.tick_water(512);
+    });
+    time("tick_lava(256)", &mut || {
+        srv.world.tick_lava(256);
+    });
+    time("tick_entities", &mut || {
+        srv.world.tick_entities(1.0 / 30.0);
+    });
+    time("tick_falling", &mut || {
+        srv.world.tick_falling(1.0 / 30.0);
+    });
+    time("random_tick", &mut || {
+        srv.world.random_tick(&mut rng);
+    });
+    time("hostile_spawns", &mut || {
+        srv.world
+            .tick_hostile_spawns(players[0].pos, players[0].spawn, 1.0, 1.0 / 30.0, &mut rng);
+    });
+    time("full advance", &mut || {
+        srv.advance(1.0 / 30.0, &players, &mut evs);
+        evs.clear();
+    });
+}
