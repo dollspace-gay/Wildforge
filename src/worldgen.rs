@@ -606,6 +606,22 @@ impl Generator {
         self.hydrology(wx, wz, &cl, pre).1
     }
 
+    /// Does a granite pluton intrude this column at mineable depth?
+    /// Mirrors sample_lattice's threshold math (tests and tooling —
+    /// the resource census measures how far apart plutons really are).
+    #[cfg(test)]
+    pub fn pluton_at(&self, wx: i32, wz: i32) -> bool {
+        for y in [16.0f64, 32.0, 48.0, 64.0] {
+            let g = self
+                .granite3d
+                .get([wx as f64 / 230.0, y / 150.0, wz as f64 / 230.0]) as f32;
+            if g > 0.40 + y as f32 * 0.0012 {
+                return true;
+            }
+        }
+        false
+    }
+
     /// The armor level sealing a column, if any (tests and tooling).
     #[cfg(test)]
     pub fn armor_at(&self, wx: i32, wz: i32) -> Option<i32> {
