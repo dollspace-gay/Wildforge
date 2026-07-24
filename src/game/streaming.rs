@@ -90,6 +90,7 @@ impl Game {
     }
 
     pub(super) fn stream_chunks(&mut self) {
+        self.stream_t0 = std::time::Instant::now();
         let pcx = (self.player.pos.x.floor() as i32).div_euclid(CHUNK_X as i32);
         let pcz = (self.player.pos.z.floor() as i32).div_euclid(CHUNK_X as i32);
 
@@ -119,8 +120,11 @@ impl Game {
                 }
             }
             // Adopt what's ready, on a time budget — adoption still
-            // pays light and seams on this thread.
-            let t0 = std::time::Instant::now();
+            // pays light and seams on this thread. This budget and the
+            // mesh budget below are ONE 5ms pool: they used to stack
+            // (6ms + 6ms) and could eat 12ms of every streaming frame
+            // by themselves.
+            let t0 = self.stream_t0;
             while let Ok((pos, chunk)) = pool.done.try_recv() {
                 pool.in_flight.remove(&pos);
                 if self.server.world.adopt_generated(pos, chunk) {
@@ -132,7 +136,7 @@ impl Game {
                         });
                     }
                 }
-                if t0.elapsed().as_millis() >= 6 {
+                if t0.elapsed().as_millis() >= 3 {
                     break;
                 }
             }
@@ -158,8 +162,13 @@ impl Game {
             .chunks_outside(ChunkPos { x: pcx, z: pcz }, limit);
         if !far.is_empty() {
             self.server.world.settle_falling();
-            self.server.world.save_modified();
+            // Save only what leaves; a full save_modified here wrote
+            // the whole world (palette, entities, mobs, stamps, every
+            // modified chunk) to disk on the main thread every time a
+            // single chunk crossed the border — a walking-speed
+            // stutter machine. The autosave timer owns the full save.
             for pos in far {
+                self.server.world.save_chunk_if_modified(pos);
                 self.server.world.unload_chunk(pos);
                 self.renderer.drop_chunk(pos);
                 self.presentation.lights.chunk_dropped(pos);
@@ -183,15 +192,14 @@ impl Game {
             })
         });
         dirty.sort_by_key(|(d, _)| *d);
-        // Meshing shares the frame with everything else: stop at the
-        // time box even if the count budget remains.
-        let t0 = std::time::Instant::now();
+        // Meshing spends whatever the shared 5ms streaming pool has
+        // left after adoption.
         for (_, pos) in dirty.into_iter().take(MESH_BUDGET) {
             let mesh = mesher::mesh_chunk(&self.server.world, pos);
             self.renderer.upload_chunk(pos, &mesh);
             self.presentation.lights.chunk_meshed(pos, mesh.emitters);
             self.server.world.mark_chunk_meshed(pos);
-            if t0.elapsed().as_millis() >= 6 {
+            if self.stream_t0.elapsed().as_millis() >= 5 {
                 break;
             }
         }

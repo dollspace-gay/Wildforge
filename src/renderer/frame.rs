@@ -204,10 +204,9 @@ impl Renderer {
                 .write_buffer(&self.outline_buf, 0, bytemuck::cast_slice(&verts));
         }
 
-        let frame = self.surface.get_current_texture()?;
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        // The swapchain image is acquired as late as possible (just
+        // before the composite pass) — acquiring here used to block on
+        // vsync while the whole shadow/world encode still lay ahead.
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -545,6 +544,12 @@ impl Renderer {
         }
 
         // Composite HDR + bloom into the sRGB swapchain (the tonemap/encode).
+        // Only now does the swapchain image matter: acquire it here so the
+        // vsync wait overlaps all the encoding above instead of preceding it.
+        let frame = self.surface.get_current_texture()?;
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
         {
             let mut pass = post_pass(&mut encoder, "composite", &view);
             pass.set_pipeline(&self.composite_pipeline);

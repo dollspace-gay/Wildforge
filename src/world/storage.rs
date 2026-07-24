@@ -224,6 +224,19 @@ impl World {
         f.write_all(&buf)
     }
 
+    /// Persist a single departing chunk (unload path): only its own
+    /// file, only if edited — the full save belongs to the autosave
+    /// timer and quit, not to every step across a chunk border.
+    pub fn save_chunk_if_modified(&self, pos: ChunkPos) {
+        if self.remote {
+            return;
+        }
+        if self.chunks.get(&pos).is_some_and(|chunk| chunk.modified) {
+            let _ = fs::create_dir_all(&self.save_dir);
+            let _ = self.save_chunk(pos);
+        }
+    }
+
     pub fn save_modified(&self) {
         if self.remote {
             return; // the host owns the world
