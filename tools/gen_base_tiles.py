@@ -247,6 +247,7 @@ ITEMS = [
     ("crystal_lens", (210, 230, 240), (140, 170, 190), "lens"),
     ("diamond_tipped_pick", (200, 240, 245), (120, 190, 210), "pick"),
     ("crystal_prism", (215, 232, 242), (145, 172, 192), "prism"),
+    ("prospect_pick", (198, 166, 92), (128, 100, 52), "pick"),
 ]
 
 GLASSES = [

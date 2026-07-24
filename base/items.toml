@@ -891,3 +891,9 @@ tool = "pickaxe"
 tool_speed = 24.0
 tool_tier = 6
 durability = 1600
+
+[[item]]
+id = "prospect_pick"
+name = "Prospector's Pick"
+texture = "@prospect_pick"
+durability = 96

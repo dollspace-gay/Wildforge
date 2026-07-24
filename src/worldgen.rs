@@ -88,6 +88,16 @@ impl Spline {
 /// the terrain spline; the crater dips it back; generate() pools the
 /// crater with lava and dresses rim and flanks.
 #[derive(Clone, Copy)]
+/// What a prospecting strike reveals: each regional feature's rough
+/// distance in blocks and the offset it was found at (for a compass
+/// direction), or None past the pick's reach.
+pub struct ProspectReading {
+    pub pluton: Option<(i32, (i32, i32))>,
+    pub volcano: Option<(i32, (i32, i32))>,
+    pub pipe: Option<(i32, (i32, i32))>,
+    pub geode: Option<(i32, (i32, i32))>,
+}
+
 pub struct Volcano {
     pub x: i32,
     pub z: i32,
@@ -607,9 +617,8 @@ impl Generator {
     }
 
     /// Does a granite pluton intrude this column at mineable depth?
-    /// Mirrors sample_lattice's threshold math (tests and tooling —
-    /// the resource census measures how far apart plutons really are).
-    #[cfg(test)]
+    /// Mirrors sample_lattice's threshold math. The census measures
+    /// with it; the prospecting pick reads with it.
     pub fn pluton_at(&self, wx: i32, wz: i32) -> bool {
         let prov = self
             .granite3d
@@ -624,6 +633,61 @@ impl Generator {
             }
         }
         false
+    }
+
+    /// One prospecting reading: what regional geology lies near this
+    /// spot, and roughly which way. Everything here is a pure function
+    /// of seed and position — the pick reveals, it never rolls.
+    /// Detection reaches are deliberately shorter than the rarity
+    /// bands: mapping a region takes a SWEEP of readings (surveying is
+    /// work, which is what makes a finished survey worth trading).
+    pub fn prospect(&self, wx: i32, wz: i32) -> ProspectReading {
+        let ring = |step: i32, cap: i32, hit: &dyn Fn(i32, i32) -> bool| {
+            if hit(wx, wz) {
+                return Some((0, (0, 0)));
+            }
+            let mut r = step;
+            while r <= cap {
+                let mut i = -r;
+                while i <= r {
+                    for (dx, dz) in [(i, -r), (i, r), (-r, i), (r, i)] {
+                        if hit(wx + dx, wz + dz) {
+                            return Some((r, (dx, dz)));
+                        }
+                    }
+                    i += step;
+                }
+                r += step;
+            }
+            None
+        };
+        let cp = ChunkPos::of_world(wx, wz);
+        let chunk_ring = |cap: i32, hit: &dyn Fn(ChunkPos) -> bool| {
+            if hit(cp) {
+                return Some((0, (0, 0)));
+            }
+            for r in 1..=cap {
+                let mut i = -r;
+                while i <= r {
+                    for (dx, dz) in [(i, -r), (i, r), (-r, i), (r, i)] {
+                        if hit(ChunkPos {
+                            x: cp.x + dx,
+                            z: cp.z + dz,
+                        }) {
+                            return Some((r * 16, (dx * 16, dz * 16)));
+                        }
+                    }
+                    i += 1;
+                }
+            }
+            None
+        };
+        ProspectReading {
+            pluton: ring(64, 1216, &|x, z| self.pluton_at(x, z)),
+            volcano: ring(64, 1216, &|x, z| self.volcano_near(x, z).is_some()),
+            pipe: chunk_ring(24, &|p| self.pipe_at(p).is_some()),
+            geode: chunk_ring(12, &|p| self.geode_at(p).is_some()),
+        }
     }
 
     /// The armor level sealing a column, if any (tests and tooling).

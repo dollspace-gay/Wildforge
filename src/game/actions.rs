@@ -771,6 +771,71 @@ impl Game {
                     return;
                 }
             }
+            // The prospector's pick: strike bare rock, read the country.
+            if held == reg.item_id("base:prospect_pick")
+                && let Some(hb) = &hit
+            {
+                let (bx, by, bz) = hb.block;
+                let tb = self.server.world.get_block(bx, by, bz);
+                if self.server.world.reg.is_solid(tb) {
+                    let r = self.server.world.generator.prospect(bx, bz);
+                    let octant = |d: (i32, i32)| -> &'static str {
+                        if d == (0, 0) {
+                            return "here";
+                        }
+                        let a = (d.0 as f32).atan2(-(d.1 as f32)).to_degrees();
+                        let names = [
+                            "north",
+                            "northeast",
+                            "east",
+                            "southeast",
+                            "south",
+                            "southwest",
+                            "west",
+                            "northwest",
+                        ];
+                        names[(((a + 382.5) / 45.0) as usize) % 8]
+                    };
+                    let mut lines: Vec<String> = Vec::new();
+                    match r.pluton {
+                        Some((0, _)) => lines.push("Granite country underfoot.".into()),
+                        Some((d, dir)) => {
+                            lines.push(format!("Granite country ~{d} blocks {}.", octant(dir)))
+                        }
+                        None => lines.push("No batholith in the pick's reach.".into()),
+                    }
+                    if let Some((d, dir)) = r.volcano {
+                        if d == 0 {
+                            lines.push("Volcanic ground — you're standing on it.".into());
+                        } else {
+                            lines.push(format!("Volcanic rock ~{d} blocks {}.", octant(dir)));
+                        }
+                    }
+                    if let Some((d, dir)) = r.pipe {
+                        if d == 0 {
+                            lines.push("BLUE GROUND. A pipe under this very spot.".into());
+                        } else {
+                            lines.push(format!("Blue ground! A pipe ~{d} blocks {}.", octant(dir)));
+                        }
+                    }
+                    if let Some((d, dir)) = r.geode {
+                        if d == 0 {
+                            lines.push("A hollow ring underfoot — geode.".into());
+                        } else {
+                            lines.push(format!("A hollow ring ~{d} blocks {}.", octant(dir)));
+                        }
+                    }
+                    for l in lines {
+                        self.toast(l);
+                    }
+                    if !self.creative {
+                        self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                    }
+                    self.sfx(Sfx::Bolt(1.2));
+                    self.input.action_cooldown = 0.8;
+                    return;
+                }
+            }
             // Throwables (snowballs): loosed from the hand.
             if let Some(speed) = held.and_then(|i| reg.item(i).throw_speed)
                 && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())

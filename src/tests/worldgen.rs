@@ -1929,3 +1929,42 @@ fn regional_resources_hold_their_distance_bands() {
         "batholiths stay regional (median {plu_med})"
     );
 }
+
+#[test]
+fn prospect_readings_reveal_the_country() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    // Stand a known distance from a located pipe: the reading points
+    // at it. (Locator first, then read from 8 chunks west of it.)
+    let mut pipe = None;
+    'p: for x in -400..=400 {
+        for z in -400..=400 {
+            if g.pipe_at(ChunkPos { x, z }).is_some() {
+                pipe = Some(ChunkPos { x, z });
+                break 'p;
+            }
+        }
+    }
+    let cp = pipe.expect("a pipe in range");
+    let (sx, sz) = (cp.x * 16 - 8 * 16, cp.z * 16 + 8);
+    let r = g.prospect(sx, sz);
+    let (d, dir) = r.pipe.expect("the pick smells blue ground");
+    assert!((96..=192).contains(&d), "8 chunks out reads ~128 ({d})");
+    assert!(dir.0 > 0, "the pipe lies east of the strike ({dir:?})");
+    // Standing inside a batholith reads "underfoot"; the same pick
+    // far outside one reads a bearing or nothing. Deterministic.
+    let mut inside = None;
+    'g: for r in 0..80 {
+        let d2 = r * 64;
+        for (x, z) in [(d2, 0), (-d2, 0), (0, d2), (0, -d2)] {
+            if g.pluton_at(x, z) {
+                inside = Some((x, z));
+                break 'g;
+            }
+        }
+    }
+    let (px, pz) = inside.expect("a batholith in range");
+    assert_eq!(g.prospect(px, pz).pluton, Some((0, (0, 0))), "underfoot");
+    let again = g.prospect(sx, sz);
+    assert_eq!(again.pipe, r.pipe, "readings are pure functions");
+}

@@ -790,3 +790,12 @@ bloom = "base:steel_bloom"
 pattern = ["i.i", "fff", "fff"]
 keys = { i = "base:iron_ingot", f = "base:firebrick" }
 output = "base:forge"
+
+# The prospector's pick: a bronze instrument, not a mining tool.
+# Strike bare rock and it reads the country - granite provinces,
+# volcanic fields, blue ground - knowledge being the one good a
+# surveyor can sell without swinging at anything (economy plan).
+[[recipe]]
+pattern = ["bb.", ".t.", ".t."]
+keys = { b = "base:bronze_ingot", t = "base:stick" }
+output = "base:prospect_pick"
