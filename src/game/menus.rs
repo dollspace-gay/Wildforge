@@ -416,6 +416,48 @@ impl Game {
                     }
                 }
             }
+            Screen::SignEdit(_) => {}
+            Screen::Stall(pos) => {
+                if self.hit(self.stall_buy_rect()) {
+                    self.sfx(Sfx::Click);
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::StallBuy {
+                            x: pos.0,
+                            y: pos.1,
+                            z: pos.2,
+                        });
+                    } else {
+                        self.stall_buy_local(pos);
+                    }
+                    return;
+                }
+                for i in 0..13 {
+                    if self.hit(self.stall_slot_rect(i)) {
+                        self.stall_click(pos, i, right);
+                        return;
+                    }
+                }
+                for i in 0..TOTAL_SLOTS {
+                    if self.hit(self.inv_slot_rect(i)) {
+                        self.inventory_click(false, i, right);
+                        return;
+                    }
+                }
+            }
+            Screen::MobCargo(id) => {
+                for i in 0..12 {
+                    if self.hit(self.mob_cargo_slot_rect(i)) {
+                        self.mob_cargo_click(id, i, right);
+                        return;
+                    }
+                }
+                for i in 0..TOTAL_SLOTS {
+                    if self.hit(self.inv_slot_rect(i)) {
+                        self.inventory_click(false, i, right);
+                        return;
+                    }
+                }
+            }
             Screen::Chest(pos) => {
                 if self.browser_click(right) {
                     return;

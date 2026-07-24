@@ -1350,6 +1350,7 @@ fn bench_sim_tick() {
     println!("mobs after seeding 169 chunks: {}", w.mob_count());
     let mut srv = crate::server::Server::new(w, 0.3, 7);
     let players = [crate::server::PlayerCtx {
+        id: 0,
         pos: glam::Vec3::new(8.0, 80.0, 8.0),
         spawn: glam::Vec3::new(8.0, 80.0, 8.0),
         attackable: true,
@@ -1394,6 +1395,7 @@ fn bench_tick_parts() {
     }
     let mut srv = crate::server::Server::new(w, 0.3, 7);
     let players = [crate::server::PlayerCtx {
+        id: 0,
         pos: glam::Vec3::new(8.0, 80.0, 8.0),
         spawn: glam::Vec3::new(8.0, 80.0, 8.0),
         attackable: true,

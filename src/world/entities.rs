@@ -105,6 +105,42 @@ impl World {
                     }
                     let _ = writeln!(out);
                 }
+                BlockEntity::Sign(sg) => {
+                    let esc = |l: &str| l.replace(['\\', '"'], "");
+                    let _ = writeln!(
+                        out,
+                        "[[sign]]\npos = [{x}, {y}, {z}]\nlines = [\"{}\", \"{}\", \"{}\"]\n",
+                        esc(&sg.lines[0]),
+                        esc(&sg.lines[1]),
+                        esc(&sg.lines[2])
+                    );
+                }
+                BlockEntity::Stall(st) => {
+                    let hex: String = st.owner.iter().map(|b| format!("{b:02x}")).collect();
+                    let _ = writeln!(
+                        out,
+                        "[[stall]]\npos = [{x}, {y}, {z}]\nowner = \"{hex}\"\nowner_name = \"{}\"",
+                        st.owner_name.replace(['\\', '"'], "")
+                    );
+                    let all: Vec<&Option<ItemStack>> = st
+                        .goods
+                        .iter()
+                        .chain([&st.price])
+                        .chain(st.till.iter())
+                        .collect();
+                    for (i, stk) in all.into_iter().enumerate() {
+                        if let Some(stk) = stk {
+                            let _ = writeln!(
+                                out,
+                                "[[stall.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                self.reg.item(stk.item).name,
+                                stk.count,
+                                stk.durability
+                            );
+                        }
+                    }
+                    let _ = writeln!(out);
+                }
                 BlockEntity::Clamp(c) => {
                     let logs: Vec<String> = c
                         .logs
@@ -220,6 +256,22 @@ impl World {
             slot: Vec<ChestSlotT>,
         }
         #[derive(Deserialize)]
+        struct SignT {
+            pos: [i32; 3],
+            #[serde(default)]
+            lines: Vec<String>,
+        }
+        #[derive(Deserialize)]
+        struct StallT {
+            pos: [i32; 3],
+            #[serde(default)]
+            owner: String,
+            #[serde(default)]
+            owner_name: String,
+            #[serde(default)]
+            slot: Vec<ChestSlotT>,
+        }
+        #[derive(Deserialize)]
         struct ClampT {
             pos: [i32; 3],
             timer: f32,
@@ -252,6 +304,10 @@ impl World {
             kiln: Vec<BloomeryT>,
             #[serde(default)]
             forge: Vec<BloomeryT>,
+            #[serde(default)]
+            sign: Vec<SignT>,
+            #[serde(default)]
+            stall: Vec<StallT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else {
             return;
@@ -372,6 +428,42 @@ impl World {
             }
             self.block_entities
                 .insert((fo.pos[0], fo.pos[1], fo.pos[2]), BlockEntity::Forge(state));
+        }
+        for sg in parsed.sign {
+            let mut state = SignState::default();
+            for (i, l) in sg.lines.into_iter().take(3).enumerate() {
+                state.lines[i] = l;
+            }
+            self.block_entities
+                .insert((sg.pos[0], sg.pos[1], sg.pos[2]), BlockEntity::Sign(state));
+        }
+        for st in parsed.stall {
+            let mut state = StallState {
+                owner_name: st.owner_name,
+                ..Default::default()
+            };
+            if st.owner.len() == 32 {
+                for (i, b) in state.owner.iter_mut().enumerate() {
+                    *b = u8::from_str_radix(&st.owner[i * 2..i * 2 + 2], 16).unwrap_or(0);
+                }
+            }
+            for sl in st.slot {
+                if let Some(item) = self.reg.item_id(&sl.item) {
+                    let stk = Some(ItemStack {
+                        item,
+                        count: sl.count,
+                        durability: sl.durability,
+                    });
+                    match sl.index {
+                        0..=5 => state.goods[sl.index] = stk,
+                        6 => state.price = stk,
+                        7..=12 => state.till[sl.index - 7] = stk,
+                        _ => {}
+                    }
+                }
+            }
+            self.block_entities
+                .insert((st.pos[0], st.pos[1], st.pos[2]), BlockEntity::Stall(state));
         }
         for cl in parsed.clamp {
             self.block_entities.insert(

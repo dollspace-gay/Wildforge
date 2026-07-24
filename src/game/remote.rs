@@ -421,6 +421,30 @@ impl Game {
                 net::S2C::PlayerState(state) => {
                     self.apply_remote_player_state(&r, state, false);
                 }
+                net::S2C::SignText { x, y, z, lines } => {
+                    self.server.world.insert_block_entity(
+                        (x, y, z),
+                        world::BlockEntity::Sign(world::SignState { lines }),
+                    );
+                }
+                net::S2C::MobCargo { id, slots } => {
+                    // The host's pack truth: mirror it onto the local
+                    // snapshot mob and open the screen if we asked.
+                    let mut cargo: Box<[Option<ItemStack>; 12]> = Default::default();
+                    for (i, sl) in slots.iter().enumerate().take(12) {
+                        cargo[i] = sl.as_ref().map(|sn| ItemStack {
+                            item: crate::registry::ItemId(sn.item),
+                            count: sn.count,
+                            durability: sn.durability,
+                        });
+                    }
+                    if let Some(m) = self.server.world.mob_by_id_mut(id) {
+                        m.cargo = Some(cargo);
+                    }
+                    if matches!(self.ui_state.screen, Screen::Playing) {
+                        self.set_screen(Screen::MobCargo(id));
+                    }
+                }
                 net::S2C::Container {
                     x,
                     y,
@@ -477,6 +501,23 @@ impl Game {
                             }
                             world::BlockEntity::Kiln(k)
                         }
+                        6 => {
+                            let mut st = world::StallState::default();
+                            for (i, sl) in slots.iter().enumerate().take(13) {
+                                let stk = conv(sl);
+                                match i {
+                                    0..=5 => st.goods[i] = stk,
+                                    6 => st.price = stk,
+                                    _ => st.till[i - 7] = stk,
+                                }
+                            }
+                            // aux[0] carries "you own this" — marked
+                            // with a sentinel owner so the UI knows.
+                            if aux.first().copied().unwrap_or(0.0) > 0.5 {
+                                st.owner = [1; 16];
+                            }
+                            world::BlockEntity::Stall(st)
+                        }
                         3 | 5 => {
                             let secs = if kind == 5 {
                                 world::FORGE_FIRE_SECS
@@ -517,6 +558,7 @@ impl Game {
                             3 => Screen::Bloomery(pos),
                             4 => Screen::Kiln(pos),
                             5 => Screen::Bloomery(pos),
+                            6 => Screen::Stall(pos),
                             _ => Screen::Offering(pos),
                         });
                     }

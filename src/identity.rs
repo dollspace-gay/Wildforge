@@ -15,8 +15,8 @@ pub mod atproto;
 #[path = "identity/local.rs"]
 mod local;
 pub use local::{
-    LocalIdentity, finish_local_profile_migration, identity_dir, local_profile_path, random_nonce,
-    verify_signature,
+    LocalIdentity, finish_local_profile_migration, identity_dir, local_player_id,
+    local_profile_path, random_nonce, verify_signature,
 };
 pub(crate) use local::{atomic_write, load_or_create_ed25519_pkcs8, sha256};
 

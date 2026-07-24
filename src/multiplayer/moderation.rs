@@ -182,6 +182,12 @@ impl ModerationStore {
     /// Pre-profile admission can enforce bans by credential but must defer an
     /// allowlist decision: an established player may be allowlisted solely by
     /// its server-owned PlayerId, which is not known until the index is read.
+    /// Is this PlayerId under a ban? (A banned seller's stalls stop
+    /// trading; their goods stay theirs.)
+    pub fn player_banned(&self, player_id: PlayerId) -> bool {
+        self.bans.iter().any(|b| b.matches(&[], Some(player_id)))
+    }
+
     pub fn check_bans(&mut self, principals: &[Principal]) -> Result<(), Refusal> {
         self.admit(principals, None, AdmissionPolicy::Open)
     }

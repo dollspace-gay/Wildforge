@@ -818,3 +818,46 @@ pattern = ["s", "s"]
 keys = { s = "base:stone" }
 output = "base:survey_cairn"
 count = 2
+
+# Pack animals (trade & travel, stage 1): husbandry becomes logistics.
+[[recipe]]
+pattern = ["l"]
+keys = { l = "base:leather" }
+output = "base:leather_strip"
+count = 4
+
+[[recipe]]
+pattern = ["s", "s", "s"]
+keys = { s = "base:leather_strip" }
+output = "base:lead"
+
+[[recipe]]
+pattern = ["sls", "p.p"]
+keys = { s = "base:leather_strip", l = "base:leather", p = "#base:planks" }
+output = "base:saddlebags"
+
+# Signs and waystones (trade & travel, stage 2): places get names.
+[[recipe]]
+pattern = ["ppp", "ppp", ".t."]
+keys = { p = "#base:planks", t = "base:stick" }
+output = "base:sign"
+count = 3
+
+[[recipe]]
+pattern = ["b", "s", "s"]
+keys = { b = "base:bronze_ingot", s = "base:stone" }
+output = "base:waystone"
+
+# The market stall (trade & travel, stage 3): a counter that only
+# trades under its posts and awning - a place, not a vending block.
+[[recipe]]
+pattern = ["ppp", "l.l"]
+keys = { p = "#base:planks", l = "base:leather" }
+output = "base:stall_counter"
+
+# Boats (trade & travel, stage 4): the coast opens. Tin tacks hold
+# the hull - the bronze age builds its own harbors.
+[[recipe]]
+pattern = ["p.p", "ppp"]
+keys = { p = "#base:planks" }
+output = "base:boat"

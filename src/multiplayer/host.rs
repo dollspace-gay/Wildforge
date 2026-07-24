@@ -43,6 +43,8 @@ pub struct Guest {
     pub pos: Vec3,
     pub yaw: f32,
     pub container: Option<(i32, i32, i32)>,
+    /// The mob pack this guest has open (host-validated).
+    pub mob_cargo: Option<u32>,
     pub sleeping: bool,
     /// Wire item id in hand (u16::MAX = empty), from Move packets.
     pub held: u16,
@@ -256,8 +258,9 @@ impl HostSession {
         if let Some(h) = host {
             out.push(h);
         }
-        for g in self.guests.values() {
+        for (id, g) in self.guests.iter() {
             out.push(crate::server::PlayerCtx {
+                id: *id,
                 pos: g.pos,
                 spawn: g.pos,
                 attackable: true,
@@ -555,6 +558,25 @@ impl HostSession {
                 }
             }
         }
+        // Vehicles follow their riders exactly (the rider's client
+        // owns their motion; the boat is presentation that floats).
+        {
+            let riders: Vec<(u32, Vec3)> =
+                self.guests.iter().map(|(gid, g)| (*gid, g.pos)).collect();
+            for m in server.world.mobs_mut() {
+                if let Some(rid) = m.ridden_by
+                    && rid != 0
+                {
+                    match riders.iter().find(|(gid, _)| *gid == rid) {
+                        Some((_, at)) => {
+                            m.pos = *at - Vec3::new(0.0, 0.35, 0.0);
+                            m.vel = Vec3::ZERO;
+                        }
+                        None => m.ridden_by = None,
+                    }
+                }
+            }
+        }
         self.state_timer += dt;
         if self.state_timer >= 1.0 {
             self.state_timer = 0.0;
@@ -763,6 +785,16 @@ impl HostSession {
             },
         );
         self.net.broadcast(&S2C::Joined { presence });
+        // The named world arrives with its names: every sign and
+        // waystone, so travelers read them without asking.
+        let signs: Vec<((i32, i32, i32), [String; 3])> = server
+            .world
+            .sign_texts()
+            .map(|(p, st)| (p, st.lines.clone()))
+            .collect();
+        for ((x, y, z), lines) in signs {
+            self.net.send(id, &S2C::SignText { x, y, z, lines });
+        }
         self.guests.insert(
             id,
             Guest {
@@ -778,6 +810,7 @@ impl HostSession {
                 pos: runtime.pos,
                 yaw: runtime.yaw,
                 container: None,
+                mob_cargo: None,
                 sleeping: false,
                 held: runtime.held,
                 style: runtime.style,
@@ -1254,16 +1287,22 @@ impl HostSession {
                 let reg = server.world.reg.clone();
                 if let Some(m) = server.world.mob_by_id_mut(mob_id) {
                     let def = &reg.animals[m.species];
+                    let can_breed = m.breed_cd <= 0.0 && !m.fed;
+                    let can_tame = !m.tamed;
                     if (m.pos - gpos).length() <= REACH
                         && !def.hostile
                         && def.breed_food.is_some()
                         && m.growth >= 1.0
-                        && m.breed_cd <= 0.0
-                        && !m.fed
+                        && (can_breed || can_tame)
                         && guest.inventory.slots[guest.hotbar].map(|stack| stack.item)
                             == def.breed_food
                     {
-                        m.fed = true;
+                        if can_tame {
+                            m.feed_tame();
+                        }
+                        if can_breed {
+                            m.fed = true;
+                        }
                         m.calm = 30.0;
                         if server.world.mode != "creative" {
                             guest.inventory.take_one(guest.hotbar);
@@ -1272,6 +1311,242 @@ impl HostSession {
                         }
                     }
                 }
+            }
+            C2S::LeadMob { id: mob_id } => {
+                let gpos = guest.pos;
+                let lead = server.world.reg.item_id("base:lead");
+                let holding = guest.inventory.slots[guest.hotbar].map(|s| s.item);
+                if let Some(m) = server.world.mob_by_id_mut(mob_id)
+                    && m.tamed
+                    && m.led_by.is_none()
+                    && (m.pos - gpos).length() <= REACH
+                    && holding == lead
+                {
+                    m.led_by = Some(id);
+                    if server.world.mode != "creative"
+                        && let Some(lead) = lead
+                    {
+                        take_item(&mut guest.inventory, lead);
+                        refresh_held(guest);
+                    }
+                } else if let Some(m) = server.world.mob_by_id_mut(mob_id)
+                    && m.led_by == Some(id)
+                {
+                    // Second use releases; the strip comes back.
+                    m.led_by = None;
+                    if let Some(lead) = lead {
+                        let reg = server.world.reg.clone();
+                        let _ = guest.inventory.add(&reg, lead, 1);
+                        refresh_held(guest);
+                    }
+                }
+            }
+            C2S::SaddleMob { id: mob_id } => {
+                let gpos = guest.pos;
+                let reg = server.world.reg.clone();
+                let bags = reg.item_id("base:saddlebags");
+                let holding = guest.inventory.slots[guest.hotbar].map(|s| s.item);
+                if let Some(m) = server.world.mob_by_id_mut(mob_id)
+                    && m.tamed
+                    && reg.animals[m.species].carrier
+                    && m.cargo.is_none()
+                    && (m.pos - gpos).length() <= REACH
+                    && holding == bags
+                {
+                    m.cargo = Some(Default::default());
+                    if server.world.mode != "creative"
+                        && let Some(bags) = bags
+                    {
+                        take_item(&mut guest.inventory, bags);
+                        refresh_held(guest);
+                    }
+                }
+            }
+            C2S::OpenMobCargo { id: mob_id } => {
+                let gpos = guest.pos;
+                if let Some(m) = server.world.mob_by_id(mob_id)
+                    && m.tamed
+                    && m.cargo.is_some()
+                    && (m.pos - gpos).length() <= REACH
+                {
+                    guest.mob_cargo = Some(mob_id);
+                    self.send_mob_cargo(server, id, mob_id);
+                }
+            }
+            C2S::MobCargoClick {
+                id: mob_id,
+                slot,
+                right,
+            } => {
+                if guest.mob_cargo != Some(mob_id) || slot >= 12 {
+                    return;
+                }
+                let reg = server.world.reg.clone();
+                let mut held = guest.cursor;
+                if let Some(m) = server.world.mob_by_id_mut(mob_id)
+                    && let Some(cargo) = m.cargo.as_mut()
+                {
+                    let (ns, nh) = click_stack(&reg, cargo[slot as usize], held, right);
+                    cargo[slot as usize] = ns;
+                    held = nh;
+                }
+                let snap = held.map(|s| StackSnap {
+                    item: s.item.0,
+                    count: s.count,
+                    durability: s.durability,
+                });
+                if let Some(g) = self.guests.get_mut(&id) {
+                    g.cursor = held;
+                }
+                self.net.send(id, &S2C::HeldResult(snap));
+                self.send_mob_cargo(server, id, mob_id);
+            }
+            C2S::RideMob { id: mob_id, mount } => {
+                let gpos = guest.pos;
+                let reg = server.world.reg.clone();
+                if let Some(m) = server.world.mob_by_id_mut(mob_id)
+                    && reg.animals[m.species].vehicle
+                {
+                    if mount && m.ridden_by.is_none() && (m.pos - gpos).length() <= REACH {
+                        m.ridden_by = Some(id);
+                    } else if !mount && m.ridden_by == Some(id) {
+                        m.ridden_by = None;
+                    }
+                }
+            }
+            C2S::StallBuy { x, y, z } => {
+                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                if (p - guest.pos).length() > REACH || !server.world.check_stall(x, y, z) {
+                    return;
+                }
+                let reg = server.world.reg.clone();
+                // A banned seller's stall stops trading (their goods
+                // stay theirs).
+                let banned_owner = |owner: [u8; 16]| {
+                    self.moderation
+                        .as_ref()
+                        .is_some_and(|m| m.player_banned(crate::identity::PlayerId(owner)))
+                };
+                let mut bought: Option<ItemStack> = None;
+                let mut paid: Option<ItemStack> = None;
+                if let Some(BlockEntity::Stall(st)) = server.world.block_entity_mut(&(x, y, z)) {
+                    if st.owner == [0; 16] || banned_owner(st.owner) {
+                        return;
+                    }
+                    let Some(price) = st.price else { return };
+                    // The buyer must carry the full price.
+                    let have: u32 = guest
+                        .inventory
+                        .slots
+                        .iter()
+                        .flatten()
+                        .filter(|s| s.item == price.item)
+                        .map(|s| s.count)
+                        .sum();
+                    if have < price.count {
+                        return;
+                    }
+                    // Goods first (nothing moves if the shelf is bare).
+                    let Some(gs) = st.goods.iter_mut().find(|s| s.is_some()) else {
+                        return;
+                    };
+                    // Till must fit the payment.
+                    let fits = st.till.iter().any(|t| match t {
+                        None => true,
+                        Some(t) => {
+                            t.item == price.item
+                                && t.count + price.count <= reg.item(t.item).max_stack
+                        }
+                    });
+                    if !fits {
+                        return;
+                    }
+                    let mut g = gs.take().unwrap();
+                    let sold = ItemStack { count: 1, ..g };
+                    g.count -= 1;
+                    if g.count > 0 {
+                        *gs = Some(g);
+                    }
+                    for t in st.till.iter_mut() {
+                        match t {
+                            Some(ts)
+                                if ts.item == price.item
+                                    && ts.count + price.count <= reg.item(ts.item).max_stack =>
+                            {
+                                ts.count += price.count;
+                                paid = Some(price);
+                                break;
+                            }
+                            None => {
+                                *t = Some(price);
+                                paid = Some(price);
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    bought = Some(sold);
+                }
+                if let (Some(sold), Some(price)) = (bought, paid) {
+                    // Take the payment, hand over the goods.
+                    let mut need = price.count;
+                    for s in guest.inventory.slots.iter_mut() {
+                        if need == 0 {
+                            break;
+                        }
+                        if let Some(st2) = s
+                            && st2.item == price.item
+                        {
+                            let take = st2.count.min(need);
+                            need -= take;
+                            st2.count -= take;
+                            if st2.count == 0 {
+                                *s = None;
+                            }
+                        }
+                    }
+                    let left = guest.inventory.add_stack(&reg, sold);
+                    if left > 0 {
+                        // No room: the purchase lands at their feet.
+                        server.world.push_drop(
+                            (
+                                guest.pos.x.floor() as i32,
+                                guest.pos.y.floor() as i32,
+                                guest.pos.z.floor() as i32,
+                            ),
+                            ItemStack {
+                                count: left,
+                                ..sold
+                            },
+                        );
+                    }
+                    refresh_held(guest);
+                    self.send_player_state(id);
+                    self.send_container(server, id, (x, y, z));
+                }
+            }
+            C2S::SetSign { x, y, z, lines } => {
+                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                if (p - guest.pos).length() > REACH {
+                    return;
+                }
+                let b = server.world.get_block(x, y, z);
+                let station = server.world.reg.block(b).interaction.as_deref();
+                if !matches!(station, Some("sign") | Some("waystone")) {
+                    return;
+                }
+                let mut lines = lines;
+                for l in lines.iter_mut() {
+                    l.truncate(14);
+                    l.retain(|c| c.is_ascii_alphanumeric() || " :_-'".contains(c));
+                }
+                server.world.insert_block_entity(
+                    (x, y, z),
+                    BlockEntity::Sign(crate::world::SignState {
+                        lines: lines.clone(),
+                    }),
+                );
+                self.net.broadcast(&S2C::SignText { x, y, z, lines });
             }
             C2S::BrushBlock { x, y, z } => {
                 let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
@@ -1361,6 +1636,7 @@ impl HostSession {
                     Some("bloomery") => 3,
                     Some("kiln") => 4,
                     Some("forge") => 5,
+                    Some("stall") => 6,
                     _ => return,
                 };
                 let default = match kind {
@@ -1369,9 +1645,17 @@ impl HostSession {
                     3 => BlockEntity::Bloomery(Default::default()),
                     4 => BlockEntity::Kiln(Default::default()),
                     5 => BlockEntity::Forge(Default::default()),
+                    6 => BlockEntity::Stall(Default::default()),
                     _ => BlockEntity::Offering(Default::default()),
                 };
                 let entry = server.world.ensure_block_entity((x, y, z), default);
+                // A fresh counter belongs to whoever opens it first.
+                if let BlockEntity::Stall(st) = entry
+                    && st.owner == [0; 16]
+                {
+                    st.owner = guest.player_id.0;
+                    st.owner_name = guest.name.clone();
+                }
                 if let BlockEntity::Chest(c) = entry
                     && c.wild_owned
                 {
@@ -1396,6 +1680,7 @@ impl HostSession {
             }
             C2S::CloseContainer => {
                 guest.container = None;
+                guest.mob_cargo = None;
             }
             C2S::LightBloomery { x, y, z } => {
                 let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
@@ -1804,7 +2089,28 @@ impl HostSession {
                     }
                 }
             }
-            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) => {}
+            BlockEntity::Stall(st) => {
+                // Only the owner rearranges a stall (goods 0-5,
+                // price 6, till 7-12 take-only-ish is fine: owner).
+                let owner = self
+                    .guests
+                    .get(&id)
+                    .is_some_and(|g| g.player_id.0 == st.owner);
+                if owner {
+                    let sref = match slot {
+                        0..=5 => Some(&mut st.goods[slot]),
+                        6 => Some(&mut st.price),
+                        7..=12 => Some(&mut st.till[slot - 7]),
+                        _ => None,
+                    };
+                    if let Some(sref) = sref {
+                        let (ns, nh) = click_stack(&reg, *sref, held, right);
+                        *sref = ns;
+                        held = nh;
+                    }
+                }
+            }
+            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) | BlockEntity::Sign(_) => {}
             BlockEntity::Chest(c) => {
                 if slot < c.slots.len() {
                     let (ns, nh) = click_stack(&reg, c.slots[slot], held, right);
@@ -1870,6 +2176,37 @@ impl HostSession {
         self.send_container(server, id, pos);
     }
 
+    /// Push a host-authored sign edit to every guest.
+    pub fn broadcast_sign(&mut self, pos: (i32, i32, i32), lines: &[String; 3]) {
+        self.net.broadcast(&S2C::SignText {
+            x: pos.0,
+            y: pos.1,
+            z: pos.2,
+            lines: lines.clone(),
+        });
+    }
+
+    fn send_mob_cargo(&mut self, server: &Server, id: u32, mob_id: u32) {
+        let Some(slots) = server
+            .world
+            .mob_by_id(mob_id)
+            .and_then(|m| m.cargo.as_deref())
+        else {
+            return;
+        };
+        let slots = slots
+            .iter()
+            .map(|s| {
+                s.map(|s| StackSnap {
+                    item: s.item.0,
+                    count: s.count,
+                    durability: s.durability,
+                })
+            })
+            .collect();
+        self.net.send(id, &S2C::MobCargo { id: mob_id, slots });
+    }
+
     fn send_container(&mut self, server: &Server, id: u32, pos: (i32, i32, i32)) {
         let Some(entity) = server.world.block_entity(&pos) else {
             return;
@@ -1918,7 +2255,19 @@ impl HostSession {
                     f.progress / crate::world::FORGE_FIRE_SECS,
                 ],
             ),
-            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) => return,
+            BlockEntity::Stall(st) => {
+                let owner = self
+                    .guests
+                    .get(&id)
+                    .is_some_and(|g| g.player_id.0 == st.owner);
+                let mut slots: Vec<Option<StackSnap>> = st.goods.iter().map(snap).collect();
+                slots.push(snap(&st.price));
+                for t in st.till.iter() {
+                    slots.push(if owner { snap(t) } else { None });
+                }
+                (6, slots, vec![if owner { 1.0 } else { 0.0 }])
+            }
+            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) | BlockEntity::Sign(_) => return,
         };
         self.net.send(
             id,

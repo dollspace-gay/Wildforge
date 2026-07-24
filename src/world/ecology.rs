@@ -7,7 +7,6 @@ impl World {
         &self.mobs
     }
 
-    #[cfg(test)]
     pub(crate) fn mobs_mut(&mut self) -> &mut Vec<Mob> {
         &mut self.mobs
     }
@@ -18,6 +17,10 @@ impl World {
 
     pub fn mob_mut(&mut self, index: usize) -> Option<&mut Mob> {
         self.mobs.get_mut(index)
+    }
+
+    pub fn mob_by_id(&self, id: u32) -> Option<&Mob> {
+        self.mobs.iter().find(|m| m.id == id)
     }
 
     pub fn mob_by_id_mut(&mut self, id: u32) -> Option<&mut Mob> {

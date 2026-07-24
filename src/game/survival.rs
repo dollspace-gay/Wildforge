@@ -95,6 +95,15 @@ impl Game {
         }
     }
 
+    /// Spill a stack at a world position (mob cargo, wreck salvage).
+    pub(super) fn drop_stack_at(&mut self, stack: ItemStack, pos: Vec3) {
+        let a = self.rand01() * std::f32::consts::TAU;
+        let v = Vec3::new(a.cos() * 1.2, 2.5 + self.rand01(), a.sin() * 1.2);
+        self.interaction
+            .items
+            .push(ItemEntity::new(pos, v, stack.item, stack.count));
+    }
+
     pub(super) fn drop_stack(&mut self, stack: ItemStack) {
         let a = self.rand01() * std::f32::consts::TAU;
         let v = Vec3::new(a.cos() * 2.0, 3.0 + self.rand01() * 1.5, a.sin() * 2.0);

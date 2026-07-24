@@ -575,7 +575,10 @@ fn bucket_items_registered_and_craftable() {
 fn base_animals_and_weapons_register() {
     let reg = base_reg();
     assert_eq!(
-        reg.animals.iter().filter(|a| !a.hostile).count(),
+        reg.animals
+            .iter()
+            .filter(|a| !a.hostile && !a.vehicle)
+            .count(),
         7,
         "seven wildlife species"
     );
@@ -796,6 +799,7 @@ fn charms_and_tablets_work() {
         &w,
         &def,
         &[crate::server::PlayerCtx {
+            id: 0,
             pos: player,
             spawn: Vec3::ZERO,
             attackable: true,
@@ -812,6 +816,7 @@ fn charms_and_tablets_work() {
         &w,
         &def,
         &[crate::server::PlayerCtx {
+            id: 0,
             pos: player,
             spawn: Vec3::ZERO,
             attackable: true,
@@ -1147,7 +1152,7 @@ fn content_graph_is_complete_and_obtainable() {
     for a in &reg.animals {
         assert!(!a.model.is_empty(), "animal {} has no model", a.name);
         assert!(a.health > 0.0, "animal {} has no health", a.name);
-        if !a.hostile {
+        if !a.hostile && !a.vehicle {
             assert!(
                 !a.biomes.is_empty() && a.biomes.iter().all(|b| biomes.contains(&b.as_str())),
                 "animal {} has invalid biomes {:?}",

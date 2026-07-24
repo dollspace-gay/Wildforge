@@ -94,6 +94,216 @@ impl Game {
         )
     }
 
+    /// Mob pack slots: 12 in two rows of six.
+    pub(super) fn mob_cargo_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        let (col, row) = (i % 6, i / 6);
+        (
+            w / 2.0 - 3.0 * (Self::SLOT + 10.0) + col as f32 * (Self::SLOT + 10.0) + 5.0,
+            h / 2.0 - 250.0 + row as f32 * (Self::SLOT + 10.0),
+            Self::SLOT,
+            Self::SLOT,
+        )
+    }
+
+    /// One click in a mob's pack: local worlds mutate directly;
+    /// guests send the click and predict nothing (the host echoes).
+    pub(super) fn mob_cargo_click(&mut self, mob_id: u32, slot: usize, right: bool) {
+        if slot >= 12 {
+            return;
+        }
+        let reg = self.content.reg.clone();
+        if let Some(rc) = &self.multiplayer.remote {
+            rc.client.send(&net::C2S::MobCargoClick {
+                id: mob_id,
+                slot: slot as u8,
+                right,
+            });
+            return;
+        }
+        let held = self.ui_state.held_stack;
+        let Some(mob) = self.server.world.mob_by_id_mut(mob_id) else {
+            return;
+        };
+        let Some(cargo) = mob.cargo.as_mut() else {
+            return;
+        };
+        let (ns, nh) = inventory::click_stack(&reg, cargo[slot], held, right);
+        cargo[slot] = ns;
+        self.ui_state.held_stack = nh;
+    }
+
+    /// Stall layout: goods 0-5 (top row), price 6 (left mid), till
+    /// 7-12 (bottom row); the BUY button sits mid-right.
+    pub(super) fn stall_slot_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        let (col, row) = match i {
+            0..=5 => (i, 0),
+            6 => (0, 1),
+            _ => (i - 7, 2),
+        };
+        (
+            w / 2.0 - 3.0 * (Self::SLOT + 10.0) + col as f32 * (Self::SLOT + 10.0) + 5.0,
+            h / 2.0 - 260.0 + row as f32 * (Self::SLOT + 34.0),
+            Self::SLOT,
+            Self::SLOT,
+        )
+    }
+
+    pub(super) fn stall_buy_rect(&self) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (
+            w / 2.0 + (Self::SLOT + 10.0) + 20.0,
+            h / 2.0 - 260.0 + (Self::SLOT + 34.0),
+            110.0,
+            36.0,
+        )
+    }
+
+    /// Whether the local player owns this stall (local worlds/hosts).
+    pub(super) fn stall_is_mine(&self, pos: (i32, i32, i32)) -> bool {
+        let my_id = identity::local_player_id(
+            &self.server.world.save_dir_for_saving(),
+            self.identity.device_id(),
+        )
+        .map(|p| p.0)
+        .unwrap_or([0; 16]);
+        match self.server.world.block_entity(&pos) {
+            Some(world::BlockEntity::Stall(st)) => st.owner == my_id,
+            _ => false,
+        }
+    }
+
+    pub(super) fn stall_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+        if slot > 12 {
+            return;
+        }
+        let reg = self.content.reg.clone();
+        if let Some(rc) = &self.multiplayer.remote {
+            rc.client.send(&net::C2S::ContainerClick {
+                x: pos.0,
+                y: pos.1,
+                z: pos.2,
+                slot: slot as u8,
+                right,
+            });
+            return;
+        }
+        if !self.stall_is_mine(pos) {
+            return; // visitors browse; the BUY button is theirs
+        }
+        let held = self.ui_state.held_stack;
+        let Some(world::BlockEntity::Stall(st)) = self.server.world.block_entity_mut(&pos) else {
+            return;
+        };
+        let sref = match slot {
+            0..=5 => &mut st.goods[slot],
+            6 => &mut st.price,
+            _ => &mut st.till[slot - 7],
+        };
+        let (ns, nh) = inventory::click_stack(&reg, *sref, held, right);
+        *sref = ns;
+        self.ui_state.held_stack = nh;
+    }
+
+    /// Local purchase: the singleplayer/host mirror of C2S::StallBuy.
+    pub(super) fn stall_buy_local(&mut self, pos: (i32, i32, i32)) {
+        let reg = self.content.reg.clone();
+        if !self.server.world.check_stall(pos.0, pos.1, pos.2) {
+            self.toast("The stall wants its posts and awning.".to_string());
+            return;
+        }
+        let result: Option<ItemStack>;
+        let mut price_used: Option<ItemStack> = None;
+        {
+            let have = |inv: &crate::inventory::Inventory, item, n| {
+                inv.slots
+                    .iter()
+                    .flatten()
+                    .filter(|s| s.item == item)
+                    .map(|s| s.count)
+                    .sum::<u32>()
+                    >= n
+            };
+            let Some(world::BlockEntity::Stall(st)) = self.server.world.block_entity_mut(&pos)
+            else {
+                return;
+            };
+            let Some(price) = st.price else {
+                return;
+            };
+            if !have(&self.inventory, price.item, price.count) {
+                return;
+            }
+            let Some(gs) = st.goods.iter_mut().find(|s| s.is_some()) else {
+                return;
+            };
+            let fits = st.till.iter().any(|t| match t {
+                None => true,
+                Some(t) => {
+                    t.item == price.item && t.count + price.count <= reg.item(t.item).max_stack
+                }
+            });
+            if !fits {
+                return;
+            }
+            let mut g = gs.take().unwrap();
+            let sold = ItemStack { count: 1, ..g };
+            g.count -= 1;
+            if g.count > 0 {
+                *gs = Some(g);
+            }
+            for t in st.till.iter_mut() {
+                match t {
+                    Some(ts)
+                        if ts.item == price.item
+                            && ts.count + price.count <= reg.item(ts.item).max_stack =>
+                    {
+                        ts.count += price.count;
+                        price_used = Some(price);
+                        break;
+                    }
+                    None => {
+                        *t = Some(price);
+                        price_used = Some(price);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            result = Some(sold);
+        }
+        if let (Some(sold), Some(price)) = (result, price_used) {
+            let mut need = price.count;
+            for s in self.inventory.slots.iter_mut() {
+                if need == 0 {
+                    break;
+                }
+                if let Some(st2) = s
+                    && st2.item == price.item
+                {
+                    let take = st2.count.min(need);
+                    need -= take;
+                    st2.count -= take;
+                    if st2.count == 0 {
+                        *s = None;
+                    }
+                }
+            }
+            let left = self.inventory.add_stack(&reg, sold);
+            if left > 0 {
+                self.drop_stack(ItemStack {
+                    count: left,
+                    ..sold
+                });
+            }
+            self.sfx(Sfx::Pickup);
+        }
+    }
+
     pub(super) fn bloomery_light_rect(&self) -> (f32, f32, f32, f32) {
         let w = self.renderer.config.width as f32;
         let h = self.renderer.config.height as f32;

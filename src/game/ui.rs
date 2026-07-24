@@ -1256,6 +1256,33 @@ impl Game {
                     self.draw_world_nameplate(&mut ui, name, Vec3::new(px, py, pz), w, h);
                 }
             }
+            // Signs and waystones wear their words in the world,
+            // nameplate-style (occluded, distance-gated).
+            let sign_texts: Vec<(Vec3, [String; 3])> = self
+                .server
+                .world
+                .sign_texts()
+                .map(|((x, y, z), st)| {
+                    (
+                        Vec3::new(x as f32 + 0.5, y as f32, z as f32 + 0.5),
+                        st.lines.clone(),
+                    )
+                })
+                .collect();
+            for (at, lines) in sign_texts {
+                if (at - self.camera.pos).length_squared() > 24.0 * 24.0 {
+                    continue;
+                }
+                for (i, l) in lines.iter().enumerate() {
+                    if l.is_empty() {
+                        continue;
+                    }
+                    // Every line's head stays above the post itself,
+                    // or the sign block occludes its own lower lines.
+                    let feet = at - Vec3::new(0.0, 0.32 + i as f32 * 0.3, 0.0);
+                    self.draw_world_nameplate(&mut ui, &l.to_uppercase(), feet, w, h);
+                }
+            }
             // Brushing progress near the crosshair.
             if self.interaction.anvil_work > 0.0 {
                 let t = (self.interaction.anvil_work / 2.0).min(1.0);
@@ -1557,6 +1584,145 @@ impl Game {
                     );
                 }
                 self.draw_browser(&mut ui);
+                if let Some(s) = self.ui_state.held_stack {
+                    let (cx, cy) = self.input.ui_cursor;
+                    let icon = self.content.reg.item(s.item).icon;
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
+                    if s.count > 1 {
+                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
+                    }
+                }
+                self.ui = ui;
+                return;
+            }
+            Screen::SignEdit(_) => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.6]);
+                let title = "WRITE";
+                let tw = UiBatch::text_width(3.0, title);
+                ui.text_shadow((w - tw) / 2.0, h / 2.0 - 150.0, 3.0, title, [1.0; 4]);
+                for i in 0..3 {
+                    let y = h / 2.0 - 90.0 + i as f32 * 44.0;
+                    let active = i == self.ui_state.sign_line;
+                    ui.rect(
+                        w / 2.0 - 170.0,
+                        y,
+                        340.0,
+                        34.0,
+                        if active {
+                            [0.25, 0.25, 0.28, 0.9]
+                        } else {
+                            [0.12, 0.12, 0.14, 0.9]
+                        },
+                    );
+                    let text = format!(
+                        "{}{}",
+                        self.ui_state.sign_lines[i].to_uppercase(),
+                        if active { "_" } else { "" }
+                    );
+                    ui.text_shadow(w / 2.0 - 160.0, y + 8.0, 2.0, &text, [1.0; 4]);
+                }
+                ui.text_shadow(
+                    w / 2.0 - 170.0,
+                    h / 2.0 + 60.0,
+                    1.5,
+                    "ENTER: NEXT LINE / DONE",
+                    [0.8, 0.8, 0.8, 1.0],
+                );
+                self.ui = ui;
+                return;
+            }
+            Screen::Stall(pos) => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
+                let mine = self.multiplayer.remote.is_none() && self.stall_is_mine(pos);
+                let (slots, owner_name, remote_mine) = {
+                    match self.server.world.block_entity(&pos) {
+                        Some(world::BlockEntity::Stall(st)) => {
+                            let mut v: Vec<Option<ItemStack>> = st.goods.to_vec();
+                            v.push(st.price);
+                            v.extend(st.till.iter().copied());
+                            (v, st.owner_name.clone(), st.owner == [1; 16])
+                        }
+                        _ => (vec![None; 13], String::new(), false),
+                    }
+                };
+                let mine = mine || remote_mine;
+                let title = if owner_name.is_empty() {
+                    "MARKET STALL".to_string()
+                } else {
+                    format!("{}'S STALL", owner_name.to_uppercase())
+                };
+                let tw = UiBatch::text_width(3.0, &title);
+                ui.text_shadow((w - tw) / 2.0, h / 2.0 - 300.0, 3.0, &title, [1.0; 4]);
+                ui.text_shadow(w / 2.0 - 150.0, h / 2.0 - 278.0, 1.5, "GOODS", [1.0; 4]);
+                ui.text_shadow(
+                    w / 2.0 - 150.0,
+                    h / 2.0 - 196.0,
+                    1.5,
+                    "PRICE EACH",
+                    [1.0; 4],
+                );
+                if mine {
+                    ui.text_shadow(w / 2.0 - 150.0, h / 2.0 - 114.0, 1.5, "TILL", [1.0; 4]);
+                }
+                for (i, s) in slots.iter().enumerate() {
+                    if !mine && i >= 7 {
+                        break; // the till is the owner's business
+                    }
+                    let r = self.stall_slot_rect(i);
+                    Self::draw_slot(&self.content.reg, &mut ui, r, *s, false, self.hit(r));
+                }
+                if !mine {
+                    let br = self.stall_buy_rect();
+                    Self::draw_button(&mut ui, br, "BUY", self.hit(br));
+                }
+                for i in 0..TOTAL_SLOTS {
+                    let r = self.inv_slot_rect(i);
+                    Self::draw_slot(
+                        &self.content.reg,
+                        &mut ui,
+                        r,
+                        self.inventory.slots[i],
+                        i == self.input.hotbar_sel,
+                        self.hit(r),
+                    );
+                }
+                if let Some(s) = self.ui_state.held_stack {
+                    let (cx, cy) = self.input.ui_cursor;
+                    let icon = self.content.reg.item(s.item).icon;
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
+                    if s.count > 1 {
+                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
+                    }
+                }
+                self.ui = ui;
+                return;
+            }
+            Screen::MobCargo(id) => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
+                let title = "SADDLEBAGS";
+                let tw = UiBatch::text_width(3.0, title);
+                ui.text_shadow((w - tw) / 2.0, h / 2.0 - 300.0, 3.0, title, [1.0; 4]);
+                let slots: [Option<ItemStack>; 12] = self
+                    .server
+                    .world
+                    .mob_by_id(id)
+                    .and_then(|m| m.cargo.as_deref().copied())
+                    .unwrap_or_default();
+                for (i, s) in slots.iter().enumerate() {
+                    let r = self.mob_cargo_slot_rect(i);
+                    Self::draw_slot(&self.content.reg, &mut ui, r, *s, false, self.hit(r));
+                }
+                for i in 0..TOTAL_SLOTS {
+                    let r = self.inv_slot_rect(i);
+                    Self::draw_slot(
+                        &self.content.reg,
+                        &mut ui,
+                        r,
+                        self.inventory.slots[i],
+                        i == self.input.hotbar_sel,
+                        self.hit(r),
+                    );
+                }
                 if let Some(s) = self.ui_state.held_stack {
                     let (cx, cy) = self.input.ui_cursor;
                     let icon = self.content.reg.item(s.item).icon;

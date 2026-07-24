@@ -73,25 +73,53 @@ impl Game {
 
     /// Read the country at a spot and toast it: the prospector's
     /// verdict, shared by pick strikes and standing survey cairns.
+    /// Compass octant of a world-space offset ("north" is -z).
+    pub(super) fn octant(d: (i32, i32)) -> &'static str {
+        if d == (0, 0) {
+            return "here";
+        }
+        let a = (d.0 as f32).atan2(-(d.1 as f32)).to_degrees();
+        let names = [
+            "north",
+            "northeast",
+            "east",
+            "southeast",
+            "south",
+            "southwest",
+            "west",
+            "northwest",
+        ];
+        names[(((a + 382.5) / 45.0) as usize) % 8]
+    }
+
+    /// Commit the sign editor: write the entity (host) or send it
+    /// (guest), then return to play.
+    pub(super) fn commit_sign(&mut self, pos: (i32, i32, i32)) {
+        let lines = self.ui_state.sign_lines.clone();
+        if let Some(rc) = &self.multiplayer.remote {
+            rc.client.send(&net::C2S::SetSign {
+                x: pos.0,
+                y: pos.1,
+                z: pos.2,
+                lines: lines.clone(),
+            });
+        }
+        // Local worlds and hosts apply directly (the host broadcast
+        // happens on the C2S path for guests' own edits).
+        if self.multiplayer.remote.is_none() {
+            self.server
+                .world
+                .insert_block_entity(pos, world::BlockEntity::Sign(world::SignState { lines }));
+            if let Some(hst) = &mut self.multiplayer.host {
+                hst.broadcast_sign(pos, &self.ui_state.sign_lines);
+            }
+        }
+        self.set_screen(Screen::Playing);
+    }
+
     pub(super) fn toast_prospect(&mut self, bx: i32, bz: i32) {
         let r = self.server.world.generator.prospect(bx, bz);
-        let octant = |d: (i32, i32)| -> &'static str {
-            if d == (0, 0) {
-                return "here";
-            }
-            let a = (d.0 as f32).atan2(-(d.1 as f32)).to_degrees();
-            let names = [
-                "north",
-                "northeast",
-                "east",
-                "southeast",
-                "south",
-                "southwest",
-                "west",
-                "northwest",
-            ];
-            names[(((a + 382.5) / 45.0) as usize) % 8]
-        };
+        let octant = |d: (i32, i32)| -> &'static str { Self::octant(d) };
         let mut lines: Vec<String> = Vec::new();
         match r.pluton {
             Some((0, _)) => lines.push("Granite country underfoot.".into()),
@@ -240,13 +268,22 @@ impl Game {
             }
             let m = self.server.world.remove_mob(i);
             let def = &reg.animals[m.species];
-            if !def.hostile {
-                // The wild counts its dead — wardens are not individuals.
-                self.server.world.add_ire(2.0);
+            if !def.hostile && !def.vehicle {
+                // The wild counts its dead — wardens are not
+                // individuals, and a TAMED animal is a household loss,
+                // not a wild one (though betrayal is still noticed).
+                // Vehicles are lumber; the wild never mourns a boat.
+                self.server.world.add_ire(if m.tamed { 1.0 } else { 2.0 });
             }
             self.sfx(Sfx::MobDeath(def.sound_pitch));
             let (tile, at) = (def.tile, m.pos + Vec3::new(0.0, 0.5, 0.0));
             self.juice_burst(at, tile, 12, 2.0);
+            // A laden carrier spills its pack where it falls.
+            if let Some(cargo) = &m.cargo {
+                for st in cargo.iter().flatten() {
+                    self.drop_stack_at(*st, m.pos + Vec3::new(0.0, 0.6, 0.0));
+                }
+            }
             if m.growth < 1.0 {
                 continue; // the young return nothing (you monster)
             }
@@ -299,6 +336,36 @@ impl Game {
         let held = self.inventory.slots[self.input.hotbar_sel].map(|s| s.item);
 
         // The bucket: scoop a full water cell or pour it back — the
+        // A boat in hand launches onto struck water.
+        if held.is_some()
+            && held == reg.item_id("base:boat")
+            && self.input.right_held
+            && self.input.action_cooldown <= 0.0
+            && let Some(w) = raycast::raycast_water(
+                &self.server.world,
+                self.camera.pos,
+                self.camera.forward(),
+                REACH,
+            )
+        {
+            let (x, y, z) = w.block;
+            if reg.is_water(self.server.world.get_block(x, y, z))
+                && let Some(bi) = reg.animal_id("base:boat")
+                && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
+            {
+                let mut boat = mobs::Mob::new(
+                    bi,
+                    Vec3::new(x as f32 + 0.5, y as f32 + 0.8, z as f32 + 0.5),
+                    self.camera.yaw,
+                );
+                boat.health = reg.animals[bi].health;
+                boat.tamed = true; // vehicles are born ours
+                self.server.world.spawn_mob(boat);
+                self.sfx(Sfx::Place);
+                self.input.action_cooldown = 0.5;
+                return;
+            }
+        }
         // cell moves with you, it never multiplies. Guests request and
         // the host's echo applies the world side; the bucket swap is
         // local (inventories are player-owned).
@@ -765,26 +832,122 @@ impl Game {
                 };
                 let (sp, mob_id, growth, breed_cd, fed) =
                     (mob.species, mob.id, mob.growth, mob.breed_cd, mob.fed);
+                let (tamed, led_by, has_cargo) = (mob.tamed, mob.led_by, mob.cargo.is_some());
                 let def = &reg.animals[sp];
+                let def_carrier = def.carrier;
+                let def_label = def.label.clone();
+                // Feeding: breeds as ever, and repeated meals TAME —
+                // a tamed animal never flees people and takes a lead.
                 if let (Some(bf), Some(h)) = (def.breed_food, held)
                     && bf == h
                     && !def.hostile
                     && growth >= 1.0
-                    && breed_cd <= 0.0
-                    && !fed
-                    && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
                 {
-                    // Guests request; setting fed locally is the
-                    // prediction until the snapshot echoes it.
-                    if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::FeedMob { id: mob_id });
+                    let can_breed = breed_cd <= 0.0 && !fed;
+                    let can_tame = !tamed;
+                    if (can_breed || can_tame)
+                        && (self.creative
+                            || self.inventory.take_one(self.input.hotbar_sel).is_some())
+                    {
+                        // Guests request; local change is the
+                        // prediction until the snapshot echoes it.
+                        if let Some(rc) = &self.multiplayer.remote {
+                            rc.client.send(&net::C2S::FeedMob { id: mob_id });
+                        }
+                        let mut now_tamed = false;
+                        if let Some(mob) = self.server.world.mob_mut(mi) {
+                            if can_tame {
+                                now_tamed = mob.feed_tame();
+                            }
+                            if can_breed {
+                                mob.fed = true;
+                            }
+                            mob.calm = 30.0;
+                        }
+                        if now_tamed {
+                            self.toast(format!("The {def_label} trusts you now."));
+                        }
+                        self.input.action_cooldown = 0.4;
+                        self.sfx(Sfx::Pickup);
+                        return;
                     }
+                }
+                // The lead: attach to a tamed animal, click again to
+                // release (the strip comes back).
+                if tamed && led_by == Some(0) && self.multiplayer.remote.is_none() {
                     if let Some(mob) = self.server.world.mob_mut(mi) {
-                        mob.fed = true;
-                        mob.calm = 30.0;
+                        mob.led_by = None;
+                    }
+                    if let Some(lead) = reg.item_id("base:lead") {
+                        let left = self.inventory.add(&reg, lead, 1);
+                        if left > 0 {
+                            self.drop_stack(ItemStack::new(&reg, lead, 1));
+                        }
                     }
                     self.input.action_cooldown = 0.4;
-                    self.sfx(Sfx::Pickup);
+                    self.sfx(Sfx::Click);
+                    return;
+                }
+                if tamed
+                    && led_by.is_none()
+                    && held == reg.item_id("base:lead")
+                    && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
+                {
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::LeadMob { id: mob_id });
+                    } else if let Some(mob) = self.server.world.mob_mut(mi) {
+                        mob.led_by = Some(0);
+                    }
+                    self.input.action_cooldown = 0.4;
+                    self.sfx(Sfx::Click);
+                    return;
+                }
+                // Saddlebags: a tamed carrier takes a pack.
+                if tamed
+                    && def_carrier
+                    && !has_cargo
+                    && held == reg.item_id("base:saddlebags")
+                    && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
+                {
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::SaddleMob { id: mob_id });
+                    } else if let Some(mob) = self.server.world.mob_mut(mi) {
+                        mob.cargo = Some(Default::default());
+                    }
+                    self.input.action_cooldown = 0.4;
+                    self.sfx(Sfx::Place);
+                    return;
+                }
+                // Step aboard a vehicle (empty-handed).
+                if def.vehicle && held.is_none() {
+                    let free = self
+                        .server
+                        .world
+                        .mob_by_id(mob_id)
+                        .is_some_and(|m| m.ridden_by.is_none());
+                    if free {
+                        if let Some(rc) = &self.multiplayer.remote {
+                            rc.client.send(&net::C2S::RideMob {
+                                id: mob_id,
+                                mount: true,
+                            });
+                        } else if let Some(m) = self.server.world.mob_by_id_mut(mob_id) {
+                            m.ridden_by = Some(0);
+                        }
+                        self.interaction.riding = Some(mob_id);
+                        self.toast("Aboard. Jump to step off.".to_string());
+                        self.input.action_cooldown = 0.4;
+                        return;
+                    }
+                }
+                // Open the pack.
+                if tamed && has_cargo {
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::OpenMobCargo { id: mob_id });
+                    } else {
+                        self.set_screen(Screen::MobCargo(mob_id));
+                    }
+                    self.input.action_cooldown = 0.3;
                     return;
                 }
             }
@@ -990,6 +1153,57 @@ impl Game {
                     self.set_screen(Screen::Offering(h.block));
                     return;
                 }
+                Some("stall") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.3;
+                    self.input.right_held = false;
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::OpenContainer {
+                            x: h.block.0,
+                            y: h.block.1,
+                            z: h.block.2,
+                        });
+                        return;
+                    }
+                    // First open claims an unowned counter for the
+                    // local player (the host's stall, by identity).
+                    let my_id = identity::local_player_id(
+                        &self.server.world.save_dir_for_saving(),
+                        self.identity.device_id(),
+                    )
+                    .map(|p| p.0)
+                    .unwrap_or([0; 16]);
+                    let my_name = self.config.display_name.clone();
+                    let e = self.server.world.ensure_block_entity(
+                        h.block,
+                        world::BlockEntity::Stall(Default::default()),
+                    );
+                    if let world::BlockEntity::Stall(st) = e
+                        && st.owner == [0; 16]
+                    {
+                        st.owner = my_id;
+                        st.owner_name = my_name;
+                    }
+                    self.set_screen(Screen::Stall(h.block));
+                    return;
+                }
+                Some("sign") if self.input.action_cooldown <= 0.0 => {
+                    // Reopen the editor with what's written.
+                    self.input.action_cooldown = 0.3;
+                    self.input.right_held = false;
+                    let cur = match self.server.world.block_entity(&h.block) {
+                        Some(world::BlockEntity::Sign(sg)) => sg.lines.clone(),
+                        _ => Default::default(),
+                    };
+                    self.ui_state.sign_lines = cur;
+                    self.ui_state.sign_line = 0;
+                    self.set_screen(Screen::SignEdit(h.block));
+                    return;
+                }
+                Some("waystone") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.4;
+                    self.read_waystone(h.block);
+                    return;
+                }
                 Some("survey") if self.input.action_cooldown <= 0.0 => {
                     // A raised cairn is bought knowledge: anyone reads
                     // the surveyor's ground, no pick required.
@@ -1084,6 +1298,12 @@ impl Game {
                     }
                     if allow && consumed {
                         self.server.world.place_block((x, y, z), block);
+                        // A fresh sign or waystone wants its words.
+                        if matches!(bd.interaction.as_deref(), Some("sign") | Some("waystone")) {
+                            self.ui_state.sign_lines = Default::default();
+                            self.ui_state.sign_line = 0;
+                            self.set_screen(Screen::SignEdit((x, y, z)));
+                        }
                         if bd.crop_next.is_some() {
                             // The wild notices things growing where you walk.
                             self.server.world.plant_ire(0.2);
