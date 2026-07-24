@@ -623,6 +623,44 @@ impl World {
         }
     }
 
+    /// Fill a cubic RGBA occupancy grid (side `g`, `origin` = world cell of
+    /// texel (0,0,0)) for the DDA point-light shadow volume. Per cell: a = class
+    /// (255 opaque full block, 128 stained glass, 0 air/pass), rgb = the glass's
+    /// per-channel light filter (the shadow tint). Chunk-aware: one hash lookup
+    /// per (x,z) column, not per cell, so a full 128³ rebuild is a few ms.
+    pub fn fill_occupancy(&self, origin: [i32; 3], g: usize, buf: &mut [u8]) {
+        buf.iter_mut().for_each(|b| *b = 0);
+        let gi = g as i32;
+        for lz in 0..gi {
+            let wz = origin[2] + lz;
+            let cz = wz.rem_euclid(CHUNK_Z as i32) as usize;
+            for lx in 0..gi {
+                let wx = origin[0] + lx;
+                let pos = ChunkPos::of_world(wx, wz);
+                let Some(c) = self.chunks.get(&pos) else {
+                    continue;
+                };
+                let cx = wx.rem_euclid(CHUNK_X as i32) as usize;
+                for ly in 0..gi {
+                    let wy = origin[1] + ly;
+                    if wy < 0 || wy >= CHUNK_Y as i32 {
+                        continue;
+                    }
+                    let def = self.reg.block(c.get(cx, wy as usize, cz));
+                    let i = ((lz as usize * g + ly as usize) * g + lx as usize) * 4;
+                    if def.opaque {
+                        buf[i + 3] = 255;
+                    } else if def.glass {
+                        buf[i] = if def.light_filter[0] { 255 } else { 0 };
+                        buf[i + 1] = if def.light_filter[1] { 255 } else { 0 };
+                        buf[i + 2] = if def.light_filter[2] { 255 } else { 0 };
+                        buf[i + 3] = 128;
+                    }
+                }
+            }
+        }
+    }
+
     /// Metadata byte at a world position (octant mask for sub-voxel blocks).
     pub fn get_meta(&self, x: i32, y: i32, z: i32) -> u8 {
         if y < 0 || y >= CHUNK_Y as i32 {

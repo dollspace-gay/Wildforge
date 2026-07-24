@@ -357,6 +357,25 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
             ..Default::default()
         });
 
+        // Voxel occupancy grid for DDA point-light shadows: a cube of the world
+        // around the camera, 1 byte per cell (1 = opaque). Refilled by the game
+        // when the camera crosses a grid step.
+        let occ_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("occ-grid"),
+            size: wgpu::Extent3d {
+                width: OCC_GRID as u32,
+                height: OCC_GRID as u32,
+                depth_or_array_layers: OCC_GRID as u32,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D3,
+            format: wgpu::TextureFormat::Rgba8Uint,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let occ_view = occ_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
         let shadow_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("shadow-bgl"),
             entries: &[
@@ -402,6 +421,16 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Uint,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let shadow_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -427,6 +456,10 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: wgpu::BindingResource::TextureView(&pt_tr_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&occ_view),
                 },
             ],
         });
@@ -1045,6 +1078,7 @@ fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
             shadow_casc_buf,
             shadow_casc_bg,
             shadow_bg,
+            occ_tex,
             pt_cached: [None; MAX_PT_LIGHTS],
             pt_progress: [0; MAX_PT_LIGHTS],
             pt_shadow_pipeline,

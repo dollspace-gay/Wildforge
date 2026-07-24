@@ -400,6 +400,9 @@ struct Game {
     total_frames: u64,
     settled_frames: u64,
     shot_at: Option<u64>,
+    /// Last world-cell origin the DDA occupancy grid was rebuilt for (None
+    /// until first build). Rebuilt when the camera crosses an OCC_STEP.
+    occ_last_origin: Option<[i32; 3]>,
     /// Your chosen look (config `appearance`, style.rs palettes).
     style: style::Style,
     auto_shot: Option<String>,
@@ -621,6 +624,7 @@ impl Game {
             last_space: -9.0,
             time_abs: 0.0,
             total_frames: 0,
+            occ_last_origin: None,
             settled_frames: 0,
             shot_at: None,
             style: own_style,
