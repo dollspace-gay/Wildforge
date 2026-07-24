@@ -36,6 +36,8 @@ impl World {
         order.truncate(K);
         let mut samples = 0;
         let mut changes = Vec::new();
+        // Evaporated film cells: applied without the crop-ire refund.
+        let mut dried: Vec<(i32, i32, i32)> = Vec::new();
         let mut saplings: Vec<(i32, i32, i32, String, u32)> = Vec::new();
         for (stamp, pos) in order {
             let elapsed = (self.clock - stamp).max(0.0);
@@ -132,14 +134,19 @@ impl World {
                     }
                     continue;
                 }
-                // Summer sun dries shallow water: a hit drops the cell
-                // to a marshy film in a basin, or clears an open spill
-                // entirely. The cell and every water neighbor must be
-                // shallow — deep bodies are safe, and the sea can't be
-                // siphoned out through its beaches.
-                if season == 1
+                // Sun dries shallow water. Summer draws shallow cells
+                // down toward a marshy film; a stranded 1-unit film is
+                // trivial and dries in any season short of winter. The
+                // cell and every water neighbor must be shallow — deep
+                // bodies are safe, and the sea can't be siphoned out
+                // through its beaches. Films survive only in pockets
+                // with 3+ SOLID walls (where rain_fill can re-seed a
+                // pond); a wide open sheet — the glaze a breached pool
+                // leaves behind — dries through, a small patch per hit
+                // so the shoreline visibly recedes.
+                if let Some(v) = reg.water_volume(b)
+                    && (season == 1 || (v == 1 && season != 3))
                     && sky_open
-                    && let Some(v) = reg.water_volume(b)
                     && self.get_block(wx, y + 1, wz) == AIR
                     && self.generator.climate(wx, wz).t > -0.35
                     && self.water_depth_at_most(wx, y, wz, 2)
@@ -147,20 +154,52 @@ impl World {
                         .iter()
                         .all(|&(dx, dz)| self.water_depth_at_most(wx + dx, y, wz + dz, 2))
                 {
-                    let contained = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                        .iter()
-                        .filter(|&&(dx, dz)| {
-                            let n = self.get_block(wx + dx, y, wz + dz);
-                            self.reg.is_solid(n) || self.reg.is_water(n)
-                        })
-                        .count()
-                        >= 3;
-                    if contained {
-                        if v > 1 {
+                    let solid_walls = |x: i32, z: i32| {
+                        [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                            .iter()
+                            .filter(|&&(dx, dz)| {
+                                self.reg.is_solid(self.get_block(x + dx, y, z + dz))
+                            })
+                            .count()
+                    };
+                    if v > 1 {
+                        // Draw-down keeps ponds ponds: a basin (walls
+                        // or fellow water on 3+ sides) never loses its
+                        // film here, an exposed spill clears outright.
+                        let contained = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                            .iter()
+                            .filter(|&&(dx, dz)| {
+                                let n = self.get_block(wx + dx, y, wz + dz);
+                                self.reg.is_solid(n) || self.reg.is_water(n)
+                            })
+                            .count()
+                            >= 3;
+                        if contained {
                             changes.push((wx, y, wz, reg.water_for_volume(1)));
+                        } else {
+                            changes.push((wx, y, wz, AIR));
                         }
-                    } else {
-                        changes.push((wx, y, wz, AIR));
+                    } else if solid_walls(wx, wz) < 3 {
+                        let mut patch = vec![(wx, wz)];
+                        let mut i = 0;
+                        while i < patch.len() && patch.len() < 16 {
+                            let (px, pz) = patch[i];
+                            i += 1;
+                            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                                let (qx, qz) = (px + dx, pz + dz);
+                                if !patch.contains(&(qx, qz))
+                                    && reg.water_volume(self.get_block(qx, y, qz)) == Some(1)
+                                    && self.get_block(qx, y + 1, qz) == AIR
+                                    && self.water_depth_at_most(qx, y, qz, 2)
+                                    && solid_walls(qx, qz) < 3
+                                {
+                                    patch.push((qx, qz));
+                                }
+                            }
+                        }
+                        for (px, pz) in patch {
+                            dried.push((px, y, pz));
+                        }
                     }
                 }
             }
@@ -171,6 +210,9 @@ impl World {
                 self.plant_ire(0.5);
             }
             self.set_block(x, y, z, b);
+        }
+        for (x, y, z) in dried {
+            self.set_block(x, y, z, AIR);
         }
         for (x, y, z, _species, rnd) in saplings {
             self.try_grow_sapling(x, y, z, rnd);
@@ -435,7 +477,10 @@ impl World {
 
     /// Rain refills the water it lands on: the first surface the
     /// column offers, if partial water or a film, gains one unit —
-    /// ponds creep back toward full through a wet autumn.
+    /// ponds creep back toward full through a wet autumn. A dry
+    /// pothole catches the rain too: a solid floor whose open cell
+    /// has 3+ solid walls seeds a fresh film, and a drained basin
+    /// rebuilds from its corners, rain by rain.
     pub fn rain_fill(&mut self, x: i32, z: i32) {
         if self.snows_at(x, z) || !self.rains_at(x, z) {
             return;
@@ -449,6 +494,15 @@ impl World {
                 && v < 8
             {
                 self.set_block(x, y, z, self.reg.water_for_volume(v + 1));
+            } else if self.reg.is_solid(b)
+                && y + 1 < CHUNK_Y as i32
+                && [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .iter()
+                    .filter(|&&(dx, dz)| self.reg.is_solid(self.get_block(x + dx, y + 1, z + dz)))
+                    .count()
+                    >= 3
+            {
+                self.set_block(x, y + 1, z, self.reg.water_for_volume(1));
             }
             return;
         }

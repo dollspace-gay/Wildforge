@@ -66,6 +66,11 @@ Rules on wake (replacing `desired_flow`):
    lowest until within **2 units** of it — the hysteresis kills
    oscillation and guarantees the queue quiesces. Moved-to and
    moved-from cells wake their neighbors.
+   **Drop exception**: an air neighbor with room in the cell below
+   it is a fall in waiting — water moved there leaves this layer
+   before it could slosh back, so the move skips the hysteresis
+   and takes everything the lower cell can swallow. A breached
+   pool pours dry at its lips instead of stranding them.
 3. Volume moves; it is never created or destroyed. A big lake drains
    layer by layer as a creeping front from the breach, bounded by
    the existing 512-cells-per-200 ms budget — big bodies take real
@@ -142,18 +147,22 @@ already pay worldgen/disk costs — no load hitch.
 
 - **Evaporation** (random-tick rule): an exposed **shallow** water
   cell — depth ≤ 2, i.e. solid within two cells below — under open
-  sky, warm climate, summer sun loses one unit at low probability.
-  The depth guard keeps the ocean and deep lakes off the stove:
-  they lose only rim shallows, not their bodies, and it spares the
-  wake-queue an eternally churning sea surface. A pond bed never
-  dries below a 1-unit film when it sits in a depression (≥3 of 4
-  horizontal neighbors solid at its y) — marshy film, never
-  nothing, so rains can find it again. Open spills on flat ground
-  evaporate fully.
+  sky and warm climate dries. Summer draws any shallow cell down
+  (basins to a film, exposed spills to nothing); a stranded
+  **1-unit film** is trivial and dries in every season short of
+  winter, a small connected patch per hit so a drained basin's
+  glaze visibly recedes. The depth guard keeps the ocean and deep
+  lakes off the stove: they lose only rim shallows, not their
+  bodies, and it spares the wake-queue an eternally churning sea
+  surface. A film survives only in a pocket with **3+ solid
+  walls** at its y — the pothole scale where rain can restart a
+  pond — everything wider dries through.
 - **Rain refill**: the existing precipitation sprinkle (the
   snow-settle rider in `server.rs`) also serves rain columns: if
   the column surface is a partial water cell or film, add one unit
-  and wake it.
+  and wake it. A **dry pothole** (solid floor whose open cell has
+  3+ solid walls) catches a fresh film instead, so dried basins
+  rebuild from their corners through a wet season.
 - Winter freeze/spring thaw already exist; the freeze rule updates
   to "full cells freeze" (partial rims stay liquid; melt returns a
   full water cell).
