@@ -9,8 +9,10 @@ impl Renderer {
         // Sun light-space matrix: an orthographic box centered near the camera,
         // looking from the sun toward that center. Covers the near field; beyond
         // its radius the shader treats fragments as lit (shadows fade out).
-        let light_vp = {
-            let radius = 90.0f32;
+        // One ortho box per cascade, all centered on the camera and looking from
+        // the sun, sized tightest-first (see CASCADE_RADII): a dense near map for
+        // crisp contact shadows / indoor sunbeams out to a wide map for distance.
+        let light_vp: [Mat4; SHADOW_CASCADES] = {
             let dist = 160.0f32;
             let center = f.cam_pos;
             let eye = center + f.sun_dir * dist;
@@ -20,15 +22,19 @@ impl Renderer {
                 Vec3::Y
             };
             let view = glam::camera::rh::view::look_at_mat4(eye, center, up);
-            let proj = glam::camera::rh::proj::directx::orthographic(
-                -radius,
-                radius,
-                -radius,
-                radius,
-                1.0,
-                dist + radius * 2.0,
-            );
-            proj * view
+            let mut a = [Mat4::IDENTITY; SHADOW_CASCADES];
+            for (i, &radius) in CASCADE_RADII.iter().enumerate() {
+                let proj = glam::camera::rh::proj::directx::orthographic(
+                    -radius,
+                    radius,
+                    -radius,
+                    radius,
+                    1.0,
+                    dist + radius * 2.0,
+                );
+                a[i] = proj * view;
+            }
+            a
         };
 
         let inv_view_proj = f.view_proj.inverse();
@@ -50,7 +56,7 @@ impl Renderer {
             sun_dir: [f.sun_dir.x, f.sun_dir.y, f.sun_dir.z, 0.0],
             sun_col: [f.sun_col.x, f.sun_col.y, f.sun_col.z, 0.0],
             amb_col: [f.amb_col.x, f.amb_col.y, f.amb_col.z, f.ambient_floor],
-            light_vp: light_vp.to_cols_array_2d(),
+            light_vp: light_vp.map(|m| m.to_cols_array_2d()),
             pt_count: [f.point_lights.len().min(MAX_PT_LIGHTS) as u32, 0, 0, 0],
             pt_pos: {
                 let mut a = [[0.0f32; 4]; MAX_PT_LIGHTS];
@@ -80,6 +86,13 @@ impl Renderer {
             },
             inv_view_proj: inv_view_proj.to_cols_array_2d(),
             sun_dir_true: [f.sun_dir_true.x, f.sun_dir_true.y, f.sun_dir_true.z, 0.0],
+            sh: {
+                let mut a = [[0.0f32; 4]; 9];
+                for (i, c) in f.sh_ambient.iter().enumerate() {
+                    a[i] = [c.x, c.y, c.z, 0.0];
+                }
+                a
+            },
         };
         self.entity_vbuf.upload(
             &self.device,
@@ -112,6 +125,14 @@ impl Renderer {
             .upload(&self.device, &self.queue, bytemuck::cast_slice(f.ui_verts));
         self.queue
             .write_buffer(&self.uniforms_buf, 0, bytemuck::bytes_of(&uniforms));
+        // Per-cascade matrix for the depth pass, one dynamic-offset slot each.
+        for (i, m) in light_vp.iter().enumerate() {
+            self.queue.write_buffer(
+                &self.shadow_casc_buf,
+                i as u64 * CASCADE_STRIDE,
+                bytemuck::cast_slice(&m.to_cols_array()),
+            );
+        }
 
         // Per-face matrices for the point-shadow cube passes: a 90° perspective
         // per cube face, plus the light position for the distance write.
@@ -191,15 +212,16 @@ impl Renderer {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-        // Shadow pass: opaque terrain depth from the sun's POV. No color target.
-        // Every loaded chunk is a potential caster (occluders behind the camera
-        // still shadow what's in view), so this pass is not frustum-culled.
-        {
+        // Shadow pass: opaque terrain depth from the sun's POV, once per cascade
+        // into its own layer. No color target. Every loaded chunk is a potential
+        // caster (occluders behind the camera still shadow what's in view), so
+        // this pass is not frustum-culled.
+        for c in 0..SHADOW_CASCADES {
             let mut sp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_view,
+                    view: &self.shadow_layer_views[c],
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -210,7 +232,11 @@ impl Renderer {
                 occlusion_query_set: None,
             });
             sp.set_pipeline(&self.shadow_pipeline);
-            sp.set_bind_group(0, &self.uniform_bg, &[]);
+            sp.set_bind_group(
+                0,
+                &self.shadow_casc_bg,
+                &[(c as u64 * CASCADE_STRIDE) as u32],
+            );
             for gpu in self.chunks.values() {
                 if let Some(m) = &gpu.opaque {
                     sp.set_vertex_buffer(0, m.vbuf.slice(..));

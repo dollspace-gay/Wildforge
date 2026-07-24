@@ -235,7 +235,7 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
             size: wgpu::Extent3d {
                 width: SHADOW_RES,
                 height: SHADOW_RES,
-                depth_or_array_layers: 1,
+                depth_or_array_layers: SHADOW_CASCADES as u32,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -244,7 +244,24 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        let shadow_view = shadow_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        // One array view for sampling all cascades, plus a single-layer view per
+        // cascade to render into.
+        let shadow_view = shadow_tex.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("shadow-sample"),
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+        let shadow_layer_views: Vec<wgpu::TextureView> = (0..SHADOW_CASCADES as u32)
+            .map(|layer| {
+                shadow_tex.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("shadow-layer"),
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    base_array_layer: layer,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                })
+            })
+            .collect();
         let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("shadow-cmp"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -346,7 +363,7 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
                         multisampled: false,
                     },
                     count: None,
@@ -453,10 +470,59 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
             bind_group_layouts: &[&uniform_bgl, &atlas_bgl, &shadow_bgl],
             push_constant_ranges: &[],
         });
-        // The depth-only shadow pass needs only the uniforms (for light_vp).
+        // Depth-only cascade shader: one matrix per pass, selected by dynamic
+        // offset. Separate module because its group-0 uniform is just the
+        // cascade's view_proj, not the full scene Uniforms.
+        let csm_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("csm-shader"),
+            source: wgpu::ShaderSource::Wgsl(
+                r#"
+struct Casc { view_proj: mat4x4<f32> };
+@group(0) @binding(0) var<uniform> c: Casc;
+@vertex
+fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
+    return c.view_proj * vec4<f32>(pos, 1.0);
+}
+"#
+                .into(),
+            ),
+        });
+        // Per-cascade light_vp, one 256-aligned slot each, addressed by offset.
+        let shadow_casc_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("shadow-cascade"),
+            size: CASCADE_STRIDE * SHADOW_CASCADES as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let shadow_casc_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("shadow-cascade-bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: true,
+                    min_binding_size: core::num::NonZeroU64::new(64),
+                },
+                count: None,
+            }],
+        });
+        let shadow_casc_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("shadow-cascade-bg"),
+            layout: &shadow_casc_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &shadow_casc_buf,
+                    offset: 0,
+                    size: core::num::NonZeroU64::new(64),
+                }),
+            }],
+        });
+        // The depth-only shadow pass binds just the per-cascade matrix.
         let shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("shadow-layout"),
-            bind_group_layouts: &[&uniform_bgl],
+            bind_group_layouts: &[&shadow_casc_bgl],
             push_constant_ranges: &[],
         });
 
@@ -653,7 +719,7 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
             label: Some("shadow"),
             layout: Some(&shadow_layout),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: &csm_shader,
                 entry_point: Some("vs_shadow"),
                 compilation_options: Default::default(),
                 buffers: std::slice::from_ref(&shadow_vertex_layout),
@@ -972,7 +1038,9 @@ fn fs_pt_tr(in: TrOut) -> @location(0) vec4<f32> {
             line_screen_pipeline,
             ui_pipeline,
             shadow_pipeline,
-            shadow_view,
+            shadow_layer_views,
+            shadow_casc_buf,
+            shadow_casc_bg,
             shadow_bg,
             pt_cached: [None; MAX_PT_LIGHTS],
             pt_shadow_pipeline,
