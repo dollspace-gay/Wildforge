@@ -1484,7 +1484,16 @@ impl Game {
             }
             Screen::Kiln(pos) => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
-                let title = "GLASS KILN";
+                let title = if self
+                    .server
+                    .world
+                    .check_glassworks(pos.0, pos.1, pos.2)
+                    .is_some()
+                {
+                    "GLASSWORKS"
+                } else {
+                    "GLASS KILN"
+                };
                 let tw = UiBatch::text_width(3.0, title);
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 310.0, 3.0, title, [1.0; 4]);
                 let (slots, lit, progress, breached) = {

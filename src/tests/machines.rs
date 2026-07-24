@@ -843,3 +843,64 @@ fn legacy_food_stacks_initialize_instead_of_rotting() {
     assert_eq!(st.item, berry, "legacy berries survive the sweep");
     assert_eq!(st.durability, 1200, "and start their clock fresh");
 }
+
+#[test]
+fn chimneyed_kiln_is_a_glassworks() {
+    use crate::world::{BlockEntity, KILN_FIRE_SECS, KilnState, Weather};
+    let reg = base_reg();
+    let mut w = test_world_with("glassworks", reg.clone());
+    let my = 120;
+    // A kiln stack, then the chimney courses over the core.
+    let fb = b(&reg, "base:firebrick");
+    let mouth = b(&reg, "base:kiln");
+    let (mx, mz) = (10, 10);
+    let (cx, cz) = (mx + 1, mz);
+    for ly in 0..6 {
+        for rx in -1..=1i32 {
+            for rz in -1..=1i32 {
+                if rx != 0 || rz != 0 {
+                    w.set_block(cx + rx, my + ly, cz + rz, fb);
+                }
+            }
+        }
+        w.set_block(cx, my + ly, cz, AIR);
+    }
+    w.set_block(mx, my, mz, mouth);
+    assert!(w.check_glassworks(mx, my, mz).is_some(), "chimney upgrades");
+    // 8 sand + 2 charcoal: the draft doubles what each fuel fires -
+    // four glass where a bare kiln stops at two.
+    let sand = reg.item_id("base:sand").unwrap();
+    let coal = reg.item_id("base:charcoal").unwrap();
+    let mut st = KilnState::default();
+    for i in 0..4 {
+        st.sand[i] = Some(ItemStack::new(&reg, sand, 2));
+    }
+    st.fuel[0] = Some(ItemStack::new(&reg, coal, 2));
+    w.insert_block_entity((mx, my, mz), BlockEntity::Kiln(st));
+    assert!(w.light_kiln(mx, my, mz).is_ok());
+    w.weather = Weather::Storm; // and the storm means nothing
+    let steps = (KILN_FIRE_SECS / 0.5) as i32 + 4;
+    for _ in 0..steps {
+        w.tick_entities(0.5);
+    }
+    let Some(BlockEntity::Kiln(k)) = w.block_entity(&(mx, my, mz)) else {
+        panic!("kiln survived");
+    };
+    assert!(!k.lit, "fired through the storm");
+    let glass: u32 = k
+        .sand
+        .iter()
+        .flatten()
+        .filter(|s| s.item != sand)
+        .map(|s| s.count)
+        .sum();
+    assert_eq!(glass, 4, "two charcoal fired four glass (double reach)");
+    let sand_left: u32 = k
+        .sand
+        .iter()
+        .flatten()
+        .filter(|s| s.item == sand)
+        .map(|s| s.count)
+        .sum();
+    assert_eq!(sand_left, 4, "the unfired sand keeps");
+}

@@ -98,22 +98,8 @@ impl World {
             self.reg.block_id("base:forge_lit"),
         ];
         let core = self.check_stack(x, y, z, &mouth)?;
-        let fb = self.reg.block_id("base:firebrick")?;
-        let (cx, cy, cz) = core;
-        for ly in 3..6 {
-            if self.get_block(cx, cy + ly, cz) != AIR {
-                return None;
-            }
-            for rx in -1..=1 {
-                for rz in -1..=1 {
-                    if rx == 0 && rz == 0 {
-                        continue;
-                    }
-                    if self.get_block(cx + rx, cy + ly, cz + rz) != fb {
-                        return None;
-                    }
-                }
-            }
+        if !self.has_chimney(core) {
+            return None;
         }
         let anvil = self.reg.block_id("base:stone_anvil")?;
         for dx in -3i32..=3 {
@@ -149,6 +135,44 @@ impl World {
         f.core = core;
         self.swap_block_keep_entity(x, y, z, "base:forge_lit");
         Ok(())
+    }
+
+    /// Three more courses of firebrick ring over the stack, flue
+    /// open: the chimney that turns a station into a workshop. Rain
+    /// never reaches a chimneyed fire.
+    fn has_chimney(&self, core: (i32, i32, i32)) -> bool {
+        let Some(fb) = self.reg.block_id("base:firebrick") else {
+            return false;
+        };
+        let (cx, cy, cz) = core;
+        for ly in 3..6 {
+            if self.get_block(cx, cy + ly, cz) != AIR {
+                return false;
+            }
+            for rx in -1..=1 {
+                for rz in -1..=1 {
+                    if rx == 0 && rz == 0 {
+                        continue;
+                    }
+                    if self.get_block(cx + rx, cy + ly, cz + rz) != fb {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    /// A kiln whose stack carries the chimney is a GLASSWORKS: the
+    /// draft doubles what each fuel fires, and weather means nothing
+    /// (economy plan, leg 2 — same capital rule as the forge).
+    pub fn check_glassworks(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
+        let core = self.check_kiln(x, y, z)?;
+        if self.has_chimney(core) {
+            Some(core)
+        } else {
+            None
+        }
     }
 
     /// The same stack with a kiln in its mouth fires glass instead.
@@ -262,8 +286,12 @@ impl World {
                 self.block_entities.insert(pos, BlockEntity::Kiln(k));
                 continue;
             }
+            // A chimneyed kiln is a glassworks: rain can't reach the
+            // fire, and the draft doubles what each fuel fires.
+            let glassworks = self.check_glassworks(x, y, z).is_some();
             let unroofed = self.light_at(k.core.0, y + 3, k.core.2).1 == 15;
-            let wet = self.weather.precipitating() && self.rains_at(x, z) && unroofed;
+            let wet =
+                !glassworks && self.weather.precipitating() && self.rains_at(x, z) && unroofed;
             if wet && self.weather == Weather::Storm {
                 k.lit = false;
                 k.progress = 0.0;
@@ -276,7 +304,8 @@ impl World {
                 if let Some((_, fuel_item, clear)) = self.reg.kiln_base {
                     let n_sand: u32 = k.sand.iter().flatten().map(|s| s.count).sum();
                     let n_fuel: u32 = k.fuel.iter().flatten().map(|s| s.count).sum();
-                    let pairs = n_sand.min(n_fuel) / 2;
+                    let fuel_reach = if glassworks { n_fuel * 2 } else { n_fuel };
+                    let pairs = n_sand.min(fuel_reach) / 2;
                     let out_n = pairs * 2;
                     // One powder colors the whole batch.
                     let colored = k.powder.as_ref().and_then(|p| {
@@ -311,7 +340,14 @@ impl World {
                         }
                     };
                     eat(&mut k.sand, pairs * 2);
-                    eat(&mut k.fuel, pairs * 2);
+                    eat(
+                        &mut k.fuel,
+                        if glassworks {
+                            (pairs * 2).div_ceil(2)
+                        } else {
+                            pairs * 2
+                        },
+                    );
                     let _ = fuel_item;
                     if out_n > 0 {
                         let reg = self.reg.clone();
