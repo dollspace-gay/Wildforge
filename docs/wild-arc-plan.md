@@ -1,5 +1,33 @@
 # The wild arc — the land becomes an actor
 
+Drafted 2026-07-24, **IMPLEMENTED** 2026-07-24, all five stages.
+Notes vs. this spec, where the implementation knew better:
+
+- **The player-touched ledger replaced the chunk-modified flag** for
+  the green tide: `chunk.modified` turned out poisoned as a proxy —
+  crops advancing marked every living chunk within minutes. A
+  dedicated set fed only by place_block/break_block (persisted like
+  the wildlife marks) is the honest signal.
+- **Seasonal wants are fixed to the calendar**, not hashed — players
+  learn the year, and the stone says its appetite in plain words on
+  its own screen.
+- **Birdsong thins via the existing night-ambience bed** reading the
+  LOCAL tier instead of the global one — no new audio, exactly the
+  intended effect (crickets in tended country, the wrathful hush
+  where the ground remembers).
+- **The blessed-streak reseed clock is session-scoped** (a quit
+  restarts the season count) — recorded, deliberate: the wild
+  forgives the patient.
+- **The smoker is a rack over a live torch** (custom legs-and-slats
+  mesh after the first cut failed the taste check as a floating
+  crate), curing a whole load together — no screen, no shell, the
+  readable station. Smoked meat keeps six days to salt's twelve.
+- **The shadow-acne fix** scales the slope bias by each cascade's
+  texel reach (1/2.5/8.5) — the fixed cap was correct only for the
+  nearest cascade.
+- Loopback flake: pump budgets tripled (early-exit on success, so
+  green runs pay nothing).
+
 Drafted 2026-07-24. Decisions settled with dollspace: the wild's
 side of the give-and-take deepens from a tax into a relationship —
 regional memory, legible escalation, richer offerings — plus the

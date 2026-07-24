@@ -1269,10 +1269,11 @@ impl HostSession {
                     && (m.pos - gpos).length() <= REACH
                 {
                     let def = reg.animals[m.species].clone();
+                    let (mx, mz) = (m.pos.x.floor() as i32, m.pos.z.floor() as i32);
                     m.hurt(&def, dmg, from);
                     m.last_hit_by = id;
                     if !def.hostile {
-                        server.world.add_ire(2.0);
+                        server.world.add_ire_at(mx, mz, 2.0);
                     }
                     if server.world.mode != "creative" {
                         guest.hunger = (guest.hunger - 0.01).max(0.0);
@@ -1660,7 +1661,7 @@ impl HostSession {
                     && c.wild_owned
                 {
                     c.wild_owned = false;
-                    server.world.add_ire(1.0);
+                    server.world.add_ire_at(x, z, 1.0);
                     self.net
                         .send(id, &S2C::Toast("The wild keeps its trophies.".into()));
                 }
@@ -2110,7 +2111,10 @@ impl HostSession {
                     }
                 }
             }
-            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) | BlockEntity::Sign(_) => {}
+            BlockEntity::Clamp(_)
+            | BlockEntity::Anvil(_)
+            | BlockEntity::Sign(_)
+            | BlockEntity::Smoker(_) => {}
             BlockEntity::Chest(c) => {
                 if slot < c.slots.len() {
                     let (ns, nh) = click_stack(&reg, c.slots[slot], held, right);
@@ -2267,7 +2271,10 @@ impl HostSession {
                 }
                 (6, slots, vec![if owner { 1.0 } else { 0.0 }])
             }
-            BlockEntity::Clamp(_) | BlockEntity::Anvil(_) | BlockEntity::Sign(_) => return,
+            BlockEntity::Clamp(_)
+            | BlockEntity::Anvil(_)
+            | BlockEntity::Sign(_)
+            | BlockEntity::Smoker(_) => return,
         };
         self.net.send(
             id,

@@ -335,6 +335,34 @@ impl World {
 
     /// Ire-driven warden spawner: territorial lurkers roll into the dark
     /// ring around the player. Never near the world spawn, never in light.
+    /// Grade the vigils: a watcher stands down when its ground is
+    /// mended (fading without a corpse), and graduates to the hunt
+    /// when the grievance stands too long ignored.
+    pub(crate) fn grade_watchers(&mut self) {
+        let mut i = 0;
+        while i < self.mobs.len() {
+            let m = &self.mobs[i];
+            if !m.watcher {
+                i += 1;
+                continue;
+            }
+            let (mx, mz) = (m.pos.x.floor() as i32, m.pos.z.floor() as i32);
+            let cell = self.regional_ire_at(mx, mz);
+            if cell < m.watch_baseline - 1.5 || self.ire_tier_at(mx, mz) == 0 {
+                // The land was answered while it watched.
+                self.whispers
+                    .push("The watcher melts back into the trees.".to_string());
+                self.mobs.swap_remove(i);
+                continue;
+            }
+            if m.watch_timer > 45.0 {
+                self.whispers.push("The watching is over.".to_string());
+                self.mobs[i].watcher = false;
+            }
+            i += 1;
+        }
+    }
+
     pub fn tick_hostile_spawns(
         &mut self,
         player: glam::Vec3,
@@ -348,9 +376,22 @@ impl World {
             return;
         }
         self.hostile_spawn_timer = 0.0;
+        self.grade_watchers();
         let reg = self.reg.clone();
-        let tier = self.ire_tier();
+        // The tier as THIS ground feels it: an angry forest hunts
+        // harder, a tended valley softer, wherever the world's mood.
+        let (px, pz) = (player.x.floor() as i32, player.z.floor() as i32);
+        let tier = self.ire_tier_at(px, pz);
         let mut budget = [2usize, 6, 10, 14][tier];
+        // While a watcher watches, nothing else comes: the warning IS
+        // the encounter until it's answered or it graduates.
+        let watcher_near = self
+            .mobs
+            .iter()
+            .any(|m| m.watcher && (m.pos - player).length_squared() < 96.0 * 96.0);
+        if watcher_near {
+            return;
+        }
         if self.weather == Weather::Storm && tier >= 2 {
             budget += 1; // dark skies are cover
         }
@@ -391,7 +432,10 @@ impl World {
                 .animals
                 .iter()
                 .enumerate()
-                .filter(|(_, d)| d.hostile && self.ire >= d.ire_min)
+                .filter(|(_, d)| {
+                    let local = (self.ire + self.regional_ire_at(x, z) * 3.0).clamp(0.0, 100.0);
+                    d.hostile && local >= d.ire_min
+                })
                 .filter_map(|(i, d)| {
                     if d.biomes.iter().any(|b| b == "underground") {
                         // A random depth with a 2-tall air pocket.
@@ -433,6 +477,17 @@ impl World {
                 (roll(rng) % 1024) as f32 / 1024.0 * std::f32::consts::TAU,
             );
             m.health = def.health;
+            // The first surface warden into aggrieved country arrives
+            // as a WATCHER: one warning at the treeline before any
+            // hunt. (The deep gives no warnings.)
+            let cell_ire = self.regional_ire_at(x, z);
+            let is_surface = y == surface_y + 1;
+            if is_surface && near_hostiles == 0 && cell_ire > 4.0 {
+                m.watcher = true;
+                m.watch_baseline = cell_ire;
+                self.whispers
+                    .push("Something watches from the treeline.".to_string());
+            }
             self.mobs.push(m);
             return; // one spawn per cycle
         }

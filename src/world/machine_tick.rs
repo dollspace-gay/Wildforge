@@ -169,6 +169,50 @@ impl World {
         }
     }
 
+    /// Smoke rises: any rack with raw cuts and a live torch directly
+    /// beneath cures the whole load together (wild arc, stage 5 —
+    /// the woodland answer to salt country).
+    pub(super) fn tick_smokers(&mut self, dt: f32) {
+        let reg = self.reg.clone();
+        let torch = reg.block_id("base:torch");
+        let smoked = reg.item_id("base:smoked_meat");
+        let raws = reg.tags.get("base:raw_meats").cloned().unwrap_or_default();
+        let keys: Vec<(i32, i32, i32)> = self
+            .block_entities
+            .iter()
+            .filter(|(_, e)| matches!(e, BlockEntity::Smoker(_)))
+            .map(|(k, _)| *k)
+            .collect();
+        for pos in keys {
+            let lit = Some(self.get_block(pos.0, pos.1 - 1, pos.2)) == torch;
+            let Some(BlockEntity::Smoker(sm)) = self.block_entities.get_mut(&pos) else {
+                continue;
+            };
+            let curing = sm.meat.iter().flatten().any(|s| raws.contains(&s.item));
+            if !lit || !curing {
+                sm.progress = 0.0;
+                continue;
+            }
+            sm.progress += dt;
+            if sm.progress >= SMOKE_SECS {
+                sm.progress = 0.0;
+                if let Some(smoked) = smoked {
+                    for s in sm.meat.iter_mut() {
+                        if let Some(st) = s
+                            && raws.contains(&st.item)
+                        {
+                            *s = Some(ItemStack {
+                                item: smoked,
+                                count: st.count,
+                                durability: reg.item(smoked).durability,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Food kept in containers ages (economy plan, leg 3): every
     /// PERISH_SWEEP_SECS, each food stack loses that much freshness —
     /// quartered in a cellar (dark and skylight-free, the cool rooms
@@ -302,6 +346,7 @@ impl World {
         self.tick_kilns(dt);
         self.tick_forges(dt);
         self.tick_clamps(dt);
+        self.tick_smokers(dt);
         self.tick_perish(dt);
         let reg = self.reg.clone();
         // Byproducts pour out the furnace mouth (cupellation lead);

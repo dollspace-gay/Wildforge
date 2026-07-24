@@ -15,6 +15,7 @@ impl World {
         let ice = reg.block_id("base:ice");
         let snow_layer = reg.block_id("base:snow_layer");
         let snow_trod = reg.block_id("base:snow_layer_trod");
+        let grass_id = reg.block_id("base:grass");
         let season = self.season();
         let mut order: Vec<(f64, ChunkPos)> = self
             .chunks
@@ -68,7 +69,14 @@ impl World {
                     // in winter - unless roofed and torchlit (a
                     // greenhouse, emergent from the light rules).
                     let mult = if d.crop_any_soil {
-                        if season == 1 || season == 2 { 1.0 } else { 0.0 }
+                        let base = if season == 1 || season == 2 { 1.0 } else { 0.0 };
+                        // Blessed country feeds back: bushes refruit
+                        // twice as readily where the land is tended.
+                        if self.regional_ire_at(wx, wz) < -8.0 {
+                            base * 2.0
+                        } else {
+                            base
+                        }
                     } else {
                         match season {
                             0 => 1.25,
@@ -101,9 +109,60 @@ impl World {
                     }
                     continue;
                 }
+                // The green tide: in country the wild doesn't resent,
+                // mature trees seed the grass at their feet — only on
+                // natural ground (untouched chunks), only where the
+                // forest isn't already thick, and never in winter.
+                let sky_open = self.light_at(wx, y + 1, wz).1 == 15;
+                if Some(b) == grass_id
+                    && season != 3
+                    && sky_open
+                    && self.get_block(wx, y + 1, wz) == AIR
+                    && self.regional_ire_at(wx, wz) <= 2.0
+                    && !self.player_touched.contains(&(pos.x, pos.z))
+                {
+                    *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                    if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.06 {
+                        // A parent within reach, and room to breathe.
+                        let mut parent: Option<BlockId> = None;
+                        let mut crowd = 0;
+                        for dx in -5i32..=5 {
+                            for dz in -5i32..=5 {
+                                for dy in 0..=6 {
+                                    let nb = self.get_block(wx + dx, y + dy, wz + dz);
+                                    let name = &reg.block(nb).name;
+                                    if name.ends_with("log") {
+                                        parent.get_or_insert(nb);
+                                        if dy == 0 || dy == 1 {
+                                            crowd += 1;
+                                        }
+                                    }
+                                    if reg.block(nb).sapling.is_some() {
+                                        crowd += 1;
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(log) = parent
+                            && crowd < 4
+                        {
+                            let ln = reg.block(log).name.clone();
+                            let sap = match ln.as_str() {
+                                "base:birch_log" => "base:birch_sapling",
+                                "base:spruce_log" => "base:spruce_sapling",
+                                "base:jungle_log" => "base:jungle_sapling",
+                                "base:acacia_log" => "base:acacia_sapling",
+                                _ => "base:oak_sapling",
+                            };
+                            if let Some(sb) = reg.block_id(sap) {
+                                changes.push((wx, y + 1, wz, sb));
+                            }
+                        }
+                    }
+                    continue;
+                }
                 // Winter freezes exposed still water outside the warm
                 // belts; spring gives the lakes back.
-                let sky_open = self.light_at(wx, y + 1, wz).1 == 15;
                 if d.water_level == Some(0)
                     && !d.lava
                     && season == 3
@@ -207,7 +266,7 @@ impl World {
         for (x, y, z, b) in changes {
             // A crop reaching its final stage refunds ire (capped daily).
             if self.reg.block(b).crop_next.is_none() {
-                self.plant_ire(0.5);
+                self.plant_ire_at(x, z, 0.5);
             }
             self.set_block(x, y, z, b);
         }
@@ -416,7 +475,8 @@ impl World {
             self.relight_and_cascade(pos);
         }
         for _ in 0..refunds {
-            self.plant_ire(0.5);
+            // Reconciled growth credits the chunk's own country.
+            self.plant_ire_at(pos.x * 16 + 8, pos.z * 16 + 8, 0.5);
         }
         for (x, y, z, rnd) in grow {
             self.try_grow_sapling(x, y, z, rnd);
@@ -517,7 +577,7 @@ impl World {
             return false;
         };
         if self.grow_tree(x, y, z, &species, rnd) {
-            self.add_ire(-2.0);
+            self.add_ire_at(x, z, -2.0);
             true
         } else {
             false

@@ -125,7 +125,11 @@ fn sample_shadow(world: vec3<f32>, ndl: f32) -> vec2<f32> {
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || p.z > 1.0 || p.z < 0.0) {
             continue; // not in this cascade; try the next (wider) one
         }
-        let ref_depth = p.z - bias;
+        // Wider cascades spread each texel over more world, so the
+        // same slope needs proportionally more bias — the fixed cap
+        // was the triangle acne on steep faces (ngutten's #24).
+        let cscale = f32(1u << (2u * c)) * 0.5 + 0.5; // 1, 2.5, 8.5
+        let ref_depth = p.z - bias * cscale;
         var sum = 0.0;
         for (var dy = -1; dy <= 1; dy = dy + 1) {
             for (var dx = -1; dx <= 1; dx = dx + 1) {

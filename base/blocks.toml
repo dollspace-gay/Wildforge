@@ -1106,3 +1106,25 @@ hardness = 1.5
 tool = "axe"
 drops = "self"
 interaction = "stall"
+
+[[block]]
+id = "clay_block"
+name = "Clay"
+texture = "clay_block.png"
+hardness = 0.8
+tool = "shovel"
+drops = "base:clay_ball"
+drop_count = 3
+item = false
+
+[[block]]
+id = "smoking_rack"
+name = "Smoking Rack"
+texture = "smoking_rack.png"
+shape = "rack"
+hardness = 1.0
+tool = "axe"
+solid = false
+opaque = false
+drops = "self"
+interaction = "smoker"

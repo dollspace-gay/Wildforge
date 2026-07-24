@@ -2209,3 +2209,158 @@ fn saved_mid_drain_pools_resume_leveling() {
         "reload resumes the leveling (heads {a} vs {b2})"
     );
 }
+
+#[test]
+fn the_land_remembers_where() {
+    let reg = base_reg();
+    let dir = tmp_dir("rire");
+    {
+        let mut w = World::new(42, dir.clone(), reg.clone());
+        // A clearcut in one valley, a garden in another.
+        for _ in 0..40 {
+            w.add_ire_at(100, 100, 1.0);
+        }
+        for _ in 0..40 {
+            w.plant_ire_at(3000, 3000, 1.0);
+        }
+        assert_eq!(w.regional_ire_at(100, 100), 20.0, "grudge clamps at 20");
+        assert_eq!(w.regional_ire_at(3000, 3000), -20.0, "grace clamps at -20");
+        assert_eq!(w.regional_ire_at(100, 3000), 0.0, "elsewhere is neutral");
+        // The same world mood feels different on different ground.
+        w.ire = 30.0; // globally tier 1
+        assert_eq!(w.ire_tier(), 1);
+        assert_eq!(w.ire_tier_at(100, 100), 3, "the angry forest hunts");
+        assert_eq!(w.ire_tier_at(3000, 3000), 0, "the tended valley forgives");
+        // Grudges fade: a full day decays 2 points.
+        w.tick_ire(1.0);
+        assert!(
+            (w.regional_ire_at(100, 100) - 18.0).abs() < 0.01,
+            "decay toward zero ({})",
+            w.regional_ire_at(100, 100)
+        );
+        w.save_modified();
+    }
+    let w = World::load_or_create(dir, reg);
+    assert!(
+        w.regional_ire_at(100, 100) > 17.0,
+        "the ledger persists ({})",
+        w.regional_ire_at(100, 100)
+    );
+}
+
+#[test]
+fn the_stone_states_its_season_and_doubles_it() {
+    use crate::world::{BlockEntity, OfferingState, SEASON_DAYS};
+    let reg = base_reg();
+    let mut w = test_world_with("wants", reg.clone());
+    w.day = 3 * SEASON_DAYS; // winter: the wild hungers
+    let (want, line) = w.season_want();
+    assert_eq!(want, 3);
+    assert!(line.contains("Food"), "the stone speaks plainly: {line}");
+    let bread = it(&reg, "base:bread");
+    let stone_ore = it(&reg, "base:raw_copper");
+    assert!(
+        w.satisfies_want(want, &ItemStack::new(&reg, bread, 1)),
+        "bread feeds"
+    );
+    assert!(
+        !w.satisfies_want(want, &ItemStack::new(&reg, stone_ore, 1)),
+        "ore does not"
+    );
+    // A wanted offering credits double, and the stone's own valley
+    // remembers the kindness.
+    let sy = w.surface_height(4, 4);
+    let mut o = OfferingState::default();
+    o.slots[0] = Some(ItemStack::new(&reg, bread, 2));
+    w.insert_block_entity((4, sy + 1, 4), BlockEntity::Offering(o));
+    w.ire = 50.0;
+    let refund = w.accept_offerings();
+    // bread: hunger 6 -> 1.5 value each, doubled = 3.0 x2 loaves = 6.
+    assert!(
+        (refund - 6.0).abs() < 0.01,
+        "winter bread counts double ({refund})"
+    );
+    assert!(
+        w.regional_ire_at(4, 4) <= -5.9,
+        "the valley remembers ({})",
+        w.regional_ire_at(4, 4)
+    );
+    // Out of season the same loaves count single.
+    w.day = SEASON_DAYS; // summer wants water, not bread
+    let mut o2 = OfferingState::default();
+    o2.slots[0] = Some(ItemStack::new(&reg, bread, 2));
+    w.insert_block_entity((4, sy + 1, 4), BlockEntity::Offering(o2));
+    let refund2 = w.accept_offerings();
+    assert!(
+        (refund2 - 3.0).abs() < 0.01,
+        "unwanted still counts, singly ({refund2})"
+    );
+}
+
+#[test]
+fn the_green_tide_seeds_only_natural_kind_ground() {
+    use crate::world::SEASON_DAYS;
+    let reg = base_reg();
+    let mut w = test_world_with("greentide", reg.clone());
+    w.day = SEASON_DAYS; // summer: growth season
+    // Force chunk (0,0) UNMODIFIED after our stage-setting: we build
+    // via raw grass/log placement then clear the flag through save.
+    let grass = b(&reg, "base:grass");
+    let log = b(&reg, "base:log");
+    let sy = 140;
+    for x in 0..16 {
+        for z in 0..16 {
+            w.set_block(x, sy, z, grass);
+        }
+    }
+    for dy in 1..=4 {
+        w.set_block(8, sy + dy, 8, log);
+    }
+    // Blessed country; set_block is the sim's hand, not a player's,
+    // so the chunk stays natural in the green tide's eyes.
+    for _ in 0..10 {
+        w.plant_ire_at(8, 8, 1.0);
+    }
+    let mut rng = 11u32;
+    for _ in 0..6000 {
+        w.random_tick(&mut rng);
+    }
+    let mut saplings = 0;
+    for x in 0..16 {
+        for z in 0..16 {
+            if reg.block(w.get_block(x, sy + 1, z)).sapling.is_some() {
+                saplings += 1;
+            }
+        }
+    }
+    assert!(saplings >= 1, "the forest thickens ({saplings})");
+    assert!(saplings <= 8, "but never marches ({saplings})");
+    // The same ground, resented: nothing seeds.
+    let mut w2 = test_world_with("greentide2", reg.clone());
+    w2.day = SEASON_DAYS;
+    for x in 0..16 {
+        for z in 0..16 {
+            w2.set_block(x, sy, z, grass);
+        }
+    }
+    for dy in 1..=4 {
+        w2.set_block(8, sy + dy, 8, log);
+    }
+    for _ in 0..10 {
+        w2.add_ire_at(8, 8, 1.0);
+    }
+    // (chunk stays modified anyway - doubly barred)
+    let mut rng2 = 11u32;
+    for _ in 0..3000 {
+        w2.random_tick(&mut rng2);
+    }
+    let mut saplings2 = 0;
+    for x in 0..16 {
+        for z in 0..16 {
+            if reg.block(w2.get_block(x, sy + 1, z)).sapling.is_some() {
+                saplings2 += 1;
+            }
+        }
+    }
+    assert_eq!(saplings2, 0, "angry or touched ground stays bare");
+}

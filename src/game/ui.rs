@@ -1784,6 +1784,17 @@ impl Game {
                     hint,
                     [0.7, 0.85, 0.65, 1.0],
                 );
+                // The stone states the season's appetite plainly.
+                let (_, want_line) = self.server.world.season_want();
+                let want_line = want_line.to_uppercase();
+                let ww = UiBatch::text_width(1.5, &want_line);
+                ui.text_shadow(
+                    (w - ww) / 2.0,
+                    h / 2.0 - 208.0,
+                    1.5,
+                    &want_line,
+                    [0.85, 0.8, 0.55, 1.0],
+                );
                 let slots = match self.server.world.block_entity(&pos) {
                     Some(world::BlockEntity::Offering(o)) => o.slots,
                     _ => [None; 3],

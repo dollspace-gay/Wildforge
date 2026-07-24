@@ -279,6 +279,10 @@ impl Default for InteractionState {
 
 /// Cosmetic animation, particles, transient feedback, and light selection.
 struct PresentationState {
+    /// Region-whisper bookkeeping: the cell we're in, and cells
+    /// already whispered this session.
+    last_ire_cell: Option<(i32, i32)>,
+    whispered_cells: std::collections::HashSet<(i32, i32)>,
     swing: f32,
     hand_bob: f32,
     weather_vis: f32,
@@ -311,6 +315,8 @@ struct PresentationState {
 impl PresentationState {
     fn new() -> Self {
         Self {
+            last_ire_cell: None,
+            whispered_cells: std::collections::HashSet::new(),
             swing: 0.0,
             hand_bob: 0.0,
             weather_vis: 0.0,

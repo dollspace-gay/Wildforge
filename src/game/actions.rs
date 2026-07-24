@@ -273,7 +273,10 @@ impl Game {
                 // individuals, and a TAMED animal is a household loss,
                 // not a wild one (though betrayal is still noticed).
                 // Vehicles are lumber; the wild never mourns a boat.
-                self.server.world.add_ire(if m.tamed { 1.0 } else { 2.0 });
+                let (mx, mz) = (m.pos.x.floor() as i32, m.pos.z.floor() as i32);
+                self.server
+                    .world
+                    .add_ire_at(mx, mz, if m.tamed { 1.0 } else { 2.0 });
             }
             self.sfx(Sfx::MobDeath(def.sound_pitch));
             let (tile, at) = (def.tile, m.pos + Vec3::new(0.0, 0.5, 0.0));
@@ -1130,7 +1133,7 @@ impl Game {
                         && c.wild_owned
                     {
                         c.wild_owned = false;
-                        self.server.world.add_ire(1.0);
+                        self.server.world.add_ire_at(h.block.0, h.block.2, 1.0);
                         self.toast("The wild keeps its trophies.".to_string());
                     }
                     self.set_screen(Screen::Chest(h.block));
@@ -1184,6 +1187,58 @@ impl Game {
                         st.owner_name = my_name;
                     }
                     self.set_screen(Screen::Stall(h.block));
+                    return;
+                }
+                Some("smoker") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.35;
+                    let raws = reg.tags.get("base:raw_meats").cloned().unwrap_or_default();
+                    let holding_raw = held.is_some_and(|h| raws.contains(&h));
+                    let e = self.server.world.ensure_block_entity(
+                        h.block,
+                        world::BlockEntity::Smoker(Default::default()),
+                    );
+                    let world::BlockEntity::Smoker(sm) = e else {
+                        return;
+                    };
+                    if holding_raw {
+                        if let Some(slot) = sm.meat.iter_mut().find(|s| s.is_none()) {
+                            let item = held.unwrap();
+                            if self.creative
+                                || self.inventory.take_one(self.input.hotbar_sel).is_some()
+                            {
+                                *slot = Some(ItemStack::new(&reg, item, 1));
+                                self.sfx(Sfx::Place);
+                                let torch_below = Some(self.server.world.get_block(
+                                    h.block.0,
+                                    h.block.1 - 1,
+                                    h.block.2,
+                                )) == reg.block_id("base:torch");
+                                if !torch_below {
+                                    self.toast(
+                                        "The rack wants a torch burning beneath.".to_string(),
+                                    );
+                                }
+                            }
+                        } else {
+                            self.toast("The rack is full.".to_string());
+                        }
+                        return;
+                    }
+                    // Empty-handed (or otherwise): take the cuts back.
+                    let mut took: Option<ItemStack> = None;
+                    if let world::BlockEntity::Smoker(sm) =
+                        self.server.world.block_entity_mut(&h.block).unwrap()
+                        && let Some(slot) = sm.meat.iter_mut().rev().find(|s| s.is_some())
+                    {
+                        took = slot.take();
+                    }
+                    if let Some(st) = took {
+                        let left = self.inventory.add_stack(&reg, st);
+                        if left > 0 {
+                            self.drop_stack(ItemStack { count: left, ..st });
+                        }
+                        self.sfx(Sfx::Pickup);
+                    }
                     return;
                 }
                 Some("sign") if self.input.action_cooldown <= 0.0 => {
@@ -1306,7 +1361,7 @@ impl Game {
                         }
                         if bd.crop_next.is_some() {
                             // The wild notices things growing where you walk.
-                            self.server.world.plant_ire(0.2);
+                            self.server.world.plant_ire_at(x, z, 0.2);
                         }
                         self.input.action_cooldown = 0.22;
                         self.sfx(Sfx::Place);

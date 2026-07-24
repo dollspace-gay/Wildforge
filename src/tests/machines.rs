@@ -983,3 +983,48 @@ fn stall_validates_and_persists_its_shop() {
     assert_eq!(st.goods[0].unwrap().count, 20);
     assert_eq!(st.price.unwrap().item, silver, "the price template holds");
 }
+
+#[test]
+fn the_smoker_cures_over_a_live_torch() {
+    use crate::world::{BlockEntity, SMOKE_SECS, SmokerState};
+    let reg = base_reg();
+    let mut w = test_world_with("smoker", reg.clone());
+    let rack = b(&reg, "base:smoking_rack");
+    let torch = b(&reg, "base:torch");
+    let stone = b(&reg, "base:stone");
+    let y = 200;
+    w.set_block(4, y, 4, stone);
+    w.set_block(4, y + 1, 4, torch);
+    w.set_block(4, y + 2, 4, rack);
+    let raw = reg.item_id("base:raw_boar").unwrap();
+    let smoked = reg.item_id("base:smoked_meat").unwrap();
+    let mut sm = SmokerState::default();
+    sm.meat[0] = Some(ItemStack::new(&reg, raw, 1));
+    sm.meat[2] = Some(ItemStack::new(&reg, raw, 1));
+    w.insert_block_entity((4, y + 2, 4), BlockEntity::Smoker(sm));
+    // Cold rack (no torch): nothing cures.
+    w.set_block(4, y + 1, 4, crate::registry::AIR);
+    for _ in 0..40 {
+        w.tick_entities(20.0);
+    }
+    let Some(BlockEntity::Smoker(sm)) = w.block_entity(&(4, y + 2, 4)) else {
+        panic!("rack stands");
+    };
+    assert_eq!(sm.meat[0].unwrap().item, raw, "cold smoke cures nothing");
+    // Relight and let it cure through.
+    w.set_block(4, y + 1, 4, torch);
+    let steps = (SMOKE_SECS / 20.0) as i32 + 2;
+    for _ in 0..steps {
+        w.tick_entities(20.0);
+    }
+    let Some(BlockEntity::Smoker(sm)) = w.block_entity(&(4, y + 2, 4)) else {
+        panic!("rack stands");
+    };
+    assert_eq!(sm.meat[0].unwrap().item, smoked, "the cut cured");
+    assert_eq!(sm.meat[2].unwrap().item, smoked, "the whole load together");
+    assert_eq!(
+        sm.meat[0].unwrap().durability,
+        reg.item(smoked).durability,
+        "smoked keeps six days"
+    );
+}

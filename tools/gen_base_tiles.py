@@ -216,6 +216,8 @@ ROCKS = {
                      veins=(196, 214, 230)),
     "stall_counter": dict(base=(158, 116, 68), dark=(112, 78, 42), bands=0.5),
     "boat_hull": dict(base=(150, 106, 58), dark=(104, 70, 36), bands=0.6),
+    "clay_block": dict(base=(174, 170, 178), dark=(130, 126, 136), bands=0.25),
+    "smoking_rack": dict(base=(120, 84, 50), dark=(78, 52, 30), bands=0.7),
     "shale": dict(base=(120, 118, 122), dark=(84, 82, 90), bands=0.55),
     "granite": dict(base=(188, 172, 160), dark=(140, 124, 116),
                     speckle=(224, 216, 208), speckle_n=40),
@@ -290,6 +292,10 @@ ITEMS = [
     ("saddlebags", (122, 80, 44), (82, 52, 26), "bags"),
     ("sign", (146, 108, 62), (96, 68, 36), "sign"),
     ("boat", (150, 106, 58), (100, 66, 32), "boat"),
+    ("clay_ball", (172, 168, 176), (124, 120, 130), "lump"),
+    ("crock", (150, 96, 70), (100, 60, 42), "crucible"),
+    ("pickles", (146, 176, 92), (96, 124, 56), "crucible"),
+    ("smoked_meat", (124, 70, 52), (80, 44, 30), "lump"),
 ]
 
 GLASSES = [

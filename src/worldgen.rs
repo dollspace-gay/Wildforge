@@ -187,6 +187,7 @@ pub struct Generator {
     mushroom: BlockId,
     stone: BlockId,
     sand: BlockId,
+    clay: BlockId,
     surface_sand: BlockId,
     gravel: BlockId,
     water: BlockId,
@@ -294,6 +295,7 @@ impl Generator {
             mushroom: b("base:wild_mushroom"),
             stone: b("base:stone"),
             sand: b("base:sand"),
+            clay: b("base:clay_block"),
             surface_sand: b("base:surface_sand"),
             gravel: b("base:gravel"),
             water: b("base:water"),
@@ -1070,6 +1072,11 @@ impl Generator {
                 let (top_b, under_b): (Option<BlockId>, Option<BlockId>) = if underwater {
                     if top < SEA_LEVEL - 14 {
                         (Some(self.gravel), Some(self.gravel))
+                    } else if self.detail.get([wx as f64 / 23.0, wz as f64 / 23.0]) > 0.34 {
+                        // Clay beds: patches where still shallows let
+                        // the fine sediment settle (wild arc, stage 5
+                        // — the crock starts here).
+                        (Some(self.clay), Some(self.clay))
                     } else {
                         (Some(self.sand), Some(self.sand))
                     }

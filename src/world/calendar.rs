@@ -28,13 +28,60 @@ impl World {
 
     // ---------------- ire (reciprocity) ----------------
 
+    /// The regional ledger's cell for a position (~256-block country).
+    pub fn ire_cell(x: i32, z: i32) -> (i32, i32) {
+        (x >> 8, z >> 8)
+    }
+
+    /// The land's local standing: negative is tended, positive is
+    /// aggrieved, clamped to a grudge the wild can actually hold.
+    pub fn regional_ire_at(&self, x: i32, z: i32) -> f32 {
+        self.regional_ire
+            .get(&Self::ire_cell(x, z))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    fn charge_cell(&mut self, x: i32, z: i32, amt: f32) {
+        let cell = Self::ire_cell(x, z);
+        let e = self.regional_ire.entry(cell).or_insert(0.0);
+        *e = (*e + amt).clamp(-20.0, 20.0);
+        if e.abs() < 0.01 {
+            self.regional_ire.remove(&cell);
+        }
+    }
+
+    /// Taking, placed: the world remembers, and so does the valley.
+    pub fn add_ire_at(&mut self, x: i32, z: i32, amt: f32) {
+        self.add_ire(amt);
+        self.charge_cell(x, z, amt);
+    }
+
+    /// Mending, placed: the global refund keeps its daily cap, but the
+    /// valley always notices the hands that tend it.
+    pub fn plant_ire_at(&mut self, x: i32, z: i32, amt: f32) {
+        self.plant_ire(amt);
+        self.charge_cell(x, z, -amt);
+    }
+
     pub fn ire_tier(&self) -> usize {
-        match self.ire {
+        Self::tier_of(self.ire)
+    }
+
+    fn tier_of(ire: f32) -> usize {
+        match ire {
             x if x < 20.0 => 0,
             x if x < 50.0 => 1,
             x if x < 80.0 => 2,
             _ => 3,
         }
+    }
+
+    /// The tier as this ground feels it: the world's mood shifted by
+    /// the local ledger (±20 regional ≈ ±2 tiers — an angry forest is
+    /// menacing, not lethal; a tended valley forgives a lot).
+    pub fn ire_tier_at(&self, x: i32, z: i32) -> usize {
+        Self::tier_of((self.ire + self.regional_ire_at(x, z) * 3.0).clamp(0.0, 100.0))
     }
 
     pub fn add_ire(&mut self, amt: f32) {
@@ -63,13 +110,78 @@ impl World {
             4.0
         };
         self.add_ire(-decay * day_frac);
+        // Grudges and gratitude both fade (2 per day toward zero).
+        self.regional_ire.retain(|_, v| {
+            *v -= v.signum() * (2.0 * day_frac).min(v.abs());
+            v.abs() >= 0.01
+        });
         self.day_progress += day_frac;
         if self.day_progress >= 1.0 {
             self.day_progress -= 1.0;
             self.plant_ire_today = 0.0;
+            // The wild forgives, slowly: a cell held deeply blessed
+            // for a full season earns ONE wildlife reseed — its
+            // hunted-out chunks roll again when next visited.
+            let blessed: Vec<(i32, i32)> = self
+                .regional_ire
+                .iter()
+                .filter(|(_, v)| **v < -10.0)
+                .map(|(c, _)| *c)
+                .collect();
+            for cell in blessed {
+                let streak = self.blessed_streak.entry(cell).or_insert(0);
+                *streak += 1;
+                if *streak >= SEASON_DAYS {
+                    self.blessed_streak.remove(&cell);
+                    let (cx0, cz0) = (cell.0 * 16, cell.1 * 16);
+                    for dx in 0..16 {
+                        for dz in 0..16 {
+                            self.mob_seeded.remove(&(cx0 + dx, cz0 + dz));
+                        }
+                    }
+                    self.whispers
+                        .push("The land breathes. Something returns.".to_string());
+                }
+            }
+            self.blessed_streak
+                .retain(|c, _| self.regional_ire.get(c).is_some_and(|&v| v < -10.0));
             return true;
         }
         false
+    }
+
+    /// The season's appetite: what the wild wants brought this time
+    /// of year, and how it says so. Fixed to the calendar — players
+    /// learn the year, not a dice roll.
+    pub fn season_want(&self) -> (usize, &'static str) {
+        match self.season() {
+            0 => (0, "The wild stirs. Seeds and saplings are welcome."),
+            1 => (1, "The wild thirsts. Carried water is welcome."),
+            2 => (2, "The wild gathers. First fruits are welcome."),
+            _ => (3, "The wild hungers. Food is welcome."),
+        }
+    }
+
+    /// Does a stack satisfy the season's want?
+    pub fn satisfies_want(&self, want: usize, s: &ItemStack) -> bool {
+        let d = self.reg.item(s.item);
+        match want {
+            // Spring: things that grow — saplings and plantables.
+            0 => {
+                d.name.ends_with("_sapling")
+                    || d.places
+                        .is_some_and(|b| self.reg.block(b).crop_next.is_some())
+            }
+            // Summer: water, carried by hand.
+            1 => d.name == "base:bucket_water",
+            // Autumn: the harvest's produce (plant nutrition).
+            2 => d
+                .food
+                .as_ref()
+                .is_some_and(|f| f.nutrition[..4].iter().any(|&n| n > 0.0)),
+            // Winter: anything that feeds.
+            _ => d.food.is_some(),
+        }
     }
 
     /// What the wild values: its own materials most, then life given.
@@ -111,21 +223,32 @@ impl World {
     /// Dawn: the wild takes everything left on offering stones. Items are
     /// consumed regardless; the refund is capped at 10 per dawn.
     pub fn accept_offerings(&mut self) -> f32 {
-        let mut taken: Vec<ItemStack> = Vec::new();
-        for e in self.block_entities.values_mut() {
+        let (want, _) = self.season_want();
+        let mut taken: Vec<((i32, i32), ItemStack)> = Vec::new();
+        for (&(x, _, z), e) in self.block_entities.iter_mut() {
             let BlockEntity::Offering(o) = e else {
                 continue;
             };
             for slot in o.slots.iter_mut() {
                 if let Some(s) = slot.take() {
-                    taken.push(s);
+                    taken.push(((x, z), s));
                 }
             }
         }
         if taken.is_empty() {
             return 0.0;
         }
-        let value: f32 = taken.iter().map(|s| self.offering_value(s)).sum();
+        // The season's want counts double — a bonus for listening,
+        // never a penalty — and every stone credits its own valley.
+        let mut value = 0.0f32;
+        for ((x, z), s) in &taken {
+            let mut v = self.offering_value(s);
+            if self.satisfies_want(want, s) {
+                v *= 2.0;
+            }
+            value += v;
+            self.charge_cell(*x, *z, -v.min(6.0));
+        }
         let refund = value.min(10.0);
         self.add_ire(-refund);
         refund
