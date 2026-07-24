@@ -172,6 +172,7 @@ impl World {
     /// drops the write) — `wake_seams` resumes it when the neighbor
     /// generates.
     pub fn tick_water(&mut self, budget: usize) -> bool {
+        self.fluid_batch = true;
         let mut changed = false;
         for _ in 0..budget {
             let Some(pos) = self.water_queue.pop_front() else {
@@ -221,7 +222,17 @@ impl World {
                 changed = true;
             }
         }
+        self.flush_fluid_relights();
         changed
+    }
+
+    /// End-of-tick light settlement: every chunk a fluid front touched
+    /// relights once, cascade included.
+    fn flush_fluid_relights(&mut self) {
+        self.fluid_batch = false;
+        for pos in std::mem::take(&mut self.pending_relight) {
+            self.relight_and_cascade(pos);
+        }
     }
 
     /// Lava potential: air receives, lava carries, all else opts out.
@@ -240,6 +251,7 @@ impl World {
     /// fraction of water's cadence. Contact with water hardens the
     /// lava cell instead of moving it.
     pub fn tick_lava(&mut self, budget: usize) -> bool {
+        self.fluid_batch = true;
         let mut changed = false;
         for _ in 0..budget {
             let Some(pos) = self.lava_queue.pop_front() else {
@@ -286,6 +298,7 @@ impl World {
                 changed = true;
             }
         }
+        self.flush_fluid_relights();
         changed
     }
 }
