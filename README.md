@@ -127,6 +127,110 @@ every claim asserted, so the docs can't drift from the code.
 - Ships with `mods/gems` — a worked example adding deep ruby ore (tier-2
   gated), items, recipes, and a scripted milestone counter.
 
+## Mechanization — the machine-tool age
+
+Power is a boolean with a rate, never a number with a cable. The
+**water wheel** turns only on *live* water — a weir lip, a spring
+race, a channel you built; standing pools turn nothing — and carries
+a few seconds of flywheel momentum because a race's flow flickers as
+it equalizes. The **windmill sail** wants altitude (y≥90) and open
+sky, and the weather sets its rate: the only machine that loves a
+storm. What a source drives is decided by **shafts** — real blocks:
+axles carry straight through, framed crown gears turn corners, and
+wooden millwork refuses past 12 blocks until a bearing-fitted shaft
+forgives the friction. Off the line hang the capital siblings of
+hand processes, every one hand-loaded and readable (click to rest
+work, bare hand to take it — no machine GUIs, ever): the
+**millstone** grinds sixteen-item loads unattended, the **sawmill**
+cuts six planks a log to the hand's four, and the **helve hammer**
+works any adjacent anvil at half a smith's pace and none of his
+attention.
+
+Then the arc's soul, the true story of the industrial revolution —
+**precision begets precision**. The **crude lathe** turns soft metal
+at sloppy tolerance: copper into screws, bronze into the
+**leadscrew**. That's enough, because a lathe *with* a leadscrew
+cuts truer threads than any screw in itself: the **iron lathe** it
+unlocks turns iron shafts, cuts gears from plate, grinds bearings
+from steel — and tolerance is a property of the *machine*, so parts
+made on the wrong lathe simply can't be made. The screw's first
+gift is workholding: precision machines refuse to cut without a
+**vice** in reach. Plate is hammered at the anvil, never turned —
+which means the helve makes it while you're elsewhere. The **boring
+mill** alone bores a true **cylinder** (Wilkinson before Watt), and
+its first customer is the **pump**: each powered stroke lifts one
+conserved water cell out of a flooded shaft, so deep mining's
+drainage problem is real and solvable. Then power leaves the river:
+**firebox + boiler + engine** burn banked coal and drink real water
+cells to drive shafts harder than any wheel, anywhere you can carry
+fuel — coal country becomes power country. And electricity lands
+where history put it, *after* machining, because a **generator** is
+a machined object: magnet (hammered from neodymium after the
+**separator** splits rare-earth powder — the cerium majority
+polishes glass, an honest luxury sink), lathe-turned shaft,
+bearings, copper windings. Its field lights **arc lamps** — white,
+cobalt blue, cinnabar red, burning only while the shaft turns — and
+runs the **electric quern** where geography and coal both said no.
+Design and divergence notes: `docs/mechanization-plan.md`.
+
+## The land remembers
+
+Ire stopped being one number. The wild now keeps a **regional
+ledger** — every 256-block cell of country carries its own standing,
+charged by what you take *there*, credited by what you tend *there*,
+fading over days. Cross from your mended valley into a stripped one
+and the night ambience itself changes register. Out of aggrieved
+country come **watchers**: wardens that never hunt, standing at the
+treeline just looking — mend the land and they dissolve without a
+word; ignore one long enough and it graduates into everything a
+warden is. The wild also *speaks* now, in lines that arrive as quiet
+toasts when a region's mood turns, and it **wants things by
+season** at the offering stone — seeds in spring, water in summer,
+first fruits in autumn, food in winter; a wanted offering counts
+double. Give a cell a full blessed season and the wild replants it
+itself: the **green tide** seeds saplings of the local wood on
+ground no player has touched. And the woodland answer to salt
+country: dig **clay**, fire **crocks**, pickle vegetables, or cure
+raw cuts on a **smoking rack** over a live torch — four minutes of
+smoke for meat that keeps for an hour.
+
+## Trade & travel
+
+The map got wider and the pack got heavier, so the animals carry it.
+**Feed a tamed animal enough meals and it accepts you**: clip on a
+**lead** (leather strips) and it follows at heel — twelve blocks of
+slack before it snaps free — then buckle **saddlebags** for twelve
+slots of walking storage. **Boats** launch onto any water and you
+ride them (jump to dismount); they're vehicles, born tame, and they
+float properly. **Signs** hold three lines on a real signboard;
+**waystones** are obelisks you attune to by touch and read for
+bearings — no teleportation, ever; they orient, you walk. And the
+**market stall** is a multiblock — counter flanked by two-tall log
+posts under a three-wide awning — that trades while it stands:
+stock goods, set any item stack as the price (barter-native, no
+coin), and the till collects while you're away. Guests buy over the
+wire; the owner restocks by identity.
+
+## The economy of scarcity
+
+You can't pay workers to mine gold if everyone can mine all the gold
+they want — so the ground deals in **regions** now. Kimberlite pipes
+run ~2.4 km apart, geodes and batholith provinces band the map, tin
+hides as chance traces in ordinary stone, and **halite** seams make
+salt country a place worth knowing. The **prospector's pick** reads
+the country when struck (granite bearings, volcanic ground, blue
+ground, hollow rings — with distance and octant), and a **survey
+cairn** publishes that reading to anyone who walks up: knowledge as
+an artifact, raised at the cost of pick wear. Food spoils —
+freshness rides every perishable stack, quartered in a proper
+**cellar** (dark, no skylight), extended by **salting**, smoking,
+or pickling — so somebody's salt route matters. And the workshop is
+the capital: a **forge** (firebrick stack + chimney + anvil in
+reach) batch-smelts in the rain that douses open stacks, and a
+kiln with a chimney is a **glassworks** whose draft doubles what
+every fuel fires. Nomadic play stays valid — and hungry;
+civilization is the faster path, never the only one.
+
 ## Weather & seasons
 
 The sky joined the simulation. Server-owned weather fronts roll from
@@ -148,11 +252,14 @@ soothes the wild: ire decays a quarter faster while the land drinks.
 
 Water is volume, not paint. Every cell holds real units that fall,
 spread, and settle — breach a pond bank and the pond genuinely
-lowers; dig a channel to the sea and it fills because the sea is
-vast, not because it cheats. There is no infinite-source trick
-anywhere: the oceans are simply very large. Craft an iron **bucket**
-to carry a full cell of it (films refuse — you can't mint water from
-puddles). The year moves it too: shallow water dries to marshy films
+lowers; break a natural dam and it drains *completely*, every last
+unit going over the edge instead of stranding a lip; dig a channel
+to the sea and it fills because the sea is vast, not because it
+cheats. Connected bodies **level through their junctions** — link
+two pools below the waterline and they equalize like the communicating
+vessels they are. There is no infinite-source trick anywhere: the
+oceans are simply very large. Craft an iron **bucket** to carry a
+full cell of it (films refuse — you can't mint water from puddles). The year moves it too: shallow water dries to marshy films
 through a hot summer, autumn rain fills the beds back up, and winter
 owns the freeze. And the world keeps living while you're away —
 come back after seasons elsewhere and the lake you left liquid is
@@ -439,7 +546,8 @@ everything else (`base/animals.toml`; mods add species via their own
 - **Wildlife is persistent**: animals are seeded once per chunk as the
   world generates, saved with the world, and never despawn. Overhunt an
   area and it stays empty — wildlife recovers slowly, spawning well away
-  from you. There's no breeding yet; hunting pressure is real.
+  from you. Hunting pressure is real; breeding (see Stewardship) is the
+  answer, and pack animals (see Trade & travel) are the reward.
 - Mods get an `on_animal_killed` event and a `spawn_animal` host call.
 
 ## Texture packs

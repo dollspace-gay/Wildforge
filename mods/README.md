@@ -109,7 +109,8 @@ Every field, with defaults:
 | `glass` | `false` | glazing: renders translucent (the blended pipeline), passes sky light, and a glass roof grows winter crops at 0.75× |
 | `light_filter` | all pass | `[r, g, b]` as 0/1 — stained light: which block-light channels pass through (red glass is `[1, 0, 0]`) |
 | `water` | none | fluid level: `0` = source (registers flow levels automatically) |
-| `interaction` | none | right-click opens: `"crafting"` \| `"furnace"` \| `"chest"` \| `"offering"` \| `"bloomery"` \| `"kiln"` \| `"anvil"` \| `"quern"` |
+| `interaction` | none | right-click behavior. Screens: `"crafting"` \| `"furnace"` \| `"chest"` \| `"offering"` \| `"bloomery"` \| `"kiln"` \| `"forge"` \| `"stall"` \| `"sign"` \| `"waystone"` \| `"survey"`. Hand-loaded stations: `"anvil"` \| `"quern"` \| `"smoker"` \| `"firebox"` \| `"separator"`. Powered stations (strikes come from the shaft line): `"millstone"` \| `"sawmill"` \| `"lathe"` \| `"iron_lathe"` \| `"boring"`. Power blocks: `"wheel"` \| `"sail"` \| `"pump"` \| `"generator"` |
+| `shape` | cube | custom render silhouette (collision stays the cell): `"obelisk"` \| `"signboard"` \| `"rack"` \| `"axle"` \| `"gearbox"` \| `"wheel"` \| `"sails"` \| `"millstone"` \| `"sawbench"` \| `"helve"` \| `"helve_up"` \| `"lathe"` \| `"lathe_iron"` \| `"vice"` \| `"boring"` \| `"pump"` \| `"boiler"` \| `"engine"` \| `"generator"` — pair with `opaque = false` |
 | `crop` | none | `{ stages = N, next_chance = 0.3, stage_textures = [...], any_soil = false }` — advances on random ticks; `any_soil` grows off farmland too |
 | `harvest` | none | `{ item = "...", count = 2, becomes = "..." }` — right-click yield without breaking |
 | `sapling` | none | `{ tree = "oak" }` — grows into that tree species on random ticks (`oak`/`birch`/`spruce`/`jungle`/`acacia`; unknown names grow oak) |
@@ -204,7 +205,11 @@ speed = 1.5
   tool = "hammer", count = 1 }` declares station work. The anvil wants
   a `hammer = true` item; `station = "quern"` with `tool = "none"`
   grinds bare-handed (minerals into pigment). `count` is the output
-  stack.
+  stack. Powered stations (`"sawmill"`, `"lathe"`, `"iron_lathe"`,
+  `"boring"`) take their strikes from the shaft line instead of a
+  player and convert their whole resting pile (up to 16) in one
+  firing — the millstone reads the quern's table, so a quern recipe
+  is automatically a millstone recipe.
 - `[[kiln]]` `{ powder, glass }` maps a pigment to its colored glass;
   the `[kiln_base]` table `{ sand, fuel, clear }` declares the kiln's
   staples. One powder colors a whole batch; no powder fires clear.
