@@ -26,6 +26,13 @@ impl ApplicationHandler for App {
         if let Ok(name) = std::env::var("WILDFORGE_WORLD") {
             game.start_world(&name);
         }
+        // Headless/dev: WILDFORGE_JOIN=addr joins a host directly
+        // (screenshots of multiplayer scenes, agent playtests).
+        if let Ok(addr) = std::env::var("WILDFORGE_JOIN")
+            && let Ok(addr) = addr.parse()
+        {
+            game.join_server(addr);
+        }
         self.game = Some(game);
     }
 

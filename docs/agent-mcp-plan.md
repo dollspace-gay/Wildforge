@@ -1,5 +1,30 @@
 # Agents at the stall — an MCP so agents can play too
 
+> **Status: implemented (stages 1–5), 2026-07-25 — and playtested
+> live**: two agents on a real dedicated server over QUIC; SAWYER
+> walked 25 blocks of natural terrain to the nearest tree, felled 5
+> logs, collected the wire-awarded drops, and cut planks through the
+> click protocol; HEELER followed him over two march legs and ended
+> 3.0 blocks off his heel; a windowed guest joined the same server
+> and photographed them both. Where the build diverged from the spec:
+> - **`give(player)` became chest delivery**: guests have no
+>   drop-item message, so the fetch quest ends with `craft chest` +
+>   `deposit` beside the requester — noted as the intended fast
+>   follow (a C2S drop/give message).
+> - **`craft` knows shapes, not the whole book** (planks, stick,
+>   crafting_table, chest, via the transactional click protocol);
+>   the agent voluntarily requires a crafting table in reach for 3x3
+>   work because the HOST doesn't check one — an open hardening item
+>   for all guests, recorded in the operations doc.
+> - **Standing behaviors bank breadcrumbs from `S2C::Players`** as
+>   designed; stuck recovery replans through A* straight to the
+>   leader and rebuilds the trail.
+> - `WILDFORGE_JOIN` (join a host headlessly) and remote-session
+>   `WILDFORGE_POS` were added as dev hooks for multiplayer
+>   screenshots and agent playtests.
+> - Stage 6 (stall buying, mob leading, boat riding, offering runs)
+>   remains open by design.
+
 Drafted 2026-07-25 after design discussion with dollspace. Decisions
 settled: **agents are guests, not gods** — an agent connects over the
 same QUIC protocol as any player, gets a PlayerId and a roster row,

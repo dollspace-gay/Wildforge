@@ -12,6 +12,7 @@ use crate::raycast::raycast;
 use crate::registry::{self, AIR, Registry};
 use crate::world::World;
 
+mod agent;
 mod identity;
 mod machines;
 mod mobs;
