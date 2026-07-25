@@ -162,10 +162,13 @@ def item(name, body, edge, shape="lump"):
         d.ellipse([9, 9, 23, 23], fill=body + (110,), outline=edge + (255,))
         d.arc([11, 11, 21, 21], 200, 320, fill=(255, 255, 255, 220))
     elif shape == "pick":
-        d.line([(8, 24), (20, 12)], fill=(122, 84, 48, 255), width=2)
-        d.arc([8, 4, 28, 22], 210, 340, fill=body + (255,), width=3)
-        d.point((10, 9), fill=edge + (255,))
-        d.point((26, 13), fill=edge + (255,))
+        # Head arc on a circle centered on the handle axis (the
+        # anti-diagonal), angles symmetric about it: both points of
+        # the pick come out the same length.
+        d.line([(8, 23), (19, 12)], fill=(122, 84, 48, 255), width=2)
+        d.arc([8, 3, 28, 23], 240, 30, fill=body + (255,), width=3)
+        d.point((12, 7), fill=edge + (255,))
+        d.point((24, 19), fill=edge + (255,))
     elif shape == "strip":
         d.line([(7, 24), (25, 8)], fill=body + (255,), width=3)
         d.line([(7, 24), (25, 8)], fill=edge + (255,), width=1)
