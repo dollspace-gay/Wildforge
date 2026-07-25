@@ -52,7 +52,23 @@ pub enum BlockEntity {
     Smoker(SmokerState),
     /// A steam firebox: banked fire and boiler water, in seconds.
     Steam(SteamState),
+    /// A rare-earth separator: powder in, neodymium and cerium out.
+    Separator(SeparatorState),
 }
+
+#[derive(Default)]
+pub struct SeparatorState {
+    pub powder: u32,
+    pub fuel: u32,
+    pub nd: u32,
+    pub ce: u32,
+    pub progress: f32,
+}
+
+/// Seconds per separator batch (1 powder + 1 fuel -> 1 Nd + 2 Ce).
+pub const SEPARATE_SECS: f32 = 45.0;
+/// How far a running generator's field reaches (lamps, the quern).
+pub const ELEC_RADIUS: i32 = 6;
 
 #[derive(Default)]
 pub struct SteamState {
@@ -817,6 +833,11 @@ impl World {
                     .entry(pos)
                     .or_insert_with(|| BlockEntity::Steam(Default::default()));
             }
+            Some("separator") => {
+                self.block_entities
+                    .entry(pos)
+                    .or_insert_with(|| BlockEntity::Separator(Default::default()));
+            }
             _ => {}
         }
         true
@@ -937,6 +958,23 @@ impl World {
                 BlockEntity::Clamp(_) => Vec::new(), // the burn dies with it
                 BlockEntity::Anvil(a) => a.bloom.into_iter().collect(),
                 BlockEntity::Steam(_) => Vec::new(), // banked fire dies with it
+                BlockEntity::Separator(sp) => {
+                    let mut out = Vec::new();
+                    let mut push = |name: &str, n: u32| {
+                        if n > 0
+                            && let Some(item) = self.reg.item_id(name)
+                        {
+                            let mut s = ItemStack::new(&self.reg, item, 1);
+                            s.count = n;
+                            out.push(s);
+                        }
+                    };
+                    push("base:rare_earth_powder", sp.powder);
+                    push("base:charcoal", sp.fuel);
+                    push("base:neodymium", sp.nd);
+                    push("base:cerium", sp.ce);
+                    out
+                }
                 BlockEntity::Kiln(k) => k
                     .sand
                     .into_iter()

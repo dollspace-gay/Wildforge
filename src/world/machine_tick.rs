@@ -361,9 +361,64 @@ impl World {
             };
             // Sources carry a marker entity so this sweep can find
             // them without scanning the world; they hold no items.
+            // The generator: shaft in, field out. It dresses to its
+            // running form and sweeps lamps in reach each second.
+            if st == "generator" {
+                let running = self.power_at(x, y, z) > 0.0;
+                let want = if running {
+                    "base:generator_run"
+                } else {
+                    "base:generator"
+                };
+                if Some(self.get_block(x, y, z)) != reg.block_id(want) {
+                    self.swap_block_keep_entity(x, y, z, want);
+                }
+                let w = self.station_work.entry(pos).or_insert(0.0);
+                *w += dt;
+                if *w < 1.0 {
+                    continue;
+                }
+                *w = 0.0;
+                let pairs = [
+                    ("base:arc_lamp", "base:arc_lamp_lit"),
+                    ("base:blue_arc_lamp", "base:blue_arc_lamp_lit"),
+                    ("base:red_arc_lamp", "base:red_arc_lamp_lit"),
+                ];
+                for dx in -ELEC_RADIUS..=ELEC_RADIUS {
+                    for dy in -ELEC_RADIUS..=ELEC_RADIUS {
+                        for dz in -ELEC_RADIUS..=ELEC_RADIUS {
+                            let (lx, ly, lz) = (x + dx, y + dy, z + dz);
+                            let b = self.get_block(lx, ly, lz);
+                            for (off, on) in pairs {
+                                let (off_id, on_id) = (reg.block_id(off), reg.block_id(on));
+                                if running && Some(b) == off_id {
+                                    if let Some(on) = on_id {
+                                        self.set_block(lx, ly, lz, on);
+                                    }
+                                } else if !running
+                                    && Some(b) == on_id
+                                    && let Some(off) = off_id
+                                {
+                                    self.set_block(lx, ly, lz, off);
+                                }
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
             if st == "wheel" || st == "sail" {
                 let live = if st == "wheel" {
-                    self.wheel_live(x, y, z)
+                    // Momentum: a wheel spins down over seconds, not
+                    // the instant one cell of its race goes still.
+                    let wet = self.wheel_live(x, y, z) > 0.0;
+                    let bank = self.station_work.entry(pos).or_insert(0.0);
+                    if wet {
+                        *bank = super::power::WHEEL_SPINDOWN_SECS;
+                    } else {
+                        *bank = (*bank - dt).max(0.0);
+                    }
+                    if *bank > 0.0 { 1.0 } else { 0.0 }
                 } else {
                     self.sail_live(x, y, z)
                 };
@@ -463,7 +518,12 @@ impl World {
             if !station_powered(&st) {
                 continue;
             }
-            let rate = self.power_at(x, y, z);
+            let mut rate = self.power_at(x, y, z);
+            // The electric quern: a millstone in a generator's field
+            // grinds where geography and coal both said no.
+            if rate <= 0.0 && st == "millstone" && self.generator_near(pos, ELEC_RADIUS) {
+                rate = 1.0;
+            }
             if rate <= 0.0 {
                 self.station_work.remove(&pos);
                 continue;
@@ -597,8 +657,68 @@ impl World {
         }
     }
 
+    /// Fire every charged separator on a valid firebrick stack: one
+    /// powder and one fuel a batch, neodymium and cerium out — the
+    /// rare-earth thread, finally honest (mechanization stage 6).
+    pub(super) fn tick_separators(&mut self, dt: f32) {
+        let reg = self.reg.clone();
+        let keys: Vec<(i32, i32, i32)> = self
+            .block_entities
+            .iter()
+            .filter(|(_, e)| matches!(e, BlockEntity::Separator(_)))
+            .map(|(k, _)| *k)
+            .collect();
+        for pos in keys {
+            let (x, y, z) = pos;
+            let valid = self.check_separator(x, y, z).is_some();
+            let Some(BlockEntity::Separator(sp)) = self.block_entities.get_mut(&pos) else {
+                continue;
+            };
+            let working = valid && sp.powder >= 1 && sp.fuel >= 1;
+            if !working {
+                sp.progress = 0.0;
+            } else {
+                sp.progress += dt;
+                if sp.progress >= SEPARATE_SECS {
+                    sp.progress = 0.0;
+                    sp.powder -= 1;
+                    sp.fuel -= 1;
+                    sp.nd += 1;
+                    sp.ce += 2;
+                }
+            }
+            let want = if working {
+                "base:separator_lit"
+            } else {
+                "base:separator"
+            };
+            if Some(self.get_block(x, y, z)) != reg.block_id(want) {
+                self.swap_block_keep_entity(x, y, z, want);
+            }
+        }
+    }
+
+    /// A running generator within reach: the field that lights lamps
+    /// and turns the electric quern. Generators are shaft-driven
+    /// machines; their markers make them findable.
+    pub fn generator_near(&self, pos: (i32, i32, i32), r: i32) -> bool {
+        let gens = [
+            self.reg.block_id("base:generator"),
+            self.reg.block_id("base:generator_run"),
+        ];
+        self.block_entities.iter().any(|(&(gx, gy, gz), e)| {
+            matches!(e, BlockEntity::Anvil(_))
+                && (gx - pos.0).abs() <= r
+                && (gy - pos.1).abs() <= r
+                && (gz - pos.2).abs() <= r
+                && gens.contains(&Some(self.get_block(gx, gy, gz)))
+                && self.power_at(gx, gy, gz) > 0.0
+        })
+    }
+
     pub fn tick_entities(&mut self, dt: f32) {
         self.tick_steam(dt);
+        self.tick_separators(dt);
         self.tick_bloomeries(dt);
         self.tick_kilns(dt);
         self.tick_forges(dt);

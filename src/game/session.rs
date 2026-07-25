@@ -655,19 +655,20 @@ impl Game {
                 // The raised race runs north-south so the wheel's
                 // face greets a camera looking east: stone trough,
                 // water pouring out the south lip under the wheel.
-                for dz in 1..=5i32 {
+                for dz in 1..=8i32 {
                     for dy in 1..=2 {
                         w.set_block(mx, y + dy, mz + dz, stone);
                     }
                     w.set_block(mx - 1, y + 3, mz + dz, stone);
                     w.set_block(mx + 1, y + 3, mz + dz, stone);
                 }
-                w.set_block(mx, y + 3, mz + 6, stone);
-                // The wall opens at the wheel: the race spills under
-                // its paddles, and the whole face shows from shore.
-                w.set_block(mx - 1, y + 3, mz + 3, AIR);
+                w.set_block(mx, y + 3, mz + 9, stone);
+                // The wall opens at the south end, downstream of the
+                // wheel: the race spills there without starving the
+                // cells the wheel actually rides.
+                w.set_block(mx - 1, y + 3, mz + 1, AIR);
                 let water = reg2.water_block(0);
-                for dz in 1..=5i32 {
+                for dz in 1..=8i32 {
                     w.set_block(mx, y + 3, mz + dz, water);
                 }
                 // The wheel rides mid-race, axle running east — its
@@ -734,6 +735,72 @@ impl Game {
                     if let Some(fe) = reg2.item_id("base:iron_ingot") {
                         w.anvil_put((mx + 6, y + 1, mz + 1), ItemStack::new(&reg2, fe, 1));
                     }
+                }
+                // The electric age: a generator off the shop gear,
+                // arc lamps drinking its field, the steam corner,
+                // and a separator on its firebrick stack.
+                if let Some(dynamo) = b("base:generator") {
+                    w.set_block(mx + 7, y + 1, mz + 4, dynamo);
+                    w.insert_block_entity(
+                        (mx + 7, y + 1, mz + 4),
+                        crate::world::BlockEntity::Anvil(Default::default()),
+                    );
+                }
+                for (lamp, lx, lz) in [
+                    ("base:arc_lamp", mx + 5, mz + 6),
+                    ("base:blue_arc_lamp", mx + 7, mz + 6),
+                    ("base:red_arc_lamp", mx + 9, mz + 6),
+                ] {
+                    if let Some(l) = b(lamp) {
+                        w.set_block(lx, y + 2, lz, l);
+                        w.set_block(lx, y + 1, lz, stone);
+                    }
+                }
+                if let (Some(fbx), Some(boiler), Some(engine)) =
+                    (b("base:firebox"), b("base:boiler"), b("base:steam_engine"))
+                {
+                    let (ex, ez) = (mx + 12, mz + 1);
+                    w.set_block(ex, y + 1, ez, fbx);
+                    w.set_block(ex, y + 2, ez, boiler);
+                    w.set_block(ex + 1, y + 2, ez, engine);
+                    w.insert_block_entity(
+                        (ex, y + 1, ez),
+                        crate::world::BlockEntity::Steam(crate::world::SteamState {
+                            fuel: 900.0,
+                            water: 900.0,
+                        }),
+                    );
+                }
+                if let (Some(fb), Some(sep)) = (b("base:firebrick"), b("base:separator")) {
+                    let (px, pz) = (bx - 8, bz + 1);
+                    for ly in 1..=3 {
+                        for rx in -1..=1i32 {
+                            for rz in -1..=1i32 {
+                                if rx == 0 && rz == 0 {
+                                    continue;
+                                }
+                                w.set_block(px + 1 + rx, y + ly, pz + rz, fb);
+                            }
+                        }
+                    }
+                    w.set_block(px, y + 1, pz, sep);
+                    w.insert_block_entity(
+                        (px, y + 1, pz),
+                        crate::world::BlockEntity::Separator(crate::world::SeparatorState {
+                            powder: 4,
+                            fuel: 4,
+                            ..Default::default()
+                        }),
+                    );
+                }
+                // Boring mill and pump join the shop floor.
+                if let (Some(bore), Some(pump)) = (b("base:boring_mill"), b("base:pump")) {
+                    w.set_block(mx + 2, y + 1, mz + 1, bore);
+                    w.set_block(mx + 2, y + 1, mz, pump);
+                    w.insert_block_entity(
+                        (mx + 2, y + 1, mz),
+                        crate::world::BlockEntity::Anvil(Default::default()),
+                    );
                 }
                 // The sail tower: altitude is the windmill's river.
                 if let Some(sail) = b("base:windmill_sail") {

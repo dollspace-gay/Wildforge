@@ -19,6 +19,11 @@ const POWER_VISITS: usize = 192;
 /// A cell plus the direction the walk entered it by.
 type Step = ((i32, i32, i32), (i32, i32, i32));
 
+/// A turning wheel carries this much momentum: seconds it keeps
+/// delivering after its water goes still (flywheels are real, and a
+/// race's flow flickers cell to cell as it equalizes).
+pub const WHEEL_SPINDOWN_SECS: f32 = 8.0;
+
 /// Wind strength by weather: the only machine that loves a storm.
 pub fn wind_rate(w: Weather) -> f32 {
     match w {
@@ -171,7 +176,15 @@ impl World {
             visits += 1;
             let b = self.get_block(p.0, p.1, p.2);
             let src = if wheel.contains(&Some(b)) {
-                self.wheel_live(p.0, p.1, p.2)
+                // Live water or banked momentum: the dress tick keeps
+                // the spin-down clock in station_work.
+                if self.wheel_live(p.0, p.1, p.2) > 0.0
+                    || self.station_work.get(&p).copied().unwrap_or(0.0) > 0.0
+                {
+                    1.0
+                } else {
+                    0.0
+                }
             } else if sail.contains(&Some(b)) {
                 self.sail_live(p.0, p.1, p.2)
             } else if engine.contains(&Some(b)) {

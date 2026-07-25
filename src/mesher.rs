@@ -305,7 +305,7 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                         }
                         "axle" | "wheel" | "sails" | "gearbox" | "millstone" | "sawbench"
                         | "helve" | "helve_up" | "lathe" | "lathe_iron" | "vice" | "boring"
-                        | "pump" | "boiler" | "engine" => {
+                        | "pump" | "boiler" | "engine" | "generator" => {
                             // Millwork reads its orientation from its
                             // neighbors: shafts run toward machines,
                             // wheels set their plane from their axle,
@@ -477,6 +477,19 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                                     if iron {
                                         bed(0.0, 0.42, 0.72, 1.0, 0.50, 0.80);
                                     }
+                                }
+                                "generator" => {
+                                    // Bedplate, a drum body between
+                                    // end caps, terminal posts on
+                                    // top, the drive stub reaching
+                                    // for its shaft.
+                                    boxed(0.04, 0.0, 0.10, 0.96, 0.16, 0.90);
+                                    boxed(0.14, 0.16, 0.22, 0.86, 0.72, 0.78);
+                                    boxed(0.06, 0.16, 0.30, 0.14, 0.66, 0.70);
+                                    boxed(0.86, 0.16, 0.30, 0.94, 0.66, 0.70);
+                                    boxed(0.30, 0.72, 0.40, 0.40, 0.92, 0.52);
+                                    boxed(0.58, 0.72, 0.40, 0.68, 0.92, 0.52);
+                                    boxed(-0.10, 0.34, 0.42, 0.06, 0.52, 0.58);
                                 }
                                 "boiler" => {
                                     // A riveted drum with chamfered

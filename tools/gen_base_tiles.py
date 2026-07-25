@@ -242,6 +242,11 @@ def item(name, body, edge, shape="lump"):
         d.polygon([(5, 16), (17, 6), (25, 15), (13, 26)], fill=body + (255,))
         d.ellipse([4, 16, 15, 26], fill=body + (255,), outline=edge + (255,))
         d.ellipse([7, 19, 12, 23], fill=(20, 20, 24, 255))
+    elif shape == "magnet":
+        # A horseshoe with bright poles.
+        d.arc([7, 6, 25, 24], 150, 390, fill=body + (255,), width=5)
+        d.rectangle([8, 18, 12, 24], fill=(220, 224, 232, 255))
+        d.rectangle([20, 18, 24, 24], fill=(220, 224, 232, 255))
     elif shape == "prism":
         d.polygon([(16, 7), (25, 24), (7, 24)], fill=body + (120,),
                   outline=edge + (255,))
@@ -363,9 +368,13 @@ ITEMS = [
     ("iron_gear", (184, 188, 196), (112, 116, 126), "gearwheel"),
     ("plate", (198, 202, 210), (126, 130, 140), "plate"),
     ("cylinder", (176, 180, 190), (108, 112, 122), "cylinder"),
+    ("neodymium", (202, 206, 216), (130, 134, 146), "lump"),
+    ("cerium", (214, 208, 186), (146, 140, 118), "powder"),
+    ("magnet", (150, 60, 64), (96, 34, 38), "magnet"),
 ]
 
 GLASSES = [
+    ("polished_glass", (235, 244, 250), 35, False),
     ("green_glass", (60, 180, 90), 90, False),
     ("cranberry_glass", (200, 40, 90), 95, False),
     ("yellow_glass", (230, 210, 60), 90, False),
@@ -422,6 +431,27 @@ BLOCKS_EXTRA = {
     "steam_engine_run": dict(base=(112, 116, 126), dark=(70, 74, 84),
                              veins=(210, 180, 100),
                              speckle=(230, 234, 240), speckle_n=14),
+    "separator": dict(base=(172, 156, 142), dark=(122, 108, 96), bands=0.3,
+                      veins=(196, 130, 90)),
+    "separator_lit": dict(base=(192, 162, 138), dark=(136, 112, 90), bands=0.3,
+                          speckle=(255, 190, 110), speckle_n=20),
+    "generator": dict(base=(112, 116, 126), dark=(72, 76, 86),
+                      veins=(196, 128, 84)),
+    "generator_run": dict(base=(120, 124, 134), dark=(78, 82, 92),
+                          veins=(214, 140, 92),
+                          speckle=(240, 244, 250), speckle_n=10),
+    "arc_lamp": dict(base=(88, 90, 98), dark=(52, 54, 62),
+                     speckle=(180, 176, 160), speckle_n=8),
+    "arc_lamp_lit": dict(base=(244, 238, 214), dark=(210, 198, 160),
+                         speckle=(255, 255, 240), speckle_n=20),
+    "blue_arc_lamp": dict(base=(70, 80, 106), dark=(42, 48, 68),
+                          speckle=(140, 160, 210), speckle_n=8),
+    "blue_arc_lamp_lit": dict(base=(170, 196, 250), dark=(120, 150, 220),
+                              speckle=(230, 240, 255), speckle_n=20),
+    "red_arc_lamp": dict(base=(104, 66, 66), dark=(64, 38, 38),
+                         speckle=(190, 130, 130), speckle_n=8),
+    "red_arc_lamp_lit": dict(base=(248, 170, 160), dark=(220, 120, 110),
+                             speckle=(255, 230, 225), speckle_n=20),
     "pump": dict(base=(118, 130, 126), dark=(76, 86, 82),
                  speckle=(168, 178, 174), speckle_n=12),
 }

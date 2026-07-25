@@ -1025,3 +1025,18 @@ texture = "plate.png"
 id = "cylinder"
 name = "Bored Cylinder"
 texture = "cylinder.png"
+
+[[item]]
+id = "neodymium"
+name = "Neodymium"
+texture = "neodymium.png"
+
+[[item]]
+id = "cerium"
+name = "Cerium"
+texture = "cerium.png"
+
+[[item]]
+id = "magnet"
+name = "Magnet"
+texture = "magnet.png"

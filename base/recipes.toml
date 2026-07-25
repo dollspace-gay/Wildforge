@@ -1092,3 +1092,43 @@ output = "base:boiler"
 pattern = ["pgp", "csr", "iii"]
 keys = { p = "base:plate", g = "base:iron_gear", c = "base:cylinder", s = "base:iron_shaft", r = "base:bearing", i = "base:iron_ingot" }
 output = "base:steam_engine"
+
+# --- electricity (mechanization, rung 4): the generator IS a
+# machined object - lathe-turned shaft, bearings, wound coils.
+
+[[recipe]]
+pattern = ["ff", "ip"]
+keys = { f = "base:firebrick", i = "base:iron_ingot", p = "base:plate" }
+output = "base:separator"
+
+[[recipe]]
+pattern = ["pmp", "rsr", "cic"]
+keys = { p = "base:plate", m = "base:magnet", r = "base:bearing", s = "base:iron_shaft", c = "base:copper_ingot", i = "base:iron_ingot" }
+output = "base:generator"
+
+[[recipe]]
+pattern = ["u", "g", "c"]
+keys = { u = "base:copper_ingot", g = "base:glass", c = "base:charcoal" }
+output = "base:arc_lamp"
+count = 2
+
+[[recipe]]
+pattern = ["l", "d"]
+keys = { l = "base:arc_lamp", d = "base:cobalt_powder" }
+output = "base:blue_arc_lamp"
+
+[[recipe]]
+pattern = ["l", "d"]
+keys = { l = "base:arc_lamp", d = "base:cinnabar_powder" }
+output = "base:red_arc_lamp"
+
+[[recipe]]
+pattern = [".g.", "geg", ".g."]
+keys = { g = "base:glass", e = "base:cerium" }
+output = "base:polished_glass"
+count = 4
+
+[[worked]]
+input = "base:neodymium"
+output = "base:magnet"
+strikes = 4

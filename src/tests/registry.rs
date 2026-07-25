@@ -1271,6 +1271,21 @@ fn content_graph_is_complete_and_obtainable() {
             ok.insert(m.0);
             grew = true;
         }
+        // The separator: mixed rare-earth powder splits into
+        // neodymium and cerium on a firebrick stack - a code path
+        // (tick_separators), like the smoker.
+        if let Some(p) = reg.item_id("base:rare_earth_powder")
+            && ok.contains(&p.0)
+        {
+            for name in ["base:neodymium", "base:cerium"] {
+                if let Some(i) = reg.item_id(name)
+                    && !ok.contains(&i.0)
+                {
+                    ok.insert(i.0);
+                    grew = true;
+                }
+            }
+        }
         if let Some((sand, fuel, clear)) = reg.kiln_base
             && ok.contains(&sand.0)
             && ok.contains(&fuel.0)

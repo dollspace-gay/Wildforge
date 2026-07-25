@@ -196,6 +196,16 @@ impl World {
         }
     }
 
+    /// The same stack with a separator in its mouth splits the mixed
+    /// rare-earth powder instead (mechanization stage 6).
+    pub fn check_separator(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
+        let mouth = [
+            self.reg.block_id("base:separator"),
+            self.reg.block_id("base:separator_lit"),
+        ];
+        self.check_stack(x, y, z, &mouth)
+    }
+
     /// The same stack with a kiln in its mouth fires glass instead.
     pub fn check_kiln(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
         let mouth = [

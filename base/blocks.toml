@@ -1366,3 +1366,113 @@ tool = "pickaxe"
 requires_tool = true
 drops = "base:steam_engine"
 item = false
+
+# --- electricity, finally honest (mechanization, rung 4) ---
+
+[[block]]
+id = "separator"
+name = "Separator"
+texture = "separator.png"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+interaction = "separator"
+
+[[block]]
+id = "separator_lit"
+name = "Separator"
+texture = "separator_lit.png"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+drops = "base:separator"
+item = false
+interaction = "separator"
+light = 10
+light_color = [1.0, 0.7, 0.4]
+
+[[block]]
+id = "generator"
+name = "Generator"
+texture = "generator.png"
+shape = "generator"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+interaction = "generator"
+
+[[block]]
+id = "generator_run"
+name = "Generator"
+texture = "generator_run.png"
+shape = "generator"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "base:generator"
+item = false
+interaction = "generator"
+
+[[block]]
+id = "arc_lamp"
+name = "Arc Lamp"
+texture = "arc_lamp.png"
+hardness = 0.8
+drops = "self"
+
+[[block]]
+id = "arc_lamp_lit"
+name = "Arc Lamp"
+texture = "arc_lamp_lit.png"
+hardness = 0.8
+drops = "base:arc_lamp"
+item = false
+light = 14
+light_color = [1.0, 0.96, 0.88]
+
+[[block]]
+id = "blue_arc_lamp"
+name = "Blue Arc Lamp"
+texture = "blue_arc_lamp.png"
+hardness = 0.8
+drops = "self"
+
+[[block]]
+id = "blue_arc_lamp_lit"
+name = "Blue Arc Lamp"
+texture = "blue_arc_lamp_lit.png"
+hardness = 0.8
+drops = "base:blue_arc_lamp"
+item = false
+light = 14
+light_color = [0.35, 0.55, 1.0]
+
+[[block]]
+id = "red_arc_lamp"
+name = "Red Arc Lamp"
+texture = "red_arc_lamp.png"
+hardness = 0.8
+drops = "self"
+
+[[block]]
+id = "red_arc_lamp_lit"
+name = "Red Arc Lamp"
+texture = "red_arc_lamp_lit.png"
+hardness = 0.8
+drops = "base:red_arc_lamp"
+item = false
+light = 14
+light_color = [1.0, 0.3, 0.25]
+
+[[block]]
+id = "polished_glass"
+name = "Polished Glass"
+texture = "polished_glass.png"
+hardness = 0.6
+glass = true
+opaque = false
+drops = "self"
