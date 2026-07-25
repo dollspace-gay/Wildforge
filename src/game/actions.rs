@@ -543,6 +543,11 @@ impl Game {
                 .interaction
                 .clone();
             let Some(station) = station else { return false };
+            // Powered stations take their strikes from the shaft
+            // line; hands only load and unload them.
+            if world::station_powered(&station) {
+                return false;
+            }
             let rested = match self.server.world.block_entity(t) {
                 Some(world::BlockEntity::Anvil(a)) => a.bloom,
                 _ => None,
@@ -1265,6 +1270,62 @@ impl Game {
                     self.toast_prospect(h.block.0, h.block.2);
                     self.sfx(Sfx::Click);
                     self.input.action_cooldown = 0.6;
+                    return;
+                }
+                Some(
+                    st @ ("anvil" | "quern" | "millstone" | "sawmill" | "lathe" | "iron_lathe"
+                    | "boring"),
+                ) if self.input.action_cooldown <= 0.0 => {
+                    // Rest work with a click, take it back bare-handed.
+                    // The held channels (hammer strikes, quern turns)
+                    // run earlier and return before reaching this arm.
+                    let table = world::worked_table_for(st);
+                    let workable = held.is_some_and(|i| {
+                        reg.worked
+                            .iter()
+                            .any(|w| w.input == i && w.station == table)
+                    });
+                    if workable {
+                        self.input.action_cooldown = 0.25;
+                        let stack = self.inventory.slots[self.input.hotbar_sel].unwrap();
+                        if let Some(rc) = &self.multiplayer.remote {
+                            rc.client.send(&net::C2S::AnvilPut {
+                                x: h.block.0,
+                                y: h.block.1,
+                                z: h.block.2,
+                            });
+                            return;
+                        }
+                        let one = ItemStack { count: 1, ..stack };
+                        if self.server.world.anvil_put(h.block, one) {
+                            if !self.creative {
+                                self.inventory.take_one(self.input.hotbar_sel);
+                            }
+                            self.sfx(Sfx::Place);
+                        } else {
+                            self.toast("It holds all it can.".to_string());
+                        }
+                        return;
+                    }
+                    if held.is_none() {
+                        self.input.action_cooldown = 0.3;
+                        if let Some(rc) = &self.multiplayer.remote {
+                            rc.client.send(&net::C2S::AnvilTake {
+                                x: h.block.0,
+                                y: h.block.1,
+                                z: h.block.2,
+                            });
+                            return;
+                        }
+                        if let Some(st) = self.server.world.anvil_take(h.block) {
+                            let left = self.inventory.add_stack(&reg, st);
+                            if left > 0 {
+                                self.drop_stack(ItemStack { count: left, ..st });
+                            }
+                            self.sfx(Sfx::Pickup);
+                        }
+                        return;
+                    }
                     return;
                 }
                 Some(station @ ("bloomery" | "kiln" | "forge"))

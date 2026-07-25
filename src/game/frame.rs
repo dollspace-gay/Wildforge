@@ -1583,26 +1583,25 @@ impl Game {
                 snap(frame_cam.z) - g / 2,
             ]
         };
-        let occ_grid: Option<Vec<u8>> = if dda_shadow
-            && (self.occ_last_origin != Some(occ_origin) || self.occ_dirty)
-        {
-            let occ_t0 = std::time::Instant::now();
-            let g = crate::renderer::OCC_GRID;
-            let mut buf = vec![0u8; g * g * g * 4];
-            self.server.world.fill_occupancy(occ_origin, g, &mut buf);
-            self.occ_last_origin = Some(occ_origin);
-            self.occ_dirty = false;
-            if std::env::var("WILDFORGE_DEBUG").is_ok() {
-                eprintln!(
-                    "occ rebuild {}³ in {:.2}ms",
-                    g,
-                    occ_t0.elapsed().as_secs_f32() * 1000.0
-                );
-            }
-            Some(buf)
-        } else {
-            None
-        };
+        let occ_grid: Option<Vec<u8>> =
+            if dda_shadow && (self.occ_last_origin != Some(occ_origin) || self.occ_dirty) {
+                let occ_t0 = std::time::Instant::now();
+                let g = crate::renderer::OCC_GRID;
+                let mut buf = vec![0u8; g * g * g * 4];
+                self.server.world.fill_occupancy(occ_origin, g, &mut buf);
+                self.occ_last_origin = Some(occ_origin);
+                self.occ_dirty = false;
+                if std::env::var("WILDFORGE_DEBUG").is_ok() {
+                    eprintln!(
+                        "occ rebuild {}³ in {:.2}ms",
+                        g,
+                        occ_t0.elapsed().as_secs_f32() * 1000.0
+                    );
+                }
+                Some(buf)
+            } else {
+                None
+            };
 
         let render_t0 = std::time::Instant::now();
         match self.renderer.render(FrameInput {

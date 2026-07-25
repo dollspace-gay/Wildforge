@@ -883,3 +883,99 @@ count = 3
 pattern = ["ppp", "t.t"]
 keys = { p = "#base:planks", t = "base:stick" }
 output = "base:smoking_rack"
+
+# --- millwork: the sawmill bootstrap (mechanization, rung 1) ---
+# Hand-whittled parts are wasteful on purpose; the first sawmill's own
+# products build the second one cheaply.
+
+[[recipe]]
+pattern = ["p", "p", "p"]
+keys = { p = "#base:planks" }
+output = "base:beam"
+count = 2
+
+[[recipe]]
+pattern = ["b", "b"]
+keys = { b = "base:beam" }
+output = "base:shaft"
+
+[[recipe]]
+pattern = [".p.", "p.p", ".p."]
+keys = { p = "#base:planks" }
+output = "base:gear"
+
+[[recipe]]
+pattern = ["ppp", "psp", "ppp"]
+keys = { p = "#base:planks", s = "base:shaft" }
+output = "base:water_wheel"
+
+[[recipe]]
+pattern = ["fpf", "psp", "fpf"]
+keys = { f = "base:plant_fiber", p = "#base:planks", s = "base:shaft" }
+output = "base:windmill_sail"
+
+[[recipe]]
+pattern = ["sss", "bqb"]
+keys = { s = "base:stone", b = "base:beam", q = "base:quern" }
+output = "base:millstone"
+
+[[recipe]]
+pattern = [".i.", "bsb", "pbp"]
+keys = { i = "base:iron_ingot", b = "base:beam", s = "base:shaft", p = "#base:planks" }
+output = "base:sawmill"
+
+[[recipe]]
+pattern = ["s..", "bbb", "p.p"]
+keys = { s = "base:stone", b = "base:beam", p = "#base:planks" }
+output = "base:helve_hammer"
+
+# The sawmill out-cuts the hand: six planks a log, and beams rip into
+# shafts two at a time.
+
+[[worked]]
+input = "base:log"
+output = "base:planks"
+station = "sawmill"
+tool = "none"
+strikes = 2
+count = 6
+
+[[worked]]
+input = "base:birch_log"
+output = "base:birch_planks"
+station = "sawmill"
+tool = "none"
+strikes = 2
+count = 6
+
+[[worked]]
+input = "base:spruce_log"
+output = "base:spruce_planks"
+station = "sawmill"
+tool = "none"
+strikes = 2
+count = 6
+
+[[worked]]
+input = "base:jungle_log"
+output = "base:jungle_planks"
+station = "sawmill"
+tool = "none"
+strikes = 2
+count = 6
+
+[[worked]]
+input = "base:acacia_log"
+output = "base:acacia_planks"
+station = "sawmill"
+tool = "none"
+strikes = 2
+count = 6
+
+[[worked]]
+input = "base:beam"
+output = "base:shaft"
+station = "sawmill"
+tool = "none"
+strikes = 2
+count = 2

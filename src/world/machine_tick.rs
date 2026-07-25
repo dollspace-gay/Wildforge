@@ -341,12 +341,147 @@ impl World {
         }
     }
 
+    /// Drive powered stations from their shaft lines: the millstone
+    /// grinds unattended, the sawmill rips a whole load, the helve
+    /// hammer works the smith's anvil at half his pace and none of
+    /// his attention. Sources dress themselves: a wheel on live water
+    /// and a sail in wind swap to their _run variants, and back.
+    pub(super) fn tick_stations(&mut self, dt: f32) {
+        let reg = self.reg.clone();
+        let keys: Vec<(i32, i32, i32)> = self
+            .block_entities
+            .iter()
+            .filter(|(_, e)| matches!(e, BlockEntity::Anvil(_)))
+            .map(|(k, _)| *k)
+            .collect();
+        for pos in keys {
+            let (x, y, z) = pos;
+            let Some(st) = self.station_at(pos) else {
+                continue;
+            };
+            // Sources carry a marker entity so this sweep can find
+            // them without scanning the world; they hold no items.
+            if st == "wheel" || st == "sail" {
+                let live = if st == "wheel" {
+                    self.wheel_live(x, y, z)
+                } else {
+                    self.sail_live(x, y, z)
+                };
+                let base = format!(
+                    "base:{}",
+                    if st == "wheel" {
+                        "water_wheel"
+                    } else {
+                        "windmill_sail"
+                    }
+                );
+                let want = if live > 0.0 {
+                    format!("{base}_run")
+                } else {
+                    base
+                };
+                if Some(self.get_block(x, y, z)) != reg.block_id(&want) {
+                    self.swap_block_keep_entity(x, y, z, &want);
+                }
+                continue;
+            }
+            // The helve hammer: a powered arm over the smith's anvil.
+            if st == "anvil" {
+                let helve = [
+                    reg.block_id("base:helve_hammer"),
+                    reg.block_id("base:helve_hammer_run"),
+                ];
+                let arm = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .into_iter()
+                    .map(|(dx, dz)| (x + dx, y, z + dz))
+                    .find(|&(hx, hy, hz)| helve.contains(&Some(self.get_block(hx, hy, hz))));
+                let Some(hp) = arm else { continue };
+                let rate = self.power_at(hp.0, hp.1, hp.2);
+                let has_work = matches!(
+                    self.block_entities.get(&pos),
+                    Some(BlockEntity::Anvil(a)) if a.bloom.is_some()
+                );
+                let want = if rate > 0.0 && has_work {
+                    "base:helve_hammer_run"
+                } else {
+                    "base:helve_hammer"
+                };
+                if Some(self.get_block(hp.0, hp.1, hp.2)) != reg.block_id(want) {
+                    self.swap_block_keep_entity(hp.0, hp.1, hp.2, want);
+                }
+                if rate <= 0.0 || !has_work {
+                    self.station_work.remove(&pos);
+                    continue;
+                }
+                let w = self.station_work.entry(pos).or_insert(0.0);
+                *w += dt * rate;
+                if *w >= HELVE_STRIKE_SECS {
+                    *w = 0.0;
+                    if let Some(out) = self.anvil_strike(pos) {
+                        self.pending_drops.push(((x, y + 1, z), out));
+                    }
+                }
+                continue;
+            }
+            if !station_powered(&st) {
+                continue;
+            }
+            let rate = self.power_at(x, y, z);
+            if rate <= 0.0 {
+                self.station_work.remove(&pos);
+                continue;
+            }
+            let Some(BlockEntity::Anvil(a)) = self.block_entities.get(&pos) else {
+                continue;
+            };
+            let Some(pile) = a.bloom else { continue };
+            let table = worked_table_for(&st);
+            let Some(def) = reg
+                .worked
+                .iter()
+                .find(|w| w.input == pile.item && w.station == table)
+                .cloned()
+            else {
+                continue;
+            };
+            let w = self.station_work.entry(pos).or_insert(0.0);
+            *w += dt * rate;
+            if *w < STATION_STRIKE_SECS {
+                continue;
+            }
+            *w -= STATION_STRIKE_SECS;
+            let Some(BlockEntity::Anvil(a)) = self.block_entities.get_mut(&pos) else {
+                continue;
+            };
+            a.strikes += 1;
+            if a.strikes < def.strikes {
+                continue;
+            }
+            // The whole load converts in one firing and spits at the
+            // mouth (the forge precedent): sixteen ground for the
+            // attention of loading once.
+            a.bloom = None;
+            a.strikes = 0;
+            let total = def.count * pile.count;
+            let max = reg.item(def.output).max_stack.max(1);
+            let mut left = total;
+            while left > 0 {
+                let n = left.min(max);
+                left -= n;
+                let mut out = ItemStack::new(&reg, def.output, 1);
+                out.count = n;
+                self.pending_drops.push(((x, y + 1, z), out));
+            }
+        }
+    }
+
     pub fn tick_entities(&mut self, dt: f32) {
         self.tick_bloomeries(dt);
         self.tick_kilns(dt);
         self.tick_forges(dt);
         self.tick_clamps(dt);
         self.tick_smokers(dt);
+        self.tick_stations(dt);
         self.tick_perish(dt);
         let reg = self.reg.clone();
         // Byproducts pour out the furnace mouth (cupellation lead);

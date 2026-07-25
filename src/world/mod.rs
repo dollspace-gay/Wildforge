@@ -24,7 +24,10 @@ mod lighting;
 mod machine_tick;
 mod machines;
 mod persistence;
+mod power;
 mod storage;
+
+pub use machines::{station_powered, worked_table_for};
 mod substrate;
 mod ticks;
 
@@ -133,6 +136,11 @@ pub const FORGE_FIRE_SECS: f32 = 120.0;
 pub const FORGE_ITEMS_PER_FUEL: u32 = 2;
 /// Seconds of smolder per log in a charcoal clamp.
 pub const CLAMP_SECS_PER_LOG: f32 = 300.0;
+/// Shaft-seconds a powered station banks per strike (a hand strike
+/// is a 2 s channel; rate scales this, it never skips it).
+pub const STATION_STRIKE_SECS: f32 = 2.0;
+/// The helve hammer strikes at half a smith's pace — and all day.
+pub const HELVE_STRIKE_SECS: f32 = 4.0;
 
 #[derive(Default)]
 pub struct OfferingState {
@@ -266,6 +274,9 @@ pub struct World {
     pending_relight: HashSet<ChunkPos>,
     /// Accumulator for the food-freshness sweep (containers).
     perish_accum: f32,
+    /// Seconds of work banked per powered station (transient: a
+    /// partial strike is honest to lose across a save).
+    station_work: HashMap<(i32, i32, i32), f32>,
     /// The land's memory: per-256-block-cell standing (±20), charged
     /// by taking, credited by tending, fading over days.
     pub(crate) regional_ire: HashMap<(i32, i32), f32>,
@@ -505,6 +516,7 @@ impl World {
             block_entities: HashMap::new(),
             pending_drops: Vec::new(),
             perish_accum: 0.0,
+            station_work: HashMap::new(),
             regional_ire: HashMap::new(),
             whispers: Vec::new(),
             blessed_streak: HashMap::new(),
@@ -770,6 +782,16 @@ impl World {
             return false;
         }
         self.set_block(pos.0, pos.1, pos.2, block);
+        // Power sources carry a marker entity from birth so the
+        // station sweep finds them without scanning the world.
+        if matches!(
+            self.reg.block(block).interaction.as_deref(),
+            Some("wheel" | "sail" | "pump" | "generator")
+        ) {
+            self.block_entities
+                .entry(pos)
+                .or_insert_with(|| BlockEntity::Anvil(Default::default()));
+        }
         true
     }
 

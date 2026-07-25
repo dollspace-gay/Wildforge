@@ -983,3 +983,8 @@ name = "Smoked Meat"
 texture = "smoked_meat.png"
 food = { hunger = 7, eat_time = 1.6, nutrition = { protein = 15 } }
 durability = 3600
+
+[[item]]
+id = "beam"
+name = "Beam"
+texture = "beam.png"

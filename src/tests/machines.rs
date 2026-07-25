@@ -1028,3 +1028,164 @@ fn the_smoker_cures_over_a_live_torch() {
         "smoked keeps six days"
     );
 }
+
+// ---- mechanization: millwork (rung 0-1) ----
+
+/// Raise the standard test water site: a sealed stone basin holding
+/// one full cell at (10,119,10), a wheel placed over it, and a breach
+/// helper that opens a lip so the pool becomes live water.
+fn wheel_over_basin(w: &mut World, reg: &Registry) -> (i32, i32, i32) {
+    let stone = b(reg, "base:stone");
+    let (wx, wy, wz) = (10, 120, 10);
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            w.set_block(wx + dx, wy - 2, wz + dz, stone);
+            if dx != 0 || dz != 0 {
+                w.set_block(wx + dx, wy - 1, wz + dz, stone);
+            }
+        }
+    }
+    w.set_block(wx, wy - 1, wz, reg.water_block(0));
+    assert!(w.place_block((wx, wy, wz), b(reg, "base:water_wheel")));
+    (wx, wy, wz)
+}
+
+fn breach_basin(w: &mut World, wheel: (i32, i32, i32)) {
+    let (wx, wy, wz) = wheel;
+    w.set_block(wx + 1, wy - 1, wz, AIR);
+    w.set_block(wx + 1, wy - 2, wz, AIR);
+}
+
+#[test]
+fn the_wheel_wants_live_water_and_shafts_carry_it() {
+    let reg = base_reg();
+    let mut w = test_world_with("millwork-power", reg.clone());
+    let wheel = wheel_over_basin(&mut w, &reg);
+    let (wx, wy, wz) = wheel;
+    assert_eq!(
+        w.wheel_live(wx, wy, wz),
+        0.0,
+        "a standing pool turns nothing"
+    );
+    breach_basin(&mut w, wheel);
+    assert!(
+        w.wheel_live(wx, wy, wz) > 0.0,
+        "a breached lip is live water"
+    );
+    // Twelve wooden shafts carry the turn; a thirteenth refuses.
+    let shaft = b(&reg, "base:shaft");
+    for i in 1..=12 {
+        w.set_block(wx, wy, wz + i, shaft);
+    }
+    assert!(w.power_at(wx, wy, wz + 13) > 0.0, "a 12-shaft run works");
+    w.set_block(wx, wy, wz + 13, shaft);
+    assert_eq!(
+        w.power_at(wx, wy, wz + 14),
+        0.0,
+        "thirteen wooden shafts is one too many"
+    );
+    // A gear turns the corner that a shaft refuses.
+    let gear = b(&reg, "base:gear");
+    for i in 1..=13 {
+        w.set_block(wx, wy, wz + i, AIR);
+    }
+    w.set_block(wx, wy, wz + 1, shaft);
+    assert_eq!(
+        w.power_at(wx + 1, wy, wz + 1),
+        0.0,
+        "a shaft never bends: nothing comes off its side"
+    );
+    w.set_block(wx, wy, wz + 2, gear);
+    w.set_block(wx + 1, wy, wz + 2, shaft);
+    assert!(
+        w.power_at(wx + 2, wy, wz + 2) > 0.0,
+        "the gear turns the corner"
+    );
+    // The wheel dresses itself: live water spins it to its run form.
+    w.tick_entities(0.3);
+    assert_eq!(
+        w.get_block(wx, wy, wz),
+        b(&reg, "base:water_wheel_run"),
+        "a live wheel turns visibly"
+    );
+}
+
+#[test]
+fn the_millstone_grinds_a_load_unattended() {
+    let reg = base_reg();
+    let mut w = test_world_with("millstone-bulk", reg.clone());
+    let wheel = wheel_over_basin(&mut w, &reg);
+    breach_basin(&mut w, wheel);
+    let (wx, wy, wz) = wheel;
+    w.set_block(wx, wy, wz + 1, b(&reg, "base:shaft"));
+    let mill = (wx, wy, wz + 2);
+    w.set_block(mill.0, mill.1, mill.2, b(&reg, "base:millstone"));
+    let copper = it(&reg, "base:raw_copper");
+    for _ in 0..4 {
+        assert!(
+            w.anvil_put(mill, ItemStack::new(&reg, copper, 1)),
+            "the millstone piles a batch"
+        );
+    }
+    w.clear_pending_drops();
+    for _ in 0..12 {
+        w.tick_entities(0.5);
+    }
+    let ground: u32 = w
+        .take_pending_drops()
+        .into_iter()
+        .filter(|(_, s)| s.item == it(&reg, "base:verdigris_powder"))
+        .map(|(_, s)| s.count)
+        .sum();
+    assert_eq!(ground, 8, "four ores grind to eight powder in one firing");
+}
+
+#[test]
+fn the_sawmill_rips_logs_and_the_helve_works_the_anvil() {
+    let reg = base_reg();
+    let mut w = test_world_with("sawmill-helve", reg.clone());
+    let wheel = wheel_over_basin(&mut w, &reg);
+    breach_basin(&mut w, wheel);
+    let (wx, wy, wz) = wheel;
+    w.set_block(wx, wy, wz + 1, b(&reg, "base:shaft"));
+    let saw = (wx, wy, wz + 2);
+    w.set_block(saw.0, saw.1, saw.2, b(&reg, "base:sawmill"));
+    let log = it(&reg, "base:log");
+    for _ in 0..3 {
+        assert!(w.anvil_put(saw, ItemStack::new(&reg, log, 1)));
+    }
+    w.clear_pending_drops();
+    for _ in 0..12 {
+        w.tick_entities(0.5);
+    }
+    let planks: u32 = w
+        .take_pending_drops()
+        .into_iter()
+        .filter(|(_, s)| s.item == it(&reg, "base:planks"))
+        .map(|(_, s)| s.count)
+        .sum();
+    assert_eq!(planks, 18, "the sawmill cuts six a log, hands cut four");
+    // The helve hammer hangs off a gear (nothing comes off a shaft's
+    // side): the anvil's bloom works itself.
+    w.set_block(wx, wy, wz + 1, b(&reg, "base:gear"));
+    w.set_block(wx + 1, wy, wz + 1, b(&reg, "base:helve_hammer"));
+    let anvil = (wx + 2, wy, wz + 1);
+    w.set_block(anvil.0, anvil.1, anvil.2, b(&reg, "base:stone_anvil"));
+    let bloom = it(&reg, "base:steel_bloom");
+    assert!(w.anvil_put(anvil, ItemStack::new(&reg, bloom, 1)));
+    w.clear_pending_drops();
+    for _ in 0..30 {
+        w.tick_entities(0.5);
+    }
+    assert!(
+        w.take_pending_drops()
+            .iter()
+            .any(|(_, s)| s.item == it(&reg, "base:steel_ingot")),
+        "three helve strikes finish the bar with nobody watching"
+    );
+    assert_eq!(
+        w.get_block(wx + 1, wy, wz + 1),
+        b(&reg, "base:helve_hammer"),
+        "the arm rests when the work is done"
+    );
+}
