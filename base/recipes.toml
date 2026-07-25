@@ -1053,3 +1053,42 @@ strikes = 4
 input = "base:iron_ingot"
 output = "base:plate"
 strikes = 4
+
+# --- the boring mill + the pump (mechanization, rung 2, stage 4) ---
+# Wilkinson before Watt: the mill that bores a TRUE cylinder is what
+# makes everything pressurized possible. The pump is its first
+# customer - deep mining's drainage problem becomes real and solvable.
+
+[[recipe]]
+pattern = ["iii", "rsr", "bbb"]
+keys = { i = "base:iron_ingot", r = "base:bearing", s = "base:iron_shaft", b = "base:beam" }
+output = "base:boring_mill"
+
+[[recipe]]
+pattern = ["s.s", "pcp", ".i."]
+keys = { s = "base:screw", p = "base:plate", c = "base:cylinder", i = "base:iron_ingot" }
+output = "base:pump"
+
+[[worked]]
+input = "base:plate"
+output = "base:cylinder"
+station = "boring"
+tool = "none"
+strikes = 8
+
+# --- steam (mechanization, rung 3): cylinder + plate + shaft ---
+
+[[recipe]]
+pattern = ["f.f", "fif", "fff"]
+keys = { f = "base:firebrick", i = "base:iron_ingot" }
+output = "base:firebox"
+
+[[recipe]]
+pattern = ["ppp", "p.p", "ppp"]
+keys = { p = "base:plate" }
+output = "base:boiler"
+
+[[recipe]]
+pattern = ["pgp", "csr", "iii"]
+keys = { p = "base:plate", g = "base:iron_gear", c = "base:cylinder", s = "base:iron_shaft", r = "base:bearing", i = "base:iron_ingot" }
+output = "base:steam_engine"

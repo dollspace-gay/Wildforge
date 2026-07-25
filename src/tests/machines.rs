@@ -1273,3 +1273,104 @@ fn the_bearing_frees_the_wooden_run() {
         "one fitted shaft mid-run and the same line turns"
     );
 }
+
+#[test]
+fn the_boring_mill_bores_and_the_pump_drains_the_mine() {
+    let reg = base_reg();
+    let mut w = test_world_with("boring-pump", reg.clone());
+    let wheel = wheel_over_basin(&mut w, &reg);
+    breach_basin(&mut w, wheel);
+    let (wx, wy, wz) = wheel;
+    w.set_block(wx, wy, wz + 1, b(&reg, "base:gear"));
+    // Only the boring mill cuts cylinders, and only held in a vice.
+    let bore = (wx + 1, wy, wz + 1);
+    w.set_block(bore.0, bore.1, bore.2, b(&reg, "base:boring_mill"));
+    w.set_block(bore.0 + 1, bore.1, bore.2, b(&reg, "base:vice"));
+    let plate = it(&reg, "base:plate");
+    assert!(
+        !w.anvil_put((wx, wy, wz + 1), ItemStack::new(&reg, plate, 1)),
+        "a gear is no station"
+    );
+    assert!(w.anvil_put(bore, ItemStack::new(&reg, plate, 1)));
+    w.clear_pending_drops();
+    for _ in 0..40 {
+        w.tick_entities(0.5);
+    }
+    assert!(
+        w.take_pending_drops()
+            .iter()
+            .any(|(_, s)| s.item == it(&reg, "base:cylinder")),
+        "eight true turns bore the cylinder"
+    );
+    // The pump: a flooded shaft under it, an open cell beside it.
+    let pump = (wx - 1, wy, wz + 1);
+    let stone = b(&reg, "base:stone");
+    for dy in 1..=4 {
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            w.set_block(pump.0 + dx, pump.1 - dy, pump.2 + dz, stone);
+        }
+    }
+    w.set_block(pump.0, pump.1 - 5, pump.2, stone);
+    let full = reg.water_block(0);
+    for dy in 2..=4 {
+        w.set_block(pump.0, pump.1 - dy, pump.2, full);
+    }
+    assert!(w.place_block(pump, b(&reg, "base:pump")));
+    for _ in 0..40 {
+        w.tick_entities(0.5);
+    }
+    let left = (1..=5)
+        .filter(|d| {
+            reg.water_volume(w.get_block(pump.0, pump.1 - d, pump.2))
+                .is_some()
+        })
+        .count();
+    assert!(
+        left < 3,
+        "the pump lifts the flood out of the shaft ({left} cells left)"
+    );
+}
+
+#[test]
+fn steam_runs_anywhere_and_stops_hungry() {
+    use crate::world::BlockEntity;
+    let reg = base_reg();
+    let mut w = test_world_with("steam-power", reg.clone());
+    // No river anywhere near: firebox, boiler on top, engine beside.
+    let (fx, fy, fz) = (10, 120, 10);
+    assert!(w.place_block((fx, fy, fz), b(&reg, "base:firebox")));
+    w.set_block(fx, fy + 1, fz, b(&reg, "base:boiler"));
+    w.set_block(fx + 1, fy + 1, fz, b(&reg, "base:steam_engine"));
+    // A shaft line off the engine down to a millstone.
+    w.set_block(fx + 2, fy + 1, fz, b(&reg, "base:gear"));
+    let mill = (fx + 2, fy, fz);
+    w.set_block(mill.0, mill.1, mill.2, b(&reg, "base:millstone"));
+    assert_eq!(w.power_at(mill.0, mill.1, mill.2), 0.0, "cold and dry");
+    // Bank fire; the boiler drinks the trough cell beside it.
+    if let Some(BlockEntity::Steam(s)) = w.block_entity_mut(&(fx, fy, fz)) {
+        s.fuel = 60.0;
+    }
+    w.set_block(fx, fy + 1, fz - 1, reg.water_block(0));
+    w.tick_entities(0.5);
+    assert_eq!(
+        w.get_block(fx, fy + 1, fz - 1),
+        AIR,
+        "the boiler drank the trough"
+    );
+    assert!(
+        w.power_at(mill.0, mill.1, mill.2) > 1.0,
+        "steam drives the line, no river in sight"
+    );
+    assert_eq!(
+        w.get_block(fx, fy, fz),
+        b(&reg, "base:firebox_lit"),
+        "the door glows while it burns"
+    );
+    // Starve the fire: the engine stops, the dress reverts.
+    if let Some(BlockEntity::Steam(s)) = w.block_entity_mut(&(fx, fy, fz)) {
+        s.fuel = 0.0;
+    }
+    w.tick_entities(0.5);
+    assert_eq!(w.power_at(mill.0, mill.1, mill.2), 0.0, "no coal, no steam");
+    assert_eq!(w.get_block(fx, fy, fz), b(&reg, "base:firebox"));
+}

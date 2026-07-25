@@ -1284,3 +1284,85 @@ opaque = false
 hardness = 2.5
 tool = "axe"
 drops = "self"
+
+[[block]]
+id = "boring_mill"
+name = "Boring Mill"
+texture = "boring_mill.png"
+shape = "boring"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+interaction = "boring"
+
+[[block]]
+id = "pump"
+name = "Pump"
+texture = "pump.png"
+shape = "pump"
+opaque = false
+hardness = 5.0
+tool = "pickaxe"
+drops = "self"
+interaction = "pump"
+
+# --- steam: power leaves the river (mechanization, rung 3) ---
+
+[[block]]
+id = "firebox"
+name = "Firebox"
+texture = "firebox.png"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+interaction = "firebox"
+
+[[block]]
+id = "firebox_lit"
+name = "Firebox"
+texture = "firebox_lit.png"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+drops = "base:firebox"
+item = false
+interaction = "firebox"
+light = 12
+light_color = [1.0, 0.6, 0.25]
+
+[[block]]
+id = "boiler"
+name = "Boiler"
+texture = "boiler.png"
+shape = "boiler"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+
+[[block]]
+id = "steam_engine"
+name = "Steam Engine"
+texture = "steam_engine.png"
+shape = "engine"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+
+[[block]]
+id = "steam_engine_run"
+name = "Steam Engine"
+texture = "steam_engine_run.png"
+shape = "engine"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "base:steam_engine"
+item = false

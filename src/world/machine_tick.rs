@@ -385,6 +385,43 @@ impl World {
                 }
                 continue;
             }
+            // The pump: the cylinder's first customer. Each stroke
+            // lifts the highest water cell in the column below to an
+            // open cell beside the pump — finite water, conserved,
+            // and a flooded shaft empties one honest stroke at a
+            // time (mechanization stage 4: mine drainage).
+            if st == "pump" {
+                let rate = self.power_at(x, y, z);
+                if rate <= 0.0 {
+                    self.station_work.remove(&pos);
+                    continue;
+                }
+                let w = self.station_work.entry(pos).or_insert(0.0);
+                *w += dt * rate;
+                if *w < PUMP_STROKE_SECS {
+                    continue;
+                }
+                *w -= PUMP_STROKE_SECS;
+                let lift = (1..=PUMP_REACH)
+                    .map(|d| (x, y - d, z))
+                    .find(|&(px, py, pz)| {
+                        self.reg.water_volume(self.get_block(px, py, pz)).is_some()
+                    });
+                let Some(cell) = lift else { continue };
+                let v = self
+                    .reg
+                    .water_volume(self.get_block(cell.0, cell.1, cell.2))
+                    .unwrap_or(0);
+                let out = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .into_iter()
+                    .map(|(dx, dz)| (x + dx, y, z + dz))
+                    .find(|&(ox, oy, oz)| self.get_block(ox, oy, oz) == AIR);
+                let Some((ox, oy, oz)) = out else { continue };
+                self.set_block(cell.0, cell.1, cell.2, AIR);
+                let wet = self.reg.water_for_volume(v);
+                self.set_block(ox, oy, oz, wet);
+                continue;
+            }
             // The helve hammer: a powered arm over the smith's anvil.
             if st == "anvil" {
                 let helve = [
@@ -480,7 +517,88 @@ impl World {
         }
     }
 
+    /// Burn every steaming firebox: fire and water spend together,
+    /// the boiler drinks adjacent cells when its bank runs low, and
+    /// the firebox and engine dress to their running forms. Power
+    /// leaves the river (mechanization stage 5).
+    pub(super) fn tick_steam(&mut self, dt: f32) {
+        let reg = self.reg.clone();
+        let keys: Vec<(i32, i32, i32)> = self
+            .block_entities
+            .iter()
+            .filter(|(_, e)| matches!(e, BlockEntity::Steam(_)))
+            .map(|(k, _)| *k)
+            .collect();
+        for pos in keys {
+            let (x, y, z) = pos;
+            // The boiler sits on the firebox; engines hang off it.
+            let boiler_here = reg.block_id("base:boiler") == Some(self.get_block(x, y + 1, z));
+            // Drink: a low water bank swallows one adjacent cell.
+            let mut drink: Option<((i32, i32, i32), u8)> = None;
+            if boiler_here
+                && let Some(BlockEntity::Steam(s)) = self.block_entities.get(&pos)
+                && s.water < STEAM_SECS_PER_WATER
+            {
+                'search: for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    for dy in [1, 0] {
+                        let c = (x + dx, y + dy, z + dz);
+                        if let Some(v) = reg.water_volume(self.get_block(c.0, c.1, c.2)) {
+                            drink = Some((c, v));
+                            break 'search;
+                        }
+                    }
+                }
+            }
+            if let Some((c, v)) = drink {
+                self.set_block(c.0, c.1, c.2, AIR);
+                if let Some(BlockEntity::Steam(s)) = self.block_entities.get_mut(&pos) {
+                    s.water += v as f32 * STEAM_SECS_PER_WATER / 8.0;
+                }
+            }
+            let Some(BlockEntity::Steam(s)) = self.block_entities.get_mut(&pos) else {
+                continue;
+            };
+            let running = boiler_here && s.fuel > 0.0 && s.water > 0.0;
+            if running {
+                s.fuel = (s.fuel - dt).max(0.0);
+                s.water = (s.water - dt).max(0.0);
+            }
+            let want = if running {
+                "base:firebox_lit"
+            } else {
+                "base:firebox"
+            };
+            if Some(self.get_block(x, y, z)) != reg.block_id(want)
+                && reg.block(self.get_block(x, y, z)).interaction.as_deref() == Some("firebox")
+            {
+                self.swap_block_keep_entity(x, y, z, want);
+            }
+            // Dress the engine beside the boiler to match.
+            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let e = (x + dx, y + 1, z + dz);
+                let b = self.get_block(e.0, e.1, e.2);
+                let is_engine = [
+                    reg.block_id("base:steam_engine"),
+                    reg.block_id("base:steam_engine_run"),
+                ]
+                .contains(&Some(b));
+                if !is_engine {
+                    continue;
+                }
+                let want = if running {
+                    "base:steam_engine_run"
+                } else {
+                    "base:steam_engine"
+                };
+                if Some(b) != reg.block_id(want) {
+                    self.swap_block_keep_entity(e.0, e.1, e.2, want);
+                }
+            }
+        }
+    }
+
     pub fn tick_entities(&mut self, dt: f32) {
+        self.tick_steam(dt);
         self.tick_bloomeries(dt);
         self.tick_kilns(dt);
         self.tick_forges(dt);

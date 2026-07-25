@@ -1328,6 +1328,36 @@ impl Game {
                     }
                     return;
                 }
+                Some("firebox") if self.input.action_cooldown <= 0.0 => {
+                    // Coal in at the door; bare hands read the gauges.
+                    self.input.action_cooldown = 0.3;
+                    let fuel = held.and_then(|i| reg.fuel_value(i));
+                    let e = self.server.world.ensure_block_entity(
+                        h.block,
+                        world::BlockEntity::Steam(Default::default()),
+                    );
+                    let world::BlockEntity::Steam(s) = e else {
+                        return;
+                    };
+                    if let Some((burn, _)) = fuel {
+                        if s.fuel >= world::STEAM_FUEL_CAP {
+                            self.toast("The firebox is banked full.".to_string());
+                            return;
+                        }
+                        if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
+                        {
+                            let e = self.server.world.block_entity_mut(&h.block);
+                            if let Some(world::BlockEntity::Steam(s)) = e {
+                                s.fuel = (s.fuel + burn * 4.0).min(world::STEAM_FUEL_CAP);
+                            }
+                            self.sfx(Sfx::Place);
+                        }
+                        return;
+                    }
+                    let (f, wtr) = (s.fuel as u32, s.water as u32);
+                    self.toast(format!("Fire banked {f}s; boiler water {wtr}s."));
+                    return;
+                }
                 Some(station @ ("bloomery" | "kiln" | "forge"))
                     if self.input.action_cooldown <= 0.0 =>
                 {

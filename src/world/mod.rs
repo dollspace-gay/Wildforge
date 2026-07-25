@@ -50,7 +50,25 @@ pub enum BlockEntity {
     Stall(StallState),
     /// A smoking rack: raw cuts curing over a live torch.
     Smoker(SmokerState),
+    /// A steam firebox: banked fire and boiler water, in seconds.
+    Steam(SteamState),
 }
+
+#[derive(Default)]
+pub struct SteamState {
+    /// Seconds of fire banked (coal fed by hand at the door).
+    pub fuel: f32,
+    /// Seconds of boiler water banked (the boiler drinks adjacent
+    /// water cells — the pump earns its keep feeding a trough).
+    pub water: f32,
+}
+
+/// One full water cell banks this many seconds of steam.
+pub const STEAM_SECS_PER_WATER: f32 = 15.0;
+/// The firebox holds at most this much banked fire (seconds).
+pub const STEAM_FUEL_CAP: f32 = 1800.0;
+/// What a running engine delivers to its shaft line.
+pub const STEAM_RATE: f32 = 1.4;
 
 #[derive(Default)]
 pub struct SmokerState {
@@ -141,6 +159,10 @@ pub const CLAMP_SECS_PER_LOG: f32 = 300.0;
 pub const STATION_STRIKE_SECS: f32 = 2.0;
 /// The helve hammer strikes at half a smith's pace — and all day.
 pub const HELVE_STRIKE_SECS: f32 = 4.0;
+/// Seconds per pump stroke (one water cell lifted per stroke).
+pub const PUMP_STROKE_SECS: f32 = 2.0;
+/// How deep a pump's suction column reaches.
+pub const PUMP_REACH: i32 = 24;
 
 #[derive(Default)]
 pub struct OfferingState {
@@ -784,13 +806,18 @@ impl World {
         self.set_block(pos.0, pos.1, pos.2, block);
         // Power sources carry a marker entity from birth so the
         // station sweep finds them without scanning the world.
-        if matches!(
-            self.reg.block(block).interaction.as_deref(),
-            Some("wheel" | "sail" | "pump" | "generator")
-        ) {
-            self.block_entities
-                .entry(pos)
-                .or_insert_with(|| BlockEntity::Anvil(Default::default()));
+        match self.reg.block(block).interaction.as_deref() {
+            Some("wheel" | "sail" | "pump" | "generator") => {
+                self.block_entities
+                    .entry(pos)
+                    .or_insert_with(|| BlockEntity::Anvil(Default::default()));
+            }
+            Some("firebox") => {
+                self.block_entities
+                    .entry(pos)
+                    .or_insert_with(|| BlockEntity::Steam(Default::default()));
+            }
+            _ => {}
         }
         true
     }
@@ -909,6 +936,7 @@ impl World {
                 BlockEntity::Smoker(sm) => sm.meat.into_iter().flatten().collect(),
                 BlockEntity::Clamp(_) => Vec::new(), // the burn dies with it
                 BlockEntity::Anvil(a) => a.bloom.into_iter().collect(),
+                BlockEntity::Steam(_) => Vec::new(), // banked fire dies with it
                 BlockEntity::Kiln(k) => k
                     .sand
                     .into_iter()

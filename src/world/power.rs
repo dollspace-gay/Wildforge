@@ -30,10 +30,36 @@ pub fn wind_rate(w: Weather) -> f32 {
 }
 
 impl World {
-    /// Steam drives shafts like a wheel does, anywhere coal and water
-    /// reach (stage 5 wires this to the boiler; inert until then).
-    pub(super) fn steam_rate(&self, _x: i32, _y: i32, _z: i32) -> f32 {
-        0.0
+    /// Steam drives shafts like a wheel does, anywhere coal and
+    /// water reach: an engine runs while a boiler beside it, firebox
+    /// below, has both fire and water banked.
+    pub(super) fn steam_rate(&self, x: i32, y: i32, z: i32) -> f32 {
+        if self.steam_firebox(x, y, z).is_some() {
+            STEAM_RATE
+        } else {
+            0.0
+        }
+    }
+
+    /// The RUNNING firebox behind an engine block, if any: boiler
+    /// horizontally adjacent to the engine, firebox directly below
+    /// the boiler, fire and water both banked.
+    pub(super) fn steam_firebox(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
+        let boiler = self.reg.block_id("base:boiler")?;
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let (bx, bz) = (x + dx, z + dz);
+            if self.get_block(bx, y, bz) != boiler {
+                continue;
+            }
+            let fpos = (bx, y - 1, bz);
+            if let Some(BlockEntity::Steam(s)) = self.block_entities.get(&fpos)
+                && s.fuel > 0.0
+                && s.water > 0.0
+            {
+                return Some(fpos);
+            }
+        }
+        None
     }
 
     /// Is this water cell going somewhere? Live means the drop rule

@@ -304,7 +304,8 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                             boxed(0.06, 0.5, 0.42, 0.94, 0.96, 0.58);
                         }
                         "axle" | "wheel" | "sails" | "gearbox" | "millstone" | "sawbench"
-                        | "helve" | "helve_up" | "lathe" | "lathe_iron" | "vice" => {
+                        | "helve" | "helve_up" | "lathe" | "lathe_iron" | "vice" | "boring"
+                        | "pump" | "boiler" | "engine" => {
                             // Millwork reads its orientation from its
                             // neighbors: shafts run toward machines,
                             // wheels set their plane from their axle,
@@ -476,6 +477,43 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                                     if iron {
                                         bed(0.0, 0.42, 0.72, 1.0, 0.50, 0.80);
                                     }
+                                }
+                                "boiler" => {
+                                    // A riveted drum with chamfered
+                                    // shoulders and a steam dome.
+                                    boxed(0.0, 0.18, 0.14, 1.0, 0.82, 0.86);
+                                    boxed(0.0, 0.08, 0.26, 1.0, 0.18, 0.74);
+                                    boxed(0.0, 0.82, 0.26, 1.0, 0.94, 0.74);
+                                    boxed(0.35, 0.94, 0.32, 0.65, 1.10, 0.68);
+                                }
+                                "engine" => {
+                                    // Bedplate, A-post, the rocking
+                                    // beam overhead, cylinder at one
+                                    // end and flywheel at the other.
+                                    boxed(0.0, 0.0, 0.0, 1.0, 0.18, 1.0);
+                                    boxed(0.40, 0.18, 0.30, 0.60, 1.10, 0.70);
+                                    boxed(-0.15, 1.10, 0.40, 1.15, 1.28, 0.60);
+                                    boxed(0.02, 0.18, 0.36, 0.32, 0.62, 0.64);
+                                    boxed(0.10, 0.62, 0.46, 0.24, 1.10, 0.54);
+                                    boxed(0.96, 0.25, 0.25, 1.14, 0.95, 0.75);
+                                    boxed(1.00, 0.45, 0.45, 1.10, 0.75, 0.55);
+                                }
+                                "boring" => {
+                                    // A heavy frame over a clamped
+                                    // blank: base, posts, crossbeam,
+                                    // the spindle plunging down.
+                                    boxed(0.04, 0.0, 0.04, 0.96, 0.20, 0.96);
+                                    boxed(0.10, 0.20, 0.30, 0.30, 1.05, 0.70);
+                                    boxed(0.70, 0.20, 0.30, 0.90, 1.05, 0.70);
+                                    boxed(0.0, 1.05, 0.34, 1.0, 1.25, 0.66);
+                                    boxed(0.42, 0.45, 0.42, 0.58, 1.05, 0.58);
+                                    boxed(0.30, 0.20, 0.30, 0.70, 0.45, 0.70);
+                                }
+                                "pump" => {
+                                    // Standpipe, pump head, spout.
+                                    boxed(0.36, 0.0, 0.36, 0.64, 0.85, 0.64);
+                                    boxed(0.26, 0.85, 0.26, 0.74, 1.10, 0.74);
+                                    boxed(0.64, 0.55, 0.42, 1.06, 0.72, 0.58);
                                 }
                                 "vice" => {
                                     // Pedestal, bench cap, two jaws,

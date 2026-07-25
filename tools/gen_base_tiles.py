@@ -235,6 +235,13 @@ def item(name, body, edge, shape="lump"):
                   fill=mix(body, edge, 0.4) + (255,))
         for (px, py) in [(11, 13), (17, 12), (14, 16), (21, 14)]:
             d.point((px, py), fill=edge + (255,))
+    elif shape == "cylinder":
+        # An open bored tube, seen at a lean.
+        d.ellipse([15, 6, 27, 16], fill=mix(body, (0, 0, 0), 0.45) + (255,),
+                  outline=edge + (255,))
+        d.polygon([(5, 16), (17, 6), (25, 15), (13, 26)], fill=body + (255,))
+        d.ellipse([4, 16, 15, 26], fill=body + (255,), outline=edge + (255,))
+        d.ellipse([7, 19, 12, 23], fill=(20, 20, 24, 255))
     elif shape == "prism":
         d.polygon([(16, 7), (25, 24), (7, 24)], fill=body + (120,),
                   outline=edge + (255,))
@@ -355,6 +362,7 @@ ITEMS = [
     ("bearing", (206, 210, 218), (128, 132, 142), "ring"),
     ("iron_gear", (184, 188, 196), (112, 116, 126), "gearwheel"),
     ("plate", (198, 202, 210), (126, 130, 140), "plate"),
+    ("cylinder", (176, 180, 190), (108, 112, 122), "cylinder"),
 ]
 
 GLASSES = [
@@ -401,6 +409,21 @@ BLOCKS_EXTRA = {
                  speckle=(190, 194, 202), speckle_n=14),
     "fitted_shaft": dict(base=(168, 128, 76), dark=(120, 86, 48), bands=0.7,
                          veins=(200, 204, 212)),
+    "boring_mill": dict(base=(110, 114, 124), dark=(70, 74, 84),
+                        veins=(184, 154, 94)),
+    "firebox": dict(base=(120, 74, 60), dark=(74, 44, 36), bands=0.3,
+                    speckle=(50, 46, 48), speckle_n=16),
+    "firebox_lit": dict(base=(150, 84, 56), dark=(96, 50, 36), bands=0.3,
+                        speckle=(255, 170, 70), speckle_n=22),
+    "boiler": dict(base=(134, 128, 120), dark=(90, 84, 78),
+                   speckle=(196, 188, 178), speckle_n=30),
+    "steam_engine": dict(base=(104, 108, 118), dark=(64, 68, 78),
+                         veins=(196, 168, 92)),
+    "steam_engine_run": dict(base=(112, 116, 126), dark=(70, 74, 84),
+                             veins=(210, 180, 100),
+                             speckle=(230, 234, 240), speckle_n=14),
+    "pump": dict(base=(118, 130, 126), dark=(76, 86, 82),
+                 speckle=(168, 178, 174), speckle_n=12),
 }
 
 
