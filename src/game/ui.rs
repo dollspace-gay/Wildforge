@@ -943,7 +943,11 @@ impl Game {
                     ),
                     (
                         "TORCH SHADOWS",
-                        if self.config.point_grid { "GRID" } else { "CUBE" },
+                        if self.config.point_grid {
+                            "GRID"
+                        } else {
+                            "CUBE"
+                        },
                     ),
                     ("DARKNESS", if self.config.stark { "STARK" } else { "SOFT" }),
                     (

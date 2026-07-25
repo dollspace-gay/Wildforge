@@ -341,12 +341,390 @@ impl World {
         }
     }
 
+    /// Drive powered stations from their shaft lines: the millstone
+    /// grinds unattended, the sawmill rips a whole load, the helve
+    /// hammer works the smith's anvil at half his pace and none of
+    /// his attention. Sources dress themselves: a wheel on live water
+    /// and a sail in wind swap to their _run variants, and back.
+    pub(super) fn tick_stations(&mut self, dt: f32) {
+        let reg = self.reg.clone();
+        let keys: Vec<(i32, i32, i32)> = self
+            .block_entities
+            .iter()
+            .filter(|(_, e)| matches!(e, BlockEntity::Anvil(_)))
+            .map(|(k, _)| *k)
+            .collect();
+        for pos in keys {
+            let (x, y, z) = pos;
+            let Some(st) = self.station_at(pos) else {
+                continue;
+            };
+            // Sources carry a marker entity so this sweep can find
+            // them without scanning the world; they hold no items.
+            // The generator: shaft in, field out. It dresses to its
+            // running form and sweeps lamps in reach each second.
+            if st == "generator" {
+                let running = self.power_at(x, y, z) > 0.0;
+                let want = if running {
+                    "base:generator_run"
+                } else {
+                    "base:generator"
+                };
+                if Some(self.get_block(x, y, z)) != reg.block_id(want) {
+                    self.swap_block_keep_entity(x, y, z, want);
+                }
+                let w = self.station_work.entry(pos).or_insert(0.0);
+                *w += dt;
+                if *w < 1.0 {
+                    continue;
+                }
+                *w = 0.0;
+                let pairs = [
+                    ("base:arc_lamp", "base:arc_lamp_lit"),
+                    ("base:blue_arc_lamp", "base:blue_arc_lamp_lit"),
+                    ("base:red_arc_lamp", "base:red_arc_lamp_lit"),
+                ];
+                for dx in -ELEC_RADIUS..=ELEC_RADIUS {
+                    for dy in -ELEC_RADIUS..=ELEC_RADIUS {
+                        for dz in -ELEC_RADIUS..=ELEC_RADIUS {
+                            let (lx, ly, lz) = (x + dx, y + dy, z + dz);
+                            let b = self.get_block(lx, ly, lz);
+                            for (off, on) in pairs {
+                                let (off_id, on_id) = (reg.block_id(off), reg.block_id(on));
+                                if running && Some(b) == off_id {
+                                    if let Some(on) = on_id {
+                                        self.set_block(lx, ly, lz, on);
+                                    }
+                                } else if !running
+                                    && Some(b) == on_id
+                                    && let Some(off) = off_id
+                                {
+                                    self.set_block(lx, ly, lz, off);
+                                }
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+            if st == "wheel" || st == "sail" {
+                let live = if st == "wheel" {
+                    // Momentum: a wheel spins down over seconds, not
+                    // the instant one cell of its race goes still.
+                    let wet = self.wheel_live(x, y, z) > 0.0;
+                    let bank = self.station_work.entry(pos).or_insert(0.0);
+                    if wet {
+                        *bank = super::power::WHEEL_SPINDOWN_SECS;
+                    } else {
+                        *bank = (*bank - dt).max(0.0);
+                    }
+                    if *bank > 0.0 { 1.0 } else { 0.0 }
+                } else {
+                    self.sail_live(x, y, z)
+                };
+                let base = format!(
+                    "base:{}",
+                    if st == "wheel" {
+                        "water_wheel"
+                    } else {
+                        "windmill_sail"
+                    }
+                );
+                let want = if live > 0.0 {
+                    format!("{base}_run")
+                } else {
+                    base
+                };
+                if Some(self.get_block(x, y, z)) != reg.block_id(&want) {
+                    self.swap_block_keep_entity(x, y, z, &want);
+                }
+                continue;
+            }
+            // The pump: the cylinder's first customer. Each stroke
+            // lifts the highest water cell in the column below to an
+            // open cell beside the pump — finite water, conserved,
+            // and a flooded shaft empties one honest stroke at a
+            // time (mechanization stage 4: mine drainage).
+            if st == "pump" {
+                let rate = self.power_at(x, y, z);
+                if rate <= 0.0 {
+                    self.station_work.remove(&pos);
+                    continue;
+                }
+                let w = self.station_work.entry(pos).or_insert(0.0);
+                *w += dt * rate;
+                if *w < PUMP_STROKE_SECS {
+                    continue;
+                }
+                *w -= PUMP_STROKE_SECS;
+                let lift = (1..=PUMP_REACH)
+                    .map(|d| (x, y - d, z))
+                    .find(|&(px, py, pz)| {
+                        self.reg.water_volume(self.get_block(px, py, pz)).is_some()
+                    });
+                let Some(cell) = lift else { continue };
+                let v = self
+                    .reg
+                    .water_volume(self.get_block(cell.0, cell.1, cell.2))
+                    .unwrap_or(0);
+                let out = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .into_iter()
+                    .map(|(dx, dz)| (x + dx, y, z + dz))
+                    .find(|&(ox, oy, oz)| self.get_block(ox, oy, oz) == AIR);
+                let Some((ox, oy, oz)) = out else { continue };
+                self.set_block(cell.0, cell.1, cell.2, AIR);
+                let wet = self.reg.water_for_volume(v);
+                self.set_block(ox, oy, oz, wet);
+                continue;
+            }
+            // The helve hammer: a powered arm over the smith's anvil.
+            if st == "anvil" {
+                let helve = [
+                    reg.block_id("base:helve_hammer"),
+                    reg.block_id("base:helve_hammer_run"),
+                ];
+                let arm = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .into_iter()
+                    .map(|(dx, dz)| (x + dx, y, z + dz))
+                    .find(|&(hx, hy, hz)| helve.contains(&Some(self.get_block(hx, hy, hz))));
+                let Some(hp) = arm else { continue };
+                let rate = self.power_at(hp.0, hp.1, hp.2);
+                let has_work = matches!(
+                    self.block_entities.get(&pos),
+                    Some(BlockEntity::Anvil(a)) if a.bloom.is_some()
+                );
+                let want = if rate > 0.0 && has_work {
+                    "base:helve_hammer_run"
+                } else {
+                    "base:helve_hammer"
+                };
+                if Some(self.get_block(hp.0, hp.1, hp.2)) != reg.block_id(want) {
+                    self.swap_block_keep_entity(hp.0, hp.1, hp.2, want);
+                }
+                if rate <= 0.0 || !has_work {
+                    self.station_work.remove(&pos);
+                    continue;
+                }
+                let w = self.station_work.entry(pos).or_insert(0.0);
+                *w += dt * rate;
+                if *w >= HELVE_STRIKE_SECS {
+                    *w = 0.0;
+                    if let Some(out) = self.anvil_strike(pos) {
+                        self.pending_drops.push(((x, y + 1, z), out));
+                    }
+                }
+                continue;
+            }
+            if !station_powered(&st) {
+                continue;
+            }
+            let mut rate = self.power_at(x, y, z);
+            // The electric quern: a millstone in a generator's field
+            // grinds where geography and coal both said no.
+            if rate <= 0.0 && st == "millstone" && self.generator_near(pos, ELEC_RADIUS) {
+                rate = 1.0;
+            }
+            if rate <= 0.0 {
+                self.station_work.remove(&pos);
+                continue;
+            }
+            // Precision machines want workholding: an iron lathe or
+            // boring mill with no vice in reach only spins.
+            if matches!(st.as_str(), "iron_lathe" | "boring") && !self.vice_near(pos) {
+                continue;
+            }
+            let Some(BlockEntity::Anvil(a)) = self.block_entities.get(&pos) else {
+                continue;
+            };
+            let Some(pile) = a.bloom else { continue };
+            let table = worked_table_for(&st);
+            let Some(def) = reg
+                .worked
+                .iter()
+                .find(|w| w.input == pile.item && w.station == table)
+                .cloned()
+            else {
+                continue;
+            };
+            let w = self.station_work.entry(pos).or_insert(0.0);
+            *w += dt * rate;
+            if *w < STATION_STRIKE_SECS {
+                continue;
+            }
+            *w -= STATION_STRIKE_SECS;
+            let Some(BlockEntity::Anvil(a)) = self.block_entities.get_mut(&pos) else {
+                continue;
+            };
+            a.strikes += 1;
+            if a.strikes < def.strikes {
+                continue;
+            }
+            // The whole load converts in one firing and spits at the
+            // mouth (the forge precedent): sixteen ground for the
+            // attention of loading once.
+            a.bloom = None;
+            a.strikes = 0;
+            let total = def.count * pile.count;
+            let max = reg.item(def.output).max_stack.max(1);
+            let mut left = total;
+            while left > 0 {
+                let n = left.min(max);
+                left -= n;
+                let mut out = ItemStack::new(&reg, def.output, 1);
+                out.count = n;
+                self.pending_drops.push(((x, y + 1, z), out));
+            }
+        }
+    }
+
+    /// Burn every steaming firebox: fire and water spend together,
+    /// the boiler drinks adjacent cells when its bank runs low, and
+    /// the firebox and engine dress to their running forms. Power
+    /// leaves the river (mechanization stage 5).
+    pub(super) fn tick_steam(&mut self, dt: f32) {
+        let reg = self.reg.clone();
+        let keys: Vec<(i32, i32, i32)> = self
+            .block_entities
+            .iter()
+            .filter(|(_, e)| matches!(e, BlockEntity::Steam(_)))
+            .map(|(k, _)| *k)
+            .collect();
+        for pos in keys {
+            let (x, y, z) = pos;
+            // The boiler sits on the firebox; engines hang off it.
+            let boiler_here = reg.block_id("base:boiler") == Some(self.get_block(x, y + 1, z));
+            // Drink: a low water bank swallows one adjacent cell.
+            let mut drink: Option<((i32, i32, i32), u8)> = None;
+            if boiler_here
+                && let Some(BlockEntity::Steam(s)) = self.block_entities.get(&pos)
+                && s.water < STEAM_SECS_PER_WATER
+            {
+                'search: for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                    for dy in [1, 0] {
+                        let c = (x + dx, y + dy, z + dz);
+                        if let Some(v) = reg.water_volume(self.get_block(c.0, c.1, c.2)) {
+                            drink = Some((c, v));
+                            break 'search;
+                        }
+                    }
+                }
+            }
+            if let Some((c, v)) = drink {
+                self.set_block(c.0, c.1, c.2, AIR);
+                if let Some(BlockEntity::Steam(s)) = self.block_entities.get_mut(&pos) {
+                    s.water += v as f32 * STEAM_SECS_PER_WATER / 8.0;
+                }
+            }
+            let Some(BlockEntity::Steam(s)) = self.block_entities.get_mut(&pos) else {
+                continue;
+            };
+            let running = boiler_here && s.fuel > 0.0 && s.water > 0.0;
+            if running {
+                s.fuel = (s.fuel - dt).max(0.0);
+                s.water = (s.water - dt).max(0.0);
+            }
+            let want = if running {
+                "base:firebox_lit"
+            } else {
+                "base:firebox"
+            };
+            if Some(self.get_block(x, y, z)) != reg.block_id(want)
+                && reg.block(self.get_block(x, y, z)).interaction.as_deref() == Some("firebox")
+            {
+                self.swap_block_keep_entity(x, y, z, want);
+            }
+            // Dress the engine beside the boiler to match.
+            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let e = (x + dx, y + 1, z + dz);
+                let b = self.get_block(e.0, e.1, e.2);
+                let is_engine = [
+                    reg.block_id("base:steam_engine"),
+                    reg.block_id("base:steam_engine_run"),
+                ]
+                .contains(&Some(b));
+                if !is_engine {
+                    continue;
+                }
+                let want = if running {
+                    "base:steam_engine_run"
+                } else {
+                    "base:steam_engine"
+                };
+                if Some(b) != reg.block_id(want) {
+                    self.swap_block_keep_entity(e.0, e.1, e.2, want);
+                }
+            }
+        }
+    }
+
+    /// Fire every charged separator on a valid firebrick stack: one
+    /// powder and one fuel a batch, neodymium and cerium out — the
+    /// rare-earth thread, finally honest (mechanization stage 6).
+    pub(super) fn tick_separators(&mut self, dt: f32) {
+        let reg = self.reg.clone();
+        let keys: Vec<(i32, i32, i32)> = self
+            .block_entities
+            .iter()
+            .filter(|(_, e)| matches!(e, BlockEntity::Separator(_)))
+            .map(|(k, _)| *k)
+            .collect();
+        for pos in keys {
+            let (x, y, z) = pos;
+            let valid = self.check_separator(x, y, z).is_some();
+            let Some(BlockEntity::Separator(sp)) = self.block_entities.get_mut(&pos) else {
+                continue;
+            };
+            let working = valid && sp.powder >= 1 && sp.fuel >= 1;
+            if !working {
+                sp.progress = 0.0;
+            } else {
+                sp.progress += dt;
+                if sp.progress >= SEPARATE_SECS {
+                    sp.progress = 0.0;
+                    sp.powder -= 1;
+                    sp.fuel -= 1;
+                    sp.nd += 1;
+                    sp.ce += 2;
+                }
+            }
+            let want = if working {
+                "base:separator_lit"
+            } else {
+                "base:separator"
+            };
+            if Some(self.get_block(x, y, z)) != reg.block_id(want) {
+                self.swap_block_keep_entity(x, y, z, want);
+            }
+        }
+    }
+
+    /// A running generator within reach: the field that lights lamps
+    /// and turns the electric quern. Generators are shaft-driven
+    /// machines; their markers make them findable.
+    pub fn generator_near(&self, pos: (i32, i32, i32), r: i32) -> bool {
+        let gens = [
+            self.reg.block_id("base:generator"),
+            self.reg.block_id("base:generator_run"),
+        ];
+        self.block_entities.iter().any(|(&(gx, gy, gz), e)| {
+            matches!(e, BlockEntity::Anvil(_))
+                && (gx - pos.0).abs() <= r
+                && (gy - pos.1).abs() <= r
+                && (gz - pos.2).abs() <= r
+                && gens.contains(&Some(self.get_block(gx, gy, gz)))
+                && self.power_at(gx, gy, gz) > 0.0
+        })
+    }
+
     pub fn tick_entities(&mut self, dt: f32) {
+        self.tick_steam(dt);
+        self.tick_separators(dt);
         self.tick_bloomeries(dt);
         self.tick_kilns(dt);
         self.tick_forges(dt);
         self.tick_clamps(dt);
         self.tick_smokers(dt);
+        self.tick_stations(dt);
         self.tick_perish(dt);
         let reg = self.reg.clone();
         // Byproducts pour out the furnace mouth (cupellation lead);

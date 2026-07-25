@@ -623,6 +623,203 @@ impl Game {
                 self.server.world.spawn_mob(w);
             }
         }
+        if std::env::var("WILDFORGE_DEMO_MILL").is_ok() {
+            // A working millrace: an elevated pool spilling over a
+            // lip, the wheel in the fall, gears walking the power
+            // down to a millstone, a sawmill, and a helve hammer at
+            // its anvil — plus a sail tower for the wind shot.
+            let b = |n: &str| self.content.reg.block_id(n);
+            let reg2 = self.content.reg.clone();
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            let y = self.server.world.surface_height(bx, bz);
+            eprintln!("mill demo anchored at ({bx},{y},{bz})");
+            if let Some(grass) = b("base:grass") {
+                for dx in -10..=10i32 {
+                    for dz in -2..=14i32 {
+                        let (x, z) = (bx + dx, bz + dz);
+                        self.server.world.set_block(x, y, z, grass);
+                        for hh in 1..=10 {
+                            if self.server.world.get_block(x, y + hh, z) != AIR {
+                                self.server.world.set_block(x, y + hh, z, AIR);
+                            }
+                        }
+                    }
+                }
+            }
+            let (mx, mz) = (bx - 3, bz + 5);
+            if let (Some(stone), Some(shaft), Some(gear)) =
+                (b("base:stone"), b("base:shaft"), b("base:gear"))
+            {
+                let w = &mut self.server.world;
+                // The raised race runs north-south so the wheel's
+                // face greets a camera looking east: stone trough,
+                // water pouring out the south lip under the wheel.
+                for dz in 1..=8i32 {
+                    for dy in 1..=2 {
+                        w.set_block(mx, y + dy, mz + dz, stone);
+                    }
+                    w.set_block(mx - 1, y + 3, mz + dz, stone);
+                    w.set_block(mx + 1, y + 3, mz + dz, stone);
+                }
+                w.set_block(mx, y + 3, mz + 9, stone);
+                // The wall opens at the south end, downstream of the
+                // wheel: the race spills there without starving the
+                // cells the wheel actually rides.
+                w.set_block(mx - 1, y + 3, mz + 1, AIR);
+                let water = reg2.water_block(0);
+                for dz in 1..=8i32 {
+                    w.set_block(mx, y + 3, mz + dz, water);
+                }
+                // The wheel rides mid-race, axle running east — its
+                // stream below it, its face to the camera.
+                if let Some(wheel) = b("base:water_wheel") {
+                    w.set_block(mx, y + 4, mz + 3, wheel);
+                    w.insert_block_entity(
+                        (mx, y + 4, mz + 3),
+                        crate::world::BlockEntity::Anvil(Default::default()),
+                    );
+                }
+                // The axle line runs four clear blocks off the hub
+                // before its down post, so the wheel's face stands
+                // alone; stations rank along the working floor.
+                for i in 1..=4 {
+                    w.set_block(mx + i, y + 4, mz + 3, shaft);
+                }
+                w.set_block(mx + 5, y + 4, mz + 3, gear);
+                w.set_block(mx + 5, y + 3, mz + 3, shaft);
+                w.set_block(mx + 5, y + 2, mz + 3, shaft);
+                w.set_block(mx + 5, y + 1, mz + 3, gear);
+                w.set_block(mx + 6, y + 1, mz + 3, shaft);
+                w.set_block(mx + 7, y + 1, mz + 3, gear);
+                w.set_block(mx + 8, y + 1, mz + 3, shaft);
+                w.set_block(mx + 9, y + 1, mz + 3, gear);
+                // Stations step south off their gears, facing camera.
+                if let Some(mill) = b("base:millstone") {
+                    w.set_block(mx + 7, y + 1, mz + 2, mill);
+                    if let Some(copper) = reg2.item_id("base:raw_copper") {
+                        for _ in 0..4 {
+                            w.anvil_put((mx + 7, y + 1, mz + 2), ItemStack::new(&reg2, copper, 1));
+                        }
+                    }
+                }
+                if let Some(saw) = b("base:sawmill") {
+                    w.set_block(mx + 9, y + 1, mz + 2, saw);
+                    if let Some(log) = reg2.item_id("base:log") {
+                        for _ in 0..3 {
+                            w.anvil_put((mx + 9, y + 1, mz + 2), ItemStack::new(&reg2, log, 1));
+                        }
+                    }
+                }
+                if let (Some(helve), Some(anvil)) = (b("base:helve_hammer"), b("base:stone_anvil"))
+                {
+                    w.set_block(mx + 9, y + 1, mz + 4, helve);
+                    w.set_block(mx + 9, y + 1, mz + 5, anvil);
+                    if let Some(bl) = reg2.item_id("base:steel_bloom") {
+                        w.anvil_put((mx + 9, y + 1, mz + 5), ItemStack::new(&reg2, bl, 1));
+                    }
+                }
+                // The machine shop row: crude lathe west, iron lathe
+                // east, the vice that lets precision cut at all.
+                w.set_block(mx + 5, y + 1, mz + 2, shaft);
+                w.set_block(mx + 5, y + 1, mz + 1, gear);
+                if let (Some(lathe), Some(ilathe), Some(vice)) =
+                    (b("base:lathe"), b("base:iron_lathe"), b("base:vice"))
+                {
+                    w.set_block(mx + 4, y + 1, mz + 1, lathe);
+                    w.set_block(mx + 6, y + 1, mz + 1, ilathe);
+                    w.set_block(mx + 5, y + 1, mz, vice);
+                    if let Some(cu) = reg2.item_id("base:copper_ingot") {
+                        w.anvil_put((mx + 4, y + 1, mz + 1), ItemStack::new(&reg2, cu, 1));
+                    }
+                    if let Some(fe) = reg2.item_id("base:iron_ingot") {
+                        w.anvil_put((mx + 6, y + 1, mz + 1), ItemStack::new(&reg2, fe, 1));
+                    }
+                }
+                // The electric age: a generator off the shop gear,
+                // arc lamps drinking its field, the steam corner,
+                // and a separator on its firebrick stack.
+                if let Some(dynamo) = b("base:generator") {
+                    w.set_block(mx + 7, y + 1, mz + 4, dynamo);
+                    w.insert_block_entity(
+                        (mx + 7, y + 1, mz + 4),
+                        crate::world::BlockEntity::Anvil(Default::default()),
+                    );
+                }
+                for (lamp, lx, lz) in [
+                    ("base:arc_lamp", mx + 5, mz + 6),
+                    ("base:blue_arc_lamp", mx + 7, mz + 6),
+                    ("base:red_arc_lamp", mx + 9, mz + 6),
+                ] {
+                    if let Some(l) = b(lamp) {
+                        w.set_block(lx, y + 2, lz, l);
+                        w.set_block(lx, y + 1, lz, stone);
+                    }
+                }
+                if let (Some(fbx), Some(boiler), Some(engine)) =
+                    (b("base:firebox"), b("base:boiler"), b("base:steam_engine"))
+                {
+                    let (ex, ez) = (mx + 12, mz + 1);
+                    w.set_block(ex, y + 1, ez, fbx);
+                    w.set_block(ex, y + 2, ez, boiler);
+                    w.set_block(ex + 1, y + 2, ez, engine);
+                    w.insert_block_entity(
+                        (ex, y + 1, ez),
+                        crate::world::BlockEntity::Steam(crate::world::SteamState {
+                            fuel: 900.0,
+                            water: 900.0,
+                        }),
+                    );
+                }
+                if let (Some(fb), Some(sep)) = (b("base:firebrick"), b("base:separator")) {
+                    let (px, pz) = (bx - 8, bz + 1);
+                    for ly in 1..=3 {
+                        for rx in -1..=1i32 {
+                            for rz in -1..=1i32 {
+                                if rx == 0 && rz == 0 {
+                                    continue;
+                                }
+                                w.set_block(px + 1 + rx, y + ly, pz + rz, fb);
+                            }
+                        }
+                    }
+                    w.set_block(px, y + 1, pz, sep);
+                    w.insert_block_entity(
+                        (px, y + 1, pz),
+                        crate::world::BlockEntity::Separator(crate::world::SeparatorState {
+                            powder: 4,
+                            fuel: 4,
+                            ..Default::default()
+                        }),
+                    );
+                }
+                // Boring mill and pump join the shop floor.
+                if let (Some(bore), Some(pump)) = (b("base:boring_mill"), b("base:pump")) {
+                    w.set_block(mx + 2, y + 1, mz + 1, bore);
+                    w.set_block(mx + 2, y + 1, mz, pump);
+                    w.insert_block_entity(
+                        (mx + 2, y + 1, mz),
+                        crate::world::BlockEntity::Anvil(Default::default()),
+                    );
+                }
+                // The sail tower: altitude is the windmill's river.
+                if let Some(sail) = b("base:windmill_sail") {
+                    let tx = bx + 8;
+                    for ty in (y + 1)..=91 {
+                        w.set_block(tx, ty, bz + 10, stone);
+                    }
+                    w.set_block(tx, 92, bz + 10, sail);
+                    w.insert_block_entity(
+                        (tx, 92, bz + 10),
+                        crate::world::BlockEntity::Anvil(Default::default()),
+                    );
+                    // And one at eye level for the mesh to be judged
+                    // (too low to ever turn; that's the point).
+                    w.set_block(bx + 6, y + 2, bz + 1, stone);
+                    w.set_block(bx + 6, y + 3, bz + 1, sail);
+                }
+            }
+        }
         if std::env::var("WILDFORGE_DEMO_CAMP").is_ok() {
             let b = |n: &str| self.content.reg.block_id(n);
             let bx = spawn.x as i32;

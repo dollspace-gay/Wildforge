@@ -1128,3 +1128,351 @@ solid = false
 opaque = false
 drops = "self"
 interaction = "smoker"
+
+# --- millwork: power learns to travel (mechanization, rung 0-1) ---
+
+[[block]]
+id = "water_wheel"
+name = "Water Wheel"
+texture = "water_wheel.png"
+shape = "wheel"
+opaque = false
+hardness = 2.5
+tool = "axe"
+drops = "self"
+interaction = "wheel"
+
+[[block]]
+id = "water_wheel_run"
+name = "Water Wheel"
+texture = "water_wheel_run.png"
+shape = "wheel"
+opaque = false
+hardness = 2.5
+tool = "axe"
+drops = "base:water_wheel"
+item = false
+interaction = "wheel"
+
+[[block]]
+id = "windmill_sail"
+name = "Windmill Sail"
+texture = "windmill_sail.png"
+shape = "sails"
+opaque = false
+hardness = 1.5
+tool = "axe"
+drops = "self"
+interaction = "sail"
+
+[[block]]
+id = "windmill_sail_run"
+name = "Windmill Sail"
+texture = "windmill_sail_run.png"
+shape = "sails"
+opaque = false
+hardness = 1.5
+tool = "axe"
+drops = "base:windmill_sail"
+item = false
+interaction = "sail"
+
+[[block]]
+id = "shaft"
+name = "Shaft"
+texture = "shaft.png"
+shape = "axle"
+opaque = false
+hardness = 1.5
+tool = "axe"
+drops = "self"
+
+[[block]]
+id = "gear"
+name = "Gear"
+texture = "gear.png"
+shape = "gearbox"
+opaque = false
+hardness = 1.5
+tool = "axe"
+drops = "self"
+
+[[block]]
+id = "millstone"
+name = "Millstone"
+texture = "millstone.png"
+shape = "millstone"
+opaque = false
+hardness = 6.5
+tool = "pickaxe"
+requires_tool = true
+interaction = "millstone"
+
+[[block]]
+id = "sawmill"
+name = "Sawmill"
+texture = "sawmill.png"
+shape = "sawbench"
+opaque = false
+hardness = 2.5
+tool = "axe"
+drops = "self"
+interaction = "sawmill"
+
+[[block]]
+id = "helve_hammer"
+name = "Helve Hammer"
+texture = "helve_hammer.png"
+shape = "helve"
+opaque = false
+hardness = 2.5
+tool = "axe"
+drops = "self"
+
+[[block]]
+id = "helve_hammer_run"
+name = "Helve Hammer"
+texture = "helve_hammer.png"
+shape = "helve_up"
+opaque = false
+hardness = 2.5
+tool = "axe"
+drops = "base:helve_hammer"
+item = false
+
+# --- the machining age: tolerance is a property of the machine ---
+
+[[block]]
+id = "lathe"
+name = "Lathe"
+texture = "lathe.png"
+shape = "lathe"
+opaque = false
+hardness = 3.0
+tool = "axe"
+drops = "self"
+interaction = "lathe"
+
+[[block]]
+id = "iron_lathe"
+name = "Iron Lathe"
+texture = "iron_lathe.png"
+shape = "lathe_iron"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+interaction = "iron_lathe"
+
+[[block]]
+id = "vice"
+name = "Vice"
+texture = "vice.png"
+shape = "vice"
+opaque = false
+hardness = 5.0
+tool = "pickaxe"
+drops = "self"
+
+[[block]]
+id = "fitted_shaft"
+name = "Fitted Shaft"
+texture = "fitted_shaft.png"
+shape = "axle"
+opaque = false
+hardness = 2.5
+tool = "axe"
+drops = "self"
+
+[[block]]
+id = "boring_mill"
+name = "Boring Mill"
+texture = "boring_mill.png"
+shape = "boring"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+interaction = "boring"
+
+[[block]]
+id = "pump"
+name = "Pump"
+texture = "pump.png"
+shape = "pump"
+opaque = false
+hardness = 5.0
+tool = "pickaxe"
+drops = "self"
+interaction = "pump"
+
+# --- steam: power leaves the river (mechanization, rung 3) ---
+
+[[block]]
+id = "firebox"
+name = "Firebox"
+texture = "firebox.png"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+interaction = "firebox"
+
+[[block]]
+id = "firebox_lit"
+name = "Firebox"
+texture = "firebox_lit.png"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+drops = "base:firebox"
+item = false
+interaction = "firebox"
+light = 12
+light_color = [1.0, 0.6, 0.25]
+
+[[block]]
+id = "boiler"
+name = "Boiler"
+texture = "boiler.png"
+shape = "boiler"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+
+[[block]]
+id = "steam_engine"
+name = "Steam Engine"
+texture = "steam_engine.png"
+shape = "engine"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+
+[[block]]
+id = "steam_engine_run"
+name = "Steam Engine"
+texture = "steam_engine_run.png"
+shape = "engine"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "base:steam_engine"
+item = false
+
+# --- electricity, finally honest (mechanization, rung 4) ---
+
+[[block]]
+id = "separator"
+name = "Separator"
+texture = "separator.png"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+interaction = "separator"
+
+[[block]]
+id = "separator_lit"
+name = "Separator"
+texture = "separator_lit.png"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+drops = "base:separator"
+item = false
+interaction = "separator"
+light = 10
+light_color = [1.0, 0.7, 0.4]
+
+[[block]]
+id = "generator"
+name = "Generator"
+texture = "generator.png"
+shape = "generator"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+interaction = "generator"
+
+[[block]]
+id = "generator_run"
+name = "Generator"
+texture = "generator_run.png"
+shape = "generator"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "base:generator"
+item = false
+interaction = "generator"
+
+[[block]]
+id = "arc_lamp"
+name = "Arc Lamp"
+texture = "arc_lamp.png"
+hardness = 0.8
+drops = "self"
+
+[[block]]
+id = "arc_lamp_lit"
+name = "Arc Lamp"
+texture = "arc_lamp_lit.png"
+hardness = 0.8
+drops = "base:arc_lamp"
+item = false
+light = 14
+light_color = [1.0, 0.96, 0.88]
+
+[[block]]
+id = "blue_arc_lamp"
+name = "Blue Arc Lamp"
+texture = "blue_arc_lamp.png"
+hardness = 0.8
+drops = "self"
+
+[[block]]
+id = "blue_arc_lamp_lit"
+name = "Blue Arc Lamp"
+texture = "blue_arc_lamp_lit.png"
+hardness = 0.8
+drops = "base:blue_arc_lamp"
+item = false
+light = 14
+light_color = [0.35, 0.55, 1.0]
+
+[[block]]
+id = "red_arc_lamp"
+name = "Red Arc Lamp"
+texture = "red_arc_lamp.png"
+hardness = 0.8
+drops = "self"
+
+[[block]]
+id = "red_arc_lamp_lit"
+name = "Red Arc Lamp"
+texture = "red_arc_lamp_lit.png"
+hardness = 0.8
+drops = "base:red_arc_lamp"
+item = false
+light = 14
+light_color = [1.0, 0.3, 0.25]
+
+[[block]]
+id = "polished_glass"
+name = "Polished Glass"
+texture = "polished_glass.png"
+hardness = 0.6
+glass = true
+opaque = false
+drops = "self"

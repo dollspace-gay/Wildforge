@@ -24,7 +24,10 @@ mod lighting;
 mod machine_tick;
 mod machines;
 mod persistence;
+mod power;
 mod storage;
+
+pub use machines::{station_powered, worked_table_for};
 mod substrate;
 mod ticks;
 
@@ -47,7 +50,41 @@ pub enum BlockEntity {
     Stall(StallState),
     /// A smoking rack: raw cuts curing over a live torch.
     Smoker(SmokerState),
+    /// A steam firebox: banked fire and boiler water, in seconds.
+    Steam(SteamState),
+    /// A rare-earth separator: powder in, neodymium and cerium out.
+    Separator(SeparatorState),
 }
+
+#[derive(Default)]
+pub struct SeparatorState {
+    pub powder: u32,
+    pub fuel: u32,
+    pub nd: u32,
+    pub ce: u32,
+    pub progress: f32,
+}
+
+/// Seconds per separator batch (1 powder + 1 fuel -> 1 Nd + 2 Ce).
+pub const SEPARATE_SECS: f32 = 45.0;
+/// How far a running generator's field reaches (lamps, the quern).
+pub const ELEC_RADIUS: i32 = 6;
+
+#[derive(Default)]
+pub struct SteamState {
+    /// Seconds of fire banked (coal fed by hand at the door).
+    pub fuel: f32,
+    /// Seconds of boiler water banked (the boiler drinks adjacent
+    /// water cells — the pump earns its keep feeding a trough).
+    pub water: f32,
+}
+
+/// One full water cell banks this many seconds of steam.
+pub const STEAM_SECS_PER_WATER: f32 = 15.0;
+/// The firebox holds at most this much banked fire (seconds).
+pub const STEAM_FUEL_CAP: f32 = 1800.0;
+/// What a running engine delivers to its shaft line.
+pub const STEAM_RATE: f32 = 1.4;
 
 #[derive(Default)]
 pub struct SmokerState {
@@ -133,6 +170,15 @@ pub const FORGE_FIRE_SECS: f32 = 120.0;
 pub const FORGE_ITEMS_PER_FUEL: u32 = 2;
 /// Seconds of smolder per log in a charcoal clamp.
 pub const CLAMP_SECS_PER_LOG: f32 = 300.0;
+/// Shaft-seconds a powered station banks per strike (a hand strike
+/// is a 2 s channel; rate scales this, it never skips it).
+pub const STATION_STRIKE_SECS: f32 = 2.0;
+/// The helve hammer strikes at half a smith's pace — and all day.
+pub const HELVE_STRIKE_SECS: f32 = 4.0;
+/// Seconds per pump stroke (one water cell lifted per stroke).
+pub const PUMP_STROKE_SECS: f32 = 2.0;
+/// How deep a pump's suction column reaches.
+pub const PUMP_REACH: i32 = 24;
 
 #[derive(Default)]
 pub struct OfferingState {
@@ -266,6 +312,9 @@ pub struct World {
     pending_relight: HashSet<ChunkPos>,
     /// Accumulator for the food-freshness sweep (containers).
     perish_accum: f32,
+    /// Seconds of work banked per powered station (transient: a
+    /// partial strike is honest to lose across a save).
+    station_work: HashMap<(i32, i32, i32), f32>,
     /// The land's memory: per-256-block-cell standing (±20), charged
     /// by taking, credited by tending, fading over days.
     pub(crate) regional_ire: HashMap<(i32, i32), f32>,
@@ -505,6 +554,7 @@ impl World {
             block_entities: HashMap::new(),
             pending_drops: Vec::new(),
             perish_accum: 0.0,
+            station_work: HashMap::new(),
             regional_ire: HashMap::new(),
             whispers: Vec::new(),
             blessed_streak: HashMap::new(),
@@ -770,6 +820,26 @@ impl World {
             return false;
         }
         self.set_block(pos.0, pos.1, pos.2, block);
+        // Power sources carry a marker entity from birth so the
+        // station sweep finds them without scanning the world.
+        match self.reg.block(block).interaction.as_deref() {
+            Some("wheel" | "sail" | "pump" | "generator") => {
+                self.block_entities
+                    .entry(pos)
+                    .or_insert_with(|| BlockEntity::Anvil(Default::default()));
+            }
+            Some("firebox") => {
+                self.block_entities
+                    .entry(pos)
+                    .or_insert_with(|| BlockEntity::Steam(Default::default()));
+            }
+            Some("separator") => {
+                self.block_entities
+                    .entry(pos)
+                    .or_insert_with(|| BlockEntity::Separator(Default::default()));
+            }
+            _ => {}
+        }
         true
     }
 
@@ -887,6 +957,24 @@ impl World {
                 BlockEntity::Smoker(sm) => sm.meat.into_iter().flatten().collect(),
                 BlockEntity::Clamp(_) => Vec::new(), // the burn dies with it
                 BlockEntity::Anvil(a) => a.bloom.into_iter().collect(),
+                BlockEntity::Steam(_) => Vec::new(), // banked fire dies with it
+                BlockEntity::Separator(sp) => {
+                    let mut out = Vec::new();
+                    let mut push = |name: &str, n: u32| {
+                        if n > 0
+                            && let Some(item) = self.reg.item_id(name)
+                        {
+                            let mut s = ItemStack::new(&self.reg, item, 1);
+                            s.count = n;
+                            out.push(s);
+                        }
+                    };
+                    push("base:rare_earth_powder", sp.powder);
+                    push("base:charcoal", sp.fuel);
+                    push("base:neodymium", sp.nd);
+                    push("base:cerium", sp.ce);
+                    out
+                }
                 BlockEntity::Kiln(k) => k
                     .sand
                     .into_iter()

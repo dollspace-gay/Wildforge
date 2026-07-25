@@ -8,12 +8,22 @@ pack can override any of these later through the normal pack flow.
 
 import math
 import random
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
 PX = 32
 OUT = Path(__file__).resolve().parent.parent / "base" / "textures"
+
+# With names on the command line, only those tiles are (re)written —
+# adding new art never has to churn every shipped byte.
+ONLY = set(sys.argv[1:])
+
+
+def save_tile(img, name):
+    if not ONLY or name in ONLY:
+        img.save(OUT / f"{name}.png")
 
 
 def rng_for(name: str) -> random.Random:
@@ -183,6 +193,60 @@ def item(name, body, edge, shape="lump"):
             d.rectangle([x0, y0, x1, y1], fill=body + (255,), outline=edge + (255,))
         d.point((12, 22), fill=edge + (255,))
         d.point((18, 17), fill=edge + (255,))
+    elif shape == "screw":
+        # Slotted head, threaded shank.
+        d.ellipse([11, 5, 21, 15], fill=body + (255,), outline=edge + (255,))
+        d.line([(13, 8), (19, 12)], fill=edge + (255,), width=2)
+        d.polygon([(14, 14), (18, 14), (17, 26), (15, 26)], fill=body + (255,))
+        for yy in range(15, 26, 3):
+            d.line([(13, yy + 1), (19, yy - 1)], fill=edge + (255,))
+    elif shape == "leadscrew":
+        # A long true thread, corner to corner.
+        d.line([(6, 26), (26, 6)], fill=body + (255,), width=4)
+        for t in range(7):
+            x0 = 7 + t * 3
+            d.line([(x0 - 1, 27 - t * 3), (x0 + 3, 23 - t * 3)],
+                   fill=edge + (255,))
+        d.rectangle([4, 24, 9, 28], fill=edge + (255,))
+    elif shape == "ring":
+        # Races and balls: the bearing.
+        d.ellipse([7, 7, 25, 25], fill=body + (255,), outline=edge + (255,))
+        d.ellipse([12, 12, 20, 20], fill=(0, 0, 0, 0), outline=edge + (255,))
+        for ang in range(0, 360, 45):
+            import math as _m
+            bx = 16 + int(6.5 * _m.cos(_m.radians(ang)))
+            by = 16 + int(6.5 * _m.sin(_m.radians(ang)))
+            d.point((bx, by), fill=(240, 242, 248, 255))
+    elif shape == "gearwheel":
+        # A cut gear: disc, teeth, keyed bore.
+        d.ellipse([8, 8, 24, 24], fill=body + (255,), outline=edge + (255,))
+        for ang in range(0, 360, 45):
+            import math as _m
+            bx = 16 + int(9 * _m.cos(_m.radians(ang)))
+            by = 16 + int(9 * _m.sin(_m.radians(ang)))
+            d.rectangle([bx - 1, by - 1, bx + 1, by + 1], fill=body + (255,))
+        d.rectangle([14, 14, 18, 18], fill=(0, 0, 0, 0))
+        d.rectangle([14, 14, 18, 18], outline=edge + (255,))
+    elif shape == "plate":
+        # Hammered sheet: a slab with peen marks.
+        d.polygon([(5, 19), (13, 9), (27, 9), (19, 19)], fill=body + (255,),
+                  outline=edge + (255,))
+        d.polygon([(5, 19), (19, 19), (19, 23), (5, 23)],
+                  fill=mix(body, edge, 0.4) + (255,))
+        for (px, py) in [(11, 13), (17, 12), (14, 16), (21, 14)]:
+            d.point((px, py), fill=edge + (255,))
+    elif shape == "cylinder":
+        # An open bored tube, seen at a lean.
+        d.ellipse([15, 6, 27, 16], fill=mix(body, (0, 0, 0), 0.45) + (255,),
+                  outline=edge + (255,))
+        d.polygon([(5, 16), (17, 6), (25, 15), (13, 26)], fill=body + (255,))
+        d.ellipse([4, 16, 15, 26], fill=body + (255,), outline=edge + (255,))
+        d.ellipse([7, 19, 12, 23], fill=(20, 20, 24, 255))
+    elif shape == "magnet":
+        # A horseshoe with bright poles.
+        d.arc([7, 6, 25, 24], 150, 390, fill=body + (255,), width=5)
+        d.rectangle([8, 18, 12, 24], fill=(220, 224, 232, 255))
+        d.rectangle([20, 18, 24, 24], fill=(220, 224, 232, 255))
     elif shape == "prism":
         d.polygon([(16, 7), (25, 24), (7, 24)], fill=body + (120,),
                   outline=edge + (255,))
@@ -296,9 +360,21 @@ ITEMS = [
     ("crock", (150, 96, 70), (100, 60, 42), "crucible"),
     ("pickles", (146, 176, 92), (96, 124, 56), "crucible"),
     ("smoked_meat", (124, 70, 52), (80, 44, 30), "lump"),
+    ("beam", (158, 112, 62), (104, 72, 40), "strip"),
+    ("screw", (196, 138, 88), (128, 84, 46), "screw"),
+    ("leadscrew", (188, 150, 96), (120, 92, 52), "leadscrew"),
+    ("iron_shaft", (192, 196, 204), (120, 124, 134), "strip"),
+    ("bearing", (206, 210, 218), (128, 132, 142), "ring"),
+    ("iron_gear", (184, 188, 196), (112, 116, 126), "gearwheel"),
+    ("plate", (198, 202, 210), (126, 130, 140), "plate"),
+    ("cylinder", (176, 180, 190), (108, 112, 122), "cylinder"),
+    ("neodymium", (202, 206, 216), (130, 134, 146), "lump"),
+    ("cerium", (214, 208, 186), (146, 140, 118), "powder"),
+    ("magnet", (150, 60, 64), (96, 34, 38), "magnet"),
 ]
 
 GLASSES = [
+    ("polished_glass", (235, 244, 250), 35, False),
     ("green_glass", (60, 180, 90), 90, False),
     ("cranberry_glass", (200, 40, 90), 95, False),
     ("yellow_glass", (230, 210, 60), 90, False),
@@ -317,6 +393,67 @@ BLOCKS_EXTRA = {
     "magma_vent": dict(base=(70, 50, 46), dark=(40, 26, 24),
                        speckle=(255, 140, 40), speckle_n=26),
     "mud": dict(base=(96, 76, 58), dark=(62, 48, 36), bands=0.15),
+    # Millwork and the machine-tool age: wood that reads as worked
+    # timber, stone that reads as dressed, iron that reads as oiled.
+    "water_wheel": dict(base=(140, 100, 58), dark=(96, 64, 34), bands=0.65),
+    "water_wheel_run": dict(base=(146, 106, 62), dark=(96, 64, 34), bands=0.65,
+                            speckle=(214, 234, 246), speckle_n=24),
+    "windmill_sail": dict(base=(228, 222, 204), dark=(192, 184, 164), bands=0.3),
+    "windmill_sail_run": dict(base=(234, 228, 210), dark=(196, 188, 168),
+                              bands=0.3, speckle=(252, 252, 246), speckle_n=18),
+    "shaft": dict(base=(168, 128, 76), dark=(120, 86, 48), bands=0.7),
+    "gear": dict(base=(150, 106, 58), dark=(104, 70, 36), bands=0.55,
+                 veins=(134, 138, 146)),
+    "millstone": dict(base=(178, 170, 160), dark=(134, 126, 118),
+                      speckle=(210, 202, 192), speckle_n=28),
+    "sawmill": dict(base=(158, 116, 68), dark=(110, 76, 42), bands=0.5,
+                    veins=(184, 190, 198)),
+    "helve_hammer": dict(base=(124, 92, 56), dark=(82, 58, 34), bands=0.6,
+                         speckle=(152, 152, 158), speckle_n=10),
+    "lathe": dict(base=(150, 110, 64), dark=(100, 72, 40), bands=0.55,
+                  veins=(150, 154, 162)),
+    "iron_lathe": dict(base=(126, 130, 140), dark=(84, 88, 98), bands=0.35,
+                       veins=(196, 170, 96)),
+    "vice": dict(base=(140, 144, 154), dark=(92, 96, 106),
+                 speckle=(190, 194, 202), speckle_n=14),
+    "fitted_shaft": dict(base=(168, 128, 76), dark=(120, 86, 48), bands=0.7,
+                         veins=(200, 204, 212)),
+    "boring_mill": dict(base=(110, 114, 124), dark=(70, 74, 84),
+                        veins=(184, 154, 94)),
+    "firebox": dict(base=(120, 74, 60), dark=(74, 44, 36), bands=0.3,
+                    speckle=(50, 46, 48), speckle_n=16),
+    "firebox_lit": dict(base=(150, 84, 56), dark=(96, 50, 36), bands=0.3,
+                        speckle=(255, 170, 70), speckle_n=22),
+    "boiler": dict(base=(134, 128, 120), dark=(90, 84, 78),
+                   speckle=(196, 188, 178), speckle_n=30),
+    "steam_engine": dict(base=(104, 108, 118), dark=(64, 68, 78),
+                         veins=(196, 168, 92)),
+    "steam_engine_run": dict(base=(112, 116, 126), dark=(70, 74, 84),
+                             veins=(210, 180, 100),
+                             speckle=(230, 234, 240), speckle_n=14),
+    "separator": dict(base=(172, 156, 142), dark=(122, 108, 96), bands=0.3,
+                      veins=(196, 130, 90)),
+    "separator_lit": dict(base=(192, 162, 138), dark=(136, 112, 90), bands=0.3,
+                          speckle=(255, 190, 110), speckle_n=20),
+    "generator": dict(base=(112, 116, 126), dark=(72, 76, 86),
+                      veins=(196, 128, 84)),
+    "generator_run": dict(base=(120, 124, 134), dark=(78, 82, 92),
+                          veins=(214, 140, 92),
+                          speckle=(240, 244, 250), speckle_n=10),
+    "arc_lamp": dict(base=(88, 90, 98), dark=(52, 54, 62),
+                     speckle=(180, 176, 160), speckle_n=8),
+    "arc_lamp_lit": dict(base=(244, 238, 214), dark=(210, 198, 160),
+                         speckle=(255, 255, 240), speckle_n=20),
+    "blue_arc_lamp": dict(base=(70, 80, 106), dark=(42, 48, 68),
+                          speckle=(140, 160, 210), speckle_n=8),
+    "blue_arc_lamp_lit": dict(base=(170, 196, 250), dark=(120, 150, 220),
+                              speckle=(230, 240, 255), speckle_n=20),
+    "red_arc_lamp": dict(base=(104, 66, 66), dark=(64, 38, 38),
+                         speckle=(190, 130, 130), speckle_n=8),
+    "red_arc_lamp_lit": dict(base=(248, 170, 160), dark=(220, 120, 110),
+                             speckle=(255, 230, 225), speckle_n=20),
+    "pump": dict(base=(118, 130, 126), dark=(76, 86, 82),
+                 speckle=(168, 178, 174), speckle_n=12),
 }
 
 
@@ -340,11 +477,11 @@ def main():
     made = {}
     for name, kw in ROCKS.items():
         made[name] = rock(name, **kw)
-        made[name].save(OUT / f"{name}.png")
+        save_tile(made[name], name)
     for name, kw in BLOCKS_EXTRA.items():
-        rock(name, **kw).save(OUT / f"{name}.png")
+        save_tile(rock(name, **kw), name)
     for name, mortar in BRICK_MORTAR.items():
-        bricks(name, made[name], mortar).save(OUT / f"{name}_bricks.png")
+        save_tile(bricks(name, made[name], mortar), f"{name}_bricks")
 
     # Hosts that aren't rocks we drew above.
     stone = rock("stone_host", base=(150, 150, 152), dark=(112, 112, 116))
@@ -360,13 +497,13 @@ def main():
             img = ore(name, img, (232, 190, 70), (255, 230, 120), 3)
         else:
             img = ore(name, hosts[host], mineral, glint, blobs)
-        img.save(OUT / f"{name}.png")
+        save_tile(img, name)
 
     for name, body, edge, shape in ITEMS:
-        item(name, body, edge, shape).save(OUT / f"{name}.png")
+        save_tile(item(name, body, edge, shape), name)
     for name, tint, alpha, glow in GLASSES:
-        glass(name, tint, alpha, glow).save(OUT / f"{name}.png")
-    lava_tile().save(OUT / "lava.png")
+        save_tile(glass(name, tint, alpha, glow), name)
+    save_tile(lava_tile(), "lava")
     # The lava bucket: the tin bucket silhouette, molten fill.
     bl = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
     d = ImageDraw.Draw(bl)
@@ -374,7 +511,7 @@ def main():
               outline=(90, 90, 96, 255))
     d.ellipse([9, 9, 23, 14], fill=(255, 120, 30, 255), outline=(90, 90, 96, 255))
     d.arc([6, 2, 26, 14], 200, 340, fill=(110, 108, 104, 255))
-    bl.save(OUT / "bucket_lava.png")
+    save_tile(bl, "bucket_lava")
     print(f"wrote {len(list(OUT.glob('*.png')))} tiles to {OUT}")
 
 

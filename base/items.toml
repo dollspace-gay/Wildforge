@@ -983,3 +983,60 @@ name = "Smoked Meat"
 texture = "smoked_meat.png"
 food = { hunger = 7, eat_time = 1.6, nutrition = { protein = 15 } }
 durability = 3600
+
+[[item]]
+id = "beam"
+name = "Beam"
+texture = "beam.png"
+
+# ---- machined parts: five, each gating something true ----
+
+[[item]]
+id = "screw"
+name = "Screw"
+texture = "screw.png"
+
+[[item]]
+id = "leadscrew"
+name = "Leadscrew"
+texture = "leadscrew.png"
+
+[[item]]
+id = "iron_shaft"
+name = "Iron Shaft"
+texture = "iron_shaft.png"
+
+[[item]]
+id = "bearing"
+name = "Bearing"
+texture = "bearing.png"
+
+[[item]]
+id = "iron_gear"
+name = "Iron Gear"
+texture = "iron_gear.png"
+
+[[item]]
+id = "plate"
+name = "Plate"
+texture = "plate.png"
+
+[[item]]
+id = "cylinder"
+name = "Bored Cylinder"
+texture = "cylinder.png"
+
+[[item]]
+id = "neodymium"
+name = "Neodymium"
+texture = "neodymium.png"
+
+[[item]]
+id = "cerium"
+name = "Cerium"
+texture = "cerium.png"
+
+[[item]]
+id = "magnet"
+name = "Magnet"
+texture = "magnet.png"

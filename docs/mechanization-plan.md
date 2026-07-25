@@ -1,5 +1,33 @@
 # Mechanization — from the water wheel to the machine-tool age
 
+> **Status: implemented (all six stages), 2026-07-24.** Where the
+> build diverged from the spec below, the code is the truth:
+> - **Wheels carry momentum**: `WHEEL_SPINDOWN_SECS` (8 s) of banked
+>   spin after their water goes still, because finite water flickers
+>   cell-to-cell as it equalizes and a flywheel doesn't care.
+> - **The wheel reads its stream for orientation** (water beside or
+>   under-beside sets the plane), falling back to its axle shaft.
+> - **The vice IS the press** for now: precision machines (iron
+>   lathe, boring mill) refuse to cut without a vice within three
+>   blocks — workholding as the screw's first gift. A true screw
+>   press waits for something worth pressing.
+> - **The millstone reads the quern's worked-table** (one table, two
+>   stations); powered stations pile 16-item loads and refuse the
+>   hand channel. The helve hammer auto-strikes any adjacent anvil
+>   job — including the new iron-ingot→plate work.
+> - **Bearings are steel** (hard races want hard metal); gears are
+>   cut from plate; the cylinder is bored from plate.
+> - **The boiler drinks adjacent water cells** into a seconds bank;
+>   the firebox banks coal by fuel value. Both spend together.
+> - **The generator radiates a 6-block field** (lamps, the electric
+>   quern) — the promised no-wires compromise until wires earn a
+>   design pass. Lit lamps self-heal dark by random tick when their
+>   generator stops or leaves.
+> - **The separator is hand-loaded on the smoker model** (no screen):
+>   powder and fuel in by click, neodymium and cerium out bare-handed.
+> - Sail arms currently share the canvas texture (single-tile shape
+>   meshes); a wood-armed polish pass is noted for later.
+
 Drafted 2026-07-24, rewritten 2026-07-24 after design review with
 dollspace. Decisions settled: **realistic tech progression** — the
 ladder runs water power → millwork → the lathe → boring → steam →

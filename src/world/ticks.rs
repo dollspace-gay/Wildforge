@@ -54,6 +54,16 @@ impl World {
                 let (wx, wz) = (pos.x * 16 + lx, pos.z * 16 + lz);
                 let b = self.get_block(wx, y, wz);
                 let d = reg.block(b);
+                // An arc lamp whose generator stopped (or left) goes
+                // dark on its own clock — self-healing, no scan.
+                if let Some(stripped) = d.name.strip_suffix("_lit")
+                    && d.name.contains("arc_lamp")
+                    && !self.generator_near((wx, y, wz), ELEC_RADIUS)
+                    && let Some(off) = reg.block_id(stripped)
+                {
+                    changes.push((wx, y, wz, off));
+                    continue;
+                }
                 if let Some(species) = &d.sapling {
                     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                     if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.02 {

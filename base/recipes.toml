@@ -883,3 +883,252 @@ count = 3
 pattern = ["ppp", "t.t"]
 keys = { p = "#base:planks", t = "base:stick" }
 output = "base:smoking_rack"
+
+# --- millwork: the sawmill bootstrap (mechanization, rung 1) ---
+# Hand-whittled parts are wasteful on purpose; the first sawmill's own
+# products build the second one cheaply.
+
+[[recipe]]
+pattern = ["p", "p", "p"]
+keys = { p = "#base:planks" }
+output = "base:beam"
+count = 2
+
+[[recipe]]
+pattern = ["b", "b"]
+keys = { b = "base:beam" }
+output = "base:shaft"
+
+[[recipe]]
+pattern = [".p.", "p.p", ".p."]
+keys = { p = "#base:planks" }
+output = "base:gear"
+
+[[recipe]]
+pattern = ["ppp", "psp", "ppp"]
+keys = { p = "#base:planks", s = "base:shaft" }
+output = "base:water_wheel"
+
+[[recipe]]
+pattern = ["fpf", "psp", "fpf"]
+keys = { f = "base:plant_fiber", p = "#base:planks", s = "base:shaft" }
+output = "base:windmill_sail"
+
+[[recipe]]
+pattern = ["sss", "bqb"]
+keys = { s = "base:stone", b = "base:beam", q = "base:quern" }
+output = "base:millstone"
+
+[[recipe]]
+pattern = [".i.", "bsb", "pbp"]
+keys = { i = "base:iron_ingot", b = "base:beam", s = "base:shaft", p = "#base:planks" }
+output = "base:sawmill"
+
+[[recipe]]
+pattern = ["s..", "bbb", "p.p"]
+keys = { s = "base:stone", b = "base:beam", p = "#base:planks" }
+output = "base:helve_hammer"
+
+# The sawmill out-cuts the hand: six planks a log, and beams rip into
+# shafts two at a time.
+
+[[worked]]
+input = "base:log"
+output = "base:planks"
+station = "sawmill"
+tool = "none"
+strikes = 2
+count = 6
+
+[[worked]]
+input = "base:birch_log"
+output = "base:birch_planks"
+station = "sawmill"
+tool = "none"
+strikes = 2
+count = 6
+
+[[worked]]
+input = "base:spruce_log"
+output = "base:spruce_planks"
+station = "sawmill"
+tool = "none"
+strikes = 2
+count = 6
+
+[[worked]]
+input = "base:jungle_log"
+output = "base:jungle_planks"
+station = "sawmill"
+tool = "none"
+strikes = 2
+count = 6
+
+[[worked]]
+input = "base:acacia_log"
+output = "base:acacia_planks"
+station = "sawmill"
+tool = "none"
+strikes = 2
+count = 6
+
+[[worked]]
+input = "base:beam"
+output = "base:shaft"
+station = "sawmill"
+tool = "none"
+strikes = 2
+count = 2
+
+# --- the machining age (mechanization, rung 2) ---
+# The crude lathe turns SOFT metal at sloppy tolerance - and that is
+# enough, because the first thing you cut is a leadscrew. A lathe
+# with a leadscrew cuts truer threads than any screw in itself: the
+# iron lathe. Tolerance is the machine's property, never a stat.
+
+[[recipe]]
+pattern = ["i.s", "bbb", "p.p"]
+keys = { i = "base:iron_ingot", s = "base:shaft", b = "base:beam", p = "#base:planks" }
+output = "base:lathe"
+
+[[recipe]]
+pattern = ["s.s", "iii", ".i."]
+keys = { s = "base:screw", i = "base:iron_ingot" }
+output = "base:vice"
+
+[[recipe]]
+pattern = ["iii", "lis", "bbb"]
+keys = { i = "base:iron_ingot", l = "base:leadscrew", s = "base:screw", b = "base:beam" }
+output = "base:iron_lathe"
+
+[[recipe]]
+pattern = ["r", "s"]
+keys = { r = "base:bearing", s = "base:shaft" }
+output = "base:fitted_shaft"
+
+# Soft metal on the crude lathe: screws, and the leadscrew itself.
+
+[[worked]]
+input = "base:copper_ingot"
+output = "base:screw"
+station = "lathe"
+tool = "none"
+strikes = 3
+count = 2
+
+[[worked]]
+input = "base:bronze_ingot"
+output = "base:leadscrew"
+station = "lathe"
+tool = "none"
+strikes = 6
+
+# True tolerance on the iron lathe: shaft, bearing, gear.
+
+[[worked]]
+input = "base:iron_ingot"
+output = "base:iron_shaft"
+station = "iron_lathe"
+tool = "none"
+strikes = 3
+
+[[worked]]
+input = "base:steel_ingot"
+output = "base:bearing"
+station = "iron_lathe"
+tool = "none"
+strikes = 4
+count = 2
+
+[[worked]]
+input = "base:plate"
+output = "base:iron_gear"
+station = "iron_lathe"
+tool = "none"
+strikes = 4
+
+# Plate is hammered, not turned - the anvil's job (and the helve's).
+
+[[worked]]
+input = "base:iron_ingot"
+output = "base:plate"
+strikes = 4
+
+# --- the boring mill + the pump (mechanization, rung 2, stage 4) ---
+# Wilkinson before Watt: the mill that bores a TRUE cylinder is what
+# makes everything pressurized possible. The pump is its first
+# customer - deep mining's drainage problem becomes real and solvable.
+
+[[recipe]]
+pattern = ["iii", "rsr", "bbb"]
+keys = { i = "base:iron_ingot", r = "base:bearing", s = "base:iron_shaft", b = "base:beam" }
+output = "base:boring_mill"
+
+[[recipe]]
+pattern = ["s.s", "pcp", ".i."]
+keys = { s = "base:screw", p = "base:plate", c = "base:cylinder", i = "base:iron_ingot" }
+output = "base:pump"
+
+[[worked]]
+input = "base:plate"
+output = "base:cylinder"
+station = "boring"
+tool = "none"
+strikes = 8
+
+# --- steam (mechanization, rung 3): cylinder + plate + shaft ---
+
+[[recipe]]
+pattern = ["f.f", "fif", "fff"]
+keys = { f = "base:firebrick", i = "base:iron_ingot" }
+output = "base:firebox"
+
+[[recipe]]
+pattern = ["ppp", "p.p", "ppp"]
+keys = { p = "base:plate" }
+output = "base:boiler"
+
+[[recipe]]
+pattern = ["pgp", "csr", "iii"]
+keys = { p = "base:plate", g = "base:iron_gear", c = "base:cylinder", s = "base:iron_shaft", r = "base:bearing", i = "base:iron_ingot" }
+output = "base:steam_engine"
+
+# --- electricity (mechanization, rung 4): the generator IS a
+# machined object - lathe-turned shaft, bearings, wound coils.
+
+[[recipe]]
+pattern = ["ff", "ip"]
+keys = { f = "base:firebrick", i = "base:iron_ingot", p = "base:plate" }
+output = "base:separator"
+
+[[recipe]]
+pattern = ["pmp", "rsr", "cic"]
+keys = { p = "base:plate", m = "base:magnet", r = "base:bearing", s = "base:iron_shaft", c = "base:copper_ingot", i = "base:iron_ingot" }
+output = "base:generator"
+
+[[recipe]]
+pattern = ["u", "g", "c"]
+keys = { u = "base:copper_ingot", g = "base:glass", c = "base:charcoal" }
+output = "base:arc_lamp"
+count = 2
+
+[[recipe]]
+pattern = ["l", "d"]
+keys = { l = "base:arc_lamp", d = "base:cobalt_powder" }
+output = "base:blue_arc_lamp"
+
+[[recipe]]
+pattern = ["l", "d"]
+keys = { l = "base:arc_lamp", d = "base:cinnabar_powder" }
+output = "base:red_arc_lamp"
+
+[[recipe]]
+pattern = [".g.", "geg", ".g."]
+keys = { g = "base:glass", e = "base:cerium" }
+output = "base:polished_glass"
+count = 4
+
+[[worked]]
+input = "base:neodymium"
+output = "base:magnet"
+strikes = 4

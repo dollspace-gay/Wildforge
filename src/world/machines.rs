@@ -2,6 +2,27 @@
 
 use super::*;
 
+/// A powered station's batch limit: what one loading can hold.
+pub const STATION_BULK: u32 = 16;
+
+/// Powered stations that are the capital sibling of a hand process
+/// read that process's worked table (the millstone IS a quern with a
+/// shaft where your arm was).
+pub fn worked_table_for(station: &str) -> &str {
+    match station {
+        "millstone" => "quern",
+        s => s,
+    }
+}
+
+/// Stations whose strikes come from the shaft line, not a player.
+pub fn station_powered(station: &str) -> bool {
+    matches!(
+        station,
+        "millstone" | "sawmill" | "lathe" | "iron_lathe" | "boring"
+    )
+}
+
 impl World {
     pub fn falling_blocks(&self) -> &[FallingBlock] {
         &self.falling
@@ -173,6 +194,16 @@ impl World {
         } else {
             None
         }
+    }
+
+    /// The same stack with a separator in its mouth splits the mixed
+    /// rare-earth powder instead (mechanization stage 6).
+    pub fn check_separator(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
+        let mouth = [
+            self.reg.block_id("base:separator"),
+            self.reg.block_id("base:separator_lit"),
+        ];
+        self.check_stack(x, y, z, &mouth)
     }
 
     /// The same stack with a kiln in its mouth fires glass instead.
@@ -480,7 +511,7 @@ impl World {
         Ok(n)
     }
 
-    /// The station kind ("anvil"/"quern") of the block at pos.
+    /// The station kind ("anvil"/"quern"/"millstone"/...) of the block at pos.
     pub(super) fn station_at(&self, pos: (i32, i32, i32)) -> Option<String> {
         self.reg
             .block(self.get_block(pos.0, pos.1, pos.2))
@@ -488,17 +519,39 @@ impl World {
             .clone()
     }
 
-    /// Rest a workable item on a station (one at a time). Only items
+    /// A vice within three blocks: precision machines refuse to cut
+    /// without workholding (the screw's first gift, mechanization
+    /// rung 2).
+    pub fn vice_near(&self, pos: (i32, i32, i32)) -> bool {
+        let Some(v) = self.reg.block_id("base:vice") else {
+            return false;
+        };
+        for dx in -3..=3i32 {
+            for dy in -1..=1i32 {
+                for dz in -3..=3i32 {
+                    if self.get_block(pos.0 + dx, pos.1 + dy, pos.2 + dz) == v {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Rest a workable item on a station. Hand stations take one at a
+    /// time; powered stations pile a batch (the millstone's whole
+    /// point is grinding sixteen while you're elsewhere). Only items
     /// this station's worked-table accepts may rest.
     pub fn anvil_put(&mut self, pos: (i32, i32, i32), stack: ItemStack) -> bool {
         let Some(st) = self.station_at(pos) else {
             return false;
         };
+        let table = worked_table_for(&st);
         if !self
             .reg
             .worked
             .iter()
-            .any(|w| w.input == stack.item && w.station == st)
+            .any(|w| w.input == stack.item && w.station == table)
         {
             return false;
         }
@@ -506,12 +559,21 @@ impl World {
             .block_entities
             .entry(pos)
             .or_insert_with(|| BlockEntity::Anvil(Default::default()));
-        if let BlockEntity::Anvil(a) = e
-            && a.bloom.is_none()
-        {
-            a.bloom = Some(ItemStack { count: 1, ..stack });
-            a.strikes = 0;
-            return true;
+        if let BlockEntity::Anvil(a) = e {
+            match &mut a.bloom {
+                None => {
+                    a.bloom = Some(ItemStack { count: 1, ..stack });
+                    a.strikes = 0;
+                    return true;
+                }
+                Some(b)
+                    if station_powered(&st) && b.item == stack.item && b.count < STATION_BULK =>
+                {
+                    b.count += 1;
+                    return true;
+                }
+                _ => {}
+            }
         }
         false
     }

@@ -483,7 +483,7 @@ fn anvil_works_blooms_into_bars() {
     let mut w = test_world_with("steel-anvil", reg.clone());
     let bloom = reg.item_id("base:steel_bloom").unwrap();
     let ingot = reg.item_id("base:steel_ingot").unwrap();
-    let iron = reg.item_id("base:iron_ingot").unwrap();
+    let stick = reg.item_id("base:stick").unwrap();
     let pos = (10, 120, 10);
     w.set_block(
         pos.0,
@@ -491,10 +491,11 @@ fn anvil_works_blooms_into_bars() {
         pos.2,
         reg.block_id("base:stone_anvil").unwrap(),
     );
-    // Only workable items rest on the anvil.
+    // Only workable items rest on the anvil (iron rests too now —
+    // it hammers into plate — so the refusal case is a stick).
     assert!(
-        !w.anvil_put(pos, ItemStack::new(&reg, iron, 1)),
-        "iron is not workable"
+        !w.anvil_put(pos, ItemStack::new(&reg, stick, 1)),
+        "a stick is not workable"
     );
     assert!(
         w.anvil_put(pos, ItemStack::new(&reg, bloom, 1)),
@@ -1026,5 +1027,422 @@ fn the_smoker_cures_over_a_live_torch() {
         sm.meat[0].unwrap().durability,
         reg.item(smoked).durability,
         "smoked keeps six days"
+    );
+}
+
+// ---- mechanization: millwork (rung 0-1) ----
+
+/// Raise the standard test water site: a sealed stone basin holding
+/// one full cell at (10,119,10), a wheel placed over it, and a breach
+/// helper that opens a lip so the pool becomes live water.
+fn wheel_over_basin(w: &mut World, reg: &Registry) -> (i32, i32, i32) {
+    let stone = b(reg, "base:stone");
+    let (wx, wy, wz) = (10, 120, 10);
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            w.set_block(wx + dx, wy - 2, wz + dz, stone);
+            if dx != 0 || dz != 0 {
+                w.set_block(wx + dx, wy - 1, wz + dz, stone);
+            }
+        }
+    }
+    w.set_block(wx, wy - 1, wz, reg.water_block(0));
+    assert!(w.place_block((wx, wy, wz), b(reg, "base:water_wheel")));
+    (wx, wy, wz)
+}
+
+fn breach_basin(w: &mut World, wheel: (i32, i32, i32)) {
+    let (wx, wy, wz) = wheel;
+    w.set_block(wx + 1, wy - 1, wz, AIR);
+    w.set_block(wx + 1, wy - 2, wz, AIR);
+}
+
+#[test]
+fn the_wheel_wants_live_water_and_shafts_carry_it() {
+    let reg = base_reg();
+    let mut w = test_world_with("millwork-power", reg.clone());
+    let wheel = wheel_over_basin(&mut w, &reg);
+    let (wx, wy, wz) = wheel;
+    assert_eq!(
+        w.wheel_live(wx, wy, wz),
+        0.0,
+        "a standing pool turns nothing"
+    );
+    breach_basin(&mut w, wheel);
+    assert!(
+        w.wheel_live(wx, wy, wz) > 0.0,
+        "a breached lip is live water"
+    );
+    // Twelve wooden shafts carry the turn; a thirteenth refuses.
+    let shaft = b(&reg, "base:shaft");
+    for i in 1..=12 {
+        w.set_block(wx, wy, wz + i, shaft);
+    }
+    assert!(w.power_at(wx, wy, wz + 13) > 0.0, "a 12-shaft run works");
+    w.set_block(wx, wy, wz + 13, shaft);
+    assert_eq!(
+        w.power_at(wx, wy, wz + 14),
+        0.0,
+        "thirteen wooden shafts is one too many"
+    );
+    // A gear turns the corner that a shaft refuses.
+    let gear = b(&reg, "base:gear");
+    for i in 1..=13 {
+        w.set_block(wx, wy, wz + i, AIR);
+    }
+    w.set_block(wx, wy, wz + 1, shaft);
+    assert_eq!(
+        w.power_at(wx + 1, wy, wz + 1),
+        0.0,
+        "a shaft never bends: nothing comes off its side"
+    );
+    w.set_block(wx, wy, wz + 2, gear);
+    w.set_block(wx + 1, wy, wz + 2, shaft);
+    assert!(
+        w.power_at(wx + 2, wy, wz + 2) > 0.0,
+        "the gear turns the corner"
+    );
+    // The wheel dresses itself: live water spins it to its run form.
+    w.tick_entities(0.3);
+    assert_eq!(
+        w.get_block(wx, wy, wz),
+        b(&reg, "base:water_wheel_run"),
+        "a live wheel turns visibly"
+    );
+}
+
+#[test]
+fn the_millstone_grinds_a_load_unattended() {
+    let reg = base_reg();
+    let mut w = test_world_with("millstone-bulk", reg.clone());
+    let wheel = wheel_over_basin(&mut w, &reg);
+    breach_basin(&mut w, wheel);
+    let (wx, wy, wz) = wheel;
+    w.set_block(wx, wy, wz + 1, b(&reg, "base:shaft"));
+    let mill = (wx, wy, wz + 2);
+    w.set_block(mill.0, mill.1, mill.2, b(&reg, "base:millstone"));
+    let copper = it(&reg, "base:raw_copper");
+    for _ in 0..4 {
+        assert!(
+            w.anvil_put(mill, ItemStack::new(&reg, copper, 1)),
+            "the millstone piles a batch"
+        );
+    }
+    w.clear_pending_drops();
+    for _ in 0..12 {
+        w.tick_entities(0.5);
+    }
+    let ground: u32 = w
+        .take_pending_drops()
+        .into_iter()
+        .filter(|(_, s)| s.item == it(&reg, "base:verdigris_powder"))
+        .map(|(_, s)| s.count)
+        .sum();
+    assert_eq!(ground, 8, "four ores grind to eight powder in one firing");
+}
+
+#[test]
+fn the_sawmill_rips_logs_and_the_helve_works_the_anvil() {
+    let reg = base_reg();
+    let mut w = test_world_with("sawmill-helve", reg.clone());
+    let wheel = wheel_over_basin(&mut w, &reg);
+    breach_basin(&mut w, wheel);
+    let (wx, wy, wz) = wheel;
+    w.set_block(wx, wy, wz + 1, b(&reg, "base:shaft"));
+    let saw = (wx, wy, wz + 2);
+    w.set_block(saw.0, saw.1, saw.2, b(&reg, "base:sawmill"));
+    let log = it(&reg, "base:log");
+    for _ in 0..3 {
+        assert!(w.anvil_put(saw, ItemStack::new(&reg, log, 1)));
+    }
+    w.clear_pending_drops();
+    for _ in 0..12 {
+        w.tick_entities(0.5);
+    }
+    let planks: u32 = w
+        .take_pending_drops()
+        .into_iter()
+        .filter(|(_, s)| s.item == it(&reg, "base:planks"))
+        .map(|(_, s)| s.count)
+        .sum();
+    assert_eq!(planks, 18, "the sawmill cuts six a log, hands cut four");
+    // The helve hammer hangs off a gear (nothing comes off a shaft's
+    // side): the anvil's bloom works itself.
+    w.set_block(wx, wy, wz + 1, b(&reg, "base:gear"));
+    w.set_block(wx + 1, wy, wz + 1, b(&reg, "base:helve_hammer"));
+    let anvil = (wx + 2, wy, wz + 1);
+    w.set_block(anvil.0, anvil.1, anvil.2, b(&reg, "base:stone_anvil"));
+    let bloom = it(&reg, "base:steel_bloom");
+    assert!(w.anvil_put(anvil, ItemStack::new(&reg, bloom, 1)));
+    w.clear_pending_drops();
+    for _ in 0..30 {
+        w.tick_entities(0.5);
+    }
+    assert!(
+        w.take_pending_drops()
+            .iter()
+            .any(|(_, s)| s.item == it(&reg, "base:steel_ingot")),
+        "three helve strikes finish the bar with nobody watching"
+    );
+    assert_eq!(
+        w.get_block(wx + 1, wy, wz + 1),
+        b(&reg, "base:helve_hammer"),
+        "the arm rests when the work is done"
+    );
+}
+
+// ---- mechanization: the machining age (rung 2) ----
+
+#[test]
+fn the_lathes_hold_their_tolerances() {
+    let reg = base_reg();
+    let mut w = test_world_with("lathe-tolerance", reg.clone());
+    let wheel = wheel_over_basin(&mut w, &reg);
+    breach_basin(&mut w, wheel);
+    let (wx, wy, wz) = wheel;
+    w.set_block(wx, wy, wz + 1, b(&reg, "base:gear"));
+    let crude = (wx + 1, wy, wz + 1);
+    w.set_block(crude.0, crude.1, crude.2, b(&reg, "base:lathe"));
+    // Sloppy tolerance turns soft metal only: iron never rests here.
+    let iron = it(&reg, "base:iron_ingot");
+    assert!(
+        !w.anvil_put(crude, ItemStack::new(&reg, iron, 1)),
+        "the crude lathe refuses iron"
+    );
+    let copper = it(&reg, "base:copper_ingot");
+    assert!(w.anvil_put(crude, ItemStack::new(&reg, copper, 1)));
+    w.clear_pending_drops();
+    for _ in 0..16 {
+        w.tick_entities(0.5);
+    }
+    let screws: u32 = w
+        .take_pending_drops()
+        .into_iter()
+        .filter(|(_, s)| s.item == it(&reg, "base:screw"))
+        .map(|(_, s)| s.count)
+        .sum();
+    assert_eq!(screws, 2, "one soft ingot turns two screws");
+    // The iron lathe: true tolerance, but only with workholding.
+    let precise = (wx - 1, wy, wz + 1);
+    w.set_block(precise.0, precise.1, precise.2, b(&reg, "base:iron_lathe"));
+    assert!(w.anvil_put(precise, ItemStack::new(&reg, iron, 1)));
+    w.clear_pending_drops();
+    for _ in 0..16 {
+        w.tick_entities(0.5);
+    }
+    assert!(
+        w.take_pending_drops().is_empty(),
+        "no vice, no cut: the work only spins"
+    );
+    w.set_block(
+        precise.0,
+        precise.1 + 1,
+        precise.2 + 1,
+        b(&reg, "base:vice"),
+    );
+    for _ in 0..16 {
+        w.tick_entities(0.5);
+    }
+    assert!(
+        w.take_pending_drops()
+            .iter()
+            .any(|(_, s)| s.item == it(&reg, "base:iron_shaft")),
+        "vice held, shaft turned true"
+    );
+}
+
+#[test]
+fn the_bearing_frees_the_wooden_run() {
+    let reg = base_reg();
+    let mut w = test_world_with("bearing-run", reg.clone());
+    let wheel = wheel_over_basin(&mut w, &reg);
+    breach_basin(&mut w, wheel);
+    let (wx, wy, wz) = wheel;
+    let shaft = b(&reg, "base:shaft");
+    for i in 1..=13 {
+        w.set_block(wx, wy, wz + i, shaft);
+    }
+    assert_eq!(
+        w.power_at(wx, wy, wz + 14),
+        0.0,
+        "thirteen wooden shafts refuse"
+    );
+    w.set_block(wx, wy, wz + 7, b(&reg, "base:fitted_shaft"));
+    assert!(
+        w.power_at(wx, wy, wz + 14) > 0.0,
+        "one fitted shaft mid-run and the same line turns"
+    );
+}
+
+#[test]
+fn the_boring_mill_bores_and_the_pump_drains_the_mine() {
+    let reg = base_reg();
+    let mut w = test_world_with("boring-pump", reg.clone());
+    let wheel = wheel_over_basin(&mut w, &reg);
+    breach_basin(&mut w, wheel);
+    let (wx, wy, wz) = wheel;
+    w.set_block(wx, wy, wz + 1, b(&reg, "base:gear"));
+    // Only the boring mill cuts cylinders, and only held in a vice.
+    let bore = (wx + 1, wy, wz + 1);
+    w.set_block(bore.0, bore.1, bore.2, b(&reg, "base:boring_mill"));
+    w.set_block(bore.0 + 1, bore.1, bore.2, b(&reg, "base:vice"));
+    let plate = it(&reg, "base:plate");
+    assert!(
+        !w.anvil_put((wx, wy, wz + 1), ItemStack::new(&reg, plate, 1)),
+        "a gear is no station"
+    );
+    assert!(w.anvil_put(bore, ItemStack::new(&reg, plate, 1)));
+    w.clear_pending_drops();
+    for _ in 0..40 {
+        w.tick_entities(0.5);
+    }
+    assert!(
+        w.take_pending_drops()
+            .iter()
+            .any(|(_, s)| s.item == it(&reg, "base:cylinder")),
+        "eight true turns bore the cylinder"
+    );
+    // The pump: a flooded shaft under it, an open cell beside it.
+    let pump = (wx - 1, wy, wz + 1);
+    let stone = b(&reg, "base:stone");
+    for dy in 1..=4 {
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            w.set_block(pump.0 + dx, pump.1 - dy, pump.2 + dz, stone);
+        }
+    }
+    w.set_block(pump.0, pump.1 - 5, pump.2, stone);
+    let full = reg.water_block(0);
+    for dy in 2..=4 {
+        w.set_block(pump.0, pump.1 - dy, pump.2, full);
+    }
+    assert!(w.place_block(pump, b(&reg, "base:pump")));
+    for _ in 0..40 {
+        w.tick_entities(0.5);
+    }
+    let left = (1..=5)
+        .filter(|d| {
+            reg.water_volume(w.get_block(pump.0, pump.1 - d, pump.2))
+                .is_some()
+        })
+        .count();
+    assert!(
+        left < 3,
+        "the pump lifts the flood out of the shaft ({left} cells left)"
+    );
+}
+
+#[test]
+fn steam_runs_anywhere_and_stops_hungry() {
+    use crate::world::BlockEntity;
+    let reg = base_reg();
+    let mut w = test_world_with("steam-power", reg.clone());
+    // No river anywhere near: firebox, boiler on top, engine beside.
+    let (fx, fy, fz) = (10, 120, 10);
+    assert!(w.place_block((fx, fy, fz), b(&reg, "base:firebox")));
+    w.set_block(fx, fy + 1, fz, b(&reg, "base:boiler"));
+    w.set_block(fx + 1, fy + 1, fz, b(&reg, "base:steam_engine"));
+    // A shaft line off the engine down to a millstone.
+    w.set_block(fx + 2, fy + 1, fz, b(&reg, "base:gear"));
+    let mill = (fx + 2, fy, fz);
+    w.set_block(mill.0, mill.1, mill.2, b(&reg, "base:millstone"));
+    assert_eq!(w.power_at(mill.0, mill.1, mill.2), 0.0, "cold and dry");
+    // Bank fire; the boiler drinks the trough cell beside it.
+    if let Some(BlockEntity::Steam(s)) = w.block_entity_mut(&(fx, fy, fz)) {
+        s.fuel = 60.0;
+    }
+    w.set_block(fx, fy + 1, fz - 1, reg.water_block(0));
+    w.tick_entities(0.5);
+    assert_eq!(
+        w.get_block(fx, fy + 1, fz - 1),
+        AIR,
+        "the boiler drank the trough"
+    );
+    assert!(
+        w.power_at(mill.0, mill.1, mill.2) > 1.0,
+        "steam drives the line, no river in sight"
+    );
+    assert_eq!(
+        w.get_block(fx, fy, fz),
+        b(&reg, "base:firebox_lit"),
+        "the door glows while it burns"
+    );
+    // Starve the fire: the engine stops, the dress reverts.
+    if let Some(BlockEntity::Steam(s)) = w.block_entity_mut(&(fx, fy, fz)) {
+        s.fuel = 0.0;
+    }
+    w.tick_entities(0.5);
+    assert_eq!(w.power_at(mill.0, mill.1, mill.2), 0.0, "no coal, no steam");
+    assert_eq!(w.get_block(fx, fy, fz), b(&reg, "base:firebox"));
+}
+
+#[test]
+fn the_separator_splits_the_rare_earth_and_the_generator_lights_the_lamp() {
+    use crate::world::BlockEntity;
+    let reg = base_reg();
+    let mut w = test_world_with("electric-age", reg.clone());
+    // The separator rides the firebrick stack (kiln pattern).
+    let (sx, sy, sz) = (30, 120, 24);
+    build_bloomery(&mut w, &reg, sx, sy, sz);
+    w.set_block(sx, sy, sz, b(&reg, "base:separator"));
+    assert!(w.check_separator(sx, sy, sz).is_some(), "the stack holds");
+    w.insert_block_entity(
+        (sx, sy, sz),
+        BlockEntity::Separator(crate::world::SeparatorState {
+            powder: 2,
+            fuel: 2,
+            ..Default::default()
+        }),
+    );
+    for _ in 0..100 {
+        w.tick_entities(0.5);
+    }
+    let Some(BlockEntity::Separator(sp)) = w.block_entity(&(sx, sy, sz)) else {
+        panic!("separator entity")
+    };
+    assert_eq!(sp.nd, 1, "one neodymium a batch");
+    assert_eq!(sp.ce, 2, "cerium is most of the ore - the honest sink");
+    // The generator: wheel -> shaft -> generator; its field lights
+    // the lamp and turns the electric quern, no shafts to either.
+    let wheel = wheel_over_basin(&mut w, &reg);
+    breach_basin(&mut w, wheel);
+    let (wx, wy, wz) = wheel;
+    w.set_block(wx, wy, wz + 1, b(&reg, "base:shaft"));
+    let dynamo = (wx, wy, wz + 2);
+    assert!(w.place_block(dynamo, b(&reg, "base:generator")));
+    let lamp = (wx + 3, wy, wz + 2);
+    w.set_block(lamp.0, lamp.1, lamp.2, b(&reg, "base:arc_lamp"));
+    let mill = (wx - 2, wy, wz + 2);
+    w.set_block(mill.0, mill.1, mill.2, b(&reg, "base:millstone"));
+    let copper = it(&reg, "base:raw_copper");
+    assert!(w.anvil_put(mill, ItemStack::new(&reg, copper, 1)));
+    w.clear_pending_drops();
+    for _ in 0..14 {
+        w.tick_entities(0.5);
+    }
+    assert_eq!(
+        w.get_block(dynamo.0, dynamo.1, dynamo.2),
+        b(&reg, "base:generator_run"),
+        "the generator hums on its shaft"
+    );
+    assert_eq!(
+        w.get_block(lamp.0, lamp.1, lamp.2),
+        b(&reg, "base:arc_lamp_lit"),
+        "light without torches"
+    );
+    assert!(
+        w.take_pending_drops()
+            .iter()
+            .any(|(_, s)| s.item == it(&reg, "base:verdigris_powder")),
+        "the electric quern grinds in the field, no shaft to it"
+    );
+    // Cut the line: the generator stops and the lamp dies with it.
+    w.set_block(wx, wy, wz + 1, AIR);
+    for _ in 0..4 {
+        w.tick_entities(0.5);
+    }
+    assert_eq!(
+        w.get_block(lamp.0, lamp.1, lamp.2),
+        b(&reg, "base:arc_lamp"),
+        "a lamp only burns while the shaft turns"
     );
 }

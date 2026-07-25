@@ -198,6 +198,20 @@ impl World {
                     }
                     let _ = writeln!(out);
                 }
+                BlockEntity::Steam(s) => {
+                    let _ = writeln!(
+                        out,
+                        "[[steam]]\npos = [{x}, {y}, {z}]\nfuel = {:?}\nwater = {:?}\n",
+                        s.fuel, s.water
+                    );
+                }
+                BlockEntity::Separator(sp) => {
+                    let _ = writeln!(
+                        out,
+                        "[[separator]]\npos = [{x}, {y}, {z}]\npowder = {}\nfuel = {}\nnd = {}\nce = {}\nprogress = {:?}\n",
+                        sp.powder, sp.fuel, sp.nd, sp.ce, sp.progress
+                    );
+                }
                 BlockEntity::Anvil(a) => {
                     let _ = writeln!(
                         out,
@@ -314,6 +328,28 @@ impl World {
             bloom: Option<SlotT>,
         }
         #[derive(Deserialize)]
+        struct SteamT {
+            pos: [i32; 3],
+            #[serde(default)]
+            fuel: f32,
+            #[serde(default)]
+            water: f32,
+        }
+        #[derive(Deserialize)]
+        struct SeparatorT {
+            pos: [i32; 3],
+            #[serde(default)]
+            powder: u32,
+            #[serde(default)]
+            fuel: u32,
+            #[serde(default)]
+            nd: u32,
+            #[serde(default)]
+            ce: u32,
+            #[serde(default)]
+            progress: f32,
+        }
+        #[derive(Deserialize)]
         struct FileT {
             #[serde(default)]
             furnace: Vec<FurnaceT>,
@@ -337,6 +373,10 @@ impl World {
             stall: Vec<StallT>,
             #[serde(default)]
             smoker: Vec<SmokerT>,
+            #[serde(default)]
+            steam: Vec<SteamT>,
+            #[serde(default)]
+            separator: Vec<SeparatorT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else {
             return;
@@ -513,6 +553,27 @@ impl World {
             self.block_entities.insert(
                 (sm.pos[0], sm.pos[1], sm.pos[2]),
                 BlockEntity::Smoker(state),
+            );
+        }
+        for st in parsed.steam {
+            self.block_entities.insert(
+                (st.pos[0], st.pos[1], st.pos[2]),
+                BlockEntity::Steam(SteamState {
+                    fuel: st.fuel,
+                    water: st.water,
+                }),
+            );
+        }
+        for sp in parsed.separator {
+            self.block_entities.insert(
+                (sp.pos[0], sp.pos[1], sp.pos[2]),
+                BlockEntity::Separator(SeparatorState {
+                    powder: sp.powder,
+                    fuel: sp.fuel,
+                    nd: sp.nd,
+                    ce: sp.ce,
+                    progress: sp.progress,
+                }),
             );
         }
         for cl in parsed.clamp {

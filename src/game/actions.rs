@@ -543,6 +543,11 @@ impl Game {
                 .interaction
                 .clone();
             let Some(station) = station else { return false };
+            // Powered stations take their strikes from the shaft
+            // line; hands only load and unload them.
+            if world::station_powered(&station) {
+                return false;
+            }
             let rested = match self.server.world.block_entity(t) {
                 Some(world::BlockEntity::Anvil(a)) => a.bloom,
                 _ => None,
@@ -1265,6 +1270,176 @@ impl Game {
                     self.toast_prospect(h.block.0, h.block.2);
                     self.sfx(Sfx::Click);
                     self.input.action_cooldown = 0.6;
+                    return;
+                }
+                Some(
+                    st @ ("anvil" | "quern" | "millstone" | "sawmill" | "lathe" | "iron_lathe"
+                    | "boring"),
+                ) if self.input.action_cooldown <= 0.0 => {
+                    // Rest work with a click, take it back bare-handed.
+                    // The held channels (hammer strikes, quern turns)
+                    // run earlier and return before reaching this arm.
+                    let table = world::worked_table_for(st);
+                    let workable = held.is_some_and(|i| {
+                        reg.worked
+                            .iter()
+                            .any(|w| w.input == i && w.station == table)
+                    });
+                    if workable {
+                        self.input.action_cooldown = 0.25;
+                        let stack = self.inventory.slots[self.input.hotbar_sel].unwrap();
+                        if let Some(rc) = &self.multiplayer.remote {
+                            rc.client.send(&net::C2S::AnvilPut {
+                                x: h.block.0,
+                                y: h.block.1,
+                                z: h.block.2,
+                            });
+                            return;
+                        }
+                        let one = ItemStack { count: 1, ..stack };
+                        if self.server.world.anvil_put(h.block, one) {
+                            if !self.creative {
+                                self.inventory.take_one(self.input.hotbar_sel);
+                            }
+                            self.sfx(Sfx::Place);
+                        } else {
+                            self.toast("It holds all it can.".to_string());
+                        }
+                        return;
+                    }
+                    if held.is_none() {
+                        self.input.action_cooldown = 0.3;
+                        if let Some(rc) = &self.multiplayer.remote {
+                            rc.client.send(&net::C2S::AnvilTake {
+                                x: h.block.0,
+                                y: h.block.1,
+                                z: h.block.2,
+                            });
+                            return;
+                        }
+                        if let Some(st) = self.server.world.anvil_take(h.block) {
+                            let left = self.inventory.add_stack(&reg, st);
+                            if left > 0 {
+                                self.drop_stack(ItemStack { count: left, ..st });
+                            }
+                            self.sfx(Sfx::Pickup);
+                        }
+                        return;
+                    }
+                    return;
+                }
+                Some("separator") if self.input.action_cooldown <= 0.0 => {
+                    // Powder and fuel in by hand; bare hands take the
+                    // split back out (smoker rules, no screen).
+                    self.input.action_cooldown = 0.3;
+                    let powder = reg.item_id("base:rare_earth_powder");
+                    let is_fuel = held.is_some_and(|i| reg.fuel_value(i).is_some());
+                    self.server.world.ensure_block_entity(
+                        h.block,
+                        world::BlockEntity::Separator(Default::default()),
+                    );
+                    let valid = self
+                        .server
+                        .world
+                        .check_separator(h.block.0, h.block.1, h.block.2)
+                        .is_some();
+                    let Some(world::BlockEntity::Separator(sp)) =
+                        self.server.world.block_entity_mut(&h.block)
+                    else {
+                        return;
+                    };
+                    if held.is_some() && held == powder {
+                        if sp.powder >= 8 {
+                            self.toast("The hopper is full.".to_string());
+                            return;
+                        }
+                        if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
+                        {
+                            if let Some(world::BlockEntity::Separator(sp)) =
+                                self.server.world.block_entity_mut(&h.block)
+                            {
+                                sp.powder += 1;
+                            }
+                            self.sfx(Sfx::Place);
+                            if !valid {
+                                self.toast("The separator wants its firebrick stack.".to_string());
+                            }
+                        }
+                        return;
+                    }
+                    if is_fuel {
+                        if sp.fuel >= 8 {
+                            self.toast("The firebed is full.".to_string());
+                            return;
+                        }
+                        if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
+                        {
+                            if let Some(world::BlockEntity::Separator(sp)) =
+                                self.server.world.block_entity_mut(&h.block)
+                            {
+                                sp.fuel += 1;
+                            }
+                            self.sfx(Sfx::Place);
+                        }
+                        return;
+                    }
+                    if held.is_none() {
+                        let (nd, ce) = (sp.nd, sp.ce);
+                        if nd == 0 && ce == 0 {
+                            let (p, f) = (sp.powder, sp.fuel);
+                            self.toast(format!("Powder {p}, fuel {f}, nothing split yet."));
+                            return;
+                        }
+                        if let Some(world::BlockEntity::Separator(sp)) =
+                            self.server.world.block_entity_mut(&h.block)
+                        {
+                            sp.nd = 0;
+                            sp.ce = 0;
+                        }
+                        for (name, n) in [("base:neodymium", nd), ("base:cerium", ce)] {
+                            if n > 0
+                                && let Some(item) = reg.item_id(name)
+                            {
+                                let mut st = ItemStack::new(&reg, item, 1);
+                                st.count = n;
+                                let left = self.inventory.add_stack(&reg, st);
+                                if left > 0 {
+                                    self.drop_stack(ItemStack { count: left, ..st });
+                                }
+                            }
+                        }
+                        self.sfx(Sfx::Pickup);
+                    }
+                    return;
+                }
+                Some("firebox") if self.input.action_cooldown <= 0.0 => {
+                    // Coal in at the door; bare hands read the gauges.
+                    self.input.action_cooldown = 0.3;
+                    let fuel = held.and_then(|i| reg.fuel_value(i));
+                    let e = self.server.world.ensure_block_entity(
+                        h.block,
+                        world::BlockEntity::Steam(Default::default()),
+                    );
+                    let world::BlockEntity::Steam(s) = e else {
+                        return;
+                    };
+                    if let Some((burn, _)) = fuel {
+                        if s.fuel >= world::STEAM_FUEL_CAP {
+                            self.toast("The firebox is banked full.".to_string());
+                            return;
+                        }
+                        if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
+                        {
+                            let e = self.server.world.block_entity_mut(&h.block);
+                            if let Some(world::BlockEntity::Steam(s)) = e {
+                                s.fuel = (s.fuel + burn * 4.0).min(world::STEAM_FUEL_CAP);
+                            }
+                            self.sfx(Sfx::Place);
+                        }
+                        return;
+                    }
+                    let (f, wtr) = (s.fuel as u32, s.water as u32);
+                    self.toast(format!("Fire banked {f}s; boiler water {wtr}s."));
                     return;
                 }
                 Some(station @ ("bloomery" | "kiln" | "forge"))

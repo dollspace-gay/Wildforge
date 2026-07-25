@@ -303,6 +303,278 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                             boxed(0.44, 0.0, 0.44, 0.56, 0.5, 0.56);
                             boxed(0.06, 0.5, 0.42, 0.94, 0.96, 0.58);
                         }
+                        "axle" | "wheel" | "sails" | "gearbox" | "millstone" | "sawbench"
+                        | "helve" | "helve_up" | "lathe" | "lathe_iron" | "vice" | "boring"
+                        | "pump" | "boiler" | "engine" | "generator" => {
+                            // Millwork reads its orientation from its
+                            // neighbors: shafts run toward machines,
+                            // wheels set their plane from their axle,
+                            // hammers face their anvil.
+                            let powerish = |b: crate::registry::BlockId| {
+                                matches!(
+                                    reg.block(b).shape.as_deref(),
+                                    Some(
+                                        "axle"
+                                            | "gearbox"
+                                            | "wheel"
+                                            | "sails"
+                                            | "millstone"
+                                            | "sawbench"
+                                            | "helve"
+                                            | "helve_up"
+                                            | "lathe"
+                                            | "lathe_iron"
+                                            | "boring"
+                                            | "engine"
+                                            | "generator"
+                                    )
+                                )
+                            };
+                            let px = powerish(get(lx + 1, y, lz)) || powerish(get(lx - 1, y, lz));
+                            let pz = powerish(get(lx, y, lz + 1)) || powerish(get(lx, y, lz - 1));
+                            let py = powerish(get(lx, y + 1, lz)) || powerish(get(lx, y - 1, lz));
+                            match shape {
+                                "axle" => {
+                                    // Journals at the ends, the shaft
+                                    // between; vertical when the run
+                                    // climbs, along its line otherwise.
+                                    if py && !px && !pz {
+                                        boxed(0.38, 0.0, 0.38, 0.62, 1.0, 0.62);
+                                        boxed(0.30, 0.0, 0.30, 0.70, 0.10, 0.70);
+                                        boxed(0.30, 0.90, 0.30, 0.70, 1.0, 0.70);
+                                    } else if pz && !px {
+                                        boxed(0.38, 0.38, 0.0, 0.62, 0.62, 1.0);
+                                        boxed(0.30, 0.30, 0.0, 0.70, 0.70, 0.10);
+                                        boxed(0.30, 0.30, 0.90, 0.70, 0.70, 1.0);
+                                    } else {
+                                        boxed(0.0, 0.38, 0.38, 1.0, 0.62, 0.62);
+                                        boxed(0.0, 0.30, 0.30, 0.10, 0.70, 0.70);
+                                        boxed(0.90, 0.30, 0.30, 1.0, 0.70, 0.70);
+                                    }
+                                }
+                                "gearbox" => {
+                                    // A framed crown gear: rim ring,
+                                    // four teeth, and the meshing pin.
+                                    boxed(0.30, 0.30, 0.30, 0.70, 0.70, 0.70);
+                                    boxed(0.18, 0.82, 0.38, 0.82, 0.96, 0.62);
+                                    boxed(0.18, 0.04, 0.38, 0.82, 0.18, 0.62);
+                                    boxed(0.04, 0.18, 0.38, 0.18, 0.82, 0.62);
+                                    boxed(0.82, 0.18, 0.38, 0.96, 0.82, 0.62);
+                                    boxed(0.70, 0.70, 0.40, 0.88, 0.88, 0.60);
+                                    boxed(0.12, 0.70, 0.40, 0.30, 0.88, 0.60);
+                                    boxed(0.70, 0.12, 0.40, 0.88, 0.30, 0.60);
+                                    boxed(0.12, 0.12, 0.40, 0.30, 0.30, 0.60);
+                                }
+                                "wheel" | "sails" => {
+                                    // A wheel's plane CONTAINS its
+                                    // stream: read the race first
+                                    // (water beside or under-beside),
+                                    // the axle shaft as the fallback.
+                                    let water_on = |dx: i32, dz: i32| {
+                                        reg.water_volume(get(lx + dx, y, lz + dz)).is_some()
+                                            || reg
+                                                .water_volume(get(lx + dx, y - 1, lz + dz))
+                                                .is_some()
+                                    };
+                                    let wx = water_on(1, 0) || water_on(-1, 0);
+                                    let wz = water_on(0, 1) || water_on(0, -1);
+                                    let flat = if shape == "wheel" && (wx ^ wz) {
+                                        wz
+                                    } else {
+                                        px && !pz
+                                    };
+                                    // Box in wheel-plane coords (u =
+                                    // across, v = up, w = thickness).
+                                    let mut disc =
+                                        |u0: f32, v0: f32, w0: f32, u1: f32, v1: f32, w1: f32| {
+                                            if flat {
+                                                boxed(w0, v0, u0, w1, v1, u1);
+                                            } else {
+                                                boxed(u0, v0, w0, u1, v1, w1);
+                                            }
+                                        };
+                                    if shape == "wheel" {
+                                        // A real mill wheel: hub,
+                                        // crossed spokes, a broad
+                                        // octagon rim, paddle boards
+                                        // — two and a half blocks of
+                                        // it (render-only overflow,
+                                        // the obelisk precedent).
+                                        disc(0.36, 0.36, 0.32, 0.64, 0.64, 0.68);
+                                        disc(-0.45, 0.42, 0.42, 1.45, 0.58, 0.58);
+                                        disc(0.42, -0.45, 0.42, 0.58, 1.45, 0.58);
+                                        disc(0.02, 1.30, 0.38, 0.98, 1.50, 0.62);
+                                        disc(0.02, -0.50, 0.38, 0.98, -0.30, 0.62);
+                                        disc(-0.50, 0.02, 0.38, -0.30, 0.98, 0.62);
+                                        disc(1.30, 0.02, 0.38, 1.50, 0.98, 0.62);
+                                        disc(0.94, 0.94, 0.38, 1.36, 1.36, 0.62);
+                                        disc(-0.36, 0.94, 0.38, 0.06, 1.36, 0.62);
+                                        disc(0.94, -0.36, 0.38, 1.36, 0.06, 0.62);
+                                        disc(-0.36, -0.36, 0.38, 0.06, 0.06, 0.62);
+                                        disc(0.26, 1.50, 0.34, 0.74, 1.72, 0.66);
+                                        disc(0.26, -0.72, 0.34, 0.74, -0.50, 0.66);
+                                        disc(-0.72, 0.26, 0.34, -0.50, 0.74, 0.66);
+                                        disc(1.50, 0.26, 0.34, 1.72, 0.74, 0.66);
+                                    } else {
+                                        // Hub, crossed arms, and four
+                                        // pinwheeled cloth panels.
+                                        disc(0.40, 0.40, 0.42, 0.60, 0.60, 0.58);
+                                        disc(-0.45, 0.46, 0.46, 1.45, 0.54, 0.54);
+                                        disc(0.46, -0.45, 0.46, 0.54, 1.45, 0.54);
+                                        disc(0.60, 0.54, 0.47, 1.40, 0.86, 0.53);
+                                        disc(-0.40, 0.14, 0.47, 0.40, 0.46, 0.53);
+                                        disc(0.14, 0.60, 0.47, 0.46, 1.40, 0.53);
+                                        disc(0.54, -0.40, 0.47, 0.86, 0.40, 0.53);
+                                    }
+                                }
+                                "millstone" => {
+                                    // Bedstone, runner, feed hopper,
+                                    // and the drive stub on top.
+                                    boxed(0.06, 0.0, 0.06, 0.94, 0.30, 0.94);
+                                    boxed(0.14, 0.30, 0.14, 0.86, 0.52, 0.86);
+                                    boxed(0.34, 0.52, 0.34, 0.66, 0.66, 0.66);
+                                    boxed(0.26, 0.62, 0.26, 0.74, 0.86, 0.74);
+                                    boxed(0.44, 0.80, 0.44, 0.56, 1.0, 0.56);
+                                }
+                                "sawbench" => {
+                                    // A stout bench, the blade proud
+                                    // of the table, a fence to guide
+                                    // the cut.
+                                    for (lx0, lz0) in
+                                        [(0.06, 0.06), (0.82, 0.06), (0.06, 0.82), (0.82, 0.82)]
+                                    {
+                                        boxed(lx0, 0.0, lz0, lx0 + 0.12, 0.55, lz0 + 0.12);
+                                    }
+                                    boxed(0.0, 0.55, 0.0, 1.0, 0.68, 1.0);
+                                    boxed(0.34, 0.62, 0.47, 0.66, 0.98, 0.53);
+                                    boxed(0.0, 0.68, 0.12, 1.0, 0.76, 0.24);
+                                }
+                                "lathe" | "lathe_iron" => {
+                                    // A long bed with ways: pedestal
+                                    // legs, rails, headstock and
+                                    // tailstock, work between
+                                    // centers, a tool rest — and on
+                                    // the iron lathe, the leadscrew
+                                    // rail that made it possible.
+                                    let along_z = pz && !px;
+                                    let mut bed =
+                                        |a0: f32, y0: f32, c0: f32, a1: f32, y1: f32, c1: f32| {
+                                            if along_z {
+                                                boxed(c0, y0, a0, c1, y1, a1);
+                                            } else {
+                                                boxed(a0, y0, c0, a1, y1, c1);
+                                            }
+                                        };
+                                    bed(0.06, 0.0, 0.30, 0.22, 0.35, 0.70);
+                                    bed(0.78, 0.0, 0.30, 0.94, 0.35, 0.70);
+                                    bed(0.0, 0.35, 0.34, 1.0, 0.50, 0.66);
+                                    let iron = shape == "lathe_iron";
+                                    let head_top = if iron { 1.0 } else { 0.90 };
+                                    bed(0.0, 0.50, 0.26, 0.28, head_top, 0.74);
+                                    bed(0.78, 0.50, 0.32, 0.96, 0.78, 0.68);
+                                    bed(0.28, 0.62, 0.44, 0.78, 0.72, 0.56);
+                                    bed(0.40, 0.50, 0.20, 0.68, 0.60, 0.34);
+                                    if iron {
+                                        bed(0.0, 0.42, 0.72, 1.0, 0.50, 0.80);
+                                    }
+                                }
+                                "generator" => {
+                                    // Bedplate, a drum body between
+                                    // end caps, terminal posts on
+                                    // top, the drive stub reaching
+                                    // for its shaft.
+                                    boxed(0.04, 0.0, 0.10, 0.96, 0.16, 0.90);
+                                    boxed(0.14, 0.16, 0.22, 0.86, 0.72, 0.78);
+                                    boxed(0.06, 0.16, 0.30, 0.14, 0.66, 0.70);
+                                    boxed(0.86, 0.16, 0.30, 0.94, 0.66, 0.70);
+                                    boxed(0.30, 0.72, 0.40, 0.40, 0.92, 0.52);
+                                    boxed(0.58, 0.72, 0.40, 0.68, 0.92, 0.52);
+                                    boxed(-0.10, 0.34, 0.42, 0.06, 0.52, 0.58);
+                                }
+                                "boiler" => {
+                                    // A riveted drum with chamfered
+                                    // shoulders and a steam dome.
+                                    boxed(0.0, 0.18, 0.14, 1.0, 0.82, 0.86);
+                                    boxed(0.0, 0.08, 0.26, 1.0, 0.18, 0.74);
+                                    boxed(0.0, 0.82, 0.26, 1.0, 0.94, 0.74);
+                                    boxed(0.35, 0.94, 0.32, 0.65, 1.10, 0.68);
+                                }
+                                "engine" => {
+                                    // Bedplate, A-post, the rocking
+                                    // beam overhead, cylinder at one
+                                    // end and flywheel at the other.
+                                    boxed(0.0, 0.0, 0.0, 1.0, 0.18, 1.0);
+                                    boxed(0.40, 0.18, 0.30, 0.60, 1.10, 0.70);
+                                    boxed(-0.15, 1.10, 0.40, 1.15, 1.28, 0.60);
+                                    boxed(0.02, 0.18, 0.36, 0.32, 0.62, 0.64);
+                                    boxed(0.10, 0.62, 0.46, 0.24, 1.10, 0.54);
+                                    boxed(0.96, 0.25, 0.25, 1.14, 0.95, 0.75);
+                                    boxed(1.00, 0.45, 0.45, 1.10, 0.75, 0.55);
+                                }
+                                "boring" => {
+                                    // A heavy frame over a clamped
+                                    // blank: base, posts, crossbeam,
+                                    // the spindle plunging down.
+                                    boxed(0.04, 0.0, 0.04, 0.96, 0.20, 0.96);
+                                    boxed(0.10, 0.20, 0.30, 0.30, 1.05, 0.70);
+                                    boxed(0.70, 0.20, 0.30, 0.90, 1.05, 0.70);
+                                    boxed(0.0, 1.05, 0.34, 1.0, 1.25, 0.66);
+                                    boxed(0.42, 0.45, 0.42, 0.58, 1.05, 0.58);
+                                    boxed(0.30, 0.20, 0.30, 0.70, 0.45, 0.70);
+                                }
+                                "pump" => {
+                                    // Standpipe, pump head, spout.
+                                    boxed(0.36, 0.0, 0.36, 0.64, 0.85, 0.64);
+                                    boxed(0.26, 0.85, 0.26, 0.74, 1.10, 0.74);
+                                    boxed(0.64, 0.55, 0.42, 1.06, 0.72, 0.58);
+                                }
+                                "vice" => {
+                                    // Pedestal, bench cap, two jaws,
+                                    // the screw spindle and handle.
+                                    boxed(0.38, 0.0, 0.38, 0.62, 0.45, 0.62);
+                                    boxed(0.28, 0.45, 0.28, 0.72, 0.60, 0.72);
+                                    boxed(0.30, 0.60, 0.40, 0.48, 0.85, 0.60);
+                                    boxed(0.54, 0.60, 0.40, 0.72, 0.85, 0.60);
+                                    boxed(0.24, 0.66, 0.46, 0.80, 0.74, 0.54);
+                                    boxed(0.76, 0.52, 0.47, 0.82, 0.90, 0.53);
+                                }
+                                "helve" | "helve_up" => {
+                                    // Pivot post, beam arm, hammer
+                                    // head — facing its anvil, raised
+                                    // while the shaft has it working.
+                                    let toward = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                                        .into_iter()
+                                        .find(|&(dx, dz)| {
+                                            reg.block(get(lx + dx, y, lz + dz))
+                                                .interaction
+                                                .as_deref()
+                                                == Some("anvil")
+                                        })
+                                        .unwrap_or((1, 0));
+                                    let mut part =
+                                        |a0: f32, y0: f32, c0: f32, a1: f32, y1: f32, c1: f32| {
+                                            let (m0, m1) = match toward {
+                                                (1, 0) => ((a0, c0), (a1, c1)),
+                                                (-1, 0) => ((1.0 - a1, c0), (1.0 - a0, c1)),
+                                                (0, 1) => ((c0, a0), (c1, a1)),
+                                                _ => ((c0, 1.0 - a1), (c1, 1.0 - a0)),
+                                            };
+                                            boxed(m0.0, y0, m0.1, m1.0, y1, m1.1);
+                                        };
+                                    let up = shape == "helve_up";
+                                    part(0.04, 0.0, 0.34, 0.24, 0.78, 0.66);
+                                    part(0.00, 0.78, 0.30, 0.28, 0.92, 0.70);
+                                    if up {
+                                        part(0.10, 0.62, 0.42, 0.96, 0.78, 0.58);
+                                        part(0.74, 0.34, 0.34, 0.98, 0.72, 0.66);
+                                    } else {
+                                        part(0.10, 0.42, 0.42, 0.96, 0.58, 0.58);
+                                        part(0.74, 0.10, 0.34, 0.98, 0.48, 0.66);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
                         _ => {}
                     }
                     continue;
