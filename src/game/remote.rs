@@ -26,7 +26,15 @@ impl Game {
     ) {
         if initial {
             self.player = Player::new(state.pos);
-            self.camera.pos = state.pos + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            // Dev: WILDFORGE_POS frames multiplayer captures too —
+            // movement is client-stated, so the host accepts it.
+            if let Ok(s) = std::env::var("WILDFORGE_POS") {
+                let p: Vec<f32> = s.split(',').filter_map(|v| v.trim().parse().ok()).collect();
+                if p.len() == 3 {
+                    self.player = Player::new(Vec3::new(p[0], p[1], p[2]));
+                }
+            }
+            self.camera.pos = self.player.pos + Vec3::new(0.0, EYE_HEIGHT, 0.0);
             self.camera.yaw = state.yaw;
             self.camera.pitch = state.pitch;
         }

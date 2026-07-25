@@ -5,6 +5,7 @@
 //! 1-9 / scroll wheel select hotbar slot, E inventory, Esc pause,
 //! F2 screenshot, F11 fullscreen.
 
+mod agent;
 mod atlas;
 mod audio;
 mod camera;
@@ -74,6 +75,21 @@ pub fn run() {
             .cloned()
             .unwrap_or_else(|| "world1".to_string());
         dedicated::run_headless_server(&world);
+        return;
+    }
+    // An agent is a guest, not a god: same protocol, same admission,
+    // driven over stdio by MCP (docs/agent-mcp-plan.md).
+    if let Some(i) = args.iter().position(|a| a == "--agent") {
+        let addr = args.get(i + 1).cloned().unwrap_or_else(|| {
+            eprintln!("usage: wildforge --agent <host[:port]> [--name NAME]");
+            std::process::exit(2);
+        });
+        let name = args
+            .iter()
+            .position(|a| a == "--name")
+            .and_then(|n| args.get(n + 1).cloned())
+            .unwrap_or_else(|| "AGENT".to_string());
+        agent::run_agent(&addr, &name);
         return;
     }
     game::run_windowed();
