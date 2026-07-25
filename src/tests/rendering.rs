@@ -573,6 +573,27 @@ fn config_lights_and_darkness_roundtrip() {
     let c4 = Config::from_text("lights=banana\ndarkness=???\n");
     assert_eq!(c4.lights, 2, "unknown value falls back to full");
     assert!(c4.stark, "unknown darkness falls back to stark");
+
+    // Point-light shadow technique: the exact voxel-grid march is the default;
+    // only an explicit `cube` opts back into the legacy distance cube map.
+    assert!(d.point_grid, "grid point shadows by default");
+    let c5 = Config {
+        point_grid: false,
+        ..Default::default()
+    };
+    assert!(
+        !Config::from_text(&c5.to_text()).point_grid,
+        "point_shadows=cube survives a round trip"
+    );
+    assert!(!Config::from_text("point_shadows=cube\n").point_grid);
+    assert!(
+        Config::from_text("point_shadows=wobble\n").point_grid,
+        "unknown value falls back to grid"
+    );
+    assert!(
+        Config::from_text("volume=0.5\n").point_grid,
+        "a config predating the setting gets grid"
+    );
 }
 
 #[test]

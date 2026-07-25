@@ -2,6 +2,20 @@
 
 use super::*;
 
+/// Dev shadow-debug viz mode (WILDFORGE_SHADOW_DEBUG), read once. 0 = off;
+/// 1 = red-where-occluded, 2 = raw shadow factor, 3 = cube-face id,
+/// 4 = depth-compare margin. Rides in the uniform's pt_count.z.
+fn shadow_debug() -> u32 {
+    use std::sync::OnceLock;
+    static M: OnceLock<u32> = OnceLock::new();
+    *M.get_or_init(|| {
+        std::env::var("WILDFORGE_SHADOW_DEBUG")
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0)
+    })
+}
+
 impl Renderer {
     pub fn render(&mut self, f: FrameInput) -> Result<(), wgpu::SurfaceError> {
         let outline = f.outline;
@@ -57,7 +71,12 @@ impl Renderer {
             sun_col: [f.sun_col.x, f.sun_col.y, f.sun_col.z, 0.0],
             amb_col: [f.amb_col.x, f.amb_col.y, f.amb_col.z, f.ambient_floor],
             light_vp: light_vp.map(|m| m.to_cols_array_2d()),
-            pt_count: [f.point_lights.len().min(MAX_PT_LIGHTS) as u32, 0, 0, 0],
+            pt_count: [
+                f.point_lights.len().min(MAX_PT_LIGHTS) as u32,
+                0,
+                shadow_debug(),
+                f.dda_shadow as u32,
+            ],
             pt_pos: {
                 let mut a = [[0.0f32; 4]; MAX_PT_LIGHTS];
                 for (i, l) in f.point_lights.iter().take(MAX_PT_LIGHTS).enumerate() {
@@ -93,7 +112,30 @@ impl Renderer {
                 }
                 a
             },
+            occ_origin: [f.occ_origin[0], f.occ_origin[1], f.occ_origin[2], 0],
         };
+        // Upload a fresh occupancy grid when the camera crossed into a new region.
+        if let Some(bytes) = f.occ_update {
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.occ_tex,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(OCC_GRID as u32 * 4),
+                    rows_per_image: Some(OCC_GRID as u32),
+                },
+                wgpu::Extent3d {
+                    width: OCC_GRID as u32,
+                    height: OCC_GRID as u32,
+                    depth_or_array_layers: OCC_GRID as u32,
+                },
+            );
+        }
         self.entity_vbuf.upload(
             &self.device,
             &self.queue,
@@ -264,6 +306,12 @@ impl Renderer {
         // face serving its old picture until replaced.
         let mut face_budget = 6usize;
         for (li, l) in f.point_lights.iter().take(MAX_PT_LIGHTS).enumerate() {
+            // DDA marches the voxel occupancy grid for occlusion, so the
+            // distance cube (and its tint companion) go unused — skip the whole
+            // rebuild. (Glass tint via DDA is a follow-up; see occ ray.)
+            if f.dda_shadow {
+                break;
+            }
             if !l.shadows {
                 continue;
             }

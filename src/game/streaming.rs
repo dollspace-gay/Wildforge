@@ -199,6 +199,14 @@ impl Game {
             self.renderer.upload_chunk(pos, &mesh);
             self.presentation.lights.chunk_meshed(pos, mesh.emitters);
             self.server.world.mark_chunk_meshed(pos);
+            // A remesh within the DDA occupancy grid's reach means occluder
+            // blocks changed — mark the grid stale so shadows track the edit.
+            let (cx, cz) = (pos.x as f32 * 16.0 + 8.0, pos.z as f32 * 16.0 + 8.0);
+            if (cx - self.camera.pos.x).hypot(cz - self.camera.pos.z)
+                < crate::renderer::OCC_GRID as f32 / 2.0 + 16.0
+            {
+                self.occ_dirty = true;
+            }
             if self.stream_t0.elapsed().as_millis() >= 5 {
                 break;
             }
