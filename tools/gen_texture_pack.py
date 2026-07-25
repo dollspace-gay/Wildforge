@@ -23,7 +23,7 @@ import urllib.request
 
 from PIL import Image
 
-MODEL = "gemini-3.1-flash-image"
+MODEL = "gemini-3-pro-image"
 PACK = "packs/gemini"
 OUT_PX = 32
 
@@ -159,7 +159,7 @@ TILES = {
     "charm_hunger": ("sprite", "a small amber bead talisman on a fiber cord"),
     "iron_ore": ("tile", "grey stone with embedded dull silver-grey iron nuggets"),
     "iron_block": ("tile", "polished silver-grey iron metal block panel"),
-    "steel_block": ("tile", "polished bright blue-silver steel metal block panel"),
+    "steel_block": ("tile", "a single flat brushed steel metal plate, cool blue-silver, uniform surface with a small rivet dot in each corner, one plate filling the whole frame"),
     "raw_iron": ("sprite", "rough lump of raw grey-brown iron ore"),
     "iron_ingot": ("sprite", "cast silver-grey iron metal ingot bar"),
     "steel_ingot": ("sprite", "cast bright blue-silver steel metal ingot bar"),
@@ -386,6 +386,180 @@ def resize_sprite(img, px_out):
     return img
 
 
+def fit_sprite(img, cap=24, trigger=26):
+    """Frame-filling art reads as a cropped zoom in inventory slots;
+    cap sprites at ~75% of the tile and center them."""
+    bbox = img.getbbox()
+    if bbox:
+        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        if max(w, h) > trigger:
+            crop = img.crop(bbox)
+            scale = cap / max(w, h)
+            nw = max(1, round(w * scale))
+            nh = max(1, round(h * scale))
+            crop = crop.resize((nw, nh), Image.NEAREST)
+            img = Image.new("RGBA", (OUT_PX, OUT_PX), (0, 0, 0, 0))
+            img.paste(crop, ((OUT_PX - nw) // 2, (OUT_PX - nh) // 2))
+    return img
+
+
+# ---- tool tier sheets ----------------------------------------------
+# One image per tool family: six tools in a row, split by alpha blobs.
+# A sheet keeps scale, pose, and style consistent across the tier in a
+# way six separate generations never manage.
+
+TOOL_MATERIALS = [
+    ("wood", "carved light-brown WOOD"),
+    ("stone", "rough grey STONE"),
+    ("copper", "shiny orange COPPER metal"),
+    ("bronze", "golden-brown BRONZE metal"),
+    ("iron", "silver-grey IRON metal"),
+    ("steel", "bright blue-silver polished STEEL metal"),
+]
+
+TOOL_FAMILIES = {
+    "pickaxe": (
+        "Each pickaxe has a curved two-pointed mining pick head mounted "
+        "across the top of the handle, BOTH points exactly equal in length "
+        "and shape - the head is bilaterally symmetric across the handle "
+        "axis, like a classic Minecraft pickaxe"
+    ),
+    "axe": (
+        "Each axe is a single-bit hatchet: one broad wedge blade on the "
+        "upper-left side of the handle top, a flat poll on the other side"
+    ),
+    "shovel": (
+        "Each shovel has a rounded spade blade at the top of the handle, "
+        "bilaterally symmetric across the handle axis"
+    ),
+    "hoe": (
+        "Each hoe has a short flat blade hooked to the left at the top of "
+        "the handle, like a classic Minecraft hoe"
+    ),
+    "sword": (
+        "Each sword is a straight shortsword pointing up-right: straight "
+        "blade with a bright edge, a small horizontal crossguard, a "
+        "wrapped grip with a pommel"
+    ),
+}
+
+SHEET_STYLE = (
+    "Retro voxel-game pixel art, chunky pixels, limited earthy palette, flat "
+    "even lighting, no text, no watermark, no borders. A single horizontal row "
+    "of SIX {fam} game item sprites, evenly spaced in six equal columns with "
+    "clear gaps between them, on a SOLID PURE MAGENTA (#FF00FF) background "
+    "filling the entire image edge to edge. All six tools are IDENTICAL in "
+    "size, pose, and pixel style, drawn on the same 45-degree diagonal "
+    "(simple brown stick handle pointing to the lower-left, head at the "
+    "upper-right), and differ ONLY in head material, left to right: "
+    "1 {m0}, 2 {m1}, 3 {m2}, 4 {m3}, 5 {m4}, 6 {m5}. {desc}. "
+    "No tool touches another or the image edge."
+)
+
+
+def split_sheet(img, expect=6):
+    """Chroma-key a sheet and split it into per-tool sprites: cut at
+    the density minima of the alpha projection (one cut per window
+    between evenly spaced tools), then keep each slice's largest
+    connected blob — the model likes to paint faint shadow bands
+    between tools that survive the key."""
+    img = chroma_key(img.convert("RGBA"))
+    w, h = img.size
+    px = img.load()
+    dens = [sum(1 for y in range(h) if px[x, y][3] > 8) for x in range(w)]
+    # Smooth a little so single-pixel spikes don't move the cuts.
+    sm = [
+        sum(dens[max(0, x - 2) : min(w, x + 3)]) / len(dens[max(0, x - 2) : min(w, x + 3)])
+        for x in range(w)
+    ]
+    cuts = [0]
+    for i in range(1, expect):
+        c = w * i // expect
+        lo, hi = c - w // (expect * 2) + 4, c + w // (expect * 2) - 4
+        cuts.append(min(range(lo, hi), key=lambda x: sm[x]))
+    cuts.append(w)
+    out = []
+    for x0, x1 in zip(cuts, cuts[1:]):
+        # Largest connected alpha component in the slice is the tool.
+        seen = [[False] * (x1 - x0) for _ in range(h)]
+        best = []
+        for sy in range(h):
+            for sx in range(x1 - x0):
+                if seen[sy][sx] or px[x0 + sx, sy][3] <= 8:
+                    continue
+                blob = []
+                stack = [(sx, sy)]
+                seen[sy][sx] = True
+                while stack:
+                    bx, by = stack.pop()
+                    blob.append((bx, by))
+                    for dx in (-1, 0, 1):
+                        for dy in (-1, 0, 1):
+                            nx, ny = bx + dx, by + dy
+                            if (
+                                0 <= nx < x1 - x0
+                                and 0 <= ny < h
+                                and not seen[ny][nx]
+                                and px[x0 + nx, ny][3] > 8
+                            ):
+                                seen[ny][nx] = True
+                                stack.append((nx, ny))
+                if len(blob) > len(best):
+                    best = blob
+        if len(best) < (h * (x1 - x0)) // 400:
+            return None  # a slice with no real tool: bad sheet
+        bw = max(b[0] for b in best) - min(b[0] for b in best) + 1
+        bh = max(b[1] for b in best) - min(b[1] for b in best) + 1
+        if max(bw, bh) > 3.5 * min(bw, bh):
+            return None  # a bare stick: the blob lost its head
+        bx0 = min(b[0] for b in best)
+        bx1 = max(b[0] for b in best) + 1
+        by0 = min(b[1] for b in best)
+        by1 = max(b[1] for b in best) + 1
+        side = max(bx1 - bx0, by1 - by0) + 8
+        sq = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+        keep = set(best)
+        for bx, by in best:
+            sq.putpixel(
+                (bx - bx0 + (side - (bx1 - bx0)) // 2, by - by0 + (side - (by1 - by0)) // 2),
+                px[x0 + bx, by],
+            )
+        _ = keep
+        out.append(sq)
+    return out
+
+
+def gen_toolsets(families):
+    outdir = os.path.join(PACK, "tiles")
+    os.makedirs(outdir, exist_ok=True)
+    mats = [m for m, _ in TOOL_MATERIALS]
+    descs = [d for _, d in TOOL_MATERIALS]
+    for fam in families:
+        prompt = SHEET_STYLE.format(
+            fam=fam + ("s" if fam != "pickaxe" else "s"),
+            desc=TOOL_FAMILIES[fam],
+            m0=descs[0], m1=descs[1], m2=descs[2],
+            m3=descs[3], m4=descs[4], m5=descs[5],
+        )
+        parts = None
+        for attempt in range(6):
+            img = generate(prompt)
+            parts = split_sheet(img)
+            if parts:
+                break
+            print(f"retry {fam}: sheet did not split into 6")
+        if not parts:
+            print(f"FAIL {fam}: no clean 6-way split after 6 sheets")
+            continue
+        for mat, sprite in zip(mats, parts):
+            sprite = resize_sprite(sprite, OUT_PX)
+            sprite = fit_sprite(sprite)
+            sprite = quantize(sprite)
+            sprite.save(os.path.join(outdir, f"{mat}_{fam}.png"))
+            print(f"ok {mat}_{fam}")
+        time.sleep(1.0)
+
+
 # Player tint bases are desaturated after generation (style palettes
 # multiply over them at atlas build).
 GREY_TILES = {"player_shirt", "player_face", "player_skin", "player_trousers"}
@@ -409,19 +583,7 @@ def process(img, cat):
         img = chroma_key(img)
         img = resize_sprite(img, OUT_PX)
         if cat == "sprite":
-            # Frame-filling art reads as a cropped zoom in inventory slots;
-            # cap sprites at ~75% of the tile and center them.
-            bbox = img.getbbox()
-            if bbox:
-                w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-                if max(w, h) > 26:
-                    crop = img.crop(bbox)
-                    scale = 24 / max(w, h)
-                    nw = max(1, round(w * scale))
-                    nh = max(1, round(h * scale))
-                    crop = crop.resize((nw, nh), Image.NEAREST)
-                    img = Image.new("RGBA", (OUT_PX, OUT_PX), (0, 0, 0, 0))
-                    img.paste(crop, ((OUT_PX - nw) // 2, (OUT_PX - nh) // 2))
+            img = fit_sprite(img)
     else:
         img = img.resize((OUT_PX, OUT_PX), Image.BOX)
     img = quantize(img)
@@ -446,6 +608,9 @@ def process(img, cat):
 
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if "--toolsets" in sys.argv:
+        gen_toolsets(args or list(TOOL_FAMILIES))
+        return
     force = "--force" in sys.argv or bool(args)
     names = args or list(TILES)
     outdir = os.path.join(PACK, "tiles")
