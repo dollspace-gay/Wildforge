@@ -718,6 +718,23 @@ impl Game {
                         w.anvil_put((mx + 9, y + 1, mz + 5), ItemStack::new(&reg2, bl, 1));
                     }
                 }
+                // The machine shop row: crude lathe west, iron lathe
+                // east, the vice that lets precision cut at all.
+                w.set_block(mx + 5, y + 1, mz + 2, shaft);
+                w.set_block(mx + 5, y + 1, mz + 1, gear);
+                if let (Some(lathe), Some(ilathe), Some(vice)) =
+                    (b("base:lathe"), b("base:iron_lathe"), b("base:vice"))
+                {
+                    w.set_block(mx + 4, y + 1, mz + 1, lathe);
+                    w.set_block(mx + 6, y + 1, mz + 1, ilathe);
+                    w.set_block(mx + 5, y + 1, mz, vice);
+                    if let Some(cu) = reg2.item_id("base:copper_ingot") {
+                        w.anvil_put((mx + 4, y + 1, mz + 1), ItemStack::new(&reg2, cu, 1));
+                    }
+                    if let Some(fe) = reg2.item_id("base:iron_ingot") {
+                        w.anvil_put((mx + 6, y + 1, mz + 1), ItemStack::new(&reg2, fe, 1));
+                    }
+                }
                 // The sail tower: altitude is the windmill's river.
                 if let Some(sail) = b("base:windmill_sail") {
                     let tx = bx + 8;

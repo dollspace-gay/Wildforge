@@ -431,6 +431,11 @@ impl World {
                 self.station_work.remove(&pos);
                 continue;
             }
+            // Precision machines want workholding: an iron lathe or
+            // boring mill with no vice in reach only spins.
+            if matches!(st.as_str(), "iron_lathe" | "boring") && !self.vice_near(pos) {
+                continue;
+            }
             let Some(BlockEntity::Anvil(a)) = self.block_entities.get(&pos) else {
                 continue;
             };

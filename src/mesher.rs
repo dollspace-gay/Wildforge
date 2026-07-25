@@ -304,7 +304,7 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                             boxed(0.06, 0.5, 0.42, 0.94, 0.96, 0.58);
                         }
                         "axle" | "wheel" | "sails" | "gearbox" | "millstone" | "sawbench"
-                        | "helve" | "helve_up" => {
+                        | "helve" | "helve_up" | "lathe" | "lathe_iron" | "vice" => {
                             // Millwork reads its orientation from its
                             // neighbors: shafts run toward machines,
                             // wheels set their plane from their axle,
@@ -447,6 +447,45 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                                     boxed(0.0, 0.55, 0.0, 1.0, 0.68, 1.0);
                                     boxed(0.34, 0.62, 0.47, 0.66, 0.98, 0.53);
                                     boxed(0.0, 0.68, 0.12, 1.0, 0.76, 0.24);
+                                }
+                                "lathe" | "lathe_iron" => {
+                                    // A long bed with ways: pedestal
+                                    // legs, rails, headstock and
+                                    // tailstock, work between
+                                    // centers, a tool rest — and on
+                                    // the iron lathe, the leadscrew
+                                    // rail that made it possible.
+                                    let along_z = pz && !px;
+                                    let mut bed =
+                                        |a0: f32, y0: f32, c0: f32, a1: f32, y1: f32, c1: f32| {
+                                            if along_z {
+                                                boxed(c0, y0, a0, c1, y1, a1);
+                                            } else {
+                                                boxed(a0, y0, c0, a1, y1, c1);
+                                            }
+                                        };
+                                    bed(0.06, 0.0, 0.30, 0.22, 0.35, 0.70);
+                                    bed(0.78, 0.0, 0.30, 0.94, 0.35, 0.70);
+                                    bed(0.0, 0.35, 0.34, 1.0, 0.50, 0.66);
+                                    let iron = shape == "lathe_iron";
+                                    let head_top = if iron { 1.0 } else { 0.90 };
+                                    bed(0.0, 0.50, 0.26, 0.28, head_top, 0.74);
+                                    bed(0.78, 0.50, 0.32, 0.96, 0.78, 0.68);
+                                    bed(0.28, 0.62, 0.44, 0.78, 0.72, 0.56);
+                                    bed(0.40, 0.50, 0.20, 0.68, 0.60, 0.34);
+                                    if iron {
+                                        bed(0.0, 0.42, 0.72, 1.0, 0.50, 0.80);
+                                    }
+                                }
+                                "vice" => {
+                                    // Pedestal, bench cap, two jaws,
+                                    // the screw spindle and handle.
+                                    boxed(0.38, 0.0, 0.38, 0.62, 0.45, 0.62);
+                                    boxed(0.28, 0.45, 0.28, 0.72, 0.60, 0.72);
+                                    boxed(0.30, 0.60, 0.40, 0.48, 0.85, 0.60);
+                                    boxed(0.54, 0.60, 0.40, 0.72, 0.85, 0.60);
+                                    boxed(0.24, 0.66, 0.46, 0.80, 0.74, 0.54);
+                                    boxed(0.76, 0.52, 0.47, 0.82, 0.90, 0.53);
                                 }
                                 "helve" | "helve_up" => {
                                     // Pivot post, beam arm, hammer

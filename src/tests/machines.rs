@@ -483,7 +483,7 @@ fn anvil_works_blooms_into_bars() {
     let mut w = test_world_with("steel-anvil", reg.clone());
     let bloom = reg.item_id("base:steel_bloom").unwrap();
     let ingot = reg.item_id("base:steel_ingot").unwrap();
-    let iron = reg.item_id("base:iron_ingot").unwrap();
+    let stick = reg.item_id("base:stick").unwrap();
     let pos = (10, 120, 10);
     w.set_block(
         pos.0,
@@ -491,10 +491,11 @@ fn anvil_works_blooms_into_bars() {
         pos.2,
         reg.block_id("base:stone_anvil").unwrap(),
     );
-    // Only workable items rest on the anvil.
+    // Only workable items rest on the anvil (iron rests too now —
+    // it hammers into plate — so the refusal case is a stick).
     assert!(
-        !w.anvil_put(pos, ItemStack::new(&reg, iron, 1)),
-        "iron is not workable"
+        !w.anvil_put(pos, ItemStack::new(&reg, stick, 1)),
+        "a stick is not workable"
     );
     assert!(
         w.anvil_put(pos, ItemStack::new(&reg, bloom, 1)),
@@ -1187,5 +1188,88 @@ fn the_sawmill_rips_logs_and_the_helve_works_the_anvil() {
         w.get_block(wx + 1, wy, wz + 1),
         b(&reg, "base:helve_hammer"),
         "the arm rests when the work is done"
+    );
+}
+
+// ---- mechanization: the machining age (rung 2) ----
+
+#[test]
+fn the_lathes_hold_their_tolerances() {
+    let reg = base_reg();
+    let mut w = test_world_with("lathe-tolerance", reg.clone());
+    let wheel = wheel_over_basin(&mut w, &reg);
+    breach_basin(&mut w, wheel);
+    let (wx, wy, wz) = wheel;
+    w.set_block(wx, wy, wz + 1, b(&reg, "base:gear"));
+    let crude = (wx + 1, wy, wz + 1);
+    w.set_block(crude.0, crude.1, crude.2, b(&reg, "base:lathe"));
+    // Sloppy tolerance turns soft metal only: iron never rests here.
+    let iron = it(&reg, "base:iron_ingot");
+    assert!(
+        !w.anvil_put(crude, ItemStack::new(&reg, iron, 1)),
+        "the crude lathe refuses iron"
+    );
+    let copper = it(&reg, "base:copper_ingot");
+    assert!(w.anvil_put(crude, ItemStack::new(&reg, copper, 1)));
+    w.clear_pending_drops();
+    for _ in 0..16 {
+        w.tick_entities(0.5);
+    }
+    let screws: u32 = w
+        .take_pending_drops()
+        .into_iter()
+        .filter(|(_, s)| s.item == it(&reg, "base:screw"))
+        .map(|(_, s)| s.count)
+        .sum();
+    assert_eq!(screws, 2, "one soft ingot turns two screws");
+    // The iron lathe: true tolerance, but only with workholding.
+    let precise = (wx - 1, wy, wz + 1);
+    w.set_block(precise.0, precise.1, precise.2, b(&reg, "base:iron_lathe"));
+    assert!(w.anvil_put(precise, ItemStack::new(&reg, iron, 1)));
+    w.clear_pending_drops();
+    for _ in 0..16 {
+        w.tick_entities(0.5);
+    }
+    assert!(
+        w.take_pending_drops().is_empty(),
+        "no vice, no cut: the work only spins"
+    );
+    w.set_block(
+        precise.0,
+        precise.1 + 1,
+        precise.2 + 1,
+        b(&reg, "base:vice"),
+    );
+    for _ in 0..16 {
+        w.tick_entities(0.5);
+    }
+    assert!(
+        w.take_pending_drops()
+            .iter()
+            .any(|(_, s)| s.item == it(&reg, "base:iron_shaft")),
+        "vice held, shaft turned true"
+    );
+}
+
+#[test]
+fn the_bearing_frees_the_wooden_run() {
+    let reg = base_reg();
+    let mut w = test_world_with("bearing-run", reg.clone());
+    let wheel = wheel_over_basin(&mut w, &reg);
+    breach_basin(&mut w, wheel);
+    let (wx, wy, wz) = wheel;
+    let shaft = b(&reg, "base:shaft");
+    for i in 1..=13 {
+        w.set_block(wx, wy, wz + i, shaft);
+    }
+    assert_eq!(
+        w.power_at(wx, wy, wz + 14),
+        0.0,
+        "thirteen wooden shafts refuse"
+    );
+    w.set_block(wx, wy, wz + 7, b(&reg, "base:fitted_shaft"));
+    assert!(
+        w.power_at(wx, wy, wz + 14) > 0.0,
+        "one fitted shaft mid-run and the same line turns"
     );
 }

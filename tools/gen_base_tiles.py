@@ -193,6 +193,48 @@ def item(name, body, edge, shape="lump"):
             d.rectangle([x0, y0, x1, y1], fill=body + (255,), outline=edge + (255,))
         d.point((12, 22), fill=edge + (255,))
         d.point((18, 17), fill=edge + (255,))
+    elif shape == "screw":
+        # Slotted head, threaded shank.
+        d.ellipse([11, 5, 21, 15], fill=body + (255,), outline=edge + (255,))
+        d.line([(13, 8), (19, 12)], fill=edge + (255,), width=2)
+        d.polygon([(14, 14), (18, 14), (17, 26), (15, 26)], fill=body + (255,))
+        for yy in range(15, 26, 3):
+            d.line([(13, yy + 1), (19, yy - 1)], fill=edge + (255,))
+    elif shape == "leadscrew":
+        # A long true thread, corner to corner.
+        d.line([(6, 26), (26, 6)], fill=body + (255,), width=4)
+        for t in range(7):
+            x0 = 7 + t * 3
+            d.line([(x0 - 1, 27 - t * 3), (x0 + 3, 23 - t * 3)],
+                   fill=edge + (255,))
+        d.rectangle([4, 24, 9, 28], fill=edge + (255,))
+    elif shape == "ring":
+        # Races and balls: the bearing.
+        d.ellipse([7, 7, 25, 25], fill=body + (255,), outline=edge + (255,))
+        d.ellipse([12, 12, 20, 20], fill=(0, 0, 0, 0), outline=edge + (255,))
+        for ang in range(0, 360, 45):
+            import math as _m
+            bx = 16 + int(6.5 * _m.cos(_m.radians(ang)))
+            by = 16 + int(6.5 * _m.sin(_m.radians(ang)))
+            d.point((bx, by), fill=(240, 242, 248, 255))
+    elif shape == "gearwheel":
+        # A cut gear: disc, teeth, keyed bore.
+        d.ellipse([8, 8, 24, 24], fill=body + (255,), outline=edge + (255,))
+        for ang in range(0, 360, 45):
+            import math as _m
+            bx = 16 + int(9 * _m.cos(_m.radians(ang)))
+            by = 16 + int(9 * _m.sin(_m.radians(ang)))
+            d.rectangle([bx - 1, by - 1, bx + 1, by + 1], fill=body + (255,))
+        d.rectangle([14, 14, 18, 18], fill=(0, 0, 0, 0))
+        d.rectangle([14, 14, 18, 18], outline=edge + (255,))
+    elif shape == "plate":
+        # Hammered sheet: a slab with peen marks.
+        d.polygon([(5, 19), (13, 9), (27, 9), (19, 19)], fill=body + (255,),
+                  outline=edge + (255,))
+        d.polygon([(5, 19), (19, 19), (19, 23), (5, 23)],
+                  fill=mix(body, edge, 0.4) + (255,))
+        for (px, py) in [(11, 13), (17, 12), (14, 16), (21, 14)]:
+            d.point((px, py), fill=edge + (255,))
     elif shape == "prism":
         d.polygon([(16, 7), (25, 24), (7, 24)], fill=body + (120,),
                   outline=edge + (255,))
@@ -307,6 +349,12 @@ ITEMS = [
     ("pickles", (146, 176, 92), (96, 124, 56), "crucible"),
     ("smoked_meat", (124, 70, 52), (80, 44, 30), "lump"),
     ("beam", (158, 112, 62), (104, 72, 40), "strip"),
+    ("screw", (196, 138, 88), (128, 84, 46), "screw"),
+    ("leadscrew", (188, 150, 96), (120, 92, 52), "leadscrew"),
+    ("iron_shaft", (192, 196, 204), (120, 124, 134), "strip"),
+    ("bearing", (206, 210, 218), (128, 132, 142), "ring"),
+    ("iron_gear", (184, 188, 196), (112, 116, 126), "gearwheel"),
+    ("plate", (198, 202, 210), (126, 130, 140), "plate"),
 ]
 
 GLASSES = [
@@ -345,6 +393,14 @@ BLOCKS_EXTRA = {
                     veins=(184, 190, 198)),
     "helve_hammer": dict(base=(124, 92, 56), dark=(82, 58, 34), bands=0.6,
                          speckle=(152, 152, 158), speckle_n=10),
+    "lathe": dict(base=(150, 110, 64), dark=(100, 72, 40), bands=0.55,
+                  veins=(150, 154, 162)),
+    "iron_lathe": dict(base=(126, 130, 140), dark=(84, 88, 98), bands=0.35,
+                       veins=(196, 170, 96)),
+    "vice": dict(base=(140, 144, 154), dark=(92, 96, 106),
+                 speckle=(190, 194, 202), speckle_n=14),
+    "fitted_shaft": dict(base=(168, 128, 76), dark=(120, 86, 48), bands=0.7,
+                         veins=(200, 204, 212)),
 }
 
 

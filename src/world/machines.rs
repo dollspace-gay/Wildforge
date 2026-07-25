@@ -509,6 +509,25 @@ impl World {
             .clone()
     }
 
+    /// A vice within three blocks: precision machines refuse to cut
+    /// without workholding (the screw's first gift, mechanization
+    /// rung 2).
+    pub fn vice_near(&self, pos: (i32, i32, i32)) -> bool {
+        let Some(v) = self.reg.block_id("base:vice") else {
+            return false;
+        };
+        for dx in -3..=3i32 {
+            for dy in -1..=1i32 {
+                for dz in -3..=3i32 {
+                    if self.get_block(pos.0 + dx, pos.1 + dy, pos.2 + dz) == v {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// Rest a workable item on a station. Hand stations take one at a
     /// time; powered stations pile a batch (the millstone's whole
     /// point is grinding sixteen while you're elsewhere). Only items

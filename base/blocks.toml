@@ -1239,3 +1239,48 @@ hardness = 2.5
 tool = "axe"
 drops = "base:helve_hammer"
 item = false
+
+# --- the machining age: tolerance is a property of the machine ---
+
+[[block]]
+id = "lathe"
+name = "Lathe"
+texture = "lathe.png"
+shape = "lathe"
+opaque = false
+hardness = 3.0
+tool = "axe"
+drops = "self"
+interaction = "lathe"
+
+[[block]]
+id = "iron_lathe"
+name = "Iron Lathe"
+texture = "iron_lathe.png"
+shape = "lathe_iron"
+opaque = false
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+drops = "self"
+interaction = "iron_lathe"
+
+[[block]]
+id = "vice"
+name = "Vice"
+texture = "vice.png"
+shape = "vice"
+opaque = false
+hardness = 5.0
+tool = "pickaxe"
+drops = "self"
+
+[[block]]
+id = "fitted_shaft"
+name = "Fitted Shaft"
+texture = "fitted_shaft.png"
+shape = "axle"
+opaque = false
+hardness = 2.5
+tool = "axe"
+drops = "self"
