@@ -2309,3 +2309,30 @@ fn a_chunk_read_from_disk_is_clean_until_something_edits_it() {
         "a freshly loaded, untouched chunk is not rewritten"
     );
 }
+
+/// The palette describes the registry, not the world, so writing it on
+/// the autosave timer was 4 KB of churn every twenty seconds saying the
+/// same thing. It still has to be written when it would differ — a
+/// fresh world, or one whose block registry changed since last time.
+#[test]
+fn the_palette_is_written_when_it_would_differ_and_not_on_a_timer() {
+    let reg = base_reg();
+    let dir = tmp_dir("palette-churn");
+    let palette = dir.join("palette");
+    let mut w = World::new(9, dir.clone(), reg.clone());
+    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w.save_modified();
+    assert!(palette.exists(), "a fresh world owes a palette");
+
+    std::fs::remove_file(&palette).unwrap();
+    w.save_modified();
+    assert!(!palette.exists(), "an unchanged palette is not rewritten");
+
+    // Reopening against a save whose palette is missing or stale counts
+    // as a difference, so the next save puts one back — and every chunk
+    // that loads is rewritten in the ids it names.
+    let mut w = World::load_or_create(dir.clone(), reg.clone());
+    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w.save_modified();
+    assert!(palette.exists(), "a stale palette is replaced");
+}

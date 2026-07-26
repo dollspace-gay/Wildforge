@@ -569,7 +569,10 @@ impl World {
             seed,
             save_dir,
             load_remap: Vec::new(),
-            palette_stale: false,
+            // A world with no save behind it has no palette on disk
+            // either, so the first save owes one. `load_or_create`
+            // replaces this with the answer for an existing save.
+            palette_stale: true,
             water_queue: VecDeque::new(),
             water_queued: HashSet::new(),
             lava_queue: VecDeque::new(),

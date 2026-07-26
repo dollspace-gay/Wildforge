@@ -442,7 +442,14 @@ impl World {
             self.day,
             self.weather,
         );
-        self.write_palette();
+        // Only when it would actually differ. The palette describes the
+        // registry, not the world, so rewriting it on a timer was 4 KB
+        // of churn every twenty seconds saying the same thing. It has
+        // to land before the chunks below, which are written in the ids
+        // it names.
+        if self.palette_stale {
+            self.write_palette();
+        }
         self.save_entities();
         self.save_mobs();
         self.save_stamps();
