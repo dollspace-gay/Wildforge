@@ -1094,3 +1094,24 @@ texture = "kelp_item.png"
 id = "guano"
 name = "Guano"
 texture = "guano.png"
+
+# Taken from a living heart, carried overland, and planted in ground
+# you have made ready. Which one you carry decides what wakes: its
+# own kind reawakens the country, a stranger's replaces it.
+[[item]]
+id = "bole_seed"
+name = "Bole Seed"
+texture = "heart_seed.png"
+durability = 240
+
+[[item]]
+id = "spring_seed"
+name = "Spring Seed"
+texture = "spring_seed.png"
+durability = 240
+
+[[item]]
+id = "stone_seed"
+name = "Stone Seed"
+texture = "stone_seed.png"
+durability = 240

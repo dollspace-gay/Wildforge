@@ -1259,6 +1259,66 @@ impl Game {
                     self.set_screen(Screen::Chest(h.block));
                     return;
                 }
+                Some("heart") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.5;
+                    self.input.right_held = false;
+                    let carried = held.and_then(|i| world::seed_nature(&reg.item(i).name));
+                    let holding_seed = carried.is_some();
+                    // A cutting from a living heart: the thing you
+                    // carry across the world to wake a dead country.
+                    if !holding_seed
+                        && self
+                            .server
+                            .world
+                            .heart_at(h.block.0, h.block.2)
+                            .is_some_and(|hh| hh.stage == 2)
+                        && let Some(seed) = reg.item_id(world::seed_of_form(world::heart_form(
+                            self.server.world.generator.biome(h.block.0, h.block.2),
+                        )))
+                    {
+                        let left = self.inventory.add(&reg, seed, 1);
+                        if left > 0 {
+                            self.drop_stack(ItemStack::new(&reg, seed, left));
+                        }
+                        // Taking from the wild is taking, even gently.
+                        self.server.world.add_ire_at(h.block.0, h.block.2, 1.0);
+                        self.toast("It gives you a seed, and it costs it.".to_string());
+                        self.sfx(Sfx::Pickup);
+                        return;
+                    }
+                    if holding_seed {
+                        // What you carry decides what wakes: its own
+                        // kind reawakens, a stranger's replaces.
+                        match self
+                            .server
+                            .world
+                            .plant_heart_seed_from(h.block.0, h.block.1, h.block.2, carried)
+                        {
+                            Some(refusal) => self.toast(refusal),
+                            None => {
+                                self.inventory.take_one(self.input.hotbar_sel);
+                                self.toast(
+                                    "You plant it in the ruin of the old heart.".to_string(),
+                                );
+                                self.sfx(Sfx::Place);
+                            }
+                        }
+                        return;
+                    }
+                    let world = &self.server.world;
+                    let line = match world.heart_at(h.block.0, h.block.2) {
+                        Some(hh) if hh.stage == 2 && hh.strain > 4.0 => {
+                            "The wood is warm, and it flinches from you."
+                        }
+                        Some(hh) if hh.stage == 2 => "The wood is warm. Something here is awake.",
+                        Some(hh) if hh.stage == 1 => "It is cold, and it is going out.",
+                        Some(_) => "Nothing answers. This country is alone.",
+                        None => "Something stood here once.",
+                    };
+                    self.toast(line.to_string());
+                    self.sfx(Sfx::Click);
+                    return;
+                }
                 Some("compost") if self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.3;
                     // A ripened heap hands over its compost bare-handed;
@@ -1422,7 +1482,10 @@ impl Game {
                 }
                 Some("survey") if self.input.action_cooldown <= 0.0 => {
                     // A raised cairn is bought knowledge: anyone reads
-                    // the surveyor's ground, no pick required.
+                    // the surveyor's ground, no pick required — and a
+                    // country's heart is the first thing worth knowing.
+                    let report = self.server.world.heart_report(h.block.0, h.block.2);
+                    self.toast(report);
                     self.toast_prospect(h.block.0, h.block.2);
                     self.sfx(Sfx::Click);
                     self.input.action_cooldown = 0.6;
@@ -1657,7 +1720,11 @@ impl Game {
                 if bd.cross && !reg.is_solid(soil) {
                     return;
                 }
-                if !reg.is_solid(self.server.world.get_block(x, y, z))
+                // The cell must be one a block can take (air, fluid,
+                // a thin layer) — checking merely "not solid" let a
+                // click through into water or a crop, where the item
+                // was spent and place_block then refused it.
+                if reg.is_replaceable(self.server.world.get_block(x, y, z))
                     && !self.player.overlaps_block(x, y, z)
                 {
                     let allow = if self.content.scripts.wants("on_block_place") {
@@ -1672,18 +1739,30 @@ impl Game {
                     } else {
                         true
                     };
-                    let consumed =
-                        self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some();
-                    if allow && consumed && self.multiplayer.remote.is_some() {
-                        if let Some(r) = &self.multiplayer.remote {
-                            r.client.send(&net::C2S::Place { x, y, z });
-                        }
-                        self.input.action_cooldown = 0.22;
-                        self.sfx(Sfx::Place);
+                    if !allow {
                         return;
                     }
-                    if allow && consumed {
-                        self.server.world.place_block((x, y, z), block);
+                    // Guests predict and let the host's echo correct
+                    // them; the host places FIRST and only spends the
+                    // item if the world actually took it.
+                    if self.multiplayer.remote.is_some() {
+                        if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
+                        {
+                            if let Some(r) = &self.multiplayer.remote {
+                                r.client.send(&net::C2S::Place { x, y, z });
+                            }
+                            self.input.action_cooldown = 0.22;
+                            self.sfx(Sfx::Place);
+                        }
+                        return;
+                    }
+                    if self.inventory.slots[self.input.hotbar_sel].is_none() && !self.creative {
+                        return;
+                    }
+                    if self.server.world.place_block((x, y, z), block) {
+                        if !self.creative {
+                            self.inventory.take_one(self.input.hotbar_sel);
+                        }
                         // A fresh sign or waystone wants its words.
                         if matches!(bd.interaction.as_deref(), Some("sign") | Some("waystone")) {
                             self.ui_state.sign_lines = Default::default();

@@ -90,7 +90,14 @@ impl World {
                     // in winter - unless roofed and torchlit (a
                     // greenhouse, emergent from the light rules).
                     let mult = if d.crop_any_soil {
-                        let base = if season == 1 || season == 2 { 1.0 } else { 0.0 };
+                        // Wild fruit is the country's gift, not yours.
+                        let base = if !self.heart_alive_at(wx, wz) {
+                            0.0
+                        } else if season == 1 || season == 2 {
+                            1.0
+                        } else {
+                            0.0
+                        };
                         // Blessed country feeds back — and bloomed
                         // country (post-wrath) erupts the same way.
                         if self.regional_ire_at(wx, wz) < -8.0 || self.bloom_at(wx, wz) > 0.0 {
@@ -137,9 +144,17 @@ impl World {
                     }
                     continue;
                 }
+                // A country whose heart is dead gives nothing: soil
+                // stops resting, the tide stops seeding, bushes stop
+                // fruiting. Crops still grow on ground you feed
+                // yourself — farms work here, wilderness does not.
+                let living = self.heart_alive_at(wx, wz);
                 // Fallow farmland recovers, twice as fast under winter
                 // (or snow) — the off season is the soil's turn.
                 if Some(b) == farmland {
+                    if !living {
+                        continue;
+                    }
                     let above = self.get_block(wx, y + 1, wz);
                     let resting =
                         above == AIR || Some(above) == snow_layer || Some(above) == snow_trod;
@@ -281,6 +296,7 @@ impl World {
                 // Bare dirt under the sky heals over beside grass —
                 // the world stops keeping scars nobody meant to leave.
                 if Some(b) == dirt_id
+                    && living
                     && self.get_block(wx, y + 1, wz) == AIR
                     && self.light_at(wx, y + 1, wz).1 >= 9
                 {
@@ -305,6 +321,7 @@ impl World {
                 let sky_open = self.light_at(wx, y + 1, wz).1 == 15;
                 let blooming = self.bloom_at(wx, wz) > 0.0;
                 if Some(b) == grass_id
+                    && living
                     && season != 3
                     && sky_open
                     && self.get_block(wx, y + 1, wz) == AIR

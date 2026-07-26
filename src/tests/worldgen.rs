@@ -93,40 +93,36 @@ fn desert_has_sand_surface_and_cacti() {
     let g = Generator::new(42, &reg);
     // Search rings directly for a solid inland desert column: the
     // plate map makes some deserts coastal or boundary-broken.
-    let mut spot = None;
-    'scan: for r in 0..400 {
-        let d = r * 24;
-        for (cx, cz) in [
-            (d, 0),
-            (-d, 0),
-            (0, d),
-            (0, -d),
-            (d, d),
-            (-d, -d),
-            (d, -d),
-            (-d, d),
-        ] {
-            if g.biome(cx, cz) == Biome::Desert
-                && g.surface_estimate(cx, cz) > crate::chunk::SEA_LEVEL + 8
-                && g.tectonics(cx, cz).boundary_dist > 160.0
-            {
-                spot = Some((cx, cz));
-                break 'scan;
+    let spot = find_biome_where(&g, Biome::Desert, |cx, cz| {
+        g.surface_estimate(cx, cz) > crate::chunk::SEA_LEVEL + 8
+            && g.tectonics(cx, cz).boundary_dist > 160.0
+    });
+    let (x0, z0) = spot.expect("dry desert column");
+    let (w, _) = gen_at(&reg, "desert", x0, z0);
+    // Judge the country, not one column: cacti own their columns and
+    // a volcano flank bares its rock, so ask what the desert is MADE
+    // of rather than what happens to stand on one spot.
+    let sand = b(&reg, "base:sand");
+    let mut sandy = 0;
+    let mut total = 0;
+    let mut probe = None;
+    for dx in 0..16 {
+        for dz in 0..16 {
+            let (x, z) = (x0 + dx, z0 + dz);
+            let h = w.surface_height(x, z);
+            total += 1;
+            if w.get_block(x, h, z) == sand {
+                sandy += 1;
+                probe.get_or_insert((x, z, h));
             }
         }
     }
-    let (x, z) = spot.expect("dry desert column");
-    let (w, h) = gen_at(&reg, "desert", x, z);
-    assert_eq!(
-        w.get_block(x, h, z),
-        b(&reg, "base:sand"),
-        "desert surface is sand"
+    assert!(
+        sandy * 10 >= total * 6,
+        "desert country is sanded ({sandy}/{total})"
     );
-    assert_eq!(
-        w.get_block(x, h - 2, z),
-        b(&reg, "base:sand"),
-        "desert subsoil is sand"
-    );
+    let (x, z, h) = probe.expect("bare desert ground");
+    assert_eq!(w.get_block(x, h - 2, z), sand, "desert subsoil is sand");
     // Cacti generate somewhere in desert chunks (deterministic for seed 42).
     let cactus = b(&reg, "base:cactus");
     let cp = ChunkPos::of_world(x, z);
@@ -547,24 +543,9 @@ fn wild_food_generates_per_biome() {
     let reg = base_reg();
     let g = Generator::new(42, &reg);
     let has = |biome: Biome, blocks: &[&str], name: &str| -> bool {
-        // The plate map can make the first biome hit a sliver; try a
-        // few well-separated patches before giving up.
-        let mut anchors: Vec<(i32, i32)> = Vec::new();
-        for r in 0..200 {
-            let d = r * 24;
-            for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
-                if g.biome(x, z) == biome
-                    && anchors
-                        .iter()
-                        .all(|&(ax, az)| (ax - x).abs() + (az - z).abs() > 400)
-                {
-                    anchors.push((x, z));
-                }
-            }
-            if anchors.len() >= 3 {
-                break;
-            }
-        }
+        // Countries are large now; sample a few of them before
+        // concluding a biome grows nothing.
+        let anchors = find_biomes(&g, biome, 3);
         let ids: Vec<_> = blocks.iter().filter_map(|n| reg.block_id(n)).collect();
         for (ai, (x, z)) in anchors.into_iter().enumerate() {
             let cp = ChunkPos::of_world(x, z);
@@ -2007,4 +1988,181 @@ fn the_waterline_grows_its_own() {
         r + k + l < 12000,
         "and it stays vegetation, not carpet ({r}/{k}/{l})"
     );
+}
+
+#[test]
+fn provinces_make_biomes_into_places() {
+    // The patchwork test: a long walk should cross a handful of
+    // countries, not dozens. (Before provinces, temperature and
+    // humidity turned over every ~385 blocks and every column voted
+    // for itself, so a forest, a desert and a taiga could share a
+    // few hundred paces.)
+    let reg = base_reg();
+    let w = World::new(42, tmp_dir("provinces"), reg.clone());
+    let g = &w.generator;
+    let mut runs = 0;
+    let mut prev = None;
+    for x in (-3000..3000).step_by(25) {
+        let k = g.province(x, 0).key;
+        if Some(k) != prev {
+            runs += 1;
+            prev = Some(k);
+        }
+    }
+    assert!(
+        (2..=12).contains(&runs),
+        "a 6000-block walk crosses a few countries ({runs})"
+    );
+    // Outside the border fringe the label is the country's, always —
+    // that is the whole fix for the confetti.
+    let mut checked = 0;
+    let mut same = 0;
+    for x in (-3000..3000).step_by(7) {
+        let p = g.province(x, 0);
+        if p.edge > 90.0
+            && g.plate_relief(&g.climate(x, 0)) <= 30.0
+            && g.surface_estimate(x, 0) > crate::chunk::SEA_LEVEL
+        {
+            checked += 1;
+            if g.biome(x, 0) == p.biome {
+                same += 1;
+            }
+        }
+    }
+    assert!(checked > 60, "plenty of dry interior sampled ({checked})");
+    assert!(
+        same * 10 >= checked * 7,
+        "interiors read as their country ({same}/{checked})"
+    );
+    // But the world is not one monotonous field either.
+    let mut seen = std::collections::HashSet::new();
+    for x in (-6000..6000).step_by(150) {
+        for z in (-6000..6000).step_by(150) {
+            seen.insert(g.biome(x, z).name());
+        }
+    }
+    assert!(seen.len() >= 6, "the world still holds variety ({seen:?})");
+    // A province is a coherent territory: sampling inside one, well
+    // clear of its fringe, gives one answer.
+    let p = g.province(0, 0);
+    let mut inside = 0;
+    let mut agree = 0;
+    for dx in (-300..=300).step_by(60) {
+        for dz in (-300..=300).step_by(60) {
+            let (x, z) = (p.site.0 + dx, p.site.1 + dz);
+            let q = g.province(x, z);
+            // Terrain keeps its veto inside a country too: a fold
+            // range reads as Mountains wherever it rises.
+            let vetoed = g.plate_relief(&g.climate(x, z)) > 30.0
+                || g.surface_estimate(x, z) <= crate::chunk::SEA_LEVEL;
+            if q.key == p.key && q.edge > 80.0 && !vetoed {
+                inside += 1;
+                if g.biome(x, z) == p.biome {
+                    agree += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        inside > 4,
+        "the province has an interior ({inside} samples)"
+    );
+    assert!(
+        agree * 10 >= inside * 7,
+        "and one biome through most of it ({agree}/{inside}) - terrain \
+         keeps its local exceptions, but the country sets the tone"
+    );
+}
+
+#[test]
+fn province_borders_are_organic_and_terrain_still_vetoes() {
+    let reg = base_reg();
+    let w = World::new(7, tmp_dir("province-edges"), reg.clone());
+    let g = &w.generator;
+    // Borders are not grid-aligned: walking a straight line, the
+    // province changes at irregular offsets, not on a 900 lattice.
+    let mut changes = Vec::new();
+    let mut prev = g.province(-4000, 12).key;
+    for x in -4000..4000 {
+        let k = g.province(x, 12).key;
+        if k != prev {
+            changes.push(x);
+            prev = k;
+        }
+    }
+    assert!(changes.len() >= 3, "several borders crossed");
+    let offsets: std::collections::HashSet<i32> =
+        changes.iter().map(|x| x.rem_euclid(900)).collect();
+    assert!(
+        offsets.len() > 1,
+        "borders sit at varied offsets, not on the lattice ({offsets:?})"
+    );
+    // Terrain keeps its veto: young fold ranges read as Mountains
+    // whatever country they cross.
+    let mut mountain_seen = false;
+    for x in (-8000..8000).step_by(97) {
+        for z in (-8000..8000).step_by(211) {
+            let cl = g.climate(x, z);
+            if g.plate_relief(&cl) > 30.0 {
+                assert_eq!(
+                    g.biome(x, z),
+                    crate::worldgen::Biome::Mountains,
+                    "a fold range is Mountains at {x},{z}"
+                );
+                mountain_seen = true;
+            }
+        }
+    }
+    assert!(mountain_seen, "the sample found a fold range");
+}
+
+#[test]
+fn dbg_chunkgen_cost() {
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("bench-gen"), reg.clone());
+    let t0 = std::time::Instant::now();
+    for cx in 0..6 {
+        for cz in 0..6 {
+            w.ensure_chunk(ChunkPos { x: cx, z: cz });
+        }
+    }
+    eprintln!("36 chunks in {:?}", t0.elapsed());
+}
+
+#[test]
+#[ignore = "dev tool: writes a biome map to the scratchpad"]
+fn dev_biome_map() {
+    let reg = base_reg();
+    let g = Generator::new(42, &reg);
+    let side = 512usize;
+    let step = 16i32; // 8192 blocks across
+    let mut px = vec![0u8; side * side * 3];
+    for iz in 0..side {
+        for ix in 0..side {
+            let x = (ix as i32 - side as i32 / 2) * step;
+            let z = (iz as i32 - side as i32 / 2) * step;
+            let c = match g.biome(x, z) {
+                Biome::Forest => [34, 110, 44],
+                Biome::Plains => [126, 190, 82],
+                Biome::Desert => [226, 206, 128],
+                Biome::Jungle => [22, 130, 60],
+                Biome::Scrubland => [170, 160, 96],
+                Biome::Taiga => [58, 110, 96],
+                Biome::Arctic => [236, 240, 246],
+                Biome::Mountains => [130, 128, 132],
+                Biome::Swamp => [80, 96, 66],
+                Biome::Savanna => [198, 176, 84],
+                Biome::Tundra => [166, 176, 168],
+                Biome::Badlands => [186, 112, 68],
+            };
+            let sea = g.surface_estimate(x, z) <= crate::chunk::SEA_LEVEL;
+            let c = if sea { [40, 66, 120] } else { c };
+            let o = (iz * side + ix) * 3;
+            px[o..o + 3].copy_from_slice(&c);
+        }
+    }
+    let mut out = format!("P6\n{side} {side}\n255\n").into_bytes();
+    out.extend_from_slice(&px);
+    let path = std::env::var("WILDFORGE_MAP_OUT").unwrap_or_else(|_| "/tmp/biomes.ppm".into());
+    std::fs::write(path, out).unwrap();
 }

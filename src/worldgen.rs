@@ -4,6 +4,8 @@
 //! interpolation) -> cave carving (cheese + spaghetti) -> slope/altitude-aware
 //! surface rules -> data-driven ores -> biome vegetation -> bedrock.
 
+use std::collections::HashMap;
+
 use noise::{NoiseFn, Perlin};
 
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
@@ -27,6 +29,25 @@ pub enum Biome {
 }
 
 impl Biome {
+    /// Round-trip for saves: 0 means "none", otherwise index + 1.
+    pub fn from_index(i: u8) -> Option<Biome> {
+        Some(match i {
+            1 => Biome::Forest,
+            2 => Biome::Plains,
+            3 => Biome::Desert,
+            4 => Biome::Jungle,
+            5 => Biome::Scrubland,
+            6 => Biome::Taiga,
+            7 => Biome::Arctic,
+            8 => Biome::Mountains,
+            9 => Biome::Swamp,
+            10 => Biome::Savanna,
+            11 => Biome::Tundra,
+            12 => Biome::Badlands,
+            _ => return None,
+        })
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Biome::Forest => "Forest",
@@ -161,7 +182,42 @@ pub struct Climate {
     pub tec: Tectonics,
 }
 
+/// A country: one Voronoi cell of the province partition, its biome
+/// decided once at its site. `edge` is the distance to the nearest
+/// border; `neighbor` is what lies across it.
+/// (label, site, temperature, humidity, erosion) — what a country is,
+/// resolved once and cached.
+type ProvinceLabel = (Biome, (i32, i32), f32, f32, f32);
+
+#[derive(Clone, Copy, Debug)]
+pub struct Province {
+    /// Stable key — the heart of this country is keyed on it.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub key: (i32, i32),
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub site: (i32, i32),
+    /// The country's own label, read at its site: what to call it.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub biome: Biome,
+    pub neighbor: Biome,
+    pub edge: f32,
+    /// The zone the country imposes: temperature, humidity, and the
+    /// worn-ness of its ground. Continentalness — how far from the
+    /// sea a column sits — stays the column's own business, so a
+    /// coast is still a coast inside a single country.
+    pub t: f32,
+    pub h: f32,
+    pub e: f32,
+    pub nt: f32,
+    pub nh: f32,
+    pub ne: f32,
+}
+
 pub struct Generator {
+    /// Province label cache: classifying a country means sampling its
+    /// site climate (tectonics included), and every column in it wants
+    /// the same answer. Keyed by province, so the work happens once.
+    province_cache: std::sync::RwLock<HashMap<(i32, i32), ProvinceLabel>>,
     base3d: [Perlin; 3],
     cont: Perlin,
     ero: Perlin,
@@ -191,6 +247,9 @@ pub struct Generator {
     lantern_fungus: BlockId,
     meadow_bloom: BlockId,
     ember_poppy: BlockId,
+    heart_tree: BlockId,
+    heart_spring: BlockId,
+    heart_stone: BlockId,
     stone: BlockId,
     sand: BlockId,
     clay: BlockId,
@@ -253,6 +312,7 @@ impl Generator {
         let b = |name: &str| reg.block_id(name).unwrap_or(AIR);
         let p = |k: u32| Perlin::new(seed.wrapping_add(k));
         Generator {
+            province_cache: std::sync::RwLock::new(HashMap::new()),
             base3d: [p(10), p(11), p(12)],
             cont: p(20),
             ero: p(21),
@@ -305,6 +365,9 @@ impl Generator {
             lantern_fungus: b("base:lantern_fungus"),
             meadow_bloom: b("base:meadow_bloom"),
             ember_poppy: b("base:ember_poppy"),
+            heart_tree: b("base:heart_tree"),
+            heart_spring: b("base:heart_spring"),
+            heart_stone: b("base:heart_stone"),
             stone: b("base:stone"),
             sand: b("base:sand"),
             clay: b("base:clay_block"),
@@ -442,22 +505,150 @@ impl Generator {
         let e = self.ero.get([x / 700.0 + 13.5, z / 700.0 - 7.2]) as f32;
         let r_raw = self.ridge.get([x / 400.0 - 3.3, z / 400.0 + 21.7]) as f32;
         let r = 1.0 - (2.0 * r_raw.abs() - 1.0).abs(); // folded, 0..1
-        let t = self.temperature.get([x * 0.0026, z * 0.0026]) as f32;
-        let h = self.moisture.get([x * 0.0026 + 31.7, z * 0.0026 - 17.3]) as f32;
+        // Slow fields: ~2500-block features. At the old 0.0026 the
+        // climate turned over every ~385 blocks, which is what a
+        // per-column classifier turned into confetti — and a province
+        // needs to be small against its climate for its site to speak
+        // for the whole country.
+        let t = self.temperature.get([x * 0.0004, z * 0.0004]) as f32;
+        let h = self.moisture.get([x * 0.0004 + 31.7, z * 0.0004 - 17.3]) as f32;
         Climate { t, h, c, e, r, tec }
     }
 
-    pub fn biome(&self, wx: i32, wz: i32) -> Biome {
-        self.biome_from(&self.climate(wx, wz))
+    /// Provinces: the world's countries. A jittered-grid Voronoi
+    /// partition (the plate trick at a smaller scale) whose climate is
+    /// sampled ONCE at the site — so a province has one biome, not a
+    /// per-column vote that flips a forest into a desert and back
+    /// across a hundred blocks. This is the unit a place can be named
+    /// by, and the territory a heart owns.
+    const PROVINCE_SIZE: f64 = 900.0;
+    /// Life fades across this fringe rather than ending at a line.
+    const PROVINCE_BLEND: f32 = 70.0;
+
+    /// The world-space center of a province, by key.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn province_center(&self, px: i32, pz: i32) -> (i32, i32) {
+        let (x, z) = self.province_site(px, pz);
+        (x as i32, z as i32)
     }
 
-    /// Biome from an already-computed climate (the generator's inner
-    /// loops read climate once per column and reuse it everywhere).
-    pub fn biome_from(&self, cl: &Climate) -> Biome {
-        // A young fold range is Mountains whatever the climate says.
+    fn province_site(&self, px: i32, pz: i32) -> (f64, f64) {
+        let h = hash2(self.seed ^ 0x9120_11ce, px, pz);
+        (
+            (px as f64 + 0.18 + ((h & 0xffff) as f64 / 65536.0) * 0.64) * Self::PROVINCE_SIZE,
+            (pz as f64 + 0.18 + (((h >> 16) & 0xffff) as f64 / 65536.0) * 0.64)
+                * Self::PROVINCE_SIZE,
+        )
+    }
+
+    /// The label and site of a province, computed once and kept.
+    fn province_label(&self, key: (i32, i32)) -> ProvinceLabel {
+        if let Some(hit) = self
+            .province_cache
+            .read()
+            .ok()
+            .and_then(|c| c.get(&key).copied())
+        {
+            return hit;
+        }
+        let site = self.province_site(key.0, key.1);
+        let site = (site.0 as i32, site.1 as i32);
+        let cl = self.climate(site.0, site.1);
+        let out = (self.classify(&cl), site, cl.t, cl.h, cl.e);
+        if let Ok(mut c) = self.province_cache.write() {
+            c.insert(key, out);
+        }
+        out
+    }
+
+    pub fn province(&self, wx: i32, wz: i32) -> Province {
+        let gx = (wx as f64 / Self::PROVINCE_SIZE).floor() as i32;
+        let gz = (wz as f64 / Self::PROVINCE_SIZE).floor() as i32;
+        let mut best = (f64::MAX, 0i32, 0i32);
+        let mut second = (f64::MAX, 0i32, 0i32);
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                let (px, pz) = (gx + dx, gz + dz);
+                let (cx, cz) = self.province_site(px, pz);
+                let d = (cx - wx as f64).hypot(cz - wz as f64);
+                if d < best.0 {
+                    second = best;
+                    best = (d, px, pz);
+                } else if d < second.0 {
+                    second = (d, px, pz);
+                }
+            }
+        }
+        let edge = ((second.0 - best.0) * 0.5) as f32;
+        let (biome, site, t, h, e) = self.province_label((best.1, best.2));
+        // The neighbor only matters inside the border fringe; deep in
+        // a country nobody asks who lives next door.
+        let (neighbor, nt, nh, ne) = if edge < Self::PROVINCE_BLEND {
+            let n = self.province_label((second.1, second.2));
+            (n.0, n.2, n.3, n.4)
+        } else {
+            (biome, t, h, e)
+        };
+        Province {
+            key: (best.1, best.2),
+            site,
+            biome,
+            neighbor,
+            edge,
+            t,
+            h,
+            e,
+            nt,
+            nh,
+            ne,
+        }
+    }
+
+    pub fn biome(&self, wx: i32, wz: i32) -> Biome {
+        self.biome_from_at(wx, wz, &self.climate(wx, wz))
+    }
+
+    /// The biome a column reads as: its province's label, dithered
+    /// with the neighbor's through the border fringe (so a forest
+    /// thins into plains instead of ending at a line), with terrain
+    /// keeping its local veto.
+    pub fn biome_from_at(&self, wx: i32, wz: i32, cl: &Climate) -> Biome {
+        // A young fold range is Mountains whatever the country says.
         if self.plate_relief(cl) > 30.0 {
             return Biome::Mountains;
         }
+        let p = self.province(wx, wz);
+        // Culture from the country, terrain from the column: the
+        // province fixes temperature and humidity across its whole
+        // extent (that is what stops the confetti), while sea level
+        // and relief stay local — so a coast is still a coast and a
+        // basin is still a basin inside a single country.
+        let (mut zt, mut zh, mut ze) = (p.t, p.h, p.e);
+        if p.neighbor != p.biome && p.edge < Self::PROVINCE_BLEND {
+            // Interleave the two zones across the fringe: near the
+            // border it is a coin the noise flips, deep in it never is.
+            let f = (p.edge / Self::PROVINCE_BLEND).clamp(0.0, 1.0);
+            // Coarse enough that the fringe reads as fingers of one
+            // country reaching into the other, not as static.
+            let n = self.detail.get([wx as f64 / 55.0, wz as f64 / 55.0]) as f32;
+            if n * 0.5 + 0.5 > 0.5 + f * 0.5 {
+                zt = p.nt;
+                zh = p.nh;
+                ze = p.ne;
+            }
+        }
+        self.classify(&Climate {
+            t: zt,
+            h: zh,
+            e: ze,
+            ..*cl
+        })
+    }
+
+    /// Nearest-centroid classification of one climate sample. Provinces
+    /// are labelled with this at their site; nothing else should call
+    /// it per-column (that was the patchwork).
+    fn classify(&self, cl: &Climate) -> Biome {
         let mut best = Biome::Plains;
         let mut best_d = f32::MAX;
         for (biome, t, h, c, e) in CENTROIDS {
@@ -483,7 +674,7 @@ impl Generator {
     /// collide, coastal ranges and offshore trenches at subduction
     /// zones, sunken valleys where plates part. Positive adds height,
     /// negative digs.
-    fn plate_relief(&self, cl: &Climate) -> f32 {
+    pub(crate) fn plate_relief(&self, cl: &Climate) -> f32 {
         let tec = &cl.tec;
         let land = ((cl.c + 0.15) / 0.35).clamp(0.0, 1.0);
         let belt = (-(tec.boundary_dist / 80.0).powi(2)).exp();
@@ -1052,7 +1243,7 @@ impl Generator {
                 let wx = bx + lx as i32;
                 let wz = bz + lz as i32;
                 let cl = self.climate(wx, wz);
-                let biome = self.biome_from(&cl);
+                let biome = self.biome_from_at(wx, wz, &cl);
                 biomes[lx][lz] = biome;
 
                 // Post-carve top solid (an armored bank can stand
@@ -1072,6 +1263,17 @@ impl Generator {
                     slope = slope.max((h0 - n).abs());
                 }
                 let steep = slope >= 3;
+                // Standing water needs somewhere to stand: a column
+                // whose neighbors all sit at or above it. On a
+                // shoulder a "pool" is just a spring, and it pours
+                // downhill forever — which is exactly what a whole
+                // swamp province turned into before this rule.
+                let basin = [(0i32, 1i32), (0, -1), (1, 0), (-1, 0)]
+                    .iter()
+                    .all(|&(dx, dz)| {
+                        shape_top[(lx as i32 + 1 + dx) as usize][(lz as i32 + 1 + dz) as usize]
+                            >= h0
+                    });
                 let underwater = top < fills[lx][lz].max(SEA_LEVEL) - 1;
                 let snowcap = top >= 170
                     || (biome == Biome::Mountains
@@ -1116,7 +1318,7 @@ impl Generator {
                         Biome::Tundra if patch < -0.3 => (Some(self.gravel), Some(self.gravel)),
                         Biome::Tundra => (Some(self.dirt), Some(self.dirt)),
                         // Wetlands: standing pools and mud between grass.
-                        Biome::Swamp if patch > 0.34 && !beach => {
+                        Biome::Swamp if patch > 0.34 && !beach && basin => {
                             (Some(self.water), Some(self.mud))
                         }
                         Biome::Swamp if patch < -0.22 => (Some(self.mud), Some(self.mud)),
@@ -1764,6 +1966,40 @@ impl Generator {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // The heart of a country stands at its province's center. A
+        // site sits inside its own province by construction, so at
+        // most a few keys can land in any one chunk.
+        {
+            let gx = (bx as f64 / Self::PROVINCE_SIZE).floor() as i32;
+            let gz = (bz as f64 / Self::PROVINCE_SIZE).floor() as i32;
+            for dx in -1..=1 {
+                for dz in -1..=1 {
+                    let key = (gx + dx, gz + dz);
+                    let (sx, sz) = self.province_center(key.0, key.1);
+                    let (lx, lz) = (sx - bx, sz - bz);
+                    if !(0..CHUNK_X as i32).contains(&lx) || !(0..CHUNK_Z as i32).contains(&lz) {
+                        continue;
+                    }
+                    let ground = heights[lx as usize][lz as usize];
+                    // A site wants dry, standable ground; a country
+                    // whose center drowns keeps its heart unbuilt, and
+                    // the world reads such country as living.
+                    if ground <= SEA_LEVEL || ground + 8 >= CHUNK_Y as i32 {
+                        continue;
+                    }
+                    let (block, tall) =
+                        match crate::world::heart_form(biomes[lx as usize][lz as usize]) {
+                            "base:heart_tree" => (self.heart_tree, 5),
+                            "base:heart_spring" => (self.heart_spring, 1),
+                            _ => (self.heart_stone, 3),
+                        };
+                    for dy in 1..=tall {
+                        c.set(lx as usize, (ground + dy) as usize, lz as usize, block);
                     }
                 }
             }

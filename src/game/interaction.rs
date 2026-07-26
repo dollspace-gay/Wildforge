@@ -5,7 +5,7 @@ use super::*;
 impl Game {
     /// A line from the lost takers, chosen at random.
     pub(super) fn read_tablet(&mut self) {
-        const LINES: [&str; 10] = [
+        const LINES: [&str; 18] = [
             "We burned the south wood. The nights grew teeth.",
             "The forge ran hot for a year. Then the trees walked.",
             "Plant after you cut. My father knew. I forgot.",
@@ -16,6 +16,15 @@ impl Game {
             "Feed the land and it feeds you. Starve it and it comes.",
             "My daughter planted a row of oaks. They spared her field.",
             "If you read this: the wild forgives. Slowly.",
+            // The takers' confession, in the order it happened.
+            "The walls held. Every night, the walls held.",
+            "We farmed their rage. Heartwood pays better than wheat.",
+            "Kellen says the raids come from the old tree. Kellen is right.",
+            "We took axes to the bole at dawn. It took all morning.",
+            "No wardens tonight. None the next. The children slept.",
+            "We did the same in the east valley, and the north.",
+            "Fourth summer: the burning ground gives us nothing.",
+            "The stone will not take the offering. It just sits there.",
         ];
         let i = (self.rand01() * LINES.len() as f32) as usize % LINES.len();
         self.toast(LINES[i].to_string());

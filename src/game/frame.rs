@@ -605,6 +605,13 @@ impl Game {
                                 self.presentation.thunder_delay = -1.0;
                             }
                         }
+                        server::SimEvent::LongWinter(fell) => {
+                            self.toast(if fell {
+                                "The year has stopped turning. Spring does not come.".to_string()
+                            } else {
+                                "The year turns again.".to_string()
+                            });
+                        }
                         server::SimEvent::IreTier { rose, tier } => {
                             let name = world::IRE_TIERS[tier.min(world::IRE_TIERS.len() - 1)];
                             self.toast(if rose {

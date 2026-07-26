@@ -83,9 +83,16 @@ impl World {
         if self.mobs.len() >= MOB_CAP {
             return;
         }
+        // Dead country restocks nothing.
+        let (wcx, wcz) = (pos.x * CHUNK_X as i32 + 8, pos.z * CHUNK_Z as i32 + 8);
+        if !self.heart_alive_at(wcx, wcz) {
+            return;
+        }
         let reg = self.reg.clone();
         let (cx, cz) = (pos.x * CHUNK_X as i32, pos.z * CHUNK_Z as i32);
-        let biome = self.generator.biome(cx + 8, cz + 8).name().to_lowercase();
+        // What a country IS, not what the map first called it: a
+        // grafted heart drags its country's life after it.
+        let biome = self.country_biome(cx + 8, cz + 8).name().to_lowercase();
         for (si, def) in reg.animals.iter().enumerate() {
             // Wildlife only — wardens come and go with the spawner.
             if def.hostile || !def.biomes.contains(&biome) {
@@ -374,6 +381,16 @@ impl World {
             if m.pos.y < -20.0 {
                 return false; // fell out of the world somehow
             }
+            if def.hostile && m.masterless {
+                // Left over when the heart died and never recalled:
+                // no daylight dissolves them, nothing sends them, and
+                // they do not stop. Only distance retires them.
+                let near = players
+                    .iter()
+                    .map(|p| (m.pos - p.pos).length_squared())
+                    .fold(f32::INFINITY, f32::min);
+                return near <= 120.0 * 120.0;
+            }
             if !def.hostile {
                 // Fish are ambience-plus-resource: the water has
                 // fish while someone's there to see it.
@@ -466,8 +483,8 @@ impl World {
                 let x = (player.x + ang.sin() * dist).floor() as i32;
                 let z = (player.z + ang.cos() * dist).floor() as i32;
                 let cp = ChunkPos::of_world(x, z);
-                if self.chunks.contains_key(&cp) {
-                    let biome = self.generator.biome(x, z).name().to_lowercase();
+                if self.chunks.contains_key(&cp) && self.heart_alive_at(x, z) {
+                    let biome = self.country_biome(x, z).name().to_lowercase();
                     // Wildlife only — wardens have their own spawner.
                     let eligible: Vec<usize> = reg
                         .animals
@@ -632,6 +649,14 @@ impl World {
         }
         self.hostile_spawn_timer = 0.0;
         self.grade_watchers();
+        // The wardens are the spirit's immune response. Where the
+        // heart is dead they simply stop coming — and the silence is
+        // the loudest thing this game ever does, because the player
+        // has spent the whole game reading warden pressure as danger.
+        let (hx, hz) = (player.x.floor() as i32, player.z.floor() as i32);
+        if !self.heart_alive_at(hx, hz) {
+            return;
+        }
         let reg = self.reg.clone();
         // The tier as THIS ground feels it: an angry forest hunts
         // harder, a tended valley softer, wherever the world's mood.
@@ -679,7 +704,8 @@ impl World {
             if dxs * dxs + dzs * dzs < 16.0 * 16.0 {
                 continue;
             }
-            let biome = self.generator.biome(x, z).name().to_lowercase();
+            // The wardens a country fields follow its heart too.
+            let biome = self.country_biome(x, z).name().to_lowercase();
             // Split the roster: surface wardens spawn at the surface, the
             // deep's own ("underground" biome tag) in caves below.
             let surface_y = self.surface_height(x, z);

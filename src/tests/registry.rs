@@ -1309,6 +1309,17 @@ fn content_graph_is_complete_and_obtainable() {
             ok.insert(c.0);
             grew = true;
         }
+        // A quickened seed: a living heart gives one to a bare hand -
+        // a code path (the heart interaction), like the bucket dip.
+        // Every world has hearts, of all three forms.
+        for name in ["base:bole_seed", "base:spring_seed", "base:stone_seed"] {
+            if let Some(s) = reg.item_id(name)
+                && !ok.contains(&s.0)
+            {
+                ok.insert(s.0);
+                grew = true;
+            }
+        }
         // The separator: mixed rare-earth powder splits into
         // neodymium and cerium on a firebrick stack - a code path
         // (tick_separators), like the smoker.

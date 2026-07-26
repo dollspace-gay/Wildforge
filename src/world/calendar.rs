@@ -5,7 +5,38 @@ use super::*;
 impl World {
     /// 0 spring, 1 summer, 2 autumn, 3 winter.
     pub fn season(&self) -> usize {
+        // The Long Winter: enough countries dead and the year stops
+        // turning. Everything winter already means — crops at zero,
+        // no breeding, halved repopulation, water freezing — arrives
+        // for free, because it IS winter, world-wide, until enough
+        // hearts are relit.
+        if self.long_winter {
+            return 3;
+        }
         ((self.day / SEASON_DAYS) % 4) as usize
+    }
+
+    /// How many known countries have lost their spirit, and how many
+    /// are known at all.
+    pub fn dead_countries(&self) -> (usize, usize) {
+        let dead = self.hearts.values().filter(|h| h.stage == 0).count();
+        (dead, self.hearts.len())
+    }
+
+    /// Re-read whether the world's year has stopped. Returns Some(true)
+    /// when the Long Winter falls and Some(false) when it lifts.
+    pub(super) fn refresh_long_winter(&mut self) -> Option<bool> {
+        let (dead, known) = self.dead_countries();
+        // A handful of dead countries is a tragedy, not a winter; it
+        // takes both a real count and a real share of the known world.
+        let falls = dead >= LONG_WINTER_MIN_DEAD
+            && known > 0
+            && dead as f32 >= known as f32 * LONG_WINTER_FRAC;
+        if falls == self.long_winter {
+            return None;
+        }
+        self.long_winter = falls;
+        Some(falls)
     }
 
     /// 0..1 through the current season.
@@ -62,6 +93,8 @@ impl World {
     pub fn plant_ire_at(&mut self, x: i32, z: i32, amt: f32) {
         self.plant_ire(amt);
         self.charge_cell(x, z, -amt);
+        // Tending is also how a cell earns back its bloom.
+        self.ease_bloom_debt(x, z, amt);
     }
 
     // ---------------- the bloom (wrath as renewal) ----------------
@@ -77,9 +110,32 @@ impl World {
             .unwrap_or(0.0)
     }
 
+    /// Bank a bloom — but the ground's willingness is finite. A cell
+    /// bloomed over and over and never tended gives less each time,
+    /// and finally nothing: the storm's gift is not a faucet, and
+    /// farming the wild's rage spends something real.
     pub fn add_bloom(&mut self, x: i32, z: i32, days: f32) {
-        let e = self.bloom.entry(Self::ire_cell(x, z)).or_insert(0.0);
-        *e = (*e + days).min(9.0);
+        let cell = Self::ire_cell(x, z);
+        let spent = self.bloom_spent.get(&cell).copied().unwrap_or(0.0);
+        let yield_frac = (1.0 - spent / BLOOM_EXHAUSTION).clamp(0.0, 1.0);
+        let given = days * yield_frac;
+        if given <= 0.01 {
+            return;
+        }
+        *self.bloom_spent.entry(cell).or_insert(0.0) += given;
+        let e = self.bloom.entry(cell).or_insert(0.0);
+        *e = (*e + given).min(9.0);
+    }
+
+    /// Tending pays the ground back its willingness to bloom.
+    pub fn ease_bloom_debt(&mut self, x: i32, z: i32, amount: f32) {
+        let cell = Self::ire_cell(x, z);
+        if let Some(v) = self.bloom_spent.get_mut(&cell) {
+            *v = (*v - amount).max(0.0);
+            if *v <= 0.01 {
+                self.bloom_spent.remove(&cell);
+            }
+        }
     }
 
     /// A hostile fell here: the wild reclaims its own, extravagantly.
@@ -174,6 +230,10 @@ impl World {
             *v -= v.signum() * (2.0 * day_frac).min(v.abs());
             v.abs() >= 0.01
         });
+        self.tick_hearts(day_frac);
+        self.refresh_long_winter();
+        self.tick_rooting(day_frac);
+        self.tick_graft(day_frac);
         // Blooms burn down day by day.
         self.bloom.retain(|_, v| {
             *v -= day_frac;
@@ -288,11 +348,23 @@ impl World {
     /// consumed regardless; the refund is capped at 10 per dawn.
     pub fn accept_offerings(&mut self) -> f32 {
         let (want, _) = self.season_want();
+        // The ire cells whose country has no spirit left to hear.
+        let dead_country: std::collections::HashSet<(i32, i32)> = self
+            .hearts
+            .values()
+            .filter(|h| h.stage == 0)
+            .map(|h| (h.pos.0 >> 8, h.pos.2 >> 8))
+            .collect();
         let mut taken: Vec<((i32, i32), ItemStack)> = Vec::new();
         for (&(x, _, z), e) in self.block_entities.iter_mut() {
             let BlockEntity::Offering(o) = e else {
                 continue;
             };
+            // In a country whose heart is dead the stone accepts
+            // nothing. Not refused — unreceived. Nobody is home.
+            if dead_country.contains(&(x >> 8, z >> 8)) {
+                continue;
+            }
             for slot in o.slots.iter_mut() {
                 if let Some(s) = slot.take() {
                     taken.push(((x, z), s));

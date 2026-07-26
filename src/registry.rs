@@ -455,6 +455,20 @@ impl Registry {
         d.water_level.is_some() && !d.lava
     }
 
+    /// Can a placed block take this cell? Air, any fluid, and thin
+    /// ground layers (snow, litter, lily pads) give way — you build
+    /// into a pond or over a drift, and the cell's old contents are
+    /// displaced. Anything standing (crops, saplings, torches) does
+    /// NOT: a placement must never quietly eat a player's work.
+    #[inline]
+    pub fn is_replaceable(&self, id: BlockId) -> bool {
+        if id == AIR {
+            return true;
+        }
+        let d = self.block(id);
+        d.water_level.is_some() || (d.height.is_some() && !d.solid)
+    }
+
     #[inline]
     pub fn is_lava(&self, id: BlockId) -> bool {
         self.block(id).lava

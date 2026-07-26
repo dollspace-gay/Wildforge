@@ -14,9 +14,20 @@ fn the_till_reads_the_ground() {
     let grass = b(&reg, "base:grass");
     let dirt = b(&reg, "base:dirt");
     let sand = b(&reg, "base:sand");
-    w.set_block(4, h, 4, grass);
-    w.set_block(8, h, 8, dirt);
-    w.set_block(12, h, 12, dirt);
+    // Set the neighborhoods too: the till reads what is BESIDE the
+    // cell, and the surrounding country supplies its own palette.
+    for (cx, cz, fill) in [(4, 4, grass), (8, 8, dirt)] {
+        for dx in -1..=1 {
+            for dz in -1..=1 {
+                w.set_block(cx + dx, h, cz + dz, fill);
+            }
+        }
+    }
+    for dx in -1..=1 {
+        for dz in -1..=1 {
+            w.set_block(12 + dx, h, 12 + dz, dirt);
+        }
+    }
     w.set_block(13, h, 12, sand);
     let grassy = soil::fert_of(w.till_meta(4, h, 4));
     let dirty = soil::fert_of(w.till_meta(8, h, 8));
@@ -174,14 +185,19 @@ fn fallow_fields_recover_and_winter_is_the_soils_turn() {
 fn grass_heals_bare_dirt_under_the_sky() {
     let reg = base_reg();
     let mut w = test_world_with("heal", reg.clone());
-    let h = w.surface_height(8, 8);
+    // A pad well clear of the terrain: whatever country this world
+    // rolled, the scar and its sky are the test's own.
+    let h = 140;
+    // (a ring of living grass around the scar, so healing has edges
+    // to spread from — the surrounding country supplies none up here)
     let grass = b(&reg, "base:grass");
     let dirt = b(&reg, "base:dirt");
     let stone = b(&reg, "base:stone");
-    // A dirt scar with grass at its edge, open to the sky.
-    for x in 4..12 {
-        for z in 4..12 {
-            w.set_block(x, h, z, if x == 4 { grass } else { dirt });
+    // A dirt scar ringed with grass, open to the sky.
+    for x in 3..13 {
+        for z in 3..13 {
+            let edge = x == 3 || x == 12 || z == 3 || z == 12;
+            w.set_block(x, h, z, if edge { grass } else { dirt });
             for dy in 1..4 {
                 if w.get_block(x, h + dy, z) != AIR {
                     w.set_block(x, h + dy, z, AIR);
@@ -198,10 +214,10 @@ fn grass_heals_bare_dirt_under_the_sky() {
         }
     }
     let mut rng = 4242u32;
-    for _ in 0..4000 {
+    for _ in 0..12000 {
         w.random_tick(&mut rng);
     }
-    let healed = (5..12)
+    let healed = (4..12)
         .flat_map(|x| (4..12).map(move |z| (x, z)))
         .filter(|&(x, z)| w.get_block(x, h, z) == grass)
         .count();

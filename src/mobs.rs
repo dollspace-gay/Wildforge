@@ -227,6 +227,9 @@ pub struct Mob {
     pub bold: bool,
     /// Carcasses only: seconds until the ground takes the rest.
     pub rot: f32,
+    /// A warden whose heart died mid-existence: never recalled, never
+    /// dissolved, and still walking.
+    pub masterless: bool,
     /// Seconds until the next hunger (counts down; <= 0 is hungry).
     pub belly: f32,
     /// Seconds until digestion finishes (> 0 after any meal).
@@ -287,6 +290,7 @@ impl Mob {
             quarry: None,
             bold: false,
             rot: 0.0,
+            masterless: false,
             // A grace period before the first meal matters.
             belly: 240.0,
             digest: 0.0,

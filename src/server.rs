@@ -47,6 +47,8 @@ pub enum SimEvent {
     WeatherChanged(Weather),
     /// The wild's own hand: a bolt landed here.
     Lightning(Vec3),
+    /// The year stopped turning, or started again.
+    LongWinter(bool),
 }
 
 pub struct Server {
@@ -133,11 +135,15 @@ impl Server {
             self.world.clock = Server::clock_of(self.world.day, self.time_of_day);
         }
         self.step_weather(dt, events);
+        let winter_before = self.world.long_winter;
         if self.world.tick_ire(dt / DAY_LENGTH) {
             let refund = self.world.accept_offerings();
             events.push(SimEvent::Dawn {
                 offering_refund: refund,
             });
+        }
+        if self.world.long_winter != winter_before {
+            events.push(SimEvent::LongWinter(self.world.long_winter));
         }
         let tier = self.world.ire_tier();
         if tier != self.prev_tier {
