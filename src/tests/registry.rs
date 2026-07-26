@@ -579,8 +579,8 @@ fn base_animals_and_weapons_register() {
             .iter()
             .filter(|a| !a.hostile && !a.vehicle)
             .count(),
-        24,
-        "the wildlife roster, the hunters, the water, the carcass"
+        35,
+        "the full roster: wildlife, hunters, water, herds, the carcass"
     );
     assert_eq!(
         reg.animals.iter().filter(|a| a.hostile).count(),
@@ -1152,6 +1152,7 @@ fn content_graph_is_complete_and_obtainable() {
         "savanna",
         "badlands",
         "swamp",
+        "underground",
     ];
     for a in &reg.animals {
         assert!(!a.model.is_empty(), "animal {} has no model", a.name);
@@ -1276,12 +1277,23 @@ fn content_graph_is_complete_and_obtainable() {
             grew = true;
         }
         // Dung: any grazing species digests its meals into it - a
-        // code path (MobEvent::Dung), like the smoker.
+        // code path (MobEvent::Dung), like the smoker. Guano is the
+        // bats' variety, gathered under a roost.
         if let Some(d) = reg.item_id("base:dung")
             && !ok.contains(&d.0)
             && reg.animals.iter().any(|a| a.grazes && a.belly_secs > 0.0)
         {
             ok.insert(d.0);
+            grew = true;
+        }
+        if let Some(g) = reg.item_id("base:guano")
+            && !ok.contains(&g.0)
+            && reg
+                .animals
+                .iter()
+                .any(|a| a.name.ends_with(":bat") && a.belly_secs > 0.0)
+        {
+            ok.insert(g.0);
             grew = true;
         }
         // Compost: a heap of greens cooks down - a code path

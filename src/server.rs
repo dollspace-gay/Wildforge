@@ -189,8 +189,9 @@ impl Server {
                 // Kills are settled inside tick_mobs; none escape.
                 MobEvent::Killed(_) => {}
                 MobEvent::Ate(pos) => self.world.apply_bite(pos),
-                MobEvent::Dung(at) => {
-                    if let Some(dung) = self.world.reg.item_id("base:dung") {
+                MobEvent::Dung(at, guano) => {
+                    let item = if guano { "base:guano" } else { "base:dung" };
+                    if let Some(dung) = self.world.reg.item_id(item) {
                         let reg = self.world.reg.clone();
                         let stack = crate::inventory::ItemStack::new(&reg, dung, 1);
                         self.world.push_drop(

@@ -1089,3 +1089,8 @@ durability = 64
 id = "kelp"
 name = "Kelp"
 texture = "kelp_item.png"
+
+[[item]]
+id = "guano"
+name = "Guano"
+texture = "guano.png"

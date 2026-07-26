@@ -646,3 +646,44 @@ fn the_crab_pinches_what_bothers_it() {
     }
     assert!(pinched, "stand on a crab, get pinched");
 }
+
+#[test]
+fn bats_roost_and_the_guano_gathers() {
+    let reg = base_reg();
+    let mut w = test_world_with("bats", reg.clone());
+    // A cave box: floor, walls, and a roof to roost against.
+    let stone = b(&reg, "base:stone");
+    for x in 4..=12 {
+        for z in 4..=12 {
+            for y in 18..=26 {
+                let shell = x == 4 || x == 12 || z == 4 || z == 12 || y == 18 || y == 26;
+                w.set_block(x, y, z, if shell { stone } else { AIR });
+            }
+        }
+    }
+    let mut bat = beast(&reg, "base:bat", glam::Vec3::new(8.5, 21.0, 8.5));
+    bat.belly = -1.0;
+    w.spawn_mob(bat);
+    let mut rng = 53u32;
+    let mut gathered = false;
+    for _ in 0..3000 {
+        let evs = w.tick_mobs(&[], 0.0, 0.05, &mut rng);
+        if evs
+            .iter()
+            .any(|e| matches!(e, crate::mobs::MobEvent::Dung(_, true)))
+        {
+            gathered = true;
+            break;
+        }
+    }
+    assert!(gathered, "the roost pays in guano");
+    let bat_si = reg.animal_id("base:bat").unwrap();
+    let bat = w.mobs().iter().find(|m| m.species == bat_si).expect("bat");
+    assert!(
+        bat.pos.y > 22.0,
+        "the hover presses the bat toward the roof (y {:.1})",
+        bat.pos.y
+    );
+    // And guano out-feeds dung: the cave's gift is the strong one.
+    assert!(soil::fertilizer_value("base:guano") > soil::fertilizer_value("base:dung"));
+}

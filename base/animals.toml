@@ -740,3 +740,275 @@ body = { size = [5, 3, 13], at = [0, 0, 0] }
 head = { size = [3.5, 2, 6], at = [0, 0.3, -9] }
 leg = { size = [1.5, 2, 1.5], at = [2.5, 0, 4] }
 tail = { size = [2.5, 2, 7], at = [0, 0.3, 9.5] }
+
+# ---- the full roster: every biome answers ----
+
+[[animal]]
+id = "bison"
+name = "Bison"
+biomes = ["plains"]
+health = 24
+speed = 2.2
+flee_range = 6
+group = [3, 5]
+rarity = 18
+belly = 600
+grazes = true
+breed_food = "base:wheat"
+tex = "bison.png"
+head_tex = "bison_face.png"
+sound_pitch = 0.5
+drops = [
+  { item = "raw_venison", min = 2, max = 3 },
+  { item = "hide", min = 1, max = 2 },
+]
+[animal.model]
+body = { size = [8, 8, 13], at = [0, 6, 0] }
+hump = { size = [7, 3, 6], at = [0, 13, -2] }
+head = { size = [5, 5, 5], at = [0, 8, -9] }
+leg = { size = [2, 6, 2], at = [2.6, 0, 4.5] }
+tail = { size = [1, 2, 1], at = [0, 11, 7] }
+
+[[animal]]
+id = "antelope"
+name = "Antelope"
+biomes = ["savanna"]
+health = 9
+speed = 3.1
+flee_range = 12
+group = [2, 4]
+rarity = 12
+belly = 600
+grazes = true
+breed_food = "base:wheat"
+tex = "antelope.png"
+head_tex = "antelope_face.png"
+sound_pitch = 1.2
+drops = [
+  { item = "raw_venison", min = 1, max = 2 },
+  { item = "hide", min = 0, max = 1 },
+]
+[animal.model]
+body = { size = [5, 6, 10], at = [0, 8, 0] }
+head = { size = [3.5, 3.5, 4], at = [0, 12, -6.5] }
+leg = { size = [1.5, 8, 1.5], at = [1.6, 0, 3.5] }
+horn_l = { size = [0.7, 3, 0.7], at = [-1.2, 15.5, -6] }
+horn_r = { size = [0.7, 3, 0.7], at = [1.2, 15.5, -6] }
+
+[[animal]]
+id = "musk_ox"
+name = "Musk Ox"
+biomes = ["tundra"]
+health = 22
+speed = 1.8
+flee_range = 4
+group = [2, 3]
+rarity = 12
+belly = 700
+grazes = true
+breed_food = "base:wheat"
+tex = "musk_ox.png"
+head_tex = "musk_ox_face.png"
+sound_pitch = 0.55
+drops = [
+  { item = "raw_chevon", min = 1, max = 2 },
+  { item = "hide", min = 1, max = 2 },
+]
+[animal.model]
+body = { size = [8, 7, 12], at = [0, 5, 0] }
+head = { size = [5, 4, 4], at = [0, 7, -8] }
+leg = { size = [2, 5, 2], at = [2.6, 0, 4] }
+horn_l = { size = [2.5, 1, 1], at = [-3.5, 10, -7.5] }
+horn_r = { size = [2.5, 1, 1], at = [3.5, 10, -7.5] }
+
+[[animal]]
+id = "mouflon"
+name = "Mouflon"
+biomes = ["scrubland", "mountains"]
+health = 10
+speed = 2.4
+flee_range = 8
+group = [2, 3]
+rarity = 12
+belly = 600
+grazes = true
+breed_food = "base:wheat"
+tex = "mouflon.png"
+head_tex = "mouflon_face.png"
+sound_pitch = 1.0
+drops = [
+  { item = "raw_chevon", min = 1, max = 2 },
+  { item = "hide", min = 0, max = 1 },
+]
+[animal.model]
+body = { size = [5, 6, 9], at = [0, 6, 0] }
+head = { size = [3.5, 3.5, 4], at = [0, 9, -6] }
+leg = { size = [1.5, 6, 1.5], at = [1.6, 0, 3] }
+horn_l = { size = [1.5, 1.5, 1], at = [-2.4, 11, -5.5] }
+horn_r = { size = [1.5, 1.5, 1], at = [2.4, 11, -5.5] }
+
+[[animal]]
+id = "camel"
+name = "Camel"
+biomes = ["desert"]
+health = 18
+speed = 2.6
+flee_range = 3
+group = [1, 2]
+rarity = 14
+belly = 900
+grazes = true
+breed_food = "base:cactus_fruit"
+carrier = true
+tex = "camel.png"
+head_tex = "camel_face.png"
+sound_pitch = 0.7
+drops = [{ item = "hide", min = 1, max = 2 }]
+[animal.model]
+body = { size = [6, 7, 12], at = [0, 9, 0] }
+hump = { size = [4, 3, 5], at = [0, 16, 0] }
+neck = { size = [2.5, 6, 2.5], at = [0, 13, -6.5] }
+head = { size = [3, 3, 4.5], at = [0, 18.5, -7] }
+leg = { size = [1.8, 9, 1.8], at = [2, 0, 4] }
+
+[[animal]]
+id = "pheasant"
+name = "Pheasant"
+biomes = ["plains", "forest"]
+health = 5
+speed = 1.9
+flee_range = 6
+group = [1, 3]
+rarity = 10
+belly = 600
+grazes = true
+breed_food = "base:wheat_seeds"
+tex = "pheasant.png"
+head_tex = "pheasant_face.png"
+sound_pitch = 1.5
+drops = [
+  { item = "raw_fowl", min = 1, max = 1 },
+  { item = "feather", min = 1, max = 2 },
+]
+[animal.model]
+body = { size = [3, 3.5, 5], at = [0, 2, 0] }
+head = { size = [2, 2, 2], at = [0, 5.5, -3] }
+tail = { size = [1.5, 1, 5], at = [0, 3.5, 4] }
+leg = { size = [0.6, 2, 0.6], at = [0.8, 0, 0.3] }
+
+[[animal]]
+id = "guineafowl"
+name = "Guineafowl"
+biomes = ["savanna"]
+health = 5
+speed = 2.0
+flee_range = 6
+group = [2, 4]
+rarity = 10
+belly = 600
+grazes = true
+breed_food = "base:wheat_seeds"
+tex = "guineafowl.png"
+head_tex = "guineafowl_face.png"
+sound_pitch = 1.7
+drops = [
+  { item = "raw_fowl", min = 1, max = 1 },
+  { item = "feather", min = 1, max = 2 },
+]
+[animal.model]
+body = { size = [3.5, 3.5, 4.5], at = [0, 2, 0] }
+head = { size = [1.6, 1.8, 1.6], at = [0, 5.8, -2.5] }
+leg = { size = [0.6, 2, 0.6], at = [0.9, 0, 0.3] }
+
+[[animal]]
+id = "ptarmigan"
+name = "Ptarmigan"
+biomes = ["tundra", "arctic"]
+health = 4
+speed = 1.9
+flee_range = 6
+group = [1, 3]
+rarity = 12
+belly = 600
+grazes = true
+breed_food = "base:wheat_seeds"
+tex = "ptarmigan.png"
+head_tex = "ptarmigan_face.png"
+sound_pitch = 1.6
+drops = [
+  { item = "raw_fowl", min = 1, max = 1 },
+  { item = "feather", min = 1, max = 2 },
+]
+[animal.model]
+body = { size = [2.8, 3, 4], at = [0, 1.5, 0] }
+head = { size = [1.6, 1.6, 1.6], at = [0, 4.5, -2.2] }
+leg = { size = [0.5, 1.5, 0.5], at = [0.7, 0, 0.3] }
+
+[[animal]]
+id = "duck"
+name = "Duck"
+biomes = ["plains", "forest", "swamp"]
+health = 4
+speed = 1.8
+flee_range = 5
+group = [2, 4]
+rarity = 14
+belly = 600
+grazes = true
+breed_food = "base:wheat_seeds"
+tex = "duck.png"
+head_tex = "duck_face.png"
+sound_pitch = 1.3
+drops = [
+  { item = "raw_fowl", min = 1, max = 1 },
+  { item = "feather", min = 1, max = 2 },
+]
+[animal.model]
+body = { size = [3, 3, 5], at = [0, 1.5, 0] }
+head = { size = [1.8, 1.8, 2], at = [0, 4.8, -2.8] }
+tail = { size = [1.5, 1, 1.5], at = [0, 2.5, 2.8] }
+leg = { size = [0.6, 1.5, 0.6], at = [0.8, 0, 0.3] }
+
+[[animal]]
+id = "marmot"
+name = "Marmot"
+# Whistles on the scree, drops nothing, matters anyway.
+biomes = ["mountains"]
+health = 4
+speed = 2.2
+flee_range = 7
+group = [1, 3]
+rarity = 12
+belly = 600
+grazes = true
+tex = "marmot.png"
+head_tex = "marmot_face.png"
+sound_pitch = 1.9
+drops = []
+[animal.model]
+body = { size = [3, 3, 5], at = [0, 0.5, 0] }
+head = { size = [2.2, 2, 2.2], at = [0, 3, -3] }
+tail = { size = [1, 1, 2], at = [0, 1.5, 3] }
+
+[[animal]]
+id = "bat"
+name = "Bat"
+# Roosts against cave ceilings (the hover presses it there), and
+# guano gathers beneath a roost: the strongest fertilizer in the
+# game is found, not made.
+biomes = ["underground"]
+health = 3
+speed = 2.8
+flee_range = 4
+group = [2, 3]
+rarity = 14
+belly = 300
+movement = "float"
+tex = "bat.png"
+head_tex = "bat_face.png"
+sound_pitch = 2.4
+drops = []
+[animal.model]
+body = { size = [1.5, 2, 1.5], at = [0, 10, 0] }
+wing_l = { size = [4, 1.5, 0.5], at = [-2.7, 10.5, 0] }
+wing_r = { size = [4, 1.5, 0.5], at = [2.7, 10.5, 0] }

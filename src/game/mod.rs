@@ -303,6 +303,8 @@ struct PresentationState {
     slot_pulse: [f32; HOTBAR_SLOTS],
     pickup_streak: (u32, f32),
     screen_age: f32,
+    /// Countdown to the next ambient speck (songbird, dragonfly).
+    ambient_timer: f32,
     sel_bounce: f32,
     press_dip: f32,
     hitch: f32,
@@ -339,6 +341,7 @@ impl PresentationState {
             slot_pulse: [0.0; HOTBAR_SLOTS],
             pickup_streak: (0, 0.0),
             screen_age: 1.0,
+            ambient_timer: 3.0,
             sel_bounce: 1.0,
             press_dip: 0.0,
             hitch: 0.0,

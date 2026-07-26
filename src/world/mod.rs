@@ -512,7 +512,7 @@ impl Weather {
 }
 
 /// Hard cap on living mobs — memory/perf backstop, far above natural density.
-pub const MOB_CAP: usize = 200;
+pub const MOB_CAP: usize = 320;
 
 impl World {
     /// Position in the lunar cycle, 0..1 (0 = new moon, 0.5 = full moon). A

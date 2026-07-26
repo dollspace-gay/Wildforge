@@ -105,6 +105,44 @@ impl World {
             }
             break; // one species per chunk keeps groups readable
         }
+        // The dark has its own roster: underground species roll
+        // independently of the surface (a chunk can carry deer above
+        // and a bat colony below).
+        for (si, def) in reg.animals.iter().enumerate() {
+            if def.hostile || def.biomes.iter().all(|b| b != "underground") {
+                continue;
+            }
+            let roll = self.mob_hash(pos.x, pos.z, 8600 + si as u32);
+            if !roll.is_multiple_of(def.rarity) {
+                continue;
+            }
+            let span = def.group[1].saturating_sub(def.group[0]) + 1;
+            let n = def.group[0] + (roll >> 8) % span;
+            for i in 0..n {
+                let h = self.mob_hash(pos.x, pos.z, 8700 + si as u32 * 31 + i);
+                let lx = (h % CHUNK_X as u32) as i32;
+                let lz = ((h >> 8) % CHUNK_Z as u32) as i32;
+                let (x, z) = (cx + lx, cz + lz);
+                // A pocket of cave: two air cells under a solid roof.
+                let base = 8 + (h >> 16) % 32;
+                let spot = (base as i32..(base as i32 + 24).min(52)).find(|&y| {
+                    self.get_block(x, y, z) == AIR
+                        && self.get_block(x, y + 1, z) == AIR
+                        && self.reg.is_solid(self.get_block(x, y + 2, z))
+                });
+                if let Some(y) = spot
+                    && self.mobs.len() < MOB_CAP
+                {
+                    let mut m = Mob::new(
+                        si,
+                        glam::Vec3::new(x as f32 + 0.5, y as f32 + 0.4, z as f32 + 0.5),
+                        (h >> 12) as f32,
+                    );
+                    m.health = reg.animals[si].health;
+                    self.mobs.push(m);
+                }
+            }
+        }
     }
 
     /// Spawn on dry solid ground at the surface — or, for swimmers,
@@ -118,6 +156,18 @@ impl World {
             .animals
             .get(species)
             .is_some_and(|d| d.movement_swim);
+        // Category budget: a full lake never starves the land spawns.
+        if swim {
+            let reg = self.reg.clone();
+            let fish = self
+                .mobs
+                .iter()
+                .filter(|m| reg.animals.get(m.species).is_some_and(|d| d.movement_swim))
+                .count();
+            if fish >= 90 {
+                return false;
+            }
+        }
         let spawn_at = if swim {
             // The first water cell from the sky down, needing depth.
             (4..=96)

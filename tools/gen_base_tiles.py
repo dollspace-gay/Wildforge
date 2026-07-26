@@ -742,6 +742,50 @@ def main():
     d.ellipse([12, 12, 17, 17], fill=(170, 200, 150, 255))
     save_tile(lily, "lily_pad")
 
+
+    # The full roster: every biome answers.
+    herd_pelts = {
+        "bison": ((110, 78, 52), (74, 50, 32), (88, 62, 40)),
+        "antelope": ((196, 160, 104), (140, 110, 66), (222, 206, 178)),
+        "musk_ox": ((92, 74, 56), (58, 46, 34), (76, 60, 44)),
+        "mouflon": ((160, 130, 96), (112, 88, 60), (188, 168, 140)),
+        "camel": ((206, 172, 116), (152, 122, 76), (188, 156, 104)),
+        "marmot": ((164, 130, 88), (116, 88, 56), (188, 160, 120)),
+        "bat": ((70, 60, 66), (44, 36, 42), (96, 80, 88)),
+    }
+    for name, (base_c, dark_c, snout) in herd_pelts.items():
+        save_tile(rock(name, base=base_c, dark=dark_c), name)
+        save_tile(face(f"{name}_face", base_c, dark_c, snout), f"{name}_face")
+    birds = {
+        "pheasant": ((150, 96, 60), (104, 60, 36), (216, 170, 60)),
+        "guineafowl": ((92, 92, 100), (60, 60, 68), (196, 130, 110)),
+        "ptarmigan": ((228, 228, 224), (190, 190, 186), (60, 50, 40)),
+        "duck": ((136, 116, 82), (94, 78, 52), (222, 170, 60)),
+    }
+    for name, (base_c, dark_c, beak) in birds.items():
+        body = rock(name, base=base_c, dark=dark_c)
+        if name == "guineafowl":
+            d = ImageDraw.Draw(body)
+            rg = rng_for("guinea_dots")
+            for _ in range(60):
+                d.point((rg.randint(1, 30), rg.randint(1, 30)),
+                        fill=(216, 216, 220, 255))
+        save_tile(body, name)
+        f = rock(f"{name}_face", base=base_c, dark=dark_c)
+        d = ImageDraw.Draw(f)
+        for ex in (8, 20):
+            d.rectangle([ex, 11, ex + 3, 14], fill=(26, 22, 16, 255))
+            d.point((ex + 1, 12), fill=(240, 235, 220, 255))
+        d.polygon([(13, 19), (18, 19), (15, 26)], fill=beak + (255,))
+        save_tile(f, f"{name}_face")
+    # Guano: the cave's pale gift.
+    gu = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(gu)
+    for cx, cy, r in [(12, 20, 6), (20, 21, 5), (16, 16, 4)]:
+        d.ellipse([cx - r, cy - r, cx + r, cy + r],
+                  fill=(216, 210, 188, 255), outline=(170, 162, 138, 255))
+    save_tile(gu, "guano")
+
     print(f"wrote {len(list(OUT.glob('*.png')))} tiles to {OUT}")
 
 

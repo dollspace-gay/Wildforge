@@ -48,8 +48,9 @@ pub enum MobEvent {
     Ate((i32, i32, i32)),
     /// A predator's kill landed: the prey (by id) becomes a carcass.
     Killed(u32),
-    /// Digestion finished where it always does.
-    Dung(Vec3),
+    /// Digestion finished where it always does (true = a bat's
+    /// guano, the cave's own fertilizer).
+    Dung(Vec3, bool),
 }
 
 /// A bolt in flight: warden thorn/ember/frost, or a player's arrow.
@@ -397,11 +398,19 @@ impl Mob {
         // on. Only species with one, and only grown animals.
         if def.belly_secs > 0.0 && self.growth >= 1.0 {
             self.belly -= dt;
+            // A species that neither grazes nor hunts (bats) finds
+            // its own meals — insects, abstracted — and digests them
+            // where it roosts.
+            if self.belly <= 0.0 && !def.grazes && def.prey.is_empty() {
+                self.belly = def.belly_secs;
+                self.digest = 30.0 + (self.id % 30) as f32;
+            }
             if self.digest > 0.0 {
                 self.digest -= dt;
                 if self.digest <= 0.0 {
-                    if self.on_ground {
-                        events.push(MobEvent::Dung(self.pos));
+                    let guano = def.name.ends_with(":bat");
+                    if self.on_ground || def.movement_float {
+                        events.push(MobEvent::Dung(self.pos, guano));
                     } else {
                         self.digest = 0.5; // held (politely) until grounded
                     }

@@ -166,6 +166,11 @@ fn wildlife_seeds_matching_biomes_only() {
     }
     for m in w.mobs() {
         let def = &reg.animals[m.species];
+        // The dark rolls independently of the surface: bats belong
+        // to whatever chunk has a cave, not to its biome.
+        if def.biomes.iter().any(|b| b == "underground") {
+            continue;
+        }
         // The group roll uses the chunk-center biome; members may scatter a
         // few blocks over a biome edge, which is fine.
         let cp = ChunkPos::of_world(m.pos.x.floor() as i32, m.pos.z.floor() as i32);

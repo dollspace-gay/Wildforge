@@ -1663,10 +1663,11 @@ fn wild_food_and_game_are_scarce() {
         "wild food stays scarce over 100 chunks ({plants} plants)"
     );
     let animals = w.mob_count();
-    // The food chain widened the roster; the country stays sparse
-    // (about one animal per two chunks, predators rare among them).
+    // The roster now spans sky, ground, water, and cave; per-species
+    // density is unchanged and any one walk still crosses mostly
+    // empty country.
     assert!(
-        animals <= 64,
+        animals <= 80,
         "wildlife stays sparse over 100 chunks ({animals})"
     );
 }

@@ -765,6 +765,36 @@ impl Game {
                         }
                     }
                 }
+                // The neighbors: the wider roster lined up along the
+                // north strip for the camera.
+                for (i, name) in [
+                    "base:bison",
+                    "base:camel",
+                    "base:musk_ox",
+                    "base:antelope",
+                    "base:mouflon",
+                    "base:pheasant",
+                    "base:duck",
+                ]
+                .iter()
+                .enumerate()
+                {
+                    if let Some(si) = reg2.animal_id(name) {
+                        let mut m = crate::mobs::Mob::new(
+                            si,
+                            glam::Vec3::new(
+                                bx as f32 - 7.0 + i as f32 * 2.2,
+                                y as f32 + 1.0,
+                                bz as f32 - 1.0,
+                            ),
+                            std::f32::consts::PI,
+                        );
+                        m.health = reg2.animals[si].health;
+                        m.tamed = true;
+                        m.belly = 9000.0;
+                        w.spawn_mob(m);
+                    }
+                }
                 // Fang and carrion: a fox on stand by the field, and
                 // the vultures' table set east of the pen.
                 for (name, dx, dz) in [
