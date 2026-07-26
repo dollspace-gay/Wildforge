@@ -2374,3 +2374,37 @@ fn the_green_tide_seeds_only_natural_kind_ground() {
     }
     assert_eq!(saplings2, 0, "angry or touched ground stays bare");
 }
+
+#[test]
+fn blocks_place_into_water_and_never_vanish_on_refusal() {
+    let reg = base_reg();
+    let mut w = test_world_with("place-water", reg.clone());
+    let h = w.surface_height(4, 4);
+    let stone = b(&reg, "base:stone");
+    let water = reg.water_block(0);
+    // A block takes a water cell — the water is displaced, not the
+    // player's hand. (The bug: place_block refused any non-AIR cell,
+    // so the click spent the item and put nothing down.)
+    w.set_block(4, h + 1, 4, water);
+    assert!(w.place_block((4, h + 1, 4), stone), "stone displaces water");
+    assert_eq!(w.get_block(4, h + 1, 4), stone);
+    // Thin layers give way the same, and air of course.
+    if let Some(layer) = reg.block_id("base:snow_layer") {
+        w.set_block(5, h + 1, 5, layer);
+        assert!(w.place_block((5, h + 1, 5), stone), "stone over a drift");
+    }
+    w.set_block(6, h + 1, 6, AIR);
+    assert!(w.place_block((6, h + 1, 6), stone));
+    // What stands does NOT give way: a placement must never quietly
+    // eat a crop, and refusal must be honest so callers keep the item.
+    let crop = b(&reg, "base:wheat_seeds");
+    w.set_block(7, h + 1, 7, crop);
+    assert!(!w.place_block((7, h + 1, 7), stone), "the wheat stands");
+    assert_eq!(w.get_block(7, h + 1, 7), crop);
+    assert!(!w.place_block((8, h + 1, 8), stone) || w.get_block(8, h + 1, 8) == stone);
+    // And the registry's own account of what gives way.
+    assert!(reg.is_replaceable(AIR));
+    assert!(reg.is_replaceable(water));
+    assert!(!reg.is_replaceable(stone));
+    assert!(!reg.is_replaceable(crop));
+}

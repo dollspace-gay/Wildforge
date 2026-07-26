@@ -819,7 +819,7 @@ impl World {
         let cp = ChunkPos::of_world(pos.0, pos.2);
         self.player_touched.insert((cp.x, cp.z));
         if self.reg.blocks.get(block.0 as usize).is_none()
-            || self.get_block(pos.0, pos.1, pos.2) != AIR
+            || !self.reg.is_replaceable(self.get_block(pos.0, pos.1, pos.2))
         {
             return false;
         }

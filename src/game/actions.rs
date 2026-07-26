@@ -1657,7 +1657,11 @@ impl Game {
                 if bd.cross && !reg.is_solid(soil) {
                     return;
                 }
-                if !reg.is_solid(self.server.world.get_block(x, y, z))
+                // The cell must be one a block can take (air, fluid,
+                // a thin layer) — checking merely "not solid" let a
+                // click through into water or a crop, where the item
+                // was spent and place_block then refused it.
+                if reg.is_replaceable(self.server.world.get_block(x, y, z))
                     && !self.player.overlaps_block(x, y, z)
                 {
                     let allow = if self.content.scripts.wants("on_block_place") {
@@ -1672,18 +1676,30 @@ impl Game {
                     } else {
                         true
                     };
-                    let consumed =
-                        self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some();
-                    if allow && consumed && self.multiplayer.remote.is_some() {
-                        if let Some(r) = &self.multiplayer.remote {
-                            r.client.send(&net::C2S::Place { x, y, z });
-                        }
-                        self.input.action_cooldown = 0.22;
-                        self.sfx(Sfx::Place);
+                    if !allow {
                         return;
                     }
-                    if allow && consumed {
-                        self.server.world.place_block((x, y, z), block);
+                    // Guests predict and let the host's echo correct
+                    // them; the host places FIRST and only spends the
+                    // item if the world actually took it.
+                    if self.multiplayer.remote.is_some() {
+                        if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
+                        {
+                            if let Some(r) = &self.multiplayer.remote {
+                                r.client.send(&net::C2S::Place { x, y, z });
+                            }
+                            self.input.action_cooldown = 0.22;
+                            self.sfx(Sfx::Place);
+                        }
+                        return;
+                    }
+                    if self.inventory.slots[self.input.hotbar_sel].is_none() && !self.creative {
+                        return;
+                    }
+                    if self.server.world.place_block((x, y, z), block) {
+                        if !self.creative {
+                            self.inventory.take_one(self.input.hotbar_sel);
+                        }
                         // A fresh sign or waystone wants its words.
                         if matches!(bd.interaction.as_deref(), Some("sign") | Some("waystone")) {
                             self.ui_state.sign_lines = Default::default();
