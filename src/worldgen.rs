@@ -189,6 +189,8 @@ pub struct Generator {
     kelp_frond: BlockId,
     water_lily: BlockId,
     lantern_fungus: BlockId,
+    meadow_bloom: BlockId,
+    ember_poppy: BlockId,
     stone: BlockId,
     sand: BlockId,
     clay: BlockId,
@@ -301,6 +303,8 @@ impl Generator {
             kelp_frond: b("base:kelp_frond"),
             water_lily: b("base:water_lily"),
             lantern_fungus: b("base:lantern_fungus"),
+            meadow_bloom: b("base:meadow_bloom"),
+            ember_poppy: b("base:ember_poppy"),
             stone: b("base:stone"),
             sand: b("base:sand"),
             clay: b("base:clay_block"),
@@ -1587,6 +1591,25 @@ impl Generator {
                                 }
                         }) {
                             c.set(lx, fy as usize, lz, self.lantern_fungus);
+                        }
+                    }
+                }
+                // Meadow flowers: scattered, useless, and worth it.
+                if matches!(biome, Biome::Plains | Biome::Forest | Biome::Savanna) {
+                    let fr = hash2(self.seed ^ 0xf10e, wx, wz);
+                    if fr.is_multiple_of(340) {
+                        let h2 = self.height_hint(heights, lx, lz);
+                        if h2 > SEA_LEVEL + 1
+                            && h2 + 2 < CHUNK_Y as i32
+                            && c.get(lx, h2 as usize, lz) == self.grass
+                            && c.get(lx, (h2 + 1) as usize, lz) == AIR
+                        {
+                            let f = if fr.is_multiple_of(2) {
+                                self.meadow_bloom
+                            } else {
+                                self.ember_poppy
+                            };
+                            c.set(lx, (h2 + 1) as usize, lz, f);
                         }
                     }
                 }

@@ -45,6 +45,8 @@ pub enum SimEvent {
     IreTier { rose: bool, tier: usize },
     /// The sky changed its mind (ambience/visual transitions).
     WeatherChanged(Weather),
+    /// The wild's own hand: a bolt landed here.
+    Lightning(Vec3),
 }
 
 pub struct Server {
@@ -61,6 +63,7 @@ pub struct Server {
     lava_timer: f32,
     random_timer: f32,
     snow_timer: f32,
+    bolt_timer: f32,
     prev_tier: usize,
     /// Sub-voxel sand block (if registered), per-player walk tracking (fire
     /// once per stride of travel), and the cells recently stood on → time-to-
@@ -87,6 +90,7 @@ impl Server {
             lava_timer: 0.0,
             random_timer: 0.0,
             snow_timer: 0.0,
+            bolt_timer: 24.0,
             prev_tier,
             sand_id,
             sand_prev: Vec::new(),
@@ -251,6 +255,34 @@ impl Server {
                 }
                 self.rng = rng;
             }
+        }
+
+        // Ire storms strike: every so often a bolt hunts natural
+        // ground near a player, chars it fertile, and banks a bloom
+        // — the wrath and the gift are the same event.
+        if self.world.weather == Weather::Storm && !players.is_empty() {
+            self.bolt_timer -= dt;
+            if self.bolt_timer <= 0.0 {
+                let mut rng = self.rng;
+                rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                self.bolt_timer = 16.0 + ((rng >> 8) % 24) as f32;
+                let p = players[(rng >> 6) as usize % players.len()].pos;
+                rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                let dx = ((rng >> 8) % 81) as i32 - 40;
+                rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                let dz = ((rng >> 8) % 81) as i32 - 40;
+                self.rng = rng;
+                let (sx, sz) = (p.x.floor() as i32 + dx, p.z.floor() as i32 + dz);
+                if let Some((bx, by, bz)) = self.world.lightning_strike(sx, sz) {
+                    events.push(SimEvent::Lightning(Vec3::new(
+                        bx as f32 + 0.5,
+                        by as f32 + 1.0,
+                        bz as f32 + 0.5,
+                    )));
+                }
+            }
+        } else {
+            self.bolt_timer = self.bolt_timer.max(6.0);
         }
 
         // Random ticks (crops, saplings) every half second.

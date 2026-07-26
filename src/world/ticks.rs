@@ -91,9 +91,9 @@ impl World {
                     // greenhouse, emergent from the light rules).
                     let mult = if d.crop_any_soil {
                         let base = if season == 1 || season == 2 { 1.0 } else { 0.0 };
-                        // Blessed country feeds back: bushes refruit
-                        // twice as readily where the land is tended.
-                        if self.regional_ire_at(wx, wz) < -8.0 {
+                        // Blessed country feeds back — and bloomed
+                        // country (post-wrath) erupts the same way.
+                        if self.regional_ire_at(wx, wz) < -8.0 || self.bloom_at(wx, wz) > 0.0 {
                             base * 2.0
                         } else {
                             base
@@ -303,15 +303,35 @@ impl World {
                 // natural ground (untouched chunks), only where the
                 // forest isn't already thick, and never in winter.
                 let sky_open = self.light_at(wx, y + 1, wz).1 == 15;
+                let blooming = self.bloom_at(wx, wz) > 0.0;
                 if Some(b) == grass_id
                     && season != 3
                     && sky_open
                     && self.get_block(wx, y + 1, wz) == AIR
-                    && self.regional_ire_at(wx, wz) <= 2.0
+                    // A bloom is the wild's OWN doing: it ignores the
+                    // resentment gate (never the built-country one).
+                    && (self.regional_ire_at(wx, wz) <= 2.0 || blooming)
                     && !self.player_touched.contains(&(pos.x, pos.z))
                 {
+                    // Post-wrath country erupts: flowers first.
+                    if blooming {
+                        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                        let fr = *rng;
+                        if ((fr >> 8) as f32 / (1 << 24) as f32) < 0.35 {
+                            let flower = if fr.is_multiple_of(2) {
+                                reg.block_id("base:meadow_bloom")
+                            } else {
+                                reg.block_id("base:ember_poppy")
+                            };
+                            if let Some(f) = flower {
+                                swaps.push((wx, y + 1, wz, f));
+                                continue;
+                            }
+                        }
+                    }
                     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
-                    if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.06 {
+                    let tide = if blooming { 0.24 } else { 0.06 };
+                    if ((*rng >> 8) as f32 / (1 << 24) as f32) < tide {
                         // A parent within reach, and room to breathe.
                         let mut parent: Option<BlockId> = None;
                         let mut crowd = 0;

@@ -68,6 +68,18 @@ impl World {
         } else {
             let _ = fs::write(self.save_dir.join("rire"), rb);
         }
+        // The bloom ledger, same shape as rire.
+        let mut bb = Vec::with_capacity(self.bloom.len() * 12);
+        for (&(x, z), &v) in &self.bloom {
+            bb.extend_from_slice(&x.to_le_bytes());
+            bb.extend_from_slice(&z.to_le_bytes());
+            bb.extend_from_slice(&v.to_le_bytes());
+        }
+        if bb.is_empty() {
+            let _ = fs::remove_file(self.save_dir.join("bloom"));
+        } else {
+            let _ = fs::write(self.save_dir.join("bloom"), bb);
+        }
         // Seeded-chunk marks: compact binary pairs.
         let mut buf = Vec::with_capacity(self.mob_seeded.len() * 8);
         for (x, z) in &self.mob_seeded {
@@ -168,6 +180,14 @@ impl World {
                 let z = i32::from_le_bytes([p[4], p[5], p[6], p[7]]);
                 let v = f32::from_le_bytes([p[8], p[9], p[10], p[11]]);
                 self.regional_ire.insert((x, z), v.clamp(-20.0, 20.0));
+            }
+        }
+        if let Ok(data) = fs::read(self.save_dir.join("bloom")) {
+            for p in data.chunks_exact(12) {
+                let x = i32::from_le_bytes([p[0], p[1], p[2], p[3]]);
+                let z = i32::from_le_bytes([p[4], p[5], p[6], p[7]]);
+                let v = f32::from_le_bytes([p[8], p[9], p[10], p[11]]);
+                self.bloom.insert((x, z), v.clamp(0.0, 9.0));
             }
         }
         if let Ok(data) = fs::read(self.save_dir.join("aseeded")) {

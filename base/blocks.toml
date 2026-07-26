@@ -1552,3 +1552,33 @@ opaque = false
 light = 6
 light_color = [0.45, 1.0, 0.78]
 drops = "self"
+
+[[block]]
+id = "charred_soil"
+name = "Charred Soil"
+# Where the wild's own lightning landed: tills into the richest
+# farmland in the game. The storm feeds the soil.
+texture = "charred_soil.png"
+hardness = 0.6
+tool = "shovel"
+drops = "base:dirt"
+
+[[block]]
+id = "meadow_bloom"
+name = "Meadow Bloom"
+cross = true
+texture = "meadow_bloom.png"
+hardness = 0.05
+solid = false
+opaque = false
+drops = "self"
+
+[[block]]
+id = "ember_poppy"
+name = "Ember Poppy"
+cross = true
+texture = "ember_poppy.png"
+hardness = 0.05
+solid = false
+opaque = false
+drops = "self"

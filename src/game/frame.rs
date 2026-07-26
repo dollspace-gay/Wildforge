@@ -569,6 +569,23 @@ impl Game {
                             }
                         }
                         server::SimEvent::BoltCast => self.sfx(Sfx::Bolt(1.2)),
+                        server::SimEvent::Lightning(at) => {
+                            // A LANDED bolt: a longer flash, thunder
+                            // timed by distance, and a white column
+                            // standing on the strike for a beat.
+                            self.presentation.lightning = 0.3;
+                            let dist = (at - self.camera.pos).length();
+                            self.presentation.thunder_delay = (dist / 110.0).clamp(0.1, 2.0);
+                            let white = *atlas::builtin_slots().get("snow").unwrap_or(&39);
+                            for dy in 0..26 {
+                                self.juice_burst(
+                                    at + Vec3::new(0.0, dy as f32 * 1.1, 0.0),
+                                    white,
+                                    2,
+                                    0.5,
+                                );
+                            }
+                        }
                         server::SimEvent::Bred => {
                             self.sfx(Sfx::Pickup);
                             self.toast("New life stirs in the wild.".to_string());

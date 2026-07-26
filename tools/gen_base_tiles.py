@@ -806,6 +806,34 @@ def main():
         d.point((x0 - 1, cap_y - r // 2), fill=(210, 255, 232, 255))
     save_tile(lf, "lantern_fungus")
 
+
+    # The storm gives back: scorched ground and what blooms after.
+    ch = rock("charred_soil", base=(52, 44, 40), dark=(28, 24, 22))
+    d = ImageDraw.Draw(ch)
+    rc = rng_for("char_embers")
+    for _ in range(9):
+        x, y = rc.randint(2, 29), rc.randint(2, 29)
+        d.point((x, y), fill=(216, 110, 40, 255))
+        if rc.random() < 0.4:
+            d.point((x + 1, y), fill=(150, 60, 24, 255))
+    save_tile(ch, "charred_soil")
+    for name, petal, heart in [
+        ("meadow_bloom", (236, 232, 244), (232, 196, 70)),
+        ("ember_poppy", (216, 84, 60), (40, 32, 28)),
+    ]:
+        fl = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+        d = ImageDraw.Draw(fl)
+        rf = rng_for(name)
+        for x0, top in [(10, 12), (21, 9), (15, 16)]:
+            d.line([(x0, 31), (x0, top + 3)], fill=(84, 124, 58, 255), width=1)
+            for ang in range(0, 360, 72):
+                ox = int(3 * math.cos(math.radians(ang + rf.randint(-10, 10))))
+                oy = int(3 * math.sin(math.radians(ang)))
+                d.ellipse([x0 + ox - 1, top + oy - 1, x0 + ox + 1, top + oy + 1],
+                          fill=petal + (255,))
+            d.point((x0, top), fill=heart + (255,))
+        save_tile(fl, name)
+
     print(f"wrote {len(list(OUT.glob('*.png')))} tiles to {OUT}")
 
 

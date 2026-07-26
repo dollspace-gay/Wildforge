@@ -268,6 +268,16 @@ impl Game {
             }
             let m = self.server.world.remove_mob(i);
             let def = &reg.animals[m.species];
+            if def.hostile {
+                // Where a warden falls, the wild reclaims its own —
+                // the death site banks bloom (dryads leave a sapling).
+                self.server.world.wild_falls(
+                    &def.name,
+                    m.pos.x.floor() as i32,
+                    m.pos.y.floor() as i32,
+                    m.pos.z.floor() as i32,
+                );
+            }
             if !def.hostile && !def.vehicle && !def.name.ends_with(":carcass") {
                 // The wild counts its dead — wardens are not
                 // individuals, and a TAMED animal is a household loss,

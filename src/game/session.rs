@@ -765,6 +765,46 @@ impl Game {
                         }
                     }
                 }
+                // The storm's aftermath, staged a week on: char scars
+                // in the grass, flowers erupting around them, saplings
+                // on the march — wrath and renewal as one event.
+                if let (Some(charred), Some(mb), Some(ep), Some(sap)) = (
+                    b("base:charred_soil"),
+                    b("base:meadow_bloom"),
+                    b("base:ember_poppy"),
+                    b("base:oak_sapling"),
+                ) {
+                    let (ax, az) = (bx - 6, bz + 15);
+                    for dx in 0..8i32 {
+                        for dz in 0..6i32 {
+                            let (x, z) = (ax + dx, az + dz);
+                            let g = b("base:grass").unwrap();
+                            w.set_block(x, y, z, g);
+                            for hh in 1..=4 {
+                                if w.get_block(x, y + hh, z) != AIR {
+                                    w.set_block(x, y + hh, z, AIR);
+                                }
+                            }
+                            let roll = (dx * 7 + dz * 13) % 17;
+                            match roll {
+                                0 | 8 => {
+                                    w.set_block(x, y, z, charred);
+                                }
+                                2 | 9 | 14 => {
+                                    w.set_block(x, y + 1, z, mb);
+                                }
+                                4 | 11 => {
+                                    w.set_block(x, y + 1, z, ep);
+                                }
+                                6 => {
+                                    w.set_block(x, y + 1, z, sap);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    w.add_bloom(ax, az, 3.0);
+                }
                 // The grotto: a hollow cut under the pad's east edge,
                 // lantern fungus glowing inside, a bat at roost and
                 // its guano on the floor — the cave's corner of the
