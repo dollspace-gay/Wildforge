@@ -19,6 +19,7 @@ impl World {
         let dirt_id = reg.block_id("base:dirt");
         let heap = reg.block_id("base:compost_heap");
         let heap_ready = reg.block_id("base:compost_heap_ready");
+        let litter_id = reg.block_id("base:leaf_litter");
         let season = self.season();
         let mut order: Vec<(f64, ChunkPos)> = self
             .chunks
@@ -44,8 +45,11 @@ impl World {
         let mut dried: Vec<(i32, i32, i32)> = Vec::new();
         // Fallow soil recovering (position, gain).
         let mut fed: Vec<(i32, i32, i32, u8)> = Vec::new();
-        // Plain swaps that earn no plant-ire credit (compost ripening).
+        // Plain swaps that earn no plant-ire credit (compost ripening,
+        // fungus creep, settling litter).
         let mut swaps: Vec<(i32, i32, i32, BlockId)> = Vec::new();
+        // Items shed where a change happened (sapling from rot).
+        let mut drops: Vec<((i32, i32, i32), ItemId)> = Vec::new();
         let mut saplings: Vec<(i32, i32, i32, String, u32)> = Vec::new();
         for (stamp, pos) in order {
             let elapsed = (self.clock - stamp).max(0.0);
@@ -161,6 +165,117 @@ impl World {
                     && let Some(ready) = heap_ready
                 {
                     swaps.push((wx, y, wz, ready));
+                    continue;
+                }
+                // Severed leaves rot: a canopy with no trunk within
+                // reach (BFS through leaves, four steps) sheds its
+                // sapling chance and sometimes drops litter on the
+                // ground below. Felled forests finally fall.
+                if d.name.contains("leaves") {
+                    let mut seen = vec![(wx, y, wz)];
+                    let mut queue = vec![((wx, y, wz), 0u8)];
+                    let mut anchored = false;
+                    'bfs: while let Some(((cx, cy, cz), depth)) = queue.pop() {
+                        for (dx, dy, dz) in [
+                            (1, 0, 0),
+                            (-1, 0, 0),
+                            (0, 1, 0),
+                            (0, -1, 0),
+                            (0, 0, 1),
+                            (0, 0, -1),
+                        ] {
+                            let n = (cx + dx, cy + dy, cz + dz);
+                            let nb = self.get_block(n.0, n.1, n.2);
+                            let name = &reg.block(nb).name;
+                            if name.ends_with("log") {
+                                anchored = true;
+                                break 'bfs;
+                            }
+                            if depth < 4 && name.contains("leaves") && !seen.contains(&n) {
+                                seen.push(n);
+                                queue.push((n, depth + 1));
+                            }
+                        }
+                    }
+                    if !anchored {
+                        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                        let roll = (*rng >> 8) as f32 / (1 << 24) as f32;
+                        if roll < 0.35 {
+                            changes.push((wx, y, wz, AIR));
+                            if let Some((item, chance)) = d.bonus_drop
+                                && roll < 0.35 * chance
+                            {
+                                drops.push(((wx, y, wz), item));
+                            }
+                            // Litter settles on the first floor below.
+                            if roll > 0.12
+                                && let Some(litter) = litter_id
+                                && let Some(fy) = (1..=8)
+                                    .map(|dy| y - dy)
+                                    .find(|&fy| reg.is_solid(self.get_block(wx, fy, wz)))
+                                && self.get_block(wx, fy + 1, wz) == AIR
+                            {
+                                swaps.push((wx, fy + 1, wz, litter));
+                            }
+                        }
+                    }
+                    continue;
+                }
+                // Litter fades into the ground that holds it.
+                if Some(b) == litter_id {
+                    *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                    if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.4 {
+                        changes.push((wx, y, wz, AIR));
+                        fed.push((wx, y - 1, wz, 4));
+                    }
+                    continue;
+                }
+                // Fungi creep where it is dark and damp: mushrooms
+                // spread cell to cell underground or near water, the
+                // lantern fungus glows its way along deep stone.
+                if d.name.contains("mushroom") || d.name.contains("lantern_fungus") {
+                    // No extra odds: any single cell's random-tick
+                    // visits are days apart already — the visit rate
+                    // IS the creep's pace.
+                    *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                    let r1 = *rng;
+                    {
+                        let dx = (r1 % 5) as i32 - 2;
+                        let dz = ((r1 >> 3) % 5) as i32 - 2;
+                        let dy = ((r1 >> 6) % 3) as i32 - 1;
+                        let (tx, ty, tz) = (wx + dx, y + dy, wz + dz);
+                        let (bl, sl) = self.light_at(tx, ty, tz);
+                        let dark = bl < 6 && sl < 6;
+                        let damp = sl == 0
+                            || (-3..=3i32).any(|ax| {
+                                (-2..=2i32).any(|ay| {
+                                    (-3..=3i32).any(|az| {
+                                        reg.is_water(self.get_block(tx + ax, ty + ay, tz + az))
+                                    })
+                                })
+                            });
+                        let crowd = (-2..=2i32)
+                            .flat_map(|ax| {
+                                (-1..=1i32)
+                                    .flat_map(move |ay| (-2..=2i32).map(move |az| (ax, ay, az)))
+                            })
+                            .filter(|&(ax, ay, az)| {
+                                let n = reg
+                                    .block(self.get_block(tx + ax, ty + ay, tz + az))
+                                    .name
+                                    .clone();
+                                n.contains("mushroom") || n.contains("lantern_fungus")
+                            })
+                            .count();
+                        if dark
+                            && damp
+                            && crowd < 3
+                            && self.get_block(tx, ty, tz) == AIR
+                            && reg.is_solid(self.get_block(tx, ty - 1, tz))
+                        {
+                            swaps.push((tx, ty, tz, b));
+                        }
+                    }
                     continue;
                 }
                 // Bare dirt under the sky heals over beside grass —
@@ -362,6 +477,10 @@ impl World {
         }
         for (x, y, z, b) in swaps {
             self.set_block(x, y, z, b);
+        }
+        for (at, item) in drops {
+            let reg = self.reg.clone();
+            self.push_drop(at, crate::inventory::ItemStack::new(&reg, item, 1));
         }
         for (x, y, z) in dried {
             self.set_block(x, y, z, AIR);

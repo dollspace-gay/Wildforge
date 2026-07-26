@@ -786,6 +786,26 @@ def main():
                   fill=(216, 210, 188, 255), outline=(170, 162, 138, 255))
     save_tile(gu, "guano")
 
+
+    # Rot and fruit: the litter underfoot and the cave's own light.
+    lit = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(lit)
+    rl = rng_for("leaf_litter")
+    for _ in range(46):
+        x, y = rl.randint(1, 28), rl.randint(1, 28)
+        c = rl.choice([(122, 88, 40), (100, 70, 34), (140, 104, 48), (86, 74, 30)])
+        d.ellipse([x, y, x + 3, y + 2], fill=c + (255,))
+        d.point((x + 1, y + 1), fill=(60, 44, 20, 255))
+    save_tile(lit, "leaf_litter")
+    lf = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(lf)
+    for x0, cap_y, r in [(9, 14, 5), (20, 10, 6), (15, 19, 4)]:
+        d.rectangle([x0 - 1, cap_y, x0 + 1, 30], fill=(174, 196, 178, 255))
+        d.ellipse([x0 - r, cap_y - r, x0 + r, cap_y + r // 2 + 2],
+                  fill=(96, 232, 176, 255), outline=(56, 160, 118, 255))
+        d.point((x0 - 1, cap_y - r // 2), fill=(210, 255, 232, 255))
+    save_tile(lf, "lantern_fungus")
+
     print(f"wrote {len(list(OUT.glob('*.png')))} tiles to {OUT}")
 
 

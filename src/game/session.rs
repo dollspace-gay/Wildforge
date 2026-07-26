@@ -765,6 +765,43 @@ impl Game {
                         }
                     }
                 }
+                // The grotto: a hollow cut under the pad's east edge,
+                // lantern fungus glowing inside, a bat at roost and
+                // its guano on the floor — the cave's corner of the
+                // tour, no cave required.
+                if let (Some(stone), Some(lf)) = (b("base:stone"), b("base:lantern_fungus")) {
+                    for dx in 8..=12i32 {
+                        for dz in -2..=2i32 {
+                            for dy in -4..=-1i32 {
+                                let (x, yy, z) = (bx + dx, y + dy, bz + dz);
+                                let shell = dx == 12 || dz == -2 || dz == 2 || dy == -4;
+                                // Open face toward the west (the pad).
+                                if dx == 8 && dy >= -3 {
+                                    if w.get_block(x, yy, z) != AIR {
+                                        w.set_block(x, yy, z, AIR);
+                                    }
+                                    continue;
+                                }
+                                w.set_block(x, yy, z, if shell { stone } else { AIR });
+                            }
+                        }
+                    }
+                    w.set_block(bx + 11, y - 3, bz, lf);
+                    w.set_block(bx + 10, y - 3, bz + 1, lf);
+                    if let Some(si) = reg2.animal_id("base:bat") {
+                        let mut m = crate::mobs::Mob::new(
+                            si,
+                            glam::Vec3::new(bx as f32 + 10.5, y as f32 - 2.5, bz as f32 - 0.5),
+                            0.0,
+                        );
+                        m.health = reg2.animals[si].health;
+                        w.spawn_mob(m);
+                    }
+                    if let Some(g) = reg2.item_id("base:guano") {
+                        let stack = ItemStack::new(&reg2, g, 2);
+                        w.push_drop((bx + 10, y - 3, bz), stack);
+                    }
+                }
                 // The neighbors: the wider roster lined up along the
                 // north strip for the camera.
                 for (i, name) in [
