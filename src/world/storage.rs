@@ -80,6 +80,10 @@ impl World {
         } else {
             let _ = fs::write(self.save_dir.join("bloom"), bb);
         }
+        let _ = fs::write(
+            self.save_dir.join("longwinter"),
+            if self.long_winter { b"1" } else { b"0" },
+        );
         // The ground's spent willingness to bloom.
         let mut sb = Vec::with_capacity(self.bloom_spent.len() * 12);
         for (&(x, z), &v) in &self.bloom_spent {
@@ -221,6 +225,9 @@ impl World {
                 self.bloom.insert((x, z), v.clamp(0.0, 9.0));
             }
         }
+        self.long_winter = fs::read(self.save_dir.join("longwinter"))
+            .map(|d| d.first() == Some(&b'1'))
+            .unwrap_or(false);
         if let Ok(data) = fs::read(self.save_dir.join("bspent")) {
             for p in data.chunks_exact(12) {
                 let x = i32::from_le_bytes([p[0], p[1], p[2], p[3]]);

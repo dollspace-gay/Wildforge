@@ -70,6 +70,11 @@ pub struct SeparatorState {
     pub progress: f32,
 }
 
+/// The world's year stops when this many countries are dead AND
+/// they are this share of every country anyone has seen.
+pub const LONG_WINTER_MIN_DEAD: usize = 3;
+pub const LONG_WINTER_FRAC: f32 = 0.5;
+
 /// A cell will give this much bloom, all told, before the ground has
 /// nothing left to give. Tending pays it back.
 pub const BLOOM_EXHAUSTION: f32 = 12.0;
@@ -342,6 +347,8 @@ pub struct World {
     /// How much bloom a cell has already been given without being
     /// tended back — the ground's willingness, spent.
     pub(crate) bloom_spent: HashMap<(i32, i32), f32>,
+    /// The year has stopped: too many countries have no spirit left.
+    pub long_winter: bool,
     /// Absolute sim-time in seconds (day * DAY_LENGTH + time-of-day),
     /// mirrored from the Server every tick so chunk load and random
     /// ticks share one clock.
@@ -578,6 +585,7 @@ impl World {
             bloom: HashMap::new(),
             hearts: HashMap::new(),
             bloom_spent: HashMap::new(),
+            long_winter: false,
             mobs: Vec::new(),
             projectiles: Vec::new(),
             hostile_spawn_timer: 0.0,

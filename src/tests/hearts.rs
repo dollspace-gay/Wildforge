@@ -683,3 +683,126 @@ fn the_seed_names_the_game_uses_are_real_items() {
     // And nothing else is mistaken for a seed.
     assert_eq!(crate::world::seed_nature("base:stick"), None);
 }
+
+/// Kill `n` countries in a world, returning how many hearts it knows.
+fn kill_countries(w: &mut World, n: usize) -> usize {
+    let keys: Vec<(i32, i32)> = w.hearts.keys().copied().take(n).collect();
+    for k in keys {
+        w.set_heart_stage(k, 0);
+    }
+    w.hearts.len()
+}
+
+#[test]
+fn enough_dead_countries_stop_the_year_and_relighting_starts_it() {
+    let reg = base_reg();
+    let mut w = World::new(60, tmp_dir("longwinter"), reg.clone());
+    // Load the chunks that actually HOLD sites: countries are ~900
+    // blocks apart, so a tidy grid of chunks misses every one.
+    let sites: Vec<(i32, i32)> = (-4..4)
+        .flat_map(|kx| (-4..4).map(move |kz| (kx, kz)))
+        .map(|(kx, kz)| w.generator.province_center(kx, kz))
+        .collect();
+    for (sx, sz) in sites {
+        w.ensure_chunk(ChunkPos::of_world(sx, sz));
+    }
+    let known = w.hearts.len();
+    assert!(known >= 4, "the world knows some countries ({known})");
+    assert!(!w.long_winter, "the year turns to begin with");
+    let summer = crate::world::SEASON_DAYS;
+    w.day = summer; // high summer
+    assert_eq!(w.season(), 1, "summer");
+    // A couple of deaths is a tragedy, not a winter.
+    kill_countries(&mut w, 2);
+    w.tick_ire(0.1);
+    assert!(!w.long_winter, "two dead countries do not stop the year");
+    // Enough of them, and the year stops.
+    let keys: Vec<(i32, i32)> = w.hearts.keys().copied().collect();
+    for k in keys.iter().take(known.div_ceil(2) + 1) {
+        w.set_heart_stage(*k, 0);
+    }
+    w.tick_ire(0.1);
+    assert!(w.long_winter, "the year has stopped");
+    assert_eq!(w.season(), 3, "and it is winter in high summer");
+    // Everything winter already means arrives for free.
+    let (dead, total) = w.dead_countries();
+    assert!(dead * 2 >= total, "{dead} of {total} countries dead");
+    // Relight enough of them and spring comes back.
+    for k in keys.iter() {
+        if w.hearts.get(k).is_some_and(|h| h.stage == 0) {
+            w.set_heart_stage(*k, 2);
+        }
+        w.tick_ire(0.1);
+        if !w.long_winter {
+            break;
+        }
+    }
+    assert!(!w.long_winter, "the year turns again");
+    assert_eq!(w.season(), 1, "and summer was waiting");
+}
+
+#[test]
+fn the_long_winter_is_survivable_by_the_tools_already_shipped() {
+    // A glasshouse still grows through a stopped year: the greenhouse
+    // rule, salt, smoke and the crock are what the takers lacked.
+    let reg = base_reg();
+    let mut w = test_world_with("longwinter-farm", reg.clone());
+    w.long_winter = true;
+    assert_eq!(w.season(), 3);
+    let farm = b(&reg, "base:farmland");
+    let seed0 = b(&reg, "base:wheat_seeds");
+    let glass = b(&reg, "base:glass");
+    let sy = 140;
+    for x in 4..10 {
+        for z in 4..10 {
+            w.set_block_meta(x, sy, z, farm, crate::world::soil::soil_meta(50, 0));
+            w.set_block(x, sy + 1, z, seed0);
+            w.set_block(x, sy + 4, z, glass);
+            for dy in 2..4 {
+                if w.get_block(x, sy + dy, z) != AIR {
+                    w.set_block(x, sy + dy, z, AIR);
+                }
+            }
+        }
+    }
+    let mut rng = 7u32;
+    for _ in 0..9000 {
+        w.random_tick(&mut rng);
+    }
+    let grown = (4..10)
+        .flat_map(|x| (4..10).map(move |z| (x, z)))
+        .filter(|&(x, z)| w.get_block(x, sy + 1, z) != seed0)
+        .count();
+    assert!(grown > 0, "under glass, the year does not matter ({grown})");
+}
+
+#[test]
+fn the_long_winter_survives_the_save() {
+    let reg = base_reg();
+    let dir = tmp_dir("longwinter-save");
+    {
+        let mut w = World::new(61, dir.clone(), reg.clone());
+        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        w.long_winter = true;
+        w.save_modified();
+    }
+    let w = World::load_or_create(dir, reg.clone());
+    assert!(w.long_winter, "a stopped year is still stopped");
+    assert_eq!(w.season(), 3);
+}
+
+#[test]
+fn the_tablets_confess_what_the_takers_did() {
+    // The lore delivery vehicle already existed; the sequence is new.
+    // Pin it, because it is the answer to the whole arc.
+    let text = std::fs::read_to_string("src/game/interaction.rs").unwrap();
+    for line in [
+        "We farmed their rage",
+        "took axes to the bole",
+        "No wardens tonight",
+        "gives us nothing",
+        "will not take the offering",
+    ] {
+        assert!(text.contains(line), "the confession is missing: {line}");
+    }
+}

@@ -128,7 +128,24 @@ impl World {
                 continue;
             }
             let h = self.mob_hash(pos.x, pos.z, 9000 + si as u32);
-            if !h.is_multiple_of(st.rarity) {
+            // The takers' cities stand in barren country because the
+            // barrenness is the receipt: they are twice as common on
+            // ground that stopped giving. (Worldgen cannot know which
+            // hearts a player will kill, so it reads the signature —
+            // exhausted, thin-soiled country — instead.)
+            let barren = matches!(
+                self.generator.biome(cx + 8, cz + 8),
+                crate::worldgen::Biome::Badlands
+                    | crate::worldgen::Biome::Scrubland
+                    | crate::worldgen::Biome::Tundra
+                    | crate::worldgen::Biome::Desert
+            );
+            let rarity = if barren {
+                (st.rarity / 2).max(1)
+            } else {
+                st.rarity
+            };
+            if !h.is_multiple_of(rarity) {
                 continue;
             }
             let w = st.layers[0].first().map(|r| r.len()).unwrap_or(0) as i32;
