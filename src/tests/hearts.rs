@@ -658,3 +658,28 @@ fn its_own_kind_reawakens_rather_than_replaces() {
     }
     assert_eq!(w.country_biome(sx, sz), native);
 }
+
+#[test]
+fn the_seed_names_the_game_uses_are_real_items() {
+    // The verb in actions.rs looks its items up BY NAME at runtime, so
+    // a stale name compiles clean and silently disables the whole
+    // feature. (It did, once.) Pin the names to the registry.
+    let reg = base_reg();
+    for form in ["base:heart_tree", "base:heart_spring", "base:heart_stone"] {
+        let seed = crate::world::seed_of_form(form);
+        let id = reg
+            .item_id(seed)
+            .unwrap_or_else(|| panic!("{form} gives {seed}, which is not an item"));
+        // And the name round-trips: what a heart gives is a seed the
+        // planting verb recognises as carrying a nature.
+        let nature = crate::world::seed_nature(&reg.item(id).name)
+            .unwrap_or_else(|| panic!("{seed} carries no nature"));
+        assert_eq!(
+            crate::world::heart_form(nature),
+            form,
+            "{seed} should wake {form}'s kind"
+        );
+    }
+    // And nothing else is mistaken for a seed.
+    assert_eq!(crate::world::seed_nature("base:stick"), None);
+}
