@@ -1582,3 +1582,110 @@ hardness = 0.05
 solid = false
 opaque = false
 drops = "self"
+
+# ---- the hearts of the land ----
+# One per province, in the form its country wears. Each has a sick
+# and a dead husk; the wardens are this thing's immune response, and
+# when it dies they stop coming.
+
+[[block]]
+id = "heart_tree"
+name = "Heartwood Bole"
+texture = { top = "heart_tree_top.png", side = "heart_tree.png" }
+hardness = 4.0
+tool = "axe"
+light = 5
+light_color = [0.55, 1.0, 0.62]
+drops = "base:living_wood"
+drop_count = 2
+interaction = "heart"
+
+[[block]]
+id = "heart_tree_sick"
+name = "Failing Bole"
+texture = { top = "heart_tree_top_sick.png", side = "heart_tree_sick.png" }
+hardness = 4.0
+tool = "axe"
+light = 2
+light_color = [0.55, 0.9, 0.6]
+drops = "base:living_wood"
+interaction = "heart"
+item = false
+
+[[block]]
+id = "heart_tree_dead"
+name = "Black Bole"
+texture = { top = "heart_tree_top_dead.png", side = "heart_tree_dead.png" }
+hardness = 5.0
+tool = "axe"
+drops = "none"
+interaction = "heart"
+item = false
+
+[[block]]
+id = "heart_spring"
+name = "Wellspring"
+texture = "heart_spring.png"
+hardness = 3.0
+tool = "pickaxe"
+light = 5
+light_color = [0.5, 0.85, 1.0]
+drops = "none"
+interaction = "heart"
+item = false
+
+[[block]]
+id = "heart_spring_sick"
+name = "Failing Spring"
+texture = "heart_spring_sick.png"
+hardness = 3.0
+tool = "pickaxe"
+light = 2
+light_color = [0.5, 0.8, 1.0]
+drops = "none"
+interaction = "heart"
+item = false
+
+[[block]]
+id = "heart_spring_dead"
+name = "Dry Spring"
+texture = "heart_spring_dead.png"
+hardness = 4.0
+tool = "pickaxe"
+drops = "none"
+interaction = "heart"
+item = false
+
+[[block]]
+id = "heart_stone"
+name = "Standing Stone"
+texture = "heart_stone.png"
+hardness = 5.0
+tool = "pickaxe"
+light = 5
+light_color = [0.75, 0.7, 1.0]
+drops = "none"
+interaction = "heart"
+item = false
+
+[[block]]
+id = "heart_stone_sick"
+name = "Cracked Stone"
+texture = "heart_stone_sick.png"
+hardness = 5.0
+tool = "pickaxe"
+light = 2
+light_color = [0.7, 0.68, 1.0]
+drops = "none"
+interaction = "heart"
+item = false
+
+[[block]]
+id = "heart_stone_dead"
+name = "Broken Stone"
+texture = "heart_stone_dead.png"
+hardness = 6.0
+tool = "pickaxe"
+drops = "none"
+interaction = "heart"
+item = false

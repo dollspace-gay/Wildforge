@@ -174,6 +174,7 @@ impl World {
             *v -= v.signum() * (2.0 * day_frac).min(v.abs());
             v.abs() >= 0.01
         });
+        self.tick_hearts(day_frac);
         // Blooms burn down day by day.
         self.bloom.retain(|_, v| {
             *v -= day_frac;
@@ -288,11 +289,23 @@ impl World {
     /// consumed regardless; the refund is capped at 10 per dawn.
     pub fn accept_offerings(&mut self) -> f32 {
         let (want, _) = self.season_want();
+        // The ire cells whose country has no spirit left to hear.
+        let dead_country: std::collections::HashSet<(i32, i32)> = self
+            .hearts
+            .values()
+            .filter(|h| h.stage == 0)
+            .map(|h| (h.pos.0 >> 8, h.pos.2 >> 8))
+            .collect();
         let mut taken: Vec<((i32, i32), ItemStack)> = Vec::new();
         for (&(x, _, z), e) in self.block_entities.iter_mut() {
             let BlockEntity::Offering(o) = e else {
                 continue;
             };
+            // In a country whose heart is dead the stone accepts
+            // nothing. Not refused — unreceived. Nobody is home.
+            if dead_country.contains(&(x >> 8, z >> 8)) {
+                continue;
+            }
             for slot in o.slots.iter_mut() {
                 if let Some(s) = slot.take() {
                     taken.push(((x, z), s));

@@ -1259,6 +1259,23 @@ impl Game {
                     self.set_screen(Screen::Chest(h.block));
                     return;
                 }
+                Some("heart") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.5;
+                    self.input.right_held = false;
+                    let world = &self.server.world;
+                    let line = match world.heart_at(h.block.0, h.block.2) {
+                        Some(hh) if hh.stage == 2 && hh.strain > 4.0 => {
+                            "The wood is warm, and it flinches from you."
+                        }
+                        Some(hh) if hh.stage == 2 => "The wood is warm. Something here is awake.",
+                        Some(hh) if hh.stage == 1 => "It is cold, and it is going out.",
+                        Some(_) => "Nothing answers. This country is alone.",
+                        None => "Something stood here once.",
+                    };
+                    self.toast(line.to_string());
+                    self.sfx(Sfx::Click);
+                    return;
+                }
                 Some("compost") if self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.3;
                     // A ripened heap hands over its compost bare-handed;
@@ -1422,7 +1439,10 @@ impl Game {
                 }
                 Some("survey") if self.input.action_cooldown <= 0.0 => {
                     // A raised cairn is bought knowledge: anyone reads
-                    // the surveyor's ground, no pick required.
+                    // the surveyor's ground, no pick required — and a
+                    // country's heart is the first thing worth knowing.
+                    let report = self.server.world.heart_report(h.block.0, h.block.2);
+                    self.toast(report);
                     self.toast_prospect(h.block.0, h.block.2);
                     self.sfx(Sfx::Click);
                     self.input.action_cooldown = 0.6;

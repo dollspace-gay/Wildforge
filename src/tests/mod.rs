@@ -14,6 +14,7 @@ use crate::world::World;
 
 mod agent;
 mod ecology;
+mod hearts;
 mod identity;
 mod machines;
 mod mobs;
@@ -158,8 +159,12 @@ fn find_biomes(g: &Generator, want: Biome, n: usize) -> Vec<(i32, i32)> {
             }
         }
         for key in keys {
-            let (x, z) = g.province_center(key.0, key.1);
+            let (cx, cz) = g.province_center(key.0, key.1);
+            // Off the site: the country's HEART stands at its center,
+            // and a landmark is not a sample of the ground around it.
+            let (x, z) = (cx + 48, cz + 48);
             if g.biome(x, z) == want
+                && g.province(x, z).key == key
                 && g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 2
                 && g.plate_relief(&g.climate(x, z)) <= 30.0
             {
@@ -208,8 +213,11 @@ fn find_biome_where(
             }
         }
         for key in keys {
-            let (x, z) = g.province_center(key.0, key.1);
-            if g.biome(x, z) == want && pred(x, z) {
+            let (cx, cz) = g.province_center(key.0, key.1);
+            // Off the site: the country's HEART stands at its center,
+            // and a landmark is not a sample of the ground around it.
+            let (x, z) = (cx + 48, cz + 48);
+            if g.biome(x, z) == want && g.province(x, z).key == key && pred(x, z) {
                 return Some((x, z));
             }
         }

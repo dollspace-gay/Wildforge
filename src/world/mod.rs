@@ -20,6 +20,7 @@ mod chunks;
 mod ecology;
 mod entities;
 mod fluids;
+mod hearts;
 mod lighting;
 mod machine_tick;
 mod machines;
@@ -27,6 +28,9 @@ mod persistence;
 mod power;
 mod storage;
 
+pub use hearts::{Heart, heart_form};
+#[cfg(test)]
+pub use hearts::{heart_block_name, heart_height};
 pub use machines::{station_powered, worked_table_for};
 pub mod soil;
 mod substrate;
@@ -329,6 +333,8 @@ pub struct World {
     pub(crate) player_touched: HashSet<(i32, i32)>,
     /// Bloom ledger: days of post-wrath eruption left per 256-cell.
     pub(crate) bloom: HashMap<(i32, i32), f32>,
+    /// The spirits of the land, keyed by province.
+    pub(crate) hearts: HashMap<(i32, i32), Heart>,
     /// Absolute sim-time in seconds (day * DAY_LENGTH + time-of-day),
     /// mirrored from the Server every tick so chunk load and random
     /// ticks share one clock.
@@ -563,6 +569,7 @@ impl World {
             blessed_streak: HashMap::new(),
             player_touched: HashSet::new(),
             bloom: HashMap::new(),
+            hearts: HashMap::new(),
             mobs: Vec::new(),
             projectiles: Vec::new(),
             hostile_spawn_timer: 0.0,
@@ -811,7 +818,11 @@ impl World {
             let cost = self.ire_for_block(block);
             self.add_ire_at(pos.0, pos.2, cost);
         }
+        let was_heart = self.reg.block(block).name.starts_with("base:heart_");
         self.set_block(pos.0, pos.1, pos.2, AIR);
+        if was_heart {
+            self.heart_struck(pos);
+        }
         Some(BlockBreak { block, drop })
     }
 

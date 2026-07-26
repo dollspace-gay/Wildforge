@@ -228,6 +228,9 @@ pub struct Generator {
     lantern_fungus: BlockId,
     meadow_bloom: BlockId,
     ember_poppy: BlockId,
+    heart_tree: BlockId,
+    heart_spring: BlockId,
+    heart_stone: BlockId,
     stone: BlockId,
     sand: BlockId,
     clay: BlockId,
@@ -343,6 +346,9 @@ impl Generator {
             lantern_fungus: b("base:lantern_fungus"),
             meadow_bloom: b("base:meadow_bloom"),
             ember_poppy: b("base:ember_poppy"),
+            heart_tree: b("base:heart_tree"),
+            heart_spring: b("base:heart_spring"),
+            heart_stone: b("base:heart_stone"),
             stone: b("base:stone"),
             sand: b("base:sand"),
             clay: b("base:clay_block"),
@@ -1941,6 +1947,40 @@ impl Generator {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // The heart of a country stands at its province's center. A
+        // site sits inside its own province by construction, so at
+        // most a few keys can land in any one chunk.
+        {
+            let gx = (bx as f64 / Self::PROVINCE_SIZE).floor() as i32;
+            let gz = (bz as f64 / Self::PROVINCE_SIZE).floor() as i32;
+            for dx in -1..=1 {
+                for dz in -1..=1 {
+                    let key = (gx + dx, gz + dz);
+                    let (sx, sz) = self.province_center(key.0, key.1);
+                    let (lx, lz) = (sx - bx, sz - bz);
+                    if !(0..CHUNK_X as i32).contains(&lx) || !(0..CHUNK_Z as i32).contains(&lz) {
+                        continue;
+                    }
+                    let ground = heights[lx as usize][lz as usize];
+                    // A site wants dry, standable ground; a country
+                    // whose center drowns keeps its heart unbuilt, and
+                    // the world reads such country as living.
+                    if ground <= SEA_LEVEL || ground + 8 >= CHUNK_Y as i32 {
+                        continue;
+                    }
+                    let (block, tall) =
+                        match crate::world::heart_form(biomes[lx as usize][lz as usize]) {
+                            "base:heart_tree" => (self.heart_tree, 5),
+                            "base:heart_spring" => (self.heart_spring, 1),
+                            _ => (self.heart_stone, 3),
+                        };
+                    for dy in 1..=tall {
+                        c.set(lx as usize, (ground + dy) as usize, lz as usize, block);
                     }
                 }
             }

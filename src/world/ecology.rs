@@ -632,6 +632,14 @@ impl World {
         }
         self.hostile_spawn_timer = 0.0;
         self.grade_watchers();
+        // The wardens are the spirit's immune response. Where the
+        // heart is dead they simply stop coming — and the silence is
+        // the loudest thing this game ever does, because the player
+        // has spent the whole game reading warden pressure as danger.
+        let (hx, hz) = (player.x.floor() as i32, player.z.floor() as i32);
+        if !self.heart_alive_at(hx, hz) {
+            return;
+        }
         let reg = self.reg.clone();
         // The tier as THIS ground feels it: an angry forest hunts
         // harder, a tended valley softer, wherever the world's mood.

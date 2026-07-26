@@ -834,6 +834,79 @@ def main():
             d.point((x0, top), fill=heart + (255,))
         save_tile(fl, name)
 
+
+    # The hearts of the land: a bole, a spring, a standing stone —
+    # each alive, failing, and dead.
+    def heart_bole(name, bark, dark, veins):
+        img = rock(name, base=bark, dark=dark)
+        d = ImageDraw.Draw(img)
+        rb = rng_for(name + "_veins")
+        for _ in range(5):
+            x = rb.randint(3, 28)
+            pts = [(x + rb.randint(-2, 2), y) for y in range(0, 33, 4)]
+            d.line(pts, fill=veins + (255,), width=2)
+        return img
+
+    def heart_top(name, ring_a, ring_b, core):
+        img = rock(name, base=ring_a, dark=ring_b)
+        d = ImageDraw.Draw(img)
+        for r in range(15, 2, -3):
+            d.ellipse([16 - r, 16 - r, 16 + r, 16 + r], outline=ring_b + (255,))
+        d.ellipse([12, 12, 20, 20], fill=core + (255,))
+        return img
+
+    for suffix, bark, dark, veins, core in [
+        ("", (96, 74, 46), (62, 46, 28), (128, 236, 150), (150, 255, 176)),
+        ("_sick", (92, 82, 62), (60, 54, 42), (120, 150, 116), (128, 158, 120)),
+        ("_dead", (52, 48, 46), (30, 28, 27), (44, 40, 38), (36, 32, 30)),
+    ]:
+        save_tile(heart_bole(f"heart_tree{suffix}", bark, dark, veins),
+                  f"heart_tree{suffix}")
+        save_tile(heart_top(f"heart_tree_top{suffix}", bark, dark, core),
+                  f"heart_tree_top{suffix}")
+
+    def heart_spring(name, water, rim, glow):
+        img = rock(name, base=rim, dark=tuple(max(0, v - 40) for v in rim))
+        d = ImageDraw.Draw(img)
+        d.ellipse([4, 4, 27, 27], fill=water + (255,),
+                  outline=tuple(max(0, v - 50) for v in rim) + (255,))
+        for r in (9, 6, 3):
+            d.ellipse([16 - r, 16 - r, 16 + r, 16 + r], outline=glow + (255,))
+        return img
+
+    save_tile(heart_spring("heart_spring", (56, 148, 200), (150, 146, 138), (170, 235, 255)),
+              "heart_spring")
+    save_tile(heart_spring("heart_spring_sick", (86, 116, 128), (146, 142, 134), (150, 180, 190)),
+              "heart_spring_sick")
+    dry = rock("heart_spring_dead", base=(126, 118, 106), dark=(84, 78, 70))
+    d = ImageDraw.Draw(dry)
+    d.ellipse([4, 4, 27, 27], fill=(92, 84, 74, 255), outline=(66, 60, 52, 255))
+    for _ in range(7):
+        rr = rng_for("dryspring")
+        x, y = rr.randint(8, 24), rr.randint(8, 24)
+        d.line([(x, y), (x + rr.randint(-5, 5), y + rr.randint(-5, 5))],
+               fill=(58, 52, 46, 255))
+    save_tile(dry, "heart_spring_dead")
+
+    def heart_stone(name, base_c, dark_c, rune, cracked):
+        img = rock(name, base=base_c, dark=dark_c)
+        d = ImageDraw.Draw(img)
+        for y0 in (7, 14, 21):
+            d.line([(9, y0), (22, y0)], fill=rune + (255,), width=2)
+            d.line([(9, y0), (12, y0 - 3)], fill=rune + (255,))
+            d.line([(22, y0), (19, y0 + 3)], fill=rune + (255,))
+        if cracked:
+            d.line([(6, 2), (14, 16), (9, 30)], fill=(28, 26, 30, 255), width=2)
+            d.line([(24, 4), (19, 15)], fill=(28, 26, 30, 255))
+        return img
+
+    save_tile(heart_stone("heart_stone", (128, 124, 140), (86, 84, 98), (198, 178, 255), False),
+              "heart_stone")
+    save_tile(heart_stone("heart_stone_sick", (118, 116, 124), (80, 78, 86), (150, 142, 178), True),
+              "heart_stone_sick")
+    save_tile(heart_stone("heart_stone_dead", (78, 76, 80), (48, 47, 50), (60, 58, 62), True),
+              "heart_stone_dead")
+
     print(f"wrote {len(list(OUT.glob('*.png')))} tiles to {OUT}")
 
 

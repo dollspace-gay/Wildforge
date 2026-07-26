@@ -54,6 +54,42 @@ impl World {
         if fresh {
             self.seed_structures(pos);
         }
+        // A heart standing in this chunk joins the ledger. The site is
+        // deterministic, so a chunk loaded from an old save registers
+        // its country's spirit the same way a fresh one does — and a
+        // stage already recorded wins (a dead heart stays dead).
+        {
+            let (bx, bz) = (pos.x * CHUNK_X as i32, pos.z * CHUNK_Z as i32);
+            let gx = (bx as f64 / 900.0).floor() as i32;
+            let gz = (bz as f64 / 900.0).floor() as i32;
+            for dx in -1..=1 {
+                for dz in -1..=1 {
+                    let key = (gx + dx, gz + dz);
+                    let (sx, sz) = self.generator.province_center(key.0, key.1);
+                    if sx < bx || sx >= bx + CHUNK_X as i32 || sz < bz || sz >= bz + CHUNK_Z as i32
+                    {
+                        continue;
+                    }
+                    // Find the site's base. A bole is solid, so the
+                    // surface scan lands on its CROWN — walk down to
+                    // the foot, which is the block the ledger keys on.
+                    let is_heart = |w: &World, y: i32| {
+                        w.reg
+                            .block(w.get_block(sx, y, sz))
+                            .name
+                            .starts_with("base:heart_")
+                    };
+                    let top = self.surface_height(sx, sz);
+                    if is_heart(self, top) {
+                        let mut base = top;
+                        while base > 1 && is_heart(self, base - 1) {
+                            base -= 1;
+                        }
+                        self.register_heart(key, (sx, base, sz));
+                    }
+                }
+            }
+        }
         // Wildlife rolls once per chunk, ever (the mark persists with the
         // world so hunted animals stay gone across sessions).
         if self.mob_seeded.insert((pos.x, pos.z)) {
