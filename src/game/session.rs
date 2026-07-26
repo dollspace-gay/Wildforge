@@ -225,6 +225,26 @@ impl Game {
             );
         }
         self.set_screen(Screen::Playing);
+        // Dev/headless: the in-world screens can only be reached by
+        // playing, which a shot run cannot do. This makes the paper
+        // doll and the slot grid verifiable from a capture.
+        // Dev/headless: park the UI cursor, so a capture can show a
+        // hover state (tooltips) that otherwise needs a real mouse.
+        if let Ok(spec) = std::env::var("WILDFORGE_CURSOR")
+            && let Some((x, z)) = spec.split_once(',')
+            && let (Ok(x), Ok(y)) = (x.trim().parse::<f32>(), z.trim().parse::<f32>())
+        {
+            self.input.ui_cursor = (x, y);
+            self.input.cursor_locked = true;
+        }
+        match std::env::var("WILDFORGE_SCREEN").as_deref() {
+            Ok("inventory") => self.set_screen(Screen::Inventory),
+            Ok("status") => {
+                self.ui_state.inventory_status_open = true;
+                self.set_screen(Screen::Inventory);
+            }
+            _ => {}
+        }
         // Dev: force time of day (0..1; 0.75 = midnight).
         if let Ok(t) = std::env::var("WILDFORGE_TIME")
             && let Ok(t) = t.parse::<f32>()
@@ -1817,6 +1837,30 @@ impl Game {
                         i as f32 * 1.3,
                     );
                     m.health = self.content.reg.animals[si].health;
+                    self.server.world.spawn_mob(m);
+                }
+            }
+        }
+        // Dev: a line of fliers at eye level ahead, wings mid-beat
+        // (flight and wingbeat verification — the one thing you cannot
+        // judge from a still of a bird standing on the ground).
+        if std::env::var("WILDFORGE_DEMO_FLIGHT").is_ok() {
+            for (i, name) in ["base:gull", "base:eagle", "base:vulture", "base:bat"]
+                .iter()
+                .enumerate()
+            {
+                if let Some(si) = self.content.reg.animal_id(name) {
+                    let x = spawn.x as i32 - 4 + i as i32 * 3;
+                    let z = spawn.z as i32 - 9;
+                    let y = self.server.world.surface_height(x, z) + 4;
+                    let mut m = mobs::Mob::new(
+                        si,
+                        Vec3::new(x as f32 + 0.5, y as f32, z as f32 + 0.5),
+                        std::f32::consts::FRAC_PI_2,
+                    );
+                    m.health = self.content.reg.animals[si].health;
+                    // Staggered so one still shows the whole stroke.
+                    m.anim_phase = i as f32 * 0.9;
                     self.server.world.spawn_mob(m);
                 }
             }

@@ -17,6 +17,7 @@ mod session;
 mod status;
 mod streaming;
 mod survival;
+mod tooltip;
 mod ui;
 
 use crate::*;
@@ -104,6 +105,9 @@ struct InputState {
     scroll_accum: f32,
     scroll_cooldown: f32,
     ui_cursor: (f32, f32),
+    /// WILDFORGE_CURSOR parked the pointer for a headless capture;
+    /// the window's synthetic CursorMoved events must not undo it.
+    cursor_locked: bool,
 }
 
 /// Player vitals, armor, recovery timers, and respawn ownership.
@@ -619,6 +623,7 @@ impl Game {
                 scroll_accum: 0.0,
                 scroll_cooldown: 0.0,
                 ui_cursor: (0.0, 0.0),
+                cursor_locked: false,
             },
             ui_state: UiState::default(),
             inventory: Inventory::new(),

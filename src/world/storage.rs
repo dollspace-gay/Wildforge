@@ -320,7 +320,13 @@ impl World {
             }
         }
         chunk.dirty = true;
-        chunk.modified = true;
+        // A chunk that came off disk already matches its file, so it only
+        // needs saving again once something edits it. The exception is a
+        // registry change: the ids in that file are about to be reinterpreted
+        // under a new palette, so it has to be rewritten in current ids.
+        // Marking every loaded chunk modified unconditionally meant a 20s
+        // autosave rewrote the entire explored world, forever.
+        chunk.modified = self.palette_stale;
         Some(chunk)
     }
 
@@ -423,7 +429,7 @@ impl World {
         }
     }
 
-    pub fn save_modified(&self) {
+    pub fn save_modified(&mut self) {
         if self.remote {
             return; // the host owns the world
         }
@@ -440,11 +446,23 @@ impl World {
         self.save_entities();
         self.save_mobs();
         self.save_stamps();
-        for (pos, chunk) in &self.chunks {
-            if chunk.modified {
-                let _ = self.save_chunk(*pos);
+        let dirty: Vec<ChunkPos> = self
+            .chunks
+            .iter()
+            .filter(|(_, chunk)| chunk.modified)
+            .map(|(pos, _)| *pos)
+            .collect();
+        for pos in dirty {
+            // Clear only on a write that landed: a chunk whose file could
+            // not be written stays queued for the next save.
+            if self.save_chunk(pos).is_ok()
+                && let Some(chunk) = self.chunks.get_mut(&pos)
+            {
+                chunk.modified = false;
             }
         }
+        // Every loaded chunk now speaks the palette we just wrote.
+        self.palette_stale = false;
     }
 
     /// Remap all in-memory chunks from an old registry to the current one

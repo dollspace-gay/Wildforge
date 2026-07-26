@@ -2154,6 +2154,9 @@ fn dev_biome_map() {
                 Biome::Savanna => [198, 176, 84],
                 Biome::Tundra => [166, 176, 168],
                 Biome::Badlands => [186, 112, 68],
+                // The generator labels land; the sea overlay below is
+                // what paints water, so this arm never fires here.
+                Biome::Ocean => [40, 66, 120],
             };
             let sea = g.surface_estimate(x, z) <= crate::chunk::SEA_LEVEL;
             let c = if sea { [40, 66, 120] } else { c };

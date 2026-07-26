@@ -76,11 +76,6 @@ impl Game {
         (panel_x + 70.0, panel_y + 48.0, 170.0, 184.0)
     }
 
-    pub(super) fn inventory_avatar_center(&self) -> (f32, f32) {
-        let (x, y, width, _) = self.inventory_avatar_rect();
-        (x + width * 0.5, y + 82.0)
-    }
-
     /// Header controls use one source of geometry for drawing and hit-testing.
     pub(super) fn inventory_tab_rect(&self, tab: usize) -> (f32, f32, f32, f32) {
         let (x, y, width, _) = self.inventory_panel_rect();
@@ -462,6 +457,13 @@ impl Game {
     }
 
     pub(super) fn build_ui(&mut self) {
+        self.build_ui_inner();
+        // Last, so it lands over every slot grid and every early return
+        // the screens above take.
+        self.draw_item_tooltip();
+    }
+
+    fn build_ui_inner(&mut self) {
         self.poll_account_task();
         let mut ui = std::mem::replace(&mut self.ui, UiBatch::new());
         ui.clear();

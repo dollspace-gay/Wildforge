@@ -314,6 +314,10 @@ pub struct World {
     save_dir: PathBuf,
     /// stored-id -> runtime-id remap for chunks loaded from disk.
     load_remap: Vec<BlockId>,
+    /// The saved palette no longer matches this registry, so every chunk
+    /// that loads has to be rewritten in current ids before the palette on
+    /// disk is replaced. Cleared by the first full save of the session.
+    palette_stale: bool,
     water_queue: VecDeque<(i32, i32, i32)>,
     water_queued: HashSet<(i32, i32, i32)>,
     lava_queue: VecDeque<(i32, i32, i32)>,
@@ -565,6 +569,7 @@ impl World {
             seed,
             save_dir,
             load_remap: Vec::new(),
+            palette_stale: false,
             water_queue: VecDeque::new(),
             water_queued: HashSet::new(),
             lava_queue: VecDeque::new(),
@@ -1026,6 +1031,21 @@ impl World {
             }
         }
         0
+    }
+
+    /// The headroom a flier standing at `y` actually has: the first
+    /// solid at or below it, and the first solid above it. Bounded so a
+    /// mob in open sky or a sealed shaft costs a fixed scan.
+    pub fn air_column(&self, x: i32, y: i32, z: i32) -> (i32, i32) {
+        let floor = (y - 64).max(0)..=y;
+        let floor = floor
+            .rev()
+            .find(|&fy| self.reg.is_solid(self.get_block(x, fy, z)))
+            .unwrap_or((y - 64).max(0));
+        let ceil = ((y + 1)..=(y + 40).min(CHUNK_Y as i32 - 1))
+            .find(|&cy| self.reg.is_solid(self.get_block(x, cy, z)))
+            .unwrap_or(CHUNK_Y as i32);
+        (floor, ceil)
     }
 
     /// Can a player body stand with its feet in cell y? Feet and

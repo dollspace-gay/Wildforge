@@ -2249,3 +2249,63 @@ fn dev_time_safe_spawn() {
     eprintln!("surface at 0,0 = {}", w.surface_height(0, 0));
     eprintln!("estimate at 0,0 = {}", w.generator.surface_estimate(0, 0));
 }
+
+/// The 20-second autosave used to rewrite every chunk the player had
+/// ever loaded, forever — the `modified` flag was set on load and never
+/// cleared, so an hour of walking turned each autosave into a few
+/// hundred synchronous file writes on the main thread. That is the
+/// periodic hitch, and this is the shape of the fix: a write clears the
+/// flag, and only a real edit sets it again.
+#[test]
+fn the_autosave_writes_only_what_changed_since_the_last_one() {
+    let reg = base_reg();
+    let dir = tmp_dir("autosave-churn");
+    let mut w = World::new(9, dir.clone(), reg.clone());
+    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    let stone = b(&reg, "base:stone");
+    let top = w.surface_height(3, 3);
+    w.set_block(3, top + 1, 3, stone);
+    w.save_modified();
+    let file = dir.join("c.0.0.wfc");
+    assert!(file.exists(), "the edited chunk is written");
+
+    // Deleting the file is the probe: if the next autosave puts it
+    // back, the chunk was queued for writing with nothing to write.
+    std::fs::remove_file(&file).unwrap();
+    w.save_modified();
+    assert!(!file.exists(), "an unchanged chunk is not rewritten");
+
+    // ...and one more edit puts it straight back in the queue.
+    w.set_block(4, top + 1, 4, stone);
+    w.save_modified();
+    assert!(file.exists(), "an edited chunk saves again");
+}
+
+/// A chunk that came off disk already matches its file. Reloading a
+/// world and walking around must not re-dirty everything it touches.
+#[test]
+fn a_chunk_read_from_disk_is_clean_until_something_edits_it() {
+    let reg = base_reg();
+    let dir = tmp_dir("autosave-reload");
+    let stone = b(&reg, "base:stone");
+    let top = {
+        let mut w = World::new(9, dir.clone(), reg.clone());
+        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        let top = w.surface_height(3, 3);
+        w.set_block(3, top + 1, 3, stone);
+        w.save_modified();
+        top
+    };
+    let file = dir.join("c.0.0.wfc");
+    assert!(file.exists());
+
+    let mut w = World::load_or_create(dir.clone(), reg.clone());
+    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    assert_eq!(w.get_block(3, top + 1, 3), stone, "the edit came back");
+    std::fs::remove_file(&file).unwrap();
+    w.save_modified();
+    assert!(
+        !file.exists(),
+        "a freshly loaded, untouched chunk is not rewritten"
+    );
+}

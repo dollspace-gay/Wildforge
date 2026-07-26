@@ -229,6 +229,9 @@ pub struct AnimalDef {
     pub movement_float: bool,
     /// Swimmers live inside the water and never leave it willingly.
     pub movement_swim: bool,
+    /// The model carries a `wing*` box, so this floater is a bird and
+    /// not a wisp: it beats, and it cruises high.
+    pub winged: bool,
     /// Rendered at full block-light — its own lantern.
     pub emissive: bool,
     /// Point-light color x intensity carried by the creature (client
@@ -2064,6 +2067,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 .max((b.at[2].abs() + b.size[2] / 2.0) / 16.0);
             height = height.max((b.at[1] + b.size[1]) / 16.0);
         }
+        let winged = model.iter().any(|b| b.name.starts_with("wing"));
         reg.animals.push(AnimalDef {
             name: full,
             label: a.name.clone().unwrap_or_else(|| a.id.clone()),
@@ -2086,6 +2090,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             ire_min: a.ire_min.unwrap_or(0.0),
             movement_float: a.movement.as_deref() == Some("float"),
             movement_swim: a.movement.as_deref() == Some("swim"),
+            winged,
             emissive: a.emissive,
             glow: a.glow,
             spawn_light_max: a.spawn_light_max.unwrap_or(3),

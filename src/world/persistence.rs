@@ -26,6 +26,7 @@ impl World {
         w.weather = weather;
         w.clock = day as f64 * crate::server::DAY_LENGTH as f64;
         w.load_remap = w.read_palette_remap();
+        w.palette_stale = !w.palette_matches_registry();
         w.load_entities();
         w.load_mobs();
         w.load_stamps();
@@ -93,14 +94,32 @@ impl World {
             .collect()
     }
 
-    /// Write the current registry as this world's palette (runtime ids are
-    /// stored ids from now on).
-    pub(super) fn write_palette(&self) {
+    /// The palette this registry would write: one `id name` line per block.
+    fn palette_text(&self) -> String {
         let mut out = String::new();
         for (i, b) in self.reg.blocks.iter().enumerate() {
             out.push_str(&format!("{i} {}\n", b.name));
         }
-        let _ = fs::write(self.save_dir.join("palette"), out);
+        out
+    }
+
+    /// Does the saved palette already describe this registry? When it does,
+    /// every chunk file on disk is written in ids we still understand, so a
+    /// chunk that loads unedited does not need saving again. When it does
+    /// NOT (a mod arrived, the game updated), chunk files carry stale ids
+    /// and every one we touch has to be rewritten under the new palette.
+    pub(super) fn palette_matches_registry(&self) -> bool {
+        fs::read_to_string(self.save_dir.join("palette")).is_ok_and(|on_disk| {
+            // A fresh world has no chunks yet, so a missing palette is not
+            // a mismatch — but an unreadable one we treat as stale.
+            on_disk == self.palette_text()
+        })
+    }
+
+    /// Write the current registry as this world's palette (runtime ids are
+    /// stored ids from now on).
+    pub(super) fn write_palette(&self) {
+        let _ = fs::write(self.save_dir.join("palette"), self.palette_text());
     }
 
     pub(super) fn chunk_file(&self, pos: ChunkPos) -> PathBuf {

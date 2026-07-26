@@ -14,6 +14,11 @@ const GRAVITY: f32 = 28.0;
 const TERMINAL: f32 = 40.0;
 const JUMP: f32 = 7.6;
 /// How far a hungry predator will notice prey.
+/// Feet to crown of a humanoid, in blocks: the head box tops out at
+/// 22+7 px and hair sits a shade proud of it (16 px = 1 block). The
+/// paper-doll preview frames itself against this.
+pub const HUMANOID_HEIGHT: f32 = 1.85;
+
 pub const HUNT_RANGE: f32 = 28.0;
 /// This long past empty, a predator gets ideas about the player.
 pub const BELLY_DESPERATE: f32 = -240.0;
@@ -540,9 +545,17 @@ impl Mob {
             match self.state {
                 MobState::Idle => {
                     if self.state_timer <= 0.0 {
-                        if r01(rng) < 0.6 {
+                        // Wings don't loiter. A bird that stops to stand
+                        // about in mid-air is the tell that it is a box
+                        // on a spring — so a flier always takes another
+                        // leg, and a long one.
+                        if def.movement_float || r01(rng) < 0.6 {
                             let ang = r01(rng) * std::f32::consts::TAU;
-                            let dist = 4.0 + r01(rng) * 6.0;
+                            let dist = if def.movement_float {
+                                14.0 + r01(rng) * 26.0
+                            } else {
+                                4.0 + r01(rng) * 6.0
+                            };
                             let dy = if def.movement_swim {
                                 (r01(rng) - 0.5) * 2.0
                             } else {
@@ -562,7 +575,9 @@ impl Mob {
                             }
                             self.target = tgt;
                             self.state = MobState::Wander;
-                            self.state_timer = 6.0;
+                            // Long enough to actually arrive: a 40-block
+                            // crossing at cruise takes more than six.
+                            self.state_timer = if def.movement_float { 16.0 } else { 6.0 };
                         } else {
                             self.state_timer = 1.5 + r01(rng) * 3.0;
                             self.yaw += (r01(rng) - 0.5) * 1.2;
@@ -574,16 +589,24 @@ impl Mob {
                     to.y = 0.0;
                     if to.length_squared() < 0.6 || self.state_timer <= 0.0 {
                         self.state = MobState::Idle;
-                        self.state_timer = 2.0 + r01(rng) * 3.0;
+                        self.state_timer = if def.movement_float {
+                            0.0 // straight into the next leg
+                        } else {
+                            2.0 + r01(rng) * 3.0
+                        };
                     } else {
                         let dir = to.normalize();
                         self.yaw = dir.x.atan2(dir.z);
                         // Landfolk don't wander into deep water;
-                        // swimmers don't wander OUT of it.
+                        // swimmers don't wander OUT of it. Wings mind
+                        // neither — a gull turned back at the shoreline
+                        // because it read the sea as a landfolk's wall.
                         let probe = self.pos + dir * 1.2;
                         let (px, pz) = (probe.x.floor() as i32, probe.z.floor() as i32);
                         let py = self.pos.y.floor() as i32;
-                        let blocked = if def.movement_swim {
+                        let blocked = if def.movement_float {
+                            false
+                        } else if def.movement_swim {
                             !world.reg.is_water(world.get_block(px, py, pz))
                         } else {
                             world.reg.is_water(world.get_block(px, py - 1, pz))
@@ -593,7 +616,9 @@ impl Mob {
                             self.state = MobState::Idle;
                             self.state_timer = 1.0;
                         } else {
-                            wish = dir * def.speed * 0.6;
+                            // Cruising speed, not a stroll: the 0.6 is a
+                            // grazer's amble and it made eagles crawl.
+                            wish = dir * def.speed * if def.movement_float { 1.0 } else { 0.6 };
                         }
                     }
                 }
@@ -775,20 +800,30 @@ impl Mob {
             }
             self.anim_phase += dt * 3.0;
         } else if def.movement_float {
-            // Wisps hover: seek a bobbing height above ground (or the
-            // player's eyes while hunting), no gravity at all.
-            let gy = world.surface_height(self.pos.x.floor() as i32, self.pos.z.floor() as i32);
+            // Floaters hover: seek a bobbing height above the ground,
+            // no gravity at all. The ground that matters is the one
+            // directly under them, not the world's surface height —
+            // reading the latter told a bat 30 blocks down to climb to
+            // daylight, so it spent its life pressed into the cave
+            // roof, which is exactly what "hovering in place" looked
+            // like from below.
+            let (fx, fz) = (self.pos.x.floor() as i32, self.pos.z.floor() as i32);
+            let (floor, ceil) = world.air_column(fx, self.pos.y.floor() as i32, fz);
             let want_y = if self.state == MobState::Hunt {
-                prey.map(|(_, p)| p.pos.y).unwrap_or(gy as f32) + 1.6
+                prey.map(|(_, p)| p.pos.y).unwrap_or(floor as f32) + 1.6
             } else if self.state == MobState::Stalk {
                 // The dive: an eagle takes its quarry on the ground.
-                self.quarry.map(|(_, at)| at.y).unwrap_or(gy as f32) + 0.5
+                self.quarry.map(|(_, at)| at.y).unwrap_or(floor as f32) + 0.5
             } else {
-                gy as f32 + 2.2
-            } + (self.anim_phase * 0.7).sin() * 0.3;
+                // Wings cruise; a wisp drifts at head height.
+                floor as f32 + if def.winged { 11.0 } else { 2.2 }
+            } + (self.anim_phase * 0.2).sin() * 0.3;
+            // Never above the roof: a low cave keeps its bats low.
+            let want_y = want_y.min(ceil as f32 - 1.2);
             let vy = (want_y - self.pos.y).clamp(-2.5, 2.5);
             self.vel.y += (vy - self.vel.y) * step;
-            self.anim_phase += dt * 2.0; // wisps always shimmer
+            // Fast enough to be a wingbeat; the bob divides it back down.
+            self.anim_phase += dt * 7.0;
         } else {
             let feet = world.get_block(
                 self.pos.x.floor() as i32,
@@ -979,9 +1014,15 @@ impl Mob {
             (Vec3::new(self.vel.x, 0.0, self.vel.z).length() / def.speed.max(0.1)).clamp(0.0, 1.0);
         let flash = 1.0 + self.hurt_flash * 2.4;
 
+        // Holding station in the air is the most work a wing ever does,
+        // so the beat is deepest when a bird is going nowhere and eases
+        // into a glide as it picks up speed. Both wings rise together:
+        // the roll is signed by which side of the body the box sits on.
+        let beat = (self.anim_phase.sin() * (0.62 - 0.30 * amp)).max(-0.5);
+
         // A box named "leg" mirrors into 4; everything else draws once.
-        #[allow(clippy::type_complexity)] // (min, size, mirrored, swing amp, tex override)
-        let mut boxes: Vec<([f32; 3], [f32; 3], bool, f32, Option<u16>)> = Vec::new();
+        #[allow(clippy::type_complexity)] // (size, at, is_head, pitch, roll, tex)
+        let mut boxes: Vec<([f32; 3], [f32; 3], bool, f32, f32, Option<u16>)> = Vec::new();
         for b in &def.model {
             let is_head = b.name.starts_with("head");
             if b.name == "leg" {
@@ -994,15 +1035,17 @@ impl Mob {
                         std::f32::consts::PI
                     };
                     let swing = (self.anim_phase + phase).sin() * 0.55 * amp;
-                    boxes.push((b.size, at, false, swing, b.tile));
+                    boxes.push((b.size, at, false, swing, 0.0, b.tile));
                 }
+            } else if b.name.starts_with("wing") {
+                boxes.push((b.size, b.at, false, 0.0, beat * b.at[0].signum(), b.tile));
             } else {
-                boxes.push((b.size, b.at, is_head, 0.0, b.tile));
+                boxes.push((b.size, b.at, is_head, 0.0, 0.0, b.tile));
             }
         }
 
         let gs = 0.45 + 0.55 * self.growth.min(1.0); // babies are small
-        for (size, at, is_head, swing, tile_override) in boxes {
+        for (size, at, is_head, swing, roll, tile_override) in boxes {
             let (hx, hy, hz) = (
                 size[0] * gs / 32.0,
                 size[1] * gs / 32.0,
@@ -1012,6 +1055,10 @@ impl Mob {
             // Legs rotate around their top (hip) on the local X axis.
             let pivot_y = at[1] * gs / 16.0 + hy * 2.0;
             let (ss, cs) = swing.sin_cos();
+            // Wings rotate around their inner end (the shoulder) on the
+            // local Z axis, so the tip sweeps and the root stays put.
+            let pivot_x = center.x - center.x.signum() * hx;
+            let (rs, rc) = roll.sin_cos();
             let ts = 1.0 / ATLAS_TILES as f32;
             let inset = ts / 32.0;
             for face in 0..6 {
@@ -1031,24 +1078,35 @@ impl Mob {
                     [0.0, 0.0, 0.0]
                 } else {
                     let n = NORMALS[face];
-                    let (mut ny, mut nz) = (n[1] as f32, n[2] as f32);
+                    let (mut nx, mut ny, mut nz) = (n[0] as f32, n[1] as f32, n[2] as f32);
                     if swing != 0.0 {
                         let (y0, z0) = (ny, nz);
                         ny = y0 * cs - z0 * ss;
                         nz = y0 * ss + z0 * cs;
                     }
-                    let nx = n[0] as f32;
+                    if roll != 0.0 {
+                        // Without this the beat is a silhouette only —
+                        // the wing's shade would stay flat while it moves.
+                        let (x0, y0) = (nx, ny);
+                        nx = x0 * rc - y0 * rs;
+                        ny = x0 * rs + y0 * rc;
+                    }
                     [nx * cyaw + nz * syaw, ny, -nx * syaw + nz * cyaw]
                 };
                 let base = verts.len() as u32;
                 for c in CORNERS[face].iter() {
-                    let lx = center.x + (c[0] - 0.5) * 2.0 * hx;
+                    let mut lx = center.x + (c[0] - 0.5) * 2.0 * hx;
                     let mut ly = center.y + (c[1] - 0.5) * 2.0 * hy;
                     let mut lz = center.z + (c[2] - 0.5) * 2.0 * hz;
                     if swing != 0.0 {
                         let (dy, dz) = (ly - pivot_y, lz - center.z);
                         ly = pivot_y + dy * cs - dz * ss;
                         lz = center.z + dy * ss + dz * cs;
+                    }
+                    if roll != 0.0 {
+                        let (dx, dy) = (lx - pivot_x, ly - center.y);
+                        lx = pivot_x + dx * rc - dy * rs;
+                        ly = center.y + dx * rs + dy * rc;
                     }
                     // Yaw the whole mob (model faces -Z forward → +yaw).
                     let wx = lx * cyaw + lz * syaw;
