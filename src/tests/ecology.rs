@@ -493,3 +493,156 @@ fn the_vulture_beats_the_clock_and_rot_feeds_the_field() {
         "and the field is richer for it"
     );
 }
+
+#[test]
+fn fish_stay_wet_and_the_rod_takes_the_real_one_first() {
+    let reg = base_reg();
+    let mut w = test_world_with("pond", reg.clone());
+    let h = w.surface_height(8, 8);
+    pad(&mut w, &reg, 0, 16, 0, 16, h);
+    // A dug pond, three deep, filled with source water.
+    let water = reg.water_block(0);
+    let stone = b(&reg, "base:stone");
+    for x in 5..=11 {
+        for z in 5..=11 {
+            for dy in 1..=3 {
+                w.set_block(
+                    x,
+                    h - dy,
+                    z,
+                    if x == 5 || x == 11 || z == 5 || z == 11 {
+                        stone
+                    } else {
+                        water
+                    },
+                );
+            }
+            w.set_block(x, h, z, AIR);
+        }
+    }
+    // Seal the floor.
+    for x in 5..=11 {
+        for z in 5..=11 {
+            w.set_block(x, h - 4, z, stone);
+        }
+    }
+    let trout_si = reg.animal_id("base:trout").unwrap();
+    let mut f = beast(
+        &reg,
+        "base:trout",
+        glam::Vec3::new(8.5, h as f32 - 2.5, 8.5),
+    );
+    f.tamed = true; // the tag that finds our fish among strangers
+    w.spawn_mob(f);
+    let mut rng = 41u32;
+    for _ in 0..1200 {
+        w.tick_mobs(
+            &[ctx(glam::Vec3::new(8.5, h as f32 + 1.0, 2.5))],
+            1.0,
+            0.05,
+            &mut rng,
+        );
+    }
+    let fish = w
+        .mobs()
+        .iter()
+        .find(|m| m.tamed && m.species == trout_si)
+        .expect("the trout persists near a player");
+    let cell = (
+        fish.pos.x.floor() as i32,
+        (fish.pos.y + 0.2).floor() as i32,
+        fish.pos.z.floor() as i32,
+    );
+    assert!(
+        reg.is_water(w.get_block(cell.0, cell.1, cell.2)),
+        "a minute later the trout is still swimming (at {:?})",
+        fish.pos
+    );
+    // The rod: the real fish comes out before any luck table.
+    let hooked = w.catch_fish_near(glam::Vec3::new(8.5, h as f32 - 2.0, 8.5), 6.0);
+    assert_eq!(hooked, Some(trout_si), "the strike lands the trout");
+    assert!(
+        !w.mobs().iter().any(|m| m.tamed && m.species == trout_si),
+        "and the water is emptier for it"
+    );
+    // Empty water gives the rod nothing real.
+    assert_eq!(
+        w.catch_fish_near(glam::Vec3::new(8.5, h as f32 - 2.0, 8.5), 6.0),
+        None
+    );
+}
+
+#[test]
+fn the_heron_works_the_shallows() {
+    let reg = base_reg();
+    let mut w = test_world_with("heron", reg.clone());
+    let h = w.surface_height(8, 8);
+    pad(&mut w, &reg, 0, 16, 0, 16, h);
+    let water = reg.water_block(0);
+    let stone = b(&reg, "base:stone");
+    for x in 6..=10 {
+        for z in 6..=10 {
+            w.set_block(
+                x,
+                h - 1,
+                z,
+                if x == 6 || x == 10 || z == 6 || z == 10 {
+                    stone
+                } else {
+                    water
+                },
+            );
+            w.set_block(x, h, z, AIR);
+        }
+    }
+    let trout_si = reg.animal_id("base:trout").unwrap();
+    w.spawn_mob(beast(
+        &reg,
+        "base:trout",
+        glam::Vec3::new(8.5, h as f32 - 0.5, 8.5),
+    ));
+    let mut hb = beast(
+        &reg,
+        "base:heron",
+        glam::Vec3::new(12.5, h as f32 + 3.0, 8.5),
+    );
+    hb.belly = -1.0;
+    w.spawn_mob(hb);
+    let mut rng = 43u32;
+    let mut taken = false;
+    for _ in 0..3000 {
+        w.tick_mobs(&[], 1.0, 0.05, &mut rng);
+        if !w.mobs().iter().any(|m| m.species == trout_si) {
+            taken = true;
+            break;
+        }
+    }
+    assert!(taken, "the heron speared the trout");
+}
+
+#[test]
+fn the_crab_pinches_what_bothers_it() {
+    let reg = base_reg();
+    let mut w = test_world_with("crab", reg.clone());
+    let h = w.surface_height(8, 8);
+    pad(&mut w, &reg, 0, 16, 0, 16, h);
+    w.spawn_mob(beast(
+        &reg,
+        "base:crab",
+        glam::Vec3::new(8.5, h as f32 + 1.0, 8.5),
+    ));
+    let player = glam::Vec3::new(9.3, h as f32 + 1.0, 8.5);
+    let mut rng = 47u32;
+    let mut pinched = false;
+    for _ in 0..1200 {
+        let evs = w.tick_mobs(&[ctx(player)], 1.0, 0.05, &mut rng);
+        if evs
+            .iter()
+            .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer(0, d, _) if *d <= 1.5))
+        {
+            pinched = true;
+            break;
+        }
+    }
+    assert!(pinched, "stand on a crab, get pinched");
+}

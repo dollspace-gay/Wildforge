@@ -152,20 +152,23 @@ impl Agent {
         Ok(format!("felled {felled} logs"))
     }
 
-    /// Place a block from the pack against the world.
+    /// Place a block from the pack against the world. Self-healing:
+    /// under load the inventory mirror can lag the host's truth no
+    /// matter how the clicks are paced (periodic PlayerState
+    /// broadcasts blur the click-echo pairing), so a misplaced hold
+    /// puts the WRONG BLOCK in the world. A player who misclicks
+    /// breaks it and does it again — so does the agent.
     pub fn place(&mut self, x: i32, y: i32, z: i32, item: &str) -> Result<(), String> {
         if self.dist_to(x, y, z) > REACH {
             return Err("out of reach".into());
         }
-        self.select(item)?;
-        // Echo-honest: the inventory mirror lags the host's truth
-        // under load, and a Place sent while the hand still holds
-        // last turn's planks PLACES THE PLANKS. Wait until the echo
-        // proves the held slot — and retry the shuffle once if the
-        // clicks acted on a stale view.
+        let want = self.reg.item_id(item).and_then(|i| self.reg.item(i).places);
         let want_item = self.reg.item_id(item);
-        let mut proven = false;
-        for attempt in 0..2 {
+        let mut last = String::from("the host didn't allow that placement");
+        for attempt in 0..3 {
+            self.select(item)?;
+            // Wait for the echo to prove the held slot.
+            let mut proven = false;
             for _ in 0..60 {
                 if self.inventory.slots[self.hotbar].map(|s| s.item) == want_item {
                     proven = true;
@@ -173,42 +176,40 @@ impl Agent {
                 }
                 self.pump_for(0.05);
             }
-            if proven {
-                break;
+            if !proven {
+                last = format!("the hand never settled on {item}");
+                continue;
             }
-            if attempt == 0 {
-                self.select(item)?;
+            self.pump_for(0.1);
+            let before = self.world.get_block(x, y, z);
+            if Some(before) == want {
+                return Ok(()); // a slow echo: the last attempt landed
             }
-        }
-        if !proven {
-            return Err(format!("the hand never settled on {item}"));
-        }
-        self.pump_for(0.1);
-        let before = self.world.get_block(x, y, z);
-        if before != registry::AIR {
-            return Err("that cell is occupied".into());
-        }
-        self.face(x, z);
-        self.anchor_stance();
-        self.send(&C2S::Place { x, y, z });
-        // Wait for the cell to become what we placed — "changed" is
-        // not enough: weather can drop a snow layer into the target
-        // cell first, and that must read as a refusal, not success.
-        let want = self.reg.item_id(item).and_then(|i| self.reg.item(i).places);
-        for _ in 0..90 {
-            self.pump_for(0.05);
-            let now = self.world.get_block(x, y, z);
-            if Some(now) == want {
-                return Ok(());
+            if before != registry::AIR {
+                return Err("that cell is occupied".into());
             }
-            if now != before && now != registry::AIR {
-                return Err(format!(
-                    "something else landed in that cell first ({})",
-                    self.reg.block(now).name
-                ));
+            self.face(x, z);
+            self.anchor_stance();
+            self.send(&C2S::Place { x, y, z });
+            for _ in 0..90 {
+                self.pump_for(0.05);
+                let now = self.world.get_block(x, y, z);
+                if Some(now) == want {
+                    return Ok(());
+                }
+                if now != before && now != registry::AIR {
+                    // The wrong thing landed — most likely our own
+                    // stale-held item. Reclaim it and try again.
+                    last = format!("misplaced ({}); reclaimed it", self.reg.block(now).name);
+                    if attempt < 2 {
+                        self.break_block(x, y, z)?;
+                        self.pump_for(0.2);
+                    }
+                    break;
+                }
             }
         }
-        Err("the host didn't allow that placement".into())
+        Err(last)
     }
 
     /// Block until the standing behavior finishes (arrival, failure,

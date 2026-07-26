@@ -475,6 +475,31 @@ impl Game {
             self.interaction.bow_draw = 0.0; // switched away mid-draw
         }
 
+        // The line in the water: the water decides when. A bite opens
+        // a short window announced by a splash; miss it and the wait
+        // begins again.
+        let rod_held = held.is_some_and(|i| reg.item(i).name == "base:fishing_rod");
+        if !rod_held {
+            self.interaction.fishing = None;
+        } else if let Some((bobber, mut wait, mut bite)) = self.interaction.fishing {
+            if bite > 0.0 {
+                bite -= dt;
+                if bite <= 0.0 {
+                    // Missed it: the water loses interest for a while.
+                    wait = 4.0 + self.rand01() * 8.0;
+                }
+            } else {
+                wait -= dt;
+                if wait <= 0.0 {
+                    bite = 1.4;
+                    let tile = reg.block(reg.water_block(0)).tiles[0];
+                    self.juice_burst(bobber, tile, 8, 1.4);
+                    self.sfx(Sfx::Splash);
+                }
+            }
+            self.interaction.fishing = Some((bobber, wait, bite));
+        }
+
         // Archaeology: sweeping a remnant is a slow, careful channel.
         let brush_held = held.is_some_and(|i| reg.item(i).brush_tool);
         let brush_target = hit.as_ref().map(|h| h.block).filter(|t| {
@@ -1055,6 +1080,65 @@ impl Game {
                 self.input.action_cooldown = 0.5;
                 return;
             }
+        }
+        // Rod clicks live outside the block-hit path: open water is
+        // rarely a solid target. Strike on a bite, reel in early, or
+        // cast at the first water the look-ray touches.
+        if self.input.right_held && self.input.action_cooldown <= 0.0 && rod_held {
+            self.input.action_cooldown = 0.45;
+            self.input.right_held = false;
+            match self.interaction.fishing.take() {
+                Some((bobber, _, bite)) if bite > 0.0 => {
+                    // The strike: a real fish first, thin luck second.
+                    let caught = self.server.world.catch_fish_near(bobber, 6.0).is_some()
+                        || self.rand01() < 0.25;
+                    if caught {
+                        if let Some(fish) = reg.item_id("base:raw_fish") {
+                            let left = self.inventory.add(&reg, fish, 1);
+                            if left > 0 {
+                                self.drop_stack(ItemStack::new(&reg, fish, left));
+                            }
+                        }
+                        self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                        self.sfx(Sfx::Pickup);
+                    } else {
+                        self.sfx(Sfx::Splash);
+                    }
+                }
+                Some(_) => {} // reeled in empty
+                None => {
+                    let eye = self.camera.pos;
+                    let dir = self.camera.forward();
+                    let mut cast = None;
+                    for i in 1..=56 {
+                        let p = eye + dir * (i as f32 * 0.25);
+                        let b = self.server.world.get_block(
+                            p.x.floor() as i32,
+                            p.y.floor() as i32,
+                            p.z.floor() as i32,
+                        );
+                        if reg.is_water(b) {
+                            cast = Some(Vec3::new(
+                                p.x.floor() + 0.5,
+                                p.y.floor() + 0.9,
+                                p.z.floor() + 0.5,
+                            ));
+                            break;
+                        }
+                        if reg.is_solid(b) {
+                            break;
+                        }
+                    }
+                    match cast {
+                        Some(at) => {
+                            self.interaction.fishing = Some((at, 3.0 + self.rand01() * 9.0, 0.0));
+                            self.sfx(Sfx::Splash);
+                        }
+                        None => self.toast("Cast at water.".to_string()),
+                    }
+                }
+            }
+            return;
         }
         let held_is_food = held.is_some_and(|i| reg.item(i).food.is_some());
         if self.input.right_held

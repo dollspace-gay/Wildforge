@@ -107,22 +107,35 @@ impl World {
         }
     }
 
-    /// Spawn on dry solid ground at the surface; silently skips bad spots.
+    /// Spawn on dry solid ground at the surface — or, for swimmers,
+    /// submerged in a water column at least two deep. Skips bad spots.
     pub(super) fn try_spawn(&mut self, species: usize, x: i32, z: i32, yaw01: f32) -> bool {
         if self.mobs.len() >= MOB_CAP {
             return false;
         }
-        let y = self.surface_height(x, z);
-        if y <= SEA_LEVEL {
+        let swim = self
+            .reg
+            .animals
+            .get(species)
+            .is_some_and(|d| d.movement_swim);
+        let spawn_at = if swim {
+            // The first water cell from the sky down, needing depth.
+            (4..=96)
+                .rev()
+                .map(|y| (y, self.get_block(x, y, z)))
+                .find(|&(_, b)| self.reg.is_water(b))
+                .filter(|&(y, _)| self.reg.is_water(self.get_block(x, y - 1, z)))
+                .map(|(y, _)| y as f32 - 0.6)
+        } else {
+            let y = self.surface_height(x, z);
+            (y > SEA_LEVEL && self.reg.is_solid(self.get_block(x, y, z))).then_some(y as f32 + 1.05)
+        };
+        let Some(sy) = spawn_at else {
             return false;
-        }
-        let ground = self.get_block(x, y, z);
-        if !self.reg.is_solid(ground) {
-            return false;
-        }
+        };
         let mut m = Mob::new(
             species,
-            glam::Vec3::new(x as f32 + 0.5, y as f32 + 1.05, z as f32 + 0.5),
+            glam::Vec3::new(x as f32 + 0.5, sy, z as f32 + 0.5),
             yaw01 * std::f32::consts::TAU,
         );
         m.health = self.reg.animals[species].health;
@@ -312,6 +325,15 @@ impl World {
                 return false; // fell out of the world somehow
             }
             if !def.hostile {
+                // Fish are ambience-plus-resource: the water has
+                // fish while someone's there to see it.
+                if def.movement_swim {
+                    let near = players
+                        .iter()
+                        .map(|p| (m.pos - p.pos).length_squared())
+                        .fold(f32::INFINITY, f32::min);
+                    return near <= 96.0 * 96.0;
+                }
                 return true;
             }
             let near = players
@@ -411,6 +433,29 @@ impl World {
             }
         }
         events
+    }
+
+    /// The strike connects: the nearest swimmer within reach of the
+    /// bobber leaves the water. Returns its species — real fish get
+    /// caught before any luck table gets a say.
+    pub fn catch_fish_near(&mut self, at: glam::Vec3, radius: f32) -> Option<usize> {
+        let reg = self.reg.clone();
+        let idx = self
+            .mobs
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| {
+                reg.animals.get(m.species).is_some_and(|d| d.movement_swim)
+                    && (m.pos - at).length() < radius
+            })
+            .min_by(|(_, a), (_, b)| {
+                (a.pos - at)
+                    .length_squared()
+                    .total_cmp(&(b.pos - at).length_squared())
+            })
+            .map(|(i, _)| i)?;
+        let fish = self.mobs.swap_remove(idx);
+        Some(fish.species)
     }
 
     /// A grazer's bite lands: a grown crop reverts to its planted

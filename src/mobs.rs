@@ -530,8 +530,13 @@ impl Mob {
                         if r01(rng) < 0.6 {
                             let ang = r01(rng) * std::f32::consts::TAU;
                             let dist = 4.0 + r01(rng) * 6.0;
+                            let dy = if def.movement_swim {
+                                (r01(rng) - 0.5) * 2.0
+                            } else {
+                                0.0
+                            };
                             let mut tgt =
-                                self.pos + Vec3::new(ang.sin() * dist, 0.0, ang.cos() * dist);
+                                self.pos + Vec3::new(ang.sin() * dist, dy, ang.cos() * dist);
                             // Herd animals lean homeward: wander picks
                             // drift toward the group's center when it
                             // has drifted away (no flocking math).
@@ -560,13 +565,18 @@ impl Mob {
                     } else {
                         let dir = to.normalize();
                         self.yaw = dir.x.atan2(dir.z);
-                        // Don't wander into deep water: probe one block ahead.
+                        // Landfolk don't wander into deep water;
+                        // swimmers don't wander OUT of it.
                         let probe = self.pos + dir * 1.2;
                         let (px, pz) = (probe.x.floor() as i32, probe.z.floor() as i32);
                         let py = self.pos.y.floor() as i32;
-                        let deep = world.reg.is_water(world.get_block(px, py - 1, pz))
-                            && world.reg.is_water(world.get_block(px, py - 2, pz));
-                        if deep {
+                        let blocked = if def.movement_swim {
+                            !world.reg.is_water(world.get_block(px, py, pz))
+                        } else {
+                            world.reg.is_water(world.get_block(px, py - 1, pz))
+                                && world.reg.is_water(world.get_block(px, py - 2, pz))
+                        };
+                        if blocked {
                             self.state = MobState::Idle;
                             self.state_timer = 1.0;
                         } else {
@@ -731,7 +741,27 @@ impl Mob {
         self.vel.x += (wish.x - self.vel.x) * step;
         self.vel.z += (wish.z - self.vel.z) * step;
 
-        if def.movement_float {
+        if def.movement_swim {
+            // Fish: neutral inside the water, helpless out of it. A
+            // swimmer drifts toward its wander target's depth; a
+            // beached one flops shoreward in little hops.
+            let here = world.get_block(
+                self.pos.x.floor() as i32,
+                (self.pos.y + 0.2).floor() as i32,
+                self.pos.z.floor() as i32,
+            );
+            if world.reg.is_water(here) {
+                let want = (self.target.y - self.pos.y).clamp(-1.2, 1.2);
+                self.vel.y += (want - self.vel.y) * step;
+            } else {
+                self.vel.y -= GRAVITY * dt;
+                self.vel.y = self.vel.y.max(-TERMINAL);
+                if self.on_ground {
+                    self.vel.y = 4.0; // the flop
+                }
+            }
+            self.anim_phase += dt * 3.0;
+        } else if def.movement_float {
             // Wisps hover: seek a bobbing height above ground (or the
             // player's eyes while hunting), no gravity at all.
             let gy = world.surface_height(self.pos.x.floor() as i32, self.pos.z.floor() as i32);

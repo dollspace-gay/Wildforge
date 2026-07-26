@@ -724,6 +724,47 @@ impl Game {
                     let stack = ItemStack::new(&reg2, dung, 1);
                     w.push_drop((bx - 7, y + 1, bz + 11), stack);
                 }
+                // The pond: dug two deep, sealed in stone, water to
+                // the brim — cattails on the bank, a lily on the
+                // glass, a trout below and the heron above it.
+                if let (Some(stone), Some(reeds), Some(lily)) =
+                    (b("base:stone"), b("base:cattail"), b("base:water_lily"))
+                {
+                    let water = reg2.water_block(0);
+                    for dx in 3..=7i32 {
+                        for dz in 10..=13i32 {
+                            let (x, z) = (bx + dx, bz + dz);
+                            let rim = dx == 3 || dx == 7 || dz == 10 || dz == 13;
+                            for dy in [-2i32, -1] {
+                                w.set_block(x, y + dy, z, if rim { stone } else { water });
+                            }
+                            w.set_block(x, y - 3, z, stone);
+                            if w.get_block(x, y, z) != AIR {
+                                w.set_block(x, y, z, AIR);
+                            }
+                        }
+                    }
+                    w.set_block(bx + 3, y, bz + 10, reeds);
+                    w.set_block(bx + 7, y, bz + 13, reeds);
+                    // The pad floats on the water surface: the first
+                    // air cell above the fill.
+                    w.set_block(bx + 5, y, bz + 12, lily);
+                    for (name, dx, dz, dy) in [
+                        ("base:trout", 5.5f32, 11.5f32, -1.6f32),
+                        ("base:heron", 5.5, 11.5, 1.0),
+                    ] {
+                        if let Some(si) = reg2.animal_id(name) {
+                            let mut m = crate::mobs::Mob::new(
+                                si,
+                                glam::Vec3::new(bx as f32 + dx, y as f32 + dy, bz as f32 + dz),
+                                1.2,
+                            );
+                            m.health = reg2.animals[si].health;
+                            m.belly = 9000.0;
+                            w.spawn_mob(m);
+                        }
+                    }
+                }
                 // Fang and carrion: a fox on stand by the field, and
                 // the vultures' table set east of the pen.
                 for (name, dx, dz) in [

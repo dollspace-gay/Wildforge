@@ -44,6 +44,7 @@ items = [
   "base:raw_fowl",
   "base:raw_rabbit",
   "base:raw_bear",
+  "base:raw_fish",
 ]
 
 [[tag]]

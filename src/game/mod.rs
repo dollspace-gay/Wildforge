@@ -257,6 +257,9 @@ struct InteractionState {
     attuned: Vec<(String, i32, i32)>,
     /// The vehicle under us (mob id), if we're aboard one.
     riding: Option<u32>,
+    /// A cast line: (bobber cell center, seconds to the bite, bite
+    /// window remaining). The water decides when.
+    fishing: Option<(Vec3, f32, f32)>,
 }
 
 impl Default for InteractionState {
@@ -273,6 +276,7 @@ impl Default for InteractionState {
             breaking: None,
             attuned: Vec::new(),
             riding: None,
+            fishing: None,
         }
     }
 }

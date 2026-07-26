@@ -14,8 +14,10 @@ impl World {
             let Some(def) = self.reg.animals.get(m.species) else {
                 continue;
             };
-            if def.hostile {
-                continue; // wardens dissolve on save — never persisted
+            if def.hostile || def.movement_swim {
+                // Wardens dissolve on save; fish are the water's,
+                // not individuals — both respawn from their sources.
+                continue;
             }
             let _ = writeln!(
                 out,

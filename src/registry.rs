@@ -231,6 +231,8 @@ pub struct AnimalDef {
     pub ire_min: f32,
     /// Floaters hover with no gravity (ember/frost wisps).
     pub movement_float: bool,
+    /// Swimmers live inside the water and never leave it willingly.
+    pub movement_swim: bool,
     /// Rendered at full block-light — its own lantern.
     pub emissive: bool,
     /// Point-light color x intensity carried by the creature (client
@@ -2079,6 +2081,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             aggro_range: a.aggro_range.unwrap_or(12.0),
             ire_min: a.ire_min.unwrap_or(0.0),
             movement_float: a.movement.as_deref() == Some("float"),
+            movement_swim: a.movement.as_deref() == Some("swim"),
             emissive: a.emissive,
             glow: a.glow,
             spawn_light_max: a.spawn_light_max.unwrap_or(3),

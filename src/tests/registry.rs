@@ -579,8 +579,8 @@ fn base_animals_and_weapons_register() {
             .iter()
             .filter(|a| !a.hostile && !a.vehicle)
             .count(),
-        16,
-        "seven wildlife plus eight hunters and the carcass"
+        24,
+        "the wildlife roster, the hunters, the water, the carcass"
     );
     assert_eq!(
         reg.animals.iter().filter(|a| a.hostile).count(),

@@ -1142,3 +1142,13 @@ output = "base:compost_heap"
 input = "base:raw_bear"
 output = "base:cooked_bear"
 time = 8.0
+
+[[smelt]]
+input = "base:raw_fish"
+output = "base:cooked_fish"
+time = 6.0
+
+[[recipe]]
+pattern = ["..s", ".sf", "s.f"]
+keys = { s = "base:stick", f = "base:plant_fiber" }
+output = "base:fishing_rod"

@@ -1496,3 +1496,35 @@ tool = "shovel"
 interaction = "compost"
 drops = "base:compost_heap"
 item = false
+
+[[block]]
+id = "cattail"
+name = "Cattails"
+cross = true
+texture = "cattail.png"
+hardness = 0.1
+solid = false
+opaque = false
+drops = "base:plant_fiber"
+drop_count = 2
+
+[[block]]
+id = "kelp_frond"
+name = "Kelp"
+cross = true
+texture = "kelp.png"
+hardness = 0.1
+solid = false
+opaque = false
+drops = "base:kelp"
+item = false
+
+[[block]]
+id = "water_lily"
+name = "Water Lily"
+texture = "lily_pad.png"
+hardness = 0.1
+solid = false
+opaque = false
+height = 0.07
+drops = "self"

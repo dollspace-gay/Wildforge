@@ -281,16 +281,19 @@ fn the_agent_crafts_places_and_deposits() {
     assert!(planks >= 12, "3 crafts x 4 planks ({planks})");
     let (px, py, pz) = crate::agent::cell_of(a.player.pos);
     a.craft("crafting_table", 1).expect("table crafts");
-    a.place(px + 1, py, pz, "base:crafting_table")
+    // Two cells out: the host (rightly) refuses placement into any
+    // cell the placer's own body overlaps, and physics can settle an
+    // agent right on a cell boundary.
+    a.place(px + 2, py, pz, "base:crafting_table")
         .expect("table places");
     a.craft("chest", 1).expect("a chest by the table");
-    a.place(px - 1, py, pz, "base:chest").expect("chest places");
+    a.place(px - 2, py, pz, "base:chest").expect("chest places");
     let report = a
-        .deposit(px - 1, py, pz, None)
+        .deposit(px - 2, py, pz, None)
         .expect("the pack empties into it");
     assert!(report.contains("stowed"), "{report}");
     // The host's chest — the authoritative one — holds the goods.
-    let held: u32 = host.with(|_, sim| match sim.world.block_entity(&(px - 1, py, pz)) {
+    let held: u32 = host.with(|_, sim| match sim.world.block_entity(&(px - 2, py, pz)) {
         Some(crate::world::BlockEntity::Chest(c)) => {
             c.slots.iter().flatten().map(|s| s.count).sum()
         }

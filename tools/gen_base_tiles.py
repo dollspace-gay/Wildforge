@@ -646,6 +646,102 @@ def main():
         d.rounded_rectangle([10, 13, 18, 18], radius=3, fill=edge_c + (255,))
         save_tile(img, nm)
 
+    # The water bears life: fish scales, waterline hides, and the
+    # rod-and-catch items.
+    fish = {
+        "trout": ((150, 130, 110), (104, 88, 70)),
+        "carp": ((170, 150, 96), (120, 104, 60)),
+        "catfish": ((96, 100, 92), (60, 64, 58)),
+    }
+    for name, (base_c, dark_c) in fish.items():
+        img = rock(name, base=base_c, dark=dark_c)
+        d = ImageDraw.Draw(img)
+        rf = rng_for(name + "_scales")
+        for _ in range(30):
+            x, y = rf.randint(1, 29), rf.randint(1, 29)
+            d.arc([x, y, x + 3, y + 3], 200, 340, fill=(
+                min(base_c[0] + 40, 255), min(base_c[1] + 40, 255), min(base_c[2] + 40, 255), 255))
+        if name == "trout":
+            for _ in range(10):
+                x, y = rf.randint(2, 28), rf.randint(2, 28)
+                d.point((x, y), fill=(196, 90, 80, 255))
+        save_tile(img, name)
+    save_tile(rock("frog", base=(96, 138, 70), dark=(62, 96, 44)), "frog")
+    save_tile(face("frog_face", (96, 138, 70), (62, 96, 44), None), "frog_face")
+    save_tile(rock("heron", base=(176, 184, 190), dark=(128, 136, 144)), "heron")
+    hf = rock("heron_face", base=(176, 184, 190), dark=(128, 136, 144))
+    d = ImageDraw.Draw(hf)
+    for ex in (8, 20):
+        d.rectangle([ex, 10, ex + 3, 13], fill=(30, 26, 20, 255))
+        d.point((ex + 1, 11), fill=(240, 210, 90, 255))
+    d.polygon([(13, 17), (18, 17), (15, 29)], fill=(216, 170, 60, 255))
+    save_tile(hf, "heron_face")
+    save_tile(rock("seal", base=(140, 138, 146), dark=(100, 98, 108)), "seal")
+    save_tile(face("seal_face", (140, 138, 146), (100, 98, 108), (110, 106, 114)), "seal_face")
+    crabimg = rock("crab", base=(196, 92, 60), dark=(140, 58, 36))
+    save_tile(crabimg, "crab")
+    croc = rock("crocodile", base=(88, 110, 62), dark=(56, 74, 40))
+    d = ImageDraw.Draw(croc)
+    for yy in range(2, 32, 6):
+        for xx in range(2, 32, 6):
+            d.rectangle([xx, yy, xx + 2, yy + 2], fill=(64, 84, 46, 255))
+    save_tile(croc, "crocodile")
+    cf = rock("crocodile_face", base=(88, 110, 62), dark=(56, 74, 40))
+    d = ImageDraw.Draw(cf)
+    for ex in (7, 21):
+        d.rectangle([ex, 8, ex + 3, 11], fill=(210, 190, 60, 255))
+        d.line([(ex + 1, 8), (ex + 1, 11)], fill=(20, 18, 12, 255))
+    for tx in range(9, 24, 4):
+        d.polygon([(tx, 24), (tx + 2, 24), (tx + 1, 27)], fill=(230, 228, 214, 255))
+    save_tile(cf, "crocodile_face")
+    # Items: the catch, cooked, the rod, and gathered kelp.
+    for nm, fill_c, edge_c in [
+        ("raw_fish", (150, 164, 176), (104, 118, 130)),
+        ("cooked_fish", (168, 128, 78), (118, 86, 48)),
+    ]:
+        img = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.ellipse([4, 11, 22, 21], fill=fill_c + (255,), outline=edge_c + (255,))
+        d.polygon([(21, 16), (28, 11), (28, 21)], fill=edge_c + (255,))
+        d.point((9, 14), fill=(20, 20, 24, 255))
+        save_tile(img, nm)
+    rod = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(rod)
+    d.line([(4, 28), (24, 4)], fill=(122, 86, 48, 255), width=2)
+    d.line([(24, 4), (27, 14)], fill=(228, 226, 218, 255))
+    d.ellipse([25, 14, 28, 17], fill=(196, 60, 50, 255))
+    save_tile(rod, "fishing_rod")
+    kelp_i = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(kelp_i)
+    for x0 in (10, 16, 21):
+        d.line([(x0, 26), (x0 + 2, 8)], fill=(52, 96, 60, 255), width=3)
+    save_tile(kelp_i, "kelp_item")
+    # Plants: cattails at the margin, kelp in the deep, the lily pad.
+    cat = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(cat)
+    for x0, h in [(8, 6), (15, 3), (23, 8)]:
+        d.line([(x0, 31), (x0, h + 6)], fill=(92, 128, 60, 255), width=2)
+        d.rectangle([x0 - 1, h, x0 + 1, h + 7], fill=(110, 74, 40, 255))
+    d.line([(12, 31), (11, 12)], fill=(80, 116, 52, 255))
+    d.line([(19, 31), (20, 10)], fill=(80, 116, 52, 255))
+    save_tile(cat, "cattail")
+    kp = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(kp)
+    rk = rng_for("kelp")
+    for x0 in (7, 13, 19, 25):
+        pts = [(x0 + rk.randint(-2, 2), y) for y in range(0, 33, 4)]
+        d.line(pts, fill=(44, 88, 54, 255), width=3)
+        for px_, py_ in pts[::2]:
+            d.ellipse([px_ - 2, py_ - 1, px_ + 3, py_ + 2], fill=(56, 104, 62, 255))
+    save_tile(kp, "kelp")
+    lily = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(lily)
+    d.ellipse([3, 4, 28, 27], fill=(62, 118, 58, 255), outline=(44, 88, 44, 255))
+    d.polygon([(16, 15), (28, 8), (28, 20)], fill=(0, 0, 0, 0))
+    d.pieslice([3, 4, 28, 27], -25, 25, fill=(0, 0, 0, 0))
+    d.ellipse([12, 12, 17, 17], fill=(170, 200, 150, 255))
+    save_tile(lily, "lily_pad")
+
     print(f"wrote {len(list(OUT.glob('*.png')))} tiles to {OUT}")
 
 

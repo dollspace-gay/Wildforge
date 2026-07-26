@@ -566,3 +566,177 @@ drops = []
 [animal.model]
 body = { size = [7, 3, 11], at = [0, 0, 0] }
 head = { size = [4, 2.5, 4], at = [0, 0, -7] }
+
+# ---- the water bears life ----
+# Fish are the water's, not individuals: never saved, culled far
+# from players, reseeded by the repop clock. Swim movement keeps
+# them inside the water; beached fish flop.
+
+[[animal]]
+id = "trout"
+name = "Trout"
+biomes = ["taiga", "arctic", "mountains", "tundra"]
+health = 3
+speed = 2.2
+flee_range = 4
+group = [2, 4]
+rarity = 6
+movement = "swim"
+tex = "trout.png"
+head_tex = "trout.png"
+sound_pitch = 1.8
+drops = [{ item = "raw_fish", min = 1, max = 1 }]
+[animal.model]
+body = { size = [1.5, 2.5, 6], at = [0, 0.5, 0] }
+tail = { size = [0.5, 2, 2], at = [0, 0.8, 4] }
+
+[[animal]]
+id = "carp"
+name = "Carp"
+biomes = ["plains", "forest", "scrubland", "savanna", "jungle"]
+health = 4
+speed = 1.8
+flee_range = 4
+group = [2, 4]
+rarity = 6
+movement = "swim"
+tex = "carp.png"
+head_tex = "carp.png"
+sound_pitch = 1.5
+drops = [{ item = "raw_fish", min = 1, max = 1 }]
+[animal.model]
+body = { size = [2, 3, 7], at = [0, 0.5, 0] }
+tail = { size = [0.5, 2.5, 2], at = [0, 0.8, 4.5] }
+
+[[animal]]
+id = "catfish"
+name = "Catfish"
+biomes = ["swamp"]
+health = 5
+speed = 1.6
+flee_range = 3
+group = [1, 3]
+rarity = 5
+movement = "swim"
+tex = "catfish.png"
+head_tex = "catfish.png"
+sound_pitch = 1.2
+drops = [{ item = "raw_fish", min = 1, max = 2 }]
+[animal.model]
+body = { size = [2.5, 3, 9], at = [0, 0.5, 0] }
+tail = { size = [0.5, 2.5, 2.5], at = [0, 0.8, 5.5] }
+whisker_l = { size = [2, 0.4, 0.4], at = [-2, 1.5, -4.5] }
+whisker_r = { size = [2, 0.4, 0.4], at = [2, 1.5, -4.5] }
+
+[[animal]]
+id = "frog"
+name = "Frog"
+biomes = ["swamp"]
+health = 3
+speed = 2.0
+flee_range = 5
+group = [1, 3]
+rarity = 7
+belly = 700
+tex = "frog.png"
+head_tex = "frog_face.png"
+sound_pitch = 1.4
+drops = []
+[animal.model]
+body = { size = [2.5, 2, 3.5], at = [0, 0, 0] }
+head = { size = [2.5, 1.5, 1.5], at = [0, 1.2, -2.2] }
+leg = { size = [1, 1.5, 1.5], at = [1.6, 0, 1] }
+
+[[animal]]
+id = "heron"
+name = "Heron"
+biomes = ["swamp", "plains"]
+health = 7
+speed = 2.6
+flee_range = 7
+group = [1, 1]
+rarity = 16
+belly = 480
+prey = ["trout", "carp", "catfish", "frog"]
+attack = 2
+movement = "float"
+tex = "heron.png"
+head_tex = "heron_face.png"
+sound_pitch = 1.1
+drops = [{ item = "feather", min = 1, max = 2 }]
+[animal.model]
+body = { size = [3, 3.5, 5], at = [0, 9, 0] }
+neck = { size = [1.2, 5, 1.2], at = [0, 12, -2.5] }
+head = { size = [1.6, 1.6, 3], at = [0, 16.5, -3.5] }
+wing_l = { size = [6, 0.8, 3], at = [-4.5, 11, 0] }
+wing_r = { size = [6, 0.8, 3], at = [4.5, 11, 0] }
+leg = { size = [0.5, 9, 0.5], at = [0.8, 0, 0.5] }
+
+[[animal]]
+id = "seal"
+name = "Seal"
+biomes = ["arctic"]
+health = 12
+speed = 1.4
+flee_range = 6
+group = [1, 3]
+rarity = 10
+belly = 600
+prey = ["trout"]
+tex = "seal.png"
+head_tex = "seal_face.png"
+sound_pitch = 0.8
+drops = [
+  { item = "raw_fish", min = 0, max = 1 },
+  { item = "hide", min = 0, max = 1 },
+]
+[animal.model]
+body = { size = [5, 4, 11], at = [0, 0, 0] }
+head = { size = [3.5, 3, 3.5], at = [0, 1.5, -7] }
+tail = { size = [3, 1.5, 3], at = [0, 0.5, 6.5] }
+
+[[animal]]
+id = "crab"
+name = "Crab"
+biomes = ["desert", "scrubland", "jungle", "savanna"]
+health = 4
+speed = 1.8
+flee_range = 0
+group = [1, 3]
+rarity = 12
+fierce = true
+attack = 1
+aggro_range = 1.8
+tex = "crab.png"
+head_tex = "crab.png"
+sound_pitch = 2.2
+drops = []
+[animal.model]
+body = { size = [3.5, 1.5, 2.5], at = [0, 0.5, 0] }
+claw_l = { size = [1.5, 1, 1.5], at = [-2.5, 0.5, -1.5] }
+claw_r = { size = [1.5, 1, 1.5], at = [2.5, 0.5, -1.5] }
+leg = { size = [0.5, 1, 0.5], at = [1.8, 0, 0.8] }
+
+[[animal]]
+id = "crocodile"
+name = "Crocodile"
+biomes = ["swamp"]
+health = 26
+speed = 2.2
+flee_range = 0
+group = [1, 1]
+rarity = 18
+belly = 420
+prey = ["catfish", "frog", "heron"]
+fierce = true
+attack = 5
+aggro_range = 4.0
+tex = "crocodile.png"
+head_tex = "crocodile_face.png"
+sound_pitch = 0.5
+drops = [{ item = "hide", min = 1, max = 2 }]
+[animal.model]
+body = { size = [5, 3, 13], at = [0, 0, 0] }
+head = { size = [3.5, 2, 6], at = [0, 0.3, -9] }
+leg = { size = [1.5, 2, 1.5], at = [2.5, 0, 4] }
+tail = { size = [2.5, 2, 7], at = [0, 0.3, 9.5] }

@@ -44,7 +44,8 @@ pub fn compost_value(name: &str) -> u8 {
     match name {
         "base:spoiled_mush" => 3,
         "base:leaf_litter" => 2,
-        "base:plant_fiber" | "base:berry" | "base:jungle_fruit" | "base:cactus_fruit" => 1,
+        "base:plant_fiber" | "base:berry" | "base:jungle_fruit" | "base:cactus_fruit"
+        | "base:kelp" => 1,
         n if n.ends_with("seeds") => 1,
         _ => 0,
     }
