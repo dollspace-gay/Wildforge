@@ -1748,18 +1748,32 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         )
     });
     tf(204, &mut |px, py, u, v| {
-        // Face: plain skin base, simple dark eyes, the faintest mouth.
-        // Deliberately epicene — identity comes from the style palette.
-        let base = 225.0 + fbm(u, v, 4, 904) * 12.0;
-        let mut c = [base, base * 0.965, base * 0.93];
-        let eye = |cx: f32| (u - cx).abs() < 0.075 && (v - 0.44).abs() < 0.05;
-        if eye(0.31) || eye(0.69) {
-            c = [38.0, 34.0, 34.0];
-        }
-        if (u - 0.5).abs() < 0.10 && (v - 0.76).abs() < 0.02 {
-            c = [base * 0.72, base * 0.66, base * 0.63]; // soft mouth
-        }
-        rgba(c, speck(px, py, 911, 0.03), 255)
+        // Face: brows, eyes and a mouth on an eight-across grid — a
+        // voxel face reads at the resolution it was drawn for, and a
+        // smoothly-shaded one at 32x32 just looks like a smudge.
+        // Deliberately epicene: identity comes from the style palette,
+        // and the base stays near-greyscale so any tone tints cleanly.
+        let base = 225.0 + fbm(u, v, 4, 904) * 10.0;
+        let skin = [base, base * 0.965, base * 0.93];
+        let (gx, gy) = ((u * 8.0) as i32, (v * 8.0) as i32);
+        let brow = gy == 2 && matches!(gx, 1 | 2 | 5 | 6);
+        let sclera = gy == 3 && matches!(gx, 1 | 6);
+        let iris = gy == 3 && matches!(gx, 2 | 5);
+        let nose = gy == 4 && matches!(gx, 3 | 4);
+        let mouth = gy == 6 && (2..=5).contains(&gx);
+        let c = if brow {
+            [base * 0.48, base * 0.44, base * 0.40]
+        } else if sclera {
+            [252.0, 250.0, 247.0]
+        } else if iris {
+            [58.0, 60.0, 70.0]
+        } else if nose || mouth {
+            let k = if mouth { 0.82 } else { 0.93 };
+            [skin[0] * k, skin[1] * k * 0.97, skin[2] * k * 0.97]
+        } else {
+            skin
+        };
+        rgba(c, speck(px, py, 911, 0.02), 255)
     });
 
     // (13,12) snowball: a packed white ball, blue-shadowed.
