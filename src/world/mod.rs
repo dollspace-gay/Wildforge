@@ -33,7 +33,6 @@ pub use hearts::ROOT_RADIUS;
 pub use hearts::{Heart, heart_block_name, heart_form, heart_height, seed_nature, seed_of_form};
 pub use machines::{station_powered, worked_table_for};
 pub mod soil;
-mod substrate;
 mod ticks;
 
 /// Per-block persistent state for interactive machines.
@@ -875,8 +874,7 @@ impl World {
     }
 
     pub fn set_block(&mut self, x: i32, y: i32, z: i32, b: BlockId) {
-        let meta = if self.reg.block(b).sub_voxel { 0xff } else { 0 };
-        self.set_block_meta(x, y, z, b, meta);
+        self.set_block_meta(x, y, z, b, 0);
     }
 
     /// Set a block with an explicit metadata byte.
@@ -1033,9 +1031,94 @@ impl World {
     /// Can a player body stand with its feet in cell y? Feet and
     /// head clear of solids, solid ground directly underfoot.
     fn standable(&self, x: i32, y: i32, z: i32) -> bool {
+        // Fluid is not solid, so a seabed column used to read as
+        // "standable" and players were dropped on the ocean floor.
+        // Somewhere to stand means dry air for the body, too.
+        let clear = |b: BlockId| !self.reg.is_solid(b) && !self.reg.is_fluid(b);
         self.reg.is_solid(self.get_block(x, y - 1, z))
-            && !self.reg.is_solid(self.get_block(x, y, z))
-            && !self.reg.is_solid(self.get_block(x, y + 1, z))
+            && clear(self.get_block(x, y, z))
+            && clear(self.get_block(x, y + 1, z))
+    }
+
+    /// Somewhere a player can be put down: dry, solid-footed, and
+    /// above the tideline. Searches outward from the asked column and,
+    /// finding nothing but open water, raises a small sand island
+    /// rather than dropping anyone into the sea.
+    pub fn safe_spawn(&mut self, x: i32, z: i32) -> Vec3 {
+        let stands_dry = |w: &mut World, cx: i32, cz: i32| -> Option<Vec3> {
+            w.ensure_chunk(ChunkPos::of_world(cx, cz));
+            let h = w.surface_height(cx, cz);
+            let feet = h + 1;
+            (h > SEA_LEVEL && w.standable(cx, feet, cz))
+                .then(|| Vec3::new(cx as f32 + 0.5, feet as f32 + 0.2, cz as f32 + 0.5))
+        };
+        if let Some(p) = stands_dry(self, x, z) {
+            return p;
+        }
+        // Rings outward: near land first, so a coastal spawn walks
+        // ashore instead of conjuring ground it didn't need. The ring
+        // is probed with the generator's cheap height estimate, and
+        // only a column that looks dry is actually generated — this
+        // search used to build hundreds of chunks per join.
+        for r in (4..=96).step_by(4) {
+            for (dx, dz) in [
+                (r, 0),
+                (-r, 0),
+                (0, r),
+                (0, -r),
+                (r, r),
+                (-r, -r),
+                (r, -r),
+                (-r, r),
+            ] {
+                let (cx, cz) = (x + dx, z + dz);
+                if self.generator.surface_estimate(cx, cz) <= SEA_LEVEL + 1 {
+                    continue;
+                }
+                if let Some(p) = stands_dry(self, cx, cz) {
+                    return p;
+                }
+            }
+        }
+        // Open ocean in every direction: make landfall.
+        let top = self.raise_castaway_isle(x, z);
+        Vec3::new(x as f32 + 0.5, top as f32 + 1.2, z as f32 + 0.5)
+    }
+
+    /// Raise a small sand island for a castaway spawn: a low dome up
+    /// out of the water with its own patch of dry ground. Returns the
+    /// height of the ground at its center.
+    pub fn raise_castaway_isle(&mut self, cx: i32, cz: i32) -> i32 {
+        const R: i32 = 5;
+        let sand = self.reg.block_id("base:sand").unwrap_or(AIR);
+        let crest = SEA_LEVEL + 2;
+        for dx in -R..=R {
+            for dz in -R..=R {
+                let d2 = dx * dx + dz * dz;
+                if d2 > R * R {
+                    continue;
+                }
+                let (x, z) = (cx + dx, cz + dz);
+                self.ensure_chunk(ChunkPos::of_world(x, z));
+                // A dome: full height at the middle, shelving into the
+                // water at the rim.
+                let top = crest - (d2 as f32 / 6.0).round() as i32;
+                let floor = (1..=SEA_LEVEL)
+                    .rev()
+                    .find(|&y| self.reg.is_solid(self.get_block(x, y, z)))
+                    .unwrap_or(1);
+                for y in floor + 1..=top {
+                    self.set_block(x, y, z, sand);
+                }
+                // Dry it out overhead, so the island is actually air.
+                for y in top + 1..=SEA_LEVEL + 4 {
+                    if self.reg.is_fluid(self.get_block(x, y, z)) {
+                        self.set_block(x, y, z, AIR);
+                    }
+                }
+            }
+        }
+        crest
     }
 
     /// Resolve a requested standing position into one a body can

@@ -11,8 +11,8 @@ pub struct Chunk {
     /// Indexed [x][z][y] flattened: (x * CHUNK_Z + z) * CHUNK_Y + y
     blocks: Vec<u16>,
     /// Per-voxel metadata byte, same indexing. Meaning is block-defined; for
-    /// `sub_voxel` blocks it is an octant occupancy mask (bit o = octant o
-    /// filled, o = (oy<<2)|(oz<<1)|ox). Zero for ordinary full-cube blocks.
+    /// soil it is fertility plus a rotation stamp; for a compost heap the
+    /// amount of greens in it. Zero for blocks that carry no state.
     /// Unlike the light planes this IS gameplay state and is saved.
     meta: Vec<u8>,
     /// Torch/emitter light per channel (r,g,b), each 0..15, same indexing.
@@ -84,7 +84,7 @@ impl Chunk {
         &mut self.blocks
     }
 
-    /// Metadata byte at a cell (octant mask for `sub_voxel` blocks).
+    /// Metadata byte at a cell (soil fertility, compost fill, ...).
     #[inline]
     pub fn meta(&self, x: usize, y: usize, z: usize) -> u8 {
         self.meta[Self::idx(x, y, z)]

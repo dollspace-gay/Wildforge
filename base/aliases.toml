@@ -19,3 +19,9 @@ new = "copper_pickaxe"
 [[alias]]
 old = "base:steel_blend"
 new = "base:steel_bloom"
+
+# Partial (sub-voxel) sand was removed; old worlds keep their
+# volume as ordinary sand rather than unknown blocks.
+[[alias]]
+old = "base:surface_sand"
+new = "sand"

@@ -120,6 +120,8 @@ pub struct HostSession {
     moderation: Option<ModerationStore>,
     /// Principals kicked this session: refused if they reconnect.
     banned: HashSet<Principal>,
+    /// Where new arrivals land, resolved once for the session.
+    pub fresh_spawn: Option<Vec3>,
     snapshot_timer: f32,
     state_timer: f32,
     container_timer: f32,
@@ -245,6 +247,7 @@ impl HostSession {
             profiles: None,
             moderation: None,
             banned: HashSet::new(),
+            fresh_spawn: None,
             snapshot_timer: 0.0,
             state_timer: 0.0,
             container_timer: 0.0,
@@ -712,11 +715,23 @@ impl HostSession {
             return;
         }
         let reg = server.world.reg.clone();
+        // A new arrival lands where a player can actually stand: the
+        // old default was a fixed point at y=80, which is the sky over
+        // some worlds and the seabed under others. Resolved once for
+        // the session — every arrival shares the world's doorstep.
+        let fresh_spawn = match self.fresh_spawn {
+            Some(p) => p,
+            None => {
+                let p = server.world.safe_spawn(0, 0);
+                self.fresh_spawn = Some(p);
+                p
+            }
+        };
         let mut runtime = match self.profiles.as_mut().unwrap().open_or_create(
             &principals,
             &display_name,
             style,
-            Vec3::new(0.5, 80.0, 0.5),
+            fresh_spawn,
             &reg,
         ) {
             Ok(runtime) => runtime,

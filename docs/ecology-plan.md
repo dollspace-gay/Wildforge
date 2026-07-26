@@ -87,7 +87,8 @@ The arc's guards, stated up front:
 ## Stage 1 — living soil (fertility, and the ground heals)
 
 Every block already carries a meta byte (`substrate.rs` uses it
-for sand octants; it rides the edit log to guests). Farmland's
+for sand octants, since removed; it rides the edit log to guests).
+Farmland's
 meta byte becomes **fertility 0–255**. No new storage, no new
 persistence, no protocol change.
 

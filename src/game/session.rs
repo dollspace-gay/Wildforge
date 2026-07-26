@@ -70,9 +70,12 @@ impl Game {
             }
             best
         };
-        let sy = world.surface_height(sx, sz) + 1;
-        let spawn =
-            world.settle_spawn(Vec3::new(sx as f32 + 0.5, sy as f32 + 0.2, sz as f32 + 0.5));
+        // Whatever the refinement picked, guarantee it: dry, solid
+        // underfoot, above the tideline — and if this is open ocean,
+        // land gets raised rather than the player getting dropped in
+        // it. (The old path fell back to the unrefined column, which
+        // is how spawns ended up on the seabed.)
+        let spawn = world.safe_spawn(sx, sz);
 
         self.renderer.clear_chunks();
         // Background generators for this world's seed (heavy terrain
@@ -1397,67 +1400,6 @@ impl Game {
         }
 
         // Dev: a sub-voxel surface-sand dune for octant substrate checks.
-        if std::env::var("WILDFORGE_DEMO_SAND").is_ok()
-            && let Some(sand) = self.content.reg.block_id("base:surface_sand")
-        {
-            let bx = spawn.x as i32;
-            let bz = spawn.z as i32;
-            for dx in [-18i32, -9, 0, 9, 18] {
-                for dz in [-18i32, -9, 0, 9, 18] {
-                    self.server
-                        .world
-                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
-                }
-            }
-            let yf = (-18..=18)
-                .flat_map(|dx| (-18..=18).map(move |dz| (dx, dz)))
-                .map(|(dx, dz)| self.server.world.surface_height(bx + dx, bz + dz))
-                .max()
-                .unwrap_or(spawn.y as i32);
-            for dx in -18..=18i32 {
-                for dz in -18..=18i32 {
-                    let distance = dx.abs().max(dz.abs());
-                    let layers = 2 + (8 - distance).max(0);
-                    for height in 0..=10 {
-                        self.server
-                            .world
-                            .set_block_quiet(bx + dx, yf + height, bz + dz, AIR, 0);
-                    }
-                    let full = layers / 2;
-                    for height in 0..full {
-                        self.server.world.set_block_quiet(
-                            bx + dx,
-                            yf + height,
-                            bz + dz,
-                            sand,
-                            0xff,
-                        );
-                    }
-                    if layers % 2 == 1 {
-                        self.server
-                            .world
-                            .set_block_quiet(bx + dx, yf + full, bz + dz, sand, 0x0f);
-                    }
-                }
-            }
-            for dx in [-18i32, -9, 0, 9, 18] {
-                for dz in [-18i32, -9, 0, 9, 18] {
-                    self.server
-                        .world
-                        .relight_and_cascade(ChunkPos::of_world(bx + dx, bz + dz));
-                }
-            }
-            let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.0, bz as f32 - 15.0);
-            self.player.pos = stand;
-            self.survival.spawn_point = stand;
-            self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
-            self.camera.yaw = std::f32::consts::FRAC_PI_2;
-            self.camera.pitch = -0.15;
-        }
-
-        // Dev: a warm light behind a wall with a doorway — light blares through
-        // the gap onto the near floor while the wall and the corners beside it
-        // stay dark. Pair with WILDFORGE_AMBIENT=0.03,0.03,0.04.
         if std::env::var("WILDFORGE_DEMO_CORNER").is_ok()
             && let Some(stone) = self.content.reg.block_id("base:cobblestone")
         {
