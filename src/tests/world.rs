@@ -4,295 +4,6 @@ use super::*;
 use std::collections::HashMap;
 
 #[test]
-fn octant_meta_roundtrips_through_save() {
-    let reg = base_reg();
-    let mut world = test_world_with("octsave", reg.clone());
-    let sand = b(&reg, "base:surface_sand");
-    world.set_block_meta(2, 75, 2, sand, 0b1010_0101);
-    world.set_block(3, 75, 3, sand);
-    world.save_modified();
-
-    let mut loaded = World::load_or_create(world.save_dir_for_test(), reg);
-    for x in -2..=2 {
-        for z in -2..=2 {
-            loaded.ensure_chunk(ChunkPos { x, z });
-        }
-    }
-    assert_eq!(loaded.get_meta(2, 75, 2), 0b1010_0101);
-    assert_eq!(loaded.get_meta(3, 75, 3), 0xff);
-}
-
-#[test]
-fn octant_mesh_emits_per_filled_octant() {
-    let reg = base_reg();
-    let mut world = test_world_with("octmesh", reg.clone());
-    let sand = b(&reg, "base:surface_sand");
-    let pos = ChunkPos { x: 0, z: 0 };
-    let (x, y, z) = (8, 200, 8);
-    let baseline = crate::mesher::mesh_chunk(&world, pos).opaque_verts.len();
-    world.set_block_meta(x, y, z, sand, 1);
-    let one = crate::mesher::mesh_chunk(&world, pos).opaque_verts.len();
-    assert_eq!(one - baseline, 6 * 4);
-    world.set_block(x, y, z, sand);
-    let full = crate::mesher::mesh_chunk(&world, pos).opaque_verts.len();
-    assert_eq!(full - baseline, 6 * 4);
-}
-
-#[test]
-fn octant_collision_is_sub_cell() {
-    let reg = base_reg();
-    let mut world = test_world_with("octcol", reg.clone());
-    let sand = b(&reg, "base:surface_sand");
-    let idle = Input {
-        forward: 0.0,
-        strafe: 0.0,
-        jump: false,
-        sprint: false,
-    };
-    let y = 190;
-    world.set_block(0, y, 0, sand);
-    let mut player = Player::new(Vec3::new(0.5, y as f32 + 5.0, 0.5));
-    for _ in 0..400 {
-        player.update(&world, &idle, Vec3::Z, Vec3::X, 1.0 / 60.0);
-    }
-    assert!(player.on_ground);
-    assert!((player.pos.y - (y as f32 + 1.0)).abs() < 0.05);
-
-    world.set_block_meta(0, y, 0, sand, 0b0000_1111);
-    let mut player = Player::new(Vec3::new(0.5, y as f32 + 5.0, 0.5));
-    for _ in 0..400 {
-        player.update(&world, &idle, Vec3::Z, Vec3::X, 1.0 / 60.0);
-    }
-    assert!(player.on_ground);
-    assert!((player.pos.y - (y as f32 + 0.5)).abs() < 0.05);
-}
-
-fn sand_volume(world: &World, sand: crate::registry::BlockId, y: i32) -> u32 {
-    let mut volume = 0;
-    for x in -8..9 {
-        for z in -8..9 {
-            for yy in (y - 4)..(y + 6) {
-                if world.get_block(x, yy, z) == sand {
-                    volume += world.get_meta(x, yy, z).count_ones();
-                }
-            }
-        }
-    }
-    volume
-}
-
-#[test]
-fn relax_flat_sand_is_stable() {
-    let reg = base_reg();
-    let mut world = test_world_with("flatsand", reg.clone());
-    let sand = b(&reg, "base:surface_sand");
-    let y = 100;
-    for x in -4..=4 {
-        for z in -4..=4 {
-            world.set_block(x, y, z, sand);
-        }
-    }
-    let before = sand_volume(&world, sand, y);
-    assert!(!world.relax_sand(sand, 0, 0, y, 1, 0));
-    assert_eq!(sand_volume(&world, sand, y), before);
-}
-
-#[test]
-fn relax_slope_flows_downhill_conserving() {
-    let reg = base_reg();
-    let mut world = test_world_with("slopesand", reg.clone());
-    let sand = b(&reg, "base:surface_sand");
-    let stone = b(&reg, "base:stone");
-    let y = 100;
-    for x in -1..=6 {
-        for z in -1..=3 {
-            world.set_block(x, y - 1, z, stone);
-        }
-    }
-    for x in 0..=1 {
-        for z in 0..=1 {
-            for height in 0..3 {
-                world.set_block(x, y + height, z, sand);
-            }
-        }
-    }
-    let before = sand_volume(&world, sand, y);
-    for _ in 0..40 {
-        world.relax_sand(sand, 2, 1, y, 5, 0);
-    }
-    assert_eq!(sand_volume(&world, sand, y), before);
-    assert!((2..=5).any(|x| (0..=1).any(|z| world.get_block(x, y, z) == sand)));
-    assert_ne!(world.get_block(0, y + 2, 0), sand);
-}
-
-#[test]
-fn walking_player_slumps_a_lip_via_sim() {
-    let reg = base_reg();
-    let mut world = test_world_with("walklip", reg.clone());
-    let sand = b(&reg, "base:surface_sand");
-    let y = 100;
-    for x in -3..=9 {
-        for z in -3..=3 {
-            world.set_block(x, y, z, sand);
-        }
-    }
-    for x in 1..=2 {
-        for z in -3..=3 {
-            world.set_block(x, y + 1, z, sand);
-        }
-    }
-    let lip_cells = |world: &World| {
-        (1..=2)
-            .flat_map(|x| (-3..=3).map(move |z| (x, z)))
-            .filter(|&(x, z)| world.get_meta(x, y + 1, z) == 0xff)
-            .count()
-    };
-    let before = sand_volume(&world, sand, y);
-    let lip_before = lip_cells(&world);
-    let mut server = crate::server::Server::new(world, 0.3, 42);
-    let mut x = 0.5;
-    for _ in 0..70 {
-        x += 0.1;
-        server.advance(
-            crate::server::TICK,
-            &[crate::server::PlayerCtx {
-                id: 0,
-                pos: Vec3::new(x, y as f32 + 1.0, 0.5),
-                spawn: Vec3::ZERO,
-                attackable: false,
-                aggro_mod: 0.0,
-            }],
-            &mut Vec::new(),
-        );
-    }
-    assert_eq!(sand_volume(&server.world, sand, y), before);
-    assert!(lip_cells(&server.world) < lip_before);
-}
-
-#[test]
-fn airborne_player_does_not_disturb_sand() {
-    let reg = base_reg();
-    let mut world = test_world_with("airborne", reg.clone());
-    let sand = b(&reg, "base:surface_sand");
-    let stone = b(&reg, "base:stone");
-    let y = 100;
-    for x in -1..=3 {
-        for z in -1..=3 {
-            world.set_block(x, y - 1, z, stone);
-        }
-    }
-    for height in 0..3 {
-        world.set_block(1, y + height, 1, sand);
-    }
-    let before = sand_volume(&world, sand, y);
-    let touched = HashMap::from([((1, 1), 1.0)]);
-    assert!(!world.disturb_sand_touched(sand, Vec3::new(1.5, (y + 5) as f32, 1.5), &touched,));
-    assert_eq!(sand_volume(&world, sand, y), before);
-}
-
-#[test]
-fn wake_leaves_sand_ahead_untouched() {
-    let reg = base_reg();
-    let mut world = test_world_with("ahead", reg.clone());
-    let sand = b(&reg, "base:surface_sand");
-    let y = 100;
-    for x in -2..=6 {
-        for z in -2..=2 {
-            world.set_block(x, y, z, sand);
-        }
-    }
-    for z in -2..=2 {
-        world.set_block(2, y + 1, z, sand);
-    }
-    let before = sand_volume(&world, sand, y);
-    let lip_before = world.get_meta(2, y + 1, 0);
-    let touched = HashMap::from([((0, 0), 1.0)]);
-    let feet = Vec3::new(0.5, (y + 1) as f32, 0.5);
-    for _ in 0..30 {
-        world.disturb_sand_touched(sand, feet, &touched);
-    }
-    assert_eq!(sand_volume(&world, sand, y), before);
-    assert_eq!(world.get_meta(2, y + 1, 0), lip_before);
-}
-
-#[test]
-fn wake_leaves_a_tall_wall_standing() {
-    let reg = base_reg();
-    let mut world = test_world_with("wall", reg.clone());
-    let sand = b(&reg, "base:surface_sand");
-    let y = 100;
-    for x in -3..=3 {
-        for z in -3..=3 {
-            world.set_block(x, y, z, sand);
-        }
-    }
-    for height in 1..=3 {
-        for z in -1..=1 {
-            world.set_block(-1, y + height, z, sand);
-        }
-    }
-    let before = sand_volume(&world, sand, y);
-    let touched = HashMap::from([((0, 0), 1.0)]);
-    let feet = Vec3::new(0.5, (y + 1) as f32, 0.5);
-    for _ in 0..40 {
-        world.disturb_sand_touched(sand, feet, &touched);
-    }
-    assert_eq!(sand_volume(&world, sand, y), before);
-    assert_eq!(world.get_block(-1, y + 3, 0), sand);
-}
-
-#[test]
-fn sand_does_not_flow_into_water() {
-    let reg = base_reg();
-    let mut world = test_world_with("sandwater", reg.clone());
-    let sand = b(&reg, "base:surface_sand");
-    let stone = b(&reg, "base:stone");
-    let water = b(&reg, "base:water");
-    let y = 100;
-    for x in -1..=3 {
-        for z in -1..=1 {
-            world.set_block(x, y - 1, z, stone);
-        }
-    }
-    for height in 0..3 {
-        world.set_block(0, y + height, 0, sand);
-    }
-    world.set_block(1, y, 0, water);
-    let before = sand_volume(&world, sand, y);
-    let touched = HashMap::from([((0, 0), 1.0)]);
-    let feet = Vec3::new(0.5, (y + 3) as f32, 0.5);
-    for _ in 0..40 {
-        world.disturb_sand_touched(sand, feet, &touched);
-    }
-    assert_eq!(world.get_block(1, y, 0), water);
-    assert_eq!(sand_volume(&world, sand, y), before);
-}
-
-#[test]
-fn flow_never_buries_the_player() {
-    let reg = base_reg();
-    let mut world = test_world_with("nobury", reg.clone());
-    let sand = b(&reg, "base:surface_sand");
-    let y = 100;
-    for x in -3..=3 {
-        for z in -3..=3 {
-            world.set_block(x, y, z, sand);
-        }
-    }
-    for z in -1..=1 {
-        world.set_block(-1, y + 1, z, sand);
-    }
-    let before = sand_volume(&world, sand, y);
-    let touched = HashMap::from([((0, 0), 1.0)]);
-    let feet = Vec3::new(0.5, (y + 1) as f32, 0.5);
-    for _ in 0..40 {
-        world.disturb_sand_touched(sand, feet, &touched);
-    }
-    assert_eq!(sand_volume(&world, sand, y), before);
-    assert!(world.get_meta(0, y + 1, 0) == 0 || world.get_block(0, y + 1, 0) != sand);
-}
-
-#[test]
 fn block_edit_fans_out_through_one_authoritative_boundary() {
     use crate::world::{BlockEntity, ChestState};
 
@@ -2412,4 +2123,129 @@ fn blocks_place_into_water_and_never_vanish_on_refusal() {
     assert!(reg.is_replaceable(water));
     assert!(!reg.is_replaceable(stone));
     assert!(!reg.is_replaceable(crop));
+}
+
+#[test]
+fn old_worlds_keep_their_partial_sand_as_ordinary_sand() {
+    // Partial (sub-voxel) sand is gone. A world saved when it existed
+    // must not come back full of unknown blocks — the alias converts
+    // it to ordinary sand, keeping the volume the player had.
+    let reg = base_reg();
+    let sand = reg.block_id("base:sand").expect("sand exists");
+    assert_eq!(
+        reg.block_id("base:surface_sand"),
+        Some(sand),
+        "an old save's surface sand resolves to plain sand"
+    );
+    // And nothing claims the octant geometry any more.
+    assert!(
+        reg.blocks.iter().all(|b| b.name != "base:surface_sand"),
+        "the block itself is gone from the registry"
+    );
+    // The metadata byte survives it: soil still carries fertility.
+    let mut w = test_world_with("post-sand-meta", reg.clone());
+    let farm = b(&reg, "base:farmland");
+    let h = w.surface_height(4, 4);
+    w.set_block_meta(4, h, 4, farm, crate::world::soil::soil_meta(31, 2));
+    assert_eq!(w.fertility_at(4, h, 4), 31, "the meta plane still works");
+}
+
+#[test]
+fn nobody_spawns_in_the_water_the_sky_or_a_wall() {
+    let reg = base_reg();
+    let mut w = test_world_with("spawn-safe", reg.clone());
+    let stone = b(&reg, "base:stone");
+    let water = reg.water_block(0);
+    let check = |w: &World, p: Vec3| {
+        let (x, y, z) = (p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32);
+        assert!(
+            reg.is_solid(w.get_block(x, y - 1, z)),
+            "solid ground underfoot at {p:?}"
+        );
+        for dy in 0..2 {
+            let b = w.get_block(x, y + dy, z);
+            assert!(!reg.is_solid(b), "body not inside a wall at {p:?}");
+            assert!(!reg.is_fluid(b), "body not in fluid at {p:?}");
+        }
+        assert!(y > SEA_LEVEL, "above the tideline at {p:?}");
+    };
+    // Ordinary ground: taken as-is.
+    let p = w.safe_spawn(4, 4);
+    check(&w, p);
+    // A drowned column: the search walks ashore instead of standing
+    // the player on the seabed. (This is the bug — fluid is not solid,
+    // so a seabed column used to read as somewhere to stand.)
+    for x in 0..10 {
+        for z in 0..10 {
+            for y in (SEA_LEVEL - 6)..=SEA_LEVEL {
+                w.set_block(x, y, z, water);
+            }
+            for y in SEA_LEVEL + 1..SEA_LEVEL + 5 {
+                w.set_block(x, y, z, AIR);
+            }
+            w.set_block(x, SEA_LEVEL - 7, z, stone);
+        }
+    }
+    let p = w.safe_spawn(5, 5);
+    check(&w, p);
+}
+
+#[test]
+fn open_ocean_gets_an_island_rather_than_a_drowning() {
+    let reg = base_reg();
+    let mut w = test_world_with("spawn-isle", reg.clone());
+    let water = reg.water_block(0);
+    let stone = b(&reg, "base:stone");
+    // A small patch of open sea: seabed just down, water to the
+    // tideline. Kept tight on purpose — every water cell set here
+    // wakes the fluid sim, and a big test sea starves the whole
+    // parallel suite.
+    for x in -9..=9 {
+        for z in -9..=9 {
+            for y in (SEA_LEVEL - 2)..=(SEA_LEVEL + 4) {
+                w.set_block(x, y, z, if y <= SEA_LEVEL { water } else { AIR });
+            }
+            w.set_block(x, SEA_LEVEL - 3, z, stone);
+        }
+    }
+    let crest = w.raise_castaway_isle(0, 0);
+    assert!(crest > SEA_LEVEL, "landfall rises out of the water");
+    // Sand, not a plinth of whatever was underneath.
+    assert_eq!(
+        w.get_block(0, crest, 0),
+        b(&reg, "base:sand"),
+        "a little sand island"
+    );
+    // Dry overhead, so a castaway is actually standing in air.
+    for dy in 1..=2 {
+        assert!(
+            !reg.is_fluid(w.get_block(0, crest + dy, 0)),
+            "the island is dry at +{dy}"
+        );
+    }
+    // It shelves back into the sea rather than dropping off a tower.
+    let rim = w.surface_height(4, 0);
+    assert!(
+        rim < crest && rim >= SEA_LEVEL - 1,
+        "the rim shelves ({rim} vs crest {crest})"
+    );
+    // And it is an island, not a continent: nothing was raised
+    // beyond its shore.
+    let sand = b(&reg, "base:sand");
+    assert!(
+        (SEA_LEVEL - 2..=SEA_LEVEL + 3).all(|y| w.get_block(8, y, 0) != sand),
+        "no landfill beyond the island's shore"
+    );
+}
+
+#[test]
+#[ignore = "dev tool: times the spawn search"]
+fn dev_time_safe_spawn() {
+    let reg = base_reg();
+    let mut w = test_world_with("spawn-timing", reg.clone());
+    let t = std::time::Instant::now();
+    let p = w.safe_spawn(0, 0);
+    eprintln!("safe_spawn(0,0) = {p:?} in {:?}", t.elapsed());
+    eprintln!("surface at 0,0 = {}", w.surface_height(0, 0));
+    eprintln!("estimate at 0,0 = {}", w.generator.surface_estimate(0, 0));
 }

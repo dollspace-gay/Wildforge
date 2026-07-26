@@ -23,7 +23,24 @@ impl TestHost {
         // Broadcast every world edit, the way the dedicated host does
         // — the agents' mirrors must see what the test builds.
         sim.world.set_edit_logging(true);
-        let sess = crate::mp::HostSession::start_on(world_tag.into(), 0).unwrap();
+        let mut sess = crate::mp::HostSession::start_on(world_tag.into(), 0).unwrap();
+        // Arrivals land on a stage this harness owns, well above any
+        // terrain: these tests exercise the wire, not the landscape,
+        // and a spawn that follows the world's shoreline makes them
+        // depend on whatever the seed happened to roll.
+        const STAGE_Y: i32 = 200;
+        {
+            // Only a footing is needed: this high the world is already
+            // open air, and each block set here costs a relight. The
+            // tests grow their own stage from here via `platform`.
+            let grass = sim.world.reg.block_id("base:grass").unwrap();
+            for x in -10..=10 {
+                for z in -10..=10 {
+                    sim.world.set_block(x, STAGE_Y - 1, z, grass);
+                }
+            }
+        }
+        sess.fresh_spawn = Some(glam::Vec3::new(0.5, STAGE_Y as f32 + 0.2, 0.5));
         let addr = format!("127.0.0.1:{}", sess.net.port).parse().unwrap();
         let shared = Arc::new(Mutex::new((sess, sim)));
         let stop = Arc::new(AtomicBool::new(false));

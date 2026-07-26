@@ -158,30 +158,7 @@ impl Player {
                     if !world.reg.is_solid(b) {
                         continue;
                     }
-                    if !world.reg.block(b).sub_voxel {
-                        return true;
-                    }
-                    // Sub-voxel block: collide against each filled octant's
-                    // half-cube instead of the whole cell.
-                    let mask = world.get_meta(x, y, z);
-                    for o in 0..8u32 {
-                        if mask & (1 << o) == 0 {
-                            continue;
-                        }
-                        let ox = (o & 1) as f32 * 0.5;
-                        let oz = ((o >> 1) & 1) as f32 * 0.5;
-                        let oy = ((o >> 2) & 1) as f32 * 0.5;
-                        let bmin = Vec3::new(x as f32 + ox, y as f32 + oy, z as f32 + oz);
-                        if min.x < bmin.x + 0.5
-                            && max.x > bmin.x
-                            && min.y < bmin.y + 0.5
-                            && max.y > bmin.y
-                            && min.z < bmin.z + 0.5
-                            && max.z > bmin.z
-                        {
-                            return true;
-                        }
-                    }
+                    return true;
                 }
             }
         }
@@ -189,8 +166,8 @@ impl Player {
     }
 
     /// Horizontal move with auto-step: if blocked while grounded, try lifting up
-    /// to `STEP_HEIGHT`, re-advancing, and settling onto a low ledge (octant
-    /// sand, slabs). Falls back to the plain slide if that gains no ground.
+    /// to `STEP_HEIGHT`, re-advancing, and settling onto a low ledge (slabs,
+    /// snow layers). Falls back to the plain slide if that gains no ground.
     fn walk_axis(&mut self, world: &World, delta: Vec3, grounded: bool) {
         let start = self.pos;
         self.move_axis(world, delta);
