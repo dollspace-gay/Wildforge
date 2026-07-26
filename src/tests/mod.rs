@@ -13,6 +13,7 @@ use crate::registry::{self, AIR, Registry};
 use crate::world::World;
 
 mod agent;
+mod ecology;
 mod identity;
 mod machines;
 mod mobs;

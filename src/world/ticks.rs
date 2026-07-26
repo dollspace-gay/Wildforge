@@ -17,6 +17,8 @@ impl World {
         let snow_trod = reg.block_id("base:snow_layer_trod");
         let grass_id = reg.block_id("base:grass");
         let dirt_id = reg.block_id("base:dirt");
+        let heap = reg.block_id("base:compost_heap");
+        let heap_ready = reg.block_id("base:compost_heap_ready");
         let season = self.season();
         let mut order: Vec<(f64, ChunkPos)> = self
             .chunks
@@ -42,6 +44,8 @@ impl World {
         let mut dried: Vec<(i32, i32, i32)> = Vec::new();
         // Fallow soil recovering (position, gain).
         let mut fed: Vec<(i32, i32, i32, u8)> = Vec::new();
+        // Plain swaps that earn no plant-ire credit (compost ripening).
+        let mut swaps: Vec<(i32, i32, i32, BlockId)> = Vec::new();
         let mut saplings: Vec<(i32, i32, i32, String, u32)> = Vec::new();
         for (stamp, pos) in order {
             let elapsed = (self.clock - stamp).max(0.0);
@@ -147,6 +151,16 @@ impl World {
                             fed.push((wx, y, wz, gain));
                         }
                     }
+                    continue;
+                }
+                // A full compost heap turns the next time the world
+                // looks at it — random-tick visits are days apart for
+                // any single cell, so the wait is already real.
+                if Some(b) == heap
+                    && self.get_meta(wx, y, wz) >= soil::COMPOST_FULL
+                    && let Some(ready) = heap_ready
+                {
+                    swaps.push((wx, y, wz, ready));
                     continue;
                 }
                 // Bare dirt under the sky heals over beside grass —
@@ -345,6 +359,9 @@ impl World {
         }
         for (x, y, z, gain) in fed {
             self.feed_soil(x, y, z, gain);
+        }
+        for (x, y, z, b) in swaps {
+            self.set_block(x, y, z, b);
         }
         for (x, y, z) in dried {
             self.set_block(x, y, z, AIR);

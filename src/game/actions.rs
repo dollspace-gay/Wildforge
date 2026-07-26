@@ -1074,6 +1074,22 @@ impl Game {
                 self.input.action_cooldown = 0.3;
                 return;
             }
+            // Fertilizer feeds the field it lands on: dung from the
+            // pen, guano from the cave, compost from the heap.
+            if let Some(hi) = held {
+                let v = world::soil::fertilizer_value(&reg.item(hi).name);
+                if v > 0
+                    && self
+                        .server
+                        .world
+                        .feed_soil(h.block.0, h.block.1, h.block.2, v)
+                {
+                    self.inventory.take_one(self.input.hotbar_sel);
+                    self.sfx(Sfx::Place);
+                    self.input.action_cooldown = 0.3;
+                    return;
+                }
+            }
             // Hoe tills grass/dirt into farmland.
             if let (Some((ToolKind::Hoe, _, _)), Some(farm)) = (
                 held.and_then(|i| reg.item(i).tool),
@@ -1145,6 +1161,47 @@ impl Game {
                         self.toast("The wild keeps its trophies.".to_string());
                     }
                     self.set_screen(Screen::Chest(h.block));
+                    return;
+                }
+                Some("compost") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.3;
+                    // A ripened heap hands over its compost bare-handed;
+                    // a fresh one eats greens item by item.
+                    if self
+                        .server
+                        .world
+                        .compost_take(h.block.0, h.block.1, h.block.2)
+                    {
+                        if let Some(c) = reg.item_id("base:compost") {
+                            let left = self.inventory.add(&reg, c, 2);
+                            if left > 0 {
+                                self.drop_stack(ItemStack::new(&reg, c, left));
+                            }
+                        }
+                        self.sfx(Sfx::Pickup);
+                        return;
+                    }
+                    if let Some(hi) = held {
+                        let name = reg.item(hi).name.clone();
+                        if self
+                            .server
+                            .world
+                            .compost_fill(h.block.0, h.block.1, h.block.2, &name)
+                        {
+                            self.inventory.take_one(self.input.hotbar_sel);
+                            self.sfx(Sfx::Place);
+                            return;
+                        }
+                    }
+                    let fill = self.server.world.get_meta(h.block.0, h.block.1, h.block.2);
+                    self.toast(if fill >= world::soil::COMPOST_FULL {
+                        "The heap is cooking.".to_string()
+                    } else {
+                        format!(
+                            "The heap wants greens ({fill}/{}).",
+                            world::soil::COMPOST_FULL
+                        )
+                    });
                     return;
                 }
                 Some("offering") if self.input.action_cooldown <= 0.0 => {

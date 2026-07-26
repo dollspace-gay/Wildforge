@@ -1132,3 +1132,8 @@ count = 4
 input = "base:neodymium"
 output = "base:magnet"
 strikes = 4
+
+[[recipe]]
+pattern = ["s.s", "pps", "pps"]
+keys = { p = "#base:planks", s = "base:stick" }
+output = "base:compost_heap"

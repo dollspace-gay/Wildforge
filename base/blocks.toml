@@ -1478,3 +1478,21 @@ hardness = 0.6
 glass = true
 opaque = false
 drops = "self"
+
+[[block]]
+id = "compost_heap"
+name = "Compost Heap"
+texture = { top = "compost_heap_top.png", side = "compost_heap_side.png" }
+hardness = 0.6
+tool = "shovel"
+interaction = "compost"
+
+[[block]]
+id = "compost_heap_ready"
+name = "Ripe Compost"
+texture = { top = "compost_ready_top.png", side = "compost_heap_side.png" }
+hardness = 0.6
+tool = "shovel"
+interaction = "compost"
+drops = "base:compost_heap"
+item = false

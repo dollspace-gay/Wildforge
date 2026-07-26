@@ -21,6 +21,34 @@ pub const FERT_TILL_DIRT: u8 = 27;
 pub const FERT_SAND_PENALTY: u8 = 10;
 /// Fallow recovery per winning random tick (winter doubles it).
 pub const FERT_FALLOW: u8 = 2;
+/// The fertilizer bag: dung from the pen, guano from the cave,
+/// compost from the heap.
+pub const DUNG_FEED: u8 = 12;
+pub const GUANO_FEED: u8 = 16;
+pub const COMPOST_FEED: u8 = 8;
+/// A heap this full starts to cook.
+pub const COMPOST_FULL: u8 = 8;
+
+/// How much soil a fertilizer item is worth (0 = not a fertilizer).
+pub fn fertilizer_value(name: &str) -> u8 {
+    match name {
+        "base:dung" => DUNG_FEED,
+        "base:guano" => GUANO_FEED,
+        "base:compost" => COMPOST_FEED,
+        _ => 0,
+    }
+}
+
+/// What a compost heap accepts, and how much of it one item fills.
+pub fn compost_value(name: &str) -> u8 {
+    match name {
+        "base:spoiled_mush" => 3,
+        "base:leaf_litter" => 2,
+        "base:plant_fiber" | "base:berry" | "base:jungle_fruit" | "base:cactus_fruit" => 1,
+        n if n.ends_with("seeds") => 1,
+        _ => 0,
+    }
+}
 
 #[inline]
 pub fn fert_of(meta: u8) -> u8 {
@@ -91,6 +119,37 @@ impl World {
             },
             0,
         )
+    }
+
+    /// Feed one item into a compost heap; the meta byte counts the
+    /// fill. Returns false when the heap is full or the item isn't
+    /// compostable.
+    pub fn compost_fill(&mut self, x: i32, y: i32, z: i32, item_name: &str) -> bool {
+        let b = self.get_block(x, y, z);
+        if self.reg.block(b).name != "base:compost_heap" {
+            return false;
+        }
+        let v = compost_value(item_name);
+        let meta = self.get_meta(x, y, z);
+        if v == 0 || meta >= COMPOST_FULL {
+            return false;
+        }
+        self.set_block_meta(x, y, z, b, (meta + v).min(COMPOST_FULL));
+        true
+    }
+
+    /// Empty a ripened heap back to a fresh one; the caller hands
+    /// over the compost items.
+    pub fn compost_take(&mut self, x: i32, y: i32, z: i32) -> bool {
+        let b = self.get_block(x, y, z);
+        if self.reg.block(b).name != "base:compost_heap_ready" {
+            return false;
+        }
+        if let Some(fresh) = self.reg.block_id("base:compost_heap") {
+            self.set_block_meta(x, y, z, fresh, 0);
+            return true;
+        }
+        false
     }
 
     /// Feed the soil block at a position (dung, guano, compost, rot).

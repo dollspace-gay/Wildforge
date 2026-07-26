@@ -19,7 +19,7 @@ impl World {
             }
             let _ = writeln!(
                 out,
-                "[[mob]]\nspecies = \"{}\"\npos = [{:?}, {:?}, {:?}]\nyaw = {:?}\nhealth = {:?}\nfed = {}\ngrowth = {:?}\ntamed = {}\ntame_fed = {}\ntame_need = {}\nsaddled = {}",
+                "[[mob]]\nspecies = \"{}\"\npos = [{:?}, {:?}, {:?}]\nyaw = {:?}\nhealth = {:?}\nfed = {}\ngrowth = {:?}\ntamed = {}\ntame_fed = {}\ntame_need = {}\nsaddled = {}\nbelly = {:?}",
                 def.name,
                 m.pos.x,
                 m.pos.y,
@@ -31,7 +31,8 @@ impl World {
                 m.tamed,
                 m.tame_fed,
                 m.tame_need,
-                m.cargo.is_some()
+                m.cargo.is_some(),
+                m.belly.max(0.0)
             );
             if let Some(cargo) = &m.cargo {
                 for (i, st) in cargo.iter().enumerate() {
@@ -114,6 +115,11 @@ impl World {
             saddled: bool,
             #[serde(default)]
             pack: Vec<PackT>,
+            #[serde(default = "grace")]
+            belly: f32,
+        }
+        fn grace() -> f32 {
+            240.0
         }
         #[derive(Deserialize)]
         struct FileT {
@@ -135,6 +141,7 @@ impl World {
                 m.tamed = t.tamed;
                 m.tame_fed = t.tame_fed;
                 m.tame_need = t.tame_need;
+                m.belly = t.belly;
                 if t.saddled {
                     let mut cargo: Box<[Option<ItemStack>; 12]> = Default::default();
                     for sl in &t.pack {

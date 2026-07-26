@@ -672,6 +672,58 @@ impl Game {
                         }
                     }
                 }
+                // The belly's corner: a compost heap pair by the field
+                // and a plank pen with two deer (their dung on the
+                // ground), plus one hungry doe loose by the dust band
+                // — the raid, caught walking.
+                if let (Some(heap), Some(ready)) =
+                    (b("base:compost_heap"), b("base:compost_heap_ready"))
+                {
+                    w.set_block_meta(bx + 7, y + 1, bz + 2, heap, 6);
+                    w.set_block(bx + 7, y + 1, bz + 4, ready);
+                }
+                if let Some(plank) = b("base:planks") {
+                    for dx in -8..=-4i32 {
+                        for dz in 10..=13i32 {
+                            if dx == -8 || dx == -4 || dz == 10 || dz == 13 {
+                                w.set_block(bx + dx, y + 1, bz + dz, plank);
+                            }
+                        }
+                    }
+                }
+            }
+            let reg2 = self.content.reg.clone();
+            if let Some(si) = reg2.animal_id("base:deer") {
+                let w = &mut self.server.world;
+                // A built demo is tended country: calm animals mind
+                // the pen walls here, as they would around any base.
+                for cx in -2..=2i32 {
+                    for cz in -2..=2i32 {
+                        let cp = crate::chunk::ChunkPos::of_world(bx + cx * 16, bz + cz * 16);
+                        w.player_touched.insert((cp.x, cp.z));
+                    }
+                }
+                for (dx, dz, hungry) in [
+                    (-6.5f32, 11.5f32, false),
+                    (-5.5, 12.5, false),
+                    (7.5, 11.5, true),
+                ] {
+                    let mut m = crate::mobs::Mob::new(
+                        si,
+                        glam::Vec3::new(bx as f32 + dx, y as f32 + 1.0, bz as f32 + dz),
+                        2.0,
+                    );
+                    m.health = reg2.animals[si].health;
+                    m.tamed = !hungry;
+                    if hungry {
+                        m.belly = -1.0;
+                    }
+                    w.spawn_mob(m);
+                }
+                if let Some(dung) = reg2.item_id("base:dung") {
+                    let stack = ItemStack::new(&reg2, dung, 1);
+                    w.push_drop((bx - 7, y + 1, bz + 11), stack);
+                }
             }
         }
         if std::env::var("WILDFORGE_DEMO_MILL").is_ok() {

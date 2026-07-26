@@ -1271,6 +1271,28 @@ fn content_graph_is_complete_and_obtainable() {
             ok.insert(m.0);
             grew = true;
         }
+        // Dung: any grazing species digests its meals into it - a
+        // code path (MobEvent::Dung), like the smoker.
+        if let Some(d) = reg.item_id("base:dung")
+            && !ok.contains(&d.0)
+            && reg.animals.iter().any(|a| a.grazes && a.belly_secs > 0.0)
+        {
+            ok.insert(d.0);
+            grew = true;
+        }
+        // Compost: a heap of greens cooks down - a code path
+        // (compost_fill/random tick), fed by anything compostable.
+        if let (Some(c), Some(_)) = (
+            reg.item_id("base:compost"),
+            reg.block_id("base:compost_heap"),
+        ) && !ok.contains(&c.0)
+            && reg.items.iter().enumerate().any(|(i, d)| {
+                crate::world::soil::compost_value(&d.name) > 0 && ok.contains(&(i as u16))
+            })
+        {
+            ok.insert(c.0);
+            grew = true;
+        }
         // The separator: mixed rare-earth powder splits into
         // neodymium and cerium on a firebrick stack - a code path
         // (tick_separators), like the smoker.

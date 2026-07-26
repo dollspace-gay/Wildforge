@@ -228,10 +228,10 @@ impl Agent {
     /// crafting table within reach even though we hold the grid.
     pub fn craft(&mut self, what: &str, times: u32) -> Result<String, String> {
         let times = times.clamp(1, 16);
-        let find = |names: &[&str]| -> Option<ItemId> {
+        let find = |a: &Agent, names: &[&str]| -> Option<ItemId> {
             names
                 .iter()
-                .find_map(|n| self.reg.item_id(n).filter(|i| self.slot_of(*i).is_some()))
+                .find_map(|n| a.reg.item_id(n).filter(|i| a.slot_of(*i).is_some()))
         };
         let logs: Vec<&str> = vec![
             "base:log",
@@ -249,7 +249,7 @@ impl Agent {
         ];
         match what {
             "planks" => {
-                let log = find(&logs).ok_or("no logs in the pack")?;
+                let log = find(self, &logs).ok_or("no logs in the pack")?;
                 let src = self.slot_of(log).unwrap();
                 self.click(InventoryArea::Inventory, src);
                 self.click(InventoryArea::Craft, 0);
@@ -263,7 +263,7 @@ impl Agent {
                 Ok(format!("cut planks x{times}"))
             }
             "stick" => {
-                let plank = find(&planks).ok_or("no planks in the pack")?;
+                let plank = find(self, &planks).ok_or("no planks in the pack")?;
                 for _ in 0..times {
                     let src = self.slot_of(plank).ok_or("ran out of planks")?;
                     self.click(InventoryArea::Inventory, src);
@@ -277,7 +277,7 @@ impl Agent {
                 Ok(format!("whittled sticks x{times}"))
             }
             "crafting_table" => {
-                let plank = find(&planks).ok_or("no planks in the pack")?;
+                let plank = find(self, &planks).ok_or("no planks in the pack")?;
                 let src = self.slot_of(plank).unwrap();
                 self.click(InventoryArea::Inventory, src);
                 for slot in [0, 1, 2, 3] {
@@ -291,11 +291,20 @@ impl Agent {
             }
             "chest" => {
                 // An honest 3x3: the host doesn't check for a table,
-                // but this agent is a guest, not a god.
-                if self.nearest("base:crafting_table", 5).starts_with("no ") {
+                // but this agent is a guest, not a god. The mirror can
+                // lag its own placement under load — give it a beat.
+                let mut near = self.nearest("base:crafting_table", 5);
+                for _ in 0..40 {
+                    if !near.starts_with("no ") {
+                        break;
+                    }
+                    self.pump_for(0.05);
+                    near = self.nearest("base:crafting_table", 5);
+                }
+                if near.starts_with("no ") {
                     return Err("a chest is 3x3 work: stand by a crafting table".into());
                 }
-                let plank = find(&planks).ok_or("no planks in the pack")?;
+                let plank = find(self, &planks).ok_or("no planks in the pack")?;
                 let src = self.slot_of(plank).unwrap();
                 if self.inventory.slots[src].is_none_or(|s| s.count < 8) {
                     return Err("a chest wants 8 planks".into());

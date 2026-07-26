@@ -149,6 +149,26 @@ impl World {
                 self.next_mob_id += 1;
             }
         }
+        // Herd centers: same species bucketed on a 32-block grid, so
+        // two distant herds never average into one phantom middle.
+        let mut herd: HashMap<(usize, i32, i32), (glam::Vec3, f32)> = HashMap::new();
+        for m in &self.mobs {
+            if let Some(d) = reg.animals.get(m.species)
+                && !d.hostile
+                && !d.vehicle
+                && d.group[1] >= 2
+                && m.growth >= 1.0
+            {
+                let k = (
+                    m.species,
+                    (m.pos.x.floor() as i32) >> 5,
+                    (m.pos.z.floor() as i32) >> 5,
+                );
+                let e = herd.entry(k).or_insert((glam::Vec3::ZERO, 0.0));
+                e.0 += m.pos;
+                e.1 += 1.0;
+            }
+        }
         let mut mobs = std::mem::take(&mut self.mobs);
         for m in &mut mobs {
             // Frozen until its chunk streams in: an unloaded chunk reads as
@@ -158,6 +178,15 @@ impl World {
                 continue;
             }
             if let Some(def) = reg.animals.get(m.species) {
+                let pull = herd
+                    .get(&(
+                        m.species,
+                        (m.pos.x.floor() as i32) >> 5,
+                        (m.pos.z.floor() as i32) >> 5,
+                    ))
+                    .filter(|(_, n)| *n >= 2.0)
+                    .map(|(sum, n)| *sum / *n);
+                m.herd_pull = pull;
                 m.unstick(self, def);
                 m.tick(self, def, players, dt, rng, &mut events);
             }
@@ -272,6 +301,27 @@ impl World {
             }
         }
         events
+    }
+
+    /// A grazer's bite lands: a grown crop reverts to its planted
+    /// base, grass to bare dirt (which heals). The animal never
+    /// breaks a placed block — it eats what the plant grew, not what
+    /// the farmer built.
+    pub fn apply_bite(&mut self, (x, y, z): (i32, i32, i32)) {
+        let b = self.get_block(x, y, z);
+        let d = self.reg.block(b);
+        if d.crop_family != 0 && d.name.contains("/stage") {
+            let base = d.name.split("/stage").next().unwrap_or("").to_string();
+            if let Some(base_id) = self.reg.block_id(&base) {
+                self.set_block(x, y, z, base_id);
+            }
+            return;
+        }
+        if d.name == "base:grass"
+            && let Some(dirt) = self.reg.block_id("base:dirt")
+        {
+            self.set_block(x, y, z, dirt);
+        }
     }
 
     /// Advance all bolts and arrows; returns (player index, damage) hits.

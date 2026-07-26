@@ -245,6 +245,10 @@ pub struct AnimalDef {
     pub carrier: bool,
     /// A rideable vehicle (boats): no breeding, no ire, spawned by item.
     pub vehicle: bool,
+    /// Seconds from a meal to the next hunger (0 = no belly at all).
+    pub belly_secs: f32,
+    /// Eats plants when hungry: grass, growing crops, fruited bushes.
+    pub grazes: bool,
 }
 
 /// A recipe slot requirement: one exact item, or any member of a tag.
@@ -862,6 +866,10 @@ struct AnimalToml {
     breed_food: Option<String>,
     #[serde(default)]
     carrier: bool,
+    #[serde(default)]
+    belly: Option<f32>,
+    #[serde(default)]
+    grazes: bool,
     #[serde(default)]
     vehicle: bool,
 }
@@ -2067,6 +2075,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 .and_then(|f| lookup_item(&reg, &modid, f)),
             carrier: a.carrier,
             vehicle: a.vehicle,
+            belly_secs: a.belly.unwrap_or(0.0).max(0.0),
+            grazes: a.grazes,
             projectile: a.projectile.as_ref().map(|pr| ProjectileDef {
                 tile: proj_tile.unwrap_or(crate::atlas::UNKNOWN_SLOT),
                 damage: pr.damage,

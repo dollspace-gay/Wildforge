@@ -539,6 +539,39 @@ def main():
                 img = ImageEnhance.Brightness(img).enhance(0.72)
             save_tile(img, name)
 
+    # The belly's leavings: dung and the compost chain.
+    dung = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(dung)
+    for cx, cy, r in [(13, 20, 6), (19, 21, 5), (16, 17, 5)]:
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(96, 72, 40, 255),
+                  outline=(66, 48, 26, 255))
+    d.ellipse([12, 15, 16, 18], fill=(112, 86, 50, 255))
+    save_tile(dung, "dung")
+
+    comp = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(comp)
+    d.polygon([(4, 24), (16, 10), (28, 24), (26, 27), (6, 27)],
+              fill=(58, 46, 30, 255), outline=(38, 30, 18, 255))
+    rng = rng_for("compost")
+    for _ in range(26):
+        x, y = rng.randint(6, 26), rng.randint(14, 25)
+        c = rng.choice([(84, 66, 40), (48, 56, 30), (70, 54, 34)])
+        d.point((x, y), fill=c + (255,))
+    save_tile(comp, "compost")
+
+    # Heap faces: slatted side, rotting top, ripe crumb top.
+    side = rock("compost_heap_side", base=(96, 74, 46), dark=(64, 48, 28))
+    d = ImageDraw.Draw(side)
+    for yy in [3, 11, 19, 27]:
+        d.line([(0, yy), (31, yy)], fill=(52, 38, 22, 255), width=2)
+    for xx in [2, 29]:
+        d.line([(xx, 0), (xx, 31)], fill=(58, 44, 26, 255), width=2)
+    save_tile(side, "compost_heap_side")
+    top = rock("compost_heap_top", base=(88, 84, 44), dark=(56, 52, 26))
+    save_tile(top, "compost_heap_top")
+    ready = rock("compost_ready_top", base=(52, 40, 26), dark=(30, 22, 12))
+    save_tile(ready, "compost_ready_top")
+
     print(f"wrote {len(list(OUT.glob('*.png')))} tiles to {OUT}")
 
 

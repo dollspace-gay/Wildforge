@@ -186,6 +186,21 @@ impl Server {
                     events.push(SimEvent::BoltCast);
                 }
                 MobEvent::Bred => events.push(SimEvent::Bred),
+                MobEvent::Ate(pos) => self.world.apply_bite(pos),
+                MobEvent::Dung(at) => {
+                    if let Some(dung) = self.world.reg.item_id("base:dung") {
+                        let reg = self.world.reg.clone();
+                        let stack = crate::inventory::ItemStack::new(&reg, dung, 1);
+                        self.world.push_drop(
+                            (
+                                at.x.floor() as i32,
+                                at.y.floor() as i32,
+                                at.z.floor() as i32,
+                            ),
+                            stack,
+                        );
+                    }
+                }
                 MobEvent::LeadSnapped(at) => {
                     if let Some(lead) = self.world.reg.item_id("base:lead") {
                         let reg = self.world.reg.clone();

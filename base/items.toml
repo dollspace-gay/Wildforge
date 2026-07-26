@@ -1040,3 +1040,13 @@ texture = "cerium.png"
 id = "magnet"
 name = "Magnet"
 texture = "magnet.png"
+
+[[item]]
+id = "dung"
+name = "Dung"
+texture = "dung.png"
+
+[[item]]
+id = "compost"
+name = "Compost"
+texture = "compost.png"
