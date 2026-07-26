@@ -28,6 +28,7 @@ mod power;
 mod storage;
 
 pub use machines::{station_powered, worked_table_for};
+pub mod soil;
 mod substrate;
 mod ticks;
 

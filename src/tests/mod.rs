@@ -21,6 +21,7 @@ mod player;
 #[path = "registry.rs"]
 mod registry_tests;
 mod rendering;
+mod soil;
 mod world;
 mod worldgen;
 

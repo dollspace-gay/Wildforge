@@ -79,6 +79,12 @@ pub struct BlockDef {
     /// `light_emit`, so a colored light keeps its intensity; the dimmer
     /// channels fall off sooner, warming/cooling the glow with distance.
     pub light_rgb: [u8; 3],
+    /// Soil: top-face tiles by fertility quartile (dust, poor, normal,
+    /// rich) — the mesher reads the block's meta byte to pick one.
+    pub fert_tiles: Option<[u16; 4]>,
+    /// Crop rotation family (1..=3); 0 = not a crop. Stamped into the
+    /// soil at maturation so monoculture drains harder than rotation.
+    pub crop_family: u8,
 }
 
 /// Resolve a block's per-channel emission from its level and optional color.
@@ -663,6 +669,9 @@ struct BlockToml {
     /// Sub-voxel octant geometry (2x2x2 occupancy mask in the metadata byte).
     #[serde(default)]
     sub_voxel: bool,
+    /// Four top-face textures by fertility quartile (soil blocks).
+    #[serde(default)]
+    texture_fertility: Option<Vec<String>>,
     /// Counts as glazing: passes sky light and makes greenhouses.
     #[serde(default)]
     glass: bool,
@@ -700,6 +709,9 @@ struct CropToml {
     stage_textures: Vec<String>,
     #[serde(default)]
     any_soil: bool,
+    /// Rotation family 1..=3 (defaults to a stable name hash).
+    #[serde(default)]
+    family: Option<u8>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -1346,6 +1358,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         glass: false,
         light_filter: [true; 3],
         light_rgb: [0, 0, 0],
+        fert_tiles: None,
+        crop_family: 0,
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
     reg.blocks.push(air);
@@ -1458,6 +1472,16 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     [s, s, t, bo, s, s]
                 }
             };
+            let fert_tiles = b.texture_fertility.as_ref().map(|v| {
+                if v.len() != 4 {
+                    errs.push(format!("{full}: texture_fertility wants 4 entries"));
+                }
+                let mut ft = [tiles[2]; 4];
+                for (i, t) in v.iter().take(4).enumerate() {
+                    ft[i] = resolve_tex(t, &raw.info.path, &mut errs);
+                }
+                ft
+            });
             let id = BlockId(reg.blocks.len() as u16);
             let is_fluid = b.water.is_some() || b.lava.is_some();
             reg.blocks.push(BlockDef {
@@ -1497,6 +1521,20 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     .map(|f| [f[0] > 0, f[1] > 0, f[2] > 0])
                     .unwrap_or([true; 3]),
                 light_rgb: resolve_light_rgb(b.light.min(15), b.light_color),
+                fert_tiles,
+                crop_family: b
+                    .crop
+                    .as_ref()
+                    .map(|c| {
+                        c.family.map(|f| f.clamp(1, 3)).unwrap_or_else(|| {
+                            // Stable name-derived family for mods.
+                            let h = full
+                                .bytes()
+                                .fold(0u32, |a, ch| a.wrapping_mul(31).wrapping_add(ch as u32));
+                            (h % 3 + 1) as u8
+                        })
+                    })
+                    .unwrap_or(0),
             });
             reg.block_by_name.insert(full.clone(), id);
             if let Some(bd) = &b.bonus_drop {
@@ -1770,6 +1808,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         glass: false,
         light_filter: [true; 3],
         light_rgb: [0, 0, 0],
+        fert_tiles: None,
+        crop_family: 0,
     });
     reg.block_by_name.insert("base:unknown".into(), unk);
     reg.unknown_block = unk;

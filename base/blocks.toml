@@ -298,6 +298,8 @@ interaction = "furnace"
 id = "farmland"
 name = "Farmland"
 texture = { top = "@farmland", side = "@dirt" }
+# Fertility quartiles, palest to richest; the soil's meta byte picks.
+texture_fertility = ["farmland_dust.png", "farmland_poor.png", "@farmland", "farmland_rich.png"]
 hardness = 0.6
 tool = "shovel"
 drops = "base:dirt"
@@ -312,7 +314,7 @@ hardness = 0.05
 solid = false
 opaque = false
 drops = "self"
-crop = { stages = 3, next_chance = 0.3, stage_textures = ["@wheat_young", "@wheat_ripe"] }
+crop = { stages = 3, next_chance = 0.3, stage_textures = ["@wheat_young", "@wheat_ripe"], family = 1 }
 harvest = { item = "base:wheat", count = 1, becomes = "base:wheat_seeds" }
 
 [[block]]
@@ -325,7 +327,7 @@ solid = false
 opaque = false
 drops = "base:carrot"
 item = false
-crop = { stages = 2, next_chance = 0.25 }
+crop = { stages = 2, next_chance = 0.25, family = 2 }
 
 [[block]]
 id = "potato_crop"
@@ -337,7 +339,7 @@ solid = false
 opaque = false
 drops = "base:potato"
 item = false
-crop = { stages = 2, next_chance = 0.25 }
+crop = { stages = 2, next_chance = 0.25, family = 3 }
 
 [[block]]
 id = "berry_bush"

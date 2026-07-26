@@ -16,6 +16,7 @@ impl World {
         let snow_layer = reg.block_id("base:snow_layer");
         let snow_trod = reg.block_id("base:snow_layer_trod");
         let grass_id = reg.block_id("base:grass");
+        let dirt_id = reg.block_id("base:dirt");
         let season = self.season();
         let mut order: Vec<(f64, ChunkPos)> = self
             .chunks
@@ -39,6 +40,8 @@ impl World {
         let mut changes = Vec::new();
         // Evaporated film cells: applied without the crop-ire refund.
         let mut dried: Vec<(i32, i32, i32)> = Vec::new();
+        // Fallow soil recovering (position, gain).
+        let mut fed: Vec<(i32, i32, i32, u8)> = Vec::new();
         let mut saplings: Vec<(i32, i32, i32, String, u32)> = Vec::new();
         for (stamp, pos) in order {
             let elapsed = (self.clock - stamp).max(0.0);
@@ -110,12 +113,59 @@ impl World {
                     } else {
                         mult
                     };
+                    // Fertile loam runs half again over baseline;
+                    // exhausted dust crawls (soil.rs).
+                    let fmult = if d.crop_any_soil {
+                        1.0
+                    } else {
+                        soil::fert_mult(soil::fert_of(self.get_meta(wx, y - 1, wz)))
+                    };
                     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                     if soil_ok
                         && mult > 0.0
-                        && ((*rng >> 8) as f32 / (1 << 24) as f32) < d.crop_chance * mult
+                        && ((*rng >> 8) as f32 / (1 << 24) as f32) < d.crop_chance * mult * fmult
                     {
                         changes.push((wx, y, wz, next));
+                    }
+                    continue;
+                }
+                // Fallow farmland recovers, twice as fast under winter
+                // (or snow) — the off season is the soil's turn.
+                if Some(b) == farmland {
+                    let above = self.get_block(wx, y + 1, wz);
+                    let resting =
+                        above == AIR || Some(above) == snow_layer || Some(above) == snow_trod;
+                    if resting {
+                        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                        if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.5 {
+                            let winterish = season == 3 || Some(above) == snow_layer;
+                            let gain = if winterish {
+                                soil::FERT_FALLOW * 2
+                            } else {
+                                soil::FERT_FALLOW
+                            };
+                            fed.push((wx, y, wz, gain));
+                        }
+                    }
+                    continue;
+                }
+                // Bare dirt under the sky heals over beside grass —
+                // the world stops keeping scars nobody meant to leave.
+                if Some(b) == dirt_id
+                    && self.get_block(wx, y + 1, wz) == AIR
+                    && self.light_at(wx, y + 1, wz).1 >= 9
+                {
+                    let near_grass = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|&(dx, dz)| {
+                        (-1..=1)
+                            .any(|dy| Some(self.get_block(wx + dx, y + dy, wz + dz)) == grass_id)
+                    });
+                    if near_grass {
+                        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                        if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.05
+                            && let Some(g) = grass_id
+                        {
+                            changes.push((wx, y, wz, g));
+                        }
                     }
                     continue;
                 }
@@ -275,10 +325,26 @@ impl World {
         }
         for (x, y, z, b) in changes {
             // A crop reaching its final stage refunds ire (capped daily).
-            if self.reg.block(b).crop_next.is_none() {
+            let (family, final_stage, any_soil) = {
+                let d = self.reg.block(b);
+                (d.crop_family, d.crop_next.is_none(), d.crop_any_soil)
+            };
+            if final_stage {
                 self.plant_ire_at(x, z, 0.5);
             }
+            // A maturing crop drew its meal from the soil below —
+            // and stamped its family there for the rotation ledger.
+            if final_stage && family != 0 && !any_soil {
+                let sb = self.get_block(x, y - 1, z);
+                if self.reg.block(sb).fert_tiles.is_some() {
+                    let meta = soil::soil_after_harvest(self.get_meta(x, y - 1, z), family);
+                    self.set_block_meta(x, y - 1, z, sb, meta);
+                }
+            }
             self.set_block(x, y, z, b);
+        }
+        for (x, y, z, gain) in fed {
+            self.feed_soil(x, y, z, gain);
         }
         for (x, y, z) in dried {
             self.set_block(x, y, z, AIR);
@@ -352,6 +418,7 @@ impl World {
                             || Some(b) == ice
                             || Some(b) == snow_layer
                             || Some(b) == snow_trod
+                            || Some(b) == farmland
                         {
                             interesting.push((
                                 pos.x * CHUNK_X as i32 + lx as i32,
@@ -368,8 +435,29 @@ impl World {
         let mut changes = Vec::new();
         let mut grow: Vec<(i32, i32, i32, u32)> = Vec::new();
         let mut refunds = 0u32;
+        let mut drains: Vec<(i32, i32, i32, u8)> = Vec::new();
+        let mut rested: Vec<(i32, i32, i32, u8)> = Vec::new();
         for (wx, y, wz, b) in interesting {
             let d = reg.block(b);
+            if Some(b) == farmland {
+                // An absent field rests: recovery integrated over the
+                // missed days (winter days restore double), only when
+                // nothing grows on it.
+                let above = self.get_block(wx, y + 1, wz);
+                let resting = above == AIR || Some(above) == snow_layer || Some(above) == snow_trod;
+                if resting {
+                    let weight: f64 = days
+                        .iter()
+                        .map(|&s| if s == 3 { 2.0 } else { 1.0 })
+                        .sum::<f64>();
+                    let e = ticks_per_day * 0.5 * weight * soil::FERT_FALLOW as f64;
+                    let k = poisson(e, &mut r).min(soil::FERT_MAX as u32) as u8;
+                    if k > 0 {
+                        rested.push((wx, y, wz, k));
+                    }
+                }
+                continue;
+            }
             if d.sapling.is_some() {
                 let e = days.len() as f64 * ticks_per_day * 0.02;
                 if poisson(e, &mut r) > 0 {
@@ -422,9 +510,14 @@ impl World {
                     }
                     if cur != b {
                         // Reaching the final stage refunds ire, as a
-                        // live random tick would have.
-                        if reg.block(cur).crop_next.is_none() {
+                        // live random tick would have — and drains the
+                        // soil it grew from, stamping the rotation.
+                        let fd = reg.block(cur);
+                        if fd.crop_next.is_none() {
                             refunds += 1;
+                            if fd.crop_family != 0 && !fd.crop_any_soil {
+                                drains.push((wx, y - 1, wz, fd.crop_family));
+                            }
                         }
                         changes.push((wx, y, wz, cur));
                     }
@@ -487,6 +580,16 @@ impl World {
         for _ in 0..refunds {
             // Reconciled growth credits the chunk's own country.
             self.plant_ire_at(pos.x * 16 + 8, pos.z * 16 + 8, 0.5);
+        }
+        for (x, y, z, family) in drains {
+            let sb = self.get_block(x, y, z);
+            if self.reg.block(sb).fert_tiles.is_some() {
+                let meta = soil::soil_after_harvest(self.get_meta(x, y, z), family);
+                self.set_block_meta(x, y, z, sb, meta);
+            }
+        }
+        for (x, y, z, gain) in rested {
+            self.feed_soil(x, y, z, gain);
         }
         for (x, y, z, rnd) in grow {
             self.try_grow_sapling(x, y, z, rnd);

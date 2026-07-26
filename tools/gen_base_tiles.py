@@ -515,6 +515,30 @@ def main():
     d.ellipse([9, 9, 23, 14], fill=(255, 120, 30, 255), outline=(90, 90, 96, 255))
     d.arc([6, 2, 26, 14], 200, 340, fill=(110, 108, 104, 255))
     save_tile(bl, "bucket_lava")
+
+    # Farmland fertility variants: graded from the shipped farmland
+    # tile so the four steps read as the same soil — dust, poor,
+    # (the original), rich. The mesher picks by the meta quartile.
+    from PIL import ImageEnhance
+
+    gem = OUT.parent.parent / "packs" / "gemini" / "tiles" / "farmland.png"
+    if gem.exists():
+        soil = Image.open(gem).convert("RGBA")
+        # Exhausted soil dries toward warm khaki; rich soil deepens.
+        dry = Image.new("RGBA", soil.size, (198, 172, 122, 255))
+        for name, toward, blend, sat in [
+            ("farmland_dust", dry, 0.52, 0.72),
+            ("farmland_poor", dry, 0.26, 0.88),
+            ("farmland_rich", None, 0.0, 1.20),
+        ]:
+            img = soil
+            if toward is not None:
+                img = Image.blend(soil, toward, blend)
+            img = ImageEnhance.Color(img).enhance(sat)
+            if name == "farmland_rich":
+                img = ImageEnhance.Brightness(img).enhance(0.72)
+            save_tile(img, name)
+
     print(f"wrote {len(list(OUT.glob('*.png')))} tiles to {OUT}")
 
 

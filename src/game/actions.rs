@@ -1081,9 +1081,12 @@ impl Game {
             ) {
                 let name = reg.block(tb).name.as_str();
                 if name == "base:grass" || name == "base:dirt" {
+                    // The till reads the ground it came from: grass-fed
+                    // loam starts richer than bare dirt (soil.rs).
+                    let meta = self.server.world.till_meta(h.block.0, h.block.1, h.block.2);
                     self.server
                         .world
-                        .set_block(h.block.0, h.block.1, h.block.2, farm);
+                        .set_block_meta(h.block.0, h.block.1, h.block.2, farm, meta);
                     self.inventory.wear_tool(&reg, self.input.hotbar_sel);
                     self.sfx(Sfx::Place);
                     self.input.action_cooldown = 0.3;

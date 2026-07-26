@@ -763,7 +763,15 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                     if !should_draw(reg, b, nb) {
                         continue;
                     }
-                    let slot = reg.block(b).tiles[face];
+                    let slot = match (face, reg.block(b).fert_tiles) {
+                        // Soil wears its fertility on its top face:
+                        // the meta quartile picks dust through loam.
+                        (2, Some(ft)) => {
+                            ft[((chunk.meta(lx as usize, y as usize, lz as usize) & 63) >> 4)
+                                as usize]
+                        }
+                        _ => reg.block(b).tiles[face],
+                    };
                     let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
                     let nrm = [n[0] as f32, n[1] as f32, n[2] as f32];
                     // `face_light` (not `light`) so a face looking into an opaque

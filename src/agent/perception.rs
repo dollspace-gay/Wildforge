@@ -218,8 +218,24 @@ impl Agent {
             return "that chunk hasn't streamed to you".into();
         }
         let (bl, sky) = self.world.light_at(x, y, z);
+        // Farmland wears its fertility in its meta byte; report it so
+        // an agent can judge a field the way a farmer reads the tint.
+        let soil = if self
+            .reg
+            .block(self.world.get_block(x, y, z))
+            .fert_tiles
+            .is_some()
+        {
+            format!(
+                "; soil {}/{}",
+                self.world.fertility_at(x, y, z),
+                crate::world::soil::FERT_MAX
+            )
+        } else {
+            String::new()
+        };
         format!(
-            "{} (light {bl}, sky {sky}); above: {}; below: {}",
+            "{} (light {bl}, sky {sky}){soil}; above: {}; below: {}",
             self.block_name(x, y, z),
             self.block_name(x, y + 1, z),
             self.block_name(x, y - 1, z),

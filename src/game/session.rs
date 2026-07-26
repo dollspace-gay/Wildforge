@@ -623,6 +623,57 @@ impl Game {
                 self.server.world.spawn_mob(w);
             }
         }
+        if std::env::var("WILDFORGE_DEMO_ECO").is_ok() {
+            // The living-soil field: four fertility bands, palest dust
+            // to deepest loam, wheat standing on the two rich bands —
+            // the tint gradient is the shot.
+            let b = |n: &str| self.content.reg.block_id(n);
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            let y = self.server.world.surface_height(bx, bz);
+            eprintln!("eco demo anchored at ({bx},{y},{bz})");
+            if let (Some(grass), Some(farm)) = (b("base:grass"), b("base:farmland")) {
+                let w = &mut self.server.world;
+                for dx in -8..=8i32 {
+                    for dz in -2..=12i32 {
+                        let (x, z) = (bx + dx, bz + dz);
+                        w.set_block(x, y, z, grass);
+                        for hh in 1..=8 {
+                            if w.get_block(x, y + hh, z) != AIR {
+                                w.set_block(x, y + hh, z, AIR);
+                            }
+                        }
+                    }
+                }
+                // Bands run away from the camera, three columns each.
+                for (band, fert) in [(0i32, 8u8), (1, 24), (2, 40), (3, 60)] {
+                    for dx in 0..3i32 {
+                        for dz in 2..=9i32 {
+                            let x = bx - 6 + band * 3 + dx;
+                            w.set_block_meta(
+                                x,
+                                y,
+                                bz + dz,
+                                farm,
+                                crate::world::soil::soil_meta(fert, 0),
+                            );
+                        }
+                    }
+                }
+                if let Some(ripe) = b("base:wheat_seeds/stage2") {
+                    for band in [2i32, 3] {
+                        for dx in 0..3i32 {
+                            for dz in 2..=9i32 {
+                                if (dx + dz) % 2 == 0 {
+                                    let x = bx - 6 + band * 3 + dx;
+                                    w.set_block(x, y + 1, bz + dz, ripe);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if std::env::var("WILDFORGE_DEMO_MILL").is_ok() {
             // A working millrace: an elevated pool spilling over a
             // lip, the wheel in the fall, gears walking the power
