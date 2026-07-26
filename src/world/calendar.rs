@@ -201,6 +201,7 @@ impl World {
         });
         self.tick_hearts(day_frac);
         self.tick_rooting(day_frac);
+        self.tick_graft(day_frac);
         // Blooms burn down day by day.
         self.bloom.retain(|_, v| {
             *v -= day_frac;

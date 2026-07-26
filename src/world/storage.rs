@@ -93,7 +93,7 @@ impl World {
             let _ = fs::write(self.save_dir.join("bspent"), sb);
         }
         // The hearts: (province x, z, site x, y, z, stage, strain).
-        let mut hb = Vec::with_capacity(self.hearts.len() * 29);
+        let mut hb = Vec::with_capacity(self.hearts.len() * 34);
         for (&(kx, kz), h) in &self.hearts {
             hb.extend_from_slice(&kx.to_le_bytes());
             hb.extend_from_slice(&kz.to_le_bytes());
@@ -103,6 +103,8 @@ impl World {
             hb.push(h.stage);
             hb.extend_from_slice(&h.strain.to_le_bytes());
             hb.extend_from_slice(&h.rooting.to_le_bytes());
+            hb.push(h.graft.map(|b| b as u8 + 1).unwrap_or(0));
+            hb.extend_from_slice(&h.drift.to_le_bytes());
         }
         if hb.is_empty() {
             let _ = fs::remove_file(self.save_dir.join("hearts"));
@@ -228,7 +230,7 @@ impl World {
             }
         }
         if let Ok(data) = fs::read(self.save_dir.join("hearts")) {
-            for p in data.chunks_exact(29) {
+            for p in data.chunks_exact(34) {
                 let i32_at = |o: usize| i32::from_le_bytes([p[o], p[o + 1], p[o + 2], p[o + 3]]);
                 self.hearts.insert(
                     (i32_at(0), i32_at(4)),
@@ -237,6 +239,8 @@ impl World {
                         stage: p[20],
                         strain: f32::from_le_bytes([p[21], p[22], p[23], p[24]]),
                         rooting: f32::from_le_bytes([p[25], p[26], p[27], p[28]]),
+                        graft: crate::worldgen::Biome::from_index(p[29]),
+                        drift: f32::from_le_bytes([p[30], p[31], p[32], p[33]]),
                     },
                 );
             }

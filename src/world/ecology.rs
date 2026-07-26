@@ -90,7 +90,9 @@ impl World {
         }
         let reg = self.reg.clone();
         let (cx, cz) = (pos.x * CHUNK_X as i32, pos.z * CHUNK_Z as i32);
-        let biome = self.generator.biome(cx + 8, cz + 8).name().to_lowercase();
+        // What a country IS, not what the map first called it: a
+        // grafted heart drags its country's life after it.
+        let biome = self.country_biome(cx + 8, cz + 8).name().to_lowercase();
         for (si, def) in reg.animals.iter().enumerate() {
             // Wildlife only — wardens come and go with the spawner.
             if def.hostile || !def.biomes.contains(&biome) {
@@ -482,7 +484,7 @@ impl World {
                 let z = (player.z + ang.cos() * dist).floor() as i32;
                 let cp = ChunkPos::of_world(x, z);
                 if self.chunks.contains_key(&cp) && self.heart_alive_at(x, z) {
-                    let biome = self.generator.biome(x, z).name().to_lowercase();
+                    let biome = self.country_biome(x, z).name().to_lowercase();
                     // Wildlife only — wardens have their own spawner.
                     let eligible: Vec<usize> = reg
                         .animals
@@ -702,7 +704,8 @@ impl World {
             if dxs * dxs + dzs * dzs < 16.0 * 16.0 {
                 continue;
             }
-            let biome = self.generator.biome(x, z).name().to_lowercase();
+            // The wardens a country fields follow its heart too.
+            let biome = self.country_biome(x, z).name().to_lowercase();
             // Split the roster: surface wardens spawn at the surface, the
             // deep's own ("underground" biome tag) in caves below.
             let surface_y = self.surface_height(x, z);

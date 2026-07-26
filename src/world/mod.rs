@@ -28,7 +28,7 @@ mod persistence;
 mod power;
 mod storage;
 
-pub use hearts::{Heart, heart_form};
+pub use hearts::{Heart, heart_form, seed_nature, seed_of_form};
 #[cfg(test)]
 pub use hearts::{ROOT_RADIUS, heart_block_name, heart_height};
 pub use machines::{station_powered, worked_table_for};

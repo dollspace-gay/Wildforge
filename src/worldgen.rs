@@ -29,6 +29,25 @@ pub enum Biome {
 }
 
 impl Biome {
+    /// Round-trip for saves: 0 means "none", otherwise index + 1.
+    pub fn from_index(i: u8) -> Option<Biome> {
+        Some(match i {
+            1 => Biome::Forest,
+            2 => Biome::Plains,
+            3 => Biome::Desert,
+            4 => Biome::Jungle,
+            5 => Biome::Scrubland,
+            6 => Biome::Taiga,
+            7 => Biome::Arctic,
+            8 => Biome::Mountains,
+            9 => Biome::Swamp,
+            10 => Biome::Savanna,
+            11 => Biome::Tundra,
+            12 => Biome::Badlands,
+            _ => return None,
+        })
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Biome::Forest => "Forest",

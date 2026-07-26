@@ -565,3 +565,96 @@ fn a_seed_only_goes_where_a_heart_died() {
     let r = w.plant_heart_seed(hp.0 + 40, hp.1, hp.2).expect("refused");
     assert!(r.contains("where the old heart stood"), "{r}");
 }
+
+#[test]
+fn a_stranger_heart_remakes_the_country_it_wakes_in() {
+    let (mut w, key, (sx, sz)) = world_with_heart(52, "hearts-graft");
+    let reg = w.reg.clone();
+    let native = w.generator.province(sx, sz).biome;
+    // Pick a seed from a DIFFERENT family than this country's.
+    let native_form = crate::world::heart_form(native);
+    let (seed, want) = [
+        ("base:bole_seed", crate::worldgen::Biome::Forest),
+        ("base:spring_seed", crate::worldgen::Biome::Desert),
+        ("base:stone_seed", crate::worldgen::Biome::Tundra),
+    ]
+    .into_iter()
+    .find(|(_, b)| crate::world::heart_form(*b) != native_form)
+    .expect("a stranger's kind exists");
+    assert_eq!(crate::world::seed_nature(seed), Some(want));
+    w.set_heart_stage(key, 0);
+    let hp = w.heart_at(sx, sz).unwrap().pos;
+    let farm = b(&reg, "base:farmland");
+    let r = crate::world::ROOT_RADIUS;
+    for dx in -r..=r {
+        for dz in -r..=r {
+            let (cx, cz) = (hp.0 + dx, hp.2 + dz);
+            let y = w.surface_height(cx, cz);
+            w.set_block_meta(cx, y, cz, farm, crate::world::soil::soil_meta(40, 0));
+        }
+    }
+    assert!(
+        w.plant_heart_seed_from(hp.0, hp.1, hp.2, Some(want))
+            .is_none(),
+        "a stranger's seed still takes in ready ground"
+    );
+    for _ in 0..14 {
+        w.tick_ire(1.0);
+    }
+    assert_eq!(w.heart_at(sx, sz).unwrap().stage, 2, "it wakes");
+    // At first the country is still itself: the drift takes seasons.
+    assert_eq!(w.country_biome(sx, sz), native, "not overnight");
+    for _ in 0..14 {
+        w.tick_ire(1.0);
+    }
+    assert_eq!(
+        w.country_biome(sx, sz),
+        want,
+        "the country becomes what its new heart is"
+    );
+    // The map never changed — the COUNTRY did.
+    assert_eq!(w.generator.province(sx, sz).biome, native);
+}
+
+#[test]
+fn its_own_kind_reawakens_rather_than_replaces() {
+    let (mut w, key, (sx, sz)) = world_with_heart(53, "hearts-reawaken");
+    let reg = w.reg.clone();
+    let native = w.generator.province(sx, sz).biome;
+    let own =
+        crate::world::seed_nature(crate::world::seed_of_form(crate::world::heart_form(native)))
+            .unwrap();
+    w.set_heart_stage(key, 0);
+    let hp = w.heart_at(sx, sz).unwrap().pos;
+    let farm = b(&reg, "base:farmland");
+    let r = crate::world::ROOT_RADIUS;
+    for dx in -r..=r {
+        for dz in -r..=r {
+            let (cx, cz) = (hp.0 + dx, hp.2 + dz);
+            let y = w.surface_height(cx, cz);
+            w.set_block_meta(cx, y, cz, farm, crate::world::soil::soil_meta(40, 0));
+        }
+    }
+    let before = w.regional_ire_at(sx, sz);
+    assert!(
+        w.plant_heart_seed_from(hp.0, hp.1, hp.2, Some(own))
+            .is_none(),
+        "its own kind takes"
+    );
+    for _ in 0..14 {
+        w.tick_ire(1.0);
+    }
+    let h = w.heart_at(sx, sz).unwrap();
+    assert_eq!(h.stage, 2);
+    assert!(h.graft.is_none(), "no graft: this is a reawakening");
+    // It remembers who did it: the ground is blessed for good.
+    assert!(
+        w.regional_ire_at(sx, sz) < before,
+        "the valley forgives you specifically"
+    );
+    // And it stays itself, forever.
+    for _ in 0..40 {
+        w.tick_ire(1.0);
+    }
+    assert_eq!(w.country_biome(sx, sz), native);
+}

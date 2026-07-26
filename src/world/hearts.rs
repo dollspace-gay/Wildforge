@@ -37,6 +37,12 @@ pub struct Heart {
     pub strain: f32,
     /// Days a planted seed has been taking, 0 when none is.
     pub rooting: f32,
+    /// The biome a rooting seed was cut from. When it takes and that
+    /// differs from this country's own, the country begins to BECOME
+    /// what the donor was — restoration doubles as terraforming.
+    pub graft: Option<crate::worldgen::Biome>,
+    /// How far the country has drifted toward its graft, 0..1.
+    pub drift: f32,
 }
 
 impl Heart {
@@ -73,6 +79,26 @@ pub fn heart_height(form: &str) -> i32 {
         "base:heart_stone" => 3,
         _ => 1,
     }
+}
+
+/// The seed a form gives, and the nature that seed carries.
+pub fn seed_of_form(form: &str) -> &'static str {
+    match form {
+        "base:heart_tree" => "base:bole_seed",
+        "base:heart_spring" => "base:spring_seed",
+        _ => "base:stone_seed",
+    }
+}
+
+/// What a seed wakes: the country a grafted heart drifts toward.
+pub fn seed_nature(item_name: &str) -> Option<crate::worldgen::Biome> {
+    use crate::worldgen::Biome as B;
+    Some(match item_name {
+        "base:bole_seed" => B::Forest,
+        "base:spring_seed" => B::Desert,
+        "base:stone_seed" => B::Tundra,
+        _ => return None,
+    })
 }
 
 /// How far around a dead site the ground must be made ready.
@@ -184,6 +210,8 @@ impl World {
             stage: 2,
             strain: 0.0,
             rooting: 0.0,
+            graft: None,
+            drift: 0.0,
         });
     }
 
@@ -238,6 +266,31 @@ impl World {
             }
         }
         (ready, total)
+    }
+
+    /// Plant a quickened seed at a dead site. `from` is the country
+    /// the seed was cut in: its own means a reawakening, a stranger's
+    /// means a replacement that brings its own nature with it.
+    /// Returns the refusal to say out loud, or None when the rooting
+    /// has begun.
+    pub fn plant_heart_seed_from(
+        &mut self,
+        x: i32,
+        y: i32,
+        z: i32,
+        from: Option<crate::worldgen::Biome>,
+    ) -> Option<String> {
+        let refusal = self.plant_heart_seed(x, y, z);
+        if refusal.is_none() {
+            let key = self.generator.province(x, z).key;
+            let native = self.generator.province(x, z).biome;
+            if let Some(e) = self.hearts.get_mut(&key) {
+                // Same family: a reawakening, and the country keeps
+                // its own nature. A stranger's: a replacement.
+                e.graft = from.filter(|b| heart_form(*b) != heart_form(native));
+            }
+        }
+        refusal
     }
 
     /// Plant a quickened seed at a dead site. Returns the refusal to
@@ -300,7 +353,40 @@ impl World {
                 for m in &mut self.mobs {
                     m.masterless = false;
                 }
+                if let Some(e) = self.hearts.get_mut(&key) {
+                    e.drift = 0.0;
+                }
+                // A reawakened country remembers who did it, and the
+                // ground it stands on is blessed for good. A grafted
+                // one wakes a stranger, and knows nothing of you.
+                if self.hearts.get(&key).and_then(|e| e.graft).is_none() {
+                    self.plant_ire_at(h.pos.0, h.pos.2, 6.0);
+                }
             }
+        }
+    }
+
+    /// A grafted country drifts toward the nature it was given, a
+    /// season at a time. This is the terraforming: what grows, what
+    /// spawns, what the ground is, all follow the heart.
+    pub(super) fn tick_graft(&mut self, day_frac: f32) {
+        for h in self.hearts.values_mut() {
+            if h.stage == 2 && h.graft.is_some() && h.drift < 1.0 {
+                h.drift = (h.drift + day_frac / 24.0).min(1.0);
+            }
+        }
+    }
+
+    /// What a country counts as now: its own nature, or the one its
+    /// heart was grafted from once the drift has carried far enough.
+    pub fn country_biome(&self, x: i32, z: i32) -> crate::worldgen::Biome {
+        let key = self.generator.province(x, z).key;
+        match self.hearts.get(&key) {
+            Some(h) if h.stage == 2 && h.drift >= 0.5 && h.graft.is_some() => h.graft.unwrap(),
+            // Ungrafted country reads exactly as the map does — the
+            // column's own label, fringe dither and terrain veto and
+            // all. Only a graft overrides it.
+            _ => self.generator.biome(x, z),
         }
     }
 

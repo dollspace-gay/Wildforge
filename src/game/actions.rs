@@ -1262,7 +1262,8 @@ impl Game {
                 Some("heart") if self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.5;
                     self.input.right_held = false;
-                    let holding_seed = held.is_some_and(|i| reg.item(i).name == "base:heart_seed");
+                    let carried = held.and_then(|i| world::seed_nature(&reg.item(i).name));
+                    let holding_seed = carried.is_some();
                     // A cutting from a living heart: the thing you
                     // carry across the world to wake a dead country.
                     if !holding_seed
@@ -1271,7 +1272,9 @@ impl Game {
                             .world
                             .heart_at(h.block.0, h.block.2)
                             .is_some_and(|hh| hh.stage == 2)
-                        && let Some(seed) = reg.item_id("base:heart_seed")
+                        && let Some(seed) = reg.item_id(world::seed_of_form(world::heart_form(
+                            self.server.world.generator.biome(h.block.0, h.block.2),
+                        )))
                     {
                         let left = self.inventory.add(&reg, seed, 1);
                         if left > 0 {
@@ -1284,10 +1287,12 @@ impl Game {
                         return;
                     }
                     if holding_seed {
+                        // What you carry decides what wakes: its own
+                        // kind reawakens, a stranger's replaces.
                         match self
                             .server
                             .world
-                            .plant_heart_seed(h.block.0, h.block.1, h.block.2)
+                            .plant_heart_seed_from(h.block.0, h.block.1, h.block.2, carried)
                         {
                             Some(refusal) => self.toast(refusal),
                             None => {

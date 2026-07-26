@@ -917,6 +917,17 @@ def main():
     d.line([(16, 8), (16, 3)], fill=(96, 150, 84, 255), width=2)
     d.ellipse([16, 2, 22, 6], fill=(110, 176, 96, 255))
     save_tile(sd, "heart_seed")
+    for nm, core, halo in [
+        ("spring_seed", (120, 208, 240), (210, 240, 255)),
+        ("stone_seed", (188, 172, 244), (226, 216, 255)),
+    ]:
+        s2 = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+        d = ImageDraw.Draw(s2)
+        d.ellipse([9, 8, 23, 26], fill=(104, 96, 88, 255), outline=(64, 58, 52, 255))
+        d.ellipse([12, 12, 20, 21], fill=core + (255,))
+        d.ellipse([14, 14, 18, 18], fill=halo + (255,))
+        d.line([(16, 8), (16, 3)], fill=(120, 116, 110, 255), width=2)
+        save_tile(s2, nm)
 
     print(f"wrote {len(list(OUT.glob('*.png')))} tiles to {OUT}")
 
