@@ -76,7 +76,9 @@ impl Agent {
         }
         self.face(x, z);
         self.send(&C2S::Break { x, y, z });
-        for _ in 0..40 {
+        // Triple-size echo budget: parallel test load can starve the
+        // host pump well past a polite wait (green runs exit early).
+        for _ in 0..120 {
             self.pump_for(0.05);
             if self.world.get_block(x, y, z) != before {
                 return Ok(());
@@ -155,7 +157,7 @@ impl Agent {
         }
         self.face(x, z);
         self.send(&C2S::Place { x, y, z });
-        for _ in 0..30 {
+        for _ in 0..90 {
             self.pump_for(0.05);
             if self.world.get_block(x, y, z) != before {
                 return Ok(());
