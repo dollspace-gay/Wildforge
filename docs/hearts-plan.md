@@ -1,5 +1,59 @@
 # The hearts arc — what the takers really did
 
+Drafted 2026-07-26, **IMPLEMENTED** 2026-07-26, all seven stages.
+Notes vs. this spec, where the implementation knew better:
+
+- **Culture from the country, terrain from the column.** The first
+  cut classified each province at its site and used that label
+  wholesale — which put "jungle" under the sea and "desert" at
+  freezing, because a 900-block province is not climatically
+  uniform. The shipped rule takes temperature, humidity and
+  worn-ness from the province and leaves continentalness to the
+  column, so coasts stay coasts inside one country. Climate also
+  slowed further than planned (~2500-block features, not 1250) so
+  a site can speak for its province at all.
+- **Province labels are cached** per key; classifying per column
+  cost a full climate sample (tectonics included) and made chunk
+  generation the hot path it never was before.
+- **Swamp pools were a real bug the arc exposed.** They placed a
+  water SOURCE wherever noise said so, including on slopes — rare
+  when swamps were scattered, a permanent waterfall once a swamp
+  was a whole province. Standing water now needs a basin. This
+  was worth the arc on its own.
+- **The heart is placed last in generation**, after every feature
+  pass, because a tree planted on the site overwrites a landmark.
+  Registration walks DOWN from the surface to the bole's foot: the
+  site is solid, so a surface scan lands on its crown.
+- **Sickening is measured in strain, not days**: it accrues at
+  `standing / 8` per day (2.5 at the very angriest, shed at 1.5),
+  so a season of unbroken grievance shows it and two and a half
+  kill it. The doc's "seasons" is the shipped feel; the units are
+  strain so the rate can scale with how angry the country is.
+- **All deaths go through one door** (`set_heart_stage(.., 0)`),
+  which is what orphans the wardens. The axe path sets strain to
+  the point of no return and calls the same door.
+- **Three seed items, not one.** A seed has to carry the nature it
+  was cut from, and items have no per-stack data — so the graft
+  travels as three visible items (Bole/Spring/Stone Seed). The
+  player can see they are carrying a desert, which is better than
+  hiding it in metadata anyway.
+- **Grafting compares FORM families, not exact biomes**: a bole
+  seed in any wooded country is a reawakening, not a replacement.
+- **The Long Winter costs one line** in `season()`. Everything it
+  means — crops at zero, no breeding, halved repopulation,
+  freezing water — already existed; the world simply stops leaving
+  winter. Threshold: three dead countries AND half of every
+  country anyone has seen.
+- **Ruins read the signature, not the history.** Worldgen cannot
+  know which hearts a player will kill, so ruins are twice as
+  common in barren country (badlands, scrubland, tundra, desert)
+  — the look of ground that stopped giving.
+- **Not shipped, recorded honestly**: the multiplayer question
+  below is still open (any player may cut any heart, with only the
+  long sickening as warning); the drift changes what LIVES in a
+  country, not its terrain blocks; and a masterless warden is the
+  existing roster with a flag, not new behaviour.
+
 Drafted 2026-07-26. Decisions settled with dollspace: the wild's
 resistance gets a body. Every region has a spirit living in a
 physical heart; the wardens are that spirit's immune response; and

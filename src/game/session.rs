@@ -623,6 +623,62 @@ impl Game {
                 self.server.world.spawn_mob(w);
             }
         }
+        if std::env::var("WILDFORGE_DEMO_HEART").is_ok() {
+            // The three forms, alive/failing/dead, in a row — and one
+            // ruined site with its ground raised ready for a seed.
+            let b = |n: &str| self.content.reg.block_id(n);
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            let y = self.server.world.surface_height(bx, bz);
+            eprintln!("heart demo anchored at ({bx},{y},{bz})");
+            if let Some(grass) = b("base:grass") {
+                let w = &mut self.server.world;
+                for dx in -18..=18i32 {
+                    for dz in -20..=14i32 {
+                        let (x, z) = (bx + dx, bz + dz);
+                        w.set_block(x, y, z, grass);
+                        for hh in 1..=10 {
+                            if w.get_block(x, y + hh, z) != AIR {
+                                w.set_block(x, y + hh, z, AIR);
+                            }
+                        }
+                    }
+                }
+            }
+            let w = &mut self.server.world;
+            for (col, form) in [
+                (-10i32, "base:heart_tree"),
+                (0, "base:heart_spring"),
+                (10, "base:heart_stone"),
+            ] {
+                for (row, stage) in [(-4i32, 2u8), (2, 1), (8, 0)] {
+                    let name = crate::world::heart_block_name(form, stage);
+                    let Some(block) = b(&name) else { continue };
+                    let tall = crate::world::heart_height(form);
+                    for dy in 1..=tall {
+                        w.set_block(bx + col, y + dy, bz + row, block);
+                    }
+                }
+            }
+            // Ground made ready around the dead stone: the long walk's
+            // last step, waiting on a seed.
+            if let Some(farm) = b("base:farmland") {
+                for dx in -4..=4i32 {
+                    for dz in -4..=4i32 {
+                        if dx * dx + dz * dz > 16 {
+                            continue;
+                        }
+                        w.set_block_meta(
+                            bx + 10 + dx,
+                            y,
+                            bz + 8 + dz,
+                            farm,
+                            crate::world::soil::soil_meta(48, 0),
+                        );
+                    }
+                }
+            }
+        }
         if std::env::var("WILDFORGE_DEMO_ECO").is_ok() {
             // The living-soil field: four fertility bands, palest dust
             // to deepest loam, wheat standing on the two rich bands —
