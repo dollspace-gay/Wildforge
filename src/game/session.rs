@@ -724,6 +724,27 @@ impl Game {
                     let stack = ItemStack::new(&reg2, dung, 1);
                     w.push_drop((bx - 7, y + 1, bz + 11), stack);
                 }
+                // Fang and carrion: a fox on stand by the field, and
+                // the vultures' table set east of the pen.
+                for (name, dx, dz) in [
+                    ("base:fox", 8.5f32, 6.5f32),
+                    ("base:carcass", -2.5, 13.5),
+                    ("base:vulture", -2.5, 13.5),
+                ] {
+                    if let Some(si) = reg2.animal_id(name) {
+                        let mut m = crate::mobs::Mob::new(
+                            si,
+                            glam::Vec3::new(bx as f32 + dx, y as f32 + 1.0, bz as f32 + dz),
+                            3.6,
+                        );
+                        m.health = reg2.animals[si].health;
+                        m.belly = 9000.0; // props don't eat the props
+                        if name == "base:carcass" {
+                            m.rot = 9000.0;
+                        }
+                        w.spawn_mob(m);
+                    }
+                }
             }
         }
         if std::env::var("WILDFORGE_DEMO_MILL").is_ok() {

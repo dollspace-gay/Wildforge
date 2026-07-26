@@ -1050,3 +1050,17 @@ texture = "dung.png"
 id = "compost"
 name = "Compost"
 texture = "compost.png"
+
+[[item]]
+id = "raw_bear"
+name = "Raw Bear"
+texture = "raw_bear.png"
+food = { hunger = 3, eat_time = 1.8, nutrition = { protein = 8 } }
+durability = 900
+
+[[item]]
+id = "cooked_bear"
+name = "Cooked Bear"
+texture = "cooked_bear.png"
+food = { hunger = 7, eat_time = 1.8, nutrition = { protein = 13 } }
+durability = 1800

@@ -268,11 +268,13 @@ impl Game {
             }
             let m = self.server.world.remove_mob(i);
             let def = &reg.animals[m.species];
-            if !def.hostile && !def.vehicle {
+            if !def.hostile && !def.vehicle && !def.name.ends_with(":carcass") {
                 // The wild counts its dead — wardens are not
                 // individuals, and a TAMED animal is a household loss,
                 // not a wild one (though betrayal is still noticed).
                 // Vehicles are lumber; the wild never mourns a boat.
+                // A carcass is already counted: the predator's kill
+                // was nature's own.
                 let (mx, mz) = (m.pos.x.floor() as i32, m.pos.z.floor() as i32);
                 self.server
                     .world

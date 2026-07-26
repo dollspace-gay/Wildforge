@@ -148,6 +148,21 @@ fn herds_lean_homeward() {
     let mut w = test_world_with("herd", reg.clone());
     let h = w.surface_height(8, 8);
     pad(&mut w, &reg, 0, 31, 0, 31, h);
+    // A walled arena in tended country: the trio can't scatter off
+    // the pad, so what the measurement sees is the pull, not luck.
+    let stone = b(&reg, "base:stone");
+    for x in 0..=31 {
+        for z in 0..=31 {
+            if x == 0 || x == 31 || z == 0 || z == 31 {
+                w.set_block(x, h + 1, z, stone);
+            }
+        }
+    }
+    for cx in -1..=1 {
+        for cz in -1..=1 {
+            w.player_touched.insert((cx, cz));
+        }
+    }
     let si = reg.animal_id("base:deer").unwrap();
     for x in [3.5f32, 15.5, 27.5] {
         let mut m = crate::mobs::Mob::new(si, glam::Vec3::new(x, h as f32 + 1.0, 15.5), 0.0);
@@ -170,7 +185,7 @@ fn herds_lean_homeward() {
     };
     let before = spread(&w);
     let mut rng = 2024u32;
-    for _ in 0..2400 {
+    for _ in 0..4800 {
         w.tick_mobs(&[], 1.0, 0.05, &mut rng);
     }
     let after = spread(&w);
@@ -267,4 +282,214 @@ fn the_heap_ripens_into_compost() {
     assert!(w.compost_take(rx, ry, rz), "the crumb comes out");
     assert_eq!(w.get_block(rx, ry, rz), heap);
     assert_eq!(w.get_meta(rx, ry, rz), 0, "fresh and empty again");
+}
+
+fn ctx(pos: glam::Vec3) -> crate::server::PlayerCtx {
+    crate::server::PlayerCtx {
+        id: 0,
+        pos,
+        spawn: glam::Vec3::ZERO,
+        attackable: true,
+        aggro_mod: 0.0,
+    }
+}
+
+fn beast(reg: &Registry, name: &str, at: glam::Vec3) -> crate::mobs::Mob {
+    let si = reg.animal_id(name).expect("species exists");
+    let mut m = crate::mobs::Mob::new(si, at, 0.0);
+    m.health = reg.animals[si].health;
+    m
+}
+
+#[test]
+fn the_fox_hunts_the_rabbit_and_leaves_a_carcass() {
+    let reg = base_reg();
+    let mut w = test_world_with("foxhunt", reg.clone());
+    let h = w.surface_height(8, 8);
+    pad(&mut w, &reg, 0, 20, 0, 20, h);
+    let mut fox = beast(&reg, "base:fox", glam::Vec3::new(6.5, h as f32 + 1.0, 8.5));
+    fox.belly = -1.0;
+    w.spawn_mob(fox);
+    w.spawn_mob(beast(
+        &reg,
+        "base:rabbit",
+        glam::Vec3::new(12.5, h as f32 + 1.0, 8.5),
+    ));
+    let ire_before = w.ire;
+    let carcass_si = reg.animal_id("base:carcass").unwrap();
+    let mut rng = 11u32;
+    let mut fed = false;
+    for _ in 0..4000 {
+        w.tick_mobs(&[], 1.0, 0.05, &mut rng);
+        if w.mobs().iter().any(|m| m.species == carcass_si) {
+            fed = true;
+            break;
+        }
+    }
+    assert!(fed, "the fox made its kill and the kill left a carcass");
+    assert_eq!(w.ire, ire_before, "predation moves the meter not at all");
+}
+
+#[test]
+fn the_polar_bear_needs_no_reason() {
+    let reg = base_reg();
+    let mut w = test_world_with("bear", reg.clone());
+    let h = w.surface_height(8, 8);
+    pad(&mut w, &reg, 0, 24, 0, 24, h);
+    let bear_si = reg.animal_id("base:polar_bear").unwrap();
+    w.spawn_mob(beast(
+        &reg,
+        "base:polar_bear",
+        glam::Vec3::new(8.5, h as f32 + 1.0, 8.5),
+    ));
+    let player = glam::Vec3::new(18.5, h as f32 + 1.0, 8.5);
+    // High noon, full health, nothing provoked: it simply comes.
+    let mut rng = 13u32;
+    let mut mauled = false;
+    for _ in 0..3000 {
+        let evs = w.tick_mobs(&[ctx(player)], 1.0, 0.05, &mut rng);
+        if evs
+            .iter()
+            .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer(0, d, _) if *d >= 6.0))
+        {
+            mauled = true;
+            break;
+        }
+    }
+    assert!(
+        mauled,
+        "the polar bear charged an unprovoked player at noon"
+    );
+    // And it is wildlife, not warden: daylight never dissolves it.
+    assert!(
+        w.mobs().iter().any(|m| m.species == bear_si),
+        "the bear persists in full daylight"
+    );
+}
+
+#[test]
+fn the_desperate_winter_wolf_sizes_you_up_and_breaks_off() {
+    let reg = base_reg();
+    let mut w = test_world_with("wolf", reg.clone());
+    w.day = 3 * crate::world::SEASON_DAYS; // deep winter
+    let h = w.surface_height(8, 8);
+    pad(&mut w, &reg, 0, 20, 0, 20, h);
+    let wolf_si = reg.animal_id("base:wolf").unwrap();
+    let mut wolf = beast(&reg, "base:wolf", glam::Vec3::new(6.5, h as f32 + 1.0, 8.5));
+    wolf.belly = -999.0; // long past empty
+    w.spawn_mob(wolf);
+    let player = glam::Vec3::new(13.5, h as f32 + 1.0, 8.5);
+    let mut rng = 17u32;
+    let mut bitten = false;
+    for _ in 0..3000 {
+        let evs = w.tick_mobs(&[ctx(player)], 0.1, 0.05, &mut rng);
+        if evs
+            .iter()
+            .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer(0, _, _)))
+        {
+            bitten = true;
+            break;
+        }
+    }
+    assert!(
+        bitten,
+        "a desperate wolf on a winter night tries the player"
+    );
+    // Wounded, it breaks off: hungry, not suicidal.
+    let def = reg.animals[wolf_si].clone();
+    let wolf = w
+        .mobs_mut()
+        .iter_mut()
+        .find(|m| m.species == wolf_si)
+        .expect("the wolf");
+    wolf.hurt(&def, 4.0, player);
+    assert_eq!(
+        wolf.state,
+        crate::mobs::MobState::Flee,
+        "a wounded wolf remembers it has options"
+    );
+    // A sated wolf on a summer day has no interest at all.
+    let mut w2 = test_world_with("wolf-sated", reg.clone());
+    let h2 = w2.surface_height(8, 8);
+    pad(&mut w2, &reg, 0, 20, 0, 20, h2);
+    let mut calm = beast(
+        &reg,
+        "base:wolf",
+        glam::Vec3::new(6.5, h2 as f32 + 1.0, 8.5),
+    );
+    calm.belly = 9999.0;
+    w2.spawn_mob(calm);
+    let player2 = glam::Vec3::new(13.5, h2 as f32 + 1.0, 8.5);
+    let mut rng2 = 19u32;
+    for _ in 0..1200 {
+        let evs = w2.tick_mobs(&[ctx(player2)], 1.0, 0.05, &mut rng2);
+        assert!(
+            !evs.iter()
+                .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer(0, _, _))),
+            "a sated summer wolf ignores everyone"
+        );
+    }
+}
+
+#[test]
+fn the_vulture_beats_the_clock_and_rot_feeds_the_field() {
+    let reg = base_reg();
+    let mut w = test_world_with("vulture", reg.clone());
+    let h = w.surface_height(8, 8);
+    pad(&mut w, &reg, 0, 20, 0, 20, h);
+    let carcass_si = reg.animal_id("base:carcass").unwrap();
+    let mut c = beast(
+        &reg,
+        "base:carcass",
+        glam::Vec3::new(10.5, h as f32 + 1.0, 10.5),
+    );
+    c.rot = 9999.0; // the bird must beat a clock that hasn't run out
+    w.spawn_mob(c);
+    let mut v = beast(
+        &reg,
+        "base:vulture",
+        glam::Vec3::new(14.5, h as f32 + 3.0, 10.5),
+    );
+    v.belly = -1.0;
+    w.spawn_mob(v);
+    let mut rng = 23u32;
+    let mut cleaned = false;
+    for _ in 0..4000 {
+        w.tick_mobs(&[], 1.0, 0.05, &mut rng);
+        if !w.mobs().iter().any(|m| m.species == carcass_si) {
+            cleaned = true;
+            break;
+        }
+    }
+    assert!(cleaned, "the vulture found the carcass and left nothing");
+    // Untouched rot pays the soil below instead.
+    let mut w2 = test_world_with("rot", reg.clone());
+    let h2 = w2.surface_height(8, 8);
+    let farm = b(&reg, "base:farmland");
+    w2.set_block_meta(8, h2, 8, farm, soil::soil_meta(10, 0));
+    for dy in 1..4 {
+        if w2.get_block(8, h2 + dy, 8) != AIR {
+            w2.set_block(8, h2 + dy, 8, AIR);
+        }
+    }
+    let mut c2 = beast(
+        &reg,
+        "base:carcass",
+        glam::Vec3::new(8.5, h2 as f32 + 1.0, 8.5),
+    );
+    c2.rot = 0.5;
+    w2.spawn_mob(c2);
+    let mut rng2 = 29u32;
+    for _ in 0..40 {
+        w2.tick_mobs(&[], 1.0, 0.05, &mut rng2);
+    }
+    assert!(
+        !w2.mobs().iter().any(|m| m.species == carcass_si),
+        "the ground took the rest"
+    );
+    assert_eq!(
+        soil::fert_of(w2.get_meta(8, h2, 8)),
+        18,
+        "and the field is richer for it"
+    );
 }

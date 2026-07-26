@@ -169,6 +169,55 @@ impl World {
                 e.1 += 1.0;
             }
         }
+        // The trophic pre-pass: hungry predators pick their quarry,
+        // desperation is graded (deep hunger plus night or winter),
+        // and prey with a stalker on top of it bolts.
+        let winter = self.season() == 3;
+        let night = daylight < 0.35;
+        let snapshot: Vec<(u32, usize, glam::Vec3)> =
+            self.mobs.iter().map(|m| (m.id, m.species, m.pos)).collect();
+        let mut spooked: Vec<(u32, glam::Vec3)> = Vec::new();
+        for m in &mut self.mobs {
+            let Some(d) = reg.animals.get(m.species) else {
+                continue;
+            };
+            m.bold = !d.hostile
+                && !d.fierce
+                && !d.prey.is_empty()
+                && d.attack > 0.0
+                && m.belly < crate::mobs::BELLY_DESPERATE
+                && (winter || night);
+            if d.prey.is_empty() || d.belly_secs <= 0.0 || m.belly > 0.0 || m.growth < 1.0 {
+                m.quarry = None;
+                continue;
+            }
+            let mut best: Option<(u32, glam::Vec3, f32)> = None;
+            for &(id, sp, pos) in &snapshot {
+                if id == m.id || !d.prey.contains(&sp) {
+                    continue;
+                }
+                let dist = (pos - m.pos).length();
+                if dist < crate::mobs::HUNT_RANGE && best.is_none_or(|(_, _, bd)| dist < bd) {
+                    best = Some((id, pos, dist));
+                }
+            }
+            m.quarry = best.map(|(id, pos, _)| (id, pos));
+            if m.state == crate::mobs::MobState::Stalk
+                && let Some((id, _, dist)) = best
+                && dist < 7.0
+            {
+                spooked.push((id, m.pos));
+            }
+        }
+        for (id, from) in spooked {
+            if let Some(p) = self.mob_by_id_mut(id)
+                && p.state != crate::mobs::MobState::Flee
+            {
+                p.state = crate::mobs::MobState::Flee;
+                p.state_timer = 4.0;
+                p.target = from;
+            }
+        }
         let mut mobs = std::mem::take(&mut self.mobs);
         for m in &mut mobs {
             // Frozen until its chunk streams in: an unloaded chunk reads as
@@ -190,6 +239,67 @@ impl World {
                 m.unstick(self, def);
                 m.tick(self, def, players, dt, rng, &mut events);
             }
+        }
+        // The kill lands: the prey leaves a carcass where it fell
+        // (a scavenged carcass just goes — never a carcass's
+        // carcass), and a laden pack spills. Predation moves the
+        // ire meter not at all: the wild's own violence is its own.
+        let killed: Vec<u32> = events
+            .iter()
+            .filter_map(|e| match e {
+                MobEvent::Killed(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
+        events.retain(|e| !matches!(e, MobEvent::Killed(_)));
+        for id in killed {
+            if let Some(i) = mobs.iter().position(|m| m.id == id) {
+                let prey = mobs.swap_remove(i);
+                let at = (
+                    prey.pos.x.floor() as i32,
+                    prey.pos.y.floor() as i32,
+                    prey.pos.z.floor() as i32,
+                );
+                if let Some(cargo) = prey.cargo {
+                    for st in cargo.into_iter().flatten() {
+                        self.push_drop(at, st);
+                    }
+                }
+                let was_carcass = reg
+                    .animals
+                    .get(prey.species)
+                    .is_some_and(|d| d.name.ends_with(":carcass"));
+                if !was_carcass && let Some(ci) = reg.animal_id("base:carcass") {
+                    let mut c = Mob::new(ci, prey.pos, prey.yaw);
+                    c.health = reg.animals[ci].health;
+                    c.rot = crate::mobs::CARCASS_ROT_SECS;
+                    mobs.push(c);
+                }
+            }
+        }
+        // Rot: the ground takes whatever the vultures leave.
+        let mut rotted: Vec<glam::Vec3> = Vec::new();
+        mobs.retain_mut(|m| {
+            if reg
+                .animals
+                .get(m.species)
+                .is_some_and(|d| d.name.ends_with(":carcass"))
+            {
+                m.rot -= dt;
+                if m.rot <= 0.0 {
+                    rotted.push(m.pos);
+                    return false;
+                }
+            }
+            true
+        });
+        for p in rotted {
+            self.feed_soil(
+                p.x.floor() as i32,
+                (p.y - 0.5).floor() as i32,
+                p.z.floor() as i32,
+                8,
+            );
         }
         // Wardens are expressions of the wild, not creatures: they dissolve
         // in daylight (sky-lit cells only — torchlight never banishes them)

@@ -60,6 +60,10 @@ pub struct Agent {
     pub spawn: Vec3,
     pub time_of_day: f32,
     pub in_world: bool,
+    /// Count of PlayerState echoes applied — the click choreography
+    /// sends one click, waits for one echo, and only then trusts the
+    /// inventory mirror for its next decision.
+    pub echoes: u64,
     block_map: Vec<BlockId>,
     item_map: Vec<Option<ItemId>>,
     /// id -> (label, pos, yaw) for every other player on the wire.
@@ -106,6 +110,7 @@ impl Agent {
             spawn: Vec3::ZERO,
             time_of_day: 0.3,
             in_world: false,
+            echoes: 0,
             block_map: Vec::new(),
             item_map: Vec::new(),
             players: HashMap::new(),
@@ -358,7 +363,10 @@ impl Agent {
                     self.event(format!("received {}x {name}", count.max(1) - left));
                 }
             }
-            net::S2C::PlayerState(state) => self.apply_player_state(state, false),
+            net::S2C::PlayerState(state) => {
+                self.echoes += 1;
+                self.apply_player_state(state, false);
+            }
             net::S2C::Toast(t) => self.event(format!("toast: {t}")),
             net::S2C::Chat { from, msg } => self.event(format!("chat <{from}> {msg}")),
             net::S2C::Joined { presence } => {

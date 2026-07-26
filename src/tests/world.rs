@@ -1573,11 +1573,21 @@ fn weather_and_season_touch_the_sim() {
         "no winter litters"
     );
     assert!(w.mob_count() <= before + 2, "no winter births");
-    // Summer: the same pair bears young.
+    // Summer: the same pair bears young. Winter wander drifts them
+    // apart, so stand them back side by side first.
     w.day = crate::world::SEASON_DAYS;
     for m in w.mobs_mut() {
         m.fed = true;
         m.breed_cd = 0.0;
+    }
+    for (moved, m) in w
+        .mobs_mut()
+        .iter_mut()
+        .filter(|m| m.pos.y > 139.0)
+        .enumerate()
+    {
+        m.pos = glam::Vec3::new(4.5 + moved as f32, 140.05, 4.5);
+        m.vel = glam::Vec3::ZERO;
     }
     let before = w.mob_count();
     for _ in 0..120 {

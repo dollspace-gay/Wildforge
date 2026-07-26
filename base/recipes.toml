@@ -1137,3 +1137,8 @@ strikes = 4
 pattern = ["s.s", "pps", "pps"]
 keys = { p = "#base:planks", s = "base:stick" }
 output = "base:compost_heap"
+
+[[smelt]]
+input = "base:raw_bear"
+output = "base:cooked_bear"
+time = 8.0

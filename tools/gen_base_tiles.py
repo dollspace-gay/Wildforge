@@ -572,6 +572,80 @@ def main():
     ready = rock("compost_ready_top", base=(52, 40, 26), dark=(30, 22, 12))
     save_tile(ready, "compost_ready_top")
 
+    # Fang and carrion: predator pelts, faces, and the bear's meat.
+    def face(name, base_c, dark_c, snout=None):
+        img = rock(name, base=base_c, dark=dark_c)
+        d = ImageDraw.Draw(img)
+        for ex in (8, 20):
+            d.rectangle([ex, 11, ex + 3, 14], fill=(26, 22, 16, 255))
+            d.point((ex + 1, 12), fill=(240, 235, 220, 255))
+        if snout:
+            d.rectangle([13, 19, 18, 26], fill=snout + (255,))
+            d.rectangle([14, 23, 17, 26], fill=(32, 26, 20, 255))
+        return img
+
+    pelts = {
+        "fox": ((196, 108, 44), (140, 66, 24), (232, 222, 206)),
+        "wolf": ((136, 136, 142), (88, 88, 96), (108, 106, 110)),
+        "lynx": ((188, 158, 110), (130, 104, 66), (214, 196, 162)),
+        "jackal": ((186, 158, 104), (128, 102, 60), (208, 188, 142)),
+        "eagle": ((96, 72, 48), (62, 44, 28), None),
+        "vulture": ((70, 62, 58), (44, 38, 34), (196, 130, 110)),
+        "polar_bear": ((236, 234, 226), (198, 196, 186), (222, 218, 206)),
+    }
+    for name, (base_c, dark_c, snout) in pelts.items():
+        body = rock(name, base=base_c, dark=dark_c)
+        if name == "lynx":
+            d = ImageDraw.Draw(body)
+            rl = rng_for("lynx_spots")
+            for _ in range(22):
+                x, y = rl.randint(1, 29), rl.randint(1, 29)
+                d.rectangle([x, y, x + 1, y + 1], fill=(96, 74, 44, 255))
+        save_tile(body, name)
+        # The eagle's white head rides its face tile.
+        if name == "eagle":
+            f = rock("eagle_face", base=(226, 222, 210), dark=(188, 184, 170))
+            d = ImageDraw.Draw(f)
+            for ex in (7, 21):
+                d.rectangle([ex, 11, ex + 3, 14], fill=(40, 30, 12, 255))
+                d.point((ex + 1, 12), fill=(250, 220, 120, 255))
+            d.polygon([(13, 19), (18, 19), (15, 27)], fill=(212, 160, 44, 255))
+            save_tile(f, "eagle_face")
+        else:
+            save_tile(face(f"{name}_face", base_c, dark_c, snout), f"{name}_face")
+    # The rattlesnake wears its diamonds.
+    snake = rock("rattlesnake", base=(190, 168, 120), dark=(140, 118, 76))
+    d = ImageDraw.Draw(snake)
+    for cy in range(2, 32, 7):
+        d.polygon(
+            [(16, cy), (21, cy + 3), (16, cy + 6), (11, cy + 3)],
+            outline=(96, 74, 40, 255),
+            fill=(150, 120, 70, 255),
+        )
+    save_tile(snake, "rattlesnake")
+    sf = rock("rattlesnake_face", base=(190, 168, 120), dark=(140, 118, 76))
+    d = ImageDraw.Draw(sf)
+    for ex in (8, 20):
+        d.rectangle([ex, 12, ex + 3, 15], fill=(180, 140, 30, 255))
+        d.line([(ex + 1, 12), (ex + 1, 15)], fill=(20, 16, 10, 255))
+    save_tile(sf, "rattlesnake_face")
+    # The carcass: hide gone still, opened dark red.
+    car = rock("carcass", base=(122, 92, 58), dark=(84, 60, 36))
+    d = ImageDraw.Draw(car)
+    d.ellipse([8, 10, 26, 24], fill=(128, 42, 34, 255), outline=(84, 26, 20, 255))
+    d.ellipse([13, 13, 21, 20], fill=(96, 30, 24, 255))
+    save_tile(car, "carcass")
+    # Bear meat, raw and cooked.
+    for nm, fill_c, edge_c in [
+        ("raw_bear", (196, 74, 66), (140, 44, 40)),
+        ("cooked_bear", (140, 88, 52), (96, 56, 30)),
+    ]:
+        img = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle([6, 9, 26, 24], radius=6, fill=fill_c + (255,), outline=edge_c + (255,))
+        d.rounded_rectangle([10, 13, 18, 18], radius=3, fill=edge_c + (255,))
+        save_tile(img, nm)
+
     print(f"wrote {len(list(OUT.glob('*.png')))} tiles to {OUT}")
 
 

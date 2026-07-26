@@ -186,6 +186,8 @@ impl Server {
                     events.push(SimEvent::BoltCast);
                 }
                 MobEvent::Bred => events.push(SimEvent::Bred),
+                // Kills are settled inside tick_mobs; none escape.
+                MobEvent::Killed(_) => {}
                 MobEvent::Ate(pos) => self.world.apply_bite(pos),
                 MobEvent::Dung(at) => {
                     if let Some(dung) = self.world.reg.item_id("base:dung") {

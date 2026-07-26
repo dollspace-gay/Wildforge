@@ -26,6 +26,18 @@ impl Agent {
         }
     }
 
+    /// State the stance RELIABLY before an edit: position and held
+    /// slot normally ride lossy datagrams, and a dropped hotbar
+    /// update makes the host refuse a Place it should love.
+    fn anchor_stance(&mut self) {
+        self.send(&C2S::Move {
+            pos: self.player.pos,
+            yaw: self.yaw,
+            hotbar: self.hotbar as u8,
+            sprint: false,
+        });
+    }
+
     /// Find the item anywhere in the pack and get it into the held
     /// hotbar slot (the click protocol does the moving; the host's
     /// PlayerState echo confirms every step).
@@ -51,12 +63,7 @@ impl Agent {
             (InventoryArea::Inventory, dst),
             (InventoryArea::Inventory, src),
         ] {
-            self.send(&C2S::InventoryClick {
-                area,
-                slot: slot as u8,
-                right: false,
-            });
-            self.pump_for(0.12);
+            self.click(area, slot);
             if self.cursor.is_none() && slot == dst {
                 break; // nothing displaced: two clicks did it
             }
@@ -75,6 +82,7 @@ impl Agent {
             return Err("nothing there".into());
         }
         self.face(x, z);
+        self.anchor_stance();
         self.send(&C2S::Break { x, y, z });
         // Triple-size echo budget: parallel test load can starve the
         // host pump well past a polite wait (green runs exit early).
@@ -150,17 +158,54 @@ impl Agent {
             return Err("out of reach".into());
         }
         self.select(item)?;
+        // Echo-honest: the inventory mirror lags the host's truth
+        // under load, and a Place sent while the hand still holds
+        // last turn's planks PLACES THE PLANKS. Wait until the echo
+        // proves the held slot — and retry the shuffle once if the
+        // clicks acted on a stale view.
+        let want_item = self.reg.item_id(item);
+        let mut proven = false;
+        for attempt in 0..2 {
+            for _ in 0..60 {
+                if self.inventory.slots[self.hotbar].map(|s| s.item) == want_item {
+                    proven = true;
+                    break;
+                }
+                self.pump_for(0.05);
+            }
+            if proven {
+                break;
+            }
+            if attempt == 0 {
+                self.select(item)?;
+            }
+        }
+        if !proven {
+            return Err(format!("the hand never settled on {item}"));
+        }
         self.pump_for(0.1);
         let before = self.world.get_block(x, y, z);
         if before != registry::AIR {
             return Err("that cell is occupied".into());
         }
         self.face(x, z);
+        self.anchor_stance();
         self.send(&C2S::Place { x, y, z });
+        // Wait for the cell to become what we placed — "changed" is
+        // not enough: weather can drop a snow layer into the target
+        // cell first, and that must read as a refusal, not success.
+        let want = self.reg.item_id(item).and_then(|i| self.reg.item(i).places);
         for _ in 0..90 {
             self.pump_for(0.05);
-            if self.world.get_block(x, y, z) != before {
+            let now = self.world.get_block(x, y, z);
+            if Some(now) == want {
                 return Ok(());
+            }
+            if now != before && now != registry::AIR {
+                return Err(format!(
+                    "something else landed in that cell first ({})",
+                    self.reg.block(now).name
+                ));
             }
         }
         Err("the host didn't allow that placement".into())
@@ -187,22 +232,34 @@ impl Agent {
 
     // ---- crafting (the click protocol, choreographed) ----
 
-    fn click(&mut self, area: InventoryArea, slot: usize) {
+    /// One click, one echo: the host answers every InventoryClick
+    /// with a PlayerState, and no later decision is safe until the
+    /// answer lands. Lock-step beats optimism at any load.
+    fn click_confirmed(&mut self, area: InventoryArea, slot: usize, right: bool) {
+        let seen = self.echoes;
         self.send(&C2S::InventoryClick {
             area,
             slot: slot as u8,
-            right: false,
+            right,
         });
-        self.pump_for(0.1);
+        for _ in 0..125 {
+            self.pump_for(0.02);
+            if self.echoes > seen {
+                // One extra beat: pace the click rate under the
+                // host's command budget even when echoes fly.
+                self.pump_for(0.02);
+                return;
+            }
+        }
+        self.event("a click went unanswered; the pack may sit odd".into());
+    }
+
+    fn click(&mut self, area: InventoryArea, slot: usize) {
+        self.click_confirmed(area, slot, false);
     }
 
     fn click_one(&mut self, area: InventoryArea, slot: usize) {
-        self.send(&C2S::InventoryClick {
-            area,
-            slot: slot as u8,
-            right: true,
-        });
-        self.pump_for(0.1);
+        self.click_confirmed(area, slot, true);
     }
 
     fn stash_cursor(&mut self) {

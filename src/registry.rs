@@ -249,6 +249,11 @@ pub struct AnimalDef {
     pub belly_secs: f32,
     /// Eats plants when hungry: grass, growing crops, fruited bushes.
     pub grazes: bool,
+    /// Species this animal hunts when hungry (resolved indices).
+    pub prey: Vec<usize>,
+    /// Hunts players on sight, fed or not. The polar bear needs no
+    /// reason. (Wildlife, not warden: persists, ignores daylight.)
+    pub fierce: bool,
 }
 
 /// A recipe slot requirement: one exact item, or any member of a tag.
@@ -870,6 +875,10 @@ struct AnimalToml {
     belly: Option<f32>,
     #[serde(default)]
     grazes: bool,
+    #[serde(default)]
+    prey: Vec<String>,
+    #[serde(default)]
+    fierce: bool,
     #[serde(default)]
     vehicle: bool,
 }
@@ -1991,7 +2000,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             reg.fuels.push((ing, f.burn, f.speed.unwrap_or(1.0)));
         }
     }
+    let mut pending_prey: Vec<(usize, String, Vec<String>)> = Vec::new();
     for (modid, a, tile, head_tile, box_tiles, proj_tile) in pending_animals {
+        if !a.prey.is_empty() {
+            pending_prey.push((reg.animals.len(), modid.clone(), a.prey.clone()));
+        }
         let full = qualify(&modid, &a.id);
         if reg.animals.iter().any(|x| x.name == full) {
             continue; // duplicate id — first wins, like blocks/items
@@ -2077,6 +2090,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             vehicle: a.vehicle,
             belly_secs: a.belly.unwrap_or(0.0).max(0.0),
             grazes: a.grazes,
+            prey: Vec::new(), // resolved after every species exists
+            fierce: a.fierce,
             projectile: a.projectile.as_ref().map(|pr| ProjectileDef {
                 tile: proj_tile.unwrap_or(crate::atlas::UNKNOWN_SLOT),
                 damage: pr.damage,
@@ -2084,6 +2099,18 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 cooldown: pr.cooldown.unwrap_or(2.0),
             }),
         });
+    }
+    // Prey lists resolve after the whole roster exists (a fox may be
+    // declared before the rabbit it hunts).
+    for (hunter, modid, names) in pending_prey {
+        let ids: Vec<usize> = names
+            .iter()
+            .filter_map(|n| {
+                let q = qualify(&modid, n);
+                reg.animal_id(&q).or_else(|| reg.animal_id(n))
+            })
+            .collect();
+        reg.animals[hunter].prey = ids;
     }
     for (modid, block, h) in pending_harvests {
         let becomes = reg
