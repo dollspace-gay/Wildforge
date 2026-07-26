@@ -48,11 +48,16 @@ Notes vs. this spec, where the implementation knew better:
   know which hearts a player will kill, so ruins are twice as
   common in barren country (badlands, scrubland, tundra, desert)
   — the look of ground that stopped giving.
-- **Not shipped, recorded honestly**: the multiplayer question
-  below is still open (any player may cut any heart, with only the
-  long sickening as warning); the drift changes what LIVES in a
-  country, not its terrain blocks; and a masterless warden is the
-  existing roster with a flag, not new behaviour.
+- **The multiplayer weight is DELIBERATE** (settled with
+  dollspace): any player may cut any shared country's heart, with
+  only the long sickening as warning, and that is the point. The
+  wild supplies a stake big enough that the only defence is a
+  society with rules and someone to enforce them. The game has no
+  mechanism to stop you; it has neighbours who will notice. See
+  the closing note.
+- **Not shipped, recorded honestly**: the drift changes what LIVES
+  in a country, not its terrain blocks; and a masterless warden is
+  the existing roster with a flag, not new behaviour.
 
 Drafted 2026-07-26. Decisions settled with dollspace: the wild's
 resistance gets a body. Every region has a spirit living in a
@@ -325,3 +330,23 @@ The arc's guard, restated once: the wild never breaks your walls.
 It stops feeding you, and the door back is always open — long,
 expensive, and open. The takers had that door too. They kept
 walking the other way.
+
+## On the shared axe (settled 2026-07-26)
+
+On a server, anyone may walk to a country's heart and cut it, and
+the game will not stop them. There is no claim system, no consent
+prompt, no permission bit — only the long, visible sickening if
+they do it slowly, and nothing at all if they do it with an axe.
+
+This is deliberate. A world where one hand can end a region's
+fertility for everyone is a world with something worth governing.
+The wild supplies a stake large enough that the answer has to be
+social: rules a settlement agrees on, someone trusted to watch the
+heart, consequences for the person who went out there anyway. That
+is a better thing to have built than a permission system, and it
+is the same reason nothing else in this game is claim-protected.
+
+The restoration path is what keeps it from being grief without
+recourse: a cut heart is a season of hard, expensive work away
+from living again, and the work is something a group can do
+together. The punishment for a bad neighbour is a public project.
