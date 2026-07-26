@@ -1040,3 +1040,57 @@ texture = "cerium.png"
 id = "magnet"
 name = "Magnet"
 texture = "magnet.png"
+
+[[item]]
+id = "dung"
+name = "Dung"
+texture = "dung.png"
+
+[[item]]
+id = "compost"
+name = "Compost"
+texture = "compost.png"
+
+[[item]]
+id = "raw_bear"
+name = "Raw Bear"
+texture = "raw_bear.png"
+food = { hunger = 3, eat_time = 1.8, nutrition = { protein = 8 } }
+durability = 900
+
+[[item]]
+id = "cooked_bear"
+name = "Cooked Bear"
+texture = "cooked_bear.png"
+food = { hunger = 7, eat_time = 1.8, nutrition = { protein = 13 } }
+durability = 1800
+
+[[item]]
+id = "raw_fish"
+name = "Raw Fish"
+texture = "raw_fish.png"
+food = { hunger = 2, eat_time = 1.4, nutrition = { protein = 5 } }
+durability = 700
+
+[[item]]
+id = "cooked_fish"
+name = "Cooked Fish"
+texture = "cooked_fish.png"
+food = { hunger = 5, eat_time = 1.4, nutrition = { protein = 10 } }
+durability = 1600
+
+[[item]]
+id = "fishing_rod"
+name = "Fishing Rod"
+texture = "fishing_rod.png"
+durability = 64
+
+[[item]]
+id = "kelp"
+name = "Kelp"
+texture = "kelp_item.png"
+
+[[item]]
+id = "guano"
+name = "Guano"
+texture = "guano.png"

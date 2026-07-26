@@ -28,6 +28,7 @@ mod power;
 mod storage;
 
 pub use machines::{station_powered, worked_table_for};
+pub mod soil;
 mod substrate;
 mod ticks;
 
@@ -326,6 +327,8 @@ pub struct World {
     /// Chunks a player's hands have edited (placed or broken blocks):
     /// the green tide never seeds ground people made their own.
     pub(crate) player_touched: HashSet<(i32, i32)>,
+    /// Bloom ledger: days of post-wrath eruption left per 256-cell.
+    pub(crate) bloom: HashMap<(i32, i32), f32>,
     /// Absolute sim-time in seconds (day * DAY_LENGTH + time-of-day),
     /// mirrored from the Server every tick so chunk load and random
     /// ticks share one clock.
@@ -511,7 +514,7 @@ impl Weather {
 }
 
 /// Hard cap on living mobs — memory/perf backstop, far above natural density.
-pub const MOB_CAP: usize = 200;
+pub const MOB_CAP: usize = 320;
 
 impl World {
     /// Position in the lunar cycle, 0..1 (0 = new moon, 0.5 = full moon). A
@@ -559,6 +562,7 @@ impl World {
             whispers: Vec::new(),
             blessed_streak: HashMap::new(),
             player_touched: HashSet::new(),
+            bloom: HashMap::new(),
             mobs: Vec::new(),
             projectiles: Vec::new(),
             hostile_spawn_timer: 0.0,

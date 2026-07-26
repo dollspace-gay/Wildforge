@@ -579,8 +579,8 @@ fn base_animals_and_weapons_register() {
             .iter()
             .filter(|a| !a.hostile && !a.vehicle)
             .count(),
-        7,
-        "seven wildlife species"
+        35,
+        "the full roster: wildlife, hunters, water, herds, the carcass"
     );
     assert_eq!(
         reg.animals.iter().filter(|a| a.hostile).count(),
@@ -1148,11 +1148,16 @@ fn content_graph_is_complete_and_obtainable() {
         "taiga",
         "arctic",
         "mountains",
+        "tundra",
+        "savanna",
+        "badlands",
+        "swamp",
+        "underground",
     ];
     for a in &reg.animals {
         assert!(!a.model.is_empty(), "animal {} has no model", a.name);
         assert!(a.health > 0.0, "animal {} has no health", a.name);
-        if !a.hostile && !a.vehicle {
+        if !a.hostile && !a.vehicle && a.rarity != u32::MAX {
             assert!(
                 !a.biomes.is_empty() && a.biomes.iter().all(|b| biomes.contains(&b.as_str())),
                 "animal {} has invalid biomes {:?}",
@@ -1269,6 +1274,39 @@ fn content_graph_is_complete_and_obtainable() {
                 .any(|(i, d)| d.food.is_some() && d.durability > 0 && ok.contains(&(i as u16)))
         {
             ok.insert(m.0);
+            grew = true;
+        }
+        // Dung: any grazing species digests its meals into it - a
+        // code path (MobEvent::Dung), like the smoker. Guano is the
+        // bats' variety, gathered under a roost.
+        if let Some(d) = reg.item_id("base:dung")
+            && !ok.contains(&d.0)
+            && reg.animals.iter().any(|a| a.grazes && a.belly_secs > 0.0)
+        {
+            ok.insert(d.0);
+            grew = true;
+        }
+        if let Some(g) = reg.item_id("base:guano")
+            && !ok.contains(&g.0)
+            && reg
+                .animals
+                .iter()
+                .any(|a| a.name.ends_with(":bat") && a.belly_secs > 0.0)
+        {
+            ok.insert(g.0);
+            grew = true;
+        }
+        // Compost: a heap of greens cooks down - a code path
+        // (compost_fill/random tick), fed by anything compostable.
+        if let (Some(c), Some(_)) = (
+            reg.item_id("base:compost"),
+            reg.block_id("base:compost_heap"),
+        ) && !ok.contains(&c.0)
+            && reg.items.iter().enumerate().any(|(i, d)| {
+                crate::world::soil::compost_value(&d.name) > 0 && ok.contains(&(i as u16))
+            })
+        {
+            ok.insert(c.0);
             grew = true;
         }
         // The separator: mixed rare-earth powder splits into

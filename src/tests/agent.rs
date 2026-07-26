@@ -33,6 +33,13 @@ impl TestHost {
                 {
                     let mut g = s2.lock().unwrap();
                     let (sess, sim) = &mut *g;
+                    // A deterministic stage: under parallel load these
+                    // tests run long enough for weather to roll in
+                    // (settling snow eats block placements) and for
+                    // seeded wildlife to wander into placement cells.
+                    // The agent tests exercise the wire, not the wild.
+                    sim.world.weather = crate::world::Weather::Clear;
+                    sim.world.replace_mobs(Vec::new());
                     sess.pump(sim, None, 0.02);
                     let players = sess.player_ctxs(None);
                     let mut evs = Vec::new();
@@ -68,31 +75,36 @@ impl Drop for TestHost {
     }
 }
 
-/// A grass platform under the agent: a small pad plus straight
-/// strips east and south (keeps the BlockSet broadcast modest).
+/// A sealed grass stage under the agent: rectangular floor, deep
+/// overhead clearing, and a stone rim two high — because on a live
+/// world the hazards are patient (water creeps in at floor level,
+/// sand falls from above) and a slow parallel run gives them time.
 fn platform(host: &TestHost, pos: glam::Vec3, reach: i32) {
     host.with(|_, sim| {
         let reg = sim.world.reg.clone();
         let grass = reg.block_id("base:grass").unwrap();
+        let stone = reg.block_id("base:stone").unwrap();
         let (px, py, pz) = (pos.x as i32, pos.y as i32, pos.z as i32);
-        let mut pave = |x: i32, z: i32| {
-            sim.world.set_block(x, py - 1, z, grass);
-            for dy in 0..3 {
-                if sim.world.get_block(x, py + dy, z) != AIR {
-                    sim.world.set_block(x, py + dy, z, AIR);
+        let (x0, x1) = (px - 4, px + reach + 4);
+        let (z0, z1) = (pz - 4, pz + reach + 4);
+        for x in x0..=x1 {
+            for z in z0..=z1 {
+                let rim = x == x0 || x == x1 || z == z0 || z == z1;
+                sim.world.set_block(x, py - 1, z, grass);
+                for dy in 0..10 {
+                    let want = if rim && dy < 2 { stone } else { AIR };
+                    if sim.world.get_block(x, py + dy, z) != want {
+                        sim.world.set_block(x, py + dy, z, want);
+                    }
                 }
             }
-        };
-        for dx in -3..=3 {
-            for dz in -3..=3 {
-                pave(px + dx, pz + dz);
-            }
         }
-        for d in 0..=reach {
-            for w in -2..=2i32 {
-                pave(px + d, pz + w);
-                pave(px + reach, pz + w.max(0) + d.min(reach));
-                pave(px + d.min(reach), pz + reach);
+        // Tended country: the green tide plants saplings on wild
+        // grass near trees, and a sapling in a placement cell reads
+        // as the host refusing an edit. A stage is not wilderness.
+        for cx in (x0 >> 4) - 1..=(x1 >> 4) + 1 {
+            for cz in (z0 >> 4) - 1..=(z1 >> 4) + 1 {
+                sim.world.player_touched.insert((cx, cz));
             }
         }
     });
@@ -269,16 +281,19 @@ fn the_agent_crafts_places_and_deposits() {
     assert!(planks >= 12, "3 crafts x 4 planks ({planks})");
     let (px, py, pz) = crate::agent::cell_of(a.player.pos);
     a.craft("crafting_table", 1).expect("table crafts");
-    a.place(px + 1, py, pz, "base:crafting_table")
+    // Two cells out: the host (rightly) refuses placement into any
+    // cell the placer's own body overlaps, and physics can settle an
+    // agent right on a cell boundary.
+    a.place(px + 2, py, pz, "base:crafting_table")
         .expect("table places");
     a.craft("chest", 1).expect("a chest by the table");
-    a.place(px - 1, py, pz, "base:chest").expect("chest places");
+    a.place(px - 2, py, pz, "base:chest").expect("chest places");
     let report = a
-        .deposit(px - 1, py, pz, None)
+        .deposit(px - 2, py, pz, None)
         .expect("the pack empties into it");
     assert!(report.contains("stowed"), "{report}");
     // The host's chest — the authoritative one — holds the goods.
-    let held: u32 = host.with(|_, sim| match sim.world.block_entity(&(px - 1, py, pz)) {
+    let held: u32 = host.with(|_, sim| match sim.world.block_entity(&(px - 2, py, pz)) {
         Some(crate::world::BlockEntity::Chest(c)) => {
             c.slots.iter().flatten().map(|s| s.count).sum()
         }

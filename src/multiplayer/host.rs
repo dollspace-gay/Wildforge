@@ -124,6 +124,9 @@ pub struct HostSession {
     state_timer: f32,
     container_timer: f32,
     perish_timer: f32,
+    /// How long everyone-asleep has held: the dawn waits a breath so
+    /// a sleep vote withdrawn in flight still counts as withdrawn.
+    sleep_settle: f32,
 }
 
 struct AuthenticatedJoin {
@@ -246,6 +249,7 @@ impl HostSession {
             state_timer: 0.0,
             container_timer: 0.0,
             perish_timer: 0.0,
+            sleep_settle: 0.0,
         })
     }
 
@@ -589,12 +593,21 @@ impl HostSession {
         }
 
         // Sleep vote.
+        if !host_sleeping && !self.guests.values().any(|g| g.sleeping) {
+            self.sleep_settle = 0.0;
+        }
         if host_sleeping || self.guests.values().any(|g| g.sleeping) {
             let present = self.guests.len() as u32 + host.is_some() as u32;
             let sleeping =
                 self.guests.values().filter(|g| g.sleeping).count() as u32 + host_sleeping as u32;
             self.net.broadcast(&S2C::Sleep { sleeping, present });
-            if sleeping == present {
+            self.sleep_settle = if sleeping == present {
+                self.sleep_settle + dt
+            } else {
+                0.0
+            };
+            if sleeping == present && self.sleep_settle >= 0.75 {
+                self.sleep_settle = 0.0;
                 let skipped = (1.0 + 0.3 - server.time_of_day) % 1.0;
                 if server.world.tick_ire(skipped) {
                     server.world.accept_offerings();
@@ -1074,7 +1087,11 @@ impl HostSession {
             return;
         };
         if !matches!(&msg, C2S::Move { .. }) {
-            if guest.command_count >= 80 {
+            // The window is SIM time: when the host runs slow, a
+            // second stretches, and an honest busy guest (an agent
+            // mid-craft) must still fit inside it. Abuse is orders
+            // of magnitude past this.
+            if guest.command_count >= 160 {
                 return;
             }
             guest.command_count += 1;

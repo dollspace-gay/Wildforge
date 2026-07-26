@@ -64,6 +64,65 @@ impl World {
         self.charge_cell(x, z, -amt);
     }
 
+    // ---------------- the bloom (wrath as renewal) ----------------
+
+    /// Days of bloom left in a cell: lightning strikes and fallen
+    /// wardens charge it; charged country erupts — the green tide
+    /// runs hot, flowers and fungi sprout, bushes refruit. The titan
+    /// levels the valley and the jungle follows it home.
+    pub fn bloom_at(&self, x: i32, z: i32) -> f32 {
+        self.bloom
+            .get(&Self::ire_cell(x, z))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    pub fn add_bloom(&mut self, x: i32, z: i32, days: f32) {
+        let e = self.bloom.entry(Self::ire_cell(x, z)).or_insert(0.0);
+        *e = (*e + days).min(9.0);
+    }
+
+    /// A hostile fell here: the wild reclaims its own, extravagantly.
+    /// Dryads put up a sapling where they stood.
+    pub fn wild_falls(&mut self, species_name: &str, x: i32, y: i32, z: i32) {
+        self.add_bloom(x, z, 1.0);
+        if species_name.contains("dryad")
+            && self.get_block(x, y, z) == AIR
+            && self
+                .reg
+                .block(self.get_block(x, y - 1, z))
+                .name
+                .contains("grass")
+            && let Some(sap) = self.reg.block_id("base:oak_sapling")
+        {
+            self.set_block(x, y, z, sap);
+        }
+    }
+
+    /// The wild's own hand: a bolt out of an ire storm. Strikes only
+    /// natural, untouched country; chars grass or dirt to max-fertile
+    /// scorch and banks bloom in the cell. Returns the struck cell.
+    pub fn lightning_strike(&mut self, x: i32, z: i32) -> Option<(i32, i32, i32)> {
+        let cp = crate::chunk::ChunkPos::of_world(x, z);
+        // The invariant, absolute: the wild never touches what
+        // players BUILT — a touched chunk is off the target list.
+        if self.player_touched.contains(&(cp.x, cp.z)) {
+            return None;
+        }
+        let y = self.surface_height(x, z);
+        if y <= 2 {
+            return None;
+        }
+        let name = self.reg.block(self.get_block(x, y, z)).name.clone();
+        self.add_bloom(x, z, 3.0);
+        if (name == "base:grass" || name == "base:dirt")
+            && let Some(ch) = self.reg.block_id("base:charred_soil")
+        {
+            self.set_block(x, y, z, ch);
+        }
+        Some((x, y, z))
+    }
+
     pub fn ire_tier(&self) -> usize {
         Self::tier_of(self.ire)
     }
@@ -114,6 +173,11 @@ impl World {
         self.regional_ire.retain(|_, v| {
             *v -= v.signum() * (2.0 * day_frac).min(v.abs());
             v.abs() >= 0.01
+        });
+        // Blooms burn down day by day.
+        self.bloom.retain(|_, v| {
+            *v -= day_frac;
+            *v > 0.0
         });
         self.day_progress += day_frac;
         if self.day_progress >= 1.0 {

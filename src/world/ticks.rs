@@ -16,6 +16,10 @@ impl World {
         let snow_layer = reg.block_id("base:snow_layer");
         let snow_trod = reg.block_id("base:snow_layer_trod");
         let grass_id = reg.block_id("base:grass");
+        let dirt_id = reg.block_id("base:dirt");
+        let heap = reg.block_id("base:compost_heap");
+        let heap_ready = reg.block_id("base:compost_heap_ready");
+        let litter_id = reg.block_id("base:leaf_litter");
         let season = self.season();
         let mut order: Vec<(f64, ChunkPos)> = self
             .chunks
@@ -39,6 +43,13 @@ impl World {
         let mut changes = Vec::new();
         // Evaporated film cells: applied without the crop-ire refund.
         let mut dried: Vec<(i32, i32, i32)> = Vec::new();
+        // Fallow soil recovering (position, gain).
+        let mut fed: Vec<(i32, i32, i32, u8)> = Vec::new();
+        // Plain swaps that earn no plant-ire credit (compost ripening,
+        // fungus creep, settling litter).
+        let mut swaps: Vec<(i32, i32, i32, BlockId)> = Vec::new();
+        // Items shed where a change happened (sapling from rot).
+        let mut drops: Vec<((i32, i32, i32), ItemId)> = Vec::new();
         let mut saplings: Vec<(i32, i32, i32, String, u32)> = Vec::new();
         for (stamp, pos) in order {
             let elapsed = (self.clock - stamp).max(0.0);
@@ -80,9 +91,9 @@ impl World {
                     // greenhouse, emergent from the light rules).
                     let mult = if d.crop_any_soil {
                         let base = if season == 1 || season == 2 { 1.0 } else { 0.0 };
-                        // Blessed country feeds back: bushes refruit
-                        // twice as readily where the land is tended.
-                        if self.regional_ire_at(wx, wz) < -8.0 {
+                        // Blessed country feeds back — and bloomed
+                        // country (post-wrath) erupts the same way.
+                        if self.regional_ire_at(wx, wz) < -8.0 || self.bloom_at(wx, wz) > 0.0 {
                             base * 2.0
                         } else {
                             base
@@ -110,12 +121,180 @@ impl World {
                     } else {
                         mult
                     };
+                    // Fertile loam runs half again over baseline;
+                    // exhausted dust crawls (soil.rs).
+                    let fmult = if d.crop_any_soil {
+                        1.0
+                    } else {
+                        soil::fert_mult(soil::fert_of(self.get_meta(wx, y - 1, wz)))
+                    };
                     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                     if soil_ok
                         && mult > 0.0
-                        && ((*rng >> 8) as f32 / (1 << 24) as f32) < d.crop_chance * mult
+                        && ((*rng >> 8) as f32 / (1 << 24) as f32) < d.crop_chance * mult * fmult
                     {
                         changes.push((wx, y, wz, next));
+                    }
+                    continue;
+                }
+                // Fallow farmland recovers, twice as fast under winter
+                // (or snow) — the off season is the soil's turn.
+                if Some(b) == farmland {
+                    let above = self.get_block(wx, y + 1, wz);
+                    let resting =
+                        above == AIR || Some(above) == snow_layer || Some(above) == snow_trod;
+                    if resting {
+                        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                        if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.5 {
+                            let winterish = season == 3 || Some(above) == snow_layer;
+                            let gain = if winterish {
+                                soil::FERT_FALLOW * 2
+                            } else {
+                                soil::FERT_FALLOW
+                            };
+                            fed.push((wx, y, wz, gain));
+                        }
+                    }
+                    continue;
+                }
+                // A full compost heap turns the next time the world
+                // looks at it — random-tick visits are days apart for
+                // any single cell, so the wait is already real.
+                if Some(b) == heap
+                    && self.get_meta(wx, y, wz) >= soil::COMPOST_FULL
+                    && let Some(ready) = heap_ready
+                {
+                    swaps.push((wx, y, wz, ready));
+                    continue;
+                }
+                // Severed leaves rot: a canopy with no trunk within
+                // reach (BFS through leaves, four steps) sheds its
+                // sapling chance and sometimes drops litter on the
+                // ground below. Felled forests finally fall.
+                if d.name.contains("leaves") {
+                    let mut seen = vec![(wx, y, wz)];
+                    let mut queue = vec![((wx, y, wz), 0u8)];
+                    let mut anchored = false;
+                    'bfs: while let Some(((cx, cy, cz), depth)) = queue.pop() {
+                        for (dx, dy, dz) in [
+                            (1, 0, 0),
+                            (-1, 0, 0),
+                            (0, 1, 0),
+                            (0, -1, 0),
+                            (0, 0, 1),
+                            (0, 0, -1),
+                        ] {
+                            let n = (cx + dx, cy + dy, cz + dz);
+                            let nb = self.get_block(n.0, n.1, n.2);
+                            let name = &reg.block(nb).name;
+                            if name.ends_with("log") {
+                                anchored = true;
+                                break 'bfs;
+                            }
+                            if depth < 4 && name.contains("leaves") && !seen.contains(&n) {
+                                seen.push(n);
+                                queue.push((n, depth + 1));
+                            }
+                        }
+                    }
+                    if !anchored {
+                        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                        let roll = (*rng >> 8) as f32 / (1 << 24) as f32;
+                        if roll < 0.35 {
+                            changes.push((wx, y, wz, AIR));
+                            if let Some((item, chance)) = d.bonus_drop
+                                && roll < 0.35 * chance
+                            {
+                                drops.push(((wx, y, wz), item));
+                            }
+                            // Litter settles on the first floor below.
+                            if roll > 0.12
+                                && let Some(litter) = litter_id
+                                && let Some(fy) = (1..=8)
+                                    .map(|dy| y - dy)
+                                    .find(|&fy| reg.is_solid(self.get_block(wx, fy, wz)))
+                                && self.get_block(wx, fy + 1, wz) == AIR
+                            {
+                                swaps.push((wx, fy + 1, wz, litter));
+                            }
+                        }
+                    }
+                    continue;
+                }
+                // Litter fades into the ground that holds it.
+                if Some(b) == litter_id {
+                    *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                    if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.4 {
+                        changes.push((wx, y, wz, AIR));
+                        fed.push((wx, y - 1, wz, 4));
+                    }
+                    continue;
+                }
+                // Fungi creep where it is dark and damp: mushrooms
+                // spread cell to cell underground or near water, the
+                // lantern fungus glows its way along deep stone.
+                if d.name.contains("mushroom") || d.name.contains("lantern_fungus") {
+                    // No extra odds: any single cell's random-tick
+                    // visits are days apart already — the visit rate
+                    // IS the creep's pace.
+                    *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                    let r1 = *rng;
+                    {
+                        let dx = (r1 % 5) as i32 - 2;
+                        let dz = ((r1 >> 3) % 5) as i32 - 2;
+                        let dy = ((r1 >> 6) % 3) as i32 - 1;
+                        let (tx, ty, tz) = (wx + dx, y + dy, wz + dz);
+                        let (bl, sl) = self.light_at(tx, ty, tz);
+                        let dark = bl < 6 && sl < 6;
+                        let damp = sl == 0
+                            || (-3..=3i32).any(|ax| {
+                                (-2..=2i32).any(|ay| {
+                                    (-3..=3i32).any(|az| {
+                                        reg.is_water(self.get_block(tx + ax, ty + ay, tz + az))
+                                    })
+                                })
+                            });
+                        let crowd = (-2..=2i32)
+                            .flat_map(|ax| {
+                                (-1..=1i32)
+                                    .flat_map(move |ay| (-2..=2i32).map(move |az| (ax, ay, az)))
+                            })
+                            .filter(|&(ax, ay, az)| {
+                                let n = reg
+                                    .block(self.get_block(tx + ax, ty + ay, tz + az))
+                                    .name
+                                    .clone();
+                                n.contains("mushroom") || n.contains("lantern_fungus")
+                            })
+                            .count();
+                        if dark
+                            && damp
+                            && crowd < 3
+                            && self.get_block(tx, ty, tz) == AIR
+                            && reg.is_solid(self.get_block(tx, ty - 1, tz))
+                        {
+                            swaps.push((tx, ty, tz, b));
+                        }
+                    }
+                    continue;
+                }
+                // Bare dirt under the sky heals over beside grass —
+                // the world stops keeping scars nobody meant to leave.
+                if Some(b) == dirt_id
+                    && self.get_block(wx, y + 1, wz) == AIR
+                    && self.light_at(wx, y + 1, wz).1 >= 9
+                {
+                    let near_grass = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|&(dx, dz)| {
+                        (-1..=1)
+                            .any(|dy| Some(self.get_block(wx + dx, y + dy, wz + dz)) == grass_id)
+                    });
+                    if near_grass {
+                        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                        if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.05
+                            && let Some(g) = grass_id
+                        {
+                            changes.push((wx, y, wz, g));
+                        }
                     }
                     continue;
                 }
@@ -124,15 +303,35 @@ impl World {
                 // natural ground (untouched chunks), only where the
                 // forest isn't already thick, and never in winter.
                 let sky_open = self.light_at(wx, y + 1, wz).1 == 15;
+                let blooming = self.bloom_at(wx, wz) > 0.0;
                 if Some(b) == grass_id
                     && season != 3
                     && sky_open
                     && self.get_block(wx, y + 1, wz) == AIR
-                    && self.regional_ire_at(wx, wz) <= 2.0
+                    // A bloom is the wild's OWN doing: it ignores the
+                    // resentment gate (never the built-country one).
+                    && (self.regional_ire_at(wx, wz) <= 2.0 || blooming)
                     && !self.player_touched.contains(&(pos.x, pos.z))
                 {
+                    // Post-wrath country erupts: flowers first.
+                    if blooming {
+                        *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+                        let fr = *rng;
+                        if ((fr >> 8) as f32 / (1 << 24) as f32) < 0.35 {
+                            let flower = if fr.is_multiple_of(2) {
+                                reg.block_id("base:meadow_bloom")
+                            } else {
+                                reg.block_id("base:ember_poppy")
+                            };
+                            if let Some(f) = flower {
+                                swaps.push((wx, y + 1, wz, f));
+                                continue;
+                            }
+                        }
+                    }
                     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
-                    if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.06 {
+                    let tide = if blooming { 0.24 } else { 0.06 };
+                    if ((*rng >> 8) as f32 / (1 << 24) as f32) < tide {
                         // A parent within reach, and room to breathe.
                         let mut parent: Option<BlockId> = None;
                         let mut crowd = 0;
@@ -275,10 +474,33 @@ impl World {
         }
         for (x, y, z, b) in changes {
             // A crop reaching its final stage refunds ire (capped daily).
-            if self.reg.block(b).crop_next.is_none() {
+            let (family, final_stage, any_soil) = {
+                let d = self.reg.block(b);
+                (d.crop_family, d.crop_next.is_none(), d.crop_any_soil)
+            };
+            if final_stage {
                 self.plant_ire_at(x, z, 0.5);
             }
+            // A maturing crop drew its meal from the soil below —
+            // and stamped its family there for the rotation ledger.
+            if final_stage && family != 0 && !any_soil {
+                let sb = self.get_block(x, y - 1, z);
+                if self.reg.block(sb).fert_tiles.is_some() {
+                    let meta = soil::soil_after_harvest(self.get_meta(x, y - 1, z), family);
+                    self.set_block_meta(x, y - 1, z, sb, meta);
+                }
+            }
             self.set_block(x, y, z, b);
+        }
+        for (x, y, z, gain) in fed {
+            self.feed_soil(x, y, z, gain);
+        }
+        for (x, y, z, b) in swaps {
+            self.set_block(x, y, z, b);
+        }
+        for (at, item) in drops {
+            let reg = self.reg.clone();
+            self.push_drop(at, crate::inventory::ItemStack::new(&reg, item, 1));
         }
         for (x, y, z) in dried {
             self.set_block(x, y, z, AIR);
@@ -352,6 +574,7 @@ impl World {
                             || Some(b) == ice
                             || Some(b) == snow_layer
                             || Some(b) == snow_trod
+                            || Some(b) == farmland
                         {
                             interesting.push((
                                 pos.x * CHUNK_X as i32 + lx as i32,
@@ -368,8 +591,29 @@ impl World {
         let mut changes = Vec::new();
         let mut grow: Vec<(i32, i32, i32, u32)> = Vec::new();
         let mut refunds = 0u32;
+        let mut drains: Vec<(i32, i32, i32, u8)> = Vec::new();
+        let mut rested: Vec<(i32, i32, i32, u8)> = Vec::new();
         for (wx, y, wz, b) in interesting {
             let d = reg.block(b);
+            if Some(b) == farmland {
+                // An absent field rests: recovery integrated over the
+                // missed days (winter days restore double), only when
+                // nothing grows on it.
+                let above = self.get_block(wx, y + 1, wz);
+                let resting = above == AIR || Some(above) == snow_layer || Some(above) == snow_trod;
+                if resting {
+                    let weight: f64 = days
+                        .iter()
+                        .map(|&s| if s == 3 { 2.0 } else { 1.0 })
+                        .sum::<f64>();
+                    let e = ticks_per_day * 0.5 * weight * soil::FERT_FALLOW as f64;
+                    let k = poisson(e, &mut r).min(soil::FERT_MAX as u32) as u8;
+                    if k > 0 {
+                        rested.push((wx, y, wz, k));
+                    }
+                }
+                continue;
+            }
             if d.sapling.is_some() {
                 let e = days.len() as f64 * ticks_per_day * 0.02;
                 if poisson(e, &mut r) > 0 {
@@ -422,9 +666,14 @@ impl World {
                     }
                     if cur != b {
                         // Reaching the final stage refunds ire, as a
-                        // live random tick would have.
-                        if reg.block(cur).crop_next.is_none() {
+                        // live random tick would have — and drains the
+                        // soil it grew from, stamping the rotation.
+                        let fd = reg.block(cur);
+                        if fd.crop_next.is_none() {
                             refunds += 1;
+                            if fd.crop_family != 0 && !fd.crop_any_soil {
+                                drains.push((wx, y - 1, wz, fd.crop_family));
+                            }
                         }
                         changes.push((wx, y, wz, cur));
                     }
@@ -487,6 +736,16 @@ impl World {
         for _ in 0..refunds {
             // Reconciled growth credits the chunk's own country.
             self.plant_ire_at(pos.x * 16 + 8, pos.z * 16 + 8, 0.5);
+        }
+        for (x, y, z, family) in drains {
+            let sb = self.get_block(x, y, z);
+            if self.reg.block(sb).fert_tiles.is_some() {
+                let meta = soil::soil_after_harvest(self.get_meta(x, y, z), family);
+                self.set_block_meta(x, y, z, sb, meta);
+            }
+        }
+        for (x, y, z, gain) in rested {
+            self.feed_soil(x, y, z, gain);
         }
         for (x, y, z, rnd) in grow {
             self.try_grow_sapling(x, y, z, rnd);

@@ -79,6 +79,12 @@ pub struct BlockDef {
     /// `light_emit`, so a colored light keeps its intensity; the dimmer
     /// channels fall off sooner, warming/cooling the glow with distance.
     pub light_rgb: [u8; 3],
+    /// Soil: top-face tiles by fertility quartile (dust, poor, normal,
+    /// rich) — the mesher reads the block's meta byte to pick one.
+    pub fert_tiles: Option<[u16; 4]>,
+    /// Crop rotation family (1..=3); 0 = not a crop. Stamped into the
+    /// soil at maturation so monoculture drains harder than rotation.
+    pub crop_family: u8,
 }
 
 /// Resolve a block's per-channel emission from its level and optional color.
@@ -225,6 +231,8 @@ pub struct AnimalDef {
     pub ire_min: f32,
     /// Floaters hover with no gravity (ember/frost wisps).
     pub movement_float: bool,
+    /// Swimmers live inside the water and never leave it willingly.
+    pub movement_swim: bool,
     /// Rendered at full block-light — its own lantern.
     pub emissive: bool,
     /// Point-light color x intensity carried by the creature (client
@@ -239,6 +247,15 @@ pub struct AnimalDef {
     pub carrier: bool,
     /// A rideable vehicle (boats): no breeding, no ire, spawned by item.
     pub vehicle: bool,
+    /// Seconds from a meal to the next hunger (0 = no belly at all).
+    pub belly_secs: f32,
+    /// Eats plants when hungry: grass, growing crops, fruited bushes.
+    pub grazes: bool,
+    /// Species this animal hunts when hungry (resolved indices).
+    pub prey: Vec<usize>,
+    /// Hunts players on sight, fed or not. The polar bear needs no
+    /// reason. (Wildlife, not warden: persists, ignores daylight.)
+    pub fierce: bool,
 }
 
 /// A recipe slot requirement: one exact item, or any member of a tag.
@@ -663,6 +680,9 @@ struct BlockToml {
     /// Sub-voxel octant geometry (2x2x2 occupancy mask in the metadata byte).
     #[serde(default)]
     sub_voxel: bool,
+    /// Four top-face textures by fertility quartile (soil blocks).
+    #[serde(default)]
+    texture_fertility: Option<Vec<String>>,
     /// Counts as glazing: passes sky light and makes greenhouses.
     #[serde(default)]
     glass: bool,
@@ -700,6 +720,9 @@ struct CropToml {
     stage_textures: Vec<String>,
     #[serde(default)]
     any_soil: bool,
+    /// Rotation family 1..=3 (defaults to a stable name hash).
+    #[serde(default)]
+    family: Option<u8>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -850,6 +873,14 @@ struct AnimalToml {
     breed_food: Option<String>,
     #[serde(default)]
     carrier: bool,
+    #[serde(default)]
+    belly: Option<f32>,
+    #[serde(default)]
+    grazes: bool,
+    #[serde(default)]
+    prey: Vec<String>,
+    #[serde(default)]
+    fierce: bool,
     #[serde(default)]
     vehicle: bool,
 }
@@ -1346,6 +1377,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         glass: false,
         light_filter: [true; 3],
         light_rgb: [0, 0, 0],
+        fert_tiles: None,
+        crop_family: 0,
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
     reg.blocks.push(air);
@@ -1458,6 +1491,16 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     [s, s, t, bo, s, s]
                 }
             };
+            let fert_tiles = b.texture_fertility.as_ref().map(|v| {
+                if v.len() != 4 {
+                    errs.push(format!("{full}: texture_fertility wants 4 entries"));
+                }
+                let mut ft = [tiles[2]; 4];
+                for (i, t) in v.iter().take(4).enumerate() {
+                    ft[i] = resolve_tex(t, &raw.info.path, &mut errs);
+                }
+                ft
+            });
             let id = BlockId(reg.blocks.len() as u16);
             let is_fluid = b.water.is_some() || b.lava.is_some();
             reg.blocks.push(BlockDef {
@@ -1497,6 +1540,20 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     .map(|f| [f[0] > 0, f[1] > 0, f[2] > 0])
                     .unwrap_or([true; 3]),
                 light_rgb: resolve_light_rgb(b.light.min(15), b.light_color),
+                fert_tiles,
+                crop_family: b
+                    .crop
+                    .as_ref()
+                    .map(|c| {
+                        c.family.map(|f| f.clamp(1, 3)).unwrap_or_else(|| {
+                            // Stable name-derived family for mods.
+                            let h = full
+                                .bytes()
+                                .fold(0u32, |a, ch| a.wrapping_mul(31).wrapping_add(ch as u32));
+                            (h % 3 + 1) as u8
+                        })
+                    })
+                    .unwrap_or(0),
             });
             reg.block_by_name.insert(full.clone(), id);
             if let Some(bd) = &b.bonus_drop {
@@ -1770,6 +1827,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         glass: false,
         light_filter: [true; 3],
         light_rgb: [0, 0, 0],
+        fert_tiles: None,
+        crop_family: 0,
     });
     reg.block_by_name.insert("base:unknown".into(), unk);
     reg.unknown_block = unk;
@@ -1943,7 +2002,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             reg.fuels.push((ing, f.burn, f.speed.unwrap_or(1.0)));
         }
     }
+    let mut pending_prey: Vec<(usize, String, Vec<String>)> = Vec::new();
     for (modid, a, tile, head_tile, box_tiles, proj_tile) in pending_animals {
+        if !a.prey.is_empty() {
+            pending_prey.push((reg.animals.len(), modid.clone(), a.prey.clone()));
+        }
         let full = qualify(&modid, &a.id);
         if reg.animals.iter().any(|x| x.name == full) {
             continue; // duplicate id — first wins, like blocks/items
@@ -2018,6 +2081,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             aggro_range: a.aggro_range.unwrap_or(12.0),
             ire_min: a.ire_min.unwrap_or(0.0),
             movement_float: a.movement.as_deref() == Some("float"),
+            movement_swim: a.movement.as_deref() == Some("swim"),
             emissive: a.emissive,
             glow: a.glow,
             spawn_light_max: a.spawn_light_max.unwrap_or(3),
@@ -2027,6 +2091,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 .and_then(|f| lookup_item(&reg, &modid, f)),
             carrier: a.carrier,
             vehicle: a.vehicle,
+            belly_secs: a.belly.unwrap_or(0.0).max(0.0),
+            grazes: a.grazes,
+            prey: Vec::new(), // resolved after every species exists
+            fierce: a.fierce,
             projectile: a.projectile.as_ref().map(|pr| ProjectileDef {
                 tile: proj_tile.unwrap_or(crate::atlas::UNKNOWN_SLOT),
                 damage: pr.damage,
@@ -2034,6 +2102,18 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 cooldown: pr.cooldown.unwrap_or(2.0),
             }),
         });
+    }
+    // Prey lists resolve after the whole roster exists (a fox may be
+    // declared before the rabbit it hunts).
+    for (hunter, modid, names) in pending_prey {
+        let ids: Vec<usize> = names
+            .iter()
+            .filter_map(|n| {
+                let q = qualify(&modid, n);
+                reg.animal_id(&q).or_else(|| reg.animal_id(n))
+            })
+            .collect();
+        reg.animals[hunter].prey = ids;
     }
     for (modid, block, h) in pending_harvests {
         let becomes = reg

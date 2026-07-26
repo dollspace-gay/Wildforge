@@ -13,6 +13,7 @@ use crate::registry::{self, AIR, Registry};
 use crate::world::World;
 
 mod agent;
+mod ecology;
 mod identity;
 mod machines;
 mod mobs;
@@ -21,6 +22,7 @@ mod player;
 #[path = "registry.rs"]
 mod registry_tests;
 mod rendering;
+mod soil;
 mod world;
 mod worldgen;
 

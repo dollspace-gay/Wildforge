@@ -304,6 +304,44 @@ impl Game {
     fn advance_feedback(&mut self, dt: f32, paused: bool) {
         // The juice layer's clock: particles, pulses, streaks, motion.
         self.presentation.pool.tick(dt);
+        // Ambience nobody profits from: a fluttering speck near the
+        // canopy by day, a dragonfly skimming the water. Client-side
+        // only — some of the world is just living here.
+        self.presentation.ambient_timer -= dt;
+        if !paused && self.presentation.ambient_timer <= 0.0 && self.presentation.juice {
+            self.presentation.ambient_timer = 1.6 + self.vary() * 2.4;
+            let day = self.server.daylight() > 0.5;
+            let r1 = self.vary();
+            let r2 = self.vary();
+            let r3 = self.vary();
+            let p =
+                self.camera.pos + Vec3::new((r1 - 0.5) * 24.0, (r2 - 0.3) * 8.0, (r3 - 0.5) * 24.0);
+            let (bx, by, bz) = (p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32);
+            let reg = self.content.reg.clone();
+            let near = |pred: &dyn Fn(&str) -> bool| -> bool {
+                (-2..=2i32).any(|dx| {
+                    (-2..=2i32).any(|dy| {
+                        (-2..=2i32).any(|dz| {
+                            pred(
+                                &reg.block(self.server.world.get_block(bx + dx, by + dy, bz + dz))
+                                    .name,
+                            )
+                        })
+                    })
+                })
+            };
+            if day && near(&|n: &str| n.contains("leaves")) {
+                // A songbird-or-butterfly speck breaking from the canopy.
+                if let Some(b) = reg.block_id("base:berry_bush") {
+                    self.juice_puff(p, reg.block(b).tiles[0], 1);
+                }
+            } else if day && near(&|n: &str| n.contains("water")) {
+                // A dragonfly working the surface.
+                if let Some(b) = reg.block_id("base:kelp_frond") {
+                    self.juice_puff(p, reg.block(b).tiles[0], 1);
+                }
+            }
+        }
         self.presentation.screen_age = (self.presentation.screen_age + dt / 0.14).min(1.0);
         self.presentation.sel_bounce = (self.presentation.sel_bounce + dt / 0.12).min(1.0);
         self.presentation.press_dip = (self.presentation.press_dip - dt).max(0.0);
@@ -531,6 +569,23 @@ impl Game {
                             }
                         }
                         server::SimEvent::BoltCast => self.sfx(Sfx::Bolt(1.2)),
+                        server::SimEvent::Lightning(at) => {
+                            // A LANDED bolt: a longer flash, thunder
+                            // timed by distance, and a white column
+                            // standing on the strike for a beat.
+                            self.presentation.lightning = 0.3;
+                            let dist = (at - self.camera.pos).length();
+                            self.presentation.thunder_delay = (dist / 110.0).clamp(0.1, 2.0);
+                            let white = *atlas::builtin_slots().get("snow").unwrap_or(&39);
+                            for dy in 0..26 {
+                                self.juice_burst(
+                                    at + Vec3::new(0.0, dy as f32 * 1.1, 0.0),
+                                    white,
+                                    2,
+                                    0.5,
+                                );
+                            }
+                        }
                         server::SimEvent::Bred => {
                             self.sfx(Sfx::Pickup);
                             self.toast("New life stirs in the wild.".to_string());

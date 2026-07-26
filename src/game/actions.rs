@@ -268,11 +268,23 @@ impl Game {
             }
             let m = self.server.world.remove_mob(i);
             let def = &reg.animals[m.species];
-            if !def.hostile && !def.vehicle {
+            if def.hostile {
+                // Where a warden falls, the wild reclaims its own —
+                // the death site banks bloom (dryads leave a sapling).
+                self.server.world.wild_falls(
+                    &def.name,
+                    m.pos.x.floor() as i32,
+                    m.pos.y.floor() as i32,
+                    m.pos.z.floor() as i32,
+                );
+            }
+            if !def.hostile && !def.vehicle && !def.name.ends_with(":carcass") {
                 // The wild counts its dead — wardens are not
                 // individuals, and a TAMED animal is a household loss,
                 // not a wild one (though betrayal is still noticed).
                 // Vehicles are lumber; the wild never mourns a boat.
+                // A carcass is already counted: the predator's kill
+                // was nature's own.
                 let (mx, mz) = (m.pos.x.floor() as i32, m.pos.z.floor() as i32);
                 self.server
                     .world
@@ -471,6 +483,31 @@ impl Game {
             }
         } else if self.interaction.bow_draw > 0.0 {
             self.interaction.bow_draw = 0.0; // switched away mid-draw
+        }
+
+        // The line in the water: the water decides when. A bite opens
+        // a short window announced by a splash; miss it and the wait
+        // begins again.
+        let rod_held = held.is_some_and(|i| reg.item(i).name == "base:fishing_rod");
+        if !rod_held {
+            self.interaction.fishing = None;
+        } else if let Some((bobber, mut wait, mut bite)) = self.interaction.fishing {
+            if bite > 0.0 {
+                bite -= dt;
+                if bite <= 0.0 {
+                    // Missed it: the water loses interest for a while.
+                    wait = 4.0 + self.rand01() * 8.0;
+                }
+            } else {
+                wait -= dt;
+                if wait <= 0.0 {
+                    bite = 1.4;
+                    let tile = reg.block(reg.water_block(0)).tiles[0];
+                    self.juice_burst(bobber, tile, 8, 1.4);
+                    self.sfx(Sfx::Splash);
+                }
+            }
+            self.interaction.fishing = Some((bobber, wait, bite));
         }
 
         // Archaeology: sweeping a remnant is a slow, careful channel.
@@ -1054,6 +1091,65 @@ impl Game {
                 return;
             }
         }
+        // Rod clicks live outside the block-hit path: open water is
+        // rarely a solid target. Strike on a bite, reel in early, or
+        // cast at the first water the look-ray touches.
+        if self.input.right_held && self.input.action_cooldown <= 0.0 && rod_held {
+            self.input.action_cooldown = 0.45;
+            self.input.right_held = false;
+            match self.interaction.fishing.take() {
+                Some((bobber, _, bite)) if bite > 0.0 => {
+                    // The strike: a real fish first, thin luck second.
+                    let caught = self.server.world.catch_fish_near(bobber, 6.0).is_some()
+                        || self.rand01() < 0.25;
+                    if caught {
+                        if let Some(fish) = reg.item_id("base:raw_fish") {
+                            let left = self.inventory.add(&reg, fish, 1);
+                            if left > 0 {
+                                self.drop_stack(ItemStack::new(&reg, fish, left));
+                            }
+                        }
+                        self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                        self.sfx(Sfx::Pickup);
+                    } else {
+                        self.sfx(Sfx::Splash);
+                    }
+                }
+                Some(_) => {} // reeled in empty
+                None => {
+                    let eye = self.camera.pos;
+                    let dir = self.camera.forward();
+                    let mut cast = None;
+                    for i in 1..=56 {
+                        let p = eye + dir * (i as f32 * 0.25);
+                        let b = self.server.world.get_block(
+                            p.x.floor() as i32,
+                            p.y.floor() as i32,
+                            p.z.floor() as i32,
+                        );
+                        if reg.is_water(b) {
+                            cast = Some(Vec3::new(
+                                p.x.floor() + 0.5,
+                                p.y.floor() + 0.9,
+                                p.z.floor() + 0.5,
+                            ));
+                            break;
+                        }
+                        if reg.is_solid(b) {
+                            break;
+                        }
+                    }
+                    match cast {
+                        Some(at) => {
+                            self.interaction.fishing = Some((at, 3.0 + self.rand01() * 9.0, 0.0));
+                            self.sfx(Sfx::Splash);
+                        }
+                        None => self.toast("Cast at water.".to_string()),
+                    }
+                }
+            }
+            return;
+        }
         let held_is_food = held.is_some_and(|i| reg.item(i).food.is_some());
         if self.input.right_held
             && self.input.action_cooldown <= 0.0
@@ -1074,6 +1170,22 @@ impl Game {
                 self.input.action_cooldown = 0.3;
                 return;
             }
+            // Fertilizer feeds the field it lands on: dung from the
+            // pen, guano from the cave, compost from the heap.
+            if let Some(hi) = held {
+                let v = world::soil::fertilizer_value(&reg.item(hi).name);
+                if v > 0
+                    && self
+                        .server
+                        .world
+                        .feed_soil(h.block.0, h.block.1, h.block.2, v)
+                {
+                    self.inventory.take_one(self.input.hotbar_sel);
+                    self.sfx(Sfx::Place);
+                    self.input.action_cooldown = 0.3;
+                    return;
+                }
+            }
             // Hoe tills grass/dirt into farmland.
             if let (Some((ToolKind::Hoe, _, _)), Some(farm)) = (
                 held.and_then(|i| reg.item(i).tool),
@@ -1081,9 +1193,12 @@ impl Game {
             ) {
                 let name = reg.block(tb).name.as_str();
                 if name == "base:grass" || name == "base:dirt" {
+                    // The till reads the ground it came from: grass-fed
+                    // loam starts richer than bare dirt (soil.rs).
+                    let meta = self.server.world.till_meta(h.block.0, h.block.1, h.block.2);
                     self.server
                         .world
-                        .set_block(h.block.0, h.block.1, h.block.2, farm);
+                        .set_block_meta(h.block.0, h.block.1, h.block.2, farm, meta);
                     self.inventory.wear_tool(&reg, self.input.hotbar_sel);
                     self.sfx(Sfx::Place);
                     self.input.action_cooldown = 0.3;
@@ -1142,6 +1257,47 @@ impl Game {
                         self.toast("The wild keeps its trophies.".to_string());
                     }
                     self.set_screen(Screen::Chest(h.block));
+                    return;
+                }
+                Some("compost") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.3;
+                    // A ripened heap hands over its compost bare-handed;
+                    // a fresh one eats greens item by item.
+                    if self
+                        .server
+                        .world
+                        .compost_take(h.block.0, h.block.1, h.block.2)
+                    {
+                        if let Some(c) = reg.item_id("base:compost") {
+                            let left = self.inventory.add(&reg, c, 2);
+                            if left > 0 {
+                                self.drop_stack(ItemStack::new(&reg, c, left));
+                            }
+                        }
+                        self.sfx(Sfx::Pickup);
+                        return;
+                    }
+                    if let Some(hi) = held {
+                        let name = reg.item(hi).name.clone();
+                        if self
+                            .server
+                            .world
+                            .compost_fill(h.block.0, h.block.1, h.block.2, &name)
+                        {
+                            self.inventory.take_one(self.input.hotbar_sel);
+                            self.sfx(Sfx::Place);
+                            return;
+                        }
+                    }
+                    let fill = self.server.world.get_meta(h.block.0, h.block.1, h.block.2);
+                    self.toast(if fill >= world::soil::COMPOST_FULL {
+                        "The heap is cooking.".to_string()
+                    } else {
+                        format!(
+                            "The heap wants greens ({fill}/{}).",
+                            world::soil::COMPOST_FULL
+                        )
+                    });
                     return;
                 }
                 Some("offering") if self.input.action_cooldown <= 0.0 => {

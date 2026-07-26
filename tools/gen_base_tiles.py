@@ -515,6 +515,325 @@ def main():
     d.ellipse([9, 9, 23, 14], fill=(255, 120, 30, 255), outline=(90, 90, 96, 255))
     d.arc([6, 2, 26, 14], 200, 340, fill=(110, 108, 104, 255))
     save_tile(bl, "bucket_lava")
+
+    # Farmland fertility variants: graded from the shipped farmland
+    # tile so the four steps read as the same soil — dust, poor,
+    # (the original), rich. The mesher picks by the meta quartile.
+    from PIL import ImageEnhance
+
+    gem = OUT.parent.parent / "packs" / "gemini" / "tiles" / "farmland.png"
+    if gem.exists():
+        soil = Image.open(gem).convert("RGBA")
+        # Exhausted soil dries toward warm khaki; rich soil deepens.
+        dry = Image.new("RGBA", soil.size, (198, 172, 122, 255))
+        for name, toward, blend, sat in [
+            ("farmland_dust", dry, 0.52, 0.72),
+            ("farmland_poor", dry, 0.26, 0.88),
+            ("farmland_rich", None, 0.0, 1.20),
+        ]:
+            img = soil
+            if toward is not None:
+                img = Image.blend(soil, toward, blend)
+            img = ImageEnhance.Color(img).enhance(sat)
+            if name == "farmland_rich":
+                img = ImageEnhance.Brightness(img).enhance(0.72)
+            save_tile(img, name)
+
+    # The belly's leavings: dung and the compost chain.
+    dung = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(dung)
+    for cx, cy, r in [(13, 20, 6), (19, 21, 5), (16, 17, 5)]:
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(96, 72, 40, 255),
+                  outline=(66, 48, 26, 255))
+    d.ellipse([12, 15, 16, 18], fill=(112, 86, 50, 255))
+    save_tile(dung, "dung")
+
+    comp = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(comp)
+    d.polygon([(4, 24), (16, 10), (28, 24), (26, 27), (6, 27)],
+              fill=(58, 46, 30, 255), outline=(38, 30, 18, 255))
+    rng = rng_for("compost")
+    for _ in range(26):
+        x, y = rng.randint(6, 26), rng.randint(14, 25)
+        c = rng.choice([(84, 66, 40), (48, 56, 30), (70, 54, 34)])
+        d.point((x, y), fill=c + (255,))
+    save_tile(comp, "compost")
+
+    # Heap faces: slatted side, rotting top, ripe crumb top.
+    side = rock("compost_heap_side", base=(96, 74, 46), dark=(64, 48, 28))
+    d = ImageDraw.Draw(side)
+    for yy in [3, 11, 19, 27]:
+        d.line([(0, yy), (31, yy)], fill=(52, 38, 22, 255), width=2)
+    for xx in [2, 29]:
+        d.line([(xx, 0), (xx, 31)], fill=(58, 44, 26, 255), width=2)
+    save_tile(side, "compost_heap_side")
+    top = rock("compost_heap_top", base=(88, 84, 44), dark=(56, 52, 26))
+    save_tile(top, "compost_heap_top")
+    ready = rock("compost_ready_top", base=(52, 40, 26), dark=(30, 22, 12))
+    save_tile(ready, "compost_ready_top")
+
+    # Fang and carrion: predator pelts, faces, and the bear's meat.
+    def face(name, base_c, dark_c, snout=None):
+        img = rock(name, base=base_c, dark=dark_c)
+        d = ImageDraw.Draw(img)
+        for ex in (8, 20):
+            d.rectangle([ex, 11, ex + 3, 14], fill=(26, 22, 16, 255))
+            d.point((ex + 1, 12), fill=(240, 235, 220, 255))
+        if snout:
+            d.rectangle([13, 19, 18, 26], fill=snout + (255,))
+            d.rectangle([14, 23, 17, 26], fill=(32, 26, 20, 255))
+        return img
+
+    pelts = {
+        "fox": ((196, 108, 44), (140, 66, 24), (232, 222, 206)),
+        "wolf": ((136, 136, 142), (88, 88, 96), (108, 106, 110)),
+        "lynx": ((188, 158, 110), (130, 104, 66), (214, 196, 162)),
+        "jackal": ((186, 158, 104), (128, 102, 60), (208, 188, 142)),
+        "eagle": ((96, 72, 48), (62, 44, 28), None),
+        "vulture": ((70, 62, 58), (44, 38, 34), (196, 130, 110)),
+        "polar_bear": ((236, 234, 226), (198, 196, 186), (222, 218, 206)),
+    }
+    for name, (base_c, dark_c, snout) in pelts.items():
+        body = rock(name, base=base_c, dark=dark_c)
+        if name == "lynx":
+            d = ImageDraw.Draw(body)
+            rl = rng_for("lynx_spots")
+            for _ in range(22):
+                x, y = rl.randint(1, 29), rl.randint(1, 29)
+                d.rectangle([x, y, x + 1, y + 1], fill=(96, 74, 44, 255))
+        save_tile(body, name)
+        # The eagle's white head rides its face tile.
+        if name == "eagle":
+            f = rock("eagle_face", base=(226, 222, 210), dark=(188, 184, 170))
+            d = ImageDraw.Draw(f)
+            for ex in (7, 21):
+                d.rectangle([ex, 11, ex + 3, 14], fill=(40, 30, 12, 255))
+                d.point((ex + 1, 12), fill=(250, 220, 120, 255))
+            d.polygon([(13, 19), (18, 19), (15, 27)], fill=(212, 160, 44, 255))
+            save_tile(f, "eagle_face")
+        else:
+            save_tile(face(f"{name}_face", base_c, dark_c, snout), f"{name}_face")
+    # The rattlesnake wears its diamonds.
+    snake = rock("rattlesnake", base=(190, 168, 120), dark=(140, 118, 76))
+    d = ImageDraw.Draw(snake)
+    for cy in range(2, 32, 7):
+        d.polygon(
+            [(16, cy), (21, cy + 3), (16, cy + 6), (11, cy + 3)],
+            outline=(96, 74, 40, 255),
+            fill=(150, 120, 70, 255),
+        )
+    save_tile(snake, "rattlesnake")
+    sf = rock("rattlesnake_face", base=(190, 168, 120), dark=(140, 118, 76))
+    d = ImageDraw.Draw(sf)
+    for ex in (8, 20):
+        d.rectangle([ex, 12, ex + 3, 15], fill=(180, 140, 30, 255))
+        d.line([(ex + 1, 12), (ex + 1, 15)], fill=(20, 16, 10, 255))
+    save_tile(sf, "rattlesnake_face")
+    # The carcass: hide gone still, opened dark red.
+    car = rock("carcass", base=(122, 92, 58), dark=(84, 60, 36))
+    d = ImageDraw.Draw(car)
+    d.ellipse([8, 10, 26, 24], fill=(128, 42, 34, 255), outline=(84, 26, 20, 255))
+    d.ellipse([13, 13, 21, 20], fill=(96, 30, 24, 255))
+    save_tile(car, "carcass")
+    # Bear meat, raw and cooked.
+    for nm, fill_c, edge_c in [
+        ("raw_bear", (196, 74, 66), (140, 44, 40)),
+        ("cooked_bear", (140, 88, 52), (96, 56, 30)),
+    ]:
+        img = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle([6, 9, 26, 24], radius=6, fill=fill_c + (255,), outline=edge_c + (255,))
+        d.rounded_rectangle([10, 13, 18, 18], radius=3, fill=edge_c + (255,))
+        save_tile(img, nm)
+
+    # The water bears life: fish scales, waterline hides, and the
+    # rod-and-catch items.
+    fish = {
+        "trout": ((150, 130, 110), (104, 88, 70)),
+        "carp": ((170, 150, 96), (120, 104, 60)),
+        "catfish": ((96, 100, 92), (60, 64, 58)),
+    }
+    for name, (base_c, dark_c) in fish.items():
+        img = rock(name, base=base_c, dark=dark_c)
+        d = ImageDraw.Draw(img)
+        rf = rng_for(name + "_scales")
+        for _ in range(30):
+            x, y = rf.randint(1, 29), rf.randint(1, 29)
+            d.arc([x, y, x + 3, y + 3], 200, 340, fill=(
+                min(base_c[0] + 40, 255), min(base_c[1] + 40, 255), min(base_c[2] + 40, 255), 255))
+        if name == "trout":
+            for _ in range(10):
+                x, y = rf.randint(2, 28), rf.randint(2, 28)
+                d.point((x, y), fill=(196, 90, 80, 255))
+        save_tile(img, name)
+    save_tile(rock("frog", base=(96, 138, 70), dark=(62, 96, 44)), "frog")
+    save_tile(face("frog_face", (96, 138, 70), (62, 96, 44), None), "frog_face")
+    save_tile(rock("heron", base=(176, 184, 190), dark=(128, 136, 144)), "heron")
+    hf = rock("heron_face", base=(176, 184, 190), dark=(128, 136, 144))
+    d = ImageDraw.Draw(hf)
+    for ex in (8, 20):
+        d.rectangle([ex, 10, ex + 3, 13], fill=(30, 26, 20, 255))
+        d.point((ex + 1, 11), fill=(240, 210, 90, 255))
+    d.polygon([(13, 17), (18, 17), (15, 29)], fill=(216, 170, 60, 255))
+    save_tile(hf, "heron_face")
+    save_tile(rock("seal", base=(140, 138, 146), dark=(100, 98, 108)), "seal")
+    save_tile(face("seal_face", (140, 138, 146), (100, 98, 108), (110, 106, 114)), "seal_face")
+    crabimg = rock("crab", base=(196, 92, 60), dark=(140, 58, 36))
+    save_tile(crabimg, "crab")
+    croc = rock("crocodile", base=(88, 110, 62), dark=(56, 74, 40))
+    d = ImageDraw.Draw(croc)
+    for yy in range(2, 32, 6):
+        for xx in range(2, 32, 6):
+            d.rectangle([xx, yy, xx + 2, yy + 2], fill=(64, 84, 46, 255))
+    save_tile(croc, "crocodile")
+    cf = rock("crocodile_face", base=(88, 110, 62), dark=(56, 74, 40))
+    d = ImageDraw.Draw(cf)
+    for ex in (7, 21):
+        d.rectangle([ex, 8, ex + 3, 11], fill=(210, 190, 60, 255))
+        d.line([(ex + 1, 8), (ex + 1, 11)], fill=(20, 18, 12, 255))
+    for tx in range(9, 24, 4):
+        d.polygon([(tx, 24), (tx + 2, 24), (tx + 1, 27)], fill=(230, 228, 214, 255))
+    save_tile(cf, "crocodile_face")
+    # Items: the catch, cooked, the rod, and gathered kelp.
+    for nm, fill_c, edge_c in [
+        ("raw_fish", (150, 164, 176), (104, 118, 130)),
+        ("cooked_fish", (168, 128, 78), (118, 86, 48)),
+    ]:
+        img = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.ellipse([4, 11, 22, 21], fill=fill_c + (255,), outline=edge_c + (255,))
+        d.polygon([(21, 16), (28, 11), (28, 21)], fill=edge_c + (255,))
+        d.point((9, 14), fill=(20, 20, 24, 255))
+        save_tile(img, nm)
+    rod = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(rod)
+    d.line([(4, 28), (24, 4)], fill=(122, 86, 48, 255), width=2)
+    d.line([(24, 4), (27, 14)], fill=(228, 226, 218, 255))
+    d.ellipse([25, 14, 28, 17], fill=(196, 60, 50, 255))
+    save_tile(rod, "fishing_rod")
+    kelp_i = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(kelp_i)
+    for x0 in (10, 16, 21):
+        d.line([(x0, 26), (x0 + 2, 8)], fill=(52, 96, 60, 255), width=3)
+    save_tile(kelp_i, "kelp_item")
+    # Plants: cattails at the margin, kelp in the deep, the lily pad.
+    cat = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(cat)
+    for x0, h in [(8, 6), (15, 3), (23, 8)]:
+        d.line([(x0, 31), (x0, h + 6)], fill=(92, 128, 60, 255), width=2)
+        d.rectangle([x0 - 1, h, x0 + 1, h + 7], fill=(110, 74, 40, 255))
+    d.line([(12, 31), (11, 12)], fill=(80, 116, 52, 255))
+    d.line([(19, 31), (20, 10)], fill=(80, 116, 52, 255))
+    save_tile(cat, "cattail")
+    kp = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(kp)
+    rk = rng_for("kelp")
+    for x0 in (7, 13, 19, 25):
+        pts = [(x0 + rk.randint(-2, 2), y) for y in range(0, 33, 4)]
+        d.line(pts, fill=(44, 88, 54, 255), width=3)
+        for px_, py_ in pts[::2]:
+            d.ellipse([px_ - 2, py_ - 1, px_ + 3, py_ + 2], fill=(56, 104, 62, 255))
+    save_tile(kp, "kelp")
+    lily = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(lily)
+    d.ellipse([3, 4, 28, 27], fill=(62, 118, 58, 255), outline=(44, 88, 44, 255))
+    d.polygon([(16, 15), (28, 8), (28, 20)], fill=(0, 0, 0, 0))
+    d.pieslice([3, 4, 28, 27], -25, 25, fill=(0, 0, 0, 0))
+    d.ellipse([12, 12, 17, 17], fill=(170, 200, 150, 255))
+    save_tile(lily, "lily_pad")
+
+
+    # The full roster: every biome answers.
+    herd_pelts = {
+        "bison": ((110, 78, 52), (74, 50, 32), (88, 62, 40)),
+        "antelope": ((196, 160, 104), (140, 110, 66), (222, 206, 178)),
+        "musk_ox": ((92, 74, 56), (58, 46, 34), (76, 60, 44)),
+        "mouflon": ((160, 130, 96), (112, 88, 60), (188, 168, 140)),
+        "camel": ((206, 172, 116), (152, 122, 76), (188, 156, 104)),
+        "marmot": ((164, 130, 88), (116, 88, 56), (188, 160, 120)),
+        "bat": ((70, 60, 66), (44, 36, 42), (96, 80, 88)),
+    }
+    for name, (base_c, dark_c, snout) in herd_pelts.items():
+        save_tile(rock(name, base=base_c, dark=dark_c), name)
+        save_tile(face(f"{name}_face", base_c, dark_c, snout), f"{name}_face")
+    birds = {
+        "pheasant": ((150, 96, 60), (104, 60, 36), (216, 170, 60)),
+        "guineafowl": ((92, 92, 100), (60, 60, 68), (196, 130, 110)),
+        "ptarmigan": ((228, 228, 224), (190, 190, 186), (60, 50, 40)),
+        "duck": ((136, 116, 82), (94, 78, 52), (222, 170, 60)),
+    }
+    for name, (base_c, dark_c, beak) in birds.items():
+        body = rock(name, base=base_c, dark=dark_c)
+        if name == "guineafowl":
+            d = ImageDraw.Draw(body)
+            rg = rng_for("guinea_dots")
+            for _ in range(60):
+                d.point((rg.randint(1, 30), rg.randint(1, 30)),
+                        fill=(216, 216, 220, 255))
+        save_tile(body, name)
+        f = rock(f"{name}_face", base=base_c, dark=dark_c)
+        d = ImageDraw.Draw(f)
+        for ex in (8, 20):
+            d.rectangle([ex, 11, ex + 3, 14], fill=(26, 22, 16, 255))
+            d.point((ex + 1, 12), fill=(240, 235, 220, 255))
+        d.polygon([(13, 19), (18, 19), (15, 26)], fill=beak + (255,))
+        save_tile(f, f"{name}_face")
+    # Guano: the cave's pale gift.
+    gu = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(gu)
+    for cx, cy, r in [(12, 20, 6), (20, 21, 5), (16, 16, 4)]:
+        d.ellipse([cx - r, cy - r, cx + r, cy + r],
+                  fill=(216, 210, 188, 255), outline=(170, 162, 138, 255))
+    save_tile(gu, "guano")
+
+
+    # Rot and fruit: the litter underfoot and the cave's own light.
+    lit = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(lit)
+    rl = rng_for("leaf_litter")
+    for _ in range(46):
+        x, y = rl.randint(1, 28), rl.randint(1, 28)
+        c = rl.choice([(122, 88, 40), (100, 70, 34), (140, 104, 48), (86, 74, 30)])
+        d.ellipse([x, y, x + 3, y + 2], fill=c + (255,))
+        d.point((x + 1, y + 1), fill=(60, 44, 20, 255))
+    save_tile(lit, "leaf_litter")
+    lf = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(lf)
+    for x0, cap_y, r in [(9, 14, 5), (20, 10, 6), (15, 19, 4)]:
+        d.rectangle([x0 - 1, cap_y, x0 + 1, 30], fill=(174, 196, 178, 255))
+        d.ellipse([x0 - r, cap_y - r, x0 + r, cap_y + r // 2 + 2],
+                  fill=(96, 232, 176, 255), outline=(56, 160, 118, 255))
+        d.point((x0 - 1, cap_y - r // 2), fill=(210, 255, 232, 255))
+    save_tile(lf, "lantern_fungus")
+
+
+    # The storm gives back: scorched ground and what blooms after.
+    ch = rock("charred_soil", base=(52, 44, 40), dark=(28, 24, 22))
+    d = ImageDraw.Draw(ch)
+    rc = rng_for("char_embers")
+    for _ in range(9):
+        x, y = rc.randint(2, 29), rc.randint(2, 29)
+        d.point((x, y), fill=(216, 110, 40, 255))
+        if rc.random() < 0.4:
+            d.point((x + 1, y), fill=(150, 60, 24, 255))
+    save_tile(ch, "charred_soil")
+    for name, petal, heart in [
+        ("meadow_bloom", (236, 232, 244), (232, 196, 70)),
+        ("ember_poppy", (216, 84, 60), (40, 32, 28)),
+    ]:
+        fl = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+        d = ImageDraw.Draw(fl)
+        rf = rng_for(name)
+        for x0, top in [(10, 12), (21, 9), (15, 16)]:
+            d.line([(x0, 31), (x0, top + 3)], fill=(84, 124, 58, 255), width=1)
+            for ang in range(0, 360, 72):
+                ox = int(3 * math.cos(math.radians(ang + rf.randint(-10, 10))))
+                oy = int(3 * math.sin(math.radians(ang)))
+                d.ellipse([x0 + ox - 1, top + oy - 1, x0 + ox + 1, top + oy + 1],
+                          fill=petal + (255,))
+            d.point((x0, top), fill=heart + (255,))
+        save_tile(fl, name)
+
     print(f"wrote {len(list(OUT.glob('*.png')))} tiles to {OUT}")
 
 

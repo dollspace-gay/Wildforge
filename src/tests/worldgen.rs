@@ -1663,8 +1663,11 @@ fn wild_food_and_game_are_scarce() {
         "wild food stays scarce over 100 chunks ({plants} plants)"
     );
     let animals = w.mob_count();
+    // The roster now spans sky, ground, water, and cave; per-species
+    // density is unchanged and any one walk still crosses mostly
+    // empty country.
     assert!(
-        animals <= 40,
+        animals <= 80,
         "wildlife stays sparse over 100 chunks ({animals})"
     );
 }
@@ -1969,4 +1972,39 @@ fn prospect_readings_reveal_the_country() {
     assert_eq!(g.prospect(px, pz).pluton, Some((0, (0, 0))), "underfoot");
     let again = g.prospect(sx, sz);
     assert_eq!(again.pipe, r.pipe, "readings are pure functions");
+}
+
+#[test]
+fn the_waterline_grows_its_own() {
+    // Cattails at the margins, kelp in the deeps — present, scarce.
+    let reg = base_reg();
+    let mut w = World::new(42, tmp_dir("waterflora"), reg.clone());
+    let reeds = reg.block_id("base:cattail").unwrap();
+    let kelp = reg.block_id("base:kelp_frond").unwrap();
+    let lily = reg.block_id("base:water_lily").unwrap();
+    let (mut r, mut k, mut l) = (0, 0, 0);
+    for cx in -12..12 {
+        for cz in -12..12 {
+            w.ensure_chunk(ChunkPos { x: cx, z: cz });
+            for lx in 0..16 {
+                for lz in 0..16 {
+                    for y in 40..80 {
+                        let b = w.get_block(cx * 16 + lx, y, cz * 16 + lz);
+                        if b == reeds {
+                            r += 1;
+                        } else if b == kelp {
+                            k += 1;
+                        } else if b == lily {
+                            l += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(r + k + l > 0, "the waterline grows something ({r}/{k}/{l})");
+    assert!(
+        r + k + l < 12000,
+        "and it stays vegetation, not carpet ({r}/{k}/{l})"
+    );
 }

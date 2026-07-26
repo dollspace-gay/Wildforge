@@ -105,24 +105,87 @@ impl World {
             }
             break; // one species per chunk keeps groups readable
         }
+        // The dark has its own roster: underground species roll
+        // independently of the surface (a chunk can carry deer above
+        // and a bat colony below).
+        for (si, def) in reg.animals.iter().enumerate() {
+            if def.hostile || def.biomes.iter().all(|b| b != "underground") {
+                continue;
+            }
+            let roll = self.mob_hash(pos.x, pos.z, 8600 + si as u32);
+            if !roll.is_multiple_of(def.rarity) {
+                continue;
+            }
+            let span = def.group[1].saturating_sub(def.group[0]) + 1;
+            let n = def.group[0] + (roll >> 8) % span;
+            for i in 0..n {
+                let h = self.mob_hash(pos.x, pos.z, 8700 + si as u32 * 31 + i);
+                let lx = (h % CHUNK_X as u32) as i32;
+                let lz = ((h >> 8) % CHUNK_Z as u32) as i32;
+                let (x, z) = (cx + lx, cz + lz);
+                // A pocket of cave: two air cells under a solid roof.
+                let base = 8 + (h >> 16) % 32;
+                let spot = (base as i32..(base as i32 + 24).min(52)).find(|&y| {
+                    self.get_block(x, y, z) == AIR
+                        && self.get_block(x, y + 1, z) == AIR
+                        && self.reg.is_solid(self.get_block(x, y + 2, z))
+                });
+                if let Some(y) = spot
+                    && self.mobs.len() < MOB_CAP
+                {
+                    let mut m = Mob::new(
+                        si,
+                        glam::Vec3::new(x as f32 + 0.5, y as f32 + 0.4, z as f32 + 0.5),
+                        (h >> 12) as f32,
+                    );
+                    m.health = reg.animals[si].health;
+                    self.mobs.push(m);
+                }
+            }
+        }
     }
 
-    /// Spawn on dry solid ground at the surface; silently skips bad spots.
+    /// Spawn on dry solid ground at the surface — or, for swimmers,
+    /// submerged in a water column at least two deep. Skips bad spots.
     pub(super) fn try_spawn(&mut self, species: usize, x: i32, z: i32, yaw01: f32) -> bool {
         if self.mobs.len() >= MOB_CAP {
             return false;
         }
-        let y = self.surface_height(x, z);
-        if y <= SEA_LEVEL {
-            return false;
+        let swim = self
+            .reg
+            .animals
+            .get(species)
+            .is_some_and(|d| d.movement_swim);
+        // Category budget: a full lake never starves the land spawns.
+        if swim {
+            let reg = self.reg.clone();
+            let fish = self
+                .mobs
+                .iter()
+                .filter(|m| reg.animals.get(m.species).is_some_and(|d| d.movement_swim))
+                .count();
+            if fish >= 90 {
+                return false;
+            }
         }
-        let ground = self.get_block(x, y, z);
-        if !self.reg.is_solid(ground) {
+        let spawn_at = if swim {
+            // The first water cell from the sky down, needing depth.
+            (4..=96)
+                .rev()
+                .map(|y| (y, self.get_block(x, y, z)))
+                .find(|&(_, b)| self.reg.is_water(b))
+                .filter(|&(y, _)| self.reg.is_water(self.get_block(x, y - 1, z)))
+                .map(|(y, _)| y as f32 - 0.6)
+        } else {
+            let y = self.surface_height(x, z);
+            (y > SEA_LEVEL && self.reg.is_solid(self.get_block(x, y, z))).then_some(y as f32 + 1.05)
+        };
+        let Some(sy) = spawn_at else {
             return false;
-        }
+        };
         let mut m = Mob::new(
             species,
-            glam::Vec3::new(x as f32 + 0.5, y as f32 + 1.05, z as f32 + 0.5),
+            glam::Vec3::new(x as f32 + 0.5, sy, z as f32 + 0.5),
             yaw01 * std::f32::consts::TAU,
         );
         m.health = self.reg.animals[species].health;
@@ -149,6 +212,75 @@ impl World {
                 self.next_mob_id += 1;
             }
         }
+        // Herd centers: same species bucketed on a 32-block grid, so
+        // two distant herds never average into one phantom middle.
+        let mut herd: HashMap<(usize, i32, i32), (glam::Vec3, f32)> = HashMap::new();
+        for m in &self.mobs {
+            if let Some(d) = reg.animals.get(m.species)
+                && !d.hostile
+                && !d.vehicle
+                && d.group[1] >= 2
+                && m.growth >= 1.0
+            {
+                let k = (
+                    m.species,
+                    (m.pos.x.floor() as i32) >> 5,
+                    (m.pos.z.floor() as i32) >> 5,
+                );
+                let e = herd.entry(k).or_insert((glam::Vec3::ZERO, 0.0));
+                e.0 += m.pos;
+                e.1 += 1.0;
+            }
+        }
+        // The trophic pre-pass: hungry predators pick their quarry,
+        // desperation is graded (deep hunger plus night or winter),
+        // and prey with a stalker on top of it bolts.
+        let winter = self.season() == 3;
+        let night = daylight < 0.35;
+        let snapshot: Vec<(u32, usize, glam::Vec3)> =
+            self.mobs.iter().map(|m| (m.id, m.species, m.pos)).collect();
+        let mut spooked: Vec<(u32, glam::Vec3)> = Vec::new();
+        for m in &mut self.mobs {
+            let Some(d) = reg.animals.get(m.species) else {
+                continue;
+            };
+            m.bold = !d.hostile
+                && !d.fierce
+                && !d.prey.is_empty()
+                && d.attack > 0.0
+                && m.belly < crate::mobs::BELLY_DESPERATE
+                && (winter || night);
+            if d.prey.is_empty() || d.belly_secs <= 0.0 || m.belly > 0.0 || m.growth < 1.0 {
+                m.quarry = None;
+                continue;
+            }
+            let mut best: Option<(u32, glam::Vec3, f32)> = None;
+            for &(id, sp, pos) in &snapshot {
+                if id == m.id || !d.prey.contains(&sp) {
+                    continue;
+                }
+                let dist = (pos - m.pos).length();
+                if dist < crate::mobs::HUNT_RANGE && best.is_none_or(|(_, _, bd)| dist < bd) {
+                    best = Some((id, pos, dist));
+                }
+            }
+            m.quarry = best.map(|(id, pos, _)| (id, pos));
+            if m.state == crate::mobs::MobState::Stalk
+                && let Some((id, _, dist)) = best
+                && dist < 7.0
+            {
+                spooked.push((id, m.pos));
+            }
+        }
+        for (id, from) in spooked {
+            if let Some(p) = self.mob_by_id_mut(id)
+                && p.state != crate::mobs::MobState::Flee
+            {
+                p.state = crate::mobs::MobState::Flee;
+                p.state_timer = 4.0;
+                p.target = from;
+            }
+        }
         let mut mobs = std::mem::take(&mut self.mobs);
         for m in &mut mobs {
             // Frozen until its chunk streams in: an unloaded chunk reads as
@@ -158,9 +290,79 @@ impl World {
                 continue;
             }
             if let Some(def) = reg.animals.get(m.species) {
+                let pull = herd
+                    .get(&(
+                        m.species,
+                        (m.pos.x.floor() as i32) >> 5,
+                        (m.pos.z.floor() as i32) >> 5,
+                    ))
+                    .filter(|(_, n)| *n >= 2.0)
+                    .map(|(sum, n)| *sum / *n);
+                m.herd_pull = pull;
                 m.unstick(self, def);
                 m.tick(self, def, players, dt, rng, &mut events);
             }
+        }
+        // The kill lands: the prey leaves a carcass where it fell
+        // (a scavenged carcass just goes — never a carcass's
+        // carcass), and a laden pack spills. Predation moves the
+        // ire meter not at all: the wild's own violence is its own.
+        let killed: Vec<u32> = events
+            .iter()
+            .filter_map(|e| match e {
+                MobEvent::Killed(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
+        events.retain(|e| !matches!(e, MobEvent::Killed(_)));
+        for id in killed {
+            if let Some(i) = mobs.iter().position(|m| m.id == id) {
+                let prey = mobs.swap_remove(i);
+                let at = (
+                    prey.pos.x.floor() as i32,
+                    prey.pos.y.floor() as i32,
+                    prey.pos.z.floor() as i32,
+                );
+                if let Some(cargo) = prey.cargo {
+                    for st in cargo.into_iter().flatten() {
+                        self.push_drop(at, st);
+                    }
+                }
+                let was_carcass = reg
+                    .animals
+                    .get(prey.species)
+                    .is_some_and(|d| d.name.ends_with(":carcass"));
+                if !was_carcass && let Some(ci) = reg.animal_id("base:carcass") {
+                    let mut c = Mob::new(ci, prey.pos, prey.yaw);
+                    c.health = reg.animals[ci].health;
+                    c.rot = crate::mobs::CARCASS_ROT_SECS;
+                    mobs.push(c);
+                }
+            }
+        }
+        // Rot: the ground takes whatever the vultures leave.
+        let mut rotted: Vec<glam::Vec3> = Vec::new();
+        mobs.retain_mut(|m| {
+            if reg
+                .animals
+                .get(m.species)
+                .is_some_and(|d| d.name.ends_with(":carcass"))
+            {
+                m.rot -= dt;
+                if m.rot <= 0.0 {
+                    rotted.push(m.pos);
+                    return false;
+                }
+            }
+            true
+        });
+        for p in rotted {
+            self.feed_soil(
+                p.x.floor() as i32,
+                (p.y - 0.5).floor() as i32,
+                p.z.floor() as i32,
+                8,
+            );
         }
         // Wardens are expressions of the wild, not creatures: they dissolve
         // in daylight (sky-lit cells only — torchlight never banishes them)
@@ -173,6 +375,15 @@ impl World {
                 return false; // fell out of the world somehow
             }
             if !def.hostile {
+                // Fish are ambience-plus-resource: the water has
+                // fish while someone's there to see it.
+                if def.movement_swim {
+                    let near = players
+                        .iter()
+                        .map(|p| (m.pos - p.pos).length_squared())
+                        .fold(f32::INFINITY, f32::min);
+                    return near <= 96.0 * 96.0;
+                }
                 return true;
             }
             let near = players
@@ -272,6 +483,50 @@ impl World {
             }
         }
         events
+    }
+
+    /// The strike connects: the nearest swimmer within reach of the
+    /// bobber leaves the water. Returns its species — real fish get
+    /// caught before any luck table gets a say.
+    pub fn catch_fish_near(&mut self, at: glam::Vec3, radius: f32) -> Option<usize> {
+        let reg = self.reg.clone();
+        let idx = self
+            .mobs
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| {
+                reg.animals.get(m.species).is_some_and(|d| d.movement_swim)
+                    && (m.pos - at).length() < radius
+            })
+            .min_by(|(_, a), (_, b)| {
+                (a.pos - at)
+                    .length_squared()
+                    .total_cmp(&(b.pos - at).length_squared())
+            })
+            .map(|(i, _)| i)?;
+        let fish = self.mobs.swap_remove(idx);
+        Some(fish.species)
+    }
+
+    /// A grazer's bite lands: a grown crop reverts to its planted
+    /// base, grass to bare dirt (which heals). The animal never
+    /// breaks a placed block — it eats what the plant grew, not what
+    /// the farmer built.
+    pub fn apply_bite(&mut self, (x, y, z): (i32, i32, i32)) {
+        let b = self.get_block(x, y, z);
+        let d = self.reg.block(b);
+        if d.crop_family != 0 && d.name.contains("/stage") {
+            let base = d.name.split("/stage").next().unwrap_or("").to_string();
+            if let Some(base_id) = self.reg.block_id(&base) {
+                self.set_block(x, y, z, base_id);
+            }
+            return;
+        }
+        if d.name == "base:grass"
+            && let Some(dirt) = self.reg.block_id("base:dirt")
+        {
+            self.set_block(x, y, z, dirt);
+        }
     }
 
     /// Advance all bolts and arrows; returns (player index, damage) hits.

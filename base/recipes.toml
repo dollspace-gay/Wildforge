@@ -1132,3 +1132,23 @@ count = 4
 input = "base:neodymium"
 output = "base:magnet"
 strikes = 4
+
+[[recipe]]
+pattern = ["s.s", "pps", "pps"]
+keys = { p = "#base:planks", s = "base:stick" }
+output = "base:compost_heap"
+
+[[smelt]]
+input = "base:raw_bear"
+output = "base:cooked_bear"
+time = 8.0
+
+[[smelt]]
+input = "base:raw_fish"
+output = "base:cooked_fish"
+time = 6.0
+
+[[recipe]]
+pattern = ["..s", ".sf", "s.f"]
+keys = { s = "base:stick", f = "base:plant_fiber" }
+output = "base:fishing_rod"

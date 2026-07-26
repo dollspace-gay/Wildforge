@@ -185,6 +185,12 @@ pub struct Generator {
     berry_bush: BlockId,
     jungle_bush: BlockId,
     mushroom: BlockId,
+    cattail: BlockId,
+    kelp_frond: BlockId,
+    water_lily: BlockId,
+    lantern_fungus: BlockId,
+    meadow_bloom: BlockId,
+    ember_poppy: BlockId,
     stone: BlockId,
     sand: BlockId,
     clay: BlockId,
@@ -293,6 +299,12 @@ impl Generator {
             berry_bush: b("base:berry_bush/stage1"),
             jungle_bush: b("base:jungle_bush/stage1"),
             mushroom: b("base:wild_mushroom"),
+            cattail: b("base:cattail"),
+            kelp_frond: b("base:kelp_frond"),
+            water_lily: b("base:water_lily"),
+            lantern_fungus: b("base:lantern_fungus"),
+            meadow_bloom: b("base:meadow_bloom"),
+            ember_poppy: b("base:ember_poppy"),
             stone: b("base:stone"),
             sand: b("base:sand"),
             clay: b("base:clay_block"),
@@ -1561,6 +1573,78 @@ impl Generator {
                     {
                         c.set(lx, (h2 + 1) as usize, lz, plant);
                         continue;
+                    }
+                }
+                // The deep grows its own light: lantern fungus takes
+                // root in cave pockets, the underground's first
+                // native lamp.
+                {
+                    let cr = hash2(self.seed ^ 0xca9e, wx, wz);
+                    if cr.is_multiple_of(20) {
+                        let start = (8 + (cr >> 8) % 30) as i32;
+                        if let Some(fy) = (start..(start + 12).min(44)).find(|&fy| {
+                            c.get(lx, fy as usize, lz) == AIR
+                                && c.get(lx, (fy + 1) as usize, lz) == AIR
+                                && {
+                                    let floor = c.get(lx, (fy - 1) as usize, lz);
+                                    floor != AIR && floor != self.water
+                                }
+                        }) {
+                            c.set(lx, fy as usize, lz, self.lantern_fungus);
+                        }
+                    }
+                }
+                // Meadow flowers: scattered, useless, and worth it.
+                if matches!(biome, Biome::Plains | Biome::Forest | Biome::Savanna) {
+                    let fr = hash2(self.seed ^ 0xf10e, wx, wz);
+                    if fr.is_multiple_of(340) {
+                        let h2 = self.height_hint(heights, lx, lz);
+                        if h2 > SEA_LEVEL + 1
+                            && h2 + 2 < CHUNK_Y as i32
+                            && c.get(lx, h2 as usize, lz) == self.grass
+                            && c.get(lx, (h2 + 1) as usize, lz) == AIR
+                        {
+                            let f = if fr.is_multiple_of(2) {
+                                self.meadow_bloom
+                            } else {
+                                self.ember_poppy
+                            };
+                            c.set(lx, (h2 + 1) as usize, lz, f);
+                        }
+                    }
+                }
+                // The waterline flora: cattails stand where the land
+                // meets the water table, lilies float on swamp glass,
+                // kelp sways in the deeper cold.
+                {
+                    let h2 = self.height_hint(heights, lx, lz);
+                    let wr = hash2(self.seed ^ 0x77a7, wx, wz);
+                    let shore = (SEA_LEVEL - 1..=SEA_LEVEL + 1).contains(&h2);
+                    let reed_odds = if biome == Biome::Swamp { 5 } else { 14 };
+                    if shore
+                        && wr.is_multiple_of(reed_odds)
+                        && c.get(lx, h2 as usize, lz) == self.grass
+                        && c.get(lx, (h2 + 1) as usize, lz) == AIR
+                    {
+                        c.set(lx, (h2 + 1) as usize, lz, self.cattail);
+                    }
+                    if h2 < SEA_LEVEL - 2 {
+                        // Underwater ground with real depth above it.
+                        if biome == Biome::Swamp
+                            && wr.is_multiple_of(10)
+                            && (SEA_LEVEL + 1) < CHUNK_Y as i32
+                            && c.get(lx, (SEA_LEVEL + 1) as usize, lz) == AIR
+                        {
+                            c.set(lx, (SEA_LEVEL + 1) as usize, lz, self.water_lily);
+                        } else if wr.is_multiple_of(9) {
+                            let fronds = 1 + (wr >> 8) % 3;
+                            for dy in 1..=fronds as i32 {
+                                let y = h2 + dy;
+                                if y < SEA_LEVEL && c.get(lx, y as usize, lz) == self.water {
+                                    c.set(lx, y as usize, lz, self.kelp_frond);
+                                }
+                            }
+                        }
                     }
                 }
                 if density == 0 || !hash2(self.seed, wx, wz).is_multiple_of(density) {

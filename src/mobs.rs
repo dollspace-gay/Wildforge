@@ -13,6 +13,12 @@ use crate::world::World;
 const GRAVITY: f32 = 28.0;
 const TERMINAL: f32 = 40.0;
 const JUMP: f32 = 7.6;
+/// How far a hungry predator will notice prey.
+pub const HUNT_RANGE: f32 = 28.0;
+/// This long past empty, a predator gets ideas about the player.
+pub const BELLY_DESPERATE: f32 = -240.0;
+/// An untouched carcass rots away in this many seconds.
+pub const CARCASS_ROT_SECS: f32 = 180.0;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum MobState {
@@ -21,6 +27,11 @@ pub enum MobState {
     Flee,
     /// Hostiles only: chase/attack the player.
     Hunt,
+    /// Hungry: walking to a plant meal. The raid never climbs — a
+    /// one-high wall turns a grazer, and that is the point of fences.
+    Graze,
+    /// Hungry predator closing on quarry (a mob, not a player).
+    Stalk,
 }
 
 /// Things a mob did this tick that the game loop must apply.
@@ -33,6 +44,13 @@ pub enum MobEvent {
     Cast(Projectile),
     /// A wildlife pair bred at this position.
     Bred,
+    /// A grazer took its bite: the world applies the plant's loss.
+    Ate((i32, i32, i32)),
+    /// A predator's kill landed: the prey (by id) becomes a carcass.
+    Killed(u32),
+    /// Digestion finished where it always does (true = a bat's
+    /// guano, the cave's own fertilizer).
+    Dung(Vec3, bool),
 }
 
 /// A bolt in flight: warden thorn/ember/frost, or a player's arrow.
@@ -200,6 +218,19 @@ pub struct Mob {
     pub watch_timer: f32,
     /// The cell's grievance when the watching began.
     pub watch_baseline: f32,
+    /// The herd's nearby center, written by tick_mobs each tick.
+    pub herd_pull: Option<Vec3>,
+    /// Nearest prey in range (id, pos), written by tick_mobs.
+    pub quarry: Option<(u32, Vec3)>,
+    /// Desperate enough to size up the player (tick_mobs decides:
+    /// deep hunger plus night or winter).
+    pub bold: bool,
+    /// Carcasses only: seconds until the ground takes the rest.
+    pub rot: f32,
+    /// Seconds until the next hunger (counts down; <= 0 is hungry).
+    pub belly: f32,
+    /// Seconds until digestion finishes (> 0 after any meal).
+    pub digest: f32,
 }
 
 fn r01(rng: &mut u32) -> f32 {
@@ -252,6 +283,13 @@ impl Mob {
             watcher: false,
             watch_timer: 0.0,
             watch_baseline: 0.0,
+            herd_pull: None,
+            quarry: None,
+            bold: false,
+            rot: 0.0,
+            // A grace period before the first meal matters.
+            belly: 240.0,
+            digest: 0.0,
         }
     }
 
@@ -287,11 +325,14 @@ impl Mob {
         };
         let kb = if def.movement_float { 2.5 } else { 6.0 };
         self.vel += dir * kb + Vec3::new(0.0, if def.movement_float { 1.0 } else { 4.5 }, 0.0);
-        if def.hostile {
+        if def.hostile || def.fierce {
+            // Wardens retaliate; the polar bear was already coming.
             self.state = MobState::Hunt;
             self.state_timer = 10.0;
             self.lose_aggro = 0.0;
         } else {
+            // Everything else — desperate wolves included — breaks
+            // off when wounded. Hungry, not suicidal.
             self.state = MobState::Flee;
             self.state_timer = 5.0;
         }
@@ -353,6 +394,29 @@ impl Mob {
         if self.growth < 1.0 {
             self.growth = (self.growth + dt / 1200.0).min(1.0);
         }
+        // The belly: hunger is the clock the whole trophic layer runs
+        // on. Only species with one, and only grown animals.
+        if def.belly_secs > 0.0 && self.growth >= 1.0 {
+            self.belly -= dt;
+            // A species that neither grazes nor hunts (bats) finds
+            // its own meals — insects, abstracted — and digests them
+            // where it roosts.
+            if self.belly <= 0.0 && !def.grazes && def.prey.is_empty() {
+                self.belly = def.belly_secs;
+                self.digest = 30.0 + (self.id % 30) as f32;
+            }
+            if self.digest > 0.0 {
+                self.digest -= dt;
+                if self.digest <= 0.0 {
+                    let guano = def.name.ends_with(":bat");
+                    if self.on_ground || def.movement_float {
+                        events.push(MobEvent::Dung(self.pos, guano));
+                    } else {
+                        self.digest = 0.5; // held (politely) until grounded
+                    }
+                }
+            }
+        }
 
         // Skittish species bolt when anyone closes in — unless recently
         // fed (feeding is taming-lite).
@@ -373,7 +437,8 @@ impl Mob {
         }
         // Wardens take notice (the quiet charm shortens their attention).
         if let Some((_, p)) = prey
-            && def.hostile
+            && (def.hostile || def.fierce || (self.bold && def.attack > 0.0))
+            && !self.tamed
             && !self.watcher
             && self.state != MobState::Hunt
         {
@@ -429,6 +494,43 @@ impl Mob {
             self.state_timer = self.state_timer.max(0.5);
             led_active = true; // skip the state machine below
         }
+        // A hungry predator with quarry in sight goes stalking (short
+        // of fleeing, being led, or already hunting the player).
+        if !led_active
+            && !def.prey.is_empty()
+            && def.belly_secs > 0.0
+            && self.belly <= 0.0
+            && self.growth >= 1.0
+            && self.quarry.is_some()
+            && !matches!(
+                self.state,
+                MobState::Flee | MobState::Stalk | MobState::Hunt
+            )
+        {
+            self.state = MobState::Stalk;
+            self.state_timer = 18.0;
+        }
+        // A hungry grazer drops what it was doing (short of fleeing or
+        // being led) and walks to the nearest richest plant — which,
+        // beside a farm, will tend to be the farm.
+        if !led_active
+            && def.grazes
+            && def.belly_secs > 0.0
+            && self.belly <= 0.0
+            && self.growth >= 1.0
+            && !matches!(self.state, MobState::Flee | MobState::Graze)
+        {
+            match self.scan_food(world) {
+                Some(meal) => {
+                    self.target =
+                        Vec3::new(meal.0 as f32 + 0.5, meal.1 as f32, meal.2 as f32 + 0.5);
+                    self.state = MobState::Graze;
+                    self.state_timer = 12.0;
+                }
+                // Nothing to eat in sight: try again in a while.
+                None => self.belly = 45.0,
+            }
+        }
         // State transitions + wish velocity.
         if !led_active {
             match self.state {
@@ -437,8 +539,24 @@ impl Mob {
                         if r01(rng) < 0.6 {
                             let ang = r01(rng) * std::f32::consts::TAU;
                             let dist = 4.0 + r01(rng) * 6.0;
-                            self.target =
-                                self.pos + Vec3::new(ang.sin() * dist, 0.0, ang.cos() * dist);
+                            let dy = if def.movement_swim {
+                                (r01(rng) - 0.5) * 2.0
+                            } else {
+                                0.0
+                            };
+                            let mut tgt =
+                                self.pos + Vec3::new(ang.sin() * dist, dy, ang.cos() * dist);
+                            // Herd animals lean homeward: wander picks
+                            // drift toward the group's center when it
+                            // has drifted away (no flocking math).
+                            if let Some(h) = self.herd_pull {
+                                let mut to = h - self.pos;
+                                to.y = 0.0;
+                                if to.length_squared() > 36.0 {
+                                    tgt += to * 0.6;
+                                }
+                            }
+                            self.target = tgt;
                             self.state = MobState::Wander;
                             self.state_timer = 6.0;
                         } else {
@@ -456,13 +574,18 @@ impl Mob {
                     } else {
                         let dir = to.normalize();
                         self.yaw = dir.x.atan2(dir.z);
-                        // Don't wander into deep water: probe one block ahead.
+                        // Landfolk don't wander into deep water;
+                        // swimmers don't wander OUT of it.
                         let probe = self.pos + dir * 1.2;
                         let (px, pz) = (probe.x.floor() as i32, probe.z.floor() as i32);
                         let py = self.pos.y.floor() as i32;
-                        let deep = world.reg.is_water(world.get_block(px, py - 1, pz))
-                            && world.reg.is_water(world.get_block(px, py - 2, pz));
-                        if deep {
+                        let blocked = if def.movement_swim {
+                            !world.reg.is_water(world.get_block(px, py, pz))
+                        } else {
+                            world.reg.is_water(world.get_block(px, py - 1, pz))
+                                && world.reg.is_water(world.get_block(px, py - 2, pz))
+                        };
+                        if blocked {
                             self.state = MobState::Idle;
                             self.state_timer = 1.0;
                         } else {
@@ -486,6 +609,69 @@ impl Mob {
                         wish = dir * def.speed * 1.6;
                     }
                 }
+                MobState::Graze => {
+                    let mut to = self.target - self.pos;
+                    to.y = 0.0;
+                    let flat = to.length();
+                    let dy = self.target.y - self.pos.y;
+                    if flat < 1.1 && dy.abs() < 1.6 {
+                        // The bite. The world applies the plant's side;
+                        // the animal trusts its own mouth.
+                        events.push(MobEvent::Ate((
+                            self.target.x.floor() as i32,
+                            self.target.y.floor() as i32,
+                            self.target.z.floor() as i32,
+                        )));
+                        self.belly = def.belly_secs;
+                        self.digest = 60.0 + (self.id % 45) as f32;
+                        self.state = MobState::Idle;
+                        self.state_timer = 2.0 + r01(rng) * 2.0;
+                    } else if self.state_timer <= 0.0 {
+                        // Fenced out or lost: give up, stay peckish.
+                        self.belly = 60.0;
+                        self.state = MobState::Idle;
+                        self.state_timer = 1.5;
+                    } else {
+                        let dir = to.normalize_or_zero();
+                        self.yaw = dir.x.atan2(dir.z);
+                        wish = dir * def.speed * 0.7;
+                    }
+                }
+                MobState::Stalk => match self.quarry {
+                    None => {
+                        // Prey died, fled the range, or was eaten
+                        // first: stay peckish, try again soon.
+                        self.belly = self.belly.max(45.0f32.min(def.belly_secs));
+                        self.state = MobState::Idle;
+                        self.state_timer = 1.5;
+                    }
+                    Some((prey_id, at)) => {
+                        self.target = at;
+                        let mut to = at - self.pos;
+                        let dy = to.y;
+                        to.y = 0.0;
+                        let flat = to.length();
+                        if flat < def.half_w + 0.9 && dy.abs() < 2.0 {
+                            // The kill. The world turns the prey into
+                            // a carcass; the hunter eats first.
+                            events.push(MobEvent::Killed(prey_id));
+                            self.belly = def.belly_secs;
+                            self.digest = 90.0 + (self.id % 45) as f32;
+                            self.state = MobState::Idle;
+                            self.state_timer = 3.0;
+                        } else if self.state_timer <= 0.0 {
+                            self.belly = 60.0;
+                            self.state = MobState::Idle;
+                            self.state_timer = 2.0;
+                        } else {
+                            let dir = to.normalize_or_zero();
+                            self.yaw = dir.x.atan2(dir.z);
+                            // The pounce pace: faster than a walk,
+                            // slower than blind panic.
+                            wish = dir * def.speed * 1.5;
+                        }
+                    }
+                },
                 MobState::Hunt => match prey {
                     None => {
                         self.state = MobState::Idle;
@@ -564,12 +750,35 @@ impl Mob {
         self.vel.x += (wish.x - self.vel.x) * step;
         self.vel.z += (wish.z - self.vel.z) * step;
 
-        if def.movement_float {
+        if def.movement_swim {
+            // Fish: neutral inside the water, helpless out of it. A
+            // swimmer drifts toward its wander target's depth; a
+            // beached one flops shoreward in little hops.
+            let here = world.get_block(
+                self.pos.x.floor() as i32,
+                (self.pos.y + 0.2).floor() as i32,
+                self.pos.z.floor() as i32,
+            );
+            if world.reg.is_water(here) {
+                let want = (self.target.y - self.pos.y).clamp(-1.2, 1.2);
+                self.vel.y += (want - self.vel.y) * step;
+            } else {
+                self.vel.y -= GRAVITY * dt;
+                self.vel.y = self.vel.y.max(-TERMINAL);
+                if self.on_ground {
+                    self.vel.y = 4.0; // the flop
+                }
+            }
+            self.anim_phase += dt * 3.0;
+        } else if def.movement_float {
             // Wisps hover: seek a bobbing height above ground (or the
             // player's eyes while hunting), no gravity at all.
             let gy = world.surface_height(self.pos.x.floor() as i32, self.pos.z.floor() as i32);
             let want_y = if self.state == MobState::Hunt {
                 prey.map(|(_, p)| p.pos.y).unwrap_or(gy as f32) + 1.6
+            } else if self.state == MobState::Stalk {
+                // The dive: an eagle takes its quarry on the ground.
+                self.quarry.map(|(_, at)| at.y).unwrap_or(gy as f32) + 0.5
             } else {
                 gy as f32 + 2.2
             } + (self.anim_phase * 0.7).sin() * 0.3;
@@ -598,14 +807,74 @@ impl Mob {
         self.move_axis(world, def, Vec3::new(0.0, 0.0, d.z));
         self.move_axis(world, def, Vec3::new(0.0, d.y, 0.0));
 
-        // Auto-jump a 1-block step when walking into a wall.
+        // Auto-jump a 1-block step when walking into a wall — with
+        // manners. The raid never climbs, and in player-touched
+        // country a CALM animal minds the walls too (pens hold at one
+        // block high). Panic is different: a fleeing animal will bolt
+        // clean over the fence, so keep your livestock calm.
         if !def.movement_float && self.hit_wall && self.on_ground && wish.length_squared() > 0.01 {
-            self.vel.y = JUMP;
+            let panicking = matches!(self.state, MobState::Flee | MobState::Hunt);
+            let tended = world.player_touched.contains(&{
+                let cp = crate::chunk::ChunkPos::of_world(
+                    self.pos.x.floor() as i32,
+                    self.pos.z.floor() as i32,
+                );
+                (cp.x, cp.z)
+            });
+            if panicking || (!tended && self.state != MobState::Graze) {
+                self.vel.y = JUMP;
+            }
         }
 
         // Legs swing with horizontal travel.
         let hspeed = Vec3::new(self.vel.x, 0.0, self.vel.z).length();
         self.anim_phase += hspeed * dt * 3.2;
+    }
+
+    /// The nearest richest plant meal within grazing range: a grown
+    /// crop out-scores a fruited bush out-scores wild grass — so an
+    /// unfenced field beside the woods is exactly the invitation it
+    /// looks like. Returns the meal's cell.
+    fn scan_food(&self, world: &World) -> Option<(i32, i32, i32)> {
+        const RANGE: i32 = 12;
+        let (px, py, pz) = (
+            self.pos.x.floor() as i32,
+            self.pos.y.floor() as i32,
+            self.pos.z.floor() as i32,
+        );
+        let reg = &world.reg;
+        let mut best: Option<((i32, i32, i32), i32, i32)> = None; // (cell, richness, dist2)
+        for dx in -RANGE..=RANGE {
+            for dz in -RANGE..=RANGE {
+                for dy in -2..=2i32 {
+                    let (x, y, z) = (px + dx, py + dy, pz + dz);
+                    let b = world.get_block(x, y, z);
+                    let d = reg.block(b);
+                    let richness = if d.crop_family != 0 && d.name.contains("/stage") {
+                        // A grown crop: ripe beats growing.
+                        if d.crop_next.is_none() { 4 } else { 3 }
+                    } else if d.name == "base:grass"
+                        && world.get_block(x, y + 1, z) == crate::registry::AIR
+                    {
+                        1
+                    } else {
+                        0
+                    };
+                    if richness == 0 {
+                        continue;
+                    }
+                    let dist2 = dx * dx + dy * dy + dz * dz;
+                    let better = match best {
+                        None => true,
+                        Some((_, r, d2)) => richness > r || (richness == r && dist2 < d2),
+                    };
+                    if better {
+                        best = Some(((x, y, z), richness, dist2));
+                    }
+                }
+            }
+        }
+        best.map(|(c, _, _)| c)
     }
 
     fn collides(&self, world: &World, def: &AnimalDef, pos: Vec3) -> bool {
