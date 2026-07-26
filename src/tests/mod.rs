@@ -139,20 +139,77 @@ fn write_script_mod(root: &Path, script: &str) -> Vec<(String, std::path::PathBu
 use crate::worldgen::{Biome, Generator};
 
 /// Find a column of the given biome near the origin (deterministic per seed).
+/// Several well-separated countries of one biome — for tests that
+/// want more than one sample before concluding anything.
+fn find_biomes(g: &Generator, want: Biome, n: usize) -> Vec<(i32, i32)> {
+    let mut out: Vec<(i32, i32)> = Vec::new();
+    for ring in 0..40i32 {
+        let mut keys: Vec<(i32, i32)> = Vec::new();
+        if ring == 0 {
+            keys.push((0, 0));
+        } else {
+            for i in -ring..=ring {
+                keys.push((i, -ring));
+                keys.push((i, ring));
+            }
+            for j in -ring + 1..ring {
+                keys.push((-ring, j));
+                keys.push((ring, j));
+            }
+        }
+        for key in keys {
+            let (x, z) = g.province_center(key.0, key.1);
+            if g.biome(x, z) == want
+                && g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 2
+                && g.plate_relief(&g.climate(x, z)) <= 30.0
+            {
+                out.push((x, z));
+                if out.len() >= n {
+                    return out;
+                }
+            }
+        }
+    }
+    out
+}
+
 fn find_biome(g: &Generator, want: Biome) -> Option<(i32, i32)> {
-    for r in 0..200 {
-        let d = r * 24;
-        for (x, z) in [
-            (d, 0),
-            (-d, 0),
-            (0, d),
-            (0, -d),
-            (d, d),
-            (-d, -d),
-            (d, -d),
-            (-d, d),
-        ] {
-            if g.biome(x, z) == want {
+    // Dry land off a fold range: a province center can sit under the
+    // sea or on a peak, and neither grows what the country grows.
+    find_biome_where(g, want, |x, z| {
+        g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 2
+            && g.plate_relief(&g.climate(x, z)) <= 30.0
+    })
+}
+
+/// As `find_biome`, but the caller adds conditions (dry, inland, off
+/// a plate boundary). Rays miss whole countries now that provinces
+/// are ~900 blocks; this spirals a grid at half-province spacing.
+fn find_biome_where(
+    g: &Generator,
+    want: Biome,
+    pred: impl Fn(i32, i32) -> bool,
+) -> Option<(i32, i32)> {
+    // Walk province CENTERS, not arbitrary columns: a country has one
+    // label, so one sample answers for all of it — and the center is
+    // the deepest interior point there is, never a border fringe.
+    for ring in 0..40i32 {
+        let mut keys: Vec<(i32, i32)> = Vec::new();
+        if ring == 0 {
+            keys.push((0, 0));
+        } else {
+            for i in -ring..=ring {
+                keys.push((i, -ring));
+                keys.push((i, ring));
+            }
+            for j in -ring + 1..ring {
+                keys.push((-ring, j));
+                keys.push((ring, j));
+            }
+        }
+        for key in keys {
+            let (x, z) = g.province_center(key.0, key.1);
+            if g.biome(x, z) == want && pred(x, z) {
                 return Some((x, z));
             }
         }

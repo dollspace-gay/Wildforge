@@ -2359,9 +2359,14 @@ fn the_green_tide_seeds_only_natural_kind_ground() {
     for _ in 0..10 {
         w2.add_ire_at(8, 8, 1.0);
     }
-    // (chunk stays modified anyway - doubly barred)
     let mut rng2 = 11u32;
-    for _ in 0..3000 {
+    for i in 0..3000 {
+        // A valley full of fruiting bushes credits its own cell, and
+        // the natural country around this pad is thick with them —
+        // keep the grievance fresh, which is what the test is about.
+        if i % 100 == 0 {
+            w2.add_ire_at(8, 8, 5.0);
+        }
         w2.random_tick(&mut rng2);
     }
     let mut saplings2 = 0;
