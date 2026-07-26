@@ -1262,6 +1262,44 @@ impl Game {
                 Some("heart") if self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.5;
                     self.input.right_held = false;
+                    let holding_seed = held.is_some_and(|i| reg.item(i).name == "base:heart_seed");
+                    // A cutting from a living heart: the thing you
+                    // carry across the world to wake a dead country.
+                    if !holding_seed
+                        && self
+                            .server
+                            .world
+                            .heart_at(h.block.0, h.block.2)
+                            .is_some_and(|hh| hh.stage == 2)
+                        && let Some(seed) = reg.item_id("base:heart_seed")
+                    {
+                        let left = self.inventory.add(&reg, seed, 1);
+                        if left > 0 {
+                            self.drop_stack(ItemStack::new(&reg, seed, left));
+                        }
+                        // Taking from the wild is taking, even gently.
+                        self.server.world.add_ire_at(h.block.0, h.block.2, 1.0);
+                        self.toast("It gives you a seed, and it costs it.".to_string());
+                        self.sfx(Sfx::Pickup);
+                        return;
+                    }
+                    if holding_seed {
+                        match self
+                            .server
+                            .world
+                            .plant_heart_seed(h.block.0, h.block.1, h.block.2)
+                        {
+                            Some(refusal) => self.toast(refusal),
+                            None => {
+                                self.inventory.take_one(self.input.hotbar_sel);
+                                self.toast(
+                                    "You plant it in the ruin of the old heart.".to_string(),
+                                );
+                                self.sfx(Sfx::Place);
+                            }
+                        }
+                        return;
+                    }
                     let world = &self.server.world;
                     let line = match world.heart_at(h.block.0, h.block.2) {
                         Some(hh) if hh.stage == 2 && hh.strain > 4.0 => {

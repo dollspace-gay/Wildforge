@@ -35,6 +35,8 @@ pub struct Heart {
     /// Accumulated grievance, in days held under resentment. The
     /// sickening is slow on purpose: a country takes seasons to die.
     pub strain: f32,
+    /// Days a planted seed has been taking, 0 when none is.
+    pub rooting: f32,
 }
 
 impl Heart {
@@ -72,6 +74,16 @@ pub fn heart_height(form: &str) -> i32 {
         _ => 1,
     }
 }
+
+/// How far around a dead site the ground must be made ready.
+pub const ROOT_RADIUS: i32 = 6;
+/// The share of that ground that must be living soil before a seed
+/// will take: the whole nutrient cycle, spent as a key.
+pub const ROOT_READY_FRAC: f32 = 0.55;
+/// Fertility a cell must reach to count as made ready.
+pub const ROOT_READY_FERT: u8 = 24;
+/// A rooting takes a season, defended.
+pub const ROOT_DAYS: f32 = 12.0;
 
 /// A country held under this much resentment starts to strain.
 pub const HEART_STRAIN_IRE: f32 = 8.0;
@@ -171,6 +183,7 @@ impl World {
             pos,
             stage: 2,
             strain: 0.0,
+            rooting: 0.0,
         });
     }
 
@@ -200,6 +213,93 @@ impl World {
             // has built around the site is theirs.
             if name.starts_with("base:heart_") {
                 self.set_block(at.0, at.1, at.2, want);
+            }
+        }
+    }
+
+    /// Is the ground around a dead site made ready? A heart will not
+    /// root in dead dirt: the soil has to be raised by hand first —
+    /// dung, compost, guano, litter, fallow seasons — which is the
+    /// whole ecology arc spent as a key.
+    pub fn root_ground_ready(&self, x: i32, z: i32) -> (u32, u32) {
+        let mut ready = 0;
+        let mut total = 0;
+        for dx in -ROOT_RADIUS..=ROOT_RADIUS {
+            for dz in -ROOT_RADIUS..=ROOT_RADIUS {
+                if dx * dx + dz * dz > ROOT_RADIUS * ROOT_RADIUS {
+                    continue;
+                }
+                let (cx, cz) = (x + dx, z + dz);
+                let y = self.surface_height(cx, cz);
+                total += 1;
+                if self.fertility_at(cx, y, cz) >= ROOT_READY_FERT {
+                    ready += 1;
+                }
+            }
+        }
+        (ready, total)
+    }
+
+    /// Plant a quickened seed at a dead site. Returns the refusal to
+    /// say out loud, or None when the rooting has begun.
+    pub fn plant_heart_seed(&mut self, x: i32, y: i32, z: i32) -> Option<String> {
+        let key = self.generator.province(x, z).key;
+        let Some(h) = self.hearts.get(&key).copied() else {
+            return Some("No country's heart ever stood here.".into());
+        };
+        if h.stage != 0 {
+            return Some("This country still has a spirit.".into());
+        }
+        if (h.pos.0 - x).abs() > 3 || (h.pos.2 - z).abs() > 3 {
+            return Some("It must go where the old heart stood.".into());
+        }
+        let (ready, total) = self.root_ground_ready(h.pos.0, h.pos.2);
+        if (ready as f32) < total as f32 * ROOT_READY_FRAC {
+            return Some(format!(
+                "The ground is not ready ({ready} of {total} plots living)."
+            ));
+        }
+        if let Some(e) = self.hearts.get_mut(&key) {
+            e.rooting = 0.01;
+            e.pos = (h.pos.0, y, h.pos.2);
+        }
+        None
+    }
+
+    /// The rooting clock: a planted seed takes a season to take, and
+    /// only in ground kept ready.
+    pub(super) fn tick_rooting(&mut self, day_frac: f32) {
+        let keys: Vec<(i32, i32)> = self
+            .hearts
+            .iter()
+            .filter(|(_, h)| h.rooting > 0.0)
+            .map(|(k, _)| *k)
+            .collect();
+        for key in keys {
+            let Some(h) = self.hearts.get(&key).copied() else {
+                continue;
+            };
+            let (ready, total) = self.root_ground_ready(h.pos.0, h.pos.2);
+            if (ready as f32) < total as f32 * ROOT_READY_FRAC * 0.75 {
+                // Let the ground go and the seed goes with it.
+                if let Some(e) = self.hearts.get_mut(&key) {
+                    e.rooting = 0.0;
+                }
+                continue;
+            }
+            let done = h.rooting + day_frac >= ROOT_DAYS;
+            if let Some(e) = self.hearts.get_mut(&key) {
+                e.rooting = if done { 0.0 } else { e.rooting + day_frac };
+                if done {
+                    e.strain = 0.0;
+                }
+            }
+            if done {
+                self.set_heart_stage(key, 2);
+                // The country wakes: its wardens answer to it again.
+                for m in &mut self.mobs {
+                    m.masterless = false;
+                }
             }
         }
     }

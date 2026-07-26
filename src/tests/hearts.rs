@@ -475,3 +475,93 @@ fn the_dead_countrys_wardens_keep_walking() {
         "still walking at noon"
     );
 }
+
+#[test]
+fn a_seed_will_not_take_in_dead_dirt_but_will_in_ground_made_ready() {
+    let (mut w, key, (sx, sz)) = world_with_heart(49, "hearts-root");
+    let reg = w.reg.clone();
+    w.set_heart_stage(key, 0);
+    let hp = w.heart_at(sx, sz).unwrap().pos;
+    // Dead dirt refuses the seed, and says why.
+    let refusal = w.plant_heart_seed(hp.0, hp.1, hp.2).expect("refused");
+    assert!(refusal.contains("ground is not ready"), "{refusal}");
+    // Raise the soil by hand: the whole nutrient cycle, spent as a key.
+    let farm = b(&reg, "base:farmland");
+    let r = crate::world::ROOT_RADIUS;
+    for dx in -r..=r {
+        for dz in -r..=r {
+            let (cx, cz) = (hp.0 + dx, hp.2 + dz);
+            let y = w.surface_height(cx, cz);
+            w.set_block_meta(cx, y, cz, farm, crate::world::soil::soil_meta(40, 0));
+        }
+    }
+    let (ready, total) = w.root_ground_ready(hp.0, hp.2);
+    assert!(
+        ready * 2 > total,
+        "the ground is living now ({ready}/{total})"
+    );
+    assert!(w.plant_heart_seed(hp.0, hp.1, hp.2).is_none(), "it takes");
+    // A rooting is a season's work, not a moment's.
+    for _ in 0..6 {
+        w.tick_ire(1.0);
+    }
+    assert_eq!(w.heart_at(sx, sz).unwrap().stage, 0, "still rooting");
+    for _ in 0..8 {
+        w.tick_ire(1.0);
+    }
+    let h = w.heart_at(sx, sz).unwrap();
+    assert_eq!(h.stage, 2, "the country wakes");
+    assert_eq!(h.rooting, 0.0);
+    assert!(w.heart_alive_at(sx, sz), "and it gives again");
+    // The site wears its living form once more.
+    let form = crate::world::heart_form(w.generator.biome(sx, sz));
+    let at = w.get_block(h.pos.0, h.pos.1, h.pos.2);
+    assert_eq!(reg.block(at).name, crate::world::heart_block_name(form, 2));
+}
+
+#[test]
+fn a_rooting_abandoned_is_a_rooting_lost() {
+    let (mut w, key, (sx, sz)) = world_with_heart(50, "hearts-abandon");
+    let reg = w.reg.clone();
+    w.set_heart_stage(key, 0);
+    let hp = w.heart_at(sx, sz).unwrap().pos;
+    let farm = b(&reg, "base:farmland");
+    let r = crate::world::ROOT_RADIUS;
+    for dx in -r..=r {
+        for dz in -r..=r {
+            let (cx, cz) = (hp.0 + dx, hp.2 + dz);
+            let y = w.surface_height(cx, cz);
+            w.set_block_meta(cx, y, cz, farm, crate::world::soil::soil_meta(40, 0));
+        }
+    }
+    assert!(w.plant_heart_seed(hp.0, hp.1, hp.2).is_none());
+    for _ in 0..4 {
+        w.tick_ire(1.0);
+    }
+    assert!(w.heart_at(sx, sz).unwrap().rooting > 0.0, "taking");
+    // Let the ground go back to nothing and the seed goes with it.
+    let dirt = b(&reg, "base:dirt");
+    for dx in -r..=r {
+        for dz in -r..=r {
+            let (cx, cz) = (hp.0 + dx, hp.2 + dz);
+            let y = w.surface_height(cx, cz);
+            w.set_block(cx, y, cz, dirt);
+        }
+    }
+    w.tick_ire(1.0);
+    assert_eq!(w.heart_at(sx, sz).unwrap().rooting, 0.0, "the seed is lost");
+    assert_eq!(w.heart_at(sx, sz).unwrap().stage, 0, "the country waits");
+}
+
+#[test]
+fn a_seed_only_goes_where_a_heart_died() {
+    let (mut w, key, (sx, sz)) = world_with_heart(51, "hearts-wrongplace");
+    // A living country refuses it outright.
+    let hp = w.heart_at(sx, sz).unwrap().pos;
+    let r = w.plant_heart_seed(hp.0, hp.1, hp.2).expect("refused");
+    assert!(r.contains("still has a spirit"), "{r}");
+    // And so does open ground far from the old site.
+    w.set_heart_stage(key, 0);
+    let r = w.plant_heart_seed(hp.0 + 40, hp.1, hp.2).expect("refused");
+    assert!(r.contains("where the old heart stood"), "{r}");
+}

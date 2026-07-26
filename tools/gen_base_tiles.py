@@ -907,6 +907,17 @@ def main():
     save_tile(heart_stone("heart_stone_dead", (78, 76, 80), (48, 47, 50), (60, 58, 62), True),
               "heart_stone_dead")
 
+
+    # The quickened seed: a living thing you carry.
+    sd = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(sd)
+    d.ellipse([9, 8, 23, 26], fill=(104, 78, 44, 255), outline=(66, 48, 26, 255))
+    d.ellipse([12, 12, 20, 21], fill=(140, 232, 158, 255))
+    d.ellipse([14, 14, 18, 18], fill=(210, 255, 220, 255))
+    d.line([(16, 8), (16, 3)], fill=(96, 150, 84, 255), width=2)
+    d.ellipse([16, 2, 22, 6], fill=(110, 176, 96, 255))
+    save_tile(sd, "heart_seed")
+
     print(f"wrote {len(list(OUT.glob('*.png')))} tiles to {OUT}")
 
 

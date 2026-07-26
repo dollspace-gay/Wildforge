@@ -1094,3 +1094,12 @@ texture = "kelp_item.png"
 id = "guano"
 name = "Guano"
 texture = "guano.png"
+
+[[item]]
+id = "heart_seed"
+name = "Quickened Seed"
+# Taken from a living heart, carried overland, and planted in ground
+# you have made ready. It is alive: it needs water, and winter is
+# hard on it.
+texture = "heart_seed.png"
+durability = 240

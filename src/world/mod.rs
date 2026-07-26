@@ -30,7 +30,7 @@ mod storage;
 
 pub use hearts::{Heart, heart_form};
 #[cfg(test)]
-pub use hearts::{heart_block_name, heart_height};
+pub use hearts::{ROOT_RADIUS, heart_block_name, heart_height};
 pub use machines::{station_powered, worked_table_for};
 pub mod soil;
 mod substrate;
