@@ -826,10 +826,22 @@ impl World {
         if block == AIR || self.reg.block(block).hardness.is_none() {
             return None;
         }
-        let drop = award_drop
+        let mut drop = award_drop
             .then(|| self.reg.drops_for(block, tool))
             .flatten()
             .map(|(item, count)| ItemStack::new(&self.reg, item, count));
+        // A sub-voxel cell holds between an eighth of a block and all
+        // of it, so the drop has to follow the fill or the world
+        // leaks sand (or mints it). A full cell always pays out; a
+        // partial one pays with the odds of what it holds, rolled
+        // from the cell's own position so it can never be re-rolled.
+        if drop.is_some() && self.reg.block(block).sub_voxel {
+            let filled = self.get_meta(pos.0, pos.1, pos.2).count_ones();
+            let roll = self.mob_hash(pos.0, pos.2, 0x5a4d_u32 ^ pos.1 as u32) % 8;
+            if roll >= filled {
+                drop = None;
+            }
+        }
         if affect_ire {
             let cost = self.ire_for_block(block);
             self.add_ire_at(pos.0, pos.2, cost);

@@ -2413,3 +2413,63 @@ fn blocks_place_into_water_and_never_vanish_on_refusal() {
     assert!(!reg.is_replaceable(stone));
     assert!(!reg.is_replaceable(crop));
 }
+
+#[test]
+fn sub_voxel_sand_pays_out_by_how_much_it_holds() {
+    // Surface sand is an octant cell: it can hold an eighth of a
+    // block or all of it. It used to drop NOTHING at any fill, so a
+    // swing silently ate the block. Now the drop follows the fill.
+    let reg = base_reg();
+    let mut w = test_world_with("sand-drops", reg.clone());
+    let sand = b(&reg, "base:surface_sand");
+    let sand_item = it(&reg, "base:sand");
+    let shovel = it(&reg, "base:wood_shovel");
+    // A full cell always pays: this is the common case (placed and
+    // interior sand), and it must never be a coin flip.
+    for i in 0..24 {
+        let (x, y, z) = (-20 + i, 90, -20);
+        w.set_block_meta(x, y, z, sand, 0xFF);
+        let got = w
+            .break_block((x, y, z), Some(shovel), true, false)
+            .and_then(|b| b.drop);
+        assert_eq!(
+            got.map(|s| s.item),
+            Some(sand_item),
+            "a full octant cell owes a whole sand"
+        );
+    }
+    // Across many partial cells the payout tracks the volume held,
+    // so the world neither leaks sand nor mints it.
+    for filled in [2u32, 4, 6] {
+        let mask = ((1u16 << filled) - 1) as u8;
+        let mut paid = 0;
+        let n = 160;
+        for i in 0..n {
+            let (x, y, z) = (-30 + (i % 60), 90, -28 + (i / 60) + filled as i32 * 6);
+            w.set_block_meta(x, y, z, sand, mask);
+            if w.break_block((x, y, z), Some(shovel), true, false)
+                .and_then(|b| b.drop)
+                .is_some()
+            {
+                paid += 1;
+            }
+        }
+        let want = n * filled as i32 / 8;
+        assert!(
+            (paid - want).abs() <= n / 5,
+            "{filled}/8 cells paid {paid} of {n}, expected near {want}"
+        );
+    }
+    // And the roll is the cell's own: the same spot answers the same
+    // way, so it can never be re-rolled by rebuilding on it.
+    let (x, y, z) = (30, 90, 30);
+    let mut first = None;
+    for _ in 0..5 {
+        w.set_block_meta(x, y, z, sand, 0b0000_1111);
+        let got = w
+            .break_block((x, y, z), Some(shovel), true, false)
+            .and_then(|b| b.drop)
+            .is_some();
+        assert_eq!(*first.get_or_insert(got), got, "the cell keeps its answer");
+    }
+}

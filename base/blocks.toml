@@ -51,9 +51,11 @@ texture = "@sand"
 hardness = 0.6
 tool = "shovel"
 sub_voxel = true
-# Drops nothing for now: an octant cell holds anywhere from 1/8 to a full
-# block, so a whole-block drop wouldn't conserve volume. (Later: a bucket.)
-drops = "none"
+# An octant cell holds anywhere from an eighth of a block to all of it,
+# so the drop follows the fill: a full cell always yields its sand, a
+# partial one yields with the odds of how much it holds. Volume is
+# conserved in expectation, and a swing never silently eats a block.
+drops = "base:sand"
 
 [[block]]
 id = "gravel"
