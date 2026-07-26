@@ -1,5 +1,47 @@
 # The ecology arc — the cycle closes
 
+Drafted 2026-07-25, **IMPLEMENTED** 2026-07-26, all seven stages.
+Notes vs. this spec, where the implementation knew better:
+
+- **Fertility is six bits, not eight**: the meta byte splits into
+  0–63 fertility plus a 2-bit rotation stamp (the last matured
+  family) — the rotation ledger wanted those bits, and 64 levels
+  is plenty behind a four-step tint. All the planned amounts
+  scaled by /4.
+- **The compost heap needs no block entity**: the meta byte counts
+  the fill, and a full heap turns on its NEXT random-tick visit —
+  any single cell's visits are days apart, so the visit rate IS
+  the wait. Fungus creep drops its extra odds for the same reason.
+- **The fence rule became a manners rule**: calm animals don't
+  auto-jump in player-touched country (a one-high pen holds), but
+  a PANICKED animal bolts clean over the wall — keep your
+  livestock calm, and fences still never stop a fleeing deer.
+- **The carcass is an inert species**, not a new entity kind: it
+  rides the existing mob stream and save-skip rules, so predation
+  cost no protocol. Scavenged carcasses leave nothing; a laden
+  carrier taken by wolves spills its pack.
+- **Fish cull at 96 blocks** under a 90-of-320 budget; the rod is
+  a cast/bite/strike state on the interaction layer, HOST-side
+  players only in v1 (guests can't fish yet — the same lane as
+  tilling; recorded for the follow-up).
+- **Bats roost by physics**: the float hover pressing them into
+  cave ceilings IS the roosting, and their belly feeds on
+  abstracted insects so the guano keeps coming.
+- **Lightning presentation rides the storm flash/thunder latch
+  that already existed**; a landed bolt is a SimEvent (host-side
+  visual in v1 — guests see the char and the bloom through the
+  edit stream, not the flash).
+- **The trophic layer is orchestrated by pre-pass**: quarry, herd
+  pull, and desperation are per-mob fields written by tick_mobs
+  each tick, keeping Mob::tick's signature stable forever.
+- **A hardening sweep came free**: the suite's load-flakes traced
+  to real protocol gaps — hotbar selection rode lossy datagrams
+  (agents now anchor stance reliably before edits), inventory
+  clicks needed lock-step echo confirmation plus a self-healing
+  place() that reclaims its own misplace, the host command budget
+  rose 80→160 per sim-second, and sleep votes settle 0.75 s so a
+  request+cancel race can never dawn the host.
+
 Drafted 2026-07-25. Decisions settled with dollspace: a realistic
 trophic layer and nutrient cycle that reaches all the way into
 agriculture; ire as retribution AND regrowth (the titan levels the
