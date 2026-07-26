@@ -83,6 +83,11 @@ impl World {
         if self.mobs.len() >= MOB_CAP {
             return;
         }
+        // Dead country restocks nothing.
+        let (wcx, wcz) = (pos.x * CHUNK_X as i32 + 8, pos.z * CHUNK_Z as i32 + 8);
+        if !self.heart_alive_at(wcx, wcz) {
+            return;
+        }
         let reg = self.reg.clone();
         let (cx, cz) = (pos.x * CHUNK_X as i32, pos.z * CHUNK_Z as i32);
         let biome = self.generator.biome(cx + 8, cz + 8).name().to_lowercase();
@@ -374,6 +379,16 @@ impl World {
             if m.pos.y < -20.0 {
                 return false; // fell out of the world somehow
             }
+            if def.hostile && m.masterless {
+                // Left over when the heart died and never recalled:
+                // no daylight dissolves them, nothing sends them, and
+                // they do not stop. Only distance retires them.
+                let near = players
+                    .iter()
+                    .map(|p| (m.pos - p.pos).length_squared())
+                    .fold(f32::INFINITY, f32::min);
+                return near <= 120.0 * 120.0;
+            }
             if !def.hostile {
                 // Fish are ambience-plus-resource: the water has
                 // fish while someone's there to see it.
@@ -466,7 +481,7 @@ impl World {
                 let x = (player.x + ang.sin() * dist).floor() as i32;
                 let z = (player.z + ang.cos() * dist).floor() as i32;
                 let cp = ChunkPos::of_world(x, z);
-                if self.chunks.contains_key(&cp) {
+                if self.chunks.contains_key(&cp) && self.heart_alive_at(x, z) {
                     let biome = self.generator.biome(x, z).name().to_lowercase();
                     // Wildlife only — wardens have their own spawner.
                     let eligible: Vec<usize> = reg

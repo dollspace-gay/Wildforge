@@ -80,6 +80,18 @@ impl World {
         } else {
             let _ = fs::write(self.save_dir.join("bloom"), bb);
         }
+        // The ground's spent willingness to bloom.
+        let mut sb = Vec::with_capacity(self.bloom_spent.len() * 12);
+        for (&(x, z), &v) in &self.bloom_spent {
+            sb.extend_from_slice(&x.to_le_bytes());
+            sb.extend_from_slice(&z.to_le_bytes());
+            sb.extend_from_slice(&v.to_le_bytes());
+        }
+        if sb.is_empty() {
+            let _ = fs::remove_file(self.save_dir.join("bspent"));
+        } else {
+            let _ = fs::write(self.save_dir.join("bspent"), sb);
+        }
         // The hearts: (province x, z, site x, y, z, stage, strain).
         let mut hb = Vec::with_capacity(self.hearts.len() * 25);
         for (&(kx, kz), h) in &self.hearts {
@@ -204,6 +216,14 @@ impl World {
                 let z = i32::from_le_bytes([p[4], p[5], p[6], p[7]]);
                 let v = f32::from_le_bytes([p[8], p[9], p[10], p[11]]);
                 self.bloom.insert((x, z), v.clamp(0.0, 9.0));
+            }
+        }
+        if let Ok(data) = fs::read(self.save_dir.join("bspent")) {
+            for p in data.chunks_exact(12) {
+                let x = i32::from_le_bytes([p[0], p[1], p[2], p[3]]);
+                let z = i32::from_le_bytes([p[4], p[5], p[6], p[7]]);
+                let v = f32::from_le_bytes([p[8], p[9], p[10], p[11]]);
+                self.bloom_spent.insert((x, z), v.max(0.0));
             }
         }
         if let Ok(data) = fs::read(self.save_dir.join("hearts")) {

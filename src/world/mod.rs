@@ -70,6 +70,10 @@ pub struct SeparatorState {
     pub progress: f32,
 }
 
+/// A cell will give this much bloom, all told, before the ground has
+/// nothing left to give. Tending pays it back.
+pub const BLOOM_EXHAUSTION: f32 = 12.0;
+
 /// Seconds per separator batch (1 powder + 1 fuel -> 1 Nd + 2 Ce).
 pub const SEPARATE_SECS: f32 = 45.0;
 /// How far a running generator's field reaches (lamps, the quern).
@@ -335,6 +339,9 @@ pub struct World {
     pub(crate) bloom: HashMap<(i32, i32), f32>,
     /// The spirits of the land, keyed by province.
     pub(crate) hearts: HashMap<(i32, i32), Heart>,
+    /// How much bloom a cell has already been given without being
+    /// tended back — the ground's willingness, spent.
+    pub(crate) bloom_spent: HashMap<(i32, i32), f32>,
     /// Absolute sim-time in seconds (day * DAY_LENGTH + time-of-day),
     /// mirrored from the Server every tick so chunk load and random
     /// ticks share one clock.
@@ -570,6 +577,7 @@ impl World {
             player_touched: HashSet::new(),
             bloom: HashMap::new(),
             hearts: HashMap::new(),
+            bloom_spent: HashMap::new(),
             mobs: Vec::new(),
             projectiles: Vec::new(),
             hostile_spawn_timer: 0.0,

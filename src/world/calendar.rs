@@ -62,6 +62,8 @@ impl World {
     pub fn plant_ire_at(&mut self, x: i32, z: i32, amt: f32) {
         self.plant_ire(amt);
         self.charge_cell(x, z, -amt);
+        // Tending is also how a cell earns back its bloom.
+        self.ease_bloom_debt(x, z, amt);
     }
 
     // ---------------- the bloom (wrath as renewal) ----------------
@@ -77,9 +79,32 @@ impl World {
             .unwrap_or(0.0)
     }
 
+    /// Bank a bloom — but the ground's willingness is finite. A cell
+    /// bloomed over and over and never tended gives less each time,
+    /// and finally nothing: the storm's gift is not a faucet, and
+    /// farming the wild's rage spends something real.
     pub fn add_bloom(&mut self, x: i32, z: i32, days: f32) {
-        let e = self.bloom.entry(Self::ire_cell(x, z)).or_insert(0.0);
-        *e = (*e + days).min(9.0);
+        let cell = Self::ire_cell(x, z);
+        let spent = self.bloom_spent.get(&cell).copied().unwrap_or(0.0);
+        let yield_frac = (1.0 - spent / BLOOM_EXHAUSTION).clamp(0.0, 1.0);
+        let given = days * yield_frac;
+        if given <= 0.01 {
+            return;
+        }
+        *self.bloom_spent.entry(cell).or_insert(0.0) += given;
+        let e = self.bloom.entry(cell).or_insert(0.0);
+        *e = (*e + given).min(9.0);
+    }
+
+    /// Tending pays the ground back its willingness to bloom.
+    pub fn ease_bloom_debt(&mut self, x: i32, z: i32, amount: f32) {
+        let cell = Self::ire_cell(x, z);
+        if let Some(v) = self.bloom_spent.get_mut(&cell) {
+            *v = (*v - amount).max(0.0);
+            if *v <= 0.01 {
+                self.bloom_spent.remove(&cell);
+            }
+        }
     }
 
     /// A hostile fell here: the wild reclaims its own, extravagantly.

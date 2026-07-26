@@ -133,6 +133,7 @@ impl World {
             e.stage = 0;
             e.strain = HEART_DEATH_STRAIN;
         }
+        self.orphan_wardens(h.pos.0, h.pos.2);
         // Take the rest of the site down with it: a half-cut heart is
         // not a thing, and the husk is what the country wears now.
         let form = heart_form(self.generator.biome(h.pos.0, h.pos.2));
@@ -183,6 +184,9 @@ impl World {
         }
         h.stage = stage;
         self.hearts.insert(key, h);
+        if stage == 0 {
+            self.orphan_wardens(h.pos.0, h.pos.2);
+        }
         let biome = self.generator.biome(h.pos.0, h.pos.2);
         let form = heart_form(biome);
         let Some(want) = self.reg.block_id(&heart_block_name(form, stage)) else {
@@ -196,6 +200,24 @@ impl World {
             // has built around the site is theirs.
             if name.starts_with("base:heart_") {
                 self.set_block(at.0, at.1, at.2, want);
+            }
+        }
+    }
+
+    /// The wardens caught mid-existence when their heart died. They
+    /// were never recalled and never will be.
+    fn orphan_wardens(&mut self, x: i32, z: i32) {
+        let key = self.generator.province(x, z).key;
+        let reg = self.reg.clone();
+        let g = &self.generator;
+        for m in &mut self.mobs {
+            if reg.animals.get(m.species).is_some_and(|d| d.hostile)
+                && g.province(m.pos.x.floor() as i32, m.pos.z.floor() as i32)
+                    .key
+                    == key
+            {
+                m.masterless = true;
+                m.watcher = false;
             }
         }
     }

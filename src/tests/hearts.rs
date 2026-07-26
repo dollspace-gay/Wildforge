@@ -337,3 +337,141 @@ fn a_dead_country_does_not_answer_the_offering_stone() {
     );
     assert!(still_there, "the diamond is still on the stone");
 }
+
+#[test]
+fn a_dead_country_gives_nothing_but_your_own_farm_still_works() {
+    let (mut w, key, (sx, sz)) = world_with_heart(47, "hearts-sterile");
+    let reg = w.reg.clone();
+    let grass = b(&reg, "base:grass");
+    let dirt = b(&reg, "base:dirt");
+    let farm = b(&reg, "base:farmland");
+    let seed0 = b(&reg, "base:wheat_seeds");
+    let log = b(&reg, "base:log");
+    let sy = 150;
+    // A pad in this country: bare dirt to heal, grass to seed the
+    // tide (with a parent log), and a tended field of the player's.
+    for x in sx - 8..sx + 8 {
+        for z in sz - 8..sz + 8 {
+            w.set_block(x, sy, z, grass);
+            for dy in 1..6 {
+                if w.get_block(x, sy + dy, z) != AIR {
+                    w.set_block(x, sy + dy, z, AIR);
+                }
+            }
+        }
+    }
+    for dy in 1..=3 {
+        w.set_block(sx, sy + dy, sz, log);
+    }
+    for x in sx - 6..sx - 2 {
+        for z in sz - 6..sz - 2 {
+            w.set_block(x, sy, z, dirt);
+        }
+    }
+    for x in sx + 2..sx + 6 {
+        for z in sz + 2..sz + 6 {
+            w.set_block_meta(x, sy, z, farm, crate::world::soil::soil_meta(30, 0));
+            w.set_block(x, sy + 1, z, seed0);
+        }
+    }
+    // Kill the country's spirit.
+    w.set_heart_stage(key, 0);
+    let mut rng = 3u32;
+    for _ in 0..9000 {
+        w.random_tick(&mut rng);
+    }
+    // Nothing the WILD gives: no tide, no healing.
+    let saplings = (sx - 8..sx + 8)
+        .flat_map(|x| (sz - 8..sz + 8).map(move |z| (x, z)))
+        .filter(|&(x, z)| reg.block(w.get_block(x, sy + 1, z)).sapling.is_some())
+        .count();
+    assert_eq!(saplings, 0, "the tide does not run in dead country");
+    let healed = (sx - 6..sx - 2)
+        .flat_map(|x| (sz - 6..sz - 2).map(move |z| (x, z)))
+        .filter(|&(x, z)| w.get_block(x, sy, z) == grass)
+        .count();
+    assert_eq!(healed, 0, "and the scars stay open");
+    // But the player's own field grows: farms work, wilderness does not.
+    let grown = (sx + 2..sx + 6)
+        .flat_map(|x| (sz + 2..sz + 6).map(move |z| (x, z)))
+        .filter(|&(x, z)| w.get_block(x, sy + 1, z) != seed0)
+        .count();
+    assert!(grown > 0, "what you feed yourself still grows ({grown})");
+}
+
+#[test]
+fn the_bloom_is_finite_if_you_never_give_back() {
+    let reg = base_reg();
+    let mut w = test_world_with("bloom-debt", reg.clone());
+    // Farm the storm: bank bloom over and over, tending nothing.
+    let mut total = 0.0;
+    for _ in 0..40 {
+        let before = w.bloom_at(500, 500);
+        w.add_bloom(500, 500, 3.0);
+        total += (w.bloom_at(500, 500) - before).max(0.0);
+        // Spend it, the way days do.
+        for _ in 0..12 {
+            w.tick_ire(1.0);
+        }
+    }
+    assert!(
+        total < crate::world::BLOOM_EXHAUSTION * 1.5,
+        "the ground's gift runs out ({total:.1})"
+    );
+    assert_eq!(
+        w.bloom_at(500, 500),
+        0.0,
+        "and a cell farmed dry blooms no more"
+    );
+    // Tend it, and the willingness comes back.
+    for _ in 0..40 {
+        w.plant_ire_at(500, 500, 1.0);
+    }
+    w.add_bloom(500, 500, 3.0);
+    assert!(w.bloom_at(500, 500) > 0.0, "tended ground blooms again");
+}
+
+#[test]
+fn the_dead_countrys_wardens_keep_walking() {
+    let reg = base_reg();
+    let (mut w, key, (sx, sz)) = world_with_heart(48, "hearts-masterless");
+    // A warden abroad when the heart dies.
+    let wi = reg
+        .animals
+        .iter()
+        .position(|a| a.hostile && a.name.contains("thornling"))
+        .expect("a warden");
+    let mut m = crate::mobs::Mob::new(
+        wi,
+        glam::Vec3::new(
+            sx as f32 + 4.0,
+            w.surface_height(sx + 4, sz) as f32 + 1.0,
+            sz as f32,
+        ),
+        0.0,
+    );
+    m.health = reg.animals[wi].health;
+    w.spawn_mob(m);
+    w.set_heart_stage(key, 0);
+    assert!(
+        w.mobs().iter().any(|m| m.masterless),
+        "the heart's death orphans what it sent"
+    );
+    // Daylight does not dissolve them: nothing is left to recall them.
+    let here = glam::Vec3::new(sx as f32, 80.0, sz as f32);
+    let ctx = crate::server::PlayerCtx {
+        id: 0,
+        pos: here,
+        spawn: here,
+        attackable: true,
+        aggro_mod: 0.0,
+    };
+    let mut rng = 9u32;
+    for _ in 0..200 {
+        w.tick_mobs(&[ctx], 1.0, 0.05, &mut rng);
+    }
+    assert!(
+        w.mobs().iter().any(|m| m.masterless),
+        "still walking at noon"
+    );
+}
