@@ -13,6 +13,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
+import heart_table
+
 PX = 32
 OUT = Path(__file__).resolve().parent.parent / "base" / "textures"
 
@@ -858,8 +860,10 @@ def main():
         save_tile(fl, name)
 
 
-    # The hearts of the land: a bole, a spring, a standing stone —
-    # each alive, failing, and dead.
+    # The hearts of the land: a bole, a spring, a standing stone.
+    # Twelve countries, three shapes, and the failing and dead variants
+    # derived from each country's own two colours (tools/heart_table.py)
+    # rather than authored six times over.
     def heart_bole(name, bark, dark, veins):
         img = rock(name, base=bark, dark=dark)
         d = ImageDraw.Draw(img)
@@ -878,38 +882,22 @@ def main():
         d.ellipse([12, 12, 20, 20], fill=core + (255,))
         return img
 
-    for suffix, bark, dark, veins, core in [
-        ("", (96, 74, 46), (62, 46, 28), (128, 236, 150), (150, 255, 176)),
-        ("_sick", (92, 82, 62), (60, 54, 42), (120, 150, 116), (128, 158, 120)),
-        ("_dead", (52, 48, 46), (30, 28, 27), (44, 40, 38), (36, 32, 30)),
-    ]:
-        save_tile(heart_bole(f"heart_tree{suffix}", bark, dark, veins),
-                  f"heart_tree{suffix}")
-        save_tile(heart_top(f"heart_tree_top{suffix}", bark, dark, core),
-                  f"heart_tree_top{suffix}")
-
-    def heart_spring(name, water, rim, glow):
+    def heart_spring(name, water, rim, glow, dry):
         img = rock(name, base=rim, dark=tuple(max(0, v - 40) for v in rim))
         d = ImageDraw.Draw(img)
         d.ellipse([4, 4, 27, 27], fill=water + (255,),
                   outline=tuple(max(0, v - 50) for v in rim) + (255,))
-        for r in (9, 6, 3):
-            d.ellipse([16 - r, 16 - r, 16 + r, 16 + r], outline=glow + (255,))
+        if dry:
+            # A cracked pan where the water was.
+            rr = rng_for(name + "_dry")
+            for _ in range(7):
+                x, y = rr.randint(8, 24), rr.randint(8, 24)
+                d.line([(x, y), (x + rr.randint(-5, 5), y + rr.randint(-5, 5))],
+                       fill=tuple(max(0, v - 34) for v in water) + (255,))
+        else:
+            for r in (9, 6, 3):
+                d.ellipse([16 - r, 16 - r, 16 + r, 16 + r], outline=glow + (255,))
         return img
-
-    save_tile(heart_spring("heart_spring", (56, 148, 200), (150, 146, 138), (170, 235, 255)),
-              "heart_spring")
-    save_tile(heart_spring("heart_spring_sick", (86, 116, 128), (146, 142, 134), (150, 180, 190)),
-              "heart_spring_sick")
-    dry = rock("heart_spring_dead", base=(126, 118, 106), dark=(84, 78, 70))
-    d = ImageDraw.Draw(dry)
-    d.ellipse([4, 4, 27, 27], fill=(92, 84, 74, 255), outline=(66, 60, 52, 255))
-    for _ in range(7):
-        rr = rng_for("dryspring")
-        x, y = rr.randint(8, 24), rr.randint(8, 24)
-        d.line([(x, y), (x + rr.randint(-5, 5), y + rr.randint(-5, 5))],
-               fill=(58, 52, 46, 255))
-    save_tile(dry, "heart_spring_dead")
 
     def heart_stone(name, base_c, dark_c, rune, cracked):
         img = rock(name, base=base_c, dark=dark_c)
@@ -923,22 +911,53 @@ def main():
             d.line([(24, 4), (19, 15)], fill=(28, 26, 30, 255))
         return img
 
-    save_tile(heart_stone("heart_stone", (128, 124, 140), (86, 84, 98), (198, 178, 255), False),
-              "heart_stone")
-    save_tile(heart_stone("heart_stone_sick", (118, 116, 124), (80, 78, 86), (150, 142, 178), True),
-              "heart_stone_sick")
-    save_tile(heart_stone("heart_stone_dead", (78, 76, 80), (48, 47, 50), (60, 58, 62), True),
-              "heart_stone_dead")
+    for biome, arch, _names, key, accent in heart_table.HEARTS:
+        bid = heart_table.biome_id(biome)
+        for stage in heart_table.STAGES:
+            k, a = heart_table.stage_palette(key, accent, stage)
+            nm = f"heart_{bid}{stage}"
+            if arch == "bole":
+                save_tile(heart_bole(nm, k, heart_table.darken(k, 0.35), a), nm)
+                save_tile(
+                    heart_top(f"{nm}_top", k, heart_table.darken(k, 0.35), a),
+                    f"{nm}_top",
+                )
+            elif arch == "spring":
+                # The spring's key IS the water; its accent is the rim.
+                save_tile(
+                    heart_spring(nm, k, a, heart_table.mix(k, (255, 255, 255), 0.6),
+                                 stage == "_dead"),
+                    nm,
+                )
+            else:
+                save_tile(heart_stone(nm, k, heart_table.darken(k, 0.35), a,
+                                      stage != ""), nm)
 
+    # The quickened seed: a living thing you carry. One per country,
+    # wearing the colour of the heart it was cut from, so a pack of
+    # them reads at a glance.
+    def heart_seed(name, husk, core, halo):
+        img = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.ellipse([9, 8, 23, 26], fill=husk + (255,),
+                  outline=heart_table.darken(husk, 0.38) + (255,))
+        d.ellipse([12, 12, 20, 21], fill=core + (255,))
+        d.ellipse([14, 14, 18, 18], fill=halo + (255,))
+        d.line([(16, 8), (16, 3)], fill=(96, 150, 84, 255), width=2)
+        d.ellipse([16, 2, 22, 6], fill=(110, 176, 96, 255))
+        return img
 
-    # The quickened seed: a living thing you carry.
+    for biome, arch, _names, key, accent in heart_table.HEARTS:
+        # The husk is the heart's own body, the core what runs in it.
+        husk = key if arch != "spring" else accent
+        core = accent if arch != "spring" else key
+        save_tile(
+            heart_seed(f"{heart_table.biome_id(biome)}_seed", husk, core,
+                       heart_table.mix(core, (255, 255, 255), 0.55)),
+            f"{heart_table.biome_id(biome)}_seed",
+        )
     sd = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
     d = ImageDraw.Draw(sd)
-    d.ellipse([9, 8, 23, 26], fill=(104, 78, 44, 255), outline=(66, 48, 26, 255))
-    d.ellipse([12, 12, 20, 21], fill=(140, 232, 158, 255))
-    d.ellipse([14, 14, 18, 18], fill=(210, 255, 220, 255))
-    d.line([(16, 8), (16, 3)], fill=(96, 150, 84, 255), width=2)
-    d.ellipse([16, 2, 22, 6], fill=(110, 176, 96, 255))
     save_tile(sd, "heart_seed")
     for nm, core, halo in [
         ("spring_seed", (120, 208, 240), (210, 240, 255)),

@@ -19,8 +19,25 @@ impl World {
     /// How many known countries have lost their spirit, and how many
     /// are known at all.
     pub fn dead_countries(&self) -> (usize, usize) {
-        let dead = self.hearts.values().filter(|h| h.stage == 0).count();
-        (dead, self.hearts.len())
+        // Ancient scars do not count, on either side of the ratio. The
+        // badlands died before anyone alive walked there; letting them
+        // into the tally would stop the world's year over history the
+        // player never touched — walk through three of them early and
+        // the Long Winter would fall on a world you had done nothing
+        // to. Relight one and it becomes a living country like any
+        // other, which is the right way for it to help lift a winter.
+        let counted = self
+            .hearts
+            .values()
+            .filter(|h| !self.is_ancient_scar(h.pos.0, h.pos.2));
+        let (mut dead, mut known) = (0, 0);
+        for h in counted {
+            known += 1;
+            if h.stage == 0 {
+                dead += 1;
+            }
+        }
+        (dead, known)
     }
 
     /// Re-read whether the world's year has stopped. Returns Some(true)

@@ -25,3 +25,57 @@ new = "base:steel_bloom"
 [[alias]]
 old = "base:surface_sand"
 new = "sand"
+
+# The three archetype hearts became one per country. A world saved
+# before that is full of the old ids; each maps to the country whose
+# heart kept that shape. Heart sites also re-read their own form when
+# their chunk loads, so a taiga bole that aliased to forest heals to
+# heart_taiga on sight.
+
+[[alias]]
+old = "heart_tree"
+new = "heart_forest"
+
+[[alias]]
+old = "heart_tree_sick"
+new = "heart_forest_sick"
+
+[[alias]]
+old = "heart_tree_dead"
+new = "heart_forest_dead"
+
+[[alias]]
+old = "heart_spring"
+new = "heart_desert"
+
+[[alias]]
+old = "heart_spring_sick"
+new = "heart_desert_sick"
+
+[[alias]]
+old = "heart_spring_dead"
+new = "heart_desert_dead"
+
+[[alias]]
+old = "heart_stone"
+new = "heart_plains"
+
+[[alias]]
+old = "heart_stone_sick"
+new = "heart_plains_sick"
+
+[[alias]]
+old = "heart_stone_dead"
+new = "heart_plains_dead"
+
+[[alias]]
+old = "bole_seed"
+new = "forest_seed"
+
+[[alias]]
+old = "spring_seed"
+new = "desert_seed"
+
+[[alias]]
+old = "stone_seed"
+new = "tundra_seed"

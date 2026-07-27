@@ -669,11 +669,15 @@ impl Game {
                 }
             }
             let w = &mut self.server.world;
-            for (col, form) in [
-                (-10i32, "base:heart_tree"),
-                (0, "base:heart_spring"),
-                (10, "base:heart_stone"),
+            // One of each shape, each from a different country, so a
+            // capture shows the bole, the spring and the stone at all
+            // three stages.
+            for (col, biome) in [
+                (-10i32, crate::worldgen::Biome::Jungle),
+                (0, crate::worldgen::Biome::Savanna),
+                (10, crate::worldgen::Biome::Arctic),
             ] {
+                let form = crate::world::heart_form(biome);
                 for (row, stage) in [(-4i32, 2u8), (2, 1), (8, 0)] {
                     let name = crate::world::heart_block_name(form, stage);
                     let Some(block) = b(&name) else { continue };

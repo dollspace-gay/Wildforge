@@ -253,6 +253,22 @@ The global tier, and the answer to what happened.
   thing that decides whether a settlement sees spring.
 - **The way out is the walk.** Relight enough hearts and the world
   turns again. That is the endgame campaign.
+> **Extended 2026-07-26.** Every country now has its OWN heart and its
+> OWN seed — twelve forms x three stages, generated from
+> `tools/heart_table.py` alongside their tiles and the Rust lookup, so
+> the four files cannot drift apart. Grafting therefore reaches all
+> twelve biomes instead of the three the archetypes allowed.
+>
+> And the badlands are born dead. This section already said the
+> barrenness was the receipt; the code gave them living hearts anyway,
+> and the ruins comment apologised for it ("worldgen cannot know which
+> hearts a player will kill"). It doesn't have to: the takers' damage
+> is history, not player action. Badlands provinces now generate with a
+> dead heart and a husk at the site, are excluded from the Long Winter
+> tally on both sides of the ratio (ancient history must not stop the
+> world's year), and are restorable like any other dead country — a
+> scar you can walk to is a campaign you can start.
+
 - **The archaeology confesses.** Ruins bias toward dead and barren
   country, because the barrenness is the receipt — you find the
   lost cities intact in ground that stopped feeding them. The

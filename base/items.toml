@@ -1098,20 +1098,77 @@ texture = "guano.png"
 # Taken from a living heart, carried overland, and planted in ground
 # you have made ready. Which one you carry decides what wakes: its
 # own kind reawakens the country, a stranger's replaces it.
+# One seed per country, cut from that country's heart and
+# carrying its nature. Generated from tools/heart_table.py.
+
 [[item]]
-id = "bole_seed"
-name = "Bole Seed"
-texture = "heart_seed.png"
+id = "forest_seed"
+name = "Forest Seed"
+texture = "forest_seed.png"
 durability = 240
 
 [[item]]
-id = "spring_seed"
-name = "Spring Seed"
-texture = "spring_seed.png"
+id = "taiga_seed"
+name = "Taiga Seed"
+texture = "taiga_seed.png"
 durability = 240
 
 [[item]]
-id = "stone_seed"
-name = "Stone Seed"
-texture = "stone_seed.png"
+id = "jungle_seed"
+name = "Jungle Seed"
+texture = "jungle_seed.png"
+durability = 240
+
+[[item]]
+id = "swamp_seed"
+name = "Swamp Seed"
+texture = "swamp_seed.png"
+durability = 240
+
+[[item]]
+id = "desert_seed"
+name = "Desert Seed"
+texture = "desert_seed.png"
+durability = 240
+
+[[item]]
+id = "badlands_seed"
+name = "Badlands Seed"
+texture = "badlands_seed.png"
+durability = 240
+
+[[item]]
+id = "savanna_seed"
+name = "Savanna Seed"
+texture = "savanna_seed.png"
+durability = 240
+
+[[item]]
+id = "scrubland_seed"
+name = "Scrubland Seed"
+texture = "scrubland_seed.png"
+durability = 240
+
+[[item]]
+id = "plains_seed"
+name = "Plains Seed"
+texture = "plains_seed.png"
+durability = 240
+
+[[item]]
+id = "tundra_seed"
+name = "Tundra Seed"
+texture = "tundra_seed.png"
+durability = 240
+
+[[item]]
+id = "arctic_seed"
+name = "Arctic Seed"
+texture = "arctic_seed.png"
+durability = 240
+
+[[item]]
+id = "mountains_seed"
+name = "Mountains Seed"
+texture = "mountains_seed.png"
 durability = 240
