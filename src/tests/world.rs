@@ -2422,3 +2422,72 @@ fn stamps_from_a_different_day_length_are_dropped_not_misread() {
         "a stamp on another clock is discarded, not read as days of absence"
     );
 }
+
+/// A lava flow down a slope has to read as one ribbon, not a row of
+/// islands. It used to pour its whole volume over each edge and leave
+/// air behind, so what you got was a single cell perched on each step
+/// with bare rock between them — a staircase of disconnected blobs.
+/// A viscous fluid coats what it runs over: every step the flow
+/// crosses stays covered, and diagonal cells share a corner, which is
+/// what the mesher's surface smoothing needs to join them into one
+/// surface.
+#[test]
+fn a_lava_flow_coats_the_slope_it_runs_down() {
+    let reg = base_reg();
+    let mut w = test_world_with("lava-ribbon", reg.clone());
+    let stone = b(&reg, "base:stone");
+    let y0 = 80;
+    const STEPS: i32 = 16;
+    // A staircase descending in +x, two cells deep per tread.
+    for step in 0..STEPS {
+        let top = y0 - step;
+        for x in (step * 2)..(step * 2 + 2) {
+            for z in -3..=3 {
+                for fill in 0..10 {
+                    w.set_block(x, top - fill, z, stone);
+                }
+            }
+        }
+    }
+    // A crater's worth behind it: reach is a question of volume.
+    for z in -3..=3 {
+        for x in 0..2 {
+            for up in 1..=3 {
+                w.set_block(x, y0 + up, z, reg.lava_for_volume(8));
+            }
+        }
+    }
+    for _ in 0..600 {
+        w.tick_lava(256);
+    }
+
+    // Which treads the flow touched, and how much of each.
+    let coated = |step: i32| -> usize {
+        let top = y0 - step;
+        ((step * 2)..(step * 2 + 2))
+            .filter(|&x| reg.is_lava(w.get_block(x, top + 1, -1)))
+            .count()
+    };
+    let reached: Vec<i32> = (0..STEPS).filter(|&s| coated(s) > 0).collect();
+    let front = *reached.last().expect("the flow left the crest");
+    assert!(
+        front >= 5,
+        "a crater's worth should run several treads down, got {front}"
+    );
+    // No bare tread between the vent and the front: that gap IS the
+    // jankiness, and it is what the trail exists to close.
+    for step in 0..=front {
+        assert!(
+            coated(step) > 0,
+            "tread {step} is bare between the vent and the front at {front}"
+        );
+    }
+    // And each tread is covered across, not perched on its lip — that
+    // is what puts a shared corner under every diagonal join.
+    let full = (0..=front).filter(|&s| coated(s) == 2).count();
+    assert!(
+        full * 2 >= (front as usize + 1),
+        "most treads should be covered across, {full} of {} are",
+        front + 1
+    );
+}

@@ -2,6 +2,11 @@
 
 use super::*;
 
+/// What a lava cell keeps back when it pours over an edge, so the flow
+/// reads as one connected ribbon instead of a row of islands. Costs
+/// nothing in conservation — it moves less, never more.
+const LAVA_TRAIL: u8 = 1;
+
 impl World {
     pub(super) fn schedule_water(&mut self, x: i32, y: i32, z: i32) {
         if self.water_queued.insert((x, y, z)) {
@@ -458,8 +463,15 @@ impl World {
                 changed = true;
                 continue;
             }
-            // Same drop rule as water: a pour over an edge is one-way,
-            // so it ignores the creep hysteresis.
+            // Same drop rule as water, with one difference that is the
+            // whole look of the thing: lava leaves a trail. Water
+            // pours its full volume over an edge and the cell it left
+            // becomes air, which is right for a rush — but on a slope
+            // it marches downhill one step at a time and what you see
+            // is a chain of disconnected puddles with rock between
+            // them, not a flow. A viscous fluid coats what it runs
+            // over, so a lava cell keeps its last unit and the ribbon
+            // stays joined from the vent to the front.
             let mut best: Option<(i32, i32, u8)> = None;
             let mut drop: Option<(i32, i32, u8)> = None;
             for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
@@ -483,11 +495,13 @@ impl World {
                 }
             }
             if let Some((nx, nz, room)) = drop {
-                let t = v.min(room);
-                self.set_block(nx, y, nz, self.reg.lava_for_volume(t));
-                self.set_block(x, y, z, self.reg.lava_for_volume(v - t));
-                changed = true;
-                continue;
+                let t = v.saturating_sub(LAVA_TRAIL).min(room);
+                if t > 0 {
+                    self.set_block(nx, y, nz, self.reg.lava_for_volume(t));
+                    self.set_block(x, y, z, self.reg.lava_for_volume(v - t));
+                    changed = true;
+                    continue;
+                }
             }
             if let Some((nx, nz, nv)) = best
                 && v >= nv + 3

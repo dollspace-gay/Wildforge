@@ -1869,6 +1869,42 @@ impl Game {
                 }
             }
         }
+        // Dev: a volcano flank — a staircase with a vent at the crest,
+        // so a flow can be watched settling instead of guessed at.
+        if std::env::var("WILDFORGE_DEMO_LAVA").is_ok() {
+            let bx = spawn.x as i32 + 6;
+            let bz = spawn.z as i32;
+            let y0 = self.server.world.surface_height(bx, bz) + 14;
+            let b = |n: &str| self.content.reg.block_id(n);
+            let Some(stone) = b("base:basalt").or_else(|| b("base:stone")) else {
+                return;
+            };
+            let w = &mut self.server.world;
+            for step in 0..14i32 {
+                let top = y0 - step;
+                for x in (step * 2)..(step * 2 + 2) {
+                    for z in -4..=4 {
+                        for fill in 0..6 {
+                            w.set_block(bx + x, top - fill, bz + z, stone);
+                        }
+                    }
+                }
+            }
+            let lava = self.content.reg.lava_for_volume(8);
+            for z in -2..=2 {
+                for x in 0..2 {
+                    w.set_block(bx + x, y0 + 1, bz + z, lava);
+                }
+            }
+            // Stand the viewer off the flank looking along it, so the
+            // shot frames the flow rather than the inside of the hill.
+            self.player.pos = Vec3::new(bx as f32 + 13.0, y0 as f32 + 3.0, bz as f32 + 22.0);
+            self.player.vel = Vec3::ZERO;
+            self.camera.yaw = -std::f32::consts::FRAC_PI_2;
+            self.camera.pitch = -0.42;
+            self.flying = true;
+            eprintln!("lava demo: crest at ({bx},{y0},{bz})");
+        }
         // Dev: a stocked furnace next to spawn, screen open (UI verification).
         if std::env::var("WILDFORGE_DEMO_FURNACE").is_ok() {
             let p = (spawn.x as i32 + 2, spawn.y as i32, spawn.z as i32);
