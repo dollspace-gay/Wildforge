@@ -2,12 +2,23 @@
 
 use std::path::PathBuf;
 
-/// How far the world may be loaded, in chunks. The ceiling is memory
-/// rather than framerate: a chunk is 16x256x16 cells of block id plus a
-/// metadata byte, about 190 KB, and the loaded set is (2n+1)^2 of them.
-/// At 24 that is ~2400 chunks and roughly half a gigabyte — which is
-/// the price of seeing a country's edifice from the next valley.
-pub const MAX_VIEW_DIST: i32 = 24;
+/// How far the world may be loaded, in chunks.
+///
+/// 64 is 1024 blocks, which is past the 900 that separates one country
+/// from the next — so at the top of the slider a heart's edifice is
+/// always somewhere on the horizon, which is the entire point.
+///
+/// The costs, in order of who cares:
+/// - RAM: a chunk is 16x256x16 block ids plus a metadata byte, ~190 KB,
+///   and the loaded set is (2n+1)^2. At 64 that is ~16600 chunks and
+///   about 3 GB.
+/// - Draw: the opaque pass is frustum-culled and shadows are
+///   range-culled, so what you pay for is what is in front of you, not
+///   what is loaded.
+/// - Filling it: the real bottleneck, and why the generator pool and
+///   the streaming budgets below scale with this number instead of
+///   sitting at the constants that suited a 7-chunk view.
+pub const MAX_VIEW_DIST: i32 = 64;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Config {
