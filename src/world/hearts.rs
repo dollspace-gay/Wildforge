@@ -43,6 +43,11 @@ pub struct Heart {
     pub graft: Option<crate::worldgen::Biome>,
     /// How far the country has drifted toward its graft, 0..1.
     pub drift: f32,
+    /// Days before it will give another cutting. A living heart parts
+    /// with one seed and then has nothing to spare for half a season —
+    /// without this it was a dispenser you could stand at and click,
+    /// trading ire for seeds as fast as the action cooldown allowed.
+    pub regrow: f32,
 }
 
 impl Heart {
@@ -120,6 +125,12 @@ pub const HEART_STRAIN_IRE: f32 = 8.0;
 pub const HEART_SICKEN_STRAIN: f32 = 30.0;
 pub const HEART_DEATH_STRAIN: f32 = 75.0;
 
+/// Days a living heart needs before it will give another cutting.
+/// Half a season: a seed is an errand you make a journey for, not a
+/// thing you farm by standing still. You only ever need one per dead
+/// country, so this costs an honest restoration nothing.
+pub const HEART_CUTTING_DAYS: f32 = 6.0;
+
 impl World {
     /// The slow clock of the spirits: a country held in resentment
     /// strains, and strain shows before it kills. Tended country
@@ -143,6 +154,7 @@ impl World {
             };
             if let Some(e) = self.hearts.get_mut(&key) {
                 e.strain = strain;
+                e.regrow = (e.regrow - day_frac).max(0.0);
             }
             let want = if strain >= HEART_DEATH_STRAIN {
                 0
@@ -154,6 +166,21 @@ impl World {
             if want != h.stage {
                 self.set_heart_stage(key, want);
             }
+        }
+    }
+
+    /// Ask a living heart for a cutting. It parts with one, then wants
+    /// half a season before it will part with another. Returns false
+    /// when it has nothing to spare — the caller says so, and charges
+    /// no ire for the asking.
+    pub fn take_heart_cutting(&mut self, x: i32, z: i32) -> bool {
+        let key = self.generator.province(x, z).key;
+        match self.hearts.get_mut(&key) {
+            Some(h) if h.stage == 2 && h.regrow <= 0.0 => {
+                h.regrow = HEART_CUTTING_DAYS;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -212,6 +239,8 @@ impl World {
             rooting: 0.0,
             graft: None,
             drift: 0.0,
+            // A heart found for the first time has a cutting to spare.
+            regrow: 0.0,
         });
     }
 

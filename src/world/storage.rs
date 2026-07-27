@@ -96,8 +96,13 @@ impl World {
         } else {
             let _ = fs::write(self.save_dir.join("bspent"), sb);
         }
-        // The hearts: (province x, z, site x, y, z, stage, strain).
-        let mut hb = Vec::with_capacity(self.hearts.len() * 34);
+        // The hearts: (province x, z, site x, y, z, stage, strain,
+        // rooting, graft, drift, regrow). The magic distinguishes this
+        // from the older headerless 34-byte layout, which is otherwise
+        // ambiguous — a save with 19 hearts is 646 bytes and divides
+        // evenly by both record sizes.
+        let mut hb = Vec::with_capacity(4 + self.hearts.len() * 38);
+        hb.extend_from_slice(b"WFH2");
         for (&(kx, kz), h) in &self.hearts {
             hb.extend_from_slice(&kx.to_le_bytes());
             hb.extend_from_slice(&kz.to_le_bytes());
@@ -109,8 +114,9 @@ impl World {
             hb.extend_from_slice(&h.rooting.to_le_bytes());
             hb.push(h.graft.map(|b| b as u8 + 1).unwrap_or(0));
             hb.extend_from_slice(&h.drift.to_le_bytes());
+            hb.extend_from_slice(&h.regrow.to_le_bytes());
         }
-        if hb.is_empty() {
+        if self.hearts.is_empty() {
             let _ = fs::remove_file(self.save_dir.join("hearts"));
         } else {
             let _ = fs::write(self.save_dir.join("hearts"), hb);
@@ -237,17 +243,27 @@ impl World {
             }
         }
         if let Ok(data) = fs::read(self.save_dir.join("hearts")) {
-            for p in data.chunks_exact(34) {
+            // WFH2 carries the cutting timer; a headerless file is the
+            // older layout and its hearts are simply ready to give.
+            let versioned = data.starts_with(b"WFH2");
+            let (body, size) = if versioned {
+                (&data[4..], 38)
+            } else {
+                (&data[..], 34)
+            };
+            for p in body.chunks_exact(size) {
                 let i32_at = |o: usize| i32::from_le_bytes([p[o], p[o + 1], p[o + 2], p[o + 3]]);
+                let f32_at = |o: usize| f32::from_le_bytes([p[o], p[o + 1], p[o + 2], p[o + 3]]);
                 self.hearts.insert(
                     (i32_at(0), i32_at(4)),
                     Heart {
                         pos: (i32_at(8), i32_at(12), i32_at(16)),
                         stage: p[20],
-                        strain: f32::from_le_bytes([p[21], p[22], p[23], p[24]]),
-                        rooting: f32::from_le_bytes([p[25], p[26], p[27], p[28]]),
+                        strain: f32_at(21),
+                        rooting: f32_at(25),
                         graft: crate::worldgen::Biome::from_index(p[29]),
-                        drift: f32::from_le_bytes([p[30], p[31], p[32], p[33]]),
+                        drift: f32_at(30),
+                        regrow: if versioned { f32_at(34) } else { 0.0 },
                     },
                 );
             }
