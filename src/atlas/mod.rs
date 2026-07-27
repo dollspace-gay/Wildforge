@@ -266,9 +266,12 @@ mod procedural;
 mod season;
 
 pub use packs::{
-    PackInfo, PackSource, build_atlas, discover_packs, embedded_base_tile, embedded_pack,
+    PackInfo, build_atlas, discover_packs, embedded_base_tile, pack_chain, pack_source_of,
 };
 #[cfg(test)]
-pub(crate) use packs::{apply_player_variants, discover_packs_in, export_tiles};
+pub(crate) use packs::{
+    PackSource, apply_player_variants, discover_packs_in, embedded_pack, export_tiles,
+    pack_chain_in,
+};
 pub(crate) use procedural::{build_material, build_normal, build_procedural};
 pub use season::season_tint;

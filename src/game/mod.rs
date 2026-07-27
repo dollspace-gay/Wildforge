@@ -514,19 +514,6 @@ pub(crate) fn next_world_name(saves: &std::path::Path, worlds: &[(String, u32)])
     }
 }
 
-/// Resolve a configured pack id: a folder under packs/ wins (editable,
-/// hot-reloads), else a pack compiled into the binary, else none.
-fn pack_source_of(id: &str) -> Option<atlas::PackSource> {
-    if id.is_empty() {
-        return None;
-    }
-    let p = PathBuf::from("packs").join(id);
-    if p.is_dir() {
-        return Some(atlas::PackSource::Dir(p));
-    }
-    atlas::embedded_pack(id).map(atlas::PackSource::Embedded)
-}
-
 /// Browser item list: public items (no internal /variants), search-filtered.
 pub(crate) fn browser_items(reg: &Registry, search: &str) -> Vec<ItemId> {
     let q = search.to_lowercase();
@@ -580,7 +567,7 @@ impl Game {
         let pack_override = std::env::var("WILDFORGE_PACK").ok();
         let active_pack = pack_override.clone().unwrap_or_else(|| config.pack.clone());
         let atlas =
-            atlas::build_atlas(&reg.tex_files, pack_source_of(&active_pack), &reg.tex_names);
+            atlas::build_atlas(&reg.tex_files, &atlas::pack_chain(&active_pack), &reg.tex_names);
         let pack_warnings = atlas.warnings;
         let renderer = pollster::block_on(renderer::Renderer::new(
             window.clone(),

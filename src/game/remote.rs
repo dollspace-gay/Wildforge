@@ -182,7 +182,7 @@ impl Game {
                     self.content.reg = Arc::new(registry::load(&cache));
                     let mut atlas = atlas::build_atlas(
                         &self.content.reg.tex_files,
-                        pack_source_of(&self.active_pack_id()),
+                        &atlas::pack_chain(&self.active_pack_id()),
                         &self.content.reg.tex_names,
                     );
                     atlas::season_tint(&mut atlas.color, atlas.px, self.server.world.season());
