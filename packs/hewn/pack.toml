@@ -1,2 +1,5 @@
 name = "Hewn"
-description = "Reference pack: rough-hewn rock with authored height + normal maps"
+description = "Relief maps over the Gemini tiles: authored height + normals, parallax and lit micro-detail"
+# Layer on top of Gemini rather than replacing it. Hewn ships companion maps for
+# tiles it wants relief on and inherits every albedo it does not repaint.
+inherits = "gemini"
