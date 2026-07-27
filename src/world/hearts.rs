@@ -362,16 +362,30 @@ impl World {
     /// root in dead dirt: the soil has to be raised by hand first —
     /// dung, compost, guano, litter, fallow seasons — which is the
     /// whole ecology arc spent as a key.
+    /// How wide the ground a rooting answers for is, here. It has to
+    /// clear the monument: a stepped edifice is 8-12 blocks of solid
+    /// stone in every direction from its chamber, and a disc that
+    /// stopped inside that asked the player to excavate a pyramid.
+    pub fn root_radius_at(&self, x: i32, z: i32) -> i32 {
+        let reach = crate::edifice::edifice_of(self.generator.biome(x, z)).reach;
+        ROOT_RADIUS.max(reach + 4)
+    }
+
     pub fn root_ground_ready(&self, x: i32, y: i32, z: i32) -> (u32, u32) {
         let mut ready = 0;
         let mut total = 0;
-        for dx in -ROOT_RADIUS..=ROOT_RADIUS {
-            for dz in -ROOT_RADIUS..=ROOT_RADIUS {
-                if dx * dx + dz * dz > ROOT_RADIUS * ROOT_RADIUS {
+        // Reach past the monument. A stepped edifice is 8-12 blocks of
+        // solid stone in every direction from its chamber, so a disc
+        // that stopped at ROOT_RADIUS asked the player to excavate a
+        // room inside a pyramid — which is silly. The ground that has
+        // to come back to life is the ground AROUND the thing.
+        let radius = self.root_radius_at(x, z);
+        for dx in -radius..=radius {
+            for dz in -radius..=radius {
+                if dx * dx + dz * dz > radius * radius {
                     continue;
                 }
                 let (cx, cz) = (x + dx, z + dz);
-                total += 1;
                 // The topmost SOIL in the column, not the topmost
                 // block. This used to read `surface_height`, which is
                 // the topmost solid — fine while a heart stood in the
@@ -385,17 +399,25 @@ impl World {
                 // scan walks past it. That also lets a site on a slope
                 // count ground well below its own foot, which a band
                 // around the heart's level would not.
-                if (1..=(y + 24).min(CHUNK_Y as i32 - 1))
-                    .rev()
-                    .find(|&cy| {
-                        self.reg
-                            .block(self.get_block(cx, cy, cz))
-                            .fert_tiles
-                            .is_some()
-                    })
-                    .is_some_and(|cy| self.fertility_at(cx, cy, cz) >= ROOT_READY_FERT)
-                {
-                    ready += 1;
+                let soil = (1..=(y + 24).min(CHUNK_Y as i32 - 1)).rev().find(|&cy| {
+                    self.reg
+                        .block(self.get_block(cx, cy, cz))
+                        .fert_tiles
+                        .is_some()
+                });
+                match soil {
+                    Some(cy) => {
+                        total += 1;
+                        if self.fertility_at(cx, cy, cz) >= ROOT_READY_FERT {
+                            ready += 1;
+                        }
+                    }
+                    // No soil in the column. Ground still to work, or
+                    // the monument itself? Stone standing well above
+                    // the heart is the edifice, and it is not a plot
+                    // anyone has to answer for.
+                    None if self.surface_height(cx, cz) > y + 3 => {}
+                    None => total += 1,
                 }
             }
         }

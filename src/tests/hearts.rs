@@ -531,7 +531,14 @@ fn a_seed_will_not_take_in_dead_dirt_but_will_in_ground_made_ready() {
     assert!(refusal.contains("ground is not ready"), "{refusal}");
     // Raise the soil by hand: the whole nutrient cycle, spent as a key.
     let farm = b(&reg, "base:farmland");
-    let r = crate::world::ROOT_RADIUS;
+    let r = w.root_radius_at(hp.0, hp.2);
+    // The disc reaches past the monument now, so it spans chunks a
+    // fixture that loads one would leave as void.
+    for cx in -2..=2 {
+        for cz in -2..=2 {
+            w.ensure_chunk(ChunkPos::of_world(hp.0 + cx * 16, hp.2 + cz * 16));
+        }
+    }
     for dx in -r..=r {
         for dz in -r..=r {
             let (cx, cz) = (hp.0 + dx, hp.2 + dz);
@@ -570,7 +577,14 @@ fn a_rooting_abandoned_is_a_rooting_lost() {
     w.set_heart_stage(key, 0);
     let hp = w.heart_at(sx, sz).unwrap().pos;
     let farm = b(&reg, "base:farmland");
-    let r = crate::world::ROOT_RADIUS;
+    let r = w.root_radius_at(hp.0, hp.2);
+    // The disc reaches past the monument now, so it spans chunks a
+    // fixture that loads one would leave as void.
+    for cx in -2..=2 {
+        for cz in -2..=2 {
+            w.ensure_chunk(ChunkPos::of_world(hp.0 + cx * 16, hp.2 + cz * 16));
+        }
+    }
     for dx in -r..=r {
         for dz in -r..=r {
             let (cx, cz) = (hp.0 + dx, hp.2 + dz);
@@ -626,7 +640,14 @@ fn a_stranger_heart_remakes_the_country_it_wakes_in() {
     w.set_heart_stage(key, 0);
     let hp = w.heart_at(sx, sz).unwrap().pos;
     let farm = b(&reg, "base:farmland");
-    let r = crate::world::ROOT_RADIUS;
+    let r = w.root_radius_at(hp.0, hp.2);
+    // The disc reaches past the monument now, so it spans chunks a
+    // fixture that loads one would leave as void.
+    for cx in -2..=2 {
+        for cz in -2..=2 {
+            w.ensure_chunk(ChunkPos::of_world(hp.0 + cx * 16, hp.2 + cz * 16));
+        }
+    }
     for dx in -r..=r {
         for dz in -r..=r {
             let (cx, cz) = (hp.0 + dx, hp.2 + dz);
@@ -670,7 +691,14 @@ fn its_own_kind_reawakens_rather_than_replaces() {
     w.set_heart_stage(key, 0);
     let hp = w.heart_at(sx, sz).unwrap().pos;
     let farm = b(&reg, "base:farmland");
-    let r = crate::world::ROOT_RADIUS;
+    let r = w.root_radius_at(hp.0, hp.2);
+    // The disc reaches past the monument now, so it spans chunks a
+    // fixture that loads one would leave as void.
+    for cx in -2..=2 {
+        for cz in -2..=2 {
+            w.ensure_chunk(ChunkPos::of_world(hp.0 + cx * 16, hp.2 + cz * 16));
+        }
+    }
     for dx in -r..=r {
         for dz in -r..=r {
             let (cx, cz) = (hp.0 + dx, hp.2 + dz);
@@ -1203,7 +1231,14 @@ fn ground_readiness_is_measured_at_the_heart_not_under_the_sky() {
     // floor of living soil at the heart's own level — tilled and fed,
     // the way a player would leave it.
     let farm = b(&reg, "base:farmland");
-    let r = crate::world::ROOT_RADIUS;
+    let r = w.root_radius_at(hp.0, hp.2);
+    // The disc reaches past the monument now, so it spans chunks a
+    // fixture that loads one would leave as void.
+    for cx in -2..=2 {
+        for cz in -2..=2 {
+            w.ensure_chunk(ChunkPos::of_world(hp.0 + cx * 16, hp.2 + cz * 16));
+        }
+    }
     for cx in -1..=1 {
         for cz in -1..=1 {
             w.ensure_chunk(ChunkPos::of_world(hp.0 + cx * 16, hp.2 + cz * 16));
@@ -1264,4 +1299,41 @@ fn the_refusal_says_what_the_ground_needs() {
             "the refusal should name {want:?}: {refusal}"
         );
     }
+}
+
+/// Nobody should have to excavate a pyramid. The ground a rooting
+/// answers for has to clear the monument standing over the site, or
+/// restoring a badlands ziggurat means hollowing out its interior.
+#[test]
+fn the_rooting_ground_clears_the_monument() {
+    let reg = base_reg();
+    let w = test_world_with("root-clear", reg.clone());
+    for biome in (1..=12u8).filter_map(Biome::from_index) {
+        let reach = crate::edifice::edifice_of(biome).reach;
+        let radius = crate::world::ROOT_RADIUS.max(reach + 4);
+        assert!(
+            radius > reach,
+            "{biome:?}: ground of {radius} must reach past a {reach}-wide mass"
+        );
+    }
+    // And the world agrees with the rule at a real site.
+    let (sx, sz) = w.generator.province_center(0, 0);
+    let reach = crate::edifice::edifice_of(w.generator.biome(sx, sz)).reach;
+    assert!(w.root_radius_at(sx, sz) > reach);
+}
+
+/// Placed soil arrives freshly turned. Farmland laid at zero fertility
+/// looks tilled, grows nothing and counts for nothing — which is why a
+/// hand-laid field around a dead heart did absolutely nothing.
+#[test]
+fn placed_soil_is_living_ground() {
+    let reg = base_reg();
+    let mut w = test_world_with("placed-soil", reg.clone());
+    let farm = b(&reg, "base:farmland");
+    let y = w.surface_height(4, 4);
+    assert!(w.place_block((4, y + 1, 4), farm), "it goes down");
+    assert!(
+        w.fertility_at(4, y + 1, 4) >= crate::world::ROOT_READY_FERT,
+        "and it is living ground, not a green-looking rock"
+    );
 }
