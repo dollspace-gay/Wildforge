@@ -6,14 +6,14 @@ impl Game {
     /// A line from the lost takers, chosen at random.
     pub(super) fn read_tablet(&mut self) {
         const LINES: [&str; 18] = [
-            "We burned the south wood. The nights grew teeth.",
+            "We burned the south wood. Something started coming at night.",
             "The forge ran hot for a year. Then the trees walked.",
             "Plant after you cut. My father knew. I forgot.",
-            "It does not hate. It answers.",
+            "The wisps came the week we cleared the ridge. Nobody said it out loud.",
             "We left the stone offerings too late.",
             "The deep ones never slept. We dug anyway.",
             "Third winter: the wisps crossed the river.",
-            "Feed the land and it feeds you. Starve it and it comes.",
+            "Feed the land. We stopped, and it came for the rest.",
             "My daughter planted a row of oaks. They spared her field.",
             "If you read this: the wild forgives. Slowly.",
             // The takers' confession, in the order it happened.

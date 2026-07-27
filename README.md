@@ -1,9 +1,10 @@
 # Wildforge
 
-A Minecraft-alpha-style voxel game written in Rust with a custom engine —
-no game framework, just **wgpu** for rendering, **winit** for windowing,
-**glam** for math, and **noise** for terrain. Physics is hand-rolled AABB
-collision (a voxel world doesn't need a general-purpose physics engine).
+A Minecraft-alpha-style voxel game written in Rust on a custom engine.
+There's no game framework under it: **wgpu** draws, **winit** handles the
+window, **glam** does the maths, **noise** makes the terrain. Collision is
+hand-rolled AABB, because a voxel world doesn't need a general-purpose
+physics engine.
 
 ![Wildforge at dusk: a torch-lit camp with hard point-light shadows](docs/camp-hero.png)
 
@@ -175,95 +176,113 @@ Design and divergence notes: `docs/mechanization-plan.md`.
 
 ## The land remembers
 
-Ire stopped being one number. The wild now keeps a **regional
-ledger** — every 256-block cell of country carries its own standing,
-charged by what you take *there*, credited by what you tend *there*,
-fading over days. Cross from your mended valley into a stripped one
-and the night ambience itself changes register. Out of aggrieved
-country come **watchers**: wardens that never hunt, standing at the
-treeline just looking — mend the land and they dissolve without a
-word; ignore one long enough and it graduates into everything a
-warden is. The wild also *speaks* now, in lines that arrive as quiet
-toasts when a region's mood turns, and it **wants things by
-season** at the offering stone — seeds in spring, water in summer,
-first fruits in autumn, food in winter; a wanted offering counts
-double. Give a cell a full blessed season and the wild replants it
-itself: the **green tide** seeds saplings of the local wood on
-ground no player has touched. And the woodland answer to salt
-country: dig **clay**, fire **crocks**, pickle vegetables, or cure
-raw cuts on a **smoking rack** over a live torch — four minutes of
-smoke for meat that keeps for an hour.
+Ire is no longer one number for the whole world. The wild keeps a
+**regional ledger**: every 256-block cell of country has its own
+standing, charged by what you take there and credited by what you tend
+there, fading over days. Walk from your mended valley into a stripped
+one and the night ambience changes register.
+
+Aggrieved country sends **watchers**. These are wardens that never
+hunt; they stand at the treeline and look. Mend the land and they
+dissolve without a word. Ignore one long enough and it becomes
+everything a warden is.
+
+The wild also asks for things by season at the offering stone: seeds in
+spring, water in summer, first fruits in autumn, food in winter. A
+wanted offering counts double. Give a cell a full blessed season and it
+replants itself, seeding saplings of the local wood on ground no player
+has touched.
+
+Woodland has its own answer to salt country. Dig **clay**, fire
+**crocks**, pickle vegetables, or cure raw cuts on a **smoking rack**
+over a live torch: four minutes of smoke buys meat that keeps for an
+hour.
 
 ## Trade & travel
 
-The map got wider and the pack got heavier, so the animals carry it.
-**Feed a tamed animal enough meals and it accepts you**: clip on a
-**lead** (leather strips) and it follows at heel — twelve blocks of
-slack before it snaps free — then buckle **saddlebags** for twelve
-slots of walking storage. **Boats** launch onto any water and you
-ride them (jump to dismount); they're vehicles, born tame, and they
-float properly. **Signs** hold three lines on a real signboard;
-**waystones** are obelisks you attune to by touch and read for
-bearings — no teleportation, ever; they orient, you walk. And the
-**market stall** is a multiblock — counter flanked by two-tall log
-posts under a three-wide awning — that trades while it stands:
-stock goods, set any item stack as the price (barter-native, no
-coin), and the till collects while you're away. Guests buy over the
-wire; the owner restocks by identity.
+The map got wider and the pack got heavier, so animals carry it. Feed a
+tamed animal enough meals and it accepts you. Clip on a **lead** (leather
+strips) and it follows at heel with twelve blocks of slack before it
+snaps free, then buckle on **saddlebags** for twelve more slots.
+
+**Boats** launch onto any water and you ride them; jump to dismount.
+They're vehicles, born tame, and they float properly.
+
+**Signs** hold three lines on a real signboard. **Waystones** are
+obelisks you attune to by touch and read for bearings. There is no
+teleportation and never will be: they orient you, and then you walk.
+
+A **market stall** is a multiblock, a counter flanked by two-tall log
+posts under a three-wide awning, and it trades while it stands. Stock
+goods, set any item stack as the price (barter, no coin), and the till
+collects while you're away. Guests buy over the wire; the owner restocks
+by identity.
 
 ## The economy of scarcity
 
-You can't pay workers to mine gold if everyone can mine all the gold
-they want — so the ground deals in **regions** now. Kimberlite pipes
-run ~2.4 km apart, geodes and batholith provinces band the map, tin
-hides as chance traces in ordinary stone, and **halite** seams make
-salt country a place worth knowing. The **prospector's pick** reads
-the country when struck (granite bearings, volcanic ground, blue
-ground, hollow rings — with distance and octant), and a **survey
-cairn** publishes that reading to anyone who walks up: knowledge as
-an artifact, raised at the cost of pick wear. Food spoils —
-freshness rides every perishable stack, quartered in a proper
-**cellar** (dark, no skylight), extended by **salting**, smoking,
-or pickling — so somebody's salt route matters. And the workshop is
-the capital: a **forge** (firebrick stack + chimney + anvil in
-reach) batch-smelts in the rain that douses open stacks, and a
-kiln with a chimney is a **glassworks** whose draft doubles what
-every fuel fires. Nomadic play stays valid — and hungry;
-civilization is the faster path, never the only one.
+Nobody pays a miner if everyone can dig all the gold they want, so the
+ground deals in **regions**. Kimberlite pipes run about 2.4 km apart,
+geodes and batholith provinces band the map, tin hides as chance traces
+in ordinary stone, and **halite** seams make salt country somewhere
+worth knowing.
+
+The **prospector's pick** reads the country when you strike rock with
+it: granite bearings, volcanic ground, blue ground, hollow rings, each
+with a distance and a direction. A **survey cairn** publishes that
+reading to anyone who walks up. Knowledge becomes an artifact, and it
+costs the surveyor their pick.
+
+Food spoils. Freshness rides every perishable stack, runs at a quarter
+speed in a proper **cellar** (dark, no skylight), and stretches further
+with **salting**, smoking or pickling. That is what makes somebody's
+salt route matter.
+
+The workshop is the capital. A **forge** (firebrick stack, chimney,
+anvil in reach) batch-smelts through the rain that douses an open
+stack, and a kiln with a chimney becomes a **glassworks** whose draft
+doubles what every fuel fires. Nomadic play stays valid, and hungry.
+Settling is the faster path, never the only one.
 
 ## Weather & seasons
 
-The sky joined the simulation. Server-owned weather fronts roll from
-clear through overcast into rain and back — and storms lean on the
-wild's ire, so a WRATHFUL camp lives under thunder (with lightning
-that borrows a frame of noon, and rain/storm ambience beds). A
-48-day year turns through four seasons on a persistent calendar (the
-inventory shows the day): foliage repaints each season, crops surge
-in spring and stop in winter — unless roofed and torchlit, so
-greenhouses emerge from rules you already know — berry bushes fruit
-in summer and autumn, wildlife bears young in spring and never in
-winter, and exposed lakes freeze over for the cold months. Snow is a
-material now: snowfall settles white layers on cold ground, shovels
-into throwable snowballs (harmless, knockback — aim well), packs
-back into snow blocks, and melts under bright torchlight. Rain even
-soothes the wild: ire decays a quarter faster while the land drinks.
+The sky is part of the simulation. Server-owned weather fronts roll
+from clear through overcast into rain and back again, and storms lean
+on the wild's ire, so a WRATHFUL camp lives under thunder. Lightning
+borrows a frame of noon; rain and storm have their own ambience beds.
+
+The calendar is persistent and the inventory shows the day. Foliage
+repaints each season. Crops surge in spring and stop in winter unless
+they're roofed and torchlit, which is how greenhouses fall out of rules
+you already knew. Berry bushes fruit in summer and autumn, wildlife
+bears young in spring and never in winter, and exposed lakes freeze for
+the cold months.
+
+Snow is a material. Snowfall settles white layers on cold ground,
+shovels into throwable snowballs (harmless, but they knock you about),
+packs back into snow blocks, and melts under bright torchlight. Rain
+soothes the wild too: ire decays a quarter faster while the land
+drinks.
 
 ## Finite water
 
-Water is volume, not paint. Every cell holds real units that fall,
-spread, and settle — breach a pond bank and the pond genuinely
-lowers; break a natural dam and it drains *completely*, every last
-unit going over the edge instead of stranding a lip; dig a channel
-to the sea and it fills because the sea is vast, not because it
-cheats. Connected bodies **level through their junctions** — link
-two pools below the waterline and they equalize like the communicating
-vessels they are. There is no infinite-source trick anywhere: the
-oceans are simply very large. Craft an iron **bucket** to carry a
-full cell of it (films refuse — you can't mint water from puddles). The year moves it too: shallow water dries to marshy films
-through a hot summer, autumn rain fills the beds back up, and winter
-owns the freeze. And the world keeps living while you're away —
-come back after seasons elsewhere and the lake you left liquid is
-simply frozen, the wheat you left green has grown.
+Water is volume rather than paint. Every cell holds real units that
+fall, spread and settle. Breach a pond bank and the pond genuinely
+lowers. Break a natural dam and it drains completely, every last unit
+going over the edge instead of stranding a lip. Dig a channel to the
+sea and it fills, because the sea is vast rather than because the game
+cheats.
+
+Connected bodies **level through their junctions**. Link two pools
+below the waterline and they equalise, being communicating vessels.
+There's no infinite-source trick anywhere; the oceans are just very
+large. An iron **bucket** carries a full cell, and films refuse, so you
+can't mint water out of puddles.
+
+The year moves it too. Shallow water dries to marshy films through a
+hot summer, autumn rain fills the beds back up, and winter owns the
+freeze. The world keeps living while you're away: come back after a
+season elsewhere and the lake you left liquid is frozen, the wheat you
+left green has grown.
 
 ## Minerals & geology
 
@@ -313,7 +332,7 @@ armor, ever.
 ## Light and shadow
 
 The world's fires are real lights now. Torches, lit bloomeries and
-kilns, burning furnaces — anything that emits — cast **hard
+kilns, burning furnaces (anything that emits) cast **hard
 line-of-sight shadows** from distance cube maps (the point-shadow
 engine landed in ngutten's PR #2; the game now drives it): a torch
 around the corner leaves you dark, the wall you face blares. Static
@@ -373,24 +392,26 @@ sheet an image model gives you into the three files a pack wants.
 
 ## Game feel
 
-The feedback skin, tuned to the game's quiet register: every effect
-answers a player verb, then shuts up. Footsteps speak per material
-(snow crunches, sand scuffs — yours, your friends', and the deer you
-can't see yet), blocks burst into debris cut from their own texture,
-drops pop and fly to the hotbar slot that received them, and
-consecutive pickups climb a small melody. Combat hits hold the swing
-for a breath and shed the mob's own colors; the anvil finally throws
-its sparks and the quern visibly turns. Damage is an edge vignette
-plus a two-pixel flinch pointing away from the attacker — the plan's
-entire screenshake budget. The wild is audible: wind is the rain
-forecast, unhunted wardens rustle before you see them, your stomach
-complains before the bar empties, and calm nights chirp with
-crickets that go silent as ire climbs. Walking through snow presses
-real footprint blocks — trails guests can follow, saved with the
-world, melting in spring. All of it is client-side presentation
-(`WILDFORGE_JUICE=0` deletes the layer; the sim doesn't notice), per
-the juiciness research: animation, particles, audio, persistence —
-never autonomy theft.
+The feedback skin is tuned to the game's quiet register. Every effect
+answers something the player did, and then shuts up.
+
+Footsteps speak per material: snow crunches, sand scuffs, and you hear
+your own, your friends', and the deer you haven't spotted yet. Blocks
+burst into debris cut from their own texture. Drops pop and fly to the
+hotbar slot that caught them, and consecutive pickups climb a small
+melody. Combat hits hold the swing for a breath and shed the mob's own
+colours. The anvil throws sparks and the quern visibly turns. Damage is
+an edge vignette plus a two-pixel flinch pointing away from whatever hit
+you, which is the entire screenshake budget.
+
+The wild is audible. Wind is the rain forecast, unhunted wardens rustle
+before you see them, your stomach complains before the bar empties, and
+calm nights chirp with crickets that fall silent as ire climbs. Walking
+through snow presses real footprint blocks: trails a guest can follow,
+saved with the world, gone in spring.
+
+All of it is client-side presentation. `WILDFORGE_JUICE=0` deletes the
+layer and the simulation doesn't notice.
 
 ## Glassworks
 
@@ -461,51 +482,55 @@ wild can be appeased as well as fought.
 
 ## Bows & armor
 
-- **Bows**: the **hunting bow** (sticks + thornling fiber — reachable
-  from your first nights) and the **warbow** (dryad living wood — the
-  wild supplies the weapons you turn back on it). Hold right-click to
-  draw; damage and speed scale with charge. Arrows (stick + feather +
-  cobblestone → 4) are pulled from anywhere in your inventory, stick
-  into terrain as recoverable drops, and are spent on flesh.
-- **Armor**: **leather** (tanned hides, 7 points full) and **bronze**
-  (11 points). Four slots beside the inventory grid; each point blocks
-  4% of the wild's damage (cap 60%) — wardens' claws and bolts only;
-  gravity remains unimpressed. Pieces wear per hit and break. Armor
-  pips show above your hearts while wearing any.
+- **Bows.** The **hunting bow** wants sticks and thornling fiber, so
+  it's reachable from your first nights. The **warbow** wants dryad
+  living wood: the wild supplies the weapons you turn back on it. Hold
+  right-click to draw, and damage and speed scale with the charge.
+  Arrows (stick + feather + cobblestone makes 4) come from anywhere in
+  your inventory, stick into terrain as recoverable drops, and are
+  spent on flesh.
+- **Armour.** **Leather** (tanned hides, 7 points for a full set) and
+  **bronze** (11 points), in four slots beside the inventory grid. Each
+  point blocks 4% of the wild's damage up to a 60% cap, and that means
+  claws and bolts only. Gravity remains unimpressed. Pieces wear per hit
+  and break, and armour pips show above your hearts while you're wearing
+  any.
 - Data-driven like everything else: `bow = { damage, speed }`,
   `ammo = "arrow"`, `armor = { slot, points }` — mods can add all
   three.
 
 ## The wild answers
 
-The world is alive, and it was never given to you. It tolerates small
-takers — but the forge is different: it turns forests into charcoal,
-empties the veins, cuts what was growing into what is built. The Wild
-keeps its own places — night, deep woods, the dark under the ground —
-and out of them it sends **wardens**: not evil, not cursed, just the
-world's answer. At dawn they dissolve back into it. The more you take,
-the more it sends.
+The world is alive and it was never given to you. It puts up with small
+takers. A forge is another matter, because a forge turns forests into
+charcoal, empties veins, and cuts what was growing into what is built.
 
-- **Ire** is the difficulty system (there is no difficulty setting): a
-  per-world meter raised by felling, mining, killing, and burning, and
-  lowered slowly by time — and by **planting** (capped daily; mending
-  is always slower than taking). Four tiers from CALM to WRATHFUL drive
-  what the night sends; a fresh world's first nights are gentle because
-  you haven't taken anything yet. Watch the meter in your inventory.
-- **The wardens**: thornlings (carnivorous shrubs) in the grasslands
-  and woods; dryads lobbing thorn bolts in provoked forests; emberkin
-  and rimewisps — floating elemental wisps of cinder and frost — over
-  desert and snow; gravelurks prowling every unlit cave at any hour;
-  and at full wrath, the **wrathwood** — a walking carnivorous tree,
-  one alive at a time, a night to remember.
+The wild keeps its own places: night, deep woods, the dark under the
+ground. Out of them it sends **wardens**. They aren't a curse or a
+punishment, they're an answer, and at dawn they dissolve back into the
+places they came from. The more you take, the more it sends.
+
+- **Ire** is the difficulty system, and there is no difficulty setting.
+  It's a per-world meter that rises when you fell, mine, kill and burn,
+  and falls slowly with time and with **planting**. Planting is capped
+  daily, so mending always runs slower than taking. Four tiers from CALM
+  to WRATHFUL decide what the night sends. A fresh world's first nights
+  are gentle because you haven't taken anything yet. The meter is in
+  your inventory.
+- **The wardens.** Thornlings (carnivorous shrubs) in grassland and
+  woods. Dryads lobbing thorn bolts in provoked forests. Emberkin and
+  rimewisps, floating wisps of cinder and frost, over desert and snow.
+  Gravelurks prowling every unlit cave at any hour. And at full wrath
+  the **wrathwood**: a walking carnivorous tree, one alive at a time,
+  and a night you'll remember.
 - They are **territorial lurkers**: they roam the dark and attack what
   they find, but don't besiege bases. Torchlight and walls genuinely
   work. They spawn only in darkness (surface nights, caves always),
   never persist, and dissolve in daylight.
-- Their drops are exclusive materials — plant fiber, living wood,
-  embers (a premium fuel), frost shards, heartwood — banked for future
-  crafts (bows want fiber and living wood). Provoking the wild on
-  purpose is a valid, dangerous harvest.
+- Their drops are materials you can get no other way: plant fiber,
+  living wood, embers (a premium fuel), frost shards, heartwood. Bows
+  want fiber and living wood. Provoking the wild on purpose is a valid
+  harvest and a dangerous one.
 - All data-driven: wardens are `animals.toml` entries with `hostile`,
   `attack`, `ire_min`, `movement = "float"`, `emissive`, and
   `projectile` fields. Mods can add their own.

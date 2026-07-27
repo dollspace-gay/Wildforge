@@ -471,7 +471,7 @@ impl World {
             // around a dead spring for nothing. A refusal that does not
             // name the work is just a locked door.
             return Some(format!(
-                "The ground is not ready: {ready} of {want} plots living.                  Break it to earth, till it with a hoe, and feed it                  dung, guano or compost."
+                "Not ready: {ready} of {want} plots living. Turn the ground to soil, work it with a hoe, then feed it dung or compost."
             ));
         }
         if let Some(e) = self.hearts.get_mut(&key) {
@@ -630,11 +630,11 @@ impl World {
         }
         let dir = octant_of(sx - fx, sz - fz);
         let far = if ancient {
-            "a country that died before your grandfathers"
+            "a country that went out long ago"
         } else {
             "a country you watched go out"
         };
-        format!("It leans {dir} — {far}, ~{} blocks.", d.round() as i32)
+        format!("It leans {dir}, about {} blocks. {far}.", d.round() as i32)
     }
 
     /// The compass reading a survey cairn gives for the country's
@@ -647,29 +647,29 @@ impl World {
         let dist = ((dx * dx + dz * dz) as f32).sqrt().round() as i32;
         let dir = octant_of(dx, dz);
         let state = match h.stage {
-            2 if h.strain > 4.0 => "and it is uneasy",
-            2 => "and it is well",
-            1 => "and it is FAILING",
-            // A scar is not a bereavement. The badlands lost their
-            // spirit before anyone alive walked there, and a cairn
-            // that says so is the first thread of the whole story.
+            2 if h.strain > 4.0 => "It is uneasy.",
+            2 => "It is well.",
+            1 => "It is FAILING.",
+            // A scar is older than the reading. The badlands lost their
+            // spirit before anyone alive walked there, and a cairn that
+            // says so is the first thread of the whole story.
             _ if self.is_ancient_scar(h.pos.0, h.pos.2) => {
-                "and it died long before these stones were cut"
+                "It died long before these stones were cut."
             }
-            _ => "and it is dead",
+            _ => "It is dead.",
         };
-        // Name the shape, because they are no longer all alike: you
-        // are looking for a particular thing now, not "a heart".
+        // Name the shape. They are no longer all alike, so a reader is
+        // looking for a particular thing rather than "a heart".
         let form = heart_form(self.generator.biome(h.pos.0, h.pos.2));
         let what = self
             .reg
             .block_id(&heart_block_name(form, h.stage))
-            .map(|b| format!(" — a {}", self.reg.block(b).label))
-            .unwrap_or_default();
+            .map(|b| self.reg.block(b).label.clone())
+            .unwrap_or_else(|| "heart".into());
         if dist <= 8 {
-            format!("The heart of this country is here{what}, {state}.")
+            format!("{what}, here. {state}")
         } else {
-            format!("The heart of this country lies ~{dist} blocks {dir}{what}, {state}.")
+            format!("{what}, about {dist} blocks {dir}. {state}")
         }
     }
 }
