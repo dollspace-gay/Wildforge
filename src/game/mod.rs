@@ -566,8 +566,11 @@ impl Game {
         // Dev override (never persisted): WILDFORGE_PACK=<id> selects a pack.
         let pack_override = std::env::var("WILDFORGE_PACK").ok();
         let active_pack = pack_override.clone().unwrap_or_else(|| config.pack.clone());
-        let atlas =
-            atlas::build_atlas(&reg.tex_files, &atlas::pack_chain(&active_pack), &reg.tex_names);
+        let atlas = atlas::build_atlas(
+            &reg.tex_files,
+            &atlas::pack_chain(&active_pack),
+            &reg.tex_names,
+        );
         let pack_warnings = atlas.warnings;
         let renderer = pollster::block_on(renderer::Renderer::new(
             window.clone(),
