@@ -268,6 +268,37 @@ fn glyph(ch: char) -> [u8; 7] {
         '@' => [
             0b01110, 0b10001, 0b10111, 0b10101, 0b10111, 0b10000, 0b01110,
         ],
+        // Punctuation the UI actually writes. Without these the text
+        // path draws a blank cell and the sentence reads with holes in
+        // it — "FEEDS: VEGETABLE  FRUIT" — which looks like a bug in
+        // the data rather than a gap in the font.
+        '\'' => [
+            0b00100, 0b00100, 0b01000, 0b00000, 0b00000, 0b00000, 0b00000,
+        ],
+        ',' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00110, 0b00110, 0b01100,
+        ],
+        '%' => [
+            0b11001, 0b11010, 0b00010, 0b00100, 0b01000, 0b01011, 0b10011,
+        ],
+        '+' => [
+            0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000,
+        ],
+        '(' => [
+            0b00010, 0b00100, 0b01000, 0b01000, 0b01000, 0b00100, 0b00010,
+        ],
+        ')' => [
+            0b01000, 0b00100, 0b00010, 0b00010, 0b00010, 0b00100, 0b01000,
+        ],
         _ => [0; 7], // space / unknown
     }
+}
+
+/// Does the font actually have a shape for this character? Unknown
+/// ones fall through to a blank cell, so a stray '~' or '\u{00B7}' is not a
+/// compile error or a panic — it is a silent hole in a sentence, and
+/// the only way to catch it is to ask.
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn has_glyph(ch: char) -> bool {
+    ch == ' ' || glyph(ch.to_ascii_uppercase()) != [0; 7]
 }

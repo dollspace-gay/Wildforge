@@ -1445,3 +1445,27 @@ fn base_tiles_ship_inside_the_binary() {
     }
     assert!(n > 50, "the base art shipped ({n})");
 }
+
+/// Every name the UI can draw has to be drawable. The 5x7 font falls
+/// through to a blank cell for anything it doesn't know, so a stray
+/// apostrophe or comma is not an error anywhere — it is a hole in the
+/// middle of a word, and it shipped that way in "PROSPECTOR'S PICK"
+/// and "FEEDS: VEGETABLE, FRUIT" before this test existed.
+#[test]
+fn every_shipped_label_can_actually_be_drawn() {
+    let reg = base_reg();
+    let check = |kind: &str, name: &str, label: &str| {
+        if let Some(bad) = label.chars().find(|&c| !crate::ui::has_glyph(c)) {
+            panic!("{kind} {name}: label {label:?} contains {bad:?}, which draws as a blank");
+        }
+    };
+    for b in &reg.blocks {
+        check("block", &b.name, &b.label);
+    }
+    for i in &reg.items {
+        check("item", &i.name, &i.label);
+    }
+    for a in &reg.animals {
+        check("animal", &a.name, &a.label);
+    }
+}

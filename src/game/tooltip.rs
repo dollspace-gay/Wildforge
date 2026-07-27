@@ -141,17 +141,23 @@ pub fn item_tooltip_lines(reg: &Registry, stack: ItemStack) -> Vec<(String, [f32
     }
     if d.durability > 0 {
         // The same field means two different things. On a tool it is
-        // wear; on food it is freshness, aged one point per second
-        // carried until the stack turns to mush. Calling a carrot's
-        // clock "durability" told the player nothing about the only
-        // thing it actually governs — how long they have to eat it.
+        // wear; on food it is freshness, burning down at
+        // FRESHNESS_PER_SEC until the stack turns to mush. Calling a
+        // carrot's clock "durability" told the player nothing about
+        // the only thing it actually governs — how long they have to
+        // eat it.
         if d.food.is_some() {
-            let secs = stack.durability.max(1);
+            // Said in days, because the question a larder answers is
+            // "will this last the winter", and winter is a count of
+            // days. Minutes were the honest unit when a season was
+            // two hours; they are noise now that it is twelve.
+            let days =
+                stack.durability as f32 / world::FRESHNESS_PER_SEC / crate::server::DAY_LENGTH;
             lines.push((
-                if secs >= 120 {
-                    format!("FRESH: ~{} MIN LEFT", secs / 60)
-                } else {
-                    "FRESH: UNDER A MINUTE - EAT IT".to_string()
+                match days {
+                    d if d < 1.0 => "FRESH: UNDER A DAY - EAT IT".to_string(),
+                    d if d < 2.0 => "FRESH: ABOUT A DAY LEFT".to_string(),
+                    d => format!("FRESH: {} DAYS LEFT", d as u32),
                 },
                 WEAR,
             ));
@@ -359,11 +365,14 @@ mod tests {
                 def.name
             );
             for (text, _) in &lines {
-                assert!(
-                    text.is_ascii(),
-                    "{}: {text:?} has a character the font cannot draw",
-                    def.name
-                );
+                // is_ascii() is not the test: '~' is ASCII and draws
+                // as a hole. Ask the font itself.
+                if let Some(bad) = text.chars().find(|&c| !crate::ui::has_glyph(c)) {
+                    panic!(
+                        "{}: {text:?} contains {bad:?}, which the font draws as a blank",
+                        def.name
+                    );
+                }
             }
         }
     }

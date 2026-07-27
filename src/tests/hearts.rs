@@ -1,6 +1,7 @@
 //! The hearts of the land: every country has one, and you can find it.
 
 use super::*;
+use crate::world::{HEART_CUTTING_DAYS, ROOT_DAYS, SEASON_DAYS};
 use crate::worldgen::Biome;
 
 #[test]
@@ -204,17 +205,32 @@ fn resented_country_sickens_slowly_and_forgives() {
         "four days of anger is not a death sentence"
     );
     // Held long enough, it shows — and it shows BEFORE it kills.
-    for _ in 0..14 {
+    // Counted rather than hardcoded, so the claim under test is the
+    // design one ("a spirit takes SEASONS") and not a day number that
+    // silently stops meaning a season when the calendar is retuned.
+    let mut days = 0;
+    while w.heart_at(sx, sz).unwrap().stage == 2 && days < SEASON_DAYS * 3 {
         for _ in 0..30 {
             w.add_ire_at(sx, sz, 4.0);
         }
         w.tick_ire(1.0);
+        days += 1;
     }
-    assert_eq!(w.heart_at(sx, sz).unwrap().stage, 1, "the heart is failing");
+    assert_eq!(
+        w.heart_at(sx, sz).unwrap().stage,
+        1,
+        "the heart is failing after {days} days"
+    );
+    assert!(
+        days >= SEASON_DAYS,
+        "and it took a season of unbroken grievance, not a night ({days} days)"
+    );
     assert!(w.heart_report(sx, sz).contains("FAILING"));
     // Stop taking, and it comes back: the wild forgives the patient.
-    for _ in 0..40 {
+    let mut days = 0;
+    while w.heart_at(sx, sz).unwrap().stage == 1 && days < SEASON_DAYS * 3 {
         w.tick_ire(1.0);
+        days += 1;
     }
     let h = w.heart_at(sx, sz).unwrap();
     assert_eq!(h.stage, 2, "tended country heals (strain {})", h.strain);
@@ -223,15 +239,25 @@ fn resented_country_sickens_slowly_and_forgives() {
 #[test]
 fn a_heart_held_in_grievance_dies_and_stays_dead() {
     let (mut w, _key, (sx, sz)) = world_with_heart(43, "hearts-die");
-    for _ in 0..40 {
+    let mut days = 0;
+    while w.heart_at(sx, sz).unwrap().stage > 0 && days < SEASON_DAYS * 8 {
         for _ in 0..30 {
             w.add_ire_at(sx, sz, 4.0);
         }
         w.tick_ire(1.0);
+        days += 1;
     }
-    assert_eq!(w.heart_at(sx, sz).unwrap().stage, 0, "the country is dead");
+    assert_eq!(
+        w.heart_at(sx, sz).unwrap().stage,
+        0,
+        "the country is dead after {days} days"
+    );
+    assert!(
+        days >= SEASON_DAYS * 2,
+        "killing a spirit outright takes more than two seasons ({days} days)"
+    );
     // And waiting never brings it back — that road is the long walk.
-    for _ in 0..60 {
+    for _ in 0..SEASON_DAYS * 4 {
         w.tick_ire(1.0);
     }
     assert_eq!(w.heart_at(sx, sz).unwrap().stage, 0, "still dead");
@@ -502,11 +528,11 @@ fn a_seed_will_not_take_in_dead_dirt_but_will_in_ground_made_ready() {
     );
     assert!(w.plant_heart_seed(hp.0, hp.1, hp.2).is_none(), "it takes");
     // A rooting is a season's work, not a moment's.
-    for _ in 0..6 {
+    for _ in 0..(ROOT_DAYS as u32 / 2) {
         w.tick_ire(1.0);
     }
     assert_eq!(w.heart_at(sx, sz).unwrap().stage, 0, "still rooting");
-    for _ in 0..8 {
+    for _ in 0..(ROOT_DAYS as u32 / 2 + 2) {
         w.tick_ire(1.0);
     }
     let h = w.heart_at(sx, sz).unwrap();
@@ -598,13 +624,15 @@ fn a_stranger_heart_remakes_the_country_it_wakes_in() {
             .is_none(),
         "a stranger's seed still takes in ready ground"
     );
-    for _ in 0..14 {
+    for _ in 0..(ROOT_DAYS as u32 + 2) {
         w.tick_ire(1.0);
     }
     assert_eq!(w.heart_at(sx, sz).unwrap().stage, 2, "it wakes");
     // At first the country is still itself: the drift takes seasons.
     assert_eq!(w.country_biome(sx, sz), native, "not overnight");
-    for _ in 0..14 {
+    // Half the drift is what tips the country over, and the drift is
+    // two seasons end to end.
+    for _ in 0..SEASON_DAYS {
         w.tick_ire(1.0);
     }
     assert_eq!(
@@ -641,7 +669,7 @@ fn its_own_kind_reawakens_rather_than_replaces() {
             .is_none(),
         "its own kind takes"
     );
-    for _ in 0..14 {
+    for _ in 0..(ROOT_DAYS as u32 + 2) {
         w.tick_ire(1.0);
     }
     let h = w.heart_at(sx, sz).unwrap();
@@ -827,11 +855,11 @@ fn a_living_heart_gives_one_cutting_then_needs_a_season() {
     }
     assert_eq!(w.regional_ire_at(sx, sz), before, "asking is not taking");
 
-    // Most of a season is still not enough...
-    for _ in 0..5 {
+    // Almost long enough is not long enough...
+    for _ in 0..(HEART_CUTTING_DAYS as u32 - 1) {
         w.tick_ire(1.0);
     }
-    assert!(!w.take_heart_cutting(sx, sz), "five days is not six");
+    assert!(!w.take_heart_cutting(sx, sz), "a day short is still short");
     w.tick_ire(1.0);
     assert!(w.take_heart_cutting(sx, sz), "half a season on, it gives");
 }
