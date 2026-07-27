@@ -46,6 +46,14 @@ pub struct BlockDef {
     pub lava: bool,
     /// Render as two crossed quads instead of a cube (plants).
     pub cross: bool,
+    /// How readily this block takes fire, 0 = never. Higher catches
+    /// sooner. Wood, leaf and stalk burn; stone, earth and glass do not.
+    pub burns: u8,
+    /// Stands with nothing beneath it. Fire is the one cross block
+    /// that is not a plant: it climbs, and the support rule that keeps
+    /// torches honest was knocking out every flame the one below it
+    /// had just lit.
+    pub floats: bool,
     /// Custom mesh: "obelisk" (tapered pillar) or "signboard"
     /// (board on a post). Render-only; collision stays the cube.
     pub shape: Option<String>,
@@ -162,6 +170,9 @@ pub struct ItemDef {
     pub charm: Option<String>,
     /// Right-click reads a line from the lost takers.
     pub tablet: bool,
+    /// Right-click to set light to something. The one place a fire
+    /// is marked as a player's.
+    pub striker: bool,
     /// Sweeps remnant blocks (archaeology).
     pub brush_tool: bool,
     /// Right-click throw speed (None = not throwable).
@@ -665,6 +676,10 @@ struct BlockToml {
     #[serde(default)]
     cross: bool,
     #[serde(default)]
+    burns: u8,
+    #[serde(default)]
+    floats: bool,
+    #[serde(default)]
     shape: Option<String>,
     #[serde(default)]
     crop: Option<CropToml>,
@@ -787,6 +802,8 @@ struct ItemToml {
     charm: Option<String>,
     #[serde(default)]
     tablet: bool,
+    #[serde(default)]
+    striker: bool,
     #[serde(default)]
     brush_tool: bool,
     /// Right-click throw: projectile speed (snowballs).
@@ -1372,6 +1389,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         water_level: None,
         lava: false,
         cross: false,
+        burns: 0,
+        floats: false,
         shape: None,
         crop_next: None,
         crop_chance: 0.0,
@@ -1531,6 +1550,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 water_level: b.water.or(b.lava),
                 lava: b.lava.is_some(),
                 cross: b.cross,
+                burns: b.burns,
+                floats: b.floats,
                 shape: b.shape.clone(),
                 crop_next: None,
                 crop_chance: 0.0,
@@ -1653,6 +1674,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     shears: false,
                     charm: None,
                     tablet: false,
+                    striker: false,
                     brush_tool: false,
                     throw_speed: None,
                     hammer: false,
@@ -1719,6 +1741,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 shears: it.shears,
                 charm: it.charm.clone(),
                 tablet: it.tablet,
+                striker: it.striker,
                 brush_tool: it.brush_tool,
                 throw_speed: it.throw.as_ref().map(|t| t.speed.unwrap_or(18.0)),
                 hammer: it.hammer,
@@ -1820,6 +1843,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         water_level: None,
         lava: false,
         cross: false,
+        burns: 0,
+        floats: false,
         shape: None,
         crop_next: None,
         crop_chance: 0.0,

@@ -1186,6 +1186,23 @@ impl Game {
                     return;
                 }
             }
+            // The striker sets light to what you point it at. This is
+            // the ONE place a fire is marked as a player's, and the
+            // mark is inherited by everything it spreads to — so a
+            // burn cannot change hands halfway down a hillside.
+            if held.is_some_and(|i| reg.item(i).striker) {
+                let f = h.adjacent;
+                if reg.block(tb).burns > 0 && self.server.world.light_fire(f.0, f.1, f.2, true) {
+                    self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                    self.toast("It catches. It is yours now.".to_string());
+                    self.sfx(Sfx::Place);
+                    self.input.action_cooldown = 0.4;
+                    return;
+                }
+                self.toast("Nothing here will take a light.".to_string());
+                self.input.action_cooldown = 0.4;
+                return;
+            }
             // Hoe tills grass/dirt into farmland.
             if let (Some((ToolKind::Hoe, _, _)), Some(farm)) = (
                 held.and_then(|i| reg.item(i).tool),

@@ -60,6 +60,7 @@ pub struct Server {
     accum: f32,
     water_timer: f32,
     lava_timer: f32,
+    fire_timer: f32,
     random_timer: f32,
     snow_timer: f32,
     bolt_timer: f32,
@@ -79,6 +80,7 @@ impl Server {
             accum: 0.0,
             water_timer: 0.0,
             lava_timer: 0.0,
+            fire_timer: 0.0,
             random_timer: 0.0,
             snow_timer: 0.0,
             bolt_timer: 24.0,
@@ -150,6 +152,13 @@ impl Server {
         while self.lava_timer >= 0.8 {
             self.lava_timer -= 0.8;
             self.world.tick_lava(256);
+        }
+        // Fire moves faster than either: a burn you can outrun but
+        // not ignore.
+        self.fire_timer += dt;
+        while self.fire_timer >= 0.35 {
+            self.fire_timer -= 0.35;
+            self.world.tick_fire(256, &mut self.rng);
         }
 
         // Machines and gravity.

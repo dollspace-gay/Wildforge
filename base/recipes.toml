@@ -1152,3 +1152,9 @@ time = 6.0
 pattern = ["..s", ".sf", "s.f"]
 keys = { s = "base:stick", f = "base:plant_fiber" }
 output = "base:fishing_rod"
+
+[[recipe]]
+pattern = ["S", "C"]
+keys = { S = "base:steel_ingot", C = "base:cobblestone" }
+output = "base:fire_striker"
+

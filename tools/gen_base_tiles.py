@@ -691,6 +691,39 @@ def main():
     d.polygon([(13, 18), (18, 18), (15, 27)], fill=(228, 182, 52, 255))
     d.point((15, 25), fill=(206, 62, 44, 255))
     save_tile(gf, "gull_face")
+    # Fire: a cross-billboard flame. Tongues from the bottom edge, so
+    # it reads as rising from whatever it stands on rather than
+    # floating in the cell.
+    fire = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(fire)
+    rf = rng_for("fire")
+    for base_x, height, hue in [
+        (6, 20, (208, 60, 20)), (16, 27, (240, 122, 24)), (25, 17, (200, 52, 18)),
+        (11, 24, (250, 168, 40)), (21, 22, (248, 146, 32)),
+    ]:
+        top = PX - height
+        w = 5
+        for y in range(PX - 1, top, -1):
+            # Taper to a point, wavering as it climbs.
+            t = (PX - 1 - y) / max(1, height)
+            half = max(0, int(w * (1.0 - t) + rf.randint(-1, 1) * t))
+            cx = base_x + int(rf.randint(-1, 1) * t * 2)
+            d.line([(cx - half, y), (cx + half, y)], fill=hue + (255,))
+    # A hot core low down, where the fuel actually is.
+    for base_x, top in [(9, 24), (17, 20), (23, 26)]:
+        d.ellipse([base_x - 3, top, base_x + 3, PX - 1], fill=(255, 226, 132, 255))
+    save_tile(fire, "fire")
+    # The striker: a steel loop and a flint, throwing a spark.
+    fs = Image.new("RGBA", (PX, PX), (0, 0, 0, 0))
+    d = ImageDraw.Draw(fs)
+    d.arc([5, 12, 21, 28], 200, 20, fill=(168, 172, 180, 255), width=3)
+    d.line([(6, 20), (6, 26)], fill=(150, 154, 162, 255), width=3)
+    d.polygon([(19, 6), (27, 10), (24, 18), (16, 14)], fill=(96, 92, 88, 255),
+              outline=(60, 58, 56, 255))
+    for sx, sy in [(14, 12), (12, 16), (17, 9)]:
+        d.point((sx, sy), fill=(255, 232, 140, 255))
+        d.point((sx + 1, sy + 1), fill=(255, 176, 60, 255))
+    save_tile(fs, "fire_striker")
     save_tile(rock("frog", base=(96, 138, 70), dark=(62, 96, 44)), "frog")
     save_tile(face("frog_face", (96, 138, 70), (62, 96, 44), None), "frog_face")
     save_tile(rock("heron", base=(176, 184, 190), dark=(128, 136, 144)), "heron")

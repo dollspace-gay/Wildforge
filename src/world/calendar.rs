@@ -193,6 +193,9 @@ impl World {
         {
             self.set_block(x, y, z, ch);
         }
+        // And it starts a fire, which is the wild's to own: it pays
+        // bloom where it burns and will not cross onto worked ground.
+        self.light_fire(x, y + 1, z, false);
         Some((x, y, z))
     }
 
