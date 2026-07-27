@@ -120,9 +120,20 @@ walk. Options, in rough order of how much I like them:
   and the heart in a chamber. Walking in to reach a spirit is a better
   moment than digging through one. Tablets and offerings gain somewhere
   to belong.
-  - Consequence to handle: a sheltered dark interior is exactly where
-    the hostile spawner wants to work. The chamber needs light or a
-    spawn veto, or a pilgrimage becomes an ambush.
+  - **The ambush is intended** (settled 2026-07-27). A sheltered dark
+    interior is exactly where the hostile spawner wants to work, and
+    that is the point: walking into a living country's heart to take a
+    cutting should cost you something. Do not light these chambers and
+    do not veto spawns in them.
+  - Note the inversion this creates, which is NOT a bug in the spawner:
+    wardens gate on `heart_alive_at`, so they never come in dead
+    country. The badlands ziggurat — the edifice a player is most
+    likely to walk into, because a scar is the advertised restoration
+    target — is therefore the safest room in the game, while the
+    living countries' chambers are the dangerous ones. That silence is
+    load-bearing (see the hearts arc: the wardens falling quiet is the
+    death knell), so if dead chambers should bite, it has to be
+    something other than a warden spawn that does the biting.
 
 ## The other constraint: edifices cross chunks
 
