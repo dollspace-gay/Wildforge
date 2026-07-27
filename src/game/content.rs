@@ -16,7 +16,7 @@ impl Game {
     pub(super) fn apply_pack(&mut self) {
         let mut atlas = atlas::build_atlas(
             &self.content.reg.tex_files,
-            pack_source_of(&self.active_pack_id()),
+            &atlas::pack_chain(&self.active_pack_id()),
             &self.content.reg.tex_names,
         );
         let season = if self.in_world {
@@ -39,7 +39,7 @@ impl Game {
         let new_reg = Arc::new(registry::load(std::path::Path::new("mods")));
         let mut atlas = atlas::build_atlas(
             &new_reg.tex_files,
-            pack_source_of(&self.active_pack_id()),
+            &atlas::pack_chain(&self.active_pack_id()),
             &new_reg.tex_names,
         );
         let season = if self.in_world {

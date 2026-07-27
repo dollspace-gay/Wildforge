@@ -48,6 +48,10 @@ pub struct PackInfo {
 struct PackToml {
     name: Option<String>,
     description: Option<String>,
+    /// Apply this pack on top of another one instead of replacing it. Lets a
+    /// pack ship only companion maps (or a handful of overrides) over another
+    /// pack's albedo.
+    inherits: Option<String>,
 }
 
 /// List texture packs under `root`, sorted by id.
@@ -91,6 +95,56 @@ pub fn discover_packs() -> Vec<PackInfo> {
     packs
 }
 
+/// Read a pack folder's declared parent, if any.
+fn pack_parent_in(root: &std::path::Path, id: &str) -> Option<String> {
+    let meta: PackToml = std::fs::read_to_string(root.join(id).join("pack.toml"))
+        .ok()
+        .and_then(|t| toml::from_str(&t).ok())?;
+    meta.inherits.filter(|p| !p.is_empty() && p != id)
+}
+
+/// Resolve a configured pack id: a folder under `root` wins (editable,
+/// hot-reloads), else a pack compiled into the binary, else none.
+pub fn pack_source_in(root: &std::path::Path, id: &str) -> Option<PackSource> {
+    if id.is_empty() {
+        return None;
+    }
+    let p = root.join(id);
+    if p.is_dir() {
+        return Some(PackSource::Dir(p));
+    }
+    embedded_pack(id).map(PackSource::Embedded)
+}
+
+pub fn pack_source_of(id: &str) -> Option<PackSource> {
+    pack_source_in(std::path::Path::new("packs"), id)
+}
+
+/// The chain of pack sources to apply for `id`, ancestors first so the named
+/// pack still gets the last word. Following `inherits` is what lets a pack ship
+/// only companion maps over another pack's albedo. A cycle (or a pack naming
+/// itself) stops the walk instead of hanging; a parent that resolves to nothing
+/// is simply skipped, so a broken `inherits` degrades to the child alone.
+pub fn pack_chain_in(root: &std::path::Path, id: &str) -> Vec<PackSource> {
+    let mut ids: Vec<String> = Vec::new();
+    let mut cur = id.to_string();
+    while !cur.is_empty() && !ids.contains(&cur) {
+        ids.push(cur.clone());
+        match pack_parent_in(root, &cur) {
+            Some(parent) => cur = parent,
+            None => break,
+        }
+    }
+    ids.reverse();
+    ids.iter()
+        .filter_map(|i| pack_source_in(root, i))
+        .collect()
+}
+
+pub fn pack_chain(id: &str) -> Vec<PackSource> {
+    pack_chain_in(std::path::Path::new("packs"), id)
+}
+
 /// A companion map authored alongside a tile's albedo.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MapKind {
@@ -98,6 +152,10 @@ pub enum MapKind {
     Height,
     /// Tangent-space normal using OpenGL's positive-green convention.
     Normal,
+    /// Interior stratum mask for multilayer parallax: the structure that sits
+    /// *below* the surface and slides under it (ice cracks, canopy depth).
+    /// White is dense interior, black is none.
+    Interior,
 }
 
 /// Recognize a pack file stem as an albedo tile or companion map.
@@ -113,6 +171,8 @@ fn classify_tile_file(
         ("_height", MapKind::Height),
         ("_n", MapKind::Normal),
         ("_normal", MapKind::Normal),
+        ("_i", MapKind::Interior),
+        ("_interior", MapKind::Interior),
     ] {
         if let Some(base) = stem.strip_suffix(suffix)
             && let Some(slot) = names.get(base)
@@ -184,13 +244,16 @@ pub struct Atlas {
     pub warnings: Vec<String>,
 }
 
-/// Build the atlas in layers: procedural/assets base, then mod PNGs, then
-/// the active texture pack's tiles last (the explicit user choice wins, but
-/// only for tiles the pack ships). Companion maps are applied after albedo
-/// layering so an albedo replacement cannot clear its own maps.
+/// Build the atlas in layers: procedural/assets base, then mod PNGs, then the
+/// active pack chain last (the explicit user choice wins, but only for tiles
+/// the pack ships). `packs` runs ancestors first — see `pack_chain` — so an
+/// inheriting pack layers over its parent rather than replacing it. Companion
+/// maps are applied after all albedo layering, so an albedo replacement cannot
+/// clear its own maps, and a child that overrides only the albedo keeps the
+/// maps it inherited.
 pub fn build_atlas(
     tex_files: &[(u16, std::path::PathBuf)],
-    pack: Option<PackSource>,
+    packs: &[PackSource],
     tex_names: &[(String, u16)],
 ) -> Atlas {
     let (mut img, px) = load_or_build();
@@ -215,48 +278,49 @@ pub fn build_atlas(
         }
     }
     let mut warnings = Vec::new();
-    match pack {
-        Some(PackSource::Dir(dir)) => {
-            let names = tile_names(tex_names);
-            let found = scan_pack(&dir, &names);
-            warnings = found.warnings;
-            for (slot, path) in found.tiles {
-                match load_tile_png(&path) {
-                    Some(src) => {
-                        blit_tile(&mut img, px, tp, slot, &src);
-                        clear_material_slot(&mut mat, px, slot);
+    for pack in packs {
+        match pack {
+            PackSource::Dir(dir) => {
+                let names = tile_names(tex_names);
+                let found = scan_pack(dir, &names);
+                warnings.extend(found.warnings);
+                for (slot, path) in found.tiles {
+                    match load_tile_png(&path) {
+                        Some(src) => {
+                            blit_tile(&mut img, px, tp, slot, &src);
+                            clear_material_slot(&mut mat, px, slot);
+                        }
+                        None => warnings.push(format!("unreadable png: {}", path.display())),
                     }
-                    None => warnings.push(format!("unreadable png: {}", path.display())),
+                }
+                for (slot, kind, path) in found.maps {
+                    match load_tile_png(&path) {
+                        Some(src) => maps.push((slot, kind, src)),
+                        None => warnings.push(format!("unreadable png: {}", path.display())),
+                    }
                 }
             }
-            for (slot, kind, path) in found.maps {
-                match load_tile_png(&path) {
-                    Some(src) => maps.push((slot, kind, src)),
-                    None => warnings.push(format!("unreadable png: {}", path.display())),
+            PackSource::Embedded(tiles) => {
+                let names = tile_names(tex_names);
+                for (name, bytes) in *tiles {
+                    // Names the current registry doesn't know (e.g. a mod's
+                    // tile with that mod removed) skip silently.
+                    let Some((slot, kind)) = classify_tile_file(name, &names) else {
+                        continue;
+                    };
+                    let Some(src) = load_tile_bytes(bytes) else {
+                        continue;
+                    };
+                    match kind {
+                        None => {
+                            blit_tile(&mut img, px, tp, slot, &src);
+                            clear_material_slot(&mut mat, px, slot);
+                        }
+                        Some(kind) => maps.push((slot, kind, src)),
+                    }
                 }
             }
         }
-        Some(PackSource::Embedded(tiles)) => {
-            let names = tile_names(tex_names);
-            for (name, bytes) in tiles {
-                // Names the current registry doesn't know (e.g. a mod's
-                // tile with that mod removed) skip silently.
-                let Some((slot, kind)) = classify_tile_file(name, &names) else {
-                    continue;
-                };
-                let Some(src) = load_tile_bytes(bytes) else {
-                    continue;
-                };
-                match kind {
-                    None => {
-                        blit_tile(&mut img, px, tp, slot, &src);
-                        clear_material_slot(&mut mat, px, slot);
-                    }
-                    Some(kind) => maps.push((slot, kind, src)),
-                }
-            }
-        }
-        None => {}
     }
     apply_player_variants(&mut img, px);
     let mut authored_height = std::collections::HashSet::new();
@@ -267,6 +331,7 @@ pub fn build_atlas(
                 authored_height.insert(*slot);
             }
             MapKind::Normal => blit_normal(&mut nrm, &mut mat, px, tp, *slot, src),
+            MapKind::Interior => blit_interior(&mut mat, px, tp, *slot, src),
         }
     }
     for slot in [
@@ -422,6 +487,10 @@ fn load_tile_bytes(bytes: &[u8]) -> Option<SrcTile> {
 }
 
 fn load_tile_reader<R: std::io::BufRead + std::io::Seek>(dec: png::Decoder<R>) -> Option<SrcTile> {
+    let mut dec = dec;
+    // Normalize the awkward encodings up front (palette -> RGB, sub-byte and
+    // 16-bit depths -> 8) so the match below only ever sees 8-bit channels.
+    dec.set_transformations(png::Transformations::normalize_to_color8());
     let mut reader = dec.read_info().ok()?;
     let mut buf = vec![0u8; reader.output_buffer_size()?];
     let info = reader.next_frame(&mut buf).ok()?;
@@ -432,6 +501,23 @@ fn load_tile_reader<R: std::io::BufRead + std::io::Seek>(dec: png::Decoder<R>) -
             let mut out = Vec::with_capacity(n * 4);
             for p in buf[..n * 3].chunks_exact(3) {
                 out.extend_from_slice(&[p[0], p[1], p[2], 255]);
+            }
+            out
+        }
+        // Height and interior maps are greyscale by nature, and every image
+        // editor and generator writes them that way. Rejecting single-channel
+        // PNGs made an authored `_h`/`_i` fail with only a warning to say so.
+        png::ColorType::Grayscale => {
+            let mut out = Vec::with_capacity(n * 4);
+            for g in &buf[..n] {
+                out.extend_from_slice(&[*g, *g, *g, 255]);
+            }
+            out
+        }
+        png::ColorType::GrayscaleAlpha => {
+            let mut out = Vec::with_capacity(n * 4);
+            for p in buf[..n * 2].chunks_exact(2) {
+                out.extend_from_slice(&[p[0], p[0], p[0], p[1]]);
             }
             out
         }
@@ -526,6 +612,28 @@ fn blit_height(mat: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &SrcTile)
     }
 }
 
+/// Interior stratum mask into the material atlas's G channel — the layer the
+/// shader parallaxes *beneath* the surface. Luminance, same as height: an
+/// authored `<tile>_i.png` is a greyscale mask, white where the interior
+/// structure is dense.
+fn blit_interior(mat: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &SrcTile) {
+    let mut tile = vec![0u8; (tp * tp * 4) as usize];
+    resample_tile(&mut tile, tp, src);
+    let (tx, ty) = (
+        slot as u32 % ATLAS_TILES * tp,
+        slot as u32 / ATLAS_TILES * tp,
+    );
+    for y in 0..tp {
+        for x in 0..tp {
+            let s = ((y * tp + x) * 4) as usize;
+            let d = (((ty + y) * atlas_px + tx + x) * 4) as usize;
+            let l =
+                0.299 * tile[s] as f32 + 0.587 * tile[s + 1] as f32 + 0.114 * tile[s + 2] as f32;
+            mat[d + 1] = l as u8;
+        }
+    }
+}
+
 fn blit_normal(nrm: &mut [u8], mat: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &SrcTile) {
     let mut tile = vec![0u8; (tp * tp * 4) as usize];
     resample_tile(&mut tile, tp, src);
@@ -555,7 +663,10 @@ fn derive_luminance_height(img: &[u8], mat: &mut [u8], px: u32, slot: u16) {
             let i = (((ty + y) * px + tx + x) * 4) as usize;
             let l = 0.299 * img[i] as f32 + 0.587 * img[i + 1] as f32 + 0.114 * img[i + 2] as f32;
             mat[i] = l as u8;
-            mat[i + 1] = 0;
+            // G (interior) is deliberately left alone. It is already 0 here
+            // unless a pack authored `<tile>_i.png`, and this fallback only
+            // supplies a missing *height* — it has no business erasing an
+            // interior the author asked for.
         }
     }
 }

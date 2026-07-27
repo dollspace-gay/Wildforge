@@ -795,7 +795,7 @@ impl Game {
                     Self::draw_button(&mut ui, r, &label, self.hit(r));
                     let cur = self.active_pack_id();
                     let active = if i == 0 {
-                        cur.is_empty() || pack_source_of(&cur).is_none()
+                        cur.is_empty() || atlas::pack_source_of(&cur).is_none()
                     } else {
                         self.content.packs[i - 1].id == cur
                     };
