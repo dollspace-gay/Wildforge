@@ -514,7 +514,7 @@ impl World {
                 3 => 0.5,
                 _ => 1.0,
             };
-        if self.repop_timer >= 8.0 {
+        if self.repop_timer >= 16.0 {
             self.repop_timer = 0.0;
             let near = self
                 .mobs

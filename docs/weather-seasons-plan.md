@@ -24,6 +24,14 @@ winter on what you stored. Reciprocity gets a rhythm.
 - **Season = (day / SEASON_DAYS) % 4**, `SEASON_DAYS = 12` (a 48-day
   year). Order: Spring, Summer, Autumn, Winter. Within a season,
   `season_progress` 0..1 for smooth transitions.
+  > **Retuned 2026-07-26.** `DAY_LENGTH` is 1200 s and `SEASON_DAYS`
+  > is 36 — a 12-hour season and a 144-day year, so a season is
+  > something you live in rather than pass through. Anything tuned
+  > *as a season* now derives from `SEASON_DAYS` instead of repeating
+  > a day count, and the two wall-clock rates that have to move
+  > against `DAY_LENGTH` (`FRESHNESS_PER_SEC`,
+  > `RANDOM_TICKS_PER_CHUNK_SEC`) are pinned by
+  > `the_calendar_and_the_wall_clock_stay_in_step`.
 - HUD: the inventory panel gains one line — `DAY 23 - EARLY WINTER`
   (early/mid/late by thirds).
 - Dev hooks in the existing style: `WILDFORGE_DAY`,

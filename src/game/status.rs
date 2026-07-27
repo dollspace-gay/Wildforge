@@ -36,9 +36,11 @@ impl Game {
         // 20 s each perishable stack loses that much freshness — no
         // cellar in a backpack — rotting to mush at zero. A legacy
         // stack from before freshness initializes instead of rotting.
+        const SWEEP: f32 = 20.0;
+        let step = (SWEEP * world::FRESHNESS_PER_SEC) as u32;
         self.survival.perish_accum += dt;
-        if self.survival.perish_accum >= 20.0 {
-            self.survival.perish_accum -= 20.0;
+        if self.survival.perish_accum >= SWEEP {
+            self.survival.perish_accum -= SWEEP;
             let reg = self.content.reg.clone();
             let mush = reg.item_id("base:spoiled_mush");
             let age = |s: &mut Option<ItemStack>| {
@@ -49,14 +51,14 @@ impl Game {
                 }
                 if st.durability == 0 {
                     st.durability = full;
-                } else if st.durability <= 20 {
+                } else if st.durability <= step {
                     *s = mush.map(|m| {
                         let mut sp = ItemStack::new(&reg, m, 1);
                         sp.count = st.count;
                         sp
                     });
                 } else {
-                    st.durability -= 20;
+                    st.durability -= step;
                 }
             };
             for s in self.inventory.slots.iter_mut() {

@@ -241,11 +241,8 @@ impl World {
             })
             .collect();
         for (pos, cellar) in cellar_at {
-            let step = if cellar {
-                PERISH_SWEEP_SECS / 4.0
-            } else {
-                PERISH_SWEEP_SECS
-            } as u32;
+            let rate = PERISH_SWEEP_SECS * FRESHNESS_PER_SEC;
+            let step = if cellar { rate / 4.0 } else { rate } as u32;
             let Some(e) = self.block_entities.get_mut(&pos) else {
                 continue;
             };

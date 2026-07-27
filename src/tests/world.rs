@@ -473,8 +473,19 @@ fn random_ticks_visit_a_bounded_cohort() {
     // 81 chunks loaded, all stamped at clock 0; K = 64 caps the visit.
     w.clock = 5.0;
     let mut rng = 3u32;
-    assert_eq!(w.random_tick(&mut rng), 64 * 80, "K chunks, elapsed-scaled");
-    assert_eq!(w.random_tick(&mut rng), 17 * 80 + 47 * 8, "oldest first");
+    // Five seconds of waiting, at the world's sample rate; the 47
+    // chunks already visited this clock fall back to the floor of 8.
+    let waited = (5.0 * crate::world::RANDOM_TICKS_PER_CHUNK_SEC) as usize;
+    assert_eq!(
+        w.random_tick(&mut rng),
+        64 * waited,
+        "K chunks, elapsed-scaled"
+    );
+    assert_eq!(
+        w.random_tick(&mut rng),
+        17 * waited + 47 * 8,
+        "oldest first"
+    );
 }
 
 #[test]
@@ -1041,13 +1052,14 @@ fn weather_machine_rolls_legal_fronts_and_storms_lean_on_ire() {
     // Calendar persistence rides world.toml.
     let dir = tmp_dir("wx-persist");
     let mut w = World::new(42, dir.clone(), reg.clone());
-    w.day = 23;
+    let midsummer = crate::world::SEASON_DAYS + crate::world::SEASON_DAYS / 2;
+    w.day = midsummer;
     w.weather = Weather::Storm;
     w.save_modified();
     let w2 = World::load_or_create(dir, reg);
-    assert_eq!(w2.day, 23);
+    assert_eq!(w2.day, midsummer);
     assert_eq!(w2.weather, Weather::Storm);
-    assert_eq!(w2.season(), 1, "day 23 is summer");
+    assert_eq!(w2.season(), 1, "a day and a half of seasons in is summer");
 }
 
 #[test]
@@ -2335,4 +2347,78 @@ fn the_palette_is_written_when_it_would_differ_and_not_on_a_timer() {
     w.ensure_chunk(ChunkPos { x: 0, z: 0 });
     w.save_modified();
     assert!(palette.exists(), "a stale palette is replaced");
+}
+
+/// The calendar runs on DAY_LENGTH; growth, spoilage and recovery run
+/// on the wall clock. Those are two clocks, and every one of these
+/// pairs silently changes what it MEANS if only one of them is turned.
+/// A crop that took four days to ripen taking two, a larder that fed
+/// you through winter running out in autumn — neither shows up as a
+/// failure anywhere, which is exactly why they are pinned here.
+#[test]
+fn the_calendar_and_the_wall_clock_stay_in_step() {
+    use crate::server::DAY_LENGTH;
+    use crate::world::{FRESHNESS_PER_SEC, RANDOM_TICKS_PER_CHUNK_SEC};
+    let reg = base_reg();
+
+    // A chunk gets the same random-tick visits per in-game day at any
+    // day length: this is what makes a crop take N days rather than N
+    // minutes. Growth, thaw, fungus and grass regrowth all ride it.
+    let visits_per_day = RANDOM_TICKS_PER_CHUNK_SEC * DAY_LENGTH as f64;
+    assert!(
+        (visits_per_day - 9600.0).abs() < 1.0,
+        "a chunk should see ~9600 random ticks a day, sees {visits_per_day:.0}"
+    );
+
+    // Food is authored in freshness points and spent on the wall
+    // clock, so its shelf life in DAYS is the product of three
+    // numbers. "Will this last the winter" has to keep its answer.
+    for (item, want_days) in [("base:potato", 3.0f32), ("base:raw_venison", 1.5)] {
+        let id = reg.item_id(item).unwrap_or_else(|| panic!("no {item}"));
+        let days = reg.item(id).durability as f32 / FRESHNESS_PER_SEC / DAY_LENGTH;
+        assert!(
+            (days - want_days).abs() < 0.05,
+            "{item} should keep {want_days} in-game days, keeps {days:.2}"
+        );
+    }
+
+    // And a season is a season's worth of days, not a hardcoded 12.
+    assert_eq!(crate::world::ROOT_DAYS, crate::world::SEASON_DAYS as f32);
+    assert_eq!(
+        crate::world::HEART_CUTTING_DAYS,
+        crate::world::SEASON_DAYS as f32 / 2.0
+    );
+    assert_eq!(
+        crate::world::BLOOM_EXHAUSTION,
+        crate::world::SEASON_DAYS as f32
+    );
+}
+
+/// Stamps mean nothing without the clock they were written against.
+#[test]
+fn stamps_from_a_different_day_length_are_dropped_not_misread() {
+    let reg = base_reg();
+    let dir = tmp_dir("stamps-version");
+    {
+        let mut w = World::new(9, dir.clone(), reg.clone());
+        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        let mut rng = 1u32;
+        w.random_tick(&mut rng);
+        w.save_modified();
+    }
+    let w = World::load_or_create(dir.clone(), reg.clone());
+    assert!(w.stamp_count() > 0, "same clock, stamps come back");
+
+    // A pre-retune file: the old headerless (x, z, time) triples.
+    let mut old = Vec::new();
+    old.extend_from_slice(&0i32.to_le_bytes());
+    old.extend_from_slice(&0i32.to_le_bytes());
+    old.extend_from_slice(&123.0f64.to_le_bytes());
+    std::fs::write(dir.join("stamps"), &old).unwrap();
+    let w = World::load_or_create(dir.clone(), reg.clone());
+    assert_eq!(
+        w.stamp_count(),
+        0,
+        "a stamp on another clock is discarded, not read as days of absence"
+    );
 }
