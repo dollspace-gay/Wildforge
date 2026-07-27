@@ -2,6 +2,11 @@
 
 use super::*;
 
+/// Stamps are only meaningful against the DAY_LENGTH they were written
+/// under. Bump this whenever that changes and old stamps are discarded
+/// rather than misread as an absence.
+const STAMPS_MAGIC: &[u8] = b"WFS2-1200";
+
 impl World {
     /// Load a world from disk (reads seed + palette) or create a fresh one.
     pub fn load_or_create(save_dir: PathBuf, reg: Arc<Registry>) -> World {
@@ -34,11 +39,21 @@ impl World {
     }
 
     /// Per-chunk random-tick stamps: compact (x, z, time) triples.
+    ///
+    /// The times are clock seconds, and the clock's unit is DAY_LENGTH.
+    /// When that changed, every stamp from an older save started
+    /// reading as days of absence — so the whole explored world would
+    /// have fired its catch-up burst (crops jumping, snow phasing) the
+    /// first time it loaded. The header says whose clock these are;
+    /// anything older is dropped, which costs only the catch-up itself.
     pub(super) fn load_stamps(&mut self) {
         let Ok(buf) = fs::read(self.save_dir.join("stamps")) else {
             return;
         };
-        for rec in buf.chunks_exact(16) {
+        let Some(body) = buf.strip_prefix(STAMPS_MAGIC) else {
+            return;
+        };
+        for rec in body.chunks_exact(16) {
             let x = i32::from_le_bytes(rec[0..4].try_into().unwrap());
             let z = i32::from_le_bytes(rec[4..8].try_into().unwrap());
             let t = f64::from_le_bytes(rec[8..16].try_into().unwrap());
@@ -47,7 +62,8 @@ impl World {
     }
 
     pub(super) fn save_stamps(&self) {
-        let mut buf = Vec::with_capacity(self.last_random.len() * 16);
+        let mut buf = Vec::with_capacity(STAMPS_MAGIC.len() + self.last_random.len() * 16);
+        buf.extend_from_slice(STAMPS_MAGIC);
         for ((x, z), t) in &self.last_random {
             buf.extend_from_slice(&x.to_le_bytes());
             buf.extend_from_slice(&z.to_le_bytes());

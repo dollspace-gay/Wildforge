@@ -13,7 +13,7 @@ use crate::world::{Weather, World};
 
 /// Fixed simulation rate. Rendering runs faster and interpol- er, copes.
 pub const TICK: f32 = 1.0 / 30.0;
-pub const DAY_LENGTH: f32 = 600.0; // seconds per full day/night cycle
+pub const DAY_LENGTH: f32 = 1200.0; // seconds per full day/night cycle
 
 /// What the simulation needs to know about a player this tick.
 #[derive(Clone, Copy)]

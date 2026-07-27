@@ -114,22 +114,26 @@ pub const ROOT_READY_FRAC: f32 = 0.55;
 /// Fertility a cell must reach to count as made ready.
 pub const ROOT_READY_FERT: u8 = 24;
 /// A rooting takes a season, defended.
-pub const ROOT_DAYS: f32 = 12.0;
+pub const ROOT_DAYS: f32 = SEASON_DAYS as f32;
 
 /// A country held under this much resentment starts to strain.
 pub const HEART_STRAIN_IRE: f32 = 8.0;
-/// Strain accrues at `standing / HEART_STRAIN_IRE` per day, so the
-/// angriest country (regional ire caps at 20) gains 2.5 a day: a
-/// season of unbroken grievance to show it, two and a half to die
-/// of it. Tended country sheds 1.5 a day. A spirit takes SEASONS.
-pub const HEART_SICKEN_STRAIN: f32 = 30.0;
-pub const HEART_DEATH_STRAIN: f32 = 75.0;
+/// The most a country can strain in a day: regional standing caps at
+/// 20, and strain accrues at `standing / HEART_STRAIN_IRE`.
+const HEART_STRAIN_MAX_PER_DAY: f32 = 20.0 / HEART_STRAIN_IRE;
+/// A season of unbroken grievance to show it, two and a half to die
+/// of it. Tended country sheds 1.5 a day. A spirit takes SEASONS —
+/// which is why these are written against the season and not as bare
+/// day counts: the calendar can be retuned without quietly turning
+/// the spirits' clock with it.
+pub const HEART_SICKEN_STRAIN: f32 = HEART_STRAIN_MAX_PER_DAY * SEASON_DAYS as f32;
+pub const HEART_DEATH_STRAIN: f32 = HEART_SICKEN_STRAIN * 2.5;
 
 /// Days a living heart needs before it will give another cutting.
 /// Half a season: a seed is an errand you make a journey for, not a
 /// thing you farm by standing still. You only ever need one per dead
 /// country, so this costs an honest restoration nothing.
-pub const HEART_CUTTING_DAYS: f32 = 6.0;
+pub const HEART_CUTTING_DAYS: f32 = SEASON_DAYS as f32 / 2.0;
 
 impl World {
     /// The slow clock of the spirits: a country held in resentment
@@ -401,7 +405,7 @@ impl World {
     pub(super) fn tick_graft(&mut self, day_frac: f32) {
         for h in self.hearts.values_mut() {
             if h.stage == 2 && h.graft.is_some() && h.drift < 1.0 {
-                h.drift = (h.drift + day_frac / 24.0).min(1.0);
+                h.drift = (h.drift + day_frac / (2.0 * SEASON_DAYS as f32)).min(1.0);
             }
         }
     }

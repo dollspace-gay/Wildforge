@@ -790,8 +790,13 @@ fn food_spoils_slower_in_a_cellar_and_salted_keeps() {
     let mut cellar = ChestState::default();
     cellar.slots[0] = Some(ItemStack::new(&reg, meat, 4));
     w.insert_block_entity((20, 41, 4), BlockEntity::Chest(cellar));
-    // Run 1000 seconds of container time.
-    for _ in 0..50 {
+    // Long enough for the open chest's stack to burn its whole
+    // freshness at whatever the current rate is, plus a margin. A bare
+    // second count here stopped being long enough the moment the
+    // calendar retuned FRESHNESS_PER_SEC.
+    let full = reg.item(meat).durability as f32;
+    let secs = full / crate::world::FRESHNESS_PER_SEC * 1.12;
+    for _ in 0..(secs / 20.0).ceil() as u32 {
         w.tick_entities(20.0);
     }
     let surface_meat = match w.block_entity(&(4, sy + 1, 4)) {
@@ -804,19 +809,19 @@ fn food_spoils_slower_in_a_cellar_and_salted_keeps() {
     };
     assert_eq!(
         surface_meat.item, mush,
-        "raw venison (900 s) rots on the surface inside 1000 s"
+        "raw venison rots on the surface once its freshness runs out"
     );
     assert_eq!(cellar_meat.item, meat, "the cellar kept it");
     assert!(
-        cellar_meat.durability >= 900 - 300,
-        "cellar decay runs at quarter rate ({})",
+        cellar_meat.durability as f32 >= full * 0.6,
+        "cellar decay runs at quarter rate ({} of {full})",
         cellar_meat.durability
     );
     let salted_left = match w.block_entity(&(4, sy + 1, 4)) {
         Some(BlockEntity::Chest(c)) => c.slots[1].unwrap(),
         _ => panic!("chest"),
     };
-    assert_eq!(salted_left.item, salted, "salted meat shrugs at 1000 s");
+    assert_eq!(salted_left.item, salted, "salted meat shrugs it off");
 }
 
 #[test]

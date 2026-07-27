@@ -53,8 +53,8 @@ impl World {
         let mut saplings: Vec<(i32, i32, i32, String, u32)> = Vec::new();
         for (stamp, pos) in order {
             let elapsed = (self.clock - stamp).max(0.0);
-            // 8 samples per half-second of waiting, floor 8, cap 256.
-            let n = ((elapsed * 16.0) as usize).clamp(8, 256);
+            // Samples proportional to the wait, floor 8, cap 256.
+            let n = ((elapsed * RANDOM_TICKS_PER_CHUNK_SEC) as usize).clamp(8, 256);
             self.last_random.insert((pos.x, pos.z), self.clock);
             samples += n;
             for _ in 0..n {
@@ -554,7 +554,8 @@ impl World {
         // them; short gaps stay with the gradual burst mechanism.
         let phase = elapsed >= 2.0 * day_len;
         // Expected random-tick visits per block per in-game day.
-        let ticks_per_day = 16.0 * day_len / (CHUNK_X * CHUNK_Z * CHUNK_Y) as f64;
+        let ticks_per_day =
+            RANDOM_TICKS_PER_CHUNK_SEC * day_len / (CHUNK_X * CHUNK_Z * CHUNK_Y) as f64;
         // Deterministic per-(world, chunk, day) randomness.
         let mut r = self
             .seed

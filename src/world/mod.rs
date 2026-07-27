@@ -29,7 +29,7 @@ mod power;
 mod storage;
 
 #[cfg(test)]
-pub use hearts::{HEART_CUTTING_DAYS, ROOT_RADIUS};
+pub use hearts::{HEART_CUTTING_DAYS, ROOT_DAYS, ROOT_RADIUS};
 pub use hearts::{Heart, heart_block_name, heart_form, heart_height, seed_nature, seed_of_form};
 pub use machines::{station_powered, worked_table_for};
 pub mod soil;
@@ -75,8 +75,24 @@ pub const LONG_WINTER_MIN_DEAD: usize = 3;
 pub const LONG_WINTER_FRAC: f32 = 0.5;
 
 /// A cell will give this much bloom, all told, before the ground has
-/// nothing left to give. Tending pays it back.
-pub const BLOOM_EXHAUSTION: f32 = 12.0;
+/// nothing left to give. Tending pays it back. A season's worth, so
+/// the exploit it closes stays closed at any calendar length.
+pub const BLOOM_EXHAUSTION: f32 = SEASON_DAYS as f32;
+
+/// Freshness a food stack loses per real second, carried or stored.
+/// Food ages on the wall clock while the calendar runs on DAY_LENGTH,
+/// so these two have to move together or the larder silently changes
+/// meaning: at half a point a second and a 1200 s day, an 1800-point
+/// potato still keeps three in-game days, exactly as it did at a
+/// point a second and a 600 s day. "Will this last the winter" is a
+/// question about days, so it is answered in days.
+pub const FRESHNESS_PER_SEC: f32 = 0.5;
+
+/// Random-tick samples per chunk per real second: growth, spread,
+/// thaw, decay. Crops are planted and waited on in DAYS, so this
+/// moves opposite DAY_LENGTH — 8 a second across a 1200 s day is the
+/// same 9600 visits a chunk got from 16 across a 600 s one.
+pub const RANDOM_TICKS_PER_CHUNK_SEC: f64 = 8.0;
 
 /// Seconds per separator batch (1 powder + 1 fuel -> 1 Nd + 2 Ce).
 pub const SEPARATE_SECS: f32 = 45.0;
@@ -148,7 +164,10 @@ pub struct KilnState {
     pub core: (i32, i32, i32),
 }
 
-/// A quarter-day of white heat per glass batch.
+/// Two and a half minutes of white heat per glass batch. Deliberately
+/// left on the wall clock when the day doubled: how long a player
+/// stands waiting on a kiln is a question about patience, not about
+/// the calendar.
 pub const KILN_FIRE_SECS: f32 = 150.0;
 
 /// A covered log pile smoldering into charcoal.
@@ -173,7 +192,9 @@ pub struct FallingBlock {
     pub block: BlockId,
 }
 
-/// Half an in-game day of fire per batch.
+/// Five minutes of fire per batch, and the forge's two is still the
+/// upgrade worth building. On the wall clock for the same reason the
+/// kiln is.
 pub const BLOOMERY_FIRE_SECS: f32 = 300.0;
 /// The forge runs hotter and shorter than the open stack — capital
 /// pays for itself in wall-clock too (economy plan, leg 2).
@@ -484,8 +505,14 @@ fn poisson(lambda: f64, r: &mut u32) -> u32 {
 
 // ---------------- calendar & weather ----------------
 
-/// In-game days per season; four seasons make a 48-day year.
-pub const SEASON_DAYS: u32 = 12;
+/// In-game days per season; four seasons make a 144-day year.
+///
+/// At a 20-minute day that is 12 hours of play per season and two
+/// full days per year. A season is meant to be lived in: you plant
+/// into one, tend through it, and meet winter with what you put by.
+/// Everything below tuned as "a season" is derived from this rather
+/// than written out again, so this is the one number to turn.
+pub const SEASON_DAYS: u32 = 36;
 pub const SEASONS: [&str; 4] = ["SPRING", "SUMMER", "AUTUMN", "WINTER"];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1034,6 +1061,12 @@ impl World {
             }
         }
         0
+    }
+
+    /// How many chunks carry a random-tick stamp.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn stamp_count(&self) -> usize {
+        self.last_random.len()
     }
 
     /// Where this world keeps its files.
