@@ -2,6 +2,24 @@
 
 use std::path::PathBuf;
 
+/// How far the world may be loaded, in chunks.
+///
+/// 64 is 1024 blocks, which is past the 900 that separates one country
+/// from the next — so at the top of the slider a heart's edifice is
+/// always somewhere on the horizon, which is the entire point.
+///
+/// The costs, in order of who cares:
+/// - RAM: a chunk is 16x256x16 block ids plus a metadata byte, ~190 KB,
+///   and the loaded set is (2n+1)^2. At 64 that is ~16600 chunks and
+///   about 3 GB.
+/// - Draw: the opaque pass is frustum-culled and shadows are
+///   range-culled, so what you pay for is what is in front of you, not
+///   what is loaded.
+/// - Filling it: the real bottleneck, and why the generator pool and
+///   the streaming budgets below scale with this number instead of
+///   sitting at the constants that suited a 7-chunk view.
+pub const MAX_VIEW_DIST: i32 = 64;
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct Config {
     /// Local Wildforge display name. It is presentation, never an account key.
@@ -41,7 +59,11 @@ impl Default for Config {
             profile_complete: false,
             volume: 0.7,
             sensitivity: 1.0,
-            view_dist: 7,
+            // Was 7 (112 blocks), which put a fog wall closer than any
+            // landmark in the game. 12 is 192 blocks and about 120 MB of
+            // loaded chunks; the slider goes to MAX_VIEW_DIST for anyone
+            // who wants to see a country's edifice from the next valley.
+            view_dist: 12,
             fov: 75.0,
             pack: "gemini".into(),
             lights: 2,
@@ -85,7 +107,7 @@ impl Config {
                 }
                 "view_dist" => {
                     if let Ok(x) = v.parse::<i32>() {
-                        c.view_dist = x.clamp(4, 12);
+                        c.view_dist = x.clamp(4, MAX_VIEW_DIST);
                     }
                 }
                 "fov" => {

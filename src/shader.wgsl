@@ -537,7 +537,11 @@ fn sky_radiance(rd_in: vec3<f32>) -> vec3<f32> {
 
 fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
     let dist = distance(world.xz, u.cam.xz);
-    let fog = smoothstep(u.cam.w * 0.72, u.cam.w * 0.98, dist);
+    // Only the last tenth dissolves. This band used to start at 0.72,
+    // which turned the far QUARTER of the view into sky — the thing you
+    // were straining to see was always in it. Fog cannot go entirely:
+    // without it the loaded world ends at a visible wall.
+    let fog = smoothstep(u.cam.w * 0.90, u.cam.w * 1.0, dist);
     // Underwater keeps the flat watery fog color; above water, distant terrain
     // dissolves into the sky gradient along its own view ray.
     let rd = normalize(world - u.cam.xyz);

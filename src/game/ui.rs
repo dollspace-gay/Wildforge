@@ -321,7 +321,7 @@ impl Game {
         match i {
             0 => self.config.volume,
             1 => (self.config.sensitivity - 0.1) / 2.9,
-            2 => (self.config.view_dist - 4) as f32 / 8.0,
+            2 => (self.config.view_dist - 4) as f32 / (crate::config::MAX_VIEW_DIST - 4) as f32,
             _ => (self.config.fov - 50.0) / 60.0,
         }
     }
@@ -340,7 +340,17 @@ impl Game {
         match i {
             0 => self.config.volume = (f * 20.0).round() / 20.0,
             1 => self.config.sensitivity = ((0.1 + f * 2.9) * 20.0).round() / 20.0,
-            2 => self.config.view_dist = 4 + (f * 8.0).round() as i32,
+            2 => {
+                // Four-chunk steps past the old maximum: nobody is
+                // choosing between 47 and 48 chunks, and a long throw
+                // with a fine step makes the slider unusable.
+                let raw = 4.0 + f * (crate::config::MAX_VIEW_DIST - 4) as f32;
+                self.config.view_dist = if raw <= 16.0 {
+                    raw.round() as i32
+                } else {
+                    (raw / 4.0).round() as i32 * 4
+                };
+            }
             _ => self.config.fov = 50.0 + (f * 60.0).round(),
         }
         self.apply_config();

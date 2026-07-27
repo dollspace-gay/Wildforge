@@ -20,9 +20,13 @@ impl GenPool {
         let (req, req_rx) = channel::<ChunkPos>();
         let (done_tx, done) = channel();
         let req_rx = Arc::new(Mutex::new(req_rx));
+        // Leave a couple of cores for the render thread and the OS,
+        // and take the rest. This was capped at four however many the
+        // machine had, which is what made a large view distance take
+        // thousands of frames to fill rather than seconds.
         let workers = std::thread::available_parallelism()
-            .map(|n| (n.get() / 2).clamp(1, 4))
-            .unwrap_or(2);
+            .map(|n| n.get().saturating_sub(2).clamp(2, 24))
+            .unwrap_or(4);
         for _ in 0..workers {
             let rx = Arc::clone(&req_rx);
             let tx = done_tx.clone();
@@ -109,10 +113,23 @@ impl Game {
             }
         }
         wanted.sort_by_key(|(d, _)| *d);
+        // The budgets below were tuned for a seven-chunk view, where the
+        // whole loaded set is 225 chunks. A sixty-four chunk view wants
+        // 16600 of them, so everything that fills the world scales with
+        // the setting or the far half never arrives.
+        let vd_us = vd.max(1) as usize;
+        let flight = (vd_us * 3).clamp(12, 192);
+        let ask = (vd_us * 6).clamp(24, 384);
+        // Adoption and meshing share one time budget so they cannot
+        // stack; it grows with the view because there is simply more to
+        // bring in, and a bigger view is a deliberate choice to spend
+        // frame time on distance.
+        let adopt_ms = (vd_us as u128 / 2).clamp(3, 12);
+        let stream_ms = (vd_us as u128).clamp(5, 28);
         if let Some(pool) = &mut self.gen_pool {
             // Keep the workers fed a nearest-first pipeline.
-            for (_, pos) in wanted.iter().take(24) {
-                if pool.in_flight.len() >= 12 {
+            for (_, pos) in wanted.iter().take(ask) {
+                if pool.in_flight.len() >= flight {
                     break;
                 }
                 if pool.in_flight.insert(*pos) {
@@ -136,7 +153,7 @@ impl Game {
                         });
                     }
                 }
-                if t0.elapsed().as_millis() >= 3 {
+                if t0.elapsed().as_millis() >= adopt_ms {
                     break;
                 }
             }
@@ -194,7 +211,8 @@ impl Game {
         dirty.sort_by_key(|(d, _)| *d);
         // Meshing spends whatever the shared 5ms streaming pool has
         // left after adoption.
-        for (_, pos) in dirty.into_iter().take(MESH_BUDGET) {
+        let mesh_cap = (vd_us).clamp(MESH_BUDGET, 64);
+        for (_, pos) in dirty.into_iter().take(mesh_cap) {
             let mesh = mesher::mesh_chunk(&self.server.world, pos);
             self.renderer.upload_chunk(pos, &mesh);
             self.presentation.lights.chunk_meshed(pos, mesh.emitters);
@@ -207,7 +225,7 @@ impl Game {
             {
                 self.occ_dirty = true;
             }
-            if self.stream_t0.elapsed().as_millis() >= 5 {
+            if self.stream_t0.elapsed().as_millis() >= stream_ms {
                 break;
             }
         }

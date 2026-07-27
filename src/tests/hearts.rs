@@ -1137,3 +1137,50 @@ fn the_ground_thickens_toward_a_heart() {
     assert!(at(260) > 0.0, "still readable a good way out");
     assert_eq!(at(400), 0.0, "and gone across the province");
 }
+
+/// A cutting knows where it is needed. Countries are 900 blocks apart
+/// and you can see a few hundred, so this is the only navigation that
+/// works at province range — and it has to work without having been
+/// there, because you cannot visit what you cannot find.
+#[test]
+fn a_seed_points_at_ground_that_would_take_it() {
+    let reg = base_reg();
+    let mut w = World::new(31, tmp_dir("seed-bearing"), reg.clone());
+    // A badlands scar is dead by definition, so a seed can point at one
+    // in a country nobody has ever loaded a chunk of.
+    let g = &w.generator;
+    let scar = (0..70)
+        .flat_map(|r| {
+            (-r..=r)
+                .flat_map(move |i| [(i, -r), (i, r), (-r, i), (r, i)])
+                .collect::<Vec<_>>()
+        })
+        .map(|(kx, kz)| g.province_center(kx, kz))
+        .find(|&(x, z)| {
+            g.province(x, z).biome == Biome::Badlands
+                && g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 4
+        })
+        .expect("some badlands in this world");
+    assert!(w.heart_at(scar.0, scar.1).is_none(), "never visited");
+
+    // Stand well to the west of it and read the seed.
+    let from = glam::Vec3::new((scar.0 - 400) as f32, 80.0, scar.1 as f32);
+    let line = w.seed_bearing(from);
+    assert!(line.contains("east"), "it leans toward the scar: {line}");
+    assert!(line.contains("blocks"), "and says how far: {line}");
+
+    // Standing on it, it says so instead of giving a bearing.
+    let on = glam::Vec3::new(scar.0 as f32, 80.0, scar.1 as f32);
+    let line = w.seed_bearing(on);
+    assert!(line.contains("here"), "on the site: {line}");
+
+    // A country this world watched die counts too, not only the scars.
+    let (mut w2, key, (sx, sz)) = world_with_heart(42, "seed-bearing-killed");
+    w2.set_heart_stage(key, 0);
+    let line = w2.seed_bearing(glam::Vec3::new(sx as f32, 80.0, sz as f32));
+    assert!(
+        line.contains("here"),
+        "a heart you killed is ground too: {line}"
+    );
+    let _ = &mut w;
+}

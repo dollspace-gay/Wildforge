@@ -1078,6 +1078,28 @@ impl Game {
                 self.input.action_cooldown = 0.35;
                 return;
             }
+            // A cutting knows where it is needed: held up, it gives a
+            // bearing to the nearest ground that would take it. That is
+            // the only navigation that works at province range, where
+            // countries are 900 blocks apart and you see a few hundred.
+            //
+            // NOT while pointing at a heart. This arm runs before the
+            // block-interaction pass, so without that guard reading the
+            // bearing would shadow PLANTING the thing — the whole
+            // restoration verb, silently gone.
+            let at_heart = hit.as_ref().is_some_and(|h| {
+                reg.block(self.server.world.get_block(h.block.0, h.block.1, h.block.2))
+                    .interaction
+                    .as_deref()
+                    == Some("heart")
+            });
+            if !at_heart && held.is_some_and(|i| world::seed_nature(&reg.item(i).name).is_some()) {
+                let line = self.server.world.seed_bearing(self.player.pos);
+                self.toast(line);
+                self.sfx(Sfx::Click);
+                self.input.action_cooldown = 0.6;
+                return;
+            }
             // Etched tablets: the lost takers speak.
             if held.is_some_and(|i| reg.item(i).tablet) {
                 self.read_tablet();

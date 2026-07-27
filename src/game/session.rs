@@ -1904,7 +1904,10 @@ impl Game {
                 }
                 let base = self.server.world.surface_height(sx, sz);
                 // Stand well back and a little above the crest.
-                let back = (ed.reach * 4).max(40) as f32;
+                let back = std::env::var("WILDFORGE_DEMO_BACK")
+                    .ok()
+                    .and_then(|v| v.parse::<f32>().ok())
+                    .unwrap_or((ed.reach * 4).max(40) as f32);
                 self.player.pos = Vec3::new(
                     sx as f32,
                     base as f32 + ed.rise as f32 * 0.7,
