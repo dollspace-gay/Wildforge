@@ -27,6 +27,20 @@ const VIEWMODEL_SLEEVE_MAX: Vec3 = Vec3::new(0.055, 0.02, 0.10);
 const VIEWMODEL_HAND_MIN: Vec3 = Vec3::new(-0.055, -0.09, 0.10);
 const VIEWMODEL_HAND_MAX: Vec3 = Vec3::new(0.055, 0.02, 0.26);
 
+/// How far in front of the camera to stand the paper doll so its body
+/// covers exactly `target_px` of screen height. The UI rect is fixed
+/// pixels and the projection is not, so this has to be solved per frame
+/// rather than picked once: a constant only ever framed one resolution.
+///
+/// The doll stands along world Y while the screen's vertical runs along
+/// camera up, so a pitched camera foreshortens it — pulling in by the
+/// same cosine keeps the framing whichever way the player was looking.
+pub(super) fn portrait_depth(fovy: f32, pitch: f32, screen_h: f32, target_px: f32) -> f32 {
+    let lean = pitch.cos().abs().max(0.25);
+    mobs::HUMANOID_HEIGHT * lean * (screen_h * 0.5)
+        / ((fovy * 0.5).tan() * target_px.max(1.0)).max(0.001)
+}
+
 impl Game {
     /// First-person viewmodel: your arm, or the block/item it holds,
     /// anchored low-right of the camera, walk-bobbed, and swung on use.
@@ -1473,12 +1487,24 @@ impl Game {
         {
             // Inventory paper doll: the active local identity gets a body,
             // not just a line of account text on a settings screen.
-            // A slightly deeper preview camera keeps the full body inside its
-            // UI frame instead of letting the feet hang into the storage rows.
-            let depth = 6.25;
+            //
+            // The doll is world geometry projected into a UI rect, so its
+            // on-screen size is set by the window height and the fov while
+            // the rect is fixed pixels. A hardcoded depth therefore only
+            // framed it correctly at one resolution — at 720p and up the
+            // head was clipped by the name plate and the feet by the
+            // storage rows, leaving a torso that read as "no sprite".
+            // Solve for the depth that makes the body the height we want.
             let w = self.renderer.config.width as f32;
             let h = self.renderer.config.height as f32;
-            let (center_x, center_y) = self.inventory_avatar_center();
+            let (ax, ay, aw, ah) = self.inventory_avatar_rect();
+            // The name plate owns the top of the frame; keep clear of it
+            // and leave the feet a margin off the bottom edge.
+            const PLATE: f32 = 42.0;
+            const MARGIN: f32 = 10.0;
+            let target_px = (ah - PLATE - MARGIN).max(24.0);
+            let depth = portrait_depth(self.camera.fovy, self.camera.pitch, h, target_px);
+            let (center_x, center_y) = (ax + aw * 0.5, ay + PLATE + target_px * 0.5);
             let ndc_x = center_x / w * 2.0 - 1.0;
             let ndc_y = 1.0 - center_y / h * 2.0;
             let half_h = (self.camera.fovy * 0.5).tan() * depth;
@@ -1489,7 +1515,7 @@ impl Game {
                 + f * depth
                 + rgt * (ndc_x * half_h * self.camera.aspect)
                 + up * (ndc_y * half_h);
-            let feet = body_center - Vec3::Y * 0.91;
+            let feet = body_center - Vec3::Y * (mobs::HUMANOID_HEIGHT * 0.5);
             let face_camera = -std::f32::consts::FRAC_PI_2 - self.camera.yaw;
             mobs::emit_humanoid(
                 feet,
@@ -1759,11 +1785,7 @@ impl Game {
             let biome = if self.in_world {
                 format!(
                     " | {}",
-                    self.server
-                        .world
-                        .generator
-                        .biome(p.x as i32, p.z as i32)
-                        .name()
+                    self.server.world.biome_here(p.x as i32, p.z as i32).name()
                 )
             } else {
                 String::new()
@@ -1819,5 +1841,65 @@ mod characterization {
     #[test]
     fn bare_viewmodel_skin_meets_the_sleeve() {
         assert_eq!(VIEWMODEL_SLEEVE_MAX.z, VIEWMODEL_HAND_MIN.z);
+    }
+}
+
+#[cfg(test)]
+mod portrait_tests {
+    use super::portrait_depth;
+    use crate::mobs::HUMANOID_HEIGHT;
+
+    /// How many pixels tall the doll actually lands, given the depth
+    /// the framing solver picked. This is the projection the renderer
+    /// applies, run backwards.
+    fn projected_px(fovy: f32, pitch: f32, screen_h: f32, target_px: f32) -> f32 {
+        let depth = portrait_depth(fovy, pitch, screen_h, target_px);
+        let half_world = (fovy * 0.5).tan() * depth;
+        HUMANOID_HEIGHT * pitch.cos().abs() * (screen_h * 0.5) / half_world
+    }
+
+    /// The doll is world geometry in a fixed-pixel UI rect, so a
+    /// hardcoded depth framed exactly one resolution. At 720p and up
+    /// the head was clipped by the name plate and the feet by the
+    /// storage rows, leaving a torso that read as "no sprite at all".
+    #[test]
+    fn the_paper_doll_fills_its_frame_at_any_resolution() {
+        let fovy = 75f32.to_radians();
+        let target = 132.0;
+        for screen_h in [480.0, 720.0, 1080.0, 1440.0, 2160.0] {
+            let got = projected_px(fovy, 0.0, screen_h, target);
+            assert!(
+                (got - target).abs() < 0.5,
+                "{screen_h}p framed the body at {got:.1}px, wanted {target}"
+            );
+        }
+    }
+
+    /// The body stands along world Y while the screen's vertical runs
+    /// along camera up, so looking up or down foreshortens it. The
+    /// solver pulls in by the same cosine.
+    #[test]
+    fn the_framing_survives_the_camera_being_pitched() {
+        let fovy = 75f32.to_radians();
+        let target = 132.0;
+        for pitch in [-1.2f32, -0.6, 0.0, 0.6, 1.2] {
+            let got = projected_px(fovy, pitch, 1080.0, target);
+            assert!(
+                (got - target).abs() < 0.5,
+                "pitch {pitch} framed the body at {got:.1}px, wanted {target}"
+            );
+        }
+        // Straight up or down would divide the doll away entirely; the
+        // clamp keeps it a sane size instead of infinitely close.
+        assert!(portrait_depth(fovy, std::f32::consts::FRAC_PI_2, 1080.0, target).is_finite());
+    }
+
+    /// Different fields of view, same frame.
+    #[test]
+    fn the_framing_survives_a_different_field_of_view() {
+        for fov in [60f32, 75.0, 100.0] {
+            let got = projected_px(fov.to_radians(), 0.0, 1080.0, 132.0);
+            assert!((got - 132.0).abs() < 0.5, "fov {fov} gave {got:.1}px");
+        }
     }
 }

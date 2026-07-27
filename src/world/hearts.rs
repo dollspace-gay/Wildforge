@@ -390,6 +390,29 @@ impl World {
         }
     }
 
+    /// What the place you are standing in *is*, which is not always what
+    /// its country is: a column drowned to sea level is Ocean however
+    /// the forest behind you is labelled. The country keeps its culture
+    /// (a coastal province is still a forest province, and its heart
+    /// still knows what it grows) — this is only the ground underfoot.
+    pub fn biome_here(&self, x: i32, z: i32) -> crate::worldgen::Biome {
+        if self.is_open_water(x, z) {
+            return crate::worldgen::Biome::Ocean;
+        }
+        self.country_biome(x, z)
+    }
+
+    /// Sea, not puddle: the column's floor lies below sea level and the
+    /// water over it reaches sea level. A dug pond on a hillside fails
+    /// the first test; a one-deep tidal scrape fails the second.
+    pub fn is_open_water(&self, x: i32, z: i32) -> bool {
+        let floor = self.surface_height(x, z);
+        floor < crate::chunk::SEA_LEVEL - 1
+            && self
+                .reg
+                .is_water(self.get_block(x, crate::chunk::SEA_LEVEL - 1, z))
+    }
+
     /// The wardens caught mid-existence when their heart died. They
     /// were never recalled and never will be.
     fn orphan_wardens(&mut self, x: i32, z: i32) {

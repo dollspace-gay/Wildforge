@@ -26,6 +26,10 @@ pub enum Biome {
     Savanna,
     Tundra,
     Badlands,
+    /// Not a province culture: the label a submerged column wears. No
+    /// centroid claims it and `classify` never returns it — the sea is
+    /// a place you are, not a climate the land has.
+    Ocean,
 }
 
 impl Biome {
@@ -44,6 +48,7 @@ impl Biome {
             10 => Biome::Savanna,
             11 => Biome::Tundra,
             12 => Biome::Badlands,
+            13 => Biome::Ocean,
             _ => return None,
         })
     }
@@ -62,6 +67,7 @@ impl Biome {
             Biome::Savanna => "Savanna",
             Biome::Tundra => "Tundra",
             Biome::Badlands => "Badlands",
+            Biome::Ocean => "Ocean",
         }
     }
 }
@@ -1649,7 +1655,11 @@ impl Generator {
                     Biome::Swamp => 130,
                     Biome::Plains => 550,
                     Biome::Desert => 190, // cacti
-                    Biome::Arctic | Biome::Mountains | Biome::Tundra | Biome::Badlands => 0,
+                    Biome::Arctic
+                    | Biome::Mountains
+                    | Biome::Tundra
+                    | Biome::Badlands
+                    | Biome::Ocean => 0,
                 };
                 // Jungle floor: undergrowth independent of trees —
                 // lush, but no longer an endless buffet.

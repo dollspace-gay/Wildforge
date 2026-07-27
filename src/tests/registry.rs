@@ -579,7 +579,7 @@ fn base_animals_and_weapons_register() {
             .iter()
             .filter(|a| !a.hostile && !a.vehicle)
             .count(),
-        35,
+        38,
         "the full roster: wildlife, hunters, water, herds, the carcass"
     );
     assert_eq!(
@@ -1153,6 +1153,8 @@ fn content_graph_is_complete_and_obtainable() {
         "badlands",
         "swamp",
         "underground",
+        // Not a province culture: the water roster's own key.
+        "ocean",
     ];
     for a in &reg.animals {
         assert!(!a.model.is_empty(), "animal {} has no model", a.name);

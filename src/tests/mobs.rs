@@ -174,16 +174,17 @@ fn wildlife_seeds_matching_biomes_only() {
         // The group roll uses the chunk-center biome; members may scatter a
         // few blocks over a biome edge, which is fine.
         let cp = ChunkPos::of_world(m.pos.x.floor() as i32, m.pos.z.floor() as i32);
-        let biome = w
+        let country = w
             .generator
             .biome(cp.x * 16 + 8, cp.z * 16 + 8)
             .name()
             .to_lowercase();
-        assert!(
-            def.biomes.contains(&biome),
-            "{} rolled in {biome} chunk",
-            def.name
-        );
+        // The water rolls on its own key, so salt-water natives are
+        // checked against the sea and not against the coast behind it.
+        let ocean = "ocean".to_string();
+        let ok = def.biomes.contains(&country)
+            || (def.biomes.contains(&ocean) && w.is_open_water(cp.x * 16 + 8, cp.z * 16 + 8));
+        assert!(ok, "{} rolled in {country} chunk", def.name);
         assert!(m.health > 0.0, "spawned alive");
     }
     assert!(w.mob_count() <= crate::world::MOB_CAP);

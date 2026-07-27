@@ -318,7 +318,9 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                game.input.ui_cursor = (position.x as f32, position.y as f32);
+                if !game.input.cursor_locked {
+                    game.input.ui_cursor = (position.x as f32, position.y as f32);
+                }
                 if let Some(i) = game.ui_state.dragging_slider {
                     let (bx, _, bw, _) = game.slider_bar_rect(i);
                     game.set_slider(i, (position.x as f32 - bx - 2.0) / (bw - 4.0));

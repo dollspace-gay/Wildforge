@@ -93,9 +93,21 @@ impl World {
         // What a country IS, not what the map first called it: a
         // grafted heart drags its country's life after it.
         let biome = self.country_biome(cx + 8, cz + 8).name().to_lowercase();
+        // Open sea keeps its own roster. A country's culture is a fact
+        // about its land, and the water over a drowned shelf belongs to
+        // neither the forest behind it nor the deer in that forest.
+        let here = if self.is_open_water(cx + 8, cz + 8) {
+            "ocean".to_string()
+        } else {
+            biome.clone()
+        };
         for (si, def) in reg.animals.iter().enumerate() {
             // Wildlife only — wardens come and go with the spawner.
-            if def.hostile || !def.biomes.contains(&biome) {
+            // Swimmers roll in the water pass below; letting them share
+            // this slot meant a fish only ever spawned in a chunk where
+            // every land animal of the biome had already failed its
+            // rarity roll, which is why the sea looked empty.
+            if def.hostile || def.movement_swim || !def.biomes.contains(&here) {
                 continue;
             }
             let roll = self.mob_hash(pos.x, pos.z, 7000 + si as u32);
@@ -111,6 +123,30 @@ impl World {
                 self.try_spawn(si, cx + lx, cz + lz, (h >> 16) as f32 / 65535.0);
             }
             break; // one species per chunk keeps groups readable
+        }
+        // The water has its own roster, rolled independently of the land
+        // above it — a chunk can carry deer on the bank and trout in the
+        // river. Fresh water stocks the country's fish; salt water its
+        // own.
+        for (si, def) in reg.animals.iter().enumerate() {
+            if def.hostile || !def.movement_swim || !def.biomes.contains(&here) {
+                continue;
+            }
+            let roll = self.mob_hash(pos.x, pos.z, 9200 + si as u32);
+            if !roll.is_multiple_of(def.rarity) {
+                continue;
+            }
+            let span = def.group[1].saturating_sub(def.group[0]) + 1;
+            let n = def.group[0] + (roll >> 8) % span;
+            for i in 0..n {
+                let h = self.mob_hash(pos.x, pos.z, 9300 + si as u32 * 31 + i);
+                let lx = (h % CHUNK_X as u32) as i32;
+                let lz = ((h >> 8) % CHUNK_Z as u32) as i32;
+                // Dry chunks simply fail every attempt: try_spawn wants a
+                // water cell two deep and finds none.
+                self.try_spawn(si, cx + lx, cz + lz, (h >> 16) as f32 / 65535.0);
+            }
+            break; // one shoal per chunk
         }
         // The dark has its own roster: underground species roll
         // independently of the surface (a chunk can carry deer above
@@ -185,7 +221,18 @@ impl World {
                 .map(|(y, _)| y as f32 - 0.6)
         } else {
             let y = self.surface_height(x, z);
-            (y > SEA_LEVEL && self.reg.is_solid(self.get_block(x, y, z))).then_some(y as f32 + 1.05)
+            let dry = y > SEA_LEVEL && self.reg.is_solid(self.get_block(x, y, z));
+            // A seabird has nowhere to stand, and the whole point of it
+            // is that it is over the water. Wings only need air.
+            let airborne = self.reg.animals[species].movement_float
+                && self.reg.is_water(self.get_block(x, SEA_LEVEL - 1, z));
+            if dry {
+                Some(y as f32 + 1.05)
+            } else if airborne {
+                Some(SEA_LEVEL as f32 + 4.0)
+            } else {
+                None
+            }
         };
         let Some(sy) = spawn_at else {
             return false;
@@ -484,13 +531,32 @@ impl World {
                 let z = (player.z + ang.cos() * dist).floor() as i32;
                 let cp = ChunkPos::of_world(x, z);
                 if self.chunks.contains_key(&cp) && self.heart_alive_at(x, z) {
-                    let biome = self.country_biome(x, z).name().to_lowercase();
+                    // Restock what the spot can actually hold: a column
+                    // of water gets swimmers, dry ground gets landfolk.
+                    // Drawing both from one pool wasted most rolls out at
+                    // sea, where every land pick fails to place.
+                    let wet =
+                        self.reg
+                            .is_water(self.get_block(x, self.surface_height(x, z) + 1, z));
+                    let biome = if wet && self.is_open_water(x, z) {
+                        "ocean".to_string()
+                    } else {
+                        self.country_biome(x, z).name().to_lowercase()
+                    };
                     // Wildlife only — wardens have their own spawner.
                     let eligible: Vec<usize> = reg
                         .animals
                         .iter()
                         .enumerate()
-                        .filter(|(_, d)| !d.hostile && d.biomes.contains(&biome))
+                        .filter(|(_, d)| {
+                            let placeable = if wet {
+                                // Over water: fish below it, wings above it.
+                                d.movement_swim || d.movement_float
+                            } else {
+                                !d.movement_swim
+                            };
+                            !d.hostile && placeable && d.biomes.contains(&biome)
+                        })
                         .map(|(i, _)| i)
                         .collect();
                     if let Some(&si) = eligible.get(((r >> 20) as usize) % eligible.len().max(1)) {

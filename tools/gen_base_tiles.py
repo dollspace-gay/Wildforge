@@ -652,6 +652,10 @@ def main():
         "trout": ((150, 130, 110), (104, 88, 70)),
         "carp": ((170, 150, 96), (120, 104, 60)),
         "catfish": ((96, 100, 92), (60, 64, 58)),
+        # Salt water: cod goes olive-and-pale, mackerel steel with
+        # the barred back that names it.
+        "cod": ((132, 138, 108), (88, 94, 70)),
+        "mackerel": ((122, 140, 156), (76, 92, 108)),
     }
     for name, (base_c, dark_c) in fish.items():
         img = rock(name, base=base_c, dark=dark_c)
@@ -665,7 +669,26 @@ def main():
             for _ in range(10):
                 x, y = rf.randint(2, 28), rf.randint(2, 28)
                 d.point((x, y), fill=(196, 90, 80, 255))
+        if name == "mackerel":
+            # The barred back, wavering the way the real ones do.
+            for by in range(1, 32, 5):
+                d.line([(0, by), (10, by + 2), (21, by), (31, by + 2)],
+                       fill=(38, 52, 66, 255))
         save_tile(img, name)
+    # The gull: white over the sea, grey across the mantle, and a
+    # yellow bill with the red gonys spot on its face tile.
+    gull = rock("gull", base=(238, 238, 234), dark=(206, 208, 208))
+    d = ImageDraw.Draw(gull)
+    d.rectangle([0, 6, 31, 17], fill=(150, 158, 166, 255))
+    save_tile(gull, "gull")
+    gf = rock("gull_face", base=(242, 242, 238), dark=(212, 214, 214))
+    d = ImageDraw.Draw(gf)
+    for ex in (8, 20):
+        d.rectangle([ex, 11, ex + 3, 14], fill=(24, 22, 18, 255))
+        d.point((ex + 1, 12), fill=(236, 232, 220, 255))
+    d.polygon([(13, 18), (18, 18), (15, 27)], fill=(228, 182, 52, 255))
+    d.point((15, 25), fill=(206, 62, 44, 255))
+    save_tile(gf, "gull_face")
     save_tile(rock("frog", base=(96, 138, 70), dark=(62, 96, 44)), "frog")
     save_tile(face("frog_face", (96, 138, 70), (62, 96, 44), None), "frog_face")
     save_tile(rock("heron", base=(176, 184, 190), dark=(128, 136, 144)), "heron")
