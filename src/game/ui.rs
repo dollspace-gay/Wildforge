@@ -321,7 +321,7 @@ impl Game {
         match i {
             0 => self.config.volume,
             1 => (self.config.sensitivity - 0.1) / 2.9,
-            2 => (self.config.view_dist - 4) as f32 / 8.0,
+            2 => (self.config.view_dist - 4) as f32 / (crate::config::MAX_VIEW_DIST - 4) as f32,
             _ => (self.config.fov - 50.0) / 60.0,
         }
     }
@@ -340,7 +340,10 @@ impl Game {
         match i {
             0 => self.config.volume = (f * 20.0).round() / 20.0,
             1 => self.config.sensitivity = ((0.1 + f * 2.9) * 20.0).round() / 20.0,
-            2 => self.config.view_dist = 4 + (f * 8.0).round() as i32,
+            2 => {
+                self.config.view_dist =
+                    4 + (f * (crate::config::MAX_VIEW_DIST - 4) as f32).round() as i32
+            }
             _ => self.config.fov = 50.0 + (f * 60.0).round(),
         }
         self.apply_config();

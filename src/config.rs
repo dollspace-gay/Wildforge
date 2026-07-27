@@ -2,6 +2,13 @@
 
 use std::path::PathBuf;
 
+/// How far the world may be loaded, in chunks. The ceiling is memory
+/// rather than framerate: a chunk is 16x256x16 cells of block id plus a
+/// metadata byte, about 190 KB, and the loaded set is (2n+1)^2 of them.
+/// At 24 that is ~2400 chunks and roughly half a gigabyte — which is
+/// the price of seeing a country's edifice from the next valley.
+pub const MAX_VIEW_DIST: i32 = 24;
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct Config {
     /// Local Wildforge display name. It is presentation, never an account key.
@@ -41,7 +48,11 @@ impl Default for Config {
             profile_complete: false,
             volume: 0.7,
             sensitivity: 1.0,
-            view_dist: 7,
+            // Was 7 (112 blocks), which put a fog wall closer than any
+            // landmark in the game. 12 is 192 blocks and about 120 MB of
+            // loaded chunks; the slider goes to MAX_VIEW_DIST for anyone
+            // who wants to see a country's edifice from the next valley.
+            view_dist: 12,
             fov: 75.0,
             pack: "gemini".into(),
             lights: 2,
@@ -85,7 +96,7 @@ impl Config {
                 }
                 "view_dist" => {
                     if let Ok(x) = v.parse::<i32>() {
-                        c.view_dist = x.clamp(4, 12);
+                        c.view_dist = x.clamp(4, MAX_VIEW_DIST);
                     }
                 }
                 "fov" => {

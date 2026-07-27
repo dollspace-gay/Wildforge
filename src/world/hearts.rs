@@ -544,6 +544,50 @@ impl World {
         }
     }
 
+    /// Where the nearest ground that would take a cutting lies, as a
+    /// bearing you can walk. A seed knows where it is needed, which is
+    /// the only navigation the game can offer at province range: 900
+    /// blocks between countries and a view of a few hundred.
+    ///
+    /// Two kinds of site qualify and both are knowable without having
+    /// been there — a country whose heart this world has watched die,
+    /// and a badlands scar, which was dead before anyone walked it.
+    pub fn seed_bearing(&self, from: glam::Vec3) -> String {
+        let (fx, fz) = (from.x.floor() as i32, from.z.floor() as i32);
+        let here = self.generator.province(fx, fz).key;
+        let mut best: Option<(f32, i32, i32, bool)> = None;
+        // Six provinces out is ~5000 blocks: further than anyone walks
+        // in one errand, and cheap because a centre is pure arithmetic.
+        for kx in -6..=6 {
+            for kz in -6..=6 {
+                let key = (here.0 + kx, here.1 + kz);
+                let (sx, sz) = self.generator.province_center(key.0, key.1);
+                let ancient = self.is_ancient_scar(sx, sz);
+                let known_dead = self.hearts.get(&key).is_some_and(|h| h.stage == 0);
+                if !ancient && !known_dead {
+                    continue;
+                }
+                let d = (((sx - fx) as f32).powi(2) + ((sz - fz) as f32).powi(2)).sqrt();
+                if best.is_none_or(|(b, _, _, _)| d < b) {
+                    best = Some((d, sx, sz, ancient));
+                }
+            }
+        }
+        let Some((d, sx, sz, ancient)) = best else {
+            return "It stirs, and finds nowhere that needs it.".into();
+        };
+        if d < 12.0 {
+            return "It strains in your hand. The ground it wants is here.".into();
+        }
+        let dir = octant_of(sx - fx, sz - fz);
+        let far = if ancient {
+            "a country that died before your grandfathers"
+        } else {
+            "a country you watched go out"
+        };
+        format!("It leans {dir} — {far}, ~{} blocks.", d.round() as i32)
+    }
+
     /// The compass reading a survey cairn gives for the country's
     /// heart: where it stands and how it fares.
     pub fn heart_report(&self, x: i32, z: i32) -> String {
