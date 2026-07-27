@@ -1055,3 +1055,85 @@ fn ancient_scars_do_not_stop_the_world_but_countries_you_kill_do() {
     }
     assert_eq!(w.dead_countries(), (2, 2), "your own killings do count");
 }
+
+/// A country's heart is a landmark you can see, not a stub you have to
+/// grid-search for. Doll went looking for one and had to sweep an area
+/// by hand — this is the shape of the fix.
+#[test]
+fn every_country_raises_an_edifice_over_its_heart() {
+    use crate::edifice::{Materials, block_at, edifice_of};
+    let reg = base_reg();
+    let m = Materials {
+        shell: b(&reg, "base:stone"),
+        crown: b(&reg, "base:planks"),
+    };
+    for biome in (1..=12u8).filter_map(Biome::from_index) {
+        let e = edifice_of(biome);
+        assert!(e.rise >= 11, "{biome:?} raises only {} blocks", e.rise);
+        assert!(e.reach >= 8, "{biome:?} is only {} wide", e.reach);
+        // Real materials, not the placeholder.
+        for name in [e.shell, e.crown] {
+            assert!(
+                reg.block_id(name).is_some_and(|b| b != reg.unknown_block),
+                "{biome:?} builds with {name}, which is not a block"
+            );
+        }
+        // It has mass...
+        let solid = (-e.reach..=e.reach)
+            .flat_map(|dx| (0..=e.rise).map(move |dy| (dx, dy)))
+            .filter(|&(dx, dy)| block_at(&e, &m, dx, dy, 0).is_some())
+            .count();
+        assert!(solid > 40, "{biome:?} is barely there ({solid} blocks)");
+        // ...and it is a wrapper, never a lock. The axe has to reach
+        // the heart, and the heart's own column is the spirit's.
+        for dy in -4..=e.rise {
+            assert!(
+                block_at(&e, &m, 0, dy, 0).is_none(),
+                "{biome:?} builds in the site column at +{dy}"
+            );
+        }
+    }
+}
+
+/// The ledger finds its heart even with a monument standing over it.
+/// Before this it took `surface_height` and demanded the block THERE be
+/// a heart, so anything overhead — an edifice, or a roof a player put
+/// up — meant the country registered no heart at all. Not a dead one:
+/// none. Wardens kept spawning and offerings kept being accepted while
+/// the whole arc quietly did not happen there.
+#[test]
+fn a_heart_registers_under_whatever_stands_over_it() {
+    let (mut w, _key, (sx, sz)) = world_with_heart(42, "hearts-buried");
+    let reg = w.reg.clone();
+    let before = w.heart_at(sx, sz).expect("found in the open");
+    // Roof it over, well clear of the site, and reload the chunk.
+    let stone = b(&reg, "base:stone");
+    let top = w.surface_height(sx, sz);
+    for dx in -2..=2 {
+        for dz in -2..=2 {
+            w.set_block(sx + dx, top + 12, sz + dz, stone);
+        }
+    }
+    let pos = ChunkPos::of_world(sx, sz);
+    w.save_modified();
+    w.unload_chunk(pos);
+    w.ensure_chunk(pos);
+    let after = w.heart_at(sx, sz).expect("still found under a roof");
+    assert_eq!(after.pos, before.pos, "and keyed to the same site");
+}
+
+/// The walk between provinces is 900 blocks and you can see 112 of it.
+/// Flowers thicken toward a heart so the ground itself tells you which
+/// way to go — no compass, no marker, no map.
+#[test]
+fn the_ground_thickens_toward_a_heart() {
+    let reg = base_reg();
+    let g = crate::worldgen::Generator::new(9, &reg);
+    let (sx, sz) = g.province_center(0, 0);
+    let at = |d: i32| g.heart_nearness(sx + d, sz);
+    assert!(at(0) > 0.95, "on the site it is unmistakable");
+    assert!(at(0) > at(120), "and it falls off with distance");
+    assert!(at(120) > at(260));
+    assert!(at(260) > 0.0, "still readable a good way out");
+    assert_eq!(at(400), 0.0, "and gone across the province");
+}
