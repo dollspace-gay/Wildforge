@@ -156,13 +156,61 @@ pub enum MapKind {
     Interior,
 }
 
-/// Recognize a pack file stem as an albedo tile or companion map.
+/// What a pack file turns out to be: which tile it belongs to, which numbered
+/// variant of it, and whether it is the albedo or a companion map.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct TileRef {
+    pub slot: u16,
+    /// 0 = the tile itself, 1..=N = `<tile>_2` .. `<tile>_<N+1>`.
+    pub variant: u8,
+    pub kind: Option<MapKind>,
+}
+
+/// Strip a trailing `_<digits>` and return (base, variant index). `stone_2` is
+/// the *second* look at stone, so the suffix is one-based and `_1` is not used.
+fn split_variant(stem: &str) -> Option<(&str, u8)> {
+    let (base, digits) = stem.rsplit_once('_')?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let n: u32 = digits.parse().ok()?;
+    if !(2..=64).contains(&n) {
+        return None;
+    }
+    Some((base, (n - 1) as u8))
+}
+
+/// Recognize a pack file stem as an albedo tile or companion map, of the tile
+/// itself or of one of its numbered variants.
+///
+/// A real tile name always wins over the suffix rules, so a tile genuinely
+/// called `foo_2` or `foo_h` keeps its own identity. Map suffix is stripped
+/// before the variant suffix, so `stone_2_h` is the height of stone's variant 2.
 fn classify_tile_file(
     stem: &str,
     names: &std::collections::HashMap<String, u16>,
-) -> Option<(u16, Option<MapKind>)> {
+) -> Option<TileRef> {
+    let resolve = |s: &str, kind: Option<MapKind>| -> Option<TileRef> {
+        if let Some(slot) = names.get(s) {
+            return Some(TileRef {
+                slot: *slot,
+                variant: 0,
+                kind,
+            });
+        }
+        let (base, variant) = split_variant(s)?;
+        names.get(base).map(|slot| TileRef {
+            slot: *slot,
+            variant,
+            kind,
+        })
+    };
     if let Some(slot) = names.get(stem) {
-        return Some((*slot, None));
+        return Some(TileRef {
+            slot: *slot,
+            variant: 0,
+            kind: None,
+        });
     }
     for (suffix, kind) in [
         ("_h", MapKind::Height),
@@ -172,20 +220,19 @@ fn classify_tile_file(
         ("_i", MapKind::Interior),
         ("_interior", MapKind::Interior),
     ] {
-        if let Some(base) = stem.strip_suffix(suffix)
-            && let Some(slot) = names.get(base)
+        if let Some(rest) = stem.strip_suffix(suffix)
+            && let Some(r) = resolve(rest, Some(kind))
         {
-            return Some((*slot, Some(kind)));
+            return Some(r);
         }
     }
-    None
+    resolve(stem, None)
 }
 
-/// What a pack's `tiles/` folder contains.
+/// What a pack's `tiles/` folder contains, in name order.
 #[derive(Default)]
 pub struct PackFiles {
-    pub tiles: Vec<(u16, std::path::PathBuf)>,
-    pub maps: Vec<(u16, MapKind, std::path::PathBuf)>,
+    pub files: Vec<(TileRef, std::path::PathBuf)>,
     pub warnings: Vec<String>,
 }
 
@@ -222,14 +269,69 @@ pub fn scan_pack(
             continue;
         };
         match classify_tile_file(name, names) {
-            Some((slot, None)) => out.tiles.push((slot, p)),
-            Some((slot, Some(kind))) => out.maps.push((slot, kind, p)),
+            Some(r) => out.files.push((r, p)),
             None => out
                 .warnings
                 .push(format!("{rel}: no tile named \"{name}\"")),
         }
     }
     out
+}
+
+/// Where each tile's alternate looks ended up in the atlas.
+///
+/// A pack breaks up the repeat by shipping `<tile>_2.png`, `<tile>_3.png`, ...
+/// Those get slots of their own past the registry's allocations, and the mesher
+/// picks between them per block face. Empty when no pack ships variants, which
+/// is the common case — `pick` is then the identity.
+#[derive(Clone, Default, Debug)]
+pub struct TileVariants {
+    /// base slot -> alternates (the base tile itself is not in the list).
+    alts: std::collections::HashMap<u16, Vec<u16>>,
+}
+
+impl TileVariants {
+    /// Order-independent identity of the whole table, for "did this change?"
+    /// without caring how the map happens to be laid out.
+    pub fn signature(&self) -> Vec<(u16, Vec<u16>)> {
+        let mut v: Vec<(u16, Vec<u16>)> = self
+            .alts
+            .iter()
+            .map(|(k, s)| {
+                let mut s = s.clone();
+                s.sort_unstable();
+                (*k, s)
+            })
+            .collect();
+        v.sort_unstable();
+        v
+    }
+
+    /// The slot to draw for this face of the block at these world coordinates.
+    ///
+    /// Position-hashed rather than stored: a variant is then stable across
+    /// saves, restarts, and every client in a multiplayer world without costing
+    /// a byte of storage or a protocol field, and a block broken and replaced
+    /// comes back the same. Face is mixed in so the sides of one cube differ.
+    pub fn pick(&self, slot: u16, x: i32, y: i32, z: i32, face: usize) -> u16 {
+        let Some(alts) = self.alts.get(&slot) else {
+            return slot;
+        };
+        // Cheap integer avalanche; the face lands in the low bits of a large
+        // odd multiplier so neighbouring faces don't land on the same variant.
+        let mut h = (x as u32).wrapping_mul(0x9E37_79B9)
+            ^ (y as u32).wrapping_mul(0x85EB_CA6B)
+            ^ (z as u32).wrapping_mul(0xC2B2_AE35)
+            ^ (face as u32).wrapping_mul(0x27D4_EB2F);
+        h ^= h >> 15;
+        h = h.wrapping_mul(0x2545_F491);
+        h ^= h >> 13;
+        let n = alts.len() + 1;
+        match (h as usize) % n {
+            0 => slot,
+            i => alts[i - 1],
+        }
+    }
 }
 
 /// The synchronized color, material, and normal textures consumed by the
@@ -240,6 +342,7 @@ pub struct Atlas {
     pub normal: Vec<u8>,
     pub px: u32,
     pub warnings: Vec<String>,
+    pub variants: TileVariants,
 }
 
 /// Build the atlas in layers: procedural/assets base, then mod PNGs, then the
@@ -276,24 +379,18 @@ pub fn build_atlas(
         }
     }
     let mut warnings = Vec::new();
+    // Gather the whole chain first: variant slots can only be handed out once
+    // every pack has been seen, since a child may add a look its parent lacks.
+    let mut gathered: Vec<(TileRef, SrcTile)> = Vec::new();
     for pack in packs {
         match pack {
             PackSource::Dir(dir) => {
                 let names = tile_names(tex_names);
                 let found = scan_pack(dir, &names);
                 warnings.extend(found.warnings);
-                for (slot, path) in found.tiles {
+                for (r, path) in found.files {
                     match load_tile_png(&path) {
-                        Some(src) => {
-                            blit_tile(&mut img, px, tp, slot, &src);
-                            clear_material_slot(&mut mat, px, slot);
-                        }
-                        None => warnings.push(format!("unreadable png: {}", path.display())),
-                    }
-                }
-                for (slot, kind, path) in found.maps {
-                    match load_tile_png(&path) {
-                        Some(src) => maps.push((slot, kind, src)),
+                        Some(src) => gathered.push((r, src)),
                         None => warnings.push(format!("unreadable png: {}", path.display())),
                     }
                 }
@@ -303,23 +400,90 @@ pub fn build_atlas(
                 for (name, bytes) in *tiles {
                     // Names the current registry doesn't know (e.g. a mod's
                     // tile with that mod removed) skip silently.
-                    let Some((slot, kind)) = classify_tile_file(name, &names) else {
+                    let Some(r) = classify_tile_file(name, &names) else {
                         continue;
                     };
                     let Some(src) = load_tile_bytes(bytes) else {
                         continue;
                     };
-                    match kind {
-                        None => {
-                            blit_tile(&mut img, px, tp, slot, &src);
-                            clear_material_slot(&mut mat, px, slot);
-                        }
-                        Some(kind) => maps.push((slot, kind, src)),
-                    }
+                    gathered.push((r, src));
                 }
             }
         }
     }
+
+    // Hand out a slot per (tile, variant), past everything the registry owns
+    // and below the reserved player-variant block at the top of the grid.
+    let mut variants = TileVariants::default();
+    let mut alt_slot: std::collections::HashMap<(u16, u8), u16> = std::collections::HashMap::new();
+    {
+        let mut wanted: Vec<(u16, u8)> = gathered
+            .iter()
+            .filter(|(r, _)| r.variant > 0)
+            .map(|(r, _)| (r.slot, r.variant))
+            .collect();
+        wanted.sort_unstable();
+        wanted.dedup();
+        let mut next = tex_names
+            .iter()
+            .map(|(_, s)| *s + 1)
+            .max()
+            .unwrap_or(FIRST_FREE_SLOT)
+            .max(FIRST_FREE_SLOT);
+        let ceiling = crate::style::EXTRA_BASE;
+        for key in wanted {
+            if next >= ceiling {
+                warnings.push(format!(
+                    "atlas full: no slot for tile variant {}_{}",
+                    key.0,
+                    key.1 + 1
+                ));
+                continue;
+            }
+            alt_slot.insert(key, next);
+            variants.alts.entry(key.0).or_default().push(next);
+            next += 1;
+        }
+    }
+    let resolve = |r: &TileRef| -> Option<u16> {
+        if r.variant == 0 {
+            Some(r.slot)
+        } else {
+            alt_slot.get(&(r.slot, r.variant)).copied()
+        }
+    };
+
+    // Albedo first, in chain order, so a later pack still wins.
+    for (r, src) in &gathered {
+        if r.kind.is_some() {
+            continue;
+        }
+        if let Some(slot) = resolve(r) {
+            blit_tile(&mut img, px, tp, slot, src);
+            clear_material_slot(&mut mat, px, slot);
+        }
+    }
+    // A variant that ships only companion maps still needs something to draw,
+    // so it inherits the base look it is a variant of.
+    let painted: std::collections::HashSet<u16> = gathered
+        .iter()
+        .filter(|(r, _)| r.kind.is_none())
+        .filter_map(|(r, _)| resolve(r))
+        .collect();
+    for (base, alts) in &variants.alts {
+        for alt in alts {
+            if !painted.contains(alt) {
+                copy_slot(&mut img, px, tp, *base, *alt);
+                copy_slot_material(&mut mat, px, tp, *base, *alt);
+            }
+        }
+    }
+    for (r, src) in &gathered {
+        if let (Some(kind), Some(slot)) = (r.kind, resolve(r)) {
+            maps.push((slot, kind, src.clone()));
+        }
+    }
+
     apply_player_variants(&mut img, px);
     let mut authored_height = std::collections::HashSet::new();
     for (slot, kind, src) in &maps {
@@ -350,6 +514,7 @@ pub fn build_atlas(
         color: img,
         material: mat,
         normal: nrm,
+        variants,
         px,
         warnings,
     }
@@ -469,6 +634,7 @@ pub fn export_tiles(
 }
 
 /// A decoded source PNG at its authored resolution.
+#[derive(Clone)]
 pub struct SrcTile {
     px: Vec<u8>,
     w: u32,
@@ -590,6 +756,28 @@ fn blit_tile(img: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &SrcTile) {
             img[di..di + 4].copy_from_slice(&tile[si..si + 4]);
         }
     }
+}
+
+/// Copy one atlas cell onto another (colour), for a variant that ships maps
+/// but no albedo of its own.
+fn copy_slot(img: &mut [u8], atlas_px: u32, tp: u32, from: u16, to: u16) {
+    let cell = |s: u16| (s as u32 % ATLAS_TILES * tp, s as u32 / ATLAS_TILES * tp);
+    let (sx, sy) = cell(from);
+    let (dx, dy) = cell(to);
+    for y in 0..tp {
+        for x in 0..tp {
+            let si = (((sy + y) * atlas_px + sx + x) * 4) as usize;
+            let di = (((dy + y) * atlas_px + dx + x) * 4) as usize;
+            let px = [img[si], img[si + 1], img[si + 2], img[si + 3]];
+            img[di..di + 4].copy_from_slice(&px);
+        }
+    }
+}
+
+/// Same, for the material atlas, so an inherited variant keeps the base tile's
+/// height/interior/normal-flag rather than reading as flat.
+fn copy_slot_material(mat: &mut [u8], atlas_px: u32, tp: u32, from: u16, to: u16) {
+    copy_slot(mat, atlas_px, tp, from, to);
 }
 
 fn blit_height(mat: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &SrcTile) {

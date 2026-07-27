@@ -215,7 +215,7 @@ impl Game {
         // left after adoption.
         let mesh_cap = (vd_us).clamp(MESH_BUDGET, 64);
         for (_, pos) in dirty.into_iter().take(mesh_cap) {
-            let mesh = mesher::mesh_chunk(&self.server.world, pos);
+            let mesh = mesher::mesh_chunk(&self.server.world, pos, &self.content.tile_variants);
             self.renderer.upload_chunk(pos, &mesh);
             self.presentation.lights.chunk_meshed(pos, mesh.emitters);
             self.server.world.mark_chunk_meshed(pos);

@@ -741,6 +741,15 @@ impl World {
         self.chunks.contains_key(&pos)
     }
 
+    /// Mark every loaded chunk for remesh. Used when something outside the
+    /// world changes what a mesh should look like — switching texture packs
+    /// can change which atlas slot a face draws, and that lives in the uvs.
+    pub fn mark_all_chunks_dirty(&mut self) {
+        for c in self.chunks.values_mut() {
+            c.dirty = true;
+        }
+    }
+
     pub fn chunk(&self, pos: ChunkPos) -> Option<&Chunk> {
         self.chunks.get(&pos)
     }

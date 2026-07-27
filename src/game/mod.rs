@@ -184,6 +184,8 @@ struct ContentRuntime {
     packs: Vec<atlas::PackInfo>,
     pack_warnings: Vec<String>,
     pack_override: Option<String>,
+    /// Alternate tiles the active pack chain supplies, consulted by the mesher.
+    tile_variants: atlas::TileVariants,
 }
 
 /// Screen navigation, focus, browser history, and cursor-held inventory state.
@@ -575,6 +577,7 @@ impl Game {
             &reg.tex_names,
         );
         let pack_warnings = atlas.warnings;
+        let tile_variants = atlas.variants;
         let renderer = pollster::block_on(renderer::Renderer::new(
             window.clone(),
             atlas.color,
@@ -640,6 +643,7 @@ impl Game {
                 packs: atlas::discover_packs(),
                 pack_warnings,
                 pack_override,
+                tile_variants,
             },
             multiplayer: MultiplayerState::default(),
             identity,

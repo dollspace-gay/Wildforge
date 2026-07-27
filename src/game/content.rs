@@ -29,6 +29,14 @@ impl Game {
         self.renderer
             .set_atlas(&atlas.color, &atlas.material, &atlas.normal, atlas.px);
         self.content.pack_warnings = atlas.warnings;
+        // Variant choice is baked into chunk uvs, so a pack whose alternates
+        // differ (or vanish) leaves every mesh pointing at a slot the new pack
+        // never filled. Compare before storing, then remesh the world.
+        let changed = self.content.tile_variants.signature() != atlas.variants.signature();
+        self.content.tile_variants = atlas.variants;
+        if changed && self.in_world {
+            self.server.world.mark_all_chunks_dirty();
+        }
         self.config.save();
     }
 
@@ -50,6 +58,9 @@ impl Game {
         atlas::season_tint(&mut atlas.color, atlas.px, season);
         self.presentation.atlas_season = season;
         self.content.pack_warnings = atlas.warnings;
+        // A reload can add or drop tiles, which reshuffles variant slots. No
+        // explicit remesh needed: `remap_from` below dirties every chunk.
+        self.content.tile_variants = atlas.variants;
         self.renderer
             .set_atlas(&atlas.color, &atlas.material, &atlas.normal, atlas.px);
 
