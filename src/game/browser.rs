@@ -68,7 +68,7 @@ impl Game {
         if self.ui_state.search.is_empty() && !self.ui_state.search_focus {
             ui.text_shadow(sr.0 + 6.0, sr.1 + 6.0, 2.0, "SEARCH", [0.5, 0.5, 0.5, 1.0]);
         }
-        let items = browser_items(reg, &self.ui_state.search);
+        let items = browser_items(reg, &self.ui_state.search, self.creative);
         let per = Self::BCOLS * Self::BROWS;
         let pages = items.len().div_ceil(per).max(1);
         let page = self.ui_state.browse_page.min(pages - 1);
@@ -204,7 +204,7 @@ impl Game {
         self.ui_state.search_focus = false;
         for (next, _) in [(false, ()), (true, ())] {
             if self.hit(self.browser_nav_rect(next)) {
-                let items = browser_items(&self.content.reg, &self.ui_state.search);
+                let items = browser_items(&self.content.reg, &self.ui_state.search, self.creative);
                 let pages = items.len().div_ceil(Self::BCOLS * Self::BROWS).max(1);
                 self.ui_state.browse_page = if next {
                     (self.ui_state.browse_page + 1).min(pages - 1)
@@ -237,7 +237,7 @@ impl Game {
             self.ui_state.browse_view = None;
             return true;
         }
-        let items = browser_items(&self.content.reg, &self.ui_state.search);
+        let items = browser_items(&self.content.reg, &self.ui_state.search, self.creative);
         let per = Self::BCOLS * Self::BROWS;
         let page = self
             .ui_state

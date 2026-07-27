@@ -29,6 +29,9 @@ mod persistence;
 mod power;
 mod storage;
 
+#[cfg_attr(not(test), allow(unused_imports))]
+pub use hearts::ROOT_READY_FERT;
+pub use hearts::ROOT_READY_FRAC;
 #[cfg(test)]
 pub use hearts::{HEART_CUTTING_DAYS, ROOT_DAYS, ROOT_RADIUS};
 pub use hearts::{Heart, heart_block_name, heart_form, heart_height, seed_nature, seed_of_form};
@@ -889,7 +892,17 @@ impl World {
         {
             return false;
         }
-        self.set_block(pos.0, pos.1, pos.2, block);
+        // Soil arrives prepared. A block that carries fertility placed
+        // at zero is dead ground that LOOKS tilled — it grows nothing
+        // and it counts for nothing, which is a trap in either mode and
+        // was the reason a hand-laid field around a dead heart did
+        // absolutely nothing. Placed farmland is freshly-turned soil.
+        if self.reg.block(block).fert_tiles.is_some() {
+            let meta = soil::soil_meta(soil::FERT_TILL_GRASS, 0);
+            self.set_block_meta(pos.0, pos.1, pos.2, block, meta);
+        } else {
+            self.set_block(pos.0, pos.1, pos.2, block);
+        }
         // Power sources carry a marker entity from birth so the
         // station sweep finds them without scanning the world.
         match self.reg.block(block).interaction.as_deref() {

@@ -1340,7 +1340,31 @@ impl Game {
                         }
                         return;
                     }
+                    // A dead site answers with the state of its ground
+                    // and the work left on it. Bare-handed, at the one
+                    // place the player is standing when they want to
+                    // know: "this country is alone" alone taught
+                    // nothing, and a scar you cannot read is a scar you
+                    // walk away from.
                     let world = &self.server.world;
+                    if world
+                        .heart_at(h.block.0, h.block.2)
+                        .is_some_and(|hh| hh.stage == 0)
+                    {
+                        let hp = world.heart_at(h.block.0, h.block.2).unwrap().pos;
+                        let (ready, total) = world.root_ground_ready(hp.0, hp.1, hp.2);
+                        let want = (total as f32 * crate::world::ROOT_READY_FRAC).ceil() as u32;
+                        self.toast(if ready >= want {
+                            "Nothing answers, but the ground is living again.                              It wants a cutting from a heart still awake."
+                                .to_string()
+                        } else {
+                            format!(
+                                "Nothing answers. This country is alone.                                  The ground around it: {ready} of {want} plots living."
+                            )
+                        });
+                        self.sfx(Sfx::Click);
+                        return;
+                    }
                     let line = match world.heart_at(h.block.0, h.block.2) {
                         // It gave already. Saying so plainly is the
                         // point: the old silence read as a broken

@@ -528,12 +528,12 @@ fn food_data_and_recipes_resolve() {
 fn browser_and_recipe_index() {
     let reg = base_reg();
     // Filtering: variants hidden, search matches label and id.
-    let all = crate::browser_items(&reg, "");
+    let all = crate::browser_items(&reg, "", false);
     assert!(all.iter().all(|i| !reg.item(*i).name.contains('/')));
-    let q = crate::browser_items(&reg, "bronze");
+    let q = crate::browser_items(&reg, "bronze", false);
     assert!(q.iter().any(|i| reg.item(*i).name == "base:bronze_pickaxe"));
     assert!(
-        !crate::browser_items(&reg, "base:stick").is_empty(),
+        !crate::browser_items(&reg, "base:stick", false).is_empty(),
         "id search"
     );
     // recipes_for/uses_of.
@@ -1373,7 +1373,9 @@ fn content_graph_is_complete_and_obtainable() {
         .items
         .iter()
         .enumerate()
-        .filter(|(i, d)| !ok.contains(&(*i as u16)) && !world_only(&d.name))
+        // Creative placers are not survival content: they exist so a
+        // builder can hold lava, fire or a crop mid-growth.
+        .filter(|(i, d)| !d.creative_only && !ok.contains(&(*i as u16)) && !world_only(&d.name))
         .map(|(_, d)| d.name.as_str())
         .collect();
     assert!(missing.is_empty(), "unobtainable in survival: {missing:?}");

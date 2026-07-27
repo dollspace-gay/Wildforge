@@ -173,6 +173,11 @@ pub struct ItemDef {
     /// Right-click to set light to something. The one place a fire
     /// is marked as a player's.
     pub striker: bool,
+    /// Reachable only from the creative browser. Every block gets one
+    /// of these so a builder can place lava, fire, a heart, a crop
+    /// mid-growth or a fluid at any level — the states a survival
+    /// player meets in the world but can never hold.
+    pub creative_only: bool,
     /// Sweeps remnant blocks (archaeology).
     pub brush_tool: bool,
     /// Right-click throw speed (None = not throwable).
@@ -1675,6 +1680,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     charm: None,
                     tablet: false,
                     striker: false,
+                    creative_only: false,
                     brush_tool: false,
                     throw_speed: None,
                     hammer: false,
@@ -1742,6 +1748,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 charm: it.charm.clone(),
                 tablet: it.tablet,
                 striker: it.striker,
+                creative_only: false,
                 brush_tool: it.brush_tool,
                 throw_speed: it.throw.as_ref().map(|t| t.speed.unwrap_or(18.0)),
                 hammer: it.hammer,
@@ -2273,6 +2280,55 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             },
             chance: f.chance.unwrap_or(1.0).clamp(0.0, 1.0),
         });
+    }
+
+    // Every block a builder cannot otherwise hold gets a creative-only
+    // item: lava, fire, a heart, a crop mid-growth, a fluid at any
+    // level. These never appear in survival, never craft, and never
+    // count toward obtainability — they exist so the browser can offer
+    // every state of every block the way a builder expects.
+    let placeable: std::collections::HashSet<u16> = reg
+        .items
+        .iter()
+        .filter_map(|i| i.places.map(|b| b.0))
+        .collect();
+    for bid in 0..reg.blocks.len() as u16 {
+        if placeable.contains(&bid) || bid == AIR.0 {
+            continue;
+        }
+        let d = &reg.blocks[bid as usize];
+        let (name, label, icon) = (d.name.clone(), d.label.clone(), d.tiles[2]);
+        // The placeholder block, and anything a pack has left without
+        // art, would put a missing-texture tile in the browser.
+        if icon == crate::atlas::UNKNOWN_SLOT {
+            continue;
+        }
+        let iid = ItemId(reg.items.len() as u16);
+        reg.items.push(ItemDef {
+            name: format!("{name}/place"),
+            label,
+            icon,
+            max_stack: 64,
+            tool: None,
+            durability: 0,
+            places: Some(BlockId(bid)),
+            food: None,
+            damage: 1.0,
+            bow: None,
+            ammo: None,
+            armor: None,
+            bedroll: false,
+            shears: false,
+            charm: None,
+            tablet: false,
+            striker: false,
+            creative_only: true,
+            brush_tool: false,
+            throw_speed: None,
+            hammer: false,
+            glow: None,
+        });
+        reg.item_by_name.insert(format!("{name}/place"), iid);
     }
 
     reg.mods.append(&mut failed);

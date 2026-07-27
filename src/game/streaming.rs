@@ -183,7 +183,9 @@ impl Game {
             // the whole world (palette, entities, mobs, stamps, every
             // modified chunk) to disk on the main thread every time a
             // single chunk crossed the border — a walking-speed
-            // stutter machine. The autosave timer owns the full save.
+            // stutter machine. This IS the incremental save now: the
+            // timer is gone, and a chunk is written as it leaves the
+            // view rather than the whole world on a clock.
             for pos in far {
                 self.server.world.save_chunk_if_modified(pos);
                 self.server.world.unload_chunk(pos);

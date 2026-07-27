@@ -362,19 +362,62 @@ impl World {
     /// root in dead dirt: the soil has to be raised by hand first —
     /// dung, compost, guano, litter, fallow seasons — which is the
     /// whole ecology arc spent as a key.
-    pub fn root_ground_ready(&self, x: i32, z: i32) -> (u32, u32) {
+    /// How wide the ground a rooting answers for is, here. It has to
+    /// clear the monument: a stepped edifice is 8-12 blocks of solid
+    /// stone in every direction from its chamber, and a disc that
+    /// stopped inside that asked the player to excavate a pyramid.
+    pub fn root_radius_at(&self, x: i32, z: i32) -> i32 {
+        let reach = crate::edifice::edifice_of(self.generator.biome(x, z)).reach;
+        ROOT_RADIUS.max(reach + 4)
+    }
+
+    pub fn root_ground_ready(&self, x: i32, y: i32, z: i32) -> (u32, u32) {
         let mut ready = 0;
         let mut total = 0;
-        for dx in -ROOT_RADIUS..=ROOT_RADIUS {
-            for dz in -ROOT_RADIUS..=ROOT_RADIUS {
-                if dx * dx + dz * dz > ROOT_RADIUS * ROOT_RADIUS {
+        // Reach past the monument. A stepped edifice is 8-12 blocks of
+        // solid stone in every direction from its chamber, so a disc
+        // that stopped at ROOT_RADIUS asked the player to excavate a
+        // room inside a pyramid — which is silly. The ground that has
+        // to come back to life is the ground AROUND the thing.
+        let radius = self.root_radius_at(x, z);
+        for dx in -radius..=radius {
+            for dz in -radius..=radius {
+                if dx * dx + dz * dz > radius * radius {
                     continue;
                 }
                 let (cx, cz) = (x + dx, z + dz);
-                let y = self.surface_height(cx, cz);
-                total += 1;
-                if self.fertility_at(cx, y, cz) >= ROOT_READY_FERT {
-                    ready += 1;
+                // The topmost SOIL in the column, not the topmost
+                // block. This used to read `surface_height`, which is
+                // the topmost solid — fine while a heart stood in the
+                // open, but under an edifice that is the crest of the
+                // mass overhead, so the plots being counted were the
+                // outside of a pyramid twenty blocks up and no work at
+                // the chamber floor could ever satisfy it.
+                //
+                // Only tilled soil carries fertility, so nothing built
+                // above can mask the ground: stone is not soil and the
+                // scan walks past it. That also lets a site on a slope
+                // count ground well below its own foot, which a band
+                // around the heart's level would not.
+                let soil = (1..=(y + 24).min(CHUNK_Y as i32 - 1)).rev().find(|&cy| {
+                    self.reg
+                        .block(self.get_block(cx, cy, cz))
+                        .fert_tiles
+                        .is_some()
+                });
+                match soil {
+                    Some(cy) => {
+                        total += 1;
+                        if self.fertility_at(cx, cy, cz) >= ROOT_READY_FERT {
+                            ready += 1;
+                        }
+                    }
+                    // No soil in the column. Ground still to work, or
+                    // the monument itself? Stone standing well above
+                    // the heart is the edifice, and it is not a plot
+                    // anyone has to answer for.
+                    None if self.surface_height(cx, cz) > y + 3 => {}
+                    None => total += 1,
                 }
             }
         }
@@ -419,10 +462,16 @@ impl World {
         if (h.pos.0 - x).abs() > 3 || (h.pos.2 - z).abs() > 3 {
             return Some("It must go where the old heart stood.".into());
         }
-        let (ready, total) = self.root_ground_ready(h.pos.0, h.pos.2);
-        if (ready as f32) < total as f32 * ROOT_READY_FRAC {
+        let (ready, total) = self.root_ground_ready(h.pos.0, h.pos.1, h.pos.2);
+        let want = (total as f32 * ROOT_READY_FRAC).ceil() as u32;
+        if ready < want {
+            // Say the verb. Only tilled soil carries fertility — grass
+            // and bare dirt read as zero however green they look — so
+            // "not ready" alone sent a player laying turf and berries
+            // around a dead spring for nothing. A refusal that does not
+            // name the work is just a locked door.
             return Some(format!(
-                "The ground is not ready ({ready} of {total} plots living)."
+                "The ground is not ready: {ready} of {want} plots living.                  Break it to earth, till it with a hoe, and feed it                  dung, guano or compost."
             ));
         }
         if let Some(e) = self.hearts.get_mut(&key) {
@@ -445,7 +494,7 @@ impl World {
             let Some(h) = self.hearts.get(&key).copied() else {
                 continue;
             };
-            let (ready, total) = self.root_ground_ready(h.pos.0, h.pos.2);
+            let (ready, total) = self.root_ground_ready(h.pos.0, h.pos.1, h.pos.2);
             if (ready as f32) < total as f32 * ROOT_READY_FRAC * 0.75 {
                 // Let the ground go and the seed goes with it.
                 if let Some(e) = self.hearts.get_mut(&key) {
