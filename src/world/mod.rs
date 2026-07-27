@@ -29,6 +29,7 @@ mod persistence;
 mod power;
 mod storage;
 
+pub use hearts::ROOT_READY_FRAC;
 #[cfg(test)]
 pub use hearts::{HEART_CUTTING_DAYS, ROOT_DAYS, ROOT_RADIUS};
 pub use hearts::{Heart, heart_block_name, heart_form, heart_height, seed_nature, seed_of_form};

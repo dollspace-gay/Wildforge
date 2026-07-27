@@ -425,8 +425,6 @@ struct Game {
     gen_pool: Option<streaming::GenPool>,
     /// Start of this frame's streaming work (shared adopt+mesh budget).
     stream_t0: std::time::Instant,
-    /// Seconds until the next full autosave.
-    autosave: f32,
     creative: bool,
     flying: bool,
     last_space: f32,
@@ -647,7 +645,6 @@ impl Game {
             worlds: Vec::new(),
             gen_pool: None,
             stream_t0: std::time::Instant::now(),
-            autosave: 20.0,
             creative: false,
             flying: false,
             last_space: -9.0,

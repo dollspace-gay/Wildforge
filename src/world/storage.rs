@@ -433,8 +433,9 @@ impl World {
     }
 
     /// Persist a single departing chunk (unload path): only its own
-    /// file, only if edited — the full save belongs to the autosave
-    /// timer and quit, not to every step across a chunk border.
+    /// file, only if edited. With the autosave timer gone this is how
+    /// most of the world reaches disk: a chunk is written once, as it
+    /// leaves the view, instead of the whole world on a clock.
     pub fn save_chunk_if_modified(&self, pos: ChunkPos) {
         if self.remote {
             return;

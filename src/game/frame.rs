@@ -503,15 +503,24 @@ impl Game {
     }
 
     fn advance_session_authority_inner(&mut self, dt: f32, paused: bool) {
-        // The full world save rides a timer now, not the unload path.
-        if self.in_world && self.multiplayer.remote.is_none() {
-            self.autosave -= dt;
-            if self.autosave <= 0.0 {
-                self.autosave = 20.0;
-                self.server.world.settle_falling();
-                self.server.world.save_modified();
-            }
-        }
+        // No autosave. Doll asked for this the first time it stuttered
+        // and I argued to keep it; the hitch came back and chasing it
+        // is not worth the feature. The world is written on the paths
+        // that already existed and always have: closing the window,
+        // quitting to the title, sleeping the night, and every chunk
+        // that leaves the view (save_chunk_if_modified on unload).
+        //
+        // Why it returned after being fixed: that fix stopped rewriting
+        // UNCHANGED chunks, which is most of them at a seven-chunk
+        // view. At twenty-four the loaded set is ten times larger, so
+        // ten times as many chunks are genuinely changed each pass by
+        // fluids and random ticks — the same wall, reached from the
+        // other side. A save that scales with view distance was never
+        // going to sit quietly on a timer.
+        //
+        // The exposure is an unclean exit: a crash or a kill loses the
+        // work since the last of those points. On a machine that is
+        // being played rather than shipped, that is the better trade.
         if !self.in_world && self.multiplayer.remote.is_some() {
             self.remote_pump(dt);
         }

@@ -539,7 +539,7 @@ fn a_seed_will_not_take_in_dead_dirt_but_will_in_ground_made_ready() {
             w.set_block_meta(cx, y, cz, farm, crate::world::soil::soil_meta(40, 0));
         }
     }
-    let (ready, total) = w.root_ground_ready(hp.0, hp.2);
+    let (ready, total) = w.root_ground_ready(hp.0, hp.1, hp.2);
     assert!(
         ready * 2 > total,
         "the ground is living now ({ready}/{total})"
@@ -1183,4 +1183,85 @@ fn a_seed_points_at_ground_that_would_take_it() {
         "a heart you killed is ground too: {line}"
     );
     let _ = &mut w;
+}
+
+/// Readiness is measured at the heart, not at the roof of the world.
+/// `surface_height` was fine while a heart stood in the open; under an
+/// edifice it returns the crest of the mass overhead, so the plots
+/// being counted were the outside of a pyramid twenty blocks up and no
+/// amount of work at the chamber floor could ever satisfy it. Doll hit
+/// exactly this at a badlands ziggurat.
+#[test]
+fn ground_readiness_is_measured_at_the_heart_not_under_the_sky() {
+    let (mut w, key, (sx, sz)) = world_with_heart(42, "root-under-cover");
+    let reg = w.reg.clone();
+    w.set_heart_stage(key, 0);
+    let hp = w.heart_at(sx, sz).unwrap().pos;
+
+    // The disc spans several chunks and a site can back onto a cliff,
+    // neither of which this test is about. Load them, then lay a level
+    // floor of living soil at the heart's own level — tilled and fed,
+    // the way a player would leave it.
+    let farm = b(&reg, "base:farmland");
+    let r = crate::world::ROOT_RADIUS;
+    for cx in -1..=1 {
+        for cz in -1..=1 {
+            w.ensure_chunk(ChunkPos::of_world(hp.0 + cx * 16, hp.2 + cz * 16));
+        }
+    }
+    for dx in -r..=r {
+        for dz in -r..=r {
+            if dx * dx + dz * dz > r * r {
+                continue;
+            }
+            let (cx, cz) = (hp.0 + dx, hp.2 + dz);
+            if (dx, dz) != (0, 0) {
+                for up in 0..=6 {
+                    w.set_block(cx, hp.1 + up, cz, AIR);
+                }
+            }
+            w.set_block(cx, hp.1 - 1, cz, farm);
+            w.feed_soil(cx, hp.1 - 1, cz, 60);
+        }
+    }
+    let (ready, total) = w.root_ground_ready(hp.0, hp.1, hp.2);
+    assert!(ready * 2 > total, "the ground is living ({ready}/{total})");
+    assert!(w.plant_heart_seed(hp.0, hp.1, hp.2).is_none(), "it takes");
+
+    // Now roof the whole site over, as an edifice does, and ask again.
+    // The answer must not change: the work is at the heart's level.
+    let stone = b(&reg, "base:stone");
+    for dx in -r..=r {
+        for dz in -r..=r {
+            for up in 8..14 {
+                w.set_block(hp.0 + dx, hp.1 + up, hp.2 + dz, stone);
+            }
+        }
+    }
+    let (roofed, total2) = w.root_ground_ready(hp.0, hp.1, hp.2);
+    assert_eq!(
+        (roofed, total2),
+        (ready, total),
+        "a mass overhead does not un-till the ground beneath it"
+    );
+}
+
+/// A refusal that does not name the work is a locked door. Only tilled
+/// soil carries fertility — grass and bare dirt read as zero however
+/// green they look — so Doll laid turf and berries around a dead spring
+/// for nothing and the game never said why.
+#[test]
+fn the_refusal_says_what_the_ground_needs() {
+    let (mut w, key, (sx, sz)) = world_with_heart(43, "root-refusal");
+    w.set_heart_stage(key, 0);
+    let hp = w.heart_at(sx, sz).unwrap().pos;
+    let refusal = w
+        .plant_heart_seed(hp.0, hp.1, hp.2)
+        .expect("bare ground refuses");
+    for want in ["till", "hoe", "plots living"] {
+        assert!(
+            refusal.to_lowercase().contains(want),
+            "the refusal should name {want:?}: {refusal}"
+        );
+    }
 }
