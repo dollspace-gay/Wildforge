@@ -227,6 +227,22 @@ impl ApplicationHandler for App {
                     return;
                 }
                 if let PhysicalKey::Code(code) = event.physical_key {
+                    // The OS repeats a held key, and every edge-triggered
+                    // action below reads a repeat as a fresh press. Holding
+                    // space to climb in creative therefore double-tapped
+                    // itself back out of flight the moment the repeat delay
+                    // elapsed — which is why it only ever "caught" once you
+                    // were already a little way up. Holding Escape flapped
+                    // the pause menu, and holding the drop key emptied the
+                    // stack, for the same reason. Held-key state is set from
+                    // the first press and cleared on release, so dropping
+                    // repeats costs movement nothing.
+                    //
+                    // Text entry needs repeats and is handled above, before
+                    // this point.
+                    if event.repeat && event.state.is_pressed() {
+                        return;
+                    }
                     game.key(code, event.state.is_pressed(), event_loop);
                 }
             }

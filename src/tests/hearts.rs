@@ -806,3 +806,88 @@ fn the_tablets_confess_what_the_takers_did() {
         assert!(text.contains(line), "the confession is missing: {line}");
     }
 }
+
+/// A living heart parted with a seed on every right-click, forever, at
+/// +1 ire a time — a dispenser you could stand at, and a way to farm
+/// ire besides. It gives one, then has nothing to spare for half a
+/// season.
+#[test]
+fn a_living_heart_gives_one_cutting_then_needs_a_season() {
+    let (mut w, _key, (sx, sz)) = world_with_heart(42, "hearts-cutting");
+    assert!(w.take_heart_cutting(sx, sz), "a living heart gives");
+    assert!(
+        !w.take_heart_cutting(sx, sz),
+        "and does not give again on the next click"
+    );
+    // Clicking a spent heart costs nothing: the refusal is free, so it
+    // cannot be used to pump ire either.
+    let before = w.regional_ire_at(sx, sz);
+    for _ in 0..20 {
+        assert!(!w.take_heart_cutting(sx, sz));
+    }
+    assert_eq!(w.regional_ire_at(sx, sz), before, "asking is not taking");
+
+    // Most of a season is still not enough...
+    for _ in 0..5 {
+        w.tick_ire(1.0);
+    }
+    assert!(!w.take_heart_cutting(sx, sz), "five days is not six");
+    w.tick_ire(1.0);
+    assert!(w.take_heart_cutting(sx, sz), "half a season on, it gives");
+}
+
+/// Only a heart that is actually well has anything to give.
+#[test]
+fn a_sickening_or_dead_heart_gives_no_cutting() {
+    let (mut w, key, (sx, sz)) = world_with_heart(42, "hearts-cutting-sick");
+    w.set_heart_stage(key, 1);
+    assert!(!w.take_heart_cutting(sx, sz), "a dying heart gives nothing");
+    w.set_heart_stage(key, 0);
+    assert!(!w.take_heart_cutting(sx, sz), "a dead one gives nothing");
+    w.set_heart_stage(key, 2);
+    assert!(w.take_heart_cutting(sx, sz), "a well one does");
+}
+
+/// The timer is worth nothing if it resets when you quit. The hearts
+/// file grew a field, so it also has to keep reading saves written
+/// before it did — the old layout is headerless and 34 bytes a record,
+/// which a 19-heart save makes ambiguous with the new 38.
+#[test]
+fn the_cutting_timer_survives_a_save_and_old_saves_still_load() {
+    let reg = base_reg();
+    let (mut w, key, (sx, sz)) = world_with_heart(42, "hearts-cutting-save");
+    let dir = w.save_dir().to_path_buf();
+    assert!(w.take_heart_cutting(sx, sz));
+    let pos = w.heart_at(sx, sz).unwrap().pos;
+    w.save_modified();
+    drop(w);
+
+    let w = World::load_or_create(dir.clone(), reg.clone());
+    let loaded = w.heart_at(pos.0, pos.2).expect("the heart came back");
+    assert!(
+        (loaded.regrow - crate::world::HEART_CUTTING_DAYS).abs() < 0.01,
+        "the rest survived the save (regrow {})",
+        loaded.regrow
+    );
+    drop(w);
+
+    // A pre-timer save: no header, 34 bytes a record. It has to load,
+    // with its hearts simply ready to give.
+    let mut old = Vec::new();
+    old.extend_from_slice(&key.0.to_le_bytes());
+    old.extend_from_slice(&key.1.to_le_bytes());
+    old.extend_from_slice(&pos.0.to_le_bytes());
+    old.extend_from_slice(&pos.1.to_le_bytes());
+    old.extend_from_slice(&pos.2.to_le_bytes());
+    old.push(2);
+    old.extend_from_slice(&3.5f32.to_le_bytes()); // strain
+    old.extend_from_slice(&0f32.to_le_bytes()); // rooting
+    old.push(0); // graft
+    old.extend_from_slice(&0f32.to_le_bytes()); // drift
+    assert_eq!(old.len(), 34, "the shape of the old record");
+    std::fs::write(dir.join("hearts"), &old).unwrap();
+    let w = World::load_or_create(dir.clone(), reg.clone());
+    let loaded = w.heart_at(pos.0, pos.2).expect("an old heart still loads");
+    assert!((loaded.strain - 3.5).abs() < 0.01, "its grievance survived");
+    assert_eq!(loaded.regrow, 0.0, "and it is ready to give");
+}

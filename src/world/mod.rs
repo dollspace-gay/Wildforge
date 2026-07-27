@@ -29,7 +29,7 @@ mod power;
 mod storage;
 
 #[cfg(test)]
-pub use hearts::ROOT_RADIUS;
+pub use hearts::{HEART_CUTTING_DAYS, ROOT_RADIUS};
 pub use hearts::{Heart, heart_block_name, heart_form, heart_height, seed_nature, seed_of_form};
 pub use machines::{station_powered, worked_table_for};
 pub mod soil;
@@ -1034,6 +1034,12 @@ impl World {
             }
         }
         0
+    }
+
+    /// Where this world keeps its files.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn save_dir(&self) -> &std::path::Path {
+        &self.save_dir
     }
 
     /// The headroom a flier standing at `y` actually has: the first

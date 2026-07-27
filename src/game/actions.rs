@@ -1267,14 +1267,10 @@ impl Game {
                     // A cutting from a living heart: the thing you
                     // carry across the world to wake a dead country.
                     if !holding_seed
-                        && self
-                            .server
-                            .world
-                            .heart_at(h.block.0, h.block.2)
-                            .is_some_and(|hh| hh.stage == 2)
                         && let Some(seed) = reg.item_id(world::seed_of_form(world::heart_form(
                             self.server.world.generator.biome(h.block.0, h.block.2),
                         )))
+                        && self.server.world.take_heart_cutting(h.block.0, h.block.2)
                     {
                         let left = self.inventory.add(&reg, seed, 1);
                         if left > 0 {
@@ -1307,6 +1303,13 @@ impl Game {
                     }
                     let world = &self.server.world;
                     let line = match world.heart_at(h.block.0, h.block.2) {
+                        // It gave already. Saying so plainly is the
+                        // point: the old silence read as a broken
+                        // button rather than a spirit with nothing left
+                        // to give this season.
+                        Some(hh) if hh.stage == 2 && hh.regrow > 0.0 => {
+                            "It has nothing more to give yet. Come back in a season."
+                        }
                         Some(hh) if hh.stage == 2 && hh.strain > 4.0 => {
                             "The wood is warm, and it flinches from you."
                         }
