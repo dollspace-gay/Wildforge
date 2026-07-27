@@ -1869,6 +1869,58 @@ impl Game {
                 }
             }
         }
+        // Dev: fly to the nearest country's heart and look at what
+        // stands over it. WILDFORGE_DEMO_EDIFICE=<n> steps outward
+        // through neighbouring provinces, so each family can be seen.
+        if let Ok(which) = std::env::var("WILDFORGE_DEMO_EDIFICE") {
+            let skip: usize = which.parse().unwrap_or(0);
+            let g = &self.server.world.generator;
+            let sites: Vec<(i32, i32)> = (0..6)
+                .flat_map(|r: i32| {
+                    (-r..=r)
+                        .flat_map(move |i| [(i, -r), (i, r), (-r, i), (r, i)])
+                        .collect::<Vec<_>>()
+                })
+                .map(|(kx, kz)| g.province_center(kx, kz))
+                .filter(|&(x, z)| g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 4)
+                .fold(Vec::new(), |mut acc, s| {
+                    // The ring walk visits (0,0) four times over.
+                    if !acc.contains(&s) {
+                        acc.push(s);
+                    }
+                    acc
+                });
+            if let Some(&(sx, sz)) = sites.get(skip) {
+                let ed = crate::edifice::edifice_of(self.server.world.generator.biome(sx, sz));
+                for cx in -3..=3 {
+                    for cz in -3..=3 {
+                        self.server
+                            .world
+                            .ensure_chunk(crate::chunk::ChunkPos::of_world(
+                                sx + cx * 16,
+                                sz + cz * 16,
+                            ));
+                    }
+                }
+                let base = self.server.world.surface_height(sx, sz);
+                // Stand well back and a little above the crest.
+                let back = (ed.reach * 4).max(40) as f32;
+                self.player.pos = Vec3::new(
+                    sx as f32,
+                    base as f32 + ed.rise as f32 * 0.7,
+                    sz as f32 + back,
+                );
+                self.player.vel = Vec3::ZERO;
+                self.camera.yaw = -std::f32::consts::FRAC_PI_2;
+                self.camera.pitch = -0.22;
+                self.flying = true;
+                eprintln!(
+                    "edifice demo: {:?} {:?} at ({sx},{base},{sz})",
+                    self.server.world.generator.biome(sx, sz),
+                    ed.family
+                );
+            }
+        }
         // Dev: a stand of trees over grass, lit at one corner, so a
         // burn can be watched running rather than inferred from a
         // test's counters. WILDFORGE_DEMO_FIRE=mine lights it as a

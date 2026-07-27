@@ -127,8 +127,7 @@ fn pack_tile_override_applied_at_slot() {
     let atlas = crate::atlas::build_atlas(&[], &[], &[]);
     let base = atlas.color;
     let bpx = atlas.px;
-    let atlas =
-        crate::atlas::build_atlas(&[], &[crate::atlas::PackSource::Dir(pack.clone())], &[]);
+    let atlas = crate::atlas::build_atlas(&[], &[crate::atlas::PackSource::Dir(pack.clone())], &[]);
     let img = atlas.color;
     let px = atlas.px;
     let warns = atlas.warnings;
@@ -196,8 +195,7 @@ fn pack_unknown_and_unreadable_files_warn() {
     let atlas = crate::atlas::build_atlas(&[], &[], &[]);
     let base = atlas.color;
     let bpx = atlas.px;
-    let atlas =
-        crate::atlas::build_atlas(&[], &[crate::atlas::PackSource::Dir(pack.clone())], &[]);
+    let atlas = crate::atlas::build_atlas(&[], &[crate::atlas::PackSource::Dir(pack.clone())], &[]);
     let img = atlas.color;
     let px = atlas.px;
     let warns = atlas.warnings;
@@ -260,8 +258,7 @@ fn export_tiles_round_trip_reproduces_atlas() {
     assert!(out.join("pack.toml").exists(), "stub pack.toml written");
     assert!(out.join("tiles/stone.png").exists());
     // Selecting the exported skeleton as a pack reproduces the atlas exactly.
-    let atlas =
-        crate::atlas::build_atlas(&[], &[crate::atlas::PackSource::Dir(out.clone())], &[]);
+    let atlas = crate::atlas::build_atlas(&[], &[crate::atlas::PackSource::Dir(out.clone())], &[]);
     let again = atlas.color;
     let apx = atlas.px;
     let warns = atlas.warnings;
@@ -278,8 +275,7 @@ fn embedded_gemini_pack_applies_without_folder() {
     let atlas = crate::atlas::build_atlas(&[], &[], &[]);
     let base = atlas.color;
     let bpx = atlas.px;
-    let atlas =
-        crate::atlas::build_atlas(&[], &[crate::atlas::PackSource::Embedded(tiles)], &[]);
+    let atlas = crate::atlas::build_atlas(&[], &[crate::atlas::PackSource::Embedded(tiles)], &[]);
     let img = atlas.color;
     let px = atlas.px;
     let warns = atlas.warnings;
@@ -1074,9 +1070,8 @@ fn pack_inherits_layers_maps_over_a_parent_albedo() {
         "parent's albedo survives - the child shipped no stone.png"
     );
     let tp = atlas.px / ATLAS_TILES;
-    let i = (((stone as u32 / ATLAS_TILES * tp) * atlas.px
-        + stone as u32 % ATLAS_TILES * tp)
-        * 4) as usize;
+    let i = (((stone as u32 / ATLAS_TILES * tp) * atlas.px + stone as u32 % ATLAS_TILES * tp) * 4)
+        as usize;
     assert_eq!(atlas.material[i], 64, "child's authored height applied");
 }
 
@@ -1116,9 +1111,8 @@ fn pack_can_author_the_interior_layer() {
     let atlas = build_atlas(&[], &[crate::atlas::PackSource::Dir(pack)], &[]);
     let leaves = *builtin_slots().get("leaves").unwrap();
     let tp = atlas.px / ATLAS_TILES;
-    let i = (((leaves as u32 / ATLAS_TILES * tp) * atlas.px
-        + leaves as u32 % ATLAS_TILES * tp)
-        * 4) as usize;
+    let i = (((leaves as u32 / ATLAS_TILES * tp) * atlas.px + leaves as u32 % ATLAS_TILES * tp) * 4)
+        as usize;
     assert_eq!(atlas.material[i + 1], 200, "interior mask in material G");
 }
 
@@ -1134,9 +1128,8 @@ fn luminance_height_fallback_keeps_an_authored_interior() {
     let atlas = build_atlas(&[], &[crate::atlas::PackSource::Dir(pack)], &[]);
     let stone = *builtin_slots().get("stone").unwrap();
     let tp = atlas.px / ATLAS_TILES;
-    let i = (((stone as u32 / ATLAS_TILES * tp) * atlas.px
-        + stone as u32 % ATLAS_TILES * tp)
-        * 4) as usize;
+    let i = (((stone as u32 / ATLAS_TILES * tp) * atlas.px + stone as u32 % ATLAS_TILES * tp) * 4)
+        as usize;
     assert_eq!(atlas.material[i + 1], 180, "interior survived the fallback");
 }
 
@@ -1167,9 +1160,7 @@ fn greyscale_companion_maps_load() {
     );
     let gravel = *builtin_slots().get("gravel").unwrap();
     let tp = atlas.px / ATLAS_TILES;
-    let i = (((gravel as u32 / ATLAS_TILES * tp) * atlas.px
-        + gravel as u32 % ATLAS_TILES * tp)
-        * 4) as usize;
+    let i = (((gravel as u32 / ATLAS_TILES * tp) * atlas.px + gravel as u32 % ATLAS_TILES * tp) * 4)
+        as usize;
     assert_eq!(atlas.material[i], 77, "greyscale height reached material R");
 }
-

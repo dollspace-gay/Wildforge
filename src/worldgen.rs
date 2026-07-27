@@ -253,6 +253,10 @@ pub struct Generator {
     lantern_fungus: BlockId,
     meadow_bloom: BlockId,
     ember_poppy: BlockId,
+    /// Edifice materials per country, indexed by Biome. Resolved here
+    /// for the same reason the heart blocks are: the generator has no
+    /// registry to ask at generation time.
+    edifice_mats: Vec<crate::edifice::Materials>,
     /// One heart block per country, indexed by Biome. Caching the
     /// three archetypes by name stopped working when every country
     /// grew its own: the lookup silently resolved to the placeholder
@@ -376,6 +380,16 @@ impl Generator {
             hearts: (1..=12)
                 .filter_map(Biome::from_index)
                 .map(|biome| b(crate::world::heart_form(biome)))
+                .collect(),
+            edifice_mats: (1..=12)
+                .filter_map(Biome::from_index)
+                .map(|biome| {
+                    let e = crate::edifice::edifice_of(biome);
+                    crate::edifice::Materials {
+                        shell: b(e.shell),
+                        crown: b(e.crown),
+                    }
+                })
                 .collect(),
             stone: b("base:stone"),
             sand: b("base:sand"),
@@ -610,6 +624,30 @@ impl Generator {
             nh,
             ne,
         }
+    }
+
+    /// How close this column is to its country's heart, 0..1. Squared
+    /// off so the thickening reads as a gradient you can walk up
+    /// rather than a hard edge you cross.
+    pub fn heart_nearness(&self, wx: i32, wz: i32) -> f32 {
+        let p = self.province(wx, wz);
+        let (sx, sz) = self.province_center(p.key.0, p.key.1);
+        let d = (((wx - sx) as f32).powi(2) + ((wz - sz) as f32).powi(2)).sqrt();
+        // Readable from about a third of the way across a province,
+        // which is roughly where you would give up and grid-search.
+        const REACH: f32 = 300.0;
+        (1.0 - (d / REACH).min(1.0)).powi(2)
+    }
+
+    /// The stone and trim a country builds with.
+    fn edifice_materials(&self, biome: Biome) -> crate::edifice::Materials {
+        self.edifice_mats
+            .get(biome as usize)
+            .copied()
+            .unwrap_or(crate::edifice::Materials {
+                shell: self.stone,
+                crown: self.stone,
+            })
     }
 
     /// The living heart block a country raises.
@@ -1752,10 +1790,25 @@ impl Generator {
                         }
                     }
                 }
-                // Meadow flowers: scattered, useless, and worth it.
-                if matches!(biome, Biome::Plains | Biome::Forest | Biome::Savanna) {
+                // Meadow flowers: scattered, useless, and worth it —
+                // and they thicken toward a country's heart, which is
+                // the only navigation the game offers between one
+                // province and the next. No compass, no marker: the
+                // ground gets busier and you follow it. Every biome
+                // shows it, not just the flowery ones, because it is a
+                // signal before it is decoration.
+                {
                     let fr = hash2(self.seed ^ 0xf10e, wx, wz);
-                    if fr.is_multiple_of(340) {
+                    let flowery = matches!(biome, Biome::Plains | Biome::Forest | Biome::Savanna);
+                    let rate = match self.heart_nearness(wx, wz) {
+                        n if n > 0.82 => 6, // you are all but on it
+                        n if n > 0.60 => 22,
+                        n if n > 0.35 => 90,
+                        n if n > 0.12 => 220,
+                        _ if flowery => 340, // ordinary meadow
+                        _ => 0,              // ordinary elsewhere: none
+                    };
+                    if rate > 0 && fr.is_multiple_of(rate) {
                         let h2 = self.height_hint(heights, lx, lz);
                         if h2 > SEA_LEVEL + 1
                             && h2 + 2 < CHUNK_Y as i32
@@ -1954,6 +2007,55 @@ impl Generator {
                     let tall = crate::world::heart_height(form);
                     for dy in 1..=tall {
                         c.set(lx as usize, (ground + dy) as usize, lz as usize, block);
+                    }
+                }
+            }
+        }
+
+        // And the edifice over it. A monument spans several chunks and
+        // a chunk cannot write into its neighbours, so this is not one
+        // chunk stamping a shape: every chunk asks what belongs in its
+        // OWN columns and they agree at the seams by construction.
+        // The site's ground therefore has to come from a function of
+        // position alone, not from this chunk's carved heightmap.
+        {
+            let gx = (bx as f64 / Self::PROVINCE_SIZE).floor() as i32;
+            let gz = (bz as f64 / Self::PROVINCE_SIZE).floor() as i32;
+            for kdx in -1..=1 {
+                for kdz in -1..=1 {
+                    let (sx, sz) = self.province_center(gx + kdx, gz + kdz);
+                    let ed = crate::edifice::edifice_of(self.biome(sx, sz));
+                    // Does any of it fall in this chunk?
+                    if sx + ed.reach < bx
+                        || sx - ed.reach >= bx + CHUNK_X as i32
+                        || sz + ed.reach < bz
+                        || sz - ed.reach >= bz + CHUNK_Z as i32
+                    {
+                        continue;
+                    }
+                    let base = self.surface_estimate(sx, sz);
+                    if base <= SEA_LEVEL || base + ed.rise + 4 >= CHUNK_Y as i32 {
+                        continue;
+                    }
+                    let mats = self.edifice_materials(self.biome(sx, sz));
+                    for lx in 0..CHUNK_X as i32 {
+                        for lz in 0..CHUNK_Z as i32 {
+                            let (dx, dz) = (bx + lx - sx, bz + lz - sz);
+                            if dx.abs() > ed.reach || dz.abs() > ed.reach {
+                                continue;
+                            }
+                            // Footings run a little below the estimate so
+                            // the mass never floats over carved ground.
+                            for dy in -4..=ed.rise {
+                                let y = base + dy;
+                                if !(1..CHUNK_Y as i32).contains(&y) {
+                                    continue;
+                                }
+                                if let Some(b) = crate::edifice::block_at(&ed, &mats, dx, dy, dz) {
+                                    c.set(lx as usize, y as usize, lz as usize, b);
+                                }
+                            }
+                        }
                     }
                 }
             }

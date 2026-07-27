@@ -13,6 +13,7 @@ mod chunk;
 mod config;
 mod crafting;
 mod dedicated;
+mod edifice;
 mod entity;
 mod game;
 mod identity;

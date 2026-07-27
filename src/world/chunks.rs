@@ -2,6 +2,12 @@
 
 use super::*;
 
+/// How far above the surface a heart's own column is still searched
+/// when the ledger goes looking for it. An edifice can bury the site
+/// under courses of stone or lift a canopy over it; the spirit is
+/// still down there.
+const EDIFICE_CLEARANCE: i32 = 48;
+
 impl World {
     pub fn ensure_chunk(&mut self, pos: ChunkPos) -> bool {
         if self.chunks.contains_key(&pos) {
@@ -79,9 +85,20 @@ impl World {
                             .name
                             .starts_with("base:heart_")
                     };
+                    // Search a band around the surface rather than
+                    // demanding the heart BE the surface block. Anything
+                    // standing over the site — an edifice, or a roof a
+                    // player put there — used to mean the country
+                    // registered no heart at all: not a dead one, none.
+                    // Wardens kept spawning and offerings kept being
+                    // accepted while the whole arc quietly did not
+                    // happen there.
                     let top = self.surface_height(sx, sz);
-                    if is_heart(self, top) {
-                        let mut base = top;
+                    if let Some(crown) = (2..=(top + EDIFICE_CLEARANCE).min(CHUNK_Y as i32 - 1))
+                        .rev()
+                        .find(|&y| is_heart(self, y))
+                    {
+                        let mut base = crown;
                         while base > 1 && is_heart(self, base - 1) {
                             base -= 1;
                         }

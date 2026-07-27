@@ -136,9 +136,7 @@ pub fn pack_chain_in(root: &std::path::Path, id: &str) -> Vec<PackSource> {
         }
     }
     ids.reverse();
-    ids.iter()
-        .filter_map(|i| pack_source_in(root, i))
-        .collect()
+    ids.iter().filter_map(|i| pack_source_in(root, i)).collect()
 }
 
 pub fn pack_chain(id: &str) -> Vec<PackSource> {
