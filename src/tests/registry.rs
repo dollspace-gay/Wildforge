@@ -1313,8 +1313,11 @@ fn content_graph_is_complete_and_obtainable() {
         }
         // A quickened seed: a living heart gives one to a bare hand -
         // a code path (the heart interaction), like the bucket dip.
-        // Every world has hearts, of all three forms.
-        for name in ["base:bole_seed", "base:spring_seed", "base:stone_seed"] {
+        // Every country has a heart, and every heart gives its own.
+        for name in (1..=12u8)
+            .filter_map(crate::worldgen::Biome::from_index)
+            .map(|b| crate::world::seed_of_form(crate::world::heart_form(b)))
+        {
             if let Some(s) = reg.item_id(name)
                 && !ok.contains(&s.0)
             {

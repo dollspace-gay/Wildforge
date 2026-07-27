@@ -253,9 +253,12 @@ pub struct Generator {
     lantern_fungus: BlockId,
     meadow_bloom: BlockId,
     ember_poppy: BlockId,
-    heart_tree: BlockId,
-    heart_spring: BlockId,
-    heart_stone: BlockId,
+    /// One heart block per country, indexed by Biome. Caching the
+    /// three archetypes by name stopped working when every country
+    /// grew its own: the lookup silently resolved to the placeholder
+    /// and the generator laid down unknown blocks where the spirits
+    /// should have stood, so nothing registered a heart at all.
+    hearts: Vec<BlockId>,
     stone: BlockId,
     sand: BlockId,
     clay: BlockId,
@@ -370,9 +373,10 @@ impl Generator {
             lantern_fungus: b("base:lantern_fungus"),
             meadow_bloom: b("base:meadow_bloom"),
             ember_poppy: b("base:ember_poppy"),
-            heart_tree: b("base:heart_tree"),
-            heart_spring: b("base:heart_spring"),
-            heart_stone: b("base:heart_stone"),
+            hearts: (1..=12)
+                .filter_map(Biome::from_index)
+                .map(|biome| b(crate::world::heart_form(biome)))
+                .collect(),
             stone: b("base:stone"),
             sand: b("base:sand"),
             clay: b("base:clay_block"),
@@ -606,6 +610,14 @@ impl Generator {
             nh,
             ne,
         }
+    }
+
+    /// The living heart block a country raises.
+    pub(crate) fn heart_block(&self, biome: Biome) -> BlockId {
+        self.hearts
+            .get(biome as usize)
+            .copied()
+            .unwrap_or(self.stone)
     }
 
     pub fn biome(&self, wx: i32, wz: i32) -> Biome {
@@ -1936,12 +1948,10 @@ impl Generator {
                     if ground <= SEA_LEVEL || ground + 8 >= CHUNK_Y as i32 {
                         continue;
                     }
-                    let (block, tall) =
-                        match crate::world::heart_form(biomes[lx as usize][lz as usize]) {
-                            "base:heart_tree" => (self.heart_tree, 5),
-                            "base:heart_spring" => (self.heart_spring, 1),
-                            _ => (self.heart_stone, 3),
-                        };
+                    let biome = biomes[lx as usize][lz as usize];
+                    let form = crate::world::heart_form(biome);
+                    let block = self.heart_block(biome);
+                    let tall = crate::world::heart_height(form);
                     for dy in 1..=tall {
                         c.set(lx as usize, (ground + dy) as usize, lz as usize, block);
                     }

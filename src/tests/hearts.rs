@@ -131,41 +131,9 @@ fn hearts_survive_the_save() {
     assert_eq!(w.generator.province(sx, sz).key, key);
 }
 
-#[test]
-fn a_country_form_matches_its_kind() {
-    // Wooded country grows a bole; dry country keeps a spring; the
-    // cold and open ground raises a stone.
-    use crate::world::heart_form;
-    for b in [Biome::Forest, Biome::Taiga, Biome::Jungle, Biome::Swamp] {
-        assert_eq!(heart_form(b), "base:heart_tree", "{b:?}");
-    }
-    for b in [
-        Biome::Desert,
-        Biome::Badlands,
-        Biome::Savanna,
-        Biome::Scrubland,
-    ] {
-        assert_eq!(heart_form(b), "base:heart_spring", "{b:?}");
-    }
-    for b in [
-        Biome::Arctic,
-        Biome::Tundra,
-        Biome::Mountains,
-        Biome::Plains,
-    ] {
-        assert_eq!(heart_form(b), "base:heart_stone", "{b:?}");
-    }
-    // Every form has all three stages registered as real blocks.
-    let reg = base_reg();
-    for form in ["base:heart_tree", "base:heart_spring", "base:heart_stone"] {
-        for stage in 0..=2u8 {
-            let name = crate::world::heart_block_name(form, stage);
-            assert!(reg.block_id(&name).is_some(), "missing {name}");
-        }
-    }
-}
-
-/// A world with a heart loaded, and the key of its country.
+/// A world with a heart loaded, and the key of its country. Skips the
+/// badlands: their spirit went out before the world began, so a
+/// province there is a scar and not a country with a heart to strain.
 fn world_with_heart(seed: u32, tag: &str) -> (World, (i32, i32), (i32, i32)) {
     let reg = base_reg();
     let mut w = World::new(seed, tmp_dir(tag), reg);
@@ -180,12 +148,62 @@ fn world_with_heart(seed: u32, tag: &str) -> (World, (i32, i32), (i32, i32)) {
         .find(|&(x, z)| {
             g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 4
                 && g.plate_relief(&g.climate(x, z)) <= 30.0
+                && g.province(x, z).biome != Biome::Badlands
         })
-        .expect("dry country");
+        .expect("dry living country");
     w.ensure_chunk(ChunkPos::of_world(sx, sz));
     let key = w.generator.province(sx, sz).key;
-    assert!(w.heart_at(sx, sz).is_some(), "the country has a heart");
+    let h = w.heart_at(sx, sz).expect("the country has a heart");
+    assert_eq!(h.stage, 2, "and it is alive");
     (w, key, (sx, sz))
+}
+
+#[test]
+fn every_country_has_its_own_heart_and_its_own_seed() {
+    use crate::world::{heart_block_name, heart_form, seed_nature, seed_of_form};
+    use std::collections::HashSet;
+    let reg = base_reg();
+    // Not a wildcard match: naming all twelve means adding a thirteenth
+    // country fails to compile here until it has a heart of its own.
+    let all = [
+        Biome::Forest,
+        Biome::Plains,
+        Biome::Desert,
+        Biome::Jungle,
+        Biome::Scrubland,
+        Biome::Taiga,
+        Biome::Arctic,
+        Biome::Mountains,
+        Biome::Swamp,
+        Biome::Savanna,
+        Biome::Tundra,
+        Biome::Badlands,
+    ];
+    let (mut forms, mut seeds) = (HashSet::new(), HashSet::new());
+    for b in all {
+        let form = heart_form(b);
+        assert!(
+            forms.insert(form),
+            "{b:?} shares its heart with another country"
+        );
+        for stage in 0..=2u8 {
+            let name = heart_block_name(form, stage);
+            assert!(reg.block_id(&name).is_some(), "missing block {name}");
+        }
+        let seed = seed_of_form(form);
+        assert!(
+            seeds.insert(seed),
+            "{b:?} shares its seed with another country"
+        );
+        assert!(reg.item_id(seed).is_some(), "missing item {seed}");
+        // The round trip that makes terraforming legible: the seed a
+        // country gives is the seed that wakes that country.
+        assert_eq!(
+            seed_nature(seed),
+            Some(b),
+            "{b:?}'s own seed should carry {b:?}"
+        );
+    }
 }
 
 #[test]
@@ -599,14 +617,11 @@ fn a_stranger_heart_remakes_the_country_it_wakes_in() {
     let native = w.generator.province(sx, sz).biome;
     // Pick a seed from a DIFFERENT family than this country's.
     let native_form = crate::world::heart_form(native);
-    let (seed, want) = [
-        ("base:bole_seed", crate::worldgen::Biome::Forest),
-        ("base:spring_seed", crate::worldgen::Biome::Desert),
-        ("base:stone_seed", crate::worldgen::Biome::Tundra),
-    ]
-    .into_iter()
-    .find(|(_, b)| crate::world::heart_form(*b) != native_form)
-    .expect("a stranger's kind exists");
+    let want = (1..=12u8)
+        .filter_map(crate::worldgen::Biome::from_index)
+        .find(|b| crate::world::heart_form(*b) != native_form)
+        .expect("a stranger's kind exists");
+    let seed = crate::world::seed_of_form(crate::world::heart_form(want));
     assert_eq!(crate::world::seed_nature(seed), Some(want));
     w.set_heart_stage(key, 0);
     let hp = w.heart_at(sx, sz).unwrap().pos;
@@ -693,7 +708,8 @@ fn the_seed_names_the_game_uses_are_real_items() {
     // a stale name compiles clean and silently disables the whole
     // feature. (It did, once.) Pin the names to the registry.
     let reg = base_reg();
-    for form in ["base:heart_tree", "base:heart_spring", "base:heart_stone"] {
+    for biome in (1..=12u8).filter_map(crate::worldgen::Biome::from_index) {
+        let form = crate::world::heart_form(biome);
         let seed = crate::world::seed_of_form(form);
         let id = reg
             .item_id(seed)
@@ -918,4 +934,124 @@ fn the_cutting_timer_survives_a_save_and_old_saves_still_load() {
     let loaded = w.heart_at(pos.0, pos.2).expect("an old heart still loads");
     assert!((loaded.strain - 3.5).abs() < 0.01, "its grievance survived");
     assert_eq!(loaded.regrow, 0.0, "and it is ready to give");
+}
+
+/// The generator caches a block id per country. When the three
+/// archetype hearts became twelve, that cache went on resolving three
+/// names that no longer existed — so it laid the placeholder block
+/// where every spirit should have stood, nothing registered a heart,
+/// and twenty tests failed at once with no mention of worldgen. Pin
+/// the two sides together.
+#[test]
+fn the_generator_lays_the_block_each_country_actually_wears() {
+    let reg = base_reg();
+    let g = crate::worldgen::Generator::new(7, &reg);
+    for biome in (1..=12u8).filter_map(Biome::from_index) {
+        let form = crate::world::heart_form(biome);
+        let want = reg
+            .block_id(form)
+            .unwrap_or_else(|| panic!("{biome:?} wears {form}, which is not a block"));
+        assert_ne!(
+            want, reg.unknown_block,
+            "{biome:?}'s heart is the placeholder"
+        );
+        assert_eq!(g.heart_block(biome), want, "{biome:?}");
+    }
+}
+
+/// The badlands are the receipt. Their spirit went out long before
+/// anyone alive walked there, which is why nothing grows and why the
+/// takers' cities stand intact in ground that stopped feeding them —
+/// the ruins already biased there; now the cause exists.
+#[test]
+fn the_badlands_are_born_dead_and_can_be_woken() {
+    let reg = base_reg();
+    let mut w = World::new(31, tmp_dir("hearts-badlands"), reg.clone());
+    let g = &w.generator;
+    let scar = (0..60)
+        .flat_map(|r| {
+            (-r..=r)
+                .flat_map(move |i| [(i, -r), (i, r), (-r, i), (r, i)])
+                .collect::<Vec<_>>()
+        })
+        .map(|(kx, kz)| g.province_center(kx, kz))
+        .find(|&(x, z)| {
+            g.province(x, z).biome == Biome::Badlands
+                && g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 4
+        })
+        .expect("some badlands in this world");
+    w.ensure_chunk(ChunkPos::of_world(scar.0, scar.1));
+    let h = w.heart_at(scar.0, scar.1).expect("the scar has a site");
+    assert_eq!(h.stage, 0, "the badlands were not always badlands");
+    assert!(!w.heart_alive_at(scar.0, scar.1));
+    assert!(w.is_ancient_scar(scar.0, scar.1));
+
+    // The site wears the husk, not a living heart.
+    let form = crate::world::heart_form(Biome::Badlands);
+    let at = w.get_block(h.pos.0, h.pos.1, h.pos.2);
+    assert_eq!(
+        reg.block(at).name,
+        crate::world::heart_block_name(form, 0),
+        "a dry spring stands there"
+    );
+
+    // And it is restorable like any other dead country — that is the
+    // point of it. A scar you can walk to is a campaign you can start.
+    w.set_heart_stage(w.generator.province(scar.0, scar.1).key, 2);
+    assert!(w.heart_alive_at(scar.0, scar.1));
+}
+
+/// Ancient scars must not count toward the Long Winter. Walking
+/// through three badlands provinces early would otherwise stop the
+/// world's year over history the player never touched.
+#[test]
+fn ancient_scars_do_not_stop_the_world_but_countries_you_kill_do() {
+    let reg = base_reg();
+    let mut w = World::new(31, tmp_dir("hearts-scar-winter"), reg.clone());
+    // Load sites until enough of each kind has actually REGISTERED. A
+    // province center only raises a heart where the generated ground
+    // is dry and has headroom, which surface_estimate only predicts.
+    let centers: Vec<(i32, i32)> = (0..70)
+        .flat_map(|r| {
+            (-r..=r)
+                .flat_map(move |i| [(i, -r), (i, r), (-r, i), (r, i)])
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let (mut scars, mut living) = (Vec::new(), Vec::new());
+    // The ring walk visits (0,0) four times over, and neighbouring
+    // keys can share a site; a country counted twice is not two.
+    let mut seen = std::collections::HashSet::new();
+    for (kx, kz) in centers {
+        if scars.len() >= 4 && living.len() >= 2 {
+            break;
+        }
+        let (x, z) = w.generator.province_center(kx, kz);
+        if !seen.insert((x, z)) {
+            continue;
+        }
+        let scar = w.is_ancient_scar(x, z);
+        if (scar && scars.len() >= 4) || (!scar && living.len() >= 2) {
+            continue;
+        }
+        w.ensure_chunk(ChunkPos::of_world(x, z));
+        if w.heart_at(x, z).is_none() {
+            continue; // drowned or cramped: this country has no site
+        }
+        if scar { &mut scars } else { &mut living }.push((x, z));
+    }
+    assert_eq!(scars.len(), 4, "need four scars to prove the point");
+    assert_eq!(living.len(), 2, "and two countries with spirits in them");
+
+    let (dead, known) = w.dead_countries();
+    assert_eq!(dead, 0, "four dead badlands count as none");
+    assert_eq!(known, 2, "only the living countries are in the pool");
+    w.tick_ire(0.01);
+    assert!(!w.long_winter, "ancient history does not stop the year");
+
+    // Kill the ones that were alive, and the tally moves.
+    for &(x, z) in &living {
+        w.set_heart_stage(w.generator.province(x, z).key, 0);
+    }
+    assert_eq!(w.dead_countries(), (2, 2), "your own killings do count");
 }
