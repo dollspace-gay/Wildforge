@@ -1317,7 +1317,11 @@ impl Game {
                         }
                         // Taking from the wild is taking, even gently.
                         self.server.world.add_ire_at(h.block.0, h.block.2, 1.0);
-                        self.toast("It gives you a seed, and it costs it.".to_string());
+                        self.toast(
+                            "A cutting comes away in your hand. This country will \
+                             remember that you took it."
+                                .to_string(),
+                        );
                         self.sfx(Sfx::Pickup);
                         return;
                     }
@@ -1355,11 +1359,11 @@ impl Game {
                         let (ready, total) = world.root_ground_ready(hp.0, hp.1, hp.2);
                         let want = (total as f32 * crate::world::ROOT_READY_FRAC).ceil() as u32;
                         self.toast(if ready >= want {
-                            "Nothing answers, but the ground is living again.                              It wants a cutting from a heart still awake."
+                            "Nothing answers. The ground is living again, though. Bring it a cutting from a heart still awake."
                                 .to_string()
                         } else {
                             format!(
-                                "Nothing answers. This country is alone.                                  The ground around it: {ready} of {want} plots living."
+                                "Nothing answers. Around it, {ready} of {want} plots are living."
                             )
                         });
                         self.sfx(Sfx::Click);
@@ -1374,9 +1378,9 @@ impl Game {
                             "It has nothing more to give yet. Come back in a season."
                         }
                         Some(hh) if hh.stage == 2 && hh.strain > 4.0 => {
-                            "The wood is warm, and it flinches from you."
+                            "Warm to the touch, and it flinches from your hand."
                         }
-                        Some(hh) if hh.stage == 2 => "The wood is warm. Something here is awake.",
+                        Some(hh) if hh.stage == 2 => "Warm to the touch. Something here is awake.",
                         Some(hh) if hh.stage == 1 => "It is cold, and it is going out.",
                         Some(_) => "Nothing answers. This country is alone.",
                         None => "Something stood here once.",

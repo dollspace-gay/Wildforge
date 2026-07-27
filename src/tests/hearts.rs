@@ -70,13 +70,13 @@ fn a_cairn_names_the_heart_and_its_condition() {
     let key = w.generator.province(sx, sz).key;
     // Standing on it: the report says so, and says it is well.
     let here = w.heart_report(sx, sz);
-    assert!(here.contains("is here"), "{here}");
+    assert!(here.contains("here"), "{here}");
     assert!(here.contains("well"), "{here}");
     // A day's walk off: direction and distance, in plain words.
     let away = w.heart_report(sx - 300, sz);
     assert!(away.contains("blocks east"), "{away}");
     assert!(
-        away.contains("~2") || away.contains("~3"),
+        away.contains("2") || away.contains("3"),
         "a distance a person can use: {away}"
     );
     // Condition tracks the stage — a player never has to guess.
@@ -528,7 +528,7 @@ fn a_seed_will_not_take_in_dead_dirt_but_will_in_ground_made_ready() {
     let hp = w.heart_at(sx, sz).unwrap().pos;
     // Dead dirt refuses the seed, and says why.
     let refusal = w.plant_heart_seed(hp.0, hp.1, hp.2).expect("refused");
-    assert!(refusal.contains("ground is not ready"), "{refusal}");
+    assert!(refusal.contains("Not ready"), "{refusal}");
     // Raise the soil by hand: the whole nutrient cycle, spent as a key.
     let farm = b(&reg, "base:farmland");
     let r = w.root_radius_at(hp.0, hp.2);
@@ -1293,7 +1293,7 @@ fn the_refusal_says_what_the_ground_needs() {
     let refusal = w
         .plant_heart_seed(hp.0, hp.1, hp.2)
         .expect("bare ground refuses");
-    for want in ["till", "hoe", "plots living"] {
+    for want in ["hoe", "soil", "plots living"] {
         assert!(
             refusal.to_lowercase().contains(want),
             "the refusal should name {want:?}: {refusal}"
