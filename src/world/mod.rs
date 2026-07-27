@@ -19,6 +19,7 @@ mod calendar;
 mod chunks;
 mod ecology;
 mod entities;
+mod fire;
 mod fluids;
 mod hearts;
 mod lighting;
@@ -343,6 +344,8 @@ pub struct World {
     water_queued: HashSet<(i32, i32, i32)>,
     lava_queue: VecDeque<(i32, i32, i32)>,
     lava_queued: HashSet<(i32, i32, i32)>,
+    fire_queue: VecDeque<(i32, i32, i32)>,
+    fire_queued: HashSet<(i32, i32, i32)>,
     /// True while a fluid tick runs: air<->fluid relights batch into
     /// pending_relight (one per chunk per tick) instead of cascading
     /// per moved cell.
@@ -604,6 +607,8 @@ impl World {
             water_queued: HashSet::new(),
             lava_queue: VecDeque::new(),
             lava_queued: HashSet::new(),
+            fire_queue: VecDeque::new(),
+            fire_queued: HashSet::new(),
             fluid_batch: false,
             pending_relight: HashSet::new(),
             clock: 0.0,
@@ -969,7 +974,7 @@ impl World {
         if !self.reg.is_solid(b) && y + 1 < CHUNK_Y as i32 {
             let above = self.get_block(x, y + 1, z);
             let ad = self.reg.block(above);
-            if above != AIR && (ad.cross || ad.height.is_some()) {
+            if above != AIR && !ad.floats && (ad.cross || ad.height.is_some()) {
                 if let Some((item, n)) = self.reg.block(above).drops {
                     let reg = self.reg.clone();
                     self.pending_drops

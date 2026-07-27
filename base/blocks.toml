@@ -8,6 +8,7 @@ texture = { top = "@grass_top", side = "@grass_side", bottom = "@dirt" }
 hardness = 0.75
 tool = "shovel"
 drops = "base:dirt"
+burns = 6
 
 [[block]]
 id = "dirt"
@@ -55,6 +56,7 @@ name = "Oak Log"
 texture = { top = "@log_top", side = "@log_side" }
 hardness = 2.2
 tool = "axe"
+burns = 3
 
 [[block]]
 id = "leaves"
@@ -64,6 +66,7 @@ hardness = 0.3
 opaque = false
 drops = "none"
 bonus_drop = { item = "base:oak_sapling", chance = 0.1 }
+burns = 6
 
 [[block]]
 id = "planks"
@@ -71,6 +74,7 @@ name = "Oak Planks"
 texture = "@planks"
 hardness = 1.8
 tool = "axe"
+burns = 4
 
 [[block]]
 id = "bedrock"
@@ -151,6 +155,7 @@ name = "Birch Log"
 texture = { top = "@birch_log_top", side = "@birch_log" }
 hardness = 2.2
 tool = "axe"
+burns = 3
 
 [[block]]
 id = "birch_leaves"
@@ -160,6 +165,7 @@ hardness = 0.3
 opaque = false
 drops = "none"
 bonus_drop = { item = "base:birch_sapling", chance = 0.1 }
+burns = 6
 
 [[block]]
 id = "spruce_log"
@@ -167,6 +173,7 @@ name = "Spruce Log"
 texture = { top = "@spruce_log_top", side = "@spruce_log" }
 hardness = 2.2
 tool = "axe"
+burns = 3
 
 [[block]]
 id = "spruce_leaves"
@@ -176,6 +183,7 @@ hardness = 0.3
 opaque = false
 drops = "none"
 bonus_drop = { item = "base:spruce_sapling", chance = 0.1 }
+burns = 6
 
 [[block]]
 id = "jungle_log"
@@ -183,6 +191,7 @@ name = "Jungle Log"
 texture = { top = "@jungle_log_top", side = "@jungle_log" }
 hardness = 2.2
 tool = "axe"
+burns = 3
 
 [[block]]
 id = "jungle_leaves"
@@ -192,6 +201,7 @@ hardness = 0.3
 opaque = false
 drops = "none"
 bonus_drop = { item = "base:jungle_sapling", chance = 0.1 }
+burns = 6
 
 [[block]]
 id = "acacia_log"
@@ -199,6 +209,7 @@ name = "Acacia Log"
 texture = { top = "@acacia_log_top", side = "@acacia_log" }
 hardness = 2.2
 tool = "axe"
+burns = 3
 
 [[block]]
 id = "acacia_leaves"
@@ -208,6 +219,7 @@ hardness = 0.3
 opaque = false
 drops = "none"
 bonus_drop = { item = "base:acacia_sapling", chance = 0.1 }
+burns = 6
 
 [[block]]
 id = "birch_planks"
@@ -215,6 +227,7 @@ name = "Birch Planks"
 texture = "@birch_planks"
 hardness = 1.8
 tool = "axe"
+burns = 4
 
 [[block]]
 id = "spruce_planks"
@@ -222,6 +235,7 @@ name = "Spruce Planks"
 texture = "@spruce_planks"
 hardness = 1.8
 tool = "axe"
+burns = 4
 
 [[block]]
 id = "jungle_planks"
@@ -229,6 +243,7 @@ name = "Jungle Planks"
 texture = "@jungle_planks"
 hardness = 1.8
 tool = "axe"
+burns = 4
 
 [[block]]
 id = "acacia_planks"
@@ -236,6 +251,7 @@ name = "Acacia Planks"
 texture = "@acacia_planks"
 hardness = 1.8
 tool = "axe"
+burns = 4
 
 [[block]]
 id = "copper_ore"
@@ -302,6 +318,7 @@ opaque = false
 drops = "self"
 crop = { stages = 3, next_chance = 0.3, stage_textures = ["@wheat_young", "@wheat_ripe"], family = 1 }
 harvest = { item = "base:wheat", count = 1, becomes = "base:wheat_seeds" }
+burns = 8
 
 [[block]]
 id = "carrot_crop"
@@ -314,6 +331,7 @@ opaque = false
 drops = "base:carrot"
 item = false
 crop = { stages = 2, next_chance = 0.25, family = 2 }
+burns = 8
 
 [[block]]
 id = "potato_crop"
@@ -326,6 +344,7 @@ opaque = false
 drops = "base:potato"
 item = false
 crop = { stages = 2, next_chance = 0.25, family = 3 }
+burns = 8
 
 [[block]]
 id = "berry_bush"
@@ -338,6 +357,7 @@ opaque = false
 drops = "self"
 crop = { stages = 2, next_chance = 0.02, stage_textures = ["@bush_fruited"], any_soil = true }
 harvest = { item = "base:berry", count = 1, becomes = "base:berry_bush" }
+burns = 8
 
 [[block]]
 id = "wild_mushroom"
@@ -361,6 +381,7 @@ opaque = false
 drops = "self"
 crop = { stages = 2, next_chance = 0.02, stage_textures = ["@bush_fruited"], any_soil = true }
 harvest = { item = "base:jungle_fruit", count = 1, becomes = "base:jungle_bush" }
+burns = 8
 
 [[block]]
 id = "torch"
@@ -411,6 +432,7 @@ opaque = false
 hardness = 0.05
 drops = "self"
 sapling = { tree = "oak" }
+burns = 7
 
 [[block]]
 id = "birch_sapling"
@@ -422,6 +444,7 @@ opaque = false
 hardness = 0.05
 drops = "self"
 sapling = { tree = "birch" }
+burns = 7
 
 [[block]]
 id = "spruce_sapling"
@@ -433,6 +456,7 @@ opaque = false
 hardness = 0.05
 drops = "self"
 sapling = { tree = "spruce" }
+burns = 7
 
 [[block]]
 id = "jungle_sapling"
@@ -444,6 +468,7 @@ opaque = false
 hardness = 0.05
 drops = "self"
 sapling = { tree = "jungle" }
+burns = 7
 
 [[block]]
 id = "acacia_sapling"
@@ -455,6 +480,7 @@ opaque = false
 hardness = 0.05
 drops = "self"
 sapling = { tree = "acacia" }
+burns = 7
 
 [[block]]
 id = "offering_stone"
@@ -1493,6 +1519,7 @@ solid = false
 opaque = false
 drops = "base:plant_fiber"
 drop_count = 2
+burns = 7
 
 [[block]]
 id = "kelp_frond"
@@ -1526,6 +1553,7 @@ solid = false
 opaque = false
 height = 0.08
 drops = "self"
+burns = 8
 
 [[block]]
 id = "lantern_fungus"
@@ -1976,4 +2004,21 @@ hardness = 6.0
 tool = "pickaxe"
 drops = "none"
 interaction = "heart"
+item = false
+
+# Fire. Its metadata carries the hand that lit it (bit 7) and how much
+# is left in it, so a flame knows on sight whether it is the wild's
+# work or somebody's. See docs/fire-plan.md.
+[[block]]
+id = "fire"
+name = "Fire"
+texture = "fire.png"
+cross = true
+floats = true
+solid = false
+opaque = false
+hardness = 0.02
+light = 12
+light_color = [1.0, 0.58, 0.22]
+drops = "none"
 item = false

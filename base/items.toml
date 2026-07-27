@@ -1172,3 +1172,14 @@ id = "mountains_seed"
 name = "Mountains Seed"
 texture = "mountains_seed.png"
 durability = 240
+
+# The hand on a fire. Whose fire it is gets decided here and nowhere
+# else -- see docs/fire-plan.md.
+[[item]]
+id = "fire_striker"
+name = "Fire Striker"
+texture = "fire_striker.png"
+max_stack = 1
+durability = 64
+striker = true
+

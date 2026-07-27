@@ -453,6 +453,14 @@ impl World {
                 changed = true;
                 continue;
             }
+            // Lava sets light to what it runs against. Whose fire that
+            // is depends on whose ground the lava is standing on: a
+            // mountain's own flow across untouched country is the
+            // wild's, but lava you led into a forest through a channel
+            // you dug is a tool, and the channel marked the ground.
+            if self.ignite_around(x, y, z) {
+                changed = true;
+            }
             if y > 0
                 && let Some(nv) = self.lava_potential(x, y - 1, z)
                 && nv < 8
