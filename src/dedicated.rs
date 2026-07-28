@@ -31,6 +31,7 @@ pub(super) fn run_headless_server(world_name: &str) {
     });
     let mut last = Instant::now();
     let mut save_timer = 0.0f32;
+    let mut residency_timer = 0.0f32;
     loop {
         while let Ok(command) = command_rx.try_recv() {
             run_console_command(&mut sess, &command);
@@ -51,10 +52,25 @@ pub(super) fn run_headless_server(world_name: &str) {
         sim.advance(dt, &players, &mut evs);
         for ev in evs {
             if let server::SimEvent::PlayerHit { who, dmg, from } = ev {
-                let ids: Vec<u32> = sess.guests.keys().copied().collect();
-                if let Some(gid) = ids.get(who) {
-                    sess.hurt_guest(*gid, dmg, from);
-                }
+                // `who` is the guest's own net id; no positional lookup.
+                sess.hurt_guest(who, dmg, from);
+            }
+        }
+        // Chunk residency. Nothing here ever released a chunk before: the
+        // eviction rule lived in the client's streaming path, so the windowed
+        // host got it for free (it is also a player) and the dedicated server
+        // — the deployment that actually needs it — grew by 448 KB for every
+        // chunk any guest walked through and never gave one back.
+        //
+        // Wall-clock, not calendar-scaled: this is a memory policy, not
+        // something that happens in the world.
+        residency_timer += dt;
+        if residency_timer >= 5.0 {
+            residency_timer = 0.0;
+            let (centers, radius) = sess.residency();
+            let dropped = sim.world.retain_chunks(&centers, radius + 2);
+            if dropped > 0 {
+                eprintln!("server: released {dropped} chunks");
             }
         }
         save_timer += dt;

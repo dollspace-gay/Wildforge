@@ -516,6 +516,15 @@ impl World {
             };
         if self.repop_timer >= 16.0 {
             self.repop_timer = 0.0;
+            // One player's ring per cycle, chosen at random — the same shape
+            // the warden spawner already uses. Restocking only ever followed
+            // players.first(), so on a shared world every guest but one lived
+            // in a country that never recovered from being hunted.
+            *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            let player = players
+                .get((*rng >> 8) as usize % players.len().max(1))
+                .map(|p| p.pos)
+                .unwrap_or(player);
             let near = self
                 .mobs
                 .iter()

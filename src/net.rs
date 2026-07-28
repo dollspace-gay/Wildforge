@@ -7,8 +7,9 @@
 #[path = "net/protocol.rs"]
 mod protocol;
 pub use protocol::{
-    AtprotoClaim, BoltSnap, C2S, FallSnap, InventoryArea, MobSnap, ModerationAction, PROTOCOL,
-    PlayerPresence, PlayerStateSnap, Refusal, RefusalCode, S2C, StackSnap, decode, encode,
+    AtprotoClaim, BoltSnap, C2S, DATAGRAM_FLOOR, FallSnap, InventoryArea, MAX_GUEST_VIEW_DIST,
+    MobSnap, ModerationAction, PROTOCOL, PlayerPresence, PlayerStateSnap, Refusal, RefusalCode,
+    S2C, Snapshot, SnapshotAssembler, StackSnap, batch_snapshot, decode, encode,
 };
 
 #[path = "net/handshake.rs"]

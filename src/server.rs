@@ -31,7 +31,13 @@ pub struct PlayerCtx {
 /// Things the simulation did that the client must present or apply.
 pub enum SimEvent {
     /// The wild connected: which player, damage, attacker position.
-    PlayerHit { who: usize, dmg: f32, from: Vec3 },
+    ///
+    /// `who` is the stable [`PlayerCtx::id`] (0 = host, otherwise the guest's
+    /// net id), not a position in the players slice. It used to be an index,
+    /// and every consumer resolved it back to a guest by re-iterating a
+    /// HashMap — correct only while nobody joined or left in between, which
+    /// nothing enforced.
+    PlayerHit { who: u32, dmg: f32, from: Vec3 },
     /// A warden loosed a bolt (sound cue; the projectile is already live).
     BoltCast,
     /// Wildlife bred.
@@ -180,7 +186,13 @@ impl Server {
         for ev in mob_events {
             match ev {
                 MobEvent::HitPlayer(who, dmg, from) => {
-                    events.push(SimEvent::PlayerHit { who, dmg, from })
+                    if let Some(p) = players.get(who) {
+                        events.push(SimEvent::PlayerHit {
+                            who: p.id,
+                            dmg,
+                            from,
+                        });
+                    }
                 }
                 MobEvent::Cast(proj) => {
                     self.world.spawn_projectile(proj);
@@ -222,11 +234,11 @@ impl Server {
             }
         }
         for (who, dmg) in self.world.tick_projectiles(players, dt) {
-            if players.get(who).is_some_and(|p| p.attackable) {
+            if let Some(p) = players.get(who).filter(|p| p.attackable) {
                 events.push(SimEvent::PlayerHit {
-                    who,
+                    who: p.id,
                     dmg,
-                    from: players[who].pos,
+                    from: p.pos,
                 });
             }
         }

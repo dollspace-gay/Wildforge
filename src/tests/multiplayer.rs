@@ -88,15 +88,19 @@ fn net_protocol_round_trips() {
             count: 1,
             durability: 40,
         })),
-        S2C::Mobs(vec![crate::net::MobSnap {
-            id: 5,
-            species: 1,
-            pos: Vec3::new(1.0, 2.0, 3.0),
-            yaw: 0.5,
-            growth: 1.0,
-            hurt: 0.0,
-            fed: true,
-        }]),
+        S2C::Mobs(crate::net::Snapshot::whole(
+            1,
+            vec![crate::net::MobSnap {
+                id: 5,
+                species: 1,
+                pos: Vec3::new(1.0, 2.0, 3.0),
+                yaw: 0.5,
+                growth: 1.0,
+                hurt: 0.0,
+                fed: true,
+            }],
+        )),
+        S2C::ViewDistance { chunks: 8 },
     ];
     for m in &s2c {
         let back: S2C = decode(&encode(m)).expect("s2c decodes");
@@ -415,8 +419,8 @@ fn loopback_join_stream_and_edit() {
                 S2C::Players(list) => {
                     // Held items and styles ride the snapshot: the
                     // host's and our own, round-tripped.
-                    let host = list.iter().find(|p| p.0 == 0).map(|p| (p.3, p.4));
-                    let me = list.iter().find(|p| p.0 != 0).map(|p| (p.3, p.4));
+                    let host = list.items.iter().find(|p| p.0 == 0).map(|p| (p.3, p.4));
+                    let me = list.items.iter().find(|p| p.0 != 0).map(|p| (p.3, p.4));
                     if let (Some(h), Some(m)) = (host, me) {
                         held_echo = Some((h, m));
                     }
@@ -640,7 +644,7 @@ fn loopback_join_stream_and_edit() {
         sim.advance(0.06, &[], &mut Vec::new());
         for msg in client.poll() {
             match msg {
-                S2C::Falling(f) if !f.is_empty() => saw_falling = true,
+                S2C::Falling(f) if !f.items.is_empty() => saw_falling = true,
                 S2C::BlockSet {
                     x: 11, z: 8, id, ..
                 } if id == sand_b.0 => saw_land = true,
@@ -1120,4 +1124,435 @@ fn loopback_reconnect_reopens_the_same_server_profile() {
     assert_eq!(guest.player_id, player_id);
     assert_eq!(guest.inventory.slots[0].unwrap().count, 6);
     assert_eq!(guest.name, "NEW NAME");
+}
+
+// ---------------- scaling: the guest is a first-class citizen ----------------
+
+use crate::net::S2C;
+
+/// Build `n` mob snapshots spread over a wide area.
+fn mob_snaps(n: usize) -> Vec<crate::net::MobSnap> {
+    (0..n)
+        .map(|i| crate::net::MobSnap {
+            id: i as u32 + 1,
+            species: (i % 7) as u16,
+            pos: Vec3::new(i as f32 * 3.5, 64.0, i as f32 * -2.5),
+            yaw: 0.7,
+            growth: 1.0,
+            hurt: 0.0,
+            fed: i % 2 == 0,
+        })
+        .collect()
+}
+
+#[test]
+fn a_full_world_of_mobs_is_batched_under_the_datagram_budget() {
+    use crate::net::{DATAGRAM_FLOOR, S2C, batch_snapshot};
+
+    // The old code put every mob in the world into one datagram. QUIC will
+    // not fragment a datagram, so past roughly forty mobs the whole snapshot
+    // was refused and guests silently stopped seeing wildlife entirely.
+    let whole = crate::net::encode(&S2C::Mobs(crate::net::Snapshot::whole(
+        1,
+        mob_snaps(crate::world::MOB_CAP),
+    )));
+    assert!(
+        whole.len() > DATAGRAM_FLOOR * 4,
+        "a full world of mobs is far past one datagram ({} bytes) — \
+         if this ever stops being true the batching below is untested",
+        whole.len()
+    );
+
+    for count in [0, 1, 2, 39, 40, 41, 120, crate::world::MOB_CAP] {
+        let parts = batch_snapshot(7, mob_snaps(count), DATAGRAM_FLOOR, S2C::Mobs);
+        assert!(!parts.is_empty(), "{count} mobs must still send something");
+        for (i, bytes) in parts.iter().enumerate() {
+            assert!(
+                bytes.len() <= DATAGRAM_FLOOR,
+                "{count} mobs: part {i} is {} bytes, over the {DATAGRAM_FLOOR} budget",
+                bytes.len()
+            );
+        }
+    }
+}
+
+#[test]
+fn a_split_snapshot_is_applied_only_once_it_is_whole() {
+    use crate::net::{DATAGRAM_FLOOR, S2C, SnapshotAssembler, batch_snapshot, decode};
+
+    let sent = mob_snaps(200);
+    let parts = batch_snapshot(9, sent.clone(), DATAGRAM_FLOOR, S2C::Mobs);
+    assert!(parts.len() > 1, "200 mobs must actually split");
+
+    let mut rx: SnapshotAssembler<crate::net::MobSnap> = Default::default();
+    let mut delivered = None;
+    for (i, bytes) in parts.iter().enumerate() {
+        let Some(S2C::Mobs(part)) = decode::<S2C>(bytes) else {
+            panic!("part {i} decodes")
+        };
+        let last = i + 1 == parts.len();
+        match rx.accept(part) {
+            Some(whole) => {
+                assert!(last, "a generation must not apply before its last part");
+                delivered = Some(whole);
+            }
+            None => assert!(!last, "the last part completes the generation"),
+        }
+    }
+    let got = delivered.expect("the whole snapshot arrives");
+    assert_eq!(got.len(), sent.len(), "every mob survives the split");
+    let ids: Vec<u32> = got.iter().map(|m| m.id).collect();
+    let want: Vec<u32> = sent.iter().map(|m| m.id).collect();
+    assert_eq!(ids, want, "order and identity survive reassembly");
+}
+
+#[test]
+fn a_lost_part_costs_its_generation_and_nothing_after_it() {
+    use crate::net::{DATAGRAM_FLOOR, S2C, SnapshotAssembler, batch_snapshot, decode};
+
+    let mut rx: SnapshotAssembler<crate::net::MobSnap> = Default::default();
+    let dropped = batch_snapshot(1, mob_snaps(200), DATAGRAM_FLOOR, S2C::Mobs);
+    assert!(dropped.len() > 1);
+    // Everything but the last part of generation 1 lands.
+    for bytes in &dropped[..dropped.len() - 1] {
+        let Some(S2C::Mobs(part)) = decode::<S2C>(bytes) else {
+            panic!()
+        };
+        assert!(rx.accept(part).is_none());
+    }
+    // Generation 2 arrives whole and is applied regardless.
+    let good = batch_snapshot(2, mob_snaps(200), DATAGRAM_FLOOR, S2C::Mobs);
+    let mut applied = None;
+    for bytes in &good {
+        let Some(S2C::Mobs(part)) = decode::<S2C>(bytes) else {
+            panic!()
+        };
+        if let Some(whole) = rx.accept(part) {
+            applied = Some(whole);
+        }
+    }
+    assert_eq!(
+        applied.map(|m| m.len()),
+        Some(200),
+        "a torn generation must not stall the stream behind it"
+    );
+}
+
+/// Stand up a host with one connected guest. Returns the session, the sim,
+/// the client, and the guest's id.
+fn loopback_pair(
+    name: &str,
+) -> (
+    crate::mp::HostSession,
+    crate::server::Server,
+    crate::net::Client,
+    u32,
+) {
+    let reg = base_reg();
+    let world = test_world_with(name, reg);
+    let mut sim = crate::server::Server::new(world, 0.3, 5);
+    sim.world.set_edit_logging(true);
+    let mut sess = crate::mp::HostSession::start_on(name.into(), 0).expect("host binds");
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", sess.net.port).parse().unwrap();
+    let identity =
+        crate::identity::LocalIdentity::load_or_create(&tmp_dir(&format!("{name}-id"))).unwrap();
+    let mut client =
+        crate::net::Client::connect(addr, "tester".into(), sess.content_hash, 0, &identity, None)
+            .expect("connect");
+    for _ in 0..600 {
+        sess.pump(&mut sim, None, 0.05);
+        if client
+            .poll()
+            .iter()
+            .any(|m| matches!(m, S2C::Welcome { .. }))
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let id = *sess.guests.keys().next().expect("guest admitted");
+    (sess, sim, client, id)
+}
+
+#[test]
+fn a_crowded_world_still_reaches_the_guest() {
+    use crate::mobs::Mob;
+
+    let (mut sess, mut sim, mut client, id) = loopback_pair("mp-crowded");
+    let gpos = Vec3::new(8.5, sim.world.surface_height(8, 8) as f32 + 1.0, 8.5);
+    sess.guests.get_mut(&id).unwrap().pos = gpos;
+
+    // Two hundred mobs inside the guest's reach: far past what ever fit in
+    // one datagram, which is exactly the case that used to go silent.
+    for i in 0..200 {
+        let angle = i as f32 * 0.31;
+        let pos = gpos + Vec3::new(angle.sin() * 30.0, 0.0, angle.cos() * 30.0);
+        let mut mob = Mob::new(0, pos, 0.0);
+        mob.id = i as u32 + 1;
+        sim.world.spawn_mob(mob);
+    }
+    assert!(sim.world.mob_count() >= 200);
+
+    let mut seen: std::collections::HashSet<u32> = Default::default();
+    for _ in 0..400 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false, u16::MAX, 0)), 0.06);
+        for msg in client.poll() {
+            if let S2C::Mobs(part) = msg {
+                seen.extend(part.items.iter().map(|m| m.id));
+            }
+        }
+        if seen.len() >= 200 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(
+        sess.net.datagram_failures(),
+        0,
+        "the host must not be dropping state datagrams on the floor"
+    );
+    assert!(
+        seen.len() >= 200,
+        "a guest standing among 200 mobs saw only {} of them",
+        seen.len()
+    );
+}
+
+#[test]
+fn a_guest_that_dropped_a_chunk_can_ask_for_it_again() {
+    let (mut sess, mut sim, mut client, id) = loopback_pair("mp-rechunk");
+    let gpos = Vec3::new(8.5, sim.world.surface_height(8, 8) as f32 + 1.0, 8.5);
+    sess.guests.get_mut(&id).unwrap().pos = gpos;
+
+    // Let the ring stream normally.
+    let mut first: Option<(i32, i32)> = None;
+    for _ in 0..400 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false, u16::MAX, 0)), 0.06);
+        for msg in client.poll() {
+            if let S2C::Chunk { x, z, .. } = msg {
+                first.get_or_insert((x, z));
+            }
+        }
+        if first.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    let (cx, cz) = first.expect("the host streams a ring unprompted");
+    assert!(
+        sess.guests[&id].holds_chunk(cx, cz),
+        "the host records what it sent"
+    );
+
+    // The guest evicts it (walking away and back does this for real), then
+    // asks. Before RequestChunk existed this was a permanent hole.
+    client.send(&crate::net::C2S::RequestChunk { x: cx, z: cz });
+    let mut resent = false;
+    for _ in 0..400 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false, u16::MAX, 0)), 0.06);
+        for msg in client.poll() {
+            if matches!(msg, S2C::Chunk { x, z, .. } if (x, z) == (cx, cz)) {
+                resent = true;
+            }
+        }
+        if resent {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert!(resent, "the host re-serves ground the guest asked for");
+}
+
+#[test]
+fn the_host_serves_the_view_distance_a_guest_asks_for() {
+    use crate::net::MAX_GUEST_VIEW_DIST;
+
+    let (mut sess, mut sim, mut client, id) = loopback_pair("mp-viewdist");
+    let gpos = Vec3::new(8.5, sim.world.surface_height(8, 8) as f32 + 1.0, 8.5);
+    sess.guests.get_mut(&id).unwrap().pos = gpos;
+    // The old host served a hardcoded ring of five however far the guest
+    // could actually see.
+    assert_eq!(sess.guests[&id].granted_view_dist(), 5);
+
+    client.send(&crate::net::C2S::SetViewDistance { chunks: 9 });
+    let mut granted = None;
+    for _ in 0..300 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false, u16::MAX, 0)), 0.06);
+        for msg in client.poll() {
+            if let S2C::ViewDistance { chunks } = msg {
+                granted = Some(chunks);
+            }
+        }
+        if granted.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(granted, Some(9), "the host honours a reasonable request");
+    assert_eq!(sess.guests[&id].granted_view_dist(), 9);
+
+    // And refuses to page in the world on one client's say-so.
+    client.send(&crate::net::C2S::SetViewDistance { chunks: 200 });
+    let mut capped = None;
+    for _ in 0..300 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false, u16::MAX, 0)), 0.06);
+        for msg in client.poll() {
+            if let S2C::ViewDistance { chunks } = msg {
+                capped = Some(chunks);
+            }
+        }
+        if capped.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(capped, Some(MAX_GUEST_VIEW_DIST), "a greedy ask is clamped");
+}
+
+#[test]
+fn a_world_releases_chunks_no_player_is_near() {
+    use crate::chunk::ChunkPos;
+
+    let mut w = test_world("mp-residency");
+    for x in -6..=6 {
+        for z in -6..=6 {
+            w.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    let loaded = w.chunk_count();
+    assert!(loaded >= 169);
+
+    // One player near the origin: distant ground goes.
+    let dropped = w.retain_chunks(&[ChunkPos { x: 0, z: 0 }], 2);
+    assert!(dropped > 0, "chunks far from every player must be released");
+    assert_eq!(w.chunk_count(), 25, "a radius of two keeps a 5x5");
+    assert!(w.has_chunk(ChunkPos { x: 2, z: 2 }));
+    assert!(!w.has_chunk(ChunkPos { x: 5, z: 5 }));
+
+    // Two players far apart each keep their own ground — the dedicated
+    // server's case, where there is no local player at all.
+    let mut w = test_world("mp-residency-two");
+    for x in -6..=6 {
+        for z in -6..=6 {
+            w.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    w.retain_chunks(&[ChunkPos { x: -5, z: -5 }, ChunkPos { x: 5, z: 5 }], 1);
+    assert!(
+        w.has_chunk(ChunkPos { x: -5, z: -5 }),
+        "first player's ground"
+    );
+    assert!(
+        w.has_chunk(ChunkPos { x: 5, z: 5 }),
+        "second player's ground"
+    );
+    assert!(
+        !w.has_chunk(ChunkPos { x: 0, z: 0 }),
+        "the empty middle goes"
+    );
+
+    // Nobody home: an idle server holds no world.
+    let mut w = test_world("mp-residency-empty");
+    for x in -3..=3 {
+        for z in -3..=3 {
+            w.ensure_chunk(ChunkPos { x, z });
+        }
+    }
+    assert!(w.chunk_count() > 0);
+    w.retain_chunks(&[], 12);
+    assert_eq!(w.chunk_count(), 0, "no players means no resident chunks");
+}
+
+#[test]
+fn the_wild_hurts_the_guest_it_actually_struck() {
+    use crate::server::{PlayerCtx, SimEvent};
+
+    // `who` is a stable id, not a position in the players slice. Two guests
+    // whose ids do not match their order is the case that used to hurt the
+    // wrong person — and it only ever worked because nothing joined or left
+    // between building the slice and reading the event back.
+    let players = [
+        PlayerCtx {
+            id: 0,
+            pos: Vec3::ZERO,
+            spawn: Vec3::ZERO,
+            attackable: true,
+            aggro_mod: 0.0,
+        },
+        PlayerCtx {
+            id: 77,
+            pos: Vec3::new(50.0, 64.0, 50.0),
+            spawn: Vec3::ZERO,
+            attackable: true,
+            aggro_mod: 0.0,
+        },
+    ];
+    // The event the sim emits for the SECOND entry names 77, not 1.
+    let hit = SimEvent::PlayerHit {
+        who: players[1].id,
+        dmg: 3.0,
+        from: Vec3::ZERO,
+    };
+    let SimEvent::PlayerHit { who, .. } = hit else {
+        panic!()
+    };
+    assert_eq!(who, 77, "the wild names the guest, not its index");
+    assert_ne!(who, 1, "an index would have hurt whoever sorted second");
+}
+
+#[test]
+fn wildlife_returns_to_every_country_someone_lives_in() {
+    use crate::server::PlayerCtx;
+
+    // Two players a long way apart, both standing on hunted-out ground.
+    // Restocking used to follow players.first() only, so the second
+    // player's country stayed empty however long they waited in it.
+    let reg = base_reg();
+    let mut w = World::new(9, tmp_dir("mp-repop"), reg);
+    let far = 900i32;
+    let far_cx = far >> 4;
+    for x in -6..=6 {
+        for z in -6..=6 {
+            w.ensure_chunk(ChunkPos { x, z });
+            w.ensure_chunk(ChunkPos { x: far_cx + x, z });
+        }
+    }
+    // Overhunted: nothing left alive anywhere. Only repopulation can
+    // put wildlife back now, and this is the state it exists for.
+    w.replace_mobs(Vec::new());
+
+    let ctx = |p: Vec3| PlayerCtx {
+        id: 0,
+        pos: p,
+        spawn: p,
+        attackable: true,
+        aggro_mod: 0.0,
+    };
+    let home = Vec3::new(8.0, w.surface_height(8, 8) as f32 + 1.0, 8.0);
+    let away = Vec3::new(far as f32, w.surface_height(far, 8) as f32 + 1.0, 8.0);
+    let players = [ctx(home), ctx(away)];
+
+    let mut rng = 12345u32;
+    for _ in 0..600 {
+        w.tick_mobs(&players, 1.0, 1.0, &mut rng);
+    }
+    let near_away = w
+        .mobs()
+        .iter()
+        .filter(|m| (m.pos - away).length() < 128.0)
+        .count();
+    let near_home = w
+        .mobs()
+        .iter()
+        .filter(|m| (m.pos - home).length() < 128.0)
+        .count();
+    assert!(
+        near_home > 0,
+        "the first player's country restocks (it always did)"
+    );
+    assert!(
+        near_away > 0,
+        "the second player's country never restocked: {near_home} mobs came \
+         back around player one and {near_away} around player two"
+    );
 }

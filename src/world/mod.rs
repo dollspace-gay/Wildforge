@@ -760,16 +760,52 @@ impl World {
         }
     }
 
-    pub fn chunks_outside(&self, center: ChunkPos, radius: i32) -> Vec<ChunkPos> {
+    /// Chunks outside `radius` of every one of `centers`.
+    ///
+    /// Chunk residency is the world's business, not the client's. It used to
+    /// live only in the client's streaming path, which meant the dedicated
+    /// server — the deployment that actually needs it — never evicted
+    /// anything and grew by 448 KB for every chunk any guest ever walked
+    /// through. With no centers at all nothing is resident: an empty server
+    /// holds no world.
+    pub fn chunks_outside_all(&self, centers: &[ChunkPos], radius: i32) -> Vec<ChunkPos> {
         self.chunks
             .keys()
-            .filter(|pos| (pos.x - center.x).abs() > radius || (pos.z - center.z).abs() > radius)
+            .filter(|pos| {
+                !centers
+                    .iter()
+                    .any(|c| (pos.x - c.x).abs() <= radius && (pos.z - c.z).abs() <= radius)
+            })
             .copied()
             .collect()
     }
 
+    /// Save and drop every chunk no longer near any of `centers`.
+    ///
+    /// Returns how many left. Saving as a chunk departs is the incremental
+    /// save: there is no autosave timer, so this is how most of the world
+    /// reaches disk.
+    pub fn retain_chunks(&mut self, centers: &[ChunkPos], radius: i32) -> usize {
+        let far = self.chunks_outside_all(centers, radius);
+        if far.is_empty() {
+            return 0;
+        }
+        self.settle_falling();
+        for pos in &far {
+            self.save_chunk_if_modified(*pos);
+            self.unload_chunk(*pos);
+        }
+        far.len()
+    }
+
     pub fn unload_chunk(&mut self, pos: ChunkPos) {
         self.chunks.remove(&pos);
+    }
+
+    /// How many chunks are resident. The number a long-running server has to
+    /// keep bounded.
+    pub fn chunk_count(&self) -> usize {
+        self.chunks.len()
     }
 
     pub fn dirty_chunks(&self) -> Vec<ChunkPos> {

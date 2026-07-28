@@ -171,12 +171,14 @@ impl Game {
             }
         }
 
-        // Unload chunks far outside the view radius.
+        // Unload chunks far outside the view radius. The same residency rule
+        // the dedicated server runs (World::retain_chunks); here it is spelled
+        // out because the renderer and the light cache have to let go too.
         let limit = vd + 2;
         let far = self
             .server
             .world
-            .chunks_outside(ChunkPos { x: pcx, z: pcz }, limit);
+            .chunks_outside_all(&[ChunkPos { x: pcx, z: pcz }], limit);
         if !far.is_empty() {
             self.server.world.settle_falling();
             // Save only what leaves; a full save_modified here wrote

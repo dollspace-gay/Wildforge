@@ -11,7 +11,7 @@
 use std::io;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
@@ -26,7 +26,9 @@ use super::handshake::certificate_from_pkcs8;
 use super::handshake::{
     auth_transcript, peer_certificate_fingerprint, pin_server_identity, server_certificate,
 };
-use super::protocol::{AUTH_TIMEOUT, CLIENT_FRAME_MAX, PREAUTH_FRAME_MAX, hello_protocol};
+use super::protocol::{
+    AUTH_TIMEOUT, CLIENT_FRAME_MAX, DATAGRAM_FLOOR, PREAUTH_FRAME_MAX, hello_protocol,
+};
 use super::{C2S, PROTOCOL, Refusal, RefusalCode, S2C, decode, encode};
 
 pub const GAME_PORT: u16 = 27431;
@@ -60,6 +62,8 @@ pub enum HostEvent {
 struct Peer {
     reliable: UnboundedSender<HostOutbound>,
     conn: quinn::Connection,
+    /// One report per peer, not one per dropped datagram at 20 Hz.
+    warned_datagram: AtomicBool,
 }
 
 enum HostOutbound {
@@ -74,6 +78,7 @@ pub struct Host {
     peer_rx: UnboundedReceiver<(u32, Peer)>,
     stop: Arc<AtomicBool>,
     pub port: u16,
+    datagram_failures: Arc<AtomicU64>,
 }
 
 impl Host {
@@ -163,6 +168,7 @@ impl Host {
             peer_rx,
             stop,
             port,
+            datagram_failures: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -194,12 +200,50 @@ impl Host {
         }
     }
 
-    /// Unreliable, latest-wins state.
-    pub fn broadcast_datagram(&self, msg: &S2C) {
-        let bytes = encode(msg);
-        for p in self.peers.values() {
-            let _ = p.conn.send_datagram(bytes.clone().into());
+    /// The datagram payload budget this peer's path can actually carry.
+    ///
+    /// Falls back to the conservative floor when the connection cannot answer
+    /// (no peer, or datagrams disabled), so callers always get a number they
+    /// can batch against.
+    pub fn datagram_budget(&self, id: u32) -> usize {
+        self.peers
+            .get(&id)
+            .and_then(|p| p.conn.max_datagram_size())
+            .unwrap_or(DATAGRAM_FLOOR)
+            .min(CLIENT_FRAME_MAX)
+    }
+
+    /// Unreliable, latest-wins state, to one guest.
+    ///
+    /// QUIC will not fragment a datagram: anything over the path budget is
+    /// refused outright. That refusal used to be discarded, so a world with
+    /// more than about forty mobs stopped replicating them entirely and said
+    /// nothing about it. Now an oversized or dropped payload is counted, and
+    /// the first one per peer is reported.
+    pub fn send_datagram(&self, id: u32, bytes: Vec<u8>) -> bool {
+        let Some(p) = self.peers.get(&id) else {
+            return false;
+        };
+        match p.conn.send_datagram(bytes.into()) {
+            Ok(()) => true,
+            Err(e) => {
+                let failures = self.datagram_failures.fetch_add(1, Ordering::Relaxed);
+                if !p.warned_datagram.swap(true, Ordering::Relaxed) {
+                    eprintln!(
+                        "net: guest {id} dropped a state datagram ({e}); \
+                         {} total this session",
+                        failures + 1
+                    );
+                }
+                false
+            }
         }
+    }
+
+    /// How many state datagrams this host has failed to send. Zero is the
+    /// only healthy value; the tests assert it.
+    pub fn datagram_failures(&self) -> u64 {
+        self.datagram_failures.load(Ordering::Relaxed)
     }
 
     pub fn kick(&mut self, id: u32) {
@@ -416,6 +460,7 @@ async fn accept_loop(
                 Peer {
                     reliable: tx,
                     conn: conn.clone(),
+                    warned_datagram: AtomicBool::new(false),
                 },
             ));
             let _ = events.send(HostEvent::Joined {
