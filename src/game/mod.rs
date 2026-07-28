@@ -5,6 +5,7 @@ mod app;
 mod browser;
 mod containers;
 mod content;
+mod demos;
 mod frame;
 mod input;
 mod interaction;

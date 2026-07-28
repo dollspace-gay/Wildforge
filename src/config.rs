@@ -118,9 +118,11 @@ impl Default for Config {
             volume: 0.7,
             sensitivity: 1.0,
             // Was 7 (112 blocks), which put a fog wall closer than any
-            // landmark in the game. 12 is 192 blocks and about 120 MB of
-            // loaded chunks; the slider goes to MAX_VIEW_DIST for anyone
-            // who wants to see a country's edifice from the next valley.
+            // landmark in the game. 12 is 192 blocks and 625 chunks — about
+            // 160 MB at the measured cost, where the old note here said 120
+            // MB by leaving both light planes out of the sum. The slider
+            // goes as high as this machine can hold, for anyone who wants to
+            // see a country's edifice from the next valley.
             view_dist: 12,
             fov: 75.0,
             pack: "gemini".into(),
