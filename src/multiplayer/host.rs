@@ -980,9 +980,13 @@ impl HostSession {
     fn stream_chunk(&mut self, server: &mut Server, id: u32, cx: i32, cz: i32) {
         let cp = ChunkPos { x: cx, z: cz };
         server.world.ensure_chunk(cp);
-        if let Some(rle) = server.world.chunk_rle(cp) {
-            self.net.send(id, &S2C::Chunk { x: cx, z: cz, rle });
-        }
+        let Some(rle) = server.world.chunk_rle(cp) else {
+            // Nothing to send — do NOT record it as sent, or the ring skips
+            // this chunk forever and the guest keeps a hole it cannot even
+            // ask about, because from the host's side it was delivered.
+            return;
+        };
+        self.net.send(id, &S2C::Chunk { x: cx, z: cz, rle });
         if let Some(g) = self.guests.get_mut(&id) {
             g.sent_chunks.insert((cx, cz));
         }

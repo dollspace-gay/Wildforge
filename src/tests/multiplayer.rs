@@ -1248,6 +1248,22 @@ fn loopback_pair(
     crate::net::Client,
     u32,
 ) {
+    let (sess, sim, client, id, _) = loopback_pair_drained(name);
+    (sess, sim, client, id)
+}
+
+/// As `loopback_pair`, but also hands back everything that arrived while the
+/// handshake was settling — the host starts streaming its ring immediately,
+/// so a test that counts chunks has to count those too.
+fn loopback_pair_drained(
+    name: &str,
+) -> (
+    crate::mp::HostSession,
+    crate::server::Server,
+    crate::net::Client,
+    u32,
+    Vec<S2C>,
+) {
     let reg = base_reg();
     let world = test_world_with(name, reg);
     let mut sim = crate::server::Server::new(world, 0.3, 5);
@@ -1259,19 +1275,19 @@ fn loopback_pair(
     let mut client =
         crate::net::Client::connect(addr, "tester".into(), sess.content_hash, 0, &identity, None)
             .expect("connect");
+    let mut drained = Vec::new();
     for _ in 0..600 {
         sess.pump(&mut sim, None, 0.05);
-        if client
-            .poll()
-            .iter()
-            .any(|m| matches!(m, S2C::Welcome { .. }))
-        {
+        let batch = client.poll();
+        let done = batch.iter().any(|m| matches!(m, S2C::Welcome { .. }));
+        drained.extend(batch);
+        if done {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     let id = *sess.guests.keys().next().expect("guest admitted");
-    (sess, sim, client, id)
+    (sess, sim, client, id, drained)
 }
 
 #[test]
@@ -1555,4 +1571,49 @@ fn wildlife_returns_to_every_country_someone_lives_in() {
         "the second player's country never restocked: {near_home} mobs came \
          back around player one and {near_away} around player two"
     );
+}
+
+#[test]
+fn a_guest_receives_the_ring_it_was_granted() {
+    // Asking for a view distance has to actually put that much ground on the
+    // wire. The host used to serve a hardcoded ring of five however far the
+    // guest could see; this pins the ring to the grant.
+    let (mut sess, mut sim, mut client, id, drained) = loopback_pair_drained("mp-ring");
+    let gpos = Vec3::new(8.5, sim.world.surface_height(8, 8) as f32 + 1.0, 8.5);
+    sess.guests.get_mut(&id).unwrap().pos = gpos;
+    let center = ChunkPos::of_world(8, 8);
+
+    client.send(&crate::net::C2S::SetViewDistance { chunks: 6 });
+    let mut got: std::collections::HashSet<(i32, i32)> = drained
+        .iter()
+        .filter_map(|m| match m {
+            S2C::Chunk { x, z, .. } => Some((*x, *z)),
+            _ => None,
+        })
+        .collect();
+    let want = 13 * 13; // (2*6+1)^2
+    for _ in 0..4000 {
+        sess.pump(&mut sim, Some((gpos, 0.0, false, u16::MAX, 0)), 0.06);
+        for msg in client.poll() {
+            if let S2C::Chunk { x, z, .. } = msg {
+                got.insert((x, z));
+            }
+        }
+        if got.len() >= want {
+            break;
+        }
+    }
+    assert_eq!(
+        got.len(),
+        want,
+        "a guest granted 6 chunks should receive a 13x13 ring, got {}",
+        got.len()
+    );
+    // ...and all of it around the guest, not somewhere else.
+    for (x, z) in &got {
+        assert!(
+            (x - center.x).abs() <= 6 && (z - center.z).abs() <= 6,
+            "chunk ({x},{z}) is outside the granted ring around {center:?}"
+        );
+    }
 }

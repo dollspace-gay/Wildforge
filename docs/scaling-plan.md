@@ -566,7 +566,7 @@ file asking for more is clamped on the way in.
 
 ### Verification
 
-The tree went from 358 to 376 tests, all passing, with no warnings.
+The tree went from 358 to 367 tests, all passing, with no warnings.
 
 Every repair has a test that was confirmed to fail without it, not just
 to pass with it:
@@ -589,6 +589,31 @@ floor. `DEMO_TORCHROOM` 0.00% of pixels differ, `DEMO_MILL` 0.18%,
 `DEMO_CAMP` 0.17%; `DEMO_POOL` differs in 9.02% of pixels against a
 noise floor of **9.12%** for that scene, because it is animated water.
 Behaviourally identical.
+
+### Verified on a live dedicated server
+
+The loopback tests are real QUIC, but the dedicated server is its own
+path, so it was driven end to end: `--server` in one process, an
+`--agent` guest in another, over the network stack.
+
+- The agent's whole 21x21 perception map came back **0/441 cells
+  unstreamed**. Before this it got the fixed ring of five.
+- It walked to (-90, -90), about 127 blocks onto ground it had never
+  stood on, and reported `arrived`. The same request previously failed
+  with "no standable ground at the goal", because the terrain under the
+  goal had never been sent to it.
+- The server logged `released 42 chunks` repeatedly as the guest moved.
+  It had never released a chunk in its life.
+- Those chunks landed in **2 region files**, not ~130 loose ones.
+
+One real bug turned up while writing the ring test, and is fixed:
+`stream_chunk` recorded a chunk as sent even when `chunk_rle` returned
+nothing, so the ring skipped it forever and the guest kept a hole the
+host believed it had already filled.
+
+The agent now asks for a ten-chunk view on join. It is still a guest and
+the host still clamps it — but an agent that never asked could not path
+to anywhere it had not already been standing.
 
 **Protocol 15 -> 16.** Saves are disposable by standing rule, so no
 migration path was built — but region files read the old layout anyway,

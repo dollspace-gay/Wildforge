@@ -20,6 +20,10 @@ use crate::registry::{self, BlockId, ItemId, Registry};
 use crate::world::World;
 use crate::{identity, mp, net};
 
+/// How far an agent asks to see, in chunks. Enough to path somewhere it has
+/// not been; the host clamps it like anyone else's request.
+const AGENT_VIEW_DIST: u8 = 10;
+
 mod mcp;
 mod motion;
 mod perception;
@@ -145,6 +149,13 @@ impl Agent {
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
+        // Ask for a working horizon. An agent that never asks gets the old
+        // fixed ring of five chunks, which is eighty blocks — it could not
+        // path to anywhere it had not already been standing, because the
+        // ground under the goal had never been sent to it.
+        agent.client.send(&net::C2S::SetViewDistance {
+            chunks: AGENT_VIEW_DIST,
+        });
         Ok(agent)
     }
 
