@@ -8,10 +8,26 @@ use serde::{Deserialize, Serialize};
 use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 15;
+pub const PROTOCOL: u32 = 16;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Conservative floor for a QUIC datagram payload.
+///
+/// The live budget is `Connection::max_datagram_size()`, which depends on the
+/// path MTU and the peer's advertised frame size; this is the value used when
+/// a connection cannot answer (and the value snapshot batching is tested
+/// against). QUIC datagrams are never fragmented — a payload over the limit is
+/// refused outright, not split — so every snapshot has to be batched under it.
+pub const DATAGRAM_FLOOR: usize = 1100;
+
+/// The largest view distance, in chunks, a host will serve to one guest.
+///
+/// A guest asking for more is clamped to this and told what it was granted.
+/// Without a cap a single client could ask a dedicated server to page in
+/// sixteen thousand chunks on its behalf.
+pub const MAX_GUEST_VIEW_DIST: u8 = 12;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct StackSnap {
@@ -61,6 +77,149 @@ pub struct BoltSnap {
     pub vel: Vec3,
     pub tile: u16,
     pub age: f32,
+}
+
+/// One part of a 20 Hz world snapshot.
+///
+/// Snapshots are latest-wins over unreliable datagrams, and a datagram that
+/// does not fit is refused rather than fragmented. So a snapshot too big for
+/// the path is split into parts that share a `seq`, and the receiver applies a
+/// generation only once every part of it has landed. Losing a part costs that
+/// generation, not the rest of the stream: the next one is 50 ms behind it.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Snapshot<T> {
+    /// Generation counter. Parts of one snapshot share it; it moves on.
+    pub seq: u32,
+    pub part: u8,
+    pub parts: u8,
+    pub items: Vec<T>,
+}
+
+impl<T> Snapshot<T> {
+    /// The whole snapshot in one part — what almost every tick sends, and
+    /// what the tests build by hand.
+    #[cfg(test)]
+    pub fn whole(seq: u32, items: Vec<T>) -> Snapshot<T> {
+        Snapshot {
+            seq,
+            part: 0,
+            parts: 1,
+            items,
+        }
+    }
+}
+
+/// Split `items` into snapshot parts that each encode within `budget`.
+///
+/// Halves until the encoding fits, so it needs no per-item size model and
+/// stays correct when postcard's varints change width. A single item that
+/// cannot fit is still emitted — dropping it silently is how the original
+/// bug behaved, and one oversized datagram that visibly fails is better than
+/// a mob that quietly never appears.
+pub fn batch_snapshot<T, F>(seq: u32, items: Vec<T>, budget: usize, wrap: F) -> Vec<Vec<u8>>
+where
+    T: Serialize + Clone,
+    F: Fn(Snapshot<T>) -> S2C + Copy,
+{
+    let mut groups: Vec<Vec<T>> = Vec::new();
+    split_groups(items, budget, &wrap, seq, &mut groups);
+    if groups.is_empty() {
+        // An empty snapshot still ships: it is how a guest clears the last
+        // tumble, the last bolt, and mobs that walked out of reach.
+        groups.push(Vec::new());
+    }
+    let parts = groups.len() as u8;
+    groups
+        .into_iter()
+        .enumerate()
+        .map(|(i, items)| {
+            encode(&wrap(Snapshot {
+                seq,
+                part: i as u8,
+                parts,
+                items,
+            }))
+        })
+        .collect()
+}
+
+fn split_groups<T, F>(items: Vec<T>, budget: usize, wrap: &F, seq: u32, out: &mut Vec<Vec<T>>)
+where
+    T: Serialize + Clone,
+    F: Fn(Snapshot<T>) -> S2C,
+{
+    if items.is_empty() {
+        return;
+    }
+    // Probed at the widest possible part count: `part`/`parts` are varints, so
+    // measuring with u8::MAX guarantees the probe never under-measures what
+    // the batch will actually cost once the real part count is known.
+    let probe = encode(&wrap(Snapshot {
+        seq,
+        part: u8::MAX,
+        parts: u8::MAX,
+        items: items.clone(),
+    }));
+    if probe.len() <= budget || items.len() == 1 {
+        out.push(items);
+        return;
+    }
+    let mut left = items;
+    let right = left.split_off(left.len() / 2);
+    split_groups(left, budget, wrap, seq, out);
+    split_groups(right, budget, wrap, seq, out);
+}
+
+/// Rebuilds multi-part snapshots on the receiving side.
+///
+/// Holds at most one incomplete generation. A newer `seq` abandons an older
+/// incomplete one rather than waiting for it — this is a latest-wins stream,
+/// and a generation that lost a datagram is worth less than the one behind it.
+pub struct SnapshotAssembler<T> {
+    seq: Option<u32>,
+    slots: Vec<Option<Vec<T>>>,
+}
+
+impl<T> Default for SnapshotAssembler<T> {
+    fn default() -> Self {
+        SnapshotAssembler {
+            seq: None,
+            slots: Vec::new(),
+        }
+    }
+}
+
+impl<T> SnapshotAssembler<T> {
+    /// Feed one part; yields the whole generation once its last part lands.
+    pub fn accept(&mut self, snap: Snapshot<T>) -> Option<Vec<T>> {
+        // The overwhelmingly common case: it all fit in one datagram.
+        if snap.parts <= 1 {
+            self.seq = Some(snap.seq);
+            self.slots.clear();
+            return Some(snap.items);
+        }
+        // A straggler from a generation we have already moved past.
+        if self.seq.is_some_and(|seen| snap.seq < seen) {
+            return None;
+        }
+        if self.seq != Some(snap.seq) {
+            self.seq = Some(snap.seq);
+            self.slots = (0..snap.parts).map(|_| None).collect();
+        }
+        let slot = self.slots.get_mut(snap.part as usize)?;
+        *slot = Some(snap.items);
+        if self.slots.iter().all(Option::is_some) {
+            let whole = self
+                .slots
+                .iter_mut()
+                .filter_map(Option::take)
+                .flatten()
+                .collect();
+            self.slots.clear();
+            return Some(whole);
+        }
+        None
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -192,6 +351,23 @@ pub enum C2S {
         right: bool,
     },
     CloseContainer,
+    /// Ask for terrain the guest does not have (or has evicted and walked
+    /// back to). The host used to push chunks and remember forever that it
+    /// had — so a guest that dropped a chunk to stay inside its memory
+    /// budget could never get it back, and stood in a hole until it
+    /// reconnected. Chunk residency is the client's business; this is how it
+    /// says so.
+    RequestChunk {
+        x: i32,
+        z: i32,
+    },
+    /// How far this guest wants to see, in chunks. Sent after the handshake
+    /// (never inside it — the auth transcript stays exactly as it was) and
+    /// again whenever the slider moves. The host clamps to
+    /// `MAX_GUEST_VIEW_DIST` and answers with `S2C::ViewDistance`.
+    SetViewDistance {
+        chunks: u8,
+    },
     /// Ask the host to feed an adult mob from authoritative inventory.
     FeedMob {
         id: u32,
@@ -326,13 +502,19 @@ pub enum S2C {
         /// Octant mask for sub-voxel blocks; 0 for ordinary blocks.
         meta: u8,
     },
-    /// (id, pos, yaw, held wire item id, packed style) for every
-    /// player, host included (u16::MAX = empty hand). Datagram.
-    Players(Vec<(u32, Vec3, f32, u16, u32)>),
-    Mobs(Vec<MobSnap>),
-    Bolts(Vec<BoltSnap>),
+    /// (id, pos, yaw, held wire item id, packed style) for every player in
+    /// this guest's reach, host included (u16::MAX = empty hand). Datagram.
+    Players(Snapshot<(u32, Vec3, f32, u16, u32)>),
+    Mobs(Snapshot<MobSnap>),
+    Bolts(Snapshot<BoltSnap>),
     /// Airborne gravity blocks (sand mid-tumble). Datagram.
-    Falling(Vec<FallSnap>),
+    Falling(Snapshot<FallSnap>),
+    /// The view distance the host actually granted, in chunks. The guest
+    /// renders and evicts against this, so it never stares past what the
+    /// host is willing to send.
+    ViewDistance {
+        chunks: u8,
+    },
     TimeIre {
         time: f32,
         ire: f32,

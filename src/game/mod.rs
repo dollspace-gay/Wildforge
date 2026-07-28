@@ -5,6 +5,7 @@ mod app;
 mod browser;
 mod containers;
 mod content;
+mod demos;
 mod frame;
 mod input;
 mod interaction;
@@ -289,6 +290,10 @@ impl Default for InteractionState {
 
 /// Cosmetic animation, particles, transient feedback, and light selection.
 struct PresentationState {
+    /// Top of the view-distance slider on this machine, resolved once at
+    /// startup from available memory. A setting that cannot be honoured is
+    /// worse than one that is not offered.
+    max_view_dist: i32,
     /// Region-whisper bookkeeping: the cell we're in, and cells
     /// already whispered this session.
     last_ire_cell: Option<(i32, i32)>,
@@ -327,6 +332,7 @@ struct PresentationState {
 impl PresentationState {
     fn new() -> Self {
         Self {
+            max_view_dist: config::max_view_dist_for_memory(),
             last_ire_cell: None,
             whispered_cells: std::collections::HashSet::new(),
             swing: 0.0,
@@ -395,6 +401,21 @@ struct Remote {
     mob_lerp: std::collections::HashMap<u32, Lerp>,
     mob_age: f32,
     mob_interval: f32,
+    /// Snapshots arrive split when they are too big for one datagram; these
+    /// hold the parts until a generation is whole.
+    players_rx: net::SnapshotAssembler<(u32, Vec3, f32, u16, u32)>,
+    mobs_rx: net::SnapshotAssembler<net::MobSnap>,
+    bolts_rx: net::SnapshotAssembler<net::BoltSnap>,
+    falling_rx: net::SnapshotAssembler<net::FallSnap>,
+    /// View distance the host granted, in chunks. Terrain past it is not
+    /// coming, so the fog and the eviction radius both respect it.
+    granted_view_dist: i32,
+    /// What we last told the host we wanted, so the slider only speaks when
+    /// it actually moves.
+    asked_view_dist: i32,
+    /// Chunks we have asked the host for and not yet received, so a gap is
+    /// requested once rather than every frame until it lands.
+    wants: std::collections::HashSet<(i32, i32)>,
 }
 
 struct Game {

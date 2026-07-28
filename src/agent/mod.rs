@@ -20,6 +20,10 @@ use crate::registry::{self, BlockId, ItemId, Registry};
 use crate::world::World;
 use crate::{identity, mp, net};
 
+/// How far an agent asks to see, in chunks. Enough to path somewhere it has
+/// not been; the host clamps it like anyone else's request.
+const AGENT_VIEW_DIST: u8 = 10;
+
 mod mcp;
 mod motion;
 mod perception;
@@ -71,6 +75,9 @@ pub struct Agent {
     names: HashMap<u32, String>,
     /// Breadcrumbs per player: the trail follow() chases.
     trail: HashMap<u32, VecDeque<Vec3>>,
+    /// Snapshots arrive split when they outgrow one datagram.
+    players_rx: net::SnapshotAssembler<(u32, Vec3, f32, u16, u32)>,
+    mobs_rx: net::SnapshotAssembler<net::MobSnap>,
     /// Human-readable happenings, drained by the events tool.
     pub events: VecDeque<String>,
     pub behavior: Behavior,
@@ -116,6 +123,8 @@ impl Agent {
             players: HashMap::new(),
             names: HashMap::new(),
             trail: HashMap::new(),
+            players_rx: Default::default(),
+            mobs_rx: Default::default(),
             events: VecDeque::new(),
             behavior: Behavior::Idle,
             move_timer: 0.0,
@@ -140,6 +149,13 @@ impl Agent {
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
+        // Ask for a working horizon. An agent that never asks gets the old
+        // fixed ring of five chunks, which is eighty blocks — it could not
+        // path to anywhere it had not already been standing, because the
+        // ground under the goal had never been sent to it.
+        agent.client.send(&net::C2S::SetViewDistance {
+            chunks: AGENT_VIEW_DIST,
+        });
         Ok(agent)
     }
 
@@ -293,7 +309,13 @@ impl Agent {
                 self.world.set_block_meta(x, y, z, local, meta);
                 self.world.clear_pending_drops();
             }
-            net::S2C::Players(list) => {
+            net::S2C::Players(part) => {
+                let Some(list) = self.players_rx.accept(part) else {
+                    return;
+                };
+                let present: std::collections::HashSet<u32> =
+                    list.iter().map(|(id, ..)| *id).collect();
+                self.players.retain(|id, _| present.contains(id));
                 for (id, pos, yaw, _held, _style) in list {
                     if id == self.my_id {
                         continue;
@@ -315,7 +337,10 @@ impl Agent {
                     }
                 }
             }
-            net::S2C::Mobs(snaps) => {
+            net::S2C::Mobs(part) => {
+                let Some(snaps) = self.mobs_rx.accept(part) else {
+                    return;
+                };
                 let mobs = snaps
                     .into_iter()
                     .filter(|s| (s.species as usize) < self.reg.animals.len())
@@ -403,6 +428,9 @@ impl Agent {
             net::S2C::Sleep { sleeping, present } => {
                 self.event(format!("{sleeping}/{present} sleeping"));
             }
+            // The agent takes whatever ring the host grants; it has no
+            // renderer, so there is no fog to keep honest.
+            net::S2C::ViewDistance { .. } => {}
             // Containers, cargo, bolts, falling sand: not yet part of
             // the agent's world-model (fast follows).
             net::S2C::Container { .. }

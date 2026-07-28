@@ -9,9 +9,12 @@ use std::path::PathBuf;
 /// always somewhere on the horizon, which is the entire point.
 ///
 /// The costs, in order of who cares:
-/// - RAM: a chunk is 16x256x16 block ids plus a metadata byte, ~190 KB,
-///   and the loaded set is (2n+1)^2. At 64 that is ~16600 chunks and
-///   about 3 GB.
+/// - RAM: the loaded set is (2n+1)^2 chunks. At 64 that is ~16600 of
+///   them, and at the measured cost below that is over 4 GB — which is
+///   why the slider is bounded by [`max_view_dist_for_memory`] rather
+///   than by this constant alone. The old note here said "~190 KB" and
+///   "about 3 GB": both undercounted, because they left out the two
+///   light planes entirely.
 /// - Draw: the opaque pass is frustum-culled and shadows are
 ///   range-culled, so what you pay for is what is in front of you, not
 ///   what is loaded.
@@ -19,6 +22,61 @@ use std::path::PathBuf;
 ///   the streaming budgets below scale with this number instead of
 ///   sitting at the constants that suited a 7-chunk view.
 pub const MAX_VIEW_DIST: i32 = 64;
+
+/// What one resident chunk costs, measured on real generated terrain.
+///
+/// Blocks and sky light are genuinely per-cell; block light and (on
+/// untouched ground) metadata compact away. A chunk with a torch in it and
+/// worked soil under it pays the full 448 KB, so this is a floor, not a
+/// promise — but it is the honest number to size a view distance against.
+pub const CHUNK_RESIDENT_BYTES: u64 = 262 * 1024;
+
+/// Share of available memory the loaded world may claim.
+const WORLD_MEMORY_SHARE: f64 = 0.55;
+
+/// Memory this machine can give us right now, if it will say.
+fn available_memory() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+        let line = text.lines().find(|l| l.starts_with("MemAvailable:"))?;
+        let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+        return Some(kb * 1024);
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+        let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
+        status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+        if unsafe { GlobalMemoryStatusEx(&mut status) } != 0 {
+            return Some(status.ullAvailPhys);
+        }
+        return None;
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
+    None
+}
+
+/// The largest view distance this machine can actually back with memory.
+///
+/// The slider used to run to [`MAX_VIEW_DIST`] on every machine, which asks
+/// for over 4 GB of resident chunks — a setting that does not render a
+/// distant edifice so much as end the process. A setting that cannot be
+/// honoured is worse than one that is not offered.
+pub fn max_view_dist_for_memory() -> i32 {
+    let Some(available) = available_memory() else {
+        // No answer: trust the player, cap at the old maximum.
+        return MAX_VIEW_DIST;
+    };
+    let budget = (available as f64 * WORLD_MEMORY_SHARE) as u64;
+    let affordable = budget / CHUNK_RESIDENT_BYTES;
+    // chunks = (2r+1)^2  =>  r = (sqrt(chunks) - 1) / 2
+    let radius = ((affordable as f64).sqrt() - 1.0) / 2.0;
+    (radius as i32).clamp(MIN_VIEW_DIST, MAX_VIEW_DIST)
+}
+
+/// Below this the world is unplayable, so it is never clamped away.
+pub const MIN_VIEW_DIST: i32 = 4;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Config {
@@ -60,9 +118,11 @@ impl Default for Config {
             volume: 0.7,
             sensitivity: 1.0,
             // Was 7 (112 blocks), which put a fog wall closer than any
-            // landmark in the game. 12 is 192 blocks and about 120 MB of
-            // loaded chunks; the slider goes to MAX_VIEW_DIST for anyone
-            // who wants to see a country's edifice from the next valley.
+            // landmark in the game. 12 is 192 blocks and 625 chunks — about
+            // 160 MB at the measured cost, where the old note here said 120
+            // MB by leaving both light planes out of the sum. The slider
+            // goes as high as this machine can hold, for anyone who wants to
+            // see a country's edifice from the next valley.
             view_dist: 12,
             fov: 75.0,
             pack: "gemini".into(),
@@ -107,7 +167,9 @@ impl Config {
                 }
                 "view_dist" => {
                     if let Ok(x) = v.parse::<i32>() {
-                        c.view_dist = x.clamp(4, MAX_VIEW_DIST);
+                        // Bounded by what this machine can hold, not just by
+                        // what the slider can express.
+                        c.view_dist = x.clamp(MIN_VIEW_DIST, max_view_dist_for_memory());
                     }
                 }
                 "fov" => {

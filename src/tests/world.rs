@@ -145,7 +145,8 @@ fn pre_v3_saves_regenerate_cleanly() {
     // ensure_chunk on fresh terrain marks modified=false, so force a write.
     w.set_block(1, 100, 1, b(&reg, "base:planks"));
     w.save_modified();
-    let bytes = std::fs::read(w.save_dir_for_test().join("c.0.0.wfc")).unwrap();
+    let bytes = crate::world::region::read_chunk(&w.save_dir_for_test(), ChunkPos { x: 0, z: 0 })
+        .expect("the edited chunk is stored");
     assert!(bytes.starts_with(b"WFC4"), "saves are written as v4 now");
 }
 
@@ -2278,7 +2279,7 @@ fn the_autosave_writes_only_what_changed_since_the_last_one() {
     let top = w.surface_height(3, 3);
     w.set_block(3, top + 1, 3, stone);
     w.save_modified();
-    let file = dir.join("c.0.0.wfc");
+    let file = crate::world::region::region_path(&dir, ChunkPos { x: 0, z: 0 });
     assert!(file.exists(), "the edited chunk is written");
 
     // Deleting the file is the probe: if the next autosave puts it
@@ -2308,7 +2309,7 @@ fn a_chunk_read_from_disk_is_clean_until_something_edits_it() {
         w.save_modified();
         top
     };
-    let file = dir.join("c.0.0.wfc");
+    let file = crate::world::region::region_path(&dir, ChunkPos { x: 0, z: 0 });
     assert!(file.exists());
 
     let mut w = World::load_or_create(dir.clone(), reg.clone());
@@ -2624,4 +2625,220 @@ fn guilt_is_inherited_by_spread() {
     assert!(left < 60, "the fire ran ({left} of 64 leaf cells left)");
     // ...and every cell it reached is still on the arsonist's account.
     assert_eq!(w.bloom_at(6, 6), 0.0, "no bloom anywhere it went");
+}
+
+#[test]
+fn a_chunk_pays_only_for_what_it_actually_holds() {
+    use crate::chunk::{CHUNK_CELLS, Chunk, ChunkPos};
+
+    // Every plane used to be allocated dense and unconditionally: 128 KB of
+    // blocks, 64 KB of metadata, 192 KB of block light and 64 KB of sky light
+    // for every chunk in memory, whether or not any of it said anything.
+    const DENSE: usize = CHUNK_CELLS * (2 + 1 + 3 + 1);
+    assert_eq!(DENSE, 458_752, "the old unconditional cost, 448 KiB");
+
+    // A fresh chunk says nothing at all and costs nothing.
+    let fresh = Chunk::new();
+    assert_eq!(fresh.heap_bytes(), 0, "open air is free");
+
+    // Real generated terrain, lit.
+    let mut w = test_world("chunk-bytes");
+    let pos = ChunkPos { x: 0, z: 0 };
+    w.ensure_chunk(pos);
+    let real = w.chunks()[&pos].heap_bytes();
+    assert!(real > 0, "terrain costs something");
+    assert!(
+        real < DENSE,
+        "a real chunk ({real} bytes) must cost less than the old flat {DENSE}"
+    );
+    // Blocks and sky light genuinely vary with terrain; block light and
+    // metadata almost never do, and they were more than half the bill.
+    assert!(
+        real <= DENSE / 2,
+        "a chunk with no torch and no block state should cost at most half \
+         the old {DENSE} bytes, got {real}"
+    );
+}
+
+#[test]
+fn the_view_distance_slider_stops_where_the_memory_does() {
+    use crate::config::{
+        CHUNK_RESIDENT_BYTES, Config, MAX_VIEW_DIST, MIN_VIEW_DIST, max_view_dist_for_memory,
+    };
+
+    let cap = max_view_dist_for_memory();
+    assert!(
+        (MIN_VIEW_DIST..=MAX_VIEW_DIST).contains(&cap),
+        "the cap stays inside the playable range, got {cap}"
+    );
+
+    // Whatever this machine allows, the loaded set at that distance has to be
+    // a number of bytes it could plausibly hold. The slider used to offer 64
+    // everywhere — over four gigabytes of resident chunks.
+    let chunks = (2u64 * cap as u64 + 1).pow(2);
+    let bytes = chunks * CHUNK_RESIDENT_BYTES;
+    assert!(
+        bytes < 64 * 1024 * 1024 * 1024,
+        "a {cap}-chunk view wants {} GiB",
+        bytes / (1024 * 1024 * 1024)
+    );
+
+    // A config file asking for more than the machine can hold is clamped on
+    // the way in rather than honoured into an out-of-memory kill.
+    let greedy = Config::from_text(&format!("view_dist={MAX_VIEW_DIST}\n"));
+    assert!(
+        greedy.view_dist <= cap,
+        "config asked {} and got {}, past the {cap} cap",
+        MAX_VIEW_DIST,
+        greedy.view_dist
+    );
+    // And one below the floor comes up to it.
+    let tiny = Config::from_text("view_dist=1\n");
+    assert_eq!(tiny.view_dist, MIN_VIEW_DIST);
+}
+
+#[test]
+fn the_lands_ledgers_do_not_grow_without_bound() {
+    // regional_ire, bloom and blessed_streak are keyed per 256-block cell and
+    // written every time anyone takes or tends anything. They are only
+    // bounded because each one decays to nothing and drops its entry when it
+    // gets there — behaviour nothing tested, in maps that are also persisted
+    // and rewritten whole on every save.
+    let mut w = test_world("ledger-bounds");
+
+    // A thousand cells across a wide area, all charged.
+    for i in 0..1000 {
+        let (x, z) = (i * 300, (i % 37) * 400);
+        w.add_ire_at(x, z, 5.0);
+        w.add_bloom(x, z, 2.0);
+    }
+    assert!(w.ledger_len() > 0, "charging the land records something");
+
+    // A season passes with nobody touching any of it.
+    for _ in 0..(crate::world::SEASON_DAYS * 4) {
+        w.tick_ire(1.0);
+    }
+    assert_eq!(
+        w.ledger_len(),
+        0,
+        "grudges, gratitude and blooms all fade to nothing and stop being \
+         stored — a ledger that only ever grew would outlive the world"
+    );
+}
+
+#[test]
+fn a_world_survives_a_save_and_reload_across_several_regions() {
+    // Chunks live 32x32 to a region file now. This walks a span wide enough
+    // to cross region boundaries in both axes and through negative
+    // coordinates, edits every chunk, saves, drops the world, and reads it
+    // all back — the case a flat file-per-chunk directory got for free and a
+    // packed format has to earn.
+    let reg = base_reg();
+    let dir = tmp_dir("region-round-trip");
+    let stone = b(&reg, "base:stone");
+    let planks = b(&reg, "base:planks");
+
+    let mut edits = Vec::new();
+    {
+        let mut w = World::new(4242, dir.clone(), reg.clone());
+        for cx in -34..=34i32 {
+            for cz in [-33i32, 0, 33] {
+                let pos = ChunkPos { x: cx, z: cz };
+                w.ensure_chunk(pos);
+                let (wx, wz) = (cx * 16 + 3, cz * 16 + 5);
+                let y = w.surface_height(wx, wz) + 1;
+                let block = if cx % 2 == 0 { stone } else { planks };
+                w.set_block(wx, y, wz, block);
+                edits.push((wx, y, wz, block));
+            }
+        }
+        w.save_modified();
+    }
+    assert!(edits.len() > 200, "enough chunks to span many regions");
+
+    // Several region files, not hundreds of chunk files.
+    let files: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    let regions = files.iter().filter(|f| f.ends_with(".wfr")).count();
+    let loose = files.iter().filter(|f| f.ends_with(".wfc")).count();
+    assert!(regions > 1, "the span crosses region boundaries");
+    assert_eq!(loose, 0, "no per-chunk files are written any more");
+    assert!(
+        regions < edits.len(),
+        "{regions} region files for {} chunks — the whole point is fewer",
+        edits.len()
+    );
+
+    let mut w = World::load_or_create(dir, reg.clone());
+    for (x, y, z, want) in edits {
+        w.ensure_chunk(ChunkPos::of_world(x, z));
+        assert_eq!(
+            w.get_block(x, y, z),
+            want,
+            "block at ({x},{y},{z}) did not survive the round trip"
+        );
+    }
+}
+
+#[test]
+#[ignore = "measurement probe, not an assertion"]
+fn measure_chunk_composition() {
+    use crate::chunk::{CHUNK_CELLS, ChunkPos};
+    use std::collections::HashSet;
+    let mut w = test_world("compose");
+    let (mut ids, mut meta_nz, mut sky_vals, mut lb_nz, mut n) =
+        (0usize, 0usize, 0usize, 0usize, 0usize);
+    let mut worst_ids = 0usize;
+    for cx in -3..=3 {
+        for cz in -3..=3 {
+            let pos = ChunkPos { x: cx, z: cz };
+            w.ensure_chunk(pos);
+            let c = &w.chunks()[&pos];
+            let mut set: HashSet<u16> = HashSet::new();
+            let mut sky: HashSet<u8> = HashSet::new();
+            let (mut mnz, mut lnz) = (0usize, 0usize);
+            for x in 0..16 {
+                for z in 0..16 {
+                    for y in 0..256 {
+                        set.insert(c.get(x, y, z).0);
+                        if c.meta(x, y, z) != 0 {
+                            mnz += 1;
+                        }
+                        let (lb, ls) = c.light(x, y, z);
+                        sky.insert(ls);
+                        if lb != [0, 0, 0] {
+                            lnz += 1;
+                        }
+                    }
+                }
+            }
+            ids += set.len();
+            worst_ids = worst_ids.max(set.len());
+            meta_nz += mnz;
+            sky_vals += sky.len();
+            lb_nz += lnz;
+            n += 1;
+        }
+    }
+    println!("PROBE over {n} chunks ({CHUNK_CELLS} cells each):");
+    println!(
+        "  distinct block ids/chunk: avg {:.1}, worst {worst_ids}  -> palette bits {}",
+        ids as f64 / n as f64,
+        (worst_ids as f64).log2().ceil() as u32
+    );
+    println!(
+        "  meta non-zero: avg {:.2}% of cells",
+        100.0 * meta_nz as f64 / (n * CHUNK_CELLS) as f64
+    );
+    println!(
+        "  block-light non-zero: avg {:.3}% of cells",
+        100.0 * lb_nz as f64 / (n * CHUNK_CELLS) as f64
+    );
+    println!(
+        "  distinct sky-light values/chunk: avg {:.1} (needs 4 bits)",
+        sky_vals as f64 / n as f64
+    );
 }

@@ -285,7 +285,7 @@ impl World {
     }
 
     pub(super) fn try_load_chunk(&self, pos: ChunkPos) -> Option<Chunk> {
-        let data = fs::read(self.chunk_file(pos)).ok()?;
+        let data = super::region::read_chunk(&self.save_dir, pos)?;
         let mut chunk = Chunk::new();
         let is_v4 = data.starts_with(b"WFC4");
         if !is_v4 && !data.starts_with(b"WFC3") {
@@ -336,6 +336,9 @@ impl World {
             }
         }
         chunk.dirty = true;
+        // Planes the file turned out uniform in (no block state anywhere,
+        // most often) shrink back to a single value.
+        chunk.compact();
         // A chunk that came off disk already matches its file, so it only
         // needs saving again once something edits it. The exception is a
         // registry change: the ids in that file are about to be reinterpreted
@@ -350,31 +353,26 @@ impl World {
     /// WFC3 remains readable with an all-zero metadata plane.
     pub fn chunk_rle(&self, pos: ChunkPos) -> Option<Vec<u8>> {
         let chunk = self.chunks.get(&pos)?;
-        let raw = chunk.raw();
         let mut buf: Vec<u8> = Vec::with_capacity(4096);
         buf.extend_from_slice(b"WFC4");
-        let mut i = 0;
-        while i < raw.len() {
-            let b = raw[i];
-            let mut run = 1usize;
-            while i + run < raw.len() && raw[i + run] == b && run < u16::MAX as usize {
-                run += 1;
+        // Runs come straight off the plane, so a uniform plane is one step
+        // rather than a scan of every cell. The u16 length field still caps
+        // a wire run, so long runs are split to fit it.
+        for (value, mut run) in chunk.block_runs() {
+            while run > 0 {
+                let take = run.min(u16::MAX as usize);
+                buf.extend_from_slice(&(take as u16).to_le_bytes());
+                buf.extend_from_slice(&value.to_le_bytes());
+                run -= take;
             }
-            buf.extend_from_slice(&(run as u16).to_le_bytes());
-            buf.extend_from_slice(&b.to_le_bytes());
-            i += run;
         }
-        let meta = chunk.meta_raw();
-        let mut i = 0;
-        while i < meta.len() {
-            let value = meta[i];
-            let mut run = 1usize;
-            while i + run < meta.len() && meta[i + run] == value && run < u16::MAX as usize {
-                run += 1;
+        for (value, mut run) in chunk.meta_runs() {
+            while run > 0 {
+                let take = run.min(u16::MAX as usize);
+                buf.extend_from_slice(&(take as u16).to_le_bytes());
+                buf.push(value);
+                run -= take;
             }
-            buf.extend_from_slice(&(run as u16).to_le_bytes());
-            buf.push(value);
-            i += run;
         }
         Some(buf)
     }
@@ -412,6 +410,7 @@ impl World {
             }
         }
         chunk.dirty = true;
+        chunk.compact();
         self.chunks.insert(pos, chunk);
         self.relight_and_cascade(pos);
         // Neighbors need remeshing for the new border faces.
@@ -428,8 +427,7 @@ impl World {
 
     pub(super) fn save_chunk(&self, pos: ChunkPos) -> std::io::Result<()> {
         let buf = self.chunk_rle(pos).unwrap_or_default();
-        let mut f = fs::File::create(self.chunk_file(pos))?;
-        f.write_all(&buf)
+        super::region::write_chunk(&self.save_dir, pos, &buf)
     }
 
     /// Persist a single departing chunk (unload path): only its own
@@ -505,6 +503,8 @@ impl World {
                     .unwrap_or(self.reg.unknown_block)
                     .0;
             }
+            // A remap can collapse many ids onto one placeholder.
+            chunk.compact();
             chunk.dirty = true;
         }
         self.load_remap = self.read_palette_remap();

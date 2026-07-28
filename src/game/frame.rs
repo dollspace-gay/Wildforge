@@ -584,11 +584,8 @@ impl Game {
                             if who == 0 && self.multiplayer.remote.is_none() {
                                 self.hurt_player_from_wild(dmg, from);
                             } else if let Some(sess) = &mut self.multiplayer.host {
-                                // Guests are listed after the host.
-                                let ids: Vec<u32> = sess.guests.keys().copied().collect();
-                                if let Some(gid) = ids.get(who.saturating_sub(1)) {
-                                    sess.hurt_guest(*gid, dmg, from);
-                                }
+                                // `who` is that guest's own net id.
+                                sess.hurt_guest(who, dmg, from);
                             }
                         }
                         server::SimEvent::BoltCast => self.sfx(Sfx::Bolt(1.2)),

@@ -141,11 +141,54 @@ impl Game {
                     mob_lerp: Default::default(),
                     mob_age: 0.0,
                     mob_interval: 0.05,
+                    players_rx: Default::default(),
+                    mobs_rx: Default::default(),
+                    bolts_rx: Default::default(),
+                    falling_rx: Default::default(),
+                    // Until the host answers, assume the old fixed ring.
+                    granted_view_dist: 5,
+                    asked_view_dist: 0,
+                    wants: Default::default(),
                 });
                 self.multiplayer.join_status = format!("{policy} - {admission} - SYNCING...");
             }
             Err(e) => {
                 self.multiplayer.join_status = format!("FAILED: {e}").to_uppercase();
+            }
+        }
+    }
+
+    /// Ask the host for chunks we should have and do not.
+    ///
+    /// Nearest first, a few per frame, bounded by the granted radius. This is
+    /// what closes the hole a guest used to leave behind by walking away and
+    /// coming back: the host remembers what it sent forever, so without this
+    /// the ground never returned.
+    fn request_missing_chunks(&mut self, r: &mut Remote) {
+        const ASK_PER_FRAME: usize = 4;
+        let vd = r.granted_view_dist.min(self.config.view_dist);
+        let center = ChunkPos::of_world(self.player.pos.x as i32, self.player.pos.z as i32);
+        let mut asked = 0;
+        for ring in 0..=vd {
+            for dx in -ring..=ring {
+                for dz in -ring..=ring {
+                    if dx.abs().max(dz.abs()) != ring {
+                        continue;
+                    }
+                    let pos = ChunkPos {
+                        x: center.x + dx,
+                        z: center.z + dz,
+                    };
+                    if self.server.world.has_chunk(pos) || !r.wants.insert((pos.x, pos.z)) {
+                        continue;
+                    }
+                    r.client
+                        .send(&net::C2S::RequestChunk { x: pos.x, z: pos.z });
+                    asked += 1;
+                    if asked >= ASK_PER_FRAME {
+                        return;
+                    }
+                }
             }
         }
     }
@@ -265,6 +308,7 @@ impl Game {
                     return;
                 }
                 net::S2C::Chunk { x, z, rle } => {
+                    r.wants.remove(&(x, z));
                     self.server
                         .world
                         .insert_remote_chunk(ChunkPos { x, z }, &rle, &r.block_map);
@@ -290,7 +334,18 @@ impl Game {
                         }
                     }
                 }
-                net::S2C::Players(list) => {
+                net::S2C::Players(part) => {
+                    let Some(list) = r.players_rx.accept(part) else {
+                        continue;
+                    };
+                    // Anyone the host stopped mentioning has walked out of
+                    // our reach; drop them rather than leaving a statue.
+                    let present: std::collections::HashSet<u32> =
+                        list.iter().map(|(id, ..)| *id).collect();
+                    r.players.retain(|id, _| present.contains(id));
+                    r.player_lerp.retain(|id, _| present.contains(id));
+                    r.player_held.retain(|id, _| present.contains(id));
+                    r.player_style.retain(|id, _| present.contains(id));
                     // New span: from wherever each player currently
                     // renders, toward the fresh snapshot.
                     let t = (r.player_age / r.player_interval.max(0.001)).clamp(0.0, 1.0);
@@ -324,7 +379,10 @@ impl Game {
                     r.player_interval = r.player_age.clamp(0.03, 0.3);
                     r.player_age = 0.0;
                 }
-                net::S2C::Mobs(snaps) => {
+                net::S2C::Mobs(part) => {
+                    let Some(snaps) = r.mobs_rx.accept(part) else {
+                        continue;
+                    };
                     let t = (r.mob_age / r.mob_interval.max(0.001)).clamp(0.0, 1.0);
                     let mut lerps = std::collections::HashMap::new();
                     let mobs = snaps
@@ -360,7 +418,13 @@ impl Game {
                     r.mob_interval = r.mob_age.clamp(0.03, 0.3);
                     r.mob_age = 0.0;
                 }
-                net::S2C::Falling(snaps) => {
+                net::S2C::ViewDistance { chunks } => {
+                    r.granted_view_dist = chunks.max(1) as i32;
+                }
+                net::S2C::Falling(part) => {
+                    let Some(snaps) = r.falling_rx.accept(part) else {
+                        continue;
+                    };
                     let falling = snaps
                         .into_iter()
                         .map(|f| world::FallingBlock {
@@ -375,7 +439,10 @@ impl Game {
                         .collect();
                     self.server.world.replace_falling_blocks(falling);
                 }
-                net::S2C::Bolts(snaps) => {
+                net::S2C::Bolts(part) => {
+                    let Some(snaps) = r.bolts_rx.accept(part) else {
+                        continue;
+                    };
                     let projectiles = snaps
                         .into_iter()
                         .map(|s| mobs::Projectile {
@@ -654,6 +721,19 @@ impl Game {
                     sprint: self.input.keys.sprint,
                 });
             }
+            // Tell the host how far we want to see, whenever that changes.
+            // The host clamps and answers; until it does we keep the ring
+            // we were given.
+            let want = self.config.view_dist;
+            if want != r.asked_view_dist {
+                r.asked_view_dist = want;
+                r.client
+                    .send(&net::C2S::SetViewDistance { chunks: want as u8 });
+            }
+            // Ask for terrain we are missing inside the granted radius.
+            // The host pushes a ring as we walk, but ground we evicted and
+            // came back to is ours to ask for — it believes we still have it.
+            self.request_missing_chunks(&mut r);
         }
         self.multiplayer.remote = Some(r);
     }
