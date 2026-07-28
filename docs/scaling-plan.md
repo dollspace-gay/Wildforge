@@ -540,6 +540,26 @@ of the finding does the real work: the slider now runs to
 `/proc/meminfo` (or `GlobalMemoryStatusEx` on Windows), and a config
 file asking for more is clamped on the way in.
 
+**Decided 2026-07-28: this is where finding 6 stops.** The remaining
+levers were measured (see the ignored `measure_chunk_composition` probe)
+and declined:
+
+| lever | typical chunk | why not |
+|---|---:|---|
+| byte block palette | 199 KB | worth revisiting, but not on its own |
+| + nibble-packed light | 131 KB | **touches the light planes** |
+| + evict light for meshed chunks | 64 KB | **touches the light planes** |
+
+Two of the three go through the lighting, and the lighting has an owner
+and a look that is worth its cost. Wildforge eats the memory for the
+aesthetic; that is a deliberate trade, not an oversight.
+
+The accepted consequence is that the top of the slider needs headroom: a
+machine with ~8 GB free reaches 64, ~4 GB reaches 46, ~2 GB reaches 32.
+The clamp makes that graceful instead of fatal, which was the actual
+defect. Anyone reopening this should start with the block palette, which
+is the one lever that leaves the light planes entirely alone.
+
 ### The deferred items, done anyway
 
 - **Region-grouped saves (finding 8).** 32x32 chunks per `r.x.z.wfr`
