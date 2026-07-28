@@ -82,10 +82,6 @@ impl<T: Copy + PartialEq> Plane<T> {
         }
     }
 
-    pub fn is_uniform(&self) -> bool {
-        matches!(self, Plane::Uniform(_))
-    }
-
     /// Does this plane hold exactly these values?
     pub fn matches(&self, values: &[T]) -> bool {
         match self {
@@ -95,6 +91,7 @@ impl<T: Copy + PartialEq> Plane<T> {
     }
 
     /// Heap bytes this plane occupies. What the whole exercise is about.
+    #[cfg(test)]
     pub fn heap_bytes(&self) -> usize {
         match self {
             Plane::Uniform(_) => 0,
@@ -257,6 +254,7 @@ impl Chunk {
 
     /// Heap bytes this chunk holds. A chunk of open air costs nothing here;
     /// a chunk of mixed terrain with a torch in it costs the lot.
+    #[cfg(test)]
     pub fn heap_bytes(&self) -> usize {
         self.blocks.heap_bytes()
             + self.meta.heap_bytes()

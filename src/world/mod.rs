@@ -809,6 +809,7 @@ impl World {
         self.chunks.len()
     }
 
+    #[cfg(test)]
     /// Entries held across the land's decaying ledgers.
     ///
     /// These are keyed per 256-block cell, persisted, and rewritten whole on

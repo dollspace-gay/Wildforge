@@ -98,6 +98,7 @@ pub struct Snapshot<T> {
 impl<T> Snapshot<T> {
     /// The whole snapshot in one part — what almost every tick sends, and
     /// what the tests build by hand.
+    #[cfg(test)]
     pub fn whole(seq: u32, items: Vec<T>) -> Snapshot<T> {
         Snapshot {
             seq,

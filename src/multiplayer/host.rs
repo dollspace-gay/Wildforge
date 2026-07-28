@@ -94,11 +94,13 @@ pub struct Guest {
 
 impl Guest {
     /// View distance in chunks this guest was granted.
+    #[cfg(test)]
     pub fn granted_view_dist(&self) -> i32 {
         self.view_dist
     }
 
     /// Does the host believe this guest already holds this chunk?
+    #[cfg(test)]
     pub fn holds_chunk(&self, cx: i32, cz: i32) -> bool {
         self.sent_chunks.contains(&(cx, cz))
     }

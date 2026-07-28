@@ -32,6 +32,7 @@ pub(super) fn run_headless_server(world_name: &str) {
     let mut last = Instant::now();
     let mut save_timer = 0.0f32;
     let mut residency_timer = 0.0f32;
+    let mut last_datagram_report = 0u64;
     loop {
         while let Ok(command) = command_rx.try_recv() {
             run_console_command(&mut sess, &command);
@@ -70,7 +71,17 @@ pub(super) fn run_headless_server(world_name: &str) {
             let (centers, radius) = sess.residency();
             let dropped = sim.world.retain_chunks(&centers, radius + 2);
             if dropped > 0 {
-                eprintln!("server: released {dropped} chunks");
+                eprintln!(
+                    "server: released {dropped} chunks ({} resident)",
+                    sim.world.chunk_count()
+                );
+            }
+            // A state datagram the path refused is a guest quietly missing
+            // wildlife. Zero is the only healthy number here.
+            let dropped_datagrams = sess.net.datagram_failures();
+            if dropped_datagrams > last_datagram_report {
+                last_datagram_report = dropped_datagrams;
+                eprintln!("server: {dropped_datagrams} state datagrams dropped");
             }
         }
         save_timer += dt;
