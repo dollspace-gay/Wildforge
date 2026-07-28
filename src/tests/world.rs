@@ -2782,3 +2782,63 @@ fn a_world_survives_a_save_and_reload_across_several_regions() {
         );
     }
 }
+
+#[test]
+#[ignore = "measurement probe, not an assertion"]
+fn measure_chunk_composition() {
+    use crate::chunk::{CHUNK_CELLS, ChunkPos};
+    use std::collections::HashSet;
+    let mut w = test_world("compose");
+    let (mut ids, mut meta_nz, mut sky_vals, mut lb_nz, mut n) =
+        (0usize, 0usize, 0usize, 0usize, 0usize);
+    let mut worst_ids = 0usize;
+    for cx in -3..=3 {
+        for cz in -3..=3 {
+            let pos = ChunkPos { x: cx, z: cz };
+            w.ensure_chunk(pos);
+            let c = &w.chunks()[&pos];
+            let mut set: HashSet<u16> = HashSet::new();
+            let mut sky: HashSet<u8> = HashSet::new();
+            let (mut mnz, mut lnz) = (0usize, 0usize);
+            for x in 0..16 {
+                for z in 0..16 {
+                    for y in 0..256 {
+                        set.insert(c.get(x, y, z).0);
+                        if c.meta(x, y, z) != 0 {
+                            mnz += 1;
+                        }
+                        let (lb, ls) = c.light(x, y, z);
+                        sky.insert(ls);
+                        if lb != [0, 0, 0] {
+                            lnz += 1;
+                        }
+                    }
+                }
+            }
+            ids += set.len();
+            worst_ids = worst_ids.max(set.len());
+            meta_nz += mnz;
+            sky_vals += sky.len();
+            lb_nz += lnz;
+            n += 1;
+        }
+    }
+    println!("PROBE over {n} chunks ({CHUNK_CELLS} cells each):");
+    println!(
+        "  distinct block ids/chunk: avg {:.1}, worst {worst_ids}  -> palette bits {}",
+        ids as f64 / n as f64,
+        (worst_ids as f64).log2().ceil() as u32
+    );
+    println!(
+        "  meta non-zero: avg {:.2}% of cells",
+        100.0 * meta_nz as f64 / (n * CHUNK_CELLS) as f64
+    );
+    println!(
+        "  block-light non-zero: avg {:.3}% of cells",
+        100.0 * lb_nz as f64 / (n * CHUNK_CELLS) as f64
+    );
+    println!(
+        "  distinct sky-light values/chunk: avg {:.1} (needs 4 bits)",
+        sky_vals as f64 / n as f64
+    );
+}
