@@ -285,7 +285,7 @@ impl World {
     }
 
     pub(super) fn try_load_chunk(&self, pos: ChunkPos) -> Option<Chunk> {
-        let data = fs::read(self.chunk_file(pos)).ok()?;
+        let data = super::region::read_chunk(&self.save_dir, pos)?;
         let mut chunk = Chunk::new();
         let is_v4 = data.starts_with(b"WFC4");
         if !is_v4 && !data.starts_with(b"WFC3") {
@@ -427,8 +427,7 @@ impl World {
 
     pub(super) fn save_chunk(&self, pos: ChunkPos) -> std::io::Result<()> {
         let buf = self.chunk_rle(pos).unwrap_or_default();
-        let mut f = fs::File::create(self.chunk_file(pos))?;
-        f.write_all(&buf)
+        super::region::write_chunk(&self.save_dir, pos, &buf)
     }
 
     /// Persist a single departing chunk (unload path): only its own

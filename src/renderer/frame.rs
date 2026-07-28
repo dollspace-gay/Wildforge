@@ -261,7 +261,12 @@ impl Renderer {
         // Shadow pass: opaque terrain depth from the sun's POV, once per cascade
         // into its own layer. No color target. Every loaded chunk is a potential
         // caster (occluders behind the camera still shadow what's in view), so
-        // this pass is not frustum-culled.
+        // this pass is range-culled per cascade rather than frustum-culled.
+        //
+        // Built once and shared by every pass below. Each pass used to walk the
+        // whole loaded map itself — five scans of up to sixteen thousand entries
+        // a frame at a wide view, to draw a few hundred.
+        let visible: Vec<(&ChunkPos, &GpuChunk)> = self.chunks.iter().collect();
         for (c, &casc_radius) in CASCADE_RADII.iter().enumerate() {
             let mut sp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("shadow"),
@@ -288,7 +293,7 @@ impl Renderer {
             // layer, so don't draw them (the near cascade skips
             // nearly the whole loaded set).
             let reach = casc_radius + 30.0;
-            for (pos, gpu) in &self.chunks {
+            for (pos, gpu) in visible.iter().copied() {
                 if !chunk_in_range(*pos, f.cam_pos, reach) {
                     continue;
                 }
@@ -367,7 +372,7 @@ impl Renderer {
                     &self.pt_face_bg,
                     &[(layer as u32) * PT_FACE_STRIDE as u32],
                 );
-                for (pos, gpu) in &self.chunks {
+                for (pos, gpu) in visible.iter().copied() {
                     if let Some(m) = &gpu.opaque {
                         if !chunk_in_range(*pos, l.pos, l.range) {
                             continue;
@@ -416,7 +421,7 @@ impl Renderer {
                     &[(layer as u32) * PT_FACE_STRIDE as u32],
                 );
                 tp.set_bind_group(1, &self.atlas_bg, &[]);
-                for (pos, gpu) in &self.chunks {
+                for (pos, gpu) in visible.iter().copied() {
                     if let Some(m) = &gpu.water {
                         if !chunk_in_range(*pos, l.pos, l.range) {
                             continue;
@@ -475,7 +480,7 @@ impl Renderer {
             // Opaque terrain (frustum-culled)
             let planes = frustum_planes(&f.view_proj);
             pass.set_pipeline(&self.chunk_pipeline);
-            for (pos, gpu) in &self.chunks {
+            for (pos, gpu) in visible.iter().copied() {
                 if !chunk_visible(&planes, *pos) {
                     continue;
                 }
@@ -495,7 +500,7 @@ impl Renderer {
 
             // Water
             pass.set_pipeline(&self.water_pipeline);
-            for (pos, gpu) in &self.chunks {
+            for (pos, gpu) in visible.iter().copied() {
                 if !chunk_visible(&planes, *pos) {
                     continue;
                 }

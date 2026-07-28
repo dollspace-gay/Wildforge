@@ -3,7 +3,6 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
-use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -27,6 +26,8 @@ mod machine_tick;
 mod machines;
 mod persistence;
 mod power;
+#[cfg_attr(test, allow(unused))]
+pub(crate) mod region;
 mod storage;
 
 #[cfg_attr(not(test), allow(unused_imports))]
@@ -806,6 +807,15 @@ impl World {
     /// keep bounded.
     pub fn chunk_count(&self) -> usize {
         self.chunks.len()
+    }
+
+    /// Entries held across the land's decaying ledgers.
+    ///
+    /// These are keyed per 256-block cell, persisted, and rewritten whole on
+    /// every save, so they are only bounded because each decays to nothing
+    /// and drops its entry when it gets there.
+    pub fn ledger_len(&self) -> usize {
+        self.regional_ire.len() + self.bloom.len() + self.blessed_streak.len()
     }
 
     pub fn dirty_chunks(&self) -> Vec<ChunkPos> {

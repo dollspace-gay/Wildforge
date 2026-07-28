@@ -145,7 +145,8 @@ fn pre_v3_saves_regenerate_cleanly() {
     // ensure_chunk on fresh terrain marks modified=false, so force a write.
     w.set_block(1, 100, 1, b(&reg, "base:planks"));
     w.save_modified();
-    let bytes = std::fs::read(w.save_dir_for_test().join("c.0.0.wfc")).unwrap();
+    let bytes = crate::world::region::read_chunk(&w.save_dir_for_test(), ChunkPos { x: 0, z: 0 })
+        .expect("the edited chunk is stored");
     assert!(bytes.starts_with(b"WFC4"), "saves are written as v4 now");
 }
 
@@ -2278,7 +2279,7 @@ fn the_autosave_writes_only_what_changed_since_the_last_one() {
     let top = w.surface_height(3, 3);
     w.set_block(3, top + 1, 3, stone);
     w.save_modified();
-    let file = dir.join("c.0.0.wfc");
+    let file = crate::world::region::region_path(&dir, ChunkPos { x: 0, z: 0 });
     assert!(file.exists(), "the edited chunk is written");
 
     // Deleting the file is the probe: if the next autosave puts it
@@ -2308,7 +2309,7 @@ fn a_chunk_read_from_disk_is_clean_until_something_edits_it() {
         w.save_modified();
         top
     };
-    let file = dir.join("c.0.0.wfc");
+    let file = crate::world::region::region_path(&dir, ChunkPos { x: 0, z: 0 });
     assert!(file.exists());
 
     let mut w = World::load_or_create(dir.clone(), reg.clone());
@@ -2694,4 +2695,90 @@ fn the_view_distance_slider_stops_where_the_memory_does() {
     // And one below the floor comes up to it.
     let tiny = Config::from_text("view_dist=1\n");
     assert_eq!(tiny.view_dist, MIN_VIEW_DIST);
+}
+
+#[test]
+fn the_lands_ledgers_do_not_grow_without_bound() {
+    // regional_ire, bloom and blessed_streak are keyed per 256-block cell and
+    // written every time anyone takes or tends anything. They are only
+    // bounded because each one decays to nothing and drops its entry when it
+    // gets there — behaviour nothing tested, in maps that are also persisted
+    // and rewritten whole on every save.
+    let mut w = test_world("ledger-bounds");
+
+    // A thousand cells across a wide area, all charged.
+    for i in 0..1000 {
+        let (x, z) = (i * 300, (i % 37) * 400);
+        w.add_ire_at(x, z, 5.0);
+        w.add_bloom(x, z, 2.0);
+    }
+    assert!(w.ledger_len() > 0, "charging the land records something");
+
+    // A season passes with nobody touching any of it.
+    for _ in 0..(crate::world::SEASON_DAYS * 4) {
+        w.tick_ire(1.0);
+    }
+    assert_eq!(
+        w.ledger_len(),
+        0,
+        "grudges, gratitude and blooms all fade to nothing and stop being \
+         stored — a ledger that only ever grew would outlive the world"
+    );
+}
+
+#[test]
+fn a_world_survives_a_save_and_reload_across_several_regions() {
+    // Chunks live 32x32 to a region file now. This walks a span wide enough
+    // to cross region boundaries in both axes and through negative
+    // coordinates, edits every chunk, saves, drops the world, and reads it
+    // all back — the case a flat file-per-chunk directory got for free and a
+    // packed format has to earn.
+    let reg = base_reg();
+    let dir = tmp_dir("region-round-trip");
+    let stone = b(&reg, "base:stone");
+    let planks = b(&reg, "base:planks");
+
+    let mut edits = Vec::new();
+    {
+        let mut w = World::new(4242, dir.clone(), reg.clone());
+        for cx in -34..=34i32 {
+            for cz in [-33i32, 0, 33] {
+                let pos = ChunkPos { x: cx, z: cz };
+                w.ensure_chunk(pos);
+                let (wx, wz) = (cx * 16 + 3, cz * 16 + 5);
+                let y = w.surface_height(wx, wz) + 1;
+                let block = if cx % 2 == 0 { stone } else { planks };
+                w.set_block(wx, y, wz, block);
+                edits.push((wx, y, wz, block));
+            }
+        }
+        w.save_modified();
+    }
+    assert!(edits.len() > 200, "enough chunks to span many regions");
+
+    // Several region files, not hundreds of chunk files.
+    let files: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    let regions = files.iter().filter(|f| f.ends_with(".wfr")).count();
+    let loose = files.iter().filter(|f| f.ends_with(".wfc")).count();
+    assert!(regions > 1, "the span crosses region boundaries");
+    assert_eq!(loose, 0, "no per-chunk files are written any more");
+    assert!(
+        regions < edits.len(),
+        "{regions} region files for {} chunks — the whole point is fewer",
+        edits.len()
+    );
+
+    let mut w = World::load_or_create(dir, reg.clone());
+    for (x, y, z, want) in edits {
+        w.ensure_chunk(ChunkPos::of_world(x, z));
+        assert_eq!(
+            w.get_block(x, y, z),
+            want,
+            "block at ({x},{y},{z}) did not survive the round trip"
+        );
+    }
 }

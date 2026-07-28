@@ -137,8 +137,4 @@ impl World {
     pub(super) fn write_palette(&self) {
         let _ = fs::write(self.save_dir.join("palette"), self.palette_text());
     }
-
-    pub(super) fn chunk_file(&self, pos: ChunkPos) -> PathBuf {
-        self.save_dir.join(format!("c.{}.{}.wfc", pos.x, pos.z))
-    }
 }

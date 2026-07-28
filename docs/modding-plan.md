@@ -167,6 +167,13 @@ on_tick(dt)                                     // budgeted; slow mods throttled
    cross build), sandboxed by default, per-event fuel limits, painless hot
    reload. The `ModBackend` trait keeps Lua/WASM backends possible later
    without redesign.
-2. **Status: plan approved, implementation not started.** Phase 1 (registry
-   refactor + save format v2 + palette) is the agreed starting point when
-   implementation kicks off.
+2. **Status: implemented, all four phases.** Dynamic registries and the
+   per-world id palette (phase 1), data mods (phase 2), the Rhai runtime
+   with nine events and a sandboxed host API (phase 3), and hot reload
+   (phase 4) all shipped. `mods/gems` is the worked example, and
+   `mods/README.md` is executable: the test suite extracts its fenced
+   blocks, loads them as a real mod, and asserts every claim, so the guide
+   cannot drift from the code.
+
+   This line read "implementation not started" long after all of it landed.
+   Noted during the 2026-07-28 scaling audit (`scaling-plan.md`, Part V).

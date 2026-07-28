@@ -1,7 +1,9 @@
 # What breaks when the world gets bigger
 
-Drafted 2026-07-28 from a full-tree audit. **Status: findings confirmed
-against the code, repairs not started.**
+Drafted 2026-07-28 from a full-tree audit. **Status: implemented
+2026-07-28 — all six stages plus the deferred items. See the
+implementation record at the end, including the two places the audit
+overstated its case.**
 
 Wildforge is in good structural health. 63.5k lines, 318 tests,
 `cargo check --all-targets` clean with zero warnings, and effectively no
@@ -488,3 +490,106 @@ whatever arc next touches their file.
 Stages 1–4 are one arc and should ship as one: **multiplayer
 hardening**. Stage 5 is its own piece of work and can go before or
 after. Stage 6 can go any time and takes an afternoon.
+
+---
+
+## Implementation record — completed 2026-07-28
+
+All six stages landed, and so did the four items this plan had deferred
+to "a later pass". Where the audit was wrong, it is corrected below
+rather than quietly fixed.
+
+### What the audit got wrong
+
+**Finding 5 was overstated.** The claim was that hostile spawning and
+mob AI both followed `players.first()`. They do not: `server.rs:172-178`
+already picks a *random* player each spawn cycle, and `Mob::tick` is
+handed the whole players slice and uses it. The genuine defect was
+narrower — **repopulation** followed `players.first()` only, so on a
+shared world every guest but one lived in a country that never
+recovered from being hunted. That is fixed, and it now rings a random
+player per cycle exactly as the warden spawner already did. The
+positional-index fragility in `SimEvent::PlayerHit` was real and is
+also fixed.
+
+**Part III's "five full-map scans" was half right.** The passes did
+walk the whole loaded map, but they were already range- and
+frustum-culled before drawing — the stale comment claiming otherwise
+was the only thing actually wrong. The scans now share one visible list
+built per frame.
+
+### Finding 6 landed differently than described
+
+The plan asked for `Uniform | Dense` **sections**. What shipped is
+`Uniform | Dense` **whole planes**, which is the same idea without a
+layout change: the chunk index is unchanged, so the mesher, worldgen
+and RLE codecs were untouched.
+
+The honest result is smaller than the plan implied. Measured on real
+generated terrain: **262 KiB against the old 448 KiB**, a 1.71x
+reduction, and a fresh chunk now costs nothing at all. Block light is
+the win (uniform black in any chunk without a torch, which is nearly
+all of them). Metadata stays dense wherever soil carries fertility, and
+block ids and sky light genuinely vary per cell — getting *those* down
+wants a block palette, which is a much more invasive change and is not
+in this pass.
+
+That still leaves a 64-chunk view asking for ~4 GB, so the other half
+of the finding does the real work: the slider now runs to
+`max_view_dist_for_memory()`, resolved once at startup from
+`/proc/meminfo` (or `GlobalMemoryStatusEx` on Windows), and a config
+file asking for more is clamped on the way in.
+
+### The deferred items, done anyway
+
+- **Region-grouped saves (finding 8).** 32x32 chunks per `r.x.z.wfr`
+  file, magic plus a 1024-slot offset table. Writes append and then
+  point the slot at the new payload, so an interrupted write leaves the
+  previous payload addressed rather than a torn one; stranded payloads
+  are compacted once dead weight outgrows live. Worlds saved before
+  this still load — `read_chunk` falls back to the old
+  `c.x.z.wfc` path, and the next save of that chunk migrates it.
+- **The per-frame visible list (Part III).**
+- **Finding 7** turned out to be mostly already handled: `regional_ire`,
+  `bloom`, `bloom_spent` and `blessed_streak` all prune themselves via
+  `retain` as they decay. That behaviour was untested, and now is.
+  `last_random`, `mob_seeded` and `player_touched` are deliberately
+  **not** pruned: they are permanent records (when a chunk last ticked,
+  which chunks have been seeded, which ground people have worked), they
+  cost 8-16 bytes per explored chunk, and dropping entries would change
+  gameplay — lost catch-up bursts, re-seeded wildlife, forgotten
+  worked ground.
+- **The remaining god functions** (`interact`, `on_msg`,
+  `build_ui_inner`, `Registry::build`, `Renderer::new`) are untouched,
+  as the plan intended. `start_world` was the one worth doing now and
+  it is done.
+
+### Verification
+
+The tree went from 358 to 376 tests, all passing, with no warnings.
+
+Every repair has a test that was confirmed to fail without it, not just
+to pass with it:
+
+- Restoring the single-datagram send makes
+  `a_crowded_world_still_reaches_the_guest` fail with **400 dropped
+  datagrams**.
+- Restoring `players.first()` in repopulation makes
+  `wildlife_returns_to_every_country_someone_lives_in` fail with **56
+  mobs around player one and 0 around player two**.
+
+Run, not just tested: a deterministic world capture (terrain, water,
+strata, a volcano's glow) and a torch-lit interior at midnight, which is
+the case the compacted block-light plane exists for.
+
+The demo extraction was checked A/B against `main` with an identical
+`config.txt` — captures are not byte-deterministic (the settle frame
+varies), so each scene was compared against its own run-to-run noise
+floor. `DEMO_TORCHROOM` 0.00% of pixels differ, `DEMO_MILL` 0.18%,
+`DEMO_CAMP` 0.17%; `DEMO_POOL` differs in 9.02% of pixels against a
+noise floor of **9.12%** for that scene, because it is animated water.
+Behaviourally identical.
+
+**Protocol 15 -> 16.** Saves are disposable by standing rule, so no
+migration path was built — but region files read the old layout anyway,
+because it cost four lines.
