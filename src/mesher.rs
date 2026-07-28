@@ -77,7 +77,14 @@ fn should_draw(reg: &Registry, b: BlockId, n: BlockId) -> bool {
     !reg.is_opaque(n)
 }
 
-pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
+/// `variants` supplies the active pack's alternate tiles. Variant choice is
+/// baked into the uvs here rather than resolved in the shader, so switching
+/// packs has to remesh — see `apply_pack`.
+pub fn mesh_chunk(
+    world: &World,
+    pos: ChunkPos,
+    variants: &crate::atlas::TileVariants,
+) -> ChunkMesh {
     let bx = pos.x * CHUNK_X as i32;
     let bz = pos.z * CHUNK_Z as i32;
     let reg = &world.reg;
@@ -606,6 +613,9 @@ pub fn mesh_chunk(world: &World, pos: ChunkPos) -> ChunkMesh {
                         }
                         _ => reg.block(b).tiles[face],
                     };
+                    // Break the repeat: one of this tile's alternate looks,
+                    // chosen per block face from the world position.
+                    let slot = variants.pick(slot, bx + lx, y, bz + lz, face);
                     let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
                     let nrm = [n[0] as f32, n[1] as f32, n[2] as f32];
                     // `face_light` (not `light`) so a face looking into an opaque

@@ -1017,7 +1017,7 @@ fn fluid_surfaces_stitch_at_shared_corners() {
     let thin = reg.water_block(5); // volume 3, surface 3/9
     w.set_block(2, y + 1, 2, full);
     w.set_block(3, y + 1, 2, thin);
-    let mesh = crate::mesher::mesh_chunk(&w, ChunkPos { x: 0, z: 0 });
+    let mesh = crate::mesher::mesh_chunk(&w, ChunkPos { x: 0, z: 0 }, &Default::default());
     let has = |x: f32, py: f32, z: f32| {
         mesh.water_verts.iter().any(|v| {
             (v.pos[0] - x).abs() < 1e-4
@@ -1163,4 +1163,121 @@ fn greyscale_companion_maps_load() {
     let i = (((gravel as u32 / ATLAS_TILES * tp) * atlas.px + gravel as u32 % ATLAS_TILES * tp) * 4)
         as usize;
     assert_eq!(atlas.material[i], 77, "greyscale height reached material R");
+}
+
+#[test]
+fn pack_numbered_variants_get_their_own_slots() {
+    use crate::atlas::{ATLAS_TILES, build_atlas, builtin_slots};
+    let pack = tmp_dir("packvariants");
+    std::fs::create_dir_all(pack.join("tiles")).unwrap();
+    write_solid_png(&pack.join("tiles/gravel.png"), 8, 8, [10, 10, 10, 255]);
+    write_solid_png(&pack.join("tiles/gravel_2.png"), 8, 8, [20, 20, 20, 255]);
+    write_solid_png(&pack.join("tiles/gravel_3.png"), 8, 8, [30, 30, 30, 255]);
+    // A variant may carry its own companion maps.
+    write_solid_png(&pack.join("tiles/gravel_2_h.png"), 8, 8, [90, 90, 90, 255]);
+    let atlas = build_atlas(&[], &[crate::atlas::PackSource::Dir(pack)], &[]);
+    assert!(atlas.warnings.is_empty(), "{:?}", atlas.warnings);
+    let gravel = *builtin_slots().get("gravel").unwrap();
+    let sig = atlas.variants.signature();
+    let alts = &sig.iter().find(|(k, _)| *k == gravel).unwrap().1;
+    assert_eq!(alts.len(), 2, "base tile plus two alternates");
+    // Each alternate is a distinct slot carrying its own art.
+    assert_eq!(
+        tile_center(&atlas.color, atlas.px, gravel),
+        [10, 10, 10, 255]
+    );
+    let mut seen: Vec<u8> = alts
+        .iter()
+        .map(|s| tile_center(&atlas.color, atlas.px, *s)[0])
+        .collect();
+    seen.sort_unstable();
+    assert_eq!(seen, vec![20, 30], "variants painted with their own albedo");
+    // gravel_2's authored height landed on gravel_2's slot, not on the base.
+    let tp = atlas.px / ATLAS_TILES;
+    let at = |slot: u16| {
+        let i = (((slot as u32 / ATLAS_TILES * tp) * atlas.px + slot as u32 % ATLAS_TILES * tp) * 4)
+            as usize;
+        atlas.material[i]
+    };
+    let v2 = alts
+        .iter()
+        .find(|s| tile_center(&atlas.color, atlas.px, **s)[0] == 20)
+        .unwrap();
+    assert_eq!(at(*v2), 90, "variant height on the variant slot");
+    assert_eq!(at(gravel), 255, "base tile height untouched");
+}
+
+#[test]
+fn variant_pick_is_per_face_stable_and_spread() {
+    use crate::atlas::{build_atlas, builtin_slots};
+    let pack = tmp_dir("packvarpick");
+    std::fs::create_dir_all(pack.join("tiles")).unwrap();
+    write_solid_png(&pack.join("tiles/stone.png"), 8, 8, [10, 10, 10, 255]);
+    for (n, v) in [
+        ("stone_2.png", 20u8),
+        ("stone_3.png", 30),
+        ("stone_4.png", 40),
+    ] {
+        write_solid_png(&pack.join("tiles").join(n), 8, 8, [v, v, v, 255]);
+    }
+    let atlas = build_atlas(&[], &[crate::atlas::PackSource::Dir(pack)], &[]);
+    let v = &atlas.variants;
+    let stone = *builtin_slots().get("stone").unwrap();
+
+    // Stable: same block, same face, same answer. This is what makes a
+    // position hash safe to use instead of stored per-block state.
+    for _ in 0..4 {
+        assert_eq!(v.pick(stone, 7, 3, -2, 1), v.pick(stone, 7, 3, -2, 1));
+    }
+    // Per-face: one cube should not be the same variant on all six sides.
+    let faces: std::collections::HashSet<u16> =
+        (0..6).map(|f| v.pick(stone, 7, 3, -2, f)).collect();
+    assert!(faces.len() > 1, "all six faces picked the same variant");
+
+    // Spread: over a volume, every variant gets used, and none dominates.
+    let mut hist = std::collections::HashMap::new();
+    for x in 0..16 {
+        for y in 0..16 {
+            for z in 0..16 {
+                *hist.entry(v.pick(stone, x, y, z, 2)).or_insert(0usize) += 1;
+            }
+        }
+    }
+    assert_eq!(hist.len(), 4, "all four looks used: {hist:?}");
+    let total: usize = hist.values().sum();
+    for (slot, n) in &hist {
+        let frac = *n as f64 / total as f64;
+        assert!(
+            (0.15..0.35).contains(&frac),
+            "slot {slot} took {frac:.2} of faces, expected ~0.25"
+        );
+    }
+    // A tile with no variants is the identity.
+    let dirt = *builtin_slots().get("dirt").unwrap();
+    assert_eq!(v.pick(dirt, 7, 3, -2, 1), dirt);
+}
+
+#[test]
+fn variant_shipping_only_maps_inherits_the_base_look() {
+    use crate::atlas::{build_atlas, builtin_slots};
+    // `stone_2_n.png` with no `stone_2.png`: the variant still needs something
+    // to draw, so it takes the base albedo rather than rendering blank.
+    let pack = tmp_dir("packvarmaps");
+    std::fs::create_dir_all(pack.join("tiles")).unwrap();
+    write_solid_png(&pack.join("tiles/stone.png"), 8, 8, [77, 88, 99, 255]);
+    write_solid_png(
+        &pack.join("tiles/stone_2_n.png"),
+        8,
+        8,
+        [128, 128, 255, 255],
+    );
+    let atlas = build_atlas(&[], &[crate::atlas::PackSource::Dir(pack)], &[]);
+    let stone = *builtin_slots().get("stone").unwrap();
+    let sig = atlas.variants.signature();
+    let alt = sig.iter().find(|(k, _)| *k == stone).unwrap().1[0];
+    assert_eq!(
+        tile_center(&atlas.color, atlas.px, alt),
+        [77, 88, 99, 255],
+        "map-only variant inherited the base albedo"
+    );
 }
