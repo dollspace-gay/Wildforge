@@ -8,7 +8,15 @@ impl Renderer {
     }
 
     /// Replace the synchronized atlas textures during hot reload.
-    pub fn set_atlas(&mut self, data: &[u8], material: &[u8], normal: &[u8], px: u32) {
+    pub fn set_atlas(
+        &mut self,
+        data: &[u8],
+        material: &[u8],
+        normal: &[u8],
+        px: u32,
+        interior_base: u16,
+    ) {
+        self.atlas_interior_base = interior_base;
         let color = upload_atlas(&self.device, &self.queue, data, px, true, "atlas");
         let mat = upload_atlas(
             &self.device,

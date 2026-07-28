@@ -112,7 +112,12 @@ impl Renderer {
                 }
                 a
             },
-            occ_origin: [f.occ_origin[0], f.occ_origin[1], f.occ_origin[2], 0],
+            occ_origin: [
+                f.occ_origin[0],
+                f.occ_origin[1],
+                f.occ_origin[2],
+                self.atlas_interior_base as i32,
+            ],
         };
         // Upload a fresh occupancy grid when the camera crossed into a new region.
         if let Some(bytes) = f.occ_update {

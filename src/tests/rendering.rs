@@ -1102,25 +1102,48 @@ fn pack_inherits_cycle_terminates() {
 #[test]
 fn pack_can_author_the_interior_layer() {
     use crate::atlas::{ATLAS_TILES, build_atlas, builtin_slots};
-    // Multilayer parallax was procedural-only (ice, hardcoded). A pack can now
-    // author the interior stratum for any tile via `<tile>_i.png`.
+    // An interior layer is a full second ALBEDO at a slot of its own, not a
+    // greyscale mask: the shader finds it via `interior_base + (alpha - 1)`.
     let pack = tmp_dir("packinterior");
     std::fs::create_dir_all(pack.join("tiles")).unwrap();
     write_solid_png(&pack.join("tiles/leaves.png"), 8, 8, [40, 90, 30, 255]);
-    write_solid_png(&pack.join("tiles/leaves_i.png"), 8, 8, [200, 200, 200, 255]);
+    write_solid_png(&pack.join("tiles/leaves_i.png"), 8, 8, [10, 20, 200, 255]);
     let atlas = build_atlas(&[], &[crate::atlas::PackSource::Dir(pack)], &[]);
+    assert!(atlas.warnings.is_empty(), "{:?}", atlas.warnings);
     let leaves = *builtin_slots().get("leaves").unwrap();
     let tp = atlas.px / ATLAS_TILES;
-    let i = (((leaves as u32 / ATLAS_TILES * tp) * atlas.px + leaves as u32 % ATLAS_TILES * tp) * 4)
-        as usize;
-    assert_eq!(atlas.material[i + 1], 200, "interior mask in material G");
+    let at = |slot: u16| {
+        (((slot as u32 / ATLAS_TILES * tp) * atlas.px + slot as u32 % ATLAS_TILES * tp) * 4)
+            as usize
+    };
+    let id = atlas.material[at(leaves) + 3];
+    assert_ne!(
+        id, 0,
+        "surface tile names its interior layer in material alpha"
+    );
+    let layer = atlas.interior_base + (id as u16 - 1);
+    assert_eq!(
+        tile_center(&atlas.color, atlas.px, layer),
+        [10, 20, 200, 255],
+        "interior layer keeps its own colour at its own slot"
+    );
+    assert_eq!(
+        tile_center(&atlas.color, atlas.px, leaves),
+        [40, 90, 30, 255],
+        "surface albedo untouched"
+    );
+    assert_eq!(
+        atlas.material[at(layer) + 3],
+        0,
+        "the layer itself has no layer"
+    );
 }
 
 #[test]
 fn luminance_height_fallback_keeps_an_authored_interior() {
     use crate::atlas::{ATLAS_TILES, build_atlas, builtin_slots};
     // stone/cobblestone get a free luminance height when none is authored. That
-    // fallback must not erase an interior the pack asked for.
+    // fallback writes R, and must not disturb the interior-layer id in A.
     let pack = tmp_dir("packinteriorstone");
     std::fs::create_dir_all(pack.join("tiles")).unwrap();
     write_solid_png(&pack.join("tiles/stone.png"), 8, 8, [120, 120, 120, 255]);
@@ -1130,7 +1153,15 @@ fn luminance_height_fallback_keeps_an_authored_interior() {
     let tp = atlas.px / ATLAS_TILES;
     let i = (((stone as u32 / ATLAS_TILES * tp) * atlas.px + stone as u32 % ATLAS_TILES * tp) * 4)
         as usize;
-    assert_eq!(atlas.material[i + 1], 180, "interior survived the fallback");
+    assert_ne!(
+        atlas.material[i + 3],
+        0,
+        "interior layer id survived the fallback"
+    );
+    assert!(
+        atlas.material[i] < 255,
+        "and the free luminance height still applied"
+    );
 }
 
 #[test]

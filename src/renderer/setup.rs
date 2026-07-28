@@ -1056,6 +1056,7 @@ fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
         let ui_vbuf = DynBuf::new(&device, wgpu::BufferUsages::VERTEX);
 
         let mut r = Renderer {
+            atlas_interior_base: 0,
             adapter_name,
             surface,
             device,

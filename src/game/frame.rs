@@ -720,8 +720,13 @@ impl Game {
             atlas::season_tint(&mut atlas.color, atlas.px, self.server.world.season());
             self.presentation.atlas_season = self.server.world.season();
             self.content.pack_warnings = atlas.warnings;
-            self.renderer
-                .set_atlas(&atlas.color, &atlas.material, &atlas.normal, atlas.px);
+            self.renderer.set_atlas(
+                &atlas.color,
+                &atlas.material,
+                &atlas.normal,
+                atlas.px,
+                atlas.interior_base,
+            );
         }
 
         // Hot reload: poll the mods + packs trees once a second.
