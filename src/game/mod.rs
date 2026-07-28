@@ -289,6 +289,10 @@ impl Default for InteractionState {
 
 /// Cosmetic animation, particles, transient feedback, and light selection.
 struct PresentationState {
+    /// Top of the view-distance slider on this machine, resolved once at
+    /// startup from available memory. A setting that cannot be honoured is
+    /// worse than one that is not offered.
+    max_view_dist: i32,
     /// Region-whisper bookkeeping: the cell we're in, and cells
     /// already whispered this session.
     last_ire_cell: Option<(i32, i32)>,
@@ -327,6 +331,7 @@ struct PresentationState {
 impl PresentationState {
     fn new() -> Self {
         Self {
+            max_view_dist: config::max_view_dist_for_memory(),
             last_ire_cell: None,
             whispered_cells: std::collections::HashSet::new(),
             swing: 0.0,

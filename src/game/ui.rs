@@ -321,7 +321,11 @@ impl Game {
         match i {
             0 => self.config.volume,
             1 => (self.config.sensitivity - 0.1) / 2.9,
-            2 => (self.config.view_dist - 4) as f32 / (crate::config::MAX_VIEW_DIST - 4) as f32,
+            2 => {
+                let top = self.presentation.max_view_dist;
+                (self.config.view_dist - crate::config::MIN_VIEW_DIST) as f32
+                    / (top - crate::config::MIN_VIEW_DIST).max(1) as f32
+            }
             _ => (self.config.fov - 50.0) / 60.0,
         }
     }
@@ -344,12 +348,20 @@ impl Game {
                 // Four-chunk steps past the old maximum: nobody is
                 // choosing between 47 and 48 chunks, and a long throw
                 // with a fine step makes the slider unusable.
-                let raw = 4.0 + f * (crate::config::MAX_VIEW_DIST - 4) as f32;
-                self.config.view_dist = if raw <= 16.0 {
+                //
+                // The top of the throw is what this machine can hold, not a
+                // constant. The slider used to run to 64 everywhere, which is
+                // over 4 GB of resident chunks — a setting that ended the
+                // process rather than showing you the next valley.
+                let min = crate::config::MIN_VIEW_DIST;
+                let top = self.presentation.max_view_dist;
+                let raw = min as f32 + f * (top - min).max(1) as f32;
+                let stepped = if raw <= 16.0 {
                     raw.round() as i32
                 } else {
                     (raw / 4.0).round() as i32 * 4
                 };
+                self.config.view_dist = stepped.clamp(min, top);
             }
             _ => self.config.fov = 50.0 + (f * 60.0).round(),
         }

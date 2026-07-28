@@ -2625,3 +2625,73 @@ fn guilt_is_inherited_by_spread() {
     // ...and every cell it reached is still on the arsonist's account.
     assert_eq!(w.bloom_at(6, 6), 0.0, "no bloom anywhere it went");
 }
+
+#[test]
+fn a_chunk_pays_only_for_what_it_actually_holds() {
+    use crate::chunk::{CHUNK_CELLS, Chunk, ChunkPos};
+
+    // Every plane used to be allocated dense and unconditionally: 128 KB of
+    // blocks, 64 KB of metadata, 192 KB of block light and 64 KB of sky light
+    // for every chunk in memory, whether or not any of it said anything.
+    const DENSE: usize = CHUNK_CELLS * (2 + 1 + 3 + 1);
+    assert_eq!(DENSE, 458_752, "the old unconditional cost, 448 KiB");
+
+    // A fresh chunk says nothing at all and costs nothing.
+    let fresh = Chunk::new();
+    assert_eq!(fresh.heap_bytes(), 0, "open air is free");
+
+    // Real generated terrain, lit.
+    let mut w = test_world("chunk-bytes");
+    let pos = ChunkPos { x: 0, z: 0 };
+    w.ensure_chunk(pos);
+    let real = w.chunks()[&pos].heap_bytes();
+    assert!(real > 0, "terrain costs something");
+    assert!(
+        real < DENSE,
+        "a real chunk ({real} bytes) must cost less than the old flat {DENSE}"
+    );
+    // Blocks and sky light genuinely vary with terrain; block light and
+    // metadata almost never do, and they were more than half the bill.
+    assert!(
+        real <= DENSE / 2,
+        "a chunk with no torch and no block state should cost at most half \
+         the old {DENSE} bytes, got {real}"
+    );
+}
+
+#[test]
+fn the_view_distance_slider_stops_where_the_memory_does() {
+    use crate::config::{
+        CHUNK_RESIDENT_BYTES, Config, MAX_VIEW_DIST, MIN_VIEW_DIST, max_view_dist_for_memory,
+    };
+
+    let cap = max_view_dist_for_memory();
+    assert!(
+        (MIN_VIEW_DIST..=MAX_VIEW_DIST).contains(&cap),
+        "the cap stays inside the playable range, got {cap}"
+    );
+
+    // Whatever this machine allows, the loaded set at that distance has to be
+    // a number of bytes it could plausibly hold. The slider used to offer 64
+    // everywhere — over four gigabytes of resident chunks.
+    let chunks = (2u64 * cap as u64 + 1).pow(2);
+    let bytes = chunks * CHUNK_RESIDENT_BYTES;
+    assert!(
+        bytes < 64 * 1024 * 1024 * 1024,
+        "a {cap}-chunk view wants {} GiB",
+        bytes / (1024 * 1024 * 1024)
+    );
+
+    // A config file asking for more than the machine can hold is clamped on
+    // the way in rather than honoured into an out-of-memory kill.
+    let greedy = Config::from_text(&format!("view_dist={MAX_VIEW_DIST}\n"));
+    assert!(
+        greedy.view_dist <= cap,
+        "config asked {} and got {}, past the {cap} cap",
+        MAX_VIEW_DIST,
+        greedy.view_dist
+    );
+    // And one below the floor comes up to it.
+    let tiny = Config::from_text("view_dist=1\n");
+    assert_eq!(tiny.view_dist, MIN_VIEW_DIST);
+}

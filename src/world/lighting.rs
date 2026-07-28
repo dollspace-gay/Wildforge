@@ -236,13 +236,12 @@ impl World {
         }
 
         let chunk = self.chunks.get_mut(&pos).unwrap();
-        let (old_b, old_s) = chunk.light_raw();
-        if old_b == lb.as_slice() && old_s == ls.as_slice() {
+        if chunk.light_matches(&lb, &ls) {
             return false;
         }
-        let (dst_b, dst_s) = chunk.light_raw_mut();
-        dst_b.copy_from_slice(&lb);
-        dst_s.copy_from_slice(&ls);
+        // A chunk with no emitter in it stores one black instead of 65,536:
+        // set_light compacts a uniform result back down.
+        chunk.set_light(&lb, &ls);
         chunk.dirty = true;
         true
     }
