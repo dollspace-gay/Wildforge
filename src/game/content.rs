@@ -26,8 +26,13 @@ impl Game {
         };
         atlas::season_tint(&mut atlas.color, atlas.px, season);
         self.presentation.atlas_season = season;
-        self.renderer
-            .set_atlas(&atlas.color, &atlas.material, &atlas.normal, atlas.px);
+        self.renderer.set_atlas(
+            &atlas.color,
+            &atlas.material,
+            &atlas.normal,
+            atlas.px,
+            atlas.interior_base,
+        );
         self.content.pack_warnings = atlas.warnings;
         // Variant choice is baked into chunk uvs, so a pack whose alternates
         // differ (or vanish) leaves every mesh pointing at a slot the new pack
@@ -61,8 +66,13 @@ impl Game {
         // A reload can add or drop tiles, which reshuffles variant slots. No
         // explicit remesh needed: `remap_from` below dirties every chunk.
         self.content.tile_variants = atlas.variants;
-        self.renderer
-            .set_atlas(&atlas.color, &atlas.material, &atlas.normal, atlas.px);
+        self.renderer.set_atlas(
+            &atlas.color,
+            &atlas.material,
+            &atlas.normal,
+            atlas.px,
+            atlas.interior_base,
+        );
 
         // Remap items by name (old registry -> new); unknown items vanish.
         let remap_item =

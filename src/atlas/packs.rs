@@ -150,9 +150,10 @@ pub enum MapKind {
     Height,
     /// Tangent-space normal using OpenGL's positive-green convention.
     Normal,
-    /// Interior stratum mask for multilayer parallax: the structure that sits
-    /// *below* the surface and slides under it (ice cracks, canopy depth).
-    /// White is dense interior, black is none.
+    /// A second, full-colour albedo that sits *below* the surface and slides
+    /// under it as the eye moves — ice bubbles beneath a cracked sheet. Not a
+    /// mask: it gets its own atlas slot, and the surface tile's own luminance
+    /// decides where it shows through.
     Interior,
 }
 
@@ -343,6 +344,9 @@ pub struct Atlas {
     pub px: u32,
     pub warnings: Vec<String>,
     pub variants: TileVariants,
+    /// First atlas slot of the contiguous interior-layer run. A tile's material
+    /// alpha holds 1 + its offset into this run, or 0 for "no interior layer".
+    pub interior_base: u16,
 }
 
 /// Build the atlas in layers: procedural/assets base, then mod PNGs, then the
@@ -416,21 +420,21 @@ pub fn build_atlas(
     // and below the reserved player-variant block at the top of the grid.
     let mut variants = TileVariants::default();
     let mut alt_slot: std::collections::HashMap<(u16, u8), u16> = std::collections::HashMap::new();
+    let mut next = tex_names
+        .iter()
+        .map(|(_, s)| *s + 1)
+        .max()
+        .unwrap_or(FIRST_FREE_SLOT)
+        .max(FIRST_FREE_SLOT);
+    let ceiling = crate::style::EXTRA_BASE;
     {
         let mut wanted: Vec<(u16, u8)> = gathered
             .iter()
-            .filter(|(r, _)| r.variant > 0)
+            .filter(|(r, _)| r.variant > 0 && r.kind != Some(MapKind::Interior))
             .map(|(r, _)| (r.slot, r.variant))
             .collect();
         wanted.sort_unstable();
         wanted.dedup();
-        let mut next = tex_names
-            .iter()
-            .map(|(_, s)| *s + 1)
-            .max()
-            .unwrap_or(FIRST_FREE_SLOT)
-            .max(FIRST_FREE_SLOT);
-        let ceiling = crate::style::EXTRA_BASE;
         for key in wanted {
             if next >= ceiling {
                 warnings.push(format!(
@@ -445,7 +449,35 @@ pub fn build_atlas(
             next += 1;
         }
     }
+    // Interior layers get a CONTIGUOUS run, because the shader has to find one
+    // from a single byte: the surface tile's material alpha holds 1 + index into
+    // this run, and `interior_base` is handed to the renderer once per atlas.
+    // That keeps the lookup out of the vertex format and off the mesher.
+    let interior_base = next;
+    let mut interior_id: std::collections::HashMap<u16, u8> = std::collections::HashMap::new();
+    {
+        let mut wanted: Vec<u16> = gathered
+            .iter()
+            .filter(|(r, _)| r.kind == Some(MapKind::Interior))
+            .map(|(r, _)| r.slot)
+            .collect();
+        wanted.sort_unstable();
+        wanted.dedup();
+        for slot in wanted {
+            if next >= ceiling || next - interior_base >= 254 {
+                warnings.push(format!("atlas full: no slot for interior layer of {slot}"));
+                continue;
+            }
+            interior_id.insert(slot, (next - interior_base) as u8 + 1);
+            next += 1;
+        }
+    }
     let resolve = |r: &TileRef| -> Option<u16> {
+        if r.kind == Some(MapKind::Interior) {
+            return interior_id
+                .get(&r.slot)
+                .map(|i| interior_base + (*i as u16 - 1));
+        }
         if r.variant == 0 {
             Some(r.slot)
         } else {
@@ -453,9 +485,11 @@ pub fn build_atlas(
         }
     };
 
-    // Albedo first, in chain order, so a later pack still wins.
+    // Albedo first, in chain order, so a later pack still wins. An interior
+    // layer is an albedo too — a full-colour stratum at its own slot, not a
+    // greyscale mask — so it goes through the same path.
     for (r, src) in &gathered {
-        if r.kind.is_some() {
+        if !(r.kind.is_none() || r.kind == Some(MapKind::Interior)) {
             continue;
         }
         if let Some(slot) = resolve(r) {
@@ -467,7 +501,7 @@ pub fn build_atlas(
     // so it inherits the base look it is a variant of.
     let painted: std::collections::HashSet<u16> = gathered
         .iter()
-        .filter(|(r, _)| r.kind.is_none())
+        .filter(|(r, _)| r.kind.is_none() || r.kind == Some(MapKind::Interior))
         .filter_map(|(r, _)| resolve(r))
         .collect();
     for (base, alts) in &variants.alts {
@@ -479,9 +513,16 @@ pub fn build_atlas(
         }
     }
     for (r, src) in &gathered {
-        if let (Some(kind), Some(slot)) = (r.kind, resolve(r)) {
+        if let (Some(kind), Some(slot)) = (r.kind, resolve(r))
+            && kind != MapKind::Interior
+        {
             maps.push((slot, kind, src.clone()));
         }
+    }
+    // Stamp "my interior layer is at interior_base + (a - 1)" into the surface
+    // tile's material alpha, which was reserved and is otherwise 0.
+    for (slot, id) in &interior_id {
+        stamp_interior_id(&mut mat, px, tp, *slot, *id);
     }
 
     apply_player_variants(&mut img, px);
@@ -493,7 +534,8 @@ pub fn build_atlas(
                 authored_height.insert(*slot);
             }
             MapKind::Normal => blit_normal(&mut nrm, &mut mat, px, tp, *slot, src),
-            MapKind::Interior => blit_interior(&mut mat, px, tp, *slot, src),
+            // Filtered out above: an interior layer is an albedo, not a map.
+            MapKind::Interior => {}
         }
     }
     for slot in [
@@ -515,6 +557,7 @@ pub fn build_atlas(
         material: mat,
         normal: nrm,
         variants,
+        interior_base,
         px,
         warnings,
     }
@@ -798,24 +841,16 @@ fn blit_height(mat: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &SrcTile)
     }
 }
 
-/// Interior stratum mask into the material atlas's G channel — the layer the
-/// shader parallaxes *beneath* the surface. Luminance, same as height: an
-/// authored `<tile>_i.png` is a greyscale mask, white where the interior
-/// structure is dense.
-fn blit_interior(mat: &mut [u8], atlas_px: u32, tp: u32, slot: u16, src: &SrcTile) {
-    let mut tile = vec![0u8; (tp * tp * 4) as usize];
-    resample_tile(&mut tile, tp, src);
+/// Record which interior layer belongs to this tile, in the material alpha.
+fn stamp_interior_id(mat: &mut [u8], atlas_px: u32, tp: u32, slot: u16, id: u8) {
     let (tx, ty) = (
         slot as u32 % ATLAS_TILES * tp,
         slot as u32 / ATLAS_TILES * tp,
     );
     for y in 0..tp {
         for x in 0..tp {
-            let s = ((y * tp + x) * 4) as usize;
             let d = (((ty + y) * atlas_px + tx + x) * 4) as usize;
-            let l =
-                0.299 * tile[s] as f32 + 0.587 * tile[s + 1] as f32 + 0.114 * tile[s + 2] as f32;
-            mat[d + 1] = l as u8;
+            mat[d + 3] = id;
         }
     }
 }

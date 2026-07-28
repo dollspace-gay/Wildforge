@@ -47,6 +47,8 @@ struct Uniforms {
     /// Sky irradiance as 9 RGB SH coefficients (diffuse light multiplier).
     sh: [[f32; 4]; 9],
     /// World-cell coordinate of occupancy texel (0,0,0). xyz used; w unused.
+    // xyz = world cell of occupancy texel (0,0,0); w = first atlas slot of the
+    // interior-layer run (see Atlas::interior_base).
     occ_origin: [i32; 4],
 }
 
@@ -279,6 +281,8 @@ pub struct GpuChunk {
 pub struct Renderer {
     /// The adapter the GPU work actually landed on (diagnostics).
     pub adapter_name: String,
+    /// First atlas slot of the interior-layer run, from the active atlas.
+    pub atlas_interior_base: u16,
     pub surface: wgpu::Surface<'static>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,

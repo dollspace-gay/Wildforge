@@ -37,7 +37,8 @@ struct Uniforms {
     // Sky irradiance as 9 RGB spherical-harmonic coefficients (cosine-convolved
     // to a diffuse light multiplier). Evaluated per-normal for the ambient fill.
     sh: array<vec4<f32>, 9>,
-    // World-cell coordinate of occupancy texel (0,0,0). xyz used; w unused.
+    // xyz = world cell of occupancy texel (0,0,0); w = first atlas slot of the
+    // interior-layer run, so a tile's material alpha can name one in a byte.
     occ_origin: vec4<i32>,
 };
 
@@ -48,7 +49,8 @@ const OCC_GRID: i32 = 128;
 @group(1) @binding(0) var atlas_tex: texture_2d<f32>;
 @group(1) @binding(1) var atlas_smp: sampler;
 // Material atlas (linear): R = parallax height (1 = surface, 0 = deepest),
-// G = interior mask, B = authored-normal strength (0 = none).
+// G = interior mask (legacy, procedural ice), B = authored-normal strength
+// (0 = none), A = 1 + index into the interior-layer slot run, or 0 for none.
 // A flat tile (R = 1, G = 0, B = 0) is a no-op, so all of it is opt-in per texture.
 @group(1) @binding(2) var material_tex: texture_2d<f32>;
 // Normal atlas (linear): tangent-space normals in the standard OpenGL / +Y
@@ -83,6 +85,19 @@ const INTERIOR_DEPTH: f32 = 0.30;
 // How opaque the surface veil is over the interior: 1 = surface only, 0 = interior
 // only. The interior is always partly visible through it (real translucency).
 const SURFACE_VEIL: f32 = 0.45;
+// An authored interior layer is a real second albedo, and the SURFACE's own
+// luminance is its opacity: where the top sheet is dark it is thin, and the
+// stratum below shines through. These bound that mapping so a merely-shaded
+// surface doesn't turn transparent and a bright one still admits a little.
+const LAYER_OPACITY_LO: f32 = 0.3;
+const LAYER_OPACITY_HI: f32 = 0.75;
+// How much dimmer the lower stratum reads, for depth.
+const LAYER_DEPTH_DIM: f32 = 0.82;
+// How far an AUTHORED layer sits below the surface. Much shallower than the
+// legacy mask's INTERIOR_DEPTH: that one hides a procedural crack field where
+// exact registration doesn't matter, while a real second albedo pushed this far
+// reads as detached from the sheet above rather than suspended inside it.
+const LAYER_DEPTH: f32 = 0.13;
 // The interior is the block's own lit colour, modulated by its internal
 // structure (G): dimmer/clearer in the gaps, brighter/frosted where dense.
 const INTERIOR_LO: f32 = 0.35;
@@ -589,7 +604,16 @@ struct Surface {
     // uv for the deeper interior stratum (parallaxed further than the surface,
     // wrapped within the tile so the periodic crack layer scrolls seamlessly).
     interior_uv: vec2<f32>,
+    // 0 = no authored interior layer; else its atlas slot, already resolved.
+    layer_slot: u32,
 };
+
+// Keep a uv inside one atlas cell by wrapping within it. A seamless tile is
+// periodic, so the sample past an edge is the sample at the opposite edge —
+// which is exactly what `fract` gives, with no clamp to smear against.
+fn wrap_tile(p: vec2<f32>, tile_min: vec2<f32>, ts: f32) -> vec2<f32> {
+    return tile_min + fract((p - tile_min) / ts) * ts;
+}
 
 // Parallax occlusion mapping + a height-derived surface normal. Steps the
 // tangent-space view ray through the material atlas's height channel to find
@@ -602,6 +626,7 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
     out.uv = uv;
     out.normal = geo_n;
     out.interior_uv = uv;
+    out.layer_slot = 0u;
 
     // Derivatives must be evaluated in uniform control flow (before any branch).
     let dpx = dpdx(world);
@@ -618,7 +643,7 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
     let nrm_amt = mat0.b;
     // Truly flat: smooth surface (R~1), no interior layer (G~0), no authored
     // normal (B~0) — nothing to do.
-    if (h0 > 0.995 && g0 < 0.01 && nrm_amt < 0.004) {
+    if (h0 > 0.995 && g0 < 0.01 && nrm_amt < 0.004 && mat0.a < 0.002) {
         return out;
     }
     // Is the uv basis usable? The test has to be scale-free. `det` has units of
@@ -643,16 +668,35 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
     let v = normalize(u.cam.xyz - world);
     let vt = vec3<f32>(dot(v, t), dot(v, b), dot(v, n));
     let ts = 1.0 / ATLAS_TILES;
-    // Per-block uv shift direction; clamp grazing z so it can't blow up. Keep the
-    // march inside this tile's atlas cell so it never bleeds into a neighbour.
+    // Per-block uv shift direction; clamp grazing z so it can't blow up. The
+    // march has to stay inside this tile's atlas cell so it never bleeds into a
+    // neighbour — but it WRAPS within the cell rather than clamping to its edge.
+    //
+    // Clamping was a visible artifact, not a safety net. At grazing incidence vz
+    // pins to 0.25, so the ray sweeps 0.32 of a tile; every fragment starting
+    // within that of the edge froze against the clamp and smeared its last texel
+    // along the view direction. On a flat expanse seen at a shallow angle that is
+    // most of the screen, and it read as seams at the block boundaries.
+    // Wrapping is also what the tile actually is: pack tiles are seamless, so the
+    // texel past the edge IS the texel at the far side. The interior stratum below
+    // already worked this way; the surface just never got the same treatment.
     let vz = max(abs(vt.z), 0.25);
     let dir = vt.xy / vz * ts;
-    let tmin = floor(uv / ts) * ts + ts * 0.02;
-    let tmax = tmin + ts - ts * 0.04;
+    let tile_min = floor(uv / ts) * ts;
+
+    // An authored interior layer names its slot in the material alpha. The
+    // surface above it is a flat sheet by design — parallaxing both would fight,
+    // and the depth cue we want is the LOWER layer sliding under a still one.
+    let layer_id = u32(round(mat0.a * 255.0));
+    let has_layer = layer_id > 0u;
+    if (has_layer) {
+        out.layer_slot = u32(u.occ_origin.w) + layer_id - 1u;
+    }
 
     var cur_uv = uv;
-    // Surface relief: only when the surface height itself has structure (R < 1).
-    if (h0 < 0.995) {
+    // Surface relief: only when the surface height itself has structure (R < 1),
+    // and never under an interior layer (the sheet stays flat).
+    if (h0 < 0.995 && !has_layer) {
         let p = dir * PARALLAX_DEPTH;
         let layer = 1.0 / f32(PARALLAX_STEPS);
         let duv = p * layer;
@@ -662,7 +706,7 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
             if (ray_depth >= surf_depth) {
                 break;
             }
-            cur_uv = clamp(cur_uv - duv, tmin, tmax);
+            cur_uv = wrap_tile(cur_uv - duv, tile_min, ts);
             surf_depth = 1.0 - textureSampleLevel(material_tex, atlas_smp, cur_uv, 0.0).r;
             ray_depth = ray_depth + layer;
         }
@@ -675,7 +719,7 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
     // the texture's author actually meant. Height-derived stays the free default.
     var n_ts = vec3<f32>(0.0, 0.0, 1.0);
     if (nrm_amt > 0.004) {
-        let enc = textureSampleLevel(normal_tex, atlas_smp, clamp(cur_uv, tmin, tmax), 0.0).xyz;
+        let enc = textureSampleLevel(normal_tex, atlas_smp, wrap_tile(cur_uv, tile_min, ts), 0.0).xyz;
         let dec = enc * 2.0 - 1.0;
         // Green is negated: OpenGL maps measure y up the image, while our
         // bitangent runs down it (tile row 0 is v = 0). That one sign is the
@@ -691,10 +735,10 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
     } else if (h0 < 0.995) {
         // Height-gradient normal at the displaced point (central differences).
         let texel = 1.0 / vec2<f32>(textureDimensions(material_tex, 0));
-        let hl = textureSampleLevel(material_tex, atlas_smp, clamp(cur_uv - vec2<f32>(texel.x, 0.0), tmin, tmax), 0.0).r;
-        let hr = textureSampleLevel(material_tex, atlas_smp, clamp(cur_uv + vec2<f32>(texel.x, 0.0), tmin, tmax), 0.0).r;
-        let hd = textureSampleLevel(material_tex, atlas_smp, clamp(cur_uv - vec2<f32>(0.0, texel.y), tmin, tmax), 0.0).r;
-        let hu = textureSampleLevel(material_tex, atlas_smp, clamp(cur_uv + vec2<f32>(0.0, texel.y), tmin, tmax), 0.0).r;
+        let hl = textureSampleLevel(material_tex, atlas_smp, wrap_tile(cur_uv - vec2<f32>(texel.x, 0.0), tile_min, ts), 0.0).r;
+        let hr = textureSampleLevel(material_tex, atlas_smp, wrap_tile(cur_uv + vec2<f32>(texel.x, 0.0), tile_min, ts), 0.0).r;
+        let hd = textureSampleLevel(material_tex, atlas_smp, wrap_tile(cur_uv - vec2<f32>(0.0, texel.y), tile_min, ts), 0.0).r;
+        let hu = textureSampleLevel(material_tex, atlas_smp, wrap_tile(cur_uv + vec2<f32>(0.0, texel.y), tile_min, ts), 0.0).r;
         n_ts = normalize(vec3<f32>((hl - hr) * NORMAL_STRENGTH, (hd - hu) * NORMAL_STRENGTH, 1.0));
     }
     out.normal = normalize(t * n_ts.x + b * n_ts.y + n * n_ts.z);
@@ -703,8 +747,41 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
     // periodic, so we WRAP the sample within this tile's cell (nearest-filtered,
     // no bleed) instead of clamping: the pattern scrolls seamlessly and reads as
     // one continuous layer at depth across every block — no edge clamp, no pop.
-    let tile_origin = floor(uv / ts) * ts;
-    out.interior_uv = tile_origin + fract((cur_uv - dir * INTERIOR_DEPTH - tile_origin) / ts) * ts;
+    var layer_min = tile_min;
+    if (has_layer) {
+        layer_min = vec2<f32>(
+            f32(out.layer_slot % u32(ATLAS_TILES)),
+            f32(out.layer_slot / u32(ATLAS_TILES)),
+        ) * ts;
+    }
+    if (has_layer) {
+        // PROBE: parameterise the stratum by WORLD position on the face plane,
+        // not by per-face uv. Per-face uv re-anchors the layer in every block,
+        // so it is N independently-wrapped patches rather than one sheet; a
+        // thing genuinely below the surface should be continuous across blocks
+        // by construction. Axis-aligned faces make the projection exact.
+        // Must reproduce the mesher's per-face uv convention (mesher.rs): side
+        // faces flip v, top/bottom do not. `fract(-y) == 1 - fract(y)`, so
+        // negating y is exactly that flip in a world-continuous form.
+        let an = abs(normalize(geo_n));
+        var w2: vec2<f32>;
+        if (an.y >= an.x && an.y >= an.z) {
+            w2 = vec2<f32>(world.x, world.z);          // +-Y: (x, z), no flip
+        } else if (an.x >= an.z) {
+            w2 = vec2<f32>(world.z, -world.y);         // +-X: (z, 1-y)
+        } else {
+            w2 = vec2<f32>(world.x, -world.y);         // +-Z: (x, 1-y)
+        }
+        // `dir` is in atlas-uv units; /ts puts the shift back into blocks, which
+        // is what w2 is measured in.
+        let shift = vt.xy / vz * LAYER_DEPTH;
+        // Anchor to the block, not the origin: fract() on a raw world coordinate
+        // loses its fractional bits far from spawn, and this layer is sampled at
+        // 1/32 of a block. Subtracting the block corner keeps the operand small.
+        out.interior_uv = layer_min + fract(w2 - floor(w2) - shift) * ts;
+    } else {
+        out.interior_uv = wrap_tile(cur_uv - dir * INTERIOR_DEPTH - tile_min + layer_min, layer_min, ts);
+    }
     return out;
 }
 
@@ -726,10 +803,26 @@ fn fs_chunk(in: VsOut) -> @location(0) vec4<f32> {
     // > 0), the block's own colour modulated by its structure — sits deeper and
     // parallaxes beneath. So you see THROUGH the surface to the structure sliding
     // under it, not a stencil painted on top. Untouched where there's no interior.
-    let structure = textureSampleLevel(material_tex, atlas_smp, s.interior_uv, 0.0).g;
-    if (structure > 0.02) {
-        let interior = surface_lit * mix(INTERIOR_LO, INTERIOR_HI, structure);
-        rgb = mix(interior, surface_lit, SURFACE_VEIL);
+    if (s.layer_slot != 0u) {
+        // A real second albedo below a translucent sheet. The SURFACE's own
+        // luminance is the sheet's opacity: dark means thin, so the stratum
+        // below shows through exactly where the top layer reads as a crack or
+        // a gap, and a bright facet stays opaque. The lower layer parallaxes
+        // (the surface does not), so it slides underneath as the eye moves.
+        let below = textureSampleLevel(atlas_tex, atlas_smp, s.interior_uv, 0.0).rgb;
+        let lum = dot(tex.rgb, vec3<f32>(0.299, 0.587, 0.114));
+        let opacity = clamp(lum, LAYER_OPACITY_LO, LAYER_OPACITY_HI);
+        let below_lit = below * world_light(in.normal, s.normal, in.light, in.sky, in.world)
+            * LAYER_DEPTH_DIM;
+        rgb = mix(below_lit, surface_lit, opacity);
+    } else {
+        // Legacy single-channel interior (the procedural ice): a greyscale mask
+        // that modulates the surface's own colour rather than a layer of its own.
+        let structure = textureSampleLevel(material_tex, atlas_smp, s.interior_uv, 0.0).g;
+        if (structure > 0.02) {
+            let interior = surface_lit * mix(INTERIOR_LO, INTERIOR_HI, structure);
+            rgb = mix(interior, surface_lit, SURFACE_VEIL);
+        }
     }
     rgb = apply_fog(rgb, in.world);
     if (u.misc.x > 0.5) {
