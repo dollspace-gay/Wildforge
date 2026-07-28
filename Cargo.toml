@@ -7,6 +7,10 @@ edition = "2024"
 bytemuck = { version = "1.25.1", features = ["derive"] }
 glam = { version = "0.33.2", features = ["serde"] }
 jacquard-common = { version = "0.12.1", default-features = false, features = ["reqwest-client"] }
+# The "dns" feature pulls hickory-resolver, which pins a hickory-proto with an
+# open advisory (GHSA-q2qq-hmj6-3wpp) that has no fix on the 0.24 line. It is
+# not reachable from a stub client and the feature is load-bearing for handle
+# verification — see docs/dependency-advisories.md before changing either.
 jacquard-identity = { version = "0.12.1", default-features = false, features = ["dns"] }
 jacquard-oauth = { version = "0.12.1", default-features = false, features = ["browser-open", "loopback"] }
 noise = "0.9.0"
