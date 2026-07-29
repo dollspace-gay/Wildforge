@@ -266,8 +266,8 @@ mod procedural;
 mod season;
 
 pub use packs::{
-    PackInfo, TileVariants, build_atlas, discover_packs, embedded_base_tile, pack_chain,
-    pack_source_of,
+    LayerParams, MAX_LAYERS, PackInfo, TileVariants, build_atlas, discover_packs,
+    embedded_base_tile, pack_chain, pack_source_of,
 };
 #[cfg(test)]
 pub(crate) use packs::{

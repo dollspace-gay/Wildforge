@@ -50,6 +50,7 @@ struct Uniforms {
     // xyz = world cell of occupancy texel (0,0,0); w = first atlas slot of the
     // interior-layer run (see Atlas::interior_base).
     occ_origin: [i32; 4],
+    layer: [[f32; 4]; crate::atlas::MAX_LAYERS as usize * 2],
 }
 
 /// Side of the cubic voxel-occupancy grid uploaded for DDA point-light shadows.
@@ -283,6 +284,9 @@ pub struct Renderer {
     pub adapter_name: String,
     /// First atlas slot of the interior-layer run, from the active atlas.
     pub atlas_interior_base: u16,
+    /// Per-layer settings, two vec4 each: (depth, op_min, op_max, dim) then
+    /// (mode, cutoff, _, _). Indexed by material alpha - 1.
+    pub atlas_layer_params: [[f32; 4]; crate::atlas::MAX_LAYERS as usize * 2],
     pub surface: wgpu::Surface<'static>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,

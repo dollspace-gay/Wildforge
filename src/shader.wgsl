@@ -40,6 +40,10 @@ struct Uniforms {
     // xyz = world cell of occupancy texel (0,0,0); w = first atlas slot of the
     // interior-layer run, so a tile's material alpha can name one in a byte.
     occ_origin: vec4<i32>,
+    // Two entries per interior layer, indexed by (material alpha - 1) * 2:
+    //   [0] = (depth, opacity_min, opacity_max, dim)
+    //   [1] = (mode, cutoff, _, _)  mode 0 = surface alpha, 1 = surface luminance
+    layer: array<vec4<f32>, 64>,
 };
 
 const MAX_PT_LIGHTS: u32 = 8u;
@@ -85,19 +89,13 @@ const INTERIOR_DEPTH: f32 = 0.30;
 // How opaque the surface veil is over the interior: 1 = surface only, 0 = interior
 // only. The interior is always partly visible through it (real translucency).
 const SURFACE_VEIL: f32 = 0.45;
-// An authored interior layer is a real second albedo, and the SURFACE's own
-// luminance is its opacity: where the top sheet is dark it is thin, and the
-// stratum below shines through. These bound that mapping so a merely-shaded
-// surface doesn't turn transparent and a bright one still admits a little.
-const LAYER_OPACITY_LO: f32 = 0.3;
-const LAYER_OPACITY_HI: f32 = 0.75;
-// How much dimmer the lower stratum reads, for depth.
-const LAYER_DEPTH_DIM: f32 = 0.82;
-// How far an AUTHORED layer sits below the surface. Much shallower than the
-// legacy mask's INTERIOR_DEPTH: that one hides a procedural crack field where
-// exact registration doesn't matter, while a real second albedo pushed this far
-// reads as detached from the sheet above rather than suspended inside it.
-const LAYER_DEPTH: f32 = 0.13;
+// Layer appearance is per-tile now (u.layer, authored in pack.toml), because
+// what the surface's opacity MEANS is a property of the material: ice is a
+// translucent sheet whose brightness says how thin it is, foliage is a cutout
+// with real holes. Deriving opacity from luminance for everything was an
+// ice-shaped policy compiled in as if it were the mechanism.
+// Fallback depth for a layer with no pack.toml entry.
+const LAYER_DEPTH_DEFAULT: f32 = 0.13;
 // The interior is the block's own lit colour, modulated by its internal
 // structure (G): dimmer/clearer in the gaps, brighter/frosted where dense.
 const INTERIOR_LO: f32 = 0.35;
@@ -606,7 +604,15 @@ struct Surface {
     interior_uv: vec2<f32>,
     // 0 = no authored interior layer; else its atlas slot, already resolved.
     layer_slot: u32,
+    // 1-based index into u.layer for this tile's settings; 0 = none.
+    layer_id: u32,
 };
+
+// Per-layer settings, or defaults when the pack declared none.
+fn layer_depth(id: u32) -> f32 {
+    if (id == 0u || id > 32u) { return LAYER_DEPTH_DEFAULT; }
+    return u.layer[(id - 1u) * 2u].x;
+}
 
 // Keep a uv inside one atlas cell by wrapping within it. A seamless tile is
 // periodic, so the sample past an edge is the sample at the opposite edge —
@@ -627,6 +633,7 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
     out.normal = geo_n;
     out.interior_uv = uv;
     out.layer_slot = 0u;
+    out.layer_id = 0u;
 
     // Derivatives must be evaluated in uniform control flow (before any branch).
     let dpx = dpdx(world);
@@ -691,6 +698,7 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
     let has_layer = layer_id > 0u;
     if (has_layer) {
         out.layer_slot = u32(u.occ_origin.w) + layer_id - 1u;
+        out.layer_id = layer_id;
     }
 
     var cur_uv = uv;
@@ -774,7 +782,7 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
         }
         // `dir` is in atlas-uv units; /ts puts the shift back into blocks, which
         // is what w2 is measured in.
-        let shift = vt.xy / vz * LAYER_DEPTH;
+        let shift = vt.xy / vz * layer_depth(layer_id);
         // Anchor to the block, not the origin: fract() on a raw world coordinate
         // loses its fractional bits far from spawn, and this layer is sampled at
         // 1/32 of a block. Subtracting the block corner keeps the operand small.
@@ -789,32 +797,43 @@ fn parallax_surface(uv: vec2<f32>, world: vec3<f32>, geo_n: vec3<f32>) -> Surfac
 fn fs_chunk(in: VsOut) -> @location(0) vec4<f32> {
     let s = parallax_surface(in.uv, in.world, in.normal);
     let tex = textureSample(atlas_tex, atlas_smp, s.uv);
-    if (tex.a < 0.5) {
+    // A layered tile reinterprets its own alpha as coverage over the stratum
+    // below, so the plain alpha test must not eat it; the cutoff below is that
+    // tile's version of the same decision.
+    if (s.layer_id == 0u && tex.a < 0.5) {
         discard; // alpha-tested item sprites share this pipeline
     }
     if (u.pt_count.z != 0u) {
         // Shadow-debug viz: bypass albedo/fog so the diagnostic color is pure.
         return vec4<f32>(world_light(in.normal, s.normal, in.light, in.sky, in.world), 1.0);
     }
-    let surface_lit = tex.rgb * world_light(in.normal, s.normal, in.light, in.sky, in.world);
+    let lit = world_light(in.normal, s.normal, in.light, in.sky, in.world);
+    let surface_lit = tex.rgb * lit;
     var rgb = surface_lit;
-    // Multilayer as a real translucent composite: the surface is a partial veil,
-    // and the interior — present everywhere the material declares it (G floored
-    // > 0), the block's own colour modulated by its structure — sits deeper and
-    // parallaxes beneath. So you see THROUGH the surface to the structure sliding
-    // under it, not a stencil painted on top. Untouched where there's no interior.
-    if (s.layer_slot != 0u) {
-        // A real second albedo below a translucent sheet. The SURFACE's own
-        // luminance is the sheet's opacity: dark means thin, so the stratum
-        // below shows through exactly where the top layer reads as a crack or
-        // a gap, and a bright facet stays opaque. The lower layer parallaxes
-        // (the surface does not), so it slides underneath as the eye moves.
-        let below = textureSampleLevel(atlas_tex, atlas_smp, s.interior_uv, 0.0).rgb;
-        let lum = dot(tex.rgb, vec3<f32>(0.299, 0.587, 0.114));
-        let opacity = clamp(lum, LAYER_OPACITY_LO, LAYER_OPACITY_HI);
-        let below_lit = below * world_light(in.normal, s.normal, in.light, in.sky, in.world)
-            * LAYER_DEPTH_DIM;
-        rgb = mix(below_lit, surface_lit, opacity);
+    if (s.layer_id != 0u) {
+        // A real second albedo below the surface. How opaque the surface is over
+        // it is the material's business, not the renderer's: mode 0 reads the
+        // surface's authored ALPHA (foliage — real holes), mode 1 derives it from
+        // luminance (ice — dark means thin). Only the lower layer parallaxes, so
+        // it slides beneath a still sheet as the eye moves.
+        let p0 = u.layer[(s.layer_id - 1u) * 2u];
+        let p1 = u.layer[(s.layer_id - 1u) * 2u + 1u];
+        let below = textureSampleLevel(atlas_tex, atlas_smp, s.interior_uv, 0.0);
+        let src = select(tex.a, dot(tex.rgb, vec3<f32>(0.299, 0.587, 0.114)), p1.x > 0.5);
+        let opacity = clamp(src, p0.y, p0.z);
+        // Standard over-operator, and the coverage it leaves is what says whether
+        // anything is here at all: gaps in BOTH strata are a hole you see through,
+        // which is what gives a canopy its ragged edge against the sky.
+        // The stratum is a portal into an infinite plane, not geometry, so a
+        // hole in it has nothing behind it and shows sky. Whether that is wanted
+        // is the material's business: author the layer opaque for a backstop
+        // (foliage, where the canopy should read solid), or with real gaps and a
+        // cutoff for a surface you can see past.
+        let coverage = opacity + below.a * (1.0 - opacity);
+        if (coverage < p1.y) {
+            discard;
+        }
+        rgb = mix(below.rgb * lit * p0.w, surface_lit, opacity / max(coverage, 1e-4));
     } else {
         // Legacy single-channel interior (the procedural ice): a greyscale mask
         // that modulates the surface's own colour rather than a layer of its own.

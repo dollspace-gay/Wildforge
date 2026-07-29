@@ -237,6 +237,7 @@ impl Game {
                         &atlas.normal,
                         atlas.px,
                         atlas.interior_base,
+                        &atlas.layer_params,
                     );
                     self.toast("Synced the host's mods.".to_string());
                 }
