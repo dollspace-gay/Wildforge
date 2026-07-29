@@ -292,3 +292,54 @@ fn pickup_ramp_steps_and_caps() {
     assert_eq!(pickup_pitch(7), pickup_pitch(100));
     assert!((pickup_pitch(7) - 2.0f32.powf(7.0 / 12.0)).abs() < 1e-4);
 }
+
+#[test]
+fn a_fast_step_cannot_pass_through_a_wall() {
+    // Movement used to test only where a step ENDED. A step long enough to
+    // clear a wall therefore went straight through it: both ends in open air,
+    // the wall between them never consulted. The server simulates up to a
+    // quarter second in one go and a sprint covers well over a block in that,
+    // so a frame hitch was enough to walk through a house.
+    let mut w = test_world("tunnel");
+    let reg = w.reg.clone();
+    let stone = reg.block_id("base:stone").unwrap();
+    let y = 119;
+    // A floor to stand on, and a one-block-thick wall standing on it at x = 8.
+    for x in 0..=16 {
+        for z in 2..=6 {
+            w.set_block(x, y, z, stone);
+        }
+    }
+    for z in 2..=6 {
+        for dy in 1..=3 {
+            w.set_block(8, y + dy, z, stone);
+        }
+    }
+
+    let start = Vec3::new(4.5, y as f32 + 1.0, 4.5);
+    let sprint = Input {
+        forward: 1.0,
+        strafe: 0.0,
+        jump: false,
+        sprint: true,
+    };
+    // One enormous step, the shape a hitch produces: far enough that the
+    // destination is open ground on the far side of the wall.
+    let mut p = Player::new(start);
+    for _ in 0..40 {
+        p.update(&w, &sprint, Vec3::X, Vec3::Z, 0.25);
+    }
+    assert!(
+        p.pos.x < 8.0,
+        "the player is at x={} — through a solid wall at x=8",
+        p.pos.x
+    );
+
+    // And the invariant that always held must still hold: wherever a move
+    // finishes, the player is not standing inside a solid block.
+    assert!(
+        !p.collides(&w, p.pos),
+        "the player finished inside a solid block at {:?}",
+        p.pos
+    );
+}
