@@ -723,6 +723,7 @@ impl Game {
                 &atlas.normal,
                 atlas.px,
                 atlas.interior_base,
+                &atlas.layer_params,
             );
         }
 

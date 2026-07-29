@@ -1057,6 +1057,7 @@ fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
 
         let mut r = Renderer {
             atlas_interior_base: 0,
+            atlas_layer_params: [[0.0; 4]; crate::atlas::MAX_LAYERS as usize * 2],
             adapter_name,
             surface,
             device,

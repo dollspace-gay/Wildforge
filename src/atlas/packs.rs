@@ -52,7 +52,76 @@ struct PackToml {
     /// pack ship only companion maps (or a handful of overrides) over another
     /// pack's albedo.
     inherits: Option<String>,
+    /// Per-tile settings for tiles that carry an interior layer, keyed by tile
+    /// name. What the layer should look like is a property of the material, not
+    /// of the renderer: ice is a translucent sheet whose own brightness says how
+    /// thin it is, foliage is a cutout with real holes. Those want different
+    /// numbers and different opacity sources, so they live here.
+    #[serde(default)]
+    layers: std::collections::HashMap<String, LayerToml>,
 }
+
+#[derive(serde::Deserialize, Default, Clone)]
+struct LayerToml {
+    depth: Option<f32>,
+    /// "alpha" (default) reads the surface tile's own alpha channel; the
+    /// authored, general answer. "luminance" derives opacity from surface
+    /// brightness instead — right for ice, where dark means thin, and wrong as
+    /// a global rule, which is why it is named here rather than compiled in.
+    opacity: Option<String>,
+    opacity_min: Option<f32>,
+    opacity_max: Option<f32>,
+    dim: Option<f32>,
+    /// Below this much total coverage (surface over interior) the fragment is
+    /// discarded and you see whatever is behind the block. 0 = never discard.
+    cutoff: Option<f32>,
+}
+
+/// Resolved per-layer settings, in the order the shader indexes them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LayerParams {
+    pub depth: f32,
+    pub opacity_min: f32,
+    pub opacity_max: f32,
+    pub dim: f32,
+    /// 0 = surface alpha channel, 1 = surface luminance.
+    pub mode: u32,
+    pub cutoff: f32,
+}
+
+impl Default for LayerParams {
+    fn default() -> Self {
+        Self {
+            depth: 0.13,
+            opacity_min: 0.0,
+            opacity_max: 1.0,
+            dim: 0.82,
+            mode: 0,
+            cutoff: 0.0,
+        }
+    }
+}
+
+impl LayerParams {
+    fn from_toml(t: &LayerToml) -> Self {
+        let d = Self::default();
+        Self {
+            depth: t.depth.unwrap_or(d.depth),
+            opacity_min: t.opacity_min.unwrap_or(d.opacity_min),
+            opacity_max: t.opacity_max.unwrap_or(d.opacity_max),
+            dim: t.dim.unwrap_or(d.dim),
+            mode: match t.opacity.as_deref() {
+                Some("luminance") => 1,
+                _ => 0,
+            },
+            cutoff: t.cutoff.unwrap_or(d.cutoff),
+        }
+    }
+}
+
+/// Most layered tiles a pack can declare. Interior slots are capped to match so
+/// every layer the atlas hands out has parameters the shader can actually read.
+pub const MAX_LAYERS: u16 = 32;
 
 /// List texture packs under `root`, sorted by id.
 pub fn discover_packs_in(root: &std::path::Path) -> Vec<PackInfo> {
@@ -93,6 +162,20 @@ pub fn discover_packs() -> Vec<PackInfo> {
         packs.sort_by(|a, b| a.id.cmp(&b.id));
     }
     packs
+}
+
+/// Read a pack folder's per-tile layer settings.
+fn pack_layers_dir(dir: &std::path::Path) -> std::collections::HashMap<String, LayerParams> {
+    let Some(meta) = std::fs::read_to_string(dir.join("pack.toml"))
+        .ok()
+        .and_then(|t| toml::from_str::<PackToml>(&t).ok())
+    else {
+        return Default::default();
+    };
+    meta.layers
+        .iter()
+        .map(|(k, v)| (k.clone(), LayerParams::from_toml(v)))
+        .collect()
 }
 
 /// Read a pack folder's declared parent, if any.
@@ -347,6 +430,8 @@ pub struct Atlas {
     /// First atlas slot of the contiguous interior-layer run. A tile's material
     /// alpha holds 1 + its offset into this run, or 0 for "no interior layer".
     pub interior_base: u16,
+    /// Settings for each interior layer, indexed by (material alpha - 1).
+    pub layer_params: Vec<LayerParams>,
 }
 
 /// Build the atlas in layers: procedural/assets base, then mod PNGs, then the
@@ -386,9 +471,11 @@ pub fn build_atlas(
     // Gather the whole chain first: variant slots can only be handed out once
     // every pack has been seen, since a child may add a look its parent lacks.
     let mut gathered: Vec<(TileRef, SrcTile)> = Vec::new();
+    let mut layer_toml: std::collections::HashMap<String, LayerParams> = Default::default();
     for pack in packs {
         match pack {
             PackSource::Dir(dir) => {
+                layer_toml.extend(pack_layers_dir(dir));
                 let names = tile_names(tex_names);
                 let found = scan_pack(dir, &names);
                 warnings.extend(found.warnings);
@@ -464,12 +551,29 @@ pub fn build_atlas(
         wanted.sort_unstable();
         wanted.dedup();
         for slot in wanted {
-            if next >= ceiling || next - interior_base >= 254 {
-                warnings.push(format!("atlas full: no slot for interior layer of {slot}"));
+            if next >= ceiling || next - interior_base >= MAX_LAYERS {
+                warnings.push(format!(
+                    "no slot for interior layer of tile {slot} (limit {MAX_LAYERS})"
+                ));
                 continue;
             }
             interior_id.insert(slot, (next - interior_base) as u8 + 1);
             next += 1;
+        }
+    }
+    // Settings per layer, in the order the shader indexes them. pack.toml keys
+    // by tile name, so invert the name table to reach the slot the id came from.
+    let mut layer_params = vec![LayerParams::default(); interior_id.len()];
+    {
+        let names = tile_names(tex_names);
+        let by_slot: std::collections::HashMap<u16, &String> =
+            names.iter().map(|(n, s)| (*s, n)).collect();
+        for (slot, id) in &interior_id {
+            if let Some(name) = by_slot.get(slot)
+                && let Some(p) = layer_toml.get(name.as_str())
+            {
+                layer_params[*id as usize - 1] = *p;
+            }
         }
     }
     let resolve = |r: &TileRef| -> Option<u16> {
@@ -558,6 +662,7 @@ pub fn build_atlas(
         normal: nrm,
         variants,
         interior_base,
+        layer_params,
         px,
         warnings,
     }

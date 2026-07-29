@@ -32,6 +32,7 @@ impl Game {
             &atlas.normal,
             atlas.px,
             atlas.interior_base,
+            &atlas.layer_params,
         );
         self.content.pack_warnings = atlas.warnings;
         // Variant choice is baked into chunk uvs, so a pack whose alternates
@@ -72,6 +73,7 @@ impl Game {
             &atlas.normal,
             atlas.px,
             atlas.interior_base,
+            &atlas.layer_params,
         );
 
         // Remap items by name (old registry -> new); unknown items vanish.

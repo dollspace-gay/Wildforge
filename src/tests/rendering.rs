@@ -1312,3 +1312,84 @@ fn variant_shipping_only_maps_inherits_the_base_look() {
         "map-only variant inherited the base albedo"
     );
 }
+
+#[test]
+fn layer_settings_come_from_pack_toml() {
+    use crate::atlas::{build_atlas, builtin_slots};
+    // What an interior layer means is the material's business. Opacity defaults
+    // to the surface's own ALPHA — the general mechanism — and "luminance" is a
+    // named special case for sheets like ice, not a rule compiled into the shader.
+    let pack = tmp_dir("packlayers");
+    std::fs::create_dir_all(pack.join("tiles")).unwrap();
+    for t in ["ice", "leaves"] {
+        write_solid_png(
+            &pack.join(format!("tiles/{t}.png")),
+            8,
+            8,
+            [80, 90, 100, 255],
+        );
+        write_solid_png(
+            &pack.join(format!("tiles/{t}_i.png")),
+            8,
+            8,
+            [10, 20, 30, 255],
+        );
+    }
+    std::fs::write(
+        pack.join("pack.toml"),
+        "[layers.ice]\n\
+         depth = 0.13\n\
+         opacity = \"luminance\"\n\
+         opacity_min = 0.3\n\
+         opacity_max = 0.75\n\
+         dim = 0.82\n\
+         cutoff = 0.0\n\
+         [layers.leaves]\n\
+         depth = 0.30\n\
+         cutoff = 0.35\n",
+    )
+    .unwrap();
+    let atlas = build_atlas(&[], &[crate::atlas::PackSource::Dir(pack)], &[]);
+    assert!(atlas.warnings.is_empty(), "{:?}", atlas.warnings);
+
+    let id_of = |name: &str| -> usize {
+        let slot = *builtin_slots().get(name).unwrap();
+        let tp = atlas.px / crate::atlas::ATLAS_TILES;
+        let i = (((slot as u32 / crate::atlas::ATLAS_TILES * tp) * atlas.px
+            + slot as u32 % crate::atlas::ATLAS_TILES * tp)
+            * 4) as usize;
+        atlas.material[i + 3] as usize
+    };
+    let ice = atlas.layer_params[id_of("ice") - 1];
+    let leaves = atlas.layer_params[id_of("leaves") - 1];
+
+    assert_eq!(ice.mode, 1, "ice asked for luminance");
+    assert_eq!(
+        leaves.mode, 0,
+        "leaves said nothing, so the alpha default holds"
+    );
+    assert!((ice.depth - 0.13).abs() < 1e-6);
+    assert!((leaves.depth - 0.30).abs() < 1e-6);
+    assert!((ice.opacity_min - 0.3).abs() < 1e-6);
+    assert!((leaves.cutoff - 0.35).abs() < 1e-6);
+    // Unstated fields fall back rather than zeroing out.
+    let d = crate::atlas::LayerParams::default();
+    assert!(
+        (leaves.dim - d.dim).abs() < 1e-6,
+        "unset dim keeps the default"
+    );
+    assert!((leaves.opacity_max - d.opacity_max).abs() < 1e-6);
+}
+
+#[test]
+fn a_tile_without_pack_toml_layer_settings_gets_defaults() {
+    use crate::atlas::{LayerParams, build_atlas};
+    let pack = tmp_dir("packlayerdefault");
+    std::fs::create_dir_all(pack.join("tiles")).unwrap();
+    write_solid_png(&pack.join("tiles/ice.png"), 8, 8, [80, 90, 100, 255]);
+    write_solid_png(&pack.join("tiles/ice_i.png"), 8, 8, [10, 20, 30, 255]);
+    let atlas = build_atlas(&[], &[crate::atlas::PackSource::Dir(pack)], &[]);
+    assert_eq!(atlas.layer_params.len(), 1);
+    assert_eq!(atlas.layer_params[0], LayerParams::default());
+    assert_eq!(atlas.layer_params[0].mode, 0, "alpha is the default source");
+}

@@ -15,8 +15,18 @@ impl Renderer {
         normal: &[u8],
         px: u32,
         interior_base: u16,
+        layer_params: &[crate::atlas::LayerParams],
     ) {
         self.atlas_interior_base = interior_base;
+        self.atlas_layer_params = [[0.0; 4]; crate::atlas::MAX_LAYERS as usize * 2];
+        for (i, p) in layer_params
+            .iter()
+            .take(crate::atlas::MAX_LAYERS as usize)
+            .enumerate()
+        {
+            self.atlas_layer_params[i * 2] = [p.depth, p.opacity_min, p.opacity_max, p.dim];
+            self.atlas_layer_params[i * 2 + 1] = [p.mode as f32, p.cutoff, 0.0, 0.0];
+        }
         let color = upload_atlas(&self.device, &self.queue, data, px, true, "atlas");
         let mat = upload_atlas(
             &self.device,
