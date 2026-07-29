@@ -18,6 +18,21 @@ const SPRINT_MULT: f32 = 1.6;
 const SWIM_SPEED: f32 = 3.0;
 const TERMINAL: f32 = 55.0;
 
+/// The longest single hop a move may take before the world is consulted again,
+/// in blocks.
+///
+/// A solid block is one unit thick, so sampling a path at intervals shorter
+/// than a block means no block can sit entirely between two samples. A quarter
+/// block leaves generous margin and costs nothing at ordinary speeds: a
+/// sprinting sixtieth of a second covers about a tenth of a block, which is
+/// still one hop and still one collision test — the same work this did before.
+const SWEEP_STEP: f32 = 0.25;
+
+/// Safety valve on the hop count. Terminal velocity across the longest tick
+/// the server will simulate is under fourteen blocks (fifty-six hops); this is
+/// an order of magnitude past that, so it only ever catches a nonsense delta.
+const MAX_SWEEP_HOPS: i32 = 512;
+
 pub struct Player {
     /// Feet-center position.
     pub pos: Vec3,
@@ -194,23 +209,50 @@ impl Player {
     }
 
     fn move_axis(&mut self, world: &World, delta: Vec3) {
-        let target = self.pos + delta;
-        if !self.collides(world, target) {
-            self.pos = target;
+        let dist = delta.length();
+        if dist <= 0.0 {
             return;
         }
-        // Binary-search the largest non-colliding fraction, then zero velocity on that axis.
-        let mut lo = 0.0f32;
-        let mut hi = 1.0f32;
-        for _ in 0..8 {
-            let mid = (lo + hi) * 0.5;
-            if self.collides(world, self.pos + delta * mid) {
-                hi = mid;
-            } else {
-                lo = mid;
+        // Walk the path rather than teleporting to the end of it.
+        //
+        // This used to test the destination and nothing else, so a step long
+        // enough to clear a wall passed straight through: both ends in open
+        // air, the wall between them never consulted. A hitch is enough —
+        // the server simulates up to a quarter second at a time, and a sprint
+        // covers well over a block in that.
+        let hops = (dist / SWEEP_STEP).ceil().max(1.0);
+        let hops = (hops as i32).min(MAX_SWEEP_HOPS);
+        // Fraction of `delta` covered so far, every bit of it tested clear.
+        let mut travelled = 0.0f32;
+        let mut blocked = false;
+        for i in 1..=hops {
+            let t = i as f32 / hops as f32;
+            if self.collides(world, self.pos + delta * t) {
+                // Snug up to whatever stopped us, searching only inside this
+                // hop. The interval is shorter than a block, so a clear point
+                // found in it cannot be on the far side of the obstacle —
+                // which is exactly what the old full-span search could return,
+                // because `collides` is not monotonic in `t` and bisection
+                // assumed it was.
+                let (mut lo, mut hi) = (travelled, t);
+                for _ in 0..8 {
+                    let mid = (lo + hi) * 0.5;
+                    if self.collides(world, self.pos + delta * mid) {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+                travelled = lo;
+                blocked = true;
+                break;
             }
+            travelled = t;
         }
-        self.pos += delta * lo;
+        self.pos += delta * travelled;
+        if !blocked {
+            return;
+        }
         if delta.y < 0.0 {
             self.on_ground = true;
         }
