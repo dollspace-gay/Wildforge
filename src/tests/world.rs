@@ -104,7 +104,7 @@ fn remote_world_neither_generates_nor_saves_authoritative_state() {
 
     assert!(!w.ensure_chunk(ChunkPos { x: 0, z: 0 }));
     assert!(w.chunks().is_empty());
-    w.save_modified();
+    save_world(&mut w);
 
     assert!(!dir.join("world.toml").exists());
     assert!(!dir.join("chunks").exists());
@@ -117,10 +117,10 @@ fn save_v2_roundtrip_with_palette() {
     let log = b(&reg, "base:log");
     w.set_block(1, 80, 1, log);
     w.set_block(-20, 33, 7, b(&reg, "base:sand"));
-    w.save_modified();
+    save_world(&mut w);
     assert!(w.save_dir_for_test().join("palette").exists());
 
-    let mut w2 = World::load_or_create(w.save_dir_for_test(), reg.clone());
+    let mut w2 = World::load_or_create(w.save_dir_for_test(), reg.clone()).unwrap();
     for x in -2..=2 {
         for z in -2..=2 {
             w2.ensure_chunk(ChunkPos { x, z });
@@ -138,13 +138,13 @@ fn pre_v3_saves_regenerate_cleanly() {
     std::fs::write(dir.join("seed"), "42").unwrap();
     // A stale v2 chunk file must be ignored (regenerated), not crash.
     std::fs::write(dir.join("c.0.0.wfc"), b"WFC2garbagegarbage").unwrap();
-    let mut w = World::load_or_create(dir, reg.clone());
+    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
     w.ensure_chunk(ChunkPos { x: 0, z: 0 });
     assert_eq!(w.get_block(0, 0, 0), b(&reg, "base:bedrock"));
-    w.save_modified();
+    save_world(&mut w);
     // ensure_chunk on fresh terrain marks modified=false, so force a write.
     w.set_block(1, 100, 1, b(&reg, "base:planks"));
-    w.save_modified();
+    save_world(&mut w);
     let bytes = crate::world::region::read_chunk(&w.save_dir_for_test(), ChunkPos { x: 0, z: 0 })
         .expect("the edited chunk is stored");
     assert!(bytes.starts_with(b"WFC4"), "saves are written as v4 now");
@@ -168,7 +168,7 @@ fn palette_less_v3_chunks_keep_their_legacy_numeric_ids() {
     }
     std::fs::write(dir.join("c.0.0.wfc"), data).unwrap();
 
-    let mut w = World::load_or_create(dir, reg.clone());
+    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
     w.ensure_chunk(ChunkPos { x: 0, z: 0 });
     assert_eq!(
         w.get_block(4, 60, 4),
@@ -192,7 +192,7 @@ fn unknown_palette_entries_become_placeholder() {
         data.extend_from_slice(&id.to_le_bytes());
     }
     let _ = std::fs::write(dir.join("c.0.0.wfc"), data);
-    let mut w = World::load_or_create(dir, reg.clone());
+    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
     w.ensure_chunk(ChunkPos { x: 0, z: 0 });
     assert_eq!(
         w.get_block(0, 60, 0),
@@ -224,7 +224,7 @@ fn all_placeholder_chunks_regenerate_instead_of_becoming_obelisks() {
     }
     std::fs::write(dir.join("c.0.0.wfc"), data).unwrap();
 
-    let mut w = World::load_or_create(dir, reg.clone());
+    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
     w.ensure_chunk(ChunkPos { x: 0, z: 0 });
     assert_ne!(
         w.get_block(4, 60, 4),
@@ -330,7 +330,7 @@ fn crops_grow_on_farmland_via_random_ticks() {
 fn world_meta_roundtrip_and_legacy() {
     use crate::world::{read_world_meta, write_world_meta};
     let dir = tmp_dir("meta");
-    write_world_meta(&dir, 777, "creative", 0.0);
+    write_world_meta(&dir, 777, "creative", 0.0).unwrap();
     assert_eq!(
         read_world_meta(&dir),
         (Some(777), "creative".to_string(), 0.0)
@@ -344,7 +344,7 @@ fn world_meta_roundtrip_and_legacy() {
     );
     // load_or_create upgrades legacy worlds to world.toml.
     let reg = base_reg();
-    let _ = World::load_or_create(dir2.clone(), reg);
+    let _ = World::load_or_create(dir2.clone(), reg).unwrap();
     assert!(dir2.join("world.toml").exists());
 }
 
@@ -457,8 +457,8 @@ fn random_ticks_budget_stamps_and_persist() {
     let again = w.random_tick(&mut rng);
     assert_eq!(again, 9 * 8, "freshly stamped chunks take the floor burst");
     assert_eq!(w.chunk_stamp(0, 0), Some(100.0));
-    w.save_modified();
-    let w2 = World::load_or_create(dir, reg.clone());
+    save_world(&mut w);
+    let w2 = World::load_or_create(dir, reg.clone()).unwrap();
     assert_eq!(w2.chunk_stamp(0, 0), Some(100.0), "stamps persist");
 }
 
@@ -584,10 +584,10 @@ fn reconcile_catches_up_an_absent_chunk() {
         w.set_block(x, h + 6, 4, b("base:farmland"));
         w.set_block(x, h + 7, 4, b("base:wheat_seeds"));
     }
-    w.save_modified();
+    save_world(&mut w);
 
     // Reopen the world a year later, in deep winter.
-    let mut w2 = World::load_or_create(dir, reg.clone());
+    let mut w2 = World::load_or_create(dir, reg.clone()).unwrap();
     w2.day = 3 * crate::world::SEASON_DAYS;
     w2.clock = w2.day as f64 * 600.0;
     for x in -1..=1 {
@@ -643,7 +643,7 @@ fn world_listing_sees_world_toml_and_legacy_seed() {
     // world.toml worlds were invisible and their folder names got reused
     // by NEW WORLD — inheriting the old player.toml (inventory carryover).
     let root = tmp_dir("listworlds");
-    crate::world::write_world_meta(&root.join("world1"), 42, "survival", 0.0);
+    crate::world::write_world_meta(&root.join("world1"), 42, "survival", 0.0).unwrap();
     std::fs::create_dir_all(root.join("old")).unwrap();
     std::fs::write(root.join("old/seed"), "7").unwrap();
     std::fs::create_dir_all(root.join("junk")).unwrap();
@@ -659,7 +659,7 @@ fn world_listing_sees_world_toml_and_legacy_seed() {
 #[test]
 fn new_world_name_never_reuses_existing_folder() {
     let root = tmp_dir("nextworld");
-    crate::world::write_world_meta(&root.join("world1"), 1, "survival", 0.0);
+    crate::world::write_world_meta(&root.join("world1"), 1, "survival", 0.0).unwrap();
     std::fs::write(root.join("world1/player.toml"), "leftover inventory").unwrap();
     let listed = crate::world::list_worlds(&root);
     assert_eq!(crate::next_world_name(&root, &listed), "world2");
@@ -867,8 +867,8 @@ fn ire_gains_decay_tiers_and_persistence() {
     w.plant_ire(0.5);
     assert!(w.ire < 90.0 - 2.0, "cap reset next day");
     // Persistence via world.toml.
-    w.save_modified();
-    let w2 = World::load_or_create(dir, reg);
+    save_world(&mut w);
+    let w2 = World::load_or_create(dir, reg).unwrap();
     assert!((w2.ire - w.ire).abs() < 0.01, "ire round-trips");
 }
 
@@ -1056,8 +1056,8 @@ fn weather_machine_rolls_legal_fronts_and_storms_lean_on_ire() {
     let midsummer = crate::world::SEASON_DAYS + crate::world::SEASON_DAYS / 2;
     w.day = midsummer;
     w.weather = Weather::Storm;
-    w.save_modified();
-    let w2 = World::load_or_create(dir, reg);
+    save_world(&mut w);
+    let w2 = World::load_or_create(dir, reg).unwrap();
     assert_eq!(w2.day, midsummer);
     assert_eq!(w2.weather, Weather::Storm);
     assert_eq!(w2.season(), 1, "a day and a half of seasons in is summer");
@@ -1380,7 +1380,7 @@ fn bedrock_floor_is_unbreakable_and_reseals_on_load() {
     // A hole knocked in the floor (a creative dig, an old bug) heals
     // when the chunk loads again.
     w.set_block(4, 0, 4, AIR);
-    w.save_modified();
+    save_world(&mut w);
     drop(w);
     let mut w2 = World::new(42, dir, reg);
     w2.ensure_chunk(ChunkPos { x: 0, z: 0 });
@@ -1415,8 +1415,8 @@ fn snow_trod_swaps_persists_melts_and_drops() {
     );
 
     // The trail persists across save/load.
-    w.save_modified();
-    let mut w2 = World::load_or_create(w.save_dir_for_test(), reg.clone());
+    save_world(&mut w);
+    let mut w2 = World::load_or_create(w.save_dir_for_test(), reg.clone()).unwrap();
     w2.ensure_chunk(ChunkPos::of_world(x, z));
     assert_eq!(w2.get_block(x, y + 1, z), trod, "footprints persist");
 
@@ -1972,9 +1972,9 @@ fn the_land_remembers_where() {
             "decay toward zero ({})",
             w.regional_ire_at(100, 100)
         );
-        w.save_modified();
+        save_world(&mut w);
     }
-    let w = World::load_or_create(dir, reg);
+    let w = World::load_or_create(dir, reg).unwrap();
     assert!(
         w.regional_ire_at(100, 100) > 17.0,
         "the ledger persists ({})",
@@ -2278,20 +2278,89 @@ fn the_autosave_writes_only_what_changed_since_the_last_one() {
     let stone = b(&reg, "base:stone");
     let top = w.surface_height(3, 3);
     w.set_block(3, top + 1, 3, stone);
-    w.save_modified();
+    save_world(&mut w);
     let file = crate::world::region::region_path(&dir, ChunkPos { x: 0, z: 0 });
     assert!(file.exists(), "the edited chunk is written");
 
     // Deleting the file is the probe: if the next autosave puts it
     // back, the chunk was queued for writing with nothing to write.
     std::fs::remove_file(&file).unwrap();
-    w.save_modified();
+    save_world(&mut w);
     assert!(!file.exists(), "an unchanged chunk is not rewritten");
 
     // ...and one more edit puts it straight back in the queue.
     w.set_block(4, top + 1, 4, stone);
-    w.save_modified();
+    save_world(&mut w);
     assert!(file.exists(), "an edited chunk saves again");
+}
+
+#[test]
+fn save_reports_every_failed_component_and_retries_dirty_chunks() {
+    let reg = base_reg();
+    let root = tmp_dir("save-report");
+    let blocked = root.join("not-a-directory");
+    std::fs::write(&blocked, b"occupied").unwrap();
+    let mut w = World::new(9, blocked.clone(), reg.clone());
+    let pos = ChunkPos { x: 0, z: 0 };
+    w.ensure_chunk(pos);
+    let stone = b(&reg, "base:stone");
+    let top = w.surface_height(3, 3);
+    w.set_block(3, top + 1, 3, stone);
+
+    let failed = w.save_modified();
+    let components: std::collections::HashSet<&str> = failed
+        .failures
+        .iter()
+        .map(|failure| failure.component.as_str())
+        .collect();
+    for component in [
+        "save directory",
+        "world metadata",
+        "block palette",
+        "block entities",
+        "animals",
+        "regional ire",
+        "bloom ledger",
+        "long winter",
+        "bloom exhaustion",
+        "hearts",
+        "animal seed marks",
+        "player-touched marks",
+        "random-tick stamps",
+    ] {
+        assert!(
+            components.contains(component),
+            "{component} failure is visible: {}",
+            failed.summary()
+        );
+    }
+    assert_eq!(
+        failed.chunks_saved, 0,
+        "a chunk cannot precede its failed palette"
+    );
+
+    std::fs::remove_file(&blocked).unwrap();
+    std::fs::create_dir_all(&blocked).unwrap();
+    let retry = w.save_modified();
+    assert!(retry.is_ok(), "retry succeeds: {}", retry.summary());
+    assert_eq!(retry.chunks_saved, 1, "the dirty chunk was retained");
+
+    w.set_block(4, top + 1, 4, stone);
+    w.fail_chunk_save_for_test(pos, true);
+    let chunk_failure = w.save_modified();
+    assert_eq!(chunk_failure.chunks_saved, 0);
+    assert!(
+        chunk_failure
+            .failures
+            .iter()
+            .any(|failure| failure.component == "chunk 0,0"),
+        "chunk failure has coordinates: {}",
+        chunk_failure.summary()
+    );
+    w.fail_chunk_save_for_test(pos, false);
+    let chunk_retry = w.save_modified();
+    assert!(chunk_retry.is_ok(), "chunk retry succeeds");
+    assert_eq!(chunk_retry.chunks_saved, 1, "failed chunk stayed dirty");
 }
 
 /// A chunk that came off disk already matches its file. Reloading a
@@ -2306,17 +2375,17 @@ fn a_chunk_read_from_disk_is_clean_until_something_edits_it() {
         w.ensure_chunk(ChunkPos { x: 0, z: 0 });
         let top = w.surface_height(3, 3);
         w.set_block(3, top + 1, 3, stone);
-        w.save_modified();
+        save_world(&mut w);
         top
     };
     let file = crate::world::region::region_path(&dir, ChunkPos { x: 0, z: 0 });
     assert!(file.exists());
 
-    let mut w = World::load_or_create(dir.clone(), reg.clone());
+    let mut w = World::load_or_create(dir.clone(), reg.clone()).unwrap();
     w.ensure_chunk(ChunkPos { x: 0, z: 0 });
     assert_eq!(w.get_block(3, top + 1, 3), stone, "the edit came back");
     std::fs::remove_file(&file).unwrap();
-    w.save_modified();
+    save_world(&mut w);
     assert!(
         !file.exists(),
         "a freshly loaded, untouched chunk is not rewritten"
@@ -2334,19 +2403,19 @@ fn the_palette_is_written_when_it_would_differ_and_not_on_a_timer() {
     let palette = dir.join("palette");
     let mut w = World::new(9, dir.clone(), reg.clone());
     w.ensure_chunk(ChunkPos { x: 0, z: 0 });
-    w.save_modified();
+    save_world(&mut w);
     assert!(palette.exists(), "a fresh world owes a palette");
 
     std::fs::remove_file(&palette).unwrap();
-    w.save_modified();
+    save_world(&mut w);
     assert!(!palette.exists(), "an unchanged palette is not rewritten");
 
     // Reopening against a save whose palette is missing or stale counts
     // as a difference, so the next save puts one back — and every chunk
     // that loads is rewritten in the ids it names.
-    let mut w = World::load_or_create(dir.clone(), reg.clone());
+    let mut w = World::load_or_create(dir.clone(), reg.clone()).unwrap();
     w.ensure_chunk(ChunkPos { x: 0, z: 0 });
-    w.save_modified();
+    save_world(&mut w);
     assert!(palette.exists(), "a stale palette is replaced");
 }
 
@@ -2405,9 +2474,9 @@ fn stamps_from_a_different_day_length_are_dropped_not_misread() {
         w.ensure_chunk(ChunkPos { x: 0, z: 0 });
         let mut rng = 1u32;
         w.random_tick(&mut rng);
-        w.save_modified();
+        save_world(&mut w);
     }
-    let w = World::load_or_create(dir.clone(), reg.clone());
+    let w = World::load_or_create(dir.clone(), reg.clone()).unwrap();
     assert!(w.stamp_count() > 0, "same clock, stamps come back");
 
     // A pre-retune file: the old headerless (x, z, time) triples.
@@ -2416,7 +2485,7 @@ fn stamps_from_a_different_day_length_are_dropped_not_misread() {
     old.extend_from_slice(&0i32.to_le_bytes());
     old.extend_from_slice(&123.0f64.to_le_bytes());
     std::fs::write(dir.join("stamps"), &old).unwrap();
-    let w = World::load_or_create(dir.clone(), reg.clone());
+    let w = World::load_or_create(dir.clone(), reg.clone()).unwrap();
     assert_eq!(
         w.stamp_count(),
         0,
@@ -2752,7 +2821,7 @@ fn a_world_survives_a_save_and_reload_across_several_regions() {
                 edits.push((wx, y, wz, block));
             }
         }
-        w.save_modified();
+        save_world(&mut w);
     }
     assert!(edits.len() > 200, "enough chunks to span many regions");
 
@@ -2772,7 +2841,7 @@ fn a_world_survives_a_save_and_reload_across_several_regions() {
         edits.len()
     );
 
-    let mut w = World::load_or_create(dir, reg.clone());
+    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
     for (x, y, z, want) in edits {
         w.ensure_chunk(ChunkPos::of_world(x, z));
         assert_eq!(

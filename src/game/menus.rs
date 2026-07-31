@@ -70,14 +70,13 @@ impl Game {
                     self.set_screen(Screen::Playing);
                 } else if self.hit(self.menu_button_rect(1)) {
                     self.sfx(Sfx::Click);
-                    self.creative = !self.creative;
-                    self.flying = false;
-                    let mode = if self.creative {
+                    let next_creative = !self.creative;
+                    let mode = if next_creative {
                         "creative"
                     } else {
                         "survival"
                     };
-                    world::write_world_meta_full(
+                    let saved = world::write_world_meta_full(
                         &self.server.world.save_dir_for_saving(),
                         self.server.world.seed,
                         mode,
@@ -85,13 +84,23 @@ impl Game {
                         self.server.world.day,
                         self.server.world.weather,
                     );
-                    if self.content.scripts.wants("on_mode_change") {
-                        self.content.scripts.dispatch(
-                            &self.server.world,
-                            "on_mode_change",
-                            (mode.to_string(),),
-                        );
-                        self.apply_script_cmds();
+                    match saved {
+                        Ok(()) => {
+                            self.creative = next_creative;
+                            self.flying = false;
+                            self.server.world.mode = mode.to_string();
+                            if self.content.scripts.wants("on_mode_change") {
+                                self.content.scripts.dispatch(
+                                    &self.server.world,
+                                    "on_mode_change",
+                                    (mode.to_string(),),
+                                );
+                                self.apply_script_cmds();
+                            }
+                        }
+                        Err(error) => {
+                            self.toast(format!("Could not change mode: {error}"));
+                        }
                     }
                 } else if self.hit(self.menu_button_rect(2)) {
                     self.sfx(Sfx::Click);

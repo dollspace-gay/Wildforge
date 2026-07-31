@@ -103,6 +103,7 @@ pub fn write_chunk(dir: &Path, pos: ChunkPos, bytes: &[u8]) -> std::io::Result<(
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .open(&path)?;
     let len = file.metadata()?.len();
     if len < HEADER_BYTES {

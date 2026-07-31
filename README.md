@@ -1,6 +1,7 @@
 # Wildforge
 
-A Minecraft-alpha-style voxel game written in Rust on a custom engine.
+A Minecraft-alpha-style voxel game written in Rust on a custom engine,
+available under the [MIT license](LICENSE).
 There's no game framework under it: **wgpu** draws, **winit** handles the
 window, **glam** does the maths, **noise** makes the terrain. Collision is
 hand-rolled AABB, because a voxel world doesn't need a general-purpose
@@ -13,6 +14,50 @@ physics engine.
 ```sh
 cargo run --release
 ```
+
+### Prerequisites and development
+
+Wildforge supports native Linux and Windows. The renderer enables
+Vulkan/GLES on Linux and Direct3D 12 on Windows; use a driver and adapter that
+supports one of those APIs. macOS/Metal is not currently a supported build
+target. WSLg runs with the mouse-capture limitation described below.
+
+The minimum Rust version is 1.95. A checkout pins Rust 1.96 with Rustfmt and
+Clippy through `rust-toolchain.toml`, so [rustup](https://rustup.rs/) selects
+the tested toolchain automatically. Install the optional local advisory
+runner with `cargo install cargo-deny --locked`; CI supplies it independently.
+
+On Ubuntu 24.04/Debian, install the native audio/build discovery packages:
+
+```sh
+sudo apt-get install libasound2-dev pkg-config
+```
+
+The repository checks are:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked --all-targets
+cargo build --locked --release
+cargo deny check advisories
+```
+
+For quick feedback, CI runs non-agent tests separately:
+
+```sh
+cargo test --locked --all-targets -- --skip tests::agent::
+```
+
+The four end-to-end QUIC agent scenarios retain their own serial lane:
+
+```sh
+cargo test --locked tests::agent:: -- --test-threads=1
+```
+
+They completed in 12.44 seconds on the 2026-07-30 review machine and have a
+five-minute CI timeout. The fast lane should also stay below five minutes;
+crossing either budget is treated as a performance regression.
 
 ## Architecture
 

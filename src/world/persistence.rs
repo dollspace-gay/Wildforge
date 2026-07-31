@@ -9,7 +9,7 @@ const STAMPS_MAGIC: &[u8] = b"WFS2-1200";
 
 impl World {
     /// Load a world from disk (reads seed + palette) or create a fresh one.
-    pub fn load_or_create(save_dir: PathBuf, reg: Arc<Registry>) -> World {
+    pub fn load_or_create(save_dir: PathBuf, reg: Arc<Registry>) -> std::io::Result<World> {
         let (seed, mode, ire, day, weather) = read_world_meta_full(&save_dir);
         let seed = seed.unwrap_or_else(|| {
             if let Some(seed) = std::env::var("WILDFORGE_SEED")
@@ -23,7 +23,7 @@ impl World {
                 .map(|d| d.as_secs() as u32)
                 .unwrap_or(1337)
         });
-        write_world_meta_full(&save_dir, seed, &mode, ire, day, weather);
+        write_world_meta_full(&save_dir, seed, &mode, ire, day, weather)?;
         let mut w = World::new(seed, save_dir, reg);
         w.mode = mode;
         w.ire = ire;
@@ -35,7 +35,7 @@ impl World {
         w.load_entities();
         w.load_mobs();
         w.load_stamps();
-        w
+        Ok(w)
     }
 
     /// Per-chunk random-tick stamps: compact (x, z, time) triples.
@@ -61,7 +61,7 @@ impl World {
         }
     }
 
-    pub(super) fn save_stamps(&self) {
+    pub(super) fn save_stamps(&self) -> std::io::Result<()> {
         let mut buf = Vec::with_capacity(STAMPS_MAGIC.len() + self.last_random.len() * 16);
         buf.extend_from_slice(STAMPS_MAGIC);
         for ((x, z), t) in &self.last_random {
@@ -69,7 +69,7 @@ impl World {
             buf.extend_from_slice(&z.to_le_bytes());
             buf.extend_from_slice(&t.to_le_bytes());
         }
-        let _ = fs::write(self.save_dir.join("stamps"), buf);
+        atomic_replace(&self.save_dir.join("stamps"), &buf)
     }
 
     /// Map every stored numeric id to a current runtime id via string names.
@@ -134,7 +134,28 @@ impl World {
 
     /// Write the current registry as this world's palette (runtime ids are
     /// stored ids from now on).
-    pub(super) fn write_palette(&self) {
-        let _ = fs::write(self.save_dir.join("palette"), self.palette_text());
+    pub(super) fn write_palette(&self) -> std::io::Result<()> {
+        atomic_replace(
+            &self.save_dir.join("palette"),
+            self.palette_text().as_bytes(),
+        )
+    }
+}
+
+pub(super) fn atomic_replace(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    crate::identity::atomic_write(path, bytes, false)
+}
+
+pub(super) fn remove_if_exists(path: &std::path::Path) -> std::io::Result<()> {
+    crate::persist::remove_if_exists(path)
+}
+
+pub(super) fn replace_or_remove(
+    path: &std::path::Path,
+    bytes: Option<&[u8]>,
+) -> std::io::Result<()> {
+    match bytes {
+        Some(bytes) => atomic_replace(path, bytes),
+        None => remove_if_exists(path),
     }
 }

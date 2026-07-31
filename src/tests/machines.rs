@@ -61,9 +61,9 @@ fn furnace_state_persists_and_breaks_drop_contents() {
             ..Default::default()
         }),
     );
-    w.save_modified();
+    save_world(&mut w);
     // Reload: state comes back by item name.
-    let mut w2 = World::load_or_create(w.save_dir_for_test(), reg.clone());
+    let mut w2 = World::load_or_create(w.save_dir_for_test(), reg.clone()).unwrap();
     for x in -2..=2 {
         for z in -2..=2 {
             w2.ensure_chunk(ChunkPos { x, z });
@@ -94,14 +94,14 @@ fn chest_stores_spills_and_persists() {
     state.slots[0] = Some(ItemStack::new(&reg, it(&reg, "base:bread"), 3));
     state.slots[26] = Some(ItemStack::new(&reg, it(&reg, "base:bronze_ingot"), 7));
     w.insert_block_entity(pos, crate::world::BlockEntity::Chest(state));
-    w.save_modified();
+    save_world(&mut w);
 
     // Round-trip by name, plus an unknown item that must skip cleanly.
     let path = dir.join("entities.toml");
     let mut text = std::fs::read_to_string(&path).unwrap();
     text.push_str("\n[[chest]]\npos = [9, 90, 9]\n[[chest.slot]]\nindex = 0\nitem = \"gone:widget\"\ncount = 5\ndurability = 0\n");
     std::fs::write(&path, text).unwrap();
-    let w2 = World::load_or_create(dir, reg.clone());
+    let w2 = World::load_or_create(dir, reg.clone()).unwrap();
     let Some(crate::world::BlockEntity::Chest(c)) = w2.block_entity(&pos) else {
         panic!("chest reloaded")
     };
@@ -932,9 +932,9 @@ fn signs_hold_their_words_through_save_and_load() {
                 ],
             }),
         );
-        w.save_modified();
+        save_world(&mut w);
     }
-    let w = World::load_or_create(dir, reg.clone());
+    let w = World::load_or_create(dir, reg.clone()).unwrap();
     let found: Vec<_> = w.sign_texts().collect();
     assert_eq!(found.len(), 1, "the sign persisted");
     assert_eq!(found[0].1.lines[0], "SALT FAIR");
@@ -978,9 +978,9 @@ fn stall_validates_and_persists_its_shop() {
         st.goods[0] = Some(ItemStack::new(&reg, salt, 20));
         st.price = Some(ItemStack::new(&reg, silver, 1));
         w.insert_block_entity((4, y, 4), BlockEntity::Stall(st));
-        w.save_modified();
+        save_world(&mut w);
     }
-    let w = World::load_or_create(dir, reg.clone());
+    let w = World::load_or_create(dir, reg.clone()).unwrap();
     let Some(BlockEntity::Stall(st)) = w.block_entity(&(4, 200, 4)) else {
         panic!("the stall persisted");
     };

@@ -2,6 +2,7 @@
 //! persistence (save v2 with a per-world id palette; legacy v1 migrates).
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -39,6 +40,130 @@ pub use hearts::{Heart, heart_block_name, heart_form, heart_height, seed_nature,
 pub use machines::{station_powered, worked_table_for};
 pub mod soil;
 mod ticks;
+
+/// One persistence component that did not reach durable storage.
+#[derive(Debug)]
+pub struct SaveFailure {
+    pub component: String,
+    pub path: PathBuf,
+    pub error: std::io::Error,
+}
+
+impl SaveFailure {
+    pub(super) fn new(component: impl Into<String>, path: PathBuf, error: std::io::Error) -> Self {
+        Self {
+            component: component.into(),
+            path,
+            error,
+        }
+    }
+}
+
+impl fmt::Display for SaveFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} ({}): {}",
+            self.component,
+            self.path.display(),
+            self.error
+        )
+    }
+}
+
+/// Complete result of one world-save attempt.
+///
+/// Independent components continue after a failure so operators get one
+/// useful report instead of discovering errors one five-minute retry at a
+/// time. Dirty chunks are cleared only for writes that landed.
+#[derive(Debug, Default)]
+#[must_use = "world save failures must be reported or handled"]
+pub struct SaveReport {
+    pub chunks_saved: usize,
+    pub failures: Vec<SaveFailure>,
+}
+
+impl SaveReport {
+    pub fn is_ok(&self) -> bool {
+        self.failures.is_empty()
+    }
+
+    pub fn summary(&self) -> String {
+        if self.is_ok() {
+            return format!("{} dirty chunks written", self.chunks_saved);
+        }
+        let shown = self
+            .failures
+            .iter()
+            .take(3)
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("; ");
+        let more = self.failures.len().saturating_sub(3);
+        if more == 0 {
+            shown
+        } else {
+            format!("{shown}; and {more} more")
+        }
+    }
+
+    pub(super) fn record(
+        &mut self,
+        component: impl Into<String>,
+        path: PathBuf,
+        result: std::io::Result<()>,
+    ) -> bool {
+        match result {
+            Ok(()) => true,
+            Err(error) => {
+                self.failures.push(SaveFailure::new(component, path, error));
+                false
+            }
+        }
+    }
+
+    pub(super) fn extend(&mut self, failures: impl IntoIterator<Item = SaveFailure>) {
+        self.failures.extend(failures);
+    }
+}
+
+/// Result of one residency sweep.
+#[derive(Debug, Default)]
+#[must_use = "residency save failures must be reported or handled"]
+pub struct ResidencyReport {
+    pub released: usize,
+    pub retained_dirty: usize,
+    pub failures: Vec<SaveFailure>,
+}
+
+impl ResidencyReport {
+    pub fn is_ok(&self) -> bool {
+        self.failures.is_empty()
+    }
+
+    pub fn summary(&self) -> String {
+        if self.is_ok() {
+            return format!("released {} chunks", self.released);
+        }
+        let shown = self
+            .failures
+            .iter()
+            .take(3)
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("; ");
+        let more = self.failures.len().saturating_sub(3);
+        let suffix = if more == 0 {
+            String::new()
+        } else {
+            format!("; and {more} more")
+        };
+        format!(
+            "released {}, retained {} dirty: {shown}{suffix}",
+            self.released, self.retained_dirty
+        )
+    }
+}
 
 /// Per-block persistent state for interactive machines.
 // Chest dwarfs the others; entity counts are tiny, so boxing would
@@ -290,8 +415,13 @@ pub fn read_world_meta_full(dir: &std::path::Path) -> (Option<u32>, String, f32,
     }
 }
 
-pub fn write_world_meta(dir: &std::path::Path, seed: u32, mode: &str, ire: f32) {
-    write_world_meta_full(dir, seed, mode, ire, 0, Weather::Clear);
+pub fn write_world_meta(
+    dir: &std::path::Path,
+    seed: u32,
+    mode: &str,
+    ire: f32,
+) -> std::io::Result<()> {
+    write_world_meta_full(dir, seed, mode, ire, 0, Weather::Clear)
 }
 
 pub fn write_world_meta_full(
@@ -301,15 +431,12 @@ pub fn write_world_meta_full(
     ire: f32,
     day: u32,
     weather: Weather,
-) {
-    let _ = fs::create_dir_all(dir);
-    let _ = fs::write(
-        dir.join("world.toml"),
-        format!(
-            "seed = {seed}\nmode = \"{mode}\"\nire = {ire:.2}\nday = {day}\nweather = \"{}\"\n",
-            weather.name()
-        ),
+) -> std::io::Result<()> {
+    let text = format!(
+        "seed = {seed}\nmode = \"{mode}\"\nire = {ire:.2}\nday = {day}\nweather = \"{}\"\n",
+        weather.name()
     );
+    crate::identity::atomic_write(&dir.join("world.toml"), text.as_bytes(), false)
 }
 
 /// List worlds under `dir`: (name, seed), sorted. Reads world.toml with the
@@ -355,6 +482,10 @@ pub struct World {
     /// per moved cell.
     fluid_batch: bool,
     pending_relight: HashSet<ChunkPos>,
+    /// Test fixtures can preserve ordinary block-edit behavior while settling
+    /// lighting once per touched chunk. Production edits never take this path.
+    #[cfg(test)]
+    fixture_relight_batch: bool,
     /// Accumulator for the food-freshness sweep (containers).
     perish_accum: f32,
     /// Seconds of work banked per powered station (transient: a
@@ -422,6 +553,8 @@ pub struct World {
     pending_gives: Vec<(u32, ItemStack)>,
     /// Next stable mob id (host side; ids exist for the wire).
     next_mob_id: u32,
+    #[cfg(test)]
+    save_fail_chunks: HashSet<ChunkPos>,
 }
 
 /// Ire tier names, index = tier.
@@ -615,6 +748,8 @@ impl World {
             fire_queued: HashSet::new(),
             fluid_batch: false,
             pending_relight: HashSet::new(),
+            #[cfg(test)]
+            fixture_relight_batch: false,
             clock: 0.0,
             last_random: HashMap::new(),
             block_entities: HashMap::new(),
@@ -647,6 +782,8 @@ impl World {
             falling: Vec::new(),
             pending_gives: Vec::new(),
             next_mob_id: 1,
+            #[cfg(test)]
+            save_fail_chunks: HashSet::new(),
         }
     }
 
@@ -783,20 +920,44 @@ impl World {
 
     /// Save and drop every chunk no longer near any of `centers`.
     ///
-    /// Returns how many left. Saving as a chunk departs is the incremental
-    /// save: there is no autosave timer, so this is how most of the world
-    /// reaches disk.
-    pub fn retain_chunks(&mut self, centers: &[ChunkPos], radius: i32) -> usize {
+    /// Returns what left and what had to stay. Saving as a chunk departs is
+    /// the incremental save: there is no short autosave timer, so this is how
+    /// most of the world reaches disk.
+    pub fn retain_chunks(&mut self, centers: &[ChunkPos], radius: i32) -> ResidencyReport {
         let far = self.chunks_outside_all(centers, radius);
-        if far.is_empty() {
-            return 0;
+        self.evict_chunks(far).0
+    }
+
+    /// Save and unload this exact set, returning both the report and the
+    /// positions that actually left. Renderer-owning clients use the latter
+    /// to release their matching GPU and light-cache state.
+    pub fn evict_chunks(&mut self, candidates: Vec<ChunkPos>) -> (ResidencyReport, Vec<ChunkPos>) {
+        let mut report = ResidencyReport::default();
+        let mut released = Vec::new();
+        if candidates.is_empty() {
+            return (report, released);
         }
         self.settle_falling();
-        for pos in &far {
-            self.save_chunk_if_modified(*pos);
-            self.unload_chunk(*pos);
+        for pos in candidates {
+            match self.save_chunk_if_modified(pos) {
+                Ok(_) => {
+                    self.unload_chunk(pos);
+                    report.released += 1;
+                    released.push(pos);
+                }
+                Err(error) => {
+                    // The in-memory chunk is the newest copy. Keep it dirty
+                    // and resident so the next residency sweep can retry.
+                    report.retained_dirty += 1;
+                    report.failures.push(SaveFailure::new(
+                        format!("chunk {},{}", pos.x, pos.z),
+                        region::region_path(&self.save_dir, pos),
+                        error,
+                    ));
+                }
+            }
         }
-        far.len()
+        (report, released)
     }
 
     pub fn unload_chunk(&mut self, pos: ChunkPos) {
@@ -807,6 +968,15 @@ impl World {
     /// keep bounded.
     pub fn chunk_count(&self) -> usize {
         self.chunks.len()
+    }
+
+    #[cfg(test)]
+    pub fn fail_chunk_save_for_test(&mut self, pos: ChunkPos, fail: bool) {
+        if fail {
+            self.save_fail_chunks.insert(pos);
+        } else {
+            self.save_fail_chunks.remove(&pos);
+        }
     }
 
     #[cfg(test)]
@@ -986,6 +1156,52 @@ impl World {
         self.set_block_meta(x, y, z, b, 0);
     }
 
+    /// Apply test-fixture edits with normal edit logging, support checks, and
+    /// fluid wakeups, but settle lighting only once per touched chunk.
+    #[cfg(test)]
+    pub(crate) fn set_blocks_for_test(
+        &mut self,
+        edits: impl IntoIterator<Item = (i32, i32, i32, BlockId)>,
+    ) {
+        assert!(
+            !self.fluid_batch && !self.fixture_relight_batch && self.pending_relight.is_empty(),
+            "test fixture edits cannot nest another relight batch"
+        );
+        self.fixture_relight_batch = true;
+        for (x, y, z, block) in edits {
+            self.set_block(x, y, z, block);
+        }
+        self.fixture_relight_batch = false;
+        for pos in std::mem::take(&mut self.pending_relight) {
+            self.relight_and_cascade(pos);
+        }
+    }
+
+    /// Install blank authoritative chunks for protocol fixtures that exercise
+    /// a hand-built stage rather than terrain generation.
+    #[cfg(test)]
+    pub(crate) fn insert_empty_chunks_for_test(
+        &mut self,
+        positions: impl IntoIterator<Item = ChunkPos>,
+    ) {
+        let bedrock = self
+            .reg
+            .block_id("base:bedrock")
+            .expect("base test registry has bedrock");
+        for pos in positions {
+            let mut chunk = Chunk::new();
+            for x in 0..CHUNK_X {
+                for z in 0..CHUNK_Z {
+                    chunk.set(x, 0, z, bedrock);
+                }
+            }
+            assert!(
+                self.chunks.insert(pos, chunk).is_none(),
+                "test fixture inserted chunk {pos:?} twice"
+            );
+        }
+    }
+
     /// Set a block with an explicit metadata byte.
     pub fn set_block_meta(&mut self, x: i32, y: i32, z: i32, b: BlockId, meta: u8) {
         if y < 0 || y >= CHUNK_Y as i32 {
@@ -1069,7 +1285,11 @@ impl World {
             && (self.reg.is_fluid(old) || self.reg.is_fluid(b))
             && (self.reg.is_fluid(old) || self.reg.is_air(old))
             && (self.reg.is_fluid(b) || self.reg.is_air(b));
-        if front_move {
+        #[cfg(test)]
+        let fixture_move = self.fixture_relight_batch && !fluid_level_only;
+        #[cfg(not(test))]
+        let fixture_move = false;
+        if front_move || fixture_move {
             self.pending_relight.insert(pos);
         } else if !fluid_level_only {
             self.relight_and_cascade(pos);

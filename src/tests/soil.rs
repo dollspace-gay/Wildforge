@@ -240,9 +240,9 @@ fn soil_survives_the_save() {
         w.ensure_chunk(ChunkPos { x: 0, z: 0 });
         h = w.surface_height(4, 4);
         w.set_block_meta(4, h, 4, farm, soil::soil_meta(33, 2));
-        w.save_modified();
+        save_world(&mut w);
     }
-    let mut w = World::load_or_create(dir, reg.clone());
+    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
     w.ensure_chunk(ChunkPos { x: 0, z: 0 });
     assert_eq!(w.get_block(4, h, 4), farm);
     assert_eq!(soil::fert_of(w.get_meta(4, h, 4)), 33, "fertility persists");

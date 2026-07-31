@@ -18,11 +18,14 @@ struct TestHost {
 impl TestHost {
     fn start(world_tag: &str) -> TestHost {
         let reg = base_reg();
-        let world = test_world_with(world_tag, reg);
+        // These are protocol/behavior tests over a deliberately hand-built
+        // stage. Generating 25 full terrain chunks here previously dominated
+        // the entire suite without exercising any agent behavior.
+        let mut world = World::new(42, tmp_dir(world_tag), reg);
+        world.insert_empty_chunks_for_test(
+            (-2..=2).flat_map(|x| (-2..=2).map(move |z| ChunkPos { x, z })),
+        );
         let mut sim = crate::server::Server::new(world, 0.3, 5);
-        // Broadcast every world edit, the way the dedicated host does
-        // — the agents' mirrors must see what the test builds.
-        sim.world.set_edit_logging(true);
         let mut sess = crate::mp::HostSession::start_on(world_tag.into(), 0).unwrap();
         // Arrivals land on a stage this harness owns, well above any
         // terrain: these tests exercise the wire, not the landscape,
@@ -30,16 +33,36 @@ impl TestHost {
         // depend on whatever the seed happened to roll.
         const STAGE_Y: i32 = 200;
         {
-            // Only a footing is needed: this high the world is already
-            // open air, and each block set here costs a relight. The
-            // tests grow their own stage from here via `platform`.
+            // Build the largest stage any test needs before guests join.
+            // Its state arrives in chunk snapshots; replaying thousands of
+            // historical BlockSet messages made every guest relight each cell.
             let grass = sim.world.reg.block_id("base:grass").unwrap();
-            for x in -10..=10 {
-                for z in -10..=10 {
-                    sim.world.set_block(x, STAGE_Y - 1, z, grass);
+            let stone = sim.world.reg.block_id("base:stone").unwrap();
+            let (x0, x1, z0, z1) = (-4, 20, -4, 20);
+            let mut edits = Vec::new();
+            for x in x0..=x1 {
+                for z in z0..=z1 {
+                    let rim = x == x0 || x == x1 || z == z0 || z == z1;
+                    edits.push((x, STAGE_Y - 1, z, grass));
+                    for dy in 0..10 {
+                        let want = if rim && dy < 2 { stone } else { AIR };
+                        if sim.world.get_block(x, STAGE_Y + dy, z) != want {
+                            edits.push((x, STAGE_Y + dy, z, want));
+                        }
+                    }
+                }
+            }
+            sim.world.set_blocks_for_test(edits);
+            for cx in (x0 >> 4) - 1..=(x1 >> 4) + 1 {
+                for cz in (z0 >> 4) - 1..=(z1 >> 4) + 1 {
+                    sim.world.player_touched.insert((cx, cz));
                 }
             }
         }
+        // Broadcast every subsequent world edit, the way the dedicated host
+        // does — the agents' mirrors must see what the test changes.
+        sim.world.set_edit_logging(true);
+        sess.set_initial_view_distance_for_test(2);
         sess.fresh_spawn = Some(glam::Vec3::new(0.5, STAGE_Y as f32 + 0.2, 0.5));
         let addr = format!("127.0.0.1:{}", sess.net.port).parse().unwrap();
         let shared = Arc::new(Mutex::new((sess, sim)));
@@ -92,46 +115,11 @@ impl Drop for TestHost {
     }
 }
 
-/// A sealed grass stage under the agent: rectangular floor, deep
-/// overhead clearing, and a stone rim two high — because on a live
-/// world the hazards are patient (water creeps in at floor level,
-/// sand falls from above) and a slow parallel run gives them time.
-fn platform(host: &TestHost, pos: glam::Vec3, reach: i32) {
-    host.with(|_, sim| {
-        let reg = sim.world.reg.clone();
-        let grass = reg.block_id("base:grass").unwrap();
-        let stone = reg.block_id("base:stone").unwrap();
-        let (px, py, pz) = (pos.x as i32, pos.y as i32, pos.z as i32);
-        let (x0, x1) = (px - 4, px + reach + 4);
-        let (z0, z1) = (pz - 4, pz + reach + 4);
-        for x in x0..=x1 {
-            for z in z0..=z1 {
-                let rim = x == x0 || x == x1 || z == z0 || z == z1;
-                sim.world.set_block(x, py - 1, z, grass);
-                for dy in 0..10 {
-                    let want = if rim && dy < 2 { stone } else { AIR };
-                    if sim.world.get_block(x, py + dy, z) != want {
-                        sim.world.set_block(x, py + dy, z, want);
-                    }
-                }
-            }
-        }
-        // Tended country: the green tide plants saplings on wild
-        // grass near trees, and a sapling in a placement cell reads
-        // as the host refusing an edit. A stage is not wilderness.
-        for cx in (x0 >> 4) - 1..=(x1 >> 4) + 1 {
-            for cz in (z0 >> 4) - 1..=(z1 >> 4) + 1 {
-                sim.world.player_touched.insert((cx, cz));
-            }
-        }
-    });
-}
-
 #[test]
 fn the_agent_joins_speaks_and_sees() {
     let host = TestHost::start("agent-join");
-    let mut a = Agent::connect(host.addr, "SCOUT").expect("scout joins");
-    let mut b = Agent::connect(host.addr, "ECHO").expect("echo joins");
+    let mut a = Agent::connect_for_test(host.addr, "SCOUT").expect("scout joins");
+    let mut b = Agent::connect_for_test(host.addr, "ECHO").expect("echo joins");
     assert!(a.in_world && b.in_world, "both admitted as ordinary guests");
     // Let physics land everyone and the first snapshots arrive.
     for _ in 0..75 {
@@ -176,8 +164,7 @@ fn the_agent_joins_speaks_and_sees() {
 #[test]
 fn the_agent_walks_and_chops() {
     let host = TestHost::start("agent-chop");
-    let mut a = Agent::connect(host.addr, "SAWYER").expect("joins");
-    platform(&host, a.player.pos, 12);
+    let mut a = Agent::connect_for_test(host.addr, "SAWYER").expect("joins");
     a.pump_for(0.5);
     let (px, py, pz) = crate::agent::cell_of(a.player.pos);
     // A four-log trunk eight blocks east.
@@ -217,9 +204,8 @@ fn the_agent_walks_and_chops() {
 #[test]
 fn the_agent_follows_the_leader() {
     let host = TestHost::start("agent-follow");
-    let mut lead = Agent::connect(host.addr, "LEADER").expect("joins");
-    let mut tail = Agent::connect(host.addr, "HEELER").expect("joins");
-    platform(&host, lead.player.pos, 16);
+    let mut lead = Agent::connect_for_test(host.addr, "LEADER").expect("joins");
+    let mut tail = Agent::connect_for_test(host.addr, "HEELER").expect("joins");
     lead.pump_for(0.4);
     tail.pump_for(0.4);
     let lead_id = tail
@@ -269,8 +255,7 @@ fn the_agent_follows_the_leader() {
 #[test]
 fn the_agent_crafts_places_and_deposits() {
     let host = TestHost::start("agent-craft");
-    let mut a = Agent::connect(host.addr, "JOINER").expect("joins");
-    platform(&host, a.player.pos, 8);
+    let mut a = Agent::connect_for_test(host.addr, "JOINER").expect("joins");
     a.pump_for(0.5);
     // The host gives raw logs the way any drop arrives.
     let gid = host.with(|sess, _| *sess.guests.keys().next().unwrap());

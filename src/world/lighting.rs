@@ -261,8 +261,18 @@ impl World {
     /// pass is monotone — values only fall during a removal — so this
     /// converges; the cap is a safety net a couple of levels above the max.
     pub fn relight_and_cascade(&mut self, start: ChunkPos) {
+        self.relight_chunks_and_cascade([start]);
+    }
+
+    /// Settle several changed chunks through one shared cascade. Network
+    /// streaming can deliver a screenful together; treating each arrival as a
+    /// separate cascade repeatedly rebuilt the same newly connected borders.
+    pub(super) fn relight_chunks_and_cascade(
+        &mut self,
+        starts: impl IntoIterator<Item = ChunkPos>,
+    ) {
         const MAX_VISITS: u32 = 18; // > the 15-level light range, with headroom
-        let mut queue = VecDeque::from([start]);
+        let mut queue: VecDeque<_> = starts.into_iter().collect();
         let mut visits: HashMap<(i32, i32), u32> = HashMap::new();
         while let Some(p) = queue.pop_front() {
             let v = visits.entry((p.x, p.z)).or_insert(0);

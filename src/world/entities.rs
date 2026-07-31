@@ -7,7 +7,7 @@ impl World {
         self.save_dir.join("entities.toml")
     }
 
-    pub(super) fn save_entities(&self) {
+    pub(super) fn save_entities(&self) -> std::io::Result<()> {
         use std::fmt::Write as _;
         let mut out = String::new();
         for ((x, y, z), e) in &self.block_entities {
@@ -231,11 +231,10 @@ impl World {
                 }
             }
         }
-        if out.is_empty() {
-            let _ = fs::remove_file(self.entities_path());
-        } else {
-            let _ = fs::write(self.entities_path(), out);
-        }
+        super::persistence::replace_or_remove(
+            &self.entities_path(),
+            (!out.is_empty()).then_some(out.as_bytes()),
+        )
     }
 
     pub(super) fn load_entities(&mut self) {

@@ -240,13 +240,13 @@ impl ScriptHost {
         }
     }
 
-    pub fn save_kv(&self, world_dir: &Path) {
+    pub fn save_kv(&self, world_dir: &Path) -> std::io::Result<()> {
         let kv = self.kv.borrow();
+        let path = world_dir.join("modstore.toml");
         if kv.is_empty() {
-            return;
+            return crate::persist::remove_if_exists(&path);
         }
-        if let Ok(text) = toml::to_string(&*kv) {
-            let _ = std::fs::write(world_dir.join("modstore.toml"), text);
-        }
+        let text = toml::to_string(&*kv).map_err(std::io::Error::other)?;
+        crate::identity::atomic_write(&path, text.as_bytes(), false)
     }
 }

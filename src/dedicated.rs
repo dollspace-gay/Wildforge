@@ -5,7 +5,13 @@ use super::*;
 /// Headless dedicated host: same binary, no window. `--server <world>`.
 pub(super) fn run_headless_server(world_name: &str) {
     let reg = Arc::new(registry::load(std::path::Path::new("mods")));
-    let world = World::load_or_create(PathBuf::from("saves").join(world_name), reg.clone());
+    let world = match World::load_or_create(PathBuf::from("saves").join(world_name), reg.clone()) {
+        Ok(world) => world,
+        Err(error) => {
+            eprintln!("server: could not open world \"{world_name}\": {error}");
+            std::process::exit(1);
+        }
+    };
     let mut sim = server::Server::new(world, 0.3, 0xd5ed);
     sim.world.set_edit_logging(true);
     let mut sess = match mp::HostSession::start(world_name.to_string()) {
@@ -69,12 +75,16 @@ pub(super) fn run_headless_server(world_name: &str) {
         if residency_timer >= 5.0 {
             residency_timer = 0.0;
             let (centers, radius) = sess.residency();
-            let dropped = sim.world.retain_chunks(&centers, radius + 2);
-            if dropped > 0 {
+            let residency = sim.world.retain_chunks(&centers, radius + 2);
+            if residency.released > 0 {
                 eprintln!(
-                    "server: released {dropped} chunks ({} resident)",
+                    "server: released {} chunks ({} resident)",
+                    residency.released,
                     sim.world.chunk_count()
                 );
+            }
+            if !residency.is_ok() {
+                eprintln!("server: chunk eviction incomplete: {}", residency.summary());
             }
             // A state datagram the path refused is a guest quietly missing
             // wildlife. Zero is the only healthy number here.
@@ -88,10 +98,18 @@ pub(super) fn run_headless_server(world_name: &str) {
         if save_timer >= 300.0 {
             save_timer = 0.0;
             sim.world.settle_falling();
-            sim.world.save_modified();
-            eprintln!("server: world saved");
+            let report = sim.world.save_modified();
+            eprintln!("{}", save_log_line(&report));
         }
         std::thread::sleep(std::time::Duration::from_millis(15));
+    }
+}
+
+fn save_log_line(report: &world::SaveReport) -> String {
+    if report.is_ok() {
+        format!("server: world saved ({})", report.summary())
+    } else {
+        format!("server: world save incomplete: {}", report.summary())
     }
 }
 
@@ -187,5 +205,35 @@ fn run_console_command(sess: &mut mp::HostSession, line: &str) {
         Ok(Some(message)) => eprintln!("server: {message}"),
         Ok(None) => eprintln!("server: no matching connected player or record"),
         Err(error) => eprintln!("server: command failed: {error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dedicated_save_log_never_calls_a_partial_save_success() {
+        let success = world::SaveReport {
+            chunks_saved: 2,
+            failures: Vec::new(),
+        };
+        assert_eq!(
+            save_log_line(&success),
+            "server: world saved (2 dirty chunks written)"
+        );
+
+        let partial = world::SaveReport {
+            chunks_saved: 1,
+            failures: vec![world::SaveFailure {
+                component: "animals".into(),
+                path: PathBuf::from("saves/world1/animals.toml"),
+                error: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "read-only"),
+            }],
+        };
+        let line = save_log_line(&partial);
+        assert!(line.starts_with("server: world save incomplete:"));
+        assert!(line.contains("animals"));
+        assert!(!line.starts_with("server: world saved"));
     }
 }

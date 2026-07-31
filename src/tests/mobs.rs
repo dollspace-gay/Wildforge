@@ -199,7 +199,7 @@ fn mob_persistence_round_trips_and_skips_unknown() {
     let mut m = crate::mobs::Mob::new(si, Vec3::new(3.5, 90.0, -2.5), 1.25);
     m.health = 7.0;
     w.spawn_mob(m);
-    w.save_modified();
+    save_world(&mut w);
     // Unknown species entries (removed mod) skip cleanly on load.
     let extra = "\n[[mob]]\nspecies = \"gone:wolf\"\npos = [0, 80, 0]\nyaw = 0\nhealth = 5\n";
     let path = dir.join("animals.toml");
@@ -207,7 +207,7 @@ fn mob_persistence_round_trips_and_skips_unknown() {
     text.push_str(extra);
     std::fs::write(&path, text).unwrap();
 
-    let w2 = World::load_or_create(dir, reg.clone());
+    let w2 = World::load_or_create(dir, reg.clone()).unwrap();
     assert_eq!(w2.mob_count(), 1, "goat loaded, unknown skipped");
     let g = &w2.mobs()[0];
     assert_eq!(g.species, si);
@@ -223,9 +223,9 @@ fn wildlife_seed_marks_persist() {
     let mut w = World::new(5, dir.clone(), reg.clone());
     w.ensure_chunk(ChunkPos { x: 0, z: 0 });
     let first = w.mob_count();
-    w.save_modified();
+    save_world(&mut w);
     // Reload: regenerating the same chunk must NOT reroll wildlife.
-    let mut w2 = World::load_or_create(dir, reg);
+    let mut w2 = World::load_or_create(dir, reg).unwrap();
     w2.ensure_chunk(ChunkPos { x: 0, z: 0 });
     assert_eq!(
         w2.mob_count(),
@@ -609,8 +609,8 @@ fn wardens_dissolve_at_dawn_and_never_save() {
         w.spawn_mob(m);
     }
     // Never persisted.
-    w.save_modified();
-    let w2 = World::load_or_create(dir, reg.clone());
+    save_world(&mut w);
+    let w2 = World::load_or_create(dir, reg.clone()).unwrap();
     assert_eq!(w2.mob_count(), 1, "only the deer survived the save");
     assert_eq!(w2.mobs()[0].species, deer_i);
     // Dawn dissolve: full daylight on an open surface removes the warden.
@@ -860,9 +860,9 @@ fn saddlebag_cargo_survives_save_and_load() {
         cargo[11] = Some(ItemStack::new(&reg, salt, 2));
         m.cargo = Some(cargo);
         w.spawn_mob(m);
-        w.save_modified();
+        save_world(&mut w);
     }
-    let w = World::load_or_create(dir, reg.clone());
+    let w = World::load_or_create(dir, reg.clone()).unwrap();
     let m = w
         .mobs()
         .iter()

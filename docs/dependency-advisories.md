@@ -5,7 +5,7 @@ would close them. One entry per advisory; delete an entry when it is gone.
 
 ---
 
-## GHSA-q2qq-hmj6-3wpp — `hickory-proto` CPU exhaustion during message encoding
+## RUSTSEC-2026-0119 — `hickory-proto` CPU exhaustion during message encoding
 
 **Status: accepted, not exploitable in this usage. Assessed 2026-07-28.**
 
@@ -65,3 +65,87 @@ verification for a vulnerability we cannot reach is a bad trade.
   answer changes.
 
 Re-check with `cargo tree -i hickory-proto` when bumping the jacquard crates.
+
+---
+
+## RUSTSEC-2023-0071 — `rsa` Marvin timing side channel
+
+**Status: accepted, vulnerable operation is unreachable. Assessed
+2026-07-30.**
+
+The `rsa` crate's private-key operations are not constant time, so a remote
+observer could recover an RSA private key from enough timing measurements.
+There is no patched `rsa 0.9` release.
+
+### Why it is still here
+
+The dependency path is `jacquard-oauth 0.12.1` -> `jose-jwk 0.1.2` -> `rsa
+0.9.10`. `jacquard-oauth` requests the P-256 and P-384 features from
+`jose-jwk`, but does not disable that crate's default `crypto` feature; the
+default also compiles RSA. Wildforge cannot turn off a default selected by a
+transitive dependency. `jacquard-oauth 0.12.1` is the newest published
+version.
+
+### Why the vulnerable operation does not reach us
+
+Wildforge registers as a public OAuth client with `keyset: None`
+(`identity/atproto.rs`, `oauth_client_data`). It therefore has no client
+authentication private key. Its only OAuth private key is the short-lived
+DPoP key generated inside Jacquard:
+
+- Jacquard's `generate_key` implements only `ES256` and creates a P-256 key.
+- Jacquard's `build_dpop_proof` accepts only a P-256 secret and signs ES256.
+- Wildforge's OAuth conformance fixture advertises only ES256.
+
+No Wildforge or active Jacquard path constructs an RSA private key, decrypts
+with RSA, or signs with RSA. Merely compiling the optional key representation
+does not expose the timing oracle described by the advisory.
+
+### What would change this
+
+- A Jacquard release that disables `jose-jwk` defaults — take it and remove
+  this exception.
+- Wildforge adding confidential-client authentication, RSA DPoP, or any RSA
+  private-key operation — this exception is no longer valid.
+
+Re-check `cargo tree -e features -i rsa` and search the OAuth path for RSA when
+upgrading Jacquard.
+
+---
+
+## RUSTSEC-2023-0089 — `atomic-polyfill` is unmaintained
+
+**Status: accepted, no vulnerable behavior; removal is upstream-blocked.
+Assessed 2026-07-30.**
+
+This is a maintenance advisory, not a memory-safety or security vulnerability.
+The archived `atomic-polyfill` crate is reached through `heapless 0.7`, whose
+replacement is a newer major version using `portable-atomic`.
+
+### Why it is still here
+
+Wildforge disables Postcard's own default features and uses its allocation
+APIs. `jacquard-common 0.12.1`, however, declares Postcard without
+`default-features = false`, which globally enables Postcard's `heapless-cas`
+feature and pulls in `heapless 0.7` -> `atomic-polyfill 1.0.3`. Cargo features
+are additive, so Wildforge cannot disable that selection.
+
+### Why the legacy implementation is not used
+
+Wildforge encodes network and identity values into allocated `Vec<u8>` buffers
+with `postcard::to_allocvec` and decodes byte slices. The Jacquard source path
+used here likewise calls `postcard::from_bytes`; neither codebase instantiates
+Postcard's optional heapless containers. The retired atomic compatibility
+implementation is therefore compiled as feature baggage, not used by the
+serialization path.
+
+### What would change this
+
+- A Jacquard release that disables Postcard defaults, or upgrades to a
+  Postcard/heapless combination without `atomic-polyfill` — adopt it and
+  remove this exception.
+- Wildforge beginning to use Postcard's heapless serializers — reassess and
+  replace the path before shipping.
+
+Re-check with `cargo tree --target all -i atomic-polyfill` when upgrading
+Jacquard or Postcard.

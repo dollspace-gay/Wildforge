@@ -1,0 +1,15 @@
+[advisories]
+ignore = [
+    {
+        id = "RUSTSEC-2026-0119",
+        reason = "Wildforge only encodes one bounded DNS question as a stub client; full reachability analysis and closure conditions are in docs/dependency-advisories.md",
+    },
+    {
+        id = "RUSTSEC-2023-0071",
+        reason = "Jacquard compiles RSA support but Wildforge's public OAuth client exclusively generates and signs with P-256; see docs/dependency-advisories.md",
+    },
+    {
+        id = "RUSTSEC-2023-0089",
+        reason = "Jacquard enables Postcard's heapless feature, but Wildforge and the used Jacquard path serialize allocated byte buffers; see docs/dependency-advisories.md",
+    },
+]

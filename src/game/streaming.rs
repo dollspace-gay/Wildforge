@@ -180,7 +180,6 @@ impl Game {
             .world
             .chunks_outside_all(&[ChunkPos { x: pcx, z: pcz }], limit);
         if !far.is_empty() {
-            self.server.world.settle_falling();
             // Save only what leaves; a full save_modified here wrote
             // the whole world (palette, entities, mobs, stamps, every
             // modified chunk) to disk on the main thread every time a
@@ -188,11 +187,15 @@ impl Game {
             // stutter machine. This IS the incremental save now: the
             // timer is gone, and a chunk is written as it leaves the
             // view rather than the whole world on a clock.
-            for pos in far {
-                self.server.world.save_chunk_if_modified(pos);
-                self.server.world.unload_chunk(pos);
+            let (report, released) = self.server.world.evict_chunks(far);
+            for pos in released {
                 self.renderer.drop_chunk(pos);
                 self.presentation.lights.chunk_dropped(pos);
+            }
+            if !report.is_ok() {
+                let message = format!("Could not save departing ground: {}", report.summary());
+                eprintln!("world: {message}");
+                self.toast(message);
             }
         }
 

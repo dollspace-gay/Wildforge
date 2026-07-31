@@ -38,6 +38,11 @@ fn tmp_dir(name: &str) -> std::path::PathBuf {
     dir
 }
 
+fn save_world(world: &mut World) {
+    let report = world.save_modified();
+    assert!(report.is_ok(), "test save failed: {}", report.summary());
+}
+
 fn test_world_with(name: &str, reg: Arc<Registry>) -> World {
     let mut w = World::new(42, tmp_dir(name), reg);
     for x in -2..=2 {

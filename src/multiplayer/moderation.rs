@@ -152,8 +152,10 @@ impl ModerationStore {
         let at = now();
         let before = self.bans.len();
         self.bans.retain(|ban| ban.active(at));
-        if self.bans.len() != before {
-            let _ = self.save_bans();
+        if self.bans.len() != before
+            && let Err(error) = self.save_bans()
+        {
+            eprintln!("moderation: could not persist expired-ban cleanup: {error}");
         }
         if let Some(ban) = self
             .bans

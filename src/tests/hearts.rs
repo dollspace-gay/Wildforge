@@ -121,9 +121,9 @@ fn hearts_survive_the_save() {
         if let Some(h) = w.hearts.get_mut(&key) {
             h.strain = 6.5;
         }
-        w.save_modified();
+        save_world(&mut w);
     }
-    let mut w = World::load_or_create(dir, reg.clone());
+    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
     w.ensure_chunk(ChunkPos::of_world(sx, sz));
     let h = w.heart_at(sx, sz).expect("the ledger came back");
     assert_eq!(h.stage, 1, "a failing heart is still failing");
@@ -856,9 +856,9 @@ fn the_long_winter_survives_the_save() {
         let mut w = World::new(61, dir.clone(), reg.clone());
         w.ensure_chunk(ChunkPos { x: 0, z: 0 });
         w.long_winter = true;
-        w.save_modified();
+        save_world(&mut w);
     }
-    let w = World::load_or_create(dir, reg.clone());
+    let w = World::load_or_create(dir, reg.clone()).unwrap();
     assert!(w.long_winter, "a stopped year is still stopped");
     assert_eq!(w.season(), 3);
 }
@@ -931,10 +931,10 @@ fn the_cutting_timer_survives_a_save_and_old_saves_still_load() {
     let dir = w.save_dir().to_path_buf();
     assert!(w.take_heart_cutting(sx, sz));
     let pos = w.heart_at(sx, sz).unwrap().pos;
-    w.save_modified();
+    save_world(&mut w);
     drop(w);
 
-    let w = World::load_or_create(dir.clone(), reg.clone());
+    let w = World::load_or_create(dir.clone(), reg.clone()).unwrap();
     let loaded = w.heart_at(pos.0, pos.2).expect("the heart came back");
     assert!(
         (loaded.regrow - crate::world::HEART_CUTTING_DAYS).abs() < 0.01,
@@ -958,7 +958,7 @@ fn the_cutting_timer_survives_a_save_and_old_saves_still_load() {
     old.extend_from_slice(&0f32.to_le_bytes()); // drift
     assert_eq!(old.len(), 34, "the shape of the old record");
     std::fs::write(dir.join("hearts"), &old).unwrap();
-    let w = World::load_or_create(dir.clone(), reg.clone());
+    let w = World::load_or_create(dir.clone(), reg.clone()).unwrap();
     let loaded = w.heart_at(pos.0, pos.2).expect("an old heart still loads");
     assert!((loaded.strain - 3.5).abs() < 0.01, "its grievance survived");
     assert_eq!(loaded.regrow, 0.0, "and it is ready to give");
@@ -1143,7 +1143,7 @@ fn a_heart_registers_under_whatever_stands_over_it() {
         }
     }
     let pos = ChunkPos::of_world(sx, sz);
-    w.save_modified();
+    save_world(&mut w);
     w.unload_chunk(pos);
     w.ensure_chunk(pos);
     let after = w.heart_at(sx, sz).expect("still found under a roof");

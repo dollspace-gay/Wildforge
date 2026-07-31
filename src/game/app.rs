@@ -42,10 +42,12 @@ impl ApplicationHandler for App {
         };
         match event {
             WindowEvent::CloseRequested => {
-                if game.in_world {
-                    game.save_player();
-                    game.server.world.settle_falling();
-                    game.server.world.save_modified();
+                if game.in_world
+                    && let Err(error) = game.save_session()
+                {
+                    eprintln!("world: close cancelled because save failed: {error}");
+                    game.toast(format!("Could not save; close cancelled: {error}"));
+                    return;
                 }
                 event_loop.exit();
             }

@@ -93,6 +93,24 @@ impl Agent {
     /// errors with the refusal). `name` is the agent's player name;
     /// its device identity persists under saves/.agents/<name>.
     pub fn connect(addr: std::net::SocketAddr, name: &str) -> Result<Agent, String> {
+        Self::connect_with_view_distance(addr, name, AGENT_VIEW_DIST)
+    }
+
+    /// Protocol fixtures exercise behavior on a compact stage and do not need
+    /// the production agent's ten-chunk pathfinding horizon.
+    #[cfg(test)]
+    pub(crate) fn connect_for_test(
+        addr: std::net::SocketAddr,
+        name: &str,
+    ) -> Result<Agent, String> {
+        Self::connect_with_view_distance(addr, name, 2)
+    }
+
+    fn connect_with_view_distance(
+        addr: std::net::SocketAddr,
+        name: &str,
+        view_distance: u8,
+    ) -> Result<Agent, String> {
         let id_dir = PathBuf::from("saves/.agents").join(name.to_lowercase());
         let identity = identity::LocalIdentity::load_or_create(&id_dir)
             .map_err(|e| format!("identity: {e}"))?;
@@ -154,7 +172,7 @@ impl Agent {
         // path to anywhere it had not already been standing, because the
         // ground under the goal had never been sent to it.
         agent.client.send(&net::C2S::SetViewDistance {
-            chunks: AGENT_VIEW_DIST,
+            chunks: view_distance,
         });
         Ok(agent)
     }
@@ -214,9 +232,19 @@ impl Agent {
             self.event("disconnected from host".into());
             return;
         }
+        let mut chunks = Vec::new();
         for msg in self.client.poll() {
-            self.apply(msg);
+            match msg {
+                net::S2C::Chunk { x, z, rle } => {
+                    chunks.push((ChunkPos { x, z }, rle));
+                }
+                other => {
+                    self.apply_chunks(&mut chunks);
+                    self.apply(other);
+                }
+            }
         }
+        self.apply_chunks(&mut chunks);
         if self.in_world {
             self.tick_behavior(dt);
             self.move_timer += dt;
@@ -230,6 +258,17 @@ impl Agent {
                 });
             }
         }
+    }
+
+    fn apply_chunks(&mut self, chunks: &mut Vec<(ChunkPos, Vec<u8>)>) {
+        if chunks.is_empty() {
+            return;
+        }
+        self.world.insert_remote_chunks(
+            chunks.iter().map(|(pos, rle)| (*pos, rle.as_slice())),
+            &self.block_map,
+        );
+        chunks.clear();
     }
 
     /// Pump for `secs` of wall time at a steady cadence (macros wait

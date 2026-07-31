@@ -53,14 +53,13 @@ impl Game {
         }
     }
 
-    fn save_attunements(&self) {
+    fn save_attunements(&self) -> std::io::Result<()> {
         use std::fmt::Write as _;
         let mut out = String::new();
         for (name, x, z) in &self.interaction.attuned {
             let _ = writeln!(out, "{x}\t{z}\t{name}");
         }
-        let _ = std::fs::create_dir_all("saves");
-        let _ = std::fs::write(self.attune_path(), out);
+        crate::persist::atomic_write(&self.attune_path(), out.as_bytes(), false)
     }
 
     /// Touch a waystone: learn it, then hear where the others stand.
@@ -79,8 +78,13 @@ impl Game {
             .any(|(_, x, z)| (*x, *z) == (pos.0, pos.2));
         if !known {
             self.interaction.attuned.push((name.clone(), pos.0, pos.2));
-            self.save_attunements();
-            self.toast(format!("The stone at {name} knows you now."));
+            match self.save_attunements() {
+                Ok(()) => self.toast(format!("The stone at {name} knows you now.")),
+                Err(error) => {
+                    self.interaction.attuned.pop();
+                    self.toast(format!("The stone could not remember you: {error}"));
+                }
+            }
         }
         let mut lines: Vec<String> = Vec::new();
         for (other, x, z) in &self.interaction.attuned {
@@ -149,10 +153,13 @@ impl Game {
         if !self.creative {
             self.inventory.wear_tool(&reg, self.input.hotbar_sel);
         }
-        self.save_player();
-        self.server.world.settle_falling();
-        self.server.world.save_modified();
-        self.toast("You camp until dawn. This is home now.".to_string());
+        match self.save_session() {
+            Ok(_) => self.toast("You camp until dawn. This is home now.".to_string()),
+            Err(error) => {
+                eprintln!("world: camp save incomplete: {error}");
+                self.toast(format!("You wake, but the camp could not save: {error}"));
+            }
+        }
         self.sfx(Sfx::Craft);
     }
 }
