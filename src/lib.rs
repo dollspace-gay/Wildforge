@@ -26,6 +26,7 @@ mod net;
 mod particles;
 mod persist;
 mod physics;
+pub mod planet;
 mod raycast;
 mod registry;
 mod renderer;

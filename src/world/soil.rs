@@ -88,7 +88,16 @@ pub fn soil_after_harvest(meta: u8, family: u8) -> u8 {
 }
 
 impl World {
+    pub fn fertility_at_pos(&self, pos: BlockPos) -> u8 {
+        if self.reg.block(self.get_block_at(pos)).fert_tiles.is_some() {
+            fert_of(self.get_meta_at(pos))
+        } else {
+            0
+        }
+    }
+
     /// Fertility of the soil block at a position (0 for non-soil).
+    #[cfg(test)]
     pub fn fertility_at(&self, x: i32, y: i32, z: i32) -> u8 {
         if self.reg.block(self.get_block(x, y, z)).fert_tiles.is_some() {
             fert_of(self.get_meta(x, y, z))
@@ -99,19 +108,30 @@ impl World {
 
     /// The meta byte a fresh till deserves: grass-fed loam beats bare
     /// dirt, and sand at the field's edge costs a step.
+    #[cfg(test)]
     pub fn till_meta(&self, x: i32, y: i32, z: i32) -> u8 {
-        let name = self.reg.block(self.get_block(x, y, z)).name.clone();
+        let Some(pos) = BlockPos::of_world(x, y, z) else {
+            return 0;
+        };
+        self.till_meta_at(pos)
+    }
+
+    pub fn till_meta_at(&self, pos: BlockPos) -> u8 {
+        let name = self.reg.block(self.get_block_at(pos)).name.clone();
         let base = if name == "base:grass" {
             FERT_TILL_GRASS
         } else {
             FERT_TILL_DIRT
         };
-        let sandy = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|&(dx, dz)| {
-            self.reg
-                .block(self.get_block(x + dx, y, z + dz))
-                .name
-                .contains("sand")
-        });
+        let sandy = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            .iter()
+            .filter_map(|&(du, dv)| pos.offset(du, 0, dv))
+            .any(|neighbor| {
+                self.reg
+                    .block(self.get_block_at(neighbor))
+                    .name
+                    .contains("sand")
+            });
         soil_meta(
             if sandy {
                 base.saturating_sub(FERT_SAND_PENALTY)
@@ -125,29 +145,45 @@ impl World {
     /// Feed one item into a compost heap; the meta byte counts the
     /// fill. Returns false when the heap is full or the item isn't
     /// compostable.
+    #[cfg(test)]
     pub fn compost_fill(&mut self, x: i32, y: i32, z: i32, item_name: &str) -> bool {
-        let b = self.get_block(x, y, z);
+        let Some(pos) = BlockPos::of_world(x, y, z) else {
+            return false;
+        };
+        self.compost_fill_at(pos, item_name)
+    }
+
+    pub fn compost_fill_at(&mut self, pos: BlockPos, item_name: &str) -> bool {
+        let b = self.get_block_at(pos);
         if self.reg.block(b).name != "base:compost_heap" {
             return false;
         }
         let v = compost_value(item_name);
-        let meta = self.get_meta(x, y, z);
+        let meta = self.get_meta_at(pos);
         if v == 0 || meta >= COMPOST_FULL {
             return false;
         }
-        self.set_block_meta(x, y, z, b, (meta + v).min(COMPOST_FULL));
+        self.set_block_meta_at(pos, b, (meta + v).min(COMPOST_FULL));
         true
     }
 
     /// Empty a ripened heap back to a fresh one; the caller hands
     /// over the compost items.
+    #[cfg(test)]
     pub fn compost_take(&mut self, x: i32, y: i32, z: i32) -> bool {
-        let b = self.get_block(x, y, z);
+        let Some(pos) = BlockPos::of_world(x, y, z) else {
+            return false;
+        };
+        self.compost_take_at(pos)
+    }
+
+    pub fn compost_take_at(&mut self, pos: BlockPos) -> bool {
+        let b = self.get_block_at(pos);
         if self.reg.block(b).name != "base:compost_heap_ready" {
             return false;
         }
         if let Some(fresh) = self.reg.block_id("base:compost_heap") {
-            self.set_block_meta(x, y, z, fresh, 0);
+            self.set_block_meta_at(pos, fresh, 0);
             return true;
         }
         false
@@ -155,16 +191,24 @@ impl World {
 
     /// Feed the soil block at a position (dung, guano, compost, rot).
     /// Returns false when there's no soil there to feed.
+    #[cfg(test)]
     pub fn feed_soil(&mut self, x: i32, y: i32, z: i32, amount: u8) -> bool {
-        let b = self.get_block(x, y, z);
+        let Some(pos) = BlockPos::of_world(x, y, z) else {
+            return false;
+        };
+        self.feed_soil_at(pos, amount)
+    }
+
+    pub fn feed_soil_at(&mut self, pos: BlockPos, amount: u8) -> bool {
+        let b = self.get_block_at(pos);
         if self.reg.block(b).fert_tiles.is_none() {
             return false;
         }
-        let meta = self.get_meta(x, y, z);
+        let meta = self.get_meta_at(pos);
         let fed = (fert_of(meta) + amount).min(FERT_MAX);
         // Fully rested soil forgets its last crop.
         let fam = if fed == FERT_MAX { 0 } else { family_of(meta) };
-        self.set_block_meta(x, y, z, b, soil_meta(fed, fam));
+        self.set_block_meta_at(pos, b, soil_meta(fed, fam));
         true
     }
 }

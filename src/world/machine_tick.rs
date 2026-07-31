@@ -7,7 +7,7 @@ impl World {
     /// Fire every lit bloomery: validate the shell, let the weather
     /// slow or douse an unroofed stack, and cash the batch when done.
     pub(super) fn tick_bloomeries(&mut self, dt: f32) {
-        let keys: Vec<(i32, i32, i32)> = self
+        let keys: Vec<BlockPos> = self
             .block_entities
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Bloomery(b) if b.lit))
@@ -17,22 +17,25 @@ impl World {
             let Some(BlockEntity::Bloomery(mut b)) = self.block_entities.remove(&pos) else {
                 continue;
             };
-            let (x, y, z) = pos;
-            if self.check_bloomery(x, y, z).is_none() {
+            if self.check_bloomery_at(pos).is_none() {
                 // Breached mid-fire: the heat escapes, the charge survives.
                 b.lit = false;
                 b.progress = 0.0;
-                self.swap_block_keep_entity(x, y, z, "base:bloomery");
+                self.swap_block_keep_entity_at(pos, "base:bloomery");
                 self.block_entities.insert(pos, BlockEntity::Bloomery(b));
                 continue;
             }
             // An unroofed stack fights the rain and loses to a storm.
-            let unroofed = self.light_at(b.core.0, y + 3, b.core.2).1 == 15;
-            let wet = self.weather.precipitating() && self.rains_at(x, z) && unroofed;
+            let unroofed = b
+                .core
+                .and_then(|core| core.offset(0, 3, 0))
+                .is_some_and(|above| self.light_at_pos(above).1 == 15);
+            let wet =
+                self.weather.precipitating() && self.rains_at_surface(pos.surface()) && unroofed;
             if wet && self.weather == Weather::Storm {
                 b.lit = false;
                 b.progress = 0.0;
-                self.swap_block_keep_entity(x, y, z, "base:bloomery");
+                self.swap_block_keep_entity_at(pos, "base:bloomery");
                 self.block_entities.insert(pos, BlockEntity::Bloomery(b));
                 continue;
             }
@@ -76,7 +79,7 @@ impl World {
                 }
                 b.lit = false;
                 b.progress = 0.0;
-                self.swap_block_keep_entity(x, y, z, "base:bloomery");
+                self.swap_block_keep_entity_at(pos, "base:bloomery");
             }
             self.block_entities.insert(pos, BlockEntity::Bloomery(b));
         }
@@ -87,7 +90,7 @@ impl World {
     /// any furnace recipe in batch at FORGE_ITEMS_PER_FUEL per fuel,
     /// spitting outputs (and cupellation byproducts) at the mouth.
     pub(super) fn tick_forges(&mut self, dt: f32) {
-        let keys: Vec<(i32, i32, i32)> = self
+        let keys: Vec<BlockPos> = self
             .block_entities
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Forge(f) if f.lit))
@@ -97,11 +100,10 @@ impl World {
             let Some(BlockEntity::Forge(mut f)) = self.block_entities.remove(&pos) else {
                 continue;
             };
-            let (x, y, z) = pos;
-            if self.check_forge(x, y, z).is_none() {
+            if self.check_forge_at(pos).is_none() {
                 f.lit = false;
                 f.progress = 0.0;
-                self.swap_block_keep_entity(x, y, z, "base:forge");
+                self.swap_block_keep_entity_at(pos, "base:forge");
                 self.block_entities.insert(pos, BlockEntity::Forge(f));
                 continue;
             }
@@ -159,11 +161,13 @@ impl World {
                 };
                 eat(&mut f.fuel, burned.div_ceil(FORGE_ITEMS_PER_FUEL));
                 for out in outputs {
-                    self.pending_drops.push(((x, y + 1, z), out));
+                    if let Some(above) = pos.offset(0, 1, 0) {
+                        self.push_drop_at(above, out);
+                    }
                 }
                 f.lit = false;
                 f.progress = 0.0;
-                self.swap_block_keep_entity(x, y, z, "base:forge");
+                self.swap_block_keep_entity_at(pos, "base:forge");
             }
             self.block_entities.insert(pos, BlockEntity::Forge(f));
         }
@@ -177,14 +181,16 @@ impl World {
         let torch = reg.block_id("base:torch");
         let smoked = reg.item_id("base:smoked_meat");
         let raws = reg.tags.get("base:raw_meats").cloned().unwrap_or_default();
-        let keys: Vec<(i32, i32, i32)> = self
+        let keys: Vec<BlockPos> = self
             .block_entities
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Smoker(_)))
             .map(|(k, _)| *k)
             .collect();
         for pos in keys {
-            let lit = Some(self.get_block(pos.0, pos.1 - 1, pos.2)) == torch;
+            let lit = pos
+                .offset(0, -1, 0)
+                .is_some_and(|below| Some(self.get_block_at(below)) == torch);
             let Some(BlockEntity::Smoker(sm)) = self.block_entities.get_mut(&pos) else {
                 continue;
             };
@@ -228,7 +234,7 @@ impl World {
         self.perish_accum -= PERISH_SWEEP_SECS;
         let reg = self.reg.clone();
         let mush = reg.item_id("base:spoiled_mush");
-        let cellar_at: Vec<((i32, i32, i32), bool)> = self
+        let cellar_at: Vec<(BlockPos, bool)> = self
             .block_entities
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Chest(_) | BlockEntity::Offering(_)))
@@ -236,7 +242,9 @@ impl World {
             .map(|p| {
                 // Sample above the container: the block itself is
                 // opaque and always reads dark.
-                let (bl, sky) = self.light_at(p.0, p.1 + 1, p.2);
+                let (bl, sky) = p
+                    .offset(0, 1, 0)
+                    .map_or((0, 15), |above| self.light_at_pos(above));
                 (p, sky == 0 && bl <= 3)
             })
             .collect();
@@ -274,7 +282,7 @@ impl World {
 
     /// Smolder every clamp; venting burns the exposed log away.
     pub(super) fn tick_clamps(&mut self, dt: f32) {
-        let keys: Vec<(i32, i32, i32)> = self
+        let keys: Vec<BlockPos> = self
             .block_entities
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Clamp(_)))
@@ -286,29 +294,21 @@ impl World {
                 continue;
             };
             // Logs that stopped being logs (mined) leave the pile.
-            c.logs.retain(|&(x, y, z)| {
-                let b = self.get_block(x, y, z);
+            c.logs.retain(|at| {
+                let b = self.get_block_at(*at);
                 self.reg
                     .item_id(&self.reg.block(b).name)
                     .is_some_and(|i| logs_tag.contains(&i))
             });
             // A newly exposed log burns to nothing.
-            let mut vented: Option<(i32, i32, i32)> = None;
+            let mut vented: Option<BlockPos> = None;
             let mut exposed = 0;
             'scan: for p in &c.logs {
-                for d in [
-                    (1, 0, 0),
-                    (-1, 0, 0),
-                    (0, 1, 0),
-                    (0, -1, 0),
-                    (0, 0, 1),
-                    (0, 0, -1),
-                ] {
-                    let n = (p.0 + d.0, p.1 + d.1, p.2 + d.2);
+                for n in crate::planet::neighbors6(*p) {
                     if c.logs.contains(&n) {
                         continue;
                     }
-                    if !self.reg.is_solid(self.get_block(n.0, n.1, n.2)) {
+                    if !self.reg.is_solid(self.get_block_at(n)) {
                         exposed += 1;
                         if exposed > 1 {
                             vented = Some(*p);
@@ -318,7 +318,7 @@ impl World {
                 }
             }
             if let Some(p) = vented {
-                self.set_block(p.0, p.1, p.2, AIR);
+                self.set_block_at(p, AIR);
                 c.logs.retain(|l| *l != p);
                 c.timer -= CLAMP_SECS_PER_LOG;
             }
@@ -329,7 +329,7 @@ impl World {
             if c.timer <= 0.0 {
                 if let Some(cc) = self.reg.block_id("base:charcoal_block") {
                     for p in c.logs.clone() {
-                        self.set_block(p.0, p.1, p.2, cc);
+                        self.set_block_at(p, cc);
                     }
                 }
                 continue; // done; entity retires
@@ -345,14 +345,13 @@ impl World {
     /// and a sail in wind swap to their _run variants, and back.
     pub(super) fn tick_stations(&mut self, dt: f32) {
         let reg = self.reg.clone();
-        let keys: Vec<(i32, i32, i32)> = self
+        let keys: Vec<BlockPos> = self
             .block_entities
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Anvil(_)))
             .map(|(k, _)| *k)
             .collect();
         for pos in keys {
-            let (x, y, z) = pos;
             let Some(st) = self.station_at(pos) else {
                 continue;
             };
@@ -361,14 +360,14 @@ impl World {
             // The generator: shaft in, field out. It dresses to its
             // running form and sweeps lamps in reach each second.
             if st == "generator" {
-                let running = self.power_at(x, y, z) > 0.0;
+                let running = self.power_at_pos(pos) > 0.0;
                 let want = if running {
                     "base:generator_run"
                 } else {
                     "base:generator"
                 };
-                if Some(self.get_block(x, y, z)) != reg.block_id(want) {
-                    self.swap_block_keep_entity(x, y, z, want);
+                if Some(self.get_block_at(pos)) != reg.block_id(want) {
+                    self.swap_block_keep_entity_at(pos, want);
                 }
                 let w = self.station_work.entry(pos).or_insert(0.0);
                 *w += dt;
@@ -384,19 +383,21 @@ impl World {
                 for dx in -ELEC_RADIUS..=ELEC_RADIUS {
                     for dy in -ELEC_RADIUS..=ELEC_RADIUS {
                         for dz in -ELEC_RADIUS..=ELEC_RADIUS {
-                            let (lx, ly, lz) = (x + dx, y + dy, z + dz);
-                            let b = self.get_block(lx, ly, lz);
+                            let Some(lamp_pos) = pos.offset(dx, dy, dz) else {
+                                continue;
+                            };
+                            let b = self.get_block_at(lamp_pos);
                             for (off, on) in pairs {
                                 let (off_id, on_id) = (reg.block_id(off), reg.block_id(on));
                                 if running && Some(b) == off_id {
                                     if let Some(on) = on_id {
-                                        self.set_block(lx, ly, lz, on);
+                                        self.set_block_at(lamp_pos, on);
                                     }
                                 } else if !running
                                     && Some(b) == on_id
                                     && let Some(off) = off_id
                                 {
-                                    self.set_block(lx, ly, lz, off);
+                                    self.set_block_at(lamp_pos, off);
                                 }
                             }
                         }
@@ -408,7 +409,7 @@ impl World {
                 let live = if st == "wheel" {
                     // Momentum: a wheel spins down over seconds, not
                     // the instant one cell of its race goes still.
-                    let wet = self.wheel_live(x, y, z) > 0.0;
+                    let wet = self.wheel_live_at(pos) > 0.0;
                     let bank = self.station_work.entry(pos).or_insert(0.0);
                     if wet {
                         *bank = super::power::WHEEL_SPINDOWN_SECS;
@@ -417,7 +418,7 @@ impl World {
                     }
                     if *bank > 0.0 { 1.0 } else { 0.0 }
                 } else {
-                    self.sail_live(x, y, z)
+                    self.sail_live_at(pos)
                 };
                 let base = format!(
                     "base:{}",
@@ -432,8 +433,8 @@ impl World {
                 } else {
                     base
                 };
-                if Some(self.get_block(x, y, z)) != reg.block_id(&want) {
-                    self.swap_block_keep_entity(x, y, z, &want);
+                if Some(self.get_block_at(pos)) != reg.block_id(&want) {
+                    self.swap_block_keep_entity_at(pos, &want);
                 }
                 continue;
             }
@@ -443,7 +444,7 @@ impl World {
             // and a flooded shaft empties one honest stroke at a
             // time (mechanization stage 4: mine drainage).
             if st == "pump" {
-                let rate = self.power_at(x, y, z);
+                let rate = self.power_at_pos(pos);
                 if rate <= 0.0 {
                     self.station_work.remove(&pos);
                     continue;
@@ -455,23 +456,18 @@ impl World {
                 }
                 *w -= PUMP_STROKE_SECS;
                 let lift = (1..=PUMP_REACH)
-                    .map(|d| (x, y - d, z))
-                    .find(|&(px, py, pz)| {
-                        self.reg.water_volume(self.get_block(px, py, pz)).is_some()
-                    });
+                    .filter_map(|d| pos.offset(0, -d, 0))
+                    .find(|&at| self.reg.water_volume(self.get_block_at(at)).is_some());
                 let Some(cell) = lift else { continue };
-                let v = self
-                    .reg
-                    .water_volume(self.get_block(cell.0, cell.1, cell.2))
-                    .unwrap_or(0);
+                let v = self.reg.water_volume(self.get_block_at(cell)).unwrap_or(0);
                 let out = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                     .into_iter()
-                    .map(|(dx, dz)| (x + dx, y, z + dz))
-                    .find(|&(ox, oy, oz)| self.get_block(ox, oy, oz) == AIR);
-                let Some((ox, oy, oz)) = out else { continue };
-                self.set_block(cell.0, cell.1, cell.2, AIR);
+                    .filter_map(|(dx, dz)| pos.offset(dx, 0, dz))
+                    .find(|&at| self.get_block_at(at) == AIR);
+                let Some(out) = out else { continue };
+                self.set_block_at(cell, AIR);
                 let wet = self.reg.water_for_volume(v);
-                self.set_block(ox, oy, oz, wet);
+                self.set_block_at(out, wet);
                 continue;
             }
             // The helve hammer: a powered arm over the smith's anvil.
@@ -482,10 +478,10 @@ impl World {
                 ];
                 let arm = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                     .into_iter()
-                    .map(|(dx, dz)| (x + dx, y, z + dz))
-                    .find(|&(hx, hy, hz)| helve.contains(&Some(self.get_block(hx, hy, hz))));
+                    .filter_map(|(dx, dz)| pos.offset(dx, 0, dz))
+                    .find(|&at| helve.contains(&Some(self.get_block_at(at))));
                 let Some(hp) = arm else { continue };
-                let rate = self.power_at(hp.0, hp.1, hp.2);
+                let rate = self.power_at_pos(hp);
                 let has_work = matches!(
                     self.block_entities.get(&pos),
                     Some(BlockEntity::Anvil(a)) if a.bloom.is_some()
@@ -495,8 +491,8 @@ impl World {
                 } else {
                     "base:helve_hammer"
                 };
-                if Some(self.get_block(hp.0, hp.1, hp.2)) != reg.block_id(want) {
-                    self.swap_block_keep_entity(hp.0, hp.1, hp.2, want);
+                if Some(self.get_block_at(hp)) != reg.block_id(want) {
+                    self.swap_block_keep_entity_at(hp, want);
                 }
                 if rate <= 0.0 || !has_work {
                     self.station_work.remove(&pos);
@@ -506,8 +502,10 @@ impl World {
                 *w += dt * rate;
                 if *w >= HELVE_STRIKE_SECS {
                     *w = 0.0;
-                    if let Some(out) = self.anvil_strike(pos) {
-                        self.pending_drops.push(((x, y + 1, z), out));
+                    if let Some(out) = self.anvil_strike_at(pos)
+                        && let Some(above) = pos.offset(0, 1, 0)
+                    {
+                        self.push_drop_at(above, out);
                     }
                 }
                 continue;
@@ -515,10 +513,10 @@ impl World {
             if !station_powered(&st) {
                 continue;
             }
-            let mut rate = self.power_at(x, y, z);
+            let mut rate = self.power_at_pos(pos);
             // The electric quern: a millstone in a generator's field
             // grinds where geography and coal both said no.
-            if rate <= 0.0 && st == "millstone" && self.generator_near(pos, ELEC_RADIUS) {
+            if rate <= 0.0 && st == "millstone" && self.generator_near_at(pos, ELEC_RADIUS) {
                 rate = 1.0;
             }
             if rate <= 0.0 {
@@ -527,7 +525,7 @@ impl World {
             }
             // Precision machines want workholding: an iron lathe or
             // boring mill with no vice in reach only spins.
-            if matches!(st.as_str(), "iron_lathe" | "boring") && !self.vice_near(pos) {
+            if matches!(st.as_str(), "iron_lathe" | "boring") && !self.vice_near_at(pos) {
                 continue;
             }
             let Some(BlockEntity::Anvil(a)) = self.block_entities.get(&pos) else {
@@ -569,7 +567,9 @@ impl World {
                 left -= n;
                 let mut out = ItemStack::new(&reg, def.output, 1);
                 out.count = n;
-                self.pending_drops.push(((x, y + 1, z), out));
+                if let Some(above) = pos.offset(0, 1, 0) {
+                    self.push_drop_at(above, out);
+                }
             }
         }
     }
@@ -580,26 +580,29 @@ impl World {
     /// leaves the river (mechanization stage 5).
     pub(super) fn tick_steam(&mut self, dt: f32) {
         let reg = self.reg.clone();
-        let keys: Vec<(i32, i32, i32)> = self
+        let keys: Vec<BlockPos> = self
             .block_entities
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Steam(_)))
             .map(|(k, _)| *k)
             .collect();
         for pos in keys {
-            let (x, y, z) = pos;
             // The boiler sits on the firebox; engines hang off it.
-            let boiler_here = reg.block_id("base:boiler") == Some(self.get_block(x, y + 1, z));
+            let boiler_pos = pos.offset(0, 1, 0);
+            let boiler_here = boiler_pos
+                .is_some_and(|at| reg.block_id("base:boiler") == Some(self.get_block_at(at)));
             // Drink: a low water bank swallows one adjacent cell.
-            let mut drink: Option<((i32, i32, i32), u8)> = None;
+            let mut drink: Option<(BlockPos, u8)> = None;
             if boiler_here
                 && let Some(BlockEntity::Steam(s)) = self.block_entities.get(&pos)
                 && s.water < STEAM_SECS_PER_WATER
             {
                 'search: for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                     for dy in [1, 0] {
-                        let c = (x + dx, y + dy, z + dz);
-                        if let Some(v) = reg.water_volume(self.get_block(c.0, c.1, c.2)) {
+                        let Some(c) = pos.offset(dx, dy, dz) else {
+                            continue;
+                        };
+                        if let Some(v) = reg.water_volume(self.get_block_at(c)) {
                             drink = Some((c, v));
                             break 'search;
                         }
@@ -607,7 +610,7 @@ impl World {
                 }
             }
             if let Some((c, v)) = drink {
-                self.set_block(c.0, c.1, c.2, AIR);
+                self.set_block_at(c, AIR);
                 if let Some(BlockEntity::Steam(s)) = self.block_entities.get_mut(&pos) {
                     s.water += v as f32 * STEAM_SECS_PER_WATER / 8.0;
                 }
@@ -625,15 +628,17 @@ impl World {
             } else {
                 "base:firebox"
             };
-            if Some(self.get_block(x, y, z)) != reg.block_id(want)
-                && reg.block(self.get_block(x, y, z)).interaction.as_deref() == Some("firebox")
+            if Some(self.get_block_at(pos)) != reg.block_id(want)
+                && reg.block(self.get_block_at(pos)).interaction.as_deref() == Some("firebox")
             {
-                self.swap_block_keep_entity(x, y, z, want);
+                self.swap_block_keep_entity_at(pos, want);
             }
             // Dress the engine beside the boiler to match.
             for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                let e = (x + dx, y + 1, z + dz);
-                let b = self.get_block(e.0, e.1, e.2);
+                let Some(e) = pos.offset(dx, 1, dz) else {
+                    continue;
+                };
+                let b = self.get_block_at(e);
                 let is_engine = [
                     reg.block_id("base:steam_engine"),
                     reg.block_id("base:steam_engine_run"),
@@ -648,7 +653,7 @@ impl World {
                     "base:steam_engine"
                 };
                 if Some(b) != reg.block_id(want) {
-                    self.swap_block_keep_entity(e.0, e.1, e.2, want);
+                    self.swap_block_keep_entity_at(e, want);
                 }
             }
         }
@@ -659,15 +664,14 @@ impl World {
     /// rare-earth thread, finally honest (mechanization stage 6).
     pub(super) fn tick_separators(&mut self, dt: f32) {
         let reg = self.reg.clone();
-        let keys: Vec<(i32, i32, i32)> = self
+        let keys: Vec<BlockPos> = self
             .block_entities
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Separator(_)))
             .map(|(k, _)| *k)
             .collect();
         for pos in keys {
-            let (x, y, z) = pos;
-            let valid = self.check_separator(x, y, z).is_some();
+            let valid = self.check_separator_at(pos).is_some();
             let Some(BlockEntity::Separator(sp)) = self.block_entities.get_mut(&pos) else {
                 continue;
             };
@@ -689,8 +693,8 @@ impl World {
             } else {
                 "base:separator"
             };
-            if Some(self.get_block(x, y, z)) != reg.block_id(want) {
-                self.swap_block_keep_entity(x, y, z, want);
+            if Some(self.get_block_at(pos)) != reg.block_id(want) {
+                self.swap_block_keep_entity_at(pos, want);
             }
         }
     }
@@ -698,18 +702,16 @@ impl World {
     /// A running generator within reach: the field that lights lamps
     /// and turns the electric quern. Generators are shaft-driven
     /// machines; their markers make them findable.
-    pub fn generator_near(&self, pos: (i32, i32, i32), r: i32) -> bool {
+    pub fn generator_near_at(&self, pos: BlockPos, r: i32) -> bool {
         let gens = [
             self.reg.block_id("base:generator"),
             self.reg.block_id("base:generator_run"),
         ];
-        self.block_entities.iter().any(|(&(gx, gy, gz), e)| {
+        self.block_entities.iter().any(|(gpos, e)| {
             matches!(e, BlockEntity::Anvil(_))
-                && (gx - pos.0).abs() <= r
-                && (gy - pos.1).abs() <= r
-                && (gz - pos.2).abs() <= r
-                && gens.contains(&Some(self.get_block(gx, gy, gz)))
-                && self.power_at(gx, gy, gz) > 0.0
+                && gpos.entity_center().distance_to(pos.entity_center()) <= r as f32
+                && gens.contains(&Some(self.get_block_at(*gpos)))
+                && self.power_at_pos(*gpos) > 0.0
         })
     }
 
@@ -726,7 +728,7 @@ impl World {
         let reg = self.reg.clone();
         // Byproducts pour out the furnace mouth (cupellation lead);
         // collected here because the entity map is borrowed.
-        let mut spat: Vec<((i32, i32, i32), ItemStack)> = Vec::new();
+        let mut spat: Vec<(BlockPos, ItemStack)> = Vec::new();
         for (&fpos, e) in self.block_entities.iter_mut() {
             let BlockEntity::Furnace(f) = e else { continue };
             let smelt = f.input.and_then(|s| reg.smelt_for(s.item)).cloned();
@@ -787,7 +789,9 @@ impl World {
                 f.progress = (f.progress - dt * 2.0).max(0.0);
             }
         }
-        self.pending_drops.extend(spat);
+        for (pos, stack) in spat {
+            self.push_drop_at(pos, stack);
+        }
     }
 
     // ---- block entity persistence (by item name, mod-change safe) ----

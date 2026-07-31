@@ -11,31 +11,142 @@
 //! ordinary session pays one function call for the lot.
 
 use super::*;
+use crate::planet::{BlockPos, EntityPos, Face, SurfacePos};
+
+/// Face-local drafting coordinates for capture scenes. Scene descriptions use
+/// compact signed offsets because a room or mill is easier to read that way;
+/// this adapter is the single boundary where those offsets become canonical
+/// planetary addresses (including seam crossings).
+#[derive(Clone, Copy)]
+struct DemoChart {
+    face: Face,
+}
+
+impl DemoChart {
+    const fn new(face: Face) -> Self {
+        Self { face }
+    }
+
+    fn surface(self, x: i32, z: i32) -> SurfacePos {
+        let half = i32::from(crate::planet::FACE_BLOCKS) / 2;
+        SurfacePos::canonicalized(self.face, x + half, z + half)
+            .expect("a capture scene stays within one face crossing")
+    }
+
+    fn block(self, x: i32, y: i32, z: i32) -> BlockPos {
+        let surface = self.surface(x, z);
+        BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
+            .expect("capture scene height stays inside the voxel shell")
+    }
+
+    fn block_tuple(self, pos: (i32, i32, i32)) -> BlockPos {
+        self.block(pos.0, pos.1, pos.2)
+    }
+
+    fn chunk(self, x: i32, z: i32) -> ChunkPos {
+        ChunkPos::from_surface(self.surface(x, z))
+    }
+
+    fn entity(self, local: Vec3) -> EntityPos {
+        let half = f32::from(crate::planet::FACE_BLOCKS) * 0.5;
+        EntityPos::new(self.face, half, local.y, half)
+            .expect("the chart center is canonical")
+            .translated(Vec3::new(local.x, 0.0, local.z))
+            .expect("a capture actor crosses only nearby planet faces")
+            .pos
+    }
+}
+
+macro_rules! demo_set {
+    ($world:expr, $chart:expr, $x:expr, $y:expr, $z:expr, $block:expr $(,)?) => {
+        ($world).set_block_at(($chart).block($x, $y, $z), $block)
+    };
+}
+
+macro_rules! demo_get {
+    ($world:expr, $chart:expr, $x:expr, $y:expr, $z:expr $(,)?) => {
+        ($world).get_block_at(($chart).block($x, $y, $z))
+    };
+}
+
+macro_rules! demo_meta {
+    ($world:expr, $chart:expr, $x:expr, $y:expr, $z:expr, $block:expr, $meta:expr $(,)?) => {
+        ($world).set_block_meta_at(($chart).block($x, $y, $z), $block, $meta)
+    };
+}
+
+macro_rules! demo_height {
+    ($world:expr, $chart:expr, $x:expr, $z:expr $(,)?) => {
+        ($world).surface_height_at(($chart).surface($x, $z))
+    };
+}
+
+macro_rules! demo_insert {
+    ($world:expr, $chart:expr, $pos:expr, $entity:expr $(,)?) => {
+        ($world).insert_block_entity_at(($chart).block_tuple($pos), $entity)
+    };
+}
+
+macro_rules! demo_mob {
+    ($chart:expr, $species:expr, $local:expr, $yaw:expr $(,)?) => {
+        crate::mobs::Mob::new_at($species, ($chart).entity($local), $yaw)
+    };
+}
+
+macro_rules! demo_drop {
+    ($world:expr, $chart:expr, $pos:expr, $stack:expr $(,)?) => {
+        ($world).push_drop_at(($chart).block_tuple($pos), $stack)
+    };
+}
+
+macro_rules! demo_ire {
+    ($world:expr, $chart:expr, $x:expr, $z:expr, $amount:expr $(,)?) => {
+        ($world).add_ire_at_surface(($chart).surface($x, $z), $amount)
+    };
+}
+
+macro_rules! demo_bloom {
+    ($world:expr, $chart:expr, $x:expr, $z:expr, $days:expr $(,)?) => {
+        ($world).add_bloom_at_surface(($chart).surface($x, $z), $days)
+    };
+}
+
+macro_rules! demo_standing {
+    ($world:expr, $chart:expr, $x:expr, $z:expr $(,)?) => {
+        ($world).regional_ire_at_surface(($chart).surface($x, $z))
+    };
+}
+
+macro_rules! demo_fire {
+    ($world:expr, $chart:expr, $x:expr, $y:expr, $z:expr, $mine:expr $(,)?) => {
+        ($world).light_fire_at(($chart).block($x, $y, $z), $mine)
+    };
+}
 
 impl Game {
     /// Stage whatever scene the environment asks for, once, at world start.
     ///
     /// Called immediately after the world is loaded and the player is placed,
     /// which is exactly where these blocks used to sit inline.
-    pub(super) fn apply_dev_overrides(&mut self, spawn: Vec3) {
+    pub(super) fn apply_dev_overrides(&mut self, spawn: crate::planet::EntityPos) {
+        let chart = DemoChart::new(spawn.face());
         // Dev: drop a water source on a pillar ahead of spawn to watch it flow.
         if std::env::var("WILDFORGE_DEMO_WATER").is_ok() {
             let (bx, bz) = (spawn.x as i32 - 6, spawn.z as i32 - 14);
             for cx in -1..=1 {
                 for cz in -1..=1 {
-                    self.server.world.ensure_chunk(crate::chunk::ChunkPos {
-                        x: bx.div_euclid(16) + cx,
-                        z: bz.div_euclid(16) + cz,
-                    });
+                    self.server
+                        .world
+                        .ensure_chunk(chart.chunk(bx, bz).offset(cx, cz));
                 }
             }
-            let by = self.server.world.surface_height(bx, bz);
+            let by = demo_height!(self.server.world, chart, bx, bz);
             let stone = self.content.reg.block_id("base:stone").unwrap_or(AIR);
             let water = self.content.reg.block_id("base:water").unwrap_or(AIR);
             for y in by + 1..=by + 4 {
-                self.server.world.set_block(bx, y, bz, stone);
+                demo_set!(self.server.world, chart, bx, y, bz, stone);
             }
-            self.server.world.set_block(bx, by + 5, bz, water);
+            demo_set!(self.server.world, chart, bx, by + 5, bz, water);
             eprintln!(
                 "demo water source at ({bx},{},{bz}), spawn {:?}",
                 by + 5,
@@ -100,18 +211,19 @@ impl Game {
         if let Ok(s) = std::env::var("WILDFORGE_POS") {
             let p: Vec<f32> = s.split(',').filter_map(|v| v.trim().parse().ok()).collect();
             if p.len() == 3 {
-                let cp = ChunkPos::of_world(p[0] as i32, p[2] as i32);
+                let cp = chart.chunk(p[0] as i32, p[2] as i32);
                 for dx in -2..=2 {
                     for dz in -2..=2 {
-                        self.server.world.ensure_chunk(ChunkPos {
-                            x: cp.x + dx,
-                            z: cp.z + dz,
-                        });
+                        self.server.world.ensure_chunk(cp.offset(dx, dz));
                     }
                 }
-                self.player.pos = Vec3::new(p[0], p[1], p[2]);
+                self.player.pos = self
+                    .player
+                    .pos
+                    .relocated_local(Vec3::new(p[0], p[1], p[2]))
+                    .unwrap();
                 self.player.vel = Vec3::ZERO;
-                self.camera.pos = self.player.pos + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+                self.camera.follow_planet(self.player.eye());
             }
         }
         // Dev: force camera look ("yaw,pitch" in radians) for framed captures.
@@ -127,8 +239,8 @@ impl Game {
         {
             for (dx, dz) in [(3, 0), (-3, 2), (0, 4), (2, -4)] {
                 let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
-                let y = self.server.world.surface_height(x, z);
-                self.server.world.set_block(x, y + 1, z, torch);
+                let y = demo_height!(self.server.world, chart, x, z);
+                demo_set!(self.server.world, chart, x, y + 1, z, torch);
             }
         }
         // Dev: two pillars flanked by a blue and a red lamp — colored-shadow
@@ -140,27 +252,27 @@ impl Game {
             let stone = self.content.reg.block_id("base:cobblestone");
             let bx = spawn.x as i32;
             let bz = spawn.z as i32 + 4;
-            let y = self.server.world.surface_height(bx, bz);
+            let y = demo_height!(self.server.world, chart, bx, bz);
             if let Some(stone) = stone {
                 // A neutral grey floor reads colored light far better than grass.
                 for dx in -8..=8 {
                     for dz in -6..=8 {
-                        self.server.world.set_block(bx + dx, y, bz + dz, stone);
+                        demo_set!(self.server.world, chart, bx + dx, y, bz + dz, stone);
                     }
                 }
                 // Two pillars as occluders.
                 for px in [-2i32, 2] {
                     for h in 1..=3 {
-                        self.server.world.set_block(bx + px, y + h, bz, stone);
+                        demo_set!(self.server.world, chart, bx + px, y + h, bz, stone);
                     }
                 }
             }
             // Low colored lamps to either side so shadows rake across the floor.
             if let Some(b) = blue {
-                self.server.world.set_block(bx - 5, y + 2, bz, b);
+                demo_set!(self.server.world, chart, bx - 5, y + 2, bz, b);
             }
             if let Some(r) = red {
-                self.server.world.set_block(bx + 5, y + 2, bz, r);
+                demo_set!(self.server.world, chart, bx + 5, y + 2, bz, r);
             }
         }
         // Dev: an enclosed cobblestone room with a 1-wide door and a 2x2 east
@@ -171,35 +283,43 @@ impl Game {
             && let Some(stone) = self.content.reg.block_id("base:cobblestone")
         {
             let (bx, bz) = (spawn.x as i32, spawn.z as i32);
-            let fy = self.server.world.surface_height(bx, bz);
+            let fy = demo_height!(self.server.world, chart, bx, bz);
             for dx in -4..=4 {
                 for dz in -4..=4 {
                     for dy in 0..=6 {
                         let shell =
                             dx == -4 || dx == 4 || dz == -4 || dz == 4 || dy == 0 || dy == 6;
                         let b = if shell { stone } else { AIR };
-                        self.server.world.set_block(bx + dx, fy + dy, bz + dz, b);
+                        demo_set!(self.server.world, chart, bx + dx, fy + dy, bz + dz, b);
                     }
                 }
             }
             // A 1-wide, 2-tall door in the +z wall.
-            self.server.world.set_block(bx, fy + 1, bz + 4, AIR);
-            self.server.world.set_block(bx, fy + 2, bz + 4, AIR);
+            demo_set!(self.server.world, chart, bx, fy + 1, bz + 4, AIR);
+            demo_set!(self.server.world, chart, bx, fy + 2, bz + 4, AIR);
             // A 2x2 window high in the +x (east) wall — the morning sun throws
             // a bright quad onto the floor that tracks across it.
             for wy in 3..=4 {
                 for wz in -1..=0 {
-                    self.server.world.set_block(bx + 4, fy + wy, bz + wz, AIR);
+                    demo_set!(self.server.world, chart, bx + 4, fy + wy, bz + wz, AIR);
                 }
             }
             if std::env::var("WILDFORGE_DEMO_ROOM").as_deref() == Ok("torch")
                 && let Some(torch) = self.content.reg.block_id("base:torch")
             {
-                self.server.world.set_block(bx + 2, fy + 1, bz, torch);
+                demo_set!(self.server.world, chart, bx + 2, fy + 1, bz, torch);
             }
             // Stand the player inside (this world has a saved position).
-            self.player.pos = Vec3::new(bx as f32 + 0.5, (fy + 1) as f32 + 0.2, bz as f32 - 2.5);
-            self.camera.pos = self.player.pos + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.player.pos = self
+                .player
+                .pos
+                .relocated_local(Vec3::new(
+                    bx as f32 + 0.5,
+                    (fy + 1) as f32 + 0.2,
+                    bz as f32 - 2.5,
+                ))
+                .unwrap();
+            self.camera.follow_planet(self.player.eye());
         }
         // Dev: two pillars on a grey floor lit by a blue and a red dynamic
         // point light (sharp per-light shadows). Pair with
@@ -208,16 +328,16 @@ impl Game {
             let stone = self.content.reg.block_id("base:cobblestone");
             let bx = spawn.x as i32;
             let bz = spawn.z as i32 + 5;
-            let y = self.server.world.surface_height(bx, bz);
+            let y = demo_height!(self.server.world, chart, bx, bz);
             if let Some(stone) = stone {
                 for dx in -9..=9 {
                     for dz in -7..=9 {
-                        self.server.world.set_block(bx + dx, y, bz + dz, stone);
+                        demo_set!(self.server.world, chart, bx + dx, y, bz + dz, stone);
                     }
                 }
                 for px in [-2i32, 2] {
                     for h in 1..=3 {
-                        self.server.world.set_block(bx + px, y + h, bz, stone);
+                        demo_set!(self.server.world, chart, bx + px, y + h, bz, stone);
                     }
                 }
             }
@@ -225,13 +345,17 @@ impl Game {
             self.presentation.demo_lights = vec![
                 lights::DynLight {
                     key: lights::Key::Demo(0),
-                    pos: Vec3::new(bx as f32 - 5.0 + 0.5, fy, bz as f32 + 0.5),
+                    pos: chart
+                        .entity(Vec3::new(bx as f32 - 5.0 + 0.5, fy, bz as f32 + 0.5))
+                        .render_pos(),
                     range: 16.0,
                     color: Vec3::new(0.35, 0.6, 2.0),
                 },
                 lights::DynLight {
                     key: lights::Key::Demo(1),
-                    pos: Vec3::new(bx as f32 + 5.0 + 0.5, fy, bz as f32 + 0.5),
+                    pos: chart
+                        .entity(Vec3::new(bx as f32 + 5.0 + 0.5, fy, bz as f32 + 0.5))
+                        .render_pos(),
                     range: 16.0,
                     color: Vec3::new(2.0, 0.35, 0.3),
                 },
@@ -251,19 +375,19 @@ impl Game {
                 for dz in [-16i32, 0, 16] {
                     self.server
                         .world
-                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
-            let y = self.server.world.surface_height(bx, bz);
+            let y = demo_height!(self.server.world, chart, bx, bz);
             // Clear and floor the clearing.
             if let Some(grass) = b("base:grass") {
                 for dx in -10..=10i32 {
                     for dz in -4..=14i32 {
                         let (x, z) = (bx + dx, bz + dz);
-                        self.server.world.set_block(x, y, z, grass);
+                        demo_set!(self.server.world, chart, x, y, z, grass);
                         for h in 1..=8 {
-                            if self.server.world.get_block(x, y + h, z) != AIR {
-                                self.server.world.set_block(x, y + h, z, AIR);
+                            if demo_get!(self.server.world, chart, x, y + h, z) != AIR {
+                                demo_set!(self.server.world, chart, x, y + h, z, AIR);
                             }
                         }
                     }
@@ -275,13 +399,13 @@ impl Game {
             {
                 let (sx, sz) = (bx - 4, bz + 6);
 
-                self.server.world.set_block(sx, y + 1, sz, counter);
+                demo_set!(self.server.world, chart, sx, y + 1, sz, counter);
                 for side in [-1i32, 1] {
-                    self.server.world.set_block(sx + side, y + 1, sz, log);
-                    self.server.world.set_block(sx + side, y + 2, sz, log);
+                    demo_set!(self.server.world, chart, sx + side, y + 1, sz, log);
+                    demo_set!(self.server.world, chart, sx + side, y + 2, sz, log);
                 }
                 for i in -1i32..=1 {
-                    self.server.world.set_block(sx + i, y + 3, sz, planks);
+                    demo_set!(self.server.world, chart, sx + i, y + 3, sz, planks);
                 }
                 let mut st = crate::world::StallState {
                     owner: [7; 16],
@@ -295,14 +419,19 @@ impl Game {
                     st.goods[0] = Some(ItemStack::new(&reg2, salt, 12));
                     st.price = Some(ItemStack::new(&reg2, silver, 1));
                 }
-                self.server
-                    .world
-                    .insert_block_entity((sx, y + 1, sz), crate::world::BlockEntity::Stall(st));
+                demo_insert!(
+                    self.server.world,
+                    chart,
+                    (sx, y + 1, sz),
+                    crate::world::BlockEntity::Stall(st)
+                );
             }
             // A sign and a named waystone.
             if let Some(sign) = b("base:sign") {
-                self.server.world.set_block(bx, y + 1, bz + 6, sign);
-                self.server.world.insert_block_entity(
+                demo_set!(self.server.world, chart, bx, y + 1, bz + 6, sign);
+                demo_insert!(
+                    self.server.world,
+                    chart,
                     (bx, y + 1, bz + 6),
                     crate::world::BlockEntity::Sign(crate::world::SignState {
                         lines: [
@@ -314,8 +443,10 @@ impl Game {
                 );
             }
             if let Some(ws) = b("base:waystone") {
-                self.server.world.set_block(bx + 3, y + 1, bz + 6, ws);
-                self.server.world.insert_block_entity(
+                demo_set!(self.server.world, chart, bx + 3, y + 1, bz + 6, ws);
+                demo_insert!(
+                    self.server.world,
+                    chart,
                     (bx + 3, y + 1, bz + 6),
                     crate::world::BlockEntity::Sign(crate::world::SignState {
                         lines: ["THREE PINES".to_string(), String::new(), String::new()],
@@ -324,7 +455,8 @@ impl Game {
             }
             // A saddlebagged deer at the hitching post.
             if let Some(di) = reg2.animal_id("base:deer") {
-                let mut deer = crate::mobs::Mob::new(
+                let mut deer = demo_mob!(
+                    chart,
                     di,
                     glam::Vec3::new(bx as f32 + 5.5, y as f32 + 1.0, bz as f32 + 7.5),
                     2.4,
@@ -343,11 +475,12 @@ impl Game {
                     for dz in 0..=3i32 {
                         // A sealed bowl: solid under the water so the
                         // pond can't drain into a cave.
-                        self.server.world.set_block(bx + dx, y - 1, bz + dz, dirt);
-                        self.server.world.set_block(bx + dx, y, bz + dz, water);
+                        demo_set!(self.server.world, chart, bx + dx, y - 1, bz + dz, dirt);
+                        demo_set!(self.server.world, chart, bx + dx, y, bz + dz, water);
                     }
                 }
-                let mut boat = crate::mobs::Mob::new(
+                let mut boat = demo_mob!(
+                    chart,
                     bi,
                     glam::Vec3::new(bx as f32 + 7.5, y as f32 + 0.9, bz as f32 + 1.5),
                     0.8,
@@ -358,12 +491,12 @@ impl Game {
             }
             // Screen shortcuts want the scene to exist first.
             match std::env::var("WILDFORGE_SCREEN").as_deref() {
-                Ok("stall") => self.set_screen(Screen::Stall((bx - 4, y + 1, bz + 6))),
+                Ok("stall") => self.set_screen(Screen::Stall(chart.block(bx - 4, y + 1, bz + 6))),
                 Ok("signedit") => {
                     self.ui_state.sign_lines =
                         ["SALT FAIR".to_string(), "PRICES".to_string(), String::new()];
                     self.ui_state.sign_line = 2;
-                    self.set_screen(Screen::SignEdit((bx, y + 1, bz + 6)));
+                    self.set_screen(Screen::SignEdit(chart.block(bx, y + 1, bz + 6)));
                 }
                 Ok("mobcargo") => {
                     // Ids are sim-assigned: run one tick so the demo
@@ -410,23 +543,23 @@ impl Game {
             let reg2 = self.content.reg.clone();
             let bx = spawn.x as i32;
             let bz = spawn.z as i32;
-            let y = self.server.world.surface_height(bx, bz);
+            let y = demo_height!(self.server.world, chart, bx, bz);
             if let Some(grass) = b("base:grass") {
                 for dx in -8..=8i32 {
                     for dz in -2..=16i32 {
                         let (x, z) = (bx + dx, bz + dz);
-                        self.server.world.set_block(x, y, z, grass);
+                        demo_set!(self.server.world, chart, x, y, z, grass);
                         for hh in 1..=6 {
-                            if self.server.world.get_block(x, y + hh, z) != AIR {
-                                self.server.world.set_block(x, y + hh, z, AIR);
+                            if demo_get!(self.server.world, chart, x, y + hh, z) != AIR {
+                                demo_set!(self.server.world, chart, x, y + hh, z, AIR);
                             }
                         }
                     }
                 }
             }
             if let (Some(rack), Some(torch)) = (b("base:smoking_rack"), b("base:torch")) {
-                self.server.world.set_block(bx - 2, y + 1, bz + 4, torch);
-                self.server.world.set_block(bx - 2, y + 2, bz + 4, rack);
+                demo_set!(self.server.world, chart, bx - 2, y + 1, bz + 4, torch);
+                demo_set!(self.server.world, chart, bx - 2, y + 2, bz + 4, rack);
                 let mut sm = crate::world::SmokerState::default();
                 if let (Some(raw), Some(smoked)) = (
                     reg2.item_id("base:raw_venison"),
@@ -435,7 +568,9 @@ impl Game {
                     sm.meat[0] = Some(ItemStack::new(&reg2, raw, 1));
                     sm.meat[1] = Some(ItemStack::new(&reg2, smoked, 1));
                 }
-                self.server.world.insert_block_entity(
+                demo_insert!(
+                    self.server.world,
+                    chart,
                     (bx - 2, y + 2, bz + 4),
                     crate::world::BlockEntity::Smoker(sm),
                 );
@@ -444,22 +579,23 @@ impl Game {
             // line marks the settlement's edge; the wild stands just
             // beyond it.
             for _ in 0..12 {
-                self.server.world.add_ire_at(bx, bz, 1.0);
+                demo_ire!(self.server.world, chart, bx, bz, 1.0);
             }
             if let Some(torch) = b("base:torch") {
                 for dx in [0i32, 3, 6] {
-                    self.server.world.set_block(bx + dx, y + 1, bz + 11, torch);
+                    demo_set!(self.server.world, chart, bx + dx, y + 1, bz + 11, torch);
                 }
             }
             if let Some(ti) = reg2.animals.iter().position(|a| a.hostile) {
-                let mut w = crate::mobs::Mob::new(
+                let mut w = demo_mob!(
+                    chart,
                     ti,
                     glam::Vec3::new(bx as f32 + 3.5, y as f32 + 1.0, bz as f32 + 13.5),
                     3.4,
                 );
                 w.health = reg2.animals[ti].health;
                 w.watcher = true;
-                w.watch_baseline = self.server.world.regional_ire_at(bx, bz);
+                w.watch_baseline = demo_standing!(self.server.world, chart, bx, bz);
                 self.server.world.spawn_mob(w);
             }
         }
@@ -469,17 +605,17 @@ impl Game {
             let b = |n: &str| self.content.reg.block_id(n);
             let bx = spawn.x as i32;
             let bz = spawn.z as i32;
-            let y = self.server.world.surface_height(bx, bz);
+            let y = demo_height!(self.server.world, chart, bx, bz);
             eprintln!("heart demo anchored at ({bx},{y},{bz})");
             if let Some(grass) = b("base:grass") {
                 let w = &mut self.server.world;
                 for dx in -18..=18i32 {
                     for dz in -20..=14i32 {
                         let (x, z) = (bx + dx, bz + dz);
-                        w.set_block(x, y, z, grass);
+                        demo_set!(w, chart, x, y, z, grass);
                         for hh in 1..=10 {
-                            if w.get_block(x, y + hh, z) != AIR {
-                                w.set_block(x, y + hh, z, AIR);
+                            if demo_get!(w, chart, x, y + hh, z) != AIR {
+                                demo_set!(w, chart, x, y + hh, z, AIR);
                             }
                         }
                     }
@@ -500,7 +636,7 @@ impl Game {
                     let Some(block) = b(&name) else { continue };
                     let tall = crate::world::heart_height(form);
                     for dy in 1..=tall {
-                        w.set_block(bx + col, y + dy, bz + row, block);
+                        demo_set!(w, chart, bx + col, y + dy, bz + row, block);
                     }
                 }
             }
@@ -512,7 +648,9 @@ impl Game {
                         if dx * dx + dz * dz > 16 {
                             continue;
                         }
-                        w.set_block_meta(
+                        demo_meta!(
+                            w,
+                            chart,
                             bx + 10 + dx,
                             y,
                             bz + 8 + dz,
@@ -530,17 +668,17 @@ impl Game {
             let b = |n: &str| self.content.reg.block_id(n);
             let bx = spawn.x as i32;
             let bz = spawn.z as i32;
-            let y = self.server.world.surface_height(bx, bz);
+            let y = demo_height!(self.server.world, chart, bx, bz);
             eprintln!("eco demo anchored at ({bx},{y},{bz})");
             if let (Some(grass), Some(farm)) = (b("base:grass"), b("base:farmland")) {
                 let w = &mut self.server.world;
                 for dx in -8..=8i32 {
                     for dz in -2..=12i32 {
                         let (x, z) = (bx + dx, bz + dz);
-                        w.set_block(x, y, z, grass);
+                        demo_set!(w, chart, x, y, z, grass);
                         for hh in 1..=8 {
-                            if w.get_block(x, y + hh, z) != AIR {
-                                w.set_block(x, y + hh, z, AIR);
+                            if demo_get!(w, chart, x, y + hh, z) != AIR {
+                                demo_set!(w, chart, x, y + hh, z, AIR);
                             }
                         }
                     }
@@ -550,7 +688,9 @@ impl Game {
                     for dx in 0..3i32 {
                         for dz in 2..=9i32 {
                             let x = bx - 6 + band * 3 + dx;
-                            w.set_block_meta(
+                            demo_meta!(
+                                w,
+                                chart,
                                 x,
                                 y,
                                 bz + dz,
@@ -566,7 +706,7 @@ impl Game {
                             for dz in 2..=9i32 {
                                 if (dx + dz) % 2 == 0 {
                                     let x = bx - 6 + band * 3 + dx;
-                                    w.set_block(x, y + 1, bz + dz, ripe);
+                                    demo_set!(w, chart, x, y + 1, bz + dz, ripe);
                                 }
                             }
                         }
@@ -579,14 +719,14 @@ impl Game {
                 if let (Some(heap), Some(ready)) =
                     (b("base:compost_heap"), b("base:compost_heap_ready"))
                 {
-                    w.set_block_meta(bx + 7, y + 1, bz + 2, heap, 6);
-                    w.set_block(bx + 7, y + 1, bz + 4, ready);
+                    demo_meta!(w, chart, bx + 7, y + 1, bz + 2, heap, 6);
+                    demo_set!(w, chart, bx + 7, y + 1, bz + 4, ready);
                 }
                 if let Some(plank) = b("base:planks") {
                     for dx in -8..=-4i32 {
                         for dz in 10..=13i32 {
                             if dx == -8 || dx == -4 || dz == 10 || dz == 13 {
-                                w.set_block(bx + dx, y + 1, bz + dz, plank);
+                                demo_set!(w, chart, bx + dx, y + 1, bz + dz, plank);
                             }
                         }
                     }
@@ -599,8 +739,8 @@ impl Game {
                 // the pen walls here, as they would around any base.
                 for cx in -2..=2i32 {
                     for cz in -2..=2i32 {
-                        let cp = crate::chunk::ChunkPos::of_world(bx + cx * 16, bz + cz * 16);
-                        w.player_touched.insert((cp.x, cp.z));
+                        let cp = chart.chunk(bx + cx * 16, bz + cz * 16);
+                        w.player_touched.insert(cp);
                     }
                 }
                 for (dx, dz, hungry) in [
@@ -608,7 +748,8 @@ impl Game {
                     (-5.5, 12.5, false),
                     (7.5, 11.5, true),
                 ] {
-                    let mut m = crate::mobs::Mob::new(
+                    let mut m = demo_mob!(
+                        chart,
                         si,
                         glam::Vec3::new(bx as f32 + dx, y as f32 + 1.0, bz as f32 + dz),
                         2.0,
@@ -622,7 +763,7 @@ impl Game {
                 }
                 if let Some(dung) = reg2.item_id("base:dung") {
                     let stack = ItemStack::new(&reg2, dung, 1);
-                    w.push_drop((bx - 7, y + 1, bz + 11), stack);
+                    demo_drop!(w, chart, (bx - 7, y + 1, bz + 11), stack);
                 }
                 // The pond: dug two deep, sealed in stone, water to
                 // the brim — cattails on the bank, a lily on the
@@ -636,25 +777,26 @@ impl Game {
                             let (x, z) = (bx + dx, bz + dz);
                             let rim = dx == 3 || dx == 7 || dz == 10 || dz == 13;
                             for dy in [-2i32, -1] {
-                                w.set_block(x, y + dy, z, if rim { stone } else { water });
+                                demo_set!(w, chart, x, y + dy, z, if rim { stone } else { water });
                             }
-                            w.set_block(x, y - 3, z, stone);
-                            if w.get_block(x, y, z) != AIR {
-                                w.set_block(x, y, z, AIR);
+                            demo_set!(w, chart, x, y - 3, z, stone);
+                            if demo_get!(w, chart, x, y, z) != AIR {
+                                demo_set!(w, chart, x, y, z, AIR);
                             }
                         }
                     }
-                    w.set_block(bx + 3, y, bz + 10, reeds);
-                    w.set_block(bx + 7, y, bz + 13, reeds);
+                    demo_set!(w, chart, bx + 3, y, bz + 10, reeds);
+                    demo_set!(w, chart, bx + 7, y, bz + 13, reeds);
                     // The pad floats on the water surface: the first
                     // air cell above the fill.
-                    w.set_block(bx + 5, y, bz + 12, lily);
+                    demo_set!(w, chart, bx + 5, y, bz + 12, lily);
                     for (name, dx, dz, dy) in [
                         ("base:trout", 5.5f32, 11.5f32, -1.6f32),
                         ("base:heron", 5.5, 11.5, 1.0),
                     ] {
                         if let Some(si) = reg2.animal_id(name) {
-                            let mut m = crate::mobs::Mob::new(
+                            let mut m = demo_mob!(
+                                chart,
                                 si,
                                 glam::Vec3::new(bx as f32 + dx, y as f32 + dy, bz as f32 + dz),
                                 1.2,
@@ -679,31 +821,31 @@ impl Game {
                         for dz in 0..6i32 {
                             let (x, z) = (ax + dx, az + dz);
                             let g = b("base:grass").unwrap();
-                            w.set_block(x, y, z, g);
+                            demo_set!(w, chart, x, y, z, g);
                             for hh in 1..=4 {
-                                if w.get_block(x, y + hh, z) != AIR {
-                                    w.set_block(x, y + hh, z, AIR);
+                                if demo_get!(w, chart, x, y + hh, z) != AIR {
+                                    demo_set!(w, chart, x, y + hh, z, AIR);
                                 }
                             }
                             let roll = (dx * 7 + dz * 13) % 17;
                             match roll {
                                 0 | 8 => {
-                                    w.set_block(x, y, z, charred);
+                                    demo_set!(w, chart, x, y, z, charred);
                                 }
                                 2 | 9 | 14 => {
-                                    w.set_block(x, y + 1, z, mb);
+                                    demo_set!(w, chart, x, y + 1, z, mb);
                                 }
                                 4 | 11 => {
-                                    w.set_block(x, y + 1, z, ep);
+                                    demo_set!(w, chart, x, y + 1, z, ep);
                                 }
                                 6 => {
-                                    w.set_block(x, y + 1, z, sap);
+                                    demo_set!(w, chart, x, y + 1, z, sap);
                                 }
                                 _ => {}
                             }
                         }
                     }
-                    w.add_bloom(ax, az, 3.0);
+                    demo_bloom!(w, chart, ax, az, 3.0);
                 }
                 // The grotto: a hollow cut under the pad's east edge,
                 // lantern fungus glowing inside, a bat at roost and
@@ -717,19 +859,20 @@ impl Game {
                                 let shell = dx == 12 || dz == -2 || dz == 2 || dy == -4;
                                 // Open face toward the west (the pad).
                                 if dx == 8 && dy >= -3 {
-                                    if w.get_block(x, yy, z) != AIR {
-                                        w.set_block(x, yy, z, AIR);
+                                    if demo_get!(w, chart, x, yy, z) != AIR {
+                                        demo_set!(w, chart, x, yy, z, AIR);
                                     }
                                     continue;
                                 }
-                                w.set_block(x, yy, z, if shell { stone } else { AIR });
+                                demo_set!(w, chart, x, yy, z, if shell { stone } else { AIR });
                             }
                         }
                     }
-                    w.set_block(bx + 11, y - 3, bz, lf);
-                    w.set_block(bx + 10, y - 3, bz + 1, lf);
+                    demo_set!(w, chart, bx + 11, y - 3, bz, lf);
+                    demo_set!(w, chart, bx + 10, y - 3, bz + 1, lf);
                     if let Some(si) = reg2.animal_id("base:bat") {
-                        let mut m = crate::mobs::Mob::new(
+                        let mut m = demo_mob!(
+                            chart,
                             si,
                             glam::Vec3::new(bx as f32 + 10.5, y as f32 - 2.5, bz as f32 - 0.5),
                             0.0,
@@ -739,7 +882,7 @@ impl Game {
                     }
                     if let Some(g) = reg2.item_id("base:guano") {
                         let stack = ItemStack::new(&reg2, g, 2);
-                        w.push_drop((bx + 10, y - 3, bz), stack);
+                        demo_drop!(w, chart, (bx + 10, y - 3, bz), stack);
                     }
                 }
                 // The neighbors: the wider roster lined up along the
@@ -757,7 +900,8 @@ impl Game {
                 .enumerate()
                 {
                     if let Some(si) = reg2.animal_id(name) {
-                        let mut m = crate::mobs::Mob::new(
+                        let mut m = demo_mob!(
+                            chart,
                             si,
                             glam::Vec3::new(
                                 bx as f32 - 7.0 + i as f32 * 2.2,
@@ -780,7 +924,8 @@ impl Game {
                     ("base:vulture", -2.5, 13.5),
                 ] {
                     if let Some(si) = reg2.animal_id(name) {
-                        let mut m = crate::mobs::Mob::new(
+                        let mut m = demo_mob!(
+                            chart,
                             si,
                             glam::Vec3::new(bx as f32 + dx, y as f32 + 1.0, bz as f32 + dz),
                             3.6,
@@ -804,16 +949,16 @@ impl Game {
             let reg2 = self.content.reg.clone();
             let bx = spawn.x as i32;
             let bz = spawn.z as i32;
-            let y = self.server.world.surface_height(bx, bz);
+            let y = demo_height!(self.server.world, chart, bx, bz);
             eprintln!("mill demo anchored at ({bx},{y},{bz})");
             if let Some(grass) = b("base:grass") {
                 for dx in -10..=10i32 {
                     for dz in -2..=14i32 {
                         let (x, z) = (bx + dx, bz + dz);
-                        self.server.world.set_block(x, y, z, grass);
+                        demo_set!(self.server.world, chart, x, y, z, grass);
                         for hh in 1..=10 {
-                            if self.server.world.get_block(x, y + hh, z) != AIR {
-                                self.server.world.set_block(x, y + hh, z, AIR);
+                            if demo_get!(self.server.world, chart, x, y + hh, z) != AIR {
+                                demo_set!(self.server.world, chart, x, y + hh, z, AIR);
                             }
                         }
                     }
@@ -829,25 +974,27 @@ impl Game {
                 // water pouring out the south lip under the wheel.
                 for dz in 1..=8i32 {
                     for dy in 1..=2 {
-                        w.set_block(mx, y + dy, mz + dz, stone);
+                        demo_set!(w, chart, mx, y + dy, mz + dz, stone);
                     }
-                    w.set_block(mx - 1, y + 3, mz + dz, stone);
-                    w.set_block(mx + 1, y + 3, mz + dz, stone);
+                    demo_set!(w, chart, mx - 1, y + 3, mz + dz, stone);
+                    demo_set!(w, chart, mx + 1, y + 3, mz + dz, stone);
                 }
-                w.set_block(mx, y + 3, mz + 9, stone);
+                demo_set!(w, chart, mx, y + 3, mz + 9, stone);
                 // The wall opens at the south end, downstream of the
                 // wheel: the race spills there without starving the
                 // cells the wheel actually rides.
-                w.set_block(mx - 1, y + 3, mz + 1, AIR);
+                demo_set!(w, chart, mx - 1, y + 3, mz + 1, AIR);
                 let water = reg2.water_block(0);
                 for dz in 1..=8i32 {
-                    w.set_block(mx, y + 3, mz + dz, water);
+                    demo_set!(w, chart, mx, y + 3, mz + dz, water);
                 }
                 // The wheel rides mid-race, axle running east — its
                 // stream below it, its face to the camera.
                 if let Some(wheel) = b("base:water_wheel") {
-                    w.set_block(mx, y + 4, mz + 3, wheel);
-                    w.insert_block_entity(
+                    demo_set!(w, chart, mx, y + 4, mz + 3, wheel);
+                    demo_insert!(
+                        w,
+                        chart,
                         (mx, y + 4, mz + 3),
                         crate::world::BlockEntity::Anvil(Default::default()),
                     );
@@ -856,64 +1003,81 @@ impl Game {
                 // before its down post, so the wheel's face stands
                 // alone; stations rank along the working floor.
                 for i in 1..=4 {
-                    w.set_block(mx + i, y + 4, mz + 3, shaft);
+                    demo_set!(w, chart, mx + i, y + 4, mz + 3, shaft);
                 }
-                w.set_block(mx + 5, y + 4, mz + 3, gear);
-                w.set_block(mx + 5, y + 3, mz + 3, shaft);
-                w.set_block(mx + 5, y + 2, mz + 3, shaft);
-                w.set_block(mx + 5, y + 1, mz + 3, gear);
-                w.set_block(mx + 6, y + 1, mz + 3, shaft);
-                w.set_block(mx + 7, y + 1, mz + 3, gear);
-                w.set_block(mx + 8, y + 1, mz + 3, shaft);
-                w.set_block(mx + 9, y + 1, mz + 3, gear);
+                demo_set!(w, chart, mx + 5, y + 4, mz + 3, gear);
+                demo_set!(w, chart, mx + 5, y + 3, mz + 3, shaft);
+                demo_set!(w, chart, mx + 5, y + 2, mz + 3, shaft);
+                demo_set!(w, chart, mx + 5, y + 1, mz + 3, gear);
+                demo_set!(w, chart, mx + 6, y + 1, mz + 3, shaft);
+                demo_set!(w, chart, mx + 7, y + 1, mz + 3, gear);
+                demo_set!(w, chart, mx + 8, y + 1, mz + 3, shaft);
+                demo_set!(w, chart, mx + 9, y + 1, mz + 3, gear);
                 // Stations step south off their gears, facing camera.
                 if let Some(mill) = b("base:millstone") {
-                    w.set_block(mx + 7, y + 1, mz + 2, mill);
+                    demo_set!(w, chart, mx + 7, y + 1, mz + 2, mill);
                     if let Some(copper) = reg2.item_id("base:raw_copper") {
                         for _ in 0..4 {
-                            w.anvil_put((mx + 7, y + 1, mz + 2), ItemStack::new(&reg2, copper, 1));
+                            w.anvil_put_at(
+                                chart.block(mx + 7, y + 1, mz + 2),
+                                ItemStack::new(&reg2, copper, 1),
+                            );
                         }
                     }
                 }
                 if let Some(saw) = b("base:sawmill") {
-                    w.set_block(mx + 9, y + 1, mz + 2, saw);
+                    demo_set!(w, chart, mx + 9, y + 1, mz + 2, saw);
                     if let Some(log) = reg2.item_id("base:log") {
                         for _ in 0..3 {
-                            w.anvil_put((mx + 9, y + 1, mz + 2), ItemStack::new(&reg2, log, 1));
+                            w.anvil_put_at(
+                                chart.block(mx + 9, y + 1, mz + 2),
+                                ItemStack::new(&reg2, log, 1),
+                            );
                         }
                     }
                 }
                 if let (Some(helve), Some(anvil)) = (b("base:helve_hammer"), b("base:stone_anvil"))
                 {
-                    w.set_block(mx + 9, y + 1, mz + 4, helve);
-                    w.set_block(mx + 9, y + 1, mz + 5, anvil);
+                    demo_set!(w, chart, mx + 9, y + 1, mz + 4, helve);
+                    demo_set!(w, chart, mx + 9, y + 1, mz + 5, anvil);
                     if let Some(bl) = reg2.item_id("base:steel_bloom") {
-                        w.anvil_put((mx + 9, y + 1, mz + 5), ItemStack::new(&reg2, bl, 1));
+                        w.anvil_put_at(
+                            chart.block(mx + 9, y + 1, mz + 5),
+                            ItemStack::new(&reg2, bl, 1),
+                        );
                     }
                 }
                 // The machine shop row: crude lathe west, iron lathe
                 // east, the vice that lets precision cut at all.
-                w.set_block(mx + 5, y + 1, mz + 2, shaft);
-                w.set_block(mx + 5, y + 1, mz + 1, gear);
+                demo_set!(w, chart, mx + 5, y + 1, mz + 2, shaft);
+                demo_set!(w, chart, mx + 5, y + 1, mz + 1, gear);
                 if let (Some(lathe), Some(ilathe), Some(vice)) =
                     (b("base:lathe"), b("base:iron_lathe"), b("base:vice"))
                 {
-                    w.set_block(mx + 4, y + 1, mz + 1, lathe);
-                    w.set_block(mx + 6, y + 1, mz + 1, ilathe);
-                    w.set_block(mx + 5, y + 1, mz, vice);
+                    demo_set!(w, chart, mx + 4, y + 1, mz + 1, lathe);
+                    demo_set!(w, chart, mx + 6, y + 1, mz + 1, ilathe);
+                    demo_set!(w, chart, mx + 5, y + 1, mz, vice);
                     if let Some(cu) = reg2.item_id("base:copper_ingot") {
-                        w.anvil_put((mx + 4, y + 1, mz + 1), ItemStack::new(&reg2, cu, 1));
+                        w.anvil_put_at(
+                            chart.block(mx + 4, y + 1, mz + 1),
+                            ItemStack::new(&reg2, cu, 1),
+                        );
                     }
                     if let Some(fe) = reg2.item_id("base:iron_ingot") {
-                        w.anvil_put((mx + 6, y + 1, mz + 1), ItemStack::new(&reg2, fe, 1));
+                        w.anvil_put_at(
+                            chart.block(mx + 6, y + 1, mz + 1),
+                            ItemStack::new(&reg2, fe, 1),
+                        );
                     }
                 }
                 // The electric age: a generator off the shop gear,
                 // arc lamps drinking its field, the steam corner,
                 // and a separator on its firebrick stack.
                 if let Some(dynamo) = b("base:generator") {
-                    w.set_block(mx + 7, y + 1, mz + 4, dynamo);
-                    w.insert_block_entity(
+                    demo_set!(w, chart, mx + 7, y + 1, mz + 4, dynamo);
+                    demo_insert!(
+                        w,
+                        chart,
                         (mx + 7, y + 1, mz + 4),
                         crate::world::BlockEntity::Anvil(Default::default()),
                     );
@@ -924,18 +1088,20 @@ impl Game {
                     ("base:red_arc_lamp", mx + 9, mz + 6),
                 ] {
                     if let Some(l) = b(lamp) {
-                        w.set_block(lx, y + 2, lz, l);
-                        w.set_block(lx, y + 1, lz, stone);
+                        demo_set!(w, chart, lx, y + 2, lz, l);
+                        demo_set!(w, chart, lx, y + 1, lz, stone);
                     }
                 }
                 if let (Some(fbx), Some(boiler), Some(engine)) =
                     (b("base:firebox"), b("base:boiler"), b("base:steam_engine"))
                 {
                     let (ex, ez) = (mx + 12, mz + 1);
-                    w.set_block(ex, y + 1, ez, fbx);
-                    w.set_block(ex, y + 2, ez, boiler);
-                    w.set_block(ex + 1, y + 2, ez, engine);
-                    w.insert_block_entity(
+                    demo_set!(w, chart, ex, y + 1, ez, fbx);
+                    demo_set!(w, chart, ex, y + 2, ez, boiler);
+                    demo_set!(w, chart, ex + 1, y + 2, ez, engine);
+                    demo_insert!(
+                        w,
+                        chart,
                         (ex, y + 1, ez),
                         crate::world::BlockEntity::Steam(crate::world::SteamState {
                             fuel: 900.0,
@@ -951,12 +1117,14 @@ impl Game {
                                 if rx == 0 && rz == 0 {
                                     continue;
                                 }
-                                w.set_block(px + 1 + rx, y + ly, pz + rz, fb);
+                                demo_set!(w, chart, px + 1 + rx, y + ly, pz + rz, fb);
                             }
                         }
                     }
-                    w.set_block(px, y + 1, pz, sep);
-                    w.insert_block_entity(
+                    demo_set!(w, chart, px, y + 1, pz, sep);
+                    demo_insert!(
+                        w,
+                        chart,
                         (px, y + 1, pz),
                         crate::world::BlockEntity::Separator(crate::world::SeparatorState {
                             powder: 4,
@@ -967,9 +1135,11 @@ impl Game {
                 }
                 // Boring mill and pump join the shop floor.
                 if let (Some(bore), Some(pump)) = (b("base:boring_mill"), b("base:pump")) {
-                    w.set_block(mx + 2, y + 1, mz + 1, bore);
-                    w.set_block(mx + 2, y + 1, mz, pump);
-                    w.insert_block_entity(
+                    demo_set!(w, chart, mx + 2, y + 1, mz + 1, bore);
+                    demo_set!(w, chart, mx + 2, y + 1, mz, pump);
+                    demo_insert!(
+                        w,
+                        chart,
                         (mx + 2, y + 1, mz),
                         crate::world::BlockEntity::Anvil(Default::default()),
                     );
@@ -978,17 +1148,19 @@ impl Game {
                 if let Some(sail) = b("base:windmill_sail") {
                     let tx = bx + 8;
                     for ty in (y + 1)..=91 {
-                        w.set_block(tx, ty, bz + 10, stone);
+                        demo_set!(w, chart, tx, ty, bz + 10, stone);
                     }
-                    w.set_block(tx, 92, bz + 10, sail);
-                    w.insert_block_entity(
+                    demo_set!(w, chart, tx, 92, bz + 10, sail);
+                    demo_insert!(
+                        w,
+                        chart,
                         (tx, 92, bz + 10),
                         crate::world::BlockEntity::Anvil(Default::default()),
                     );
                     // And one at eye level for the mesh to be judged
                     // (too low to ever turn; that's the point).
-                    w.set_block(bx + 6, y + 2, bz + 1, stone);
-                    w.set_block(bx + 6, y + 3, bz + 1, sail);
+                    demo_set!(w, chart, bx + 6, y + 2, bz + 1, stone);
+                    demo_set!(w, chart, bx + 6, y + 3, bz + 1, sail);
                 }
             }
         }
@@ -1000,7 +1172,7 @@ impl Game {
                 for dz in [-8i32, 0, 8] {
                     self.server
                         .world
-                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
             if let (Some(log), Some(torch)) = (b("base:log"), b("base:torch")) {
@@ -1008,10 +1180,10 @@ impl Game {
                 for dx in -6..=6i32 {
                     for dz in -1..=12i32 {
                         let (x, z) = (bx + dx, bz + dz);
-                        let y = self.server.world.surface_height(x, z);
+                        let y = demo_height!(self.server.world, chart, x, z);
                         for h in 1..=9 {
-                            if self.server.world.get_block(x, y + h, z) != AIR {
-                                self.server.world.set_block(x, y + h, z, AIR);
+                            if demo_get!(self.server.world, chart, x, y + h, z) != AIR {
+                                demo_set!(self.server.world, chart, x, y + h, z, AIR);
                             }
                         }
                     }
@@ -1019,17 +1191,17 @@ impl Game {
                 // Torch posts: a 2-log stake with the flame on top.
                 for (px, pz) in [(4i32, 4i32), (-4, 6), (0, 10)] {
                     let (x, z) = (bx + px, bz + pz);
-                    let y = self.server.world.surface_height(x, z);
-                    self.server.world.set_block(x, y + 1, z, log);
-                    self.server.world.set_block(x, y + 2, z, log);
-                    self.server.world.set_block(x, y + 3, z, torch);
+                    let y = demo_height!(self.server.world, chart, x, z);
+                    demo_set!(self.server.world, chart, x, y + 1, z, log);
+                    demo_set!(self.server.world, chart, x, y + 2, z, log);
+                    demo_set!(self.server.world, chart, x, y + 3, z, torch);
                 }
             }
             for (name, px, pz) in [("base:chest", 2i32, 7i32), ("base:stone_anvil", -2, 4)] {
                 if let Some(blk) = b(name) {
                     let (x, z) = (bx + px, bz + pz);
-                    let y = self.server.world.surface_height(x, z);
-                    self.server.world.set_block(x, y + 1, z, blk);
+                    let y = demo_height!(self.server.world, chart, x, z);
+                    demo_set!(self.server.world, chart, x, y + 1, z, blk);
                 }
             }
             let reg = self.content.reg.clone();
@@ -1057,17 +1229,17 @@ impl Game {
                 for dz in [-8i32, 0, 8] {
                     self.server
                         .world
-                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
             let yf = (-7..=7)
                 .flat_map(|dx| (-7..=7).map(move |dz| (dx, dz)))
-                .map(|(dx, dz)| self.server.world.surface_height(bx + dx, bz + dz))
+                .map(|(dx, dz)| demo_height!(self.server.world, chart, bx + dx, bz + dz))
                 .max()
                 .unwrap_or(spawn.y as i32);
             for dx in -7..=7i32 {
                 for dz in -7..=7i32 {
-                    self.server.world.set_block(bx + dx, yf, bz + dz, stone);
+                    demo_set!(self.server.world, chart, bx + dx, yf, bz + dz, stone);
                     let wall = dx.abs() == 7 || dz.abs() == 7;
                     for h in 1..=8 {
                         let b = if (wall && h <= 3) || h == 4 {
@@ -1076,35 +1248,35 @@ impl Game {
                             AIR
                         };
                         let b = if h > 4 { AIR } else { b };
-                        self.server.world.set_block(bx + dx, yf + h, bz + dz, b);
+                        demo_set!(self.server.world, chart, bx + dx, yf + h, bz + dz, b);
                     }
                 }
             }
             for px in [-3i32, 3] {
                 for h in 1..=3 {
-                    self.server.world.set_block(bx + px, yf + h, bz + 3, stone);
+                    demo_set!(self.server.world, chart, bx + px, yf + h, bz + 3, stone);
                 }
             }
             for (tx, tz) in [(-6i32, -6i32), (6, -6), (0, 6)] {
-                self.server.world.set_block(bx + tx, yf + 1, bz + tz, torch);
+                demo_set!(self.server.world, chart, bx + tx, yf + 1, bz + tz, torch);
             }
             // A red-glazed alcove: torch sealed behind a stained pane —
             // its pool outside should come out the color of the glass.
             if let Some(rg) = self.content.reg.block_id("base:red_glass") {
                 let (ax, az) = (bx + 4, bz - 4);
-                self.server.world.set_block(ax, yf + 1, az, stone);
-                self.server.world.set_block(ax, yf + 2, az, torch);
-                self.server.world.set_block(ax, yf + 3, az, stone);
-                self.server.world.set_block(ax - 1, yf + 2, az, stone);
-                self.server.world.set_block(ax + 1, yf + 2, az, stone);
-                self.server.world.set_block(ax, yf + 2, az - 1, stone);
-                self.server.world.set_block(ax, yf + 2, az + 1, rg);
+                demo_set!(self.server.world, chart, ax, yf + 1, az, stone);
+                demo_set!(self.server.world, chart, ax, yf + 2, az, torch);
+                demo_set!(self.server.world, chart, ax, yf + 3, az, stone);
+                demo_set!(self.server.world, chart, ax - 1, yf + 2, az, stone);
+                demo_set!(self.server.world, chart, ax + 1, yf + 2, az, stone);
+                demo_set!(self.server.world, chart, ax, yf + 2, az - 1, stone);
+                demo_set!(self.server.world, chart, ax, yf + 2, az + 1, rg);
             }
             // Stand in the room, whatever the terrain wanted.
             let inside = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.2, bz as f32 + 0.5);
-            self.player.pos = inside;
-            self.survival.spawn_point = inside;
-            self.camera.pos = inside + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.player.pos = self.player.pos.relocated_local(inside).unwrap();
+            self.survival.spawn_point = self.player.pos;
+            self.camera.follow_planet(self.player.eye());
             // A torch in slot 0: WILDFORGE_SEL=0 holds it (held-light
             // shots), WILDFORGE_SEL=8 keeps the hand empty.
             let reg = self.content.reg.clone();
@@ -1123,29 +1295,29 @@ impl Game {
                 for dz in [-8i32, 0, 8] {
                     self.server
                         .world
-                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
             let yf = (-10..=10)
                 .flat_map(|dx| (-10..=10).map(move |dz| (dx, dz)))
-                .map(|(dx, dz)| self.server.world.surface_height(bx + dx, bz + dz))
+                .map(|(dx, dz)| demo_height!(self.server.world, chart, bx + dx, bz + dz))
                 .max()
                 .unwrap_or(spawn.y as i32);
             for dx in -10..=10i32 {
                 for dz in -10..=10i32 {
-                    self.server.world.set_block(bx + dx, yf, bz + dz, ice);
+                    demo_set!(self.server.world, chart, bx + dx, yf, bz + dz, ice);
                 }
-                self.server.world.set_block(bx + dx, yf + 1, bz + 10, ice);
-                self.server.world.set_block(bx + dx, yf + 2, bz + 10, ice);
+                demo_set!(self.server.world, chart, bx + dx, yf + 1, bz + 10, ice);
+                demo_set!(self.server.world, chart, bx + dx, yf + 2, bz + 10, ice);
             }
             let strafe: f32 = std::env::var("WILDFORGE_DEMO_STRAFE")
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(0.0);
             let stand = Vec3::new(bx as f32 + 0.5 + strafe, yf as f32 + 1.0, bz as f32 - 9.0);
-            self.player.pos = stand;
-            self.survival.spawn_point = stand;
-            self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.player.pos = self.player.pos.relocated_local(stand).unwrap();
+            self.survival.spawn_point = self.player.pos;
+            self.camera.follow_planet(self.player.eye());
             self.camera.yaw = std::f32::consts::FRAC_PI_2;
             self.camera.pitch = -0.35;
         }
@@ -1162,12 +1334,12 @@ impl Game {
                 for dz in [-8i32, 0, 8] {
                     self.server
                         .world
-                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
             let yf = (-5..=5)
                 .flat_map(|dx| (-4..=4).map(move |dz| (dx, dz)))
-                .map(|(dx, dz)| self.server.world.surface_height(bx + dx, bz + dz))
+                .map(|(dx, dz)| demo_height!(self.server.world, chart, bx + dx, bz + dz))
                 .max()
                 .unwrap_or(spawn.y as i32);
             for dx in -4..=4i32 {
@@ -1175,26 +1347,22 @@ impl Game {
                     for dy in 0..=4i32 {
                         let edge = dx.abs() == 4 || dz.abs() == 3 || dy == 0 || dy == 4;
                         let b = if edge { stone } else { AIR };
-                        self.server
-                            .world
-                            .set_block(bx + dx, yf + 1 + dy, bz + dz, b);
+                        demo_set!(self.server.world, chart, bx + dx, yf + 1 + dy, bz + dz, b);
                     }
                 }
             }
             // The window in the far wall, glowing green.
             for dx in -2..=2i32 {
                 for dy in 2..=3i32 {
-                    self.server
-                        .world
-                        .set_block(bx + dx, yf + 1 + dy, bz + 3, glow);
+                    demo_set!(self.server.world, chart, bx + dx, yf + 1 + dy, bz + 3, glow);
                 }
             }
             // A torch on the outside sill: its beam crosses the pane.
-            self.server.world.set_block(bx, yf + 2, bz + 5, torch);
+            demo_set!(self.server.world, chart, bx, yf + 2, bz + 5, torch);
             let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.2, bz as f32 - 1.5);
-            self.player.pos = stand;
-            self.survival.spawn_point = stand;
-            self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.player.pos = self.player.pos.relocated_local(stand).unwrap();
+            self.survival.spawn_point = self.player.pos;
+            self.camera.follow_planet(self.player.eye());
             self.camera.yaw = std::f32::consts::FRAC_PI_2;
             self.camera.pitch = 0.05;
         }
@@ -1209,33 +1377,33 @@ impl Game {
                 for dz in [-8i32, 0, 8] {
                     self.server
                         .world
-                        .ensure_chunk(ChunkPos::of_world(bx + dx, bz + dz));
+                        .ensure_chunk(chart.chunk(bx + dx, bz + dz));
                 }
             }
             let yf = (-10..=10)
                 .flat_map(|dx| (-10..=10).map(move |dz| (dx, dz)))
-                .map(|(dx, dz)| self.server.world.surface_height(bx + dx, bz + dz))
+                .map(|(dx, dz)| demo_height!(self.server.world, chart, bx + dx, bz + dz))
                 .max()
                 .unwrap_or(spawn.y as i32);
             for dx in -10..=10i32 {
                 for dz in -10..=10i32 {
-                    self.server.world.set_block(bx + dx, yf, bz + dz, stone);
+                    demo_set!(self.server.world, chart, bx + dx, yf, bz + dz, stone);
                 }
                 for dy in 1..=6i32 {
-                    self.server.world.set_block(bx + dx, yf + dy, bz - 8, stone);
+                    demo_set!(self.server.world, chart, bx + dx, yf + dy, bz - 8, stone);
                 }
             }
             for dy in 1..=3i32 {
-                self.server.world.set_block(bx + 3, yf + dy, bz - 4, stone);
+                demo_set!(self.server.world, chart, bx + 3, yf + dy, bz - 4, stone);
             }
             let dist: f32 = std::env::var("WILDFORGE_DEMO_DIST")
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(12.0);
             let stand = Vec3::new(bx as f32 + 0.5, yf as f32 + 1.0, bz as f32 - 7.0 + dist);
-            self.player.pos = stand;
-            self.survival.spawn_point = stand;
-            self.camera.pos = stand + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.player.pos = self.player.pos.relocated_local(stand).unwrap();
+            self.survival.spawn_point = self.player.pos;
+            self.camera.follow_planet(self.player.eye());
             self.camera.yaw = -std::f32::consts::FRAC_PI_2;
             self.camera.pitch = -0.10;
         }
@@ -1246,14 +1414,14 @@ impl Game {
         {
             let bx = spawn.x as i32;
             let bz = spawn.z as i32 + 6;
-            let y = self.server.world.surface_height(bx, bz);
+            let y = demo_height!(self.server.world, chart, bx, bz);
             // Carve a clean flat arena: cobblestone floor, air above, so
             // grass and trees don't intrude on the shadow.
             for dx in -11..=11 {
                 for dz in -9..=15 {
-                    self.server.world.set_block(bx + dx, y, bz + dz, stone);
+                    demo_set!(self.server.world, chart, bx + dx, y, bz + dz, stone);
                     for h in 1..=9 {
-                        self.server.world.set_block(bx + dx, y + h, bz + dz, AIR);
+                        demo_set!(self.server.world, chart, bx + dx, y + h, bz + dz, AIR);
                     }
                 }
             }
@@ -1263,14 +1431,20 @@ impl Game {
                     continue;
                 }
                 for h in 1..=5 {
-                    self.server.world.set_block(bx + dx, y + h, bz, stone);
+                    demo_set!(self.server.world, chart, bx + dx, y + h, bz, stone);
                 }
             }
             // Warm light on the far side of the wall — it blares through the
             // doorway and lights the far room, leaving the near side dark.
             self.presentation.demo_lights = vec![lights::DynLight {
                 key: lights::Key::Demo(0),
-                pos: Vec3::new(bx as f32 + 0.5, (y + 2) as f32 + 0.5, bz as f32 + 5.5),
+                pos: chart
+                    .entity(Vec3::new(
+                        bx as f32 + 0.5,
+                        (y + 2) as f32 + 0.5,
+                        bz as f32 + 5.5,
+                    ))
+                    .render_pos(),
                 range: 24.0,
                 color: Vec3::new(2.4, 1.7, 0.8),
             }];
@@ -1281,10 +1455,10 @@ impl Game {
         {
             let cx = spawn.x as i32;
             let cz = spawn.z as i32 + 10;
-            let y = self.server.world.surface_height(cx, cz);
+            let y = demo_height!(self.server.world, chart, cx, cz);
             for dx in -8..=8 {
                 for dz in -8..=8 {
-                    self.server.world.set_block(cx + dx, y, cz + dz, water);
+                    demo_set!(self.server.world, chart, cx + dx, y, cz + dz, water);
                 }
             }
         }
@@ -1294,8 +1468,8 @@ impl Game {
             let place = |w: &mut World, name: &str, dx: i32, dz: i32| {
                 if let Some(b) = w.reg.block_id(name) {
                     let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
-                    let y = w.surface_height(x, z);
-                    w.set_block(x, y + 1, z, b);
+                    let y = demo_height!(w, chart, x, z);
+                    demo_set!(w, chart, x, y + 1, z, b);
                 }
             };
             place(&mut self.server.world, "base:torch", -2, 5);
@@ -1307,9 +1481,9 @@ impl Game {
         {
             for (dx, dz, h) in [(4, 2, 6), (7, -3, 8), (-2, 6, 5), (10, 4, 7)] {
                 let (x, z) = (spawn.x as i32 + dx, spawn.z as i32 + dz);
-                let base = self.server.world.surface_height(x, z);
+                let base = demo_height!(self.server.world, chart, x, z);
                 for i in 1..=h {
-                    self.server.world.set_block(x, base + i, z, stone);
+                    demo_set!(self.server.world, chart, x, base + i, z, stone);
                 }
             }
         }
@@ -1323,7 +1497,7 @@ impl Game {
                 b("base:stone_anvil"),
             ) {
                 let (sx, sz) = (spawn.x as i32 + 6, spawn.z as i32 + 4);
-                let sy = self.server.world.surface_height(sx, sz) + 1;
+                let sy = demo_height!(self.server.world, chart, sx, sz) + 1;
                 // Core at (sx, sy, sz); mouth on its -X side.
                 for ly in 0..3 {
                     for rx in -1..=1i32 {
@@ -1331,32 +1505,42 @@ impl Game {
                             if rx == 0 && rz == 0 {
                                 continue;
                             }
-                            self.server.world.set_block(sx + rx, sy + ly, sz + rz, fb);
+                            demo_set!(self.server.world, chart, sx + rx, sy + ly, sz + rz, fb);
                         }
                     }
-                    self.server
-                        .world
-                        .set_block(sx, sy + ly, sz, crate::registry::AIR);
+                    demo_set!(
+                        self.server.world,
+                        chart,
+                        sx,
+                        sy + ly,
+                        sz,
+                        crate::registry::AIR
+                    );
                 }
-                self.server.world.set_block(sx - 1, sy, sz, mouth);
-                self.server.world.set_block(sx - 3, sy, sz + 2, anvil);
+                demo_set!(self.server.world, chart, sx - 1, sy, sz, mouth);
+                demo_set!(self.server.world, chart, sx - 3, sy, sz + 2, anvil);
                 // A second stack, already charged and burning.
                 let (lx, lz) = (sx, sz + 8);
-                let ly = self.server.world.surface_height(lx, lz) + 1;
+                let ly = demo_height!(self.server.world, chart, lx, lz) + 1;
                 for dy in 0..3 {
                     for rx in -1..=1i32 {
                         for rz in -1..=1i32 {
                             if rx == 0 && rz == 0 {
                                 continue;
                             }
-                            self.server.world.set_block(lx + rx, ly + dy, lz + rz, fb);
+                            demo_set!(self.server.world, chart, lx + rx, ly + dy, lz + rz, fb);
                         }
                     }
-                    self.server
-                        .world
-                        .set_block(lx, ly + dy, lz, crate::registry::AIR);
+                    demo_set!(
+                        self.server.world,
+                        chart,
+                        lx,
+                        ly + dy,
+                        lz,
+                        crate::registry::AIR
+                    );
                 }
-                self.server.world.set_block(lx - 1, ly, lz, mouth);
+                demo_set!(self.server.world, chart, lx - 1, ly, lz, mouth);
                 let reg2 = self.content.reg.clone();
                 if let (Some(iron), Some(coal)) = (
                     reg2.item_id("base:iron_ingot"),
@@ -1367,16 +1551,23 @@ impl Game {
                         st.charge[i] = Some(ItemStack::new(&reg2, iron, 2));
                         st.fuel[i] = Some(ItemStack::new(&reg2, coal, 2));
                     }
-                    self.server
+                    demo_insert!(
+                        self.server.world,
+                        chart,
+                        (lx - 1, ly, lz),
+                        world::BlockEntity::Bloomery(st)
+                    );
+                    let _ = self
+                        .server
                         .world
-                        .insert_block_entity((lx - 1, ly, lz), world::BlockEntity::Bloomery(st));
-                    let _ = self.server.world.light_bloomery(lx - 1, ly, lz);
+                        .light_bloomery_at(chart.block(lx - 1, ly, lz));
                 }
                 // A bloom resting on the anvil, ready for the hammer.
                 if let Some(bl) = reg2.item_id("base:steel_bloom") {
-                    self.server
-                        .world
-                        .anvil_put((sx - 3, sy, sz + 2), ItemStack::new(&reg2, bl, 1));
+                    self.server.world.anvil_put_at(
+                        chart.block(sx - 3, sy, sz + 2),
+                        ItemStack::new(&reg2, bl, 1),
+                    );
                 }
                 let reg = self.content.reg.clone();
                 for (name, n) in [
@@ -1402,20 +1593,24 @@ impl Game {
             let b = |n: &str| self.content.reg.block_id(n);
             if let (Some(layer), Some(dirt)) = (b("base:snow_layer"), b("base:dirt")) {
                 let (sx, sz) = (spawn.x as i32 + 4, spawn.z as i32 - 2);
-                let sy = self.server.world.surface_height(sx, sz);
+                let sy = demo_height!(self.server.world, chart, sx, sz);
                 for rx in 0..6i32 {
                     for rz in -2..=2i32 {
-                        self.server.world.set_block(sx + rx, sy, sz + rz, dirt);
-                        self.server.world.set_block(sx + rx, sy + 1, sz + rz, layer);
+                        demo_set!(self.server.world, chart, sx + rx, sy, sz + rz, dirt);
+                        demo_set!(self.server.world, chart, sx + rx, sy + 1, sz + rz, layer);
                     }
                 }
                 // A walker crossed the field on the diagonal.
                 for i in 0..5i32 {
-                    self.server.world.tread(sx + i, sy + 1, sz - 2 + i);
+                    self.server
+                        .world
+                        .tread_at(chart.block(sx + i, sy + 1, sz - 2 + i));
                 }
                 // A break mid-burst, sparks and all; the tick re-stamps
                 // the moment so any capture frame lands mid-effect.
-                let center = Vec3::new(sx as f32 + 2.5, sy as f32 + 2.5, sz as f32 + 0.5);
+                let center = chart
+                    .entity(Vec3::new(sx as f32 + 2.5, sy as f32 + 2.5, sz as f32 + 0.5))
+                    .render_pos();
                 self.presentation.demo_burst =
                     Some((center, self.content.reg.block(dirt).tiles[0]));
                 self.juice_burst(center, self.content.reg.block(dirt).tiles[0], 10, 2.2);
@@ -1430,22 +1625,27 @@ impl Game {
                 (b("base:firebrick"), b("base:kiln"), b("base:quern"))
             {
                 let (sx, sz) = (spawn.x as i32 + 6, spawn.z as i32 - 6);
-                let sy = self.server.world.surface_height(sx, sz) + 1;
+                let sy = demo_height!(self.server.world, chart, sx, sz) + 1;
                 for ly in 0..3 {
                     for rx in -1..=1i32 {
                         for rz in -1..=1i32 {
                             if rx == 0 && rz == 0 {
                                 continue;
                             }
-                            self.server.world.set_block(sx + rx, sy + ly, sz + rz, fb);
+                            demo_set!(self.server.world, chart, sx + rx, sy + ly, sz + rz, fb);
                         }
                     }
-                    self.server
-                        .world
-                        .set_block(sx, sy + ly, sz, crate::registry::AIR);
+                    demo_set!(
+                        self.server.world,
+                        chart,
+                        sx,
+                        sy + ly,
+                        sz,
+                        crate::registry::AIR
+                    );
                 }
-                self.server.world.set_block(sx - 1, sy, sz, kiln);
-                self.server.world.set_block(sx - 3, sy, sz + 2, quern);
+                demo_set!(self.server.world, chart, sx - 1, sy, sz, kiln);
+                demo_set!(self.server.world, chart, sx - 3, sy, sz + 2, quern);
                 let reg = self.content.reg.clone();
                 if let (Some(sand), Some(coal), Some(pow)) = (
                     reg.item_id("base:sand"),
@@ -1458,10 +1658,13 @@ impl Game {
                         st.fuel[i] = Some(ItemStack::new(&reg, coal, 2));
                     }
                     st.powder = Some(ItemStack::new(&reg, pow, 1));
-                    self.server
-                        .world
-                        .insert_block_entity((sx - 1, sy, sz), world::BlockEntity::Kiln(st));
-                    let _ = self.server.world.light_kiln(sx - 1, sy, sz);
+                    demo_insert!(
+                        self.server.world,
+                        chart,
+                        (sx - 1, sy, sz),
+                        world::BlockEntity::Kiln(st)
+                    );
+                    let _ = self.server.world.light_kiln_at(chart.block(sx - 1, sy, sz));
                 }
                 for (name, n) in [
                     ("base:sand", 16),
@@ -1479,7 +1682,7 @@ impl Game {
                 // Torches behind stained panes: the light comes out
                 // the color of the glass (stage 5's proof).
                 let (tx2, tz2) = (spawn.x as i32 - 8, spawn.z as i32 + 2);
-                let ty2 = self.server.world.surface_height(tx2, tz2) + 1;
+                let ty2 = demo_height!(self.server.world, chart, tx2, tz2) + 1;
                 if let (Some(stone), Some(torch), Some(rg), Some(bg)) = (
                     b("base:stone"),
                     b("base:torch"),
@@ -1491,21 +1694,33 @@ impl Game {
                         // A stone alcove holding a torch, glazed shut.
                         for dy in -1..=1i32 {
                             for dz in -1..=1i32 {
-                                self.server
-                                    .world
-                                    .set_block(tx2 - 1, ty2 + dy, z + dz, stone);
+                                demo_set!(
+                                    self.server.world,
+                                    chart,
+                                    tx2 - 1,
+                                    ty2 + dy,
+                                    z + dz,
+                                    stone
+                                );
                                 if dy != 0 || dz != 0 {
-                                    self.server.world.set_block(tx2, ty2 + dy, z + dz, stone);
+                                    demo_set!(
+                                        self.server.world,
+                                        chart,
+                                        tx2,
+                                        ty2 + dy,
+                                        z + dz,
+                                        stone
+                                    );
                                 }
                             }
                         }
-                        self.server.world.set_block(tx2, ty2, z, torch);
-                        self.server.world.set_block(tx2 + 1, ty2, z, *pane);
+                        demo_set!(self.server.world, chart, tx2, ty2, z, torch);
+                        demo_set!(self.server.world, chart, tx2 + 1, ty2, z, *pane);
                     }
                 }
                 // A stained window row so the tint shows in shots.
                 let (wx, wz) = (spawn.x as i32 - 5, spawn.z as i32);
-                let wy = self.server.world.surface_height(wx, wz) + 1;
+                let wy = demo_height!(self.server.world, chart, wx, wz) + 1;
                 for (i, g) in [
                     "base:glass",
                     "base:teal_glass",
@@ -1518,8 +1733,8 @@ impl Game {
                 .enumerate()
                 {
                     if let Some(gb) = b(g) {
-                        self.server.world.set_block(wx, wy, wz + i as i32, gb);
-                        self.server.world.set_block(wx, wy + 1, wz + i as i32, gb);
+                        demo_set!(self.server.world, chart, wx, wy, wz + i as i32, gb);
+                        demo_set!(self.server.world, chart, wx, wy + 1, wz + i as i32, gb);
                     }
                 }
             }
@@ -1567,8 +1782,9 @@ impl Game {
                 if let Some(si) = self.content.reg.animal_id(name) {
                     let x = spawn.x as i32 - 4 + i as i32 * 3;
                     let z = spawn.z as i32 - 7;
-                    let y = self.server.world.surface_height(x, z) + 1;
-                    let mut m = mobs::Mob::new(
+                    let y = demo_height!(self.server.world, chart, x, z) + 1;
+                    let mut m = demo_mob!(
+                        chart,
                         si,
                         Vec3::new(x as f32 + 0.5, y as f32 + 0.05, z as f32 + 0.5),
                         0.0,
@@ -1584,22 +1800,27 @@ impl Game {
             let reg = self.content.reg.clone();
             let (sx, sz) = (spawn.x as i32, spawn.z as i32);
             if let Some(os) = reg.block_id("base:offering_stone") {
-                let y = self.server.world.surface_height(sx - 3, sz - 5) + 1;
-                self.server.world.set_block(sx - 3, y, sz - 5, os);
+                let y = demo_height!(self.server.world, chart, sx - 3, sz - 5) + 1;
+                demo_set!(self.server.world, chart, sx - 3, y, sz - 5, os);
                 let mut st = world::OfferingState::default();
                 if let Some(hw) = reg.item_id("base:heartwood") {
                     st.slots[0] = Some(ItemStack::new(&reg, hw, 2));
                 }
-                self.server
-                    .world
-                    .insert_block_entity((sx - 3, y, sz - 5), world::BlockEntity::Offering(st));
+                demo_insert!(
+                    self.server.world,
+                    chart,
+                    (sx - 3, y, sz - 5),
+                    world::BlockEntity::Offering(st)
+                );
             }
             if let Some(sap) = reg.block_id("base:oak_sapling") {
-                let y = self.server.world.surface_height(sx + 2, sz - 6) + 1;
-                self.server.world.set_block(sx + 2, y, sz - 6, sap);
+                let y = demo_height!(self.server.world, chart, sx + 2, sz - 6) + 1;
+                demo_set!(self.server.world, chart, sx + 2, y, sz - 6, sap);
             }
-            let ty = self.server.world.surface_height(sx + 6, sz - 8) + 1;
-            self.server.world.grow_tree(sx + 6, ty, sz - 8, "oak", 3);
+            let ty = demo_height!(self.server.world, chart, sx + 6, sz - 8) + 1;
+            self.server
+                .world
+                .grow_tree_at(chart.block(sx + 6, ty, sz - 8), "oak", 3);
             for name in ["base:bedroll", "base:oak_sapling"] {
                 if let Some(item) = reg.item_id(name) {
                     self.inventory.add(&reg, item, 1);
@@ -1611,7 +1832,7 @@ impl Game {
             let p = (spawn.x as i32 - 2, spawn.y as i32, spawn.z as i32);
             let reg = self.content.reg.clone();
             if let Some(cb) = reg.block_id("base:chest") {
-                self.server.world.set_block(p.0, p.1, p.2, cb);
+                demo_set!(self.server.world, chart, p.0, p.1, p.2, cb);
                 let mut st = world::ChestState::default();
                 for (i, (name, n)) in [
                     ("base:bread", 5),
@@ -1625,10 +1846,8 @@ impl Game {
                         st.slots[i * 4] = Some(ItemStack::new(&reg, item, *n));
                     }
                 }
-                self.server
-                    .world
-                    .insert_block_entity(p, world::BlockEntity::Chest(st));
-                self.set_screen(Screen::Chest(p));
+                demo_insert!(self.server.world, chart, p, world::BlockEntity::Chest(st));
+                self.set_screen(Screen::Chest(chart.block_tuple(p)));
             }
         }
         // Dev/headless: open the inventory for UI verification.
@@ -1651,8 +1870,9 @@ impl Game {
                 if let Some(si) = self.content.reg.animal_id(name) {
                     let x = spawn.x as i32 - 3 + i as i32 * 2;
                     let z = spawn.z as i32 - 6;
-                    let y = self.server.world.surface_height(x, z) + 1;
-                    let mut m = mobs::Mob::new(
+                    let y = demo_height!(self.server.world, chart, x, z) + 1;
+                    let mut m = demo_mob!(
+                        chart,
                         si,
                         Vec3::new(x as f32 + 0.5, y as f32 + 0.05, z as f32 + 0.5),
                         i as f32 * 1.3,
@@ -1673,8 +1893,9 @@ impl Game {
                 if let Some(si) = self.content.reg.animal_id(name) {
                     let x = spawn.x as i32 - 4 + i as i32 * 3;
                     let z = spawn.z as i32 - 9;
-                    let y = self.server.world.surface_height(x, z) + 4;
-                    let mut m = mobs::Mob::new(
+                    let y = demo_height!(self.server.world, chart, x, z) + 4;
+                    let mut m = demo_mob!(
+                        chart,
                         si,
                         Vec3::new(x as f32 + 0.5, y as f32, z as f32 + 0.5),
                         std::f32::consts::FRAC_PI_2,
@@ -1692,14 +1913,15 @@ impl Game {
         if let Ok(which) = std::env::var("WILDFORGE_DEMO_EDIFICE") {
             let skip: usize = which.parse().unwrap_or(0);
             let g = &self.server.world.generator;
-            let sites: Vec<(i32, i32)> = (0..6)
+            let home = g.province_at(spawn.surface()).key;
+            let sites: Vec<SurfacePos> = (0..6)
                 .flat_map(|r: i32| {
                     (-r..=r)
                         .flat_map(move |i| [(i, -r), (i, r), (-r, i), (r, i)])
                         .collect::<Vec<_>>()
                 })
-                .map(|(kx, kz)| g.province_center(kx, kz))
-                .filter(|&(x, z)| g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 4)
+                .map(|(du, dv)| g.province_center_at(g.province_offset(home, du, dv)))
+                .filter(|&site| g.surface_estimate_at(site) > crate::chunk::SEA_LEVEL + 4)
                 .fold(Vec::new(), |mut acc, s| {
                     // The ring walk visits (0,0) four times over.
                     if !acc.contains(&s) {
@@ -1707,37 +1929,41 @@ impl Game {
                     }
                     acc
                 });
-            if let Some(&(sx, sz)) = sites.get(skip) {
-                let ed = crate::edifice::edifice_of(self.server.world.generator.biome(sx, sz));
+            if let Some(&site) = sites.get(skip) {
+                let ed = crate::edifice::edifice_of(self.server.world.generator.biome_at(site));
+                let center = ChunkPos::from_surface(site);
                 for cx in -3..=3 {
                     for cz in -3..=3 {
-                        self.server
-                            .world
-                            .ensure_chunk(crate::chunk::ChunkPos::of_world(
-                                sx + cx * 16,
-                                sz + cz * 16,
-                            ));
+                        self.server.world.ensure_chunk(center.offset(cx, cz));
                     }
                 }
-                let base = self.server.world.surface_height(sx, sz);
+                let base = self.server.world.surface_height_at(site);
                 // Stand well back and a little above the crest.
                 let back = std::env::var("WILDFORGE_DEMO_BACK")
                     .ok()
                     .and_then(|v| v.parse::<f32>().ok())
                     .unwrap_or((ed.reach * 4).max(40) as f32);
-                self.player.pos = Vec3::new(
-                    sx as f32,
+                self.player.pos = EntityPos::new(
+                    site.face(),
+                    f32::from(site.u()) + 0.5,
                     base as f32 + ed.rise as f32 * 0.7,
-                    sz as f32 + back,
-                );
+                    f32::from(site.v()) + 0.5,
+                )
+                .unwrap()
+                .translated(Vec3::new(0.0, 0.0, back))
+                .unwrap()
+                .pos;
                 self.player.vel = Vec3::ZERO;
                 self.camera.yaw = -std::f32::consts::FRAC_PI_2;
                 self.camera.pitch = -0.22;
                 self.flying = true;
                 eprintln!(
-                    "edifice demo: {:?} {:?} at ({sx},{base},{sz})",
-                    self.server.world.generator.biome(sx, sz),
-                    ed.family
+                    "edifice demo: {:?} {:?} at {:?} {},{base},{}",
+                    self.server.world.generator.biome_at(site),
+                    ed.family,
+                    site.face(),
+                    site.u(),
+                    site.v()
                 );
             }
         }
@@ -1748,7 +1974,7 @@ impl Game {
         if let Ok(who) = std::env::var("WILDFORGE_DEMO_FIRE") {
             let b = |n: &str| self.content.reg.block_id(n);
             let (bx, bz) = (spawn.x as i32 + 10, spawn.z as i32);
-            let g = self.server.world.surface_height(bx, bz);
+            let g = demo_height!(self.server.world, chart, bx, bz);
             if let (Some(grass), Some(log), Some(leaves)) =
                 (b("base:grass"), b("base:log"), b("base:leaves"))
             {
@@ -1758,35 +1984,32 @@ impl Game {
                 // whatever we build here.
                 for cx in -1..=1 {
                     for cz in -1..=1 {
-                        w.ensure_chunk(crate::chunk::ChunkPos::of_world(
-                            bx + cx * 16,
-                            bz + cz * 16,
-                        ));
+                        w.ensure_chunk(chart.chunk(bx + cx * 16, bz + cz * 16));
                     }
                 }
                 for x in -8..=8 {
                     for z in -8..=8 {
                         for y in (g - 2)..g {
-                            w.set_block(bx + x, y, bz + z, grass);
+                            demo_set!(w, chart, bx + x, y, bz + z, grass);
                         }
                         for y in (g + 1)..(g + 9) {
-                            w.set_block(bx + x, y, bz + z, AIR);
+                            demo_set!(w, chart, bx + x, y, bz + z, AIR);
                         }
-                        w.set_block(bx + x, g, bz + z, grass);
+                        demo_set!(w, chart, bx + x, g, bz + z, grass);
                     }
                 }
                 // A copse: trunks on a lattice under one canopy.
                 for x in (-6..=6).step_by(3) {
                     for z in (-6..=6).step_by(3) {
                         for y in 1..=4 {
-                            w.set_block(bx + x, g + y, bz + z, log);
+                            demo_set!(w, chart, bx + x, g + y, bz + z, log);
                         }
                     }
                 }
                 for x in -7..=7 {
                     for z in -7..=7 {
                         for y in 4..=6 {
-                            w.set_block(bx + x, g + y, bz + z, leaves);
+                            demo_set!(w, chart, bx + x, g + y, bz + z, leaves);
                         }
                     }
                 }
@@ -1794,10 +2017,18 @@ impl Game {
                 // own fire is willing to touch it.
                 w.player_touched.clear();
                 let mine = who == "mine";
-                w.light_fire(bx - 7, g + 1, bz - 7, mine);
+                demo_fire!(w, chart, bx - 7, g + 1, bz - 7, mine);
                 eprintln!("fire demo at ({bx},{g},{bz}), mine={mine}");
             }
-            self.player.pos = Vec3::new(bx as f32 - 2.0, g as f32 + 14.0, bz as f32 + 26.0);
+            self.player.pos = self
+                .player
+                .pos
+                .relocated_local(Vec3::new(
+                    bx as f32 - 2.0,
+                    g as f32 + 14.0,
+                    bz as f32 + 26.0,
+                ))
+                .unwrap();
             self.player.vel = Vec3::ZERO;
             self.camera.yaw = -std::f32::consts::FRAC_PI_2;
             self.camera.pitch = -0.42;
@@ -1808,7 +2039,7 @@ impl Game {
         if std::env::var("WILDFORGE_DEMO_LAVA").is_ok() {
             let bx = spawn.x as i32 + 6;
             let bz = spawn.z as i32;
-            let y0 = self.server.world.surface_height(bx, bz) + 14;
+            let y0 = demo_height!(self.server.world, chart, bx, bz) + 14;
             let b = |n: &str| self.content.reg.block_id(n);
             let Some(stone) = b("base:basalt").or_else(|| b("base:stone")) else {
                 return;
@@ -1819,7 +2050,7 @@ impl Game {
                 for x in (step * 2)..(step * 2 + 2) {
                     for z in -4..=4 {
                         for fill in 0..6 {
-                            w.set_block(bx + x, top - fill, bz + z, stone);
+                            demo_set!(w, chart, bx + x, top - fill, bz + z, stone);
                         }
                     }
                 }
@@ -1827,12 +2058,20 @@ impl Game {
             let lava = self.content.reg.lava_for_volume(8);
             for z in -2..=2 {
                 for x in 0..2 {
-                    w.set_block(bx + x, y0 + 1, bz + z, lava);
+                    demo_set!(w, chart, bx + x, y0 + 1, bz + z, lava);
                 }
             }
             // Stand the viewer off the flank looking along it, so the
             // shot frames the flow rather than the inside of the hill.
-            self.player.pos = Vec3::new(bx as f32 + 13.0, y0 as f32 + 3.0, bz as f32 + 22.0);
+            self.player.pos = self
+                .player
+                .pos
+                .relocated_local(Vec3::new(
+                    bx as f32 + 13.0,
+                    y0 as f32 + 3.0,
+                    bz as f32 + 22.0,
+                ))
+                .unwrap();
             self.player.vel = Vec3::ZERO;
             self.camera.yaw = -std::f32::consts::FRAC_PI_2;
             self.camera.pitch = -0.42;
@@ -1848,8 +2087,10 @@ impl Game {
                 reg.item_id("base:raw_copper"),
                 reg.item_id("base:log"),
             ) {
-                self.server.world.set_block(p.0, p.1, p.2, fb);
-                self.server.world.insert_block_entity(
+                demo_set!(self.server.world, chart, p.0, p.1, p.2, fb);
+                demo_insert!(
+                    self.server.world,
+                    chart,
                     p,
                     world::BlockEntity::Furnace(world::FurnaceState {
                         input: Some(ItemStack::new(&reg, raw, 5)),
@@ -1859,8 +2100,205 @@ impl Game {
                 );
                 self.inventory
                     .add(&reg, reg.item_id("base:copper_ingot").unwrap(), 7);
-                self.set_screen(Screen::Furnace(p));
+                self.set_screen(Screen::Furnace(chart.block_tuple(p)));
             }
         }
+        if let Ok(scene) = std::env::var("WILDFORGE_PLANET_SHOT") {
+            self.stage_planet_qualification(&scene);
+        }
+    }
+
+    /// Deterministic scenes used by the finite-planet visual gate.
+    fn stage_planet_qualification(&mut self, scene: &str) {
+        if matches!(scene, "sea" | "mountain") {
+            let anchor = self.qualification_ocean();
+            self.config.view_dist = 14;
+            let y = if scene == "sea" {
+                (SEA_LEVEL + 1) as f32
+            } else {
+                (SEA_LEVEL + 42) as f32
+            };
+            self.player.pos = EntityPos::new(
+                anchor.face(),
+                f32::from(anchor.u()) + 0.5,
+                y,
+                f32::from(anchor.v()) + 0.5,
+            )
+            .expect("qualification altitude is inside the voxel shell");
+            self.player.vel = Vec3::ZERO;
+            self.survival.spawn_point = self.player.pos;
+            self.flying = true;
+            self.camera.yaw = 0.18;
+            self.camera.pitch = -0.035;
+            self.camera.follow_planet(self.player.eye());
+            eprintln!(
+                "planet qualification {scene}: {:?} {},{} y={y}",
+                anchor.face(),
+                anchor.u(),
+                anchor.v()
+            );
+            return;
+        }
+
+        let chart = DemoChart::new(Face::PosZ);
+        let (center_x, center_z, radius) = if scene == "corner" {
+            (4095, 4095, 3)
+        } else {
+            (4095, 0, 3)
+        };
+        let center = chart.chunk(center_x, center_z);
+        for du in -radius..=radius {
+            for dv in -radius..=radius {
+                self.server.world.ensure_chunk(center.offset(du, dv));
+            }
+        }
+        self.config.view_dist = 7;
+
+        let stone = self.content.reg.block_id("base:cobblestone").unwrap_or(AIR);
+        let planks = self.content.reg.block_id("base:planks").unwrap_or(stone);
+        let red = self
+            .content
+            .reg
+            .block_id("base:red_glass")
+            .unwrap_or(planks);
+        let blue = self
+            .content
+            .reg
+            .block_id("base:blue_glass")
+            .unwrap_or(planks);
+        let amber = self
+            .content
+            .reg
+            .block_id("base:amber_glass")
+            .unwrap_or(planks);
+        let water = self.content.reg.water_for_volume(8);
+        let mut edits = Vec::new();
+
+        if scene == "corner" {
+            for x in 4088..=4103 {
+                for z in 4088..=4103 {
+                    let surface = chart.surface(x, z);
+                    let floor = match surface.face() {
+                        Face::PosZ => stone,
+                        Face::PosX => red,
+                        Face::PosY => blue,
+                        _ => amber,
+                    };
+                    edits.push((chart.block(x, 108, z), floor));
+                    for y in 109..=124 {
+                        edits.push((chart.block(x, y, z), AIR));
+                    }
+                }
+            }
+            for (x, z, block) in [
+                (4093, 4093, stone),
+                (4098, 4093, red),
+                (4093, 4098, blue),
+                (4098, 4098, amber),
+            ] {
+                for y in 109..=115 {
+                    edits.push((chart.block(x, y, z), block));
+                }
+            }
+            self.player.pos = chart.entity(Vec3::new(4088.5, 109.0, 4088.5));
+            self.camera.yaw = std::f32::consts::FRAC_PI_4;
+            self.camera.pitch = -0.14;
+        } else {
+            for x in 4083..=4107 {
+                for z in -13..=13 {
+                    edits.push((chart.block(x, 108, z), stone));
+                    for y in 109..=122 {
+                        edits.push((chart.block(x, y, z), AIR));
+                    }
+                }
+            }
+            match scene {
+                "building" => {
+                    for x in 4091..=4100 {
+                        for z in -6..=6 {
+                            edits.push((chart.block(x, 109, z), planks));
+                            for y in 110..=115 {
+                                let wall = x == 4091 || x == 4100 || z == -6 || z == 6;
+                                let doorway = x == 4091 && (-1..=1).contains(&z) && y <= 112;
+                                if wall && !doorway {
+                                    let block = if y == 112 && (z == -6 || z == 6) {
+                                        if x < 4096 { blue } else { amber }
+                                    } else {
+                                        planks
+                                    };
+                                    edits.push((chart.block(x, y, z), block));
+                                }
+                            }
+                            edits.push((chart.block(x, 116, z), planks));
+                        }
+                    }
+                    self.player.pos = chart.entity(Vec3::new(4084.5, 110.0, 0.5));
+                    self.camera.yaw = 0.0;
+                    self.camera.pitch = -0.08;
+                }
+                "water" => {
+                    for x in 4087..=4104i32 {
+                        for z in -4..=4i32 {
+                            if z.abs() == 4 || x == 4087 || x == 4104 {
+                                edits.push((chart.block(x, 109, z), stone));
+                            } else {
+                                edits.push((chart.block(x, 109, z), water));
+                            }
+                        }
+                    }
+                    self.player.pos = chart.entity(Vec3::new(4084.5, 111.0, 0.5));
+                    self.camera.yaw = 0.0;
+                    self.camera.pitch = -0.28;
+                }
+                "players" => {
+                    self.player.pos = chart.entity(Vec3::new(4095.5, 109.0, -5.0));
+                    self.camera.yaw = std::f32::consts::FRAC_PI_2;
+                    self.camera.pitch = -0.08;
+                }
+                other => {
+                    eprintln!("unknown WILDFORGE_PLANET_SHOT={other:?}");
+                    return;
+                }
+            }
+        }
+
+        self.server.world.edit_batch(|world| {
+            for (pos, block) in edits {
+                world.set_block_at(pos, block);
+            }
+        });
+        self.player.vel = Vec3::ZERO;
+        self.survival.spawn_point = self.player.pos;
+        self.flying = true;
+        self.camera.follow_planet(self.player.eye());
+        eprintln!("planet qualification {scene}: staged at the PosZ east seam");
+    }
+
+    fn qualification_ocean(&self) -> SurfacePos {
+        for face in Face::ALL {
+            for u in (128..crate::planet::FACE_BLOCKS).step_by(256) {
+                for v in (128..crate::planet::FACE_BLOCKS).step_by(256) {
+                    let center = SurfacePos::new(face, u, v).unwrap();
+                    let deep = [(0, 0), (-160, 0), (160, 0), (0, -160), (0, 160)]
+                        .into_iter()
+                        .all(|(du, dv)| {
+                            let sample = SurfacePos::canonicalized(
+                                face,
+                                i32::from(u) + du,
+                                i32::from(v) + dv,
+                            )
+                            .unwrap();
+                            self.server.world.generator.biome_at(sample)
+                                == crate::worldgen::Biome::Ocean
+                                && self.server.world.generator.surface_estimate_at(sample)
+                                    < SEA_LEVEL - 4
+                        });
+                    if deep {
+                        return center;
+                    }
+                }
+            }
+        }
+        SurfacePos::new(Face::PosZ, 4096, 4096).unwrap()
     }
 }

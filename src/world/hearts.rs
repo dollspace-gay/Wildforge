@@ -7,13 +7,12 @@
 //! its death is the quietest catastrophe in the game.
 
 use super::*;
+use crate::planet::{BlockPos, EntityPos, SurfacePos, geodesic_distance, great_circle_bearing};
+use crate::worldgen::ProvinceKey;
 
-/// Compass octant of an offset ("north" is -z).
-fn octant_of(dx: i32, dz: i32) -> &'static str {
-    if dx == 0 && dz == 0 {
-        return "here";
-    }
-    let a = (dx as f32).atan2(-(dz as f32)).to_degrees();
+fn compass_octant(radians_clockwise_from_north: f64) -> &'static str {
+    let index =
+        ((radians_clockwise_from_north.to_degrees() + 22.5).rem_euclid(360.0) / 45.0) as usize;
     [
         "north",
         "northeast",
@@ -23,13 +22,13 @@ fn octant_of(dx: i32, dz: i32) -> &'static str {
         "southwest",
         "west",
         "northwest",
-    ][(((a + 382.5) / 45.0) as usize) % 8]
+    ][index]
 }
 
 /// A country's spirit, keyed on its province.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Heart {
-    pub pos: (i32, i32, i32),
+    pub pos: BlockPos,
     /// 2 = alive, 1 = sickening, 0 = dead.
     pub stage: u8,
     /// Accumulated grievance, in days held under resentment. The
@@ -186,7 +185,7 @@ impl World {
     /// bleeds it off. Death is not on this clock's way back — a dead
     /// heart is restored by hand, never by waiting.
     pub(super) fn tick_hearts(&mut self, day_frac: f32) {
-        let keys: Vec<(i32, i32)> = self.hearts.keys().copied().collect();
+        let keys: Vec<ProvinceKey> = self.hearts.keys().copied().collect();
         for key in keys {
             let Some(h) = self.hearts.get(&key).copied() else {
                 continue;
@@ -194,7 +193,7 @@ impl World {
             if h.stage == 0 {
                 continue;
             }
-            let standing = self.regional_ire_at(h.pos.0, h.pos.2);
+            let standing = self.regional_ire_at_surface(h.pos.surface());
             let strain = if standing >= HEART_STRAIN_IRE {
                 // Deeper grievance sickens faster, but never fast.
                 h.strain + day_frac * (standing / HEART_STRAIN_IRE)
@@ -222,8 +221,8 @@ impl World {
     /// half a season before it will part with another. Returns false
     /// when it has nothing to spare — the caller says so, and charges
     /// no ire for the asking.
-    pub fn take_heart_cutting(&mut self, x: i32, z: i32) -> bool {
-        let key = self.generator.province(x, z).key;
+    pub fn take_heart_cutting_at(&mut self, pos: SurfacePos) -> bool {
+        let key = self.generator.province_at(pos).key;
         match self.hearts.get_mut(&key) {
             Some(h) if h.stage == 2 && h.regrow <= 0.0 => {
                 h.regrow = HEART_CUTTING_DAYS;
@@ -235,8 +234,8 @@ impl World {
 
     /// A heart cut down. The raids stop that night — which is the
     /// whole trap: it WORKS, and the country never gives again.
-    pub(super) fn heart_struck(&mut self, pos: (i32, i32, i32)) {
-        let key = self.generator.province(pos.0, pos.2).key;
+    pub(super) fn heart_struck_at(&mut self, pos: BlockPos) {
+        let key = self.generator.province_at(pos.surface()).key;
         let Some(h) = self.hearts.get(&key).copied() else {
             return;
         };
@@ -247,41 +246,38 @@ impl World {
             e.stage = 0;
             e.strain = HEART_DEATH_STRAIN;
         }
-        self.orphan_wardens(h.pos.0, h.pos.2);
+        self.orphan_wardens_at(h.pos.surface());
         // Take the rest of the site down with it: a half-cut heart is
         // not a thing, and the husk is what the country wears now.
-        let form = heart_form(self.generator.biome(h.pos.0, h.pos.2));
+        let form = heart_form(self.generator.biome_at(h.pos.surface()));
         if let Some(dead) = self.reg.block_id(&heart_block_name(form, 0)) {
             for dy in 0..heart_height(form) {
-                let at = (h.pos.0, h.pos.1 + dy, h.pos.2);
-                let name = self
-                    .reg
-                    .block(self.get_block(at.0, at.1, at.2))
-                    .name
-                    .clone();
-                if name.starts_with("base:heart_") {
-                    self.set_block(at.0, at.1, at.2, dead);
+                if let Some(at) = h.pos.offset(0, dy, 0) {
+                    let name = self.reg.block(self.get_block_at(at)).name.clone();
+                    if name.starts_with("base:heart_") {
+                        self.set_block_at(at, dead);
+                    }
                 }
             }
         }
     }
     /// The heart of the country a position stands in, if its site has
     /// been generated yet.
-    pub fn heart_at(&self, x: i32, z: i32) -> Option<Heart> {
-        let key = self.generator.province(x, z).key;
+    pub fn heart_at_surface(&self, pos: SurfacePos) -> Option<Heart> {
+        let key = self.generator.province_at(pos).key;
         self.hearts.get(&key).copied()
     }
 
     /// Does the country here still have a spirit? Unvisited country
     /// counts as living — the wild is presumed well until seen
     /// otherwise, and a heart registers the moment its chunk loads.
-    pub fn heart_alive_at(&self, x: i32, z: i32) -> bool {
-        self.heart_at(x, z).is_none_or(|h| h.alive())
+    pub fn heart_alive_at_surface(&self, pos: SurfacePos) -> bool {
+        self.heart_at_surface(pos).is_none_or(|h| h.alive())
     }
 
     /// Record a heart the generator has just laid down.
-    pub(crate) fn register_heart(&mut self, key: (i32, i32), pos: (i32, i32, i32)) {
-        let ancient = self.is_ancient_scar(pos.0, pos.2);
+    pub(crate) fn register_heart(&mut self, key: ProvinceKey, pos: BlockPos) {
+        let ancient = self.is_ancient_scar_at(pos.surface());
         self.hearts.entry(key).or_insert(Heart {
             pos,
             // The badlands were not always badlands. Their spirit went
@@ -308,28 +304,29 @@ impl World {
     /// Country whose spirit died before the world began. Read from the
     /// map rather than stored: badlands ARE the scar, so the answer
     /// cannot drift out of step with the terrain that shows it.
-    pub fn is_ancient_scar(&self, x: i32, z: i32) -> bool {
-        self.generator.province(x, z).biome == crate::worldgen::Biome::Badlands
+    pub fn is_ancient_scar_at(&self, pos: SurfacePos) -> bool {
+        self.generator.province_at(pos).biome == crate::worldgen::Biome::Badlands
     }
 
     /// Make the blocks at a site match the form and stage its country
     /// wears now.
-    fn reface_heart_site(&mut self, pos: (i32, i32, i32), stage: u8) {
-        let form = heart_form(self.generator.biome(pos.0, pos.2));
+    fn reface_heart_site(&mut self, pos: BlockPos, stage: u8) {
+        let form = heart_form(self.generator.biome_at(pos.surface()));
         let Some(want) = self.reg.block_id(&heart_block_name(form, stage)) else {
             return;
         };
         for dy in 0..heart_height(form) {
-            let at = (pos.0, pos.1 + dy, pos.2);
-            let here = self.get_block(at.0, at.1, at.2);
-            if here != want && self.reg.block(here).name.starts_with("base:heart_") {
-                self.set_block(at.0, at.1, at.2, want);
+            if let Some(at) = pos.offset(0, dy, 0) {
+                let here = self.get_block_at(at);
+                if here != want && self.reg.block(here).name.starts_with("base:heart_") {
+                    self.set_block_at(at, want);
+                }
             }
         }
     }
 
     /// Set a heart's stage and swap the blocks at its site to match.
-    pub fn set_heart_stage(&mut self, key: (i32, i32), stage: u8) {
+    pub fn set_heart_stage(&mut self, key: ProvinceKey, stage: u8) {
         let Some(mut h) = self.hearts.get(&key).copied() else {
             return;
         };
@@ -339,21 +336,22 @@ impl World {
         h.stage = stage;
         self.hearts.insert(key, h);
         if stage == 0 {
-            self.orphan_wardens(h.pos.0, h.pos.2);
+            self.orphan_wardens_at(h.pos.surface());
         }
-        let biome = self.generator.biome(h.pos.0, h.pos.2);
+        let biome = self.generator.biome_at(h.pos.surface());
         let form = heart_form(biome);
         let Some(want) = self.reg.block_id(&heart_block_name(form, stage)) else {
             return;
         };
         for dy in 0..heart_height(form) {
-            let at = (h.pos.0, h.pos.1 + dy, h.pos.2);
-            let here = self.get_block(at.0, at.1, at.2);
-            let name = self.reg.block(here).name.clone();
-            // Only rewrite the heart's own blocks: whatever a player
-            // has built around the site is theirs.
-            if name.starts_with("base:heart_") {
-                self.set_block(at.0, at.1, at.2, want);
+            if let Some(at) = h.pos.offset(0, dy, 0) {
+                let here = self.get_block_at(at);
+                let name = self.reg.block(here).name.clone();
+                // Only rewrite the heart's own blocks: whatever a player
+                // has built around the site is theirs.
+                if name.starts_with("base:heart_") {
+                    self.set_block_at(at, want);
+                }
             }
         }
     }
@@ -366,12 +364,12 @@ impl World {
     /// clear the monument: a stepped edifice is 8-12 blocks of solid
     /// stone in every direction from its chamber, and a disc that
     /// stopped inside that asked the player to excavate a pyramid.
-    pub fn root_radius_at(&self, x: i32, z: i32) -> i32 {
-        let reach = crate::edifice::edifice_of(self.generator.biome(x, z)).reach;
+    pub fn root_radius_at(&self, pos: SurfacePos) -> i32 {
+        let reach = crate::edifice::edifice_of(self.generator.biome_at(pos)).reach;
         ROOT_RADIUS.max(reach + 4)
     }
 
-    pub fn root_ground_ready(&self, x: i32, y: i32, z: i32) -> (u32, u32) {
+    pub fn root_ground_ready_at(&self, heart: BlockPos) -> (u32, u32) {
         let mut ready = 0;
         let mut total = 0;
         // Reach past the monument. A stepped edifice is 8-12 blocks of
@@ -379,13 +377,15 @@ impl World {
         // that stopped at ROOT_RADIUS asked the player to excavate a
         // room inside a pyramid — which is silly. The ground that has
         // to come back to life is the ground AROUND the thing.
-        let radius = self.root_radius_at(x, z);
+        let radius = self.root_radius_at(heart.surface());
         for dx in -radius..=radius {
             for dz in -radius..=radius {
                 if dx * dx + dz * dz > radius * radius {
                     continue;
                 }
-                let (cx, cz) = (x + dx, z + dz);
+                let Some(column) = heart.offset(dx, 0, dz).map(BlockPos::surface) else {
+                    continue;
+                };
                 // The topmost SOIL in the column, not the topmost
                 // block. This used to read `surface_height`, which is
                 // the topmost solid — fine while a heart stood in the
@@ -399,16 +399,16 @@ impl World {
                 // scan walks past it. That also lets a site on a slope
                 // count ground well below its own foot, which a band
                 // around the heart's level would not.
-                let soil = (1..=(y + 24).min(CHUNK_Y as i32 - 1)).rev().find(|&cy| {
-                    self.reg
-                        .block(self.get_block(cx, cy, cz))
-                        .fert_tiles
-                        .is_some()
-                });
+                let soil = (1..=(i32::from(heart.y()) + 24).min(CHUNK_Y as i32 - 1))
+                    .rev()
+                    .filter_map(|cy| {
+                        BlockPos::new(column.face(), column.u(), cy as u8, column.v()).ok()
+                    })
+                    .find(|&pos| self.reg.block(self.get_block_at(pos)).fert_tiles.is_some());
                 match soil {
-                    Some(cy) => {
+                    Some(pos) => {
                         total += 1;
-                        if self.fertility_at(cx, cy, cz) >= ROOT_READY_FERT {
+                        if self.fertility_at_pos(pos) >= ROOT_READY_FERT {
                             ready += 1;
                         }
                     }
@@ -416,7 +416,7 @@ impl World {
                     // the monument itself? Stone standing well above
                     // the heart is the edifice, and it is not a plot
                     // anyone has to answer for.
-                    None if self.surface_height(cx, cz) > y + 3 => {}
+                    None if self.surface_height_at(column) > i32::from(heart.y()) + 3 => {}
                     None => total += 1,
                 }
             }
@@ -429,17 +429,16 @@ impl World {
     /// means a replacement that brings its own nature with it.
     /// Returns the refusal to say out loud, or None when the rooting
     /// has begun.
-    pub fn plant_heart_seed_from(
+    pub fn plant_heart_seed_from_at(
         &mut self,
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
         from: Option<crate::worldgen::Biome>,
     ) -> Option<String> {
-        let refusal = self.plant_heart_seed(x, y, z);
+        let refusal = self.plant_heart_seed_at(pos);
         if refusal.is_none() {
-            let key = self.generator.province(x, z).key;
-            let native = self.generator.province(x, z).biome;
+            let province = self.generator.province_at(pos.surface());
+            let key = province.key;
+            let native = province.biome;
             if let Some(e) = self.hearts.get_mut(&key) {
                 // Same family: a reawakening, and the country keeps
                 // its own nature. A stranger's: a replacement.
@@ -451,18 +450,18 @@ impl World {
 
     /// Plant a quickened seed at a dead site. Returns the refusal to
     /// say out loud, or None when the rooting has begun.
-    pub fn plant_heart_seed(&mut self, x: i32, y: i32, z: i32) -> Option<String> {
-        let key = self.generator.province(x, z).key;
+    pub fn plant_heart_seed_at(&mut self, pos: BlockPos) -> Option<String> {
+        let key = self.generator.province_at(pos.surface()).key;
         let Some(h) = self.hearts.get(&key).copied() else {
             return Some("No country's heart ever stood here.".into());
         };
         if h.stage != 0 {
             return Some("This country still has a spirit.".into());
         }
-        if (h.pos.0 - x).abs() > 3 || (h.pos.2 - z).abs() > 3 {
+        if geodesic_distance(h.pos.surface().center(), pos.surface().center()) > 4.5 {
             return Some("It must go where the old heart stood.".into());
         }
-        let (ready, total) = self.root_ground_ready(h.pos.0, h.pos.1, h.pos.2);
+        let (ready, total) = self.root_ground_ready_at(h.pos);
         let want = (total as f32 * ROOT_READY_FRAC).ceil() as u32;
         if ready < want {
             // Say the verb. Only tilled soil carries fertility — grass
@@ -476,7 +475,7 @@ impl World {
         }
         if let Some(e) = self.hearts.get_mut(&key) {
             e.rooting = 0.01;
-            e.pos = (h.pos.0, y, h.pos.2);
+            e.pos = h.pos.with_y(pos.y());
         }
         None
     }
@@ -484,7 +483,7 @@ impl World {
     /// The rooting clock: a planted seed takes a season to take, and
     /// only in ground kept ready.
     pub(super) fn tick_rooting(&mut self, day_frac: f32) {
-        let keys: Vec<(i32, i32)> = self
+        let keys: Vec<ProvinceKey> = self
             .hearts
             .iter()
             .filter(|(_, h)| h.rooting > 0.0)
@@ -494,7 +493,7 @@ impl World {
             let Some(h) = self.hearts.get(&key).copied() else {
                 continue;
             };
-            let (ready, total) = self.root_ground_ready(h.pos.0, h.pos.1, h.pos.2);
+            let (ready, total) = self.root_ground_ready_at(h.pos);
             if (ready as f32) < total as f32 * ROOT_READY_FRAC * 0.75 {
                 // Let the ground go and the seed goes with it.
                 if let Some(e) = self.hearts.get_mut(&key) {
@@ -522,7 +521,7 @@ impl World {
                 // ground it stands on is blessed for good. A grafted
                 // one wakes a stranger, and knows nothing of you.
                 if self.hearts.get(&key).and_then(|e| e.graft).is_none() {
-                    self.plant_ire_at(h.pos.0, h.pos.2, 6.0);
+                    self.plant_ire_at_surface(h.pos.surface(), 6.0);
                 }
             }
         }
@@ -541,15 +540,22 @@ impl World {
 
     /// What a country counts as now: its own nature, or the one its
     /// heart was grafted from once the drift has carried far enough.
-    pub fn country_biome(&self, x: i32, z: i32) -> crate::worldgen::Biome {
-        let key = self.generator.province(x, z).key;
+    pub fn country_biome_at(&self, pos: SurfacePos) -> crate::worldgen::Biome {
+        let key = self.generator.province_at(pos).key;
         match self.hearts.get(&key) {
             Some(h) if h.stage == 2 && h.drift >= 0.5 && h.graft.is_some() => h.graft.unwrap(),
             // Ungrafted country reads exactly as the map does — the
             // column's own label, fringe dither and terrain veto and
             // all. Only a graft overrides it.
-            _ => self.generator.biome(x, z),
+            _ => self.generator.biome_at(pos),
         }
+    }
+
+    #[cfg(test)]
+    pub fn country_biome(&self, x: i32, z: i32) -> crate::worldgen::Biome {
+        SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+            .map(|pos| self.country_biome_at(pos))
+            .unwrap_or(crate::worldgen::Biome::Ocean)
     }
 
     /// What the place you are standing in *is*, which is not always what
@@ -557,33 +563,43 @@ impl World {
     /// the forest behind you is labelled. The country keeps its culture
     /// (a coastal province is still a forest province, and its heart
     /// still knows what it grows) — this is only the ground underfoot.
-    pub fn biome_here(&self, x: i32, z: i32) -> crate::worldgen::Biome {
-        if self.is_open_water(x, z) {
+    pub fn biome_here_at(&self, pos: SurfacePos) -> crate::worldgen::Biome {
+        if self.is_open_water_at(pos) {
             return crate::worldgen::Biome::Ocean;
         }
-        self.country_biome(x, z)
+        self.country_biome_at(pos)
     }
 
     /// Sea, not puddle: the column's floor lies below sea level and the
     /// water over it reaches sea level. A dug pond on a hillside fails
     /// the first test; a one-deep tidal scrape fails the second.
-    pub fn is_open_water(&self, x: i32, z: i32) -> bool {
-        let floor = self.surface_height(x, z);
+    pub fn is_open_water_at(&self, pos: SurfacePos) -> bool {
+        let floor = self.surface_height_at(pos);
         floor < crate::chunk::SEA_LEVEL - 1
-            && self
-                .reg
-                .is_water(self.get_block(x, crate::chunk::SEA_LEVEL - 1, z))
+            && BlockPos::new(
+                pos.face(),
+                pos.u(),
+                (crate::chunk::SEA_LEVEL - 1) as u8,
+                pos.v(),
+            )
+            .is_ok_and(|at| self.reg.is_water(self.get_block_at(at)))
+    }
+
+    #[cfg(test)]
+    pub fn is_open_water(&self, x: i32, z: i32) -> bool {
+        SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+            .is_ok_and(|pos| self.is_open_water_at(pos))
     }
 
     /// The wardens caught mid-existence when their heart died. They
     /// were never recalled and never will be.
-    fn orphan_wardens(&mut self, x: i32, z: i32) {
-        let key = self.generator.province(x, z).key;
+    fn orphan_wardens_at(&mut self, pos: SurfacePos) {
+        let key = self.generator.province_at(pos).key;
         let reg = self.reg.clone();
         let g = &self.generator;
         for m in &mut self.mobs {
             if reg.animals.get(m.species).is_some_and(|d| d.hostile)
-                && g.province(m.pos.x.floor() as i32, m.pos.z.floor() as i32)
+                && g.province_at(m.pos.block().map_or(pos, BlockPos::surface))
                     .key
                     == key
             {
@@ -601,34 +617,41 @@ impl World {
     /// Two kinds of site qualify and both are knowable without having
     /// been there — a country whose heart this world has watched die,
     /// and a badlands scar, which was dead before anyone walked it.
-    pub fn seed_bearing(&self, from: glam::Vec3) -> String {
-        let (fx, fz) = (from.x.floor() as i32, from.z.floor() as i32);
-        let here = self.generator.province(fx, fz).key;
-        let mut best: Option<(f32, i32, i32, bool)> = None;
+    pub fn seed_bearing_at(&self, from: EntityPos) -> String {
+        let from_surface = SurfacePos::new(
+            from.face(),
+            from.u().floor() as u16,
+            from.v().floor() as u16,
+        )
+        .expect("a canonical entity has a canonical surface cell");
+        let here = self.generator.province_at(from_surface).key;
+        let mut best: Option<(f64, SurfacePos, bool)> = None;
         // Six provinces out is ~5000 blocks: further than anyone walks
         // in one errand, and cheap because a centre is pure arithmetic.
-        for kx in -6..=6 {
-            for kz in -6..=6 {
-                let key = (here.0 + kx, here.1 + kz);
-                let (sx, sz) = self.generator.province_center(key.0, key.1);
-                let ancient = self.is_ancient_scar(sx, sz);
+        for ku in -6..=6 {
+            for kv in -6..=6 {
+                let key = self.generator.province_offset(here, ku, kv);
+                let site = self.generator.province_center_at(key);
+                let ancient = self.is_ancient_scar_at(site);
                 let known_dead = self.hearts.get(&key).is_some_and(|h| h.stage == 0);
                 if !ancient && !known_dead {
                     continue;
                 }
-                let d = (((sx - fx) as f32).powi(2) + ((sz - fz) as f32).powi(2)).sqrt();
-                if best.is_none_or(|(b, _, _, _)| d < b) {
-                    best = Some((d, sx, sz, ancient));
+                let d = geodesic_distance(from_surface.center(), site.center());
+                if best.is_none_or(|(b, _, _)| d < b) {
+                    best = Some((d, site, ancient));
                 }
             }
         }
-        let Some((d, sx, sz, ancient)) = best else {
+        let Some((d, site, ancient)) = best else {
             return "It stirs, and finds nowhere that needs it.".into();
         };
         if d < 12.0 {
             return "It strains in your hand. The ground it wants is here.".into();
         }
-        let dir = octant_of(sx - fx, sz - fz);
+        let dir = great_circle_bearing(from_surface.center(), site.center())
+            .map(compass_octant)
+            .unwrap_or("somewhere beyond a stable bearing");
         let far = if ancient {
             "a country that went out long ago"
         } else {
@@ -639,13 +662,14 @@ impl World {
 
     /// The compass reading a survey cairn gives for the country's
     /// heart: where it stands and how it fares.
-    pub fn heart_report(&self, x: i32, z: i32) -> String {
-        let Some(h) = self.heart_at(x, z) else {
+    pub fn heart_report_at(&self, pos: SurfacePos) -> String {
+        let Some(h) = self.heart_at_surface(pos) else {
             return "The heart of this country lies beyond your maps.".into();
         };
-        let (dx, dz) = (h.pos.0 - x, h.pos.2 - z);
-        let dist = ((dx * dx + dz * dz) as f32).sqrt().round() as i32;
-        let dir = octant_of(dx, dz);
+        let dist = geodesic_distance(pos.center(), h.pos.surface().center()).round() as i32;
+        let dir = great_circle_bearing(pos.center(), h.pos.surface().center())
+            .map(compass_octant)
+            .unwrap_or("here");
         let state = match h.stage {
             2 if h.strain > 4.0 => "It is uneasy.",
             2 => "It is well.",
@@ -653,14 +677,14 @@ impl World {
             // A scar is older than the reading. The badlands lost their
             // spirit before anyone alive walked there, and a cairn that
             // says so is the first thread of the whole story.
-            _ if self.is_ancient_scar(h.pos.0, h.pos.2) => {
+            _ if self.is_ancient_scar_at(h.pos.surface()) => {
                 "It died long before these stones were cut."
             }
             _ => "It is dead.",
         };
         // Name the shape. They are no longer all alike, so a reader is
         // looking for a particular thing rather than "a heart".
-        let form = heart_form(self.generator.biome(h.pos.0, h.pos.2));
+        let form = heart_form(self.generator.biome_at(h.pos.surface()));
         let what = self
             .reg
             .block_id(&heart_block_name(form, h.stage))

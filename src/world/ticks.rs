@@ -1,6 +1,7 @@
 //! Random ticks, offline reconciliation, crops, snow, rain, and saplings.
 
 use super::*;
+use crate::planet::{BlockPos, SurfacePos};
 
 impl World {
     /// Random ticks: crops advance a stage when conditions hold.
@@ -24,74 +25,70 @@ impl World {
         let mut order: Vec<(f64, ChunkPos)> = self
             .chunks
             .keys()
-            .map(|p| {
-                (
-                    self.last_random
-                        .get(&(p.x, p.z))
-                        .copied()
-                        .unwrap_or(self.clock),
-                    *p,
-                )
-            })
+            .map(|p| (self.last_random.get(p).copied().unwrap_or(self.clock), *p))
             .collect();
-        order.sort_unstable_by(|a, b| {
-            a.0.total_cmp(&b.0)
-                .then((a.1.x, a.1.z).cmp(&(b.1.x, b.1.z)))
-        });
+        order.sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
         order.truncate(K);
         let mut samples = 0;
         let mut changes = Vec::new();
         // Evaporated film cells: applied without the crop-ire refund.
-        let mut dried: Vec<(i32, i32, i32)> = Vec::new();
+        let mut dried: Vec<BlockPos> = Vec::new();
         // Fallow soil recovering (position, gain).
-        let mut fed: Vec<(i32, i32, i32, u8)> = Vec::new();
+        let mut fed: Vec<(BlockPos, u8)> = Vec::new();
         // Plain swaps that earn no plant-ire credit (compost ripening,
         // fungus creep, settling litter).
-        let mut swaps: Vec<(i32, i32, i32, BlockId)> = Vec::new();
+        let mut swaps: Vec<(BlockPos, BlockId)> = Vec::new();
         // Items shed where a change happened (sapling from rot).
-        let mut drops: Vec<((i32, i32, i32), ItemId)> = Vec::new();
-        let mut saplings: Vec<(i32, i32, i32, String, u32)> = Vec::new();
+        let mut drops: Vec<(BlockPos, ItemId)> = Vec::new();
+        let mut saplings: Vec<(BlockPos, String, u32)> = Vec::new();
         for (stamp, pos) in order {
             let elapsed = (self.clock - stamp).max(0.0);
             // Samples proportional to the wait, floor 8, cap 256.
             let n = ((elapsed * RANDOM_TICKS_PER_CHUNK_SEC) as usize).clamp(8, 256);
-            self.last_random.insert((pos.x, pos.z), self.clock);
+            self.last_random.insert(pos, self.clock);
             samples += n;
             for _ in 0..n {
                 *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                 let r = *rng >> 8;
                 let (lx, lz) = ((r % 16) as i32, ((r >> 4) % 16) as i32);
-                let y = ((r >> 8) % CHUNK_Y as u32) as i32;
-                let (wx, wz) = (pos.x * 16 + lx, pos.z * 16 + lz);
-                let b = self.get_block(wx, y, wz);
+                let y = ((r >> 8) % CHUNK_Y as u32) as u8;
+                let at = BlockPos::new(
+                    pos.face(),
+                    pos.u() * CHUNK_X as u16 + lx as u16,
+                    y,
+                    pos.v() * CHUNK_Z as u16 + lz as u16,
+                )
+                .expect("a sampled chunk cell is canonical");
+                let b = self.get_block_at(at);
                 let d = reg.block(b);
                 // An arc lamp whose generator stopped (or left) goes
                 // dark on its own clock — self-healing, no scan.
                 if let Some(stripped) = d.name.strip_suffix("_lit")
                     && d.name.contains("arc_lamp")
-                    && !self.generator_near((wx, y, wz), ELEC_RADIUS)
+                    && !self.generator_near_at(at, ELEC_RADIUS)
                     && let Some(off) = reg.block_id(stripped)
                 {
-                    changes.push((wx, y, wz, off));
+                    changes.push((at, off));
                     continue;
                 }
                 if let Some(species) = &d.sapling {
                     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                     if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.02 {
-                        saplings.push((wx, y, wz, species.clone(), *rng));
+                        saplings.push((at, species.clone(), *rng));
                     }
                     continue;
                 }
                 if let Some(next) = d.crop_next {
-                    let soil_ok =
-                        d.crop_any_soil || farmland == Some(self.get_block(wx, y - 1, wz));
+                    let below = at.offset(0, -1, 0);
+                    let soil_ok = d.crop_any_soil
+                        || below.is_some_and(|pos| farmland == Some(self.get_block_at(pos)));
                     // The calendar gates growth. Bushes fruit in summer
                     // and autumn; crops slow through the year and stop
                     // in winter - unless roofed and torchlit (a
                     // greenhouse, emergent from the light rules).
                     let mult = if d.crop_any_soil {
                         // Wild fruit is the country's gift, not yours.
-                        let base = if !self.heart_alive_at(wx, wz) {
+                        let base = if !self.heart_alive_at_surface(at.surface()) {
                             0.0
                         } else if season == 1 || season == 2 {
                             1.0
@@ -100,7 +97,9 @@ impl World {
                         };
                         // Blessed country feeds back — and bloomed
                         // country (post-wrath) erupts the same way.
-                        if self.regional_ire_at(wx, wz) < -8.0 || self.bloom_at(wx, wz) > 0.0 {
+                        if self.regional_ire_at_surface(at.surface()) < -8.0
+                            || self.bloom_at_surface(at.surface()) > 0.0
+                        {
                             base * 2.0
                         } else {
                             base
@@ -114,12 +113,13 @@ impl World {
                         }
                     };
                     let mult = if mult == 0.0 && !d.crop_any_soil {
-                        let (bl, sl) = self.light_at(wx, y, wz);
+                        let (bl, sl) = self.light_at_pos(at);
                         if sl < 15 && bl >= 10 {
                             0.5 // dark roof + torchlight
                         } else if sl == 15
                             && (1..=16)
-                                .any(|dy| self.reg.block(self.get_block(wx, y + dy, wz)).glass)
+                                .filter_map(|dy| at.offset(0, dy, 0))
+                                .any(|pos| self.reg.block(self.get_block_at(pos)).glass)
                         {
                             0.75 // a glass roof is a greenhouse
                         } else {
@@ -133,14 +133,14 @@ impl World {
                     let fmult = if d.crop_any_soil {
                         1.0
                     } else {
-                        soil::fert_mult(soil::fert_of(self.get_meta(wx, y - 1, wz)))
+                        soil::fert_mult(soil::fert_of(below.map_or(0, |pos| self.get_meta_at(pos))))
                     };
                     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                     if soil_ok
                         && mult > 0.0
                         && ((*rng >> 8) as f32 / (1 << 24) as f32) < d.crop_chance * mult * fmult
                     {
-                        changes.push((wx, y, wz, next));
+                        changes.push((at, next));
                     }
                     continue;
                 }
@@ -148,14 +148,14 @@ impl World {
                 // stops resting, the tide stops seeding, bushes stop
                 // fruiting. Crops still grow on ground you feed
                 // yourself — farms work here, wilderness does not.
-                let living = self.heart_alive_at(wx, wz);
+                let living = self.heart_alive_at_surface(at.surface());
                 // Fallow farmland recovers, twice as fast under winter
                 // (or snow) — the off season is the soil's turn.
                 if Some(b) == farmland {
                     if !living {
                         continue;
                     }
-                    let above = self.get_block(wx, y + 1, wz);
+                    let above = at.offset(0, 1, 0).map_or(AIR, |pos| self.get_block_at(pos));
                     let resting =
                         above == AIR || Some(above) == snow_layer || Some(above) == snow_trod;
                     if resting {
@@ -167,7 +167,7 @@ impl World {
                             } else {
                                 soil::FERT_FALLOW
                             };
-                            fed.push((wx, y, wz, gain));
+                            fed.push((at, gain));
                         }
                     }
                     continue;
@@ -176,10 +176,10 @@ impl World {
                 // looks at it — random-tick visits are days apart for
                 // any single cell, so the wait is already real.
                 if Some(b) == heap
-                    && self.get_meta(wx, y, wz) >= soil::COMPOST_FULL
+                    && self.get_meta_at(at) >= soil::COMPOST_FULL
                     && let Some(ready) = heap_ready
                 {
-                    swaps.push((wx, y, wz, ready));
+                    swaps.push((at, ready));
                     continue;
                 }
                 // Severed leaves rot: a canopy with no trunk within
@@ -187,10 +187,10 @@ impl World {
                 // sapling chance and sometimes drops litter on the
                 // ground below. Felled forests finally fall.
                 if d.name.contains("leaves") {
-                    let mut seen = vec![(wx, y, wz)];
-                    let mut queue = vec![((wx, y, wz), 0u8)];
+                    let mut seen = vec![at];
+                    let mut queue = vec![(at, 0u8)];
                     let mut anchored = false;
-                    'bfs: while let Some(((cx, cy, cz), depth)) = queue.pop() {
+                    'bfs: while let Some((cell, depth)) = queue.pop() {
                         for (dx, dy, dz) in [
                             (1, 0, 0),
                             (-1, 0, 0),
@@ -199,8 +199,10 @@ impl World {
                             (0, 0, 1),
                             (0, 0, -1),
                         ] {
-                            let n = (cx + dx, cy + dy, cz + dz);
-                            let nb = self.get_block(n.0, n.1, n.2);
+                            let Some(n) = cell.offset(dx, dy, dz) else {
+                                continue;
+                            };
+                            let nb = self.get_block_at(n);
                             let name = &reg.block(nb).name;
                             if name.ends_with("log") {
                                 anchored = true;
@@ -216,21 +218,22 @@ impl World {
                         *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                         let roll = (*rng >> 8) as f32 / (1 << 24) as f32;
                         if roll < 0.35 {
-                            changes.push((wx, y, wz, AIR));
+                            changes.push((at, AIR));
                             if let Some((item, chance)) = d.bonus_drop
                                 && roll < 0.35 * chance
                             {
-                                drops.push(((wx, y, wz), item));
+                                drops.push((at, item));
                             }
                             // Litter settles on the first floor below.
                             if roll > 0.12
                                 && let Some(litter) = litter_id
-                                && let Some(fy) = (1..=8)
-                                    .map(|dy| y - dy)
-                                    .find(|&fy| reg.is_solid(self.get_block(wx, fy, wz)))
-                                && self.get_block(wx, fy + 1, wz) == AIR
+                                && let Some(floor) = (1..=8)
+                                    .filter_map(|dy| at.offset(0, -dy, 0))
+                                    .find(|&pos| reg.is_solid(self.get_block_at(pos)))
+                                && let Some(above) = floor.offset(0, 1, 0)
+                                && self.get_block_at(above) == AIR
                             {
-                                swaps.push((wx, fy + 1, wz, litter));
+                                swaps.push((above, litter));
                             }
                         }
                     }
@@ -240,8 +243,10 @@ impl World {
                 if Some(b) == litter_id {
                     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                     if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.4 {
-                        changes.push((wx, y, wz, AIR));
-                        fed.push((wx, y - 1, wz, 4));
+                        changes.push((at, AIR));
+                        if let Some(below) = at.offset(0, -1, 0) {
+                            fed.push((below, 4));
+                        }
                     }
                     continue;
                 }
@@ -258,14 +263,18 @@ impl World {
                         let dx = (r1 % 5) as i32 - 2;
                         let dz = ((r1 >> 3) % 5) as i32 - 2;
                         let dy = ((r1 >> 6) % 3) as i32 - 1;
-                        let (tx, ty, tz) = (wx + dx, y + dy, wz + dz);
-                        let (bl, sl) = self.light_at(tx, ty, tz);
+                        let Some(target) = at.offset(dx, dy, dz) else {
+                            continue;
+                        };
+                        let (bl, sl) = self.light_at_pos(target);
                         let dark = bl < 6 && sl < 6;
                         let damp = sl == 0
                             || (-3..=3i32).any(|ax| {
                                 (-2..=2i32).any(|ay| {
                                     (-3..=3i32).any(|az| {
-                                        reg.is_water(self.get_block(tx + ax, ty + ay, tz + az))
+                                        target
+                                            .offset(ax, ay, az)
+                                            .is_some_and(|pos| reg.is_water(self.get_block_at(pos)))
                                     })
                                 })
                             });
@@ -275,20 +284,22 @@ impl World {
                                     .flat_map(move |ay| (-2..=2i32).map(move |az| (ax, ay, az)))
                             })
                             .filter(|&(ax, ay, az)| {
-                                let n = reg
-                                    .block(self.get_block(tx + ax, ty + ay, tz + az))
-                                    .name
-                                    .clone();
+                                let n = target.offset(ax, ay, az).map_or("", |pos| {
+                                    reg.block(self.get_block_at(pos)).name.as_str()
+                                });
                                 n.contains("mushroom") || n.contains("lantern_fungus")
                             })
                             .count();
+                        let solid_below = target
+                            .offset(0, -1, 0)
+                            .is_some_and(|below| reg.is_solid(self.get_block_at(below)));
                         if dark
                             && damp
                             && crowd < 3
-                            && self.get_block(tx, ty, tz) == AIR
-                            && reg.is_solid(self.get_block(tx, ty - 1, tz))
+                            && self.get_block_at(target) == AIR
+                            && solid_below
                         {
-                            swaps.push((tx, ty, tz, b));
+                            swaps.push((target, b));
                         }
                     }
                     continue;
@@ -297,19 +308,22 @@ impl World {
                 // the world stops keeping scars nobody meant to leave.
                 if Some(b) == dirt_id
                     && living
-                    && self.get_block(wx, y + 1, wz) == AIR
-                    && self.light_at(wx, y + 1, wz).1 >= 9
+                    && at.offset(0, 1, 0).is_some_and(|above| {
+                        self.get_block_at(above) == AIR && self.light_at_pos(above).1 >= 9
+                    })
                 {
                     let near_grass = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|&(dx, dz)| {
-                        (-1..=1)
-                            .any(|dy| Some(self.get_block(wx + dx, y + dy, wz + dz)) == grass_id)
+                        (-1..=1).any(|dy| {
+                            at.offset(dx, dy, dz)
+                                .is_some_and(|pos| Some(self.get_block_at(pos)) == grass_id)
+                        })
                     });
                     if near_grass {
                         *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                         if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.05
                             && let Some(g) = grass_id
                         {
-                            changes.push((wx, y, wz, g));
+                            changes.push((at, g));
                         }
                     }
                     continue;
@@ -318,17 +332,18 @@ impl World {
                 // mature trees seed the grass at their feet — only on
                 // natural ground (untouched chunks), only where the
                 // forest isn't already thick, and never in winter.
-                let sky_open = self.light_at(wx, y + 1, wz).1 == 15;
-                let blooming = self.bloom_at(wx, wz) > 0.0;
+                let above = at.offset(0, 1, 0);
+                let sky_open = above.is_some_and(|pos| self.light_at_pos(pos).1 == 15);
+                let blooming = self.bloom_at_surface(at.surface()) > 0.0;
                 if Some(b) == grass_id
                     && living
                     && season != 3
                     && sky_open
-                    && self.get_block(wx, y + 1, wz) == AIR
+                    && above.is_some_and(|pos| self.get_block_at(pos) == AIR)
                     // A bloom is the wild's OWN doing: it ignores the
                     // resentment gate (never the built-country one).
-                    && (self.regional_ire_at(wx, wz) <= 2.0 || blooming)
-                    && !self.player_touched.contains(&(pos.x, pos.z))
+                    && (self.regional_ire_at_surface(at.surface()) <= 2.0 || blooming)
+                    && !self.player_touched.contains(&pos)
                 {
                     // Post-wrath country erupts: flowers first.
                     if blooming {
@@ -340,8 +355,8 @@ impl World {
                             } else {
                                 reg.block_id("base:ember_poppy")
                             };
-                            if let Some(f) = flower {
-                                swaps.push((wx, y + 1, wz, f));
+                            if let (Some(f), Some(above)) = (flower, above) {
+                                swaps.push((above, f));
                                 continue;
                             }
                         }
@@ -355,7 +370,10 @@ impl World {
                         for dx in -5i32..=5 {
                             for dz in -5i32..=5 {
                                 for dy in 0..=6 {
-                                    let nb = self.get_block(wx + dx, y + dy, wz + dz);
+                                    let Some(sample) = at.offset(dx, dy, dz) else {
+                                        continue;
+                                    };
+                                    let nb = self.get_block_at(sample);
                                     let name = &reg.block(nb).name;
                                     if name.ends_with("log") {
                                         parent.get_or_insert(nb);
@@ -380,8 +398,8 @@ impl World {
                                 "base:acacia_log" => "base:acacia_sapling",
                                 _ => "base:oak_sapling",
                             };
-                            if let Some(sb) = reg.block_id(sap) {
-                                changes.push((wx, y + 1, wz, sb));
+                            if let (Some(sb), Some(above)) = (reg.block_id(sap), above) {
+                                changes.push((above, sb));
                             }
                         }
                     }
@@ -393,29 +411,29 @@ impl World {
                     && !d.lava
                     && season == 3
                     && sky_open
-                    && self.get_block(wx, y + 1, wz) == AIR
-                    && self.generator.climate(wx, wz).t < 0.35
+                    && above.is_some_and(|pos| self.get_block_at(pos) == AIR)
+                    && self.generator.climate_at(at.surface()).t < 0.35
                 {
                     if let Some(ice) = ice {
-                        changes.push((wx, y, wz, ice));
+                        changes.push((at, ice));
                     }
                     continue;
                 }
                 if Some(b) == ice
                     && (season == 0 || season == 1)
                     && sky_open
-                    && self.generator.climate(wx, wz).t > -0.35
+                    && self.generator.climate_at(at.surface()).t > -0.35
                 {
-                    changes.push((wx, y, wz, self.reg.water_block(0)));
+                    changes.push((at, self.reg.water_block(0)));
                     continue;
                 }
                 // Snow layers melt under bright light or a warm season
                 // (footprints melt with them).
                 if Some(b) == snow_layer || Some(b) == snow_trod {
-                    let (bl, _) = self.light_at(wx, y, wz);
-                    let warm = season != 3 && self.generator.climate(wx, wz).t > -0.35;
+                    let (bl, _) = self.light_at_pos(at);
+                    let warm = season != 3 && self.generator.climate_at(at.surface()).t > -0.35;
                     if bl >= 12 || warm {
-                        changes.push((wx, y, wz, AIR));
+                        changes.push((at, AIR));
                     }
                     continue;
                 }
@@ -432,18 +450,21 @@ impl World {
                 if let Some(v) = reg.water_volume(b)
                     && (season == 1 || (v == 1 && season != 3))
                     && sky_open
-                    && self.get_block(wx, y + 1, wz) == AIR
-                    && self.generator.climate(wx, wz).t > -0.35
-                    && self.water_depth_at_most(wx, y, wz, 2)
-                    && [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                        .iter()
-                        .all(|&(dx, dz)| self.water_depth_at_most(wx + dx, y, wz + dz, 2))
+                    && above.is_some_and(|pos| self.get_block_at(pos) == AIR)
+                    && self.generator.climate_at(at.surface()).t > -0.35
+                    && self.water_depth_at_most_pos(at, 2)
+                    && [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().all(|&(dx, dz)| {
+                        at.offset(dx, 0, dz)
+                            .is_none_or(|pos| self.water_depth_at_most_pos(pos, 2))
+                    })
                 {
-                    let solid_walls = |x: i32, z: i32| {
+                    let solid_walls = |center: BlockPos| {
                         [(1, 0), (-1, 0), (0, 1), (0, -1)]
                             .iter()
                             .filter(|&&(dx, dz)| {
-                                self.reg.is_solid(self.get_block(x + dx, y, z + dz))
+                                center
+                                    .offset(dx, 0, dz)
+                                    .is_some_and(|pos| self.reg.is_solid(self.get_block_at(pos)))
                             })
                             .count()
                     };
@@ -454,76 +475,84 @@ impl World {
                         let contained = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                             .iter()
                             .filter(|&&(dx, dz)| {
-                                let n = self.get_block(wx + dx, y, wz + dz);
-                                self.reg.is_solid(n) || self.reg.is_water(n)
+                                at.offset(dx, 0, dz).is_some_and(|pos| {
+                                    let n = self.get_block_at(pos);
+                                    self.reg.is_solid(n) || self.reg.is_water(n)
+                                })
                             })
                             .count()
                             >= 3;
                         if contained {
-                            changes.push((wx, y, wz, reg.water_for_volume(1)));
+                            changes.push((at, reg.water_for_volume(1)));
                         } else {
-                            changes.push((wx, y, wz, AIR));
+                            changes.push((at, AIR));
                         }
-                    } else if solid_walls(wx, wz) < 3 {
-                        let mut patch = vec![(wx, wz)];
+                    } else if solid_walls(at) < 3 {
+                        let mut patch = vec![at];
                         let mut i = 0;
                         while i < patch.len() && patch.len() < 16 {
-                            let (px, pz) = patch[i];
+                            let current = patch[i];
                             i += 1;
                             for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                                let (qx, qz) = (px + dx, pz + dz);
-                                if !patch.contains(&(qx, qz))
-                                    && reg.water_volume(self.get_block(qx, y, qz)) == Some(1)
-                                    && self.get_block(qx, y + 1, qz) == AIR
-                                    && self.water_depth_at_most(qx, y, qz, 2)
-                                    && solid_walls(qx, qz) < 3
+                                let Some(neighbor) = current.offset(dx, 0, dz) else {
+                                    continue;
+                                };
+                                if !patch.contains(&neighbor)
+                                    && reg.water_volume(self.get_block_at(neighbor)) == Some(1)
+                                    && neighbor
+                                        .offset(0, 1, 0)
+                                        .is_some_and(|pos| self.get_block_at(pos) == AIR)
+                                    && self.water_depth_at_most_pos(neighbor, 2)
+                                    && solid_walls(neighbor) < 3
                                 {
-                                    patch.push((qx, qz));
+                                    patch.push(neighbor);
                                 }
                             }
                         }
-                        for (px, pz) in patch {
-                            dried.push((px, y, pz));
-                        }
+                        dried.extend(patch);
                     }
                 }
             }
         }
-        for (x, y, z, b) in changes {
+        for (pos, b) in changes {
             // A crop reaching its final stage refunds ire (capped daily).
             let (family, final_stage, any_soil) = {
                 let d = self.reg.block(b);
                 (d.crop_family, d.crop_next.is_none(), d.crop_any_soil)
             };
             if final_stage {
-                self.plant_ire_at(x, z, 0.5);
+                self.plant_ire_at_surface(pos.surface(), 0.5);
             }
             // A maturing crop drew its meal from the soil below —
             // and stamped its family there for the rotation ledger.
-            if final_stage && family != 0 && !any_soil {
-                let sb = self.get_block(x, y - 1, z);
+            if final_stage
+                && family != 0
+                && !any_soil
+                && let Some(below) = pos.offset(0, -1, 0)
+            {
+                let sb = self.get_block_at(below);
                 if self.reg.block(sb).fert_tiles.is_some() {
-                    let meta = soil::soil_after_harvest(self.get_meta(x, y - 1, z), family);
-                    self.set_block_meta(x, y - 1, z, sb, meta);
+                    let meta = soil::soil_after_harvest(self.get_meta_at(below), family);
+                    self.set_block_meta_at(below, sb, meta);
                 }
             }
-            self.set_block(x, y, z, b);
+            self.set_block_at(pos, b);
         }
-        for (x, y, z, gain) in fed {
-            self.feed_soil(x, y, z, gain);
+        for (pos, gain) in fed {
+            self.feed_soil_at(pos, gain);
         }
-        for (x, y, z, b) in swaps {
-            self.set_block(x, y, z, b);
+        for (pos, b) in swaps {
+            self.set_block_at(pos, b);
         }
         for (at, item) in drops {
             let reg = self.reg.clone();
-            self.push_drop(at, crate::inventory::ItemStack::new(&reg, item, 1));
+            self.push_drop_at(at, crate::inventory::ItemStack::new(&reg, item, 1));
         }
-        for (x, y, z) in dried {
-            self.set_block(x, y, z, AIR);
+        for pos in dried {
+            self.set_block_at(pos, AIR);
         }
-        for (x, y, z, _species, rnd) in saplings {
-            self.try_grow_sapling(x, y, z, rnd);
+        for (pos, _species, rnd) in saplings {
+            self.try_grow_sapling_at(pos, rnd);
         }
         samples
     }
@@ -531,7 +560,7 @@ impl World {
     /// The last random-tick stamp for a chunk.
     #[cfg(test)]
     pub fn chunk_stamp(&self, x: i32, z: i32) -> Option<f64> {
-        self.last_random.get(&(x, z)).copied()
+        self.last_random.get(&ChunkPos::of_world(x, z)).copied()
     }
 
     /// A chunk returning after an absence catches up in one sweep:
@@ -560,9 +589,10 @@ impl World {
         let mut r = self
             .seed
             .wrapping_mul(31)
-            .wrapping_add(pos.x as u32)
+            .wrapping_add(pos.u() as u32)
             .wrapping_mul(31)
-            .wrapping_add(pos.z as u32)
+            .wrapping_add(pos.v() as u32)
+            .wrapping_add((pos.face() as u32).wrapping_mul(0x9e37_79b9))
             .wrapping_mul(31)
             .wrapping_add(self.day);
         // Seasons of the missed days, capped at two years back —
@@ -576,7 +606,7 @@ impl World {
             .collect();
 
         // One pass over the chunk collects the cells the rules touch.
-        let mut interesting: Vec<(i32, i32, i32, BlockId)> = Vec::new();
+        let mut interesting: Vec<(BlockPos, BlockId)> = Vec::new();
         if let Some(c) = self.chunks.get(&pos) {
             for lx in 0..CHUNK_X {
                 for lz in 0..CHUNK_Z {
@@ -595,9 +625,13 @@ impl World {
                             || Some(b) == farmland
                         {
                             interesting.push((
-                                pos.x * CHUNK_X as i32 + lx as i32,
-                                y as i32,
-                                pos.z * CHUNK_Z as i32 + lz as i32,
+                                BlockPos::new(
+                                    pos.face(),
+                                    pos.u() * CHUNK_X as u16 + lx as u16,
+                                    y as u8,
+                                    pos.v() * CHUNK_Z as u16 + lz as u16,
+                                )
+                                .expect("a chunk cell is canonical"),
                                 b,
                             ));
                         }
@@ -607,17 +641,17 @@ impl World {
         }
 
         let mut changes = Vec::new();
-        let mut grow: Vec<(i32, i32, i32, u32)> = Vec::new();
+        let mut grow: Vec<(BlockPos, u32)> = Vec::new();
         let mut refunds = 0u32;
-        let mut drains: Vec<(i32, i32, i32, u8)> = Vec::new();
-        let mut rested: Vec<(i32, i32, i32, u8)> = Vec::new();
-        for (wx, y, wz, b) in interesting {
+        let mut drains: Vec<(BlockPos, u8)> = Vec::new();
+        let mut rested: Vec<(BlockPos, u8)> = Vec::new();
+        for (at, b) in interesting {
             let d = reg.block(b);
             if Some(b) == farmland {
                 // An absent field rests: recovery integrated over the
                 // missed days (winter days restore double), only when
                 // nothing grows on it.
-                let above = self.get_block(wx, y + 1, wz);
+                let above = at.offset(0, 1, 0).map_or(AIR, |pos| self.get_block_at(pos));
                 let resting = above == AIR || Some(above) == snow_layer || Some(above) == snow_trod;
                 if resting {
                     let weight: f64 = days
@@ -627,7 +661,7 @@ impl World {
                     let e = ticks_per_day * 0.5 * weight * soil::FERT_FALLOW as f64;
                     let k = poisson(e, &mut r).min(soil::FERT_MAX as u32) as u8;
                     if k > 0 {
-                        rested.push((wx, y, wz, k));
+                        rested.push((at, k));
                     }
                 }
                 continue;
@@ -636,12 +670,14 @@ impl World {
                 let e = days.len() as f64 * ticks_per_day * 0.02;
                 if poisson(e, &mut r) > 0 {
                     r = r.wrapping_mul(1664525).wrapping_add(1013904223);
-                    grow.push((wx, y, wz, r));
+                    grow.push((at, r));
                 }
                 continue;
             }
             if d.crop_next.is_some() {
-                let soil_ok = d.crop_any_soil || farmland == Some(self.get_block(wx, y - 1, wz));
+                let below = at.offset(0, -1, 0);
+                let soil_ok = d.crop_any_soil
+                    || below.is_some_and(|pos| farmland == Some(self.get_block_at(pos)));
                 if !soil_ok {
                     continue;
                 }
@@ -658,11 +694,13 @@ impl World {
                         }
                     };
                     let mult = if mult == 0.0 && !d.crop_any_soil {
-                        let (bl, sl) = self.light_at(wx, y, wz);
+                        let (bl, sl) = self.light_at_pos(at);
                         if sl < 15 && bl >= 10 {
                             0.5
                         } else if sl == 15
-                            && (1..=16).any(|dy| reg.block(self.get_block(wx, y + dy, wz)).glass)
+                            && (1..=16)
+                                .filter_map(|dy| at.offset(0, dy, 0))
+                                .any(|pos| reg.block(self.get_block_at(pos)).glass)
                         {
                             0.75
                         } else {
@@ -689,11 +727,14 @@ impl World {
                         let fd = reg.block(cur);
                         if fd.crop_next.is_none() {
                             refunds += 1;
-                            if fd.crop_family != 0 && !fd.crop_any_soil {
-                                drains.push((wx, y - 1, wz, fd.crop_family));
+                            if fd.crop_family != 0
+                                && !fd.crop_any_soil
+                                && let Some(below) = below
+                            {
+                                drains.push((below, fd.crop_family));
                             }
                         }
-                        changes.push((wx, y, wz, cur));
+                        changes.push((at, cur));
                     }
                 }
                 continue;
@@ -701,79 +742,83 @@ impl World {
             if !phase {
                 continue;
             }
-            let sky_open = self.light_at(wx, y + 1, wz).1 == 15;
+            let above = at.offset(0, 1, 0);
+            let sky_open = above.is_some_and(|pos| self.light_at_pos(pos).1 == 15);
             if d.water_level == Some(0)
                 && !d.lava
                 && season == 3
                 && sky_open
-                && self.get_block(wx, y + 1, wz) == AIR
-                && self.generator.climate(wx, wz).t < 0.35
+                && above.is_some_and(|pos| self.get_block_at(pos) == AIR)
+                && self.generator.climate_at(at.surface()).t < 0.35
             {
                 if let Some(ice) = ice {
-                    changes.push((wx, y, wz, ice));
+                    changes.push((at, ice));
                 }
                 continue;
             }
             if Some(b) == ice
                 && (season == 0 || season == 1)
                 && sky_open
-                && self.generator.climate(wx, wz).t > -0.35
+                && self.generator.climate_at(at.surface()).t > -0.35
             {
-                changes.push((wx, y, wz, reg.water_block(0)));
+                changes.push((at, reg.water_block(0)));
                 continue;
             }
             if Some(b) == snow_layer || Some(b) == snow_trod {
-                let (bl, _) = self.light_at(wx, y, wz);
-                let warm = season != 3 && self.generator.climate(wx, wz).t > -0.35;
+                let (bl, _) = self.light_at_pos(at);
+                let warm = season != 3 && self.generator.climate_at(at.surface()).t > -0.35;
                 if bl >= 12 || warm {
-                    changes.push((wx, y, wz, AIR));
+                    changes.push((at, AIR));
                 }
             }
         }
         // Batched apply: a frozen lake is many cells — one relight,
         // not one per cell.
         let any = !changes.is_empty();
-        for (x, y, z, nb) in changes {
-            let (lx, lz) = (
-                x.rem_euclid(CHUNK_X as i32) as usize,
-                z.rem_euclid(CHUNK_Z as i32) as usize,
-            );
-            if let Some(c) = self.chunks.get_mut(&pos) {
-                c.set(lx, y as usize, lz, nb);
+        for (at, nb) in changes {
+            let (lx, y, lz) = at.local();
+            if let Some(c) = self.chunks.get_mut(&at.chunk()) {
+                c.set(lx, y, lz, nb);
                 c.dirty = true;
                 c.modified = true;
                 if self.log_edits {
-                    self.edit_log.push((x, y, z, nb, 0));
+                    self.edit_log.push((at, nb, 0));
                 }
             }
-            self.wake_water(x, y, z);
+            self.wake_water_at(at);
         }
         if any {
             self.relight_and_cascade(pos);
         }
         for _ in 0..refunds {
             // Reconciled growth credits the chunk's own country.
-            self.plant_ire_at(pos.x * 16 + 8, pos.z * 16 + 8, 0.5);
+            let center = SurfacePos::new(
+                pos.face(),
+                pos.u() * CHUNK_X as u16 + CHUNK_X as u16 / 2,
+                pos.v() * CHUNK_Z as u16 + CHUNK_Z as u16 / 2,
+            )
+            .expect("chunk center is canonical");
+            self.plant_ire_at_surface(center, 0.5);
         }
-        for (x, y, z, family) in drains {
-            let sb = self.get_block(x, y, z);
+        for (at, family) in drains {
+            let sb = self.get_block_at(at);
             if self.reg.block(sb).fert_tiles.is_some() {
-                let meta = soil::soil_after_harvest(self.get_meta(x, y, z), family);
-                self.set_block_meta(x, y, z, sb, meta);
+                let meta = soil::soil_after_harvest(self.get_meta_at(at), family);
+                self.set_block_meta_at(at, sb, meta);
             }
         }
-        for (x, y, z, gain) in rested {
-            self.feed_soil(x, y, z, gain);
+        for (at, gain) in rested {
+            self.feed_soil_at(at, gain);
         }
-        for (x, y, z, rnd) in grow {
-            self.try_grow_sapling(x, y, z, rnd);
+        for (at, rnd) in grow {
+            self.try_grow_sapling_at(at, rnd);
         }
     }
 
     /// A footstep through a snow layer presses it into a trodden
     /// print — a real edit: logged, broadcast, persisted, and it melts
     /// like any layer. History written in the ground.
-    pub fn tread(&mut self, x: i32, y: i32, z: i32) {
+    pub fn tread_at(&mut self, pos: BlockPos) {
         if self.remote {
             return; // guests' prints are stamped by the host
         }
@@ -783,41 +828,46 @@ impl World {
         ) else {
             return;
         };
-        if self.get_block(x, y, z) == layer {
-            self.set_block(x, y, z, trod);
+        if self.get_block_at(pos) == layer {
+            self.set_block_at(pos, trod);
         }
     }
 
     /// One flake of consequence: lay a snow layer on this column's
     /// surface if the storm is cold here and the sky can reach it.
-    pub fn settle_snow(&mut self, x: i32, z: i32) {
-        if !self.snows_at(x, z) {
+    pub fn settle_snow_at(&mut self, surface: SurfacePos) {
+        if !self.snows_at_surface(surface) {
             return;
         }
         let Some(layer) = self.reg.block_id("base:snow_layer") else {
             return;
         };
-        let y = self.surface_height(x, z);
+        let y = self.surface_height_at(surface);
         if y <= SEA_LEVEL || y + 1 >= CHUNK_Y as i32 - 1 {
             return;
         }
-        if self.get_block(x, y + 1, z) != AIR || self.light_at(x, y + 1, z).1 != 15 {
+        let Ok(pos) = BlockPos::new(surface.face(), surface.u(), (y + 1) as u8, surface.v()) else {
+            return;
+        };
+        if self.get_block_at(pos) != AIR || self.light_at_pos(pos).1 != 15 {
             return;
         }
-        self.set_block(x, y + 1, z, layer);
+        self.set_block_at(pos, layer);
     }
 
     /// Is the water column under (x, y, z) at most `d` cells deep?
     /// Non-water counts as depth zero (air and solid never block).
-    pub(super) fn water_depth_at_most(&self, x: i32, y: i32, z: i32, d: i32) -> bool {
+    pub(super) fn water_depth_at_most_pos(&self, pos: BlockPos, d: i32) -> bool {
         let mut depth = 0;
-        let mut yy = y;
-        while self.reg.is_water(self.get_block(x, yy, z)) {
+        let mut at = Some(pos);
+        while let Some(cell) = at
+            && self.reg.is_water(self.get_block_at(cell))
+        {
             depth += 1;
             if depth > d {
                 return false;
             }
-            yy -= 1;
+            at = cell.offset(0, -1, 0);
         }
         true
     }
@@ -828,46 +878,64 @@ impl World {
     /// pothole catches the rain too: a solid floor whose open cell
     /// has 3+ solid walls seeds a fresh film, and a drained basin
     /// rebuilds from its corners, rain by rain.
-    pub fn rain_fill(&mut self, x: i32, z: i32) {
-        if self.snows_at(x, z) || !self.rains_at(x, z) {
+    pub fn rain_fill_at(&mut self, surface: SurfacePos) {
+        if self.snows_at_surface(surface) || !self.rains_at_surface(surface) {
             return;
         }
         for y in (1..CHUNK_Y as i32).rev() {
-            let b = self.get_block(x, y, z);
+            let pos = BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
+                .expect("rain scan height is inside the world");
+            let b = self.get_block_at(pos);
             if b == AIR {
                 continue;
             }
             if let Some(v) = self.reg.water_volume(b)
                 && v < 8
             {
-                self.set_block(x, y, z, self.reg.water_for_volume(v + 1));
+                self.set_block_at(pos, self.reg.water_for_volume(v + 1));
             } else if self.reg.is_solid(b)
                 && y + 1 < CHUNK_Y as i32
                 && [(1, 0), (-1, 0), (0, 1), (0, -1)]
                     .iter()
-                    .filter(|&&(dx, dz)| self.reg.is_solid(self.get_block(x + dx, y + 1, z + dz)))
+                    .filter(|&&(dx, dz)| {
+                        pos.offset(dx, 1, dz)
+                            .is_some_and(|at| self.reg.is_solid(self.get_block_at(at)))
+                    })
                     .count()
                     >= 3
+                && let Some(above) = pos.offset(0, 1, 0)
             {
-                self.set_block(x, y + 1, z, self.reg.water_for_volume(1));
+                self.set_block_at(above, self.reg.water_for_volume(1));
             }
             return;
+        }
+    }
+
+    #[cfg(test)]
+    pub fn rain_fill(&mut self, x: i32, z: i32) {
+        if let Ok(surface) = SurfacePos::from_centered(crate::planet::Face::PosZ, x, z) {
+            self.rain_fill_at(surface);
         }
     }
 
     /// Attempt to mature the sapling at this position. On success the
     /// tree is built and the wild refunds -2 ire, bypassing the daily
     /// planting cap (it took days — it IS the slow path).
-    pub fn try_grow_sapling(&mut self, x: i32, y: i32, z: i32, rnd: u32) -> bool {
-        let b = self.get_block(x, y, z);
+    pub fn try_grow_sapling_at(&mut self, pos: BlockPos, rnd: u32) -> bool {
+        let b = self.get_block_at(pos);
         let Some(species) = self.reg.block(b).sapling.clone() else {
             return false;
         };
-        if self.grow_tree(x, y, z, &species, rnd) {
-            self.add_ire_at(x, z, -2.0);
+        if self.grow_tree_at(pos, &species, rnd) {
+            self.add_ire_at_surface(pos.surface(), -2.0);
             true
         } else {
             false
         }
+    }
+
+    #[cfg(test)]
+    pub fn try_grow_sapling(&mut self, x: i32, y: i32, z: i32, rnd: u32) -> bool {
+        BlockPos::of_world(x, y, z).is_some_and(|pos| self.try_grow_sapling_at(pos, rnd))
     }
 }

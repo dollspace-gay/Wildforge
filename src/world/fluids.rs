@@ -1,6 +1,7 @@
 //! Finite-water scheduling, seam waking, and flow simulation.
 
 use super::*;
+use crate::planet::{BlockPos, Direction6, step6};
 
 /// What a lava cell keeps back when it pours over an edge, so the flow
 /// reads as one connected ribbon instead of a row of islands. Costs
@@ -8,33 +9,27 @@ use super::*;
 const LAVA_TRAIL: u8 = 1;
 
 impl World {
-    pub(super) fn schedule_water(&mut self, x: i32, y: i32, z: i32) {
-        if self.water_queued.insert((x, y, z)) {
-            self.water_queue.push_back((x, y, z));
+    pub(super) fn schedule_water_at(&mut self, pos: BlockPos) {
+        if self.water_queued.insert(pos) {
+            self.water_queue.push_back(pos);
         }
     }
 
-    pub(super) fn schedule_lava(&mut self, x: i32, y: i32, z: i32) {
-        if self.lava_queued.insert((x, y, z)) {
-            self.lava_queue.push_back((x, y, z));
+    pub(super) fn schedule_lava_at(&mut self, pos: BlockPos) {
+        if self.lava_queued.insert(pos) {
+            self.lava_queue.push_back(pos);
         }
     }
 
     /// Wake both fluids around an edit: each tick skips cells that
     /// aren't its own fluid, and contact reactions need either side
     /// to notice the other.
-    pub fn wake_water(&mut self, x: i32, y: i32, z: i32) {
-        for (dx, dy, dz) in [
-            (0, 0, 0),
-            (1, 0, 0),
-            (-1, 0, 0),
-            (0, 1, 0),
-            (0, -1, 0),
-            (0, 0, 1),
-            (0, 0, -1),
-        ] {
-            self.schedule_water(x + dx, y + dy, z + dz);
-            self.schedule_lava(x + dx, y + dy, z + dz);
+    pub fn wake_water_at(&mut self, pos: BlockPos) {
+        self.schedule_water_at(pos);
+        self.schedule_lava_at(pos);
+        for neighbor in crate::planet::neighbors6(pos) {
+            self.schedule_water_at(neighbor);
+            self.schedule_lava_at(neighbor);
         }
     }
 
@@ -43,30 +38,49 @@ impl World {
     /// differentials queue — a flat ocean seam schedules nothing.
     pub(super) fn wake_seams(&mut self, pos: ChunkPos) {
         let mut wake = Vec::new();
-        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let np = ChunkPos {
-                x: pos.x + dx,
-                z: pos.z + dz,
+        for direction in [
+            Direction6::East,
+            Direction6::West,
+            Direction6::North,
+            Direction6::South,
+        ] {
+            let np = match direction {
+                Direction6::East => pos.offset(1, 0),
+                Direction6::West => pos.offset(-1, 0),
+                Direction6::North => pos.offset(0, 1),
+                Direction6::South => pos.offset(0, -1),
+                _ => unreachable!(),
             };
             if !self.chunks.contains_key(&np) {
                 continue;
             }
-            let n = if dx != 0 { CHUNK_Z } else { CHUNK_X } as i32;
+            let n = match direction {
+                Direction6::East | Direction6::West => CHUNK_Z,
+                _ => CHUNK_X,
+            };
             for i in 0..n {
-                // World coords of the facing cells on each side.
-                let (ax, az) = if dx != 0 {
-                    (
-                        pos.x * CHUNK_X as i32 + if dx == 1 { CHUNK_X as i32 - 1 } else { 0 },
-                        pos.z * CHUNK_Z as i32 + i,
-                    )
-                } else {
-                    (
-                        pos.x * CHUNK_X as i32 + i,
-                        pos.z * CHUNK_Z as i32 + if dz == 1 { CHUNK_Z as i32 - 1 } else { 0 },
-                    )
+                let (u, v) = match direction {
+                    Direction6::East => (
+                        pos.u() * CHUNK_X as u16 + CHUNK_X as u16 - 1,
+                        pos.v() * CHUNK_Z as u16 + i as u16,
+                    ),
+                    Direction6::West => (
+                        pos.u() * CHUNK_X as u16,
+                        pos.v() * CHUNK_Z as u16 + i as u16,
+                    ),
+                    Direction6::North => (
+                        pos.u() * CHUNK_X as u16 + i as u16,
+                        pos.v() * CHUNK_Z as u16 + CHUNK_Z as u16 - 1,
+                    ),
+                    Direction6::South => (
+                        pos.u() * CHUNK_X as u16 + i as u16,
+                        pos.v() * CHUNK_Z as u16,
+                    ),
+                    _ => unreachable!(),
                 };
-                let (bx, bz) = (ax + dx, az + dz);
-                for y in 1..CHUNK_Y as i32 {
+                for y in 1..CHUNK_Y as u16 {
+                    let a = BlockPos::new(pos.face(), u, y as u8, v).unwrap();
+                    let b = step6(a, direction).expect("horizontal planet step").pos;
                     // Only fluid-meets-AIR differentials wake: a hole
                     // beside the sea must flood, but stepped worldgen
                     // water (a terraced river crossing the border)
@@ -75,30 +89,28 @@ impl World {
                     // river cascading on load — endless sim churn and
                     // remeshes, and the surface looked like broken
                     // glass while it sloshed.
-                    let (ba, bb) = (self.get_block(ax, y, az), self.get_block(bx, y, bz));
+                    let (ba, bb) = (self.get_block_at(a), self.get_block_at(b));
                     let (a_air, b_air) = (self.reg.is_air(ba), self.reg.is_air(bb));
                     if a_air == b_air {
                         continue;
                     }
-                    if let (Some(a), Some(b)) = (
-                        self.flow_potential(ax, y, az),
-                        self.flow_potential(bx, y, bz),
-                    ) && a.abs_diff(b) >= 2
+                    if let (Some(av), Some(bv)) =
+                        (self.flow_potential_at(a), self.flow_potential_at(b))
+                        && av.abs_diff(bv) >= 2
                     {
-                        wake.push(if a > b { (ax, y, az) } else { (bx, y, bz) });
-                    } else if let (Some(a), Some(b)) = (
-                        self.lava_potential(ax, y, az),
-                        self.lava_potential(bx, y, bz),
-                    ) && a.abs_diff(b) >= 3
+                        wake.push(if av > bv { a } else { b });
+                    } else if let (Some(av), Some(bv)) =
+                        (self.lava_potential_at(a), self.lava_potential_at(b))
+                        && av.abs_diff(bv) >= 3
                     {
-                        wake.push(if a > b { (ax, y, az) } else { (bx, y, bz) });
+                        wake.push(if av > bv { a } else { b });
                     }
                 }
             }
         }
-        for (x, y, z) in wake {
-            self.schedule_water(x, y, z);
-            self.schedule_lava(x, y, z);
+        for pos in wake {
+            self.schedule_water_at(pos);
+            self.schedule_lava_at(pos);
         }
     }
 
@@ -109,8 +121,6 @@ impl World {
     /// mid-pour) resumes settling instead of hanging frozen until some
     /// edit happens to touch it. Border pairs are wake_seams' business.
     pub(super) fn wake_stale_fluids(&mut self, pos: ChunkPos) {
-        let bx = pos.x * CHUNK_X as i32;
-        let bz = pos.z * CHUNK_Z as i32;
         let Some(c) = self.chunks.get(&pos) else {
             return;
         };
@@ -121,9 +131,15 @@ impl World {
                     if !self.reg.is_fluid(c.get(lx, y, lz)) {
                         continue;
                     }
-                    let (x, wy, z) = (bx + lx as i32, y as i32, bz + lz as i32);
+                    let here = BlockPos::new(
+                        pos.face(),
+                        pos.u() * CHUNK_X as u16 + lx as u16,
+                        y as u8,
+                        pos.v() * CHUNK_Z as u16 + lz as u16,
+                    )
+                    .unwrap();
                     if self.reg.is_air(c.get(lx, y - 1, lz)) {
-                        wake.push((x, wy, z));
+                        wake.push(here);
                         continue;
                     }
                     let class = |cx: usize, cy: usize, cz: usize| -> u8 {
@@ -156,34 +172,40 @@ impl World {
                                 && self.reg.is_water(c.get(nx as usize, y, nz as usize))
                                 && class(lx, y, lz) != class(nx as usize, y, nz as usize)
                             {
-                                wake.push((bx + lx as i32, y as i32, bz + lz as i32));
+                                wake.push(here);
                                 break;
                             }
                             continue;
                         }
-                        let (ax, az) = (bx + nx, bz + nz);
+                        let neighbor = BlockPos::new(
+                            pos.face(),
+                            pos.u() * CHUNK_X as u16 + nx as u16,
+                            y as u8,
+                            pos.v() * CHUNK_Z as u16 + nz as u16,
+                        )
+                        .unwrap();
                         if let (Some(a), Some(b)) = (
-                            self.flow_potential(x, wy, z),
-                            self.flow_potential(ax, wy, az),
+                            self.flow_potential_at(here),
+                            self.flow_potential_at(neighbor),
                         ) && a.abs_diff(b) >= 2
                         {
-                            wake.push((x, wy, z));
+                            wake.push(here);
                             break;
                         } else if let (Some(a), Some(b)) = (
-                            self.lava_potential(x, wy, z),
-                            self.lava_potential(ax, wy, az),
+                            self.lava_potential_at(here),
+                            self.lava_potential_at(neighbor),
                         ) && a.abs_diff(b) >= 3
                         {
-                            wake.push((x, wy, z));
+                            wake.push(here);
                             break;
                         }
                     }
                 }
             }
         }
-        for (x, y, z) in wake {
-            self.schedule_water(x, y, z);
-            self.schedule_lava(x, y, z);
+        for pos in wake {
+            self.schedule_water_at(pos);
+            self.schedule_lava_at(pos);
         }
     }
 
@@ -192,60 +214,35 @@ impl World {
     /// one documented exception to water conservation: the steam
     /// left). Both edits wake the neighborhood, so a fluid front
     /// hardens crust cell by cell until the two are separated.
-    fn quench(&mut self, lava: (i32, i32, i32), water: (i32, i32, i32)) {
-        let lv = self
-            .reg
-            .lava_volume(self.get_block(lava.0, lava.1, lava.2))
-            .unwrap_or(0);
+    fn quench(&mut self, lava: BlockPos, water: BlockPos) {
+        let lv = self.reg.lava_volume(self.get_block_at(lava)).unwrap_or(0);
         let hard = if lv >= 8 {
             "base:obsidian"
         } else {
             "base:basalt"
         };
         if let Some(b) = self.reg.block_id(hard) {
-            self.set_block(lava.0, lava.1, lava.2, b);
+            self.set_block_at(lava, b);
         }
-        self.set_block(water.0, water.1, water.2, AIR);
+        self.set_block_at(water, AIR);
     }
 
     /// The first watery neighbor of a cell, if any (6-connected).
-    fn water_neighbor(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
-        for (dx, dy, dz) in [
-            (1, 0, 0),
-            (-1, 0, 0),
-            (0, 1, 0),
-            (0, -1, 0),
-            (0, 0, 1),
-            (0, 0, -1),
-        ] {
-            if self.reg.is_water(self.get_block(x + dx, y + dy, z + dz)) {
-                return Some((x + dx, y + dy, z + dz));
-            }
-        }
-        None
+    fn water_neighbor(&self, pos: BlockPos) -> Option<BlockPos> {
+        crate::planet::neighbors6(pos)
+            .find(|neighbor| self.reg.is_water(self.get_block_at(*neighbor)))
     }
 
     /// The first lava neighbor of a cell, if any (6-connected).
-    fn lava_neighbor(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
-        for (dx, dy, dz) in [
-            (1, 0, 0),
-            (-1, 0, 0),
-            (0, 1, 0),
-            (0, -1, 0),
-            (0, 0, 1),
-            (0, 0, -1),
-        ] {
-            if self.reg.is_lava(self.get_block(x + dx, y + dy, z + dz)) {
-                return Some((x + dx, y + dy, z + dz));
-            }
-        }
-        None
+    fn lava_neighbor(&self, pos: BlockPos) -> Option<BlockPos> {
+        crate::planet::neighbors6(pos)
+            .find(|neighbor| self.reg.is_lava(self.get_block_at(*neighbor)))
     }
 
     /// Volume for flow comparisons: water carries its units, air can
     /// receive (0), anything else opts out of flow entirely.
-    pub(super) fn flow_potential(&self, x: i32, y: i32, z: i32) -> Option<u8> {
-        let b = self.get_block(x, y, z);
+    pub(super) fn flow_potential_at(&self, pos: BlockPos) -> Option<u8> {
+        let b = self.get_block_at(pos);
         if self.reg.is_air(b) {
             Some(0)
         } else {
@@ -269,24 +266,23 @@ impl World {
                 break;
             };
             self.water_queued.remove(&pos);
-            let (x, y, z) = pos;
-            let Some(v) = self.reg.water_volume(self.get_block(x, y, z)) else {
+            let Some(v) = self.reg.water_volume(self.get_block_at(pos)) else {
                 continue;
             };
             // Fire first: touching lava consumes this cell.
-            if let Some(l) = self.lava_neighbor(x, y, z) {
-                self.quench(l, (x, y, z));
+            if let Some(lava) = self.lava_neighbor(pos) {
+                self.quench(lava, pos);
                 changed = true;
                 continue;
             }
-            // Fall first, greedily (below is always in our own chunk).
-            if y > 0
-                && let Some(nv) = self.flow_potential(x, y - 1, z)
+            // Fall first, greedily.
+            if let Some(below) = step6(pos, Direction6::Down).map(|step| step.pos)
+                && let Some(nv) = self.flow_potential_at(below)
                 && nv < 8
             {
                 let t = v.min(8 - nv);
-                self.set_block(x, y - 1, z, self.reg.water_for_volume(nv + t));
-                self.set_block(x, y, z, self.reg.water_for_volume(v - t));
+                self.set_block_at(below, self.reg.water_for_volume(nv + t));
+                self.set_block_at(pos, self.reg.water_for_volume(v - t));
                 changed = true;
                 continue;
             }
@@ -298,41 +294,46 @@ impl World {
             // the edge and a breached pool empties instead of
             // stranding a lip. Only as much as the cell below can
             // swallow moves, keeping the push one-way.
-            let mut best: Option<(i32, i32, u8)> = None;
-            let mut drop: Option<(i32, i32, u8)> = None;
-            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                let (nx, nz) = (x + dx, z + dz);
-                if !self.chunks.contains_key(&ChunkPos::of_world(nx, nz)) {
+            let mut best: Option<(BlockPos, u8)> = None;
+            let mut drop: Option<(BlockPos, u8)> = None;
+            for direction in [
+                Direction6::East,
+                Direction6::North,
+                Direction6::West,
+                Direction6::South,
+            ] {
+                let neighbor = step6(pos, direction).expect("horizontal planet step").pos;
+                if !self.chunks.contains_key(&neighbor.chunk()) {
                     continue; // the world's edge: defer, don't spill
                 }
-                let Some(nv) = self.flow_potential(nx, y, nz) else {
+                let Some(nv) = self.flow_potential_at(neighbor) else {
                     continue;
                 };
-                if best.is_none_or(|(_, _, b)| nv < b) {
-                    best = Some((nx, nz, nv));
+                if best.is_none_or(|(_, volume)| nv < volume) {
+                    best = Some((neighbor, nv));
                 }
                 if nv == 0
-                    && y > 0
-                    && let Some(bv) = self.flow_potential(nx, y - 1, nz)
+                    && let Some(below) = step6(neighbor, Direction6::Down).map(|step| step.pos)
+                    && let Some(bv) = self.flow_potential_at(below)
                     && bv < 8
-                    && drop.is_none_or(|(_, _, r)| 8 - bv > r)
+                    && drop.is_none_or(|(_, room)| 8 - bv > room)
                 {
-                    drop = Some((nx, nz, 8 - bv));
+                    drop = Some((neighbor, 8 - bv));
                 }
             }
-            if let Some((nx, nz, room)) = drop {
+            if let Some((neighbor, room)) = drop {
                 let t = v.min(room);
-                self.set_block(nx, y, nz, self.reg.water_for_volume(t));
-                self.set_block(x, y, z, self.reg.water_for_volume(v - t));
+                self.set_block_at(neighbor, self.reg.water_for_volume(t));
+                self.set_block_at(pos, self.reg.water_for_volume(v - t));
                 changed = true;
                 continue;
             }
-            if let Some((nx, nz, nv)) = best
+            if let Some((neighbor, nv)) = best
                 && v >= nv + 2
             {
                 let t = ((v - nv) / 2).max(1);
-                self.set_block(nx, y, nz, self.reg.water_for_volume(nv + t));
-                self.set_block(x, y, z, self.reg.water_for_volume(v - t));
+                self.set_block_at(neighbor, self.reg.water_for_volume(nv + t));
+                self.set_block_at(pos, self.reg.water_for_volume(v - t));
                 changed = true;
                 continue;
             }
@@ -348,44 +349,52 @@ impl World {
             // fully roofed plumbing).
             // A column receives at its partial top, or in the air
             // above a full one; capped by rock, it can only donate.
-            let open = |cx: i32, cz: i32, top: (i32, u8, i64)| -> bool {
+            let open = |top: (BlockPos, u8, i64)| -> bool {
                 top.1 < 8
-                    || (top.0 + 1 < CHUNK_Y as i32 && self.get_block(cx, top.0 + 1, cz) == AIR)
+                    || step6(top.0, Direction6::Up)
+                        .is_some_and(|step| self.get_block_at(step.pos) == AIR)
             };
-            let own = self.water_column_top(x, y, z);
-            let mut donor = (x, z, own);
-            let mut recv = if open(x, z, own) {
-                Some((x, z, own))
-            } else {
-                None
-            };
-            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                let (nx, nz) = (x + dx, z + dz);
-                if !self.chunks.contains_key(&ChunkPos::of_world(nx, nz))
-                    || !self.reg.is_water(self.get_block(nx, y, nz))
+            let own = self.water_column_top(pos);
+            let mut donor = own;
+            let mut recv = open(own).then_some(own);
+            for direction in [
+                Direction6::East,
+                Direction6::North,
+                Direction6::West,
+                Direction6::South,
+            ] {
+                let neighbor = step6(pos, direction).expect("horizontal planet step").pos;
+                if !self.chunks.contains_key(&neighbor.chunk())
+                    || !self.reg.is_water(self.get_block_at(neighbor))
                 {
                     continue;
                 }
-                let col = (nx, nz, self.water_column_top(nx, y, nz));
-                if col.2.2 > donor.2.2 {
+                let col = self.water_column_top(neighbor);
+                if col.2 > donor.2 {
                     donor = col;
                 }
-                if open(nx, nz, col.2)
-                    && recv.is_none_or(|r: (i32, i32, (i32, u8, i64))| col.2.2 < r.2.2)
-                {
+                if open(col) && recv.is_none_or(|receiving| col.2 < receiving.2) {
                     recv = Some(col);
                 }
             }
-            let (dx_, dz_, (dty, dtv, dh)) = donor;
-            if let Some((rx_, rz_, (rty, rtv, rh))) = recv
-                && dh >= rh + 2
+            let (donor_top, donor_volume, donor_head) = donor;
+            if let Some((receiver_top, receiver_volume, receiver_head)) = recv
+                && donor_head >= receiver_head + 2
             {
-                let (ry, rv) = if rtv < 8 { (rty, rtv) } else { (rty + 1, 0) };
-                let t = ((dh - rh) / 2).min(dtv as i64).min(8 - rv as i64) as u8;
-                self.set_block(rx_, ry, rz_, self.reg.water_for_volume(rv + t));
-                self.set_block(dx_, dty, dz_, self.reg.water_for_volume(dtv - t));
+                let (receiver, existing) = if receiver_volume < 8 {
+                    (receiver_top, receiver_volume)
+                } else if let Some(step) = step6(receiver_top, Direction6::Up) {
+                    (step.pos, 0)
+                } else {
+                    continue;
+                };
+                let t = ((donor_head - receiver_head) / 2)
+                    .min(donor_volume as i64)
+                    .min(8 - existing as i64) as u8;
+                self.set_block_at(receiver, self.reg.water_for_volume(existing + t));
+                self.set_block_at(donor_top, self.reg.water_for_volume(donor_volume - t));
                 // Keep conducting until the heads meet.
-                self.schedule_water(x, y, z);
+                self.schedule_water_at(pos);
                 changed = true;
             }
         }
@@ -397,19 +406,19 @@ impl World {
     /// highest connected water above it. Returns (top y, top volume,
     /// head) where head counts total height in volume units — the
     /// quantity pressure equalizes between touching columns.
-    fn water_column_top(&self, x: i32, y: i32, z: i32) -> (i32, u8, i64) {
-        let mut ty = y;
+    fn water_column_top(&self, pos: BlockPos) -> (BlockPos, u8, i64) {
+        let mut top = pos;
         let mut tv = self
             .reg
-            .water_volume(self.get_block(x, y, z))
+            .water_volume(self.get_block_at(pos))
             .unwrap_or_default();
-        while ty + 1 < CHUNK_Y as i32
-            && let Some(nv) = self.reg.water_volume(self.get_block(x, ty + 1, z))
+        while let Some(above) = step6(top, Direction6::Up).map(|step| step.pos)
+            && let Some(nv) = self.reg.water_volume(self.get_block_at(above))
         {
-            ty += 1;
+            top = above;
             tv = nv;
         }
-        (ty, tv, ty as i64 * 8 + tv as i64)
+        (top, tv, i64::from(top.y()) * 8 + i64::from(tv))
     }
 
     /// End-of-tick light settlement: every chunk a fluid front touched
@@ -422,8 +431,8 @@ impl World {
     }
 
     /// Lava potential: air receives, lava carries, all else opts out.
-    fn lava_potential(&self, x: i32, y: i32, z: i32) -> Option<u8> {
-        let b = self.get_block(x, y, z);
+    fn lava_potential_at(&self, pos: BlockPos) -> Option<u8> {
+        let b = self.get_block_at(pos);
         if self.reg.is_air(b) {
             Some(0)
         } else {
@@ -444,12 +453,11 @@ impl World {
                 break;
             };
             self.lava_queued.remove(&pos);
-            let (x, y, z) = pos;
-            let Some(v) = self.reg.lava_volume(self.get_block(x, y, z)) else {
+            let Some(v) = self.reg.lava_volume(self.get_block_at(pos)) else {
                 continue;
             };
-            if let Some(w) = self.water_neighbor(x, y, z) {
-                self.quench((x, y, z), w);
+            if let Some(water) = self.water_neighbor(pos) {
+                self.quench(pos, water);
                 changed = true;
                 continue;
             }
@@ -458,16 +466,16 @@ impl World {
             // mountain's own flow across untouched country is the
             // wild's, but lava you led into a forest through a channel
             // you dug is a tool, and the channel marked the ground.
-            if self.ignite_around(x, y, z) {
+            if self.ignite_around_at(pos) {
                 changed = true;
             }
-            if y > 0
-                && let Some(nv) = self.lava_potential(x, y - 1, z)
+            if let Some(below) = step6(pos, Direction6::Down).map(|step| step.pos)
+                && let Some(nv) = self.lava_potential_at(below)
                 && nv < 8
             {
                 let t = v.min(8 - nv);
-                self.set_block(x, y - 1, z, self.reg.lava_for_volume(nv + t));
-                self.set_block(x, y, z, self.reg.lava_for_volume(v - t));
+                self.set_block_at(below, self.reg.lava_for_volume(nv + t));
+                self.set_block_at(pos, self.reg.lava_for_volume(v - t));
                 changed = true;
                 continue;
             }
@@ -480,43 +488,48 @@ impl World {
             // them, not a flow. A viscous fluid coats what it runs
             // over, so a lava cell keeps its last unit and the ribbon
             // stays joined from the vent to the front.
-            let mut best: Option<(i32, i32, u8)> = None;
-            let mut drop: Option<(i32, i32, u8)> = None;
-            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                let (nx, nz) = (x + dx, z + dz);
-                if !self.chunks.contains_key(&ChunkPos::of_world(nx, nz)) {
+            let mut best: Option<(BlockPos, u8)> = None;
+            let mut drop: Option<(BlockPos, u8)> = None;
+            for direction in [
+                Direction6::East,
+                Direction6::North,
+                Direction6::West,
+                Direction6::South,
+            ] {
+                let neighbor = step6(pos, direction).expect("horizontal planet step").pos;
+                if !self.chunks.contains_key(&neighbor.chunk()) {
                     continue;
                 }
-                let Some(nv) = self.lava_potential(nx, y, nz) else {
+                let Some(nv) = self.lava_potential_at(neighbor) else {
                     continue;
                 };
-                if best.is_none_or(|(_, _, b)| nv < b) {
-                    best = Some((nx, nz, nv));
+                if best.is_none_or(|(_, volume)| nv < volume) {
+                    best = Some((neighbor, nv));
                 }
                 if nv == 0
-                    && y > 0
-                    && let Some(bv) = self.lava_potential(nx, y - 1, nz)
+                    && let Some(below) = step6(neighbor, Direction6::Down).map(|step| step.pos)
+                    && let Some(bv) = self.lava_potential_at(below)
                     && bv < 8
-                    && drop.is_none_or(|(_, _, r)| 8 - bv > r)
+                    && drop.is_none_or(|(_, room)| 8 - bv > room)
                 {
-                    drop = Some((nx, nz, 8 - bv));
+                    drop = Some((neighbor, 8 - bv));
                 }
             }
-            if let Some((nx, nz, room)) = drop {
+            if let Some((neighbor, room)) = drop {
                 let t = v.saturating_sub(LAVA_TRAIL).min(room);
                 if t > 0 {
-                    self.set_block(nx, y, nz, self.reg.lava_for_volume(t));
-                    self.set_block(x, y, z, self.reg.lava_for_volume(v - t));
+                    self.set_block_at(neighbor, self.reg.lava_for_volume(t));
+                    self.set_block_at(pos, self.reg.lava_for_volume(v - t));
                     changed = true;
                     continue;
                 }
             }
-            if let Some((nx, nz, nv)) = best
+            if let Some((neighbor, nv)) = best
                 && v >= nv + 3
             {
                 let t = ((v - nv) / 2).max(1);
-                self.set_block(nx, y, nz, self.reg.lava_for_volume(nv + t));
-                self.set_block(x, y, z, self.reg.lava_for_volume(v - t));
+                self.set_block_at(neighbor, self.reg.lava_for_volume(nv + t));
+                self.set_block_at(pos, self.reg.lava_for_volume(v - t));
                 changed = true;
             }
         }

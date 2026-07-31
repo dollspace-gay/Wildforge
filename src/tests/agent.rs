@@ -23,7 +23,7 @@ impl TestHost {
         // the entire suite without exercising any agent behavior.
         let mut world = World::new(42, tmp_dir(world_tag), reg);
         world.insert_empty_chunks_for_test(
-            (-2..=2).flat_map(|x| (-2..=2).map(move |z| ChunkPos { x, z })),
+            (-2..=2).flat_map(|x| (-2..=2).map(move |z| tchunk(x, z))),
         );
         let mut sim = crate::server::Server::new(world, 0.3, 5);
         let mut sess = crate::mp::HostSession::start_on(world_tag.into(), 0).unwrap();
@@ -55,7 +55,7 @@ impl TestHost {
             sim.world.set_blocks_for_test(edits);
             for cx in (x0 >> 4) - 1..=(x1 >> 4) + 1 {
                 for cz in (z0 >> 4) - 1..=(z1 >> 4) + 1 {
-                    sim.world.player_touched.insert((cx, cz));
+                    sim.world.player_touched.insert(tchunk(cx, cz));
                 }
             }
         }
@@ -63,7 +63,7 @@ impl TestHost {
         // does — the agents' mirrors must see what the test changes.
         sim.world.set_edit_logging(true);
         sess.set_initial_view_distance_for_test(2);
-        sess.fresh_spawn = Some(glam::Vec3::new(0.5, STAGE_Y as f32 + 0.2, 0.5));
+        sess.fresh_spawn = Some(ep(glam::Vec3::new(0.5, STAGE_Y as f32 + 0.2, 0.5)));
         let addr = format!("127.0.0.1:{}", sess.net.port).parse().unwrap();
         let shared = Arc::new(Mutex::new((sess, sim)));
         let stop = Arc::new(AtomicBool::new(false));
@@ -148,10 +148,11 @@ fn the_agent_joins_speaks_and_sees() {
     assert!(look.contains("pos ") && look.contains('@'), "digest + map");
     assert!(look.contains("ECHO"), "sees the other player: {look}");
     // A log placed by the host turns up in nearest().
-    let spot = crate::agent::cell_of(a.player.pos);
+    let spot = crate::agent::cell_of(a.player.pos).expect("agent occupies a world cell");
     host.with(|_, sim| {
         let log = sim.world.reg.block_id("base:log").unwrap();
-        sim.world.set_block(spot.0 + 3, spot.1, spot.2, log);
+        sim.world
+            .set_block_at(spot.offset(3, 0, 0).expect("nearby test cell"), log);
     });
     for _ in 0..50 {
         a.pump(0.02);
@@ -166,17 +167,21 @@ fn the_agent_walks_and_chops() {
     let host = TestHost::start("agent-chop");
     let mut a = Agent::connect_for_test(host.addr, "SAWYER").expect("joins");
     a.pump_for(0.5);
-    let (px, py, pz) = crate::agent::cell_of(a.player.pos);
+    let player_cell = crate::agent::cell_of(a.player.pos).expect("agent occupies a world cell");
+    let trunk = player_cell.offset(8, 0, 0).expect("nearby trunk cell");
     // A four-log trunk eight blocks east.
     host.with(|_, sim| {
         let log = sim.world.reg.block_id("base:log").unwrap();
         for dy in 0..4 {
-            sim.world.set_block(px + 8, py + dy, pz, log);
+            sim.world
+                .set_block_at(trunk.offset(0, dy, 0).expect("trunk height"), log);
         }
     });
     a.pump_for(0.5);
     let ire_before = host.with(|_, sim| sim.world.ire);
-    let report = a.chop(px + 8, py + 1, pz).expect("the chop succeeds");
+    let report = a
+        .chop_at(trunk.offset(0, 1, 0).expect("trunk target"))
+        .expect("the chop succeeds");
     assert!(report.contains("felled"), "{report}");
     // The design guard, as a test: the wild keeps score on hired
     // hands too — an agent's felling charges the shared meter.
@@ -198,7 +203,7 @@ fn the_agent_walks_and_chops() {
         "the host awarded the drops over the wire ({logs})"
     );
     // And the world agrees the trunk is gone.
-    assert_eq!(a.world.get_block(px + 8, py, pz), AIR);
+    assert_eq!(a.world.get_block_at(trunk), AIR);
 }
 
 #[test]
@@ -219,8 +224,9 @@ fn the_agent_follows_the_leader() {
         distance: 3.0,
     };
     // The leader walks a bent path; the heeler chases the trail.
-    let (px, py, pz) = crate::agent::cell_of(lead.player.pos);
-    lead.go_to((px + 14, py, pz)).expect("leg one plans");
+    let start = crate::agent::cell_of(lead.player.pos).expect("leader occupies a world cell");
+    let turn = start.offset(14, 0, 0).expect("first destination");
+    lead.go_to(turn).expect("leg one plans");
     for _ in 0..900 {
         lead.pump(0.02);
         tail.pump(0.02);
@@ -229,7 +235,8 @@ fn the_agent_follows_the_leader() {
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    lead.go_to((px + 14, py, pz + 10)).expect("leg two plans");
+    lead.go_to(turn.offset(0, 0, 10).expect("second destination"))
+        .expect("leg two plans");
     for _ in 0..900 {
         lead.pump(0.02);
         tail.pump(0.02);
@@ -281,21 +288,23 @@ fn the_agent_crafts_places_and_deposits() {
         .map(|s| s.count)
         .sum();
     assert!(planks >= 12, "3 crafts x 4 planks ({planks})");
-    let (px, py, pz) = crate::agent::cell_of(a.player.pos);
+    let player_cell = crate::agent::cell_of(a.player.pos).expect("agent occupies a world cell");
     a.craft("crafting_table", 1).expect("table crafts");
     // Two cells out: the host (rightly) refuses placement into any
     // cell the placer's own body overlaps, and physics can settle an
     // agent right on a cell boundary.
-    a.place(px + 2, py, pz, "base:crafting_table")
-        .expect("table places");
+    a.place_at(
+        player_cell.offset(2, 0, 0).expect("table cell"),
+        "base:crafting_table",
+    )
+    .expect("table places");
     a.craft("chest", 1).expect("a chest by the table");
-    a.place(px - 2, py, pz, "base:chest").expect("chest places");
-    let report = a
-        .deposit(px - 2, py, pz, None)
-        .expect("the pack empties into it");
+    let chest = player_cell.offset(-2, 0, 0).expect("chest cell");
+    a.place_at(chest, "base:chest").expect("chest places");
+    let report = a.deposit(chest, None).expect("the pack empties into it");
     assert!(report.contains("stowed"), "{report}");
     // The host's chest — the authoritative one — holds the goods.
-    let held: u32 = host.with(|_, sim| match sim.world.block_entity(&(px - 2, py, pz)) {
+    let held: u32 = host.with(|_, sim| match sim.world.block_entity_at(&chest) {
         Some(crate::world::BlockEntity::Chest(c)) => {
             c.slots.iter().flatten().map(|s| s.count).sum()
         }

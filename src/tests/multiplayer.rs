@@ -19,20 +19,18 @@ fn net_protocol_round_trips() {
             atproto: None,
         },
         C2S::Move {
-            pos: Vec3::new(1.5, 80.0, -3.5),
+            pos: ep(Vec3::new(1.5, 80.0, -3.5)),
             yaw: 1.2,
             hotbar: 2,
             sprint: true,
         },
-        C2S::Break { x: 1, y: 2, z: 3 },
-        C2S::Place { x: -9, y: 70, z: 4 },
+        C2S::Break { pos: bp(1, 2, 3) },
+        C2S::Place { pos: bp(-9, 70, 4) },
         C2S::AttackMob { id: 3 },
         C2S::FeedMob { id: 12 },
-        C2S::BrushBlock { x: 4, y: 30, z: -2 },
+        C2S::BrushBlock { pos: bp(4, 30, -2) },
         C2S::ContainerClick {
-            x: 1,
-            y: 2,
-            z: 3,
+            pos: bp(1, 2, 3),
             slot: 4,
             right: true,
         },
@@ -58,9 +56,8 @@ fn net_protocol_round_trips() {
             admission_policy: crate::identity::AdmissionPolicy::Open,
         },
         S2C::BlockSet {
-            x: 1,
-            y: 2,
-            z: 3,
+            pos: crate::planet::BlockPos::from_centered(crate::planet::Face::PosZ, 1, 2, 3)
+                .unwrap(),
             id: 9,
             meta: 0,
         },
@@ -79,8 +76,9 @@ fn net_protocol_round_trips() {
             present: 3,
         },
         S2C::Chunk {
-            x: 0,
-            z: 0,
+            face: crate::planet::Face::PosZ as u8,
+            u: 0,
+            v: 0,
             rle: vec![1, 2, 3],
         },
         S2C::HeldResult(Some(crate::net::StackSnap {
@@ -93,7 +91,7 @@ fn net_protocol_round_trips() {
             vec![crate::net::MobSnap {
                 id: 5,
                 species: 1,
-                pos: Vec3::new(1.0, 2.0, 3.0),
+                pos: ep(Vec3::new(1.0, 2.0, 3.0)),
                 yaw: 0.5,
                 growth: 1.0,
                 hurt: 0.0,
@@ -301,11 +299,11 @@ fn loopback_join_stream_and_edit() {
     let mut torch_wire: Option<usize> = None;
     let mut held_echo: Option<((u16, u32), (u16, u32))> = None;
     let mut got_chunk = false;
-    let mut chunk_data: Option<(i32, i32, Vec<u8>)> = None;
+    let mut chunk_data: Option<(ChunkPos, Vec<u8>)> = None;
     for _ in 0..600 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
         for msg in client.poll() {
@@ -321,16 +319,19 @@ fn loopback_join_stream_and_edit() {
                     torch_wire = items.iter().position(|n| n == "base:torch");
                     welcome = Some(palette);
                     client.send(&C2S::Move {
-                        pos: Vec3::new(0.5, 80.0, 0.5),
+                        pos: ep(Vec3::new(0.5, 80.0, 0.5)),
                         yaw: 0.0,
                         hotbar: 0,
                         sprint: false,
                     });
                 }
-                S2C::Chunk { x, z, rle } => {
+                S2C::Chunk { face, u, v, rle } => {
                     got_chunk = true;
-                    if chunk_data.is_none() {
-                        chunk_data = Some((x, z, rle));
+                    if chunk_data.is_none()
+                        && let Some(face) = crate::planet::Face::from_u8(face)
+                        && let Ok(pos) = ChunkPos::new(face, u, v)
+                    {
+                        chunk_data = Some((pos, rle));
                     }
                 }
                 _ => {}
@@ -349,20 +350,20 @@ fn loopback_join_stream_and_edit() {
     let gid = *sess.guests.keys().next().expect("guest admitted");
     {
         let guest = sess.guests.get_mut(&gid).unwrap();
-        guest.pos = gpos;
+        guest.pos = ep(gpos);
         let torch = reg.item_id("base:torch").unwrap();
         guest.inventory.slots[0] = Some(ItemStack::new(&reg, torch, 4));
         guest.hotbar = 0;
         guest.held = torch.0;
     }
     client.send(&C2S::Move {
-        pos: gpos,
+        pos: ep(gpos),
         yaw: 0.0,
         hotbar: 0,
         sprint: false,
     });
     client.send(&C2S::Move {
-        pos: gpos + Vec3::new(100.0, 40.0, 100.0),
+        pos: ep(gpos + Vec3::new(100.0, 40.0, 100.0)),
         yaw: 0.0,
         hotbar: 0,
         sprint: true,
@@ -370,51 +371,56 @@ fn loopback_join_stream_and_edit() {
     for _ in 0..15 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.05,
         );
     }
-    assert_eq!(sess.guests[&gid].pos, gpos, "teleport intent is rejected");
+    assert_eq!(
+        sess.guests[&gid].pos,
+        ep(gpos),
+        "teleport intent is rejected"
+    );
 
     // The streamed chunk decodes into an identical remote chunk.
-    let (cx, cz, rle) = chunk_data.unwrap();
+    let (pos, rle) = chunk_data.unwrap();
     let mut remote = World::new(1, tmp_dir("mpguest"), reg.clone());
     remote.set_remote(true);
     let remap = crate::mp::block_remap(&remote, &palette);
-    remote.insert_remote_chunk(ChunkPos { x: cx, z: cz }, &rle, &remap);
-    let host_chunk = sim.world.chunks().get(&ChunkPos { x: cx, z: cz }).unwrap();
-    let guest_chunk = remote.chunks().get(&ChunkPos { x: cx, z: cz }).unwrap();
+    remote.insert_remote_chunk(pos, &rle, &remap);
+    let host_chunk = sim.world.chunks().get(&pos).unwrap();
+    let guest_chunk = remote.chunks().get(&pos).unwrap();
     assert_eq!(
         host_chunk.raw(),
         guest_chunk.raw(),
         "chunk survives the wire"
     );
     // Remote worlds never generate on their own.
-    assert!(!remote.ensure_chunk(ChunkPos { x: 90, z: 90 }));
-    assert!(!remote.chunks().contains_key(&ChunkPos { x: 90, z: 90 }));
+    assert!(!remote.ensure_chunk(tchunk(90, 90)));
+    assert!(!remote.chunks().contains_key(&tchunk(90, 90)));
 
     // Guest breaks a block: host applies it authoritatively and echoes.
     let y = sim.world.surface_height(9, 9);
-    let target_block = sim.world.get_block(9, y, 9);
-    assert_ne!(target_block, AIR);
-    client.send(&C2S::Break { x: 9, y, z: 9 });
+    // Use a known hand-harvestable fixture. Temporary planetary terrain can
+    // put tool-gated rock at this coordinate, which correctly yields nothing
+    // to a torch-wielding guest.
+    let dirt = reg.block_id("base:dirt").unwrap();
+    sim.world.set_block(9, y, 9, dirt);
+    client.send(&C2S::Break { pos: bp(9, y, 9) });
     let mut echoed = false;
     let mut given = false;
     for _ in 0..600 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
         for msg in client.poll() {
             match msg {
-                S2C::BlockSet {
-                    x: 9,
-                    y: yy,
-                    z: 9,
-                    id: 0,
-                    ..
-                } if yy == y => echoed = true,
+                S2C::BlockSet { pos, id: 0, .. }
+                    if pos == crate::planet::BlockPos::of_world(9, y, 9).unwrap() =>
+                {
+                    echoed = true
+                }
                 S2C::Give { .. } => given = true,
                 S2C::Players(list) => {
                     // Held items and styles ride the snapshot: the
@@ -457,14 +463,12 @@ fn loopback_join_stream_and_edit() {
     sim.world.ensure_chunk(ChunkPos::of_world(200, 200));
     let far_block = sim.world.get_block(200, far_y, 200);
     client.send(&C2S::Break {
-        x: 200,
-        y: far_y,
-        z: 200,
+        pos: bp(200, far_y, 200),
     });
     for _ in 0..90 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
         client.poll();
@@ -492,12 +496,12 @@ fn loopback_join_stream_and_edit() {
     sim.world.set_block(11, wy, 8, reg.water_for_volume(3));
     let bucket = reg.item_id("base:bucket").unwrap();
     sess.guests.get_mut(&gid).unwrap().inventory.slots[0] = Some(ItemStack::new(&reg, bucket, 1));
-    client.send(&C2S::Scoop { x: 8, y: wy, z: 10 });
-    client.send(&C2S::Scoop { x: 11, y: wy, z: 8 });
+    client.send(&C2S::Scoop { pos: bp(8, wy, 10) });
+    client.send(&C2S::Scoop { pos: bp(11, wy, 8) });
     for _ in 0..90 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
         client.poll();
@@ -516,16 +520,17 @@ fn loopback_join_stream_and_edit() {
     let sword = reg.item_id("base:bronze_sword").expect("sword exists");
     let cy = sim.world.surface_height(8, 8) + 1;
     sim.world.set_block(10, cy, 8, chest);
-    client.send(&C2S::OpenContainer { x: 10, y: cy, z: 8 });
+    let chest_pos = bp(10, cy, 8);
+    client.send(&C2S::OpenContainer { pos: chest_pos });
     let mut opened = false;
     for _ in 0..300 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
         for msg in client.poll() {
-            if matches!(msg, S2C::Container { x: 10, kind: 0, .. }) {
+            if matches!(msg, S2C::Container { pos, kind: 0, .. } if pos == chest_pos) {
                 opened = true;
             }
         }
@@ -542,17 +547,13 @@ fn loopback_join_stream_and_edit() {
         durability: 7,
     });
     client.send(&C2S::ContainerClick {
-        x: 10,
-        y: cy,
-        z: 8,
+        pos: chest_pos,
         slot: 2,
         right: false,
     });
     // ...then immediately pick it back up.
     client.send(&C2S::ContainerClick {
-        x: 10,
-        y: cy,
-        z: 8,
+        pos: chest_pos,
         slot: 2,
         right: false,
     });
@@ -560,7 +561,7 @@ fn loopback_join_stream_and_edit() {
     for _ in 0..300 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
         for msg in client.poll() {
@@ -589,7 +590,7 @@ fn loopback_join_stream_and_edit() {
     for _ in 0..300 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, true, host_held, host_style)),
+            Some((ep(gpos), 0.0, true, host_held, host_style)),
             0.06,
         );
         client.poll();
@@ -607,7 +608,7 @@ fn loopback_join_stream_and_edit() {
     for _ in 0..300 {
         let fx = sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
         if fx
@@ -630,24 +631,26 @@ fn loopback_join_stream_and_edit() {
     sim.world.set_block(11, sy2 + 3, 8, plank_b);
     sim.world.set_block(11, sy2 + 4, 8, sand_b);
     client.send(&C2S::Break {
-        x: 11,
-        y: sy2 + 3,
-        z: 8,
+        pos: bp(11, sy2 + 3, 8),
     });
     let (mut saw_falling, mut saw_land) = (false, false);
     for _ in 0..600 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
         sim.advance(0.06, &[], &mut Vec::new());
         for msg in client.poll() {
             match msg {
                 S2C::Falling(f) if !f.items.is_empty() => saw_falling = true,
-                S2C::BlockSet {
-                    x: 11, z: 8, id, ..
-                } if id == sand_b.0 => saw_land = true,
+                S2C::BlockSet { pos, id, .. }
+                    if pos.surface().centered_u() == 11
+                        && pos.surface().centered_v() == 8
+                        && id == sand_b.0 =>
+                {
+                    saw_land = true
+                }
                 _ => {}
             }
         }
@@ -664,12 +667,12 @@ fn loopback_join_stream_and_edit() {
     // bloomery through the container RPC, then hammers at the anvil.
     let by = sim.world.surface_height(12, 8) + 1;
     build_bloomery(&mut sim.world, &reg, 12, by, 8);
-    client.send(&C2S::OpenContainer { x: 12, y: by, z: 8 });
+    client.send(&C2S::OpenContainer { pos: bp(12, by, 8) });
     let mut got_kind3 = false;
     for _ in 0..300 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
         for msg in client.poll() {
@@ -693,13 +696,13 @@ fn loopback_join_stream_and_edit() {
     }
     let ember = reg.item_id("base:ember").unwrap();
     sess.guests.get_mut(&gid).unwrap().inventory.slots[1] = Some(ItemStack::new(&reg, ember, 1));
-    client.send(&C2S::LightBloomery { x: 12, y: by, z: 8 });
+    client.send(&C2S::LightBloomery { pos: bp(12, by, 8) });
     let lit = reg.block_id("base:bloomery_lit").unwrap();
     let mut is_lit = false;
     for _ in 0..300 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
         client.poll();
@@ -721,14 +724,12 @@ fn loopback_join_stream_and_edit() {
         guest.hotbar = 0;
     }
     client.send(&C2S::AnvilPut {
-        x: 11,
-        y: by,
-        z: 10,
+        pos: bp(11, by, 10),
     });
     for _ in 0..300 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
         client.poll();
@@ -748,14 +749,12 @@ fn loopback_join_stream_and_edit() {
     sess.guests.get_mut(&gid).unwrap().inventory.slots[0] = Some(ItemStack::new(&reg, hammer, 1));
     for expected_strikes in 1..=3 {
         client.send(&C2S::AnvilStrike {
-            x: 11,
-            y: by,
-            z: 10,
+            pos: bp(11, by, 10),
         });
         for _ in 0..300 {
             sess.pump(
                 &mut sim,
-                Some((gpos, 0.0, false, host_held, host_style)),
+                Some((ep(gpos), 0.0, false, host_held, host_style)),
                 0.06,
             );
             let observed = match sim.world.block_entity(&(11, by, 10)) {
@@ -781,7 +780,7 @@ fn loopback_join_stream_and_edit() {
         for _ in 0..21 {
             sess.pump(
                 &mut sim,
-                Some((gpos, 0.0, false, host_held, host_style)),
+                Some((ep(gpos), 0.0, false, host_held, host_style)),
                 0.06,
             );
             std::thread::sleep(std::time::Duration::from_millis(5));
@@ -791,7 +790,7 @@ fn loopback_join_stream_and_edit() {
     for _ in 0..300 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
         for msg in client.poll() {
@@ -813,12 +812,12 @@ fn loopback_join_stream_and_edit() {
     build_bloomery(&mut sim.world, &reg, 6, ky, 12);
     let kiln_b = reg.block_id("base:kiln").unwrap();
     sim.world.set_block(6, ky, 12, kiln_b);
-    client.send(&C2S::OpenContainer { x: 6, y: ky, z: 12 });
+    client.send(&C2S::OpenContainer { pos: bp(6, ky, 12) });
     let mut got_kind4 = false;
     for _ in 0..300 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, false, host_held, host_style)),
+            Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
         for msg in client.poll() {
@@ -840,7 +839,7 @@ fn loopback_join_stream_and_edit() {
     for _ in 0..90 {
         sess.pump(
             &mut sim,
-            Some((gpos, 0.0, true, host_held, host_style)),
+            Some((ep(gpos), 0.0, true, host_held, host_style)),
             0.06,
         );
         client.poll();
@@ -1136,7 +1135,7 @@ fn mob_snaps(n: usize) -> Vec<crate::net::MobSnap> {
         .map(|i| crate::net::MobSnap {
             id: i as u32 + 1,
             species: (i % 7) as u16,
-            pos: Vec3::new(i as f32 * 3.5, 64.0, i as f32 * -2.5),
+            pos: ep(Vec3::new(i as f32 * 3.5, 64.0, i as f32 * -2.5)),
             yaw: 0.7,
             growth: 1.0,
             hurt: 0.0,
@@ -1291,12 +1290,100 @@ fn loopback_pair_drained(
 }
 
 #[test]
+fn host_and_guest_cross_a_planet_seam_smoothly_with_both_faces_streamed() {
+    use crate::net::{C2S, S2C};
+    use crate::planet::{EntityPos, FACE_BLOCKS, Face};
+
+    let (mut sess, mut sim, mut client, id) = loopback_pair("mp-planet-seam");
+    let start = EntityPos::new(Face::PosZ, f32::from(FACE_BLOCKS) - 0.2, 120.0, 4096.5).unwrap();
+    let end = start.translated(Vec3::X * 0.7).unwrap().pos;
+    assert_ne!(start.face(), end.face(), "fixture crosses a cube face");
+    sess.guests.get_mut(&id).unwrap().prime_move_for_test(start);
+
+    client.send(&C2S::Move {
+        pos: end,
+        yaw: 0.4,
+        hotbar: 0,
+        sprint: false,
+    });
+    for _ in 0..200 {
+        sess.pump(&mut sim, Some((end, 0.4, false, u16::MAX, 0)), 0.0);
+        let _ = client.poll();
+        if sess.guests[&id].pos == end {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert_eq!(sess.guests[&id].pos, end, "the host accepts the seam step");
+
+    let from_render = start.render_pos();
+    let to_render = end.render_pos();
+    let just_accepted = sess.guests[&id].render_pos().0;
+    assert!(
+        just_accepted.distance(from_render) < 1.0e-4,
+        "the render span starts at the pre-seam position"
+    );
+    sess.pump(&mut sim, Some((end, 0.4, false, u16::MAX, 0)), 0.15);
+    let midway = sess.guests[&id].render_pos().0;
+    assert!(
+        midway.distance(from_render) > 0.05 && midway.distance(to_render) > 0.05,
+        "embedded interpolation must not snap to either face endpoint"
+    );
+
+    let mut streamed_faces = std::collections::HashSet::new();
+    let mut saw_host_across = false;
+    for _ in 0..600 {
+        sess.pump(&mut sim, Some((end, 0.4, false, u16::MAX, 0)), 0.06);
+        for message in client.poll() {
+            match message {
+                S2C::Chunk { face, .. } => {
+                    if let Some(face) = Face::from_u8(face) {
+                        streamed_faces.insert(face);
+                    }
+                }
+                S2C::Players(part) => {
+                    saw_host_across |= part
+                        .items
+                        .iter()
+                        .any(|(player, pos, ..)| *player == 0 && pos.face() == end.face());
+                }
+                _ => {}
+            }
+        }
+        let guest = &sess.guests[&id];
+        if guest.holds_chunk_at(start.chunk().unwrap())
+            && guest.holds_chunk_at(end.chunk().unwrap())
+            && saw_host_across
+        {
+            break;
+        }
+    }
+    let guest = &sess.guests[&id];
+    assert!(
+        guest.holds_chunk_at(start.chunk().unwrap()),
+        "the source-face seam chunk remains resident"
+    );
+    assert!(
+        guest.holds_chunk_at(end.chunk().unwrap()),
+        "the destination-face seam chunk streams"
+    );
+    assert!(
+        streamed_faces.contains(&start.face()) && streamed_faces.contains(&end.face()),
+        "the client receives terrain from both sides of the seam"
+    );
+    assert!(
+        saw_host_across,
+        "the guest receives the host's canonical destination-face snapshot"
+    );
+}
+
+#[test]
 fn a_crowded_world_still_reaches_the_guest() {
     use crate::mobs::Mob;
 
     let (mut sess, mut sim, mut client, id) = loopback_pair("mp-crowded");
     let gpos = Vec3::new(8.5, sim.world.surface_height(8, 8) as f32 + 1.0, 8.5);
-    sess.guests.get_mut(&id).unwrap().pos = gpos;
+    sess.guests.get_mut(&id).unwrap().pos = ep(gpos);
 
     // Two hundred mobs inside the guest's reach: far past what ever fit in
     // one datagram, which is exactly the case that used to go silent.
@@ -1311,7 +1398,7 @@ fn a_crowded_world_still_reaches_the_guest() {
 
     let mut seen: std::collections::HashSet<u32> = Default::default();
     for _ in 0..400 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, u16::MAX, 0)), 0.06);
+        sess.pump(&mut sim, Some((ep(gpos), 0.0, false, u16::MAX, 0)), 0.06);
         for msg in client.poll() {
             if let S2C::Mobs(part) = msg {
                 seen.extend(part.items.iter().map(|m| m.id));
@@ -1338,15 +1425,18 @@ fn a_crowded_world_still_reaches_the_guest() {
 fn a_guest_that_dropped_a_chunk_can_ask_for_it_again() {
     let (mut sess, mut sim, mut client, id) = loopback_pair("mp-rechunk");
     let gpos = Vec3::new(8.5, sim.world.surface_height(8, 8) as f32 + 1.0, 8.5);
-    sess.guests.get_mut(&id).unwrap().pos = gpos;
+    sess.guests.get_mut(&id).unwrap().pos = ep(gpos);
 
     // Let the ring stream normally.
-    let mut first: Option<(i32, i32)> = None;
+    let mut first: Option<ChunkPos> = None;
     for _ in 0..400 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, u16::MAX, 0)), 0.06);
+        sess.pump(&mut sim, Some((ep(gpos), 0.0, false, u16::MAX, 0)), 0.06);
         for msg in client.poll() {
-            if let S2C::Chunk { x, z, .. } = msg {
-                first.get_or_insert((x, z));
+            if let S2C::Chunk { face, u, v, .. } = msg
+                && let Some(face) = crate::planet::Face::from_u8(face)
+                && let Ok(pos) = ChunkPos::new(face, u, v)
+            {
+                first.get_or_insert(pos);
             }
         }
         if first.is_some() {
@@ -1354,22 +1444,28 @@ fn a_guest_that_dropped_a_chunk_can_ask_for_it_again() {
         }
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
-    let (cx, cz) = first.expect("the host streams a ring unprompted");
+    let pos = first.expect("the host streams a ring unprompted");
     assert!(
-        sess.guests[&id].holds_chunk(cx, cz),
+        sess.guests[&id].holds_chunk(pos.centered_u(), pos.centered_v()),
         "the host records what it sent"
     );
 
     // The guest evicts it (walking away and back does this for real), then
     // asks. Before RequestChunk existed this was a permanent hole.
-    client.send(&crate::net::C2S::RequestChunk { x: cx, z: cz });
+    client.send(&crate::net::C2S::RequestChunk {
+        face: pos.face() as u8,
+        u: pos.u(),
+        v: pos.v(),
+    });
     let mut resent = false;
     for _ in 0..400 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, u16::MAX, 0)), 0.06);
+        sess.pump(&mut sim, Some((ep(gpos), 0.0, false, u16::MAX, 0)), 0.06);
         for msg in client.poll() {
-            if matches!(msg, S2C::Chunk { x, z, .. } if (x, z) == (cx, cz)) {
-                resent = true;
-            }
+            resent |= matches!(
+                msg,
+                S2C::Chunk { face, u, v, .. }
+                    if (face, u, v) == (pos.face() as u8, pos.u(), pos.v())
+            );
         }
         if resent {
             break;
@@ -1385,7 +1481,7 @@ fn the_host_serves_the_view_distance_a_guest_asks_for() {
 
     let (mut sess, mut sim, mut client, id) = loopback_pair("mp-viewdist");
     let gpos = Vec3::new(8.5, sim.world.surface_height(8, 8) as f32 + 1.0, 8.5);
-    sess.guests.get_mut(&id).unwrap().pos = gpos;
+    sess.guests.get_mut(&id).unwrap().pos = ep(gpos);
     // The old host served a hardcoded ring of five however far the guest
     // could actually see.
     assert_eq!(sess.guests[&id].granted_view_dist(), 5);
@@ -1393,7 +1489,7 @@ fn the_host_serves_the_view_distance_a_guest_asks_for() {
     client.send(&crate::net::C2S::SetViewDistance { chunks: 9 });
     let mut granted = None;
     for _ in 0..300 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, u16::MAX, 0)), 0.06);
+        sess.pump(&mut sim, Some((ep(gpos), 0.0, false, u16::MAX, 0)), 0.06);
         for msg in client.poll() {
             if let S2C::ViewDistance { chunks } = msg {
                 granted = Some(chunks);
@@ -1411,7 +1507,7 @@ fn the_host_serves_the_view_distance_a_guest_asks_for() {
     client.send(&crate::net::C2S::SetViewDistance { chunks: 200 });
     let mut capped = None;
     for _ in 0..300 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, u16::MAX, 0)), 0.06);
+        sess.pump(&mut sim, Some((ep(gpos), 0.0, false, u16::MAX, 0)), 0.06);
         for msg in client.poll() {
             if let S2C::ViewDistance { chunks } = msg {
                 capped = Some(chunks);
@@ -1427,56 +1523,50 @@ fn the_host_serves_the_view_distance_a_guest_asks_for() {
 
 #[test]
 fn a_world_releases_chunks_no_player_is_near() {
-    use crate::chunk::ChunkPos;
-
     let mut w = test_world("mp-residency");
     for x in -6..=6 {
         for z in -6..=6 {
-            w.ensure_chunk(ChunkPos { x, z });
+            w.ensure_chunk(tchunk(x, z));
         }
     }
     let loaded = w.chunk_count();
     assert!(loaded >= 169);
 
     // One player near the origin: distant ground goes.
-    let report = w.retain_chunks(&[ChunkPos { x: 0, z: 0 }], 2);
+    let report = w.retain_chunks(&[tchunk(0, 0)], 2);
     assert!(
         report.released > 0,
         "chunks far from every player must be released"
     );
     assert!(report.is_ok(), "clean eviction: {}", report.summary());
-    assert_eq!(w.chunk_count(), 25, "a radius of two keeps a 5x5");
-    assert!(w.has_chunk(ChunkPos { x: 2, z: 2 }));
-    assert!(!w.has_chunk(ChunkPos { x: 5, z: 5 }));
+    assert_eq!(
+        w.chunk_count(),
+        13,
+        "a geodesic radius keeps a circular neighborhood"
+    );
+    assert!(w.has_chunk(tchunk(2, 0)));
+    assert!(!w.has_chunk(tchunk(2, 2)));
+    assert!(!w.has_chunk(tchunk(5, 5)));
 
     // Two players far apart each keep their own ground — the dedicated
     // server's case, where there is no local player at all.
     let mut w = test_world("mp-residency-two");
     for x in -6..=6 {
         for z in -6..=6 {
-            w.ensure_chunk(ChunkPos { x, z });
+            w.ensure_chunk(tchunk(x, z));
         }
     }
-    let report = w.retain_chunks(&[ChunkPos { x: -5, z: -5 }, ChunkPos { x: 5, z: 5 }], 1);
+    let report = w.retain_chunks(&[tchunk(-5, -5), tchunk(5, 5)], 1);
     assert!(report.is_ok(), "two-center eviction: {}", report.summary());
-    assert!(
-        w.has_chunk(ChunkPos { x: -5, z: -5 }),
-        "first player's ground"
-    );
-    assert!(
-        w.has_chunk(ChunkPos { x: 5, z: 5 }),
-        "second player's ground"
-    );
-    assert!(
-        !w.has_chunk(ChunkPos { x: 0, z: 0 }),
-        "the empty middle goes"
-    );
+    assert!(w.has_chunk(tchunk(-5, -5)), "first player's ground");
+    assert!(w.has_chunk(tchunk(5, 5)), "second player's ground");
+    assert!(!w.has_chunk(tchunk(0, 0)), "the empty middle goes");
 
     // Nobody home: an idle server holds no world.
     let mut w = test_world("mp-residency-empty");
     for x in -3..=3 {
         for z in -3..=3 {
-            w.ensure_chunk(ChunkPos { x, z });
+            w.ensure_chunk(tchunk(x, z));
         }
     }
     assert!(w.chunk_count() > 0);
@@ -1491,14 +1581,12 @@ fn a_world_releases_chunks_no_player_is_near() {
 
 #[test]
 fn failed_dirty_chunk_eviction_keeps_only_the_unsaved_ground() {
-    use crate::chunk::ChunkPos;
-
     let mut w = test_world("mp-residency-save-failure");
-    let failed = ChunkPos { x: -2, z: 0 };
-    let saved = ChunkPos { x: 2, z: 0 };
+    let failed = tchunk(-2, 0);
+    let saved = tchunk(2, 0);
     for pos in [failed, saved] {
         w.ensure_chunk(pos);
-        let x = pos.x * crate::chunk::CHUNK_X as i32;
+        let x = pos.centered_u() * crate::chunk::CHUNK_X as i32;
         let y = w.surface_height(x, 0) + 1;
         let stone = w.reg.block_id("base:stone").unwrap();
         w.set_block(x, y, 0, stone);
@@ -1535,15 +1623,15 @@ fn the_wild_hurts_the_guest_it_actually_struck() {
     let players = [
         PlayerCtx {
             id: 0,
-            pos: Vec3::ZERO,
-            spawn: Vec3::ZERO,
+            pos: ep(Vec3::ZERO),
+            spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
         },
         PlayerCtx {
             id: 77,
-            pos: Vec3::new(50.0, 64.0, 50.0),
-            spawn: Vec3::ZERO,
+            pos: ep(Vec3::new(50.0, 64.0, 50.0)),
+            spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
         },
@@ -1552,7 +1640,7 @@ fn the_wild_hurts_the_guest_it_actually_struck() {
     let hit = SimEvent::PlayerHit {
         who: players[1].id,
         dmg: 3.0,
-        from: Vec3::ZERO,
+        from: ep(Vec3::ZERO),
     };
     let SimEvent::PlayerHit { who, .. } = hit else {
         panic!()
@@ -1574,8 +1662,8 @@ fn wildlife_returns_to_every_country_someone_lives_in() {
     let far_cx = far >> 4;
     for x in -6..=6 {
         for z in -6..=6 {
-            w.ensure_chunk(ChunkPos { x, z });
-            w.ensure_chunk(ChunkPos { x: far_cx + x, z });
+            w.ensure_chunk(tchunk(x, z));
+            w.ensure_chunk(tchunk(far_cx + x, z));
         }
     }
     // Overhunted: nothing left alive anywhere. Only repopulation can
@@ -1584,8 +1672,8 @@ fn wildlife_returns_to_every_country_someone_lives_in() {
 
     let ctx = |p: Vec3| PlayerCtx {
         id: 0,
-        pos: p,
-        spawn: p,
+        pos: ep(p),
+        spawn: ep(p),
         attackable: true,
         aggro_mod: 0.0,
     };
@@ -1625,23 +1713,31 @@ fn a_guest_receives_the_ring_it_was_granted() {
     // guest could see; this pins the ring to the grant.
     let (mut sess, mut sim, mut client, id, drained) = loopback_pair_drained("mp-ring");
     let gpos = Vec3::new(8.5, sim.world.surface_height(8, 8) as f32 + 1.0, 8.5);
-    sess.guests.get_mut(&id).unwrap().pos = gpos;
+    sess.guests.get_mut(&id).unwrap().pos = ep(gpos);
     let center = ChunkPos::of_world(8, 8);
 
     client.send(&crate::net::C2S::SetViewDistance { chunks: 6 });
-    let mut got: std::collections::HashSet<(i32, i32)> = drained
+    let mut got: std::collections::HashSet<ChunkPos> = drained
         .iter()
         .filter_map(|m| match m {
-            S2C::Chunk { x, z, .. } => Some((*x, *z)),
+            S2C::Chunk { face, u, v, .. } => crate::planet::Face::from_u8(*face)
+                .and_then(|face| ChunkPos::new(face, *u, *v).ok()),
             _ => None,
         })
         .collect();
-    let want = 13 * 13; // (2*6+1)^2
+    let want = (-6..=6)
+        .flat_map(|du| (-6..=6).map(move |dv| center.offset(du, dv)))
+        .filter(|pos| pos.distance(center) <= 6.0 * 16.0 + 1.0)
+        .collect::<std::collections::HashSet<_>>()
+        .len();
     for _ in 0..4000 {
-        sess.pump(&mut sim, Some((gpos, 0.0, false, u16::MAX, 0)), 0.06);
+        sess.pump(&mut sim, Some((ep(gpos), 0.0, false, u16::MAX, 0)), 0.06);
         for msg in client.poll() {
-            if let S2C::Chunk { x, z, .. } = msg {
-                got.insert((x, z));
+            if let S2C::Chunk { face, u, v, .. } = msg
+                && let Some(face) = crate::planet::Face::from_u8(face)
+                && let Ok(pos) = ChunkPos::new(face, u, v)
+            {
+                got.insert(pos);
             }
         }
         if got.len() >= want {
@@ -1655,10 +1751,10 @@ fn a_guest_receives_the_ring_it_was_granted() {
         got.len()
     );
     // ...and all of it around the guest, not somewhere else.
-    for (x, z) in &got {
+    for pos in &got {
         assert!(
-            (x - center.x).abs() <= 6 && (z - center.z).abs() <= 6,
-            "chunk ({x},{z}) is outside the granted ring around {center:?}"
+            pos.distance(center) <= 6.0 * 16.0 + 1.0,
+            "chunk {pos:?} is outside the granted ring around {center:?}"
         );
     }
 }

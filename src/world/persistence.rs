@@ -5,24 +5,26 @@ use super::*;
 /// Stamps are only meaningful against the DAY_LENGTH they were written
 /// under. Bump this whenever that changes and old stamps are discarded
 /// rather than misread as an absence.
-const STAMPS_MAGIC: &[u8] = b"WFS2-1200";
+const STAMPS_MAGIC: &[u8] = b"WFS3-PLANET-1200";
 
 impl World {
     /// Load a world from disk (reads seed + palette) or create a fresh one.
     pub fn load_or_create(save_dir: PathBuf, reg: Arc<Registry>) -> std::io::Result<World> {
-        let (seed, mode, ire, day, weather) = read_world_meta_full(&save_dir);
-        let seed = seed.unwrap_or_else(|| {
-            if let Some(seed) = std::env::var("WILDFORGE_SEED")
+        let existing = load_world_meta(&save_dir)?;
+        let seed = existing.as_ref().map(|meta| meta.seed).unwrap_or_else(|| {
+            std::env::var("WILDFORGE_SEED")
                 .ok()
                 .and_then(|value| value.parse().ok())
-            {
-                return seed;
-            }
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as u32)
-                .unwrap_or(1337)
+                .unwrap_or_else(|| {
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as u32)
+                        .unwrap_or(1337)
+                })
         });
+        let (mode, ire, day, weather) = existing
+            .map(|meta| (meta.mode, meta.ire, meta.day, meta.weather))
+            .unwrap_or_else(|| ("survival".to_string(), 0.0, 0, Weather::Clear));
         write_world_meta_full(&save_dir, seed, &mode, ire, day, weather)?;
         let mut w = World::new(seed, save_dir, reg);
         w.mode = mode;
@@ -53,20 +55,27 @@ impl World {
         let Some(body) = buf.strip_prefix(STAMPS_MAGIC) else {
             return;
         };
-        for rec in body.chunks_exact(16) {
-            let x = i32::from_le_bytes(rec[0..4].try_into().unwrap());
-            let z = i32::from_le_bytes(rec[4..8].try_into().unwrap());
-            let t = f64::from_le_bytes(rec[8..16].try_into().unwrap());
-            self.last_random.insert((x, z), t);
+        for rec in body.chunks_exact(13) {
+            let Some(face) = crate::planet::Face::from_u8(rec[0]) else {
+                continue;
+            };
+            let u = u16::from_le_bytes(rec[1..3].try_into().unwrap());
+            let v = u16::from_le_bytes(rec[3..5].try_into().unwrap());
+            let Ok(pos) = ChunkPos::new(face, u, v) else {
+                continue;
+            };
+            let t = f64::from_le_bytes(rec[5..13].try_into().unwrap());
+            self.last_random.insert(pos, t);
         }
     }
 
     pub(super) fn save_stamps(&self) -> std::io::Result<()> {
-        let mut buf = Vec::with_capacity(STAMPS_MAGIC.len() + self.last_random.len() * 16);
+        let mut buf = Vec::with_capacity(STAMPS_MAGIC.len() + self.last_random.len() * 13);
         buf.extend_from_slice(STAMPS_MAGIC);
-        for ((x, z), t) in &self.last_random {
-            buf.extend_from_slice(&x.to_le_bytes());
-            buf.extend_from_slice(&z.to_le_bytes());
+        for (pos, t) in &self.last_random {
+            buf.push(pos.face() as u8);
+            buf.extend_from_slice(&pos.u().to_le_bytes());
+            buf.extend_from_slice(&pos.v().to_le_bytes());
             buf.extend_from_slice(&t.to_le_bytes());
         }
         atomic_replace(&self.save_dir.join("stamps"), &buf)

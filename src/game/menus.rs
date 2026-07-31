@@ -430,11 +430,7 @@ impl Game {
                 if self.hit(self.stall_buy_rect()) {
                     self.sfx(Sfx::Click);
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::StallBuy {
-                            x: pos.0,
-                            y: pos.1,
-                            z: pos.2,
-                        });
+                        rc.client.send(&net::C2S::StallBuy { pos });
                     } else {
                         self.stall_buy_local(pos);
                     }

@@ -25,16 +25,18 @@ impl Game {
         initial: bool,
     ) {
         if initial {
-            self.player = Player::new(state.pos);
+            self.player = Player::new_at(state.pos);
             // Dev: WILDFORGE_POS frames multiplayer captures too —
             // movement is client-stated, so the host accepts it.
             if let Ok(s) = std::env::var("WILDFORGE_POS") {
                 let p: Vec<f32> = s.split(',').filter_map(|v| v.trim().parse().ok()).collect();
-                if p.len() == 3 {
-                    self.player = Player::new(Vec3::new(p[0], p[1], p[2]));
+                if p.len() == 3
+                    && let Ok(pos) = state.pos.relocated_local(Vec3::new(p[0], p[1], p[2]))
+                {
+                    self.player = Player::new_at(pos);
                 }
             }
-            self.camera.pos = self.player.pos + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+            self.camera.follow_planet(self.player.eye());
             self.camera.yaw = state.yaw;
             self.camera.pitch = state.pitch;
         }
@@ -131,6 +133,7 @@ impl Game {
                     item_map: Vec::new(),
                     host_block: Default::default(),
                     players: Default::default(),
+                    player_positions: Default::default(),
                     player_held: Default::default(),
                     player_style: Default::default(),
                     names: Default::default(),
@@ -167,7 +170,9 @@ impl Game {
     fn request_missing_chunks(&mut self, r: &mut Remote) {
         const ASK_PER_FRAME: usize = 4;
         let vd = r.granted_view_dist.min(self.config.view_dist);
-        let center = ChunkPos::of_world(self.player.pos.x as i32, self.player.pos.z as i32);
+        let Some(center) = self.player.pos.chunk() else {
+            return;
+        };
         let mut asked = 0;
         for ring in 0..=vd {
             for dx in -ring..=ring {
@@ -175,15 +180,18 @@ impl Game {
                     if dx.abs().max(dz.abs()) != ring {
                         continue;
                     }
-                    let pos = ChunkPos {
-                        x: center.x + dx,
-                        z: center.z + dz,
-                    };
-                    if self.server.world.has_chunk(pos) || !r.wants.insert((pos.x, pos.z)) {
+                    let pos = center.offset(dx, dz);
+                    if pos.distance(center) > f64::from(vd * CHUNK_X as i32) + 1.0 {
                         continue;
                     }
-                    r.client
-                        .send(&net::C2S::RequestChunk { x: pos.x, z: pos.z });
+                    if self.server.world.has_chunk(pos) || !r.wants.insert(pos) {
+                        continue;
+                    }
+                    r.client.send(&net::C2S::RequestChunk {
+                        face: pos.face() as u8,
+                        u: pos.u(),
+                        v: pos.v(),
+                    });
                     asked += 1;
                     if asked >= ASK_PER_FRAME {
                         return;
@@ -308,20 +316,26 @@ impl Game {
                     }
                     return;
                 }
-                net::S2C::Chunk { x, z, rle } => {
-                    r.wants.remove(&(x, z));
+                net::S2C::Chunk { face, u, v, rle } => {
+                    let Some(face) = crate::planet::Face::from_u8(face) else {
+                        continue;
+                    };
+                    let Ok(pos) = ChunkPos::new(face, u, v) else {
+                        continue;
+                    };
+                    r.wants.remove(&pos);
                     self.server
                         .world
-                        .insert_remote_chunk(ChunkPos { x, z }, &rle, &r.block_map);
+                        .insert_remote_chunk(pos, &rle, &r.block_map);
                 }
-                net::S2C::BlockSet { x, y, z, id, meta } => {
+                net::S2C::BlockSet { pos, id, meta } => {
                     let local = r
                         .block_map
                         .get(id as usize)
                         .copied()
                         .unwrap_or(self.content.reg.unknown_block);
-                    let old = self.server.world.get_block(x, y, z);
-                    self.server.world.set_block_meta(x, y, z, local, meta);
+                    let old = self.server.world.get_block_at(pos);
+                    self.server.world.set_block_meta_at(pos, local, meta);
                     self.server.world.clear_pending_drops();
                     // Someone broke something: the world crumbles for
                     // everyone watching.
@@ -329,7 +343,11 @@ impl Game {
                         && old != crate::registry::AIR
                         && self.content.reg.block(old).hardness.is_some()
                     {
-                        let center = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
+                        let center = Vec3::new(
+                            pos.surface().centered_u() as f32 + 0.5,
+                            pos.y() as f32 + 0.5,
+                            pos.surface().centered_v() as f32 + 0.5,
+                        );
                         if (center - self.camera.pos).length() < 40.0 {
                             self.juice_burst(center, self.content.reg.block(old).tiles[0], 8, 2.0);
                         }
@@ -344,6 +362,7 @@ impl Game {
                     let present: std::collections::HashSet<u32> =
                         list.iter().map(|(id, ..)| *id).collect();
                     r.players.retain(|id, _| present.contains(id));
+                    r.player_positions.retain(|id, _| present.contains(id));
                     r.player_lerp.retain(|id, _| present.contains(id));
                     r.player_held.retain(|id, _| present.contains(id));
                     r.player_style.retain(|id, _| present.contains(id));
@@ -356,15 +375,17 @@ impl Game {
                         }
                         r.player_held.insert(id, held);
                         r.player_style.insert(id, pstyle);
+                        r.player_positions.insert(id, pos);
+                        let render_pos = pos.render_pos();
                         let cur = match r.player_lerp.get(&id) {
                             Some(l) => l.at(t),
-                            None => (pos, yaw),
+                            None => (render_pos, yaw),
                         };
                         r.player_lerp.insert(
                             id,
                             Lerp {
                                 from: cur.0,
-                                to: pos,
+                                to: render_pos,
                                 from_yaw: cur.1,
                                 to_yaw: yaw,
                                 phase: 0.0,
@@ -390,21 +411,22 @@ impl Game {
                         .into_iter()
                         .filter(|s| (s.species as usize) < self.content.reg.animals.len())
                         .map(|s| {
+                            let render_pos = s.pos.render_pos();
                             let (cur, phase) = match r.mob_lerp.get(&s.id) {
                                 Some(l) if s.id != 0 => (l.at(t), l.phase),
-                                _ => ((s.pos, s.yaw), 0.0),
+                                _ => ((render_pos, s.yaw), 0.0),
                             };
                             lerps.insert(
                                 s.id,
                                 Lerp {
                                     from: cur.0,
-                                    to: s.pos,
+                                    to: render_pos,
                                     from_yaw: cur.1,
                                     to_yaw: s.yaw,
                                     phase,
                                 },
                             );
-                            let mut m = mobs::Mob::new(s.species as usize, cur.0, cur.1);
+                            let mut m = mobs::Mob::new_at(s.species as usize, s.pos, cur.1);
                             m.id = s.id;
                             m.growth = s.growth;
                             m.hurt_flash = s.hurt;
@@ -502,9 +524,9 @@ impl Game {
                 net::S2C::PlayerState(state) => {
                     self.apply_remote_player_state(&r, state, false);
                 }
-                net::S2C::SignText { x, y, z, lines } => {
-                    self.server.world.insert_block_entity(
-                        (x, y, z),
+                net::S2C::SignText { pos, lines } => {
+                    self.server.world.insert_block_entity_at(
+                        pos,
                         world::BlockEntity::Sign(world::SignState { lines }),
                     );
                 }
@@ -527,9 +549,7 @@ impl Game {
                     }
                 }
                 net::S2C::Container {
-                    x,
-                    y,
-                    z,
+                    pos,
                     kind,
                     slots,
                     aux,
@@ -544,7 +564,6 @@ impl Game {
                             durability: s.durability,
                         })
                     };
-                    let pos = (x, y, z);
                     let entity = match kind {
                         0 => {
                             let mut c = world::ChestState::default();
@@ -631,7 +650,7 @@ impl Game {
                             world::BlockEntity::Offering(o)
                         }
                     };
-                    self.server.world.insert_block_entity(pos, entity);
+                    self.server.world.insert_block_entity_at(pos, entity);
                     if matches!(self.ui_state.screen, Screen::Playing) {
                         self.set_screen(match kind {
                             0 => Screen::Chest(pos),
@@ -670,6 +689,7 @@ impl Game {
                 }
                 net::S2C::Left { id } => {
                     r.players.remove(&id);
+                    r.player_positions.remove(&id);
                     r.player_lerp.remove(&id);
                     if let Some(n) = r.names.remove(&id) {
                         self.toast(format!("{n} left."));
@@ -696,8 +716,7 @@ impl Game {
         let t = (r.mob_age / r.mob_interval.max(0.001)).clamp(0.0, 1.0);
         self.server.world.for_each_mob_mut(|m| {
             if let Some(l) = r.mob_lerp.get_mut(&m.id) {
-                let (p, y) = l.at(t);
-                m.pos = p;
+                let (_, y) = l.at(t);
                 m.yaw = y;
                 let d = l.to - l.from;
                 let hspeed = Vec3::new(d.x, 0.0, d.z).length() / r.mob_interval.max(0.03);
@@ -707,7 +726,10 @@ impl Game {
             }
         });
         self.server.world.for_each_projectile_mut(|p| {
-            p.pos += p.vel * dt;
+            if let Ok(moved) = p.pos.translated(p.vel * dt) {
+                p.pos = moved.pos;
+                p.vel = moved.rotation.rotate_vec3(p.vel);
+            }
             p.age += dt;
         });
         // Our movement upstream at 20 Hz.

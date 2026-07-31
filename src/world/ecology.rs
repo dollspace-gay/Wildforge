@@ -1,6 +1,7 @@
 //! Wildlife seeding, mob/projectile ticking, and hostile spawning.
 
 use super::*;
+use crate::planet::{BlockPos, EntityPos, SurfacePos};
 
 impl World {
     pub fn mobs(&self) -> &[Mob] {
@@ -67,9 +68,10 @@ impl World {
         }
     }
 
-    pub(super) fn mob_hash(&self, x: i32, z: i32, salt: u32) -> u32 {
-        let mut h = (x as u32).wrapping_mul(0x85eb_ca6b)
-            ^ (z as u32).wrapping_mul(0xc2b2_ae35)
+    pub(super) fn mob_hash_at(&self, pos: SurfacePos, salt: u32) -> u32 {
+        let mut h = u32::from(pos.u()).wrapping_mul(0x85eb_ca6b)
+            ^ u32::from(pos.v()).wrapping_mul(0xc2b2_ae35)
+            ^ (pos.face() as u32).wrapping_mul(0x27d4_eb2d)
             ^ self.seed.wrapping_mul(0x9e37_79b9)
             ^ salt.wrapping_mul(0x2708_92cd);
         h ^= h >> 15;
@@ -84,19 +86,23 @@ impl World {
             return;
         }
         // Dead country restocks nothing.
-        let (wcx, wcz) = (pos.x * CHUNK_X as i32 + 8, pos.z * CHUNK_Z as i32 + 8);
-        if !self.heart_alive_at(wcx, wcz) {
+        let center = SurfacePos::new(
+            pos.face(),
+            pos.u() * CHUNK_X as u16 + CHUNK_X as u16 / 2,
+            pos.v() * CHUNK_Z as u16 + CHUNK_Z as u16 / 2,
+        )
+        .expect("chunk center is canonical");
+        if !self.heart_alive_at_surface(center) {
             return;
         }
         let reg = self.reg.clone();
-        let (cx, cz) = (pos.x * CHUNK_X as i32, pos.z * CHUNK_Z as i32);
         // What a country IS, not what the map first called it: a
         // grafted heart drags its country's life after it.
-        let biome = self.country_biome(cx + 8, cz + 8).name().to_lowercase();
+        let biome = self.country_biome_at(center).name().to_lowercase();
         // Open sea keeps its own roster. A country's culture is a fact
         // about its land, and the water over a drowned shelf belongs to
         // neither the forest behind it nor the deer in that forest.
-        let here = if self.is_open_water(cx + 8, cz + 8) {
+        let here = if self.is_open_water_at(center) {
             "ocean".to_string()
         } else {
             biome.clone()
@@ -110,17 +116,21 @@ impl World {
             if def.hostile || def.movement_swim || !def.biomes.contains(&here) {
                 continue;
             }
-            let roll = self.mob_hash(pos.x, pos.z, 7000 + si as u32);
+            let roll = self.mob_hash_at(center, 7000 + si as u32);
             if !roll.is_multiple_of(def.rarity) {
                 continue;
             }
             let span = def.group[1].saturating_sub(def.group[0]) + 1;
             let n = def.group[0] + (roll >> 8) % span;
             for i in 0..n {
-                let h = self.mob_hash(pos.x, pos.z, 7100 + si as u32 * 31 + i);
-                let lx = (h % CHUNK_X as u32) as i32;
-                let lz = ((h >> 8) % CHUNK_Z as u32) as i32;
-                self.try_spawn(si, cx + lx, cz + lz, (h >> 16) as f32 / 65535.0);
+                let h = self.mob_hash_at(center, 7100 + si as u32 * 31 + i);
+                let surface = SurfacePos::new(
+                    pos.face(),
+                    pos.u() * CHUNK_X as u16 + (h % CHUNK_X as u32) as u16,
+                    pos.v() * CHUNK_Z as u16 + ((h >> 8) % CHUNK_Z as u32) as u16,
+                )
+                .expect("sampled wildlife column is canonical");
+                self.try_spawn_at(si, surface, (h >> 16) as f32 / 65535.0);
             }
             break; // one species per chunk keeps groups readable
         }
@@ -128,25 +138,52 @@ impl World {
         // above it — a chunk can carry deer on the bank and trout in the
         // river. Fresh water stocks the country's fish; salt water its
         // own.
-        for (si, def) in reg.animals.iter().enumerate() {
-            if def.hostile || !def.movement_swim || !def.biomes.contains(&here) {
-                continue;
-            }
-            let roll = self.mob_hash(pos.x, pos.z, 9200 + si as u32);
+        let swimmers: Vec<usize> = reg
+            .animals
+            .iter()
+            .enumerate()
+            .filter_map(|(index, def)| {
+                (!def.hostile && def.movement_swim && def.biomes.contains(&here)).then_some(index)
+            })
+            .collect();
+        let swimmer_start = if swimmers.is_empty() {
+            0
+        } else {
+            // Use the high half of the mixed hash. Taking `% 2` here
+            // accidentally made the low-bit quality of the coordinate
+            // hash decide between the two ocean fish, and one species
+            // could win every early chunk before the aquatic budget
+            // filled.
+            ((u64::from(self.mob_hash_at(center, 9_101)) * swimmers.len() as u64) >> 32) as usize
+        };
+        for step in 0..swimmers.len() {
+            let si = swimmers[(swimmer_start + step) % swimmers.len()];
+            let def = &reg.animals[si];
+            let roll = self.mob_hash_at(center, 9200 + si as u32);
             if !roll.is_multiple_of(def.rarity) {
                 continue;
             }
             let span = def.group[1].saturating_sub(def.group[0]) + 1;
             let n = def.group[0] + (roll >> 8) % span;
+            let mut spawned = false;
             for i in 0..n {
-                let h = self.mob_hash(pos.x, pos.z, 9300 + si as u32 * 31 + i);
-                let lx = (h % CHUNK_X as u32) as i32;
-                let lz = ((h >> 8) % CHUNK_Z as u32) as i32;
+                let h = self.mob_hash_at(center, 9300 + si as u32 * 31 + i);
+                let surface = SurfacePos::new(
+                    pos.face(),
+                    pos.u() * CHUNK_X as u16 + (h % CHUNK_X as u32) as u16,
+                    pos.v() * CHUNK_Z as u16 + ((h >> 8) % CHUNK_Z as u32) as u16,
+                )
+                .expect("sampled fish column is canonical");
                 // Dry chunks simply fail every attempt: try_spawn wants a
                 // water cell two deep and finds none.
-                self.try_spawn(si, cx + lx, cz + lz, (h >> 16) as f32 / 65535.0);
+                spawned |= self.try_spawn_at(si, surface, (h >> 16) as f32 / 65535.0);
             }
-            break; // one shoal per chunk
+            // One shoal per chunk. Candidate order rotates by canonical
+            // address so the first fish in the data file cannot fill the
+            // global mob cap before later ocean natives ever get a turn.
+            if spawned {
+                break;
+            }
         }
         // The dark has its own roster: underground species roll
         // independently of the surface (a chunk can carry deer above
@@ -155,32 +192,44 @@ impl World {
             if def.hostile || def.biomes.iter().all(|b| b != "underground") {
                 continue;
             }
-            let roll = self.mob_hash(pos.x, pos.z, 8600 + si as u32);
+            let roll = self.mob_hash_at(center, 8600 + si as u32);
             if !roll.is_multiple_of(def.rarity) {
                 continue;
             }
             let span = def.group[1].saturating_sub(def.group[0]) + 1;
             let n = def.group[0] + (roll >> 8) % span;
             for i in 0..n {
-                let h = self.mob_hash(pos.x, pos.z, 8700 + si as u32 * 31 + i);
-                let lx = (h % CHUNK_X as u32) as i32;
-                let lz = ((h >> 8) % CHUNK_Z as u32) as i32;
-                let (x, z) = (cx + lx, cz + lz);
+                let h = self.mob_hash_at(center, 8700 + si as u32 * 31 + i);
+                let surface = SurfacePos::new(
+                    pos.face(),
+                    pos.u() * CHUNK_X as u16 + (h % CHUNK_X as u32) as u16,
+                    pos.v() * CHUNK_Z as u16 + ((h >> 8) % CHUNK_Z as u32) as u16,
+                )
+                .expect("sampled cave column is canonical");
                 // A pocket of cave: two air cells under a solid roof.
                 let base = 8 + (h >> 16) % 32;
                 let spot = (base as i32..(base as i32 + 24).min(52)).find(|&y| {
-                    self.get_block(x, y, z) == AIR
-                        && self.get_block(x, y + 1, z) == AIR
-                        && self.reg.is_solid(self.get_block(x, y + 2, z))
+                    let at =
+                        BlockPos::new(surface.face(), surface.u(), y as u8, surface.v()).unwrap();
+                    self.get_block_at(at) == AIR
+                        && at
+                            .offset(0, 1, 0)
+                            .is_some_and(|p| self.get_block_at(p) == AIR)
+                        && at
+                            .offset(0, 2, 0)
+                            .is_some_and(|p| self.reg.is_solid(self.get_block_at(p)))
                 });
                 if let Some(y) = spot
                     && self.mobs.len() < MOB_CAP
                 {
-                    let mut m = Mob::new(
-                        si,
-                        glam::Vec3::new(x as f32 + 0.5, y as f32 + 0.4, z as f32 + 0.5),
-                        (h >> 12) as f32,
-                    );
+                    let at = EntityPos::new(
+                        surface.face(),
+                        f32::from(surface.u()) + 0.5,
+                        y as f32 + 0.4,
+                        f32::from(surface.v()) + 0.5,
+                    )
+                    .expect("cave spawn is canonical");
+                    let mut m = Mob::new_at(si, at, (h >> 12) as f32);
                     m.health = reg.animals[si].health;
                     self.mobs.push(m);
                 }
@@ -190,7 +239,7 @@ impl World {
 
     /// Spawn on dry solid ground at the surface — or, for swimmers,
     /// submerged in a water column at least two deep. Skips bad spots.
-    pub(super) fn try_spawn(&mut self, species: usize, x: i32, z: i32, yaw01: f32) -> bool {
+    pub(super) fn try_spawn_at(&mut self, species: usize, surface: SurfacePos, yaw01: f32) -> bool {
         if self.mobs.len() >= MOB_CAP {
             return false;
         }
@@ -215,17 +264,31 @@ impl World {
             // The first water cell from the sky down, needing depth.
             (4..=96)
                 .rev()
-                .map(|y| (y, self.get_block(x, y, z)))
+                .filter_map(|y| {
+                    BlockPos::new(surface.face(), surface.u(), y, surface.v())
+                        .ok()
+                        .map(|pos| (pos, self.get_block_at(pos)))
+                })
                 .find(|&(_, b)| self.reg.is_water(b))
-                .filter(|&(y, _)| self.reg.is_water(self.get_block(x, y - 1, z)))
-                .map(|(y, _)| y as f32 - 0.6)
+                .filter(|&(pos, _)| {
+                    pos.offset(0, -1, 0)
+                        .is_some_and(|below| self.reg.is_water(self.get_block_at(below)))
+                })
+                .map(|(pos, _)| f32::from(pos.y()) - 0.6)
         } else {
-            let y = self.surface_height(x, z);
-            let dry = y > SEA_LEVEL && self.reg.is_solid(self.get_block(x, y, z));
+            let y = self.surface_height_at(surface);
+            let ground = BlockPos::new(surface.face(), surface.u(), y as u8, surface.v()).unwrap();
+            let dry = y > SEA_LEVEL && self.reg.is_solid(self.get_block_at(ground));
             // A seabird has nowhere to stand, and the whole point of it
             // is that it is over the water. Wings only need air.
             let airborne = self.reg.animals[species].movement_float
-                && self.reg.is_water(self.get_block(x, SEA_LEVEL - 1, z));
+                && BlockPos::new(
+                    surface.face(),
+                    surface.u(),
+                    (SEA_LEVEL - 1) as u8,
+                    surface.v(),
+                )
+                .is_ok_and(|pos| self.reg.is_water(self.get_block_at(pos)));
             if dry {
                 Some(y as f32 + 1.05)
             } else if airborne {
@@ -237,11 +300,14 @@ impl World {
         let Some(sy) = spawn_at else {
             return false;
         };
-        let mut m = Mob::new(
-            species,
-            glam::Vec3::new(x as f32 + 0.5, sy, z as f32 + 0.5),
-            yaw01 * std::f32::consts::TAU,
-        );
+        let pos = EntityPos::new(
+            surface.face(),
+            f32::from(surface.u()) + 0.5,
+            sy,
+            f32::from(surface.v()) + 0.5,
+        )
+        .expect("wildlife spawn is canonical");
+        let mut m = Mob::new_at(species, pos, yaw01 * std::f32::consts::TAU);
         m.health = self.reg.animals[species].health;
         self.mobs.push(m);
         true
@@ -256,7 +322,7 @@ impl World {
         dt: f32,
         rng: &mut u32,
     ) -> Vec<MobEvent> {
-        let player = players.first().map(|p| p.pos).unwrap_or(glam::Vec3::ZERO);
+        let fallback_player = players.first().map(|p| p.pos);
         let reg = self.reg.clone();
         let mut events = Vec::new();
         // Stamp stable ids on anything new (spawns, births, loaded saves).
@@ -266,34 +332,26 @@ impl World {
                 self.next_mob_id += 1;
             }
         }
-        // Herd centers: same species bucketed on a 32-block grid, so
-        // two distant herds never average into one phantom middle.
-        let mut herd: HashMap<(usize, i32, i32), (glam::Vec3, f32)> = HashMap::new();
-        for m in &self.mobs {
-            if let Some(d) = reg.animals.get(m.species)
-                && !d.hostile
-                && !d.vehicle
-                && d.group[1] >= 2
-                && m.growth >= 1.0
-            {
-                let k = (
-                    m.species,
-                    (m.pos.x.floor() as i32) >> 5,
-                    (m.pos.z.floor() as i32) >> 5,
-                );
-                let e = herd.entry(k).or_insert((glam::Vec3::ZERO, 0.0));
-                e.0 += m.pos;
-                e.1 += 1.0;
-            }
-        }
+        // Herd pulls are averaged in each animal's local tangent frame.
+        // This costs little at the mob cap and lets a herd straddle a face
+        // seam without splitting into two coordinate buckets.
+        let herd_members: Vec<(usize, EntityPos)> = self
+            .mobs
+            .iter()
+            .filter_map(|m| {
+                let d = reg.animals.get(m.species)?;
+                (!d.hostile && !d.vehicle && d.group[1] >= 2 && m.growth >= 1.0)
+                    .then_some((m.species, m.pos))
+            })
+            .collect();
         // The trophic pre-pass: hungry predators pick their quarry,
         // desperation is graded (deep hunger plus night or winter),
         // and prey with a stalker on top of it bolts.
         let winter = self.season() == 3;
         let night = daylight < 0.35;
-        let snapshot: Vec<(u32, usize, glam::Vec3)> =
+        let snapshot: Vec<(u32, usize, crate::planet::EntityPos)> =
             self.mobs.iter().map(|m| (m.id, m.species, m.pos)).collect();
-        let mut spooked: Vec<(u32, glam::Vec3)> = Vec::new();
+        let mut spooked: Vec<(u32, crate::planet::EntityPos)> = Vec::new();
         for m in &mut self.mobs {
             let Some(d) = reg.animals.get(m.species) else {
                 continue;
@@ -308,12 +366,13 @@ impl World {
                 m.quarry = None;
                 continue;
             }
-            let mut best: Option<(u32, glam::Vec3, f32)> = None;
+            let mut best: Option<(u32, crate::planet::EntityPos, f32)> = None;
             for &(id, sp, pos) in &snapshot {
                 if id == m.id || !d.prey.contains(&sp) {
                     continue;
                 }
-                let dist = (pos - m.pos).length();
+                let delta = m.pos.local_delta_to(pos);
+                let dist = delta.length();
                 if dist < crate::mobs::HUNT_RANGE && best.is_none_or(|(_, _, bd)| dist < bd) {
                     best = Some((id, pos, dist));
                 }
@@ -339,20 +398,27 @@ impl World {
         for m in &mut mobs {
             // Frozen until its chunk streams in: an unloaded chunk reads as
             // air, and ticking against it drops the mob through the world.
-            let cp = ChunkPos::of_world(m.pos.x.floor() as i32, m.pos.z.floor() as i32);
+            let Some(cp) = m.pos.chunk() else {
+                continue;
+            };
             if !self.chunks.contains_key(&cp) {
                 continue;
             }
             if let Some(def) = reg.animals.get(m.species) {
-                let pull = herd
-                    .get(&(
-                        m.species,
-                        (m.pos.x.floor() as i32) >> 5,
-                        (m.pos.z.floor() as i32) >> 5,
-                    ))
-                    .filter(|(_, n)| *n >= 2.0)
-                    .map(|(sum, n)| *sum / *n);
-                m.herd_pull = pull;
+                let mut sum = glam::Vec3::ZERO;
+                let mut count = 0.0;
+                for &(species, other) in &herd_members {
+                    if species == m.species {
+                        let delta = m.pos.local_delta_to(other);
+                        if delta.length_squared() <= 32.0 * 32.0 {
+                            sum += delta;
+                            count += 1.0;
+                        }
+                    }
+                }
+                m.herd_pull = (count >= 2.0)
+                    .then(|| m.pos.translated(sum / count).ok().map(|moved| moved.pos))
+                    .flatten();
                 m.unstick(self, def);
                 m.tick(self, def, players, dt, rng, &mut events);
             }
@@ -372,14 +438,12 @@ impl World {
         for id in killed {
             if let Some(i) = mobs.iter().position(|m| m.id == id) {
                 let prey = mobs.swap_remove(i);
-                let at = (
-                    prey.pos.x.floor() as i32,
-                    prey.pos.y.floor() as i32,
-                    prey.pos.z.floor() as i32,
-                );
+                let at = prey.pos.block();
                 if let Some(cargo) = prey.cargo {
                     for st in cargo.into_iter().flatten() {
-                        self.push_drop(at, st);
+                        if let Some(at) = at {
+                            self.push_drop_at(at, st);
+                        }
                     }
                 }
                 let was_carcass = reg
@@ -387,7 +451,7 @@ impl World {
                     .get(prey.species)
                     .is_some_and(|d| d.name.ends_with(":carcass"));
                 if !was_carcass && let Some(ci) = reg.animal_id("base:carcass") {
-                    let mut c = Mob::new(ci, prey.pos, prey.yaw);
+                    let mut c = Mob::new_at(ci, prey.pos, prey.yaw);
                     c.health = reg.animals[ci].health;
                     c.rot = crate::mobs::CARCASS_ROT_SECS;
                     mobs.push(c);
@@ -395,7 +459,7 @@ impl World {
             }
         }
         // Rot: the ground takes whatever the vultures leave.
-        let mut rotted: Vec<glam::Vec3> = Vec::new();
+        let mut rotted: Vec<crate::planet::EntityPos> = Vec::new();
         mobs.retain_mut(|m| {
             if reg
                 .animals
@@ -411,12 +475,13 @@ impl World {
             true
         });
         for p in rotted {
-            self.feed_soil(
-                p.x.floor() as i32,
-                (p.y - 0.5).floor() as i32,
-                p.z.floor() as i32,
-                8,
-            );
+            if let Some(pos) = p
+                .translated(glam::Vec3::new(0.0, -0.5, 0.0))
+                .ok()
+                .and_then(|moved| moved.pos.block())
+            {
+                self.feed_soil_at(pos, 8);
+            }
         }
         // Wardens are expressions of the wild, not creatures: they dissolve
         // in daylight (sky-lit cells only — torchlight never banishes them)
@@ -425,7 +490,7 @@ impl World {
             let Some(def) = reg.animals.get(m.species) else {
                 return false;
             };
-            if m.pos.y < -20.0 {
+            if m.pos.y() < -20.0 {
                 return false; // fell out of the world somehow
             }
             if def.hostile && m.masterless {
@@ -434,7 +499,7 @@ impl World {
                 // they do not stop. Only distance retires them.
                 let near = players
                     .iter()
-                    .map(|p| (m.pos - p.pos).length_squared())
+                    .map(|p| m.pos.local_delta_to(p.pos).length_squared())
                     .fold(f32::INFINITY, f32::min);
                 return near <= 120.0 * 120.0;
             }
@@ -444,7 +509,7 @@ impl World {
                 if def.movement_swim {
                     let near = players
                         .iter()
-                        .map(|p| (m.pos - p.pos).length_squared())
+                        .map(|p| m.pos.local_delta_to(p.pos).length_squared())
                         .fold(f32::INFINITY, f32::min);
                     return near <= 96.0 * 96.0;
                 }
@@ -452,16 +517,20 @@ impl World {
             }
             let near = players
                 .iter()
-                .map(|p| (m.pos - p.pos).length_squared())
+                .map(|p| m.pos.local_delta_to(p.pos).length_squared())
                 .fold(f32::INFINITY, f32::min);
             if near > 80.0 * 80.0 {
                 return false;
             }
-            let (_, sl) = self.light_at(
-                m.pos.x.floor() as i32,
-                (m.pos.y + 0.5).floor() as i32,
-                m.pos.z.floor() as i32,
-            );
+            let Some(light_pos) = m
+                .pos
+                .translated(glam::Vec3::new(0.0, 0.5, 0.0))
+                .ok()
+                .and_then(|p| p.pos.block())
+            else {
+                return false;
+            };
+            let (_, sl) = self.light_at_pos(light_pos);
             sl as f32 * daylight < 7.0
         });
         // Husbandry: two fed adults of a species near each other bear
@@ -479,7 +548,7 @@ impl World {
                 if mobs[j].species == mobs[i].species
                     && mobs[j].fed
                     && mobs[j].growth >= 1.0
-                    && (mobs[i].pos - mobs[j].pos).length_squared() < 16.0
+                    && mobs[i].pos.distance_to(mobs[j].pos).powi(2) < 16.0
                 {
                     births.push((i, j));
                     break;
@@ -487,13 +556,17 @@ impl World {
             }
         }
         for (i, j) in births {
-            let mid = (mobs[i].pos + mobs[j].pos) * 0.5;
+            let mid = mobs[i]
+                .pos
+                .translated(mobs[i].pos.local_delta_to(mobs[j].pos) * 0.5)
+                .map(|p| p.pos)
+                .unwrap_or(mobs[i].pos);
             mobs[i].fed = false;
             mobs[j].fed = false;
             mobs[i].breed_cd = 300.0;
             mobs[j].breed_cd = 300.0;
             if mobs.len() < MOB_CAP {
-                let mut baby = Mob::new(mobs[i].species, mid, 0.0);
+                let mut baby = Mob::new_at(mobs[i].species, mid, 0.0);
                 baby.health = reg.animals[mobs[i].species].health;
                 baby.growth = 0.05;
                 mobs.push(baby);
@@ -524,11 +597,14 @@ impl World {
             let player = players
                 .get((*rng >> 8) as usize % players.len().max(1))
                 .map(|p| p.pos)
-                .unwrap_or(player);
+                .or(fallback_player);
+            let Some(player) = player else {
+                return events;
+            };
             let near = self
                 .mobs
                 .iter()
-                .filter(|m| (m.pos - player).length_squared() < 96.0 * 96.0)
+                .filter(|m| m.pos.distance_to(player) < 96.0)
                 .count();
             if near < 40 && !reg.animals.is_empty() {
                 *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
@@ -536,21 +612,32 @@ impl World {
                 // A ring 32-72 blocks out at a random angle.
                 let ang = (r % 1024) as f32 / 1024.0 * std::f32::consts::TAU;
                 let dist = 32.0 + ((r >> 10) % 40) as f32;
-                let x = (player.x + ang.sin() * dist).floor() as i32;
-                let z = (player.z + ang.cos() * dist).floor() as i32;
-                let cp = ChunkPos::of_world(x, z);
-                if self.chunks.contains_key(&cp) && self.heart_alive_at(x, z) {
+                let Some(surface) = player
+                    .translated(glam::Vec3::new(ang.sin() * dist, 0.0, ang.cos() * dist))
+                    .ok()
+                    .and_then(|moved| moved.pos.block())
+                    .map(BlockPos::surface)
+                else {
+                    return events;
+                };
+                let cp = ChunkPos::from_surface(surface);
+                if self.chunks.contains_key(&cp) && self.heart_alive_at_surface(surface) {
                     // Restock what the spot can actually hold: a column
                     // of water gets swimmers, dry ground gets landfolk.
                     // Drawing both from one pool wasted most rolls out at
                     // sea, where every land pick fails to place.
-                    let wet =
-                        self.reg
-                            .is_water(self.get_block(x, self.surface_height(x, z) + 1, z));
-                    let biome = if wet && self.is_open_water(x, z) {
+                    let surface_y = self.surface_height_at(surface);
+                    let wet = BlockPos::new(
+                        surface.face(),
+                        surface.u(),
+                        (surface_y + 1).clamp(0, CHUNK_Y as i32 - 1) as u8,
+                        surface.v(),
+                    )
+                    .is_ok_and(|pos| self.reg.is_water(self.get_block_at(pos)));
+                    let biome = if wet && self.is_open_water_at(surface) {
                         "ocean".to_string()
                     } else {
-                        self.country_biome(x, z).name().to_lowercase()
+                        self.country_biome_at(surface).name().to_lowercase()
                     };
                     // Wildlife only — wardens have their own spawner.
                     let eligible: Vec<usize> = reg
@@ -569,7 +656,7 @@ impl World {
                         .map(|(i, _)| i)
                         .collect();
                     if let Some(&si) = eligible.get(((r >> 20) as usize) % eligible.len().max(1)) {
-                        self.try_spawn(si, x, z, (r >> 8) as f32 / (u32::MAX >> 8) as f32);
+                        self.try_spawn_at(si, surface, (r >> 8) as f32 / (u32::MAX >> 8) as f32);
                     }
                 }
             }
@@ -580,7 +667,17 @@ impl World {
     /// The strike connects: the nearest swimmer within reach of the
     /// bobber leaves the water. Returns its species — real fish get
     /// caught before any luck table gets a say.
+    #[cfg(test)]
     pub fn catch_fish_near(&mut self, at: glam::Vec3, radius: f32) -> Option<usize> {
+        let at = crate::planet::EntityPos::from_local(crate::planet::Face::PosZ, at).ok()?;
+        self.catch_fish_near_at(at, radius)
+    }
+
+    pub fn catch_fish_near_at(
+        &mut self,
+        at: crate::planet::EntityPos,
+        radius: f32,
+    ) -> Option<usize> {
         let reg = self.reg.clone();
         let idx = self
             .mobs
@@ -588,13 +685,9 @@ impl World {
             .enumerate()
             .filter(|(_, m)| {
                 reg.animals.get(m.species).is_some_and(|d| d.movement_swim)
-                    && (m.pos - at).length() < radius
+                    && m.pos.distance_to(at) < radius
             })
-            .min_by(|(_, a), (_, b)| {
-                (a.pos - at)
-                    .length_squared()
-                    .total_cmp(&(b.pos - at).length_squared())
-            })
+            .min_by(|(_, a), (_, b)| a.pos.distance_to(at).total_cmp(&b.pos.distance_to(at)))
             .map(|(i, _)| i)?;
         let fish = self.mobs.swap_remove(idx);
         Some(fish.species)
@@ -604,20 +697,20 @@ impl World {
     /// base, grass to bare dirt (which heals). The animal never
     /// breaks a placed block — it eats what the plant grew, not what
     /// the farmer built.
-    pub fn apply_bite(&mut self, (x, y, z): (i32, i32, i32)) {
-        let b = self.get_block(x, y, z);
+    pub fn apply_bite_at(&mut self, pos: crate::planet::BlockPos) {
+        let b = self.get_block_at(pos);
         let d = self.reg.block(b);
         if d.crop_family != 0 && d.name.contains("/stage") {
             let base = d.name.split("/stage").next().unwrap_or("").to_string();
             if let Some(base_id) = self.reg.block_id(&base) {
-                self.set_block(x, y, z, base_id);
+                self.set_block_at(pos, base_id);
             }
             return;
         }
         if d.name == "base:grass"
             && let Some(dirt) = self.reg.block_id("base:dirt")
         {
-            self.set_block(x, y, z, dirt);
+            self.set_block_at(pos, dirt);
         }
     }
 
@@ -630,8 +723,8 @@ impl World {
         dt: f32,
     ) -> Vec<(usize, f32)> {
         let mut dmg: Vec<(usize, f32)> = Vec::new();
-        let mut mob_hits: Vec<(usize, f32, glam::Vec3)> = Vec::new();
-        let mut drops: Vec<((i32, i32, i32), crate::registry::ItemId)> = Vec::new();
+        let mut mob_hits: Vec<(usize, f32, crate::planet::EntityPos)> = Vec::new();
+        let mut drops: Vec<(crate::planet::BlockPos, crate::registry::ItemId)> = Vec::new();
         let mut projectiles = std::mem::take(&mut self.projectiles);
         projectiles.retain_mut(|p| match p.tick(self, players, dt) {
             ProjHit::None => true,
@@ -641,7 +734,12 @@ impl World {
                 false
             }
             ProjHit::Mob(i) => {
-                mob_hits.push((i, p.damage, p.pos - p.vel * dt));
+                let from = p
+                    .pos
+                    .translated(-p.vel * dt)
+                    .map(|moved| moved.pos)
+                    .unwrap_or(p.pos);
+                mob_hits.push((i, p.damage, from));
                 false
             }
             ProjHit::Block => {
@@ -651,15 +749,14 @@ impl World {
                         let stack = ItemStack::new(&self.reg, it, 1);
                         self.pending_gives.push((p.owner, stack));
                     } else {
-                        let back = p.pos - p.vel * dt * 2.0;
-                        drops.push((
-                            (
-                                back.x.floor() as i32,
-                                back.y.floor() as i32,
-                                back.z.floor() as i32,
-                            ),
-                            it,
-                        ));
+                        let back = p
+                            .pos
+                            .translated(-p.vel * dt * 2.0)
+                            .map(|moved| moved.pos)
+                            .unwrap_or(p.pos);
+                        if let Some(back) = back.block() {
+                            drops.push((back, it));
+                        }
                     }
                 }
                 false
@@ -675,7 +772,7 @@ impl World {
             }
         }
         for (pos, it) in drops {
-            self.pending_drops.push((pos, ItemStack::new(&reg, it, 1)));
+            self.push_drop_at(pos, ItemStack::new(&reg, it, 1));
         }
         dmg
     }
@@ -693,9 +790,12 @@ impl World {
                 i += 1;
                 continue;
             }
-            let (mx, mz) = (m.pos.x.floor() as i32, m.pos.z.floor() as i32);
-            let cell = self.regional_ire_at(mx, mz);
-            if cell < m.watch_baseline - 1.5 || self.ire_tier_at(mx, mz) == 0 {
+            let Some(surface) = m.pos.block().map(BlockPos::surface) else {
+                self.mobs.swap_remove(i);
+                continue;
+            };
+            let cell = self.regional_ire_at_surface(surface);
+            if cell < m.watch_baseline - 1.5 || self.ire_tier_at_surface(surface) == 0 {
                 // The land was answered while it watched.
                 self.whispers
                     .push("The watcher melts back into the trees.".to_string());
@@ -712,8 +812,8 @@ impl World {
 
     pub fn tick_hostile_spawns(
         &mut self,
-        player: glam::Vec3,
-        world_spawn: glam::Vec3,
+        player: EntityPos,
+        world_spawn: EntityPos,
         daylight: f32,
         dt: f32,
         rng: &mut u32,
@@ -728,22 +828,23 @@ impl World {
         // heart is dead they simply stop coming — and the silence is
         // the loudest thing this game ever does, because the player
         // has spent the whole game reading warden pressure as danger.
-        let (hx, hz) = (player.x.floor() as i32, player.z.floor() as i32);
-        if !self.heart_alive_at(hx, hz) {
+        let Some(player_surface) = player.block().map(BlockPos::surface) else {
+            return;
+        };
+        if !self.heart_alive_at_surface(player_surface) {
             return;
         }
         let reg = self.reg.clone();
         // The tier as THIS ground feels it: an angry forest hunts
         // harder, a tended valley softer, wherever the world's mood.
-        let (px, pz) = (player.x.floor() as i32, player.z.floor() as i32);
-        let tier = self.ire_tier_at(px, pz);
+        let tier = self.ire_tier_at_surface(player_surface);
         let mut budget = [2usize, 6, 10, 14][tier];
         // While a watcher watches, nothing else comes: the warning IS
         // the encounter until it's answered or it graduates.
         let watcher_near = self
             .mobs
             .iter()
-            .any(|m| m.watcher && (m.pos - player).length_squared() < 96.0 * 96.0);
+            .any(|m| m.watcher && m.pos.distance_to(player) < 96.0);
         if watcher_near {
             return;
         }
@@ -755,7 +856,7 @@ impl World {
             .iter()
             .filter(|m| {
                 reg.animals.get(m.species).is_some_and(|d| d.hostile)
-                    && (m.pos - player).length_squared() < 96.0 * 96.0
+                    && m.pos.distance_to(player) < 96.0
             })
             .count();
         if near_hostiles >= budget || self.mobs.len() >= MOB_CAP {
@@ -769,36 +870,52 @@ impl World {
             let r = roll(rng);
             let ang = (r % 1024) as f32 / 1024.0 * std::f32::consts::TAU;
             let dist = 24.0 + ((r >> 10) % 32) as f32;
-            let x = (player.x + ang.sin() * dist).floor() as i32;
-            let z = (player.z + ang.cos() * dist).floor() as i32;
-            if !self.chunks.contains_key(&ChunkPos::of_world(x, z)) {
+            let Some(surface) = player
+                .translated(glam::Vec3::new(ang.sin() * dist, 0.0, ang.cos() * dist))
+                .ok()
+                .and_then(|moved| moved.pos.block())
+                .map(BlockPos::surface)
+            else {
+                continue;
+            };
+            if !self.chunks.contains_key(&ChunkPos::from_surface(surface)) {
                 continue;
             }
-            let dxs = x as f32 - world_spawn.x;
-            let dzs = z as f32 - world_spawn.z;
-            if dxs * dxs + dzs * dzs < 16.0 * 16.0 {
+            let spawn_probe = EntityPos::new(
+                surface.face(),
+                f32::from(surface.u()) + 0.5,
+                player.y(),
+                f32::from(surface.v()) + 0.5,
+            )
+            .expect("hostile spawn probe is canonical");
+            if spawn_probe.horizontal_distance_to(world_spawn) < 16.0 {
                 continue;
             }
             // The wardens a country fields follow its heart too.
-            let biome = self.country_biome(x, z).name().to_lowercase();
+            let biome = self.country_biome_at(surface).name().to_lowercase();
             // Split the roster: surface wardens spawn at the surface, the
             // deep's own ("underground" biome tag) in caves below.
-            let surface_y = self.surface_height(x, z);
+            let surface_y = self.surface_height_at(surface);
             let candidates: Vec<(usize, i32)> = reg
                 .animals
                 .iter()
                 .enumerate()
                 .filter(|(_, d)| {
-                    let local = (self.ire + self.regional_ire_at(x, z) * 3.0).clamp(0.0, 100.0);
+                    let local =
+                        (self.ire + self.regional_ire_at_surface(surface) * 3.0).clamp(0.0, 100.0);
                     d.hostile && local >= d.ire_min
                 })
                 .filter_map(|(i, d)| {
                     if d.biomes.iter().any(|b| b == "underground") {
                         // A random depth with a 2-tall air pocket.
                         let y = 6 + (roll(rng) % (surface_y.max(12) as u32 - 6)) as i32;
-                        let ground = self.get_block(x, y - 1, z);
-                        let a1 = self.get_block(x, y, z);
-                        let a2 = self.get_block(x, y + 1, z);
+                        let at = BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
+                            .ok()?;
+                        let ground = at
+                            .offset(0, -1, 0)
+                            .map_or(AIR, |pos| self.get_block_at(pos));
+                        let a1 = self.get_block_at(at);
+                        let a2 = at.offset(0, 1, 0).map_or(AIR, |pos| self.get_block_at(pos));
                         (self.reg.is_solid(ground) && a1 == AIR && a2 == AIR).then_some((i, y))
                     } else if d.biomes.contains(&biome) && surface_y > SEA_LEVEL {
                         Some((i, surface_y + 1))
@@ -822,21 +939,32 @@ impl World {
             {
                 continue;
             }
-            let (bl, sl) = self.light_at(x, y, z);
+            let Some(at) = BlockPos::new(surface.face(), surface.u(), y as u8, surface.v()).ok()
+            else {
+                continue;
+            };
+            let (bl, sl) = self.light_at_pos(at);
             let eff = (bl as f32).max(sl as f32 * daylight);
             if eff >= def.spawn_light_max as f32 {
                 continue;
             }
-            let mut m = Mob::new(
+            let entity = EntityPos::new(
+                surface.face(),
+                f32::from(surface.u()) + 0.5,
+                y as f32 + 0.05,
+                f32::from(surface.v()) + 0.5,
+            )
+            .expect("hostile spawn is canonical");
+            let mut m = Mob::new_at(
                 si,
-                glam::Vec3::new(x as f32 + 0.5, y as f32 + 0.05, z as f32 + 0.5),
+                entity,
                 (roll(rng) % 1024) as f32 / 1024.0 * std::f32::consts::TAU,
             );
             m.health = def.health;
             // The first surface warden into aggrieved country arrives
             // as a WATCHER: one warning at the treeline before any
             // hunt. (The deep gives no warnings.)
-            let cell_ire = self.regional_ire_at(x, z);
+            let cell_ire = self.regional_ire_at_surface(surface);
             let is_surface = y == surface_y + 1;
             if is_surface && near_hostiles == 0 && cell_ire > 4.0 {
                 m.watcher = true;

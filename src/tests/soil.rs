@@ -13,7 +13,10 @@ fn the_till_reads_the_ground() {
     let h = w.surface_height(4, 4);
     let grass = b(&reg, "base:grass");
     let dirt = b(&reg, "base:dirt");
-    let sand = b(&reg, "base:sand");
+    // Loose sand correctly falls if an uneven generated column leaves air
+    // below the fixture. Sandstone is stable and carries the same sandy
+    // neighborhood signal this tilling rule is meant to test.
+    let sand = b(&reg, "base:sandstone");
     // Set the neighborhoods too: the till reads what is BESIDE the
     // cell, and the surrounding country supplies its own palette.
     for (cx, cz, fill) in [(4, 4, grass), (8, 8, dirt)] {
@@ -45,27 +48,32 @@ fn the_till_reads_the_ground() {
 fn fertile_soil_outgrows_dust() {
     let reg = base_reg();
     let mut w = test_world_with("fertgrow", reg.clone());
-    let h = w.surface_height(4, 4);
+    // Put both populations in the same generated chunk and in guaranteed
+    // open sky. A pair of 16-cell strips produced only a handful of random
+    // visits, so which strip won was mostly sampling noise rather than soil.
+    let h = 200;
     let farm = b(&reg, "base:farmland");
     let seed0 = b(&reg, "base:wheat_seeds");
-    // Two strips: rich loam west, exhausted dust east.
-    for z in 0..16 {
-        w.set_block_meta(2, h, z, farm, soil::soil_meta(FERT_MAX, 0));
-        w.set_block(2, h + 1, z, seed0);
-        w.set_block_meta(13, h, z, farm, soil::soil_meta(2, 0));
-        w.set_block(13, h + 1, z, seed0);
+    // Two equal half-fields: rich loam west, exhausted dust east.
+    for x in 0..16 {
+        for z in 0..16 {
+            let fertility = if x < 8 { FERT_MAX } else { 2 };
+            w.set_block_meta(x, h, z, farm, soil::soil_meta(fertility, 0));
+            w.set_block(x, h + 1, z, seed0);
+            w.set_block(x, h + 2, z, AIR);
+        }
     }
     let mut rng = 777u32;
     for _ in 0..2500 {
         w.random_tick(&mut rng);
     }
-    let count = |x: i32, w: &crate::world::World| {
-        (0..16)
-            .filter(|&z| w.get_block(x, h + 1, z) != seed0)
+    let count = |xs: std::ops::Range<i32>, w: &crate::world::World| {
+        xs.flat_map(|x| (0..16).map(move |z| (x, z)))
+            .filter(|&(x, z)| w.get_block(x, h + 1, z) != seed0)
             .count()
     };
-    let rich = count(2, &w);
-    let dust = count(13, &w);
+    let rich = count(0..8, &w);
+    let dust = count(8..16, &w);
     assert!(
         rich > dust,
         "loam ({rich}) must outgrow dust ({dust}) over the same ticks"
@@ -237,13 +245,13 @@ fn soil_survives_the_save() {
     let h;
     {
         let mut w = World::new(7, dir.clone(), reg.clone());
-        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        w.ensure_chunk(tchunk(0, 0));
         h = w.surface_height(4, 4);
         w.set_block_meta(4, h, 4, farm, soil::soil_meta(33, 2));
         save_world(&mut w);
     }
     let mut w = World::load_or_create(dir, reg.clone()).unwrap();
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w.ensure_chunk(tchunk(0, 0));
     assert_eq!(w.get_block(4, h, 4), farm);
     assert_eq!(soil::fert_of(w.get_meta(4, h, 4)), 33, "fertility persists");
     assert_eq!(soil::family_of(w.get_meta(4, h, 4)), 2, "stamp persists");

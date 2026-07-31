@@ -34,29 +34,41 @@ fn time_phase(t: f32) -> &'static str {
 }
 
 impl Agent {
-    fn loaded(&self, x: i32, z: i32) -> bool {
+    fn loaded_at(&self, pos: crate::planet::BlockPos) -> bool {
         // Streamed chunks always carry the bedrock floor.
-        self.world.get_block(x, 0, z) != registry::AIR
+        self.world.get_block_at(pos.with_y(0)) != registry::AIR
     }
 
-    fn surface_y(&self, x: i32, z: i32, around_y: i32) -> Option<i32> {
+    fn surface_near(
+        &self,
+        pos: crate::planet::BlockPos,
+        around_y: i32,
+    ) -> Option<crate::planet::BlockPos> {
         (around_y - 14..=around_y + 12)
             .rev()
-            .find(|&y| self.reg.is_solid(self.world.get_block(x, y, z)))
+            .filter_map(|y| u8::try_from(y).ok().map(|y| pos.with_y(y)))
+            .find(|&at| self.reg.is_solid(self.world.get_block_at(at)))
     }
 
-    fn block_name(&self, x: i32, y: i32, z: i32) -> String {
-        self.reg.block(self.world.get_block(x, y, z)).name.clone()
+    fn block_name_at(&self, pos: crate::planet::BlockPos) -> String {
+        self.reg.block(self.world.get_block_at(pos)).name.clone()
     }
 
     /// The compact digest: who/where/when, a 21x21 minimap (2 blocks
     /// per cell), company, and anything the wire recently said.
     pub fn look_around(&self) -> String {
         let p = self.player.pos;
-        let (px, py, pz) = motion::cell_of(p);
+        let Some(feet) = motion::cell_of(p) else {
+            return "outside the voxel shell".into();
+        };
+        let py = i32::from(feet.y());
         let mut out = String::new();
         out.push_str(&format!(
-            "pos {px} {py} {pz}; {}; day {}; {:?}; health {:.0}/14 hunger {:.0}/20\n",
+            "pos {} {} {} {}; {}; day {}; {:?}; health {:.0}/14 hunger {:.0}/20\n",
+            feet.face().name(),
+            feet.u(),
+            feet.y(),
+            feet.v(),
             time_phase(self.time_of_day),
             self.world.day,
             self.world.weather,
@@ -65,31 +77,37 @@ impl Agent {
         ));
         out.push_str(&format!(
             "standing on {}; in {}\n",
-            self.block_name(px, py - 1, pz),
-            self.block_name(px, py, pz),
+            feet.offset(0, -1, 0)
+                .map_or_else(|| "bedrock".into(), |at| self.block_name_at(at)),
+            self.block_name_at(feet),
         ));
         // Minimap: 2-block cells, north up. Legend in the footer.
         out.push_str("map (21x21, 2 blocks/cell, north up):\n");
         for row in -10i32..=10 {
             for col in -10i32..=10 {
-                let (x, z) = (px + col * 2, pz + row * 2);
+                let Some(column) = feet.offset(col * 2, 0, row * 2) else {
+                    out.push('?');
+                    continue;
+                };
                 let ch = if (row, col) == (0, 0) {
                     '@'
-                } else if !self.loaded(x, z) {
+                } else if !self.loaded_at(column) {
                     '?'
-                } else if let Some(sy) = self.surface_y(x, z, py) {
-                    let b = self.world.get_block(x, sy, z);
+                } else if let Some(surface) = self.surface_near(column, py) {
+                    let b = self.world.get_block_at(surface);
                     let name = &self.reg.block(b).name;
-                    let over = self.world.get_block(x, sy + 1, z);
+                    let over = surface
+                        .offset(0, 1, 0)
+                        .map_or(registry::AIR, |at| self.world.get_block_at(at));
                     if self.reg.water_volume(over).is_some() {
                         '~'
                     } else if name.contains("log") || name.contains("leaves") {
                         'T'
-                    } else if sy > py + 3 {
+                    } else if i32::from(surface.y()) > py + 3 {
                         '#'
-                    } else if sy > py + 1 {
+                    } else if i32::from(surface.y()) > py + 1 {
                         '^'
-                    } else if sy < py - 4 {
+                    } else if i32::from(surface.y()) < py - 4 {
                         'v'
                     } else {
                         '.'
@@ -103,16 +121,16 @@ impl Agent {
         }
         out.push_str("(@ you, T trees, ~ water/void, ^ rise, # cliff, v drop, ? unstreamed)\n");
         for (id, (name, pos, _)) in &self.players {
-            let d = *pos - p;
+            let d = p.local_delta_to(*pos);
             out.push_str(&format!(
                 "player {name} (id {id}): {:.0} blocks {}\n",
-                d.length(),
+                p.distance_to(*pos),
                 octant(d.x as i32, d.z as i32),
             ));
         }
         let mut counts: HashMap<&str, (usize, f32)> = HashMap::new();
         for m in self.world.mobs() {
-            let d = (m.pos - p).length();
+            let d = m.pos.distance_to(p);
             if d < 32.0 {
                 let e = counts
                     .entry(self.reg.animals[m.species].name.as_str())
@@ -139,11 +157,12 @@ impl Agent {
                 .find(|(_, (n, _, _))| n.to_lowercase().contains(&want));
             return match hit {
                 Some((id, (n, pos, _))) => format!(
-                    "{n} (id {id}) at {:.0} {:.0} {:.0}, {:.0} blocks away",
-                    pos.x,
-                    pos.y,
-                    pos.z,
-                    (*pos - p).length()
+                    "{n} (id {id}) at {} {:.0} {:.0} {:.0}, {:.0} blocks away",
+                    pos.face().name(),
+                    pos.u(),
+                    pos.y(),
+                    pos.v(),
+                    pos.distance_to(p)
                 ),
                 None => "no such player in sight".into(),
             };
@@ -166,18 +185,26 @@ impl Agent {
             }
             Box::new(move |b| Some(b) == want)
         };
-        let (px, py, pz) = motion::cell_of(p);
+        let Some(origin) = motion::cell_of(p) else {
+            return "outside the voxel shell".into();
+        };
+        let py = i32::from(origin.y());
         let r = radius.clamp(2, 48);
-        let mut hits: Vec<((i32, i32, i32), f32)> = Vec::new();
-        for x in px - r..=px + r {
-            for z in pz - r..=pz + r {
-                if !self.loaded(x, z) {
+        let mut hits: Vec<(crate::planet::BlockPos, f32)> = Vec::new();
+        for du in -r..=r {
+            for dv in -r..=r {
+                let Some(column) = origin.offset(du, 0, dv) else {
+                    continue;
+                };
+                if !self.loaded_at(column) {
                     continue;
                 }
                 for y in (py - r).max(1)..=py + r {
-                    if matcher(self.world.get_block(x, y, z)) {
-                        let d = Vec3::new(x as f32 - p.x, y as f32 - p.y, z as f32 - p.z).length();
-                        hits.push(((x, y, z), d));
+                    let Some(at) = u8::try_from(y).ok().map(|y| column.with_y(y)) else {
+                        continue;
+                    };
+                    if matcher(self.world.get_block_at(at)) {
+                        hits.push((at, p.distance_to(at.entity_center())));
                     }
                 }
             }
@@ -188,21 +215,23 @@ impl Agent {
         }
         let mut out = String::new();
         let mut shown = 0;
-        let mut last: Option<(i32, i32, i32)> = None;
+        let mut last: Option<crate::planet::BlockPos> = None;
         for (c, d) in hits {
             // One line per cluster, not per block of the same trunk.
             if let Some(l) = last
-                && (c.0 - l.0).abs() + (c.1 - l.1).abs() + (c.2 - l.2).abs() < 4
+                && c.entity_center().distance_to(l.entity_center()) < 4.0
             {
                 continue;
             }
+            let delta = p.local_delta_to(c.entity_center());
             out.push_str(&format!(
-                "{} at {} {} {} - {d:.0} blocks {}\n",
-                self.block_name(c.0, c.1, c.2),
-                c.0,
-                c.1,
-                c.2,
-                octant(c.0 - px, c.2 - pz),
+                "{} at {} {} {} {} - {d:.0} blocks {}\n",
+                self.block_name_at(c),
+                c.face().name(),
+                c.u(),
+                c.y(),
+                c.v(),
+                octant(delta.x as i32, delta.z as i32),
             ));
             last = Some(c);
             shown += 1;
@@ -213,22 +242,22 @@ impl Agent {
         out
     }
 
-    pub fn at(&self, x: i32, y: i32, z: i32) -> String {
-        if !self.loaded(x, z) {
+    pub fn at(&self, pos: crate::planet::BlockPos) -> String {
+        if !self.loaded_at(pos) {
             return "that chunk hasn't streamed to you".into();
         }
-        let (bl, sky) = self.world.light_at(x, y, z);
+        let (bl, sky) = self.world.light_at_pos(pos);
         // Farmland wears its fertility in its meta byte; report it so
         // an agent can judge a field the way a farmer reads the tint.
         let soil = if self
             .reg
-            .block(self.world.get_block(x, y, z))
+            .block(self.world.get_block_at(pos))
             .fert_tiles
             .is_some()
         {
             format!(
                 "; soil {}/{}",
-                self.world.fertility_at(x, y, z),
+                self.world.fertility_at_pos(pos),
                 crate::world::soil::FERT_MAX
             )
         } else {
@@ -236,9 +265,11 @@ impl Agent {
         };
         format!(
             "{} (light {bl}, sky {sky}){soil}; above: {}; below: {}",
-            self.block_name(x, y, z),
-            self.block_name(x, y + 1, z),
-            self.block_name(x, y - 1, z),
+            self.block_name_at(pos),
+            pos.offset(0, 1, 0)
+                .map_or_else(|| "outside shell".into(), |at| self.block_name_at(at)),
+            pos.offset(0, -1, 0)
+                .map_or_else(|| "outside shell".into(), |at| self.block_name_at(at)),
         )
     }
 
@@ -274,10 +305,11 @@ impl Agent {
             Behavior::Idle => "idle".to_string(),
             Behavior::GoTo { goal, path } => {
                 format!(
-                    "walking to {} {} {} ({} waypoints left)",
-                    goal.0,
-                    goal.1,
-                    goal.2,
+                    "walking to {} {} {} {} ({} waypoints left)",
+                    goal.face().name(),
+                    goal.u(),
+                    goal.y(),
+                    goal.v(),
                     path.len()
                 )
             }
@@ -290,10 +322,11 @@ impl Agent {
             ),
         };
         format!(
-            "pos {:.1} {:.1} {:.1}; health {:.0}; hunger {:.0}; {}; {}; behavior: {doing}",
-            p.x,
-            p.y,
-            p.z,
+            "pos {} {:.1} {:.1} {:.1}; health {:.0}; hunger {:.0}; {}; {}; behavior: {doing}",
+            p.face().name(),
+            p.u(),
+            p.y(),
+            p.v(),
             self.health,
             self.hunger,
             time_phase(self.time_of_day),

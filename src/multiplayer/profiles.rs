@@ -7,12 +7,14 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(test)]
 use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 use crate::identity::{DisplayName, PlayerId, Principal};
 use crate::inventory::{HOTBAR_SLOTS, Inventory, ItemStack, TOTAL_SLOTS};
 use crate::net::{PlayerStateSnap, StackSnap};
+use crate::planet::EntityPos;
 use crate::registry::Registry;
 
 #[derive(Serialize, Deserialize)]
@@ -53,10 +55,10 @@ struct StoredProfile {
     display_name: String,
     #[serde(default)]
     previous_names: Vec<String>,
-    pos: [f32; 3],
+    pos: EntityPos,
     yaw: f32,
     pitch: f32,
-    spawn: [f32; 3],
+    spawn: EntityPos,
     health: f32,
     hunger: f32,
     nutrition: [f32; 5],
@@ -77,31 +79,15 @@ struct StoredProfile {
     last_saved_at: u64,
 }
 
-#[derive(Deserialize)]
-struct LegacyLocalProfile {
-    pos: [f32; 3],
-    yaw: f32,
-    pitch: f32,
-    health: f32,
-    hunger: f32,
-    nutrition: [f32; 5],
-    hotbar: usize,
-    spawn: Option<[f32; 3]>,
-    #[serde(default)]
-    slot: Vec<StoredStack>,
-    #[serde(default)]
-    armor: Vec<StoredStack>,
-}
-
 pub(super) struct PlayerRuntime {
     pub player_id: PlayerId,
     pub principals: Vec<Principal>,
     pub display_name: String,
     pub previous_names: Vec<String>,
-    pub pos: Vec3,
+    pub pos: EntityPos,
     pub yaw: f32,
     pub pitch: f32,
-    pub spawn: Vec3,
+    pub spawn: EntityPos,
     pub health: f32,
     pub hunger: f32,
     pub nutrition: [f32; 5],
@@ -201,7 +187,7 @@ impl ProfileStore {
         principals: &[Principal],
         display_name: &DisplayName,
         style: u32,
-        spawn: Vec3,
+        spawn: EntityPos,
         reg: &std::sync::Arc<Registry>,
     ) -> io::Result<PlayerRuntime> {
         self.registry = Some(reg.clone());
@@ -229,17 +215,10 @@ impl ProfileStore {
         };
         let path = self.profile_path(player_id);
         let mut runtime = match std::fs::read_to_string(&path) {
-            Ok(text) => match toml::from_str::<StoredProfile>(&text) {
-                Ok(stored) => stored_to_runtime(stored, reg)?,
-                Err(_) => legacy_local_to_runtime(
-                    toml::from_str::<LegacyLocalProfile>(&text).map_err(invalid_data)?,
-                    player_id,
-                    principals,
-                    display_name,
-                    style,
-                    reg,
-                ),
-            },
+            Ok(text) => stored_to_runtime(
+                toml::from_str::<StoredProfile>(&text).map_err(invalid_data)?,
+                reg,
+            )?,
             Err(e) if e.kind() == io::ErrorKind::NotFound => PlayerRuntime {
                 player_id,
                 principals: principals.to_vec(),
@@ -365,7 +344,7 @@ impl ProfileStore {
                 // migration index remains authoritative until first save.
                 continue;
             };
-            if profile.version != 1 {
+            if profile.version != 2 {
                 continue;
             }
             let expected = self.profile_path(profile.player_id);
@@ -399,48 +378,6 @@ impl ProfileStore {
     }
 }
 
-fn legacy_local_to_runtime(
-    profile: LegacyLocalProfile,
-    player_id: PlayerId,
-    principals: &[Principal],
-    display_name: &DisplayName,
-    style: u32,
-    reg: &Registry,
-) -> PlayerRuntime {
-    let mut inventory = Inventory::new();
-    for stack in profile.slot {
-        if stack.index < TOTAL_SLOTS {
-            inventory.slots[stack.index] = restore_stack(&stack, reg);
-        }
-    }
-    let mut armor = [None; 5];
-    for stack in profile.armor {
-        if stack.index < armor.len() {
-            armor[stack.index] = restore_stack(&stack, reg);
-        }
-    }
-    PlayerRuntime {
-        player_id,
-        principals: principals.to_vec(),
-        display_name: display_name.to_string(),
-        previous_names: Vec::new(),
-        pos: Vec3::from_array(profile.pos),
-        yaw: profile.yaw,
-        pitch: profile.pitch,
-        spawn: Vec3::from_array(profile.spawn.unwrap_or(profile.pos)),
-        health: profile.health.clamp(0.0, 14.0),
-        hunger: profile.hunger.clamp(0.0, 20.0),
-        nutrition: profile.nutrition.map(|value| value.max(0.0)),
-        hotbar: profile.hotbar.min(HOTBAR_SLOTS - 1),
-        style,
-        held: u16::MAX,
-        inventory,
-        armor,
-        cursor: None,
-        first_seen: now(),
-    }
-}
-
 fn runtime_to_stored(player: &PlayerRuntime, reg: &Registry) -> StoredProfile {
     let saved_at = now();
     let stacks = |slots: &[Option<ItemStack>]| {
@@ -451,15 +388,15 @@ fn runtime_to_stored(player: &PlayerRuntime, reg: &Registry) -> StoredProfile {
             .collect()
     };
     StoredProfile {
-        version: 1,
+        version: 2,
         player_id: player.player_id,
         principals: player.principals.clone(),
         display_name: player.display_name.clone(),
         previous_names: player.previous_names.clone(),
-        pos: player.pos.to_array(),
+        pos: player.pos,
         yaw: player.yaw,
         pitch: player.pitch,
-        spawn: player.spawn.to_array(),
+        spawn: player.spawn,
         health: player.health,
         hunger: player.hunger,
         nutrition: player.nutrition,
@@ -476,7 +413,7 @@ fn runtime_to_stored(player: &PlayerRuntime, reg: &Registry) -> StoredProfile {
 }
 
 fn stored_to_runtime(profile: StoredProfile, reg: &Registry) -> io::Result<PlayerRuntime> {
-    if profile.version != 1 {
+    if profile.version != 2 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("unsupported player profile version {}", profile.version),
@@ -499,10 +436,10 @@ fn stored_to_runtime(profile: StoredProfile, reg: &Registry) -> io::Result<Playe
         principals: profile.principals,
         display_name: profile.display_name,
         previous_names: profile.previous_names,
-        pos: Vec3::from_array(profile.pos),
+        pos: profile.pos,
         yaw: profile.yaw,
         pitch: profile.pitch,
-        spawn: Vec3::from_array(profile.spawn),
+        spawn: profile.spawn,
         health: profile.health.clamp(0.0, 14.0),
         hunger: profile.hunger.clamp(0.0, 20.0),
         nutrition: profile.nutrition.map(|value| value.max(0.0)),
@@ -593,6 +530,10 @@ mod tests {
         Principal::LocalDevice(DeviceKeyId([seed; 32]))
     }
 
+    fn planet_spawn(local: Vec3) -> EntityPos {
+        EntityPos::from_local(crate::planet::Face::PosZ, local).unwrap()
+    }
+
     #[test]
     fn reconnect_reopens_one_profile_and_keeps_state_and_name_history() {
         let (root, reg) = fixture("reconnect");
@@ -604,11 +545,11 @@ mod tests {
                     std::slice::from_ref(&principal),
                     &DisplayName::parse("Moss").unwrap(),
                     7,
-                    Vec3::new(1.0, 2.0, 3.0),
+                    planet_spawn(Vec3::new(1.0, 2.0, 3.0)),
                     &reg,
                 )
                 .unwrap();
-            profile.pos = Vec3::new(8.0, 70.0, 9.0);
+            profile.pos = planet_spawn(Vec3::new(8.0, 70.0, 9.0));
             let item = reg.item_id("base:torch").unwrap();
             profile.inventory.slots[0] = Some(ItemStack::new(&reg, item, 3));
             store.save(&profile, &reg).unwrap();
@@ -630,12 +571,12 @@ mod tests {
                 &[principal],
                 &DisplayName::parse("Fern").unwrap(),
                 8,
-                Vec3::ZERO,
+                planet_spawn(Vec3::ZERO),
                 &reg,
             )
             .unwrap();
         assert_eq!(profile.player_id, first_id);
-        assert_eq!(profile.pos, Vec3::new(8.0, 70.0, 9.0));
+        assert_eq!(profile.pos.local(), Vec3::new(8.0, 70.0, 9.0));
         assert_eq!(profile.inventory.slots[0].unwrap().count, 3);
         assert_eq!(profile.display_name, "FERN");
         assert!(profile.previous_names.contains(&"MOSS".to_string()));
@@ -651,7 +592,7 @@ mod tests {
                 &[device(2)],
                 &DisplayName::parse("One").unwrap(),
                 0,
-                Vec3::ZERO,
+                planet_spawn(Vec3::ZERO),
                 &reg,
             )
             .unwrap();
@@ -660,7 +601,7 @@ mod tests {
                 &[did.clone(), device(2)],
                 &DisplayName::parse("One").unwrap(),
                 0,
-                Vec3::ZERO,
+                planet_spawn(Vec3::ZERO),
                 &reg,
             )
             .unwrap();
@@ -674,7 +615,7 @@ mod tests {
                 &[did.clone(), device(4)],
                 &DisplayName::parse("Renamed").unwrap(),
                 1,
-                Vec3::ZERO,
+                planet_spawn(Vec3::ZERO),
                 &reg,
             )
             .unwrap();
@@ -686,7 +627,7 @@ mod tests {
                 &[device(3)],
                 &DisplayName::parse("Two").unwrap(),
                 0,
-                Vec3::ZERO,
+                planet_spawn(Vec3::ZERO),
                 &reg,
             )
             .unwrap();
@@ -696,7 +637,7 @@ mod tests {
                 &[did, device(3)],
                 &DisplayName::parse("Two").unwrap(),
                 0,
-                Vec3::ZERO,
+                planet_spawn(Vec3::ZERO),
                 &reg,
             )
             .err()
@@ -715,7 +656,7 @@ mod tests {
                     std::slice::from_ref(&principal),
                     &DisplayName::parse("Moss").unwrap(),
                     0,
-                    Vec3::ZERO,
+                    planet_spawn(Vec3::ZERO),
                     &reg,
                 )
                 .unwrap()
@@ -730,7 +671,7 @@ mod tests {
                 std::slice::from_ref(&principal),
                 &DisplayName::parse("Moss").unwrap(),
                 0,
-                Vec3::ZERO,
+                planet_spawn(Vec3::ZERO),
                 &reg,
             )
             .unwrap();
@@ -760,7 +701,7 @@ mod tests {
                     std::slice::from_ref(&principal),
                     &DisplayName::parse("Moss").unwrap(),
                     0,
-                    Vec3::ZERO,
+                    planet_spawn(Vec3::ZERO),
                     &reg,
                 )
                 .is_err()
@@ -771,7 +712,7 @@ mod tests {
                 std::slice::from_ref(&principal),
                 &DisplayName::parse("Moss").unwrap(),
                 0,
-                Vec3::ZERO,
+                planet_spawn(Vec3::ZERO),
                 &reg,
             )
             .unwrap();
@@ -791,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_profile_is_upgraded_and_conflicting_index_ownership_is_rejected() {
+    fn legacy_flat_profile_is_rejected_without_being_rewritten() {
         let (root, reg) = fixture("schema-recovery");
         let principal = device(9);
         let player_id = PlayerId::random().unwrap();
@@ -809,37 +750,22 @@ mod tests {
             toml::to_string_pretty(&index).unwrap(),
         )
         .unwrap();
-        std::fs::write(
-            players.join(format!("{player_id}.toml")),
-            "pos = [3.0, 70.0, 4.0]\nyaw = 1.0\npitch = 0.25\nhealth = 11.0\nhunger = 17.0\nnutrition = [1.0, 2.0, 3.0, 4.0, 5.0]\nhotbar = 2\n",
-        )
-        .unwrap();
+        let profile_path = players.join(format!("{player_id}.toml"));
+        let legacy = "pos = [3.0, 70.0, 4.0]\nyaw = 1.0\npitch = 0.25\nhealth = 11.0\nhunger = 17.0\nnutrition = [1.0, 2.0, 3.0, 4.0, 5.0]\nhotbar = 2\n";
+        std::fs::write(&profile_path, legacy).unwrap();
 
         let mut store = ProfileStore::load(root.clone()).unwrap();
-        let upgraded = store
+        let error = store
             .open_or_create(
                 std::slice::from_ref(&principal),
                 &DisplayName::parse("Legacy").unwrap(),
                 3,
-                Vec3::ZERO,
+                planet_spawn(Vec3::ZERO),
                 &reg,
             )
-            .unwrap();
-        assert_eq!(upgraded.player_id, player_id);
-        assert_eq!(upgraded.pos, Vec3::new(3.0, 70.0, 4.0));
-        assert_eq!(upgraded.health, 11.0);
-        let profile_path = players.join(format!("{player_id}.toml"));
-        let text = std::fs::read_to_string(&profile_path).unwrap();
-        let mut duplicate: StoredProfile = toml::from_str(&text).unwrap();
-        assert_eq!(duplicate.version, 1);
-
-        duplicate.player_id = PlayerId::random().unwrap();
-        std::fs::write(
-            players.join(format!("{}.toml", duplicate.player_id)),
-            toml::to_string_pretty(&duplicate).unwrap(),
-        )
-        .unwrap();
-        let error = ProfileStore::load(root).err().unwrap();
-        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+            .err()
+            .expect("legacy flat profile must be refused");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read_to_string(profile_path).unwrap(), legacy);
     }
 }

@@ -32,6 +32,8 @@ pub struct SkyParams {
     /// True direction toward the sun (world space), dipping below the horizon
     /// at night — the same vector the sky pass uses.
     pub sun_dir: Vec3,
+    /// Local radial up at the viewer.
+    pub up: Vec3,
     /// Weather gloom 0..1 (flattens the dome toward `overcast`).
     pub gloom: f32,
     /// The flat overcast/fog color the dome flattens toward under cloud.
@@ -48,8 +50,9 @@ fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
 
 /// Low-frequency sky radiance along `dir` (normalized). Mirrors `shader.wgsl`.
 fn radiance(dir: Vec3, p: &SkyParams) -> Vec3 {
-    let up = dir.y.clamp(0.0, 1.0);
-    let se = p.sun_dir.y; // sun elevation
+    let up_axis = p.up.normalize_or_zero();
+    let up = dir.dot(up_axis).clamp(0.0, 1.0);
+    let se = p.sun_dir.dot(up_axis); // local sun elevation
 
     let day_zenith = Vec3::new(0.18, 0.40, 0.78);
     let day_horizon = Vec3::new(0.66, 0.79, 0.94);
@@ -65,8 +68,8 @@ fn radiance(dir: Vec3, p: &SkyParams) -> Vec3 {
     // Twilight: dim/warm the dome, then a molten band biased toward the sun.
     let twilight = smoothstep(0.35, 0.0, se) * smoothstep(-0.32, 0.03, se);
     let hb = 1.0 - up;
-    let sun_h = Vec3::new(p.sun_dir.x, 0.0, p.sun_dir.z).normalize_or_zero();
-    let dir_h = Vec3::new(dir.x, 0.0, dir.z).normalize_or_zero();
+    let sun_h = (p.sun_dir - up_axis * p.sun_dir.dot(up_axis)).normalize_or_zero();
+    let dir_h = (dir - up_axis * dir.dot(up_axis)).normalize_or_zero();
     let sun_side = dir_h.dot(sun_h).max(0.0);
     col *= 1.0 - 0.5 * twilight;
     let band_w = (hb.powf(3.0) * (0.30 + 0.70 * sun_side) * twilight).clamp(0.0, 0.90);
@@ -76,8 +79,9 @@ fn radiance(dir: Vec3, p: &SkyParams) -> Vec3 {
     col = col.lerp(p.overcast, smoothstep(0.0, 0.85, p.gloom));
 
     // Below the horizon is ground, not sky: darken it so undersides stay dim.
-    if dir.y < 0.0 {
-        col *= 1.0 - (1.0 - GROUND) * (-dir.y).clamp(0.0, 1.0);
+    let below = dir.dot(up_axis);
+    if below < 0.0 {
+        col *= 1.0 - (1.0 - GROUND) * (-below).clamp(0.0, 1.0);
     }
     col
 }

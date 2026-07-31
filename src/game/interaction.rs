@@ -40,14 +40,20 @@ impl Game {
     pub(super) fn load_attunements(&mut self) {
         self.interaction.attuned.clear();
         if let Ok(text) = std::fs::read_to_string(self.attune_path()) {
-            for l in text.lines() {
-                let mut parts = l.splitn(3, '\t');
-                if let (Some(x), Some(z), Some(name)) = (
-                    parts.next().and_then(|v| v.parse().ok()),
-                    parts.next().and_then(|v| v.parse().ok()),
+            let mut lines = text.lines();
+            if lines.next() != Some("version\t2") {
+                return; // old planar knowledge is deliberately not reinterpreted
+            }
+            for line in lines {
+                let mut parts = line.splitn(4, '\t');
+                if let (Some(face), Some(u), Some(v), Some(name)) = (
+                    parts.next().and_then(crate::planet::Face::from_name),
+                    parts.next().and_then(|value| value.parse().ok()),
+                    parts.next().and_then(|value| value.parse().ok()),
                     parts.next(),
-                ) {
-                    self.interaction.attuned.push((name.to_string(), x, z));
+                ) && let Ok(surface) = crate::planet::SurfacePos::new(face, u, v)
+                {
+                    self.interaction.attuned.push((name.to_string(), surface));
                 }
             }
         }
@@ -55,29 +61,36 @@ impl Game {
 
     fn save_attunements(&self) -> std::io::Result<()> {
         use std::fmt::Write as _;
-        let mut out = String::new();
-        for (name, x, z) in &self.interaction.attuned {
-            let _ = writeln!(out, "{x}\t{z}\t{name}");
+        let mut out = String::from("version\t2\n");
+        for (name, surface) in &self.interaction.attuned {
+            let _ = writeln!(
+                out,
+                "{}\t{}\t{}\t{name}",
+                surface.face(),
+                surface.u(),
+                surface.v()
+            );
         }
         crate::persist::atomic_write(&self.attune_path(), out.as_bytes(), false)
     }
 
     /// Touch a waystone: learn it, then hear where the others stand.
-    pub(super) fn read_waystone(&mut self, pos: (i32, i32, i32)) {
-        let name = match self.server.world.block_entity(&pos) {
+    pub(super) fn read_waystone(&mut self, pos: crate::planet::BlockPos) {
+        let name = match self.server.world.block_entity_at(&pos) {
             Some(world::BlockEntity::Sign(sg)) if !sg.lines[0].is_empty() => sg.lines[0].clone(),
             _ => {
                 self.toast("The stone is unnamed. Write it first.".to_string());
                 return;
             }
         };
+        let surface = pos.surface();
         let known = self
             .interaction
             .attuned
             .iter()
-            .any(|(_, x, z)| (*x, *z) == (pos.0, pos.2));
+            .any(|(_, known)| *known == surface);
         if !known {
-            self.interaction.attuned.push((name.clone(), pos.0, pos.2));
+            self.interaction.attuned.push((name.clone(), surface));
             match self.save_attunements() {
                 Ok(()) => self.toast(format!("The stone at {name} knows you now.")),
                 Err(error) => {
@@ -87,16 +100,36 @@ impl Game {
             }
         }
         let mut lines: Vec<String> = Vec::new();
-        for (other, x, z) in &self.interaction.attuned {
-            if (*x, *z) == (pos.0, pos.2) {
+        for (other, other_surface) in &self.interaction.attuned {
+            if *other_surface == surface {
                 continue;
             }
-            let d = (((x - pos.0).pow(2) + (z - pos.2).pow(2)) as f32).sqrt() as i32;
-            lines.push(format!(
-                "{}: ~{d} blocks {}",
-                other.to_uppercase(),
-                Self::octant((x - pos.0, z - pos.2))
-            ));
+            let from = surface.center();
+            let to = other_surface.center();
+            let distance = crate::planet::geodesic_distance(from, to).round() as i32;
+            let direction = crate::planet::great_circle_bearing(from, to).map(|bearing| {
+                const NAMES: [&str; 8] = [
+                    "north",
+                    "northeast",
+                    "east",
+                    "southeast",
+                    "south",
+                    "southwest",
+                    "west",
+                    "northwest",
+                ];
+                let octant = ((bearing.to_degrees() + 22.5).rem_euclid(360.0) / 45.0) as usize;
+                NAMES[octant]
+            });
+            lines.push(match direction {
+                Some(direction) => {
+                    format!("{}: ~{distance} blocks {direction}", other.to_uppercase())
+                }
+                None => format!(
+                    "{}: ~{distance} blocks; bearing uncertain",
+                    other.to_uppercase()
+                ),
+            });
         }
         if lines.is_empty() {
             self.toast("It hums alone. Touch other stones.".to_string());

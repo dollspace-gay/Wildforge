@@ -9,11 +9,21 @@ impl World {
 
     pub(super) fn save_entities(&self) -> std::io::Result<()> {
         use std::fmt::Write as _;
-        let mut out = String::new();
-        for ((x, y, z), e) in &self.block_entities {
+        let mut out = String::from("version = 3\n");
+        let pos_value = |pos: BlockPos| {
+            format!(
+                "{{ face = \"{:?}\", u = {}, y = {}, v = {} }}",
+                pos.face(),
+                pos.u(),
+                pos.y(),
+                pos.v()
+            )
+        };
+        for (pos, e) in &self.block_entities {
+            let pos_line = format!("pos = {}", pos_value(*pos));
             match e {
                 BlockEntity::Furnace(f) => {
-                    let _ = writeln!(out, "[[furnace]]\npos = [{x}, {y}, {z}]");
+                    let _ = writeln!(out, "[[furnace]]\n{pos_line}");
                     let mut slot = |k: &str, s: &Option<ItemStack>| {
                         if let Some(s) = s {
                             let _ = writeln!(
@@ -35,7 +45,7 @@ impl World {
                     );
                 }
                 BlockEntity::Chest(c) => {
-                    let _ = writeln!(out, "[[chest]]\npos = [{x}, {y}, {z}]");
+                    let _ = writeln!(out, "[[chest]]\n{pos_line}");
                     if c.wild_owned {
                         let _ = writeln!(out, "wild_owned = true");
                     }
@@ -53,7 +63,7 @@ impl World {
                     let _ = writeln!(out);
                 }
                 BlockEntity::Offering(o) => {
-                    let _ = writeln!(out, "[[offering]]\npos = [{x}, {y}, {z}]");
+                    let _ = writeln!(out, "[[offering]]\n{pos_line}");
                     for (i, st) in o.slots.iter().enumerate() {
                         if let Some(st) = st {
                             let _ = writeln!(
@@ -68,10 +78,14 @@ impl World {
                     let _ = writeln!(out);
                 }
                 BlockEntity::Bloomery(b) => {
+                    let core = b
+                        .core
+                        .map(|core| format!("\ncore = {}", pos_value(core)))
+                        .unwrap_or_default();
                     let _ = writeln!(
                         out,
-                        "[[bloomery]]\npos = [{x}, {y}, {z}]\nlit = {}\nprogress = {}\ncore = [{}, {}, {}]",
-                        b.lit, b.progress, b.core.0, b.core.1, b.core.2
+                        "[[bloomery]]\n{pos_line}\nlit = {}\nprogress = {}{core}",
+                        b.lit, b.progress
                     );
                     for (i, st) in b.charge.iter().chain(b.fuel.iter()).enumerate() {
                         if let Some(st) = st {
@@ -87,10 +101,14 @@ impl World {
                     let _ = writeln!(out);
                 }
                 BlockEntity::Forge(f) => {
+                    let core = f
+                        .core
+                        .map(|core| format!("\ncore = {}", pos_value(core)))
+                        .unwrap_or_default();
                     let _ = writeln!(
                         out,
-                        "[[forge]]\npos = [{x}, {y}, {z}]\nlit = {}\nprogress = {}\ncore = [{}, {}, {}]",
-                        f.lit, f.progress, f.core.0, f.core.1, f.core.2
+                        "[[forge]]\n{pos_line}\nlit = {}\nprogress = {}{core}",
+                        f.lit, f.progress
                     );
                     for (i, st) in f.charge.iter().chain(f.fuel.iter()).enumerate() {
                         if let Some(st) = st {
@@ -109,7 +127,7 @@ impl World {
                     let esc = |l: &str| l.replace(['\\', '"'], "");
                     let _ = writeln!(
                         out,
-                        "[[sign]]\npos = [{x}, {y}, {z}]\nlines = [\"{}\", \"{}\", \"{}\"]\n",
+                        "[[sign]]\n{pos_line}\nlines = [\"{}\", \"{}\", \"{}\"]\n",
                         esc(&sg.lines[0]),
                         esc(&sg.lines[1]),
                         esc(&sg.lines[2])
@@ -119,7 +137,7 @@ impl World {
                     let hex: String = st.owner.iter().map(|b| format!("{b:02x}")).collect();
                     let _ = writeln!(
                         out,
-                        "[[stall]]\npos = [{x}, {y}, {z}]\nowner = \"{hex}\"\nowner_name = \"{}\"",
+                        "[[stall]]\n{pos_line}\nowner = \"{hex}\"\nowner_name = \"{}\"",
                         st.owner_name.replace(['\\', '"'], "")
                     );
                     let all: Vec<&Option<ItemStack>> = st
@@ -142,11 +160,7 @@ impl World {
                     let _ = writeln!(out);
                 }
                 BlockEntity::Smoker(sm) => {
-                    let _ = writeln!(
-                        out,
-                        "[[smoker]]\npos = [{x}, {y}, {z}]\nprogress = {:?}",
-                        sm.progress
-                    );
+                    let _ = writeln!(out, "[[smoker]]\n{pos_line}\nprogress = {:?}", sm.progress);
                     for (i, st) in sm.meat.iter().enumerate() {
                         if let Some(st) = st {
                             let _ = writeln!(
@@ -161,23 +175,23 @@ impl World {
                     let _ = writeln!(out);
                 }
                 BlockEntity::Clamp(c) => {
-                    let logs: Vec<String> = c
-                        .logs
-                        .iter()
-                        .map(|(a, b2, c2)| format!("[{a}, {b2}, {c2}]"))
-                        .collect();
+                    let logs: Vec<String> = c.logs.iter().map(|pos| pos_value(*pos)).collect();
                     let _ = writeln!(
                         out,
-                        "[[clamp]]\npos = [{x}, {y}, {z}]\ntimer = {}\nlogs = [{}]\n",
+                        "[[clamp]]\n{pos_line}\ntimer = {}\nlogs = [{}]\n",
                         c.timer,
                         logs.join(", ")
                     );
                 }
                 BlockEntity::Kiln(k) => {
+                    let core = k
+                        .core
+                        .map(|core| format!("\ncore = {}", pos_value(core)))
+                        .unwrap_or_default();
                     let _ = writeln!(
                         out,
-                        "[[kiln]]\npos = [{x}, {y}, {z}]\nlit = {}\nprogress = {}\ncore = [{}, {}, {}]",
-                        k.lit, k.progress, k.core.0, k.core.1, k.core.2
+                        "[[kiln]]\n{pos_line}\nlit = {}\nprogress = {}{core}",
+                        k.lit, k.progress
                     );
                     let all: Vec<&Option<ItemStack>> = k
                         .sand
@@ -201,23 +215,19 @@ impl World {
                 BlockEntity::Steam(s) => {
                     let _ = writeln!(
                         out,
-                        "[[steam]]\npos = [{x}, {y}, {z}]\nfuel = {:?}\nwater = {:?}\n",
+                        "[[steam]]\n{pos_line}\nfuel = {:?}\nwater = {:?}\n",
                         s.fuel, s.water
                     );
                 }
                 BlockEntity::Separator(sp) => {
                     let _ = writeln!(
                         out,
-                        "[[separator]]\npos = [{x}, {y}, {z}]\npowder = {}\nfuel = {}\nnd = {}\nce = {}\nprogress = {:?}\n",
+                        "[[separator]]\n{pos_line}\npowder = {}\nfuel = {}\nnd = {}\nce = {}\nprogress = {:?}\n",
                         sp.powder, sp.fuel, sp.nd, sp.ce, sp.progress
                     );
                 }
                 BlockEntity::Anvil(a) => {
-                    let _ = writeln!(
-                        out,
-                        "[[anvil]]\npos = [{x}, {y}, {z}]\nstrikes = {}",
-                        a.strikes
-                    );
+                    let _ = writeln!(out, "[[anvil]]\n{pos_line}\nstrikes = {}", a.strikes);
                     if let Some(st) = &a.bloom {
                         let _ = writeln!(
                             out,
@@ -247,7 +257,7 @@ impl World {
         }
         #[derive(Deserialize)]
         struct FurnaceT {
-            pos: [i32; 3],
+            pos: crate::planet::BlockPos,
             input: Option<SlotT>,
             fuel: Option<SlotT>,
             output: Option<SlotT>,
@@ -269,7 +279,7 @@ impl World {
         }
         #[derive(Deserialize)]
         struct ChestT {
-            pos: [i32; 3],
+            pos: crate::planet::BlockPos,
             #[serde(default)]
             wild_owned: bool,
             #[serde(default)]
@@ -277,25 +287,25 @@ impl World {
         }
         #[derive(Deserialize)]
         struct BloomeryT {
-            pos: [i32; 3],
+            pos: crate::planet::BlockPos,
             #[serde(default)]
             lit: bool,
             #[serde(default)]
             progress: f32,
             #[serde(default)]
-            core: Option<[i32; 3]>,
+            core: Option<crate::planet::BlockPos>,
             #[serde(default)]
             slot: Vec<ChestSlotT>,
         }
         #[derive(Deserialize)]
         struct SignT {
-            pos: [i32; 3],
+            pos: crate::planet::BlockPos,
             #[serde(default)]
             lines: Vec<String>,
         }
         #[derive(Deserialize)]
         struct StallT {
-            pos: [i32; 3],
+            pos: crate::planet::BlockPos,
             #[serde(default)]
             owner: String,
             #[serde(default)]
@@ -305,7 +315,7 @@ impl World {
         }
         #[derive(Deserialize)]
         struct SmokerT {
-            pos: [i32; 3],
+            pos: crate::planet::BlockPos,
             #[serde(default)]
             progress: f32,
             #[serde(default)]
@@ -313,14 +323,14 @@ impl World {
         }
         #[derive(Deserialize)]
         struct ClampT {
-            pos: [i32; 3],
+            pos: crate::planet::BlockPos,
             timer: f32,
             #[serde(default)]
-            logs: Vec<[i32; 3]>,
+            logs: Vec<crate::planet::BlockPos>,
         }
         #[derive(Deserialize)]
         struct AnvilT {
-            pos: [i32; 3],
+            pos: crate::planet::BlockPos,
             #[serde(default)]
             strikes: u32,
             #[serde(default)]
@@ -328,7 +338,7 @@ impl World {
         }
         #[derive(Deserialize)]
         struct SteamT {
-            pos: [i32; 3],
+            pos: crate::planet::BlockPos,
             #[serde(default)]
             fuel: f32,
             #[serde(default)]
@@ -336,7 +346,7 @@ impl World {
         }
         #[derive(Deserialize)]
         struct SeparatorT {
-            pos: [i32; 3],
+            pos: crate::planet::BlockPos,
             #[serde(default)]
             powder: u32,
             #[serde(default)]
@@ -350,6 +360,7 @@ impl World {
         }
         #[derive(Deserialize)]
         struct FileT {
+            version: u32,
             #[serde(default)]
             furnace: Vec<FurnaceT>,
             #[serde(default)]
@@ -383,6 +394,9 @@ impl World {
         let Ok(parsed) = toml::from_str::<FileT>(&text) else {
             return;
         };
+        if parsed.version != 3 {
+            return;
+        }
         let conv = |s: Option<SlotT>| -> Option<ItemStack> {
             let s = s?;
             let item = self.reg.item_id(&s.item)?;
@@ -394,7 +408,7 @@ impl World {
         };
         for fu in parsed.furnace {
             self.block_entities.insert(
-                (fu.pos[0], fu.pos[1], fu.pos[2]),
+                fu.pos,
                 BlockEntity::Furnace(FurnaceState {
                     input: conv(fu.input),
                     fuel: conv(fu.fuel),
@@ -423,7 +437,7 @@ impl World {
                 }
             }
             self.block_entities
-                .insert((ch.pos[0], ch.pos[1], ch.pos[2]), BlockEntity::Chest(state));
+                .insert(ch.pos, BlockEntity::Chest(state));
         }
         for of in parsed.offering {
             let mut state = OfferingState::default();
@@ -438,16 +452,14 @@ impl World {
                     });
                 }
             }
-            self.block_entities.insert(
-                (of.pos[0], of.pos[1], of.pos[2]),
-                BlockEntity::Offering(state),
-            );
+            self.block_entities
+                .insert(of.pos, BlockEntity::Offering(state));
         }
         for bl in parsed.bloomery {
             let mut state = BloomeryState {
                 lit: bl.lit,
                 progress: bl.progress,
-                core: bl.core.map(|c| (c[0], c[1], c[2])).unwrap_or_default(),
+                core: bl.core,
                 ..Default::default()
             };
             for sl in bl.slot {
@@ -466,16 +478,14 @@ impl World {
                     }
                 }
             }
-            self.block_entities.insert(
-                (bl.pos[0], bl.pos[1], bl.pos[2]),
-                BlockEntity::Bloomery(state),
-            );
+            self.block_entities
+                .insert(bl.pos, BlockEntity::Bloomery(state));
         }
         for fo in parsed.forge {
             let mut state = BloomeryState {
                 lit: fo.lit,
                 progress: fo.progress,
-                core: fo.core.map(|c| (c[0], c[1], c[2])).unwrap_or_default(),
+                core: fo.core,
                 ..Default::default()
             };
             for sl in fo.slot {
@@ -495,15 +505,14 @@ impl World {
                 }
             }
             self.block_entities
-                .insert((fo.pos[0], fo.pos[1], fo.pos[2]), BlockEntity::Forge(state));
+                .insert(fo.pos, BlockEntity::Forge(state));
         }
         for sg in parsed.sign {
             let mut state = SignState::default();
             for (i, l) in sg.lines.into_iter().take(3).enumerate() {
                 state.lines[i] = l;
             }
-            self.block_entities
-                .insert((sg.pos[0], sg.pos[1], sg.pos[2]), BlockEntity::Sign(state));
+            self.block_entities.insert(sg.pos, BlockEntity::Sign(state));
         }
         for st in parsed.stall {
             let mut state = StallState {
@@ -531,7 +540,7 @@ impl World {
                 }
             }
             self.block_entities
-                .insert((st.pos[0], st.pos[1], st.pos[2]), BlockEntity::Stall(state));
+                .insert(st.pos, BlockEntity::Stall(state));
         }
         for sm in parsed.smoker {
             let mut state = SmokerState {
@@ -549,14 +558,12 @@ impl World {
                     });
                 }
             }
-            self.block_entities.insert(
-                (sm.pos[0], sm.pos[1], sm.pos[2]),
-                BlockEntity::Smoker(state),
-            );
+            self.block_entities
+                .insert(sm.pos, BlockEntity::Smoker(state));
         }
         for st in parsed.steam {
             self.block_entities.insert(
-                (st.pos[0], st.pos[1], st.pos[2]),
+                st.pos,
                 BlockEntity::Steam(SteamState {
                     fuel: st.fuel,
                     water: st.water,
@@ -565,7 +572,7 @@ impl World {
         }
         for sp in parsed.separator {
             self.block_entities.insert(
-                (sp.pos[0], sp.pos[1], sp.pos[2]),
+                sp.pos,
                 BlockEntity::Separator(SeparatorState {
                     powder: sp.powder,
                     fuel: sp.fuel,
@@ -577,9 +584,9 @@ impl World {
         }
         for cl in parsed.clamp {
             self.block_entities.insert(
-                (cl.pos[0], cl.pos[1], cl.pos[2]),
+                cl.pos,
                 BlockEntity::Clamp(ClampState {
-                    logs: cl.logs.iter().map(|l| (l[0], l[1], l[2])).collect(),
+                    logs: cl.logs,
                     timer: cl.timer,
                 }),
             );
@@ -588,7 +595,7 @@ impl World {
             let mut state = KilnState {
                 lit: kl.lit,
                 progress: kl.progress,
-                core: kl.core.map(|c| (c[0], c[1], c[2])).unwrap_or_default(),
+                core: kl.core,
                 ..Default::default()
             };
             for sl in kl.slot {
@@ -607,12 +614,11 @@ impl World {
                     }
                 }
             }
-            self.block_entities
-                .insert((kl.pos[0], kl.pos[1], kl.pos[2]), BlockEntity::Kiln(state));
+            self.block_entities.insert(kl.pos, BlockEntity::Kiln(state));
         }
         for an in parsed.anvil {
             self.block_entities.insert(
-                (an.pos[0], an.pos[1], an.pos[2]),
+                an.pos,
                 BlockEntity::Anvil(AnvilState {
                     bloom: conv(an.bloom),
                     strikes: an.strikes,

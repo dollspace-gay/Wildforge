@@ -6,6 +6,9 @@ use glam::Vec3;
 
 use crate::atlas::ATLAS_TILES;
 use crate::mesher::{CORNERS, FACE_SHADE, NORMALS, Vertex};
+use crate::planet::EntityPos;
+#[cfg(test)]
+use crate::planet::Face;
 use crate::registry::{AnimalDef, Registry};
 use crate::server::PlayerCtx;
 use crate::world::World;
@@ -42,26 +45,26 @@ pub enum MobState {
 /// Things a mob did this tick that the game loop must apply.
 pub enum MobEvent {
     /// A lead stretched past its limit: drop the strip here.
-    LeadSnapped(Vec3),
+    LeadSnapped(EntityPos),
     /// Contact damage: (player index, half-hearts, attacker position).
-    HitPlayer(usize, f32, Vec3),
+    HitPlayer(usize, f32, EntityPos),
     /// A caster fired: projectile spawn.
     Cast(Projectile),
     /// A wildlife pair bred at this position.
     Bred,
     /// A grazer took its bite: the world applies the plant's loss.
-    Ate((i32, i32, i32)),
+    Ate(crate::planet::BlockPos),
     /// A predator's kill landed: the prey (by id) becomes a carcass.
     Killed(u32),
     /// Digestion finished where it always does (true = a bat's
     /// guano, the cave's own fertilizer).
-    Dung(Vec3, bool),
+    Dung(EntityPos, bool),
 }
 
 /// A bolt in flight: warden thorn/ember/frost, or a player's arrow.
 #[derive(Clone, Debug)]
 pub struct Projectile {
-    pub pos: Vec3,
+    pub pos: EntityPos,
     pub vel: Vec3,
     pub tile: u16,
     pub damage: f32,
@@ -92,12 +95,15 @@ impl Projectile {
             return ProjHit::Expired;
         }
         self.vel.y -= 3.0 * dt; // light arc
-        self.pos += self.vel * dt;
-        let b = world.get_block(
-            self.pos.x.floor() as i32,
-            self.pos.y.floor() as i32,
-            self.pos.z.floor() as i32,
-        );
+        let Ok(moved) = self.pos.translated(self.vel * dt) else {
+            return ProjHit::Expired;
+        };
+        self.pos = moved.pos;
+        self.vel = moved.rotation.rotate_vec3(self.vel);
+        let Some(cell) = self.pos.block() else {
+            return ProjHit::Expired;
+        };
+        let b = world.get_block_at(cell);
         if world.reg.is_solid(b) {
             return ProjHit::Block;
         }
@@ -106,7 +112,11 @@ impl Projectile {
                 let Some(def) = world.reg.animals.get(m.species) else {
                     continue;
                 };
-                let d = self.pos - m.pos;
+                // Measure the bolt from the animal's feet.  The previous
+                // ordering made `d.y` point down from the bolt to the mob,
+                // so a perfectly ordinary waist-high arrow could never
+                // enter the positive-height hit box.
+                let d = m.pos.local_delta_to(self.pos);
                 if d.x.abs() < def.half_w + 0.2
                     && d.z.abs() < def.half_w + 0.2
                     && d.y > -0.15
@@ -117,7 +127,7 @@ impl Projectile {
             }
         } else {
             for (i, p) in players.iter().enumerate() {
-                let d = self.pos - (p.pos + Vec3::new(0.0, 0.9, 0.0));
+                let d = self.pos.local_delta_to(p.pos) + Vec3::new(0.0, 0.9, 0.0);
                 if d.x.abs() < 0.5 && d.z.abs() < 0.5 && d.y.abs() < 1.1 {
                     return ProjHit::Player(i);
                 }
@@ -134,6 +144,11 @@ impl Projectile {
         );
         let ts = 1.0 / ATLAS_TILES as f32;
         let inset = ts / 32.0;
+        let center = self.pos.render_pos();
+        let frame = crate::planet::local_frame(self.pos.surface_point());
+        let east = frame.east.as_vec3();
+        let up = frame.up.as_vec3();
+        let north = frame.north.as_vec3();
         let ang = self.age * 6.0;
         let (sin, cos) = ang.sin_cos();
         let h = 0.28;
@@ -158,8 +173,9 @@ impl Projectile {
                     } else {
                         ty as f32 * ts + inset
                     };
+                    let world = center + east * (dx * o) + up * y + north * (dz * o);
                     verts.push(Vertex {
-                        pos: [self.pos.x + dx * o, self.pos.y + y, self.pos.z + dz * o],
+                        pos: world.to_array(),
                         uv: [u, v],
                         normal: [0.0, 0.0, 0.0],
                         light: [1.0; 3], // bolts glow faintly
@@ -179,7 +195,7 @@ pub struct Mob {
     pub id: u32,
     pub species: usize,
     /// Feet-center position.
-    pub pos: Vec3,
+    pub pos: EntityPos,
     pub vel: Vec3,
     /// Facing; forward = (sin yaw, 0, cos yaw).
     pub yaw: f32,
@@ -187,7 +203,7 @@ pub struct Mob {
     pub state: MobState,
     pub state_timer: f32,
     /// Wander destination, or the point we're fleeing from.
-    pub target: Vec3,
+    pub target: EntityPos,
     pub anim_phase: f32,
     pub hurt_flash: f32,
     pub on_ground: bool,
@@ -224,9 +240,9 @@ pub struct Mob {
     /// The cell's grievance when the watching began.
     pub watch_baseline: f32,
     /// The herd's nearby center, written by tick_mobs each tick.
-    pub herd_pull: Option<Vec3>,
+    pub herd_pull: Option<EntityPos>,
     /// Nearest prey in range (id, pos), written by tick_mobs.
-    pub quarry: Option<(u32, Vec3)>,
+    pub quarry: Option<(u32, EntityPos)>,
     /// Desperate enough to size up the player (tick_mobs decides:
     /// deep hunger plus night or winter).
     pub bold: bool,
@@ -246,6 +262,18 @@ fn r01(rng: &mut u32) -> f32 {
     (*rng >> 8) as f32 / (1 << 24) as f32
 }
 
+fn block_at_height(world: &World, pos: EntityPos, y: i32) -> crate::registry::BlockId {
+    if !(0..crate::chunk::CHUNK_Y as i32).contains(&y) {
+        return crate::registry::AIR;
+    }
+    let surface =
+        crate::planet::SurfacePos::new(pos.face(), pos.u().floor() as u16, pos.v().floor() as u16)
+            .expect("canonical entity has a valid surface cell");
+    let block = crate::planet::BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
+        .expect("height and surface were validated");
+    world.get_block_at(block)
+}
+
 /// Shortest-arc angle interpolation (snapshot smoothing).
 pub fn lerp_yaw(a: f32, b: f32, t: f32) -> f32 {
     use std::f32::consts::{PI, TAU};
@@ -259,7 +287,14 @@ pub fn lerp_yaw(a: f32, b: f32, t: f32) -> f32 {
 }
 
 impl Mob {
+    #[cfg(test)]
     pub fn new(species: usize, pos: Vec3, yaw: f32) -> Mob {
+        let pos = EntityPos::from_local(Face::PosZ, pos)
+            .expect("legacy mob position is inside the finite PosZ chart");
+        Self::new_at(species, pos, yaw)
+    }
+
+    pub fn new_at(species: usize, pos: EntityPos, yaw: f32) -> Mob {
         Mob {
             id: 0,
             species,
@@ -322,10 +357,10 @@ impl Mob {
 
     /// Take damage from an attacker at `from`: knockback, then panic
     /// (wildlife) or retaliation (wardens).
-    pub fn hurt(&mut self, def: &AnimalDef, dmg: f32, from: Vec3) {
+    pub fn hurt(&mut self, def: &AnimalDef, dmg: f32, from: EntityPos) {
         self.health -= dmg;
         self.hurt_flash = 0.35;
-        let mut away = self.pos - from;
+        let mut away = -self.pos.local_delta_to(from);
         away.y = 0.0;
         let dir = if away.length_squared() > 0.001 {
             away.normalize()
@@ -379,9 +414,10 @@ impl Mob {
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| {
-                (a.pos - self.pos)
+                self.pos
+                    .local_delta_to(a.pos)
                     .length_squared()
-                    .total_cmp(&(b.pos - self.pos).length_squared())
+                    .total_cmp(&self.pos.local_delta_to(b.pos).length_squared())
             })
             .map(|(i, p)| (i, *p));
         let prey = players
@@ -389,9 +425,10 @@ impl Mob {
             .enumerate()
             .filter(|(_, p)| p.attackable)
             .min_by(|(_, a), (_, b)| {
-                (a.pos - self.pos)
+                self.pos
+                    .local_delta_to(a.pos)
                     .length_squared()
-                    .total_cmp(&(b.pos - self.pos).length_squared())
+                    .total_cmp(&self.pos.local_delta_to(b.pos).length_squared())
             })
             .map(|(i, p)| (i, *p));
         self.state_timer -= dt;
@@ -436,7 +473,7 @@ impl Mob {
             && self.calm <= 0.0
             && self.state != MobState::Flee
         {
-            let mut d = near.pos - self.pos;
+            let mut d = self.pos.local_delta_to(near.pos);
             d.y = 0.0;
             if d.length_squared() < def.flee_range * def.flee_range {
                 self.state = MobState::Flee;
@@ -452,7 +489,7 @@ impl Mob {
             && self.state != MobState::Hunt
         {
             let range = (def.aggro_range + p.aggro_mod).max(2.0);
-            if (p.pos - self.pos).length_squared() < range * range {
+            if self.pos.local_delta_to(p.pos).length_squared() < range * range {
                 self.state = MobState::Hunt;
                 self.lose_aggro = 0.0;
             }
@@ -464,9 +501,9 @@ impl Mob {
         let mut wish = Vec3::ZERO;
         if let Some(pid) = self.led_by {
             match players.iter().find(|p| p.id == pid) {
-                Some(p) if (p.pos - self.pos).length_squared() <= 12.0 * 12.0 => {
+                Some(p) if self.pos.local_delta_to(p.pos).length_squared() <= 12.0 * 12.0 => {
                     led_active = true;
-                    let mut to = p.pos - self.pos;
+                    let mut to = self.pos.local_delta_to(p.pos);
                     to.y = 0.0;
                     if to.length_squared() > 3.0 * 3.0 {
                         let dir = to.normalize();
@@ -488,7 +525,7 @@ impl Mob {
         if self.watcher && !led_active {
             self.watch_timer += dt;
             if let Some((_, near)) = nearest {
-                let mut to = near.pos - self.pos;
+                let mut to = self.pos.local_delta_to(near.pos);
                 to.y = 0.0;
                 let d2 = to.length_squared();
                 if d2 > 0.01 {
@@ -531,8 +568,13 @@ impl Mob {
         {
             match self.scan_food(world) {
                 Some(meal) => {
-                    self.target =
-                        Vec3::new(meal.0 as f32 + 0.5, meal.1 as f32, meal.2 as f32 + 0.5);
+                    self.target = EntityPos::new(
+                        meal.face(),
+                        meal.u() as f32 + 0.5,
+                        meal.y() as f32,
+                        meal.v() as f32 + 0.5,
+                    )
+                    .expect("meal cell center is canonical");
                     self.state = MobState::Graze;
                     self.state_timer = 12.0;
                 }
@@ -561,19 +603,22 @@ impl Mob {
                             } else {
                                 0.0
                             };
-                            let mut tgt =
-                                self.pos + Vec3::new(ang.sin() * dist, dy, ang.cos() * dist);
+                            let mut delta = Vec3::new(ang.sin() * dist, dy, ang.cos() * dist);
                             // Herd animals lean homeward: wander picks
                             // drift toward the group's center when it
                             // has drifted away (no flocking math).
                             if let Some(h) = self.herd_pull {
-                                let mut to = h - self.pos;
+                                let mut to = self.pos.local_delta_to(h);
                                 to.y = 0.0;
                                 if to.length_squared() > 36.0 {
-                                    tgt += to * 0.6;
+                                    delta += to * 0.6;
                                 }
                             }
-                            self.target = tgt;
+                            self.target = self
+                                .pos
+                                .translated(delta)
+                                .map(|moved| moved.pos)
+                                .unwrap_or(self.pos);
                             self.state = MobState::Wander;
                             // Long enough to actually arrive: a 40-block
                             // crossing at cruise takes more than six.
@@ -585,7 +630,7 @@ impl Mob {
                     }
                 }
                 MobState::Wander => {
-                    let mut to = self.target - self.pos;
+                    let mut to = self.pos.local_delta_to(self.target);
                     to.y = 0.0;
                     if to.length_squared() < 0.6 || self.state_timer <= 0.0 {
                         self.state = MobState::Idle;
@@ -601,16 +646,19 @@ impl Mob {
                         // swimmers don't wander OUT of it. Wings mind
                         // neither — a gull turned back at the shoreline
                         // because it read the sea as a landfolk's wall.
-                        let probe = self.pos + dir * 1.2;
-                        let (px, pz) = (probe.x.floor() as i32, probe.z.floor() as i32);
+                        let probe = self
+                            .pos
+                            .translated(dir * 1.2)
+                            .map(|moved| moved.pos)
+                            .unwrap_or(self.pos);
                         let py = self.pos.y.floor() as i32;
                         let blocked = if def.movement_float {
                             false
                         } else if def.movement_swim {
-                            !world.reg.is_water(world.get_block(px, py, pz))
+                            !world.reg.is_water(block_at_height(world, probe, py))
                         } else {
-                            world.reg.is_water(world.get_block(px, py - 1, pz))
-                                && world.reg.is_water(world.get_block(px, py - 2, pz))
+                            world.reg.is_water(block_at_height(world, probe, py - 1))
+                                && world.reg.is_water(block_at_height(world, probe, py - 2))
                         };
                         if blocked {
                             self.state = MobState::Idle;
@@ -627,7 +675,7 @@ impl Mob {
                         self.state = MobState::Idle;
                         self.state_timer = 1.0 + r01(rng) * 2.0;
                     } else {
-                        let mut away = self.pos - self.target;
+                        let mut away = -self.pos.local_delta_to(self.target);
                         away.y = 0.0;
                         let dir = if away.length_squared() > 0.001 {
                             away.normalize()
@@ -639,18 +687,16 @@ impl Mob {
                     }
                 }
                 MobState::Graze => {
-                    let mut to = self.target - self.pos;
+                    let mut to = self.pos.local_delta_to(self.target);
                     to.y = 0.0;
                     let flat = to.length();
                     let dy = self.target.y - self.pos.y;
                     if flat < 1.1 && dy.abs() < 1.6 {
                         // The bite. The world applies the plant's side;
                         // the animal trusts its own mouth.
-                        events.push(MobEvent::Ate((
-                            self.target.x.floor() as i32,
-                            self.target.y.floor() as i32,
-                            self.target.z.floor() as i32,
-                        )));
+                        if let Some(meal) = self.target.block() {
+                            events.push(MobEvent::Ate(meal));
+                        }
                         self.belly = def.belly_secs;
                         self.digest = 60.0 + (self.id % 45) as f32;
                         self.state = MobState::Idle;
@@ -676,7 +722,7 @@ impl Mob {
                     }
                     Some((prey_id, at)) => {
                         self.target = at;
-                        let mut to = at - self.pos;
+                        let mut to = self.pos.local_delta_to(at);
                         let dy = to.y;
                         to.y = 0.0;
                         let flat = to.length();
@@ -707,7 +753,7 @@ impl Mob {
                         self.state_timer = 1.0;
                     }
                     Some((who, p)) => {
-                        let mut to = p.pos - self.pos;
+                        let mut to = self.pos.local_delta_to(p.pos);
                         let dist = to.length();
                         to.y = 0.0;
                         let dir = if to.length_squared() > 0.001 {
@@ -736,11 +782,19 @@ impl Mob {
                                 }
                                 if dist < 14.0 && self.cast_cd <= 0.0 {
                                     self.cast_cd = pr.cooldown;
-                                    let muzzle = self.pos + Vec3::new(0.0, def.height * 0.7, 0.0);
-                                    let aim = (p.pos + Vec3::new(0.0, 0.9, 0.0) - muzzle)
-                                        .normalize_or_zero();
+                                    let muzzle = self
+                                        .pos
+                                        .translated(Vec3::new(0.0, def.height * 0.7, 0.0))
+                                        .expect("mob muzzle stays in its chart")
+                                        .pos;
+                                    let aim = (muzzle.local_delta_to(p.pos)
+                                        + Vec3::new(0.0, 0.9, 0.0))
+                                    .normalize_or_zero();
                                     events.push(MobEvent::Cast(Projectile {
-                                        pos: muzzle + aim * 0.6,
+                                        pos: muzzle
+                                            .translated(aim * 0.6)
+                                            .expect("bolt starts beside its caster")
+                                            .pos,
                                         vel: aim * pr.speed,
                                         tile: pr.tile,
                                         damage: pr.damage,
@@ -783,11 +837,7 @@ impl Mob {
             // Fish: neutral inside the water, helpless out of it. A
             // swimmer drifts toward its wander target's depth; a
             // beached one flops shoreward in little hops.
-            let here = world.get_block(
-                self.pos.x.floor() as i32,
-                (self.pos.y + 0.2).floor() as i32,
-                self.pos.z.floor() as i32,
-            );
+            let here = block_at_height(world, self.pos, (self.pos.y + 0.2).floor() as i32);
             if world.reg.is_water(here) {
                 let want = (self.target.y - self.pos.y).clamp(-1.2, 1.2);
                 self.vel.y += (want - self.vel.y) * step;
@@ -807,8 +857,7 @@ impl Mob {
             // daylight, so it spent its life pressed into the cave
             // roof, which is exactly what "hovering in place" looked
             // like from below.
-            let (fx, fz) = (self.pos.x.floor() as i32, self.pos.z.floor() as i32);
-            let (floor, ceil) = world.air_column(fx, self.pos.y.floor() as i32, fz);
+            let (floor, ceil) = world.air_column_at(self.pos, self.pos.y.floor() as i32);
             let want_y = if self.state == MobState::Hunt {
                 prey.map(|(_, p)| p.pos.y).unwrap_or(floor as f32) + 1.6
             } else if self.state == MobState::Stalk {
@@ -825,11 +874,7 @@ impl Mob {
             // Fast enough to be a wingbeat; the bob divides it back down.
             self.anim_phase += dt * 7.0;
         } else {
-            let feet = world.get_block(
-                self.pos.x.floor() as i32,
-                (self.pos.y + 0.3).floor() as i32,
-                self.pos.z.floor() as i32,
-            );
+            let feet = block_at_height(world, self.pos, (self.pos.y + 0.3).floor() as i32);
             if world.reg.is_water(feet) {
                 // Bob to the surface rather than drowning.
                 self.vel.y += (2.0 - self.vel.y).min(20.0 * dt);
@@ -853,13 +898,10 @@ impl Mob {
         // clean over the fence, so keep your livestock calm.
         if !def.movement_float && self.hit_wall && self.on_ground && wish.length_squared() > 0.01 {
             let panicking = matches!(self.state, MobState::Flee | MobState::Hunt);
-            let tended = world.player_touched.contains(&{
-                let cp = crate::chunk::ChunkPos::of_world(
-                    self.pos.x.floor() as i32,
-                    self.pos.z.floor() as i32,
-                );
-                (cp.x, cp.z)
-            });
+            let tended = self
+                .pos
+                .chunk()
+                .is_some_and(|chunk| world.player_touched.contains(&chunk));
             if panicking || (!tended && self.state != MobState::Graze) {
                 self.vel.y = JUMP;
             }
@@ -874,26 +916,45 @@ impl Mob {
     /// crop out-scores a fruited bush out-scores wild grass — so an
     /// unfenced field beside the woods is exactly the invitation it
     /// looks like. Returns the meal's cell.
-    fn scan_food(&self, world: &World) -> Option<(i32, i32, i32)> {
+    fn scan_food(&self, world: &World) -> Option<crate::planet::BlockPos> {
         const RANGE: i32 = 12;
-        let (px, py, pz) = (
-            self.pos.x.floor() as i32,
-            self.pos.y.floor() as i32,
-            self.pos.z.floor() as i32,
-        );
+        let py = self.pos.y.floor() as i32;
+        let center = crate::planet::SurfacePos::new(
+            self.pos.face(),
+            self.pos.u().floor() as u16,
+            self.pos.v().floor() as u16,
+        )
+        .expect("canonical mob has a valid surface cell");
         let reg = &world.reg;
-        let mut best: Option<((i32, i32, i32), i32, i32)> = None; // (cell, richness, dist2)
+        let mut best: Option<(crate::planet::BlockPos, i32, i32)> = None;
         for dx in -RANGE..=RANGE {
             for dz in -RANGE..=RANGE {
                 for dy in -2..=2i32 {
-                    let (x, y, z) = (px + dx, py + dy, pz + dz);
-                    let b = world.get_block(x, y, z);
+                    let y = py + dy;
+                    if !(0..crate::chunk::CHUNK_Y as i32 - 1).contains(&y) {
+                        continue;
+                    }
+                    let Ok(surface) = crate::planet::SurfacePos::canonicalized(
+                        center.face(),
+                        center.u() as i32 + dx,
+                        center.v() as i32 + dz,
+                    ) else {
+                        continue;
+                    };
+                    let cell = crate::planet::BlockPos::new(
+                        surface.face(),
+                        surface.u(),
+                        y as u8,
+                        surface.v(),
+                    )
+                    .expect("food scan coordinates were validated");
+                    let b = world.get_block_at(cell);
                     let d = reg.block(b);
                     let richness = if d.crop_family != 0 && d.name.contains("/stage") {
                         // A grown crop: ripe beats growing.
                         if d.crop_next.is_none() { 4 } else { 3 }
                     } else if d.name == "base:grass"
-                        && world.get_block(x, y + 1, z) == crate::registry::AIR
+                        && world.get_block_at(cell.with_y((y + 1) as u8)) == crate::registry::AIR
                     {
                         1
                     } else {
@@ -908,7 +969,7 @@ impl Mob {
                         Some((_, r, d2)) => richness > r || (richness == r && dist2 < d2),
                     };
                     if better {
-                        best = Some(((x, y, z), richness, dist2));
+                        best = Some((cell, richness, dist2));
                     }
                 }
             }
@@ -916,16 +977,31 @@ impl Mob {
         best.map(|(c, _, _)| c)
     }
 
-    fn collides(&self, world: &World, def: &AnimalDef, pos: Vec3) -> bool {
-        let min = pos - Vec3::new(def.half_w, 0.0, def.half_w);
-        let max = pos + Vec3::new(def.half_w, def.height, def.half_w);
+    fn collides(&self, world: &World, def: &AnimalDef, pos: EntityPos) -> bool {
+        let local = pos.chart_local();
+        let min = local - Vec3::new(def.half_w, 0.0, def.half_w);
+        let max = local + Vec3::new(def.half_w, def.height, def.half_w);
         let (x0, x1) = (min.x.floor() as i32, max.x.floor() as i32);
         let (y0, y1) = (min.y.floor() as i32, max.y.floor() as i32);
         let (z0, z1) = (min.z.floor() as i32, max.z.floor() as i32);
         for x in x0..=x1 {
             for y in y0..=y1 {
                 for z in z0..=z1 {
-                    if world.reg.is_solid(world.get_block(x, y, z)) {
+                    let Ok(surface) = crate::planet::SurfacePos::canonicalized(pos.face(), x, z)
+                    else {
+                        return true;
+                    };
+                    if !(0..crate::chunk::CHUNK_Y as i32).contains(&y) {
+                        return true;
+                    }
+                    let cell = crate::planet::BlockPos::new(
+                        surface.face(),
+                        surface.u(),
+                        y as u8,
+                        surface.v(),
+                    )
+                    .expect("collision sample was vertically bounded");
+                    if world.reg.is_solid(world.get_block_at(cell)) {
                         return true;
                     }
                 }
@@ -935,22 +1011,41 @@ impl Mob {
     }
 
     fn move_axis(&mut self, world: &World, def: &AnimalDef, delta: Vec3) {
-        let target = self.pos + delta;
-        if !self.collides(world, def, target) {
-            self.pos = target;
+        let Ok(target) = self.pos.translated(delta) else {
+            return;
+        };
+        if !self.collides(world, def, target.pos) {
+            self.pos = target.pos;
+            self.vel = target.rotation.rotate_vec3(self.vel);
+            self.yaw = target.rotation.rotate_yaw(self.yaw);
+            if target.rotation != crate::planet::QuarterTurn::IDENTITY {
+                self.target = self.pos;
+            }
             return;
         }
         let mut lo = 0.0f32;
         let mut hi = 1.0f32;
         for _ in 0..8 {
             let mid = (lo + hi) * 0.5;
-            if self.collides(world, def, self.pos + delta * mid) {
+            let candidate = self
+                .pos
+                .translated(delta * mid)
+                .map(|moved| moved.pos)
+                .unwrap_or(self.pos);
+            if self.collides(world, def, candidate) {
                 hi = mid;
             } else {
                 lo = mid;
             }
         }
-        self.pos += delta * lo;
+        if let Ok(moved) = self.pos.translated(delta * lo) {
+            self.pos = moved.pos;
+            self.vel = moved.rotation.rotate_vec3(self.vel);
+            self.yaw = moved.rotation.rotate_yaw(self.yaw);
+            if moved.rotation != crate::planet::QuarterTurn::IDENTITY {
+                self.target = self.pos;
+            }
+        }
         if delta.y < 0.0 {
             self.on_ground = true;
         }
@@ -969,6 +1064,42 @@ impl Mob {
     }
 
     /// Ray vs this mob's collision AABB (slab test); returns hit distance.
+    pub fn ray_hit_from(
+        &self,
+        def: &AnimalDef,
+        origin: EntityPos,
+        dir: Vec3,
+        max_t: f32,
+    ) -> Option<f32> {
+        let center = origin.local_delta_to(self.pos);
+        let min = center - Vec3::new(def.half_w, 0.0, def.half_w);
+        let max = center + Vec3::new(def.half_w, def.height, def.half_w);
+        let mut t0 = 0.0f32;
+        let mut t1 = max_t;
+        for axis in 0..3 {
+            let (direction, lo, hi) = (dir[axis], min[axis], max[axis]);
+            if direction.abs() < 1e-6 {
+                if 0.0 < lo || 0.0 > hi {
+                    return None;
+                }
+                continue;
+            }
+            let inverse = 1.0 / direction;
+            let (mut near, mut far) = (lo * inverse, hi * inverse);
+            if near > far {
+                std::mem::swap(&mut near, &mut far);
+            }
+            t0 = t0.max(near);
+            t1 = t1.min(far);
+            if t0 > t1 {
+                return None;
+            }
+        }
+        Some(t0)
+    }
+
+    #[cfg(test)]
+    #[doc(hidden)]
     pub fn ray_hit(&self, def: &AnimalDef, origin: Vec3, dir: Vec3, max_t: f32) -> Option<f32> {
         let min = self.pos - Vec3::new(def.half_w, 0.0, def.half_w);
         let max = self.pos + Vec3::new(def.half_w, def.height, def.half_w);
@@ -1005,6 +1136,11 @@ impl Mob {
         idx: &mut Vec<u32>,
     ) {
         let def = &reg.animals[self.species];
+        let origin = self.pos.render_pos();
+        let frame = crate::planet::local_frame(self.pos.surface_point());
+        let east = frame.east.as_vec3();
+        let up = frame.up.as_vec3();
+        let north = frame.north.as_vec3();
         // Emissive wardens are their own lantern.
         let lum = if def.emissive { ([1.0; 3], lum.1) } else { lum };
         // Models face -Z; motion forward is (sin yaw, cos yaw) = +Z at 0,
@@ -1091,7 +1227,8 @@ impl Mob {
                         nx = x0 * rc - y0 * rs;
                         ny = x0 * rs + y0 * rc;
                     }
-                    [nx * cyaw + nz * syaw, ny, -nx * syaw + nz * cyaw]
+                    let local = Vec3::new(nx * cyaw + nz * syaw, ny, -nx * syaw + nz * cyaw);
+                    (east * local.x + up * local.y + north * local.z).to_array()
                 };
                 let base = verts.len() as u32;
                 for c in CORNERS[face].iter() {
@@ -1124,8 +1261,9 @@ impl Mob {
                     } else {
                         flash
                     };
+                    let world = origin + east * wx + up * ly + north * wz;
                     verts.push(Vertex {
-                        pos: [self.pos.x + wx, self.pos.y + ly, self.pos.z + wz],
+                        pos: world.to_array(),
                         uv: [
                             tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                             ty as f32 * ts + inset + v * (ts - 2.0 * inset),
@@ -1185,7 +1323,7 @@ pub enum HeldArt {
 /// an alpha-cut overlay box; the held item rides the right hand.
 #[allow(clippy::too_many_arguments)]
 pub fn emit_humanoid(
-    pos: Vec3,
+    pos: EntityPos,
     yaw: f32,
     art: &HumanoidArt,
     gait: (f32, f32),
@@ -1194,6 +1332,30 @@ pub fn emit_humanoid(
     verts: &mut Vec<Vertex>,
     idx: &mut Vec<u32>,
 ) {
+    emit_humanoid_interpolated(pos, pos.render_pos(), yaw, art, gait, held, lum, verts, idx);
+}
+
+/// Render a logical planetary actor at a separately interpolated embedded
+/// origin. The logical address supplies its continuously rotating tangent
+/// frame; the embedded origin supplies snapshot smoothing. Keeping those
+/// concerns separate prevents remote players from snapping at cube-face
+/// seams without ever making them stand in the global Y direction.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn emit_humanoid_interpolated(
+    pos: EntityPos,
+    origin: Vec3,
+    yaw: f32,
+    art: &HumanoidArt,
+    gait: (f32, f32),
+    held: HeldArt,
+    lum: ([f32; 3], f32),
+    verts: &mut Vec<Vertex>,
+    idx: &mut Vec<u32>,
+) {
+    let frame = crate::planet::local_frame(pos.surface_point());
+    let east = frame.east.as_vec3();
+    let up = frame.up.as_vec3();
+    let north = frame.north.as_vec3();
     let (syaw, cyaw) = (yaw + std::f32::consts::PI).sin_cos();
     let (phase, amp) = gait;
     let leg = phase.sin() * 0.55 * amp;
@@ -1325,7 +1487,9 @@ pub fn emit_humanoid(
                 nz = y0 * ss + z0 * cs;
             }
             let nx = n[0] as f32;
-            let normal = [nx * cyaw + nz * syaw, ny, -nx * syaw + nz * cyaw];
+            let local_normal = Vec3::new(nx * cyaw + nz * syaw, ny, -nx * syaw + nz * cyaw);
+            let normal =
+                (east * local_normal.x + up * local_normal.y + north * local_normal.z).to_array();
             let base = verts.len() as u32;
             for c in CORNERS[f].iter() {
                 let lx = center.x + (c[0] - 0.5) * 2.0 * hx;
@@ -1343,8 +1507,9 @@ pub fn emit_humanoid(
                     4 | 5 => (c[0], 1.0 - c[1]),
                     _ => (c[0], c[2]),
                 };
+                let world = origin + east * wx + up * ly + north * wz;
                 verts.push(Vertex {
-                    pos: [pos.x + wx, pos.y + ly, pos.z + wz],
+                    pos: world.to_array(),
                     uv: [
                         tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                         ty as f32 * ts + inset + v * (ts - 2.0 * inset),
@@ -1385,8 +1550,9 @@ pub fn emit_humanoid(
         for (lp, u, v) in corners {
             let wx = lp.x * cyaw + lp.z * syaw;
             let wz = -lp.x * syaw + lp.z * cyaw;
+            let world = origin + east * wx + up * lp.y + north * wz;
             verts.push(Vertex {
-                pos: [pos.x + wx, pos.y + lp.y, pos.z + wz],
+                pos: world.to_array(),
                 uv: [
                     tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                     ty as f32 * ts + inset + v * (ts - 2.0 * inset),

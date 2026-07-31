@@ -288,13 +288,13 @@ impl ApplicationHandler for App {
                         }
                     }
                     MouseButton::Middle if pressed => {
-                        if let Some(h) = raycast::raycast(
+                        if let Some(h) = raycast::raycast_at(
                             &game.server.world,
-                            game.camera.pos,
-                            game.camera.forward(),
+                            game.player.eye(),
+                            game.camera.local_forward(),
                             REACH,
                         ) {
-                            let b = game.server.world.get_block(h.block.0, h.block.1, h.block.2);
+                            let b = game.server.world.get_block_at(h.block);
                             let reg = game.content.reg.clone();
                             let found = game.inventory.slots[..HOTBAR_SLOTS]
                                 .iter()

@@ -34,10 +34,16 @@ impl World {
 
     /// Lift a block out of the grid and into the air (atomically: the
     /// cell empties in the same call, so it can't be duped).
-    pub(super) fn detach(&mut self, x: i32, y: i32, z: i32, b: BlockId) {
-        self.set_block(x, y, z, AIR);
+    pub(super) fn detach_at(&mut self, pos: crate::planet::BlockPos, b: BlockId) {
+        self.set_block_at(pos, AIR);
         self.falling.push(FallingBlock {
-            pos: glam::Vec3::new(x as f32, y as f32, z as f32),
+            pos: crate::planet::EntityPos::new(
+                pos.face(),
+                pos.u() as f32,
+                pos.y() as f32,
+                pos.v() as f32,
+            )
+            .expect("block corner is a canonical entity position"),
             vel: 0.0,
             block: b,
         });
@@ -56,33 +62,44 @@ impl World {
         let mut still = Vec::with_capacity(fallen.len());
         for mut f in fallen.drain(..) {
             f.vel = (f.vel + 20.0 * dt).min(30.0);
-            f.pos.y -= f.vel * dt;
-            let (x, z) = (f.pos.x.floor() as i32, f.pos.z.floor() as i32);
+            let Ok(moved) = f.pos.translated(glam::Vec3::new(0.0, -f.vel * dt, 0.0)) else {
+                continue;
+            };
+            f.pos = moved.pos;
+            let surface = crate::planet::SurfacePos::new(
+                f.pos.face(),
+                f.pos.u().floor() as u16,
+                f.pos.v().floor() as u16,
+            )
+            .expect("canonical falling position has a valid surface cell");
             let below = f.pos.y.floor() as i32;
             if below < 0 {
                 continue; // out of the world (should be impossible)
             }
-            if !self.reg.is_solid(self.get_block(x, below, z)) {
+            let at = |y: i32| {
+                crate::planet::BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
+                    .expect("falling block height is inside the shell")
+            };
+            if !self.reg.is_solid(self.get_block_at(at(below))) {
                 still.push(f);
                 continue;
             }
             // Land on the first free cell above the obstruction - a
             // second sand in the same column stacks instead of popping.
             let mut y = below + 1;
-            while y < CHUNK_Y as i32 - 1 && self.reg.is_solid(self.get_block(x, y, z)) {
+            while y < CHUNK_Y as i32 - 1 && self.reg.is_solid(self.get_block_at(at(y))) {
                 y += 1;
             }
             let b = f.block;
-            let cur = self.get_block(x, y, z);
+            let cur = self.get_block_at(at(y));
             if cur != AIR {
                 // Crushed: the plant/layer pops as its drop first.
                 if let Some((item, n)) = self.reg.block(cur).drops {
                     let reg = self.reg.clone();
-                    self.pending_drops
-                        .push(((x, y, z), ItemStack::new(&reg, item, n)));
+                    self.push_drop_at(at(y), ItemStack::new(&reg, item, n));
                 }
             }
-            self.set_block(x, y, z, b);
+            self.set_block_at(at(y), b);
         }
         // Landings may have detached more (rare); keep both sets.
         self.falling.extend(still);
@@ -100,12 +117,12 @@ impl World {
     /// Validate the bloomery multiblock at this mouth: a hollow 1x1
     /// core beside the mouth wrapped in a 3-wide, 3-tall firebrick
     /// ring (23 firebrick + the mouth), open on top. Returns the core.
-    pub fn check_bloomery(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
+    pub fn check_bloomery_at(&self, pos: BlockPos) -> Option<BlockPos> {
         let mouth = [
             self.reg.block_id("base:bloomery"),
             self.reg.block_id("base:bloomery_lit"),
         ];
-        self.check_stack(x, y, z, &mouth)
+        self.check_stack_at(pos, &mouth)
     }
 
     /// Validate the forge: the firebrick stack with a forge mouth,
@@ -113,20 +130,23 @@ impl World {
     /// open flue above the stack — rain never reaches the fire) and a
     /// stone anvil within three blocks of the mouth. A building, not
     /// a block: the workshop is the capital (economy plan, leg 2).
-    pub fn check_forge(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
+    pub fn check_forge_at(&self, pos: BlockPos) -> Option<BlockPos> {
         let mouth = [
             self.reg.block_id("base:forge"),
             self.reg.block_id("base:forge_lit"),
         ];
-        let core = self.check_stack(x, y, z, &mouth)?;
-        if !self.has_chimney(core) {
+        let core = self.check_stack_at(pos, &mouth)?;
+        if !self.has_chimney_at(core) {
             return None;
         }
         let anvil = self.reg.block_id("base:stone_anvil")?;
         for dx in -3i32..=3 {
             for dz in -3i32..=3 {
                 for dy in -1..=1 {
-                    if self.get_block(x + dx, y + dy, z + dz) == anvil {
+                    if pos
+                        .offset(dx, dy, dz)
+                        .is_some_and(|at| self.get_block_at(at) == anvil)
+                    {
                         return Some(core);
                     }
                 }
@@ -136,11 +156,11 @@ impl World {
     }
 
     /// Light a charged forge. Errors name what's missing.
-    pub fn light_forge(&mut self, x: i32, y: i32, z: i32) -> Result<(), &'static str> {
+    pub fn light_forge_at(&mut self, pos: BlockPos) -> Result<(), &'static str> {
         let core = self
-            .check_forge(x, y, z)
+            .check_forge_at(pos)
             .ok_or("the forge wants its stack, chimney, and anvil")?;
-        let Some(BlockEntity::Forge(f)) = self.block_entities.get_mut(&(x, y, z)) else {
+        let Some(BlockEntity::Forge(f)) = self.block_entities.get_mut(&pos) else {
             return Err("nothing charged");
         };
         if f.lit {
@@ -153,21 +173,23 @@ impl World {
         }
         f.lit = true;
         f.progress = 0.0;
-        f.core = core;
-        self.swap_block_keep_entity(x, y, z, "base:forge_lit");
+        f.core = Some(core);
+        self.swap_block_keep_entity_at(pos, "base:forge_lit");
         Ok(())
     }
 
     /// Three more courses of firebrick ring over the stack, flue
     /// open: the chimney that turns a station into a workshop. Rain
     /// never reaches a chimneyed fire.
-    fn has_chimney(&self, core: (i32, i32, i32)) -> bool {
+    fn has_chimney_at(&self, core: BlockPos) -> bool {
         let Some(fb) = self.reg.block_id("base:firebrick") else {
             return false;
         };
-        let (cx, cy, cz) = core;
         for ly in 3..6 {
-            if self.get_block(cx, cy + ly, cz) != AIR {
+            let Some(flue) = core.offset(0, ly, 0) else {
+                return false;
+            };
+            if self.get_block_at(flue) != AIR {
                 return false;
             }
             for rx in -1..=1 {
@@ -175,7 +197,10 @@ impl World {
                     if rx == 0 && rz == 0 {
                         continue;
                     }
-                    if self.get_block(cx + rx, cy + ly, cz + rz) != fb {
+                    if core
+                        .offset(rx, ly, rz)
+                        .is_none_or(|at| self.get_block_at(at) != fb)
+                    {
                         return false;
                     }
                 }
@@ -187,9 +212,9 @@ impl World {
     /// A kiln whose stack carries the chimney is a GLASSWORKS: the
     /// draft doubles what each fuel fires, and weather means nothing
     /// (economy plan, leg 2 — same capital rule as the forge).
-    pub fn check_glassworks(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
-        let core = self.check_kiln(x, y, z)?;
-        if self.has_chimney(core) {
+    pub fn check_glassworks_at(&self, pos: BlockPos) -> Option<BlockPos> {
+        let core = self.check_kiln_at(pos)?;
+        if self.has_chimney_at(core) {
             Some(core)
         } else {
             None
@@ -198,28 +223,28 @@ impl World {
 
     /// The same stack with a separator in its mouth splits the mixed
     /// rare-earth powder instead (mechanization stage 6).
-    pub fn check_separator(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
+    pub fn check_separator_at(&self, pos: BlockPos) -> Option<BlockPos> {
         let mouth = [
             self.reg.block_id("base:separator"),
             self.reg.block_id("base:separator_lit"),
         ];
-        self.check_stack(x, y, z, &mouth)
+        self.check_stack_at(pos, &mouth)
     }
 
     /// The same stack with a kiln in its mouth fires glass instead.
-    pub fn check_kiln(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
+    pub fn check_kiln_at(&self, pos: BlockPos) -> Option<BlockPos> {
         let mouth = [
             self.reg.block_id("base:kiln"),
             self.reg.block_id("base:kiln_lit"),
         ];
-        self.check_stack(x, y, z, &mouth)
+        self.check_stack_at(pos, &mouth)
     }
 
     /// Validate a market stall at its counter: two log posts (two
     /// tall) flanking the counter along either axis, bridged by a
     /// three-wide awning of solid or glass at post-top height. A
     /// stall trades only while it stands (trade & travel, stage 3).
-    pub fn check_stall(&self, x: i32, y: i32, z: i32) -> bool {
+    pub fn check_stall_at(&self, pos: BlockPos) -> bool {
         let logs = self.reg.tags.get("base:logs").cloned().unwrap_or_default();
         let is_log = |b: BlockId| {
             self.reg
@@ -229,13 +254,21 @@ impl World {
         let awning_ok = |b: BlockId| self.reg.is_solid(b) || self.reg.block(b).glass;
         'axes: for (dx, dz) in [(1, 0), (0, 1)] {
             for side in [-1, 1] {
-                let (px, pz) = (x + dx * side, z + dz * side);
-                if !is_log(self.get_block(px, y, pz)) || !is_log(self.get_block(px, y + 1, pz)) {
+                let Some(post) = pos.offset(dx * side, 0, dz * side) else {
+                    continue 'axes;
+                };
+                let Some(post_top) = post.offset(0, 1, 0) else {
+                    continue 'axes;
+                };
+                if !is_log(self.get_block_at(post)) || !is_log(self.get_block_at(post_top)) {
                     continue 'axes;
                 }
             }
             for i in -1..=1 {
-                if !awning_ok(self.get_block(x + dx * i, y + 2, z + dz * i)) {
+                if pos
+                    .offset(dx * i, 2, dz * i)
+                    .is_none_or(|at| !awning_ok(self.get_block_at(at)))
+                {
                     continue 'axes;
                 }
             }
@@ -246,18 +279,21 @@ impl World {
 
     /// The shared shell scan: the stack is the stack; the mouth block
     /// decides the craft.
-    pub(super) fn check_stack(
+    pub(super) fn check_stack_at(
         &self,
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
         mouth: &[Option<BlockId>; 2],
-    ) -> Option<(i32, i32, i32)> {
+    ) -> Option<BlockPos> {
         let fb = self.reg.block_id("base:firebrick")?;
         'dirs: for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let (cx, cz) = (x + dx, z + dz);
+            let Some(core) = pos.offset(dx, 0, dz) else {
+                continue;
+            };
             for ly in 0..3 {
-                if self.get_block(cx, y + ly, cz) != AIR {
+                if core
+                    .offset(0, ly, 0)
+                    .is_none_or(|at| self.get_block_at(at) != AIR)
+                {
                     continue 'dirs;
                 }
                 for rx in -1..=1 {
@@ -265,9 +301,11 @@ impl World {
                         if rx == 0 && rz == 0 {
                             continue;
                         }
-                        let (bx, bz) = (cx + rx, cz + rz);
-                        let b = self.get_block(bx, y + ly, bz);
-                        if bx == x && bz == z && ly == 0 {
+                        let Some(at) = core.offset(rx, ly, rz) else {
+                            continue 'dirs;
+                        };
+                        let b = self.get_block_at(at);
+                        if at == pos && ly == 0 {
                             if !mouth.contains(&Some(b)) {
                                 continue 'dirs;
                             }
@@ -277,17 +315,15 @@ impl World {
                     }
                 }
             }
-            return Some((cx, y, cz));
+            return Some(core);
         }
         None
     }
 
     /// Light a charged bloomery. Errors name what's missing.
-    pub fn light_bloomery(&mut self, x: i32, y: i32, z: i32) -> Result<(), &'static str> {
-        let core = self
-            .check_bloomery(x, y, z)
-            .ok_or("the stack is breached")?;
-        let Some(BlockEntity::Bloomery(b)) = self.block_entities.get_mut(&(x, y, z)) else {
+    pub fn light_bloomery_at(&mut self, pos: BlockPos) -> Result<(), &'static str> {
+        let core = self.check_bloomery_at(pos).ok_or("the stack is breached")?;
+        let Some(BlockEntity::Bloomery(b)) = self.block_entities.get_mut(&pos) else {
             return Err("nothing charged");
         };
         if b.lit {
@@ -300,15 +336,15 @@ impl World {
         }
         b.lit = true;
         b.progress = 0.0;
-        b.core = core;
-        self.swap_block_keep_entity(x, y, z, "base:bloomery_lit");
+        b.core = Some(core);
+        self.swap_block_keep_entity_at(pos, "base:bloomery_lit");
         Ok(())
     }
 
     /// Light a charged kiln. Errors name what's missing.
-    pub fn light_kiln(&mut self, x: i32, y: i32, z: i32) -> Result<(), &'static str> {
-        let core = self.check_kiln(x, y, z).ok_or("the stack is breached")?;
-        let Some(BlockEntity::Kiln(k)) = self.block_entities.get_mut(&(x, y, z)) else {
+    pub fn light_kiln_at(&mut self, pos: BlockPos) -> Result<(), &'static str> {
+        let core = self.check_kiln_at(pos).ok_or("the stack is breached")?;
+        let Some(BlockEntity::Kiln(k)) = self.block_entities.get_mut(&pos) else {
             return Err("nothing charged");
         };
         if k.lit {
@@ -321,14 +357,14 @@ impl World {
         }
         k.lit = true;
         k.progress = 0.0;
-        k.core = core;
-        self.swap_block_keep_entity(x, y, z, "base:kiln_lit");
+        k.core = Some(core);
+        self.swap_block_keep_entity_at(pos, "base:kiln_lit");
         Ok(())
     }
 
     /// Fire every lit kiln: shared shell/weather rules, glass out.
     pub(super) fn tick_kilns(&mut self, dt: f32) {
-        let keys: Vec<(i32, i32, i32)> = self
+        let keys: Vec<BlockPos> = self
             .block_entities
             .iter()
             .filter(|(_, e)| matches!(e, BlockEntity::Kiln(k) if k.lit))
@@ -338,24 +374,28 @@ impl World {
             let Some(BlockEntity::Kiln(mut k)) = self.block_entities.remove(&pos) else {
                 continue;
             };
-            let (x, y, z) = pos;
-            if self.check_kiln(x, y, z).is_none() {
+            if self.check_kiln_at(pos).is_none() {
                 k.lit = false;
                 k.progress = 0.0;
-                self.swap_block_keep_entity(x, y, z, "base:kiln");
+                self.swap_block_keep_entity_at(pos, "base:kiln");
                 self.block_entities.insert(pos, BlockEntity::Kiln(k));
                 continue;
             }
             // A chimneyed kiln is a glassworks: rain can't reach the
             // fire, and the draft doubles what each fuel fires.
-            let glassworks = self.check_glassworks(x, y, z).is_some();
-            let unroofed = self.light_at(k.core.0, y + 3, k.core.2).1 == 15;
-            let wet =
-                !glassworks && self.weather.precipitating() && self.rains_at(x, z) && unroofed;
+            let glassworks = self.check_glassworks_at(pos).is_some();
+            let unroofed = k
+                .core
+                .and_then(|core| core.offset(0, 3, 0))
+                .is_some_and(|above| self.light_at_pos(above).1 == 15);
+            let wet = !glassworks
+                && self.weather.precipitating()
+                && self.rains_at_surface(pos.surface())
+                && unroofed;
             if wet && self.weather == Weather::Storm {
                 k.lit = false;
                 k.progress = 0.0;
-                self.swap_block_keep_entity(x, y, z, "base:kiln");
+                self.swap_block_keep_entity_at(pos, "base:kiln");
                 self.block_entities.insert(pos, BlockEntity::Kiln(k));
                 continue;
             }
@@ -423,51 +463,45 @@ impl World {
                 }
                 k.lit = false;
                 k.progress = 0.0;
-                self.swap_block_keep_entity(x, y, z, "base:kiln");
+                self.swap_block_keep_entity_at(pos, "base:kiln");
             }
             self.block_entities.insert(pos, BlockEntity::Kiln(k));
         }
     }
 
     /// Swap a block without invalidating the machine living there.
-    pub(super) fn swap_block_keep_entity(&mut self, x: i32, y: i32, z: i32, to: &str) {
+    pub(super) fn swap_block_keep_entity_at(&mut self, pos: BlockPos, to: &str) {
         let Some(to) = self.reg.block_id(to) else {
             return;
         };
-        let e = self.block_entities.remove(&(x, y, z));
-        self.set_block(x, y, z, to);
+        let e = self.block_entities.remove(&pos);
+        self.set_block_at(pos, to);
         if let Some(e) = e {
-            self.block_entities.insert((x, y, z), e);
+            self.block_entities.insert(pos, e);
         }
     }
 
     /// Flood-fill a covered log pile from the clicked log and light it.
     /// Exactly one face (the lighting face) may be exposed.
-    pub fn try_light_clamp(&mut self, x: i32, y: i32, z: i32) -> Result<usize, &'static str> {
+    pub fn try_light_clamp_at(&mut self, pos: BlockPos) -> Result<usize, &'static str> {
         let logs_tag = self.reg.tags.get("base:logs").cloned().unwrap_or_default();
-        let is_log = |w: &World, p: (i32, i32, i32)| {
-            let b = w.get_block(p.0, p.1, p.2);
+        let is_log = |w: &World, p: BlockPos| {
+            let b = w.get_block_at(p);
             w.reg
                 .item_id(&w.reg.block(b).name)
                 .is_some_and(|i| logs_tag.contains(&i))
         };
-        if !is_log(self, (x, y, z)) {
+        if !is_log(self, pos) {
             return Err("light a log");
         }
-        let mut set = vec![(x, y, z)];
-        let mut queue = vec![(x, y, z)];
+        let mut set = HashSet::from([pos]);
+        let mut logs = vec![pos];
+        let mut queue = vec![pos];
         while let Some(p) = queue.pop() {
-            for d in [
-                (1, 0, 0),
-                (-1, 0, 0),
-                (0, 1, 0),
-                (0, -1, 0),
-                (0, 0, 1),
-                (0, 0, -1),
-            ] {
-                let n = (p.0 + d.0, p.1 + d.1, p.2 + d.2);
+            for n in crate::planet::neighbors6(p) {
                 if !set.contains(&n) && is_log(self, n) {
-                    set.push(n);
+                    set.insert(n);
+                    logs.push(n);
                     if set.len() > 8 {
                         return Err("the pile is too big to smolder (8 logs at most)");
                     }
@@ -480,19 +514,11 @@ impl World {
         }
         let mut exposed = 0;
         for p in &set {
-            for d in [
-                (1, 0, 0),
-                (-1, 0, 0),
-                (0, 1, 0),
-                (0, -1, 0),
-                (0, 0, 1),
-                (0, 0, -1),
-            ] {
-                let n = (p.0 + d.0, p.1 + d.1, p.2 + d.2);
+            for n in crate::planet::neighbors6(*p) {
                 if set.contains(&n) {
                     continue;
                 }
-                if !self.reg.is_solid(self.get_block(n.0, n.1, n.2)) {
+                if !self.reg.is_solid(self.get_block_at(n)) {
                     exposed += 1;
                 }
             }
@@ -502,9 +528,9 @@ impl World {
         }
         let n = set.len();
         self.block_entities.insert(
-            (x, y, z),
+            pos,
             BlockEntity::Clamp(ClampState {
-                logs: set,
+                logs,
                 timer: n as f32 * CLAMP_SECS_PER_LOG,
             }),
         );
@@ -512,24 +538,24 @@ impl World {
     }
 
     /// The station kind ("anvil"/"quern"/"millstone"/...) of the block at pos.
-    pub(super) fn station_at(&self, pos: (i32, i32, i32)) -> Option<String> {
-        self.reg
-            .block(self.get_block(pos.0, pos.1, pos.2))
-            .interaction
-            .clone()
+    pub(super) fn station_at(&self, pos: BlockPos) -> Option<String> {
+        self.reg.block(self.get_block_at(pos)).interaction.clone()
     }
 
     /// A vice within three blocks: precision machines refuse to cut
     /// without workholding (the screw's first gift, mechanization
     /// rung 2).
-    pub fn vice_near(&self, pos: (i32, i32, i32)) -> bool {
+    pub fn vice_near_at(&self, pos: BlockPos) -> bool {
         let Some(v) = self.reg.block_id("base:vice") else {
             return false;
         };
         for dx in -3..=3i32 {
             for dy in -1..=1i32 {
                 for dz in -3..=3i32 {
-                    if self.get_block(pos.0 + dx, pos.1 + dy, pos.2 + dz) == v {
+                    if pos
+                        .offset(dx, dy, dz)
+                        .is_some_and(|at| self.get_block_at(at) == v)
+                    {
                         return true;
                     }
                 }
@@ -542,7 +568,7 @@ impl World {
     /// time; powered stations pile a batch (the millstone's whole
     /// point is grinding sixteen while you're elsewhere). Only items
     /// this station's worked-table accepts may rest.
-    pub fn anvil_put(&mut self, pos: (i32, i32, i32), stack: ItemStack) -> bool {
+    pub fn anvil_put_at(&mut self, pos: BlockPos, stack: ItemStack) -> bool {
         let Some(st) = self.station_at(pos) else {
             return false;
         };
@@ -578,7 +604,7 @@ impl World {
         false
     }
 
-    pub fn anvil_take(&mut self, pos: (i32, i32, i32)) -> Option<ItemStack> {
+    pub fn anvil_take_at(&mut self, pos: BlockPos) -> Option<ItemStack> {
         if let Some(BlockEntity::Anvil(a)) = self.block_entities.get_mut(&pos) {
             a.strikes = 0;
             return a.bloom.take();
@@ -587,7 +613,7 @@ impl World {
     }
 
     /// One hammer strike; finishing the work returns the output.
-    pub fn anvil_strike(&mut self, pos: (i32, i32, i32)) -> Option<ItemStack> {
+    pub fn anvil_strike_at(&mut self, pos: BlockPos) -> Option<ItemStack> {
         let reg = self.reg.clone();
         let st = self.station_at(pos)?;
         if let Some(BlockEntity::Anvil(a)) = self.block_entities.get_mut(&pos)
@@ -611,12 +637,83 @@ impl World {
 
     /// Archaeology: sweep a remnant block — it yields its artifact once
     /// and becomes plain. Returns what was found.
-    pub fn brush_block(&mut self, x: i32, y: i32, z: i32, rng: &mut u32) -> Option<ItemStack> {
-        let b = self.get_block(x, y, z);
+    pub fn brush_block_at(&mut self, pos: BlockPos, rng: &mut u32) -> Option<ItemStack> {
+        let b = self.get_block_at(pos);
         let (table, becomes) = self.reg.block(b).brush.clone()?;
         let mut items = self.roll_loot(&table, 1, rng);
-        self.set_block(x, y, z, becomes);
+        self.set_block_at(pos, becomes);
         items.pop()
+    }
+
+    // Positive-Z adapters exist only for the pre-topology fixture suite.
+    #[cfg(test)]
+    pub fn check_bloomery(&self, x: i32, y: i32, z: i32) -> Option<BlockPos> {
+        BlockPos::of_world(x, y, z).and_then(|pos| self.check_bloomery_at(pos))
+    }
+
+    #[cfg(test)]
+    pub fn check_forge(&self, x: i32, y: i32, z: i32) -> Option<BlockPos> {
+        BlockPos::of_world(x, y, z).and_then(|pos| self.check_forge_at(pos))
+    }
+
+    #[cfg(test)]
+    pub fn check_glassworks(&self, x: i32, y: i32, z: i32) -> Option<BlockPos> {
+        BlockPos::of_world(x, y, z).and_then(|pos| self.check_glassworks_at(pos))
+    }
+
+    #[cfg(test)]
+    pub fn check_separator(&self, x: i32, y: i32, z: i32) -> Option<BlockPos> {
+        BlockPos::of_world(x, y, z).and_then(|pos| self.check_separator_at(pos))
+    }
+
+    #[cfg(test)]
+    pub fn check_kiln(&self, x: i32, y: i32, z: i32) -> Option<BlockPos> {
+        BlockPos::of_world(x, y, z).and_then(|pos| self.check_kiln_at(pos))
+    }
+
+    #[cfg(test)]
+    pub fn check_stall(&self, x: i32, y: i32, z: i32) -> bool {
+        BlockPos::of_world(x, y, z).is_some_and(|pos| self.check_stall_at(pos))
+    }
+
+    #[cfg(test)]
+    pub fn light_bloomery(&mut self, x: i32, y: i32, z: i32) -> Result<(), &'static str> {
+        self.light_bloomery_at(BlockPos::of_world(x, y, z).ok_or("outside the world")?)
+    }
+
+    #[cfg(test)]
+    pub fn light_forge(&mut self, x: i32, y: i32, z: i32) -> Result<(), &'static str> {
+        self.light_forge_at(BlockPos::of_world(x, y, z).ok_or("outside the world")?)
+    }
+
+    #[cfg(test)]
+    pub fn light_kiln(&mut self, x: i32, y: i32, z: i32) -> Result<(), &'static str> {
+        self.light_kiln_at(BlockPos::of_world(x, y, z).ok_or("outside the world")?)
+    }
+
+    #[cfg(test)]
+    pub fn try_light_clamp(&mut self, x: i32, y: i32, z: i32) -> Result<usize, &'static str> {
+        self.try_light_clamp_at(BlockPos::of_world(x, y, z).ok_or("outside the world")?)
+    }
+
+    #[cfg(test)]
+    pub fn anvil_put(&mut self, pos: (i32, i32, i32), stack: ItemStack) -> bool {
+        BlockPos::of_world(pos.0, pos.1, pos.2).is_some_and(|at| self.anvil_put_at(at, stack))
+    }
+
+    #[cfg(test)]
+    pub fn anvil_take(&mut self, pos: (i32, i32, i32)) -> Option<ItemStack> {
+        BlockPos::of_world(pos.0, pos.1, pos.2).and_then(|at| self.anvil_take_at(at))
+    }
+
+    #[cfg(test)]
+    pub fn anvil_strike(&mut self, pos: (i32, i32, i32)) -> Option<ItemStack> {
+        BlockPos::of_world(pos.0, pos.1, pos.2).and_then(|at| self.anvil_strike_at(at))
+    }
+
+    #[cfg(test)]
+    pub fn brush_block(&mut self, x: i32, y: i32, z: i32, rng: &mut u32) -> Option<ItemStack> {
+        BlockPos::of_world(x, y, z).and_then(|pos| self.brush_block_at(pos, rng))
     }
 
     // ---------------- wildlife ----------------

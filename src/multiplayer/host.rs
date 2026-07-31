@@ -26,6 +26,7 @@ use crate::net::{
     self, C2S, HostEvent, MAX_GUEST_VIEW_DIST, ModerationAction, Refusal, RefusalCode, S2C,
     StackSnap,
 };
+use crate::planet::{BlockPos, EntityPos};
 use crate::server::Server;
 use crate::world::{BlockEntity, World};
 use moderation::{BanIdentity, ModerationStore};
@@ -43,9 +44,9 @@ pub struct Guest {
     pub verified_handle: Option<String>,
     /// Handle safe to include in the public roster because the player opted in.
     pub public_handle: Option<String>,
-    pub pos: Vec3,
+    pub pos: EntityPos,
     pub yaw: f32,
-    pub container: Option<(i32, i32, i32)>,
+    pub container: Option<BlockPos>,
     /// The mob pack this guest has open (host-validated).
     pub mob_cargo: Option<u32>,
     pub sleeping: bool,
@@ -58,7 +59,7 @@ pub struct Guest {
     pub health: f32,
     pub hunger: f32,
     pub nutrition: [f32; 5],
-    pub spawn: Vec3,
+    pub spawn: EntityPos,
     pub pitch: f32,
     pub hotbar: usize,
     pub cursor: Option<ItemStack>,
@@ -78,7 +79,7 @@ pub struct Guest {
     /// guest walks out of range of them, because the guest evicts on the same
     /// rule — a set that only ever grew meant a guest who left an area and
     /// came back was never sent it again, and stood in a hole.
-    sent_chunks: HashSet<(i32, i32)>,
+    sent_chunks: HashSet<ChunkPos>,
     /// Granted view distance in chunks: what the guest asked for, clamped to
     /// `MAX_GUEST_VIEW_DIST`.
     view_dist: i32,
@@ -89,6 +90,9 @@ pub struct Guest {
     edit_window: f32,
     /// Movement packets arrive at ~20 Hz; rendering interpolates from
     /// here toward (pos, yaw) so guests glide instead of stutter.
+    /// Embedded render position and yaw at the start of the current network
+    /// interpolation span. Embedded space is continuous across cube-face
+    /// seams, unlike either face's local `(u, v)` chart.
     render_from: (Vec3, f32),
     net_age: f32,
     net_interval: f32,
@@ -104,16 +108,37 @@ impl Guest {
     /// Does the host believe this guest already holds this chunk?
     #[cfg(test)]
     pub fn holds_chunk(&self, cx: i32, cz: i32) -> bool {
-        self.sent_chunks.contains(&(cx, cz))
+        ChunkPos::from_centered(crate::planet::Face::PosZ, cx, cz)
+            .is_ok_and(|pos| self.sent_chunks.contains(&pos))
+    }
+
+    #[cfg(test)]
+    pub fn holds_chunk_at(&self, pos: ChunkPos) -> bool {
+        self.sent_chunks.contains(&pos)
+    }
+
+    #[cfg(test)]
+    pub fn prime_move_for_test(&mut self, pos: EntityPos) {
+        self.pos = pos;
+        self.render_from = (pos.render_pos(), self.yaw);
+        self.net_age = 0.3;
+        self.net_interval = 0.3;
+        self.has_moved = true;
     }
 
     /// Position/yaw to draw this guest at (the sim uses the latest).
     pub fn render_pos(&self) -> (Vec3, f32) {
         let t = (self.net_age / self.net_interval.max(0.001)).clamp(0.0, 1.0);
         (
-            self.render_from.0.lerp(self.pos, t),
+            self.render_from.0.lerp(self.pos.render_pos(), t),
             crate::mobs::lerp_yaw(self.render_from.1, self.yaw, t),
         )
+    }
+
+    /// Canonical position for topology-aware light and label queries. Actual
+    /// geometry uses [`Self::render_pos`] so a face transition remains smooth.
+    pub fn render_entity_pos(&self) -> EntityPos {
+        self.pos
     }
 
     pub fn public_label(&self) -> String {
@@ -146,7 +171,7 @@ pub struct HostSession {
     /// Principals kicked this session: refused if they reconnect.
     banned: HashSet<Principal>,
     /// Where new arrivals land, resolved once for the session.
-    pub fresh_spawn: Option<Vec3>,
+    pub fresh_spawn: Option<EntityPos>,
     /// Horizon assigned before a client negotiates one. Tests may shrink this
     /// for compact protocol fixtures; production retains the legacy five.
     initial_view_dist: i32,
@@ -327,12 +352,13 @@ impl HostSession {
     pub fn pump(
         &mut self,
         server: &mut Server,
-        host: Option<(Vec3, f32, bool, u16, u32)>,
+        host: Option<(EntityPos, f32, bool, u16, u32)>,
         dt: f32,
     ) -> Vec<HostFx> {
-        let host_pos = host
-            .map(|(p, _, _, _, _)| p)
-            .unwrap_or(Vec3::new(0.5, 80.0, 0.5));
+        let host_pos = host.map(|(p, _, _, _, _)| p).unwrap_or_else(|| {
+            EntityPos::from_local(crate::planet::Face::PosZ, Vec3::new(0.5, 80.0, 0.5))
+                .expect("default host position is canonical")
+        });
         let host_yaw = host.map(|(_, y, _, _, _)| y).unwrap_or(0.0);
         let host_sleeping = host.map(|(_, _, s, _, _)| s).unwrap_or(false);
         let host_held = host.map(|(_, _, _, h, _)| h).unwrap_or(u16::MAX);
@@ -457,14 +483,8 @@ impl HostSession {
 
         // Authoritative block edits out.
         if !server.world.edits().is_empty() {
-            for (x, y, z, b, meta) in server.world.take_edits() {
-                self.net.broadcast(&S2C::BlockSet {
-                    x,
-                    y,
-                    z,
-                    id: b.0,
-                    meta,
-                });
+            for (pos, b, meta) in server.world.take_edits() {
+                self.net.broadcast(&S2C::BlockSet { pos, id: b.0, meta });
             }
         }
         // Items owed to guests (arrow recovery, mining, mob drops,
@@ -495,7 +515,7 @@ impl HostSession {
         self.container_timer += dt;
         if self.container_timer >= 0.5 {
             self.container_timer = 0.0;
-            let open: Vec<(u32, (i32, i32, i32))> = self
+            let open: Vec<(u32, BlockPos)> = self
                 .guests
                 .iter()
                 .filter_map(|(id, g)| g.container.map(|c| (*id, c)))
@@ -535,7 +555,7 @@ impl HostSession {
         // Vehicles follow their riders exactly (the rider's client
         // owns their motion; the boat is presentation that floats).
         {
-            let riders: Vec<(u32, Vec3)> =
+            let riders: Vec<(u32, EntityPos)> =
                 self.guests.iter().map(|(gid, g)| (*gid, g.pos)).collect();
             for m in server.world.mobs_mut() {
                 if let Some(rid) = m.ridden_by
@@ -543,7 +563,10 @@ impl HostSession {
                 {
                     match riders.iter().find(|(gid, _)| *gid == rid) {
                         Some((_, at)) => {
-                            m.pos = *at - Vec3::new(0.0, 0.35, 0.0);
+                            m.pos = at
+                                .translated(Vec3::new(0.0, -0.35, 0.0))
+                                .expect("vehicle remains below rider")
+                                .pos;
                             m.vel = Vec3::ZERO;
                         }
                         None => m.ridden_by = None,
@@ -689,7 +712,13 @@ impl HostSession {
         let fresh_spawn = match self.fresh_spawn {
             Some(p) => p,
             None => {
-                let p = server.world.safe_spawn(0, 0);
+                let center = crate::planet::SurfacePos::new(
+                    crate::planet::Face::PosZ,
+                    crate::planet::FACE_BLOCKS / 2,
+                    crate::planet::FACE_BLOCKS / 2,
+                )
+                .expect("planet center is a valid spawn column");
+                let p = server.world.safe_spawn_at(center);
                 self.fresh_spawn = Some(p);
                 p
             }
@@ -723,7 +752,7 @@ impl HostSession {
         // world, or someone built over the spot. Free it before the
         // guest materializes inside a hill (mid-air and mid-swim saves
         // pass through untouched).
-        runtime.pos = server.world.free_position(runtime.pos);
+        runtime.pos = server.world.free_position_at(runtime.pos);
         if let Err(refusal) = self.moderation.as_mut().unwrap().admit(
             &runtime.principals,
             Some(runtime.player_id),
@@ -782,13 +811,13 @@ impl HostSession {
         self.net.broadcast(&S2C::Joined { presence });
         // The named world arrives with its names: every sign and
         // waystone, so travelers read them without asking.
-        let signs: Vec<((i32, i32, i32), [String; 3])> = server
+        let signs: Vec<(BlockPos, [String; 3])> = server
             .world
             .sign_texts()
             .map(|(p, st)| (p, st.lines.clone()))
             .collect();
-        for ((x, y, z), lines) in signs {
-            self.net.send(id, &S2C::SignText { x, y, z, lines });
+        for (pos, lines) in signs {
+            self.net.send(id, &S2C::SignText { pos, lines });
         }
         self.guests.insert(
             id,
@@ -838,7 +867,7 @@ impl HostSession {
                 chunk_window: 0.0,
                 edits: 0,
                 edit_window: 0.0,
-                render_from: (Vec3::new(0.5, 80.0, 0.5), 0.0),
+                render_from: (runtime.pos.render_pos(), 0.0),
                 net_age: 0.0,
                 net_interval: 0.05,
             },
@@ -1022,7 +1051,7 @@ impl HostSession {
 
     /// Apply simulation damage to server-owned survival state. The `Hit`
     /// packet is presentation; the following `PlayerState` is the authority.
-    pub fn hurt_guest(&mut self, id: u32, amount: f32, from: Vec3) {
+    pub fn hurt_guest(&mut self, id: u32, amount: f32, from: crate::planet::EntityPos) {
         let Some(guest) = self.guests.get_mut(&id) else {
             return;
         };
@@ -1074,8 +1103,9 @@ impl HostSession {
         // below, because both have to reach back into the session while
         // holding it would forbid that.
         match &msg {
-            C2S::RequestChunk { x, z } => {
-                let (x, z) = (*x, *z);
+            C2S::RequestChunk { face, u, v } => {
+                let requested = crate::planet::Face::from_u8(*face)
+                    .and_then(|face| ChunkPos::new(face, *u, *v).ok());
                 let serve = {
                     let Some(g) = self.guests.get_mut(&id) else {
                         return;
@@ -1087,12 +1117,16 @@ impl HostSession {
                         // Only ground this guest could be standing near. The
                         // request fills its own holes; it is not a way to
                         // read the map from across the world.
-                        let center = ChunkPos::of_world(g.pos.x as i32, g.pos.z as i32);
-                        (x - center.x).abs().max((z - center.z).abs()) <= g.view_dist + 2
+                        let Some(center) = g.pos.chunk() else {
+                            return;
+                        };
+                        requested.is_some_and(|pos| {
+                            pos.distance(center) <= f64::from((g.view_dist + 2) * 16)
+                        })
                     }
                 };
-                if serve {
-                    self.stream_chunk(server, id, x, z);
+                if serve && let Some(pos) = requested {
+                    self.stream_chunk(server, id, pos);
                 }
                 return;
             }
@@ -1145,28 +1179,28 @@ impl HostSession {
                 sprint,
             } => {
                 let elapsed = guest.net_age.clamp(0.03, 0.3);
-                let delta = pos - guest.pos;
+                let delta = guest.pos.local_delta_to(pos);
                 let horizontal = Vec3::new(delta.x, 0.0, delta.z).length();
-                let probe = crate::physics::Player::new(pos);
-                let grounded = server.world.reg.is_solid(server.world.get_block(
-                    pos.x.floor() as i32,
-                    (pos.y - 0.05).floor() as i32,
-                    pos.z.floor() as i32,
-                ));
-                let in_water = server.world.reg.is_water(server.world.get_block(
-                    pos.x.floor() as i32,
-                    (pos.y + 0.6).floor() as i32,
-                    pos.z.floor() as i32,
-                ));
+                let probe = crate::physics::Player::new_at(pos);
+                let grounded = pos
+                    .translated(Vec3::new(0.0, -0.05, 0.0))
+                    .ok()
+                    .and_then(|p| p.pos.block())
+                    .is_some_and(|p| server.world.reg.is_solid(server.world.get_block_at(p)));
+                let in_water = pos
+                    .translated(Vec3::new(0.0, 0.6, 0.0))
+                    .ok()
+                    .and_then(|p| p.pos.block())
+                    .is_some_and(|p| server.world.reg.is_water(server.world.get_block_at(p)));
                 let airborne_rise = if grounded || in_water {
                     0.0
                 } else {
                     guest.airborne_rise + delta.y.max(0.0)
                 };
-                let valid = pos.is_finite()
+                let valid = pos.is_canonical()
                     && yaw.is_finite()
                     && hotbar < HOTBAR_SLOTS as u8
-                    && !probe.collides(&server.world, pos)
+                    && !probe.collides(&server.world, probe.pos)
                     && airborne_rise <= 2.4
                     && (guest.has_moved
                         && horizontal <= 8.0 * elapsed + 0.35
@@ -1190,15 +1224,14 @@ impl HostSession {
                 guest.has_moved = true;
                 refresh_held(guest);
                 // Guests leave footprints too; the edit echoes to all.
-                server.world.tread(
-                    pos.x.floor() as i32,
-                    (pos.y + 0.1).floor() as i32,
-                    pos.z.floor() as i32,
-                );
+                if let Some(at) = pos.block() {
+                    server.world.tread_at(at);
+                }
             }
-            C2S::Break { x, y, z } => {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                if (p - guest.pos).length() > REACH || guest.edits >= EDITS_PER_SEC {
+            C2S::Break { pos } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH
+                    || guest.edits >= EDITS_PER_SEC
+                {
                     return;
                 }
                 guest.edits += 1;
@@ -1208,13 +1241,13 @@ impl HostSession {
                     && server
                         .world
                         .reg
-                        .block(server.world.get_block(x, y, z))
+                        .block(server.world.get_block_at(pos))
                         .name
                         .contains("leaves");
                 let Some(result) =
                     server
                         .world
-                        .break_block((x, y, z), held, !creative && !sheared, !creative)
+                        .break_block_at(pos, held, !creative && !sheared, !creative)
                 else {
                     return;
                 };
@@ -1228,14 +1261,15 @@ impl HostSession {
                 }
                 self.send_player_state(id);
             }
-            C2S::Scoop { x, y, z } => {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                if (p - guest.pos).length() > REACH || guest.edits >= EDITS_PER_SEC {
+            C2S::Scoop { pos } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH
+                    || guest.edits >= EDITS_PER_SEC
+                {
                     return;
                 }
                 // Only a full cell fills a bucket — partials would let
                 // a guest mint fluid out of films. Either fluid dips.
-                let b = server.world.get_block(x, y, z);
+                let b = server.world.get_block_at(pos);
                 if server.world.reg.fluid_volume(b) != Some(8) {
                     return;
                 }
@@ -1253,7 +1287,7 @@ impl HostSession {
                     return;
                 }
                 guest.edits += 1;
-                server.world.set_block(x, y, z, crate::registry::AIR);
+                server.world.set_block_at(pos, crate::registry::AIR);
                 if server.world.mode != "creative"
                     && let Some(full) = server.world.reg.item_id(full_name)
                 {
@@ -1263,9 +1297,10 @@ impl HostSession {
                     self.send_player_state(id);
                 }
             }
-            C2S::Place { x, y, z } => {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                if (p - guest.pos).length() > REACH || guest.edits >= EDITS_PER_SEC {
+            C2S::Place { pos } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH
+                    || guest.edits >= EDITS_PER_SEC
+                {
                     return;
                 }
                 let selected = guest.inventory.slots[guest.hotbar];
@@ -1285,10 +1320,10 @@ impl HostSession {
                     });
                 let Some(block) = block else { return };
                 let overlaps = {
-                    let player = crate::physics::Player::new(guest.pos);
-                    player.overlaps_block(x, y, z)
+                    let player = crate::physics::Player::new_at(guest.pos);
+                    player.overlaps_block_at(pos)
                 };
-                if overlaps || !server.world.place_block((x, y, z), block) {
+                if overlaps || !server.world.place_block_at(pos, block) {
                     return;
                 }
                 guest.edits += 1;
@@ -1319,18 +1354,22 @@ impl HostSession {
                     .map(|stack| server.world.reg.item(stack.item).damage)
                     .unwrap_or(1.0)
                     .clamp(0.0, 16.0);
-                let from = guest.pos + Vec3::new(0.0, 1.6, 0.0);
+                let from = guest
+                    .pos
+                    .translated(Vec3::new(0.0, 1.6, 0.0))
+                    .expect("guest attack origin stays in the shell")
+                    .pos;
                 let gpos = guest.pos;
                 let reg = server.world.reg.clone();
                 if let Some(m) = server.world.mob_by_id_mut(mob_id)
-                    && (m.pos - gpos).length() <= REACH
+                    && m.pos.distance_to(gpos) <= REACH
                 {
                     let def = reg.animals[m.species].clone();
-                    let (mx, mz) = (m.pos.x.floor() as i32, m.pos.z.floor() as i32);
+                    let surface = m.pos.surface();
                     m.hurt(&def, dmg, from);
                     m.last_hit_by = id;
                     if !def.hostile {
-                        server.world.add_ire_at(mx, mz, 2.0);
+                        server.world.add_ire_at_surface(surface, 2.0);
                     }
                     if server.world.mode != "creative" {
                         guest.hunger = (guest.hunger - 0.01).max(0.0);
@@ -1472,9 +1511,10 @@ impl HostSession {
                     }
                 }
             }
-            C2S::StallBuy { x, y, z } => {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                if (p - guest.pos).length() > REACH || !server.world.check_stall(x, y, z) {
+            C2S::StallBuy { pos } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH
+                    || !server.world.check_stall_at(pos)
+                {
                     return;
                 }
                 let reg = server.world.reg.clone();
@@ -1487,7 +1527,7 @@ impl HostSession {
                 };
                 let mut bought: Option<ItemStack> = None;
                 let mut paid: Option<ItemStack> = None;
-                if let Some(BlockEntity::Stall(st)) = server.world.block_entity_mut(&(x, y, z)) {
+                if let Some(BlockEntity::Stall(st)) = server.world.block_entity_mut_at(&pos) {
                     if st.owner == [0; 16] || banned_owner(st.owner) {
                         return;
                     }
@@ -1566,29 +1606,26 @@ impl HostSession {
                     let left = guest.inventory.add_stack(&reg, sold);
                     if left > 0 {
                         // No room: the purchase lands at their feet.
-                        server.world.push_drop(
-                            (
-                                guest.pos.x.floor() as i32,
-                                guest.pos.y.floor() as i32,
-                                guest.pos.z.floor() as i32,
-                            ),
-                            ItemStack {
-                                count: left,
-                                ..sold
-                            },
-                        );
+                        if let Some(at) = guest.pos.block() {
+                            server.world.push_drop_at(
+                                at,
+                                ItemStack {
+                                    count: left,
+                                    ..sold
+                                },
+                            );
+                        }
                     }
                     refresh_held(guest);
                     self.send_player_state(id);
-                    self.send_container(server, id, (x, y, z));
+                    self.send_container(server, id, pos);
                 }
             }
-            C2S::SetSign { x, y, z, lines } => {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                if (p - guest.pos).length() > REACH {
+            C2S::SetSign { pos, lines } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH {
                     return;
                 }
-                let b = server.world.get_block(x, y, z);
+                let b = server.world.get_block_at(pos);
                 let station = server.world.reg.block(b).interaction.as_deref();
                 if !matches!(station, Some("sign") | Some("waystone")) {
                     return;
@@ -1598,20 +1635,19 @@ impl HostSession {
                     l.truncate(14);
                     l.retain(|c| c.is_ascii_alphanumeric() || " :_-'".contains(c));
                 }
-                server.world.insert_block_entity(
-                    (x, y, z),
+                server.world.insert_block_entity_at(
+                    pos,
                     BlockEntity::Sign(crate::world::SignState {
                         lines: lines.clone(),
                     }),
                 );
-                self.net.broadcast(&S2C::SignText { x, y, z, lines });
+                self.net.broadcast(&S2C::SignText { pos, lines });
             }
-            C2S::BrushBlock { x, y, z } => {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                if (p - guest.pos).length() > REACH {
+            C2S::BrushBlock { pos } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH {
                     return;
                 }
-                let b = server.world.get_block(x, y, z);
+                let b = server.world.get_block_at(pos);
                 if server.world.reg.block(b).brush.is_none() {
                     return;
                 }
@@ -1621,7 +1657,7 @@ impl HostSession {
                     return;
                 }
                 let mut r = server.rng;
-                let found = server.world.brush_block(x, y, z, &mut r);
+                let found = server.world.brush_block_at(pos, &mut r);
                 server.rng = r;
                 if let Some(stack) = found {
                     server.world.queue_give(id, stack);
@@ -1667,7 +1703,11 @@ impl HostSession {
                     return;
                 };
                 guest.action_cooldown = 0.25;
-                let pos = guest.pos + Vec3::new(0.0, 1.6, 0.0) + direction * 0.4;
+                let pos = guest
+                    .pos
+                    .translated(Vec3::new(0.0, 1.6, 0.0) + direction * 0.4)
+                    .expect("guest projectile starts beside the player")
+                    .pos;
                 server.world.spawn_projectile(crate::mobs::Projectile {
                     pos,
                     vel: direction * speed.min(40.0),
@@ -1681,12 +1721,11 @@ impl HostSession {
                 refresh_held(guest);
                 self.send_player_state(id);
             }
-            C2S::OpenContainer { x, y, z } => {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                if (p - guest.pos).length() > REACH {
+            C2S::OpenContainer { pos } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH {
                     return;
                 }
-                let b = server.world.get_block(x, y, z);
+                let b = server.world.get_block_at(pos);
                 let kind = match server.world.reg.block(b).interaction.as_deref() {
                     Some("chest") => 0u8,
                     Some("furnace") => 1,
@@ -1706,7 +1745,7 @@ impl HostSession {
                     6 => BlockEntity::Stall(Default::default()),
                     _ => BlockEntity::Offering(Default::default()),
                 };
-                let entry = server.world.ensure_block_entity((x, y, z), default);
+                let entry = server.world.ensure_block_entity_at(pos, default);
                 // A fresh counter belongs to whoever opens it first.
                 if let BlockEntity::Stall(st) = entry
                     && st.owner == [0; 16]
@@ -1718,31 +1757,24 @@ impl HostSession {
                     && c.wild_owned
                 {
                     c.wild_owned = false;
-                    server.world.add_ire_at(x, z, 1.0);
+                    server.world.add_ire_at_surface(pos.surface(), 1.0);
                     self.net
                         .send(id, &S2C::Toast("The wild keeps its trophies.".into()));
                 }
                 if let Some(g) = self.guests.get_mut(&id) {
-                    g.container = Some((x, y, z));
+                    g.container = Some(pos);
                 }
-                self.send_container(server, id, (x, y, z));
+                self.send_container(server, id, pos);
             }
-            C2S::ContainerClick {
-                x,
-                y,
-                z,
-                slot,
-                right,
-            } => {
-                self.container_click(server, id, (x, y, z), slot as usize, right);
+            C2S::ContainerClick { pos, slot, right } => {
+                self.container_click(server, id, pos, slot as usize, right);
             }
             C2S::CloseContainer => {
                 guest.container = None;
                 guest.mob_cargo = None;
             }
-            C2S::LightBloomery { x, y, z } => {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                if (p - guest.pos).length() > REACH {
+            C2S::LightBloomery { pos } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH {
                     return;
                 }
                 let ember = server.world.reg.item_id("base:ember");
@@ -1756,11 +1788,11 @@ impl HostSession {
                 {
                     return;
                 }
-                let b = server.world.get_block(x, y, z);
+                let b = server.world.get_block_at(pos);
                 let res = match server.world.reg.block(b).interaction.as_deref() {
-                    Some("kiln") => server.world.light_kiln(x, y, z),
-                    Some("forge") => server.world.light_forge(x, y, z),
-                    _ => server.world.light_bloomery(x, y, z),
+                    Some("kiln") => server.world.light_kiln_at(pos),
+                    Some("forge") => server.world.light_forge_at(pos),
+                    _ => server.world.light_bloomery_at(pos),
                 };
                 match res {
                     Ok(()) => {
@@ -1771,14 +1803,13 @@ impl HostSession {
                             refresh_held(guest);
                             self.send_player_state(id);
                         }
-                        self.send_container(server, id, (x, y, z));
+                        self.send_container(server, id, pos);
                     }
                     Err(e) => self.net.send(id, &S2C::Toast(e.into())),
                 }
             }
-            C2S::LightClamp { x, y, z } => {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                if (p - guest.pos).length() > REACH {
+            C2S::LightClamp { pos } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH {
                     return;
                 }
                 if server.world.mode != "creative"
@@ -1787,7 +1818,7 @@ impl HostSession {
                 {
                     return;
                 }
-                match server.world.try_light_clamp(x, y, z) {
+                match server.world.try_light_clamp_at(pos) {
                     Ok(n) => {
                         if server.world.mode != "creative" {
                             guest.inventory.take_one(guest.hotbar);
@@ -1800,24 +1831,22 @@ impl HostSession {
                     Err(e) => self.net.send(id, &S2C::Toast(e.into())),
                 }
             }
-            C2S::AnvilPut { x, y, z } => {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                if (p - guest.pos).length() > REACH {
+            C2S::AnvilPut { pos } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH {
                     return;
                 }
                 let Some(stack) = guest.inventory.slots[guest.hotbar] else {
                     return;
                 };
                 let one = ItemStack { count: 1, ..stack };
-                if server.world.anvil_put((x, y, z), one) && server.world.mode != "creative" {
+                if server.world.anvil_put_at(pos, one) && server.world.mode != "creative" {
                     guest.inventory.take_one(guest.hotbar);
                     refresh_held(guest);
                     self.send_player_state(id);
                 }
             }
-            C2S::AnvilStrike { x, y, z } => {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                if (p - guest.pos).length() > REACH {
+            C2S::AnvilStrike { pos } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH {
                     return;
                 }
                 if guest.action_cooldown > 0.0 {
@@ -1833,17 +1862,16 @@ impl HostSession {
                     guest.inventory.wear_tool(&server.world.reg, guest.hotbar);
                     refresh_held(guest);
                 }
-                if let Some(out) = server.world.anvil_strike((x, y, z)) {
+                if let Some(out) = server.world.anvil_strike_at(pos) {
                     server.world.queue_give(id, out);
                 }
                 self.send_player_state(id);
             }
-            C2S::AnvilTake { x, y, z } => {
-                let p = Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5);
-                if (p - guest.pos).length() > REACH {
+            C2S::AnvilTake { pos } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH {
                     return;
                 }
-                if let Some(b) = server.world.anvil_take((x, y, z)) {
+                if let Some(b) = server.world.anvil_take_at(pos) {
                     server.world.queue_give(id, b);
                 }
             }
@@ -1956,7 +1984,7 @@ impl HostSession {
                     return;
                 }
                 // The saved spawn may be buried or dug out by now.
-                guest.pos = server.world.settle_spawn(guest.spawn);
+                guest.pos = server.world.settle_spawn_at(guest.spawn);
                 guest.health = 14.0;
                 guest.hunger = 20.0;
                 guest.since_damage = 100.0;
@@ -2064,7 +2092,7 @@ impl HostSession {
         &mut self,
         server: &mut Server,
         id: u32,
-        pos: (i32, i32, i32),
+        pos: BlockPos,
         slot: usize,
         right: bool,
     ) {
@@ -2080,7 +2108,7 @@ impl HostSession {
         {
             return;
         }
-        let Some(entity) = server.world.block_entity_mut(&pos) else {
+        let Some(entity) = server.world.block_entity_mut_at(&pos) else {
             return;
         };
         let mut held = self.guests.get(&id).and_then(|guest| guest.cursor);
@@ -2239,12 +2267,9 @@ impl HostSession {
         self.send_container(server, id, pos);
     }
 
-    /// Push a host-authored sign edit to every guest.
-    pub fn broadcast_sign(&mut self, pos: (i32, i32, i32), lines: &[String; 3]) {
+    pub fn broadcast_sign_at(&mut self, pos: BlockPos, lines: &[String; 3]) {
         self.net.broadcast(&S2C::SignText {
-            x: pos.0,
-            y: pos.1,
-            z: pos.2,
+            pos,
             lines: lines.clone(),
         });
     }
@@ -2270,8 +2295,8 @@ impl HostSession {
         self.net.send(id, &S2C::MobCargo { id: mob_id, slots });
     }
 
-    fn send_container(&mut self, server: &Server, id: u32, pos: (i32, i32, i32)) {
-        let Some(entity) = server.world.block_entity(&pos) else {
+    fn send_container(&mut self, server: &Server, id: u32, pos: BlockPos) {
+        let Some(entity) = server.world.block_entity_at(&pos) else {
             return;
         };
         let snap = |s: &Option<ItemStack>| {
@@ -2340,9 +2365,7 @@ impl HostSession {
         self.net.send(
             id,
             &S2C::Container {
-                x: pos.0,
-                y: pos.1,
-                z: pos.2,
+                pos,
                 kind,
                 slots,
                 aux,

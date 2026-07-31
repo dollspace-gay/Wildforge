@@ -4,7 +4,7 @@ fn on_world_start(world) {
     hud_message("Gemstones loaded - rubies hide deep below y24");
 }
 
-fn on_block_break(x, y, z, block) {
+fn on_block_break(face, u, y, v, block) {
     if block == "gems:ruby_ore" {
         let n = storage_get("found");
         let count = if n == "" { 1 } else { n.parse_int() + 1 };

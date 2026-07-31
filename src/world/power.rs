@@ -16,8 +16,8 @@ pub const WOODEN_RUN: u32 = 12;
 /// and a pathological loop of gears stops wasting time here.
 const POWER_VISITS: usize = 192;
 
-/// A cell plus the direction the walk entered it by.
-type Step = ((i32, i32, i32), (i32, i32, i32));
+/// A cell plus the face-local direction the walk entered it by.
+type Step = (BlockPos, crate::planet::Direction6);
 
 /// A turning wheel carries this much momentum: seconds it keeps
 /// delivering after its water goes still (flywheels are real, and a
@@ -38,8 +38,8 @@ impl World {
     /// Steam drives shafts like a wheel does, anywhere coal and
     /// water reach: an engine runs while a boiler beside it, firebox
     /// below, has both fire and water banked.
-    pub(super) fn steam_rate(&self, x: i32, y: i32, z: i32) -> f32 {
-        if self.steam_firebox(x, y, z).is_some() {
+    pub(super) fn steam_rate_at(&self, pos: BlockPos) -> f32 {
+        if self.steam_firebox_at(pos).is_some() {
             STEAM_RATE
         } else {
             0.0
@@ -49,19 +49,26 @@ impl World {
     /// The RUNNING firebox behind an engine block, if any: boiler
     /// horizontally adjacent to the engine, firebox directly below
     /// the boiler, fire and water both banked.
-    pub(super) fn steam_firebox(&self, x: i32, y: i32, z: i32) -> Option<(i32, i32, i32)> {
+    pub(super) fn steam_firebox_at(&self, pos: BlockPos) -> Option<BlockPos> {
         let boiler = self.reg.block_id("base:boiler")?;
-        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let (bx, bz) = (x + dx, z + dz);
-            if self.get_block(bx, y, bz) != boiler {
+        for direction in [
+            crate::planet::Direction6::East,
+            crate::planet::Direction6::North,
+            crate::planet::Direction6::West,
+            crate::planet::Direction6::South,
+        ] {
+            let boiler_pos = crate::planet::step6(pos, direction)?.pos;
+            if self.get_block_at(boiler_pos) != boiler {
                 continue;
             }
-            let fpos = (bx, y - 1, bz);
-            if let Some(BlockEntity::Steam(s)) = self.block_entities.get(&fpos)
+            let Some(firebox_pos) = boiler_pos.offset(0, -1, 0) else {
+                continue;
+            };
+            if let Some(BlockEntity::Steam(s)) = self.block_entities.get(&firebox_pos)
                 && s.fuel > 0.0
                 && s.water > 0.0
             {
-                return Some(fpos);
+                return Some(firebox_pos);
             }
         }
         None
@@ -71,26 +78,33 @@ impl World {
     /// could fire here: falling into room below, spilling over an
     /// edge, or pushing a real gradient at a neighbor. Standing
     /// pools turn nothing.
-    pub fn is_live_water(&self, x: i32, y: i32, z: i32) -> bool {
-        let Some(v) = self.reg.water_volume(self.get_block(x, y, z)) else {
+    pub fn is_live_water_at(&self, pos: BlockPos) -> bool {
+        let Some(v) = self.reg.water_volume(self.get_block_at(pos)) else {
             return false;
         };
         // Falling: the cell below has room.
-        if y > 0
-            && let Some(nv) = self.flow_potential(x, y - 1, z)
+        if let Some(below) = pos.offset(0, -1, 0)
+            && let Some(nv) = self.flow_potential_at(below)
             && nv < 8
         {
             return true;
         }
-        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let (nx, nz) = (x + dx, z + dz);
-            let Some(nv) = self.flow_potential(nx, y, nz) else {
+        for neighbor in [
+            crate::planet::Direction6::East,
+            crate::planet::Direction6::North,
+            crate::planet::Direction6::West,
+            crate::planet::Direction6::South,
+        ]
+        .into_iter()
+        .filter_map(|direction| crate::planet::step6(pos, direction).map(|step| step.pos))
+        {
+            let Some(nv) = self.flow_potential_at(neighbor) else {
                 continue;
             };
             // Over an edge: an empty neighbor with room beneath it.
             if nv == 0
-                && y > 0
-                && let Some(bv) = self.flow_potential(nx, y - 1, nz)
+                && let Some(below) = neighbor.offset(0, -1, 0)
+                && let Some(bv) = self.flow_potential_at(below)
                 && bv < 8
             {
                 return true;
@@ -105,20 +119,23 @@ impl World {
 
     /// A water wheel turns only on LIVE water in one of the six cells
     /// it hangs into — a weir lip, a spring race, a built channel.
-    pub fn wheel_live(&self, x: i32, y: i32, z: i32) -> f32 {
+    pub fn wheel_live_at(&self, pos: BlockPos) -> f32 {
         let touch = [
-            (x, y - 1, z),
-            (x + 1, y, z),
-            (x - 1, y, z),
-            (x, y, z + 1),
-            (x, y, z - 1),
-            (x + 1, y - 1, z),
-            (x - 1, y - 1, z),
-            (x, y - 1, z + 1),
-            (x, y - 1, z - 1),
+            (0, -1, 0),
+            (1, 0, 0),
+            (-1, 0, 0),
+            (0, 0, 1),
+            (0, 0, -1),
+            (1, -1, 0),
+            (-1, -1, 0),
+            (0, -1, 1),
+            (0, -1, -1),
         ];
-        for (tx, ty, tz) in touch {
-            if self.is_live_water(tx, ty, tz) {
+        for at in touch
+            .into_iter()
+            .filter_map(|(du, dy, dv)| pos.offset(du, dy, dv))
+        {
+            if self.is_live_water_at(at) {
                 return 1.0;
             }
         }
@@ -127,8 +144,12 @@ impl World {
 
     /// Sails want altitude and open sky; the weather sets the rate.
     /// The only machine that fears nothing the kiln fears.
-    pub fn sail_live(&self, x: i32, y: i32, z: i32) -> f32 {
-        if y < 90 || self.light_at(x, y + 1, z).1 != 15 {
+    pub fn sail_live_at(&self, pos: BlockPos) -> f32 {
+        if pos.y() < 90
+            || pos
+                .offset(0, 1, 0)
+                .is_none_or(|above| self.light_at_pos(above).1 != 15)
+        {
             return 0.0;
         }
         wind_rate(self.weather)
@@ -138,7 +159,7 @@ impl World {
     /// from this block to a live source. Shafts carry straight
     /// through, gears turn corners, bearing-fitted shafts forgive the
     /// wooden friction limit. Returns the strongest source found.
-    pub fn power_at(&self, x: i32, y: i32, z: i32) -> f32 {
+    pub fn power_at_pos(&self, pos: BlockPos) -> f32 {
         let id = |n: &str| self.reg.block_id(n);
         let (Some(shaft), Some(gear)) = (id("base:shaft"), id("base:gear")) else {
             return 0.0;
@@ -147,21 +168,15 @@ impl World {
         let wheel = [id("base:water_wheel"), id("base:water_wheel_run")];
         let sail = [id("base:windmill_sail"), id("base:windmill_sail_run")];
         let engine = [id("base:steam_engine"), id("base:steam_engine_run")];
-        const DIRS: [(i32, i32, i32); 6] = [
-            (1, 0, 0),
-            (-1, 0, 0),
-            (0, 1, 0),
-            (0, -1, 0),
-            (0, 0, 1),
-            (0, 0, -1),
-        ];
         let mut best: f32 = 0.0;
         // State: position, the direction we moved to enter it, and
         // wooden steps since the last bearing.
         let mut queue: VecDeque<(Step, u32)> = VecDeque::new();
         let mut seen: HashSet<Step> = HashSet::new();
-        for d in DIRS {
-            queue.push_back((((x + d.0, y + d.1, z + d.2), d), 1));
+        for direction in crate::planet::Direction6::ALL {
+            if let Some(step) = crate::planet::step6(pos, direction) {
+                queue.push_back(((step.pos, step.direction), 1));
+            }
         }
         let mut visits = 0;
         while let Some(((p, entry), steps)) = queue.pop_front() {
@@ -174,11 +189,11 @@ impl World {
                 continue;
             }
             visits += 1;
-            let b = self.get_block(p.0, p.1, p.2);
+            let b = self.get_block_at(p);
             let src = if wheel.contains(&Some(b)) {
                 // Live water or banked momentum: the dress tick keeps
                 // the spin-down clock in station_work.
-                if self.wheel_live(p.0, p.1, p.2) > 0.0
+                if self.wheel_live_at(p) > 0.0
                     || self.station_work.get(&p).copied().unwrap_or(0.0) > 0.0
                 {
                     1.0
@@ -186,9 +201,9 @@ impl World {
                     0.0
                 }
             } else if sail.contains(&Some(b)) {
-                self.sail_live(p.0, p.1, p.2)
+                self.sail_live_at(p)
             } else if engine.contains(&Some(b)) {
-                self.steam_rate(p.0, p.1, p.2)
+                self.steam_rate_at(p)
             } else {
                 0.0
             };
@@ -199,18 +214,31 @@ impl World {
             if b == shaft || Some(b) == fitted {
                 // Straight through only; a bearing resets the count.
                 let steps = if Some(b) == fitted { 0 } else { steps };
-                let n = (p.0 + entry.0, p.1 + entry.1, p.2 + entry.2);
-                queue.push_back(((n, entry), steps + 1));
+                if let Some(next) = crate::planet::step6(p, entry) {
+                    queue.push_back(((next.pos, next.direction), steps + 1));
+                }
             } else if b == gear {
-                for d in DIRS {
+                for direction in crate::planet::Direction6::ALL {
                     // Never straight back into the face we came from.
-                    if d == (-entry.0, -entry.1, -entry.2) {
+                    if direction == entry.opposite() {
                         continue;
                     }
-                    queue.push_back((((p.0 + d.0, p.1 + d.1, p.2 + d.2), d), steps + 1));
+                    if let Some(next) = crate::planet::step6(p, direction) {
+                        queue.push_back(((next.pos, next.direction), steps + 1));
+                    }
                 }
             }
         }
         best
+    }
+
+    #[cfg(test)]
+    pub fn wheel_live(&self, x: i32, y: i32, z: i32) -> f32 {
+        BlockPos::of_world(x, y, z).map_or(0.0, |pos| self.wheel_live_at(pos))
+    }
+
+    #[cfg(test)]
+    pub fn power_at(&self, x: i32, y: i32, z: i32) -> f32 {
+        BlockPos::of_world(x, y, z).map_or(0.0, |pos| self.power_at_pos(pos))
     }
 }

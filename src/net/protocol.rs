@@ -6,9 +6,10 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
+use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 16;
+pub const PROTOCOL: u32 = 19;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -38,10 +39,10 @@ pub struct StackSnap {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PlayerStateSnap {
-    pub pos: Vec3,
+    pub pos: EntityPos,
     pub yaw: f32,
     pub pitch: f32,
-    pub spawn: Vec3,
+    pub spawn: EntityPos,
     pub health: f32,
     pub hunger: f32,
     pub nutrition: [f32; 5],
@@ -56,7 +57,7 @@ pub struct MobSnap {
     /// Stable host-assigned id: guests interpolate and target by it.
     pub id: u32,
     pub species: u16,
-    pub pos: Vec3,
+    pub pos: EntityPos,
     pub yaw: f32,
     pub growth: f32,
     pub hurt: f32,
@@ -66,13 +67,13 @@ pub struct MobSnap {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FallSnap {
-    pub pos: Vec3,
+    pub pos: EntityPos,
     pub block: u16,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BoltSnap {
-    pub pos: Vec3,
+    pub pos: EntityPos,
     /// Guests dead-reckon between snapshots.
     pub vel: Vec3,
     pub tile: u16,
@@ -309,26 +310,20 @@ pub enum C2S {
         atproto: Option<AtprotoClaim>,
     },
     Move {
-        pos: Vec3,
+        pos: EntityPos,
         yaw: f32,
         hotbar: u8,
         sprint: bool,
     },
     Break {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
     },
     Place {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
     },
     /// Bucket dip: ask the host to take a full water cell.
     Scoop {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
     },
     AttackMob {
         id: u32,
@@ -338,15 +333,11 @@ pub enum C2S {
         charge: f32,
     },
     OpenContainer {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
     },
     /// One transactional click. The host owns and applies the cursor stack.
     ContainerClick {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
         slot: u8,
         right: bool,
     },
@@ -358,8 +349,9 @@ pub enum C2S {
     /// reconnected. Chunk residency is the client's business; this is how it
     /// says so.
     RequestChunk {
-        x: i32,
-        z: i32,
+        face: u8,
+        u: u16,
+        v: u16,
     },
     /// How far this guest wants to see, in chunks. Sent after the handshake
     /// (never inside it — the auth transcript stays exactly as it was) and
@@ -391,15 +383,11 @@ pub enum C2S {
     },
     /// Buy one item from a market stall (host validates everything).
     StallBuy {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
     },
     /// Write a placed sign or waystone (host validates and broadcasts).
     SetSign {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
         lines: [String; 3],
     },
     /// One transactional click in a mob's pack.
@@ -410,36 +398,24 @@ pub enum C2S {
     },
     /// Report a completed brush channel; the host validates and awards it.
     BrushBlock {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
     },
     /// Steelworks: ask the host to light a charged bloomery or covered log pile.
     LightBloomery {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
     },
     LightClamp {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
     },
     /// Anvil intents; held items and results remain host-authoritative.
     AnvilPut {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
     },
     AnvilStrike {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
     },
     AnvilTake {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
     },
     InventoryClick {
         area: InventoryArea,
@@ -481,7 +457,7 @@ pub enum S2C {
         your_id: u32,
         your_role: Role,
         roster: Vec<PlayerPresence>,
-        spawn: Vec3,
+        spawn: EntityPos,
         world_name: String,
         player_state: PlayerStateSnap,
     },
@@ -490,21 +466,20 @@ pub enum S2C {
     /// Host mods dir (scripts excluded) when content hashes differ.
     ModFiles(Vec<(String, Vec<u8>)>),
     Chunk {
-        x: i32,
-        z: i32,
+        face: u8,
+        u: u16,
+        v: u16,
         rle: Vec<u8>,
     },
     BlockSet {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: crate::planet::BlockPos,
         id: u16,
         /// Octant mask for sub-voxel blocks; 0 for ordinary blocks.
         meta: u8,
     },
     /// (id, pos, yaw, held wire item id, packed style) for every player in
     /// this guest's reach, host included (u16::MAX = empty hand). Datagram.
-    Players(Snapshot<(u32, Vec3, f32, u16, u32)>),
+    Players(Snapshot<(u32, EntityPos, f32, u16, u32)>),
     Mobs(Snapshot<MobSnap>),
     Bolts(Snapshot<BoltSnap>),
     /// Airborne gravity blocks (sand mid-tumble). Datagram.
@@ -523,7 +498,7 @@ pub enum S2C {
     },
     Hit {
         dmg: f32,
-        from: Vec3,
+        from: EntityPos,
     },
     Give {
         item: u16,
@@ -531,9 +506,7 @@ pub enum S2C {
         durability: u32,
     },
     Container {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
         /// 0 chest, 1 furnace, 2 offering, 3 bloomery, 4 kiln.
         kind: u8,
         slots: Vec<Option<StackSnap>>,
@@ -543,9 +516,7 @@ pub enum S2C {
     },
     /// Sign text (broadcast on set; the full set arrives on join).
     SignText {
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: BlockPos,
         lines: [String; 3],
     },
     /// A mob pack's contents (sent on open and after each change).

@@ -55,6 +55,8 @@ impl Renderer {
         let uniforms = Uniforms {
             view_proj: f.view_proj.to_cols_array_2d(),
             cam: [f.cam_pos.x, f.cam_pos.y, f.cam_pos.z, f.fog_dist],
+            origin: [f.cam_pos.x, f.cam_pos.y, f.cam_pos.z, 0.0],
+            local_up: [f.local_up.x, f.local_up.y, f.local_up.z, 0.0],
             sky: [
                 self.sky_color[0],
                 self.sky_color[1],
@@ -206,47 +208,51 @@ impl Renderer {
             self.queue.write_buffer(&self.pt_face_buf, 0, &data);
         }
 
-        if let Some((bx, by, bz)) = outline {
+        if let Some(block) = outline {
             let e = 0.003f32;
-            let (x0, y0, z0) = (bx as f32 - e, by as f32 - e, bz as f32 - e);
-            let (x1, y1, z1) = (
-                bx as f32 + 1.0 + e,
-                by as f32 + 1.0 + e,
-                bz as f32 + 1.0 + e,
-            );
             let c = [0.05, 0.05, 0.05];
-            let p = |x: f32, y: f32, z: f32| LineVertex {
-                pos: [x, y, z],
-                color: c,
+            let p = |du: f64, dy: f64, dv: f64| {
+                let surface = crate::planet::SurfacePoint {
+                    face: block.face(),
+                    u: f64::from(block.u()) + du,
+                    v: f64::from(block.v()) + dv,
+                };
+                let mut pos =
+                    crate::planet::block_to_render(surface, f64::from(block.y()) + dy).as_vec3();
+                pos += pos.normalize_or_zero() * e;
+                LineVertex {
+                    pos: pos.to_array(),
+                    color: c,
+                }
             };
             let verts = [
                 // bottom
-                p(x0, y0, z0),
-                p(x1, y0, z0),
-                p(x1, y0, z0),
-                p(x1, y0, z1),
-                p(x1, y0, z1),
-                p(x0, y0, z1),
-                p(x0, y0, z1),
-                p(x0, y0, z0),
+                p(0.0, 0.0, 0.0),
+                p(1.0, 0.0, 0.0),
+                p(1.0, 0.0, 0.0),
+                p(1.0, 0.0, 1.0),
+                p(1.0, 0.0, 1.0),
+                p(0.0, 0.0, 1.0),
+                p(0.0, 0.0, 1.0),
+                p(0.0, 0.0, 0.0),
                 // top
-                p(x0, y1, z0),
-                p(x1, y1, z0),
-                p(x1, y1, z0),
-                p(x1, y1, z1),
-                p(x1, y1, z1),
-                p(x0, y1, z1),
-                p(x0, y1, z1),
-                p(x0, y1, z0),
+                p(0.0, 1.0, 0.0),
+                p(1.0, 1.0, 0.0),
+                p(1.0, 1.0, 0.0),
+                p(1.0, 1.0, 1.0),
+                p(1.0, 1.0, 1.0),
+                p(0.0, 1.0, 1.0),
+                p(0.0, 1.0, 1.0),
+                p(0.0, 1.0, 0.0),
                 // pillars
-                p(x0, y0, z0),
-                p(x0, y1, z0),
-                p(x1, y0, z0),
-                p(x1, y1, z0),
-                p(x1, y0, z1),
-                p(x1, y1, z1),
-                p(x0, y0, z1),
-                p(x0, y1, z1),
+                p(0.0, 0.0, 0.0),
+                p(0.0, 1.0, 0.0),
+                p(1.0, 0.0, 0.0),
+                p(1.0, 1.0, 0.0),
+                p(1.0, 0.0, 1.0),
+                p(1.0, 1.0, 1.0),
+                p(0.0, 0.0, 1.0),
+                p(0.0, 1.0, 1.0),
             ];
             self.queue
                 .write_buffer(&self.outline_buf, 0, bytemuck::cast_slice(&verts));
@@ -294,8 +300,8 @@ impl Renderer {
             // layer, so don't draw them (the near cascade skips
             // nearly the whole loaded set).
             let reach = casc_radius + 30.0;
-            for (pos, gpu) in visible.iter().copied() {
-                if !chunk_in_range(*pos, f.cam_pos, reach) {
+            for (_pos, gpu) in visible.iter().copied() {
+                if !chunk_in_range(gpu, f.cam_pos, reach) {
                     continue;
                 }
                 if let Some(m) = &gpu.opaque {
@@ -373,9 +379,9 @@ impl Renderer {
                     &self.pt_face_bg,
                     &[(layer as u32) * PT_FACE_STRIDE as u32],
                 );
-                for (pos, gpu) in visible.iter().copied() {
+                for (_pos, gpu) in visible.iter().copied() {
                     if let Some(m) = &gpu.opaque {
-                        if !chunk_in_range(*pos, l.pos, l.range) {
+                        if !chunk_in_range(gpu, l.pos, l.range) {
                             continue;
                         }
                         pp.set_vertex_buffer(0, m.vbuf.slice(..));
@@ -422,9 +428,9 @@ impl Renderer {
                     &[(layer as u32) * PT_FACE_STRIDE as u32],
                 );
                 tp.set_bind_group(1, &self.atlas_bg, &[]);
-                for (pos, gpu) in visible.iter().copied() {
+                for (_pos, gpu) in visible.iter().copied() {
                     if let Some(m) = &gpu.water {
-                        if !chunk_in_range(*pos, l.pos, l.range) {
+                        if !chunk_in_range(gpu, l.pos, l.range) {
                             continue;
                         }
                         tp.set_vertex_buffer(0, m.vbuf.slice(..));
@@ -481,8 +487,8 @@ impl Renderer {
             // Opaque terrain (frustum-culled)
             let planes = frustum_planes(&f.view_proj);
             pass.set_pipeline(&self.chunk_pipeline);
-            for (pos, gpu) in visible.iter().copied() {
-                if !chunk_visible(&planes, *pos) {
+            for (_pos, gpu) in visible.iter().copied() {
+                if !chunk_visible(&planes, gpu, f.cam_pos) {
                     continue;
                 }
                 if let Some(m) = &gpu.opaque {
@@ -501,8 +507,8 @@ impl Renderer {
 
             // Water
             pass.set_pipeline(&self.water_pipeline);
-            for (pos, gpu) in visible.iter().copied() {
-                if !chunk_visible(&planes, *pos) {
+            for (_pos, gpu) in visible.iter().copied() {
+                if !chunk_visible(&planes, gpu, f.cam_pos) {
                     continue;
                 }
                 if let Some(m) = &gpu.water {

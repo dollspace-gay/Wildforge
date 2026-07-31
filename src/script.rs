@@ -10,18 +10,22 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 
-use rhai::{AST, Dynamic, Engine, FuncArgs, Scope};
+use rhai::{AST, Dynamic, Engine, FuncArgs, Map, Scope};
 
+use crate::planet::{
+    BlockPos, Direction6, EntityPos, Face, SurfacePos, geodesic_distance, great_circle_bearing,
+    step6,
+};
 use crate::world::World;
 
 /// Deferred world mutations queued by scripts during an event, applied by the
 /// game loop afterwards (scripts never hold `&mut World`).
 pub enum Cmd {
-    SetBlock(i32, i32, i32, String),
+    SetBlock(BlockPos, String),
     Give(String, u32),
     Hud(String),
     Sound(String),
-    SpawnAnimal(String, f32, f32, f32),
+    SpawnAnimal(String, EntityPos),
 }
 
 pub struct ScriptMod {
@@ -70,6 +74,58 @@ fn with_world<R>(f: impl FnOnce(&World) -> R, default: R) -> R {
     })
 }
 
+fn block_pos(face: &str, u: i64, y: i64, v: i64) -> Option<BlockPos> {
+    BlockPos::new(
+        Face::from_name(face)?,
+        u16::try_from(u).ok()?,
+        u8::try_from(y).ok()?,
+        u16::try_from(v).ok()?,
+    )
+    .ok()
+}
+
+fn surface_pos(face: &str, u: i64, v: i64) -> Option<SurfacePos> {
+    SurfacePos::new(
+        Face::from_name(face)?,
+        u16::try_from(u).ok()?,
+        u16::try_from(v).ok()?,
+    )
+    .ok()
+}
+
+fn direction(value: &str) -> Option<Direction6> {
+    match value {
+        "east" => Some(Direction6::East),
+        "north" => Some(Direction6::North),
+        "west" => Some(Direction6::West),
+        "south" => Some(Direction6::South),
+        "up" => Some(Direction6::Up),
+        "down" => Some(Direction6::Down),
+        _ => None,
+    }
+}
+
+fn pos_map(pos: BlockPos, direction: Direction6) -> Map {
+    let mut map = Map::new();
+    map.insert("face".into(), pos.face().name().into());
+    map.insert("u".into(), i64::from(pos.u()).into());
+    map.insert("y".into(), i64::from(pos.y()).into());
+    map.insert("v".into(), i64::from(pos.v()).into());
+    map.insert(
+        "direction".into(),
+        match direction {
+            Direction6::East => "east",
+            Direction6::North => "north",
+            Direction6::West => "west",
+            Direction6::South => "south",
+            Direction6::Up => "up",
+            Direction6::Down => "down",
+        }
+        .into(),
+    );
+    map
+}
+
 impl ScriptHost {
     pub fn new() -> ScriptHost {
         let queue: Rc<RefCell<Vec<Cmd>>> = Rc::new(RefCell::new(Vec::new()));
@@ -84,24 +140,70 @@ impl ScriptHost {
         engine.set_max_expr_depths(64, 64);
 
         let q = queue.clone();
-        engine.register_fn("set_block", move |x: i64, y: i64, z: i64, block: &str| {
-            q.borrow_mut()
-                .push(Cmd::SetBlock(x as i32, y as i32, z as i32, block.into()));
+        engine.register_fn(
+            "set_block",
+            move |face: &str, u: i64, y: i64, v: i64, block: &str| {
+                if let Some(pos) = block_pos(face, u, y, v) {
+                    q.borrow_mut().push(Cmd::SetBlock(pos, block.into()));
+                }
+            },
+        );
+        engine.register_fn(
+            "get_block",
+            |face: &str, u: i64, y: i64, v: i64| -> String {
+                let Some(pos) = block_pos(face, u, y, v) else {
+                    return String::new();
+                };
+                with_world(
+                    |w| w.reg.block(w.get_block_at(pos)).name.clone(),
+                    String::new(),
+                )
+            },
+        );
+        engine.register_fn("surface_height", |face: &str, u: i64, v: i64| -> i64 {
+            let Some(surface) = surface_pos(face, u, v) else {
+                return -1;
+            };
+            with_world(|w| i64::from(w.surface_height_at(surface)), -1)
         });
-        engine.register_fn("get_block", |x: i64, y: i64, z: i64| -> String {
-            with_world(
-                |w| {
-                    w.reg
-                        .block(w.get_block(x as i32, y as i32, z as i32))
-                        .name
-                        .clone()
-                },
-                String::new(),
-            )
-        });
-        engine.register_fn("surface_height", |x: i64, z: i64| -> i64 {
-            with_world(|w| w.surface_height(x as i32, z as i32) as i64, 0)
-        });
+        engine.register_fn(
+            "neighbor",
+            |face: &str, u: i64, y: i64, v: i64, heading: &str| -> Map {
+                let Some(pos) = block_pos(face, u, y, v) else {
+                    return Map::new();
+                };
+                let Some(heading) = direction(heading) else {
+                    return Map::new();
+                };
+                step6(pos, heading)
+                    .map(|step| pos_map(step.pos, step.direction))
+                    .unwrap_or_default()
+            },
+        );
+        engine.register_fn(
+            "surface_distance",
+            |face_a: &str, u_a: i64, v_a: i64, face_b: &str, u_b: i64, v_b: i64| -> f64 {
+                let Some(a) = surface_pos(face_a, u_a, v_a) else {
+                    return -1.0;
+                };
+                let Some(b) = surface_pos(face_b, u_b, v_b) else {
+                    return -1.0;
+                };
+                geodesic_distance(a.center(), b.center())
+            },
+        );
+        engine.register_fn(
+            "surface_bearing",
+            |face_a: &str, u_a: i64, v_a: i64, face_b: &str, u_b: i64, v_b: i64| -> f64 {
+                let Some(a) = surface_pos(face_a, u_a, v_a) else {
+                    return f64::NAN;
+                };
+                let Some(b) = surface_pos(face_b, u_b, v_b) else {
+                    return f64::NAN;
+                };
+                great_circle_bearing(a.center(), b.center()).unwrap_or(f64::NAN)
+            },
+        );
         let q = queue.clone();
         engine.register_fn("give", move |item: &str, count: i64| {
             q.borrow_mut()
@@ -118,13 +220,19 @@ impl ScriptHost {
         let q = queue.clone();
         engine.register_fn(
             "spawn_animal",
-            move |species: &str, x: i64, y: i64, z: i64| {
-                q.borrow_mut().push(Cmd::SpawnAnimal(
-                    species.into(),
-                    x as f32 + 0.5,
-                    y as f32,
-                    z as f32 + 0.5,
-                ));
+            move |species: &str, face: &str, u: i64, y: i64, v: i64| {
+                let Some(block) = block_pos(face, u, y, v) else {
+                    return;
+                };
+                let Ok(pos) = EntityPos::new(
+                    block.face(),
+                    f32::from(block.u()) + 0.5,
+                    f32::from(block.y()),
+                    f32::from(block.v()) + 0.5,
+                ) else {
+                    return;
+                };
+                q.borrow_mut().push(Cmd::SpawnAnimal(species.into(), pos));
             },
         );
         let cur = current.clone();

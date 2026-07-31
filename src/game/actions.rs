@@ -73,12 +73,11 @@ impl Game {
 
     /// Read the country at a spot and toast it: the prospector's
     /// verdict, shared by pick strikes and standing survey cairns.
-    /// Compass octant of a world-space offset ("north" is -z).
-    pub(super) fn octant(d: (i32, i32)) -> &'static str {
-        if d == (0, 0) {
+    /// Compass octant of a great-circle bearing (clockwise from local north).
+    pub(super) fn octant_bearing(bearing: Option<f64>) -> &'static str {
+        let Some(bearing) = bearing else {
             return "here";
-        }
-        let a = (d.0 as f32).atan2(-(d.1 as f32)).to_degrees();
+        };
         let names = [
             "north",
             "northeast",
@@ -89,18 +88,16 @@ impl Game {
             "west",
             "northwest",
         ];
-        names[(((a + 382.5) / 45.0) as usize) % 8]
+        names[((bearing.to_degrees() + 22.5).rem_euclid(360.0) / 45.0) as usize]
     }
 
     /// Commit the sign editor: write the entity (host) or send it
     /// (guest), then return to play.
-    pub(super) fn commit_sign(&mut self, pos: (i32, i32, i32)) {
+    pub(super) fn commit_sign(&mut self, pos: crate::planet::BlockPos) {
         let lines = self.ui_state.sign_lines.clone();
         if let Some(rc) = &self.multiplayer.remote {
             rc.client.send(&net::C2S::SetSign {
-                x: pos.0,
-                y: pos.1,
-                z: pos.2,
+                pos,
                 lines: lines.clone(),
             });
         }
@@ -109,42 +106,57 @@ impl Game {
         if self.multiplayer.remote.is_none() {
             self.server
                 .world
-                .insert_block_entity(pos, world::BlockEntity::Sign(world::SignState { lines }));
+                .insert_block_entity_at(pos, world::BlockEntity::Sign(world::SignState { lines }));
             if let Some(hst) = &mut self.multiplayer.host {
-                hst.broadcast_sign(pos, &self.ui_state.sign_lines);
+                hst.broadcast_sign_at(pos, &self.ui_state.sign_lines);
             }
         }
         self.set_screen(Screen::Playing);
     }
 
-    pub(super) fn toast_prospect(&mut self, bx: i32, bz: i32) {
-        let r = self.server.world.generator.prospect(bx, bz);
-        let octant = |d: (i32, i32)| -> &'static str { Self::octant(d) };
+    pub(super) fn toast_prospect(&mut self, pos: crate::planet::SurfacePos) {
+        let r = self.server.world.generator.prospect_at(pos);
         let mut lines: Vec<String> = Vec::new();
         match r.pluton {
-            Some((0, _)) => lines.push("Granite country underfoot.".into()),
-            Some((d, dir)) => lines.push(format!("Granite country ~{d} blocks {}.", octant(dir))),
+            Some(hit) if hit.distance == 0 => lines.push("Granite country underfoot.".into()),
+            Some(hit) => lines.push(format!(
+                "Granite country ~{} blocks {}.",
+                hit.distance,
+                Self::octant_bearing(hit.bearing)
+            )),
             None => lines.push("No batholith in the pick's reach.".into()),
         }
-        if let Some((d, dir)) = r.volcano {
-            if d == 0 {
+        if let Some(hit) = r.volcano {
+            if hit.distance == 0 {
                 lines.push("Volcanic ground — you're standing on it.".into());
             } else {
-                lines.push(format!("Volcanic rock ~{d} blocks {}.", octant(dir)));
+                lines.push(format!(
+                    "Volcanic rock ~{} blocks {}.",
+                    hit.distance,
+                    Self::octant_bearing(hit.bearing)
+                ));
             }
         }
-        if let Some((d, dir)) = r.pipe {
-            if d == 0 {
+        if let Some(hit) = r.pipe {
+            if hit.distance == 0 {
                 lines.push("BLUE GROUND. A pipe under this very spot.".into());
             } else {
-                lines.push(format!("Blue ground! A pipe ~{d} blocks {}.", octant(dir)));
+                lines.push(format!(
+                    "Blue ground! A pipe ~{} blocks {}.",
+                    hit.distance,
+                    Self::octant_bearing(hit.bearing)
+                ));
             }
         }
-        if let Some((d, dir)) = r.geode {
-            if d == 0 {
+        if let Some(hit) = r.geode {
+            if hit.distance == 0 {
                 lines.push("A hollow ring underfoot — geode.".into());
             } else {
-                lines.push(format!("A hollow ring ~{d} blocks {}.", octant(dir)));
+                lines.push(format!(
+                    "A hollow ring ~{} blocks {}.",
+                    hit.distance,
+                    Self::octant_bearing(hit.bearing)
+                ));
             }
         }
         for l in lines {
@@ -198,7 +210,8 @@ impl Game {
             self.take_ammo("arrow")
         };
         let Some(arrow_id) = arrow_id else { return };
-        let dir = self.camera.forward();
+        let dir = self.camera.local_forward();
+        let eye = self.player.eye();
         if let Some(r) = &self.multiplayer.remote {
             r.client.send(&net::C2S::FireProjectile {
                 direction: dir,
@@ -211,7 +224,10 @@ impl Game {
             return;
         }
         self.server.world.spawn_projectile(mobs::Projectile {
-            pos: self.camera.pos + dir * 0.4,
+            pos: eye
+                .translated(dir * 0.4)
+                .expect("projectile muzzle stays near the player")
+                .pos,
             vel: dir * bow.speed * (0.6 + 0.4 * charge),
             tile: reg.item(arrow_id).icon,
             damage: bow.damage * (0.45 + 0.55 * charge),
@@ -229,26 +245,19 @@ impl Game {
 
     /// Nearest mob under the crosshair within reach, unless a solid block
     /// sits in front of it.
-    pub(super) fn mob_in_crosshair(&self, hit: &Option<raycast::Hit>) -> Option<usize> {
-        let origin = self.camera.pos;
-        let dir = self.camera.forward();
+    pub(super) fn mob_in_crosshair(&self, hit: &Option<raycast::PlanetHit>) -> Option<usize> {
+        let origin = self.player.eye();
+        let dir = self.camera.local_forward();
         // A wall in the way shields the mob behind it (approximate the
         // wall distance by its block center).
         let wall_t = hit
             .as_ref()
-            .map(|h| {
-                let c = Vec3::new(
-                    h.block.0 as f32 + 0.5,
-                    h.block.1 as f32 + 0.5,
-                    h.block.2 as f32 + 0.5,
-                );
-                (c - origin).length() + 0.5
-            })
+            .map(|h| origin.distance_to(h.block.entity_center()) + 0.5)
             .unwrap_or(REACH);
         let mut best: Option<(usize, f32)> = None;
         for (i, m) in self.server.world.mobs().iter().enumerate() {
             let def = &self.content.reg.animals[m.species];
-            if let Some(t) = m.ray_hit(def, origin, dir, REACH.min(wall_t))
+            if let Some(t) = m.ray_hit_from(def, origin, dir, REACH.min(wall_t))
                 && best.is_none_or(|(_, bt)| t < bt)
             {
                 best = Some((i, t));
@@ -271,12 +280,9 @@ impl Game {
             if def.hostile {
                 // Where a warden falls, the wild reclaims its own —
                 // the death site banks bloom (dryads leave a sapling).
-                self.server.world.wild_falls(
-                    &def.name,
-                    m.pos.x.floor() as i32,
-                    m.pos.y.floor() as i32,
-                    m.pos.z.floor() as i32,
-                );
+                if let Some(pos) = m.pos.block() {
+                    self.server.world.wild_falls_at(&def.name, pos);
+                }
             }
             if !def.hostile && !def.vehicle && !def.name.ends_with(":carcass") {
                 // The wild counts its dead — wardens are not
@@ -285,18 +291,35 @@ impl Game {
                 // Vehicles are lumber; the wild never mourns a boat.
                 // A carcass is already counted: the predator's kill
                 // was nature's own.
-                let (mx, mz) = (m.pos.x.floor() as i32, m.pos.z.floor() as i32);
-                self.server
-                    .world
-                    .add_ire_at(mx, mz, if m.tamed { 1.0 } else { 2.0 });
+                self.server.world.add_ire_at_surface(
+                    crate::planet::SurfacePos::new(
+                        m.pos.face(),
+                        m.pos.u().floor() as u16,
+                        m.pos.v().floor() as u16,
+                    )
+                    .expect("mob death has a canonical surface"),
+                    if m.tamed { 1.0 } else { 2.0 },
+                );
             }
             self.sfx(Sfx::MobDeath(def.sound_pitch));
-            let (tile, at) = (def.tile, m.pos + Vec3::new(0.0, 0.5, 0.0));
+            let (tile, at) = (
+                def.tile,
+                m.pos
+                    .translated(Vec3::new(0.0, 0.5, 0.0))
+                    .expect("death effect stays beside the mob")
+                    .pos
+                    .render_pos(),
+            );
             self.juice_burst(at, tile, 12, 2.0);
             // A laden carrier spills its pack where it falls.
             if let Some(cargo) = &m.cargo {
                 for st in cargo.iter().flatten() {
-                    self.drop_stack_at(*st, m.pos + Vec3::new(0.0, 0.6, 0.0));
+                    let at = m
+                        .pos
+                        .translated(Vec3::new(0.0, 0.6, 0.0))
+                        .expect("cargo spills beside its carrier")
+                        .pos;
+                    self.drop_stack_at(*st, at);
                 }
             }
             if m.growth < 1.0 {
@@ -317,7 +340,10 @@ impl Game {
                 let a = self.rand01() * std::f32::consts::TAU;
                 let v = Vec3::new(a.cos() * 1.2, 2.5, a.sin() * 1.2);
                 self.interaction.items.push(ItemEntity::new(
-                    m.pos + Vec3::new(0.0, def.height * 0.5, 0.0),
+                    m.pos
+                        .translated(Vec3::new(0.0, def.height * 0.5, 0.0))
+                        .expect("mob loot begins beside the mob")
+                        .pos,
                     v,
                     *item,
                     n,
@@ -329,9 +355,10 @@ impl Game {
                     "on_animal_killed",
                     (
                         def.name.clone(),
-                        m.pos.x as i64,
-                        m.pos.y as i64,
-                        m.pos.z as i64,
+                        m.pos.face().name().to_string(),
+                        m.pos.u().floor() as i64,
+                        m.pos.y().floor() as i64,
+                        m.pos.v().floor() as i64,
                     ),
                 );
                 self.apply_script_cmds();
@@ -342,10 +369,10 @@ impl Game {
     /// Mining and placing while playing.
     pub(super) fn interact(&mut self, dt: f32) {
         let reg = self.content.reg.clone();
-        let hit = raycast::raycast(
+        let hit = raycast::raycast_at(
             &self.server.world,
-            self.camera.pos,
-            self.camera.forward(),
+            self.player.eye(),
+            self.camera.local_forward(),
             REACH,
         );
         let held = self.inventory.slots[self.input.hotbar_sel].map(|s| s.item);
@@ -356,21 +383,27 @@ impl Game {
             && held == reg.item_id("base:boat")
             && self.input.right_held
             && self.input.action_cooldown <= 0.0
-            && let Some(w) = raycast::raycast_water(
+            && let Some(w) = raycast::raycast_water_at(
                 &self.server.world,
-                self.camera.pos,
-                self.camera.forward(),
+                self.player.eye(),
+                self.camera.local_forward(),
                 REACH,
             )
         {
-            let (x, y, z) = w.block;
-            if reg.is_water(self.server.world.get_block(x, y, z))
+            let pos = w.block;
+            if reg.is_water(self.server.world.get_block_at(pos))
                 && let Some(bi) = reg.animal_id("base:boat")
                 && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
             {
-                let mut boat = mobs::Mob::new(
+                let mut boat = mobs::Mob::new_at(
                     bi,
-                    Vec3::new(x as f32 + 0.5, y as f32 + 0.8, z as f32 + 0.5),
+                    crate::planet::EntityPos::new(
+                        pos.face(),
+                        f32::from(pos.u()) + 0.5,
+                        f32::from(pos.y()) + 0.8,
+                        f32::from(pos.v()) + 0.5,
+                    )
+                    .expect("a launched boat is inside its water cell"),
                     self.camera.yaw,
                 );
                 boat.health = reg.animals[bi].health;
@@ -387,15 +420,15 @@ impl Game {
         if held.is_some() && held == reg.item_id("base:bucket") {
             if self.input.right_held
                 && self.input.action_cooldown <= 0.0
-                && let Some(w) = raycast::raycast_water(
+                && let Some(w) = raycast::raycast_water_at(
                     &self.server.world,
-                    self.camera.pos,
-                    self.camera.forward(),
+                    self.player.eye(),
+                    self.camera.local_forward(),
                     REACH,
                 )
             {
-                let (x, y, z) = w.block;
-                let b = self.server.world.get_block(x, y, z);
+                let pos = w.block;
+                let b = self.server.world.get_block_at(pos);
                 // Either fluid fills the bucket — a full cell only.
                 if reg.fluid_volume(b) == Some(8) {
                     let full_item = if reg.is_lava(b) {
@@ -404,9 +437,9 @@ impl Game {
                         reg.item_id("base:bucket_water")
                     };
                     if let Some(r) = &self.multiplayer.remote {
-                        r.client.send(&net::C2S::Scoop { x, y, z });
+                        r.client.send(&net::C2S::Scoop { pos });
                     } else {
-                        self.server.world.set_block(x, y, z, AIR);
+                        self.server.world.set_block_at(pos, AIR);
                     }
                     if let Some(full) = full_item {
                         self.inventory.slots[self.input.hotbar_sel] =
@@ -423,15 +456,14 @@ impl Game {
                 && self.input.action_cooldown <= 0.0
                 && let Some(h) = &hit
             {
-                let (x, y, z) = h.adjacent;
-                if self.server.world.get_block(x, y, z) == AIR
-                    && !self.player.overlaps_block(x, y, z)
+                let pos = h.adjacent;
+                if self.server.world.get_block_at(pos) == AIR && !self.player.overlaps_block_at(pos)
                 {
                     if let Some(r) = &self.multiplayer.remote {
-                        r.client.send(&net::C2S::Place { x, y, z });
+                        r.client.send(&net::C2S::Place { pos });
                     } else {
                         let water = reg.water_block(0);
-                        self.server.world.place_block((x, y, z), water);
+                        self.server.world.place_block_at(pos, water);
                     }
                     if let Some(empty) = reg.item_id("base:bucket") {
                         self.inventory.slots[self.input.hotbar_sel] =
@@ -448,15 +480,14 @@ impl Game {
                 && self.input.action_cooldown <= 0.0
                 && let Some(h) = &hit
             {
-                let (x, y, z) = h.adjacent;
-                if self.server.world.get_block(x, y, z) == AIR
-                    && !self.player.overlaps_block(x, y, z)
+                let pos = h.adjacent;
+                if self.server.world.get_block_at(pos) == AIR && !self.player.overlaps_block_at(pos)
                 {
                     if let Some(r) = &self.multiplayer.remote {
-                        r.client.send(&net::C2S::Place { x, y, z });
+                        r.client.send(&net::C2S::Place { pos });
                     } else {
                         let lava = reg.lava_for_volume(8);
-                        self.server.world.place_block((x, y, z), lava);
+                        self.server.world.place_block_at(pos, lava);
                     }
                     if let Some(empty) = reg.item_id("base:bucket") {
                         self.inventory.slots[self.input.hotbar_sel] =
@@ -503,7 +534,7 @@ impl Game {
                 if wait <= 0.0 {
                     bite = 1.4;
                     let tile = reg.block(reg.water_block(0)).tiles[0];
-                    self.juice_burst(bobber, tile, 8, 1.4);
+                    self.juice_burst(bobber.render_pos(), tile, 8, 1.4);
                     self.sfx(Sfx::Splash);
                 }
             }
@@ -515,7 +546,7 @@ impl Game {
         let brush_target = hit.as_ref().map(|h| h.block).filter(|t| {
             brush_held
                 && reg
-                    .block(self.server.world.get_block(t.0, t.1, t.2))
+                    .block(self.server.world.get_block_at(*t))
                     .brush
                     .is_some()
         });
@@ -531,28 +562,23 @@ impl Game {
                 if let Some(rc) = &self.multiplayer.remote {
                     // The host rolls the find and Gives it straight to
                     // us; the BlockSet echo swaps the remnant out.
-                    rc.client.send(&net::C2S::BrushBlock {
-                        x: target.0,
-                        y: target.1,
-                        z: target.2,
-                    });
+                    rc.client.send(&net::C2S::BrushBlock { pos: target });
                     if !self.creative {
                         self.inventory.wear_tool(&reg, self.input.hotbar_sel);
                     }
                     return;
                 }
                 let mut r = self.rng;
-                let found = self
-                    .server
-                    .world
-                    .brush_block(target.0, target.1, target.2, &mut r);
+                let found = self.server.world.brush_block_at(target, &mut r);
                 self.rng = r;
                 if let Some(stack) = found {
-                    let center = Vec3::new(
-                        target.0 as f32 + 0.5,
-                        target.1 as f32 + 0.6,
-                        target.2 as f32 + 0.5,
-                    );
+                    let center = crate::planet::EntityPos::new(
+                        target.face(),
+                        f32::from(target.u()) + 0.5,
+                        f32::from(target.y()) + 0.6,
+                        f32::from(target.v()) + 0.5,
+                    )
+                    .expect("brushed item begins inside its source cell");
                     let mut ent =
                         ItemEntity::new(center, Vec3::new(0.0, 2.0, 0.0), stack.item, stack.count);
                     // Old tools surface as worn as they were buried.
@@ -576,7 +602,7 @@ impl Game {
         // bare-hand turns at the quern. The def decides the tool.
         let anvil_target = hit.as_ref().map(|h| h.block).filter(|t| {
             let station = reg
-                .block(self.server.world.get_block(t.0, t.1, t.2))
+                .block(self.server.world.get_block_at(*t))
                 .interaction
                 .clone();
             let Some(station) = station else { return false };
@@ -585,7 +611,7 @@ impl Game {
             if world::station_powered(&station) {
                 return false;
             }
-            let rested = match self.server.world.block_entity(t) {
+            let rested = match self.server.world.block_entity_at(t) {
                 Some(world::BlockEntity::Anvil(a)) => a.bloom,
                 _ => None,
             };
@@ -612,11 +638,14 @@ impl Game {
             if self.interaction.anvil_work >= 2.0 {
                 self.interaction.anvil_work = 0.0;
                 self.sfx(Sfx::Break(BreakMat::Stone));
-                let top = Vec3::new(
-                    target.0 as f32 + 0.5,
-                    target.1 as f32 + 1.05,
-                    target.2 as f32 + 0.5,
-                );
+                let top_pos = crate::planet::EntityPos::new(
+                    target.face(),
+                    f32::from(target.u()) + 0.5,
+                    f32::from(target.y()) + 1.05,
+                    f32::from(target.v()) + 0.5,
+                )
+                .expect("station effects remain above their source");
+                let top = top_pos.render_pos();
                 if self.presentation.juice {
                     if held.is_some_and(|i| reg.item(i).hammer) {
                         // The promised sparks: embers ring off the bloom.
@@ -627,7 +656,7 @@ impl Game {
                     } else {
                         let v = self.vary();
                         self.sfx_vol(Sfx::Grind, v.min(1.0));
-                        let b = self.server.world.get_block(target.0, target.1, target.2);
+                        let b = self.server.world.get_block_at(target);
                         let tile = reg.block(b).tiles[2];
                         self.juice_puff(top, tile, 3);
                     }
@@ -637,17 +666,18 @@ impl Game {
                 }
                 if let Some(rc) = &self.multiplayer.remote {
                     // The host counts strikes and Gives the bar.
-                    rc.client.send(&net::C2S::AnvilStrike {
-                        x: target.0,
-                        y: target.1,
-                        z: target.2,
-                    });
-                } else if let Some(out) = self.server.world.anvil_strike(target) {
-                    let center = Vec3::new(
-                        target.0 as f32 + 0.5,
-                        target.1 as f32 + 1.0,
-                        target.2 as f32 + 0.5,
-                    );
+                    rc.client.send(&net::C2S::AnvilStrike { pos: target });
+                } else {
+                    let Some(out) = self.server.world.anvil_strike_at(target) else {
+                        return;
+                    };
+                    let center = crate::planet::EntityPos::new(
+                        target.face(),
+                        f32::from(target.u()) + 0.5,
+                        f32::from(target.y()) + 1.0,
+                        f32::from(target.v()) + 0.5,
+                    )
+                    .expect("worked item remains above its station");
                     self.interaction.items.push(ItemEntity::new(
                         center,
                         Vec3::new(0.0, 2.0, 0.0),
@@ -685,7 +715,11 @@ impl Game {
                     if self.presentation.juice {
                         self.presentation.hitch = 0.06;
                     }
-                    let at = mob_pos + Vec3::new(0.0, 0.5, 0.0);
+                    let at = mob_pos
+                        .translated(Vec3::new(0.0, 0.5, 0.0))
+                        .expect("mob hit effect stays beside the mob")
+                        .pos
+                        .render_pos();
                     self.juice_burst(at, reg.animals[sp].tile, 5, 1.6);
                     self.sfx(Sfx::MobHurt(pitch));
                     self.survival.hunger = (self.survival.hunger - 0.01).max(0.0);
@@ -698,12 +732,16 @@ impl Game {
                 let def = reg.animals[sp].clone();
                 if let Some(mob) = self.server.world.mob_mut(mi) {
                     let dmg = held.map(|i| reg.item(i).damage).unwrap_or(1.0);
-                    mob.hurt(&def, dmg, self.camera.pos);
+                    mob.hurt(&def, dmg, self.player.eye());
                 }
                 if self.presentation.juice {
                     self.presentation.hitch = 0.06;
                 }
-                let at = mob_pos + Vec3::new(0.0, 0.5, 0.0);
+                let at = mob_pos
+                    .translated(Vec3::new(0.0, 0.5, 0.0))
+                    .expect("mob hit effect stays beside the mob")
+                    .pos
+                    .render_pos();
                 self.juice_burst(at, def.tile, 5, 1.6);
                 self.sfx(Sfx::MobHurt(pitch));
                 self.survival.hunger = (self.survival.hunger - 0.01).max(0.0);
@@ -718,7 +756,7 @@ impl Game {
         if self.input.left_held {
             if let Some(h) = &hit {
                 let target = h.block;
-                let b = self.server.world.get_block(target.0, target.1, target.2);
+                let b = self.server.world.get_block_at(target);
                 let hardness = if self.creative {
                     // Creative breaks anything instantly — except the
                     // unbreakable (the world's floor stays a floor).
@@ -738,7 +776,13 @@ impl Game {
                             let ok = self.content.scripts.dispatch(
                                 &self.server.world,
                                 "on_block_break",
-                                (target.0 as i64, target.1 as i64, target.2 as i64, name),
+                                (
+                                    target.face().name().to_string(),
+                                    target.u() as i64,
+                                    target.y() as i64,
+                                    target.v() as i64,
+                                    name,
+                                ),
                             );
                             self.apply_script_cmds();
                             ok
@@ -749,20 +793,16 @@ impl Game {
                         if allow && self.multiplayer.remote.is_some() {
                             // Guests request; the echo applies the change.
                             if let Some(r) = &self.multiplayer.remote {
-                                r.client.send(&net::C2S::Break {
-                                    x: target.0,
-                                    y: target.1,
-                                    z: target.2,
-                                });
+                                r.client.send(&net::C2S::Break { pos: target });
                             }
                             self.survival.hunger = (self.survival.hunger - 0.008).max(0.0);
                             self.sfx(Sfx::Break(self.break_mat(b)));
-                            let center = Vec3::new(
-                                target.0 as f32 + 0.5,
-                                target.1 as f32 + 0.5,
-                                target.2 as f32 + 0.5,
+                            self.juice_burst(
+                                target.entity_center().render_pos(),
+                                self.content.reg.block(b).tiles[0],
+                                10,
+                                2.2,
                             );
-                            self.juice_burst(center, self.content.reg.block(b).tiles[0], 10, 2.2);
                             if !self.creative {
                                 self.inventory.wear_tool(&reg, self.input.hotbar_sel);
                             }
@@ -775,7 +815,7 @@ impl Game {
                             let result = self
                                 .server
                                 .world
-                                .break_block(
+                                .break_block_at(
                                     target,
                                     held,
                                     !self.creative && !sheared,
@@ -784,12 +824,12 @@ impl Game {
                                 .expect("mining target was validated before completion");
                             let b = result.block;
                             self.sfx(Sfx::Break(self.break_mat(b)));
-                            let center = Vec3::new(
-                                target.0 as f32 + 0.5,
-                                target.1 as f32 + 0.5,
-                                target.2 as f32 + 0.5,
+                            self.juice_burst(
+                                target.entity_center().render_pos(),
+                                self.content.reg.block(b).tiles[0],
+                                10,
+                                2.2,
                             );
-                            self.juice_burst(center, self.content.reg.block(b).tiles[0], 10, 2.2);
                             if !self.creative {
                                 self.inventory.wear_tool(&reg, self.input.hotbar_sel);
                             }
@@ -798,11 +838,7 @@ impl Game {
                                 && !self.creative
                                 && let Some(item) = reg.item_id(&reg.block(b).name)
                             {
-                                let center = Vec3::new(
-                                    target.0 as f32 + 0.5,
-                                    target.1 as f32 + 0.3,
-                                    target.2 as f32 + 0.5,
-                                );
+                                let center = target.entity_at_height(0.3);
                                 self.interaction.items.push(ItemEntity::new(
                                     center,
                                     Vec3::new(0.0, 2.2, 0.0),
@@ -811,11 +847,7 @@ impl Game {
                                 ));
                             }
                             if let Some(drop) = result.drop {
-                                let center = Vec3::new(
-                                    target.0 as f32 + 0.5,
-                                    target.1 as f32 + 0.3,
-                                    target.2 as f32 + 0.5,
-                                );
+                                let center = target.entity_at_height(0.3);
                                 let a = self.rand01() * std::f32::consts::TAU;
                                 let v = Vec3::new(a.cos() * 1.2, 2.2, a.sin() * 1.2);
                                 self.interaction
@@ -827,11 +859,7 @@ impl Game {
                                 && !self.creative
                                 && self.rand01() < ch
                             {
-                                let center = Vec3::new(
-                                    target.0 as f32 + 0.5,
-                                    target.1 as f32 + 0.3,
-                                    target.2 as f32 + 0.5,
-                                );
+                                let center = target.entity_at_height(0.3);
                                 let a = self.rand01() * std::f32::consts::TAU;
                                 let v = Vec3::new(a.cos() * 1.2, 2.2, a.sin() * 1.2);
                                 self.interaction
@@ -845,12 +873,12 @@ impl Game {
                         self.interaction.breaking = Some((target, progress));
                         // Chips fly as each crack stage lands.
                         if (progress * 4.0) as i32 > stage_before {
-                            let center = Vec3::new(
-                                target.0 as f32 + 0.5,
-                                target.1 as f32 + 0.5,
-                                target.2 as f32 + 0.5,
+                            self.juice_burst(
+                                target.entity_center().render_pos(),
+                                self.content.reg.block(b).tiles[0],
+                                2,
+                                1.2,
                             );
-                            self.juice_burst(center, self.content.reg.block(b).tiles[0], 2, 1.2);
                         }
                         // Keep the arm swinging while we chip away.
                         if self.presentation.swing <= 0.0 {
@@ -1001,8 +1029,8 @@ impl Game {
             if held == ember
                 && let Some(hb) = &hit
             {
-                let (bx, by, bz) = hb.block;
-                let tb = self.server.world.get_block(bx, by, bz);
+                let pos = hb.block;
+                let tb = self.server.world.get_block_at(pos);
                 let is_log = reg.tags.get("base:logs").is_some_and(|l| {
                     reg.item_id(&reg.block(tb).name)
                         .is_some_and(|i| l.contains(&i))
@@ -1010,13 +1038,9 @@ impl Game {
                 if is_log {
                     if let Some(rc) = &self.multiplayer.remote {
                         self.inventory.take_one(self.input.hotbar_sel);
-                        rc.client.send(&net::C2S::LightClamp {
-                            x: bx,
-                            y: by,
-                            z: bz,
-                        });
+                        rc.client.send(&net::C2S::LightClamp { pos });
                     } else {
-                        match self.server.world.try_light_clamp(bx, by, bz) {
+                        match self.server.world.try_light_clamp_at(pos) {
                             Ok(n) => {
                                 self.inventory.take_one(self.input.hotbar_sel);
                                 self.sfx(Sfx::Bolt(0.8));
@@ -1036,10 +1060,10 @@ impl Game {
             if held == reg.item_id("base:prospect_pick")
                 && let Some(hb) = &hit
             {
-                let (bx, by, bz) = hb.block;
-                let tb = self.server.world.get_block(bx, by, bz);
+                let pos = hb.block;
+                let tb = self.server.world.get_block_at(pos);
                 if self.server.world.reg.is_solid(tb) {
-                    self.toast_prospect(bx, bz);
+                    self.toast_prospect(pos.surface());
                     if !self.creative {
                         self.inventory.wear_tool(&reg, self.input.hotbar_sel);
                     }
@@ -1053,14 +1077,19 @@ impl Game {
                 && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
             {
                 let item = held.unwrap();
-                let dir = self.camera.forward();
+                let dir = self.camera.local_forward();
                 if let Some(rc) = &self.multiplayer.remote {
                     rc.client.send(&net::C2S::FireProjectile {
                         direction: dir,
                         charge: 1.0,
                     });
                 } else {
-                    let pos = self.camera.pos + dir * 0.4;
+                    let pos = self
+                        .player
+                        .eye()
+                        .translated(dir * 0.4)
+                        .expect("throwing muzzle stays near the player")
+                        .pos;
                     let vel = dir * speed;
                     let tile = reg.item(item).icon;
                     self.server.world.spawn_projectile(mobs::Projectile {
@@ -1088,13 +1117,13 @@ impl Game {
             // bearing would shadow PLANTING the thing — the whole
             // restoration verb, silently gone.
             let at_heart = hit.as_ref().is_some_and(|h| {
-                reg.block(self.server.world.get_block(h.block.0, h.block.1, h.block.2))
+                reg.block(self.server.world.get_block_at(h.block))
                     .interaction
                     .as_deref()
                     == Some("heart")
             });
             if !at_heart && held.is_some_and(|i| world::seed_nature(&reg.item(i).name).is_some()) {
-                let line = self.server.world.seed_bearing(self.player.pos);
+                let line = self.server.world.seed_bearing_at(self.player.pos);
                 self.toast(line);
                 self.sfx(Sfx::Click);
                 self.input.action_cooldown = 0.6;
@@ -1122,7 +1151,7 @@ impl Game {
             match self.interaction.fishing.take() {
                 Some((bobber, _, bite)) if bite > 0.0 => {
                     // The strike: a real fish first, thin luck second.
-                    let caught = self.server.world.catch_fish_near(bobber, 6.0).is_some()
+                    let caught = self.server.world.catch_fish_near_at(bobber, 6.0).is_some()
                         || self.rand01() < 0.25;
                     if caught {
                         if let Some(fish) = reg.item_id("base:raw_fish") {
@@ -1139,28 +1168,14 @@ impl Game {
                 }
                 Some(_) => {} // reeled in empty
                 None => {
-                    let eye = self.camera.pos;
-                    let dir = self.camera.forward();
-                    let mut cast = None;
-                    for i in 1..=56 {
-                        let p = eye + dir * (i as f32 * 0.25);
-                        let b = self.server.world.get_block(
-                            p.x.floor() as i32,
-                            p.y.floor() as i32,
-                            p.z.floor() as i32,
-                        );
-                        if reg.is_water(b) {
-                            cast = Some(Vec3::new(
-                                p.x.floor() + 0.5,
-                                p.y.floor() + 0.9,
-                                p.z.floor() + 0.5,
-                            ));
-                            break;
-                        }
-                        if reg.is_solid(b) {
-                            break;
-                        }
-                    }
+                    let cast = raycast::raycast_water_at(
+                        &self.server.world,
+                        self.player.eye(),
+                        self.camera.local_forward(),
+                        14.0,
+                    )
+                    .filter(|hit| reg.is_water(self.server.world.get_block_at(hit.block)))
+                    .map(|hit| hit.block.entity_at_height(0.9));
                     match cast {
                         Some(at) => {
                             self.interaction.fishing = Some((at, 3.0 + self.rand01() * 9.0, 0.0));
@@ -1178,12 +1193,10 @@ impl Game {
             && !held_is_food
             && let Some(h) = &hit
         {
-            let tb = self.server.world.get_block(h.block.0, h.block.1, h.block.2);
+            let tb = self.server.world.get_block_at(h.block);
             // Harvestable blocks (berry bushes).
             if let Some((item, n, becomes)) = reg.block(tb).harvest {
-                self.server
-                    .world
-                    .set_block(h.block.0, h.block.1, h.block.2, becomes);
+                self.server.world.set_block_at(h.block, becomes);
                 let left = self.inventory.add(&reg, item, n);
                 if left > 0 {
                     self.drop_stack(ItemStack::new(&reg, item, left));
@@ -1196,12 +1209,7 @@ impl Game {
             // pen, guano from the cave, compost from the heap.
             if let Some(hi) = held {
                 let v = world::soil::fertilizer_value(&reg.item(hi).name);
-                if v > 0
-                    && self
-                        .server
-                        .world
-                        .feed_soil(h.block.0, h.block.1, h.block.2, v)
-                {
+                if v > 0 && self.server.world.feed_soil_at(h.block, v) {
                     self.inventory.take_one(self.input.hotbar_sel);
                     self.sfx(Sfx::Place);
                     self.input.action_cooldown = 0.3;
@@ -1214,7 +1222,7 @@ impl Game {
             // burn cannot change hands halfway down a hillside.
             if held.is_some_and(|i| reg.item(i).striker) {
                 let f = h.adjacent;
-                if reg.block(tb).burns > 0 && self.server.world.light_fire(f.0, f.1, f.2, true) {
+                if reg.block(tb).burns > 0 && self.server.world.light_fire_at(f, true) {
                     self.inventory.wear_tool(&reg, self.input.hotbar_sel);
                     self.toast("It catches. It is yours now.".to_string());
                     self.sfx(Sfx::Place);
@@ -1234,10 +1242,8 @@ impl Game {
                 if name == "base:grass" || name == "base:dirt" {
                     // The till reads the ground it came from: grass-fed
                     // loam starts richer than bare dirt (soil.rs).
-                    let meta = self.server.world.till_meta(h.block.0, h.block.1, h.block.2);
-                    self.server
-                        .world
-                        .set_block_meta(h.block.0, h.block.1, h.block.2, farm, meta);
+                    let meta = self.server.world.till_meta_at(h.block);
+                    self.server.world.set_block_meta_at(h.block, farm, meta);
                     self.inventory.wear_tool(&reg, self.input.hotbar_sel);
                     self.sfx(Sfx::Place);
                     self.input.action_cooldown = 0.3;
@@ -1249,7 +1255,13 @@ impl Game {
                 let allow = self.content.scripts.dispatch(
                     &self.server.world,
                     "on_interact",
-                    (h.block.0 as i64, h.block.1 as i64, h.block.2 as i64, name),
+                    (
+                        h.block.face().name().to_string(),
+                        h.block.u() as i64,
+                        h.block.y() as i64,
+                        h.block.v() as i64,
+                        name,
+                    ),
                 );
                 self.apply_script_cmds();
                 if !allow {
@@ -1267,7 +1279,7 @@ impl Game {
                 }
                 Some("furnace") => {
                     self.input.right_held = false;
-                    self.server.world.ensure_block_entity(
+                    self.server.world.ensure_block_entity_at(
                         h.block,
                         world::BlockEntity::Furnace(Default::default()),
                     );
@@ -1277,14 +1289,10 @@ impl Game {
                 Some("chest") if self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.3;
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::OpenContainer {
-                            x: h.block.0,
-                            y: h.block.1,
-                            z: h.block.2,
-                        });
+                        rc.client.send(&net::C2S::OpenContainer { pos: h.block });
                         return;
                     }
-                    let e = self.server.world.ensure_block_entity(
+                    let e = self.server.world.ensure_block_entity_at(
                         h.block,
                         world::BlockEntity::Chest(Default::default()),
                     );
@@ -1292,7 +1300,7 @@ impl Game {
                         && c.wild_owned
                     {
                         c.wild_owned = false;
-                        self.server.world.add_ire_at(h.block.0, h.block.2, 1.0);
+                        self.server.world.add_ire_at_surface(h.block.surface(), 1.0);
                         self.toast("The wild keeps its trophies.".to_string());
                     }
                     self.set_screen(Screen::Chest(h.block));
@@ -1307,16 +1315,16 @@ impl Game {
                     // carry across the world to wake a dead country.
                     if !holding_seed
                         && let Some(seed) = reg.item_id(world::seed_of_form(world::heart_form(
-                            self.server.world.generator.biome(h.block.0, h.block.2),
+                            self.server.world.generator.biome_at(h.block.surface()),
                         )))
-                        && self.server.world.take_heart_cutting(h.block.0, h.block.2)
+                        && self.server.world.take_heart_cutting_at(h.block.surface())
                     {
                         let left = self.inventory.add(&reg, seed, 1);
                         if left > 0 {
                             self.drop_stack(ItemStack::new(&reg, seed, left));
                         }
                         // Taking from the wild is taking, even gently.
-                        self.server.world.add_ire_at(h.block.0, h.block.2, 1.0);
+                        self.server.world.add_ire_at_surface(h.block.surface(), 1.0);
                         self.toast(
                             "A cutting comes away in your hand. This country will \
                              remember that you took it."
@@ -1328,11 +1336,7 @@ impl Game {
                     if holding_seed {
                         // What you carry decides what wakes: its own
                         // kind reawakens, a stranger's replaces.
-                        match self
-                            .server
-                            .world
-                            .plant_heart_seed_from(h.block.0, h.block.1, h.block.2, carried)
-                        {
+                        match self.server.world.plant_heart_seed_from_at(h.block, carried) {
                             Some(refusal) => self.toast(refusal),
                             None => {
                                 self.inventory.take_one(self.input.hotbar_sel);
@@ -1352,11 +1356,11 @@ impl Game {
                     // walk away from.
                     let world = &self.server.world;
                     if world
-                        .heart_at(h.block.0, h.block.2)
+                        .heart_at_surface(h.block.surface())
                         .is_some_and(|hh| hh.stage == 0)
                     {
-                        let hp = world.heart_at(h.block.0, h.block.2).unwrap().pos;
-                        let (ready, total) = world.root_ground_ready(hp.0, hp.1, hp.2);
+                        let hp = world.heart_at_surface(h.block.surface()).unwrap().pos;
+                        let (ready, total) = world.root_ground_ready_at(hp);
                         let want = (total as f32 * crate::world::ROOT_READY_FRAC).ceil() as u32;
                         self.toast(if ready >= want {
                             "Nothing answers. The ground is living again, though. Bring it a cutting from a heart still awake."
@@ -1369,7 +1373,7 @@ impl Game {
                         self.sfx(Sfx::Click);
                         return;
                     }
-                    let line = match world.heart_at(h.block.0, h.block.2) {
+                    let line = match world.heart_at_surface(h.block.surface()) {
                         // It gave already. Saying so plainly is the
                         // point: the old silence read as a broken
                         // button rather than a spirit with nothing left
@@ -1393,11 +1397,7 @@ impl Game {
                     self.input.action_cooldown = 0.3;
                     // A ripened heap hands over its compost bare-handed;
                     // a fresh one eats greens item by item.
-                    if self
-                        .server
-                        .world
-                        .compost_take(h.block.0, h.block.1, h.block.2)
-                    {
+                    if self.server.world.compost_take_at(h.block) {
                         if let Some(c) = reg.item_id("base:compost") {
                             let left = self.inventory.add(&reg, c, 2);
                             if left > 0 {
@@ -1409,17 +1409,13 @@ impl Game {
                     }
                     if let Some(hi) = held {
                         let name = reg.item(hi).name.clone();
-                        if self
-                            .server
-                            .world
-                            .compost_fill(h.block.0, h.block.1, h.block.2, &name)
-                        {
+                        if self.server.world.compost_fill_at(h.block, &name) {
                             self.inventory.take_one(self.input.hotbar_sel);
                             self.sfx(Sfx::Place);
                             return;
                         }
                     }
-                    let fill = self.server.world.get_meta(h.block.0, h.block.1, h.block.2);
+                    let fill = self.server.world.get_meta_at(h.block);
                     self.toast(if fill >= world::soil::COMPOST_FULL {
                         "The heap is cooking.".to_string()
                     } else {
@@ -1433,14 +1429,10 @@ impl Game {
                 Some("offering") if self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.3;
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::OpenContainer {
-                            x: h.block.0,
-                            y: h.block.1,
-                            z: h.block.2,
-                        });
+                        rc.client.send(&net::C2S::OpenContainer { pos: h.block });
                         return;
                     }
-                    self.server.world.ensure_block_entity(
+                    self.server.world.ensure_block_entity_at(
                         h.block,
                         world::BlockEntity::Offering(Default::default()),
                     );
@@ -1451,11 +1443,7 @@ impl Game {
                     self.input.action_cooldown = 0.3;
                     self.input.right_held = false;
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::OpenContainer {
-                            x: h.block.0,
-                            y: h.block.1,
-                            z: h.block.2,
-                        });
+                        rc.client.send(&net::C2S::OpenContainer { pos: h.block });
                         return;
                     }
                     // First open claims an unowned counter for the
@@ -1467,7 +1455,7 @@ impl Game {
                     .map(|p| p.0)
                     .unwrap_or([0; 16]);
                     let my_name = self.config.display_name.clone();
-                    let e = self.server.world.ensure_block_entity(
+                    let e = self.server.world.ensure_block_entity_at(
                         h.block,
                         world::BlockEntity::Stall(Default::default()),
                     );
@@ -1484,7 +1472,7 @@ impl Game {
                     self.input.action_cooldown = 0.35;
                     let raws = reg.tags.get("base:raw_meats").cloned().unwrap_or_default();
                     let holding_raw = held.is_some_and(|h| raws.contains(&h));
-                    let e = self.server.world.ensure_block_entity(
+                    let e = self.server.world.ensure_block_entity_at(
                         h.block,
                         world::BlockEntity::Smoker(Default::default()),
                     );
@@ -1499,11 +1487,10 @@ impl Game {
                             {
                                 *slot = Some(ItemStack::new(&reg, item, 1));
                                 self.sfx(Sfx::Place);
-                                let torch_below = Some(self.server.world.get_block(
-                                    h.block.0,
-                                    h.block.1 - 1,
-                                    h.block.2,
-                                )) == reg.block_id("base:torch");
+                                let torch_below = h.block.offset(0, -1, 0).is_some_and(|below| {
+                                    Some(self.server.world.get_block_at(below))
+                                        == reg.block_id("base:torch")
+                                });
                                 if !torch_below {
                                     self.toast(
                                         "The rack wants a torch burning beneath.".to_string(),
@@ -1518,7 +1505,7 @@ impl Game {
                     // Empty-handed (or otherwise): take the cuts back.
                     let mut took: Option<ItemStack> = None;
                     if let world::BlockEntity::Smoker(sm) =
-                        self.server.world.block_entity_mut(&h.block).unwrap()
+                        self.server.world.block_entity_mut_at(&h.block).unwrap()
                         && let Some(slot) = sm.meat.iter_mut().rev().find(|s| s.is_some())
                     {
                         took = slot.take();
@@ -1536,7 +1523,7 @@ impl Game {
                     // Reopen the editor with what's written.
                     self.input.action_cooldown = 0.3;
                     self.input.right_held = false;
-                    let cur = match self.server.world.block_entity(&h.block) {
+                    let cur = match self.server.world.block_entity_at(&h.block) {
                         Some(world::BlockEntity::Sign(sg)) => sg.lines.clone(),
                         _ => Default::default(),
                     };
@@ -1554,9 +1541,9 @@ impl Game {
                     // A raised cairn is bought knowledge: anyone reads
                     // the surveyor's ground, no pick required — and a
                     // country's heart is the first thing worth knowing.
-                    let report = self.server.world.heart_report(h.block.0, h.block.2);
+                    let report = self.server.world.heart_report_at(h.block.surface());
                     self.toast(report);
-                    self.toast_prospect(h.block.0, h.block.2);
+                    self.toast_prospect(h.block.surface());
                     self.sfx(Sfx::Click);
                     self.input.action_cooldown = 0.6;
                     return;
@@ -1578,15 +1565,11 @@ impl Game {
                         self.input.action_cooldown = 0.25;
                         let stack = self.inventory.slots[self.input.hotbar_sel].unwrap();
                         if let Some(rc) = &self.multiplayer.remote {
-                            rc.client.send(&net::C2S::AnvilPut {
-                                x: h.block.0,
-                                y: h.block.1,
-                                z: h.block.2,
-                            });
+                            rc.client.send(&net::C2S::AnvilPut { pos: h.block });
                             return;
                         }
                         let one = ItemStack { count: 1, ..stack };
-                        if self.server.world.anvil_put(h.block, one) {
+                        if self.server.world.anvil_put_at(h.block, one) {
                             if !self.creative {
                                 self.inventory.take_one(self.input.hotbar_sel);
                             }
@@ -1599,14 +1582,10 @@ impl Game {
                     if held.is_none() {
                         self.input.action_cooldown = 0.3;
                         if let Some(rc) = &self.multiplayer.remote {
-                            rc.client.send(&net::C2S::AnvilTake {
-                                x: h.block.0,
-                                y: h.block.1,
-                                z: h.block.2,
-                            });
+                            rc.client.send(&net::C2S::AnvilTake { pos: h.block });
                             return;
                         }
-                        if let Some(st) = self.server.world.anvil_take(h.block) {
+                        if let Some(st) = self.server.world.anvil_take_at(h.block) {
                             let left = self.inventory.add_stack(&reg, st);
                             if left > 0 {
                                 self.drop_stack(ItemStack { count: left, ..st });
@@ -1623,17 +1602,13 @@ impl Game {
                     self.input.action_cooldown = 0.3;
                     let powder = reg.item_id("base:rare_earth_powder");
                     let is_fuel = held.is_some_and(|i| reg.fuel_value(i).is_some());
-                    self.server.world.ensure_block_entity(
+                    self.server.world.ensure_block_entity_at(
                         h.block,
                         world::BlockEntity::Separator(Default::default()),
                     );
-                    let valid = self
-                        .server
-                        .world
-                        .check_separator(h.block.0, h.block.1, h.block.2)
-                        .is_some();
+                    let valid = self.server.world.check_separator_at(h.block).is_some();
                     let Some(world::BlockEntity::Separator(sp)) =
-                        self.server.world.block_entity_mut(&h.block)
+                        self.server.world.block_entity_mut_at(&h.block)
                     else {
                         return;
                     };
@@ -1645,7 +1620,7 @@ impl Game {
                         if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
                         {
                             if let Some(world::BlockEntity::Separator(sp)) =
-                                self.server.world.block_entity_mut(&h.block)
+                                self.server.world.block_entity_mut_at(&h.block)
                             {
                                 sp.powder += 1;
                             }
@@ -1664,7 +1639,7 @@ impl Game {
                         if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
                         {
                             if let Some(world::BlockEntity::Separator(sp)) =
-                                self.server.world.block_entity_mut(&h.block)
+                                self.server.world.block_entity_mut_at(&h.block)
                             {
                                 sp.fuel += 1;
                             }
@@ -1680,7 +1655,7 @@ impl Game {
                             return;
                         }
                         if let Some(world::BlockEntity::Separator(sp)) =
-                            self.server.world.block_entity_mut(&h.block)
+                            self.server.world.block_entity_mut_at(&h.block)
                         {
                             sp.nd = 0;
                             sp.ce = 0;
@@ -1705,7 +1680,7 @@ impl Game {
                     // Coal in at the door; bare hands read the gauges.
                     self.input.action_cooldown = 0.3;
                     let fuel = held.and_then(|i| reg.fuel_value(i));
-                    let e = self.server.world.ensure_block_entity(
+                    let e = self.server.world.ensure_block_entity_at(
                         h.block,
                         world::BlockEntity::Steam(Default::default()),
                     );
@@ -1719,7 +1694,7 @@ impl Game {
                         }
                         if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
                         {
-                            let e = self.server.world.block_entity_mut(&h.block);
+                            let e = self.server.world.block_entity_mut_at(&h.block);
                             if let Some(world::BlockEntity::Steam(s)) = e {
                                 s.fuel = (s.fuel + burn * 4.0).min(world::STEAM_FUEL_CAP);
                             }
@@ -1736,11 +1711,7 @@ impl Game {
                 {
                     self.input.action_cooldown = 0.3;
                     if let Some(rc) = &self.multiplayer.remote {
-                        rc.client.send(&net::C2S::OpenContainer {
-                            x: h.block.0,
-                            y: h.block.1,
-                            z: h.block.2,
-                        });
+                        rc.client.send(&net::C2S::OpenContainer { pos: h.block });
                         return;
                     }
                     let (default, screen) = match station {
@@ -1757,13 +1728,13 @@ impl Game {
                             Screen::Bloomery(h.block),
                         ),
                     };
-                    self.server.world.ensure_block_entity(h.block, default);
+                    self.server.world.ensure_block_entity_at(h.block, default);
                     self.set_screen(screen);
                     return;
                 }
                 _ => {}
             }
-            let (x, y, z) = h.adjacent;
+            let pos = h.adjacent;
             let place =
                 self.inventory.slots[self.input.hotbar_sel].and_then(|s| reg.item(s.item).places);
             if let Some(block) = place {
@@ -1782,7 +1753,9 @@ impl Game {
                     self.inventory.wear_tool(&reg, slot);
                 }
                 let needs_farmland = bd.crop_next.is_some() && !bd.crop_any_soil;
-                let soil = self.server.world.get_block(x, y - 1, z);
+                let soil = pos
+                    .offset(0, -1, 0)
+                    .map_or(AIR, |below| self.server.world.get_block_at(below));
                 if needs_farmland && Some(soil) != reg.block_id("base:farmland") {
                     return;
                 }
@@ -1794,15 +1767,21 @@ impl Game {
                 // a thin layer) — checking merely "not solid" let a
                 // click through into water or a crop, where the item
                 // was spent and place_block then refused it.
-                if reg.is_replaceable(self.server.world.get_block(x, y, z))
-                    && !self.player.overlaps_block(x, y, z)
+                if reg.is_replaceable(self.server.world.get_block_at(pos))
+                    && !self.player.overlaps_block_at(pos)
                 {
                     let allow = if self.content.scripts.wants("on_block_place") {
                         let name = reg.block(block).name.clone();
                         let ok = self.content.scripts.dispatch(
                             &self.server.world,
                             "on_block_place",
-                            (x as i64, y as i64, z as i64, name),
+                            (
+                                pos.face().name().to_string(),
+                                pos.u() as i64,
+                                pos.y() as i64,
+                                pos.v() as i64,
+                                name,
+                            ),
                         );
                         self.apply_script_cmds();
                         ok
@@ -1819,7 +1798,7 @@ impl Game {
                         if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
                         {
                             if let Some(r) = &self.multiplayer.remote {
-                                r.client.send(&net::C2S::Place { x, y, z });
+                                r.client.send(&net::C2S::Place { pos });
                             }
                             self.input.action_cooldown = 0.22;
                             self.sfx(Sfx::Place);
@@ -1829,7 +1808,7 @@ impl Game {
                     if self.inventory.slots[self.input.hotbar_sel].is_none() && !self.creative {
                         return;
                     }
-                    if self.server.world.place_block((x, y, z), block) {
+                    if self.server.world.place_block_at(pos, block) {
                         if !self.creative {
                             self.inventory.take_one(self.input.hotbar_sel);
                         }
@@ -1837,11 +1816,11 @@ impl Game {
                         if matches!(bd.interaction.as_deref(), Some("sign") | Some("waystone")) {
                             self.ui_state.sign_lines = Default::default();
                             self.ui_state.sign_line = 0;
-                            self.set_screen(Screen::SignEdit((x, y, z)));
+                            self.set_screen(Screen::SignEdit(pos));
                         }
                         if bd.crop_next.is_some() {
                             // The wild notices things growing where you walk.
-                            self.server.world.plant_ire_at(x, z, 0.2);
+                            self.server.world.plant_ire_at_surface(pos.surface(), 0.2);
                         }
                         self.input.action_cooldown = 0.22;
                         self.sfx(Sfx::Place);
@@ -1856,9 +1835,9 @@ impl Game {
         let reg = self.content.reg.clone();
         for cmd in self.content.scripts.take_cmds() {
             match cmd {
-                script::Cmd::SetBlock(x, y, z, name) => {
+                script::Cmd::SetBlock(pos, name) => {
                     if let Some(b) = reg.block_id(&name) {
-                        self.server.world.set_block(x, y, z, b);
+                        self.server.world.set_block_at(pos, b);
                     }
                 }
                 script::Cmd::Give(name, n) => {
@@ -1870,11 +1849,11 @@ impl Game {
                     }
                 }
                 script::Cmd::Hud(msg) => self.toast(msg),
-                script::Cmd::SpawnAnimal(name, x, y, z) => {
+                script::Cmd::SpawnAnimal(name, pos) => {
                     if let Some(si) = reg.animal_id(&name)
                         && self.server.world.mob_count() < world::MOB_CAP
                     {
-                        let mut m = mobs::Mob::new(si, Vec3::new(x, y, z), 0.0);
+                        let mut m = mobs::Mob::new_at(si, pos, 0.0);
                         m.health = reg.animals[si].health;
                         self.server.world.spawn_mob(m);
                     }

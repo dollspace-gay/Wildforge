@@ -66,7 +66,7 @@ fn furnace_state_persists_and_breaks_drop_contents() {
     let mut w2 = World::load_or_create(w.save_dir_for_test(), reg.clone()).unwrap();
     for x in -2..=2 {
         for z in -2..=2 {
-            w2.ensure_chunk(ChunkPos { x, z });
+            w2.ensure_chunk(tchunk(x, z));
         }
     }
     let Some(BlockEntity::Furnace(f)) = w2.block_entity(&pos) else {
@@ -85,7 +85,7 @@ fn chest_stores_spills_and_persists() {
     let reg = base_reg();
     let dir = tmp_dir("chestsave");
     let mut w = World::new(9, dir.clone(), reg.clone());
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w.ensure_chunk(tchunk(0, 0));
     let chest = reg.block_id("base:chest").unwrap();
     assert_eq!(reg.block(chest).interaction.as_deref(), Some("chest"));
     let pos = (4, 100, 4);
@@ -99,7 +99,7 @@ fn chest_stores_spills_and_persists() {
     // Round-trip by name, plus an unknown item that must skip cleanly.
     let path = dir.join("entities.toml");
     let mut text = std::fs::read_to_string(&path).unwrap();
-    text.push_str("\n[[chest]]\npos = [9, 90, 9]\n[[chest.slot]]\nindex = 0\nitem = \"gone:widget\"\ncount = 5\ndurability = 0\n");
+    text.push_str("\n[[chest]]\npos = { face = \"PosZ\", u = 4105, y = 90, v = 4105 }\n[[chest.slot]]\nindex = 0\nitem = \"gone:widget\"\ncount = 5\ndurability = 0\n");
     std::fs::write(&path, text).unwrap();
     let w2 = World::load_or_create(dir, reg.clone()).unwrap();
     let Some(crate::world::BlockEntity::Chest(c)) = w2.block_entity(&pos) else {
@@ -117,6 +117,9 @@ fn chest_stores_spills_and_persists() {
 
     // Breaking the chest spills every stack.
     let mut w3 = w2;
+    // Worlds load chunks lazily. Load the saved voxel chunk before editing
+    // the chest that lives in it.
+    assert!(w3.ensure_chunk(tchunk(0, 0)));
     w3.set_block(pos.0, pos.1, pos.2, AIR);
     assert!(!w3.has_block_entity(&pos));
     let spilled: Vec<_> = w3.pending_drops().iter().map(|(_, s)| s.count).collect();
@@ -246,6 +249,94 @@ fn sand_falls_lands_chains_and_crushes() {
             .any(|(_, st)| Some(st.item) == reg.item_id("base:torch")),
         "the torch popped as a drop"
     );
+}
+
+#[test]
+fn falling_blocks_detach_and_land_on_both_sides_of_every_planet_seam() {
+    use crate::planet::BlockPos;
+
+    let reg = base_reg();
+    let sand = b(&reg, "base:sand");
+    let stone = b(&reg, "base:stone");
+    let mut world = World::new(51, tmp_dir("planet-falling-all-seams"), reg);
+    let seams = directed_planet_seams();
+    let columns: Vec<_> = seams
+        .iter()
+        .flat_map(|seam| [seam.source, seam.across])
+        .collect();
+    let chunks: std::collections::BTreeSet<_> = columns
+        .iter()
+        .map(|surface| crate::planet::ChunkPos::from_surface(*surface))
+        .collect();
+    world.insert_empty_chunks_for_test(chunks);
+
+    let fixture_set = |world: &mut World, pos: BlockPos, block| {
+        let (x, y, z) = pos.local();
+        world
+            .chunks_mut()
+            .get_mut(&pos.chunk())
+            .expect("falling fixture chunk")
+            .set(x, y, z, block);
+    };
+    for surface in &columns {
+        // Save-time settling advances in coarse vertical steps.  Model the
+        // planet's solid shell rather than a one-voxel floating platform, so
+        // a coarse sample always finds rock below the landing surface.
+        for y in 1..=95 {
+            fixture_set(
+                &mut world,
+                BlockPos::new(surface.face(), surface.u(), y, surface.v()).unwrap(),
+                stone,
+            );
+        }
+        fixture_set(
+            &mut world,
+            BlockPos::new(surface.face(), surface.u(), 100, surface.v()).unwrap(),
+            stone,
+        );
+        fixture_set(
+            &mut world,
+            BlockPos::new(surface.face(), surface.u(), 101, surface.v()).unwrap(),
+            sand,
+        );
+    }
+
+    for surface in &columns {
+        world.set_block_at(
+            BlockPos::new(surface.face(), surface.u(), 100, surface.v()).unwrap(),
+            AIR,
+        );
+    }
+    assert_eq!(
+        world.falling_blocks().len(),
+        columns.len(),
+        "every seam-side column detaches exactly once"
+    );
+    for surface in &columns {
+        let launched = BlockPos::new(surface.face(), surface.u(), 101, surface.v()).unwrap();
+        assert_eq!(world.get_block_at(launched), AIR);
+        assert!(world.falling_blocks().iter().any(|falling| {
+            falling.pos.face() == surface.face()
+                && falling.pos.u() == f32::from(surface.u())
+                && falling.pos.v() == f32::from(surface.v())
+        }));
+    }
+
+    world.settle_falling();
+    assert!(world.falling_blocks().is_empty());
+    for (index, seam) in seams.iter().enumerate() {
+        for surface in [seam.source, seam.across] {
+            assert_eq!(
+                world.get_block_at(
+                    BlockPos::new(surface.face(), surface.u(), 96, surface.v()).unwrap()
+                ),
+                sand,
+                "falling block landed on the wrong chart for seam {index}: {:?} {:?}",
+                seam.face,
+                seam.direction
+            );
+        }
+    }
 }
 
 #[test]
@@ -403,7 +494,7 @@ fn bloomery_multiblock_fires_batches_and_fears_the_rain() {
     };
     b.lit = true;
     b.progress = 0.0;
-    b.core = (11, my, 10);
+    b.core = Some(bp(11, my, 10));
     w.weather = Weather::Precip;
     for _ in 0..10 {
         w.tick_entities(1.0);
@@ -680,7 +771,9 @@ fn cupellation_splits_silver_from_lead() {
     let spat: u32 = w
         .take_pending_drops()
         .into_iter()
-        .filter(|(p, s)| *p == pos && s.item == lead)
+        .filter(|(p, s)| {
+            *p == crate::planet::BlockPos::of_world(pos.0, pos.1, pos.2).unwrap() && s.item == lead
+        })
         .map(|(_, s)| s.count)
         .sum();
     assert_eq!(spat, 2, "the lead pours out the mouth");
@@ -918,7 +1011,7 @@ fn signs_hold_their_words_through_save_and_load() {
     let dir = tmp_dir("signsave");
     {
         let mut w = World::new(42, dir.clone(), reg.clone());
-        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        w.ensure_chunk(tchunk(0, 0));
         let sign = b(&reg, "base:sign");
         let sy = w.surface_height(4, 4);
         w.set_block(4, sy + 1, 4, sign);
@@ -953,7 +1046,7 @@ fn stall_validates_and_persists_its_shop() {
     let silver = it(&reg, "base:silver_ingot");
     {
         let mut w = World::new(42, dir.clone(), reg.clone());
-        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        w.ensure_chunk(tchunk(0, 0));
         let y = 200;
         w.set_block(4, y, 4, counter);
         assert!(!w.check_stall(4, y, 4), "a bare counter is not a stall");
@@ -1114,6 +1207,132 @@ fn the_wheel_wants_live_water_and_shafts_carry_it() {
         b(&reg, "base:water_wheel_run"),
         "a live wheel turns visibly"
     );
+}
+
+#[test]
+fn multiblock_and_power_cross_a_rotated_planet_seam() {
+    use crate::planet::{BlockPos, Direction6, FACE_BLOCKS, Face, step6};
+
+    let reg = base_reg();
+    let mut w = test_world_with("machine-seam", reg.clone());
+    let y = 120;
+    let mouth = BlockPos::new(Face::PosZ, FACE_BLOCKS - 1, y, 4100).unwrap();
+    let core = step6(mouth, Direction6::East).unwrap().pos;
+
+    let mut shell = Vec::new();
+    for ly in 0..3 {
+        for rx in -1..=1 {
+            for rz in -1..=1 {
+                if rx == 0 && rz == 0 {
+                    continue;
+                }
+                shell.push(core.offset(rx, ly, rz).unwrap());
+            }
+        }
+    }
+    let mut chunks: std::collections::BTreeSet<_> = shell.iter().map(|pos| pos.chunk()).collect();
+    chunks.insert(core.chunk());
+    chunks.insert(mouth.chunk());
+    for chunk in chunks {
+        w.ensure_chunk(chunk);
+    }
+    let firebrick = reg.block_id("base:firebrick").unwrap();
+    for at in shell {
+        w.set_block_at(
+            at,
+            if at == mouth {
+                reg.block_id("base:bloomery").unwrap()
+            } else {
+                firebrick
+            },
+        );
+    }
+    for ly in 0..3 {
+        w.set_block_at(core.offset(0, ly, 0).unwrap(), AIR);
+    }
+    w.set_block_at(mouth, reg.block_id("base:bloomery").unwrap());
+    assert_eq!(
+        w.check_bloomery_at(mouth),
+        Some(core),
+        "the firebrick shell validates after its local axes rotate across a seam"
+    );
+
+    let source = BlockPos::new(Face::PosZ, FACE_BLOCKS - 2, y + 8, 4108).unwrap();
+    let shaft = step6(source, Direction6::East).unwrap().pos;
+    let receiver = step6(shaft, step6(source, Direction6::East).unwrap().direction)
+        .unwrap()
+        .pos;
+    for chunk in [source.chunk(), shaft.chunk(), receiver.chunk()] {
+        w.ensure_chunk(chunk);
+    }
+    w.set_block_at(source, reg.block_id("base:water_wheel").unwrap());
+    w.set_block_at(shaft, reg.block_id("base:shaft").unwrap());
+    let water = source.offset(0, -1, 0).unwrap();
+    w.set_block_at(water, reg.water_block(0));
+    w.set_block_at(water.offset(0, -1, 0).unwrap(), AIR);
+    assert!(
+        w.power_at_pos(receiver) > 0.0,
+        "a straight shaft remains straight in the rotated destination chart"
+    );
+}
+
+#[test]
+fn shaft_power_crosses_every_directed_planet_seam() {
+    use crate::planet::{BlockPos, Direction4, Direction6, step6};
+
+    let reg = base_reg();
+    let wheel = b(&reg, "base:water_wheel");
+    let shaft_block = b(&reg, "base:shaft");
+    let water = reg.water_block(0);
+    let mut world = World::new(52, tmp_dir("planet-power-all-seams"), reg);
+
+    for seam in directed_planet_seams() {
+        let source =
+            BlockPos::new(seam.source.face(), seam.source.u(), 120, seam.source.v()).unwrap();
+        let outward = match seam.direction {
+            Direction4::East => Direction6::East,
+            Direction4::North => Direction6::North,
+            Direction4::West => Direction6::West,
+            Direction4::South => Direction6::South,
+        };
+        let first = step6(source, outward).unwrap();
+        let shaft = first.pos;
+        assert_eq!(shaft.surface(), seam.across);
+        let receiver = step6(shaft, first.direction).unwrap().pos;
+        let water_pos = source.offset(0, -1, 0).unwrap();
+        let drain = water_pos.offset(0, -1, 0).unwrap();
+        let missing: std::collections::BTreeSet<_> = [
+            source.chunk(),
+            shaft.chunk(),
+            receiver.chunk(),
+            water_pos.chunk(),
+        ]
+        .into_iter()
+        .filter(|chunk| !world.has_chunk(*chunk))
+        .collect();
+        world.insert_empty_chunks_for_test(missing);
+
+        let fixture_set = |world: &mut World, pos: BlockPos, block| {
+            let (x, y, z) = pos.local();
+            world
+                .chunks_mut()
+                .get_mut(&pos.chunk())
+                .expect("power fixture chunk")
+                .set(x, y, z, block);
+        };
+        fixture_set(&mut world, source, wheel);
+        fixture_set(&mut world, shaft, shaft_block);
+        fixture_set(&mut world, receiver, AIR);
+        fixture_set(&mut world, water_pos, water);
+        fixture_set(&mut world, drain, AIR);
+
+        assert!(
+            world.power_at_pos(receiver) > 0.0,
+            "shaft power did not remain straight across {:?} {:?}",
+            seam.face,
+            seam.direction
+        );
+    }
 }
 
 #[test]

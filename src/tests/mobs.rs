@@ -27,8 +27,8 @@ fn mob_settles_on_ground_and_flees_from_damage() {
             &def,
             &[crate::server::PlayerCtx {
                 id: 0,
-                pos: Vec3::new(100.0, 181.0, 100.0),
-                spawn: Vec3::ZERO,
+                pos: ep(Vec3::new(100.0, 181.0, 100.0)),
+                spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
             }],
@@ -45,19 +45,19 @@ fn mob_settles_on_ground_and_flees_from_damage() {
     );
 
     // Damage from the east: it panics away, gaining distance from the threat.
-    let threat = m.pos + Vec3::new(2.0, 0.0, 0.0);
+    let threat = m.pos.translated(Vec3::new(2.0, 0.0, 0.0)).unwrap().pos;
     m.hurt(&def, 4.0, threat);
     assert_eq!(m.state, crate::mobs::MobState::Flee);
     assert!(m.health < def.health);
-    let d0 = (m.pos - threat).length();
+    let d0 = m.pos.distance_to(threat);
     for _ in 0..90 {
         m.tick(
             &w,
             &def,
             &[crate::server::PlayerCtx {
                 id: 0,
-                pos: Vec3::new(100.0, 181.0, 100.0),
-                spawn: Vec3::ZERO,
+                pos: ep(Vec3::new(100.0, 181.0, 100.0)),
+                spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
             }],
@@ -75,8 +75,8 @@ fn mob_settles_on_ground_and_flees_from_damage() {
             &def,
             &[crate::server::PlayerCtx {
                 id: 0,
-                pos: Vec3::new(100.0, 181.0, 100.0),
-                spawn: Vec3::ZERO,
+                pos: ep(Vec3::new(100.0, 181.0, 100.0)),
+                spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
             }],
@@ -106,8 +106,8 @@ fn skittish_flees_players_bold_does_not() {
         &deer_def,
         &[crate::server::PlayerCtx {
             id: 0,
-            pos: player,
-            spawn: Vec3::ZERO,
+            pos: ep(player),
+            spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
         }],
@@ -120,8 +120,8 @@ fn skittish_flees_players_bold_does_not() {
         &boar_def,
         &[crate::server::PlayerCtx {
             id: 0,
-            pos: player,
-            spawn: Vec3::ZERO,
+            pos: ep(player),
+            spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
         }],
@@ -161,7 +161,7 @@ fn wildlife_seeds_matching_biomes_only() {
     // Sweep a wide area; every spawned mob must belong to its chunk's biome.
     for cx in -12..12 {
         for cz in -12..12 {
-            w.ensure_chunk(ChunkPos { x: cx, z: cz });
+            w.ensure_chunk(tchunk(cx, cz));
         }
     }
     for m in w.mobs() {
@@ -176,14 +176,15 @@ fn wildlife_seeds_matching_biomes_only() {
         let cp = ChunkPos::of_world(m.pos.x.floor() as i32, m.pos.z.floor() as i32);
         let country = w
             .generator
-            .biome(cp.x * 16 + 8, cp.z * 16 + 8)
+            .biome(cp.centered_u() * 16 + 8, cp.centered_v() * 16 + 8)
             .name()
             .to_lowercase();
         // The water rolls on its own key, so salt-water natives are
         // checked against the sea and not against the coast behind it.
         let ocean = "ocean".to_string();
         let ok = def.biomes.contains(&country)
-            || (def.biomes.contains(&ocean) && w.is_open_water(cp.x * 16 + 8, cp.z * 16 + 8));
+            || (def.biomes.contains(&ocean)
+                && w.is_open_water(cp.centered_u() * 16 + 8, cp.centered_v() * 16 + 8));
         assert!(ok, "{} rolled in {country} chunk", def.name);
         assert!(m.health > 0.0, "spawned alive");
     }
@@ -201,7 +202,7 @@ fn mob_persistence_round_trips_and_skips_unknown() {
     w.spawn_mob(m);
     save_world(&mut w);
     // Unknown species entries (removed mod) skip cleanly on load.
-    let extra = "\n[[mob]]\nspecies = \"gone:wolf\"\npos = [0, 80, 0]\nyaw = 0\nhealth = 5\n";
+    let extra = "\n[[mob]]\nspecies = \"gone:wolf\"\nface = 4\nu = 4096.0\ny = 80.0\nv = 4096.0\nyaw = 0\nhealth = 5\n";
     let path = dir.join("animals.toml");
     let mut text = std::fs::read_to_string(&path).unwrap();
     text.push_str(extra);
@@ -221,16 +222,23 @@ fn wildlife_seed_marks_persist() {
     let reg = base_reg();
     let dir = tmp_dir("mobmark");
     let mut w = World::new(5, dir.clone(), reg.clone());
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
-    let first = w.mob_count();
+    w.ensure_chunk(tchunk(0, 0));
+    let first = w
+        .mobs()
+        .iter()
+        .filter(|m| {
+            let def = &reg.animals[m.species];
+            !def.hostile && !def.movement_swim
+        })
+        .count();
     save_world(&mut w);
     // Reload: regenerating the same chunk must NOT reroll wildlife.
     let mut w2 = World::load_or_create(dir, reg).unwrap();
-    w2.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w2.ensure_chunk(tchunk(0, 0));
     assert_eq!(
         w2.mob_count(),
         first,
-        "seeded mark survives; no duplicate wildlife on revisit"
+        "seeded mark survives; saved land wildlife is not duplicated on revisit"
     );
 }
 
@@ -239,7 +247,7 @@ fn mod_can_add_species() {
     let root = tmp_dir("modanimal");
     let dir = root.join("fauna");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("mod.toml"), "id = \"fauna\"\n").unwrap();
+    std::fs::write(dir.join("mod.toml"), "id = \"fauna\"\nworld_api = 2\n").unwrap();
     std::fs::write(
         dir.join("animals.toml"),
         r#"
@@ -277,8 +285,8 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
         w.tick_mobs(
             &[crate::server::PlayerCtx {
                 id: 0,
-                pos: Vec3::ZERO,
-                spawn: Vec3::ZERO,
+                pos: ep(Vec3::ZERO),
+                spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
             }],
@@ -309,8 +317,8 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
     w.tick_mobs(
         &[crate::server::PlayerCtx {
             id: 0,
-            pos: Vec3::new(60.0, 80.0, 60.0),
-            spawn: Vec3::ZERO,
+            pos: ep(Vec3::new(60.0, 80.0, 60.0)),
+            spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
         }],
@@ -351,8 +359,8 @@ fn warden_hunts_strikes_and_caster_fires() {
         &def,
         &[crate::server::PlayerCtx {
             id: 0,
-            pos: player,
-            spawn: Vec3::ZERO,
+            pos: ep(player),
+            spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
         }],
@@ -362,15 +370,15 @@ fn warden_hunts_strikes_and_caster_fires() {
     );
     assert_eq!(m.state, crate::mobs::MobState::Hunt, "aggro within range");
     // Walk it onto the player: contact damage fires once, then cools down.
-    m.pos = player + Vec3::new(0.8, 0.0, 0.0);
+    m.pos = ep(player + Vec3::new(0.8, 0.0, 0.0));
     for _ in 0..30 {
         m.tick(
             &w,
             &def,
             &[crate::server::PlayerCtx {
                 id: 0,
-                pos: player,
-                spawn: Vec3::ZERO,
+                pos: ep(player),
+                spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
             }],
@@ -378,7 +386,7 @@ fn warden_hunts_strikes_and_caster_fires() {
             &mut rng,
             &mut events,
         );
-        m.pos = player + Vec3::new(0.8, 0.0, 0.0);
+        m.pos = ep(player + Vec3::new(0.8, 0.0, 0.0));
     }
     let hits = events
         .iter()
@@ -394,8 +402,8 @@ fn warden_hunts_strikes_and_caster_fires() {
         &def,
         &[crate::server::PlayerCtx {
             id: 0,
-            pos: player,
-            spawn: Vec3::ZERO,
+            pos: ep(player),
+            spawn: ep(Vec3::ZERO),
             attackable: false,
             aggro_mod: 0.0,
         }],
@@ -421,8 +429,8 @@ fn warden_hunts_strikes_and_caster_fires() {
             &ddef,
             &[crate::server::PlayerCtx {
                 id: 0,
-                pos: player,
-                spawn: Vec3::ZERO,
+                pos: ep(player),
+                spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
             }],
@@ -436,6 +444,144 @@ fn warden_hunts_strikes_and_caster_fires() {
             .any(|e| matches!(e, crate::mobs::MobEvent::Cast(_))),
         "caster fired"
     );
+}
+
+#[test]
+fn a_hostile_mob_pursues_across_every_planet_seam() {
+    use crate::planet::{BlockPos, Direction4, EntityPos, FACE_BLOCKS, Face, SurfacePos};
+
+    fn fixture_set(world: &mut World, pos: BlockPos, block: crate::registry::BlockId) {
+        let (x, y, z) = pos.local();
+        world
+            .chunks_mut()
+            .get_mut(&pos.chunk())
+            .expect("the pursuit fixture installs every touched chunk")
+            .set(x, y, z, block);
+    }
+
+    let reg = base_reg();
+    let mut world = World::new(50, tmp_dir("planet-mob-all-seams"), reg.clone());
+    let stone = b(&reg, "base:stone");
+    let species = reg.animal_id("base:thornling").unwrap();
+    let def = reg.animals[species].clone();
+    let side = f32::from(FACE_BLOCKS);
+
+    for (edge_index, (face, direction)) in Face::ALL
+        .into_iter()
+        .flat_map(|face| Direction4::ALL.map(move |direction| (face, direction)))
+        .enumerate()
+    {
+        let varying = 360 + edge_index as u16 * 300;
+        let (u, v, chase, cell_u, cell_v, du, dv, pu, pv) = match direction {
+            Direction4::East => (
+                side - 1.2,
+                f32::from(varying) + 0.5,
+                Vec3::X,
+                i32::from(FACE_BLOCKS) - 1,
+                i32::from(varying),
+                1,
+                0,
+                0,
+                1,
+            ),
+            Direction4::North => (
+                f32::from(varying) + 0.5,
+                side - 1.2,
+                Vec3::Z,
+                i32::from(varying),
+                i32::from(FACE_BLOCKS) - 1,
+                0,
+                1,
+                1,
+                0,
+            ),
+            Direction4::West => (
+                1.2,
+                f32::from(varying) + 0.5,
+                Vec3::NEG_X,
+                0,
+                i32::from(varying),
+                -1,
+                0,
+                0,
+                1,
+            ),
+            Direction4::South => (
+                f32::from(varying) + 0.5,
+                1.2,
+                Vec3::NEG_Z,
+                i32::from(varying),
+                0,
+                0,
+                -1,
+                1,
+                0,
+            ),
+        };
+        let mut lane = Vec::new();
+        for along in -3..=4 {
+            for across in -1..=1 {
+                lane.push(
+                    SurfacePos::canonicalized(
+                        face,
+                        cell_u + along * du + across * pu,
+                        cell_v + along * dv + across * pv,
+                    )
+                    .unwrap(),
+                );
+            }
+        }
+        let chunks: std::collections::BTreeSet<_> = lane
+            .iter()
+            .map(|surface| crate::planet::ChunkPos::from_surface(*surface))
+            .filter(|chunk| !world.has_chunk(*chunk))
+            .collect();
+        world.insert_empty_chunks_for_test(chunks);
+        for surface in lane {
+            fixture_set(
+                &mut world,
+                BlockPos::new(surface.face(), surface.u(), 99, surface.v()).unwrap(),
+                stone,
+            );
+            for y in 100..=103 {
+                fixture_set(
+                    &mut world,
+                    BlockPos::new(surface.face(), surface.u(), y, surface.v()).unwrap(),
+                    AIR,
+                );
+            }
+        }
+
+        let start = EntityPos::new(face, u, 100.0, v).unwrap();
+        let player = start.translated(chase * 3.0).unwrap().pos;
+        assert_ne!(face, player.face());
+        let players = [crate::server::PlayerCtx {
+            id: 0,
+            pos: player,
+            spawn: player,
+            attackable: true,
+            aggro_mod: 0.0,
+        }];
+        let mut mob = crate::mobs::Mob::new_at(species, start, 0.0);
+        mob.health = def.health;
+        mob.on_ground = true;
+        let mut rng = edge_index as u32 + 1;
+        let mut events = Vec::new();
+        let mut crossed = false;
+        for _ in 0..120 {
+            mob.tick(&world, &def, &players, 0.05, &mut rng, &mut events);
+            crossed |= mob.pos.face() != face;
+            if crossed && mob.pos.distance_to(player) < 1.5 {
+                break;
+            }
+        }
+        assert!(
+            crossed,
+            "thornling did not pursue across {face:?} {direction:?}; stopped at {:?}",
+            mob.pos
+        );
+        assert!(mob.pos.is_canonical());
+    }
 }
 
 #[test]
@@ -456,8 +602,8 @@ fn floaters_hover_and_projectiles_collide() {
             &def,
             &[crate::server::PlayerCtx {
                 id: 0,
-                pos: far,
-                spawn: Vec3::ZERO,
+                pos: ep(far),
+                spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
             }],
@@ -466,11 +612,11 @@ fn floaters_hover_and_projectiles_collide() {
             &mut Vec::new(),
         );
     }
-    let under = w.surface_height(m.pos.x.floor() as i32, m.pos.z.floor() as i32);
+    let (under, ceiling) = w.air_column_at(m.pos, m.pos.y.floor() as i32);
     assert!(
-        m.pos.y > under as f32 + 0.8,
-        "wisp hovers instead of sinking (y={} ground={under})",
-        m.pos.y
+        m.pos.y > under as f32 + 0.8 && m.pos.y < ceiling as f32,
+        "wisp hovers in its current air column (y={} floor={under} ceiling={ceiling})",
+        m.pos.y,
     );
     let _ = gy;
 
@@ -478,7 +624,7 @@ fn floaters_hover_and_projectiles_collide() {
     let stone = reg.block_id("base:stone").unwrap();
     w.set_block(10, 200, 10, stone);
     let mut p = crate::mobs::Projectile {
-        pos: Vec3::new(10.5, 200.5, 7.0),
+        pos: ep(Vec3::new(10.5, 200.5, 7.0)),
         vel: Vec3::new(0.0, 0.0, 20.0),
         tile: 0,
         damage: 3.0,
@@ -493,8 +639,8 @@ fn floaters_hover_and_projectiles_collide() {
             &w,
             &[crate::server::PlayerCtx {
                 id: 0,
-                pos: far,
-                spawn: Vec3::ZERO,
+                pos: ep(far),
+                spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
             }],
@@ -509,7 +655,7 @@ fn floaters_hover_and_projectiles_collide() {
         "bolt stopped by the wall"
     );
     w.spawn_projectile(crate::mobs::Projectile {
-        pos: Vec3::new(4.5, 120.9, 2.0),
+        pos: ep(Vec3::new(4.5, 120.9, 2.0)),
         vel: Vec3::new(0.0, 0.0, 12.0),
         tile: 0,
         damage: 3.0,
@@ -524,8 +670,8 @@ fn floaters_hover_and_projectiles_collide() {
             .tick_projectiles(
                 &[crate::server::PlayerCtx {
                     id: 0,
-                    pos: Vec3::new(4.5, 120.0, 4.5),
-                    spawn: Vec3::ZERO,
+                    pos: ep(Vec3::new(4.5, 120.0, 4.5)),
+                    spawn: ep(Vec3::ZERO),
                     attackable: true,
                     aggro_mod: 0.0,
                 }],
@@ -542,8 +688,8 @@ fn floaters_hover_and_projectiles_collide() {
 fn spawner_respects_darkness_ire_and_tiers() {
     let reg = base_reg();
     let mut w = test_world("wardenspawn");
-    let player = Vec3::new(8.0, (w.surface_height(8, 8) + 1) as f32, 8.0);
-    let world_spawn = Vec3::new(-500.0, 70.0, -500.0); // far away, no exclusion
+    let player = ep(Vec3::new(8.0, (w.surface_height(8, 8) + 1) as f32, 8.0));
+    let world_spawn = ep(Vec3::new(-500.0, 70.0, -500.0)); // far away, no exclusion
     let mut rng = 77u32;
     // Daytime: surface spawns are impossible (only underground wardens may
     // appear, if a cave pocket is found).
@@ -578,7 +724,7 @@ fn spawner_respects_darkness_ire_and_tiers() {
     for m in &hostiles {
         let d = &reg.animals[m.species];
         assert_eq!(d.ire_min, 0.0, "no provoked-tier wardens at calm");
-        let dist = (m.pos - player).length();
+        let dist = m.pos.distance_to(player);
         assert!((20.0..90.0).contains(&dist), "ring distance {dist}");
     }
     // Wrathful: higher budget, elites allowed.
@@ -599,7 +745,7 @@ fn wardens_dissolve_at_dawn_and_never_save() {
     let reg = base_reg();
     let dir = tmp_dir("wardensave");
     let mut w = World::new(21, dir.clone(), reg.clone());
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w.ensure_chunk(tchunk(0, 0));
     let ti = reg.animal_id("base:thornling").unwrap();
     let deer_i = reg.animal_id("base:deer").unwrap();
     let y = w.surface_height(4, 4) as f32 + 1.0;
@@ -611,16 +757,22 @@ fn wardens_dissolve_at_dawn_and_never_save() {
     // Never persisted.
     save_world(&mut w);
     let w2 = World::load_or_create(dir, reg.clone()).unwrap();
-    assert_eq!(w2.mob_count(), 1, "only the deer survived the save");
-    assert_eq!(w2.mobs()[0].species, deer_i);
+    assert!(
+        w2.mobs().iter().all(|mob| mob.species != ti),
+        "wardens never survive a save"
+    );
+    assert!(
+        w2.mobs().iter().any(|mob| mob.species == deer_i),
+        "ordinary wildlife survives"
+    );
     // Dawn dissolve: full daylight on an open surface removes the warden.
     let player = Vec3::new(5.0, y, 5.0);
     let mut rng = 3u32;
     w.tick_mobs(
         &[crate::server::PlayerCtx {
             id: 0,
-            pos: player,
-            spawn: Vec3::ZERO,
+            pos: ep(player),
+            spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
         }],
@@ -655,8 +807,8 @@ fn breeding_makes_babies_that_grow() {
     let events = w.tick_mobs(
         &[crate::server::PlayerCtx {
             id: 0,
-            pos: Vec3::new(200.0, 80.0, 200.0),
-            spawn: Vec3::ZERO,
+            pos: ep(Vec3::new(200.0, 80.0, 200.0)),
+            spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
         }],
@@ -686,8 +838,8 @@ fn breeding_makes_babies_that_grow() {
         w.tick_mobs(
             &[crate::server::PlayerCtx {
                 id: 0,
-                pos: Vec3::new(200.0, 80.0, 200.0),
-                spawn: Vec3::ZERO,
+                pos: ep(Vec3::new(200.0, 80.0, 200.0)),
+                spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
             }],
@@ -707,8 +859,8 @@ fn breeding_makes_babies_that_grow() {
     let ev2 = w.tick_mobs(
         &[crate::server::PlayerCtx {
             id: 0,
-            pos: Vec3::new(200.0, 80.0, 200.0),
-            spawn: Vec3::ZERO,
+            pos: ep(Vec3::new(200.0, 80.0, 200.0)),
+            spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
         }],
@@ -774,8 +926,8 @@ fn feeding_tames_and_tamed_animals_stand_their_ground() {
     let def = &reg.animals[deer_i];
     let player = [crate::server::PlayerCtx {
         id: 0,
-        pos: Vec3::new(9.5, 220.0, 8.5),
-        spawn: Vec3::ZERO,
+        pos: ep(Vec3::new(9.5, 220.0, 8.5)),
+        spawn: ep(Vec3::ZERO),
         attackable: true,
         aggro_mod: 0.0,
     }];
@@ -814,8 +966,8 @@ fn led_animals_follow_and_leads_snap_at_range() {
     let handler = |x: f32| {
         [crate::server::PlayerCtx {
             id: 0,
-            pos: Vec3::new(x, 220.0, 8.5),
-            spawn: Vec3::ZERO,
+            pos: ep(Vec3::new(x, 220.0, 8.5)),
+            spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
         }]
@@ -900,8 +1052,8 @@ fn boats_float_carry_cargo_and_wreck_into_salvage() {
     let def = &reg.animals[boat_i];
     let players = [crate::server::PlayerCtx {
         id: 0,
-        pos: Vec3::new(50.0, 160.0, 50.0),
-        spawn: Vec3::ZERO,
+        pos: ep(Vec3::new(50.0, 160.0, 50.0)),
+        spawn: ep(Vec3::ZERO),
         attackable: true,
         aggro_mod: 0.0,
     }];
@@ -943,8 +1095,8 @@ fn the_watcher_warns_stands_down_or_graduates() {
     let def = &reg.animals[thorn];
     let players = [crate::server::PlayerCtx {
         id: 0,
-        pos: Vec3::new(504.5, 220.0, 500.5),
-        spawn: Vec3::ZERO,
+        pos: ep(Vec3::new(504.5, 220.0, 500.5)),
+        spawn: ep(Vec3::ZERO),
         attackable: true,
         aggro_mod: 0.0,
     }];

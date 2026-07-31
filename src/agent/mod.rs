@@ -44,8 +44,8 @@ pub enum Behavior {
     },
     /// Walk a planned path; report arrival or failure as an event.
     GoTo {
-        path: Vec<(i32, i32, i32)>,
-        goal: (i32, i32, i32),
+        path: Vec<crate::planet::BlockPos>,
+        goal: crate::planet::BlockPos,
     },
 }
 
@@ -61,7 +61,7 @@ pub struct Agent {
     pub cursor: Option<ItemStack>,
     pub health: f32,
     pub hunger: f32,
-    pub spawn: Vec3,
+    pub spawn: crate::planet::EntityPos,
     pub time_of_day: f32,
     pub in_world: bool,
     /// Count of PlayerState echoes applied — the click choreography
@@ -71,19 +71,19 @@ pub struct Agent {
     block_map: Vec<BlockId>,
     item_map: Vec<Option<ItemId>>,
     /// id -> (label, pos, yaw) for every other player on the wire.
-    pub players: HashMap<u32, (String, Vec3, f32)>,
+    pub players: HashMap<u32, (String, crate::planet::EntityPos, f32)>,
     names: HashMap<u32, String>,
     /// Breadcrumbs per player: the trail follow() chases.
-    trail: HashMap<u32, VecDeque<Vec3>>,
+    trail: HashMap<u32, VecDeque<crate::planet::EntityPos>>,
     /// Snapshots arrive split when they outgrow one datagram.
-    players_rx: net::SnapshotAssembler<(u32, Vec3, f32, u16, u32)>,
+    players_rx: net::SnapshotAssembler<(u32, crate::planet::EntityPos, f32, u16, u32)>,
     mobs_rx: net::SnapshotAssembler<net::MobSnap>,
     /// Human-readable happenings, drained by the events tool.
     pub events: VecDeque<String>,
     pub behavior: Behavior,
     move_timer: f32,
     /// (pos sampled, seconds since) for stuck detection.
-    stuck_probe: (Vec3, f32),
+    stuck_probe: (crate::planet::EntityPos, f32),
     mods_dir: PathBuf,
     cache_dir: PathBuf,
 }
@@ -120,19 +120,26 @@ impl Agent {
         let client = net::Client::connect(addr, name.to_string(), hash, 0, &identity, None)
             .map_err(|e| format!("connect: {e}"))?;
         let world = World::new(0, id_dir.join("world-cache"), reg.clone());
+        let half = f32::from(crate::planet::FACE_BLOCKS) * 0.5;
+        let default_origin =
+            crate::planet::EntityPos::new(crate::planet::Face::PosZ, half, 0.0, half)
+                .expect("agent default origin is canonical");
+        let default_player =
+            crate::planet::EntityPos::new(crate::planet::Face::PosZ, half, 80.0, half)
+                .expect("agent default player position is canonical");
         let mut agent = Agent {
             client,
             reg,
             world,
             my_id: 0,
-            player: Player::new(Vec3::new(0.0, 80.0, 0.0)),
+            player: Player::new_at(default_player),
             yaw: 0.0,
             hotbar: 0,
             inventory: Inventory::new(),
             cursor: None,
             health: 20.0,
             hunger: 20.0,
-            spawn: Vec3::ZERO,
+            spawn: default_origin,
             time_of_day: 0.3,
             in_world: false,
             echoes: 0,
@@ -146,7 +153,7 @@ impl Agent {
             events: VecDeque::new(),
             behavior: Behavior::Idle,
             move_timer: 0.0,
-            stuck_probe: (Vec3::ZERO, 0.0),
+            stuck_probe: (default_origin, 0.0),
             mods_dir,
             cache_dir: id_dir.join("world-cache"),
         };
@@ -194,7 +201,7 @@ impl Agent {
 
     fn apply_player_state(&mut self, state: net::PlayerStateSnap, initial: bool) {
         if initial {
-            self.player = Player::new(state.pos);
+            self.player = Player::new_at(state.pos);
             self.yaw = state.yaw;
         }
         self.spawn = state.spawn;
@@ -235,8 +242,12 @@ impl Agent {
         let mut chunks = Vec::new();
         for msg in self.client.poll() {
             match msg {
-                net::S2C::Chunk { x, z, rle } => {
-                    chunks.push((ChunkPos { x, z }, rle));
+                net::S2C::Chunk { face, u, v, rle } => {
+                    if let Some(face) = crate::planet::Face::from_u8(face)
+                        && let Ok(pos) = ChunkPos::new(face, u, v)
+                    {
+                        chunks.push((pos, rle));
+                    }
                 }
                 other => {
                     self.apply_chunks(&mut chunks);
@@ -335,17 +346,20 @@ impl Agent {
                 self.event(format!("refused: {}", why.detail));
                 self.in_world = false;
             }
-            net::S2C::Chunk { x, z, rle } => {
-                self.world
-                    .insert_remote_chunk(ChunkPos { x, z }, &rle, &self.block_map);
+            net::S2C::Chunk { face, u, v, rle } => {
+                if let Some(face) = crate::planet::Face::from_u8(face)
+                    && let Ok(pos) = ChunkPos::new(face, u, v)
+                {
+                    self.world.insert_remote_chunk(pos, &rle, &self.block_map);
+                }
             }
-            net::S2C::BlockSet { x, y, z, id, meta } => {
+            net::S2C::BlockSet { pos, id, meta } => {
                 let local = self
                     .block_map
                     .get(id as usize)
                     .copied()
                     .unwrap_or(self.reg.unknown_block);
-                self.world.set_block_meta(x, y, z, local, meta);
+                self.world.set_block_meta_at(pos, local, meta);
                 self.world.clear_pending_drops();
             }
             net::S2C::Players(part) => {
@@ -368,7 +382,7 @@ impl Agent {
                     // Breadcrumbs: a new crumb each ~0.75 blocks of
                     // travel; follow() chases the trail, not the line.
                     let t = self.trail.entry(id).or_default();
-                    if t.back().is_none_or(|b| (*b - pos).length() > 0.75) {
+                    if t.back().is_none_or(|b| b.distance_to(pos) > 0.75) {
                         t.push_back(pos);
                         if t.len() > 512 {
                             t.pop_front();
@@ -384,7 +398,7 @@ impl Agent {
                     .into_iter()
                     .filter(|s| (s.species as usize) < self.reg.animals.len())
                     .map(|s| {
-                        let mut m = crate::mobs::Mob::new(s.species as usize, s.pos, s.yaw);
+                        let mut m = crate::mobs::Mob::new_at(s.species as usize, s.pos, s.yaw);
                         m.id = s.id;
                         m.growth = s.growth;
                         m.fed = s.fed;
@@ -446,9 +460,9 @@ impl Agent {
                     self.event(format!("{n} left"));
                 }
             }
-            net::S2C::SignText { x, y, z, lines } => {
-                self.world.insert_block_entity(
-                    (x, y, z),
+            net::S2C::SignText { pos, lines } => {
+                self.world.insert_block_entity_at(
+                    pos,
                     crate::world::BlockEntity::Sign(crate::world::SignState { lines }),
                 );
             }

@@ -1,10 +1,20 @@
 //! RGB block light, skylight, and cross-chunk relight cascades.
 
 use super::*;
+use crate::planet::{BlockPos, Direction6, step6};
 
 impl World {
+    /// (block-light intensity, sky light) at a canonical planetary cell.
+    pub fn light_at_pos(&self, pos: BlockPos) -> (u8, u8) {
+        let (x, y, z) = pos.local();
+        self.chunks
+            .get(&pos.chunk())
+            .map_or((0, 15), |chunk| chunk.light_intensity(x, y, z))
+    }
+
     /// (block-light intensity, sky light) at a world position. Unloaded chunks
     /// read as open sky so the world's edge doesn't render black.
+    #[cfg(test)]
     pub fn light_at(&self, x: i32, y: i32, z: i32) -> (u8, u8) {
         if y < 0 {
             return (0, 0);
@@ -12,18 +22,20 @@ impl World {
         if y >= CHUNK_Y as i32 {
             return (0, 15);
         }
-        match self.chunks.get(&ChunkPos::of_world(x, z)) {
-            Some(c) => c.light_intensity(
-                x.rem_euclid(CHUNK_X as i32) as usize,
-                y as usize,
-                z.rem_euclid(CHUNK_Z as i32) as usize,
-            ),
-            None => (0, 15),
-        }
+        BlockPos::of_world(x, y, z).map_or((0, 15), |pos| self.light_at_pos(pos))
+    }
+
+    /// (block-light r,g,b, sky light) at a canonical planetary cell.
+    pub fn light_rgb_at_pos(&self, pos: BlockPos) -> ([u8; 3], u8) {
+        let (x, y, z) = pos.local();
+        self.chunks
+            .get(&pos.chunk())
+            .map_or(([0; 3], 15), |chunk| chunk.light(x, y, z))
     }
 
     /// (block-light r,g,b, sky light) at a world position — the full colored
     /// signal the mesher bakes into vertices.
+    #[cfg(test)]
     pub fn light_rgb_at(&self, x: i32, y: i32, z: i32) -> ([u8; 3], u8) {
         if y < 0 {
             return ([0; 3], 0);
@@ -31,14 +43,7 @@ impl World {
         if y >= CHUNK_Y as i32 {
             return ([0; 3], 15);
         }
-        match self.chunks.get(&ChunkPos::of_world(x, z)) {
-            Some(c) => c.light(
-                x.rem_euclid(CHUNK_X as i32) as usize,
-                y as usize,
-                z.rem_euclid(CHUNK_Z as i32) as usize,
-            ),
-            None => ([0; 3], 15),
-        }
+        BlockPos::of_world(x, y, z).map_or(([0; 3], 15), |pos| self.light_rgb_at_pos(pos))
     }
 
     /// Recompute both light channels for one chunk from scratch: sky column
@@ -117,32 +122,36 @@ impl World {
                     q: &mut VecDeque<(usize, usize, usize)>,
                     cells: &[Cell],
                     chan: Option<usize>| {
-            for (dx, dz, edge_x, edge_z) in [
-                (-1i32, 0i32, 0usize, usize::MAX),
-                (1, 0, NX - 1, usize::MAX),
-                (0, -1, usize::MAX, 0usize),
-                (0, 1, usize::MAX, NZ - 1),
+            let base_u = u32::from(pos.u()) * CHUNK_X as u32;
+            let base_v = u32::from(pos.v()) * CHUNK_Z as u32;
+            for (direction, edge_x, edge_z) in [
+                (Direction6::West, 0usize, usize::MAX),
+                (Direction6::East, NX - 1, usize::MAX),
+                (Direction6::South, usize::MAX, 0usize),
+                (Direction6::North, usize::MAX, NZ - 1),
             ] {
-                let npos = ChunkPos {
-                    x: pos.x + dx,
-                    z: pos.z + dz,
-                };
-                let Some(nc) = self.chunks.get(&npos) else {
-                    continue;
-                };
-                // The neighbor's cell touching our edge cell.
-                let (nb_x, nb_z) = (
-                    if dx == -1 { NX - 1 } else { 0 },
-                    if dz == -1 { NZ - 1 } else { 0 },
-                );
                 for t in 0..(if edge_x == usize::MAX { NX } else { NZ }) {
                     for y in 0..NY {
-                        let (ox, oz, nx, nz) = if edge_x != usize::MAX {
-                            (edge_x, t, nb_x, t)
+                        let (ox, oz) = if edge_x != usize::MAX {
+                            (edge_x, t)
                         } else {
-                            (t, edge_z, t, nb_z)
+                            (t, edge_z)
                         };
-                        let (nlb, nls) = nc.light(nx, y, nz);
+                        let here = BlockPos::new(
+                            pos.face(),
+                            (base_u + ox as u32) as u16,
+                            y as u8,
+                            (base_v + oz as u32) as u16,
+                        )
+                        .expect("chunk cells are valid planetary block positions");
+                        let across = step6(here, direction)
+                            .expect("horizontal block steps always exist")
+                            .pos;
+                        let Some(nc) = self.chunks.get(&across.chunk()) else {
+                            continue;
+                        };
+                        let (nx, ny, nz) = across.local();
+                        let (nlb, nls) = nc.light(nx, ny, nz);
                         let v = match chan {
                             None => nls,
                             Some(c) => nlb[c],
@@ -273,9 +282,9 @@ impl World {
     ) {
         const MAX_VISITS: u32 = 18; // > the 15-level light range, with headroom
         let mut queue: VecDeque<_> = starts.into_iter().collect();
-        let mut visits: HashMap<(i32, i32), u32> = HashMap::new();
+        let mut visits: HashMap<ChunkPos, u32> = HashMap::new();
         while let Some(p) = queue.pop_front() {
-            let v = visits.entry((p.x, p.z)).or_insert(0);
+            let v = visits.entry(p).or_insert(0);
             if *v >= MAX_VISITS {
                 continue; // safety cap; converges below this
             }
@@ -285,10 +294,7 @@ impl World {
             }
             if self.relight_chunk(p) {
                 for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                    let n = ChunkPos {
-                        x: p.x + dx,
-                        z: p.z + dz,
-                    };
+                    let n = p.offset(dx, dz);
                     if self.chunks.contains_key(&n) {
                         queue.push_back(n);
                     }

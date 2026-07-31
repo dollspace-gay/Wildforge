@@ -6,6 +6,7 @@
 //! 256 KB of the 448 KB a chunk used to cost unconditionally, and the
 //! overwhelming majority of chunks are uniform in both.
 
+pub use crate::planet::ChunkPos;
 use crate::registry::BlockId;
 
 pub const CHUNK_X: usize = 16;
@@ -260,21 +261,5 @@ impl Chunk {
             + self.meta.heap_bytes()
             + self.light_block.heap_bytes()
             + self.light_sky.heap_bytes()
-    }
-}
-
-/// Chunk coordinate (world block x = cx * 16 + local x).
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct ChunkPos {
-    pub x: i32,
-    pub z: i32,
-}
-
-impl ChunkPos {
-    pub fn of_world(wx: i32, wz: i32) -> ChunkPos {
-        ChunkPos {
-            x: wx.div_euclid(CHUNK_X as i32),
-            z: wz.div_euclid(CHUNK_Z as i32),
-        }
     }
 }
