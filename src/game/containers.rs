@@ -164,29 +164,27 @@ impl Game {
     }
 
     /// Whether the local player owns this stall (local worlds/hosts).
-    pub(super) fn stall_is_mine(&self, pos: (i32, i32, i32)) -> bool {
+    pub(super) fn stall_is_mine(&self, pos: crate::planet::BlockPos) -> bool {
         let my_id = identity::local_player_id(
             &self.server.world.save_dir_for_saving(),
             self.identity.device_id(),
         )
         .map(|p| p.0)
         .unwrap_or([0; 16]);
-        match self.server.world.block_entity(&pos) {
+        match self.server.world.block_entity_at(&pos) {
             Some(world::BlockEntity::Stall(st)) => st.owner == my_id,
             _ => false,
         }
     }
 
-    pub(super) fn stall_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+    pub(super) fn stall_click(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
         if slot > 12 {
             return;
         }
         let reg = self.content.reg.clone();
         if let Some(rc) = &self.multiplayer.remote {
             rc.client.send(&net::C2S::ContainerClick {
-                x: pos.0,
-                y: pos.1,
-                z: pos.2,
+                pos,
                 slot: slot as u8,
                 right,
             });
@@ -196,7 +194,8 @@ impl Game {
             return; // visitors browse; the BUY button is theirs
         }
         let held = self.ui_state.held_stack;
-        let Some(world::BlockEntity::Stall(st)) = self.server.world.block_entity_mut(&pos) else {
+        let Some(world::BlockEntity::Stall(st)) = self.server.world.block_entity_mut_at(&pos)
+        else {
             return;
         };
         let sref = match slot {
@@ -210,9 +209,9 @@ impl Game {
     }
 
     /// Local purchase: the singleplayer/host mirror of C2S::StallBuy.
-    pub(super) fn stall_buy_local(&mut self, pos: (i32, i32, i32)) {
+    pub(super) fn stall_buy_local(&mut self, pos: crate::planet::BlockPos) {
         let reg = self.content.reg.clone();
-        if !self.server.world.check_stall(pos.0, pos.1, pos.2) {
+        if !self.server.world.check_stall_at(pos) {
             self.toast("The stall wants its posts and awning.".to_string());
             return;
         }
@@ -228,7 +227,7 @@ impl Game {
                     .sum::<u32>()
                     >= n
             };
-            let Some(world::BlockEntity::Stall(st)) = self.server.world.block_entity_mut(&pos)
+            let Some(world::BlockEntity::Stall(st)) = self.server.world.block_entity_mut_at(&pos)
             else {
                 return;
             };
@@ -315,7 +314,12 @@ impl Game {
         )
     }
 
-    pub(super) fn bloomery_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+    pub(super) fn bloomery_click(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        slot: usize,
+        right: bool,
+    ) {
         self.remote_container_notify(pos, slot, right);
         let reg = self.content.reg.clone();
         // Mirror of the host rule: sealed while firing, charge takes
@@ -323,7 +327,7 @@ impl Game {
         // free. The bloomery wants its chain; the forge takes any
         // smeltable and any fuel.
         let held = self.ui_state.held_stack;
-        let (b, ok) = match self.server.world.block_entity_mut(&pos) {
+        let (b, ok) = match self.server.world.block_entity_mut_at(&pos) {
             Some(world::BlockEntity::Bloomery(b)) => {
                 let chain = reg.bloomery.first().cloned();
                 let want = chain.map(|c| if slot < 4 { c.charge } else { c.fuel });
@@ -357,7 +361,7 @@ impl Game {
 
     /// The LIGHT action: needs an ember in hand or inventory, a valid
     /// shell, and a charge. Guests request; the host answers.
-    pub(super) fn light_bloomery_action(&mut self, pos: (i32, i32, i32)) {
+    pub(super) fn light_bloomery_action(&mut self, pos: crate::planet::BlockPos) {
         let reg = self.content.reg.clone();
         let Some(ember) = reg.item_id("base:ember") else {
             return;
@@ -370,24 +374,20 @@ impl Game {
         };
         if let Some(rc) = &self.multiplayer.remote {
             self.inventory.take_one(slot);
-            rc.client.send(&net::C2S::LightBloomery {
-                x: pos.0,
-                y: pos.1,
-                z: pos.2,
-            });
+            rc.client.send(&net::C2S::LightBloomery { pos });
             return;
         }
         let station = self
             .content
             .reg
-            .block(self.server.world.get_block(pos.0, pos.1, pos.2))
+            .block(self.server.world.get_block_at(pos))
             .interaction
             .clone();
         let kilnish = station.as_deref() == Some("kiln");
         let res = match station.as_deref() {
-            Some("kiln") => self.server.world.light_kiln(pos.0, pos.1, pos.2),
-            Some("forge") => self.server.world.light_forge(pos.0, pos.1, pos.2),
-            _ => self.server.world.light_bloomery(pos.0, pos.1, pos.2),
+            Some("kiln") => self.server.world.light_kiln_at(pos),
+            Some("forge") => self.server.world.light_forge_at(pos),
+            _ => self.server.world.light_bloomery_at(pos),
         };
         match res {
             Ok(()) => {
@@ -422,10 +422,10 @@ impl Game {
         )
     }
 
-    pub(super) fn kiln_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+    pub(super) fn kiln_click(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
         self.remote_container_notify(pos, slot, right);
         let reg = self.content.reg.clone();
-        let Some(world::BlockEntity::Kiln(k)) = self.server.world.block_entity_mut(&pos) else {
+        let Some(world::BlockEntity::Kiln(k)) = self.server.world.block_entity_mut_at(&pos) else {
             return;
         };
         if k.lit || slot >= 9 {
@@ -466,7 +466,7 @@ impl Game {
     #[allow(clippy::type_complexity)]
     pub(super) fn furnace_view(
         &self,
-        pos: (i32, i32, i32),
+        pos: crate::planet::BlockPos,
     ) -> (
         Option<ItemStack>,
         Option<ItemStack>,
@@ -474,7 +474,7 @@ impl Game {
         f32,
         f32,
     ) {
-        match self.server.world.block_entity(&pos) {
+        match self.server.world.block_entity_at(&pos) {
             Some(world::BlockEntity::Furnace(f)) => {
                 let time = f
                     .input
@@ -574,10 +574,16 @@ impl Game {
         )
     }
 
-    pub(super) fn offering_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+    pub(super) fn offering_click(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        slot: usize,
+        right: bool,
+    ) {
         self.remote_container_notify(pos, slot, right);
         let reg = self.content.reg.clone();
-        let Some(world::BlockEntity::Offering(o)) = self.server.world.block_entity_mut(&pos) else {
+        let Some(world::BlockEntity::Offering(o)) = self.server.world.block_entity_mut_at(&pos)
+        else {
             return;
         };
         let (new_slot, new_held) =
@@ -592,7 +598,7 @@ impl Game {
     /// HeldResult echo is the truth that reconciles it.
     pub(super) fn remote_container_notify(
         &mut self,
-        pos: (i32, i32, i32),
+        pos: crate::planet::BlockPos,
         slot: usize,
         right: bool,
     ) {
@@ -600,18 +606,16 @@ impl Game {
             return;
         };
         r.client.send(&net::C2S::ContainerClick {
-            x: pos.0,
-            y: pos.1,
-            z: pos.2,
+            pos,
             slot: slot as u8,
             right,
         });
     }
 
-    pub(super) fn chest_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+    pub(super) fn chest_click(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
         self.remote_container_notify(pos, slot, right);
         let reg = self.content.reg.clone();
-        let Some(world::BlockEntity::Chest(c)) = self.server.world.block_entity_mut(&pos) else {
+        let Some(world::BlockEntity::Chest(c)) = self.server.world.block_entity_mut_at(&pos) else {
             return;
         };
         let (new_slot, new_held) =
@@ -620,10 +624,11 @@ impl Game {
         self.ui_state.held_stack = new_held;
     }
 
-    pub(super) fn furnace_click(&mut self, pos: (i32, i32, i32), slot: usize, right: bool) {
+    pub(super) fn furnace_click(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
         self.remote_container_notify(pos, slot, right);
         let reg = self.content.reg.clone();
-        let Some(world::BlockEntity::Furnace(f)) = self.server.world.block_entity_mut(&pos) else {
+        let Some(world::BlockEntity::Furnace(f)) = self.server.world.block_entity_mut_at(&pos)
+        else {
             return;
         };
         match slot {

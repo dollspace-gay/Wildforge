@@ -1,10 +1,9 @@
 //! Guest terrain delivery and perception-bounded world snapshots.
 
-use glam::Vec3;
-
 use super::HostSession;
 use crate::chunk::ChunkPos;
 use crate::net::{self, MobSnap, S2C, batch_snapshot};
+use crate::planet::EntityPos;
 use crate::server::Server;
 
 /// Chunks pushed per guest per pump. The ring is paced so a guest asking for
@@ -28,13 +27,15 @@ impl HostSession {
                 let g = &self.guests[&id];
                 (g.pos, g.view_dist)
             };
-            let center = ChunkPos::of_world(gpos.x as i32, gpos.z as i32);
+            let Some(center) = gpos.chunk() else {
+                continue;
+            };
             // A guest that walked away has dropped these; forget that we sent
             // them so walking back re-streams instead of leaving a hole.
             if let Some(g) = self.guests.get_mut(&id) {
                 let keep = vd + 2;
                 g.sent_chunks
-                    .retain(|(cx, cz)| (cx - center.x).abs().max((cz - center.z).abs()) <= keep);
+                    .retain(|pos| pos.distance(center) <= f64::from(keep * 16));
             }
             let mut needed = Vec::new();
             'scan: for r in 0..=vd {
@@ -43,7 +44,10 @@ impl HostSession {
                         if dx.abs().max(dz.abs()) != r {
                             continue;
                         }
-                        let cp = (center.x + dx, center.z + dz);
+                        let cp = center.offset(dx, dz);
+                        if cp.distance(center) > f64::from(vd * 16) + 1.0 {
+                            continue;
+                        }
                         if !self.guests[&id].sent_chunks.contains(&cp) {
                             needed.push(cp);
                             if needed.len() >= CHUNKS_PER_PUMP {
@@ -53,8 +57,8 @@ impl HostSession {
                     }
                 }
             }
-            for (cx, cz) in needed {
-                self.stream_chunk(server, id, cx, cz);
+            for pos in needed {
+                self.stream_chunk(server, id, pos);
             }
         }
     }
@@ -64,7 +68,7 @@ impl HostSession {
     pub(super) fn stream_snapshots(
         &mut self,
         server: &Server,
-        host: Option<(Vec3, f32, u16, u32)>,
+        host: Option<(EntityPos, f32, u16, u32)>,
         dt: f32,
     ) {
         self.snapshot_timer += dt;
@@ -87,10 +91,7 @@ impl HostSession {
                 continue;
             };
             let (eye, reach) = (g.pos, snapshot_reach(g.view_dist));
-            let near = |p: Vec3| {
-                let (dx, dz) = (p.x - eye.x, p.z - eye.z);
-                dx * dx + dz * dz <= reach * reach
-            };
+            let near_entity = |p: EntityPos| eye.horizontal_distance_to(p) <= reach;
             let budget = self.net.datagram_budget(id);
 
             // Other players stay visible past the mob horizon: a person on
@@ -98,7 +99,7 @@ impl HostSession {
             let players: Vec<_> = everyone
                 .iter()
                 .copied()
-                .filter(|(pid, p, ..)| *pid == id || near(*p))
+                .filter(|(pid, p, ..)| *pid == id || near_entity(*p))
                 .collect();
             self.send_snapshot(id, batch_snapshot(seq, players, budget, S2C::Players));
 
@@ -106,7 +107,7 @@ impl HostSession {
                 .world
                 .mobs()
                 .iter()
-                .filter(|m| near(m.pos))
+                .filter(|m| near_entity(m.pos))
                 .map(|m| MobSnap {
                     id: m.id,
                     species: m.species as u16,
@@ -123,7 +124,7 @@ impl HostSession {
                 .world
                 .projectiles()
                 .iter()
-                .filter(|p| near(p.pos))
+                .filter(|p| near_entity(p.pos))
                 .map(|p| net::BoltSnap {
                     pos: p.pos,
                     vel: p.vel,
@@ -138,7 +139,7 @@ impl HostSession {
                 .world
                 .falling_blocks()
                 .iter()
-                .filter(|f| near(f.pos))
+                .filter(|f| near_entity(f.pos))
                 .map(|f| net::FallSnap {
                     pos: f.pos,
                     block: f.block.0,
@@ -150,28 +151,31 @@ impl HostSession {
 
     /// Resident centers and radius requested by active guests.
     pub fn residency(&self) -> (Vec<ChunkPos>, i32) {
-        let centers = self
-            .guests
-            .values()
-            .map(|g| ChunkPos::of_world(g.pos.x as i32, g.pos.z as i32))
-            .collect();
+        let centers = self.guests.values().filter_map(|g| g.pos.chunk()).collect();
         let radius = self.guests.values().map(|g| g.view_dist).max().unwrap_or(0);
         (centers, radius)
     }
 
     /// Generate, encode, and send one chunk, remembering that the guest has
     /// it. The single path for both the streaming ring and `RequestChunk`.
-    pub(super) fn stream_chunk(&mut self, server: &mut Server, id: u32, cx: i32, cz: i32) {
-        let cp = ChunkPos { x: cx, z: cz };
-        server.world.ensure_chunk(cp);
-        let Some(rle) = server.world.chunk_rle(cp) else {
+    pub(super) fn stream_chunk(&mut self, server: &mut Server, id: u32, pos: ChunkPos) {
+        server.world.ensure_chunk(pos);
+        let Some(rle) = server.world.chunk_rle(pos) else {
             // Nothing to send — do not record it as sent or the ring skips
             // this chunk forever and the guest cannot repair the hole.
             return;
         };
-        self.net.send(id, &S2C::Chunk { x: cx, z: cz, rle });
+        self.net.send(
+            id,
+            &S2C::Chunk {
+                face: pos.face() as u8,
+                u: pos.u(),
+                v: pos.v(),
+                rle,
+            },
+        );
         if let Some(g) = self.guests.get_mut(&id) {
-            g.sent_chunks.insert((cx, cz));
+            g.sent_chunks.insert(pos);
         }
     }
 

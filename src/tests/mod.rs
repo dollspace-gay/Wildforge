@@ -38,6 +38,96 @@ fn tmp_dir(name: &str) -> std::path::PathBuf {
     dir
 }
 
+fn tchunk(x: i32, z: i32) -> ChunkPos {
+    ChunkPos::from_centered(crate::planet::Face::PosZ, x, z)
+        .expect("test chunk coordinate must be inside the finite planet")
+}
+
+fn ep(local: Vec3) -> crate::planet::EntityPos {
+    crate::planet::EntityPos::from_local(crate::planet::Face::PosZ, local)
+        .expect("test position must fit on the finite PosZ face")
+}
+
+fn bp(x: i32, y: i32, z: i32) -> crate::planet::BlockPos {
+    crate::planet::BlockPos::of_world(x, y, z).expect("positive-Z test coordinate")
+}
+
+fn surface_offset(pos: crate::planet::SurfacePos, du: i32, dv: i32) -> crate::planet::SurfacePos {
+    crate::planet::SurfacePos::canonicalized(
+        pos.face(),
+        i32::from(pos.u()) + du,
+        i32::from(pos.v()) + dv,
+    )
+    .expect("small test offset canonicalizes on the finite planet")
+}
+
+fn block_pos(pos: crate::planet::SurfacePos, y: i32) -> crate::planet::BlockPos {
+    crate::planet::BlockPos::new(pos.face(), pos.u(), y as u8, pos.v())
+        .expect("test surface and shell height form a block position")
+}
+
+fn block_at(world: &World, pos: crate::planet::SurfacePos, y: i32) -> crate::registry::BlockId {
+    if !(0..CHUNK_Y as i32).contains(&y) {
+        return AIR;
+    }
+    world.get_block_at(block_pos(pos, y))
+}
+
+/// Every directed cube-face transition at a non-corner coordinate.
+///
+/// A physical cube edge appears twice in this list, once from either incident
+/// face.  Keeping both directions is important: several transitions rotate
+/// the destination chart, and a subsystem can accidentally work in one
+/// direction while failing on the reciprocal walk.
+#[derive(Clone, Copy, Debug)]
+struct DirectedSeam {
+    face: crate::planet::Face,
+    direction: crate::planet::Direction4,
+    source: crate::planet::SurfacePos,
+    across: crate::planet::SurfacePos,
+    heading: Vec3,
+}
+
+fn directed_planet_seams() -> Vec<DirectedSeam> {
+    use crate::planet::{Direction4, FACE_BLOCKS, Face, SurfacePos, step4};
+
+    Face::ALL
+        .into_iter()
+        .flat_map(|face| Direction4::ALL.map(move |direction| (face, direction)))
+        .enumerate()
+        .map(|(index, (face, direction))| {
+            // Spread fixtures around each edge so systems that retain queues or
+            // cached light cannot interact with the next case.
+            let varying = 320 + index as u16 * 300;
+            let (u, v, heading) = match direction {
+                Direction4::East => (FACE_BLOCKS - 1, varying, Vec3::X),
+                Direction4::North => (varying, FACE_BLOCKS - 1, Vec3::Z),
+                Direction4::West => (0, varying, Vec3::NEG_X),
+                Direction4::South => (varying, 0, Vec3::NEG_Z),
+            };
+            let source = SurfacePos::new(face, u, v).unwrap();
+            let across = step4(source, direction).pos;
+            assert_ne!(source.face(), across.face());
+            DirectedSeam {
+                face,
+                direction,
+                source,
+                across,
+                heading,
+            }
+        })
+        .collect()
+}
+
+fn ensure_surface_neighborhood(world: &mut World, pos: crate::planet::SurfacePos, radius: i32) {
+    let center = ChunkPos::from_surface(pos);
+    for du in -radius..=radius {
+        for dv in -radius..=radius {
+            world.ensure_chunk(center.offset(du, dv));
+        }
+    }
+}
+
 fn save_world(world: &mut World) {
     let report = world.save_modified();
     assert!(report.is_ok(), "test save failed: {}", report.summary());
@@ -47,7 +137,7 @@ fn test_world_with(name: &str, reg: Arc<Registry>) -> World {
     let mut w = World::new(42, tmp_dir(name), reg);
     for x in -2..=2 {
         for z in -2..=2 {
-            w.ensure_chunk(ChunkPos { x, z });
+            w.ensure_chunk(tchunk(x, z));
         }
     }
     w
@@ -76,7 +166,7 @@ fn write_demo_mod(root: &Path) {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("mod.toml"),
-        "id = \"testium\"\nname = \"Testium\"\nversion = \"1.0.0\"\ndepends = [\"base\"]\n",
+        "id = \"testium\"\nname = \"Testium\"\nversion = \"1.0.0\"\nworld_api = 2\ndepends = [\"base\"]\n",
     )
     .unwrap();
     std::fs::write(
@@ -133,7 +223,7 @@ y_range = [4, 60]
 fn write_script_mod(root: &Path, script: &str) -> Vec<(String, std::path::PathBuf)> {
     let dir = root.join("scripty");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("mod.toml"), "id = \"scripty\"\n").unwrap();
+    std::fs::write(dir.join("mod.toml"), "id = \"scripty\"\nworld_api = 2\n").unwrap();
     std::fs::write(dir.join("main.rhai"), script).unwrap();
     vec![("scripty".to_string(), dir)]
 }
@@ -144,38 +234,31 @@ fn write_script_mod(root: &Path, script: &str) -> Vec<(String, std::path::PathBu
 
 use crate::worldgen::{Biome, Generator};
 
-/// Find a column of the given biome near the origin (deterministic per seed).
-/// Several well-separated countries of one biome — for tests that
-/// want more than one sample before concluding anything.
-fn find_biomes(g: &Generator, want: Biome, n: usize) -> Vec<(i32, i32)> {
-    let mut out: Vec<(i32, i32)> = Vec::new();
-    for ring in 0..40i32 {
-        let mut keys: Vec<(i32, i32)> = Vec::new();
-        if ring == 0 {
-            keys.push((0, 0));
-        } else {
-            for i in -ring..=ring {
-                keys.push((i, -ring));
-                keys.push((i, ring));
-            }
-            for j in -ring + 1..ring {
-                keys.push((-ring, j));
-                keys.push((ring, j));
-            }
-        }
-        for key in keys {
-            let (cx, cz) = g.province_center(key.0, key.1);
-            // Off the site: the country's HEART stands at its center,
-            // and a landmark is not a sample of the ground around it.
-            let (x, z) = (cx + 48, cz + 48);
-            if g.biome(x, z) == want
-                && g.province(x, z).key == key
-                && g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 2
-                && g.plate_relief(&g.climate(x, z)) <= 30.0
-            {
-                out.push((x, z));
-                if out.len() >= n {
-                    return out;
+/// Several well-separated countries of one biome on the finite planet.
+/// Enumerating all 6×9×9 country cells is cheap, deterministic, and avoids
+/// accidentally testing the retired positive-Z planar adapter.
+fn find_biomes(g: &Generator, want: Biome, n: usize) -> Vec<crate::planet::SurfacePos> {
+    let mut out = Vec::new();
+    for face in crate::planet::Face::ALL {
+        for u in 0..Generator::PROVINCE_CELLS {
+            for v in 0..Generator::PROVINCE_CELLS {
+                let key = crate::worldgen::ProvinceKey { face, u, v };
+                let site = g.province_center_at(key);
+                let sample = crate::planet::SurfacePos::canonicalized(
+                    site.face(),
+                    i32::from(site.u()) + 48,
+                    i32::from(site.v()) + 48,
+                )
+                .expect("a country-interior sample canonicalizes");
+                if g.biome_at(sample) == want
+                    && g.province_at(sample).key == g.province_at(site).key
+                    && g.surface_estimate_at(sample) > crate::chunk::SEA_LEVEL + 2
+                    && g.plate_relief(&g.climate_at(sample)) <= 30.0
+                {
+                    out.push(sample);
+                    if out.len() >= n {
+                        return out;
+                    }
                 }
             }
         }
@@ -183,12 +266,12 @@ fn find_biomes(g: &Generator, want: Biome, n: usize) -> Vec<(i32, i32)> {
     out
 }
 
-fn find_biome(g: &Generator, want: Biome) -> Option<(i32, i32)> {
+fn find_biome(g: &Generator, want: Biome) -> Option<crate::planet::SurfacePos> {
     // Dry land off a fold range: a province center can sit under the
     // sea or on a peak, and neither grows what the country grows.
-    find_biome_where(g, want, |x, z| {
-        g.surface_estimate(x, z) > crate::chunk::SEA_LEVEL + 2
-            && g.plate_relief(&g.climate(x, z)) <= 30.0
+    find_biome_where(g, want, |pos| {
+        g.surface_estimate_at(pos) > crate::chunk::SEA_LEVEL + 2
+            && g.plate_relief(&g.climate_at(pos)) <= 30.0
     })
 }
 
@@ -198,52 +281,71 @@ fn find_biome(g: &Generator, want: Biome) -> Option<(i32, i32)> {
 fn find_biome_where(
     g: &Generator,
     want: Biome,
-    pred: impl Fn(i32, i32) -> bool,
-) -> Option<(i32, i32)> {
-    // Walk province CENTERS, not arbitrary columns: a country has one
-    // label, so one sample answers for all of it — and the center is
-    // the deepest interior point there is, never a border fringe.
-    for ring in 0..40i32 {
-        let mut keys: Vec<(i32, i32)> = Vec::new();
-        if ring == 0 {
-            keys.push((0, 0));
-        } else {
-            for i in -ring..=ring {
-                keys.push((i, -ring));
-                keys.push((i, ring));
-            }
-            for j in -ring + 1..ring {
-                keys.push((-ring, j));
-                keys.push((ring, j));
-            }
-        }
-        for key in keys {
-            let (cx, cz) = g.province_center(key.0, key.1);
-            // Off the site: the country's HEART stands at its center,
-            // and a landmark is not a sample of the ground around it.
-            let (x, z) = (cx + 48, cz + 48);
-            if g.biome(x, z) == want && g.province(x, z).key == key && pred(x, z) {
-                return Some((x, z));
+    pred: impl Fn(crate::planet::SurfacePos) -> bool,
+) -> Option<crate::planet::SurfacePos> {
+    for face in crate::planet::Face::ALL {
+        for u in 0..Generator::PROVINCE_CELLS {
+            for v in 0..Generator::PROVINCE_CELLS {
+                let key = crate::worldgen::ProvinceKey { face, u, v };
+                let site = g.province_center_at(key);
+                let sample = crate::planet::SurfacePos::canonicalized(
+                    site.face(),
+                    i32::from(site.u()) + 48,
+                    i32::from(site.v()) + 48,
+                )
+                .expect("a country-interior sample canonicalizes");
+                if g.biome_at(sample) == want
+                    && g.province_at(sample).key == g.province_at(site).key
+                    && pred(sample)
+                {
+                    return Some(sample);
+                }
             }
         }
     }
     None
 }
 
-/// Generate the chunk containing a column and return (world, surface y).
-fn gen_at(reg: &Arc<Registry>, name: &str, x: i32, z: i32) -> (World, i32) {
-    let mut w = World::new(42, tmp_dir(name), reg.clone());
-    let cp = ChunkPos::of_world(x, z);
-    for dx in -1..=1 {
-        for dz in -1..=1 {
-            w.ensure_chunk(ChunkPos {
-                x: cp.x + dx,
-                z: cp.z + dz,
-            });
+fn find_water_features(
+    generator: &crate::worldgen::Generator,
+    wanted: usize,
+) -> Vec<(crate::planet::SurfacePos, i32)> {
+    let mut found: Vec<(crate::planet::SurfacePos, i32)> = Vec::new();
+    'faces: for face in crate::planet::Face::ALL {
+        for u in (8..crate::planet::FACE_BLOCKS).step_by(16) {
+            for v in (8..crate::planet::FACE_BLOCKS).step_by(16) {
+                let pos = crate::planet::SurfacePos::new(face, u, v).unwrap();
+                let Some(fill) = generator.water_features_at(pos) else {
+                    continue;
+                };
+                if fill <= crate::chunk::SEA_LEVEL + 3
+                    || found.iter().any(|(other, _)| {
+                        crate::planet::geodesic_distance(pos.center(), other.center()) < 200.0
+                    })
+                {
+                    continue;
+                }
+                found.push((pos, fill));
+                if found.len() >= wanted {
+                    break 'faces;
+                }
+            }
         }
     }
-    let h = w.surface_height(x, z);
-    (w, h)
+    found
+}
+
+/// Planetary counterpart used by generator tests after the topology break.
+fn gen_at_surface(reg: &Arc<Registry>, name: &str, pos: crate::planet::SurfacePos) -> (World, i32) {
+    let mut world = World::new(42, tmp_dir(name), reg.clone());
+    let chunk = ChunkPos::from_surface(pos);
+    for du in -1..=1 {
+        for dv in -1..=1 {
+            world.ensure_chunk(chunk.offset(du, dv));
+        }
+    }
+    let height = world.surface_height_at(pos);
+    (world, height)
 }
 
 // ---------------- terrain v2 ----------------

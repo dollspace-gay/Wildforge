@@ -135,25 +135,29 @@ impl Game {
         &self,
         ui: &mut UiBatch,
         name: &str,
-        feet: Vec3,
+        feet: crate::planet::EntityPos,
         width: f32,
         height: f32,
     ) {
-        let head = feet + Vec3::new(0.0, 2.12, 0.0);
-        let sight = head - self.camera.pos;
-        let distance = sight.length();
+        let Ok(head) = feet.translated(Vec3::new(0.0, 2.12, 0.0)) else {
+            return;
+        };
+        let head = head.pos;
+        let local_sight = self.player.eye().local_delta_to(head);
+        let distance = local_sight.length();
         if !(1.0..=64.0).contains(&distance)
-            || raycast::raycast(
+            || raycast::raycast_at(
                 &self.server.world,
-                self.camera.pos,
-                sight,
+                self.player.eye(),
+                local_sight,
                 (distance - 0.3).max(0.0),
             )
             .is_some()
         {
             return;
         }
-        let Some((sx, sy)) = project_world_label(self.camera.view_proj(), head, width, height)
+        let relative = head.render_pos() - self.camera.pos;
+        let Some((sx, sy)) = project_world_label(self.camera.view_proj(), relative, width, height)
         else {
             return;
         };
@@ -1285,38 +1289,55 @@ impl Game {
             // Other players: world-space identity labels with distance fading,
             // screen clipping, and terrain occlusion.
             if let Some(r) = &self.multiplayer.remote {
-                for (name, pos, _) in r.players.values() {
-                    self.draw_world_nameplate(&mut ui, name, *pos, w, h);
+                for (id, (name, _, _)) in &r.players {
+                    if let Some(&pos) = r.player_positions.get(id) {
+                        self.draw_world_nameplate(&mut ui, name, pos, w, h);
+                    }
                 }
             }
             if let Some(hst) = &self.multiplayer.host {
                 for g in hst.guests.values() {
-                    self.draw_world_nameplate(&mut ui, &g.public_label(), g.render_pos().0, w, h);
+                    self.draw_world_nameplate(
+                        &mut ui,
+                        &g.public_label(),
+                        g.render_entity_pos(),
+                        w,
+                        h,
+                    );
                 }
             }
             if std::env::var("WILDFORGE_DEMO_PLAYER").is_ok() && self.in_world {
-                for (i, name) in ["ROWAN", "MICA"].iter().enumerate() {
-                    let px = self.player.pos.x.floor() + 0.5 + (i as f32 * 2.0 - 1.0);
-                    let pz = self.player.pos.z.floor() + 3.5;
-                    let py = self.server.world.surface_height(px as i32, pz as i32) as f32 + 1.0;
-                    self.draw_world_nameplate(&mut ui, name, Vec3::new(px, py, pz), w, h);
+                for (i, name) in ["ROWAN", "MICA", "SOL"].iter().enumerate() {
+                    let translated = self
+                        .player
+                        .pos
+                        .translated(Vec3::new([-1.2, 0.0, 1.2][i], 0.0, 3.5))
+                        .expect("demo player offset stays on the planet")
+                        .pos;
+                    let surface = translated
+                        .block()
+                        .expect("demo player remains inside the voxel shell")
+                        .surface();
+                    let at = crate::planet::EntityPos::new(
+                        surface.face(),
+                        translated.u(),
+                        self.server.world.surface_height_at(surface) as f32 + 1.0,
+                        translated.v(),
+                    )
+                    .expect("demo player position is canonical");
+                    self.draw_world_nameplate(&mut ui, name, at, w, h);
                 }
             }
             // Signs and waystones wear their words in the world,
             // nameplate-style (occluded, distance-gated).
-            let sign_texts: Vec<(Vec3, [String; 3])> = self
+            let sign_texts: Vec<(crate::planet::EntityPos, [String; 3])> = self
                 .server
                 .world
                 .sign_texts()
-                .map(|((x, y, z), st)| {
-                    (
-                        Vec3::new(x as f32 + 0.5, y as f32, z as f32 + 0.5),
-                        st.lines.clone(),
-                    )
-                })
+                .map(|(pos, st)| (pos.entity_center(), st.lines.clone()))
                 .collect();
             for (at, lines) in sign_texts {
-                if (at - self.camera.pos).length_squared() > 24.0 * 24.0 {
+                if at.distance_to(self.player.pos) > 24.0 {
                     continue;
                 }
                 for (i, l) in lines.iter().enumerate() {
@@ -1325,8 +1346,9 @@ impl Game {
                     }
                     // Every line's head stays above the post itself,
                     // or the sign block occludes its own lower lines.
-                    let feet = at - Vec3::new(0.0, 0.32 + i as f32 * 0.3, 0.0);
-                    self.draw_world_nameplate(&mut ui, &l.to_uppercase(), feet, w, h);
+                    if let Ok(feet) = at.translated(Vec3::new(0.0, -(0.32 + i as f32 * 0.3), 0.0)) {
+                        self.draw_world_nameplate(&mut ui, &l.to_uppercase(), feet.pos, w, h);
+                    }
                 }
             }
             // Brushing progress near the crosshair.
@@ -1461,7 +1483,7 @@ impl Game {
                 // The forge rides the bloomery screen: same slots,
                 // its own shell check and firing clock.
                 let forge = matches!(
-                    self.server.world.block_entity(&pos),
+                    self.server.world.block_entity_at(&pos),
                     Some(world::BlockEntity::Forge(_))
                 );
                 let title = if forge { "FORGE" } else { "BLOOMERY" };
@@ -1469,14 +1491,11 @@ impl Game {
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 300.0, 3.0, title, [1.0; 4]);
                 let (slots, lit, progress, breached) = {
                     let breached = if forge {
-                        self.server.world.check_forge(pos.0, pos.1, pos.2).is_none()
+                        self.server.world.check_forge_at(pos).is_none()
                     } else {
-                        self.server
-                            .world
-                            .check_bloomery(pos.0, pos.1, pos.2)
-                            .is_none()
+                        self.server.world.check_bloomery_at(pos).is_none()
                     };
-                    match self.server.world.block_entity(&pos) {
+                    match self.server.world.block_entity_at(&pos) {
                         Some(world::BlockEntity::Bloomery(b))
                         | Some(world::BlockEntity::Forge(b)) => {
                             let mut v = [None; 8];
@@ -1557,12 +1576,7 @@ impl Game {
             }
             Screen::Kiln(pos) => {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
-                let title = if self
-                    .server
-                    .world
-                    .check_glassworks(pos.0, pos.1, pos.2)
-                    .is_some()
-                {
+                let title = if self.server.world.check_glassworks_at(pos).is_some() {
                     "GLASSWORKS"
                 } else {
                     "GLASS KILN"
@@ -1570,8 +1584,8 @@ impl Game {
                 let tw = UiBatch::text_width(3.0, title);
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 310.0, 3.0, title, [1.0; 4]);
                 let (slots, lit, progress, breached) = {
-                    let breached = self.server.world.check_kiln(pos.0, pos.1, pos.2).is_none();
-                    match self.server.world.block_entity(&pos) {
+                    let breached = self.server.world.check_kiln_at(pos).is_none();
+                    match self.server.world.block_entity_at(&pos) {
                         Some(world::BlockEntity::Kiln(k)) => {
                             let mut v = [None; 9];
                             v[..4].copy_from_slice(&k.sand);
@@ -1681,7 +1695,7 @@ impl Game {
                 ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
                 let mine = self.multiplayer.remote.is_none() && self.stall_is_mine(pos);
                 let (slots, owner_name, remote_mine) = {
-                    match self.server.world.block_entity(&pos) {
+                    match self.server.world.block_entity_at(&pos) {
                         Some(world::BlockEntity::Stall(st)) => {
                             let mut v: Vec<Option<ItemStack>> = st.goods.to_vec();
                             v.push(st.price);
@@ -1785,7 +1799,7 @@ impl Game {
                 let title = "CHEST";
                 let tw = UiBatch::text_width(3.0, title);
                 ui.text_shadow((w - tw) / 2.0, h / 2.0 - 340.0, 3.0, title, [1.0; 4]);
-                let slots = match self.server.world.block_entity(&pos) {
+                let slots = match self.server.world.block_entity_at(&pos) {
                     Some(world::BlockEntity::Chest(c)) => c.slots,
                     _ => [None; world::CHEST_SLOTS],
                 };
@@ -1841,7 +1855,7 @@ impl Game {
                     &want_line,
                     [0.85, 0.8, 0.55, 1.0],
                 );
-                let slots = match self.server.world.block_entity(&pos) {
+                let slots = match self.server.world.block_entity_at(&pos) {
                     Some(world::BlockEntity::Offering(o)) => o.slots,
                     _ => [None; 3],
                 };

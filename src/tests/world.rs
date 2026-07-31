@@ -9,8 +9,8 @@ fn block_edit_fans_out_through_one_authoritative_boundary() {
 
     let reg = base_reg();
     let mut w = test_world_with("edit-side-effects", reg.clone());
-    let here = ChunkPos { x: 0, z: 0 };
-    let west = ChunkPos { x: -1, z: 0 };
+    let here = tchunk(0, 0);
+    let west = tchunk(-1, 0);
     for pos in [here, west] {
         let chunk = w.chunks_mut().get_mut(&pos).unwrap();
         chunk.dirty = false;
@@ -22,7 +22,14 @@ fn block_edit_fans_out_through_one_authoritative_boundary() {
     w.set_block(0, 200, 4, stone);
     assert_eq!(w.get_block(0, 200, 4), stone);
     assert!(w.chunks()[&here].dirty && w.chunks()[&west].dirty);
-    assert_eq!(w.edits().last(), Some(&(0, 200, 4, stone, 0)));
+    assert_eq!(
+        w.edits().last(),
+        Some(&(
+            crate::planet::BlockPos::of_world(0, 200, 4).unwrap(),
+            stone,
+            0
+        ))
+    );
 
     let chest = b(&reg, "base:chest");
     let stick = it(&reg, "base:stick");
@@ -32,11 +39,11 @@ fn block_edit_fans_out_through_one_authoritative_boundary() {
     w.insert_block_entity((2, 200, 4), BlockEntity::Chest(state));
     w.set_block(2, 200, 4, AIR);
     assert!(!w.has_block_entity(&(2, 200, 4)));
-    assert!(
-        w.pending_drops()
-            .iter()
-            .any(|(pos, stack)| { *pos == (2, 200, 4) && stack.item == stick && stack.count == 3 })
-    );
+    assert!(w.pending_drops().iter().any(|(pos, stack)| {
+        *pos == crate::planet::BlockPos::of_world(2, 200, 4).unwrap()
+            && stack.item == stick
+            && stack.count == 3
+    }));
 
     let sand = b(&reg, "base:sand");
     w.set_block(4, 202, 4, sand);
@@ -102,7 +109,7 @@ fn remote_world_neither_generates_nor_saves_authoritative_state() {
     let mut w = World::new(7, dir.clone(), reg);
     w.set_remote(true);
 
-    assert!(!w.ensure_chunk(ChunkPos { x: 0, z: 0 }));
+    assert!(!w.ensure_chunk(tchunk(0, 0)));
     assert!(w.chunks().is_empty());
     save_world(&mut w);
 
@@ -123,7 +130,7 @@ fn save_v2_roundtrip_with_palette() {
     let mut w2 = World::load_or_create(w.save_dir_for_test(), reg.clone()).unwrap();
     for x in -2..=2 {
         for z in -2..=2 {
-            w2.ensure_chunk(ChunkPos { x, z });
+            w2.ensure_chunk(tchunk(x, z));
         }
     }
     assert_eq!(w2.get_block(1, 80, 1), log);
@@ -138,16 +145,13 @@ fn pre_v3_saves_regenerate_cleanly() {
     std::fs::write(dir.join("seed"), "42").unwrap();
     // A stale v2 chunk file must be ignored (regenerated), not crash.
     std::fs::write(dir.join("c.0.0.wfc"), b"WFC2garbagegarbage").unwrap();
-    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
-    assert_eq!(w.get_block(0, 0, 0), b(&reg, "base:bedrock"));
-    save_world(&mut w);
-    // ensure_chunk on fresh terrain marks modified=false, so force a write.
-    w.set_block(1, 100, 1, b(&reg, "base:planks"));
-    save_world(&mut w);
-    let bytes = crate::world::region::read_chunk(&w.save_dir_for_test(), ChunkPos { x: 0, z: 0 })
-        .expect("the edited chunk is stored");
-    assert!(bytes.starts_with(b"WFC4"), "saves are written as v4 now");
+    let error = World::load_or_create(dir.clone(), reg).err().unwrap();
+    assert!(error.to_string().contains("legacy flat"));
+    assert!(
+        dir.join("c.0.0.wfc").exists(),
+        "refusal leaves old data alone"
+    );
+    assert!(!dir.join("world.toml").exists());
 }
 
 #[test]
@@ -168,13 +172,8 @@ fn palette_less_v3_chunks_keep_their_legacy_numeric_ids() {
     }
     std::fs::write(dir.join("c.0.0.wfc"), data).unwrap();
 
-    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
-    assert_eq!(
-        w.get_block(4, 60, 4),
-        stone,
-        "a missing palette must not turn an entire legacy chunk into the placeholder"
-    );
+    let error = World::load_or_create(dir, reg).err().unwrap();
+    assert!(error.to_string().contains("legacy flat"));
 }
 
 #[test]
@@ -192,14 +191,8 @@ fn unknown_palette_entries_become_placeholder() {
         data.extend_from_slice(&id.to_le_bytes());
     }
     let _ = std::fs::write(dir.join("c.0.0.wfc"), data);
-    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
-    assert_eq!(
-        w.get_block(0, 60, 0),
-        reg.unknown_block,
-        "missing mod blocks must become the placeholder, not corrupt"
-    );
-    assert_eq!(w.get_block(0, 61, 0), AIR);
+    let error = World::load_or_create(dir, reg).err().unwrap();
+    assert!(error.to_string().contains("legacy flat"));
 }
 
 #[test]
@@ -224,13 +217,8 @@ fn all_placeholder_chunks_regenerate_instead_of_becoming_obelisks() {
     }
     std::fs::write(dir.join("c.0.0.wfc"), data).unwrap();
 
-    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
-    assert_ne!(
-        w.get_block(4, 60, 4),
-        reg.unknown_block,
-        "a chunk poisoned by the palette-less-save bug should regenerate"
-    );
+    let error = World::load_or_create(dir, reg).err().unwrap();
+    assert!(error.to_string().contains("legacy flat"));
 }
 
 #[test]
@@ -327,25 +315,41 @@ fn crops_grow_on_farmland_via_random_ticks() {
 }
 
 #[test]
-fn world_meta_roundtrip_and_legacy() {
-    use crate::world::{read_world_meta, write_world_meta};
+fn world_meta_roundtrip_and_legacy_refusal() {
+    use crate::world::{WORLD_TOPOLOGY, load_world_meta, read_world_meta, write_world_meta};
     let dir = tmp_dir("meta");
     write_world_meta(&dir, 777, "creative", 0.0).unwrap();
     assert_eq!(
         read_world_meta(&dir),
         (Some(777), "creative".to_string(), 0.0)
     );
-    // Legacy: bare seed file means survival.
+    let text = std::fs::read_to_string(dir.join("world.toml")).unwrap();
+    assert!(text.contains(&format!("topology = \"{WORLD_TOPOLOGY}\"")));
+    assert!(text.contains("face_blocks = 8192"));
+    assert!(text.contains("world_height = 256"));
+    assert!(text.contains("planet_radius = 5215."));
+    assert!(text.contains("generator_version = 1"));
+
+    // A flat save is rejected without modifying it.
     let dir2 = tmp_dir("meta2");
     std::fs::write(dir2.join("seed"), "42").unwrap();
-    assert_eq!(
-        read_world_meta(&dir2),
-        (Some(42), "survival".to_string(), 0.0)
-    );
-    // load_or_create upgrades legacy worlds to world.toml.
+    let before = std::fs::read(dir2.join("seed")).unwrap();
+    let error = load_world_meta(&dir2).unwrap_err();
+    assert!(error.to_string().contains("legacy flat"));
     let reg = base_reg();
-    let _ = World::load_or_create(dir2.clone(), reg).unwrap();
-    assert!(dir2.join("world.toml").exists());
+    assert!(World::load_or_create(dir2.clone(), reg).is_err());
+    assert!(!dir2.join("world.toml").exists());
+    assert_eq!(std::fs::read(dir2.join("seed")).unwrap(), before);
+
+    // An old world.toml is likewise not inferred to be planetary.
+    let dir3 = tmp_dir("meta3");
+    std::fs::write(dir3.join("world.toml"), "seed = 9\nmode = \"survival\"\n").unwrap();
+    assert!(
+        load_world_meta(&dir3)
+            .unwrap_err()
+            .to_string()
+            .contains("missing topology")
+    );
 }
 
 #[test]
@@ -371,6 +375,165 @@ fn water_conserves_and_spreads_finite() {
     assert_eq!(total_water(&w), before + 8, "volume neither made nor lost");
     // One cell can't stay full on open ground: it spread into a film.
     assert!(reg.water_volume(w.get_block(4, y, 4)).unwrap_or(0) < 8);
+}
+
+#[test]
+fn finite_water_crosses_a_real_planet_face_seam() {
+    use crate::planet::{BlockPos, Direction6, step6};
+
+    let reg = base_reg();
+    let mut world = World::new(42, tmp_dir("planet-water-all-seams"), reg.clone());
+    let stone = b(&reg, "base:stone");
+
+    for seam in directed_planet_seams() {
+        let source =
+            BlockPos::new(seam.source.face(), seam.source.u(), 100, seam.source.v()).unwrap();
+        let across =
+            BlockPos::new(seam.across.face(), seam.across.u(), 100, seam.across.v()).unwrap();
+        let missing: Vec<_> = [source.chunk(), across.chunk()]
+            .into_iter()
+            .filter(|chunk| !world.has_chunk(*chunk))
+            .collect();
+        world.insert_empty_chunks_for_test(missing);
+
+        for cell in [source, across] {
+            world.set_block_at(step6(cell, Direction6::Down).unwrap().pos, stone);
+            for direction in [
+                Direction6::East,
+                Direction6::North,
+                Direction6::West,
+                Direction6::South,
+            ] {
+                let neighbor = step6(cell, direction).unwrap().pos;
+                if neighbor != source && neighbor != across {
+                    world.set_block_at(neighbor, stone);
+                }
+            }
+        }
+
+        world.set_block_at(source, reg.water_for_volume(8));
+        for _ in 0..32 {
+            if !world.tick_water(64) {
+                break;
+            }
+        }
+        let source_volume = reg.water_volume(world.get_block_at(source)).unwrap_or(0);
+        let across_volume = reg.water_volume(world.get_block_at(across)).unwrap_or(0);
+        assert_eq!(
+            source_volume + across_volume,
+            8,
+            "volume is conserved at {:?} {:?}",
+            seam.face,
+            seam.direction
+        );
+        assert_eq!(
+            (source_volume, across_volume),
+            (4, 4),
+            "fluid did not treat {:?} {:?} as an ordinary neighbor",
+            seam.face,
+            seam.direction
+        );
+    }
+}
+
+#[test]
+fn finite_lava_crosses_every_directed_planet_seam() {
+    use crate::planet::{BlockPos, Direction6, step6};
+
+    let reg = base_reg();
+    let mut world = World::new(53, tmp_dir("planet-lava-all-seams"), reg.clone());
+    let stone = b(&reg, "base:stone");
+
+    for seam in directed_planet_seams() {
+        let source =
+            BlockPos::new(seam.source.face(), seam.source.u(), 104, seam.source.v()).unwrap();
+        let across =
+            BlockPos::new(seam.across.face(), seam.across.u(), 104, seam.across.v()).unwrap();
+        let missing: Vec<_> = [source.chunk(), across.chunk()]
+            .into_iter()
+            .filter(|chunk| !world.has_chunk(*chunk))
+            .collect();
+        world.insert_empty_chunks_for_test(missing);
+
+        for cell in [source, across] {
+            world.set_block_at(step6(cell, Direction6::Down).unwrap().pos, stone);
+            for direction in [
+                Direction6::East,
+                Direction6::North,
+                Direction6::West,
+                Direction6::South,
+            ] {
+                let neighbor = step6(cell, direction).unwrap().pos;
+                if neighbor != source && neighbor != across {
+                    world.set_block_at(neighbor, stone);
+                }
+            }
+        }
+
+        world.set_block_at(source, reg.lava_for_volume(8));
+        for _ in 0..32 {
+            if !world.tick_lava(64) {
+                break;
+            }
+        }
+        let source_volume = reg.lava_volume(world.get_block_at(source)).unwrap_or(0);
+        let across_volume = reg.lava_volume(world.get_block_at(across)).unwrap_or(0);
+        assert_eq!(
+            source_volume + across_volume,
+            8,
+            "lava volume changed at {:?} {:?}",
+            seam.face,
+            seam.direction
+        );
+        assert_eq!(
+            (source_volume, across_volume),
+            (4, 4),
+            "lava did not cross {:?} {:?}",
+            seam.face,
+            seam.direction
+        );
+    }
+}
+
+#[test]
+fn block_light_crosses_and_clears_at_a_real_planet_face_seam() {
+    use crate::planet::BlockPos;
+
+    let reg = base_reg();
+    let mut world = World::new(43, tmp_dir("planet-light-all-seams"), reg.clone());
+    let torch = b(&reg, "base:torch");
+    let emission = reg.block(torch).light_rgb;
+
+    for seam in directed_planet_seams() {
+        let source =
+            BlockPos::new(seam.source.face(), seam.source.u(), 100, seam.source.v()).unwrap();
+        let across =
+            BlockPos::new(seam.across.face(), seam.across.u(), 100, seam.across.v()).unwrap();
+        let missing: Vec<_> = [source.chunk(), across.chunk()]
+            .into_iter()
+            .filter(|chunk| !world.has_chunk(*chunk))
+            .collect();
+        world.insert_empty_chunks_for_test(missing);
+
+        world.set_block_at(source, torch);
+        assert_eq!(world.light_rgb_at_pos(source).0, emission);
+        assert_eq!(
+            world.light_rgb_at_pos(across).0,
+            emission.map(|channel| channel.saturating_sub(1)),
+            "light did not cross {:?} {:?}",
+            seam.face,
+            seam.direction
+        );
+
+        world.set_block_at(source, AIR);
+        assert_eq!(
+            world.light_rgb_at_pos(across).0,
+            [0; 3],
+            "light did not drain across {:?} {:?}",
+            seam.face,
+            seam.direction
+        );
+    }
 }
 
 #[test]
@@ -447,7 +610,7 @@ fn random_ticks_budget_stamps_and_persist() {
     let mut w = World::new(42, dir.clone(), reg.clone());
     for x in 0..3 {
         for z in 0..3 {
-            w.ensure_chunk(ChunkPos { x, z });
+            w.ensure_chunk(tchunk(x, z));
         }
     }
     w.clock = 100.0;
@@ -468,7 +631,7 @@ fn random_ticks_visit_a_bounded_cohort() {
     let mut w = World::new(42, tmp_dir("cohort"), reg.clone());
     for x in 0..9 {
         for z in 0..9 {
-            w.ensure_chunk(ChunkPos { x, z });
+            w.ensure_chunk(tchunk(x, z));
         }
     }
     // 81 chunks loaded, all stamped at clock 0; K = 64 caps the visit.
@@ -566,23 +729,28 @@ fn rain_refills_surface_water() {
 
 #[test]
 fn reconcile_catches_up_an_absent_chunk() {
+    use crate::worldgen::Biome;
+
     let reg = base_reg();
     let dir = tmp_dir("reconcile");
     let mut w = World::new(42, dir.clone(), reg.clone());
-    for x in -1..=1 {
-        for z in -1..=1 {
-            w.ensure_chunk(ChunkPos { x, z });
-        }
-    }
+    let anchor = find_biome(&w.generator, Biome::Arctic).expect("cold planetary country");
+    ensure_surface_neighborhood(&mut w, anchor, 1);
     let b = |n: &str| reg.block_id(n).unwrap();
-    let h = w.surface_height(4, 4);
+    let y = 200;
     // A supported sky-open pool (the shelf the live winter test uses)
     // and a farmland strip about to miss three growing seasons.
-    for x in 0..8 {
-        w.set_block(x, h + 12, 12, b("base:planks"));
-        w.set_block(x, h + 13, 12, reg.water_block(0));
-        w.set_block(x, h + 6, 4, b("base:farmland"));
-        w.set_block(x, h + 7, 4, b("base:wheat_seeds"));
+    let pool: Vec<_> = (0..8)
+        .map(|du| block_pos(surface_offset(anchor, du, 4), y + 1))
+        .collect();
+    let crops: Vec<_> = (0..8)
+        .map(|du| block_pos(surface_offset(anchor, du, -4), y + 1))
+        .collect();
+    for (&water, &crop) in pool.iter().zip(&crops) {
+        w.set_block_at(water.offset(0, -1, 0).unwrap(), b("base:planks"));
+        w.set_block_at(water, reg.water_block(0));
+        w.set_block_at(crop.offset(0, -1, 0).unwrap(), b("base:farmland"));
+        w.set_block_at(crop, b("base:wheat_seeds"));
     }
     save_world(&mut w);
 
@@ -590,17 +758,15 @@ fn reconcile_catches_up_an_absent_chunk() {
     let mut w2 = World::load_or_create(dir, reg.clone()).unwrap();
     w2.day = 3 * crate::world::SEASON_DAYS;
     w2.clock = w2.day as f64 * 600.0;
-    for x in -1..=1 {
-        for z in -1..=1 {
-            w2.ensure_chunk(ChunkPos { x, z });
-        }
-    }
-    let iced = (0..8)
-        .filter(|&x| w2.get_block(x, h + 13, 12) == b("base:ice"))
+    ensure_surface_neighborhood(&mut w2, anchor, 1);
+    let iced = pool
+        .iter()
+        .filter(|&&pos| w2.get_block_at(pos) == b("base:ice"))
         .count();
     assert!(iced >= 6, "the pool froze while you were away ({iced}/8)");
-    let grown = (0..8)
-        .filter(|&x| w2.get_block(x, h + 7, 4) != b("base:wheat_seeds"))
+    let grown = crops
+        .iter()
+        .filter(|&&pos| w2.get_block_at(pos) != b("base:wheat_seeds"))
         .count();
     assert!(grown > 0, "crops advanced over the missed seasons");
 }
@@ -609,7 +775,7 @@ fn reconcile_catches_up_an_absent_chunk() {
 fn water_defers_at_the_worlds_edge() {
     let reg = base_reg();
     let mut w = World::new(42, tmp_dir("borderwater"), reg.clone());
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w.ensure_chunk(tchunk(0, 0));
     let stone = b(&reg, "base:stone");
     let y = 250;
     // A shelf against the +x seam, walled on every loaded side.
@@ -627,7 +793,7 @@ fn water_defers_at_the_worlds_edge() {
         "water waits at the ungenerated seam instead of vanishing"
     );
     // The neighbor generates: the seam wakes and the flow resumes.
-    w.ensure_chunk(ChunkPos { x: 1, z: 0 });
+    w.ensure_chunk(tchunk(1, 0));
     let t1 = total_water(&w);
     settle_water(&mut w);
     assert_eq!(total_water(&w), t1, "crossing the seam conserved volume");
@@ -638,7 +804,7 @@ fn water_defers_at_the_worlds_edge() {
 }
 
 #[test]
-fn world_listing_sees_world_toml_and_legacy_seed() {
+fn world_listing_only_includes_compatible_planets() {
     // Regression: the title list only read the legacy `seed` file, so
     // world.toml worlds were invisible and their folder names got reused
     // by NEW WORLD — inheriting the old player.toml (inventory carryover).
@@ -651,8 +817,8 @@ fn world_listing_sees_world_toml_and_legacy_seed() {
     let worlds = crate::world::list_worlds(&root);
     assert_eq!(
         worlds,
-        vec![("old".to_string(), 7), ("world1".to_string(), 42)],
-        "world.toml and legacy worlds both list; junk doesn't"
+        vec![("world1".to_string(), 42)],
+        "only validated planetary worlds are selectable"
     );
 }
 
@@ -769,7 +935,7 @@ fn water_dims_sky_and_mod_blocks_can_glow() {
     let root = tmp_dir("glowmod");
     let dir = root.join("glow");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("mod.toml"), "id = \"glow\"\n").unwrap();
+    std::fs::write(dir.join("mod.toml"), "id = \"glow\"\nworld_api = 2\n").unwrap();
     std::fs::write(
         dir.join("blocks.toml"),
         "[[block]]\nid = \"lamp\"\ntexture = \"@stone\"\nlight = 9\n",
@@ -802,7 +968,7 @@ fn relight_perf_sane() {
     let mut w = test_world("lightperf");
     let t0 = std::time::Instant::now();
     for _ in 0..10 {
-        w.relight_and_cascade(ChunkPos { x: 0, z: 0 });
+        w.relight_and_cascade(tchunk(0, 0));
     }
     let per = t0.elapsed().as_secs_f32() / 10.0;
     assert!(per < 0.05, "relight cascade averaged {per:.4}s");
@@ -966,8 +1132,8 @@ fn server_ticks_at_fixed_rate_and_runs_the_world() {
     let mut sv = crate::server::Server::new(world, 0.3, 42);
     let ctx = crate::server::PlayerCtx {
         id: 0,
-        pos: Vec3::new(8.0, 80.0, 8.0),
-        spawn: Vec3::new(-500.0, 70.0, -500.0),
+        pos: ep(Vec3::new(8.0, 80.0, 8.0)),
+        spawn: ep(Vec3::new(-500.0, 70.0, -500.0)),
         attackable: true,
         aggro_mod: 0.0,
     };
@@ -1065,36 +1231,55 @@ fn weather_machine_rolls_legal_fronts_and_storms_lean_on_ire() {
 
 #[test]
 fn winter_gates_growth_and_freezes_exposed_water() {
+    use crate::worldgen::Biome;
+
     let reg = base_reg();
-    let mut w = test_world_with("wx-winter", reg.clone());
+    let mut w = World::new(42, tmp_dir("wx-winter"), reg.clone());
     w.day = 3 * crate::world::SEASON_DAYS; // deep winter
     let b = |n: &str| reg.block_id(n).unwrap();
-    let h = w.surface_height(4, 4);
+    let anchor = find_biome_where(&w.generator, Biome::Taiga, |pos| {
+        let t = w.generator.climate_at(pos).t;
+        (-0.35..0.35).contains(&t) && w.generator.surface_estimate_at(pos) > SEA_LEVEL + 2
+    })
+    .expect("seasonally freezing planetary country");
+    ensure_surface_neighborhood(&mut w, anchor, 1);
+    let y = 200;
 
     // A strip of sky-open wheat on farmland never advances in winter...
-    for x in 0..16 {
-        w.set_block(x, h + 6, 4, b("base:farmland"));
-        w.set_block(x, h + 7, 4, b("base:wheat_seeds"));
+    let open: Vec<_> = (0..16)
+        .map(|du| block_pos(surface_offset(anchor, du - 8, -4), y + 1))
+        .collect();
+    for &crop in &open {
+        w.set_block_at(crop.offset(0, -1, 0).unwrap(), b("base:farmland"));
+        w.set_block_at(crop, b("base:wheat_seeds"));
     }
     // ...while a roofed, torchlit one still creeps (the greenhouse).
-    for x in 0..16 {
-        w.set_block(x, h + 6, 8, b("base:farmland"));
-        w.set_block(x, h + 7, 8, b("base:wheat_seeds"));
-        w.set_block(x, h + 9, 8, b("base:planks"));
-        if x % 3 == 0 {
-            w.set_block(x, h + 7, 9, b("base:torch"));
+    let roofed: Vec<_> = (0..16)
+        .map(|du| block_pos(surface_offset(anchor, du - 8, 0), y + 1))
+        .collect();
+    for (index, &crop) in roofed.iter().enumerate() {
+        w.set_block_at(crop.offset(0, -1, 0).unwrap(), b("base:farmland"));
+        w.set_block_at(crop, b("base:wheat_seeds"));
+        w.set_block_at(crop.offset(0, 2, 0).unwrap(), b("base:planks"));
+        if index % 3 == 0 {
+            let torch = block_pos(surface_offset(crop.surface(), 0, 1), y + 1);
+            w.set_block_at(torch.offset(0, -1, 0).unwrap(), b("base:planks"));
+            w.set_block_at(torch, b("base:torch"));
         }
     }
     let mut rng = 7u32;
-    for _ in 0..30_000 {
+    for _ in 0..1_000 {
+        w.clock += 100.0;
         w.random_tick(&mut rng);
     }
-    let open_grown = (0..16)
-        .filter(|&x| w.get_block(x, h + 7, 4) != b("base:wheat_seeds"))
+    let open_grown = open
+        .iter()
+        .filter(|&&pos| w.get_block_at(pos) != b("base:wheat_seeds"))
         .count();
-    let roofed_grown = (0..16)
-        .filter(|&x| {
-            let g = w.get_block(x, h + 7, 8);
+    let roofed_grown = roofed
+        .iter()
+        .filter(|&&pos| {
+            let g = w.get_block_at(pos);
             g != b("base:wheat_seeds") && g != AIR
         })
         .count();
@@ -1105,33 +1290,42 @@ fn winter_gates_growth_and_freezes_exposed_water() {
     );
 
     // Exposed still water freezes over in winter...
-    for x in 0..8 {
-        w.set_block(x, h + 12, 12, b("base:planks"));
-        w.set_block(x, h + 13, 12, reg.water_block(0));
+    let pool: Vec<_> = (0..8)
+        .map(|du| block_pos(surface_offset(anchor, du - 4, 6), y + 1))
+        .collect();
+    for &water in &pool {
+        w.set_block_at(water.offset(0, -1, 0).unwrap(), b("base:planks"));
+        w.set_block_at(water, reg.water_block(0));
     }
     // (support keeps it a still pool; sky above is open)
-    for _ in 0..30_000 {
+    for _ in 0..1_000 {
+        w.clock += 100.0;
         w.random_tick(&mut rng);
     }
-    let iced = (0..8)
-        .filter(|&x| w.get_block(x, h + 13, 12) == b("base:ice"))
+    let iced = pool
+        .iter()
+        .filter(|&&pos| w.get_block_at(pos) == b("base:ice"))
         .count();
     assert!(iced > 0, "winter freezes exposed pools, froze {iced}");
 
     // ...and spring gives them back.
     w.day = 0;
-    for _ in 0..30_000 {
+    for _ in 0..1_000 {
+        w.clock += 100.0;
         w.random_tick(&mut rng);
     }
-    let thawed = (0..8)
-        .filter(|&x| w.get_block(x, h + 13, 12) == reg.water_block(0))
+    let thawed = pool
+        .iter()
+        .filter(|&&pos| w.get_block_at(pos) == reg.water_block(0))
         .count();
     assert!(thawed > 0, "spring thaws the ice, thawed {thawed}");
 }
 
 #[test]
 fn snow_settles_melts_and_snowballs_fly() {
+    use crate::worldgen::Biome;
     use glam::Vec3;
+
     let reg = base_reg();
     let mut w = test_world_with("wx-snow", reg.clone());
     let b = |n: &str| reg.block_id(n).unwrap();
@@ -1144,52 +1338,44 @@ fn snow_settles_melts_and_snowballs_fly() {
 
     // Snowfall settles one layer on a cold, sky-open column - once.
     w.day = 3 * crate::world::SEASON_DAYS; // winter relaxes the snow line
-    // Find LAND columns (not frozen ocean) in each climate.
-    let find = |w: &mut World, lo: f32, hi: f32| -> Option<(i32, i32)> {
-        for x in (-400..400).step_by(16) {
-            for z in (-400..400).step_by(16) {
-                let t = w.generator.climate(x, z).t;
-                if t < lo || t > hi {
-                    continue;
-                }
-                w.ensure_chunk(ChunkPos::of_world(x, z));
-                let y = w.surface_height(x, z);
-                if y > SEA_LEVEL + 1 && w.get_block(x, y + 1, z) == AIR {
-                    return Some((x, z));
-                }
-            }
-        }
-        None
-    };
-    let (cx, cz) = find(&mut w, -1.0, -0.15).expect("cold land in range");
-    let (wx, wz) = find(&mut w, 0.0, 0.3).expect("temperate land in range");
-    let cy = w.surface_height(cx, cz);
-    w.settle_snow(cx, cz);
+    let cold = find_biome(&w.generator, Biome::Arctic).expect("cold land on the planet");
+    let temperate = find_biome_where(&w.generator, Biome::Plains, |pos| {
+        let t = w.generator.climate_at(pos).t;
+        (0.0..=0.5).contains(&t) && w.generator.surface_estimate_at(pos) > SEA_LEVEL + 2
+    })
+    .expect("temperate land on the planet");
+    ensure_surface_neighborhood(&mut w, cold, 1);
+    ensure_surface_neighborhood(&mut w, temperate, 1);
+    let cy = w.surface_height_at(cold);
+    let snow = block_pos(cold, cy + 1);
+    w.settle_snow_at(cold);
     assert_eq!(
-        w.get_block(cx, cy + 1, cz),
+        w.get_block_at(snow),
         layer,
         "snow settled on the cold column"
     );
-    w.settle_snow(cx, cz);
-    assert_eq!(w.get_block(cx, cy + 2, cz), AIR, "layers never stack");
-    let wy = w.surface_height(wx, wz);
-    w.settle_snow(wx, wz);
+    w.settle_snow_at(cold);
+    assert_eq!(block_at(&w, cold, cy + 2), AIR, "layers never stack");
+    let wy = w.surface_height_at(temperate);
+    w.settle_snow_at(temperate);
     assert_ne!(
-        w.get_block(wx, wy + 1, wz),
+        block_at(&w, temperate, wy + 1),
         layer,
         "temperate columns shrug it off"
     );
 
     // Torchlight melts layers even in an arctic winter.
-    w.set_block(cx + 1, cy + 1, cz, b("base:torch"));
+    let torch_surface = surface_offset(cold, 1, 0);
+    w.set_block_at(block_pos(torch_surface, cy), b("base:stone"));
+    w.set_block_at(block_pos(torch_surface, cy + 1), b("base:torch"));
     let mut rng = 9u32;
     for _ in 0..30_000 {
         w.random_tick(&mut rng);
-        if w.get_block(cx, cy + 1, cz) == AIR {
+        if w.get_block_at(snow) == AIR {
             break;
         }
     }
-    assert_eq!(w.get_block(cx, cy + 1, cz), AIR, "bright light clears snow");
+    assert_eq!(w.get_block_at(snow), AIR, "bright light clears snow");
 
     // Breaking a snow block yields snowballs; the crafting loop closes.
     assert_eq!(
@@ -1215,7 +1401,7 @@ fn snow_settles_melts_and_snowballs_fly() {
     m.health = 10.0;
     w.spawn_mob(m);
     w.spawn_projectile(crate::mobs::Projectile {
-        pos: Vec3::new(4.5, sy + 0.4, 3.0),
+        pos: ep(Vec3::new(4.5, sy + 0.4, 3.0)),
         vel: Vec3::new(0.0, 0.0, 12.0),
         tile: 0,
         damage: 0.0,
@@ -1310,7 +1496,7 @@ fn weather_and_season_touch_the_sim() {
         .filter(|m| m.pos.y > 139.0)
         .enumerate()
     {
-        m.pos = glam::Vec3::new(4.5 + moved as f32, 140.05, 4.5);
+        m.pos = ep(glam::Vec3::new(4.5 + moved as f32, 140.05, 4.5));
         m.vel = glam::Vec3::ZERO;
     }
     let before = w.mob_count();
@@ -1364,7 +1550,7 @@ fn bedrock_floor_is_unbreakable_and_reseals_on_load() {
     let root = reg.block_id("base:bedrock").expect("bedrock registered");
     let dir = tmp_dir("floor");
     let mut w = World::new(42, dir.clone(), reg.clone());
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w.ensure_chunk(tchunk(0, 0));
     // Every column of a fresh chunk is floored.
     for x in 0..16 {
         for z in 0..16 {
@@ -1383,7 +1569,7 @@ fn bedrock_floor_is_unbreakable_and_reseals_on_load() {
     save_world(&mut w);
     drop(w);
     let mut w2 = World::new(42, dir, reg);
-    w2.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w2.ensure_chunk(tchunk(0, 0));
     assert_eq!(w2.get_block(4, 0, 4), root, "floor resealed on load");
 }
 
@@ -1394,18 +1580,24 @@ fn snow_trod_swaps_persists_melts_and_drops() {
     let layer = b(&reg, "base:snow_layer");
     let trod = b(&reg, "base:snow_layer_trod");
     let dirt = b(&reg, "base:dirt");
-    let (x, y, z) = (3, 90, 3);
-    w.set_block(x, y, z, dirt);
-    w.set_block(x, y + 1, z, layer);
+    let surface =
+        crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, 3, 3).unwrap();
+    let y = 200;
+    let ground = block_pos(surface, y);
+    let print = block_pos(surface, y + 1);
+    let empty = block_pos(surface, y + 5);
+    w.set_block_at(ground, dirt);
+    w.set_block_at(print, layer);
+    w.set_block_at(empty, AIR);
 
     // Walking through presses the layer into a print; treading again
     // (or treading air/dirt) changes nothing.
-    w.tread(x, y + 1, z);
-    assert_eq!(w.get_block(x, y + 1, z), trod, "layer pressed to trod");
-    w.tread(x, y + 1, z);
-    assert_eq!(w.get_block(x, y + 1, z), trod, "idempotent");
-    w.tread(x, y + 5, z);
-    assert_eq!(w.get_block(x, y + 5, z), AIR, "air stays air");
+    w.tread_at(print);
+    assert_eq!(w.get_block_at(print), trod, "layer pressed to trod");
+    w.tread_at(print);
+    assert_eq!(w.get_block_at(print), trod, "idempotent");
+    w.tread_at(empty);
+    assert_eq!(w.get_block_at(empty), AIR, "air stays air");
 
     // Same shovel yield as fresh snow — the content graph is unmoved.
     assert_eq!(
@@ -1417,28 +1609,30 @@ fn snow_trod_swaps_persists_melts_and_drops() {
     // The trail persists across save/load.
     save_world(&mut w);
     let mut w2 = World::load_or_create(w.save_dir_for_test(), reg.clone()).unwrap();
-    w2.ensure_chunk(ChunkPos::of_world(x, z));
-    assert_eq!(w2.get_block(x, y + 1, z), trod, "footprints persist");
+    w2.ensure_chunk(crate::planet::ChunkPos::from_surface(surface));
+    assert_eq!(w2.get_block_at(print), trod, "footprints persist");
 
     // And melts by the same rule as the untouched layer: torchlight.
-    w2.set_block(x + 1, y + 1, z, b(&reg, "base:torch"));
+    let torch_surface = surface_offset(surface, 1, 0);
+    w2.set_block_at(block_pos(torch_surface, y), dirt);
+    w2.set_block_at(block_pos(torch_surface, y + 1), b(&reg, "base:torch"));
     let mut rng = 5u32;
     for _ in 0..30_000 {
         w2.random_tick(&mut rng);
-        if w2.get_block(x, y + 1, z) == AIR {
+        if w2.get_block_at(print) == AIR {
             break;
         }
     }
-    assert_eq!(w2.get_block(x, y + 1, z), AIR, "prints melt like snow");
+    assert_eq!(w2.get_block_at(print), AIR, "prints melt like snow");
 
     // Guests never tread locally; the host stamps prints for them.
     let mut wr = test_world_with("snow-trod-remote", reg.clone());
     wr.set_remote(true);
-    wr.set_block(x, y, z, dirt);
-    wr.set_block(x, y + 1, z, layer);
-    wr.tread(x, y + 1, z);
+    wr.set_block_at(ground, dirt);
+    wr.set_block_at(print, layer);
+    wr.tread_at(print);
     assert_eq!(
-        wr.get_block(x, y + 1, z),
+        wr.get_block_at(print),
         layer,
         "remote worlds wait for the echo"
     );
@@ -1614,15 +1808,34 @@ fn lava_conserves_creeps_and_quenches() {
 #[test]
 fn magma_pools_the_deep_chambers() {
     let reg = base_reg();
-    let w = test_world_with("magma", reg.clone());
+    let mut w = World::new(42, tmp_dir("magma"), reg.clone());
     let mut lava_cells = 0;
-    for x in -32..32 {
-        for z in -32..32 {
-            for y in 1..12 {
-                if reg.is_lava(w.get_block(x, y, z)) {
-                    lava_cells += 1;
+    // Deep magma is a sparse planetary field. Sample the same finite
+    // hydrology/geology neighborhoods used by the generator census instead
+    // of assuming the old flat origin happens to cut through a chamber.
+    for (center, _) in find_water_features(&w.generator, 4) {
+        let chunk = crate::planet::ChunkPos::from_surface(center);
+        for du in -2..=2 {
+            for dv in -2..=2 {
+                let sample = chunk.offset(du, dv);
+                w.ensure_chunk(sample);
+                for lx in 0..crate::chunk::CHUNK_X as u16 {
+                    for lz in 0..crate::chunk::CHUNK_Z as u16 {
+                        let surface = crate::planet::SurfacePos::new(
+                            sample.face(),
+                            sample.u() * crate::chunk::CHUNK_X as u16 + lx,
+                            sample.v() * crate::chunk::CHUNK_Z as u16 + lz,
+                        )
+                        .unwrap();
+                        lava_cells += (1..12)
+                            .filter(|&y| reg.is_lava(block_at(&w, surface, y)))
+                            .count();
+                    }
                 }
             }
+        }
+        if lava_cells > 20 {
+            break;
         }
     }
     assert!(
@@ -1641,7 +1854,7 @@ fn stale_saved_water_wakes_on_load() {
     let y = 180;
     {
         let mut w = World::new(7, dir.clone(), reg.clone());
-        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        w.ensure_chunk(tchunk(0, 0));
         // A 3x3 stone shelf holding one exposed full water cube.
         for x in 3..=5 {
             for z in 3..=5 {
@@ -1651,10 +1864,10 @@ fn stale_saved_water_wakes_on_load() {
         w.set_block(4, y + 1, 4, reg.water_block(0));
         // Unload without ticking: the save captures it mid-flow, and
         // this world's pending queues die with it.
-        w.unload_chunk(ChunkPos { x: 0, z: 0 });
+        w.unload_chunk(tchunk(0, 0));
     }
     let mut w = World::new(7, dir, reg.clone());
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w.ensure_chunk(tchunk(0, 0));
     let mut quiet = false;
     for _ in 0..200 {
         if !w.tick_water(10_000) {
@@ -1887,7 +2100,7 @@ fn saved_mid_drain_pools_resume_leveling() {
     let y = 200;
     {
         let mut w = World::new(7, dir.clone(), reg.clone());
-        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        w.ensure_chunk(tchunk(0, 0));
         let stone = b(&reg, "base:stone");
         for x in 0..7 {
             for z in 0..4 {
@@ -1916,10 +2129,10 @@ fn saved_mid_drain_pools_resume_leveling() {
         while w.tick_water(10_000) {}
         w.set_block(3, y + 1, 1, AIR);
         w.tick_water(50); // a few strokes of the pour, then quit
-        w.unload_chunk(ChunkPos { x: 0, z: 0 });
+        w.unload_chunk(tchunk(0, 0));
     }
     let mut w = World::new(7, dir, reg.clone());
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w.ensure_chunk(tchunk(0, 0));
     let mut quiet = false;
     for _ in 0..4000 {
         if !w.tick_water(10_000) {
@@ -2206,38 +2419,65 @@ fn nobody_spawns_in_the_water_the_sky_or_a_wall() {
 #[test]
 fn open_ocean_gets_an_island_rather_than_a_drowning() {
     let reg = base_reg();
-    let mut w = test_world_with("spawn-isle", reg.clone());
+    let mut w = World::new(42, tmp_dir("spawn-isle"), reg.clone());
     let water = reg.water_block(0);
     let stone = b(&reg, "base:stone");
+    let center = 'search: {
+        for face in crate::planet::Face::ALL {
+            for cu in (1..crate::planet::FACE_CHUNKS - 1).step_by(11) {
+                for cv in (1..crate::planet::FACE_CHUNKS - 1).step_by(11) {
+                    let pos = crate::planet::SurfacePos::new(
+                        face,
+                        cu * crate::chunk::CHUNK_X as u16 + 8,
+                        cv * crate::chunk::CHUNK_Z as u16 + 8,
+                    )
+                    .unwrap();
+                    if w.generator.surface_estimate_at(pos) >= SEA_LEVEL - 4 {
+                        continue;
+                    }
+                    ensure_surface_neighborhood(&mut w, pos, 1);
+                    if w.is_open_water_at(pos) {
+                        break 'search pos;
+                    }
+                }
+            }
+        }
+        panic!("seed 42 has no sampled deep ocean");
+    };
+
     // A small patch of open sea: seabed just down, water to the
     // tideline. Kept tight on purpose — every water cell set here
     // wakes the fluid sim, and a big test sea starves the whole
     // parallel suite.
-    for x in -9..=9 {
-        for z in -9..=9 {
+    for du in -9..=9 {
+        for dv in -9..=9 {
+            let surface = surface_offset(center, du, dv);
             for y in (SEA_LEVEL - 2)..=(SEA_LEVEL + 4) {
-                w.set_block(x, y, z, if y <= SEA_LEVEL { water } else { AIR });
+                w.set_block_at(
+                    block_pos(surface, y),
+                    if y <= SEA_LEVEL { water } else { AIR },
+                );
             }
-            w.set_block(x, SEA_LEVEL - 3, z, stone);
+            w.set_block_at(block_pos(surface, SEA_LEVEL - 3), stone);
         }
     }
-    let crest = w.raise_castaway_isle(0, 0);
+    let crest = w.raise_castaway_isle_at(center);
     assert!(crest > SEA_LEVEL, "landfall rises out of the water");
     // Sand, not a plinth of whatever was underneath.
     assert_eq!(
-        w.get_block(0, crest, 0),
+        block_at(&w, center, crest),
         b(&reg, "base:sand"),
         "a little sand island"
     );
     // Dry overhead, so a castaway is actually standing in air.
     for dy in 1..=2 {
         assert!(
-            !reg.is_fluid(w.get_block(0, crest + dy, 0)),
+            !reg.is_fluid(block_at(&w, center, crest + dy)),
             "the island is dry at +{dy}"
         );
     }
     // It shelves back into the sea rather than dropping off a tower.
-    let rim = w.surface_height(4, 0);
+    let rim = w.surface_height_at(surface_offset(center, 4, 0));
     assert!(
         rim < crest && rim >= SEA_LEVEL - 1,
         "the rim shelves ({rim} vs crest {crest})"
@@ -2245,8 +2485,9 @@ fn open_ocean_gets_an_island_rather_than_a_drowning() {
     // And it is an island, not a continent: nothing was raised
     // beyond its shore.
     let sand = b(&reg, "base:sand");
+    let beyond = surface_offset(center, 8, 0);
     assert!(
-        (SEA_LEVEL - 2..=SEA_LEVEL + 3).all(|y| w.get_block(8, y, 0) != sand),
+        (SEA_LEVEL - 2..=SEA_LEVEL + 3).all(|y| block_at(&w, beyond, y) != sand),
         "no landfill beyond the island's shore"
     );
 }
@@ -2274,12 +2515,12 @@ fn the_autosave_writes_only_what_changed_since_the_last_one() {
     let reg = base_reg();
     let dir = tmp_dir("autosave-churn");
     let mut w = World::new(9, dir.clone(), reg.clone());
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w.ensure_chunk(tchunk(0, 0));
     let stone = b(&reg, "base:stone");
     let top = w.surface_height(3, 3);
     w.set_block(3, top + 1, 3, stone);
     save_world(&mut w);
-    let file = crate::world::region::region_path(&dir, ChunkPos { x: 0, z: 0 });
+    let file = crate::world::region::region_path(&dir, tchunk(0, 0));
     assert!(file.exists(), "the edited chunk is written");
 
     // Deleting the file is the probe: if the next autosave puts it
@@ -2301,7 +2542,7 @@ fn save_reports_every_failed_component_and_retries_dirty_chunks() {
     let blocked = root.join("not-a-directory");
     std::fs::write(&blocked, b"occupied").unwrap();
     let mut w = World::new(9, blocked.clone(), reg.clone());
-    let pos = ChunkPos { x: 0, z: 0 };
+    let pos = tchunk(0, 0);
     w.ensure_chunk(pos);
     let stone = b(&reg, "base:stone");
     let top = w.surface_height(3, 3);
@@ -2353,7 +2594,7 @@ fn save_reports_every_failed_component_and_retries_dirty_chunks() {
         chunk_failure
             .failures
             .iter()
-            .any(|failure| failure.component == "chunk 0,0"),
+            .any(|failure| failure.component == format!("chunk {pos:?}")),
         "chunk failure has coordinates: {}",
         chunk_failure.summary()
     );
@@ -2372,17 +2613,17 @@ fn a_chunk_read_from_disk_is_clean_until_something_edits_it() {
     let stone = b(&reg, "base:stone");
     let top = {
         let mut w = World::new(9, dir.clone(), reg.clone());
-        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        w.ensure_chunk(tchunk(0, 0));
         let top = w.surface_height(3, 3);
         w.set_block(3, top + 1, 3, stone);
         save_world(&mut w);
         top
     };
-    let file = crate::world::region::region_path(&dir, ChunkPos { x: 0, z: 0 });
+    let file = crate::world::region::region_path(&dir, tchunk(0, 0));
     assert!(file.exists());
 
     let mut w = World::load_or_create(dir.clone(), reg.clone()).unwrap();
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w.ensure_chunk(tchunk(0, 0));
     assert_eq!(w.get_block(3, top + 1, 3), stone, "the edit came back");
     std::fs::remove_file(&file).unwrap();
     save_world(&mut w);
@@ -2402,7 +2643,7 @@ fn the_palette_is_written_when_it_would_differ_and_not_on_a_timer() {
     let dir = tmp_dir("palette-churn");
     let palette = dir.join("palette");
     let mut w = World::new(9, dir.clone(), reg.clone());
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w.ensure_chunk(tchunk(0, 0));
     save_world(&mut w);
     assert!(palette.exists(), "a fresh world owes a palette");
 
@@ -2414,7 +2655,7 @@ fn the_palette_is_written_when_it_would_differ_and_not_on_a_timer() {
     // as a difference, so the next save puts one back — and every chunk
     // that loads is rewritten in the ids it names.
     let mut w = World::load_or_create(dir.clone(), reg.clone()).unwrap();
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w.ensure_chunk(tchunk(0, 0));
     save_world(&mut w);
     assert!(palette.exists(), "a stale palette is replaced");
 }
@@ -2471,7 +2712,7 @@ fn stamps_from_a_different_day_length_are_dropped_not_misread() {
     let dir = tmp_dir("stamps-version");
     {
         let mut w = World::new(9, dir.clone(), reg.clone());
-        w.ensure_chunk(ChunkPos { x: 0, z: 0 });
+        w.ensure_chunk(tchunk(0, 0));
         let mut rng = 1u32;
         w.random_tick(&mut rng);
         save_world(&mut w);
@@ -2506,28 +2747,34 @@ fn a_lava_flow_coats_the_slope_it_runs_down() {
     let reg = base_reg();
     let mut w = test_world_with("lava-ribbon", reg.clone());
     let stone = b(&reg, "base:stone");
-    let y0 = 80;
-    const STEPS: i32 = 16;
+    // Keep the hand-built experiment in guaranteed open shell-space. At the
+    // old y=80 the new jungle terrain could occupy the channel and make this
+    // a test of the spawn country's canopy instead of lava viscosity.
+    let y0 = 220;
+    const STEPS: i32 = 10;
     // A staircase descending in +x, two cells deep per tread.
     for step in 0..STEPS {
         let top = y0 - step;
         for x in (step * 2)..(step * 2 + 2) {
-            for z in -3..=3 {
+            for z in -2..=2 {
                 for fill in 0..10 {
                     w.set_block(x, top - fill, z, stone);
+                }
+                if z.abs() == 2 {
+                    w.set_block(x, top + 1, z, stone);
                 }
             }
         }
     }
     // A crater's worth behind it: reach is a question of volume.
-    for z in -3..=3 {
+    for z in -1..=1 {
         for x in 0..2 {
             for up in 1..=3 {
                 w.set_block(x, y0 + up, z, reg.lava_for_volume(8));
             }
         }
     }
-    for _ in 0..600 {
+    for _ in 0..300 {
         w.tick_lava(256);
     }
 
@@ -2618,7 +2865,7 @@ fn the_wilds_fire_pays_bloom_and_stops_at_worked_ground() {
 
     // Now claim the ground and try again: the wild will not light it.
     let (mut w, _, y) = kindling("fire-wild-stop");
-    w.player_touched.insert((0, 0));
+    w.player_touched.insert(tchunk(0, 0));
     assert!(
         !w.light_fire(2, y + 1, 2, false),
         "the wild does not burn what you built on"
@@ -2664,7 +2911,7 @@ fn burning_your_own_crop_on_your_own_ground_is_husbandry() {
     }
     // Worked ground: in play, planting a field marks it. set_block is
     // the raw poke that does not, so say it outright.
-    w.player_touched.insert((0, 0));
+    w.player_touched.insert(tchunk(0, 0));
     let y = w.surface_height(2, 2);
     assert!(w.light_fire(2, y + 2, 2, true));
     burn(&mut w, 60);
@@ -2697,6 +2944,78 @@ fn guilt_is_inherited_by_spread() {
 }
 
 #[test]
+fn fire_spreads_across_a_real_planet_face_seam() {
+    use crate::planet::BlockPos;
+
+    let reg = base_reg();
+    let crop = b(&reg, "base:wheat_seeds");
+    let burns = reg.block(crop).burns;
+
+    for (index, seam) in directed_planet_seams().into_iter().enumerate() {
+        let mut world = World::new(
+            44,
+            tmp_dir(&format!("planet-fire-seam-{index}")),
+            reg.clone(),
+        );
+        let flame =
+            BlockPos::new(seam.source.face(), seam.source.u(), 100, seam.source.v()).unwrap();
+        let fuel =
+            BlockPos::new(seam.across.face(), seam.across.u(), 100, seam.across.v()).unwrap();
+
+        world.insert_empty_chunks_for_test([flame.chunk(), fuel.chunk()]);
+        world.set_block_at(fuel, crop);
+        assert!(world.light_fire_at(flame, true));
+
+        // Pick a deterministic predecessor whose next fire roll catches.
+        let mut rng = (0..10_000u32)
+            .find(|candidate| {
+                let next = candidate
+                    .wrapping_mul(1_664_525)
+                    .wrapping_add(1_013_904_223);
+                (next >> 16) % 10 < u32::from(burns)
+            })
+            .unwrap();
+        assert!(world.tick_fire(1, &mut rng));
+        assert_eq!(
+            reg.block(world.get_block_at(fuel)).name,
+            "base:fire",
+            "fire did not cross {:?} {:?}",
+            seam.face,
+            seam.direction
+        );
+    }
+}
+
+#[test]
+fn regional_ledgers_are_face_aware_and_round_trip() {
+    use crate::planet::{Face, SurfacePos};
+
+    let reg = base_reg();
+    let dir = tmp_dir("planet-ledgers");
+    let pos_z = SurfacePos::new(Face::PosZ, 12, 34).unwrap();
+    let pos_x = SurfacePos::new(Face::PosX, 12, 34).unwrap();
+    let mut world = World::new(45, dir.clone(), reg.clone());
+    world.add_ire_at_surface(pos_z, 3.0);
+    world.add_ire_at_surface(pos_x, 7.0);
+    world.add_bloom_at_surface(pos_z, 2.0);
+    world.add_bloom_at_surface(pos_x, 5.0);
+    assert_eq!(world.regional_ire_at_surface(pos_z), 3.0);
+    assert_eq!(world.regional_ire_at_surface(pos_x), 7.0);
+    assert_eq!(world.bloom_at_surface(pos_z), 2.0);
+    assert_eq!(world.bloom_at_surface(pos_x), 5.0);
+
+    let report = world.save_modified();
+    assert!(report.is_ok(), "ledger save failed: {}", report.summary());
+    drop(world);
+
+    let loaded = World::load_or_create(dir, reg).unwrap();
+    assert_eq!(loaded.regional_ire_at_surface(pos_z), 3.0);
+    assert_eq!(loaded.regional_ire_at_surface(pos_x), 7.0);
+    assert_eq!(loaded.bloom_at_surface(pos_z), 2.0);
+    assert_eq!(loaded.bloom_at_surface(pos_x), 5.0);
+}
+
+#[test]
 fn a_chunk_pays_only_for_what_it_actually_holds() {
     use crate::chunk::{CHUNK_CELLS, Chunk, ChunkPos};
 
@@ -2712,7 +3031,7 @@ fn a_chunk_pays_only_for_what_it_actually_holds() {
 
     // Real generated terrain, lit.
     let mut w = test_world("chunk-bytes");
-    let pos = ChunkPos { x: 0, z: 0 };
+    let pos = tchunk(0, 0);
     w.ensure_chunk(pos);
     let real = w.chunks()[&pos].heap_bytes();
     assert!(real > 0, "terrain costs something");
@@ -2775,11 +3094,18 @@ fn the_lands_ledgers_do_not_grow_without_bound() {
     // and rewritten whole on every save.
     let mut w = test_world("ledger-bounds");
 
-    // A thousand cells across a wide area, all charged.
+    // A thousand distinct regional cells distributed over the six finite
+    // faces, all charged. The old arithmetic ran ever farther off PosZ and
+    // was exactly the unbounded-world assumption this test now guards
+    // against.
     for i in 0..1000 {
-        let (x, z) = (i * 300, (i % 37) * 400);
-        w.add_ire_at(x, z, 5.0);
-        w.add_bloom(x, z, 2.0);
+        let face = crate::planet::Face::ALL[i % crate::planet::Face::ALL.len()];
+        let cell = i / crate::planet::Face::ALL.len();
+        let u = ((cell % 32) * 256 + 128) as u16;
+        let v = (((cell / 32) % 32) * 256 + 128) as u16;
+        let pos = crate::planet::SurfacePos::new(face, u, v).unwrap();
+        w.add_ire_at_surface(pos, 5.0);
+        w.add_bloom_at_surface(pos, 2.0);
     }
     assert!(w.ledger_len() > 0, "charging the land records something");
 
@@ -2797,11 +3123,9 @@ fn the_lands_ledgers_do_not_grow_without_bound() {
 
 #[test]
 fn a_world_survives_a_save_and_reload_across_several_regions() {
-    // Chunks live 32x32 to a region file now. This walks a span wide enough
-    // to cross region boundaries in both axes and through negative
-    // coordinates, edits every chunk, saves, drops the world, and reads it
-    // all back — the case a flat file-per-chunk directory got for free and a
-    // packed format has to earn.
+    // Chunks live 32x32 to a face-local region file. Sample explicit chunks
+    // on both sides of several region boundaries and on all six faces, edit
+    // each, save, drop the world, and read it all back.
     let reg = base_reg();
     let dir = tmp_dir("region-round-trip");
     let stone = b(&reg, "base:stone");
@@ -2810,15 +3134,23 @@ fn a_world_survives_a_save_and_reload_across_several_regions() {
     let mut edits = Vec::new();
     {
         let mut w = World::new(4242, dir.clone(), reg.clone());
-        for cx in -34..=34i32 {
-            for cz in [-33i32, 0, 33] {
-                let pos = ChunkPos { x: cx, z: cz };
-                w.ensure_chunk(pos);
-                let (wx, wz) = (cx * 16 + 3, cz * 16 + 5);
-                let y = w.surface_height(wx, wz) + 1;
-                let block = if cx % 2 == 0 { stone } else { planks };
-                w.set_block(wx, y, wz, block);
-                edits.push((wx, y, wz, block));
+        for face in crate::planet::Face::ALL {
+            for cu in [0u16, 31, 32, 255, 256, 480, 511] {
+                for cv in [0u16, 31, 32, 255, 256] {
+                    let chunk = crate::planet::ChunkPos::new(face, cu, cv).unwrap();
+                    w.ensure_chunk(chunk);
+                    let surface = crate::planet::SurfacePos::new(
+                        face,
+                        cu * crate::chunk::CHUNK_X as u16 + 3,
+                        cv * crate::chunk::CHUNK_Z as u16 + 5,
+                    )
+                    .unwrap();
+                    let y = w.surface_height_at(surface) + 1;
+                    let block = if cu.is_multiple_of(2) { stone } else { planks };
+                    let at = block_pos(surface, y);
+                    w.set_block_at(at, block);
+                    edits.push((at, block));
+                }
             }
         }
         save_world(&mut w);
@@ -2826,10 +3158,15 @@ fn a_world_survives_a_save_and_reload_across_several_regions() {
     assert!(edits.len() > 200, "enough chunks to span many regions");
 
     // Several region files, not hundreds of chunk files.
-    let files: Vec<String> = std::fs::read_dir(&dir)
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name().to_string_lossy().into_owned())
+    let files: Vec<String> = crate::planet::Face::ALL
+        .into_iter()
+        .flat_map(|face| {
+            std::fs::read_dir(dir.join(face.name()))
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        })
         .collect();
     let regions = files.iter().filter(|f| f.ends_with(".wfr")).count();
     let loose = files.iter().filter(|f| f.ends_with(".wfc")).count();
@@ -2842,12 +3179,12 @@ fn a_world_survives_a_save_and_reload_across_several_regions() {
     );
 
     let mut w = World::load_or_create(dir, reg.clone()).unwrap();
-    for (x, y, z, want) in edits {
-        w.ensure_chunk(ChunkPos::of_world(x, z));
+    for (at, want) in edits {
+        w.ensure_chunk(crate::planet::ChunkPos::from_surface(at.surface()));
         assert_eq!(
-            w.get_block(x, y, z),
+            w.get_block_at(at),
             want,
-            "block at ({x},{y},{z}) did not survive the round trip"
+            "block at {at:?} did not survive the round trip"
         );
     }
 }
@@ -2863,7 +3200,7 @@ fn measure_chunk_composition() {
     let mut worst_ids = 0usize;
     for cx in -3..=3 {
         for cz in -3..=3 {
-            let pos = ChunkPos { x: cx, z: cz };
+            let pos = tchunk(cx, cz);
             w.ensure_chunk(pos);
             let c = &w.chunks()[&pos];
             let mut set: HashSet<u16> = HashSet::new();

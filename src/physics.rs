@@ -2,6 +2,9 @@
 
 use glam::Vec3;
 
+#[cfg(test)]
+use crate::planet::Face;
+use crate::planet::{BlockPos, EntityPos, QuarterTurn, SurfacePos};
 use crate::world::World;
 
 pub const PLAYER_HALF_W: f32 = 0.3;
@@ -35,12 +38,15 @@ const MAX_SWEEP_HOPS: i32 = 512;
 
 pub struct Player {
     /// Feet-center position.
-    pub pos: Vec3,
+    pub pos: EntityPos,
     pub vel: Vec3,
     pub on_ground: bool,
     pub in_water: bool,
     /// Hit a wall horizontally last frame (used for the jump-out-of-water hop).
     pub pushed_wall: bool,
+    /// Face-frame rotation accumulated by the latest move. Camera yaw and
+    /// other local-frame state consume this after physics.
+    pub frame_rotation: QuarterTurn,
 }
 
 pub struct Input {
@@ -51,33 +57,55 @@ pub struct Input {
 }
 
 impl Player {
+    #[cfg(test)]
     pub fn new(pos: Vec3) -> Player {
+        let half = f32::from(crate::planet::FACE_BLOCKS) * 0.5;
+        let pos = EntityPos::new(Face::PosZ, pos.x + half, pos.y, pos.z + half)
+            .expect("legacy player spawn is inside the finite PosZ chart");
+        Self::new_at(pos)
+    }
+
+    pub fn new_at(pos: EntityPos) -> Player {
         Player {
             pos,
             vel: Vec3::ZERO,
             on_ground: false,
             in_water: false,
             pushed_wall: false,
+            frame_rotation: QuarterTurn::IDENTITY,
         }
     }
 
-    pub fn eye(&self) -> Vec3 {
-        self.pos + Vec3::new(0.0, EYE_HEIGHT, 0.0)
+    pub fn eye(&self) -> EntityPos {
+        self.pos
+            .translated(Vec3::new(0.0, EYE_HEIGHT, 0.0))
+            .expect("vertical eye offset remains on the same chart")
+            .pos
     }
 
     fn head_in_water(&self, world: &World) -> bool {
-        let e = self.eye();
-        let b = world.get_block(e.x.floor() as i32, e.y.floor() as i32, e.z.floor() as i32);
+        let Some(pos) = self.eye().block() else {
+            return false;
+        };
+        let b = world.get_block_at(pos);
         world.reg.is_fluid(b)
     }
 
     fn body_in_water(&self, world: &World) -> bool {
-        let p = self.pos + Vec3::new(0.0, 0.6, 0.0);
-        let b = world.get_block(p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32);
+        let Some(pos) = self
+            .pos
+            .translated(Vec3::new(0.0, 0.6, 0.0))
+            .ok()
+            .and_then(|p| p.pos.block())
+        else {
+            return false;
+        };
+        let b = world.get_block_at(pos);
         world.reg.is_fluid(b)
     }
 
     pub fn update(&mut self, world: &World, input: &Input, flat_fwd: Vec3, right: Vec3, dt: f32) {
+        self.frame_rotation = QuarterTurn::IDENTITY;
         self.in_water = self.body_in_water(world);
 
         // Horizontal wish velocity.
@@ -136,10 +164,25 @@ impl Player {
         self.move_axis(world, Vec3::new(0.0, d.y, 0.0));
 
         // Void safety: respawn above surface if fallen out.
-        if self.pos.y < -10.0 {
-            let x = self.pos.x.floor() as i32;
-            let z = self.pos.z.floor() as i32;
-            self.pos.y = world.surface_height(x, z) as f32 + 2.0;
+        if self.pos.y() < -10.0 {
+            let block = self
+                .pos
+                .translated(Vec3::new(0.0, -self.pos.y(), 0.0))
+                .expect("vertical respawn projection stays on the face")
+                .pos;
+            let surface = SurfacePos::new(
+                block.face(),
+                block.u().floor() as u16,
+                block.v().floor() as u16,
+            )
+            .expect("canonical player surface");
+            self.pos = EntityPos::new(
+                block.face(),
+                block.u(),
+                world.surface_height_at(surface) as f32 + 2.0,
+                block.v(),
+            )
+            .expect("respawn height is finite");
             self.vel = Vec3::ZERO;
         }
         let _ = self.head_in_water(world); // (used by renderer via head_underwater)
@@ -160,17 +203,40 @@ impl Player {
         self.move_axis(world, Vec3::new(0.0, d.y, 0.0));
     }
 
-    pub(crate) fn collides(&self, world: &World, pos: Vec3) -> bool {
-        let min = pos - Vec3::new(PLAYER_HALF_W, 0.0, PLAYER_HALF_W);
-        let max = pos + Vec3::new(PLAYER_HALF_W, PLAYER_HEIGHT, PLAYER_HALF_W);
+    pub(crate) fn collides(&self, world: &World, pos: EntityPos) -> bool {
+        let local = pos.chart_local();
+        let min = local - Vec3::new(PLAYER_HALF_W, 0.0, PLAYER_HALF_W);
+        let max = local + Vec3::new(PLAYER_HALF_W, PLAYER_HEIGHT, PLAYER_HALF_W);
         let (x0, x1) = (min.x.floor() as i32, max.x.floor() as i32);
         let (y0, y1) = (min.y.floor() as i32, max.y.floor() as i32);
         let (z0, z1) = (min.z.floor() as i32, max.z.floor() as i32);
         for x in x0..=x1 {
             for y in y0..=y1 {
                 for z in z0..=z1 {
-                    let b = world.get_block(x, y, z);
+                    if !(0..crate::chunk::CHUNK_Y as i32).contains(&y) {
+                        continue;
+                    }
+                    let Ok(surface) = SurfacePos::canonicalized(pos.face(), x, z) else {
+                        return true;
+                    };
+                    let b = world.get_block_at(
+                        crate::planet::BlockPos::new(
+                            surface.face(),
+                            surface.u(),
+                            y as u8,
+                            surface.v(),
+                        )
+                        .expect("collision cell is validated"),
+                    );
                     if !world.reg.is_solid(b) {
+                        continue;
+                    }
+                    // Partial-height solids (steps, low work blocks) occupy
+                    // only the bottom of their voxel.  Treating them as a
+                    // full cube made the auto-step path impossible even
+                    // though rendering already honored `height`.
+                    let block_top = y as f32 + world.reg.block(b).height.unwrap_or(1.0);
+                    if max.y <= y as f32 || min.y >= block_top {
                         continue;
                     }
                     return true;
@@ -185,33 +251,40 @@ impl Player {
     /// snow layers). Falls back to the plain slide if that gains no ground.
     fn walk_axis(&mut self, world: &World, delta: Vec3, grounded: bool) {
         let start = self.pos;
-        self.move_axis(world, delta);
-        let advanced = (self.pos - start).dot(delta);
-        let wanted = delta.dot(delta);
-        if !grounded || advanced + 1e-4 >= wanted {
+        let start_vel = self.vel;
+        let start_rotation = self.frame_rotation;
+        let advanced = self.move_axis(world, delta);
+        if !grounded || advanced + 1e-4 >= 1.0 {
             return; // moved freely, or airborne — no stepping
         }
-        let flat = self.pos;
+        let flat = (self.pos, self.vel, self.frame_rotation);
         let flat_ground = self.on_ground;
-        let lifted = start + Vec3::new(0.0, STEP_HEIGHT, 0.0);
+        let lifted = start
+            .translated(Vec3::new(0.0, STEP_HEIGHT, 0.0))
+            .expect("vertical step remains on the current chart")
+            .pos;
         if self.collides(world, lifted) {
             return; // no headroom to step
         }
         self.pos = lifted;
-        self.move_axis(world, delta);
+        self.vel = start_vel;
+        self.frame_rotation = start_rotation;
+        let stepped = self.move_axis(world, delta);
         self.on_ground = false;
         self.move_axis(world, Vec3::new(0.0, -STEP_HEIGHT, 0.0));
         // Keep the step only if it landed on a ledge farther along than the slide.
-        if !(self.on_ground && (self.pos - start).dot(delta) > advanced + 1e-4) {
-            self.pos = flat;
+        if !(self.on_ground && stepped > advanced + 1e-4) {
+            self.pos = flat.0;
+            self.vel = flat.1;
+            self.frame_rotation = flat.2;
             self.on_ground = flat_ground;
         }
     }
 
-    fn move_axis(&mut self, world: &World, delta: Vec3) {
+    fn move_axis(&mut self, world: &World, delta: Vec3) -> f32 {
         let dist = delta.length();
         if dist <= 0.0 {
-            return;
+            return 1.0;
         }
         // Walk the path rather than teleporting to the end of it.
         //
@@ -227,7 +300,12 @@ impl Player {
         let mut blocked = false;
         for i in 1..=hops {
             let t = i as f32 / hops as f32;
-            if self.collides(world, self.pos + delta * t) {
+            let candidate = self
+                .pos
+                .translated(delta * t)
+                .expect("a swept player hop crosses at most one planet edge")
+                .pos;
+            if self.collides(world, candidate) {
                 // Snug up to whatever stopped us, searching only inside this
                 // hop. The interval is shorter than a block, so a clear point
                 // found in it cannot be on the far side of the obstacle —
@@ -237,7 +315,12 @@ impl Player {
                 let (mut lo, mut hi) = (travelled, t);
                 for _ in 0..8 {
                     let mid = (lo + hi) * 0.5;
-                    if self.collides(world, self.pos + delta * mid) {
+                    let candidate = self
+                        .pos
+                        .translated(delta * mid)
+                        .expect("collision bisection crosses at most one planet edge")
+                        .pos;
+                    if self.collides(world, candidate) {
                         hi = mid;
                     } else {
                         lo = mid;
@@ -249,9 +332,15 @@ impl Player {
             }
             travelled = t;
         }
-        self.pos += delta * travelled;
+        let moved = self
+            .pos
+            .translated(delta * travelled)
+            .expect("a committed player move crosses at most one planet edge");
+        self.pos = moved.pos;
+        self.vel = moved.rotation.rotate_vec3(self.vel);
+        self.frame_rotation = moved.rotation.then(self.frame_rotation);
         if !blocked {
-            return;
+            return travelled;
         }
         if delta.y < 0.0 {
             self.on_ground = true;
@@ -268,17 +357,27 @@ impl Player {
         if delta.z != 0.0 {
             self.vel.z = 0.0;
         }
+        travelled
     }
 
     /// Would placing a block at these world coords overlap the player?
+    pub fn overlaps_block_at(&self, block: BlockPos) -> bool {
+        let center = block.entity_center();
+        let delta = self.pos.local_delta_to(center);
+        let min = Vec3::new(delta.x - 0.5, delta.y - 0.5, delta.z - 0.5);
+        let max = Vec3::new(delta.x + 0.5, delta.y + 0.5, delta.z + 0.5);
+        -PLAYER_HALF_W < max.x
+            && PLAYER_HALF_W > min.x
+            && 0.0 < max.y
+            && PLAYER_HEIGHT > min.y
+            && -PLAYER_HALF_W < max.z
+            && PLAYER_HALF_W > min.z
+    }
+
+    /// Legacy PosZ fixture bridge.
+    #[cfg(test)]
+    #[doc(hidden)]
     pub fn overlaps_block(&self, bx: i32, by: i32, bz: i32) -> bool {
-        let min = self.pos - Vec3::new(PLAYER_HALF_W, 0.0, PLAYER_HALF_W);
-        let max = self.pos + Vec3::new(PLAYER_HALF_W, PLAYER_HEIGHT, PLAYER_HALF_W);
-        (bx as f32) < max.x
-            && (bx + 1) as f32 > min.x
-            && (by as f32) < max.y
-            && (by + 1) as f32 > min.y
-            && (bz as f32) < max.z
-            && (bz + 1) as f32 > min.z
+        BlockPos::of_world(bx, by, bz).is_some_and(|pos| self.overlaps_block_at(pos))
     }
 }

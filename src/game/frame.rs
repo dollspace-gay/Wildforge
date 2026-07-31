@@ -56,7 +56,7 @@ impl Game {
 
         // Camera basis: f forward, r screen-right, u screen-up.
         let f = self.camera.forward();
-        let mut r = f.cross(Vec3::Y);
+        let mut r = f.cross(self.camera.up());
         if r.length_squared() < 1e-6 {
             r = Vec3::new(-self.camera.yaw.sin(), 0.0, self.camera.yaw.cos());
         }
@@ -110,11 +110,11 @@ impl Game {
         };
 
         // Lit like anything standing where the camera stands.
-        let (bl, sl) = self.server.world.light_at(
-            self.camera.pos.x.floor() as i32,
-            self.camera.pos.y.floor() as i32,
-            self.camera.pos.z.floor() as i32,
-        );
+        let (bl, sl) = self
+            .player
+            .eye()
+            .block()
+            .map_or((0, 15), |pos| self.server.world.light_at_pos(pos));
         let lum = (bl as f32 / 15.0, sl as f32 / 15.0);
 
         // A local-space box textured one tile per face (arm, held block).
@@ -328,18 +328,26 @@ impl Game {
             let r1 = self.vary();
             let r2 = self.vary();
             let r3 = self.vary();
-            let p =
-                self.camera.pos + Vec3::new((r1 - 0.5) * 24.0, (r2 - 0.3) * 8.0, (r3 - 0.5) * 24.0);
-            let (bx, by, bz) = (p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32);
+            let Ok(sample) = self.player.eye().translated(Vec3::new(
+                (r1 - 0.5) * 24.0,
+                (r2 - 0.3) * 8.0,
+                (r3 - 0.5) * 24.0,
+            )) else {
+                return;
+            };
+            let sample = sample.pos;
+            let p = sample.render_pos();
+            let Some(center) = sample.block() else {
+                return;
+            };
             let reg = self.content.reg.clone();
             let near = |pred: &dyn Fn(&str) -> bool| -> bool {
                 (-2..=2i32).any(|dx| {
                     (-2..=2i32).any(|dy| {
                         (-2..=2i32).any(|dz| {
-                            pred(
-                                &reg.block(self.server.world.get_block(bx + dx, by + dy, bz + dz))
-                                    .name,
-                            )
+                            center.offset(dx, dy, dz).is_some_and(|at| {
+                                pred(&reg.block(self.server.world.get_block_at(at)).name)
+                            })
                         })
                     })
                 })
@@ -424,11 +432,9 @@ impl Game {
 
         // Footprints in snow: not juice — the trail is world state.
         if self.in_world && !paused && self.multiplayer.remote.is_none() && self.player.on_ground {
-            self.server.world.tread(
-                self.player.pos.x.floor() as i32,
-                (self.player.pos.y + 0.1).floor() as i32,
-                self.player.pos.z.floor() as i32,
-            );
+            if let Some(at) = self.player.pos.block() {
+                self.server.world.tread_at(at);
+            }
         }
 
         // Footsteps: mine, my fellow players', and the creatures'.
@@ -438,8 +444,7 @@ impl Game {
                 self.presentation.step_accum += hv * dt;
                 if self.presentation.step_accum >= 2.2 {
                     self.presentation.step_accum = 0.0;
-                    let m =
-                        self.step_mat_at(self.player.pos.x, self.player.pos.y, self.player.pos.z);
+                    let m = self.step_mat_at(self.player.pos);
                     let pitch = self.vary();
                     self.sfx(Sfx::Step(m, pitch));
                 }
@@ -450,24 +455,29 @@ impl Game {
             let cam = self.camera.pos;
             let mut steps: Vec<(audio::StepMat, f32, f32)> = Vec::new();
             for m in self.server.world.mobs() {
-                let d = (m.pos - cam).length();
+                let d = (m.pos.render_pos() - cam).length();
                 if d > 16.0 || m.id == 0 {
                     continue;
                 }
                 let beat = (m.anim_phase / std::f32::consts::PI).floor();
                 let last = self.presentation.mob_strides.insert(m.id, beat);
                 if last.is_some_and(|l| beat > l) {
-                    let mat = self.step_mat_at(m.pos.x, m.pos.y, m.pos.z);
+                    let mat = self.step_mat_at(m.pos);
                     let pitch = self.content.reg.animals[m.species].sound_pitch;
                     steps.push((mat, pitch, 1.0 - d / 18.0));
                 }
             }
             // Remote players step by distance walked, like we do.
-            let remote_players: Vec<(u32, Vec3)> = self
+            let remote_players: Vec<(u32, crate::planet::EntityPos)> = self
                 .multiplayer
                 .remote
                 .as_ref()
-                .map(|r| r.players.iter().map(|(id, p)| (*id, p.1)).collect())
+                .map(|r| {
+                    r.player_positions
+                        .iter()
+                        .map(|(id, pos)| (*id, *pos))
+                        .collect()
+                })
                 .unwrap_or_default();
             for (id, pos) in remote_players {
                 let (last, mut accum) = self
@@ -476,13 +486,13 @@ impl Game {
                     .get(&id)
                     .copied()
                     .unwrap_or((pos, 0.0));
-                let moved = Vec3::new(pos.x - last.x, 0.0, pos.z - last.z).length();
+                let moved = last.horizontal_distance_to(pos);
                 accum += moved;
                 if accum >= 2.2 {
                     accum = 0.0;
-                    let d = (pos - cam).length();
+                    let d = (pos.render_pos() - cam).length();
                     if d < 16.0 {
-                        let mat = self.step_mat_at(pos.x, pos.y, pos.z);
+                        let mat = self.step_mat_at(pos);
                         steps.push((mat, 1.0, 1.0 - d / 18.0));
                     }
                 }
@@ -594,6 +604,7 @@ impl Game {
                             // timed by distance, and a white column
                             // standing on the strike for a beat.
                             self.presentation.lightning = 0.3;
+                            let at = at.render_pos();
                             let dist = (at - self.camera.pos).length();
                             self.presentation.thunder_delay = (dist / 110.0).clamp(0.1, 2.0);
                             let white = *atlas::builtin_slots().get("snow").unwrap_or(&39);
@@ -646,8 +657,7 @@ impl Game {
                     self.sweep_dead_mobs();
                 }
                 for (pos, s) in self.server.world.take_pending_drops() {
-                    let center =
-                        Vec3::new(pos.0 as f32 + 0.5, pos.1 as f32 + 0.5, pos.2 as f32 + 0.5);
+                    let center = pos.entity_center();
                     let a = self.rand01() * std::f32::consts::TAU;
                     let v = Vec3::new(a.cos() * 1.5, 2.5, a.sin() * 1.5);
                     self.interaction
@@ -660,16 +670,11 @@ impl Game {
                 }
                 // Crossing into marked country: one line per region
                 // per session, hostile or blessed.
-                let cell = world::World::ire_cell(
-                    self.player.pos.x.floor() as i32,
-                    self.player.pos.z.floor() as i32,
-                );
+                let surface = self.player.pos.surface();
+                let cell = world::RegionCell::from_surface(surface);
                 if self.presentation.last_ire_cell != Some(cell) {
                     self.presentation.last_ire_cell = Some(cell);
-                    let standing = self.server.world.regional_ire_at(
-                        self.player.pos.x.floor() as i32,
-                        self.player.pos.z.floor() as i32,
-                    );
+                    let standing = self.server.world.regional_ire_at_surface(surface);
                     if standing.abs() >= 8.0 && self.presentation.whispered_cells.insert(cell) {
                         self.toast(
                             if standing > 0.0 {
@@ -686,7 +691,7 @@ impl Game {
                 | Screen::Chest(pos)
                 | Screen::Offering(pos)
                 | Screen::Bloomery(pos) = self.ui_state.screen
-                    && !self.server.world.has_block_entity(&pos)
+                    && self.server.world.block_entity_at(&pos).is_none()
                 {
                     self.set_screen(Screen::Playing);
                 }
@@ -745,10 +750,9 @@ impl Game {
 
     fn advance_player(&mut self, dt: f32, paused: bool) {
         // Physics — only once the chunk under the player exists.
-        let pchunk = ChunkPos::of_world(
-            self.player.pos.x.floor() as i32,
-            self.player.pos.z.floor() as i32,
-        );
+        let Some(pchunk) = self.player.pos.chunk() else {
+            return;
+        };
         let can_sim = self.server.world.has_chunk(pchunk) && !paused;
         if can_sim && self.ui_state.screen != Screen::Dead {
             let input = physics::Input {
@@ -775,8 +779,8 @@ impl Game {
             }
             self.update_food(dt, &input);
             if self.flying {
-                let mut wish =
-                    self.camera.flat_forward() * input.forward + self.camera.right() * input.strafe;
+                let mut wish = self.camera.local_flat_forward() * input.forward
+                    + self.camera.local_right() * input.strafe;
                 if wish.length_squared() > 1.0 {
                     wish = wish.normalize();
                 }
@@ -795,11 +799,12 @@ impl Game {
                 self.player.update(
                     &self.server.world,
                     &input,
-                    self.camera.flat_forward(),
-                    self.camera.right(),
+                    self.camera.local_flat_forward(),
+                    self.camera.local_right(),
                     dt,
                 );
             }
+            self.camera.yaw = self.player.frame_rotation.rotate_yaw(self.camera.yaw);
             // Aboard a boat: the hull carries you — float at the
             // surface, glide fast, and the boat glues underneath.
             // Jump steps off.
@@ -825,7 +830,12 @@ impl Game {
                         self.player.vel.x *= 1.9;
                         self.player.vel.z *= 1.9;
                     }
-                    let at = self.player.pos - Vec3::new(0.0, 0.35, 0.0);
+                    let at = self
+                        .player
+                        .pos
+                        .translated(Vec3::new(0.0, -0.35, 0.0))
+                        .expect("ridden vehicle stays below its rider")
+                        .pos;
                     let yaw = self.camera.yaw;
                     if let Some(m) = self.server.world.mob_by_id_mut(bid) {
                         m.pos = at;
@@ -842,7 +852,7 @@ impl Game {
         if can_sim {
             self.update_items(dt);
         }
-        self.camera.pos = self.player.eye();
+        self.camera.follow_planet(self.player.eye());
 
         if self.ui_state.screen == Screen::Playing && self.input.mouse_captured {
             self.interact(dt);
@@ -881,10 +891,16 @@ impl Game {
         let horiz = ang.cos(); // +1 dawn -> 0 noon -> -1 dusk
         // Warm sun, clamped just over the horizon so its shadow never
         // degenerates while it's the active light.
-        let warm_sun_dir = Vec3::new(horiz * 0.8, elev.max(0.05) + 0.15, 0.45).normalize();
+        let warm_sun_dir = self
+            .camera
+            .world_vector(Vec3::new(horiz * 0.8, elev.max(0.05) + 0.15, 0.45))
+            .normalize();
         // Same azimuth/tilt but the true elevation (dips below the horizon at
         // night), so the sky gradient can actually set and darken.
-        let sun_dir_true = Vec3::new(horiz * 0.8, elev, 0.45).normalize();
+        let sun_dir_true = self
+            .camera
+            .world_vector(Vec3::new(horiz * 0.8, elev, 0.45))
+            .normalize();
         let sun_vis = elev.clamp(0.0, 1.0).sqrt(); // 0 below horizon
         // Golden hour: the sun's hue warms from near-white at noon to deep
         // orange as it nears the horizon.
@@ -904,7 +920,14 @@ impl Game {
         };
         let moon_elev = -elev;
         let moon_horiz = -horiz;
-        let moon_dir = Vec3::new(moon_horiz * 0.8, moon_elev.max(0.05) + 0.15, 0.45).normalize();
+        let moon_dir = self
+            .camera
+            .world_vector(Vec3::new(
+                moon_horiz * 0.8,
+                moon_elev.max(0.05) + 0.15,
+                0.45,
+            ))
+            .normalize();
         let moon_vis = moon_elev.clamp(0.0, 1.0).sqrt() * illum;
         // A strong, distinctly cold key so full-moon-lit faces clearly read as
         // lit — paired with a near-nothing fill (below) so shadows stay genuinely
@@ -975,6 +998,7 @@ impl Game {
         // fill light — from the same values that drive the visible dome.
         let sh_ambient = crate::sky::project(&crate::sky::SkyParams {
             sun_dir: sun_dir_true,
+            up: self.camera.up(),
             gloom,
             overcast: Vec3::from_array(self.renderer.sky_color),
             moon_fill,
@@ -982,17 +1006,17 @@ impl Game {
 
         // The weather bed follows what's actually falling where you stand.
         if let Some(a) = &self.audio {
-            let (px, pz) = (
-                self.player.pos.x.floor() as i32,
-                self.player.pos.z.floor() as i32,
-            );
             let want = if self.ui_state.screen == Screen::Paused {
                 // The pause menu holds the world's breath: no rain,
                 // no wind, no crickets until you come back.
                 None
             } else if self.in_world
                 && self.server.world.weather.precipitating()
-                && self.server.world.rains_at(px, pz)
+                && self
+                    .player
+                    .pos
+                    .block()
+                    .is_some_and(|pos| self.server.world.rains_at_surface(pos.surface()))
             {
                 Some(if self.server.world.weather == world::Weather::Storm {
                     audio::Ambience::Storm
@@ -1012,10 +1036,10 @@ impl Game {
                     // The night bed reads the land underfoot: crickets
                     // in tended country, the wrathful hush where the
                     // ground remembers (legible escalation, stage 2).
-                    self.server.world.ire_tier_at(
-                        self.player.pos.x.floor() as i32,
-                        self.player.pos.z.floor() as i32,
-                    ) < 2,
+                    self.server
+                        .world
+                        .ire_tier_at_surface(self.player.pos.surface())
+                        < 2,
                 ))
             } else {
                 None
@@ -1035,10 +1059,10 @@ impl Game {
 
         let playing = self.ui_state.screen == Screen::Playing;
         let outline = if playing && self.config.outline {
-            raycast::raycast(
+            raycast::raycast_at(
                 &self.server.world,
-                self.camera.pos,
-                self.camera.forward(),
+                self.player.eye(),
+                self.camera.local_forward(),
                 REACH,
             )
             .map(|h| h.block)
@@ -1051,12 +1075,12 @@ impl Game {
         // World-space extras: item entities + mining crack overlay.
         let mut entity_verts = Vec::new();
         let mut entity_idx = Vec::new();
-        let sample = |w: &World, p: Vec3| -> ([f32; 3], f32) {
-            let (b, s) = w.light_rgb_at(
-                p.x.floor() as i32,
-                (p.y + 0.4).floor() as i32,
-                p.z.floor() as i32,
-            );
+        let sample = |w: &World, p: crate::planet::EntityPos| -> ([f32; 3], f32) {
+            let sample = p
+                .translated(Vec3::new(0.0, 0.4, 0.0))
+                .ok()
+                .and_then(|moved| moved.pos.block());
+            let (b, s) = sample.map_or(([0; 3], 15), |pos| w.light_rgb_at_pos(pos));
             (
                 [b[0] as f32 / 15.0, b[1] as f32 / 15.0, b[2] as f32 / 15.0],
                 s as f32 / 15.0,
@@ -1078,9 +1102,10 @@ impl Game {
             .pool
             .emit(&mut entity_verts, &mut entity_idx);
         // Fellow players, dressed and striding.
-        // Dev: stand-ins a few blocks ahead — two styles side by side,
-        // mid-stride, one holding a torch (model iteration).
-        if std::env::var("WILDFORGE_DEMO_PLAYER").is_ok() && self.in_world {
+        // Dev: stand-ins a few blocks ahead — three styles side by side,
+        // mid-stride, one holding a torch (model and seam iteration).
+        let planet_player_shot = std::env::var("WILDFORGE_PLANET_SHOT").as_deref() == Ok("players");
+        if (std::env::var("WILDFORGE_DEMO_PLAYER").is_ok() || planet_player_shot) && self.in_world {
             let torch_art = self.held_art(self.content.reg.item_id("base:torch"));
             for (i, st) in [
                 style::Style {
@@ -1098,19 +1123,39 @@ impl Game {
                     build: 2,
                     ..Default::default()
                 },
+                style::Style {
+                    skin: 2,
+                    hair: 7,
+                    shirt: 1,
+                    trousers: 5,
+                    hair_style: 2,
+                    build: 1,
+                    ..Default::default()
+                },
             ]
             .into_iter()
             .enumerate()
             {
-                let px = self.player.pos.x.floor() + 0.5 + (i as f32 * 2.0 - 1.0);
-                let pz = self.player.pos.z.floor() + 3.5;
-                let py = self
-                    .server
-                    .world
-                    .surface_height(px.floor() as i32, pz.floor() as i32)
-                    as f32
-                    + 1.0;
-                let at = Vec3::new(px, py, pz);
+                let translated = self
+                    .player
+                    .pos
+                    .translated(Vec3::new([-1.2, 0.0, 1.2][i], 0.0, 3.5))
+                    .expect("demo player translation stays canonical")
+                    .pos;
+                let surface = crate::planet::SurfacePos::new(
+                    translated.face(),
+                    translated.u().floor() as u16,
+                    translated.v().floor() as u16,
+                )
+                .expect("canonical demo position has a surface cell");
+                let py = self.server.world.surface_height_at(surface) as f32 + 1.0;
+                let at = crate::planet::EntityPos::new(
+                    surface.face(),
+                    translated.u(),
+                    py,
+                    translated.v(),
+                )
+                .expect("demo player surface is canonical");
                 let lum = sample(&self.server.world, at);
                 let held = if i == 1 {
                     torch_art
@@ -1130,18 +1175,23 @@ impl Game {
             }
         }
         if self.multiplayer.remote.is_some() {
-            let entries: Vec<(u32, Vec3, f32)> = self
+            let entries: Vec<(u32, Vec3, crate::planet::EntityPos, f32)> = self
                 .multiplayer
                 .remote
                 .as_ref()
                 .map(|r| {
                     r.players
                         .iter()
-                        .map(|(id, (_, p, y))| (*id, *p, *y))
+                        .filter_map(|(id, (_, p, y))| {
+                            r.player_positions
+                                .get(id)
+                                .copied()
+                                .map(|logical| (*id, *p, logical, *y))
+                        })
                         .collect()
                 })
                 .unwrap_or_default();
-            for (id, pos, yaw) in entries {
+            for (id, pos, logical, yaw) in entries {
                 let gait = self.gait_for(id, pos, dt);
                 let (held, st) = {
                     let r = self.multiplayer.remote.as_ref().unwrap();
@@ -1156,8 +1206,9 @@ impl Game {
                         .unwrap_or_default();
                     (held, st)
                 };
-                let lum = sample(&self.server.world, pos);
-                mobs::emit_humanoid(
+                let lum = sample(&self.server.world, logical);
+                mobs::emit_humanoid_interpolated(
+                    logical,
                     pos,
                     yaw,
                     &Self::humanoid_art(st),
@@ -1170,7 +1221,7 @@ impl Game {
             }
         }
         if self.multiplayer.host.is_some() {
-            let entries: Vec<(u32, Vec3, f32, u16, u32)> = self
+            let entries: Vec<(u32, Vec3, crate::planet::EntityPos, f32, u16, u32)> = self
                 .multiplayer
                 .host
                 .as_ref()
@@ -1179,20 +1230,21 @@ impl Game {
                         .iter()
                         .map(|(id, g)| {
                             let (p, y) = g.render_pos();
-                            (*id, p, y, g.held, g.style)
+                            (*id, p, g.render_entity_pos(), y, g.held, g.style)
                         })
                         .collect()
                 })
                 .unwrap_or_default();
-            for (id, pos, yaw, held_wire, pstyle) in entries {
+            for (id, pos, logical, yaw, held_wire, pstyle) in entries {
                 let gait = self.gait_for(id, pos, dt);
                 let held = if held_wire == u16::MAX {
                     None
                 } else {
                     Some(ItemId(held_wire))
                 };
-                let lum = sample(&self.server.world, pos);
-                mobs::emit_humanoid(
+                let lum = sample(&self.server.world, logical);
+                mobs::emit_humanoid_interpolated(
+                    logical,
                     pos,
                     yaw,
                     &Self::humanoid_art(style::Style::unpack(pstyle)),
@@ -1206,7 +1258,12 @@ impl Game {
         }
         // Airborne sand tumbles as full-size cubes.
         for f in self.server.world.falling_blocks().to_vec() {
-            let lum = sample(&self.server.world, f.pos + Vec3::new(0.5, 0.5, 0.5));
+            let lum = sample(&self.server.world, f.pos);
+            let origin = f.pos.render_pos();
+            let local_frame = crate::planet::local_frame(f.pos.surface_point());
+            let east = local_frame.east.as_vec3();
+            let up = local_frame.up.as_vec3();
+            let north = local_frame.north.as_vec3();
             let d = self.content.reg.block(f.block);
             let ts = 1.0 / atlas::ATLAS_TILES as f32;
             let inset = ts / 32.0;
@@ -1224,13 +1281,16 @@ impl Game {
                         _ => (c[0], c[2]),
                     };
                     let n = mesher::NORMALS[face];
+                    let local_n = Vec3::new(n[0] as f32, n[1] as f32, n[2] as f32);
+                    let normal = east * local_n.x + up * local_n.y + north * local_n.z;
+                    let world = origin + east * c[0] + up * c[1] + north * c[2];
                     entity_verts.push(mesher::Vertex {
-                        pos: [f.pos.x + c[0], f.pos.y + c[1], f.pos.z + c[2]],
+                        pos: world.to_array(),
                         uv: [
                             tx as f32 * ts + inset + uu * (ts - 2.0 * inset),
                             ty as f32 * ts + inset + vv * (ts - 2.0 * inset),
                         ],
-                        normal: [n[0] as f32, n[1] as f32, n[2] as f32],
+                        normal: normal.to_array(),
                         light: lum.0,
                         sky: lum.1,
                     });
@@ -1247,13 +1307,16 @@ impl Game {
             let smoke_slot = *atlas::builtin_slots().get("snow_flake").unwrap_or(&0);
             let t = self.time_abs;
             let sprite = |slot: u16,
-                          cx: f32,
-                          cy: f32,
-                          cz: f32,
+                          pos: crate::planet::EntityPos,
                           size: f32,
                           lum: f32,
                           verts: &mut Vec<mesher::Vertex>,
                           idx: &mut Vec<u32>| {
+                let center = pos.render_pos();
+                let frame = crate::planet::local_frame(pos.surface_point());
+                let east = frame.east.as_vec3();
+                let up = frame.up.as_vec3();
+                let north = frame.north.as_vec3();
                 let (tx, ty) = (
                     slot as u32 % atlas::ATLAS_TILES,
                     slot as u32 / atlas::ATLAS_TILES,
@@ -1279,7 +1342,8 @@ impl Game {
                                 ty as f32 * ts + inset
                             };
                             verts.push(mesher::Vertex {
-                                pos: [cx + dx * o, cy + dy, cz + dz * o],
+                                pos: (center + east * (dx * o) + up * dy + north * (dz * o))
+                                    .to_array(),
                                 uv: [uu, vv],
                                 normal: [0.0, 0.0, 0.0],
                                 light: [lum; 3],
@@ -1297,70 +1361,60 @@ impl Game {
                     }
                 }
             };
-            let mut work: Vec<(u16, f32, f32, f32, f32, f32)> = Vec::new();
-            for (&(x, y, z), e) in self.server.world.block_entities() {
+            let mut work: Vec<(u16, crate::planet::EntityPos, f32, f32)> = Vec::new();
+            for (&pos, e) in self.server.world.block_entities() {
                 match e {
                     world::BlockEntity::Anvil(a) => {
                         if let Some(b) = a.bloom {
                             let icon = self.content.reg.item(b.item).icon;
-                            work.push((
-                                icon,
-                                x as f32 + 0.5,
-                                y as f32 + 0.78,
-                                z as f32 + 0.5,
-                                0.32,
-                                1.0,
-                            ));
+                            let at = crate::planet::EntityPos::new(
+                                pos.face(),
+                                f32::from(pos.u()) + 0.5,
+                                f32::from(pos.y()) + 0.78,
+                                f32::from(pos.v()) + 0.5,
+                            )
+                            .expect("block entity sprite remains in its cell");
+                            work.push((icon, at, 0.32, 1.0));
                         }
                     }
                     world::BlockEntity::Bloomery(b) if b.lit => {
                         for k in 0..3 {
                             let rise = (t * 0.7 + k as f32 * 0.65) % 2.0;
                             let drift = (t * 0.9 + k as f32 * 2.1).sin() * 0.2;
-                            work.push((
-                                smoke_slot,
-                                x as f32 + 0.5 + drift,
-                                y as f32 + 3.2 + rise,
-                                z as f32 + 0.5,
-                                0.5 + rise * 0.3,
-                                0.12,
-                            ));
+                            let at = crate::planet::EntityPos::new(
+                                pos.face(),
+                                f32::from(pos.u()) + 0.5 + drift,
+                                f32::from(pos.y()) + 3.2 + rise,
+                                f32::from(pos.v()) + 0.5,
+                            )
+                            .expect("bloomery smoke remains near its source");
+                            work.push((smoke_slot, at, 0.5 + rise * 0.3, 0.12));
                         }
                     }
                     world::BlockEntity::Clamp(_) => {
                         for k in 0..2 {
                             let rise = (t * 0.5 + k as f32 * 0.9) % 1.8;
                             let drift = (t * 0.8 + k as f32 * 1.7).sin() * 0.15;
-                            work.push((
-                                smoke_slot,
-                                x as f32 + 0.5 + drift,
-                                y as f32 + 1.2 + rise,
-                                z as f32 + 0.5,
-                                0.4 + rise * 0.25,
-                                0.12,
-                            ));
+                            let at = crate::planet::EntityPos::new(
+                                pos.face(),
+                                f32::from(pos.u()) + 0.5 + drift,
+                                f32::from(pos.y()) + 1.2 + rise,
+                                f32::from(pos.v()) + 0.5,
+                            )
+                            .expect("clamp smoke remains near its source");
+                            work.push((smoke_slot, at, 0.4 + rise * 0.25, 0.12));
                         }
                     }
                     _ => {}
                 }
             }
-            for (slot, cx, cy, cz, size, lum) in work {
-                sprite(
-                    slot,
-                    cx,
-                    cy,
-                    cz,
-                    size,
-                    lum,
-                    &mut entity_verts,
-                    &mut entity_idx,
-                );
+            for (slot, pos, size, lum) in work {
+                sprite(slot, pos, size, lum, &mut entity_verts, &mut entity_idx);
             }
         }
         // Precipitation: a cylinder of falling quads around the camera.
         // Each streak owns a column; roofed columns stay dry.
         if self.in_world && self.server.world.weather.precipitating() {
-            let cam = self.camera.pos;
             let t = self.time_abs;
             let ts = 1.0 / atlas::ATLAS_TILES as f32;
             let inset = ts / 32.0;
@@ -1371,19 +1425,40 @@ impl Game {
                 let a = (h >> 8 & 0xffff) as f32 / 65536.0 * std::f32::consts::TAU;
                 let r = 2.0 + (h >> 16 & 0xff) as f32 / 255.0 * 13.0;
                 let phase = (h & 0xff) as f32 / 255.0;
-                let wx = cam.x + a.cos() * r;
-                let wz = cam.z + a.sin() * r;
-                let (cx, cz) = (wx.floor() as i32, wz.floor() as i32);
-                if !self.server.world.rains_at(cx, cz) {
+                let Ok(sample) =
+                    self.player
+                        .pos
+                        .translated(Vec3::new(a.cos() * r, 0.0, a.sin() * r))
+                else {
+                    continue;
+                };
+                let sample = sample.pos;
+                let Some(column) = sample.block() else {
+                    continue;
+                };
+                if !self.server.world.rains_at_surface(column.surface()) {
                     continue;
                 }
-                let snow = self.server.world.snows_at(cx, cz);
+                let snow = self.server.world.snows_at_surface(column.surface());
                 let speed = if snow { 3.0 } else { 13.0 };
                 let span = 14.0;
-                let y = cam.y + 7.0 - (t * speed + phase * span) % span;
-                if self.server.world.light_at(cx, y.floor() as i32, cz).1 < 15 {
+                let y = self.player.pos.y() + 7.0 - (t * speed + phase * span) % span;
+                let Ok(streak) =
+                    crate::planet::EntityPos::new(sample.face(), sample.u(), y, sample.v())
+                else {
+                    continue;
+                };
+                let Some(streak_block) = streak.block() else {
+                    continue;
+                };
+                if self.server.world.light_at_pos(streak_block).1 < 15 {
                     continue; // a roof owns this column
                 }
+                let frame = crate::planet::local_frame(streak.surface_point());
+                let east = frame.east.as_vec3();
+                let up = frame.up.as_vec3();
+                let north = frame.north.as_vec3();
+                let center = streak.render_pos();
                 let slot = if snow { snow_slot } else { rain_slot };
                 let (tx, ty) = (
                     slot as u32 % atlas::ATLAS_TILES,
@@ -1395,7 +1470,7 @@ impl Game {
                 } else {
                     0.0
                 };
-                for (dx, dz) in [(1.0f32, 0.0f32), (0.0, 1.0)] {
+                for horizontal in [east, north] {
                     for flip in [false, true] {
                         let base = entity_verts.len() as u32;
                         let (u0, u1) = if flip {
@@ -1415,8 +1490,9 @@ impl Game {
                             } else {
                                 ty as f32 * ts + inset
                             };
+                            let world = center + horizontal * (drift + o) + up * dy;
                             entity_verts.push(mesher::Vertex {
-                                pos: [wx + drift + dx * o, y + dy, wz + dz * o],
+                                pos: world.to_array(),
                                 uv: [uu, vv],
                                 normal: [0.0, 0.0, 0.0],
                                 light: [0.5; 3],
@@ -1448,7 +1524,7 @@ impl Game {
             && !self.inventory.slots[self.input.hotbar_sel]
                 .is_some_and(|st| self.content.reg.item(st.item).hammer)
         {
-            let b = self.server.world.get_block(t.0, t.1, t.2);
+            let b = self.server.world.get_block_at(t);
             let slot = self.content.reg.block(b).tiles[2];
             let ts = 1.0 / atlas::ATLAS_TILES as f32;
             let (tx, ty) = (
@@ -1457,7 +1533,17 @@ impl Game {
             );
             let ang = self.interaction.anvil_work * std::f32::consts::PI;
             let (sa, ca) = ang.sin_cos();
-            let c = Vec3::new(t.0 as f32 + 0.5, t.1 as f32 + 1.01, t.2 as f32 + 0.5);
+            let center = crate::planet::EntityPos::new(
+                t.face(),
+                f32::from(t.u()) + 0.5,
+                f32::from(t.y()) + 1.01,
+                f32::from(t.v()) + 0.5,
+            )
+            .expect("station overlay is inside the shell");
+            let c = center.render_pos();
+            let local = crate::planet::local_frame(center.surface_point());
+            let east = local.east.as_vec3();
+            let north = local.north.as_vec3();
             let base = overlay_verts.len() as u32;
             for (lx, lz, u, v) in [
                 (-0.5f32, -0.5f32, 0.0f32, 0.0f32),
@@ -1468,7 +1554,7 @@ impl Game {
                 let rx = lx * ca - lz * sa;
                 let rz = lx * sa + lz * ca;
                 overlay_verts.push(mesher::Vertex {
-                    pos: [c.x + rx, c.y, c.z + rz],
+                    pos: (c + east * rx + north * rz).to_array(),
                     uv: [(tx as f32 + u) * ts, (ty as f32 + v) * ts],
                     normal: [0.0, 0.0, 0.0],
                     light: [1.0; 3],
@@ -1482,9 +1568,14 @@ impl Game {
         self.emit_hand(&mut hand_verts, &mut hand_idx);
         if self.ui_state.screen == Screen::Appearance {
             // Live preview: you, slowly turning, left of the swatches.
-            let f = self.camera.forward();
-            let rgt = f.cross(Vec3::Y).normalize_or_zero();
-            let feet = self.camera.pos + f * 2.6 - rgt * 0.9 - Vec3::Y * 1.35;
+            let f = self.camera.local_forward();
+            let rgt = self.camera.local_right();
+            let feet = self
+                .player
+                .eye()
+                .translated(f * 2.6 - rgt * 0.9 - Vec3::Y * 1.35)
+                .expect("appearance preview stays in the local planetary frame")
+                .pos;
             mobs::emit_humanoid(
                 feet,
                 self.time_abs * 0.8,
@@ -1520,14 +1611,17 @@ impl Game {
             let ndc_x = center_x / w * 2.0 - 1.0;
             let ndc_y = 1.0 - center_y / h * 2.0;
             let half_h = (self.camera.fovy * 0.5).tan() * depth;
-            let f = self.camera.forward();
-            let rgt = f.cross(Vec3::Y).normalize_or_zero();
+            let f = self.camera.local_forward();
+            let rgt = self.camera.local_right();
             let up = rgt.cross(f).normalize_or_zero();
-            let body_center = self.camera.pos
-                + f * depth
-                + rgt * (ndc_x * half_h * self.camera.aspect)
-                + up * (ndc_y * half_h);
-            let feet = body_center - Vec3::Y * (mobs::HUMANOID_HEIGHT * 0.5);
+            let body_delta =
+                f * depth + rgt * (ndc_x * half_h * self.camera.aspect) + up * (ndc_y * half_h);
+            let feet = self
+                .player
+                .eye()
+                .translated(body_delta - Vec3::Y * (mobs::HUMANOID_HEIGHT * 0.5))
+                .expect("inventory preview stays in the local planetary frame")
+                .pos;
             let face_camera = -std::f32::consts::FRAC_PI_2 - self.camera.yaw;
             mobs::emit_humanoid(
                 feet,
@@ -1577,7 +1671,7 @@ impl Game {
         {
             dyn_lights.push(lights::DynLight {
                 key: lights::Key::Held,
-                pos: self.camera.pos - Vec3::Y * 0.15,
+                pos: self.camera.pos - self.camera.up() * 0.15,
                 color,
                 range,
             });
@@ -1588,19 +1682,25 @@ impl Game {
             let cam = self.camera.pos;
             let mut tail: Vec<(f32, lights::DynLight)> = Vec::new();
             if let Some(r) = &self.multiplayer.remote {
-                for (id, (_, pos, _)) in &r.players {
+                for (id, _) in &r.players {
                     let Some(&held) = r.player_held.get(id) else {
                         continue;
                     };
                     let local = r.item_map.get(held as usize).copied().flatten();
                     if let Some(item) = local
                         && let Some((color, range)) = self.held_glow(item)
+                        && let Some(logical) = r.player_positions.get(id).copied()
                     {
+                        let pos = logical
+                            .translated(Vec3::new(0.0, 1.4, 0.0))
+                            .expect("held light stays in the voxel shell")
+                            .pos
+                            .render_pos();
                         tail.push((
                             pos.distance(cam),
                             lights::DynLight {
                                 key: lights::Key::RemoteHeld(*id),
-                                pos: *pos + Vec3::new(0.0, 1.4, 0.0),
+                                pos,
                                 color,
                                 range,
                             },
@@ -1614,12 +1714,17 @@ impl Game {
                         continue;
                     }
                     if let Some((color, range)) = self.held_glow(ItemId(g.held)) {
-                        let p = g.render_pos().0;
+                        let p = g
+                            .render_entity_pos()
+                            .translated(Vec3::new(0.0, 1.4, 0.0))
+                            .expect("guest held light stays in the voxel shell")
+                            .pos
+                            .render_pos();
                         tail.push((
                             p.distance(cam),
                             lights::DynLight {
                                 key: lights::Key::RemoteHeld(*id),
-                                pos: p + Vec3::new(0.0, 1.4, 0.0),
+                                pos: p,
                                 color,
                                 range,
                             },
@@ -1631,13 +1736,19 @@ impl Game {
                 let Some(g) = self.content.reg.animals[m.species].glow else {
                     continue;
                 };
-                let d = (m.pos - cam).length();
+                let d = (m.pos.render_pos() - cam).length();
                 if d < 32.0 {
+                    let pos = m
+                        .pos
+                        .translated(Vec3::new(0.0, 0.7, 0.0))
+                        .expect("mob light stays in the voxel shell")
+                        .pos
+                        .render_pos();
                     tail.push((
                         d,
                         lights::DynLight {
                             key: lights::Key::Mob(m.id),
-                            pos: m.pos + Vec3::new(0.0, 0.7, 0.0),
+                            pos,
                             color: Vec3::from(g),
                             range: 12.0,
                         },
@@ -1672,41 +1783,19 @@ impl Game {
         // Voxel occupancy grid for DDA point-light shadows. The origin snaps to
         // OCC_STEP and keeps the camera near the cube's centre; we only rebuild
         // (a full region scan) when the camera crosses into a new snapped cell.
-        let dda_shadow = dda_shadow_enabled(self.config.point_grid);
-        let occ_origin = {
-            let g = crate::renderer::OCC_GRID as i32;
-            let s = crate::renderer::OCC_STEP;
-            let snap = |v: f32| (v / s as f32).floor() as i32 * s;
-            [
-                snap(frame_cam.x) - g / 2,
-                snap(frame_cam.y) - g / 2,
-                snap(frame_cam.z) - g / 2,
-            ]
-        };
-        let occ_grid: Option<Vec<u8>> =
-            if dda_shadow && (self.occ_last_origin != Some(occ_origin) || self.occ_dirty) {
-                let occ_t0 = std::time::Instant::now();
-                let g = crate::renderer::OCC_GRID;
-                let mut buf = vec![0u8; g * g * g * 4];
-                self.server.world.fill_occupancy(occ_origin, g, &mut buf);
-                self.occ_last_origin = Some(occ_origin);
-                self.occ_dirty = false;
-                if std::env::var("WILDFORGE_DEBUG").is_ok() {
-                    eprintln!(
-                        "occ rebuild {}³ in {:.2}ms",
-                        g,
-                        occ_t0.elapsed().as_secs_f32() * 1000.0
-                    );
-                }
-                Some(buf)
-            } else {
-                None
-            };
+        // The old occupancy texture is a Cartesian lattice and cannot
+        // represent cube-sphere cell adjacency. Planetary point lights use the
+        // distance-cube shadow path until that optional acceleration is rebuilt
+        // on top of topology-aware DDA.
+        let dda_shadow = false;
+        let occ_origin = [0; 3];
+        let occ_grid: Option<Vec<u8>> = None;
 
         let render_t0 = std::time::Instant::now();
         match self.renderer.render(FrameInput {
             view_proj: frame_vp,
             cam_pos: frame_cam,
+            local_up: self.camera.up(),
             fog_dist: fog,
             underwater,
             daylight,
@@ -1797,7 +1886,9 @@ impl Game {
             let biome = if self.in_world {
                 format!(
                     " | {}",
-                    self.server.world.biome_here(p.x as i32, p.z as i32).name()
+                    p.block()
+                        .map(|at| self.server.world.biome_here_at(at.surface()).name())
+                        .unwrap_or("Beyond the world")
                 )
             } else {
                 String::new()

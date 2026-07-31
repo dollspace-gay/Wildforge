@@ -16,7 +16,7 @@ code, CI fails.
 
 ```text
 mods/<your_mod>/
-  mod.toml          required: id, and optionally name/version/depends
+  mod.toml          required: id and world_api; name/version/depends optional
   blocks.toml       [[block]] entries
   items.toml        [[item]] entries
   recipes.toml      [[recipe]], [[smelt]], [[fuel]] entries
@@ -39,6 +39,7 @@ on the MODS screen — the rest of the game keeps working.
 id = "meadow"
 name = "Meadow"
 version = "1.0.0"
+world_api = 2
 depends = ["base"]
 ```
 
@@ -368,7 +369,7 @@ fn on_world_start(world) {
     hud_message("The meadow hums with light.");
 }
 
-fn on_block_break(x, y, z, block) {
+fn on_block_break(face, u, y, v, block) {
     if block == "meadow:sunstone_ore" {
         let n = storage_get("mined");
         let count = if n == "" { 1 } else { n.parse_int() + 1 };
@@ -388,23 +389,31 @@ fully qualified):
 |---|---|---|
 | `on_world_start` | `(world_name)` | after a world loads |
 | `on_tick` | `(dt)` | ~10 Hz while playing |
-| `on_block_break` | `(x, y, z, block)` | return `false` to cancel |
-| `on_block_place` | `(x, y, z, block)` | return `false` to cancel |
-| `on_interact` | `(x, y, z, block)` | right-click on a block; return `false` to cancel |
+| `on_block_break` | `(face, u, y, v, block)` | return `false` to cancel |
+| `on_block_place` | `(face, u, y, v, block)` | return `false` to cancel |
+| `on_interact` | `(face, u, y, v, block)` | right-click on a block; return `false` to cancel |
 | `on_craft` | `(item)` | after a craft is taken |
-| `on_animal_killed` | `(species, x, y, z)` | adult wildlife/warden death |
+| `on_animal_killed` | `(species, face, u, y, v)` | adult wildlife/warden death |
 | `on_player_respawn` | `()` | after the respawn button |
 | `on_mode_change` | `(mode)` | `"survival"`/`"creative"` toggle |
 
 API callable from any handler:
 
-- `get_block(x, y, z) -> name`, `set_block(x, y, z, name)`,
-  `surface_height(x, z) -> y`
+- `get_block(face, u, y, v) -> name`,
+  `set_block(face, u, y, v, name)`,
+  `surface_height(face, u, v) -> y`
+- `neighbor(face, u, y, v, direction) -> map` — directions are
+  `"east"`, `"north"`, `"west"`, `"south"`, `"up"`, and `"down"`;
+  the result contains `face`, `u`, `y`, `v`, and the rotated
+  `direction`, or is empty at a vertical boundary
+- `surface_distance(face_a, u_a, v_a, face_b, u_b, v_b) -> blocks`
+- `surface_bearing(face_a, u_a, v_a, face_b, u_b, v_b) -> radians`
+  clockwise from local north (`NaN` when no stable bearing exists)
 - `give(item, count)` — into the player's inventory (overflow drops)
 - `hud_message(text)` — toast
 - `play_sound(name)` — `"click"`, `"place"`, `"pickup"`, `"hurt"`,
   `"craft"`, `"splash"`
-- `spawn_animal(species, x, y, z)`
+- `spawn_animal(species, face, u, y, v)`
 - `storage_get(key) -> string` / `storage_set(key, value)` — per-mod
   key-value store, saved with the world
 - `log(text)` — to the terminal, prefixed with your mod id

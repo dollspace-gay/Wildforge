@@ -24,7 +24,7 @@ impl Game {
     /// Damage from a warden: knockback away from the attacker, and the
     /// death screen knows who to blame. Armor blocks 4% per point (cap
     /// 60%) and wears; it does nothing against falls or hunger.
-    pub(super) fn hurt_player_from_wild(&mut self, amount: f32, from: Vec3) {
+    pub(super) fn hurt_player_from_wild(&mut self, amount: f32, from: crate::planet::EntityPos) {
         if self.creative || self.ui_state.screen == Screen::Dead {
             return;
         }
@@ -44,7 +44,7 @@ impl Game {
                 }
             }
         }
-        let mut away = self.player.pos - from;
+        let mut away = from.local_delta_to(self.player.pos);
         away.y = 0.0;
         if away.length_squared() > 0.001 {
             let dir = away.normalize();
@@ -96,7 +96,7 @@ impl Game {
     }
 
     /// Spill a stack at a world position (mob cargo, wreck salvage).
-    pub(super) fn drop_stack_at(&mut self, stack: ItemStack, pos: Vec3) {
+    pub(super) fn drop_stack_at(&mut self, stack: ItemStack, pos: crate::planet::EntityPos) {
         let a = self.rand01() * std::f32::consts::TAU;
         let v = Vec3::new(a.cos() * 1.2, 2.5 + self.rand01(), a.sin() * 1.2);
         self.interaction
@@ -107,7 +107,12 @@ impl Game {
     pub(super) fn drop_stack(&mut self, stack: ItemStack) {
         let a = self.rand01() * std::f32::consts::TAU;
         let v = Vec3::new(a.cos() * 2.0, 3.0 + self.rand01() * 1.5, a.sin() * 2.0);
-        let pos = self.player.pos + Vec3::new(0.0, 1.0, 0.0);
+        let pos = self
+            .player
+            .pos
+            .translated(Vec3::new(0.0, 1.0, 0.0))
+            .expect("dropped item begins beside the player")
+            .pos;
         self.interaction
             .items
             .push(ItemEntity::new(pos, v, stack.item, stack.count));
@@ -120,8 +125,8 @@ impl Game {
         // The stored spawn can be stale in both directions — built
         // over (you'd wake inside a hill) or dug out (you'd wake in
         // free fall). Settle it into a real standing spot first.
-        let spawn = self.server.world.settle_spawn(self.survival.spawn_point);
-        self.player = Player::new(spawn);
+        let spawn = self.server.world.settle_spawn_at(self.survival.spawn_point);
+        self.player = Player::new_at(spawn);
         self.survival.health = self.max_health();
         self.survival.hunger = 20.0;
         self.survival.air = MAX_AIR;

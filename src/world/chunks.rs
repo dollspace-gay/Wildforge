@@ -65,25 +65,36 @@ impl World {
         // its country's spirit the same way a fresh one does — and a
         // stage already recorded wins (a dead heart stays dead).
         {
-            let (bx, bz) = (pos.x * CHUNK_X as i32, pos.z * CHUNK_Z as i32);
-            let gx = (bx as f64 / 900.0).floor() as i32;
-            let gz = (bz as f64 / 900.0).floor() as i32;
-            for dx in -1..=1 {
-                for dz in -1..=1 {
-                    let key = (gx + dx, gz + dz);
-                    let (sx, sz) = self.generator.province_center(key.0, key.1);
-                    if sx < bx || sx >= bx + CHUNK_X as i32 || sz < bz || sz >= bz + CHUNK_Z as i32
-                    {
+            let center = crate::planet::SurfacePos::new(
+                pos.face(),
+                pos.u() * CHUNK_X as u16 + CHUNK_X as u16 / 2,
+                pos.v() * CHUNK_Z as u16 + CHUNK_Z as u16 / 2,
+            )
+            .expect("chunk center is canonical");
+            let home = self.generator.province_at(center).key;
+            let mut seen = Vec::new();
+            for du in -2..=2 {
+                for dv in -2..=2 {
+                    let key = self.generator.province_offset(home, du, dv);
+                    if seen.contains(&key) {
+                        continue;
+                    }
+                    seen.push(key);
+                    let site = self.generator.province_center_at(key);
+                    if ChunkPos::from_surface(site) != pos {
                         continue;
                     }
                     // Find the site's base. A bole is solid, so the
                     // surface scan lands on its CROWN — walk down to
                     // the foot, which is the block the ledger keys on.
                     let is_heart = |w: &World, y: i32| {
-                        w.reg
-                            .block(w.get_block(sx, y, sz))
-                            .name
-                            .starts_with("base:heart_")
+                        crate::planet::BlockPos::new(site.face(), site.u(), y as u8, site.v())
+                            .is_ok_and(|at| {
+                                w.reg
+                                    .block(w.get_block_at(at))
+                                    .name
+                                    .starts_with("base:heart_")
+                            })
                     };
                     // Search a band around the surface rather than
                     // demanding the heart BE the surface block. Anything
@@ -93,7 +104,7 @@ impl World {
                     // Wardens kept spawning and offerings kept being
                     // accepted while the whole arc quietly did not
                     // happen there.
-                    let top = self.surface_height(sx, sz);
+                    let top = self.surface_height_at(site);
                     if let Some(crown) = (2..=(top + EDIFICE_CLEARANCE).min(CHUNK_Y as i32 - 1))
                         .rev()
                         .find(|&y| is_heart(self, y))
@@ -102,20 +113,27 @@ impl World {
                         while base > 1 && is_heart(self, base - 1) {
                             base -= 1;
                         }
-                        self.register_heart(key, (sx, base, sz));
+                        let at = crate::planet::BlockPos::new(
+                            site.face(),
+                            site.u(),
+                            base as u8,
+                            site.v(),
+                        )
+                        .expect("heart base is inside the world");
+                        self.register_heart(key, at);
                     }
                 }
             }
         }
         // Wildlife rolls once per chunk, ever (the mark persists with the
         // world so hunted animals stay gone across sessions).
-        if self.mob_seeded.insert((pos.x, pos.z)) {
+        if self.mob_seeded.insert(pos) {
             self.seed_wildlife(pos);
         }
         // A chunk seen for the first time is up to date; one loaded
         // from disk keeps its old stamp (the gap below reads it).
-        let stamp = self.last_random.get(&(pos.x, pos.z)).copied();
-        self.last_random.entry((pos.x, pos.z)).or_insert(self.clock);
+        let stamp = self.last_random.get(&pos).copied();
+        self.last_random.entry(pos).or_insert(self.clock);
         self.wake_seams(pos);
         // A chunk back from disk may hold water saved mid-flow (or
         // stranded by older, unsealed worldgen): set it settling again.
@@ -128,7 +146,7 @@ impl World {
             let gap = self.clock - stamp;
             if gap > 60.0 {
                 self.reconcile_chunk(pos, gap);
-                self.last_random.insert((pos.x, pos.z), self.clock);
+                self.last_random.insert(pos, self.clock);
             }
         }
     }
@@ -138,20 +156,25 @@ impl World {
     /// Deterministic per-chunk structure roll (at most one per chunk).
     pub(super) fn seed_structures(&mut self, pos: ChunkPos) {
         let reg = self.reg.clone();
-        let (cx, cz) = (pos.x * CHUNK_X as i32, pos.z * CHUNK_Z as i32);
-        let biome = self.generator.biome(cx + 8, cz + 8).name().to_lowercase();
+        let center = crate::planet::SurfacePos::new(
+            pos.face(),
+            pos.u() * CHUNK_X as u16 + CHUNK_X as u16 / 2,
+            pos.v() * CHUNK_Z as u16 + CHUNK_Z as u16 / 2,
+        )
+        .expect("chunk center is canonical");
+        let biome = self.generator.biome_at(center).name().to_lowercase();
         for (si, st) in reg.structures.iter().enumerate() {
             if !st.biomes.contains(&biome) {
                 continue;
             }
-            let h = self.mob_hash(pos.x, pos.z, 9000 + si as u32);
+            let h = self.mob_hash_at(center, 9000 + si as u32);
             // The takers' cities stand in barren country because the
             // barrenness is the receipt: they are twice as common on
             // ground that stopped giving. (Worldgen cannot know which
             // hearts a player will kill, so it reads the signature —
             // exhausted, thin-soiled country — instead.)
             let barren = matches!(
-                self.generator.biome(cx + 8, cz + 8),
+                self.generator.biome_at(center),
                 crate::worldgen::Biome::Badlands
                     | crate::worldgen::Biome::Scrubland
                     | crate::worldgen::Biome::Tundra
@@ -170,27 +193,46 @@ impl World {
             if w == 0 || w > 14 || d > 14 {
                 continue;
             }
-            let ox = cx + 1 + ((h >> 8) as i32).rem_euclid((15 - w).max(1));
-            let oz = cz + 1 + ((h >> 16) as i32).rem_euclid((15 - d).max(1));
-            let surface = self.surface_height(ox + w / 2, oz + d / 2);
-            if surface <= SEA_LEVEL + 1 || surface >= CHUNK_Y as i32 - 24 {
+            let origin_surface = crate::planet::SurfacePos::new(
+                pos.face(),
+                pos.u() * CHUNK_X as u16
+                    + (1 + ((h >> 8) as i32).rem_euclid((15 - w).max(1))) as u16,
+                pos.v() * CHUNK_Z as u16
+                    + (1 + ((h >> 16) as i32).rem_euclid((15 - d).max(1))) as u16,
+            )
+            .expect("structure origin is inside its chunk");
+            let sample = crate::planet::SurfacePos::canonicalized(
+                origin_surface.face(),
+                i32::from(origin_surface.u()) + w / 2,
+                i32::from(origin_surface.v()) + d / 2,
+            )
+            .expect("structure center canonicalizes");
+            let surface_y = self.surface_height_at(sample);
+            if surface_y <= SEA_LEVEL + 1 || surface_y >= CHUNK_Y as i32 - 24 {
                 continue;
             }
             let y0 = match st.buried {
-                None => surface,
+                None => surface_y,
                 Some((min, max)) => {
                     let depth = min + (h >> 4).rem_euclid((max - min + 1) as u32) as i32;
-                    (surface - depth).max(6)
+                    (surface_y - depth).max(6)
                 }
             };
-            self.place_structure(si, ox, y0, oz, h);
+            let origin = BlockPos::new(
+                origin_surface.face(),
+                origin_surface.u(),
+                y0 as u8,
+                origin_surface.v(),
+            )
+            .expect("structure base is inside the world");
+            self.place_structure_at(si, origin, h);
             break;
         }
     }
 
     /// Stamp a structure template into the world (clipped writes via
     /// set_block; chests get rolled loot and belong to the wild).
-    pub fn place_structure(&mut self, si: usize, x0: i32, y0: i32, z0: i32, seed: u32) {
+    pub fn place_structure_at(&mut self, si: usize, origin: BlockPos, seed: u32) {
         let reg = self.reg.clone();
         let Some(st) = reg.structures.get(si).cloned() else {
             return;
@@ -200,13 +242,15 @@ impl World {
         for (ly, layer) in st.layers.iter().enumerate() {
             for (lz, row) in layer.iter().enumerate() {
                 for (lx, ch) in row.chars().enumerate() {
-                    let (x, y, z) = (x0 + lx as i32, y0 + ly as i32, z0 + lz as i32);
+                    let Some(pos) = origin.offset(lx as i32, ly as i32, lz as i32) else {
+                        continue;
+                    };
                     match ch {
                         '.' => {}
-                        '~' => self.set_block(x, y, z, AIR),
+                        '~' => self.set_block_at(pos, AIR),
                         'C' => {
                             if let Some(cb) = chest_block {
-                                self.set_block(x, y, z, cb);
+                                self.set_block_at(pos, cb);
                                 let mut state = ChestState {
                                     wild_owned: true,
                                     ..Default::default()
@@ -225,13 +269,12 @@ impl World {
                                         }
                                     }
                                 }
-                                self.block_entities
-                                    .insert((x, y, z), BlockEntity::Chest(state));
+                                self.block_entities.insert(pos, BlockEntity::Chest(state));
                             }
                         }
                         c => {
                             if let Some(b) = st.palette.get(&c) {
-                                self.set_block(x, y, z, *b);
+                                self.set_block_at(pos, *b);
                             }
                         }
                     }
@@ -242,11 +285,23 @@ impl World {
         if st.buried.is_some()
             && let Some(cob) = reg.block_id("base:cobblestone")
         {
-            let hx = x0 + 1;
-            let hz = z0 + 1;
-            let sy = self.surface_height(hx, hz);
-            self.set_block(hx, sy + 1, hz, cob);
-            self.set_block(hx, sy + 2, hz, cob);
+            if let Some(hint) = origin.offset(1, 0, 1) {
+                let sy = self.surface_height_at(hint.surface());
+                if let Ok(base) = BlockPos::new(hint.face(), hint.u(), (sy + 1) as u8, hint.v()) {
+                    self.set_block_at(base, cob);
+                    if let Some(top) = base.offset(0, 1, 0) {
+                        self.set_block_at(top, cob);
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    #[cfg(test)]
+    pub fn place_structure(&mut self, si: usize, x: i32, y: i32, z: i32, seed: u32) {
+        if let Some(origin) = BlockPos::of_world(x, y, z) {
+            self.place_structure_at(si, origin, seed);
         }
     }
 

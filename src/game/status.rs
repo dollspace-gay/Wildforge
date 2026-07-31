@@ -142,21 +142,20 @@ impl Game {
             if let (Some(start), true) = (self.survival.fall_start, self.player.on_ground) {
                 let fall = start - self.player.pos.y;
                 if fall >= 2.0 && self.presentation.juice {
-                    let under = self.server.world.get_block(
-                        self.player.pos.x.floor() as i32,
-                        (self.player.pos.y - 0.6).floor() as i32,
-                        self.player.pos.z.floor() as i32,
-                    );
+                    let under = self
+                        .player
+                        .pos
+                        .translated(Vec3::new(0.0, -0.6, 0.0))
+                        .ok()
+                        .and_then(|canonical| canonical.pos.block())
+                        .map(|block| self.server.world.get_block_at(block))
+                        .unwrap_or(crate::registry::AIR);
                     let tile = self.content.reg.block(under).tiles[2];
-                    self.juice_puff(self.player.pos, tile, 5);
+                    self.juice_puff(self.player.pos.render_pos(), tile, 5);
                     if fall > 3.0 {
                         self.sfx(Sfx::Thud);
                     } else {
-                        let m = self.step_mat_at(
-                            self.player.pos.x,
-                            self.player.pos.y,
-                            self.player.pos.z,
-                        );
+                        let m = self.step_mat_at(self.player.pos);
                         let p = self.vary() * 0.8;
                         self.sfx(Sfx::Step(m, p));
                     }
@@ -175,20 +174,16 @@ impl Game {
             self.survival.fall_start = None;
         }
 
-        // The void below the world's floor: nothing survives long out
-        // there (a backstop — worldroot should make this unreachable).
-        if self.player.pos.y < -8.0 && self.survival.since_damage >= 0.4 {
-            self.survival.killed_by_wild = false;
-            self.damage(4.0);
-        }
-
         // Lava burns fast — you can struggle (fluids are swimmable),
         // but every half-second in the fire costs dearly.
-        let feet = self.server.world.get_block(
-            self.player.pos.x.floor() as i32,
-            (self.player.pos.y + 0.4).floor() as i32,
-            self.player.pos.z.floor() as i32,
-        );
+        let feet = self
+            .player
+            .pos
+            .translated(Vec3::new(0.0, 0.4, 0.0))
+            .ok()
+            .and_then(|canonical| canonical.pos.block())
+            .map(|block| self.server.world.get_block_at(block))
+            .unwrap_or(crate::registry::AIR);
         if self.content.reg.is_lava(feet) {
             self.survival.burn_timer += dt;
             if self.survival.burn_timer >= 0.5 {
@@ -227,11 +222,16 @@ impl Game {
             return;
         }
         // Pickup: magnetize into the inventory.
-        let target = self.player.pos + Vec3::new(0.0, 0.9, 0.0);
+        let target = self
+            .player
+            .pos
+            .translated(Vec3::new(0.0, 0.9, 0.0))
+            .expect("pickup target stays beside the player")
+            .pos;
         let mut i = 0;
         while i < self.interaction.items.len() {
             let it = &self.interaction.items[i];
-            let d = it.pos.distance(target);
+            let d = it.pos.distance_to(target);
             if it.age > entity::PICKUP_DELAY && d < 1.4 {
                 let it_pos = it.pos;
                 let (item, count, dur) = (
@@ -268,7 +268,7 @@ impl Game {
                         && slot < HOTBAR_SLOTS
                     {
                         // A ghost of the icon flies to its new home.
-                        let clip = self.camera.view_proj() * it_pos.extend(1.0);
+                        let clip = self.camera.view_proj() * it_pos.render_pos().extend(1.0);
                         if clip.w > 0.3 {
                             let w = self.renderer.config.width as f32;
                             let h = self.renderer.config.height as f32;

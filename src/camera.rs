@@ -11,6 +11,9 @@ pub struct Camera {
     /// Base sensitivity multiplier from settings; WILDFORGE_SENS multiplies further.
     pub sens: f32,
     env_sens: f32,
+    east: Vec3,
+    up: Vec3,
+    north: Vec3,
 }
 
 impl Camera {
@@ -28,10 +31,38 @@ impl Camera {
                 .and_then(|v| v.parse().ok())
                 .filter(|s: &f32| *s > 0.0 && *s <= 10.0)
                 .unwrap_or(1.0),
+            east: Vec3::X,
+            up: Vec3::Y,
+            north: Vec3::Z,
         }
     }
 
+    pub fn follow_planet(&mut self, eye: crate::planet::EntityPos) {
+        self.pos = eye.render_pos();
+        let frame = crate::planet::local_frame(crate::planet::SurfacePoint {
+            face: eye.face(),
+            u: f64::from(eye.u()),
+            v: f64::from(eye.v()),
+        });
+        self.east = frame.east.as_vec3();
+        self.up = frame.up.as_vec3();
+        self.north = frame.north.as_vec3();
+    }
+
+    /// Rotate a face-local simulation vector into embedded planet space.
+    pub fn world_vector(&self, local: Vec3) -> Vec3 {
+        self.east * local.x + self.up * local.y + self.north * local.z
+    }
+
     pub fn forward(&self) -> Vec3 {
+        let local = self.local_forward();
+        (self.east * local.x + self.up * local.y + self.north * local.z).normalize()
+    }
+
+    /// Look direction expressed in the player's current face-local tangent
+    /// frame. Simulation, voxel DDA, and locally stored entity velocity use
+    /// this basis; rendering uses [`Self::forward`].
+    pub fn local_forward(&self) -> Vec3 {
         Vec3::new(
             self.yaw.cos() * self.pitch.cos(),
             self.pitch.sin(),
@@ -40,13 +71,27 @@ impl Camera {
         .normalize()
     }
 
-    /// Horizontal forward (for movement).
+    /// Planet-space horizontal forward, for rendering.
     pub fn flat_forward(&self) -> Vec3 {
+        (self.east * self.yaw.cos() + self.north * self.yaw.sin()).normalize()
+    }
+
+    /// Face-local horizontal forward, for movement and simulation.
+    pub fn local_flat_forward(&self) -> Vec3 {
         Vec3::new(self.yaw.cos(), 0.0, self.yaw.sin()).normalize()
     }
 
     pub fn right(&self) -> Vec3 {
-        self.flat_forward().cross(Vec3::Y).normalize()
+        self.flat_forward().cross(self.up).normalize()
+    }
+
+    /// Face-local right, for movement and simulation.
+    pub fn local_right(&self) -> Vec3 {
+        self.local_flat_forward().cross(Vec3::Y).normalize()
+    }
+
+    pub fn up(&self) -> Vec3 {
+        self.up
     }
 
     pub fn turn(&mut self, dx: f32, dy: f32) {
@@ -57,7 +102,10 @@ impl Camera {
 
     #[allow(deprecated)]
     pub fn view_proj(&self) -> Mat4 {
-        let view = Mat4::look_to_rh(self.pos, self.forward(), Vec3::Y);
+        // All scene vertices subtract `self.pos` before this matrix is applied.
+        // Keeping the eye at zero is the renderer's floating origin: depth and
+        // projection never cancel two five-thousand-unit planet coordinates.
+        let view = Mat4::look_to_rh(Vec3::ZERO, self.forward(), self.up);
         let proj = Mat4::perspective_rh(self.fovy, self.aspect.max(0.01), 0.05, 600.0);
         proj * view
     }

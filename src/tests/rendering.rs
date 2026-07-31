@@ -33,7 +33,7 @@ fn atlas_builds_with_mod_texture() {
     let root = tmp_dir("atlasmod");
     let dir = root.join("texmod");
     std::fs::create_dir_all(dir.join("textures")).unwrap();
-    std::fs::write(dir.join("mod.toml"), "id = \"texmod\"\n").unwrap();
+    std::fs::write(dir.join("mod.toml"), "id = \"texmod\"\nworld_api = 2\n").unwrap();
     std::fs::write(
         dir.join("blocks.toml"),
         "[[block]]\nid = \"red\"\ntexture = \"red.png\"\n",
@@ -83,7 +83,7 @@ fn missing_texture_uses_placeholder_not_crash() {
     let root = tmp_dir("misstex");
     let dir = root.join("m");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("mod.toml"), "id = \"m\"\n").unwrap();
+    std::fs::write(dir.join("mod.toml"), "id = \"m\"\nworld_api = 2\n").unwrap();
     std::fs::write(
         dir.join("blocks.toml"),
         "[[block]]\nid = \"x\"\ntexture = \"nope.png\"\n",
@@ -463,9 +463,9 @@ fn particle_pool_caps_culls_and_stays_in_tile() {
 fn light_promotion_scores_and_hysteresis() {
     use crate::lights::{Key, promote};
     let (a, b, c) = (
-        Key::Block(0, 0, 0),
-        Key::Block(1, 0, 0),
-        Key::Block(2, 0, 0),
+        Key::Block(crate::planet::BlockPos::of_world(0, 1, 0).unwrap()),
+        Key::Block(crate::planet::BlockPos::of_world(1, 1, 0).unwrap()),
+        Key::Block(crate::planet::BlockPos::of_world(2, 1, 0).unwrap()),
     );
 
     // Empty slots fill best-first.
@@ -489,13 +489,14 @@ fn light_promotion_scores_and_hysteresis() {
 fn light_director_caches_until_an_edit_lands_nearby() {
     use crate::lights::{Director, DynLight, Emitter, Key};
     let mut d = Director::new();
+    let torch_pos = crate::planet::BlockPos::of_world(4, 64, 4).unwrap();
     let torch = Emitter {
-        pos: (4, 64, 4),
+        pos: torch_pos,
         rgb: [14, 11, 6],
         emit: 14,
     };
-    d.chunk_meshed(ChunkPos { x: 0, z: 0 }, vec![torch]);
-    let cam = Vec3::new(2.0, 64.0, 2.0);
+    d.chunk_meshed(tchunk(0, 0), vec![torch]);
+    let cam = crate::planet::block_to_render(torch_pos.surface().center(), 64.5).as_vec3();
 
     // Steady state: same key, same epoch -> the renderer skips all six
     // cube faces. (Flicker moves the color, never the epoch.)
@@ -506,11 +507,11 @@ fn light_director_caches_until_an_edit_lands_nearby() {
     assert!(l1[0].suppress.0 > 0.0, "static lights suppress their flood");
 
     // An edit in a far chunk leaves the cube cached...
-    d.chunk_meshed(ChunkPos { x: 8, z: 8 }, vec![]);
+    d.chunk_meshed(tchunk(8, 8), vec![]);
     let l3 = d.frame(cam, &[], 0.016, true);
     assert_eq!(l3[0].epoch, l2[0].epoch, "far edits don't invalidate");
     // ...an edit within range invalidates it.
-    d.chunk_meshed(ChunkPos { x: 0, z: 0 }, vec![torch]);
+    d.chunk_meshed(tchunk(0, 0), vec![torch]);
     let l4 = d.frame(cam, &[], 0.016, true);
     assert!(l4[0].epoch > l3[0].epoch, "near edits re-render the cube");
 
@@ -533,16 +534,78 @@ fn light_director_caches_until_an_edit_lands_nearby() {
     // cube too — the bug report was shadows of walls no longer there,
     // resetting only once the player wandered past the threshold.
     let hp = cam + Vec3::new(1.0, 0.0, 0.0);
-    d.chunk_meshed(ChunkPos { x: 0, z: 0 }, vec![torch]);
+    d.chunk_meshed(tchunk(0, 0), vec![torch]);
     let h4 = d.frame(cam, &[held(hp)], 0.016, true);
     assert!(
         h4[1].epoch > h3[1].epoch,
         "a nearby remesh invalidates a still held light's cube"
     );
     // And the far chunk still doesn't.
-    d.chunk_meshed(ChunkPos { x: 8, z: 8 }, vec![]);
+    d.chunk_meshed(tchunk(8, 8), vec![]);
     let h5 = d.frame(cam, &[held(hp)], 0.016, true);
     assert_eq!(h5[1].epoch, h4[1].epoch, "far edits leave it cached");
+}
+
+#[test]
+fn curved_chunk_meshes_join_and_cull_across_a_cube_face() {
+    use std::collections::HashSet;
+
+    use crate::planet::{BlockPos, PLANET_RADIUS};
+
+    let reg = base_reg();
+    let stone = b(&reg, "base:stone");
+    for (index, seam) in directed_planet_seams().into_iter().enumerate() {
+        let mut world = World::new(
+            47,
+            tmp_dir(&format!("planet-mesh-seam-{index}")),
+            reg.clone(),
+        );
+        let source =
+            BlockPos::new(seam.source.face(), seam.source.u(), 100, seam.source.v()).unwrap();
+        let across =
+            BlockPos::new(seam.across.face(), seam.across.u(), 100, seam.across.v()).unwrap();
+        world.insert_empty_chunks_for_test([source.chunk(), across.chunk()]);
+        for chunk in [source.chunk(), across.chunk()] {
+            let chunk = world.chunks_mut().get_mut(&chunk).unwrap();
+            for x in 0..crate::chunk::CHUNK_X {
+                for z in 0..crate::chunk::CHUNK_Z {
+                    chunk.set(x, 0, z, crate::registry::AIR);
+                }
+            }
+        }
+        world.set_block_at(source, stone);
+        world.set_block_at(across, stone);
+
+        let a = crate::mesher::mesh_chunk(&world, source.chunk(), &Default::default());
+        let bmesh = crate::mesher::mesh_chunk(&world, across.chunk(), &Default::default());
+        assert_eq!(
+            a.opaque_idx.len() + bmesh.opaque_idx.len(),
+            10 * 6,
+            "directed seam {index}: shared block sides are culled"
+        );
+        let positions = |mesh: &crate::mesher::ChunkMesh| {
+            mesh.opaque_verts
+                .iter()
+                .map(|vertex| vertex.pos.map(f32::to_bits))
+                .collect::<HashSet<_>>()
+        };
+        let a_positions = positions(&a);
+        let b_positions = positions(&bmesh);
+        assert!(
+            a_positions.intersection(&b_positions).count() >= 4,
+            "directed seam {index}: all four shared-face corners must be bit-identical"
+        );
+        for vertex in a.opaque_verts.iter().chain(&bmesh.opaque_verts) {
+            let p = Vec3::from(vertex.pos);
+            assert!(
+                (PLANET_RADIUS as f32..=PLANET_RADIUS as f32 + 256.0).contains(&p.length()),
+                "mesh vertex is embedded radially: {:?}",
+                vertex.pos
+            );
+            let normal = Vec3::from(vertex.normal);
+            assert!((normal.length() - 1.0).abs() < 1.0e-4);
+        }
+    }
 }
 
 #[test]
@@ -662,7 +725,7 @@ fn humanoid_stands_full_height_with_hands() {
     };
     let (mut verts, mut idx) = (Vec::new(), Vec::new());
     emit_humanoid(
-        Vec3::ZERO,
+        ep(Vec3::ZERO),
         0.0,
         &art,
         (0.0, 0.0),
@@ -671,10 +734,16 @@ fn humanoid_stands_full_height_with_hands() {
         &mut verts,
         &mut idx,
     );
+    let origin = ep(Vec3::ZERO);
+    let render_origin = origin.render_pos();
+    let up = crate::planet::local_frame(origin.surface_point())
+        .up
+        .as_vec3();
     let (mut lo, mut hi) = (f32::MAX, f32::MIN);
     for v in &verts {
-        lo = lo.min(v.pos[1]);
-        hi = hi.max(v.pos[1]);
+        let radial_height = (Vec3::from_array(v.pos) - render_origin).dot(up);
+        lo = lo.min(radial_height);
+        hi = hi.max(radial_height);
     }
     // The sinking bug, pinned: feet at the position, head at the hitbox.
     assert!(lo > -0.01, "nothing below the feet (was: waist-deep)");
@@ -690,7 +759,7 @@ fn humanoid_stands_full_height_with_hands() {
     // A held block adds its six faces to the right hand.
     let (mut v2, mut i2) = (Vec::new(), Vec::new());
     emit_humanoid(
-        Vec3::ZERO,
+        ep(Vec3::ZERO),
         0.0,
         &art,
         (0.0, 0.0),
@@ -705,7 +774,7 @@ fn humanoid_stands_full_height_with_hands() {
     let quads = |art: &HumanoidArt| {
         let (mut v, mut i) = (Vec::new(), Vec::new());
         emit_humanoid(
-            Vec3::ZERO,
+            ep(Vec3::ZERO),
             0.0,
             art,
             (0.0, 0.0),
@@ -1017,26 +1086,27 @@ fn fluid_surfaces_stitch_at_shared_corners() {
     let thin = reg.water_block(5); // volume 3, surface 3/9
     w.set_block(2, y + 1, 2, full);
     w.set_block(3, y + 1, 2, thin);
-    let mesh = crate::mesher::mesh_chunk(&w, ChunkPos { x: 0, z: 0 }, &Default::default());
-    let has = |x: f32, py: f32, z: f32| {
-        mesh.water_verts.iter().any(|v| {
-            (v.pos[0] - x).abs() < 1e-4
-                && (v.pos[1] - py).abs() < 1e-4
-                && (v.pos[2] - z).abs() < 1e-4
-        })
+    let mesh = crate::mesher::mesh_chunk(&w, tchunk(0, 0), &Default::default());
+    let has = |x: i32, py: f32, z: i32| {
+        let point = crate::planet::SurfacePoint {
+            face: crate::planet::Face::PosZ,
+            u: (x + crate::planet::FACE_BLOCKS as i32 / 2) as f64,
+            v: (z + crate::planet::FACE_BLOCKS as i32 / 2) as f64,
+        };
+        let expected = crate::planet::block_to_render(point, py as f64).as_vec3();
+        mesh.water_verts
+            .iter()
+            .any(|v| (Vec3::from_array(v.pos) - expected).length() < 1e-3)
     };
     let ys = (y + 1) as f32;
     // Shared edge corners sit at the full cell's height...
-    assert!(has(3.0, ys + 8.0 / 9.0, 2.0), "near shared corner stitched");
-    assert!(has(3.0, ys + 8.0 / 9.0, 3.0), "far shared corner stitched");
+    assert!(has(3, ys + 8.0 / 9.0, 2), "near shared corner stitched");
+    assert!(has(3, ys + 8.0 / 9.0, 3), "far shared corner stitched");
     // ...while the thin cell's outer edge keeps its own height.
-    assert!(
-        has(4.0, ys + 3.0 / 9.0, 2.0),
-        "outer corner keeps thin height"
-    );
+    assert!(has(4, ys + 3.0 / 9.0, 2), "outer corner keeps thin height");
     // No thin-cell rim hangs at full height on the outer edge.
     assert!(
-        !has(4.0, ys + 8.0 / 9.0, 2.0),
+        !has(4, ys + 8.0 / 9.0, 2),
         "no floating rim on the thin side"
     );
 }

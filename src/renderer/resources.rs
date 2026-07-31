@@ -92,6 +92,7 @@ impl Renderer {
         let gpu = GpuChunk {
             opaque: upload_mesh(&self.device, &mesh.opaque_verts, &mesh.opaque_idx),
             water: upload_mesh(&self.device, &mesh.water_verts, &mesh.water_idx),
+            bounds: mesh_bounds(pos, mesh),
         };
         self.chunks.insert(pos, gpu);
     }

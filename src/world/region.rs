@@ -17,9 +17,9 @@ use std::path::{Path, PathBuf};
 
 use crate::chunk::ChunkPos;
 
-const MAGIC: &[u8; 4] = b"WFR1";
-const REGION_SHIFT: i32 = 5;
-const REGION_SIDE: i32 = 1 << REGION_SHIFT;
+const MAGIC: &[u8; 4] = b"WFR2";
+const REGION_SHIFT: u16 = 5;
+const REGION_SIDE: u16 = 1 << REGION_SHIFT;
 const SLOTS: usize = (REGION_SIDE * REGION_SIDE) as usize;
 const INDEX_BYTES: usize = SLOTS * 8;
 const HEADER_BYTES: u64 = 4 + INDEX_BYTES as u64;
@@ -29,24 +29,19 @@ const COMPACT_RATIO: u64 = 2;
 /// ...and never for the sake of less than this much dead space.
 const COMPACT_FLOOR: u64 = 4 * 1024 * 1024;
 
-fn region_of(pos: ChunkPos) -> (i32, i32) {
-    (pos.x >> REGION_SHIFT, pos.z >> REGION_SHIFT)
+fn region_of(pos: ChunkPos) -> (u16, u16) {
+    (pos.u() >> REGION_SHIFT, pos.v() >> REGION_SHIFT)
 }
 
 fn slot_of(pos: ChunkPos) -> usize {
-    let lx = pos.x.rem_euclid(REGION_SIDE) as usize;
-    let lz = pos.z.rem_euclid(REGION_SIDE) as usize;
+    let lx = (pos.u() % REGION_SIDE) as usize;
+    let lz = (pos.v() % REGION_SIDE) as usize;
     lz * REGION_SIDE as usize + lx
 }
 
 pub fn region_path(dir: &Path, pos: ChunkPos) -> PathBuf {
-    let (rx, rz) = region_of(pos);
-    dir.join(format!("r.{rx}.{rz}.wfr"))
-}
-
-/// The pre-region per-chunk file, still read so existing worlds keep working.
-pub fn legacy_chunk_path(dir: &Path, pos: ChunkPos) -> PathBuf {
-    dir.join(format!("c.{}.{}.wfc", pos.x, pos.z))
+    let (ru, rv) = region_of(pos);
+    dir.join(pos.face().name()).join(format!("r.{ru}.{rv}.wfr"))
 }
 
 fn read_index(file: &mut fs::File) -> std::io::Result<Vec<(u32, u32)>> {
@@ -66,8 +61,6 @@ fn read_index(file: &mut fs::File) -> std::io::Result<Vec<(u32, u32)>> {
 
 /// One chunk's stored bytes, or None if this region has never held it.
 ///
-/// Falls back to the legacy per-chunk file, so a world saved before region
-/// files still loads; the next save of that chunk moves it into the region.
 pub fn read_chunk(dir: &Path, pos: ChunkPos) -> Option<Vec<u8>> {
     let path = region_path(dir, pos);
     let found = (|| -> std::io::Result<Option<Vec<u8>>> {
@@ -89,16 +82,15 @@ pub fn read_chunk(dir: &Path, pos: ChunkPos) -> Option<Vec<u8>> {
     })()
     .ok()
     .flatten();
-    if found.is_some() {
-        return found;
-    }
-    fs::read(legacy_chunk_path(dir, pos)).ok()
+    found
 }
 
 /// Store one chunk's bytes, appending and then pointing the slot at them.
 pub fn write_chunk(dir: &Path, pos: ChunkPos, bytes: &[u8]) -> std::io::Result<()> {
-    fs::create_dir_all(dir)?;
     let path = region_path(dir, pos);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     let mut file = fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -137,8 +129,6 @@ pub fn write_chunk(dir: &Path, pos: ChunkPos, bytes: &[u8]) -> std::io::Result<(
         drop(file);
         compact(&path)?;
     }
-    // A chunk that lived in a legacy file now lives in the region.
-    let _ = fs::remove_file(legacy_chunk_path(dir, pos));
     Ok(())
 }
 
@@ -189,6 +179,11 @@ fn compact(path: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::planet::Face;
+
+    fn tchunk(u: i32, v: i32) -> ChunkPos {
+        ChunkPos::from_centered(Face::PosZ, u, v).unwrap()
+    }
 
     fn tmp(name: &str) -> PathBuf {
         let dir =
@@ -201,8 +196,8 @@ mod tests {
     #[test]
     fn chunks_round_trip_through_one_region_file() {
         let dir = tmp("round-trip");
-        let a = ChunkPos { x: 3, z: 9 };
-        let b = ChunkPos { x: 31, z: 0 };
+        let a = tchunk(3, 9);
+        let b = tchunk(31, 0);
         write_chunk(&dir, a, b"first chunk").unwrap();
         write_chunk(&dir, b, b"second chunk").unwrap();
         assert_eq!(read_chunk(&dir, a).unwrap(), b"first chunk");
@@ -219,8 +214,8 @@ mod tests {
         // -1 belongs to region -1, not region 0: a floor shift, not a
         // truncating divide, or the whole western half of a world collides
         // with the eastern half.
-        let west = ChunkPos { x: -1, z: -1 };
-        let east = ChunkPos { x: 0, z: 0 };
+        let west = tchunk(-1, -1);
+        let east = tchunk(0, 0);
         assert_ne!(region_path(&dir, west), region_path(&dir, east));
         write_chunk(&dir, west, b"west").unwrap();
         write_chunk(&dir, east, b"east").unwrap();
@@ -232,13 +227,13 @@ mod tests {
     #[test]
     fn rewriting_a_chunk_replaces_it() {
         let dir = tmp("rewrite");
-        let pos = ChunkPos { x: 5, z: 5 };
+        let pos = tchunk(5, 5);
         for n in 0..12 {
             write_chunk(&dir, pos, format!("version {n}").as_bytes()).unwrap();
         }
         assert_eq!(read_chunk(&dir, pos).unwrap(), b"version 11");
         // Neighbours in the same region are undisturbed by the churn.
-        let other = ChunkPos { x: 6, z: 5 };
+        let other = tchunk(6, 5);
         write_chunk(&dir, other, b"neighbour").unwrap();
         write_chunk(&dir, pos, b"final").unwrap();
         assert_eq!(read_chunk(&dir, other).unwrap(), b"neighbour");
@@ -248,28 +243,28 @@ mod tests {
     #[test]
     fn a_missing_chunk_reads_as_absent() {
         let dir = tmp("absent");
-        assert!(read_chunk(&dir, ChunkPos { x: 0, z: 0 }).is_none());
-        write_chunk(&dir, ChunkPos { x: 0, z: 0 }, b"here").unwrap();
-        assert!(read_chunk(&dir, ChunkPos { x: 1, z: 0 }).is_none());
+        assert!(read_chunk(&dir, tchunk(0, 0)).is_none());
+        write_chunk(&dir, tchunk(0, 0), b"here").unwrap();
+        assert!(read_chunk(&dir, tchunk(1, 0)).is_none());
     }
 
     #[test]
-    fn a_world_saved_before_regions_still_loads() {
+    fn a_flat_pre_region_file_is_not_visible_to_planetary_storage() {
         let dir = tmp("legacy");
-        let pos = ChunkPos { x: 2, z: -7 };
-        fs::write(legacy_chunk_path(&dir, pos), b"old flat file").unwrap();
-        assert_eq!(read_chunk(&dir, pos).unwrap(), b"old flat file");
-        // Saving it moves it into the region and retires the old file.
+        let pos = tchunk(2, -7);
+        let legacy = dir.join("c.2.-7.wfc");
+        fs::write(&legacy, b"old flat file").unwrap();
+        assert!(read_chunk(&dir, pos).is_none());
         write_chunk(&dir, pos, b"new").unwrap();
-        assert!(!legacy_chunk_path(&dir, pos).exists());
+        assert!(legacy.exists(), "refusal does not modify old flat data");
         assert_eq!(read_chunk(&dir, pos).unwrap(), b"new");
     }
 
     #[test]
     fn compaction_keeps_every_live_chunk() {
         let dir = tmp("compact");
-        let a = ChunkPos { x: 1, z: 1 };
-        let b = ChunkPos { x: 2, z: 2 };
+        let a = tchunk(1, 1);
+        let b = tchunk(2, 2);
         write_chunk(&dir, b, b"b stays").unwrap();
         // Enough churn to trip the compaction thresholds.
         let big = vec![7u8; 512 * 1024];

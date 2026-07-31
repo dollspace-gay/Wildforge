@@ -7,11 +7,13 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+#[cfg(test)]
 use glam::Vec3;
 
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
 use crate::inventory::ItemStack;
 use crate::mobs::{Mob, MobEvent, ProjHit, Projectile};
+use crate::planet::BlockPos;
 use crate::registry::{AIR, BlockId, ItemId, Registry};
 use crate::worldgen::Generator;
 
@@ -35,7 +37,9 @@ mod storage;
 pub use hearts::ROOT_READY_FERT;
 pub use hearts::ROOT_READY_FRAC;
 #[cfg(test)]
-pub use hearts::{HEART_CUTTING_DAYS, ROOT_DAYS, ROOT_RADIUS};
+pub use hearts::{
+    HEART_CUTTING_DAYS, HEART_DEATH_STRAIN, HEART_SICKEN_STRAIN, ROOT_DAYS, ROOT_RADIUS,
+};
 pub use hearts::{Heart, heart_block_name, heart_form, heart_height, seed_nature, seed_of_form};
 pub use machines::{station_powered, worked_table_for};
 pub mod soil;
@@ -280,7 +284,7 @@ pub struct BloomeryState {
     /// Seconds fired so far (out of BLOOMERY_FIRE_SECS).
     pub progress: f32,
     /// Hollow core cell of the validated stack (set on lighting).
-    pub core: (i32, i32, i32),
+    pub core: Option<BlockPos>,
 }
 
 /// The glass kiln: sand + one powder + charcoal, fired hot and fast.
@@ -291,7 +295,7 @@ pub struct KilnState {
     pub fuel: [Option<ItemStack>; 4],
     pub lit: bool,
     pub progress: f32,
-    pub core: (i32, i32, i32),
+    pub core: Option<BlockPos>,
 }
 
 /// Two and a half minutes of white heat per glass batch. Deliberately
@@ -302,7 +306,7 @@ pub const KILN_FIRE_SECS: f32 = 150.0;
 
 /// A covered log pile smoldering into charcoal.
 pub struct ClampState {
-    pub logs: Vec<(i32, i32, i32)>,
+    pub logs: Vec<BlockPos>,
     /// Seconds remaining until the whole pile converts.
     pub timer: f32,
 }
@@ -317,7 +321,7 @@ pub struct AnvilState {
 /// A gravity block mid-fall (host-simulated; guests get snapshots).
 #[derive(Clone, Copy)]
 pub struct FallingBlock {
-    pub pos: glam::Vec3,
+    pub pos: crate::planet::EntityPos,
     pub vel: f32,
     pub block: BlockId,
 }
@@ -379,7 +383,121 @@ pub struct FurnaceState {
     pub burn_speed: f32,
 }
 
-/// (seed, mode, ire) from world.toml, falling back to the legacy seed file.
+/// Stable save-format identifiers for the finite planetary world.
+pub const WORLD_TOPOLOGY: &str = "cube_sphere_v1";
+pub const WORLD_GENERATOR_VERSION: u32 = 1;
+
+#[derive(Clone, Debug)]
+pub struct WorldMeta {
+    pub seed: u32,
+    pub mode: String,
+    pub ire: f32,
+    pub day: u32,
+    pub weather: Weather,
+}
+
+fn meta_value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+    text.lines().find_map(|line| {
+        let (found, value) = line.split_once('=')?;
+        (found.trim() == key).then(|| value.trim().trim_matches('"'))
+    })
+}
+
+fn invalid_world_meta(message: impl Into<String>) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, message.into())
+}
+
+/// Read and validate the planetary save header.
+///
+/// `Ok(None)` means the path has never contained a world. A legacy seed file
+/// or a `world.toml` without the exact topology contract is an error: planar
+/// coordinates must never be silently reinterpreted as planetary ones.
+pub fn load_world_meta(dir: &std::path::Path) -> std::io::Result<Option<WorldMeta>> {
+    let path = dir.join("world.toml");
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            if dir.join("seed").exists() {
+                return Err(invalid_world_meta(
+                    "legacy flat Wildforge world: this build only opens cube_sphere_v1 worlds",
+                ));
+            }
+            return Ok(None);
+        }
+        Err(error) => return Err(error),
+    };
+
+    let topology = meta_value(&text, "topology").ok_or_else(|| {
+        invalid_world_meta(
+            "flat or unversioned Wildforge world: missing topology = \"cube_sphere_v1\"",
+        )
+    })?;
+    if topology != WORLD_TOPOLOGY {
+        return Err(invalid_world_meta(format!(
+            "unsupported world topology {topology:?}; expected {WORLD_TOPOLOGY:?}"
+        )));
+    }
+
+    let face_blocks = meta_value(&text, "face_blocks")
+        .and_then(|value| value.parse::<u16>().ok())
+        .ok_or_else(|| invalid_world_meta("planetary world is missing a valid face_blocks"))?;
+    if face_blocks != crate::planet::FACE_BLOCKS {
+        return Err(invalid_world_meta(format!(
+            "unsupported planetary face size {face_blocks}; expected {}",
+            crate::planet::FACE_BLOCKS
+        )));
+    }
+
+    let world_height = meta_value(&text, "world_height")
+        .and_then(|value| value.parse::<u16>().ok())
+        .ok_or_else(|| invalid_world_meta("planetary world is missing a valid world_height"))?;
+    if world_height != CHUNK_Y as u16 {
+        return Err(invalid_world_meta(format!(
+            "unsupported world height {world_height}; expected {CHUNK_Y}"
+        )));
+    }
+
+    let radius = meta_value(&text, "planet_radius")
+        .and_then(|value| value.parse::<f64>().ok())
+        .ok_or_else(|| invalid_world_meta("planetary world is missing a valid planet_radius"))?;
+    if (radius - crate::planet::PLANET_RADIUS).abs() > 0.001 {
+        return Err(invalid_world_meta(format!(
+            "unsupported planet radius {radius}; expected {:.6}",
+            crate::planet::PLANET_RADIUS
+        )));
+    }
+
+    let generator_version = meta_value(&text, "generator_version")
+        .and_then(|value| value.parse::<u32>().ok())
+        .ok_or_else(|| invalid_world_meta("planetary world is missing a generator_version"))?;
+    if generator_version != WORLD_GENERATOR_VERSION {
+        return Err(invalid_world_meta(format!(
+            "unsupported generator version {generator_version}; expected {WORLD_GENERATOR_VERSION}"
+        )));
+    }
+
+    let seed = meta_value(&text, "seed")
+        .and_then(|value| value.parse::<u32>().ok())
+        .ok_or_else(|| invalid_world_meta("world metadata is missing a valid seed"))?;
+    let mode = meta_value(&text, "mode").unwrap_or("survival").to_string();
+    let ire = meta_value(&text, "ire")
+        .and_then(|value| value.parse::<f32>().ok())
+        .unwrap_or(0.0)
+        .clamp(0.0, 100.0);
+    let day = meta_value(&text, "day")
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(0);
+    let weather = Weather::from_name(meta_value(&text, "weather").unwrap_or("clear"));
+    Ok(Some(WorldMeta {
+        seed,
+        mode,
+        ire,
+        day,
+        weather,
+    }))
+}
+
+/// (seed, mode, ire) from a validated planetary `world.toml`.
 pub fn read_world_meta(dir: &std::path::Path) -> (Option<u32>, String, f32) {
     let (seed, mode, ire, _, _) = read_world_meta_full(dir);
     (seed, mode, ire)
@@ -387,31 +505,9 @@ pub fn read_world_meta(dir: &std::path::Path) -> (Option<u32>, String, f32) {
 
 /// Full metadata: (seed, mode, ire, day, weather).
 pub fn read_world_meta_full(dir: &std::path::Path) -> (Option<u32>, String, f32, u32, Weather) {
-    if let Ok(t) = fs::read_to_string(dir.join("world.toml")) {
-        let mut seed = None;
-        let mut mode = "survival".to_string();
-        let mut ire = 0.0f32;
-        let mut day = 0u32;
-        let mut weather = Weather::Clear;
-        for l in t.lines() {
-            if let Some(v) = l.strip_prefix("seed = ") {
-                seed = v.trim().parse().ok();
-            } else if let Some(v) = l.strip_prefix("mode = ") {
-                mode = v.trim().trim_matches('"').to_string();
-            } else if let Some(v) = l.strip_prefix("ire = ") {
-                ire = v.trim().parse().unwrap_or(0.0);
-            } else if let Some(v) = l.strip_prefix("day = ") {
-                day = v.trim().parse().unwrap_or(0);
-            } else if let Some(v) = l.strip_prefix("weather = ") {
-                weather = Weather::from_name(v.trim().trim_matches('"'));
-            }
-        }
-        (seed, mode, ire.clamp(0.0, 100.0), day, weather)
-    } else {
-        let seed = fs::read_to_string(dir.join("seed"))
-            .ok()
-            .and_then(|s| s.trim().parse().ok());
-        (seed, "survival".to_string(), 0.0, 0, Weather::Clear)
+    match load_world_meta(dir) {
+        Ok(Some(meta)) => (Some(meta.seed), meta.mode, meta.ire, meta.day, meta.weather),
+        Ok(None) | Err(_) => (None, "survival".to_string(), 0.0, 0, Weather::Clear),
     }
 }
 
@@ -433,14 +529,15 @@ pub fn write_world_meta_full(
     weather: Weather,
 ) -> std::io::Result<()> {
     let text = format!(
-        "seed = {seed}\nmode = \"{mode}\"\nire = {ire:.2}\nday = {day}\nweather = \"{}\"\n",
+        "topology = \"{WORLD_TOPOLOGY}\"\nface_blocks = {}\nworld_height = {CHUNK_Y}\nplanet_radius = {:.6}\ngenerator_version = {WORLD_GENERATOR_VERSION}\nseed = {seed}\nmode = \"{mode}\"\nire = {ire:.2}\nday = {day}\nweather = \"{}\"\n",
+        crate::planet::FACE_BLOCKS,
+        crate::planet::PLANET_RADIUS,
         weather.name()
     );
     crate::identity::atomic_write(&dir.join("world.toml"), text.as_bytes(), false)
 }
 
-/// List worlds under `dir`: (name, seed), sorted. Reads world.toml with the
-/// legacy `seed`-file fallback, same as read_world_meta.
+/// List compatible planetary worlds under `dir`: (name, seed), sorted.
 pub fn list_worlds(dir: &std::path::Path) -> Vec<(String, u32)> {
     let mut out = Vec::new();
     if let Ok(rd) = fs::read_dir(dir) {
@@ -449,13 +546,43 @@ pub fn list_worlds(dir: &std::path::Path) -> Vec<(String, u32)> {
             if name.starts_with('.') || !e.path().is_dir() {
                 continue;
             }
-            if let (Some(seed), _, _) = read_world_meta(&e.path()) {
-                out.push((name, seed));
+            if let Ok(Some(meta)) = load_world_meta(&e.path()) {
+                out.push((name, meta.seed));
             }
         }
     }
     out.sort();
     out
+}
+
+/// One 256×256-cell regional ledger tile on a particular cube face.
+///
+/// The face is part of the identity: coordinates at the same `(u, v)` on two
+/// charts are unrelated countries.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RegionCell {
+    pub face: crate::planet::Face,
+    pub u: u8,
+    pub v: u8,
+}
+
+impl RegionCell {
+    pub const BLOCKS: u16 = 256;
+
+    pub const fn from_surface(surface: crate::planet::SurfacePos) -> Self {
+        Self {
+            face: surface.face(),
+            u: (surface.u() / Self::BLOCKS) as u8,
+            v: (surface.v() / Self::BLOCKS) as u8,
+        }
+    }
+
+    #[cfg(test)]
+    fn from_legacy(x: i32, z: i32) -> Self {
+        let surface = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+            .expect("legacy regional coordinate is within the bounded porting window");
+        Self::from_surface(surface)
+    }
 }
 
 pub struct World {
@@ -471,44 +598,43 @@ pub struct World {
     /// that loads has to be rewritten in current ids before the palette on
     /// disk is replaced. Cleared by the first full save of the session.
     palette_stale: bool,
-    water_queue: VecDeque<(i32, i32, i32)>,
-    water_queued: HashSet<(i32, i32, i32)>,
-    lava_queue: VecDeque<(i32, i32, i32)>,
-    lava_queued: HashSet<(i32, i32, i32)>,
-    fire_queue: VecDeque<(i32, i32, i32)>,
-    fire_queued: HashSet<(i32, i32, i32)>,
+    water_queue: VecDeque<crate::planet::BlockPos>,
+    water_queued: HashSet<crate::planet::BlockPos>,
+    lava_queue: VecDeque<crate::planet::BlockPos>,
+    lava_queued: HashSet<crate::planet::BlockPos>,
+    fire_queue: VecDeque<crate::planet::BlockPos>,
+    fire_queued: HashSet<crate::planet::BlockPos>,
     /// True while a fluid tick runs: air<->fluid relights batch into
     /// pending_relight (one per chunk per tick) instead of cascading
     /// per moved cell.
     fluid_batch: bool,
     pending_relight: HashSet<ChunkPos>,
-    /// Test fixtures can preserve ordinary block-edit behavior while settling
-    /// lighting once per touched chunk. Production edits never take this path.
-    #[cfg(test)]
-    fixture_relight_batch: bool,
+    /// Authored bulk edits preserve ordinary block-edit behavior while
+    /// settling lighting once per touched chunk.
+    edit_relight_batch: bool,
     /// Accumulator for the food-freshness sweep (containers).
     perish_accum: f32,
     /// Seconds of work banked per powered station (transient: a
     /// partial strike is honest to lose across a save).
-    station_work: HashMap<(i32, i32, i32), f32>,
+    station_work: HashMap<BlockPos, f32>,
     /// The land's memory: per-256-block-cell standing (±20), charged
     /// by taking, credited by tending, fading over days.
-    pub(crate) regional_ire: HashMap<(i32, i32), f32>,
+    pub(crate) regional_ire: HashMap<RegionCell, f32>,
     /// Lines the wild wants spoken (drained by the game as toasts).
     pub whispers: Vec<String>,
     /// Days each cell has held deeply blessed (session-scoped; the
     /// reseed clock restarts on load — the wild forgives the patient).
-    blessed_streak: HashMap<(i32, i32), u32>,
+    blessed_streak: HashMap<RegionCell, u32>,
     /// Chunks a player's hands have edited (placed or broken blocks):
     /// the green tide never seeds ground people made their own.
-    pub(crate) player_touched: HashSet<(i32, i32)>,
+    pub(crate) player_touched: HashSet<ChunkPos>,
     /// Bloom ledger: days of post-wrath eruption left per 256-cell.
-    pub(crate) bloom: HashMap<(i32, i32), f32>,
+    pub(crate) bloom: HashMap<RegionCell, f32>,
     /// The spirits of the land, keyed by province.
-    pub(crate) hearts: HashMap<(i32, i32), Heart>,
+    pub(crate) hearts: HashMap<crate::worldgen::ProvinceKey, Heart>,
     /// How much bloom a cell has already been given without being
     /// tended back — the ground's willingness, spent.
-    pub(crate) bloom_spent: HashMap<(i32, i32), f32>,
+    pub(crate) bloom_spent: HashMap<RegionCell, f32>,
     /// The year has stopped: too many countries have no spirit left.
     pub long_winter: bool,
     /// Absolute sim-time in seconds (day * DAY_LENGTH + time-of-day),
@@ -517,15 +643,15 @@ pub struct World {
     pub clock: f64,
     /// When each chunk last took its random ticks (persisted, so the
     /// world can live on while a chunk is away).
-    last_random: HashMap<(i32, i32), f64>,
-    block_entities: HashMap<(i32, i32, i32), BlockEntity>,
+    last_random: HashMap<ChunkPos, f64>,
+    block_entities: HashMap<crate::planet::BlockPos, BlockEntity>,
     /// Items spilled by removed block entities, for the game loop to spawn.
-    pending_drops: Vec<((i32, i32, i32), ItemStack)>,
+    pending_drops: Vec<(crate::planet::BlockPos, ItemStack)>,
     mobs: Vec<crate::mobs::Mob>,
     projectiles: Vec<Projectile>,
     hostile_spawn_timer: f32,
     /// Chunks whose wildlife roll already happened (persisted).
-    mob_seeded: HashSet<(i32, i32)>,
+    mob_seeded: HashSet<ChunkPos>,
     repop_timer: f32,
     /// Game mode string, persisted in world.toml alongside seed/ire.
     pub mode: String,
@@ -545,7 +671,7 @@ pub struct World {
     pub weather_timer: f32,
     /// Host mode: record block edits for broadcasting.
     log_edits: bool,
-    edit_log: Vec<(i32, i32, i32, BlockId, u8)>,
+    edit_log: Vec<(crate::planet::BlockPos, BlockId, u8)>,
     /// Gravity blocks currently airborne.
     falling: Vec<FallingBlock>,
     /// (guest id, stack) owed over the wire: mining drops, kill loot,
@@ -748,8 +874,7 @@ impl World {
             fire_queued: HashSet::new(),
             fluid_batch: false,
             pending_relight: HashSet::new(),
-            #[cfg(test)]
-            fixture_relight_batch: false,
+            edit_relight_batch: false,
             clock: 0.0,
             last_random: HashMap::new(),
             block_entities: HashMap::new(),
@@ -801,11 +926,11 @@ impl World {
         self.log_edits = enabled;
     }
 
-    pub fn edits(&self) -> &[(i32, i32, i32, BlockId, u8)] {
+    pub fn edits(&self) -> &[(crate::planet::BlockPos, BlockId, u8)] {
         &self.edit_log
     }
 
-    pub fn take_edits(&mut self) -> Vec<(i32, i32, i32, BlockId, u8)> {
+    pub fn take_edits(&mut self) -> Vec<(crate::planet::BlockPos, BlockId, u8)> {
         std::mem::take(&mut self.edit_log)
     }
 
@@ -818,7 +943,7 @@ impl World {
     }
 
     #[cfg(test)]
-    pub(crate) fn pending_drops(&self) -> &[((i32, i32, i32), ItemStack)] {
+    pub(crate) fn pending_drops(&self) -> &[(crate::planet::BlockPos, ItemStack)] {
         &self.pending_drops
     }
 
@@ -827,7 +952,7 @@ impl World {
     }
 
     /// Every sign and waystone with its text (world rendering, join sync).
-    pub fn sign_texts(&self) -> impl Iterator<Item = ((i32, i32, i32), &SignState)> {
+    pub fn sign_texts(&self) -> impl Iterator<Item = (crate::planet::BlockPos, &SignState)> {
         self.block_entities.iter().filter_map(|(&p, e)| match e {
             BlockEntity::Sign(s) => Some((p, s)),
             _ => None,
@@ -835,43 +960,88 @@ impl World {
     }
 
     /// Queue an item drop at a cell (spawned by the game loop).
+    #[cfg(test)]
     pub fn push_drop(&mut self, at: (i32, i32, i32), stack: ItemStack) {
+        if let Some(at) = crate::planet::BlockPos::of_world(at.0, at.1, at.2) {
+            self.push_drop_at(at, stack);
+        }
+    }
+
+    pub fn push_drop_at(&mut self, at: crate::planet::BlockPos, stack: ItemStack) {
         self.pending_drops.push((at, stack));
     }
 
-    pub fn take_pending_drops(&mut self) -> Vec<((i32, i32, i32), ItemStack)> {
+    pub fn take_pending_drops(&mut self) -> Vec<(crate::planet::BlockPos, ItemStack)> {
         std::mem::take(&mut self.pending_drops)
     }
 
+    #[cfg(test)]
     pub fn block_entity(&self, pos: &(i32, i32, i32)) -> Option<&BlockEntity> {
+        crate::planet::BlockPos::of_world(pos.0, pos.1, pos.2)
+            .and_then(|pos| self.block_entities.get(&pos))
+    }
+
+    #[cfg(test)]
+    pub fn block_entity_mut(&mut self, pos: &(i32, i32, i32)) -> Option<&mut BlockEntity> {
+        let pos = crate::planet::BlockPos::of_world(pos.0, pos.1, pos.2)?;
+        self.block_entities.get_mut(&pos)
+    }
+
+    pub fn block_entity_at(&self, pos: &crate::planet::BlockPos) -> Option<&BlockEntity> {
         self.block_entities.get(pos)
     }
 
-    pub fn block_entity_mut(&mut self, pos: &(i32, i32, i32)) -> Option<&mut BlockEntity> {
+    pub fn block_entity_mut_at(
+        &mut self,
+        pos: &crate::planet::BlockPos,
+    ) -> Option<&mut BlockEntity> {
         self.block_entities.get_mut(pos)
     }
 
+    #[cfg(test)]
     pub fn insert_block_entity(
         &mut self,
         pos: (i32, i32, i32),
         entity: BlockEntity,
     ) -> Option<BlockEntity> {
+        let pos = crate::planet::BlockPos::of_world(pos.0, pos.1, pos.2)?;
         self.block_entities.insert(pos, entity)
     }
 
+    pub fn insert_block_entity_at(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        entity: BlockEntity,
+    ) -> Option<BlockEntity> {
+        self.block_entities.insert(pos, entity)
+    }
+
+    #[cfg(test)]
     pub fn ensure_block_entity(
         &mut self,
         pos: (i32, i32, i32),
         default: BlockEntity,
     ) -> &mut BlockEntity {
+        let pos = crate::planet::BlockPos::of_world(pos.0, pos.1, pos.2)
+            .expect("legacy block entity address is inside the planet");
         self.block_entities.entry(pos).or_insert(default)
     }
 
-    pub fn has_block_entity(&self, pos: &(i32, i32, i32)) -> bool {
-        self.block_entities.contains_key(pos)
+    pub fn ensure_block_entity_at(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        default: BlockEntity,
+    ) -> &mut BlockEntity {
+        self.block_entities.entry(pos).or_insert(default)
     }
 
-    pub fn block_entities(&self) -> impl Iterator<Item = (&(i32, i32, i32), &BlockEntity)> {
+    #[cfg(test)]
+    pub fn has_block_entity(&self, pos: &(i32, i32, i32)) -> bool {
+        crate::planet::BlockPos::of_world(pos.0, pos.1, pos.2)
+            .is_some_and(|pos| self.block_entities.contains_key(&pos))
+    }
+
+    pub fn block_entities(&self) -> impl Iterator<Item = (&crate::planet::BlockPos, &BlockEntity)> {
         self.block_entities.iter()
     }
 
@@ -912,7 +1082,7 @@ impl World {
             .filter(|pos| {
                 !centers
                     .iter()
-                    .any(|c| (pos.x - c.x).abs() <= radius && (pos.z - c.z).abs() <= radius)
+                    .any(|center| pos.distance(*center) <= f64::from(radius * CHUNK_X as i32))
             })
             .copied()
             .collect()
@@ -950,7 +1120,7 @@ impl World {
                     // and resident so the next residency sweep can retry.
                     report.retained_dirty += 1;
                     report.failures.push(SaveFailure::new(
-                        format!("chunk {},{}", pos.x, pos.z),
+                        format!("chunk {pos:?}"),
                         region::region_path(&self.save_dir, pos),
                         error,
                     ));
@@ -1012,19 +1182,20 @@ impl World {
         &mut self.chunks
     }
 
-    pub fn get_block(&self, x: i32, y: i32, z: i32) -> BlockId {
-        if y < 0 || y >= CHUNK_Y as i32 {
-            return AIR;
-        }
-        let pos = ChunkPos::of_world(x, z);
-        match self.chunks.get(&pos) {
-            Some(c) => c.get(
-                x.rem_euclid(CHUNK_X as i32) as usize,
-                y as usize,
-                z.rem_euclid(CHUNK_Z as i32) as usize,
-            ),
+    pub fn get_block_at(&self, pos: crate::planet::BlockPos) -> BlockId {
+        let (x, y, z) = pos.local();
+        match self.chunks.get(&pos.chunk()) {
+            Some(chunk) => chunk.get(x, y, z),
             None => AIR,
         }
+    }
+
+    #[cfg(test)]
+    #[doc(hidden)]
+    pub fn get_block(&self, x: i32, y: i32, z: i32) -> BlockId {
+        crate::planet::BlockPos::of_world(x, y, z)
+            .map(|pos| self.get_block_at(pos))
+            .unwrap_or(AIR)
     }
 
     /// Fill a cubic RGBA occupancy grid (side `g`, `origin` = world cell of
@@ -1032,6 +1203,7 @@ impl World {
     /// (255 opaque full block, 128 stained glass, 0 air/pass), rgb = the glass's
     /// per-channel light filter (the shadow tint). Chunk-aware: one hash lookup
     /// per (x,z) column, not per cell, so a full 128³ rebuild is a few ms.
+    #[cfg(test)]
     pub fn fill_occupancy(&self, origin: [i32; 3], g: usize, buf: &mut [u8]) {
         buf.iter_mut().for_each(|b| *b = 0);
         let gi = g as i32;
@@ -1066,21 +1238,23 @@ impl World {
     }
 
     /// Metadata byte at a world position (octant mask for sub-voxel blocks).
-    pub fn get_meta(&self, x: i32, y: i32, z: i32) -> u8 {
-        if y < 0 || y >= CHUNK_Y as i32 {
-            return 0;
-        }
-        let pos = ChunkPos::of_world(x, z);
-        match self.chunks.get(&pos) {
-            Some(chunk) => chunk.meta(
-                x.rem_euclid(CHUNK_X as i32) as usize,
-                y as usize,
-                z.rem_euclid(CHUNK_Z as i32) as usize,
-            ),
+    pub fn get_meta_at(&self, pos: crate::planet::BlockPos) -> u8 {
+        let (x, y, z) = pos.local();
+        match self.chunks.get(&pos.chunk()) {
+            Some(chunk) => chunk.meta(x, y, z),
             None => 0,
         }
     }
 
+    #[cfg(test)]
+    #[doc(hidden)]
+    pub fn get_meta(&self, x: i32, y: i32, z: i32) -> u8 {
+        crate::planet::BlockPos::of_world(x, y, z)
+            .map(|pos| self.get_meta_at(pos))
+            .unwrap_or(0)
+    }
+
+    #[cfg(test)]
     pub fn break_block(
         &mut self,
         pos: (i32, i32, i32),
@@ -1088,9 +1262,19 @@ impl World {
         award_drop: bool,
         affect_ire: bool,
     ) -> Option<BlockBreak> {
-        let cp = ChunkPos::of_world(pos.0, pos.2);
-        self.player_touched.insert((cp.x, cp.z));
-        let block = self.get_block(pos.0, pos.1, pos.2);
+        let pos = BlockPos::of_world(pos.0, pos.1, pos.2)?;
+        self.break_block_at(pos, tool, award_drop, affect_ire)
+    }
+
+    pub fn break_block_at(
+        &mut self,
+        pos: BlockPos,
+        tool: Option<ItemId>,
+        award_drop: bool,
+        affect_ire: bool,
+    ) -> Option<BlockBreak> {
+        self.player_touched.insert(pos.chunk());
+        let block = self.get_block_at(pos);
         if block == AIR || self.reg.block(block).hardness.is_none() {
             return None;
         }
@@ -1100,21 +1284,28 @@ impl World {
             .map(|(item, count)| ItemStack::new(&self.reg, item, count));
         if affect_ire {
             let cost = self.ire_for_block(block);
-            self.add_ire_at(pos.0, pos.2, cost);
+            self.add_ire_at_surface(pos.surface(), cost);
         }
         let was_heart = self.reg.block(block).name.starts_with("base:heart_");
-        self.set_block(pos.0, pos.1, pos.2, AIR);
+        self.set_block_at(pos, AIR);
         if was_heart {
-            self.heart_struck(pos);
+            self.heart_struck_at(pos);
         }
         Some(BlockBreak { block, drop })
     }
 
+    #[cfg(test)]
     pub fn place_block(&mut self, pos: (i32, i32, i32), block: BlockId) -> bool {
-        let cp = ChunkPos::of_world(pos.0, pos.2);
-        self.player_touched.insert((cp.x, cp.z));
+        let Some(block_pos) = BlockPos::of_world(pos.0, pos.1, pos.2) else {
+            return false;
+        };
+        self.place_block_at(block_pos, block)
+    }
+
+    pub fn place_block_at(&mut self, pos: BlockPos, block: BlockId) -> bool {
+        self.player_touched.insert(pos.chunk());
         if self.reg.blocks.get(block.0 as usize).is_none()
-            || !self.reg.is_replaceable(self.get_block(pos.0, pos.1, pos.2))
+            || !self.reg.is_replaceable(self.get_block_at(pos))
         {
             return false;
         }
@@ -1125,9 +1316,9 @@ impl World {
         // absolutely nothing. Placed farmland is freshly-turned soil.
         if self.reg.block(block).fert_tiles.is_some() {
             let meta = soil::soil_meta(soil::FERT_TILL_GRASS, 0);
-            self.set_block_meta(pos.0, pos.1, pos.2, block, meta);
+            self.set_block_meta_at(pos, block, meta);
         } else {
-            self.set_block(pos.0, pos.1, pos.2, block);
+            self.set_block_at(pos, block);
         }
         // Power sources carry a marker entity from birth so the
         // station sweep finds them without scanning the world.
@@ -1152,24 +1343,170 @@ impl World {
         true
     }
 
+    #[cfg(test)]
     pub fn set_block(&mut self, x: i32, y: i32, z: i32, b: BlockId) {
         self.set_block_meta(x, y, z, b, 0);
     }
 
-    /// Apply test-fixture edits with normal edit logging, support checks, and
-    /// fluid wakeups, but settle lighting only once per touched chunk.
-    #[cfg(test)]
-    pub(crate) fn edit_fixture_for_test(&mut self, edit: impl FnOnce(&mut Self)) {
+    /// Planetary block mutation used by topology-aware simulation walks.
+    pub fn set_block_at(&mut self, pos: crate::planet::BlockPos, block: BlockId) {
+        self.set_block_meta_at(pos, block, 0);
+    }
+
+    /// Low-level typed mutation. Subsystems that already own a canonical
+    /// address never convert it back through a planar tuple.
+    pub fn set_block_meta_at(&mut self, pos: BlockPos, block: BlockId, meta: u8) {
+        let chunk_pos = pos.chunk();
+        let (x, y, z) = pos.local();
+        let old = self.get_block_at(pos);
+        if let Some(chunk) = self.chunks.get_mut(&chunk_pos) {
+            chunk.set(x, y, z, block);
+            chunk.set_meta(x, y, z, meta);
+            chunk.dirty = true;
+            chunk.modified = true;
+            if self.log_edits {
+                self.edit_log.push((pos, block, meta));
+            }
+        } else {
+            return;
+        }
+        if x == 0 {
+            self.mark_chunk_dirty(chunk_pos.offset(-1, 0));
+        } else if x == CHUNK_X - 1 {
+            self.mark_chunk_dirty(chunk_pos.offset(1, 0));
+        }
+        if z == 0 {
+            self.mark_chunk_dirty(chunk_pos.offset(0, -1));
+        } else if z == CHUNK_Z - 1 {
+            self.mark_chunk_dirty(chunk_pos.offset(0, 1));
+        }
+        self.wake_water_at(pos);
+
+        // Gravity blocks detach when support vanishes, and a newly placed
+        // gravity block over air starts falling. All neighbor addressing goes
+        // through BlockPos::offset so this works identically at face seams.
+        if !self.remote {
+            if !self.reg.is_solid(block)
+                && let Some(above) = pos.offset(0, 1, 0)
+            {
+                let above_block = self.get_block_at(above);
+                if self.reg.block(above_block).falls {
+                    self.detach_at(above, above_block);
+                }
+            }
+            if self.reg.block(block).falls
+                && let Some(below) = pos.offset(0, -1, 0)
+                && !self.reg.is_solid(self.get_block_at(below))
+            {
+                self.detach_at(pos, block);
+                return;
+            }
+        }
+
+        // Plants, torches, and layers pop when the support underneath changes.
+        if !self.reg.is_solid(block)
+            && let Some(above) = pos.offset(0, 1, 0)
+        {
+            let above_block = self.get_block_at(above);
+            let above_def = self.reg.block(above_block);
+            if above_block != AIR
+                && !above_def.floats
+                && (above_def.cross || above_def.height.is_some())
+            {
+                if let Some((item, count)) = above_def.drops {
+                    let reg = self.reg.clone();
+                    self.push_drop_at(above, ItemStack::new(&reg, item, count));
+                }
+                self.set_block_at(above, AIR);
+            }
+        }
+
+        let fluid_level_only = self.reg.is_fluid(old)
+            && self.reg.is_fluid(block)
+            && self.reg.is_lava(old) == self.reg.is_lava(block);
+        let front_move = self.fluid_batch
+            && (self.reg.is_fluid(old) || self.reg.is_fluid(block))
+            && (self.reg.is_fluid(old) || self.reg.is_air(old))
+            && (self.reg.is_fluid(block) || self.reg.is_air(block));
+        let bulk_edit = self.edit_relight_batch && !fluid_level_only;
+        if front_move || bulk_edit {
+            self.pending_relight.insert(chunk_pos);
+        } else if !fluid_level_only {
+            self.relight_and_cascade(chunk_pos);
+        }
+
+        // A changed block invalidates any machine state living there and
+        // returns its inventory at that exact planetary address.
+        if let Some(entity) = self.block_entities.remove(&pos) {
+            let spilled: Vec<ItemStack> = match entity {
+                BlockEntity::Furnace(f) => {
+                    [f.input, f.fuel, f.output].into_iter().flatten().collect()
+                }
+                BlockEntity::Chest(c) => c.slots.into_iter().flatten().collect(),
+                BlockEntity::Offering(o) => o.slots.into_iter().flatten().collect(),
+                BlockEntity::Bloomery(b) => b.charge.into_iter().chain(b.fuel).flatten().collect(),
+                BlockEntity::Forge(f) => f.charge.into_iter().chain(f.fuel).flatten().collect(),
+                BlockEntity::Sign(_) => Vec::new(),
+                BlockEntity::Stall(st) => st
+                    .goods
+                    .into_iter()
+                    .chain(st.till)
+                    .chain([st.price])
+                    .flatten()
+                    .collect(),
+                BlockEntity::Smoker(sm) => sm.meat.into_iter().flatten().collect(),
+                BlockEntity::Clamp(_) => Vec::new(),
+                BlockEntity::Anvil(a) => a.bloom.into_iter().collect(),
+                BlockEntity::Steam(_) => Vec::new(),
+                BlockEntity::Separator(separator) => {
+                    let mut out = Vec::new();
+                    let mut push = |name: &str, count: u32| {
+                        if count > 0
+                            && let Some(item) = self.reg.item_id(name)
+                        {
+                            let mut stack = ItemStack::new(&self.reg, item, 1);
+                            stack.count = count;
+                            out.push(stack);
+                        }
+                    };
+                    push("base:rare_earth_powder", separator.powder);
+                    push("base:charcoal", separator.fuel);
+                    push("base:neodymium", separator.nd);
+                    push("base:cerium", separator.ce);
+                    out
+                }
+                BlockEntity::Kiln(k) => k
+                    .sand
+                    .into_iter()
+                    .chain(k.fuel)
+                    .chain([k.powder])
+                    .flatten()
+                    .collect(),
+            };
+            for stack in spilled {
+                self.push_drop_at(pos, stack);
+            }
+        }
+    }
+
+    /// Apply an authored group of edits with normal logging, support checks,
+    /// and fluid wakeups, but settle lighting only once per touched chunk.
+    pub(crate) fn edit_batch(&mut self, edit: impl FnOnce(&mut Self)) {
         assert!(
-            !self.fluid_batch && !self.fixture_relight_batch && self.pending_relight.is_empty(),
-            "test fixture edits cannot nest another relight batch"
+            !self.fluid_batch && !self.edit_relight_batch && self.pending_relight.is_empty(),
+            "block-edit batches cannot nest"
         );
-        self.fixture_relight_batch = true;
+        self.edit_relight_batch = true;
         edit(self);
-        self.fixture_relight_batch = false;
+        self.edit_relight_batch = false;
         for pos in std::mem::take(&mut self.pending_relight) {
             self.relight_and_cascade(pos);
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn edit_fixture_for_test(&mut self, edit: impl FnOnce(&mut Self)) {
+        self.edit_batch(edit);
     }
 
     /// Convenience wrapper for block-only fixtures.
@@ -1211,154 +1548,28 @@ impl World {
     }
 
     /// Set a block with an explicit metadata byte.
+    #[cfg(test)]
+    #[doc(hidden)]
     pub fn set_block_meta(&mut self, x: i32, y: i32, z: i32, b: BlockId, meta: u8) {
-        if y < 0 || y >= CHUNK_Y as i32 {
-            return;
-        }
-        let pos = ChunkPos::of_world(x, z);
-        let lx = x.rem_euclid(CHUNK_X as i32) as usize;
-        let lz = z.rem_euclid(CHUNK_Z as i32) as usize;
-        let old = self.get_block(x, y, z);
-        if let Some(c) = self.chunks.get_mut(&pos) {
-            c.set(lx, y as usize, lz, b);
-            c.set_meta(lx, y as usize, lz, meta);
-            c.dirty = true;
-            c.modified = true;
-            if self.log_edits {
-                self.edit_log.push((x, y, z, b, meta));
-            }
-        }
-        let mut touch = |dx: i32, dz: i32| {
-            let np = ChunkPos {
-                x: pos.x + dx,
-                z: pos.z + dz,
-            };
-            if let Some(c) = self.chunks.get_mut(&np) {
-                c.dirty = true;
-            }
-        };
-        if lx == 0 {
-            touch(-1, 0);
-        } else if lx == CHUNK_X - 1 {
-            touch(1, 0);
-        }
-        if lz == 0 {
-            touch(0, -1);
-        } else if lz == CHUNK_Z - 1 {
-            touch(0, 1);
-        }
-        self.wake_water(x, y, z);
-        // Gravity blocks detach when their support vanishes — and a
-        // gravity block placed over nothing starts falling immediately.
-        // Guests never simulate this; the host's BlockSet echoes land.
-        if !self.remote {
-            if !self.reg.is_solid(b) && y + 1 < CHUNK_Y as i32 {
-                let above = self.get_block(x, y + 1, z);
-                if self.reg.block(above).falls {
-                    self.detach(x, y + 1, z, above);
-                }
-            }
-            if self.reg.block(b).falls && y > 0 && !self.reg.is_solid(self.get_block(x, y - 1, z)) {
-                self.detach(x, y, z, b);
-            }
-        }
-        // Cross blocks (torches, plants) and thin slabs (snow layers)
-        // pop off when their support vanishes.
-        if !self.reg.is_solid(b) && y + 1 < CHUNK_Y as i32 {
-            let above = self.get_block(x, y + 1, z);
-            let ad = self.reg.block(above);
-            if above != AIR && !ad.floats && (ad.cross || ad.height.is_some()) {
-                if let Some((item, n)) = self.reg.block(above).drops {
-                    let reg = self.reg.clone();
-                    self.pending_drops
-                        .push(((x, y + 1, z), ItemStack::new(&reg, item, n)));
-                }
-                self.set_block(x, y + 1, z, AIR);
-            }
-        }
-        // A fluid changing level within its own family carries zero
-        // light consequence (every level shares one cost, lava's every
-        // level emits alike) — skip the full-chunk relight that was
-        // making a settling river cost thousands of BFS passes a
-        // second. During a fluid tick, air<->fluid transitions (an
-        // advancing or draining front) batch instead: each touched
-        // chunk relights once at the end of the tick, not once per
-        // moved cell — an ocean pouring into cave seams was costing
-        // 78ms per water tick in cascaded relights alone. Outside the
-        // ticks (a bucket pour, a block break) light stays immediate.
-        let fluid_level_only = self.reg.is_fluid(old)
-            && self.reg.is_fluid(b)
-            && self.reg.is_lava(old) == self.reg.is_lava(b);
-        let front_move = self.fluid_batch
-            && (self.reg.is_fluid(old) || self.reg.is_fluid(b))
-            && (self.reg.is_fluid(old) || self.reg.is_air(old))
-            && (self.reg.is_fluid(b) || self.reg.is_air(b));
-        #[cfg(test)]
-        let fixture_move = self.fixture_relight_batch && !fluid_level_only;
-        #[cfg(not(test))]
-        let fixture_move = false;
-        if front_move || fixture_move {
-            self.pending_relight.insert(pos);
-        } else if !fluid_level_only {
-            self.relight_and_cascade(pos);
-        }
-        // A changed block invalidates any machine state living there.
-        if let Some(e) = self.block_entities.remove(&(x, y, z)) {
-            let spilled: Vec<ItemStack> = match e {
-                BlockEntity::Furnace(f) => {
-                    [f.input, f.fuel, f.output].into_iter().flatten().collect()
-                }
-                BlockEntity::Chest(c) => c.slots.into_iter().flatten().collect(),
-                BlockEntity::Offering(o) => o.slots.into_iter().flatten().collect(),
-                BlockEntity::Bloomery(b) => b.charge.into_iter().chain(b.fuel).flatten().collect(),
-                BlockEntity::Forge(f) => f.charge.into_iter().chain(f.fuel).flatten().collect(),
-                BlockEntity::Sign(_) => Vec::new(),
-                BlockEntity::Stall(st) => st
-                    .goods
-                    .into_iter()
-                    .chain(st.till)
-                    .chain([st.price])
-                    .flatten()
-                    .collect(),
-                BlockEntity::Smoker(sm) => sm.meat.into_iter().flatten().collect(),
-                BlockEntity::Clamp(_) => Vec::new(), // the burn dies with it
-                BlockEntity::Anvil(a) => a.bloom.into_iter().collect(),
-                BlockEntity::Steam(_) => Vec::new(), // banked fire dies with it
-                BlockEntity::Separator(sp) => {
-                    let mut out = Vec::new();
-                    let mut push = |name: &str, n: u32| {
-                        if n > 0
-                            && let Some(item) = self.reg.item_id(name)
-                        {
-                            let mut s = ItemStack::new(&self.reg, item, 1);
-                            s.count = n;
-                            out.push(s);
-                        }
-                    };
-                    push("base:rare_earth_powder", sp.powder);
-                    push("base:charcoal", sp.fuel);
-                    push("base:neodymium", sp.nd);
-                    push("base:cerium", sp.ce);
-                    out
-                }
-                BlockEntity::Kiln(k) => k
-                    .sand
-                    .into_iter()
-                    .chain(k.fuel)
-                    .chain([k.powder])
-                    .flatten()
-                    .collect(),
-            };
-            for s in spilled {
-                self.pending_drops.push(((x, y, z), s));
-            }
+        if let Some(pos) = BlockPos::of_world(x, y, z) {
+            self.set_block_meta_at(pos, b, meta);
         }
     }
 
     /// Y of the highest solid block in a column (for spawn placement).
+    #[cfg(test)]
     pub fn surface_height(&self, x: i32, z: i32) -> i32 {
+        let surface = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+            .expect("legacy surface query is within the bounded porting window");
+        self.surface_height_at(surface)
+    }
+
+    pub fn surface_height_at(&self, surface: crate::planet::SurfacePos) -> i32 {
         for y in (0..CHUNK_Y as i32).rev() {
-            if self.reg.is_solid(self.get_block(x, y, z)) {
+            let pos =
+                crate::planet::BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
+                    .expect("surface column and height are validated");
+            if self.reg.is_solid(self.get_block_at(pos)) {
                 return y;
             }
         }
@@ -1372,7 +1583,7 @@ impl World {
     }
 
     /// Where this world keeps its files.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub fn save_dir(&self) -> &std::path::Path {
         &self.save_dir
     }
@@ -1380,43 +1591,93 @@ impl World {
     /// The headroom a flier standing at `y` actually has: the first
     /// solid at or below it, and the first solid above it. Bounded so a
     /// mob in open sky or a sealed shaft costs a fixed scan.
+    #[cfg(test)]
     pub fn air_column(&self, x: i32, y: i32, z: i32) -> (i32, i32) {
+        let pos = crate::planet::EntityPos::from_local(
+            crate::planet::Face::PosZ,
+            Vec3::new(x as f32 + 0.5, y as f32, z as f32 + 0.5),
+        )
+        .expect("legacy air column is inside PosZ");
+        self.air_column_at(pos, y)
+    }
+
+    pub fn air_column_at(&self, pos: crate::planet::EntityPos, y: i32) -> (i32, i32) {
+        let surface = crate::planet::SurfacePos::new(
+            pos.face(),
+            pos.u().floor() as u16,
+            pos.v().floor() as u16,
+        )
+        .expect("canonical entity has a valid surface cell");
+        let at = |height: i32| {
+            crate::planet::BlockPos::new(surface.face(), surface.u(), height as u8, surface.v())
+                .expect("air column height is inside the shell")
+        };
         let floor = (y - 64).max(0)..=y;
         let floor = floor
             .rev()
-            .find(|&fy| self.reg.is_solid(self.get_block(x, fy, z)))
-            .unwrap_or((y - 64).max(0));
+            .find(|&fy| self.reg.is_solid(self.get_block_at(at(fy))))
+            // An ungenerated/open column has no trustworthy ground. A
+            // floater should hold station until terrain is resident, not
+            // interpret missing data as a sixty-block abyss.
+            .unwrap_or((y - 2).max(0));
         let ceil = ((y + 1)..=(y + 40).min(CHUNK_Y as i32 - 1))
-            .find(|&cy| self.reg.is_solid(self.get_block(x, cy, z)))
+            .find(|&cy| self.reg.is_solid(self.get_block_at(at(cy))))
             .unwrap_or(CHUNK_Y as i32);
         (floor, ceil)
     }
 
     /// Can a player body stand with its feet in cell y? Feet and
     /// head clear of solids, solid ground directly underfoot.
-    fn standable(&self, x: i32, y: i32, z: i32) -> bool {
+    fn standable_at(&self, surface: crate::planet::SurfacePos, y: i32) -> bool {
         // Fluid is not solid, so a seabed column used to read as
         // "standable" and players were dropped on the ocean floor.
         // Somewhere to stand means dry air for the body, too.
         let clear = |b: BlockId| !self.reg.is_solid(b) && !self.reg.is_fluid(b);
-        self.reg.is_solid(self.get_block(x, y - 1, z))
-            && clear(self.get_block(x, y, z))
-            && clear(self.get_block(x, y + 1, z))
+        let at = |height: i32| {
+            crate::planet::BlockPos::new(surface.face(), surface.u(), height as u8, surface.v())
+                .expect("standable height is inside the vertical shell")
+        };
+        self.reg.is_solid(self.get_block_at(at(y - 1)))
+            && clear(self.get_block_at(at(y)))
+            && clear(self.get_block_at(at(y + 1)))
+    }
+
+    #[cfg(test)]
+    fn standable(&self, x: i32, y: i32, z: i32) -> bool {
+        let surface = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+            .expect("legacy standability query is inside PosZ");
+        self.standable_at(surface, y)
     }
 
     /// Somewhere a player can be put down: dry, solid-footed, and
     /// above the tideline. Searches outward from the asked column and,
     /// finding nothing but open water, raises a small sand island
     /// rather than dropping anyone into the sea.
+    #[cfg(test)]
     pub fn safe_spawn(&mut self, x: i32, z: i32) -> Vec3 {
-        let stands_dry = |w: &mut World, cx: i32, cz: i32| -> Option<Vec3> {
-            w.ensure_chunk(ChunkPos::of_world(cx, cz));
-            let h = w.surface_height(cx, cz);
+        let surface = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+            .expect("legacy spawn query is inside PosZ");
+        self.safe_spawn_at(surface).local()
+    }
+
+    pub fn safe_spawn_at(&mut self, wanted: crate::planet::SurfacePos) -> crate::planet::EntityPos {
+        let stands_dry = |w: &mut World,
+                          surface: crate::planet::SurfacePos|
+         -> Option<crate::planet::EntityPos> {
+            w.ensure_chunk(ChunkPos::from_surface(surface));
+            let h = w.surface_height_at(surface);
             let feet = h + 1;
-            (h > SEA_LEVEL && w.standable(cx, feet, cz))
-                .then(|| Vec3::new(cx as f32 + 0.5, feet as f32 + 0.2, cz as f32 + 0.5))
+            (h > SEA_LEVEL && w.standable_at(surface, feet)).then(|| {
+                crate::planet::EntityPos::new(
+                    surface.face(),
+                    surface.u() as f32 + 0.5,
+                    feet as f32 + 0.2,
+                    surface.v() as f32 + 0.5,
+                )
+                .expect("surface cell center is a canonical entity position")
+            })
         };
-        if let Some(p) = stands_dry(self, x, z) {
+        if let Some(p) = stands_dry(self, wanted) {
             return p;
         }
         // Rings outward: near land first, so a coastal spawn walks
@@ -1435,24 +1696,43 @@ impl World {
                 (r, -r),
                 (-r, r),
             ] {
-                let (cx, cz) = (x + dx, z + dz);
-                if self.generator.surface_estimate(cx, cz) <= SEA_LEVEL + 1 {
+                let Ok(surface) = crate::planet::SurfacePos::canonicalized(
+                    wanted.face(),
+                    wanted.u() as i32 + dx,
+                    wanted.v() as i32 + dz,
+                ) else {
+                    continue;
+                };
+                if self.generator.surface_estimate_at(surface) <= SEA_LEVEL + 1 {
                     continue;
                 }
-                if let Some(p) = stands_dry(self, cx, cz) {
+                if let Some(p) = stands_dry(self, surface) {
                     return p;
                 }
             }
         }
         // Open ocean in every direction: make landfall.
-        let top = self.raise_castaway_isle(x, z);
-        Vec3::new(x as f32 + 0.5, top as f32 + 1.2, z as f32 + 0.5)
+        let top = self.raise_castaway_isle_at(wanted);
+        crate::planet::EntityPos::new(
+            wanted.face(),
+            wanted.u() as f32 + 0.5,
+            top as f32 + 1.2,
+            wanted.v() as f32 + 0.5,
+        )
+        .expect("surface cell center is a canonical entity position")
     }
 
     /// Raise a small sand island for a castaway spawn: a low dome up
     /// out of the water with its own patch of dry ground. Returns the
     /// height of the ground at its center.
+    #[cfg(test)]
     pub fn raise_castaway_isle(&mut self, cx: i32, cz: i32) -> i32 {
+        let center = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, cx, cz)
+            .expect("legacy island center is inside PosZ");
+        self.raise_castaway_isle_at(center)
+    }
+
+    pub fn raise_castaway_isle_at(&mut self, center: crate::planet::SurfacePos) -> i32 {
         const R: i32 = 5;
         let sand = self.reg.block_id("base:sand").unwrap_or(AIR);
         let crest = SEA_LEVEL + 2;
@@ -1462,22 +1742,31 @@ impl World {
                 if d2 > R * R {
                     continue;
                 }
-                let (x, z) = (cx + dx, cz + dz);
-                self.ensure_chunk(ChunkPos::of_world(x, z));
+                let surface = crate::planet::SurfacePos::canonicalized(
+                    center.face(),
+                    center.u() as i32 + dx,
+                    center.v() as i32 + dz,
+                )
+                .expect("castaway island radius crosses at most one face edge");
+                self.ensure_chunk(ChunkPos::from_surface(surface));
+                let at = |y: i32| {
+                    crate::planet::BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
+                        .expect("castaway island height is inside the shell")
+                };
                 // A dome: full height at the middle, shelving into the
                 // water at the rim.
                 let top = crest - (d2 as f32 / 6.0).round() as i32;
                 let floor = (1..=SEA_LEVEL)
                     .rev()
-                    .find(|&y| self.reg.is_solid(self.get_block(x, y, z)))
+                    .find(|&y| self.reg.is_solid(self.get_block_at(at(y))))
                     .unwrap_or(1);
                 for y in floor + 1..=top {
-                    self.set_block(x, y, z, sand);
+                    self.set_block_at(at(y), sand);
                 }
                 // Dry it out overhead, so the island is actually air.
                 for y in top + 1..=SEA_LEVEL + 4 {
-                    if self.reg.is_fluid(self.get_block(x, y, z)) {
-                        self.set_block(x, y, z, AIR);
+                    if self.reg.is_fluid(self.get_block_at(at(y))) {
+                        self.set_block_at(at(y), AIR);
                     }
                 }
             }
@@ -1492,17 +1781,35 @@ impl World {
     /// unchanged; otherwise the nearest clear opening in the column
     /// wins (downward on ties, matching the old come-to-ground rule),
     /// then a ring of neighbor columns, then the column surface.
+    #[cfg(test)]
     pub fn settle_spawn(&mut self, want: Vec3) -> Vec3 {
-        let (x, z) = (want.x.floor() as i32, want.z.floor() as i32);
-        self.ensure_chunk(ChunkPos::of_world(x, z));
+        crate::planet::EntityPos::from_local(crate::planet::Face::PosZ, want)
+            .map(|want| self.settle_spawn_at(want).local())
+            .unwrap_or(want)
+    }
+
+    pub fn settle_spawn_at(&mut self, want: crate::planet::EntityPos) -> crate::planet::EntityPos {
+        let surface = crate::planet::SurfacePos::new(
+            want.face(),
+            want.u().floor() as u16,
+            want.v().floor() as u16,
+        )
+        .expect("canonical entity has a valid surface cell");
+        self.ensure_chunk(ChunkPos::from_surface(surface));
         let feet = (want.y.floor() as i32).clamp(1, CHUNK_Y as i32 - 2);
-        if self.standable(x, feet, z) {
+        if self.standable_at(surface, feet) {
             return want;
         }
         for d in 1..CHUNK_Y as i32 {
             for y in [feet - d, feet + d] {
-                if y >= 1 && y < CHUNK_Y as i32 - 1 && self.standable(x, y, z) {
-                    return Vec3::new(want.x, y as f32 + 0.2, want.z);
+                if y >= 1 && y < CHUNK_Y as i32 - 1 && self.standable_at(surface, y) {
+                    return crate::planet::EntityPos::new(
+                        want.face(),
+                        want.u(),
+                        y as f32 + 0.2,
+                        want.v(),
+                    )
+                    .expect("settled height preserves a canonical surface position");
                 }
             }
         }
@@ -1514,32 +1821,60 @@ impl World {
                     if dx.abs() != r && dz.abs() != r {
                         continue;
                     }
-                    let (nx, nz) = (x + dx, z + dz);
-                    self.ensure_chunk(ChunkPos::of_world(nx, nz));
-                    let y = self.surface_height(nx, nz) + 1;
-                    if y < CHUNK_Y as i32 - 1 && self.standable(nx, y, nz) {
-                        return Vec3::new(nx as f32 + 0.5, y as f32 + 0.2, nz as f32 + 0.5);
+                    let neighbor = crate::planet::SurfacePos::canonicalized(
+                        surface.face(),
+                        surface.u() as i32 + dx,
+                        surface.v() as i32 + dz,
+                    )
+                    .expect("spawn rescue radius crosses at most one face edge");
+                    self.ensure_chunk(ChunkPos::from_surface(neighbor));
+                    let y = self.surface_height_at(neighbor) + 1;
+                    if y < CHUNK_Y as i32 - 1 && self.standable_at(neighbor, y) {
+                        return crate::planet::EntityPos::new(
+                            neighbor.face(),
+                            neighbor.u() as f32 + 0.5,
+                            y as f32 + 0.2,
+                            neighbor.v() as f32 + 0.5,
+                        )
+                        .expect("neighbor cell center is canonical");
                     }
                 }
             }
         }
         // Last resort: on top of whatever this column calls surface.
-        let y = self.surface_height(x, z) + 1;
-        Vec3::new(want.x, y as f32 + 0.2, want.z)
+        let y = self.surface_height_at(surface) + 1;
+        crate::planet::EntityPos::new(want.face(), want.u(), y as f32 + 0.2, want.v())
+            .expect("settled height preserves a canonical surface position")
     }
 
     /// Free a restored *position* only if it is embedded in solid.
     /// Unlike `settle_spawn`, a legitimate mid-air or mid-swim save
     /// passes through untouched — physics owns falling and floating;
     /// this only rescues a body inside a hill.
+    #[cfg(test)]
     pub fn free_position(&mut self, pos: Vec3) -> Vec3 {
-        let (x, z) = (pos.x.floor() as i32, pos.z.floor() as i32);
-        self.ensure_chunk(ChunkPos::of_world(x, z));
+        crate::planet::EntityPos::from_local(crate::planet::Face::PosZ, pos)
+            .map(|pos| self.free_position_at(pos).local())
+            .unwrap_or(pos)
+    }
+
+    pub fn free_position_at(&mut self, pos: crate::planet::EntityPos) -> crate::planet::EntityPos {
+        let surface = crate::planet::SurfacePos::new(
+            pos.face(),
+            pos.u().floor() as u16,
+            pos.v().floor() as u16,
+        )
+        .expect("canonical entity has a valid surface cell");
+        self.ensure_chunk(ChunkPos::from_surface(surface));
         let feet = (pos.y.floor() as i32).clamp(1, CHUNK_Y as i32 - 2);
-        let embedded = self.reg.is_solid(self.get_block(x, feet, z))
-            || self.reg.is_solid(self.get_block(x, feet + 1, z));
+        let block = |y: i32| {
+            crate::planet::BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
+                .expect("rescued height is inside the shell")
+        };
+        let embedded = self.reg.is_solid(self.get_block_at(block(feet)))
+            || self.reg.is_solid(self.get_block_at(block(feet + 1)));
         if embedded {
-            self.settle_spawn(pos)
+            self.settle_spawn_at(pos)
         } else {
             pos
         }

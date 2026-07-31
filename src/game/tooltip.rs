@@ -215,21 +215,21 @@ impl Game {
             }
             Screen::Chest(pos) => (0..27)
                 .find(|&i| self.hit(self.chest_slot_rect(i)))
-                .and_then(|i| match self.server.world.block_entity(&pos) {
+                .and_then(|i| match self.server.world.block_entity_at(&pos) {
                     Some(world::BlockEntity::Chest(c)) => c.slots[i],
                     _ => None,
                 })
                 .or_else(inv),
             Screen::Furnace(pos) => (0..3)
                 .find(|&i| self.hit(self.furnace_slot_rect(i)))
-                .and_then(|i| match self.server.world.block_entity(&pos) {
+                .and_then(|i| match self.server.world.block_entity_at(&pos) {
                     Some(world::BlockEntity::Furnace(f)) => [f.input, f.fuel, f.output][i],
                     _ => None,
                 })
                 .or_else(inv),
             Screen::Offering(pos) => (0..3)
                 .find(|&i| self.hit(self.offering_slot_rect(i)))
-                .and_then(|i| match self.server.world.block_entity(&pos) {
+                .and_then(|i| match self.server.world.block_entity_at(&pos) {
                     Some(world::BlockEntity::Offering(o)) => o.slots[i],
                     _ => None,
                 })

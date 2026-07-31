@@ -9,6 +9,10 @@ use std::collections::HashMap;
 use noise::{NoiseFn, Perlin};
 
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
+use crate::planet::{
+    Direction4, FACE_BLOCKS, Face, PLANET_RADIUS, SurfacePos, geodesic_distance, step4,
+    surface_to_unit,
+};
 use crate::registry::{AIR, BlockId, Registry};
 
 /// Climate-derived biomes, chosen by nearest centroid in climate space.
@@ -119,12 +123,20 @@ impl Spline {
 /// distance in blocks and the offset it was found at (for a compass
 /// direction), or None past the pick's reach.
 pub struct ProspectReading {
-    pub pluton: Option<(i32, (i32, i32))>,
-    pub volcano: Option<(i32, (i32, i32))>,
-    pub pipe: Option<(i32, (i32, i32))>,
-    pub geode: Option<(i32, (i32, i32))>,
+    pub pluton: Option<ProspectHit>,
+    pub volcano: Option<ProspectHit>,
+    pub pipe: Option<ProspectHit>,
+    pub geode: Option<ProspectHit>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProspectHit {
+    pub distance: i32,
+    /// Radians clockwise from local north.
+    pub bearing: Option<f64>,
+}
+
+#[cfg(test)]
 pub struct Volcano {
     pub x: i32,
     pub z: i32,
@@ -132,6 +144,7 @@ pub struct Volcano {
     pub height: f32,
 }
 
+#[cfg(test)]
 impl Volcano {
     pub fn dist(&self, wx: i32, wz: i32) -> f32 {
         (((wx - self.x).pow(2) + (wz - self.z).pow(2)) as f32).sqrt()
@@ -191,17 +204,26 @@ pub struct Climate {
 /// A country: one Voronoi cell of the province partition, its biome
 /// decided once at its site. `edge` is the distance to the nearest
 /// border; `neighbor` is what lies across it.
+/// Stable finite country address. The grid lives on all six faces and its
+/// offset operation canonicalizes through the planet's seam table.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ProvinceKey {
+    pub face: Face,
+    pub u: u8,
+    pub v: u8,
+}
+
 /// (label, site, temperature, humidity, erosion) — what a country is,
 /// resolved once and cached.
-type ProvinceLabel = (Biome, (i32, i32), f32, f32, f32);
+type ProvinceLabel = (Biome, SurfacePos, f32, f32, f32);
 
 #[derive(Clone, Copy, Debug)]
 pub struct Province {
     /// Stable key — the heart of this country is keyed on it.
     #[cfg_attr(not(test), allow(dead_code))]
-    pub key: (i32, i32),
+    pub key: ProvinceKey,
     #[cfg_attr(not(test), allow(dead_code))]
-    pub site: (i32, i32),
+    pub site: SurfacePos,
     /// The country's own label, read at its site: what to call it.
     #[cfg_attr(not(test), allow(dead_code))]
     pub biome: Biome,
@@ -223,7 +245,7 @@ pub struct Generator {
     /// Province label cache: classifying a country means sampling its
     /// site climate (tectonics included), and every column in it wants
     /// the same answer. Keyed by province, so the work happens once.
-    province_cache: std::sync::RwLock<HashMap<(i32, i32), ProvinceLabel>>,
+    province_cache: std::sync::RwLock<HashMap<ProvinceKey, ProvinceLabel>>,
     base3d: [Perlin; 3],
     cont: Perlin,
     ero: Perlin,
@@ -320,6 +342,53 @@ fn hash2(seed: u32, x: i32, z: i32) -> u32 {
 const RING: usize = CHUNK_X + 2; // heightmap with a 1-block border
 
 impl Generator {
+    #[inline]
+    fn chunk_hash(&self, salt: u32, pos: ChunkPos) -> u32 {
+        hash2(
+            self.seed ^ salt ^ (pos.face() as u32).wrapping_mul(0x9e37_79b9),
+            i32::from(pos.u()),
+            i32::from(pos.v()),
+        )
+    }
+
+    #[inline]
+    fn surface_in_chunk(pos: ChunkPos, lx: i32, lz: i32) -> SurfacePos {
+        SurfacePos::canonicalized(
+            pos.face(),
+            i32::from(pos.u()) * CHUNK_X as i32 + lx,
+            i32::from(pos.v()) * CHUNK_Z as i32 + lz,
+        )
+        .expect("world-generation aprons cross at most one cube-face edge")
+    }
+
+    #[inline]
+    fn noise_at(noise: &Perlin, pos: SurfacePos, scale: f64, offset: [f64; 3]) -> f32 {
+        let p = surface_to_unit(pos.center()) * (PLANET_RADIUS / scale);
+        noise.get([p.x + offset[0], p.y + offset[1], p.z + offset[2]]) as f32
+    }
+
+    #[inline]
+    fn radial_noise_at(
+        noise: &Perlin,
+        pos: SurfacePos,
+        y: f64,
+        scale: f64,
+        offset: [f64; 3],
+    ) -> f32 {
+        let p = surface_to_unit(pos.center()) * ((PLANET_RADIUS + y) / scale);
+        noise.get([p.x + offset[0], p.y + offset[1], p.z + offset[2]]) as f32
+    }
+
+    fn hash_surface(&self, salt: u32, pos: SurfacePos) -> u32 {
+        // Canonical face/cell identity means the same physical cell has one
+        // roll even at seams. Adjacent cells remain decorrelated as intended.
+        let a = ((pos.face() as u32) << 29) ^ (u32::from(pos.u()) << 13) ^ u32::from(pos.v());
+        let mut h = self.seed ^ salt ^ a.wrapping_mul(0x9e37_79b9);
+        h ^= h >> 16;
+        h = h.wrapping_mul(0x85eb_ca6b);
+        h ^ (h >> 13)
+    }
+
     pub fn new(seed: u32, reg: &Registry) -> Generator {
         let b = |name: &str| reg.block_id(name).unwrap_or(AIR);
         let p = |k: u32| Perlin::new(seed.wrapping_add(k));
@@ -455,6 +524,7 @@ impl Generator {
 
     const PLATE_SIZE: f64 = 1400.0;
 
+    #[cfg(test)]
     fn plate_center(&self, px: i32, pz: i32) -> (f64, f64) {
         let h = hash2(self.seed ^ 0x91a7e, px, pz);
         (
@@ -463,11 +533,13 @@ impl Generator {
         )
     }
 
+    #[cfg(test)]
     fn plate_vel(&self, px: i32, pz: i32) -> (f32, f32) {
         let a = (hash2(self.seed ^ 0x7ec70, px, pz) % 6283) as f32 / 1000.0;
         (a.cos(), a.sin())
     }
 
+    #[cfg(test)]
     fn plate_oceanic(&self, px: i32, pz: i32) -> bool {
         hash2(self.seed ^ 0x0c00, px, pz) % 10 < 4
     }
@@ -476,6 +548,7 @@ impl Generator {
     /// deterministic (conceptual) drift vector and crust kind. Nearest
     /// two centers give the boundary; the closing speed across it
     /// decides fold ranges, trenches, and rifts.
+    #[cfg(test)]
     pub fn tectonics(&self, wx: i32, wz: i32) -> Tectonics {
         let gx = (wx as f64 / Self::PLATE_SIZE).floor() as i32;
         let gz = (wz as f64 / Self::PLATE_SIZE).floor() as i32;
@@ -511,6 +584,7 @@ impl Generator {
         }
     }
 
+    #[cfg(test)]
     pub fn climate(&self, wx: i32, wz: i32) -> Climate {
         let x = wx as f64;
         let z = wz as f64;
@@ -537,34 +611,131 @@ impl Generator {
         Climate { t, h, c, e, r, tec }
     }
 
+    /// Seam-safe planetary climate. Every field is sampled from the embedded
+    /// unit direction; latitude supplies the broad temperature belt while
+    /// low-frequency 3D noise breaks it into recognizable regions.
+    pub fn climate_at(&self, pos: SurfacePos) -> Climate {
+        let unit = surface_to_unit(pos.center());
+        let c = Self::noise_at(&self.cont, pos, 1_650.0, [0.0, 0.0, 0.0]) * 1.15;
+        let e = Self::noise_at(&self.ero, pos, 720.0, [13.5, -7.2, 4.1]);
+        let ridge_raw = Self::noise_at(&self.ridge, pos, 410.0, [-3.3, 21.7, 8.9]);
+        let r = 1.0 - (2.0 * ridge_raw.abs() - 1.0).abs();
+        let lat_heat = 1.0 - 2.0 * unit.y.abs() as f32;
+        let t = (lat_heat * 0.82
+            + Self::noise_at(&self.temperature, pos, 2_300.0, [2.7, -4.9, 8.3]) * 0.34)
+            .clamp(-1.0, 1.0);
+        let h = (Self::noise_at(&self.moisture, pos, 1_900.0, [31.7, -17.3, 11.9])
+            + Self::noise_at(&self.moisture, pos, 520.0, [-9.1, 6.4, 23.0]) * 0.28)
+            .clamp(-1.0, 1.0);
+
+        // A continuous stand-in for static plate readings. Zero crossings of
+        // the folded ridge field are boundaries; a second vector field says
+        // whether the two sides converge or part.
+        let boundary_dist = ridge_raw.abs() * 760.0;
+        let convergence = Self::noise_at(&self.detail, pos, 1_100.0, [47.0, -19.0, 5.0]) * 0.75;
+        let along = Self::noise_at(&self.bandwarp, pos, 280.0, [3.0, 7.0, 13.0]) * 2_000.0;
+        let own_c = Self::noise_at(&self.cont, pos, 1_650.0, [0.0, 0.0, 0.0]);
+        let across = step4(pos, Direction4::East).pos;
+        let neighbor_c = Self::noise_at(&self.cont, across, 1_650.0, [0.0, 0.0, 0.0]);
+        let tec = Tectonics {
+            boundary_dist,
+            convergence,
+            along,
+            oceanic: own_c < -0.12,
+            neighbor_oceanic: neighbor_c < -0.12,
+        };
+        Climate { t, h, c, e, r, tec }
+    }
+
+    /// Planetary biome classification used by generation and typed callers.
+    pub fn biome_at(&self, pos: SurfacePos) -> Biome {
+        let climate = self.climate_at(pos);
+        if self.plate_relief(&climate) > 30.0 {
+            Biome::Mountains
+        } else if self.offset_base.at(climate.c) < SEA_LEVEL as f32 - 5.0 {
+            Biome::Ocean
+        } else {
+            let province = self.province_at(pos);
+            let (mut t, mut h, mut e) = (province.t, province.h, province.e);
+            if province.neighbor != province.biome && province.edge < Self::PROVINCE_BLEND {
+                let depth = (province.edge / Self::PROVINCE_BLEND).clamp(0.0, 1.0);
+                let fringe = self.hash_surface(0x51f1_6e, pos) as f32 / u32::MAX as f32;
+                if fringe > 0.5 + depth * 0.5 {
+                    t = province.nt;
+                    h = province.nh;
+                    e = province.ne;
+                }
+            }
+            self.classify(&Climate { t, h, e, ..climate })
+        }
+    }
+
     /// Provinces: the world's countries. A jittered-grid Voronoi
     /// partition (the plate trick at a smaller scale) whose climate is
     /// sampled ONCE at the site — so a province has one biome, not a
     /// per-column vote that flips a forest into a desert and back
     /// across a hundred blocks. This is the unit a place can be named
     /// by, and the territory a heart owns.
-    const PROVINCE_SIZE: f64 = 900.0;
+    pub const PROVINCE_CELLS: u8 = 9;
     /// Life fades across this fringe rather than ending at a line.
     const PROVINCE_BLEND: f32 = 70.0;
 
-    /// The world-space center of a province, by key.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn province_center(&self, px: i32, pz: i32) -> (i32, i32) {
-        let (x, z) = self.province_site(px, pz);
-        (x as i32, z as i32)
+    fn province_key_at(pos: SurfacePos) -> ProvinceKey {
+        let cells = u32::from(Self::PROVINCE_CELLS);
+        ProvinceKey {
+            face: pos.face(),
+            u: ((u32::from(pos.u()) * cells) / u32::from(FACE_BLOCKS)).min(cells - 1) as u8,
+            v: ((u32::from(pos.v()) * cells) / u32::from(FACE_BLOCKS)).min(cells - 1) as u8,
+        }
     }
 
-    fn province_site(&self, px: i32, pz: i32) -> (f64, f64) {
-        let h = hash2(self.seed ^ 0x9120_11ce, px, pz);
-        (
-            (px as f64 + 0.18 + ((h & 0xffff) as f64 / 65536.0) * 0.64) * Self::PROVINCE_SIZE,
-            (pz as f64 + 0.18 + (((h >> 16) & 0xffff) as f64 / 65536.0) * 0.64)
-                * Self::PROVINCE_SIZE,
+    fn province_nominal_center(face: Face, u: i32, v: i32) -> SurfacePos {
+        let cells = i32::from(Self::PROVINCE_CELLS);
+        let side = i32::from(FACE_BLOCKS);
+        let center_u = ((u * 2 + 1) * side) / (cells * 2);
+        let center_v = ((v * 2 + 1) * side) / (cells * 2);
+        SurfacePos::canonicalized(face, center_u, center_v)
+            .expect("a nearby province-grid center canonicalizes")
+    }
+
+    /// Walk the finite country grid through a face seam.
+    pub fn province_offset(&self, key: ProvinceKey, du: i32, dv: i32) -> ProvinceKey {
+        let pos =
+            Self::province_nominal_center(key.face, i32::from(key.u) + du, i32::from(key.v) + dv);
+        Self::province_key_at(pos)
+    }
+
+    fn province_site(&self, key: ProvinceKey) -> SurfacePos {
+        let cells = u32::from(Self::PROVINCE_CELLS);
+        let side = u32::from(FACE_BLOCKS);
+        let lo_u = u32::from(key.u) * side / cells;
+        let hi_u = (u32::from(key.u) + 1) * side / cells;
+        let lo_v = u32::from(key.v) * side / cells;
+        let hi_v = (u32::from(key.v) + 1) * side / cells;
+        let packed = i32::from(key.u) | (i32::from(key.v) << 8);
+        let h = hash2(
+            self.seed ^ 0x9120_11ce ^ (key.face as u32).wrapping_mul(0x9e37_79b9),
+            packed,
+            i32::from(key.face as u8),
+        );
+        let jitter_u = 0.18 + (h & 0xffff) as f64 / 65536.0 * 0.64;
+        let jitter_v = 0.18 + ((h >> 16) & 0xffff) as f64 / 65536.0 * 0.64;
+        let u = f64::from(lo_u) + f64::from(hi_u - lo_u) * jitter_u;
+        let v = f64::from(lo_v) + f64::from(hi_v - lo_v) * jitter_v;
+        SurfacePos::new(
+            key.face,
+            u.floor().min(f64::from(FACE_BLOCKS - 1)) as u16,
+            v.floor().min(f64::from(FACE_BLOCKS - 1)) as u16,
         )
+        .expect("a jittered province site stays inside its canonical cell")
+    }
+
+    pub fn province_center_at(&self, key: ProvinceKey) -> SurfacePos {
+        self.province_site(key)
     }
 
     /// The label and site of a province, computed once and kept.
-    fn province_label(&self, key: (i32, i32)) -> ProvinceLabel {
+    fn province_label(&self, key: ProvinceKey) -> ProvinceLabel {
         if let Some(hit) = self
             .province_cache
             .read()
@@ -573,46 +744,57 @@ impl Generator {
         {
             return hit;
         }
-        let site = self.province_site(key.0, key.1);
-        let site = (site.0 as i32, site.1 as i32);
-        let cl = self.climate(site.0, site.1);
-        let out = (self.classify(&cl), site, cl.t, cl.h, cl.e);
+        let site = self.province_site(key);
+        let cl = self.climate_at(site);
+        let biome = if self.plate_relief(&cl) > 30.0 {
+            Biome::Mountains
+        } else if self.offset_base.at(cl.c) < SEA_LEVEL as f32 - 5.0 {
+            Biome::Ocean
+        } else {
+            self.classify(&cl)
+        };
+        let out = (biome, site, cl.t, cl.h, cl.e);
         if let Ok(mut c) = self.province_cache.write() {
             c.insert(key, out);
         }
         out
     }
 
-    pub fn province(&self, wx: i32, wz: i32) -> Province {
-        let gx = (wx as f64 / Self::PROVINCE_SIZE).floor() as i32;
-        let gz = (wz as f64 / Self::PROVINCE_SIZE).floor() as i32;
-        let mut best = (f64::MAX, 0i32, 0i32);
-        let mut second = (f64::MAX, 0i32, 0i32);
-        for dx in -1..=1 {
-            for dz in -1..=1 {
-                let (px, pz) = (gx + dx, gz + dz);
-                let (cx, cz) = self.province_site(px, pz);
-                let d = (cx - wx as f64).hypot(cz - wz as f64);
-                if d < best.0 {
-                    second = best;
-                    best = (d, px, pz);
-                } else if d < second.0 {
-                    second = (d, px, pz);
+    pub fn province_at(&self, pos: SurfacePos) -> Province {
+        let home = Self::province_key_at(pos);
+        let mut candidates = Vec::with_capacity(25);
+        for du in -2..=2 {
+            for dv in -2..=2 {
+                let key = self.province_offset(home, du, dv);
+                if !candidates.contains(&key) {
+                    candidates.push(key);
                 }
             }
         }
+        let mut best = (f64::MAX, home);
+        let mut second = (f64::MAX, home);
+        for key in candidates {
+            let site = self.province_site(key);
+            let d = geodesic_distance(pos.center(), site.center());
+            if d < best.0 {
+                second = best;
+                best = (d, key);
+            } else if d < second.0 {
+                second = (d, key);
+            }
+        }
         let edge = ((second.0 - best.0) * 0.5) as f32;
-        let (biome, site, t, h, e) = self.province_label((best.1, best.2));
+        let (biome, site, t, h, e) = self.province_label(best.1);
         // The neighbor only matters inside the border fringe; deep in
         // a country nobody asks who lives next door.
         let (neighbor, nt, nh, ne) = if edge < Self::PROVINCE_BLEND {
-            let n = self.province_label((second.1, second.2));
+            let n = self.province_label(second.1);
             (n.0, n.2, n.3, n.4)
         } else {
             (biome, t, h, e)
         };
         Province {
-            key: (best.1, best.2),
+            key: best.1,
             site,
             biome,
             neighbor,
@@ -629,14 +811,43 @@ impl Generator {
     /// How close this column is to its country's heart, 0..1. Squared
     /// off so the thickening reads as a gradient you can walk up
     /// rather than a hard edge you cross.
-    pub fn heart_nearness(&self, wx: i32, wz: i32) -> f32 {
-        let p = self.province(wx, wz);
-        let (sx, sz) = self.province_center(p.key.0, p.key.1);
-        let d = (((wx - sx) as f32).powi(2) + ((wz - sz) as f32).powi(2)).sqrt();
+    pub fn heart_nearness_at(&self, pos: SurfacePos) -> f32 {
+        let p = self.province_at(pos);
+        let site = self.province_center_at(p.key);
+        let d = geodesic_distance(pos.center(), site.center()) as f32;
         // Readable from about a third of the way across a province,
         // which is roughly where you would give up and grid-search.
         const REACH: f32 = 300.0;
         (1.0 - (d / REACH).min(1.0)).powi(2)
+    }
+
+    #[cfg(test)]
+    #[doc(hidden)]
+    pub fn province(&self, wx: i32, wz: i32) -> Province {
+        let pos = SurfacePos::from_centered(Face::PosZ, wx, wz)
+            .expect("test province query is inside the positive-Z face");
+        self.province_at(pos)
+    }
+
+    #[cfg(test)]
+    #[doc(hidden)]
+    pub fn province_center(&self, px: i32, pz: i32) -> (i32, i32) {
+        let cells = i32::from(Self::PROVINCE_CELLS);
+        let key = ProvinceKey {
+            face: Face::PosZ,
+            u: px.rem_euclid(cells) as u8,
+            v: pz.rem_euclid(cells) as u8,
+        };
+        let site = self.province_center_at(key);
+        (site.centered_u(), site.centered_v())
+    }
+
+    #[cfg(test)]
+    #[doc(hidden)]
+    pub fn heart_nearness(&self, wx: i32, wz: i32) -> f32 {
+        SurfacePos::from_centered(Face::PosZ, wx, wz)
+            .map(|pos| self.heart_nearness_at(pos))
+            .unwrap_or(0.0)
     }
 
     /// The stone and trim a country builds with.
@@ -658,6 +869,7 @@ impl Generator {
             .unwrap_or(self.stone)
     }
 
+    #[cfg(test)]
     pub fn biome(&self, wx: i32, wz: i32) -> Biome {
         self.biome_from_at(wx, wz, &self.climate(wx, wz))
     }
@@ -666,6 +878,7 @@ impl Generator {
     /// with the neighbor's through the border fringe (so a forest
     /// thins into plains instead of ending at a line), with terrain
     /// keeping its local veto.
+    #[cfg(test)]
     pub fn biome_from_at(&self, wx: i32, wz: i32, cl: &Climate) -> Biome {
         // A young fold range is Mountains whatever the country says.
         if self.plate_relief(cl) > 30.0 {
@@ -761,6 +974,7 @@ impl Generator {
         cl.t > 0.7 && cl.h < -0.4 && cl.c > 0.1
     }
 
+    #[cfg(test)]
     fn base_offset(&self, wx: i32, wz: i32, cl: &Climate) -> f32 {
         let base = self.offset_base.at(cl.c);
         // Old erosion mountains stay as worn highlands; the young
@@ -777,11 +991,24 @@ impl Generator {
         off
     }
 
+    fn base_offset_at(&self, pos: SurfacePos, cl: &Climate) -> f32 {
+        let base = self.offset_base.at(cl.c);
+        let land = ((cl.c + 0.15) / 0.35).clamp(0.0, 1.0);
+        let mtn = self.mountain_amp.at(cl.e) * (0.35 + 0.65 * cl.r) * land * 0.45;
+        let mut off = base + mtn + self.plate_relief(cl);
+        if Self::is_badlands(cl) {
+            let mesa = Self::noise_at(&self.detail, pos, 140.0, [0.0, 0.0, 0.0]);
+            off += ((mesa * 3.0).floor().clamp(0.0, 2.0)) * 11.0;
+        }
+        off
+    }
+
     /// Raw waterline math for one column, before sealing: the carve,
     /// the candidate water level, and whether the column sits close
     /// enough to a channel or lake basin that sealing must look at it
     /// (gates the neighbor probes — the margins cover the one-block
     /// noise gradient to the true water zones).
+    #[cfg(test)]
     fn hydro_raw(&self, wx: i32, wz: i32, cl: &Climate, pre: f32) -> (f32, Option<i32>, bool) {
         let mut carve = 0.0f32;
         let mut level: Option<i32> = None;
@@ -824,6 +1051,43 @@ impl Generator {
         (carve, level, near)
     }
 
+    fn hydro_raw_at(&self, pos: SurfacePos, cl: &Climate, pre: f32) -> (f32, Option<i32>, bool) {
+        let mut carve = 0.0f32;
+        let mut level = None;
+        let mut near = false;
+        if pre > SEA_LEVEL as f32 - 2.0 && cl.c > -0.05 {
+            let riv = Self::noise_at(&self.rivernoise, pos, 620.0, [0.0, 0.0, 0.0]);
+            let width = 0.012 + 0.010 * (0.6 - cl.c).clamp(0.0, 1.0);
+            let shoulder = width * 3.2;
+            if riv.abs() < shoulder {
+                near = true;
+                let t = 1.0 - riv.abs() / shoulder;
+                carve += t * t * 8.0;
+                if riv.abs() < width {
+                    carve += 3.0;
+                    let floor = (pre - carve) as i32;
+                    let fill = floor + 3;
+                    let fill = fill - fill.rem_euclid(4);
+                    if fill > floor {
+                        level = Some(fill);
+                    }
+                }
+            }
+            let lake = Self::noise_at(&self.lakenoise, pos, 300.0, [0.0, 0.0, 0.0]);
+            if lake > 0.56 {
+                near = true;
+            }
+            if lake > 0.58 && pre > SEA_LEVEL as f32 + 2.0 && pre < 120.0 {
+                let t = ((lake - 0.58) / 0.42).min(1.0);
+                carve += t * 10.0;
+                let fill = (pre - 2.0) as i32;
+                let fill = fill - fill.rem_euclid(4);
+                level = Some(level.map_or(fill, |old: i32| old.max(fill)));
+            }
+        }
+        (carve, level, near)
+    }
+
     /// Rivers and lakes for a column: how deep the water has cut the
     /// terrain, the fill level (a river or lake acts as a local sea
     /// level in the shape pass), and the armor level. Every pool is
@@ -835,6 +1099,7 @@ impl Generator {
     /// woken pool has nowhere to shed: no thin films creeping over the
     /// sand, no floating shelves meeting edge-on. All decisions read
     /// only raw per-column math, so chunks agree without communication.
+    #[cfg(test)]
     pub fn hydrology(
         &self,
         wx: i32,
@@ -866,6 +1131,41 @@ impl Generator {
         }
     }
 
+    fn hydrology_at(
+        &self,
+        pos: SurfacePos,
+        cl: &Climate,
+        pre: f32,
+    ) -> (f32, Option<i32>, Option<i32>) {
+        let (carve, level, near) = self.hydro_raw_at(pos, cl, pre);
+        if !near {
+            return (carve, None, None);
+        }
+        let mut step_down = false;
+        let mut tallest = None;
+        for direction in [
+            Direction4::East,
+            Direction4::North,
+            Direction4::West,
+            Direction4::South,
+        ] {
+            let neighbor = step4(pos, direction).pos;
+            let ncl = self.climate_at(neighbor);
+            let npre = self.base_offset_at(neighbor, &ncl);
+            let (_, nlevel, _) = self.hydro_raw_at(neighbor, &ncl, npre);
+            match (nlevel, level) {
+                (Some(nf), Some(f)) if nf < f => step_down = true,
+                (Some(nf), None) => tallest = Some(tallest.map_or(nf, |t: i32| t.max(nf))),
+                _ => {}
+            }
+        }
+        match level {
+            Some(fill) if step_down => (carve, None, Some(fill)),
+            Some(fill) => (carve, Some(fill), None),
+            None => (carve, None, tallest),
+        }
+    }
+
     /// The local water level a river or lake gives a column, if any
     /// (tests and tooling; generate() computes the same inline).
     #[cfg(test)]
@@ -875,18 +1175,21 @@ impl Generator {
         self.hydrology(wx, wz, &cl, pre).1
     }
 
+    #[cfg(test)]
+    pub fn water_features_at(&self, pos: SurfacePos) -> Option<i32> {
+        let climate = self.climate_at(pos);
+        let pre = self.base_offset_at(pos, &climate);
+        self.hydrology_at(pos, &climate, pre).1
+    }
+
     /// Does a granite pluton intrude this column at mineable depth?
     /// Mirrors sample_lattice's threshold math. The census measures
     /// with it; the prospecting pick reads with it.
-    pub fn pluton_at(&self, wx: i32, wz: i32) -> bool {
-        let prov = self
-            .granite3d
-            .get([wx as f64 / 1400.0, 77.7, wz as f64 / 1400.0]) as f32;
+    pub fn pluton_at_surface(&self, pos: SurfacePos) -> bool {
+        let prov = Self::radial_noise_at(&self.granite3d, pos, 77.7, 1_400.0, [0.0; 3]);
         let prov_pen = (0.44 - prov).max(0.0) * 1.8;
         for y in [16.0f64, 32.0, 48.0, 64.0] {
-            let g = self
-                .granite3d
-                .get([wx as f64 / 230.0, y / 150.0, wz as f64 / 230.0]) as f32;
+            let g = Self::radial_noise_at(&self.granite3d, pos, y, 230.0, [0.0; 3]);
             if g > 0.55 + prov_pen + y as f32 * 0.0012 {
                 return true;
             }
@@ -900,18 +1203,27 @@ impl Generator {
     /// Detection reaches are deliberately shorter than the rarity
     /// bands: mapping a region takes a SWEEP of readings (surveying is
     /// work, which is what makes a finished survey worth trading).
-    pub fn prospect(&self, wx: i32, wz: i32) -> ProspectReading {
-        let ring = |step: i32, cap: i32, hit: &dyn Fn(i32, i32) -> bool| {
-            if hit(wx, wz) {
-                return Some((0, (0, 0)));
+    pub fn prospect_at(&self, pos: SurfacePos) -> ProspectReading {
+        let reading = |target: SurfacePos| ProspectHit {
+            distance: geodesic_distance(pos.center(), target.center()).round() as i32,
+            bearing: crate::planet::great_circle_bearing(pos.center(), target.center()),
+        };
+        let ring = |step: i32, cap: i32, hit: &dyn Fn(SurfacePos) -> bool| {
+            if hit(pos) {
+                return Some(reading(pos));
             }
             let mut r = step;
             while r <= cap {
                 let mut i = -r;
                 while i <= r {
                     for (dx, dz) in [(i, -r), (i, r), (-r, i), (r, i)] {
-                        if hit(wx + dx, wz + dz) {
-                            return Some((r, (dx, dz)));
+                        if let Ok(target) = SurfacePos::canonicalized(
+                            pos.face(),
+                            i32::from(pos.u()) + dx,
+                            i32::from(pos.v()) + dz,
+                        ) && hit(target)
+                        {
+                            return Some(reading(target));
                         }
                     }
                     i += step;
@@ -920,20 +1232,24 @@ impl Generator {
             }
             None
         };
-        let cp = ChunkPos::of_world(wx, wz);
+        let cp = ChunkPos::from_surface(pos);
         let chunk_ring = |cap: i32, hit: &dyn Fn(ChunkPos) -> bool| {
             if hit(cp) {
-                return Some((0, (0, 0)));
+                return Some(reading(pos));
             }
             for r in 1..=cap {
                 let mut i = -r;
                 while i <= r {
                     for (dx, dz) in [(i, -r), (i, r), (-r, i), (r, i)] {
-                        if hit(ChunkPos {
-                            x: cp.x + dx,
-                            z: cp.z + dz,
-                        }) {
-                            return Some((r * 16, (dx * 16, dz * 16)));
+                        let target_chunk = cp.offset(dx, dz);
+                        if hit(target_chunk) {
+                            let target = SurfacePos::new(
+                                target_chunk.face(),
+                                target_chunk.u() * CHUNK_X as u16 + CHUNK_X as u16 / 2,
+                                target_chunk.v() * CHUNK_Z as u16 + CHUNK_Z as u16 / 2,
+                            )
+                            .expect("chunk center is canonical");
+                            return Some(reading(target));
                         }
                     }
                     i += 1;
@@ -942,11 +1258,26 @@ impl Generator {
             None
         };
         ProspectReading {
-            pluton: ring(64, 1216, &|x, z| self.pluton_at(x, z)),
-            volcano: ring(64, 1216, &|x, z| self.volcano_near(x, z).is_some()),
+            pluton: ring(64, 1216, &|surface| self.pluton_at_surface(surface)),
+            // Goal-1's temporary planetary generator does not stamp the old
+            // planar volcano regions.
+            volcano: None,
             pipe: chunk_ring(24, &|p| self.pipe_at(p).is_some()),
             geode: chunk_ring(12, &|p| self.geode_at(p).is_some()),
         }
+    }
+
+    #[cfg(test)]
+    pub fn pluton_at(&self, wx: i32, wz: i32) -> bool {
+        SurfacePos::from_centered(Face::PosZ, wx, wz).is_ok_and(|pos| self.pluton_at_surface(pos))
+    }
+
+    #[cfg(test)]
+    pub fn prospect(&self, wx: i32, wz: i32) -> ProspectReading {
+        self.prospect_at(
+            SurfacePos::from_centered(Face::PosZ, wx, wz)
+                .expect("test prospect is inside the positive-Z face"),
+        )
     }
 
     /// The armor level sealing a column, if any (tests and tooling).
@@ -957,6 +1288,14 @@ impl Generator {
         self.hydrology(wx, wz, &cl, pre).2
     }
 
+    #[cfg(test)]
+    pub fn armor_at_surface(&self, pos: SurfacePos) -> Option<i32> {
+        let climate = self.climate_at(pos);
+        let pre = self.base_offset_at(pos, &climate);
+        self.hydrology_at(pos, &climate, pre).2
+    }
+
+    #[cfg(test)]
     fn column_params(&self, wx: i32, wz: i32) -> (f32, f32) {
         let cl = self.climate(wx, wz);
         let pre = self.base_offset(wx, wz, &cl);
@@ -970,10 +1309,21 @@ impl Generator {
         (offset, self.factor_spline.at(cl.e))
     }
 
+    fn column_params_at(&self, pos: SurfacePos) -> (f32, f32) {
+        let cl = self.climate_at(pos);
+        let pre = self.base_offset_at(pos, &cl);
+        let (carve, _, _) = self.hydro_raw_at(pos, &cl, pre);
+        (
+            (pre - carve).clamp(6.0, CHUNK_Y as f32 - 22.0),
+            self.factor_spline.at(cl.e),
+        )
+    }
+
     /// The volcano whose reach covers a column, if any: deterministic
     /// per region cell, so every chunk agrees without communication.
     /// Land and coastal shelves only — volcanic islands are welcome,
     /// the deep ocean floor is not.
+    #[cfg(test)]
     pub fn volcano_near(&self, wx: i32, wz: i32) -> Option<Volcano> {
         const REGION: i32 = 384;
         let rx = wx.div_euclid(REGION);
@@ -1036,10 +1386,18 @@ impl Generator {
     }
 
     /// Cheap surface estimate (spline offset) for spawn search and tooling.
+    #[cfg(test)]
     pub fn surface_estimate(&self, wx: i32, wz: i32) -> i32 {
         self.column_params(wx, wz).0 as i32
     }
 
+    /// Seam-safe cheap surface estimate for planetary spawn search and
+    /// diagnostics.
+    pub fn surface_estimate_at(&self, pos: SurfacePos) -> i32 {
+        self.column_params_at(pos).0 as i32
+    }
+
+    #[cfg(test)]
     fn density_at(&self, wx: f64, y: f64, wz: f64, offset: f32, factor: f32) -> f32 {
         let mut n = 0.0f64;
         let mut amp = 1.0;
@@ -1059,6 +1417,31 @@ impl Generator {
         n * 0.62 + dy * s
     }
 
+    fn density_at_planet(&self, pos: SurfacePos, y: f64, offset: f32, factor: f32) -> f32 {
+        let mut noise = 0.0;
+        let mut amplitude = 1.0;
+        let mut frequency = 1.0;
+        for octave in &self.base3d {
+            noise += f64::from(Self::radial_noise_at(
+                octave,
+                pos,
+                y,
+                171.0 / frequency,
+                [0.0, 0.0, 0.0],
+            )) * amplitude;
+            frequency *= 2.0;
+            amplitude *= 0.5;
+        }
+        let noise = (noise / 1.75) as f32;
+        let dy = offset - y as f32;
+        let slope = if dy < 0.0 {
+            factor * 0.011
+        } else {
+            factor.max(3.0) * 0.026
+        };
+        noise * 0.62 + dy * slope
+    }
+
     /// Sample density on a 4x8x4 lattice covering the chunk plus a 4-block
     /// apron, so border columns interpolate identically to their neighbors.
     /// The second channel is the granite intrusion margin: distance past
@@ -1067,33 +1450,24 @@ impl Generator {
     fn sample_lattice(&self, pos: ChunkPos) -> (Vec<f32>, Vec<f32>) {
         const NX: usize = 7; // x/z: -4, 0, 4, 8, 12, 16, 20
         const NY: usize = CHUNK_Y / 8 + 1;
-        let bx = pos.x * CHUNK_X as i32 - 4;
-        let bz = pos.z * CHUNK_Z as i32 - 4;
         let mut lat = vec![0f32; NX * NX * NY];
         let mut lat_g = vec![0f32; NX * NX * NY];
         for ix in 0..NX {
             for iz in 0..NX {
-                let wx = bx + ix as i32 * 4;
-                let wz = bz + iz as i32 * 4;
-                let (offset, factor) = self.column_params(wx, wz);
+                let surface = Self::surface_in_chunk(pos, ix as i32 * 4 - 4, iz as i32 * 4 - 4);
+                let (offset, factor) = self.column_params_at(surface);
                 // Batholith provinces: a coarse gate over the pluton
                 // noise. Inside a province intrusions abound; outside,
                 // the threshold climbs out of reach — granite country
                 // is a REGION you travel to (economy plan, leg 1),
                 // not a backyard given.
-                let prov = self
-                    .granite3d
-                    .get([wx as f64 / 1400.0, 77.7, wz as f64 / 1400.0])
-                    as f32;
+                let prov = Self::radial_noise_at(&self.granite3d, surface, 77.7, 1_400.0, [0.0; 3]);
                 let prov_pen = (0.44 - prov).max(0.0) * 1.8;
                 for iy in 0..NY {
                     let y = (iy * 8) as f64;
                     let i = (ix * NX + iz) * NY + iy;
-                    lat[i] = self.density_at(wx as f64, y, wz as f64, offset, factor);
-                    let g = self
-                        .granite3d
-                        .get([wx as f64 / 230.0, y / 150.0, wz as f64 / 230.0])
-                        as f32;
+                    lat[i] = self.density_at_planet(surface, y, offset, factor);
+                    let g = Self::radial_noise_at(&self.granite3d, surface, y, 230.0, [0.0; 3]);
                     // Plutons widen downward: the threshold tightens
                     // with altitude, so intrusions taper as they rise.
                     let thr = 0.55 + prov_pen + y as f32 * 0.0012;
@@ -1109,6 +1483,7 @@ impl Generator {
     /// (basalt_top, basement_top, shale_top, limestone_top,
     /// sandstone_top); above the last it's basement again — mountain
     /// cores read as uplifted stone.
+    #[cfg(test)]
     fn strata_bands(&self, wx: i32, wz: i32, cl: &Climate) -> [i32; 5] {
         let x = wx as f64;
         let z = wz as f64;
@@ -1132,6 +1507,26 @@ impl Generator {
             (50.0 + w2 * 5.0 + wet * 5.0 + fold) as i32,
             (68.0 + w1 * 6.0 + fold) as i32,
             (92.0 + w2 * 9.0 - wet * 6.0 + fold + mesa) as i32,
+        ]
+    }
+
+    fn strata_bands_at(&self, pos: SurfacePos, cl: &Climate) -> [i32; 5] {
+        let w1 = Self::noise_at(&self.bandwarp, pos, 260.0, [0.0, 0.0, 0.0]);
+        let w2 = Self::noise_at(&self.bandwarp, pos, 170.0, [7.3, -2.1, 4.7]);
+        let tec = &cl.tec;
+        let fold = if tec.convergence > 0.12 && !tec.oceanic && !tec.neighbor_oceanic {
+            let belt = (-(tec.boundary_dist / 110.0).powi(2)).exp();
+            tec.convergence * belt * 26.0 * (tec.along / 24.0 + w1).sin()
+        } else {
+            0.0
+        };
+        let mesa = if Self::is_badlands(cl) { 42.0 } else { 0.0 };
+        [
+            (8.0 + w1 * 3.0) as i32,
+            (34.0 + w1 * 7.0 + fold * 0.5) as i32,
+            (50.0 + w2 * 5.0 + cl.h * 5.0 + fold) as i32,
+            (68.0 + w1 * 6.0 + fold) as i32,
+            (92.0 + w2 * 9.0 - cl.h * 6.0 + fold + mesa) as i32,
         ]
     }
 
@@ -1198,8 +1593,6 @@ impl Generator {
 
     pub fn generate(&self, pos: ChunkPos, reg: &Registry) -> Chunk {
         let mut c = Chunk::new();
-        let bx = pos.x * CHUNK_X as i32;
-        let bz = pos.z * CHUNK_Z as i32;
         let (lat, lat_g) = self.sample_lattice(pos);
 
         // Stage 1: shape. Track pre-carve solid tops for the 18x18 ring.
@@ -1220,19 +1613,18 @@ impl Generator {
                 if !(0..CHUNK_X as i32).contains(&lx) || !(0..CHUNK_Z as i32).contains(&lz) {
                     continue;
                 }
-                let (wx, wz) = (bx + lx, bz + lz);
+                let surface = Self::surface_in_chunk(pos, lx, lz);
                 // One climate read serves bands, hydrology, and rock.
-                let cl = self.climate(wx, wz);
-                let bands = self.strata_bands(wx, wz, &cl);
-                let vol = self
-                    .volcano_near(wx, wz)
-                    .map(|v| v.strength(wx, wz))
-                    .unwrap_or(0.0);
-                let dike =
-                    vol > 0.05 && self.detail.get([wx as f64 / 13.0, wz as f64 / 13.0]) > 0.58;
+                let cl = self.climate_at(surface);
+                let bands = self.strata_bands_at(surface, &cl);
+                // The goal-1 generator keeps the complete rock stack but
+                // leaves landmark placement to the later spherical feature
+                // pass; a planar volcano region may never bleed across a face.
+                let vol = 0.0;
+                let dike = false;
                 // Rivers and lakes flood their carve as a local sea.
-                let pre = self.base_offset(wx, wz, &cl);
-                let (_, fill, armor) = self.hydrology(wx, wz, &cl, pre);
+                let pre = self.base_offset_at(surface, &cl);
+                let (_, fill, armor) = self.hydrology_at(surface, &cl, pre);
                 let fill_y = fill.unwrap_or(0).max(SEA_LEVEL);
                 let armor_y = armor.unwrap_or(0);
                 fills[lx as usize][lz as usize] = fill_y;
@@ -1254,8 +1646,7 @@ impl Generator {
         // Stage 2: carve caves (stone only, never the bedrock rows).
         for lx in 0..CHUNK_X as i32 {
             for lz in 0..CHUNK_Z as i32 {
-                let wx = (bx + lx) as f64;
-                let wz = (bz + lz) as f64;
+                let surface = Self::surface_in_chunk(pos, lx, lz);
                 let top = shape_top[(lx + 1) as usize][(lz + 1) as usize];
                 for y in 5..top.min(CHUNK_Y as i32 - 1) {
                     if !self.is_rock(c.get(lx as usize, y as usize, lz as usize)) {
@@ -1264,17 +1655,15 @@ impl Generator {
                     let depth = (top - y).max(0) as f32;
                     let yf = y as f64;
                     // Cheese: big voids, more common deeper down.
-                    let ch = self.cheese.get([wx / 120.0, yf / 85.0, wz / 120.0]) as f32;
+                    let ch = Self::radial_noise_at(&self.cheese, surface, yf, 120.0, [0.0; 3]);
                     let cheese_thr = 0.74 - (SEA_LEVEL as f32 - y as f32).clamp(0.0, 50.0) * 0.004;
                     // Spaghetti: two noises near zero = a winding tunnel.
                     // Width tapers near the surface so entrances are rare.
                     let taper = (depth / 12.0).min(1.0);
                     let w = (0.055 + depth * 0.0003) * taper;
-                    let s1 = self.spag1.get([wx / 70.0, yf / 55.0, wz / 70.0]) as f32;
-                    let s2 = self
-                        .spag2
-                        .get([wx / 70.0 + 41.0, yf / 55.0, wz / 70.0 - 13.0])
-                        as f32;
+                    let s1 = Self::radial_noise_at(&self.spag1, surface, yf, 70.0, [0.0; 3]);
+                    let s2 =
+                        Self::radial_noise_at(&self.spag2, surface, yf, 70.0, [41.0, 0.0, -13.0]);
                     if y < 11 && ch > 0.32 {
                         // Deep magma pockets: where the cheese noise
                         // merely swells, the rock holds lava instead
@@ -1294,10 +1683,8 @@ impl Generator {
         let mut biomes = [[Biome::Plains; CHUNK_Z]; CHUNK_X];
         for lx in 0..CHUNK_X {
             for lz in 0..CHUNK_Z {
-                let wx = bx + lx as i32;
-                let wz = bz + lz as i32;
-                let cl = self.climate(wx, wz);
-                let biome = self.biome_from_at(wx, wz, &cl);
+                let surface = Self::surface_in_chunk(pos, lx as i32, lz as i32);
+                let biome = self.biome_at(surface);
                 biomes[lx][lz] = biome;
 
                 // Post-carve top solid (an armored bank can stand
@@ -1332,15 +1719,15 @@ impl Generator {
                 let snowcap = top >= 170
                     || (biome == Biome::Mountains
                         && top >= 150
-                        && self.detail.get([wx as f64 * 0.11, wz as f64 * 0.11]) > -0.2);
+                        && Self::noise_at(&self.detail, surface, 9.0, [0.0; 3]) > -0.2);
 
-                let scrub_sandy = self.detail.get([wx as f64 * 0.03, wz as f64 * 0.03]) > 0.15;
+                let scrub_sandy = Self::noise_at(&self.detail, surface, 33.0, [0.0; 3]) > 0.15;
                 // None = leave the natural rock exposed (bare mountains,
                 // steep faces — the strata read in the cliffs).
                 let (top_b, under_b): (Option<BlockId>, Option<BlockId>) = if underwater {
                     if top < SEA_LEVEL - 14 {
                         (Some(self.gravel), Some(self.gravel))
-                    } else if self.detail.get([wx as f64 / 23.0, wz as f64 / 23.0]) > 0.34 {
+                    } else if Self::noise_at(&self.detail, surface, 23.0, [0.0; 3]) > 0.34 {
                         // Clay beds: patches where still shallows let
                         // the fine sediment settle (wild arc, stage 5
                         // — the crock starts here).
@@ -1350,17 +1737,12 @@ impl Generator {
                     }
                 } else if snowcap {
                     (Some(self.snow), None)
-                } else if biome == Biome::Mountains
-                    || steep
-                    || self
-                        .volcano_near(wx, wz)
-                        .is_some_and(|v| v.strength(wx, wz) > 0.28)
-                {
+                } else if biome == Biome::Mountains || steep {
                     // Bare rock: mountains, cliffs, volcano flanks.
                     (None, None)
                 } else {
                     let beach = top <= SEA_LEVEL + 1;
-                    let patch = self.detail.get([wx as f64 / 9.0, wz as f64 / 9.0]) as f32;
+                    let patch = Self::noise_at(&self.detail, surface, 9.0, [0.0; 3]);
                     match biome {
                         Biome::Desert => (Some(self.sand), Some(self.sand)),
                         Biome::Scrubland if scrub_sandy => (Some(self.sand), Some(self.sand)),
@@ -1402,7 +1784,7 @@ impl Generator {
                 if top > 110
                     && steep
                     && top + 1 < CHUNK_Y as i32 - 1
-                    && hash2(self.seed ^ 0x59a1, wx, wz).is_multiple_of(211)
+                    && self.hash_surface(0x59a1, surface).is_multiple_of(211)
                     && c.get(lx, (top + 1) as usize, lz) == AIR
                 {
                     c.set(lx, top as usize, lz, self.water);
@@ -1411,58 +1793,6 @@ impl Generator {
                 // Frozen ocean surface.
                 if biome == Biome::Arctic && c.get(lx, SEA_LEVEL as usize, lz) == self.water {
                     c.set(lx, SEA_LEVEL as usize, lz, self.ice);
-                }
-            }
-        }
-
-        // Volcano dressing: the crater pools with lava behind an
-        // obsidian rim; magma vents stud the inner wall; sulfur
-        // crusts the flanks. All deterministic from the volcano's
-        // region hash, so chunk borders agree.
-        let probe = [(8, 8), (0, 0), (15, 0), (0, 15), (15, 15)]
-            .iter()
-            .find_map(|&(qx, qz)| self.volcano_near(bx + qx, bz + qz));
-        if let Some(v) = probe {
-            let pool_y = self.column_params(v.x, v.z).0 as i32 + 4;
-            let cr = v.crater_r();
-            for (lx, hrow) in heights.iter().enumerate() {
-                for (lz, &top) in hrow.iter().enumerate() {
-                    let (wx, wz) = (bx + lx as i32, bz + lz as i32);
-                    let d = v.dist(wx, wz);
-                    if d >= v.radius {
-                        continue;
-                    }
-                    // The magma chamber beneath: an ellipsoid half-full
-                    // of lava, feeding the throat above.
-                    let ch_r = (v.radius * 0.33).min(20.0);
-                    if d < ch_r {
-                        for y in 12..=28i32 {
-                            let dy = (y - 20) as f32 / 8.0;
-                            let dh = d / ch_r;
-                            if dh * dh + dy * dy < 1.0 {
-                                let b = if y < 20 { self.lava } else { AIR };
-                                c.set(lx, y as usize, lz, b);
-                            }
-                        }
-                    }
-                    if d < cr - 0.5 {
-                        for y in (top + 1).max(2)..=pool_y.min(CHUNK_Y as i32 - 2) {
-                            if c.get(lx, y as usize, lz) == AIR {
-                                c.set(lx, y as usize, lz, self.lava);
-                            }
-                        }
-                    } else if d < cr + 1.8 {
-                        if top > 0 {
-                            c.set(lx, top as usize, lz, self.obsidian);
-                        }
-                    } else if top > 0 {
-                        let h = hash2(self.seed ^ 0xbe27, wx, wz);
-                        if d < cr + 4.0 && h.is_multiple_of(11) {
-                            c.set(lx, top as usize, lz, self.magma_vent);
-                        } else if d > cr + 4.0 && d < v.radius * 0.72 && h.is_multiple_of(29) {
-                            c.set(lx, top as usize, lz, self.sulfur_ore);
-                        }
-                    }
                 }
             }
         }
@@ -1487,7 +1817,7 @@ impl Generator {
     /// breaches_surface). Roughly one chunk in four hundred; the pipe
     /// fits inside its chunk's footprint by construction.
     pub fn pipe_at(&self, pos: ChunkPos) -> Option<(usize, usize, bool)> {
-        let h = hash2(self.seed ^ 0x8d1a, pos.x, pos.z);
+        let h = self.chunk_hash(0x8d1a, pos);
         // Treasure-band rarity (economy plan): a pipe is a multi-km
         // expedition and a famous site, not a backyard curiosity —
         // median nearest ~2.3 km (was 1/397, ~150 blocks).
@@ -1509,7 +1839,7 @@ impl Generator {
         let Some((cx, cz, breach)) = self.pipe_at(pos) else {
             return;
         };
-        let h = hash2(self.seed ^ 0x8d1a, pos.x, pos.z);
+        let h = self.chunk_hash(0x8d1a, pos);
         let surf = heights[cx][cz];
         let top_y = if breach {
             surf
@@ -1544,8 +1874,12 @@ impl Generator {
                         continue;
                     }
                     if dx * dx + dz * dz <= 20
-                        && hash2(self.seed ^ 0xb1e, pos.x * 16 + lx, pos.z * 16 + lz)
-                            .is_multiple_of(2)
+                        && hash2(
+                            self.seed ^ 0xb1e ^ (pos.face() as u32).wrapping_mul(0x9e37_79b9),
+                            pos.u() as i32 * 16 + lx,
+                            pos.v() as i32 * 16 + lz,
+                        )
+                        .is_multiple_of(2)
                     {
                         let top = heights[lx as usize][lz as usize];
                         if top > 0 {
@@ -1559,7 +1893,7 @@ impl Generator {
 
     /// The geode rolled for a chunk, if any: (local cx, cz, cy, r).
     pub fn geode_at(&self, pos: ChunkPos) -> Option<(usize, usize, i32, i32)> {
-        let h = hash2(self.seed ^ 0x6e0d, pos.x, pos.z);
+        let h = self.chunk_hash(0x6e0d, pos);
         // Uncommon local luxury (economy plan): median nearest ~200
         // blocks (was 1/89, ~70).
         if !h.is_multiple_of(700) {
@@ -1583,7 +1917,7 @@ impl Generator {
         if heart != self.limestone && heart != self.marble {
             return;
         }
-        let h = hash2(self.seed ^ 0x6e0d, pos.x, pos.z);
+        let h = self.chunk_hash(0x6e0d, pos);
         for dx in -r..=r {
             for dy in -r..=r {
                 for dz in -r..=r {
@@ -1622,7 +1956,7 @@ impl Generator {
     /// Data-driven ore veins from mod features, deterministic per chunk.
     fn plant_ores(&self, c: &mut Chunk, pos: ChunkPos, reg: &Registry) {
         for (fi, ore) in reg.ores.iter().enumerate() {
-            let mut rng = hash2(self.seed ^ (fi as u32).wrapping_mul(0x9e37), pos.x, pos.z);
+            let mut rng = self.chunk_hash((fi as u32).wrapping_mul(0x9e37), pos);
             let mut next = || {
                 rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                 rng >> 8
@@ -1689,12 +2023,9 @@ impl Generator {
         heights: &[[i32; CHUNK_Z]; CHUNK_X],
         biomes: &[[Biome; CHUNK_Z]; CHUNK_X],
     ) {
-        let bx = pos.x * CHUNK_X as i32;
-        let bz = pos.z * CHUNK_Z as i32;
         for lx in 2..CHUNK_X - 2 {
             for lz in 2..CHUNK_Z - 2 {
-                let wx = bx + lx as i32;
-                let wz = bz + lz as i32;
+                let surface = Self::surface_in_chunk(pos, lx as i32, lz as i32);
                 let biome = biomes[lx][lz];
                 let density = match biome {
                     Biome::Jungle => 22,
@@ -1714,8 +2045,11 @@ impl Generator {
                 // Jungle floor: undergrowth independent of trees —
                 // lush, but no longer an endless buffet.
                 if biome == Biome::Jungle {
-                    let ur = hash2(self.seed ^ 0x0f01, wx, wz);
-                    if ur.is_multiple_of(16) {
+                    let ur = self.hash_surface(0x0f01, surface);
+                    // This bush bears real food. Keep the jungle visually
+                    // tree-dense without turning its floor into a free
+                    // orchard that makes farming irrelevant.
+                    if ur.is_multiple_of(384) {
                         let h2 = self.height_hint(heights, lx, lz);
                         if h2 > SEA_LEVEL + 1
                             && h2 + 2 < CHUNK_Y as i32
@@ -1737,8 +2071,8 @@ impl Generator {
                 // clusters of a handful). Finding a berry patch or a
                 // stand of wild wheat is a real find — and a seed
                 // source — instead of groceries every few steps.
-                let food_roll = hash2(self.seed ^ 0x5eed, wx, wz);
-                let patch = hash2(self.seed ^ 0xf00d, wx >> 4, wz >> 4).is_multiple_of(8);
+                let food_roll = self.hash_surface(0x5eed, surface);
+                let patch = self.chunk_hash(0xf00d, pos).is_multiple_of(8);
                 if patch && food_roll.is_multiple_of(48) && biome != Biome::Desert {
                     let h2 = self.height_hint(heights, lx, lz);
                     let plant = match biome {
@@ -1775,7 +2109,7 @@ impl Generator {
                 // root in cave pockets, the underground's first
                 // native lamp.
                 {
-                    let cr = hash2(self.seed ^ 0xca9e, wx, wz);
+                    let cr = self.hash_surface(0xca9e, surface);
                     if cr.is_multiple_of(20) {
                         let start = (8 + (cr >> 8) % 30) as i32;
                         if let Some(fy) = (start..(start + 12).min(44)).find(|&fy| {
@@ -1798,9 +2132,9 @@ impl Generator {
                 // shows it, not just the flowery ones, because it is a
                 // signal before it is decoration.
                 {
-                    let fr = hash2(self.seed ^ 0xf10e, wx, wz);
+                    let fr = self.hash_surface(0xf10e, surface);
                     let flowery = matches!(biome, Biome::Plains | Biome::Forest | Biome::Savanna);
-                    let rate = match self.heart_nearness(wx, wz) {
+                    let rate = match self.heart_nearness_at(surface) {
                         n if n > 0.82 => 6, // you are all but on it
                         n if n > 0.60 => 22,
                         n if n > 0.35 => 90,
@@ -1829,7 +2163,7 @@ impl Generator {
                 // kelp sways in the deeper cold.
                 {
                     let h2 = self.height_hint(heights, lx, lz);
-                    let wr = hash2(self.seed ^ 0x77a7, wx, wz);
+                    let wr = self.hash_surface(0x77a7, surface);
                     let shore = (SEA_LEVEL - 1..=SEA_LEVEL + 1).contains(&h2);
                     let reed_odds = if biome == Biome::Swamp { 5 } else { 14 };
                     if shore
@@ -1858,18 +2192,18 @@ impl Generator {
                         }
                     }
                 }
-                if density == 0 || !hash2(self.seed, wx, wz).is_multiple_of(density) {
+                if density == 0 || !self.hash_surface(0, surface).is_multiple_of(density) {
                     continue;
                 }
                 let h = heights[lx][lz];
                 if h <= SEA_LEVEL + 1 || h + 11 >= CHUNK_Y as i32 {
                     continue;
                 }
-                let surface = c.get(lx, h as usize, lz);
-                let rnd = hash2(self.seed ^ 0xabcd, wx, wz);
+                let surface_block = c.get(lx, h as usize, lz);
+                let rnd = self.hash_surface(0xabcd, surface);
 
                 if biome == Biome::Desert {
-                    if surface == self.sand {
+                    if surface_block == self.sand {
                         let ch = 2 + (rnd % 2) as i32;
                         for y in 1..=ch {
                             c.set(lx, (h + y) as usize, lz, self.cactus);
@@ -1877,7 +2211,7 @@ impl Generator {
                     }
                     continue;
                 }
-                if surface != self.grass {
+                if surface_block != self.grass {
                     continue;
                 }
                 c.set(lx, h as usize, lz, self.dirt);
@@ -1984,16 +2318,22 @@ impl Generator {
         // site sits inside its own province by construction, so at
         // most a few keys can land in any one chunk.
         {
-            let gx = (bx as f64 / Self::PROVINCE_SIZE).floor() as i32;
-            let gz = (bz as f64 / Self::PROVINCE_SIZE).floor() as i32;
-            for dx in -1..=1 {
-                for dz in -1..=1 {
-                    let key = (gx + dx, gz + dz);
-                    let (sx, sz) = self.province_center(key.0, key.1);
-                    let (lx, lz) = (sx - bx, sz - bz);
-                    if !(0..CHUNK_X as i32).contains(&lx) || !(0..CHUNK_Z as i32).contains(&lz) {
+            let center = Self::surface_in_chunk(pos, CHUNK_X as i32 / 2, CHUNK_Z as i32 / 2);
+            let home = self.province_at(center).key;
+            let mut seen = Vec::new();
+            for du in -2..=2 {
+                for dv in -2..=2 {
+                    let key = self.province_offset(home, du, dv);
+                    if seen.contains(&key) {
                         continue;
                     }
+                    seen.push(key);
+                    let site = self.province_center_at(key);
+                    if ChunkPos::from_surface(site) != pos {
+                        continue;
+                    }
+                    let lx = usize::from(site.u() % CHUNK_X as u16);
+                    let lz = usize::from(site.v() % CHUNK_Z as u16);
                     let ground = heights[lx as usize][lz as usize];
                     // A site wants dry, standable ground; a country
                     // whose center drowns keeps its heart unbuilt, and
@@ -2001,12 +2341,15 @@ impl Generator {
                     if ground <= SEA_LEVEL || ground + 8 >= CHUNK_Y as i32 {
                         continue;
                     }
-                    let biome = biomes[lx as usize][lz as usize];
+                    let biome = self.province_at(site).biome;
+                    if biome == Biome::Ocean {
+                        continue;
+                    }
                     let form = crate::world::heart_form(biome);
                     let block = self.heart_block(biome);
                     let tall = crate::world::heart_height(form);
                     for dy in 1..=tall {
-                        c.set(lx as usize, (ground + dy) as usize, lz as usize, block);
+                        c.set(lx, (ground + dy) as usize, lz, block);
                     }
                 }
             }
@@ -2019,28 +2362,51 @@ impl Generator {
         // The site's ground therefore has to come from a function of
         // position alone, not from this chunk's carved heightmap.
         {
-            let gx = (bx as f64 / Self::PROVINCE_SIZE).floor() as i32;
-            let gz = (bz as f64 / Self::PROVINCE_SIZE).floor() as i32;
-            for kdx in -1..=1 {
-                for kdz in -1..=1 {
-                    let (sx, sz) = self.province_center(gx + kdx, gz + kdz);
-                    let ed = crate::edifice::edifice_of(self.biome(sx, sz));
-                    // Does any of it fall in this chunk?
-                    if sx + ed.reach < bx
-                        || sx - ed.reach >= bx + CHUNK_X as i32
-                        || sz + ed.reach < bz
-                        || sz - ed.reach >= bz + CHUNK_Z as i32
+            let center = Self::surface_in_chunk(pos, CHUNK_X as i32 / 2, CHUNK_Z as i32 / 2);
+            let home = self.province_at(center).key;
+            let mut seen = Vec::new();
+            for du in -2..=2 {
+                for dv in -2..=2 {
+                    let key = self.province_offset(home, du, dv);
+                    if seen.contains(&key) {
+                        continue;
+                    }
+                    seen.push(key);
+                    let site = self.province_center_at(key);
+                    let biome = self.province_at(site).biome;
+                    if biome == Biome::Ocean {
+                        continue;
+                    }
+                    let ed = crate::edifice::edifice_of(biome);
+                    if geodesic_distance(center.center(), site.center())
+                        > f64::from(ed.reach) + 24.0
                     {
                         continue;
                     }
-                    let base = self.surface_estimate(sx, sz);
+                    let base = self.surface_estimate_at(site);
                     if base <= SEA_LEVEL || base + ed.rise + 4 >= CHUNK_Y as i32 {
                         continue;
                     }
-                    let mats = self.edifice_materials(self.biome(sx, sz));
+                    let mats = self.edifice_materials(biome);
+                    let site_entity = crate::planet::EntityPos::new(
+                        site.face(),
+                        f32::from(site.u()) + 0.5,
+                        0.0,
+                        f32::from(site.v()) + 0.5,
+                    )
+                    .expect("province site is canonical");
                     for lx in 0..CHUNK_X as i32 {
                         for lz in 0..CHUNK_Z as i32 {
-                            let (dx, dz) = (bx + lx - sx, bz + lz - sz);
+                            let column = Self::surface_in_chunk(pos, lx, lz);
+                            let column_entity = crate::planet::EntityPos::new(
+                                column.face(),
+                                f32::from(column.u()) + 0.5,
+                                0.0,
+                                f32::from(column.v()) + 0.5,
+                            )
+                            .expect("chunk column is canonical");
+                            let delta = site_entity.local_delta_to(column_entity);
+                            let (dx, dz) = (delta.x.round() as i32, delta.z.round() as i32);
                             if dx.abs() > ed.reach || dz.abs() > ed.reach {
                                 continue;
                             }

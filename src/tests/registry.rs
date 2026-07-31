@@ -131,7 +131,7 @@ fn broken_mod_is_skipped_with_error() {
     let root = tmp_dir("brokenmod");
     let dir = root.join("bad");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("mod.toml"), "id = \"bad\"\n").unwrap();
+    std::fs::write(dir.join("mod.toml"), "id = \"bad\"\nworld_api = 2\n").unwrap();
     std::fs::write(dir.join("blocks.toml"), "this is not [ valid toml").unwrap();
     let reg = registry::load(&root);
     // Base still loads fine; bad mod recorded with error.
@@ -150,7 +150,7 @@ fn script_events_cancel_and_queue_commands() {
     let mods = write_script_mod(
         &root,
         r#"
-fn on_block_break(x, y, z, block) {
+fn on_block_break(face, u, y, v, block) {
     if block == "base:bedrock" { return false; }
     storage_set("count", (storage_get("count").len() + 1).to_string());
     give("base:stick", 2);
@@ -169,14 +169,26 @@ fn on_block_break(x, y, z, block) {
     let allow = host.dispatch(
         &w,
         "on_block_break",
-        (0i64, 0i64, 0i64, "base:bedrock".to_string()),
+        (
+            "pos_z".to_string(),
+            4096i64,
+            0i64,
+            4096i64,
+            "base:bedrock".to_string(),
+        ),
     );
     assert!(!allow, "script should cancel bedrock break");
     // Normal break allowed + commands queued.
     let allow = host.dispatch(
         &w,
         "on_block_break",
-        (1i64, 70i64, 1i64, "base:dirt".to_string()),
+        (
+            "pos_z".to_string(),
+            4097i64,
+            70i64,
+            4097i64,
+            "base:dirt".to_string(),
+        ),
     );
     assert!(allow);
     let cmds = host.take_cmds();
@@ -205,7 +217,7 @@ fn script_reads_world_state() {
         &root,
         r#"
 fn on_tick(dt) {
-    let below = get_block(0, 0, 0);
+    let below = get_block("pos_z", 4096, 0, 4096);
     if below == "base:bedrock" { hud_message("bedrock confirmed"); }
 }
 "#,
@@ -356,7 +368,7 @@ fn mods_can_extend_ingredient_tags() {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("mod.toml"),
-        "id = \"cherry\"\ndepends = [\"base\"]\n",
+        "id = \"cherry\"\nworld_api = 2\ndepends = [\"base\"]\n",
     )
     .unwrap();
     std::fs::write(
@@ -388,7 +400,7 @@ fn tool_tiers_gate_drops() {
     let root = tmp_dir("tiermod");
     let dir = root.join("t");
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("mod.toml"), "id = \"t\"\n").unwrap();
+    std::fs::write(dir.join("mod.toml"), "id = \"t\"\nworld_api = 2\n").unwrap();
     std::fs::write(
         dir.join("blocks.toml"),
         "[[block]]\nid = \"hard\"\ntexture = \"@stone\"\ntool = \"pickaxe\"\nrequires_tool = true\nmin_tier = 2\n",
@@ -463,27 +475,10 @@ fn full_bronze_chain_resolves() {
 #[test]
 fn copper_aliases_migrate_old_worlds() {
     let reg = base_reg();
-    // Old-world palette references the retired copper mod's names.
-    let dir = tmp_dir("copper-mig");
-    std::fs::write(dir.join("seed"), "42").unwrap();
-    std::fs::write(dir.join("palette"), "0 base:air\n1 copper:ore\n").unwrap();
-    let mut data = Vec::new();
-    data.extend_from_slice(b"WFC3");
-    let total = 16 * 16 * 256usize;
-    let mut left = total;
-    while left > 0 {
-        let run = left.min(u16::MAX as usize) as u16;
-        data.extend_from_slice(&run.to_le_bytes());
-        data.extend_from_slice(&1u16.to_le_bytes());
-        left -= run as usize;
-    }
-    std::fs::write(dir.join("c.0.0.wfc"), data).unwrap();
-    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
-    w.ensure_chunk(ChunkPos { x: 0, z: 0 });
     assert_eq!(
-        w.get_block(4, 60, 4),
-        b(&reg, "base:copper_ore"),
-        "copper:ore aliases to base:copper_ore instead of placeholder"
+        reg.block_id("copper:ore"),
+        Some(b(&reg, "base:copper_ore")),
+        "the content alias remains available to importers even though flat saves are refused"
     );
 }
 
@@ -798,7 +793,15 @@ fn charms_and_tablets_work() {
     let ti = reg.animal_id("base:thornling").unwrap();
     let def = reg.animals[ti].clone();
     let player = Vec3::new(0.5, 200.0, 0.5);
-    let pos = player + Vec3::new(10.5, 0.0, 0.0);
+    // Cube-sphere chart steps have modest, intentional metric distortion.
+    // Pick a chart offset whose measured arc lies between the two aggro
+    // radii instead of treating one chart step as one physical block.
+    let pos = player + Vec3::new(11.5, 0.0, 0.0);
+    let measured = ep(player).horizontal_distance_to(ep(pos));
+    assert!(
+        (10.0..12.0).contains(&measured),
+        "fixture arc is {measured}"
+    );
     let mut rng = 4u32;
     let mut a = crate::mobs::Mob::new(ti, pos, 0.0);
     a.health = def.health;
@@ -807,8 +810,8 @@ fn charms_and_tablets_work() {
         &def,
         &[crate::server::PlayerCtx {
             id: 0,
-            pos: player,
-            spawn: Vec3::ZERO,
+            pos: ep(player),
+            spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
         }],
@@ -824,8 +827,8 @@ fn charms_and_tablets_work() {
         &def,
         &[crate::server::PlayerCtx {
             id: 0,
-            pos: player,
-            spawn: Vec3::ZERO,
+            pos: ep(player),
+            spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: -2.0,
         }],
@@ -987,8 +990,8 @@ fn mods_readme_example_mod_loads_and_works() {
     let mut hits = 0;
     'scan: for cx in 0..6 {
         for cz in 0..6 {
-            w.ensure_chunk(ChunkPos { x: cx, z: cz });
-            let c = &w.chunks()[&ChunkPos { x: cx, z: cz }];
+            w.ensure_chunk(tchunk(cx, cz));
+            let c = &w.chunks()[&tchunk(cx, cz)];
             for x in 0..16 {
                 for z in 0..16 {
                     for y in 4..48 {
@@ -1060,7 +1063,13 @@ fn mods_readme_example_mod_loads_and_works() {
         host.dispatch(
             &w,
             "on_block_break",
-            (1i64, 2i64, 3i64, "meadow:sunstone_ore".to_string()),
+            (
+                "pos_z".to_string(),
+                1i64,
+                2i64,
+                3i64,
+                "meadow:sunstone_ore".to_string(),
+            ),
         );
     }
     let cmds = host.take_cmds();
@@ -1078,7 +1087,13 @@ fn mods_readme_example_mod_loads_and_works() {
     assert!(host.dispatch(
         &w,
         "on_block_break",
-        (0i64, 0i64, 0i64, "base:dirt".to_string())
+        (
+            "pos_z".to_string(),
+            0i64,
+            0i64,
+            0i64,
+            "base:dirt".to_string(),
+        )
     ));
 }
 

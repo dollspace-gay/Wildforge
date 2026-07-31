@@ -28,48 +28,54 @@ impl Game {
                 return;
             }
         };
-        // Dev: WILDFORGE_SPAWN="x,z" overrides the spawn search.
-        let (sx, sz) = std::env::var("WILDFORGE_SPAWN")
+        // Dev: WILDFORGE_SPAWN="face,u,v" overrides the planetary spawn search.
+        let wanted = std::env::var("WILDFORGE_SPAWN")
             .ok()
             .and_then(|s| {
-                let (a, b) = s.split_once(',')?;
-                Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+                let mut fields = s.split(',').map(str::trim);
+                let face = crate::planet::Face::from_name(fields.next()?)?;
+                let u = fields.next()?.parse().ok()?;
+                let v = fields.next()?.parse().ok()?;
+                fields.next().is_none().then_some(())?;
+                crate::planet::SurfacePos::new(face, u, v).ok()
             })
             .unwrap_or_else(|| find_spawn(&world));
-        let spawn_chunk = ChunkPos::of_world(sx, sz);
+        let spawn_chunk = ChunkPos::from_surface(wanted);
         for dx in -1..=1 {
             for dz in -1..=1 {
-                world.ensure_chunk(ChunkPos {
-                    x: spawn_chunk.x + dx,
-                    z: spawn_chunk.z + dz,
-                });
+                world.ensure_chunk(spawn_chunk.offset(dx, dz));
             }
         }
         // 3D terrain can put the "highest solid" on an overhang lip or a
         // spike; refine to a locally flat, dry column so spawning is safe.
-        let (sx, sz) = {
-            let mut best = (sx, sz);
+        let wanted = {
+            let mut best = wanted;
             let mut best_score = i32::MAX;
             for dx in -12..=12 {
                 for dz in -12..=12 {
-                    let (x, z) = (sx + dx, sz + dz);
-                    let h = world.surface_height(x, z);
+                    let candidate = crate::planet::SurfacePos::canonicalized(
+                        wanted.face(),
+                        i32::from(wanted.u()) + dx,
+                        i32::from(wanted.v()) + dz,
+                    )
+                    .expect("spawn refinement crosses at most one face edge");
+                    let h = world.surface_height_at(candidate);
                     if h <= SEA_LEVEL + 1 {
                         continue;
                     }
                     let mut slope = 0;
-                    for (nx, nz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                        slope = slope.max((h - world.surface_height(x + nx, z + nz)).abs());
+                    for neighbor in crate::planet::neighbors4(candidate) {
+                        slope = slope.max((h - world.surface_height_at(neighbor)).abs());
                     }
                     let score = slope * 100 + dx.abs() + dz.abs();
                     if slope <= 1 {
-                        best = (x, z);
+                        best = candidate;
                         best_score = 0;
                         break;
                     }
                     if score < best_score {
                         best_score = score;
-                        best = (x, z);
+                        best = candidate;
                     }
                 }
                 if best_score == 0 {
@@ -83,7 +89,7 @@ impl Game {
         // land gets raised rather than the player getting dropped in
         // it. (The old path fell back to the unrefined column, which
         // is how spawns ended up on the seabed.)
-        let spawn = world.safe_spawn(sx, sz);
+        let spawn = world.safe_spawn_at(wanted);
 
         self.renderer.clear_chunks();
         // Background generators for this world's seed (heavy terrain
@@ -93,9 +99,9 @@ impl Game {
             self.content.reg.clone(),
         ));
         self.server = server::Server::new(world, 0.3, self.rng ^ 0x5ee1);
-        self.player = Player::new(spawn);
-        self.survival.spawn_point = spawn;
-        self.camera.pos = spawn + Vec3::new(0.0, EYE_HEIGHT, 0.0);
+        self.player = Player::new_at(spawn);
+        self.survival.spawn_point = self.player.pos;
+        self.camera.follow_planet(self.player.eye());
         self.camera.yaw = -std::f32::consts::FRAC_PI_2;
         self.camera.pitch = 0.0;
         self.inventory = Inventory::new();
@@ -160,30 +166,23 @@ impl Game {
         self.in_world = true;
         if self.load_player(&PathBuf::from("saves").join(name)) {
             // Ensure the chunk under the restored position exists.
-            let cp = ChunkPos::of_world(self.player.pos.x as i32, self.player.pos.z as i32);
-            for dx in -1..=1 {
-                for dz in -1..=1 {
-                    self.server.world.ensure_chunk(ChunkPos {
-                        x: cp.x + dx,
-                        z: cp.z + dz,
-                    });
+            if let Some(cp) = self.player.pos.chunk() {
+                for dx in -1..=1 {
+                    for dz in -1..=1 {
+                        self.server.world.ensure_chunk(cp.offset(dx, dz));
+                    }
                 }
             }
-            // A save from below the world floor (a void casualty) comes
-            // back standing on whatever ground its column still has.
+            // A malformed/development profile below the sealed shell is
+            // settled onto valid ground; there is no planetary void mechanic.
             if self.player.pos.y < 1.0 {
-                let (px, pz) = (
-                    self.player.pos.x.floor() as i32,
-                    self.player.pos.z.floor() as i32,
-                );
-                let h = self.server.world.surface_height(px, pz);
-                self.player.pos.y = h as f32 + 1.05;
+                self.player.pos = self.server.world.settle_spawn_at(self.player.pos);
                 self.player.vel = Vec3::ZERO;
             }
             // And a save whose terrain changed underneath it (built
             // over, regenerated) comes back beside the hill, not in
             // it. Mid-air/mid-swim saves pass through untouched.
-            let freed = self.server.world.free_position(self.player.pos);
+            let freed = self.server.world.free_position_at(self.player.pos);
             if freed != self.player.pos {
                 self.player.pos = freed;
                 self.player.vel = Vec3::ZERO;
@@ -236,7 +235,15 @@ impl Game {
         use std::fmt::Write as _;
         let mut out = String::new();
         let p = self.player.pos;
-        let _ = writeln!(out, "pos = [{}, {}, {}]", p.x, p.y, p.z);
+        let _ = writeln!(out, "version = 2");
+        let _ = writeln!(
+            out,
+            "face = {}\nu = {}\ny = {}\nv = {}",
+            p.face() as u8,
+            p.u(),
+            p.y(),
+            p.v()
+        );
         let _ = writeln!(
             out,
             "yaw = {}\npitch = {}",
@@ -250,7 +257,14 @@ impl Game {
         let _ = writeln!(out, "nutrition = {:?}", self.survival.nutrition);
         let _ = writeln!(out, "hotbar = {}", self.input.hotbar_sel);
         let sp = self.survival.spawn_point;
-        let _ = writeln!(out, "spawn = [{}, {}, {}]", sp.x, sp.y, sp.z);
+        let _ = writeln!(
+            out,
+            "spawn_face = {}\nspawn_u = {}\nspawn_y = {}\nspawn_v = {}",
+            sp.face() as u8,
+            sp.u(),
+            sp.y(),
+            sp.v()
+        );
         for (i, s) in self.inventory.slots.iter().enumerate() {
             if let Some(s) = s {
                 let _ = writeln!(
@@ -320,15 +334,21 @@ impl Game {
         }
         #[derive(Deserialize)]
         struct P {
-            pos: [f32; 3],
+            version: u32,
+            face: u8,
+            u: f32,
+            y: f32,
+            v: f32,
             yaw: f32,
             pitch: f32,
             health: f32,
             hunger: f32,
             nutrition: [f32; 5],
             hotbar: usize,
-            #[serde(default)]
-            spawn: Option<[f32; 3]>,
+            spawn_face: u8,
+            spawn_u: f32,
+            spawn_y: f32,
+            spawn_v: f32,
             #[serde(default, alias = "inventory")]
             slot: Vec<SlotT>,
             #[serde(default)]
@@ -347,16 +367,30 @@ impl Game {
         let Ok(p) = toml::from_str::<P>(&text) else {
             return false;
         };
-        self.player.pos = Vec3::new(p.pos[0], p.pos[1], p.pos[2]);
+        if p.version != 2 {
+            return false;
+        }
+        let Some(face) = crate::planet::Face::from_u8(p.face) else {
+            return false;
+        };
+        let Ok(pos) = crate::planet::EntityPos::new(face, p.u, p.y, p.v) else {
+            return false;
+        };
+        let Some(spawn_face) = crate::planet::Face::from_u8(p.spawn_face) else {
+            return false;
+        };
+        let Ok(spawn) = crate::planet::EntityPos::new(spawn_face, p.spawn_u, p.spawn_y, p.spawn_v)
+        else {
+            return false;
+        };
+        self.player.pos = pos;
         self.camera.yaw = p.yaw;
         self.camera.pitch = p.pitch;
         self.survival.health = p.health;
         self.survival.hunger = p.hunger;
         self.survival.nutrition = p.nutrition;
         self.input.hotbar_sel = p.hotbar.min(HOTBAR_SLOTS - 1);
-        if let Some(sp) = p.spawn {
-            self.survival.spawn_point = Vec3::new(sp[0], sp[1], sp[2]);
-        }
+        self.survival.spawn_point = spawn;
         for s in p.slot {
             if s.index < TOTAL_SLOTS
                 && let Some(item) = self.content.reg.item_id(&s.item)

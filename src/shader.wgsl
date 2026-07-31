@@ -2,6 +2,10 @@ struct Uniforms {
     view_proj: mat4x4<f32>,
     // xyz = camera pos, w = fog distance
     cam: vec4<f32>,
+    // Absolute embedded camera position, subtracted before projection.
+    origin: vec4<f32>,
+    // Radial up at the camera. The visible sky is local to the curved surface.
+    local_up: vec4<f32>,
     // rgb = flat sky/overcast color (fog far target under cloud), a = weather
     // gloom 0..1 (blends the gradient toward the flat overcast color)
     sky: vec4<f32>,
@@ -121,7 +125,7 @@ struct VsOut {
 @vertex
 fn vs_chunk(in: VsIn) -> VsOut {
     var out: VsOut;
-    out.clip = u.view_proj * vec4<f32>(in.pos, 1.0);
+    out.clip = u.view_proj * vec4<f32>(in.pos - u.origin.xyz, 1.0);
     out.uv = in.uv;
     out.light = in.light;
     out.sky = in.sky;
@@ -166,11 +170,13 @@ fn sample_shadow(world: vec3<f32>, ndl: f32) -> vec2<f32> {
 // Minecraft-style face brightness from a normal: top 1.0, bottom 0.5,
 // Z-sides 0.8, X-sides 0.6. Gives torch-/ambient-lit faces their form
 // without any real light direction.
-fn face_shade(n: vec3<f32>) -> f32 {
-    if (n.y > 0.5) { return 1.0; }
-    if (n.y < -0.5) { return 0.5; }
-    if (abs(n.z) > abs(n.x)) { return 0.8; }
-    return 0.6;
+fn face_shade(n: vec3<f32>, world: vec3<f32>) -> f32 {
+    let vertical = dot(normalize(n), normalize(world));
+    if (vertical > 0.5) { return 1.0; }
+    if (vertical < -0.5) { return 0.5; }
+    // A common side value avoids a cube-chart lighting seam. Directional
+    // sunlight still gives each wall its actual form.
+    return 0.72;
 }
 
 // Sky ambient irradiance in the direction `n` (a diffuse light multiplier),
@@ -363,7 +369,7 @@ fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f3
     }
     let n = normalize(normal);
     let dn = normalize(detail_n);
-    let fs = face_shade(n);
+    let fs = face_shade(n, world);
     // Warm sun: direct, gated by sky visibility, surface orientation, and the
     // shadow map (cast shadows). Ambient/torch are unaffected, so shadowed
     // ground fills with cool sky light instead of going black.
@@ -493,8 +499,9 @@ fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f3
 fn sky_radiance(rd_in: vec3<f32>) -> vec3<f32> {
     let rd = normalize(rd_in);
     let sd = normalize(u.sun_dir_true.xyz);
-    let up = clamp(rd.y, 0.0, 1.0);
-    let se = sd.y; // sun elevation, -1..1
+    let radial_up = normalize(u.local_up.xyz);
+    let up = clamp(dot(rd, radial_up), 0.0, 1.0);
+    let se = dot(sd, radial_up); // local sun elevation, -1..1
 
     // Day palette: deep blue zenith -> pale horizon.
     let day_zenith = vec3<f32>(0.18, 0.40, 0.78);
@@ -517,7 +524,9 @@ fn sky_radiance(rd_in: vec3<f32>) -> vec3<f32> {
     let twilight = smoothstep(0.35, 0.0, se) * smoothstep(-0.32, 0.03, se);
     // Azimuthal proximity to the sun (horizontal only) and height above horizon.
     let hb = 1.0 - up; // 0 at zenith, 1 at horizon
-    let az = dot(normalize(vec3<f32>(rd.x, 0.0, rd.z)), normalize(vec3<f32>(sd.x, 0.0, sd.z)));
+    let rd_h = normalize(rd - radial_up * dot(rd, radial_up));
+    let sd_h = normalize(sd - radial_up * dot(sd, radial_up));
+    let az = dot(rd_h, sd_h);
     let sun_side = max(az, 0.0);
 
     // First dim and cool-drain the whole dome at dusk, so the horizon fire has
@@ -549,7 +558,14 @@ fn sky_radiance(rd_in: vec3<f32>) -> vec3<f32> {
 }
 
 fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
-    let dist = distance(world.xz, u.cam.xz);
+    let camera_radius = length(u.cam.xyz);
+    let world_radius = length(world);
+    let angle = acos(clamp(dot(
+        u.cam.xyz / max(camera_radius, 1e-3),
+        world / max(world_radius, 1e-3)
+    ), -1.0, 1.0));
+    let surface_dist = angle * 5215.189;
+    let dist = length(vec2<f32>(surface_dist, world_radius - camera_radius));
     // Only the last tenth dissolves. This band used to start at 0.72,
     // which turned the far QUARTER of the view into sky — the thing you
     // were straining to see was always in it. Fog cannot go entirely:
@@ -886,7 +902,7 @@ struct LineOut {
 @vertex
 fn vs_line_world(in: LineIn) -> LineOut {
     var out: LineOut;
-    out.clip = u.view_proj * vec4<f32>(in.pos, 1.0);
+    out.clip = u.view_proj * vec4<f32>(in.pos - u.origin.xyz, 1.0);
     out.color = in.color;
     return out;
 }

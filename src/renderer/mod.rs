@@ -25,6 +25,10 @@ use resources::{atlas_bind_group, upload_atlas};
 struct Uniforms {
     view_proj: [[f32; 4]; 4],
     cam: [f32; 4],
+    /// Absolute embedded camera position subtracted by every world vertex.
+    origin: [f32; 4],
+    /// Local radial up at the camera, used by the sky dome.
+    local_up: [f32; 4],
     sky: [f32; 4],
     misc: [f32; 4],
     sun_dir: [f32; 4],
@@ -174,6 +178,7 @@ impl DynBuf {
 pub struct FrameInput<'a> {
     pub view_proj: Mat4,
     pub cam_pos: Vec3,
+    pub local_up: Vec3,
     pub fog_dist: f32,
     pub underwater: bool,
     pub daylight: f32,
@@ -202,7 +207,7 @@ pub struct FrameInput<'a> {
     pub occ_update: Option<&'a [u8]>,
     /// Dynamic colored point lights (accumulated in the chunk shader).
     pub point_lights: &'a [PointLight],
-    pub outline: Option<(i32, i32, i32)>,
+    pub outline: Option<crate::planet::BlockPos>,
     /// Opaque world-space extras (item entities), drawn with the chunk shader.
     pub entity_verts: &'a [Vertex],
     pub entity_idx: &'a [u32],
@@ -231,28 +236,44 @@ fn frustum_planes(m: &Mat4) -> [glam::Vec4; 6] {
 }
 
 /// Is the chunk's AABB at least partially inside the frustum?
-fn chunk_visible(planes: &[glam::Vec4; 6], pos: ChunkPos) -> bool {
-    let min = glam::Vec3::new(pos.x as f32 * 16.0, 0.0, pos.z as f32 * 16.0);
-    let max = min + glam::Vec3::new(16.0, 256.0, 16.0);
+fn chunk_visible(planes: &[glam::Vec4; 6], chunk: &GpuChunk, camera: Vec3) -> bool {
+    let Some(bounds) = chunk.bounds else {
+        return false;
+    };
     for p in planes {
-        // Positive vertex: the AABB corner furthest along the plane normal.
-        let v = glam::Vec3::new(
-            if p.x >= 0.0 { max.x } else { min.x },
-            if p.y >= 0.0 { max.y } else { min.y },
-            if p.z >= 0.0 { max.z } else { min.z },
-        );
-        if p.x * v.x + p.y * v.y + p.z * v.z + p.w < 0.0 {
+        let normal = p.truncate();
+        if normal.dot(bounds.center - camera) + p.w < -bounds.radius * normal.length() {
             return false;
         }
     }
-    true
+    // The sea shell is a conservative planetary occluder. A mesh is hidden
+    // only when even its highest vertex and full angular footprint lie below
+    // the geometric horizon, so mountains appear before low country without
+    // ever revealing terrain through the planet.
+    let body = crate::planet::PLANET_RADIUS as f32 + crate::chunk::SEA_LEVEL as f32 - 1.0;
+    let camera_radius = camera.length();
+    if camera_radius <= body + 0.05 {
+        return true;
+    }
+    let camera_horizon = (body / camera_radius).clamp(-1.0, 1.0).acos();
+    let object_horizon = if bounds.max_radial > body {
+        (body / bounds.max_radial).clamp(-1.0, 1.0).acos()
+    } else {
+        0.0
+    };
+    let separation = camera
+        .normalize_or_zero()
+        .dot(bounds.direction)
+        .clamp(-1.0, 1.0)
+        .acos();
+    separation <= camera_horizon + object_horizon + bounds.angular_radius
 }
 
 /// Is any part of the chunk's AABB within `range` of the light?
-fn chunk_in_range(pos: ChunkPos, light: Vec3, range: f32) -> bool {
-    let min = Vec3::new(pos.x as f32 * 16.0, 0.0, pos.z as f32 * 16.0);
-    let max = min + Vec3::new(16.0, 256.0, 16.0);
-    light.distance(light.clamp(min, max)) <= range
+fn chunk_in_range(chunk: &GpuChunk, light: Vec3, range: f32) -> bool {
+    chunk
+        .bounds
+        .is_some_and(|bounds| bounds.center.distance(light) <= range + bounds.radius)
 }
 
 fn upload_mesh(device: &wgpu::Device, verts: &[Vertex], idx: &[u32]) -> Option<GpuMesh> {
@@ -277,6 +298,63 @@ fn upload_mesh(device: &wgpu::Device, verts: &[Vertex], idx: &[u32]) -> Option<G
 pub struct GpuChunk {
     opaque: Option<GpuMesh>,
     water: Option<GpuMesh>,
+    bounds: Option<MeshBounds>,
+}
+
+#[derive(Clone, Copy)]
+struct MeshBounds {
+    center: Vec3,
+    radius: f32,
+    direction: Vec3,
+    max_radial: f32,
+    angular_radius: f32,
+}
+
+fn mesh_bounds(pos: ChunkPos, mesh: &ChunkMesh) -> Option<MeshBounds> {
+    let verts = mesh
+        .opaque_verts
+        .iter()
+        .chain(mesh.water_verts.iter())
+        .map(|vertex| Vec3::from_array(vertex.pos));
+    let mut count = 0usize;
+    let mut min = Vec3::splat(f32::INFINITY);
+    let mut max = Vec3::splat(f32::NEG_INFINITY);
+    let mut max_radial = 0.0f32;
+    for point in verts {
+        count += 1;
+        min = min.min(point);
+        max = max.max(point);
+        max_radial = max_radial.max(point.length());
+    }
+    if count == 0 {
+        return None;
+    }
+    let center = (min + max) * 0.5;
+    let direction = crate::planet::surface_to_unit(crate::planet::SurfacePoint {
+        face: pos.face(),
+        u: f64::from(pos.u()) * crate::chunk::CHUNK_X as f64 + crate::chunk::CHUNK_X as f64 * 0.5,
+        v: f64::from(pos.v()) * crate::chunk::CHUNK_Z as f64 + crate::chunk::CHUNK_Z as f64 * 0.5,
+    })
+    .as_vec3();
+    let mut radius = 0.0f32;
+    let mut angular_radius = 0.0f32;
+    for vertex in mesh.opaque_verts.iter().chain(mesh.water_verts.iter()) {
+        let point = Vec3::from_array(vertex.pos);
+        radius = radius.max(point.distance(center));
+        angular_radius = angular_radius.max(
+            direction
+                .dot(point.normalize_or_zero())
+                .clamp(-1.0, 1.0)
+                .acos(),
+        );
+    }
+    Some(MeshBounds {
+        center,
+        radius,
+        direction,
+        max_radial,
+        angular_radius,
+    })
 }
 
 pub struct Renderer {

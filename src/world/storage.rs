@@ -1,4 +1,4 @@
-//! Mob/chunk persistence, WFC4 streaming, saves, and registry remapping.
+//! Mob/chunk persistence, planetary WFC5 streaming, saves, and registry remapping.
 
 use super::*;
 
@@ -10,7 +10,7 @@ impl World {
     pub(super) fn save_mobs(&self) -> Vec<SaveFailure> {
         use std::fmt::Write as _;
         let mut report = SaveReport::default();
-        let mut out = String::new();
+        let mut out = String::from("version = 2\n");
         for m in &self.mobs {
             let Some(def) = self.reg.animals.get(m.species) else {
                 continue;
@@ -22,11 +22,12 @@ impl World {
             }
             let _ = writeln!(
                 out,
-                "[[mob]]\nspecies = \"{}\"\npos = [{:?}, {:?}, {:?}]\nyaw = {:?}\nhealth = {:?}\nfed = {}\ngrowth = {:?}\ntamed = {}\ntame_fed = {}\ntame_need = {}\nsaddled = {}\nbelly = {:?}",
+                "[[mob]]\nspecies = \"{}\"\nface = {}\nu = {:?}\ny = {:?}\nv = {:?}\nyaw = {:?}\nhealth = {:?}\nfed = {}\ngrowth = {:?}\ntamed = {}\ntame_fed = {}\ntame_need = {}\nsaddled = {}\nbelly = {:?}",
                 def.name,
-                m.pos.x,
-                m.pos.y,
-                m.pos.z,
+                m.pos.face() as u8,
+                m.pos.u(),
+                m.pos.y(),
+                m.pos.v(),
                 m.yaw,
                 m.health,
                 m.fed,
@@ -61,31 +62,37 @@ impl World {
                 (!out.is_empty()).then_some(out.as_bytes()),
             ),
         );
-        // The regional ledger: compact (cell x, cell z, standing).
-        let mut rb = Vec::with_capacity(self.regional_ire.len() * 12);
-        for (&(x, z), &v) in &self.regional_ire {
-            rb.extend_from_slice(&x.to_le_bytes());
-            rb.extend_from_slice(&z.to_le_bytes());
+        // Face-aware regional ledgers. Each record is
+        // (face, region-u, region-v, reserved, value).
+        let mut rb = Vec::with_capacity(4 + self.regional_ire.len() * 8);
+        rb.extend_from_slice(b"WFR1");
+        for (&cell, &v) in &self.regional_ire {
+            rb.extend_from_slice(&[cell.face as u8, cell.u, cell.v, 0]);
             rb.extend_from_slice(&v.to_le_bytes());
         }
         let path = self.save_dir.join("rire");
         report.record(
             "regional ire",
             path.clone(),
-            super::persistence::replace_or_remove(&path, (!rb.is_empty()).then_some(rb.as_slice())),
+            super::persistence::replace_or_remove(
+                &path,
+                (!self.regional_ire.is_empty()).then_some(rb.as_slice()),
+            ),
         );
-        // The bloom ledger, same shape as rire.
-        let mut bb = Vec::with_capacity(self.bloom.len() * 12);
-        for (&(x, z), &v) in &self.bloom {
-            bb.extend_from_slice(&x.to_le_bytes());
-            bb.extend_from_slice(&z.to_le_bytes());
+        let mut bb = Vec::with_capacity(4 + self.bloom.len() * 8);
+        bb.extend_from_slice(b"WFB1");
+        for (&cell, &v) in &self.bloom {
+            bb.extend_from_slice(&[cell.face as u8, cell.u, cell.v, 0]);
             bb.extend_from_slice(&v.to_le_bytes());
         }
         let path = self.save_dir.join("bloom");
         report.record(
             "bloom ledger",
             path.clone(),
-            super::persistence::replace_or_remove(&path, (!bb.is_empty()).then_some(bb.as_slice())),
+            super::persistence::replace_or_remove(
+                &path,
+                (!self.bloom.is_empty()).then_some(bb.as_slice()),
+            ),
         );
         let path = self.save_dir.join("longwinter");
         report.record(
@@ -94,31 +101,31 @@ impl World {
             super::persistence::atomic_replace(&path, if self.long_winter { b"1" } else { b"0" }),
         );
         // The ground's spent willingness to bloom.
-        let mut sb = Vec::with_capacity(self.bloom_spent.len() * 12);
-        for (&(x, z), &v) in &self.bloom_spent {
-            sb.extend_from_slice(&x.to_le_bytes());
-            sb.extend_from_slice(&z.to_le_bytes());
+        let mut sb = Vec::with_capacity(4 + self.bloom_spent.len() * 8);
+        sb.extend_from_slice(b"WFS1");
+        for (&cell, &v) in &self.bloom_spent {
+            sb.extend_from_slice(&[cell.face as u8, cell.u, cell.v, 0]);
             sb.extend_from_slice(&v.to_le_bytes());
         }
         let path = self.save_dir.join("bspent");
         report.record(
             "bloom exhaustion",
             path.clone(),
-            super::persistence::replace_or_remove(&path, (!sb.is_empty()).then_some(sb.as_slice())),
+            super::persistence::replace_or_remove(
+                &path,
+                (!self.bloom_spent.is_empty()).then_some(sb.as_slice()),
+            ),
         );
-        // The hearts: (province x, z, site x, y, z, stage, strain,
-        // rooting, graft, drift, regrow). The magic distinguishes this
-        // from the older headerless 34-byte layout, which is otherwise
-        // ambiguous — a save with 19 hearts is 646 bytes and divides
-        // evenly by both record sizes.
-        let mut hb = Vec::with_capacity(4 + self.hearts.len() * 38);
-        hb.extend_from_slice(b"WFH2");
-        for (&(kx, kz), h) in &self.hearts {
-            hb.extend_from_slice(&kx.to_le_bytes());
-            hb.extend_from_slice(&kz.to_le_bytes());
-            hb.extend_from_slice(&h.pos.0.to_le_bytes());
-            hb.extend_from_slice(&h.pos.1.to_le_bytes());
-            hb.extend_from_slice(&h.pos.2.to_le_bytes());
+        // Planetary hearts: province face/grid address, canonical block
+        // site, stage, strain, rooting, graft, drift, and cutting timer.
+        let mut hb = Vec::with_capacity(4 + self.hearts.len() * 28);
+        hb.extend_from_slice(b"WFH3");
+        for (&key, h) in &self.hearts {
+            hb.extend_from_slice(&[key.face as u8, key.u, key.v, 0]);
+            hb.push(h.pos.face() as u8);
+            hb.extend_from_slice(&h.pos.u().to_le_bytes());
+            hb.push(h.pos.y());
+            hb.extend_from_slice(&h.pos.v().to_le_bytes());
             hb.push(h.stage);
             hb.extend_from_slice(&h.strain.to_le_bytes());
             hb.extend_from_slice(&h.rooting.to_le_bytes());
@@ -135,11 +142,13 @@ impl World {
                 (!self.hearts.is_empty()).then_some(hb.as_slice()),
             ),
         );
-        // Seeded-chunk marks: compact binary pairs.
-        let mut buf = Vec::with_capacity(self.mob_seeded.len() * 8);
-        for (x, z) in &self.mob_seeded {
-            buf.extend_from_slice(&x.to_le_bytes());
-            buf.extend_from_slice(&z.to_le_bytes());
+        // Planetary seeded-chunk marks: magic followed by face/u/v records.
+        let mut buf = Vec::with_capacity(4 + self.mob_seeded.len() * 5);
+        buf.extend_from_slice(b"WFA1");
+        for pos in &self.mob_seeded {
+            buf.push(pos.face() as u8);
+            buf.extend_from_slice(&pos.u().to_le_bytes());
+            buf.extend_from_slice(&pos.v().to_le_bytes());
         }
         let path = self.save_dir.join("aseeded");
         report.record(
@@ -147,11 +156,13 @@ impl World {
             path.clone(),
             super::persistence::atomic_replace(&path, &buf),
         );
-        // Player-touched chunk marks: same shape.
-        let mut pt = Vec::with_capacity(self.player_touched.len() * 8);
-        for (x, z) in &self.player_touched {
-            pt.extend_from_slice(&x.to_le_bytes());
-            pt.extend_from_slice(&z.to_le_bytes());
+        // Player-touched chunk marks: same planetary shape.
+        let mut pt = Vec::with_capacity(4 + self.player_touched.len() * 5);
+        pt.extend_from_slice(b"WFP1");
+        for pos in &self.player_touched {
+            pt.push(pos.face() as u8);
+            pt.extend_from_slice(&pos.u().to_le_bytes());
+            pt.extend_from_slice(&pos.v().to_le_bytes());
         }
         let path = self.save_dir.join("ptouched");
         report.record(
@@ -178,7 +189,10 @@ impl World {
         #[derive(Deserialize)]
         struct MobT {
             species: String,
-            pos: [f32; 3],
+            face: u8,
+            u: f32,
+            y: f32,
+            v: f32,
             yaw: f32,
             health: f32,
             #[serde(default)]
@@ -203,18 +217,26 @@ impl World {
         }
         #[derive(Deserialize)]
         struct FileT {
+            version: u32,
             #[serde(default)]
             mob: Vec<MobT>,
         }
         if let Ok(text) = fs::read_to_string(self.mobs_path())
             && let Ok(f) = toml::from_str::<FileT>(&text)
+            && f.version == 2
         {
             for t in f.mob {
                 // Unknown species (mod removed) skip cleanly.
                 let Some(si) = self.reg.animal_id(&t.species) else {
                     continue;
                 };
-                let mut m = Mob::new(si, glam::Vec3::new(t.pos[0], t.pos[1], t.pos[2]), t.yaw);
+                let Some(face) = crate::planet::Face::from_u8(t.face) else {
+                    continue;
+                };
+                let Ok(pos) = crate::planet::EntityPos::new(face, t.u, t.y, t.v) else {
+                    continue;
+                };
+                let mut m = Mob::new_at(si, pos, t.yaw);
                 m.health = t.health.min(self.reg.animals[si].health);
                 m.fed = t.fed;
                 m.growth = t.growth.clamp(0.05, 1.0);
@@ -240,71 +262,129 @@ impl World {
                 self.mobs.push(m);
             }
         }
-        if let Ok(data) = fs::read(self.save_dir.join("rire")) {
-            for p in data.chunks_exact(12) {
-                let x = i32::from_le_bytes([p[0], p[1], p[2], p[3]]);
-                let z = i32::from_le_bytes([p[4], p[5], p[6], p[7]]);
-                let v = f32::from_le_bytes([p[8], p[9], p[10], p[11]]);
-                self.regional_ire.insert((x, z), v.clamp(-20.0, 20.0));
+        if let Ok(data) = fs::read(self.save_dir.join("rire"))
+            && let Some(body) = data.strip_prefix(b"WFR1")
+        {
+            for p in body.chunks_exact(8) {
+                if let Some(face) = crate::planet::Face::from_u8(p[0]) {
+                    let v = f32::from_le_bytes([p[4], p[5], p[6], p[7]]);
+                    self.regional_ire.insert(
+                        RegionCell {
+                            face,
+                            u: p[1],
+                            v: p[2],
+                        },
+                        v.clamp(-20.0, 20.0),
+                    );
+                }
             }
         }
-        if let Ok(data) = fs::read(self.save_dir.join("bloom")) {
-            for p in data.chunks_exact(12) {
-                let x = i32::from_le_bytes([p[0], p[1], p[2], p[3]]);
-                let z = i32::from_le_bytes([p[4], p[5], p[6], p[7]]);
-                let v = f32::from_le_bytes([p[8], p[9], p[10], p[11]]);
-                self.bloom.insert((x, z), v.clamp(0.0, 9.0));
+        if let Ok(data) = fs::read(self.save_dir.join("bloom"))
+            && let Some(body) = data.strip_prefix(b"WFB1")
+        {
+            for p in body.chunks_exact(8) {
+                if let Some(face) = crate::planet::Face::from_u8(p[0]) {
+                    let v = f32::from_le_bytes([p[4], p[5], p[6], p[7]]);
+                    self.bloom.insert(
+                        RegionCell {
+                            face,
+                            u: p[1],
+                            v: p[2],
+                        },
+                        v.clamp(0.0, 9.0),
+                    );
+                }
             }
         }
         self.long_winter = fs::read(self.save_dir.join("longwinter"))
             .map(|d| d.first() == Some(&b'1'))
             .unwrap_or(false);
-        if let Ok(data) = fs::read(self.save_dir.join("bspent")) {
-            for p in data.chunks_exact(12) {
-                let x = i32::from_le_bytes([p[0], p[1], p[2], p[3]]);
-                let z = i32::from_le_bytes([p[4], p[5], p[6], p[7]]);
-                let v = f32::from_le_bytes([p[8], p[9], p[10], p[11]]);
-                self.bloom_spent.insert((x, z), v.max(0.0));
+        if let Ok(data) = fs::read(self.save_dir.join("bspent"))
+            && let Some(body) = data.strip_prefix(b"WFS1")
+        {
+            for p in body.chunks_exact(8) {
+                if let Some(face) = crate::planet::Face::from_u8(p[0]) {
+                    let v = f32::from_le_bytes([p[4], p[5], p[6], p[7]]);
+                    self.bloom_spent.insert(
+                        RegionCell {
+                            face,
+                            u: p[1],
+                            v: p[2],
+                        },
+                        v.max(0.0),
+                    );
+                }
             }
         }
-        if let Ok(data) = fs::read(self.save_dir.join("hearts")) {
-            // WFH2 carries the cutting timer; a headerless file is the
-            // older layout and its hearts are simply ready to give.
-            let versioned = data.starts_with(b"WFH2");
-            let (body, size) = if versioned {
-                (&data[4..], 38)
-            } else {
-                (&data[..], 34)
-            };
-            for p in body.chunks_exact(size) {
-                let i32_at = |o: usize| i32::from_le_bytes([p[o], p[o + 1], p[o + 2], p[o + 3]]);
+        if let Ok(data) = fs::read(self.save_dir.join("hearts"))
+            && let Some(body) = data.strip_prefix(b"WFH3")
+        {
+            for p in body.chunks_exact(28) {
                 let f32_at = |o: usize| f32::from_le_bytes([p[o], p[o + 1], p[o + 2], p[o + 3]]);
+                let Some(key_face) = crate::planet::Face::from_u8(p[0]) else {
+                    continue;
+                };
+                let Some(pos_face) = crate::planet::Face::from_u8(p[4]) else {
+                    continue;
+                };
+                let Ok(pos) = BlockPos::new(
+                    pos_face,
+                    u16::from_le_bytes([p[5], p[6]]),
+                    p[7],
+                    u16::from_le_bytes([p[8], p[9]]),
+                ) else {
+                    continue;
+                };
                 self.hearts.insert(
-                    (i32_at(0), i32_at(4)),
+                    crate::worldgen::ProvinceKey {
+                        face: key_face,
+                        u: p[1],
+                        v: p[2],
+                    },
                     Heart {
-                        pos: (i32_at(8), i32_at(12), i32_at(16)),
-                        stage: p[20],
-                        strain: f32_at(21),
-                        rooting: f32_at(25),
-                        graft: crate::worldgen::Biome::from_index(p[29]),
-                        drift: f32_at(30),
-                        regrow: if versioned { f32_at(34) } else { 0.0 },
+                        pos,
+                        stage: p[10],
+                        strain: f32_at(11),
+                        rooting: f32_at(15),
+                        graft: crate::worldgen::Biome::from_index(p[19]),
+                        drift: f32_at(20),
+                        regrow: f32_at(24),
                     },
                 );
             }
         }
         if let Ok(data) = fs::read(self.save_dir.join("aseeded")) {
-            for p in data.chunks_exact(8) {
-                let x = i32::from_le_bytes([p[0], p[1], p[2], p[3]]);
-                let z = i32::from_le_bytes([p[4], p[5], p[6], p[7]]);
-                self.mob_seeded.insert((x, z));
+            for p in data
+                .strip_prefix(b"WFA1")
+                .unwrap_or_default()
+                .chunks_exact(5)
+            {
+                if let Some(face) = crate::planet::Face::from_u8(p[0])
+                    && let Ok(pos) = ChunkPos::new(
+                        face,
+                        u16::from_le_bytes([p[1], p[2]]),
+                        u16::from_le_bytes([p[3], p[4]]),
+                    )
+                {
+                    self.mob_seeded.insert(pos);
+                }
             }
         }
         if let Ok(data) = fs::read(self.save_dir.join("ptouched")) {
-            for p in data.chunks_exact(8) {
-                let x = i32::from_le_bytes([p[0], p[1], p[2], p[3]]);
-                let z = i32::from_le_bytes([p[4], p[5], p[6], p[7]]);
-                self.player_touched.insert((x, z));
+            for p in data
+                .strip_prefix(b"WFP1")
+                .unwrap_or_default()
+                .chunks_exact(5)
+            {
+                if let Some(face) = crate::planet::Face::from_u8(p[0])
+                    && let Ok(pos) = ChunkPos::new(
+                        face,
+                        u16::from_le_bytes([p[1], p[2]]),
+                        u16::from_le_bytes([p[3], p[4]]),
+                    )
+                {
+                    self.player_touched.insert(pos);
+                }
             }
         }
     }
@@ -312,9 +392,8 @@ impl World {
     pub(super) fn try_load_chunk(&self, pos: ChunkPos) -> Option<Chunk> {
         let data = super::region::read_chunk(&self.save_dir, pos)?;
         let mut chunk = Chunk::new();
-        let is_v4 = data.starts_with(b"WFC4");
-        if !is_v4 && !data.starts_with(b"WFC3") {
-            return None; // pre-256-height save: regenerate
+        if !data.starts_with(b"WFC5") {
+            return None;
         }
         let out = chunk.raw_mut();
         let mut o = 0;
@@ -344,21 +423,23 @@ impl World {
             // terrain instead of keeping the poisoned chunk forever.
             eprintln!(
                 "world: regenerating all-placeholder chunk {},{}",
-                pos.x, pos.z
+                pos.u(),
+                pos.v()
             );
             return None;
         }
-        if is_v4 {
-            let meta = chunk.meta_raw_mut();
-            let mut offset = 0;
-            while i + 3 <= data.len() && offset < meta.len() {
-                let count = u16::from_le_bytes([data[i], data[i + 1]]) as usize;
-                let value = data[i + 2];
-                let end = (offset + count).min(meta.len());
-                meta[offset..end].fill(value);
-                offset = end;
-                i += 3;
-            }
+        let meta = chunk.meta_raw_mut();
+        let mut offset = 0;
+        while i + 3 <= data.len() && offset < meta.len() {
+            let count = u16::from_le_bytes([data[i], data[i + 1]]) as usize;
+            let value = data[i + 2];
+            let end = (offset + count).min(meta.len());
+            meta[offset..end].fill(value);
+            offset = end;
+            i += 3;
+        }
+        if offset != meta.len() {
+            return None;
         }
         chunk.dirty = true;
         // Planes the file turned out uniform in (no block state anywhere,
@@ -374,12 +455,11 @@ impl World {
         Some(chunk)
     }
 
-    /// WFC4 block and metadata RLE, also used for multiplayer chunk streaming.
-    /// WFC3 remains readable with an all-zero metadata plane.
+    /// Planetary WFC5 block and metadata RLE, also used for chunk streaming.
     pub fn chunk_rle(&self, pos: ChunkPos) -> Option<Vec<u8>> {
         let chunk = self.chunks.get(&pos)?;
         let mut buf: Vec<u8> = Vec::with_capacity(4096);
-        buf.extend_from_slice(b"WFC4");
+        buf.extend_from_slice(b"WFC5");
         // Runs come straight off the plane, so a uniform plane is one step
         // rather than a scan of every cell. The u16 length field still caps
         // a wire run, so long runs are split to fit it.
@@ -425,8 +505,7 @@ impl World {
     }
 
     fn insert_remote_chunk_unlit(&mut self, pos: ChunkPos, rle: &[u8], remap: &[BlockId]) -> bool {
-        let is_v4 = rle.starts_with(b"WFC4");
-        if !is_v4 && !rle.starts_with(b"WFC3") {
+        if !rle.starts_with(b"WFC5") {
             return false;
         }
         let mut chunk = Chunk::new();
@@ -442,27 +521,28 @@ impl World {
             o = end;
             i += 4;
         }
-        if is_v4 {
-            let meta = chunk.meta_raw_mut();
-            let mut offset = 0;
-            while i + 3 <= rle.len() && offset < meta.len() {
-                let count = u16::from_le_bytes([rle[i], rle[i + 1]]) as usize;
-                let value = rle[i + 2];
-                let end = (offset + count).min(meta.len());
-                meta[offset..end].fill(value);
-                offset = end;
-                i += 3;
-            }
+        if o != out.len() {
+            return false;
+        }
+        let meta = chunk.meta_raw_mut();
+        let mut offset = 0;
+        while i + 3 <= rle.len() && offset < meta.len() {
+            let count = u16::from_le_bytes([rle[i], rle[i + 1]]) as usize;
+            let value = rle[i + 2];
+            let end = (offset + count).min(meta.len());
+            meta[offset..end].fill(value);
+            offset = end;
+            i += 3;
+        }
+        if offset != meta.len() {
+            return false;
         }
         chunk.dirty = true;
         chunk.compact();
         self.chunks.insert(pos, chunk);
         // Neighbors need remeshing for the new border faces.
         for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-            let n = ChunkPos {
-                x: pos.x + dx,
-                z: pos.z + dz,
-            };
+            let n = pos.offset(dx, dz);
             if let Some(c) = self.chunks.get_mut(&n) {
                 c.dirty = true;
             }
@@ -481,7 +561,7 @@ impl World {
         let buf = self.chunk_rle(pos).ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("chunk {},{} is not resident", pos.x, pos.z),
+                format!("chunk {pos:?} is not resident"),
             )
         })?;
         super::region::write_chunk(&self.save_dir, pos, &buf)
@@ -568,7 +648,7 @@ impl World {
                     }
                 }
                 Err(error) => report.failures.push(SaveFailure::new(
-                    format!("chunk {},{}", pos.x, pos.z),
+                    format!("chunk {pos:?}"),
                     super::region::region_path(&self.save_dir, pos),
                     error,
                 )),

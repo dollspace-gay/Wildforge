@@ -43,17 +43,17 @@ enum Screen {
     ConfirmDelete,
     Playing,
     Inventory,
-    Furnace((i32, i32, i32)),
-    Chest((i32, i32, i32)),
-    Offering((i32, i32, i32)),
-    Bloomery((i32, i32, i32)),
-    Kiln((i32, i32, i32)),
+    Furnace(crate::planet::BlockPos),
+    Chest(crate::planet::BlockPos),
+    Offering(crate::planet::BlockPos),
+    Bloomery(crate::planet::BlockPos),
+    Kiln(crate::planet::BlockPos),
     /// A tamed carrier's saddlebags, keyed by mob id.
     MobCargo(u32),
     /// Writing a placed sign or waystone.
-    SignEdit((i32, i32, i32)),
+    SignEdit(crate::planet::BlockPos),
     /// A market stall: the owner manages, everyone else shops.
-    Stall((i32, i32, i32)),
+    Stall(crate::planet::BlockPos),
     Join,
     Paused,
     Dead,
@@ -128,12 +128,12 @@ struct SurvivalState {
     burn_timer: f32,
     damage_flash: f32,
     fall_start: Option<f32>,
-    spawn_point: Vec3,
+    spawn_point: crate::planet::EntityPos,
     killed_by_wild: bool,
 }
 
 impl SurvivalState {
-    fn new(spawn_point: Vec3) -> Self {
+    fn new(spawn_point: crate::planet::EntityPos) -> Self {
         Self {
             armor: [None; 5],
             health: MAX_HEALTH,
@@ -252,21 +252,21 @@ impl Default for UiState {
 struct InteractionState {
     bow_draw: f32,
     brushing: f32,
-    brush_target: Option<(i32, i32, i32)>,
+    brush_target: Option<crate::planet::BlockPos>,
     anvil_work: f32,
-    anvil_pos: Option<(i32, i32, i32)>,
+    anvil_pos: Option<crate::planet::BlockPos>,
     craft_grid: [Option<ItemStack>; 9],
     craft_size: usize,
     items: Vec<ItemEntity>,
-    breaking: Option<((i32, i32, i32), f32)>,
+    breaking: Option<(crate::planet::BlockPos, f32)>,
     /// Waystones this player has touched: (name, x, z). Loaded from a
     /// per-world sidecar; purely local knowledge, never synced.
-    attuned: Vec<(String, i32, i32)>,
+    attuned: Vec<(String, crate::planet::SurfacePos)>,
     /// The vehicle under us (mob id), if we're aboard one.
     riding: Option<u32>,
     /// A cast line: (bobber cell center, seconds to the bite, bite
     /// window remaining). The water decides when.
-    fishing: Option<(Vec3, f32, f32)>,
+    fishing: Option<(crate::planet::EntityPos, f32, f32)>,
 }
 
 impl Default for InteractionState {
@@ -296,8 +296,8 @@ struct PresentationState {
     max_view_dist: i32,
     /// Region-whisper bookkeeping: the cell we're in, and cells
     /// already whispered this session.
-    last_ire_cell: Option<(i32, i32)>,
-    whispered_cells: std::collections::HashSet<(i32, i32)>,
+    last_ire_cell: Option<world::RegionCell>,
+    whispered_cells: std::collections::HashSet<world::RegionCell>,
     swing: f32,
     hand_bob: f32,
     weather_vis: f32,
@@ -309,7 +309,7 @@ struct PresentationState {
     pool: particles::Pool,
     step_accum: f32,
     mob_strides: std::collections::HashMap<u32, f32>,
-    remote_strides: std::collections::HashMap<u32, (Vec3, f32)>,
+    remote_strides: std::collections::HashMap<u32, (crate::planet::EntityPos, f32)>,
     ui_flies: Vec<(u16, (f32, f32), usize, f32)>,
     slot_pulse: [f32; HOTBAR_SLOTS],
     pickup_streak: (u32, f32),
@@ -387,6 +387,8 @@ struct Remote {
     host_block: std::collections::HashMap<u16, u16>,
     /// id -> (name, pos, yaw) of every other player (render state).
     players: std::collections::HashMap<u32, (String, Vec3, f32)>,
+    /// Latest canonical authoritative position for each rendered player.
+    player_positions: std::collections::HashMap<u32, crate::planet::EntityPos>,
     /// Wire item id each player holds (from Players snapshots).
     player_held: std::collections::HashMap<u32, u16>,
     /// Packed Style per player (from Players snapshots).
@@ -403,7 +405,7 @@ struct Remote {
     mob_interval: f32,
     /// Snapshots arrive split when they are too big for one datagram; these
     /// hold the parts until a generation is whole.
-    players_rx: net::SnapshotAssembler<(u32, Vec3, f32, u16, u32)>,
+    players_rx: net::SnapshotAssembler<(u32, crate::planet::EntityPos, f32, u16, u32)>,
     mobs_rx: net::SnapshotAssembler<net::MobSnap>,
     bolts_rx: net::SnapshotAssembler<net::BoltSnap>,
     falling_rx: net::SnapshotAssembler<net::FallSnap>,
@@ -415,7 +417,7 @@ struct Remote {
     asked_view_dist: i32,
     /// Chunks we have asked the host for and not yet received, so a gap is
     /// requested once rather than every frame until it lands.
-    wants: std::collections::HashSet<(i32, i32)>,
+    wants: std::collections::HashSet<ChunkPos>,
 }
 
 struct Game {
@@ -555,15 +557,27 @@ pub(crate) fn browser_items(reg: &Registry, search: &str, creative: bool) -> Vec
         .collect()
 }
 
-fn find_spawn(world: &World) -> (i32, i32) {
+fn find_spawn(world: &World) -> crate::planet::SurfacePos {
     // Walk outward until we find dry land.
     let g = &world.generator;
-    let mut best = (0, 0);
+    let center = crate::planet::SurfacePos::new(
+        crate::planet::Face::PosZ,
+        crate::planet::FACE_BLOCKS / 2,
+        crate::planet::FACE_BLOCKS / 2,
+    )
+    .expect("the planet face center is canonical");
+    let mut best = center;
     'outer: for r in 0..64 {
         let d = r * 8;
-        for (x, z) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
-            if g.surface_estimate(x, z) > SEA_LEVEL + 1 {
-                best = (x, z);
+        for (du, dv) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
+            let candidate = crate::planet::SurfacePos::canonicalized(
+                center.face(),
+                i32::from(center.u()) + du,
+                i32::from(center.v()) + dv,
+            )
+            .expect("bounded spawn search canonicalizes across the planet");
+            if g.surface_estimate_at(candidate) > SEA_LEVEL + 1 {
+                best = candidate;
                 break 'outer;
             }
         }
@@ -611,7 +625,13 @@ impl Game {
         // No world yet — the game opens on the title screen.
         let world = World::new(0, PathBuf::from("saves/.none"), reg.clone());
         let sim = server::Server::new(world, 0.3, 0x51ed_c0de);
-        let spawn = Vec3::new(0.5, 80.0, 0.5);
+        let spawn = crate::planet::EntityPos::new(
+            crate::planet::Face::PosZ,
+            crate::planet::FACE_BLOCKS as f32 * 0.5 + 0.5,
+            80.0,
+            crate::planet::FACE_BLOCKS as f32 * 0.5 + 0.5,
+        )
+        .expect("initial menu position is at the planet face center");
         let own_style = style::Style::unpack(config.appearance);
 
         let size = window.inner_size();
@@ -622,8 +642,15 @@ impl Game {
             window,
             renderer,
             server: sim,
-            player: Player::new(spawn),
-            camera: Camera::new(spawn + Vec3::new(0.0, EYE_HEIGHT, 0.0), aspect),
+            player: Player::new_at(spawn),
+            camera: Camera::new(
+                spawn
+                    .translated(Vec3::new(0.0, EYE_HEIGHT, 0.0))
+                    .expect("initial camera height is inside the shell")
+                    .pos
+                    .render_pos(),
+                aspect,
+            ),
             input: InputState {
                 keys: KeysDown::default(),
                 mouse_captured: false,
@@ -781,12 +808,13 @@ impl Game {
     }
 
     /// The footstep surface under a world position.
-    fn step_mat_at(&self, x: f32, y: f32, z: f32) -> audio::StepMat {
-        let b = self.server.world.get_block(
-            x.floor() as i32,
-            (y - 0.1).floor() as i32,
-            z.floor() as i32,
-        );
+    fn step_mat_at(&self, pos: crate::planet::EntityPos) -> audio::StepMat {
+        let b = pos
+            .translated(Vec3::new(0.0, -0.1, 0.0))
+            .ok()
+            .and_then(|canonical| canonical.pos.block())
+            .map(|block| self.server.world.get_block_at(block))
+            .unwrap_or(crate::registry::AIR);
         audio::step_mat(&self.content.reg.block(b).name, self.break_mat(b))
     }
 }

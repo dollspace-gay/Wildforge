@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use glam::Vec3;
 
 use crate::chunk::ChunkPos;
+use crate::planet::{BlockPos, block_to_render};
 use crate::renderer::PointLight;
 
 /// Total light slots (matches the renderer/shader MAX_PT_LIGHTS).
@@ -22,7 +23,7 @@ const HYSTERESIS: f32 = 1.25;
 /// their cell; dynamic lights on what they are.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Key {
-    Block(i32, i32, i32),
+    Block(BlockPos),
     Held,
     Mob(u32),
     /// Another player's carried light (by player id).
@@ -34,11 +35,15 @@ pub enum Key {
 /// A block that emits light, as collected during chunk meshing.
 #[derive(Clone, Copy, Debug)]
 pub struct Emitter {
-    pub pos: (i32, i32, i32),
+    pub pos: BlockPos,
     /// Per-channel emission 0..15 (BlockDef.light_rgb).
     pub rgb: [u8; 3],
     /// Peak level 0..15 (BlockDef.light_emit).
     pub emit: u8,
+}
+
+fn emitter_render_pos(pos: BlockPos) -> Vec3 {
+    block_to_render(pos.surface().center(), f64::from(pos.y()) + 0.5).as_vec3()
 }
 
 /// A dynamic light the game hands the director each frame.
@@ -80,11 +85,7 @@ fn static_light(e: &Emitter, flicker: f32) -> PointLight {
     // from the rendered torch term so the hard direct light reads.
     let suppress_scale = emit / (15.0 * intensity.max(0.01));
     PointLight {
-        pos: Vec3::new(
-            e.pos.0 as f32 + 0.5,
-            e.pos.1 as f32 + 0.5,
-            e.pos.2 as f32 + 0.5,
-        ),
+        pos: emitter_render_pos(e.pos),
         range: emit + 2.0,
         color: color * intensity,
         key: 0,
@@ -176,8 +177,16 @@ impl Director {
     }
 
     fn invalidate_near_chunk(&mut self, cpos: ChunkPos) {
-        let min = Vec3::new(cpos.x as f32 * 16.0, 0.0, cpos.z as f32 * 16.0);
-        let max = min + Vec3::new(16.0, 256.0, 16.0);
+        let center = block_to_render(
+            crate::planet::SurfacePoint::new(
+                cpos.face(),
+                f64::from(cpos.u()) * 16.0 + 8.0,
+                f64::from(cpos.v()) * 16.0 + 8.0,
+            )
+            .expect("chunk center is on its face"),
+            128.0,
+        )
+        .as_vec3();
         // Statics hold a slot; dynamics (the held torch, glowing mobs)
         // live in last_pos. Both kinds of cube go stale when the world
         // near them remeshes — a held light that skipped this showed
@@ -194,7 +203,7 @@ impl Director {
             let Some((p, range)) = self.light_pos(key) else {
                 continue;
             };
-            if p.distance(p.clamp(min, max)) <= range {
+            if p.distance(center) <= range + 130.0 {
                 *self.epochs.entry(key).or_insert(0) += 1;
             }
         }
@@ -203,12 +212,9 @@ impl Director {
     /// Position + range of an active light, for invalidation tests.
     fn light_pos(&self, key: Key) -> Option<(Vec3, f32)> {
         match key {
-            Key::Block(x, y, z) => {
-                let e = self.emitter_at(x, y, z)?;
-                Some((
-                    Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5),
-                    e.emit as f32 + 2.0,
-                ))
+            Key::Block(pos) => {
+                let e = self.emitter_at(pos)?;
+                Some((emitter_render_pos(pos), e.emit as f32 + 2.0))
             }
             // Dynamic lights re-render on movement anyway; use their last
             // known position for chunk-edit invalidation.
@@ -216,12 +222,12 @@ impl Director {
         }
     }
 
-    fn emitter_at(&self, x: i32, y: i32, z: i32) -> Option<Emitter> {
-        let cpos = ChunkPos::of_world(x, z);
+    fn emitter_at(&self, pos: BlockPos) -> Option<Emitter> {
+        let cpos = pos.chunk();
         self.chunk_emitters
             .get(&cpos)?
             .iter()
-            .find(|e| e.pos == (x, y, z))
+            .find(|e| e.pos == pos)
             .copied()
     }
 
@@ -237,26 +243,14 @@ impl Director {
         self.clock += dt;
 
         // Static candidates: every emitter within promotion range.
-        let ccx = (cam.x / 16.0).floor() as i32;
-        let ccz = (cam.z / 16.0).floor() as i32;
-        let r = (PROMOTE_RANGE / 16.0).ceil() as i32;
         let mut candidates: Vec<(Key, f32)> = Vec::new();
-        for cx in (ccx - r)..=(ccx + r) {
-            for cz in (ccz - r)..=(ccz + r) {
-                let Some(list) = self.chunk_emitters.get(&ChunkPos { x: cx, z: cz }) else {
-                    continue;
-                };
-                for e in list {
-                    let p = Vec3::new(
-                        e.pos.0 as f32 + 0.5,
-                        e.pos.1 as f32 + 0.5,
-                        e.pos.2 as f32 + 0.5,
-                    );
-                    let d = p.distance(cam);
-                    if d < PROMOTE_RANGE {
-                        let key = Key::Block(e.pos.0, e.pos.1, e.pos.2);
-                        candidates.push((key, e.emit as f32 / (1.0 + d)));
-                    }
+        for list in self.chunk_emitters.values() {
+            for e in list {
+                let p = emitter_render_pos(e.pos);
+                let d = p.distance(cam);
+                if d < PROMOTE_RANGE {
+                    let key = Key::Block(e.pos);
+                    candidates.push((key, e.emit as f32 / (1.0 + d)));
                 }
             }
         }
@@ -272,13 +266,16 @@ impl Director {
         let mut out = Vec::with_capacity(MAX_LIGHTS);
         for slot in &self.slots {
             let Some(key) = slot else { continue };
-            let Key::Block(x, y, z) = key else { continue };
-            let Some(e) = self.emitter_at(*x, *y, *z) else {
+            let Key::Block(pos) = key else { continue };
+            let Some(e) = self.emitter_at(*pos) else {
                 continue;
             };
             // Flames breathe; cool lights hold steady.
             let f = if e.rgb[0] > e.rgb[2] {
-                let phase = (x.wrapping_mul(31) ^ y.wrapping_mul(17) ^ z) as f32;
+                let phase = (u32::from(pos.u()).wrapping_mul(31)
+                    ^ u32::from(pos.y()).wrapping_mul(17)
+                    ^ u32::from(pos.v())
+                    ^ (pos.face() as u32).wrapping_mul(101)) as f32;
                 flicker(self.clock, phase, 0.08)
             } else {
                 1.0
@@ -323,8 +320,11 @@ impl Director {
 /// Pack a Key into the u64 the renderer caches on.
 fn key_bits(k: Key) -> u64 {
     match k {
-        Key::Block(x, y, z) => {
-            ((x as u32 as u64) << 40) ^ ((y as u32 as u64) << 20) ^ (z as u32 as u64)
+        Key::Block(pos) => {
+            ((pos.face() as u64) << 48)
+                | (u64::from(pos.u()) << 32)
+                | (u64::from(pos.y()) << 16)
+                | u64::from(pos.v())
         }
         Key::Held => 1 << 62,
         Key::Mob(id) => (2 << 62) | id as u64,

@@ -9,6 +9,7 @@
 use glam::Vec3;
 
 use crate::mobs::MobEvent;
+use crate::planet::EntityPos;
 use crate::world::{Weather, World};
 
 /// Fixed simulation rate. Rendering runs faster and interpol- er, copes.
@@ -20,8 +21,8 @@ pub const DAY_LENGTH: f32 = 1200.0; // seconds per full day/night cycle
 pub struct PlayerCtx {
     /// Stable identity for lead-following: 0 = host, guests their net id.
     pub id: u32,
-    pub pos: Vec3,
-    pub spawn: Vec3,
+    pub pos: EntityPos,
+    pub spawn: EntityPos,
     /// False in creative or while dead: the wild can't touch you.
     pub attackable: bool,
     /// Charm of quiet: shrinks warden attention.
@@ -37,7 +38,11 @@ pub enum SimEvent {
     /// and every consumer resolved it back to a guest by re-iterating a
     /// HashMap — correct only while nobody joined or left in between, which
     /// nothing enforced.
-    PlayerHit { who: u32, dmg: f32, from: Vec3 },
+    PlayerHit {
+        who: u32,
+        dmg: f32,
+        from: crate::planet::EntityPos,
+    },
     /// A warden loosed a bolt (sound cue; the projectile is already live).
     BoltCast,
     /// Wildlife bred.
@@ -49,7 +54,7 @@ pub enum SimEvent {
     /// The sky changed its mind (ambience/visual transitions).
     WeatherChanged(Weather),
     /// The wild's own hand: a bolt landed here.
-    Lightning(Vec3),
+    Lightning(crate::planet::EntityPos),
     /// The year stopped turning, or started again.
     LongWinter(bool),
 }
@@ -201,34 +206,24 @@ impl Server {
                 MobEvent::Bred => events.push(SimEvent::Bred),
                 // Kills are settled inside tick_mobs; none escape.
                 MobEvent::Killed(_) => {}
-                MobEvent::Ate(pos) => self.world.apply_bite(pos),
+                MobEvent::Ate(pos) => self.world.apply_bite_at(pos),
                 MobEvent::Dung(at, guano) => {
                     let item = if guano { "base:guano" } else { "base:dung" };
                     if let Some(dung) = self.world.reg.item_id(item) {
                         let reg = self.world.reg.clone();
                         let stack = crate::inventory::ItemStack::new(&reg, dung, 1);
-                        self.world.push_drop(
-                            (
-                                at.x.floor() as i32,
-                                at.y.floor() as i32,
-                                at.z.floor() as i32,
-                            ),
-                            stack,
-                        );
+                        if let Some(at) = at.block() {
+                            self.world.push_drop_at(at, stack);
+                        }
                     }
                 }
                 MobEvent::LeadSnapped(at) => {
                     if let Some(lead) = self.world.reg.item_id("base:lead") {
                         let reg = self.world.reg.clone();
                         let stack = crate::inventory::ItemStack::new(&reg, lead, 1);
-                        self.world.push_drop(
-                            (
-                                at.x.floor() as i32,
-                                at.y.floor() as i32,
-                                at.z.floor() as i32,
-                            ),
-                            stack,
-                        );
+                        if let Some(at) = at.block() {
+                            self.world.push_drop_at(at, stack);
+                        }
                     }
                 }
             }
@@ -258,9 +253,14 @@ impl Server {
                     let dx = ((rng >> 8) % 49) as i32 - 24;
                     rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                     let dz = ((rng >> 8) % 49) as i32 - 24;
-                    let (x, z) = (p.x.floor() as i32 + dx, p.z.floor() as i32 + dz);
-                    self.world.settle_snow(x, z);
-                    self.world.rain_fill(x, z);
+                    if let Some(surface) = p
+                        .block()
+                        .and_then(|at| at.offset(dx, 0, dz))
+                        .map(|at| at.surface())
+                    {
+                        self.world.settle_snow_at(surface);
+                        self.world.rain_fill_at(surface);
+                    }
                 }
                 self.rng = rng;
             }
@@ -281,13 +281,18 @@ impl Server {
                 rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                 let dz = ((rng >> 8) % 81) as i32 - 40;
                 self.rng = rng;
-                let (sx, sz) = (p.x.floor() as i32 + dx, p.z.floor() as i32 + dz);
-                if let Some((bx, by, bz)) = self.world.lightning_strike(sx, sz) {
-                    events.push(SimEvent::Lightning(Vec3::new(
-                        bx as f32 + 0.5,
-                        by as f32 + 1.0,
-                        bz as f32 + 0.5,
-                    )));
+                let target = p
+                    .translated(Vec3::new(dx as f32, 0.0, dz as f32))
+                    .ok()
+                    .and_then(|canonical| canonical.pos.block())
+                    .map(|block| block.surface());
+                if let Some(struck) = target.and_then(|at| self.world.lightning_strike_at(at)) {
+                    let landed = struck
+                        .entity_center()
+                        .translated(Vec3::new(0.0, 0.5, 0.0))
+                        .expect("lightning presentation offset stays canonical")
+                        .pos;
+                    events.push(SimEvent::Lightning(landed));
                 }
             }
         } else {

@@ -5,11 +5,12 @@ use glam::Vec3;
 
 use crate::atlas::{ATLAS_TILES, CRACK_SLOT};
 use crate::mesher::{CORNERS, NORMALS, Vertex};
+use crate::planet::{BlockPos, EntityPos, SurfacePoint, block_to_render, local_frame};
 use crate::registry::{ItemId, Registry};
 use crate::world::World;
 
 pub struct ItemEntity {
-    pub pos: Vec3, // center of the mini-cube
+    pub pos: EntityPos, // center of the mini-cube
     pub vel: Vec3,
     pub item: ItemId,
     pub count: u32,
@@ -24,7 +25,7 @@ const DESPAWN: f32 = 300.0;
 pub const PICKUP_DELAY: f32 = 0.6;
 
 impl ItemEntity {
-    pub fn new(pos: Vec3, vel: Vec3, item: ItemId, count: u32) -> ItemEntity {
+    pub fn new(pos: EntityPos, vel: Vec3, item: ItemId, count: u32) -> ItemEntity {
         ItemEntity {
             pos,
             vel,
@@ -42,11 +43,10 @@ impl ItemEntity {
             return false;
         }
         // Lava eats what falls in.
-        let at = world.get_block(
-            self.pos.x.floor() as i32,
-            self.pos.y.floor() as i32,
-            self.pos.z.floor() as i32,
-        );
+        let at = self
+            .pos
+            .block()
+            .map_or(crate::registry::AIR, |pos| world.get_block_at(pos));
         if world.reg.is_lava(at) {
             return false;
         }
@@ -57,21 +57,28 @@ impl ItemEntity {
         self.vel.x *= drag;
         self.vel.z *= drag;
 
-        let mut next = self.pos + self.vel * dt;
+        let Ok(moved) = self.pos.translated(self.vel * dt) else {
+            return false;
+        };
+        let mut next = moved.pos;
+        self.vel = moved.rotation.rotate_vec3(self.vel);
         let half = SIZE / 2.0;
         // Floor collision at the bottom of the cube.
-        let bx = next.x.floor() as i32;
-        let bz = next.z.floor() as i32;
-        let by = (next.y - half).floor() as i32;
-        if world.reg.is_solid(world.get_block(bx, by, bz)) && self.vel.y < 0.0 {
-            next.y = by as f32 + 1.0 + half;
+        let by = (next.y() - half).floor() as i32;
+        let below = EntityPos::new(next.face(), next.u(), by as f32, next.v())
+            .ok()
+            .and_then(EntityPos::block);
+        if below.is_some_and(|pos| world.reg.is_solid(world.get_block_at(pos))) && self.vel.y < 0.0
+        {
+            next = EntityPos::new(next.face(), next.u(), by as f32 + 1.0 + half, next.v())
+                .expect("item floor resolution remains inside the shell");
             self.vel.y = 0.0;
         }
         // Simple side collision: don't move into solid blocks.
-        let cx = next.x.floor() as i32;
-        let cy = next.y.floor() as i32;
-        let cz = next.z.floor() as i32;
-        if world.reg.is_solid(world.get_block(cx, cy, cz)) {
+        if next
+            .block()
+            .is_some_and(|pos| world.reg.is_solid(world.get_block_at(pos)))
+        {
             next = self.pos;
             self.vel.x = 0.0;
             self.vel.z = 0.0;
@@ -110,7 +117,11 @@ impl ItemEntity {
         let bob = (self.age * 2.2).sin() * 0.05;
         let ang = self.age * 1.5;
         let (sin, cos) = ang.sin_cos();
-        let center = self.pos + Vec3::new(0.0, bob, 0.0);
+        let center = self.pos.render_pos();
+        let frame = local_frame(self.pos.surface_point());
+        let east = frame.east.as_vec3();
+        let up = frame.up.as_vec3();
+        let north = frame.north.as_vec3();
 
         for face in 0..6 {
             let slot = reg.block(block).tiles[face];
@@ -119,7 +130,9 @@ impl ItemEntity {
             let inset = ts / 32.0;
             let n = NORMALS[face];
             let (nx, nz) = (n[0] as f32, n[2] as f32);
-            let normal = [nx * cos - nz * sin, n[1] as f32, nx * sin + nz * cos];
+            let local_normal = Vec3::new(nx * cos - nz * sin, n[1] as f32, nx * sin + nz * cos);
+            let normal =
+                (east * local_normal.x + up * local_normal.y + north * local_normal.z).to_array();
             let base = verts.len() as u32;
             for c in CORNERS[face].iter() {
                 // Cube corner in local space, spun around Y.
@@ -134,7 +147,7 @@ impl ItemEntity {
                     _ => (c[0], c[2]),
                 };
                 verts.push(Vertex {
-                    pos: [center.x + rx, center.y + ly - half, center.z + rz],
+                    pos: (center + east * rx + up * (ly - half + bob) + north * rz).to_array(),
                     uv: [
                         tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                         ty as f32 * ts + inset + v * (ts - 2.0 * inset),
@@ -164,7 +177,11 @@ impl ItemEntity {
         let bob = (self.age * 2.2).sin() * 0.05;
         let ang = self.age * 1.5;
         let (sin, cos) = ang.sin_cos();
-        let c = self.pos + Vec3::new(0.0, bob, 0.0);
+        let c = self.pos.render_pos();
+        let frame = local_frame(self.pos.surface_point());
+        let east = frame.east.as_vec3();
+        let up = frame.up.as_vec3();
+        let north = frame.north.as_vec3();
         let h = 0.35 * self.pop(); // sprite size
 
         // Two crossed upright quads, spun around Y (drawn double-sided).
@@ -190,7 +207,8 @@ impl ItemEntity {
                         ty as f32 * ts + inset
                     };
                     verts.push(Vertex {
-                        pos: [c.x + dx * o, c.y + y + 0.5 * h, c.z + dz * o],
+                        pos: (c + east * (dx * o) + up * (y + 0.5 * h + bob) + north * (dz * o))
+                            .to_array(),
                         uv: [u, v],
                         normal: [0.0, 0.0, 0.0],
                         light: [0.95 * lum.0[0], 0.95 * lum.0[1], 0.95 * lum.0[2]],
@@ -205,20 +223,13 @@ impl ItemEntity {
 
 /// Crack overlay: a slightly inflated cube around the block being mined,
 /// textured with the crack stage. Rendered alpha-blended.
-pub fn emit_crack(
-    block: (i32, i32, i32),
-    progress: f32,
-    verts: &mut Vec<Vertex>,
-    idx: &mut Vec<u32>,
-) {
+pub fn emit_crack(block: BlockPos, progress: f32, verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
     let stage = ((progress * 4.0) as u16).min(3);
     let slot = CRACK_SLOT + stage;
     let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
     let ts = 1.0 / ATLAS_TILES as f32;
     let inset = ts / 32.0;
-    let e = 0.006; // inflate to avoid z-fighting
-    let origin = Vec3::new(block.0 as f32 - e, block.1 as f32 - e, block.2 as f32 - e);
-    let scale = 1.0 + 2.0 * e;
+    let e = 0.006f32; // radial inflation avoids z-fighting
 
     for (face, corners) in CORNERS.iter().enumerate() {
         let base = verts.len() as u32;
@@ -228,12 +239,16 @@ pub fn emit_crack(
                 4 | 5 => (c[0], 1.0 - c[1]),
                 _ => (c[0], c[2]),
             };
+            let surface = SurfacePoint {
+                face: block.face(),
+                u: f64::from(block.u()) + f64::from(c[0]),
+                v: f64::from(block.v()) + f64::from(c[2]),
+            };
+            let mut position =
+                block_to_render(surface, f64::from(block.y()) + f64::from(c[1])).as_vec3();
+            position += position.normalize_or_zero() * e;
             verts.push(Vertex {
-                pos: [
-                    origin.x + c[0] * scale,
-                    origin.y + c[1] * scale,
-                    origin.z + c[2] * scale,
-                ],
+                pos: position.to_array(),
                 uv: [
                     tx as f32 * ts + inset + u * (ts - 2.0 * inset),
                     ty as f32 * ts + inset + v * (ts - 2.0 * inset),

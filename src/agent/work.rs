@@ -9,18 +9,13 @@ use crate::net::{C2S, InventoryArea};
 const REACH: f32 = 6.5; // stay inside the host's 7.0
 
 impl Agent {
-    fn dist_to(&self, x: i32, y: i32, z: i32) -> f32 {
-        (Vec3::new(x as f32 + 0.5, y as f32 + 0.5, z as f32 + 0.5)
-            - (self.player.pos + Vec3::new(0.0, 1.0, 0.0)))
-        .length()
+    fn dist_to(&self, pos: crate::planet::BlockPos) -> f32 {
+        self.player.eye().distance_to(pos.entity_center())
     }
 
-    fn face(&mut self, x: i32, z: i32) {
-        let d = Vec3::new(
-            x as f32 + 0.5 - self.player.pos.x,
-            0.0,
-            z as f32 + 0.5 - self.player.pos.z,
-        );
+    fn face_block(&mut self, pos: crate::planet::BlockPos) {
+        let delta = self.player.pos.local_delta_to(pos.entity_center());
+        let d = Vec3::new(delta.x, 0.0, delta.z);
         if d.length() > 0.01 {
             self.yaw = d.z.atan2(d.x);
         }
@@ -73,22 +68,22 @@ impl Agent {
     }
 
     /// Break one block and wait for the world's echo.
-    pub fn break_block(&mut self, x: i32, y: i32, z: i32) -> Result<(), String> {
-        if self.dist_to(x, y, z) > REACH {
+    pub fn break_block_at(&mut self, pos: crate::planet::BlockPos) -> Result<(), String> {
+        if self.dist_to(pos) > REACH {
             return Err("out of reach".into());
         }
-        let before = self.world.get_block(x, y, z);
+        let before = self.world.get_block_at(pos);
         if before == registry::AIR {
             return Err("nothing there".into());
         }
-        self.face(x, z);
+        self.face_block(pos);
         self.anchor_stance();
-        self.send(&C2S::Break { x, y, z });
+        self.send(&C2S::Break { pos });
         // Triple-size echo budget: parallel test load can starve the
         // host pump well past a polite wait (green runs exit early).
         for _ in 0..120 {
             self.pump_for(0.05);
-            if self.world.get_block(x, y, z) != before {
+            if self.world.get_block_at(pos) != before {
                 return Ok(());
             }
         }
@@ -97,21 +92,23 @@ impl Agent {
 
     /// Walk to a tree and fell what's reachable of its trunk; the
     /// drops arrive over the wire as the host awards them.
-    pub fn chop(&mut self, x: i32, y: i32, z: i32) -> Result<String, String> {
+    pub fn chop_at(&mut self, pos: crate::planet::BlockPos) -> Result<String, String> {
         let logs = self.reg.tags.get("base:logs").cloned().unwrap_or_default();
-        let is_log = |a: &Agent, cx: i32, cy: i32, cz: i32| {
-            let b = a.world.get_block(cx, cy, cz);
+        let is_log = |a: &Agent, at: crate::planet::BlockPos| {
+            let b = a.world.get_block_at(at);
             a.reg
                 .item_id(&a.reg.block(b).name)
                 .is_some_and(|i| logs.contains(&i))
         };
-        if !is_log(self, x, y, z) {
+        if !is_log(self, pos) {
             return Err("that isn't a log".into());
         }
         // Walk down to the trunk base, then stand beside it.
-        let mut base = y;
-        while base > 1 && is_log(self, x, base - 1, z) {
-            base -= 1;
+        let mut base = pos;
+        while let Some(below) = base.offset(0, -1, 0)
+            && is_log(self, below)
+        {
+            base = below;
         }
         let spot = [
             (1, 0),
@@ -126,22 +123,25 @@ impl Agent {
         .into_iter()
         .find_map(|(dx, dz)| {
             (-2..=2).find_map(|dy| {
-                let c = (x + dx, base + dy, z + dz);
-                self.stands(c.0, c.1, c.2).then_some(c)
+                let c = base.offset(dx, dy, dz)?;
+                self.stands_at(c).then_some(c)
             })
         })
         .ok_or("nowhere to stand at that tree")?;
         self.go_to(spot)?;
         self.wait_idle(30.0);
         let mut felled = 0;
-        for cy in base..base + 8 {
-            if !is_log(self, x, cy, z) {
+        for dy in 0..8 {
+            let Some(at) = base.offset(0, dy, 0) else {
+                break;
+            };
+            if !is_log(self, at) {
                 break;
             }
-            if self.dist_to(x, cy, z) > REACH {
+            if self.dist_to(at) > REACH {
                 break;
             }
-            self.break_block(x, cy, z)?;
+            self.break_block_at(at)?;
             felled += 1;
         }
         // Whatever the trunk dropped has been Given by now.
@@ -158,8 +158,8 @@ impl Agent {
     /// broadcasts blur the click-echo pairing), so a misplaced hold
     /// puts the WRONG BLOCK in the world. A player who misclicks
     /// breaks it and does it again — so does the agent.
-    pub fn place(&mut self, x: i32, y: i32, z: i32, item: &str) -> Result<(), String> {
-        if self.dist_to(x, y, z) > REACH {
+    pub fn place_at(&mut self, pos: crate::planet::BlockPos, item: &str) -> Result<(), String> {
+        if self.dist_to(pos) > REACH {
             return Err("out of reach".into());
         }
         let want = self.reg.item_id(item).and_then(|i| self.reg.item(i).places);
@@ -181,19 +181,19 @@ impl Agent {
                 continue;
             }
             self.pump_for(0.1);
-            let before = self.world.get_block(x, y, z);
+            let before = self.world.get_block_at(pos);
             if Some(before) == want {
                 return Ok(()); // a slow echo: the last attempt landed
             }
             if before != registry::AIR {
                 return Err("that cell is occupied".into());
             }
-            self.face(x, z);
+            self.face_block(pos);
             self.anchor_stance();
-            self.send(&C2S::Place { x, y, z });
+            self.send(&C2S::Place { pos });
             for _ in 0..90 {
                 self.pump_for(0.05);
-                let now = self.world.get_block(x, y, z);
+                let now = self.world.get_block_at(pos);
                 if Some(now) == want {
                     return Ok(());
                 }
@@ -202,7 +202,7 @@ impl Agent {
                     // stale-held item. Reclaim it and try again.
                     last = format!("misplaced ({}); reclaimed it", self.reg.block(now).name);
                     if attempt < 2 {
-                        self.break_block(x, y, z)?;
+                        self.break_block_at(pos)?;
                         self.pump_for(0.2);
                     }
                     break;
@@ -391,19 +391,17 @@ impl Agent {
     /// click protocol; the HeldResult echo confirms every move.
     pub fn deposit(
         &mut self,
-        x: i32,
-        y: i32,
-        z: i32,
+        pos: crate::planet::BlockPos,
         only: Option<&str>,
     ) -> Result<String, String> {
-        if self.dist_to(x, y, z) > REACH {
+        if self.dist_to(pos) > REACH {
             return Err("out of reach of the chest".into());
         }
         let filter = match only {
             Some(n) => Some(self.reg.item_id(n).ok_or(format!("unknown item {n}"))?),
             None => None,
         };
-        self.send(&C2S::OpenContainer { x, y, z });
+        self.send(&C2S::OpenContainer { pos });
         self.pump_for(0.3);
         let mut moved = 0u32;
         for slot in 0..TOTAL_SLOTS {
@@ -420,9 +418,7 @@ impl Agent {
                     break;
                 }
                 self.send(&C2S::ContainerClick {
-                    x,
-                    y,
-                    z,
+                    pos,
                     slot: chest_slot as u8,
                     right: false,
                 });
@@ -430,9 +426,7 @@ impl Agent {
                 // A swap pulled something out: put it straight back.
                 if self.cursor.is_some_and(|c| c.item != stack.item) {
                     self.send(&C2S::ContainerClick {
-                        x,
-                        y,
-                        z,
+                        pos,
                         slot: chest_slot as u8,
                         right: false,
                     });
@@ -451,22 +445,22 @@ impl Agent {
     }
 
     /// Rest the held item on a station / take work back.
-    pub fn station_put(&mut self, x: i32, y: i32, z: i32, item: &str) -> Result<(), String> {
-        if self.dist_to(x, y, z) > REACH {
+    pub fn station_put(&mut self, pos: crate::planet::BlockPos, item: &str) -> Result<(), String> {
+        if self.dist_to(pos) > REACH {
             return Err("out of reach".into());
         }
         self.select(item)?;
         self.pump_for(0.1);
-        self.send(&C2S::AnvilPut { x, y, z });
+        self.send(&C2S::AnvilPut { pos });
         self.pump_for(0.2);
         Ok(())
     }
 
-    pub fn station_take(&mut self, x: i32, y: i32, z: i32) -> Result<(), String> {
-        if self.dist_to(x, y, z) > REACH {
+    pub fn station_take(&mut self, pos: crate::planet::BlockPos) -> Result<(), String> {
+        if self.dist_to(pos) > REACH {
             return Err("out of reach".into());
         }
-        self.send(&C2S::AnvilTake { x, y, z });
+        self.send(&C2S::AnvilTake { pos });
         self.pump_for(0.3);
         Ok(())
     }

@@ -112,6 +112,23 @@ fn rpc_ok(id: Option<Value>, result: Value) -> String {
     json!({"jsonrpc": "2.0", "id": id, "result": result}).to_string()
 }
 
+fn planetary_pos(args: &Value) -> Result<crate::planet::BlockPos, String> {
+    let face = args
+        .get("face")
+        .and_then(Value::as_str)
+        .and_then(crate::planet::Face::from_name)
+        .ok_or("face must be PosX, NegX, PosY, NegY, PosZ, or NegZ")?;
+    let coord = |name: &str| {
+        args.get(name)
+            .and_then(Value::as_u64)
+            .ok_or_else(|| format!("{name} must be a nonnegative integer"))
+    };
+    let u = u16::try_from(coord("u")?).map_err(|_| "u is outside 0..8191")?;
+    let y = u8::try_from(coord("y")?).map_err(|_| "y is outside 0..255")?;
+    let v = u16::try_from(coord("v")?).map_err(|_| "v is outside 0..8191")?;
+    crate::planet::BlockPos::new(face, u, y, v).map_err(|error| error.to_string())
+}
+
 fn tool(name: &str, desc: &str, props: Value, required: &[&str]) -> Value {
     json!({
         "name": name,
@@ -123,6 +140,14 @@ fn tool(name: &str, desc: &str, props: Value, required: &[&str]) -> Value {
 fn tool_schemas() -> Vec<Value> {
     let num = |d: &str| json!({"type": "number", "description": d});
     let s = |d: &str| json!({"type": "string", "description": d});
+    let pos = || {
+        json!({
+            "face": s("planet face: PosX, NegX, PosY, NegY, PosZ, or NegZ"),
+            "u": num("bounded east coordinate, 0..8191"),
+            "y": num("radial block height, 0..255"),
+            "v": num("bounded north coordinate, 0..8191")
+        })
+    };
     vec![
         tool(
             "look_around",
@@ -139,8 +164,8 @@ fn tool_schemas() -> Vec<Value> {
         tool(
             "at",
             "Inspect one block position.",
-            json!({"x": num("x"), "y": num("y"), "z": num("z")}),
-            &["x", "y", "z"],
+            pos(),
+            &["face", "u", "y", "v"],
         ),
         tool("inventory", "Your pack, slot by slot.", json!({}), &[]),
         tool(
@@ -164,8 +189,8 @@ fn tool_schemas() -> Vec<Value> {
         tool(
             "go_to",
             "Walk to a position (pathfinds; blocks until arrival, failure, or timeout).",
-            json!({"x": num("x"), "z": num("z"), "y": num("y (optional; found from terrain)")}),
-            &["x", "z"],
+            pos(),
+            &["face", "u", "y", "v"],
         ),
         tool(
             "follow",
@@ -183,14 +208,18 @@ fn tool_schemas() -> Vec<Value> {
         tool(
             "break_block",
             "Break one block in reach.",
-            json!({"x": num("x"), "y": num("y"), "z": num("z")}),
-            &["x", "y", "z"],
+            pos(),
+            &["face", "u", "y", "v"],
         ),
         tool(
             "place",
             "Place an item from the pack as a block.",
-            json!({"x": num("x"), "y": num("y"), "z": num("z"), "item": s("item name, e.g. base:chest")}),
-            &["x", "y", "z", "item"],
+            {
+                let mut fields = pos().as_object().cloned().unwrap_or_default();
+                fields.insert("item".into(), s("item name, e.g. base:chest"));
+                Value::Object(fields)
+            },
+            &["face", "u", "y", "v", "item"],
         ),
         tool(
             "craft",
@@ -201,20 +230,28 @@ fn tool_schemas() -> Vec<Value> {
         tool(
             "deposit",
             "Stow pack contents into a chest in reach.",
-            json!({"x": num("x"), "y": num("y"), "z": num("z"), "item": s("only this item (optional)")}),
-            &["x", "y", "z"],
+            {
+                let mut fields = pos().as_object().cloned().unwrap_or_default();
+                fields.insert("item".into(), s("only this item (optional)"));
+                Value::Object(fields)
+            },
+            &["face", "u", "y", "v"],
         ),
         tool(
             "station_put",
             "Rest an item on a station (anvil, quern, millstone...).",
-            json!({"x": num("x"), "y": num("y"), "z": num("z"), "item": s("item to rest")}),
-            &["x", "y", "z", "item"],
+            {
+                let mut fields = pos().as_object().cloned().unwrap_or_default();
+                fields.insert("item".into(), s("item to rest"));
+                Value::Object(fields)
+            },
+            &["face", "u", "y", "v", "item"],
         ),
         tool(
             "station_take",
             "Take resting work back off a station.",
-            json!({"x": num("x"), "y": num("y"), "z": num("z")}),
-            &["x", "y", "z"],
+            pos(),
+            &["face", "u", "y", "v"],
         ),
         tool(
             "eat",
@@ -236,10 +273,9 @@ fn call_tool(agent: &mut Agent, name: &str, args: &Value) -> String {
             Some(kind) => agent.nearest(&kind, gi("radius").unwrap_or(32)),
             None => need.into(),
         },
-        "at" => match (gi("x"), gi("y"), gi("z")) {
-            (Some(x), Some(y), Some(z)) => agent.at(x, y, z),
-            _ => need.into(),
-        },
+        "at" => planetary_pos(args)
+            .map(|pos| agent.at(pos))
+            .unwrap_or_else(|error| error),
         "inventory" => agent.inventory_text(),
         "status" => agent.status(),
         "events" => {
@@ -257,19 +293,16 @@ fn call_tool(agent: &mut Agent, name: &str, args: &Value) -> String {
             }
             None => need.into(),
         },
-        "go_to" => match (gi("x"), gi("z")) {
-            (Some(x), Some(z)) => {
-                let y = gi("y").unwrap_or_else(|| (motion::cell_of(agent.player.pos).1).max(1));
-                match agent.go_to((x, y, z)) {
-                    Ok(full) => {
-                        let note = if full { "" } else { " (partial route)" };
-                        let outcome = agent.wait_idle(90.0);
-                        format!("{outcome}{note}")
-                    }
-                    Err(e) => e,
+        "go_to" => match planetary_pos(args) {
+            Ok(pos) => match agent.go_to(pos) {
+                Ok(full) => {
+                    let note = if full { "" } else { " (partial route)" };
+                    let outcome = agent.wait_idle(90.0);
+                    format!("{outcome}{note}")
                 }
-            }
-            _ => need.into(),
+                Err(e) => e,
+            },
+            Err(error) => error,
         },
         "follow" => match gs("player") {
             Some(p) => {
@@ -301,41 +334,48 @@ fn call_tool(agent: &mut Agent, name: &str, args: &Value) -> String {
             let logs = agent.reg.tags.get("base:logs").cloned().unwrap_or_default();
             let reg = agent.reg.clone();
             let p = agent.player.pos;
-            let (px, py, pz) = motion::cell_of(p);
-            let mut best: Option<((i32, i32, i32), f32)> = None;
-            for x in px - 48..=px + 48 {
-                for z in pz - 48..=pz + 48 {
-                    for y in (py - 24).max(1)..=py + 24 {
-                        let b = agent.world.get_block(x, y, z);
+            let Some(origin) = motion::cell_of(p) else {
+                return "outside the voxel shell".into();
+            };
+            let py = i32::from(origin.y());
+            let mut best: Option<(crate::planet::BlockPos, f32)> = None;
+            for du in -48..=48 {
+                for dv in -48..=48 {
+                    for y in (py - 24).max(1)..=(py + 24).min(255) {
+                        let Some(at) = origin.offset(du, y - py, dv) else {
+                            continue;
+                        };
+                        let b = agent.world.get_block_at(at);
                         if reg
                             .item_id(&reg.block(b).name)
                             .is_some_and(|i| logs.contains(&i))
                         {
-                            let d = Vec3::new(x as f32, y as f32, z as f32).distance(p);
+                            let d = at.entity_center().distance_to(p);
                             if best.is_none_or(|(_, bd)| d < bd) {
-                                best = Some(((x, y, z), d));
+                                best = Some((at, d));
                             }
                         }
                     }
                 }
             }
             match best {
-                Some((c, _)) => agent.chop(c.0, c.1, c.2).unwrap_or_else(|e| e),
+                Some((pos, _)) => agent.chop_at(pos).unwrap_or_else(|e| e),
                 None => "no trees on any streamed ground near you".into(),
             }
         }
-        "break_block" => match (gi("x"), gi("y"), gi("z")) {
-            (Some(x), Some(y), Some(z)) => match agent.break_block(x, y, z) {
+        "break_block" => match planetary_pos(args) {
+            Ok(pos) => match agent.break_block_at(pos) {
                 Ok(()) => "broken".into(),
                 Err(e) => e,
             },
-            _ => need.into(),
+            Err(error) => error,
         },
-        "place" => match (gi("x"), gi("y"), gi("z"), gs("item")) {
-            (Some(x), Some(y), Some(z), Some(item)) => match agent.place(x, y, z, &item) {
+        "place" => match (planetary_pos(args), gs("item")) {
+            (Ok(pos), Some(item)) => match agent.place_at(pos, &item) {
                 Ok(()) => "placed".into(),
                 Err(e) => e,
             },
+            (Err(error), _) => error,
             _ => need.into(),
         },
         "craft" => match gs("what") {
@@ -345,28 +385,27 @@ fn call_tool(agent: &mut Agent, name: &str, args: &Value) -> String {
             }
             None => need.into(),
         },
-        "deposit" => match (gi("x"), gi("y"), gi("z")) {
-            (Some(x), Some(y), Some(z)) => {
+        "deposit" => match planetary_pos(args) {
+            Ok(pos) => {
                 let only = gs("item");
-                agent
-                    .deposit(x, y, z, only.as_deref())
-                    .unwrap_or_else(|e| e)
+                agent.deposit(pos, only.as_deref()).unwrap_or_else(|e| e)
             }
-            _ => need.into(),
+            Err(error) => error,
         },
-        "station_put" => match (gi("x"), gi("y"), gi("z"), gs("item")) {
-            (Some(x), Some(y), Some(z), Some(item)) => match agent.station_put(x, y, z, &item) {
+        "station_put" => match (planetary_pos(args), gs("item")) {
+            (Ok(pos), Some(item)) => match agent.station_put(pos, &item) {
                 Ok(()) => "rested".into(),
                 Err(e) => e,
             },
+            (Err(error), _) => error,
             _ => need.into(),
         },
-        "station_take" => match (gi("x"), gi("y"), gi("z")) {
-            (Some(x), Some(y), Some(z)) => match agent.station_take(x, y, z) {
+        "station_take" => match planetary_pos(args) {
+            Ok(pos) => match agent.station_take(pos) {
                 Ok(()) => "taken (check events for what arrived)".into(),
                 Err(e) => e,
             },
-            _ => need.into(),
+            Err(error) => error,
         },
         "eat" => match gs("item") {
             Some(item) => match agent.eat(&item) {

@@ -435,6 +435,8 @@ pub struct Registry {
 struct ModToml {
     id: String,
     #[serde(default)]
+    world_api: Option<u32>,
+    #[serde(default)]
     name: Option<String>,
     #[serde(default)]
     version: Option<String>,
@@ -962,11 +964,21 @@ const BASE_FEATURES: &str = include_str!("../base/features.toml");
 const BASE_ALIASES: &str = include_str!("../base/aliases.toml");
 const BASE_ANIMALS: &str = include_str!("../base/animals.toml");
 const BASE_STRUCTURES: &str = include_str!("../base/structures.toml");
+pub const WORLD_API_VERSION: u32 = 2;
 
 fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
     let manifest =
         std::fs::read_to_string(dir.join("mod.toml")).map_err(|e| format!("mod.toml: {e}"))?;
     let m: ModToml = toml::from_str(&manifest).map_err(|e| format!("mod.toml: {e}"))?;
+    if m.world_api != Some(WORLD_API_VERSION) {
+        let found = m
+            .world_api
+            .map_or_else(|| "missing".to_string(), |version| version.to_string());
+        return Err(format!(
+            "mod.toml: world_api is {found}; this build requires world_api = \
+             {WORLD_API_VERSION} (planet positions use face/u/y/v)"
+        ));
+    }
     let read = |f: &str| std::fs::read_to_string(dir.join(f)).unwrap_or_default();
     let blocks: BlocksFile =
         toml::from_str(&read("blocks.toml")).map_err(|e| format!("blocks.toml: {e}"))?;

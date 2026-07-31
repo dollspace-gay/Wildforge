@@ -29,7 +29,7 @@ impl World {
         let counted = self
             .hearts
             .values()
-            .filter(|h| !self.is_ancient_scar(h.pos.0, h.pos.2));
+            .filter(|h| !self.is_ancient_scar_at(h.pos.surface()));
         let (mut dead, mut known) = (0, 0);
         for h in counted {
             known += 1;
@@ -63,35 +63,58 @@ impl World {
 
     /// Does precipitation fall as snow in this column? The threshold
     /// relaxes in winter so taiga and cold-temperate lands whiten.
-    pub fn snows_at(&self, x: i32, z: i32) -> bool {
-        let t = self.generator.climate(x, z).t;
+    pub fn snows_at_surface(&self, pos: crate::planet::SurfacePos) -> bool {
+        let t = self.generator.climate_at(pos).t;
         t < if self.season() == 3 { -0.05 } else { -0.35 }
     }
 
+    /// Legacy positive-Z fixture helper.
+    #[cfg(test)]
+    pub(super) fn snows_at(&self, x: i32, z: i32) -> bool {
+        crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+            .is_ok_and(|pos| self.snows_at_surface(pos))
+    }
+
     /// Deserts stay dry: overcast skies, nothing falls.
-    pub fn rains_at(&self, x: i32, z: i32) -> bool {
-        let c = self.generator.climate(x, z);
+    pub fn rains_at_surface(&self, pos: crate::planet::SurfacePos) -> bool {
+        let c = self.generator.climate_at(pos);
         !(c.t > 0.6 && c.h < -0.5)
+    }
+
+    /// Legacy positive-Z fixture helper.
+    #[cfg(test)]
+    pub(super) fn rains_at(&self, x: i32, z: i32) -> bool {
+        crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+            .is_ok_and(|pos| self.rains_at_surface(pos))
     }
 
     // ---------------- ire (reciprocity) ----------------
 
     /// The regional ledger's cell for a position (~256-block country).
-    pub fn ire_cell(x: i32, z: i32) -> (i32, i32) {
-        (x >> 8, z >> 8)
+    #[cfg(test)]
+    pub fn ire_cell(x: i32, z: i32) -> RegionCell {
+        RegionCell::from_legacy(x, z)
     }
 
-    /// The land's local standing: negative is tended, positive is
-    /// aggrieved, clamped to a grudge the wild can actually hold.
-    pub fn regional_ire_at(&self, x: i32, z: i32) -> f32 {
+    /// The land's local standing at a canonical planetary surface cell.
+    pub fn regional_ire_at_surface(&self, pos: crate::planet::SurfacePos) -> f32 {
         self.regional_ire
-            .get(&Self::ire_cell(x, z))
+            .get(&RegionCell::from_surface(pos))
             .copied()
             .unwrap_or(0.0)
     }
 
-    fn charge_cell(&mut self, x: i32, z: i32, amt: f32) {
-        let cell = Self::ire_cell(x, z);
+    /// The land's local standing: negative is tended, positive is
+    /// aggrieved, clamped to a grudge the wild can actually hold.
+    #[cfg(test)]
+    pub fn regional_ire_at(&self, x: i32, z: i32) -> f32 {
+        self.regional_ire_at_surface(
+            crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+                .expect("legacy regional coordinate is within the bounded porting window"),
+        )
+    }
+
+    fn charge_cell(&mut self, cell: RegionCell, amt: f32) {
         let e = self.regional_ire.entry(cell).or_insert(0.0);
         *e = (*e + amt).clamp(-20.0, 20.0);
         if e.abs() < 0.01 {
@@ -100,18 +123,32 @@ impl World {
     }
 
     /// Taking, placed: the world remembers, and so does the valley.
+    #[cfg(test)]
     pub fn add_ire_at(&mut self, x: i32, z: i32, amt: f32) {
+        let pos = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+            .expect("legacy regional coordinate is within the bounded porting window");
+        self.add_ire_at_surface(pos, amt);
+    }
+
+    pub fn add_ire_at_surface(&mut self, pos: crate::planet::SurfacePos, amt: f32) {
         self.add_ire(amt);
-        self.charge_cell(x, z, amt);
+        self.charge_cell(RegionCell::from_surface(pos), amt);
     }
 
     /// Mending, placed: the global refund keeps its daily cap, but the
     /// valley always notices the hands that tend it.
+    #[cfg(test)]
     pub fn plant_ire_at(&mut self, x: i32, z: i32, amt: f32) {
+        let pos = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+            .expect("legacy regional coordinate is within the bounded porting window");
+        self.plant_ire_at_surface(pos, amt);
+    }
+
+    pub fn plant_ire_at_surface(&mut self, pos: crate::planet::SurfacePos, amt: f32) {
         self.plant_ire(amt);
-        self.charge_cell(x, z, -amt);
+        self.charge_cell(RegionCell::from_surface(pos), -amt);
         // Tending is also how a cell earns back its bloom.
-        self.ease_bloom_debt(x, z, amt);
+        self.ease_bloom_debt_at_surface(pos, amt);
     }
 
     // ---------------- the bloom (wrath as renewal) ----------------
@@ -120,9 +157,16 @@ impl World {
     /// wardens charge it; charged country erupts — the green tide
     /// runs hot, flowers and fungi sprout, bushes refruit. The titan
     /// levels the valley and the jungle follows it home.
+    #[cfg(test)]
     pub fn bloom_at(&self, x: i32, z: i32) -> f32 {
+        let pos = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+            .expect("legacy regional coordinate is within the bounded porting window");
+        self.bloom_at_surface(pos)
+    }
+
+    pub fn bloom_at_surface(&self, pos: crate::planet::SurfacePos) -> f32 {
         self.bloom
-            .get(&Self::ire_cell(x, z))
+            .get(&RegionCell::from_surface(pos))
             .copied()
             .unwrap_or(0.0)
     }
@@ -131,8 +175,15 @@ impl World {
     /// bloomed over and over and never tended gives less each time,
     /// and finally nothing: the storm's gift is not a faucet, and
     /// farming the wild's rage spends something real.
+    #[cfg(test)]
     pub fn add_bloom(&mut self, x: i32, z: i32, days: f32) {
-        let cell = Self::ire_cell(x, z);
+        let pos = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+            .expect("legacy regional coordinate is within the bounded porting window");
+        self.add_bloom_at_surface(pos, days);
+    }
+
+    pub fn add_bloom_at_surface(&mut self, pos: crate::planet::SurfacePos, days: f32) {
+        let cell = RegionCell::from_surface(pos);
         let spent = self.bloom_spent.get(&cell).copied().unwrap_or(0.0);
         let yield_frac = (1.0 - spent / BLOOM_EXHAUSTION).clamp(0.0, 1.0);
         let given = days * yield_frac;
@@ -145,8 +196,15 @@ impl World {
     }
 
     /// Tending pays the ground back its willingness to bloom.
+    #[cfg(test)]
     pub fn ease_bloom_debt(&mut self, x: i32, z: i32, amount: f32) {
-        let cell = Self::ire_cell(x, z);
+        let pos = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
+            .expect("legacy regional coordinate is within the bounded porting window");
+        self.ease_bloom_debt_at_surface(pos, amount);
+    }
+
+    pub fn ease_bloom_debt_at_surface(&mut self, pos: crate::planet::SurfacePos, amount: f32) {
+        let cell = RegionCell::from_surface(pos);
         if let Some(v) = self.bloom_spent.get_mut(&cell) {
             *v = (*v - amount).max(0.0);
             if *v <= 0.01 {
@@ -157,46 +215,69 @@ impl World {
 
     /// A hostile fell here: the wild reclaims its own, extravagantly.
     /// Dryads put up a sapling where they stood.
+    #[cfg(test)]
     pub fn wild_falls(&mut self, species_name: &str, x: i32, y: i32, z: i32) {
-        self.add_bloom(x, z, 1.0);
+        if let Some(pos) = crate::planet::BlockPos::of_world(x, y, z) {
+            self.wild_falls_at(species_name, pos);
+        }
+    }
+
+    pub fn wild_falls_at(&mut self, species_name: &str, pos: crate::planet::BlockPos) {
+        self.add_bloom_at_surface(pos.surface(), 1.0);
         if species_name.contains("dryad")
-            && self.get_block(x, y, z) == AIR
-            && self
-                .reg
-                .block(self.get_block(x, y - 1, z))
-                .name
-                .contains("grass")
+            && self.get_block_at(pos) == AIR
+            && pos.offset(0, -1, 0).is_some_and(|below| {
+                self.reg
+                    .block(self.get_block_at(below))
+                    .name
+                    .contains("grass")
+            })
             && let Some(sap) = self.reg.block_id("base:oak_sapling")
         {
-            self.set_block(x, y, z, sap);
+            self.set_block_at(pos, sap);
         }
     }
 
     /// The wild's own hand: a bolt out of an ire storm. Strikes only
     /// natural, untouched country; chars grass or dirt to max-fertile
     /// scorch and banks bloom in the cell. Returns the struck cell.
-    pub fn lightning_strike(&mut self, x: i32, z: i32) -> Option<(i32, i32, i32)> {
-        let cp = crate::chunk::ChunkPos::of_world(x, z);
+    pub fn lightning_strike_at(
+        &mut self,
+        surface: crate::planet::SurfacePos,
+    ) -> Option<crate::planet::BlockPos> {
+        let cp = crate::planet::ChunkPos::from_surface(surface);
         // The invariant, absolute: the wild never touches what
         // players BUILT — a touched chunk is off the target list.
-        if self.player_touched.contains(&(cp.x, cp.z)) {
+        if self.player_touched.contains(&cp) {
             return None;
         }
-        let y = self.surface_height(x, z);
+        let y = self.surface_height_at(surface);
         if y <= 2 {
             return None;
         }
-        let name = self.reg.block(self.get_block(x, y, z)).name.clone();
-        self.add_bloom(x, z, 3.0);
+        let struck =
+            crate::planet::BlockPos::new(surface.face(), surface.u(), y as u8, surface.v()).ok()?;
+        let name = self.reg.block(self.get_block_at(struck)).name.clone();
+        self.add_bloom_at_surface(surface, 3.0);
         if (name == "base:grass" || name == "base:dirt")
             && let Some(ch) = self.reg.block_id("base:charred_soil")
         {
-            self.set_block(x, y, z, ch);
+            self.set_block_at(struck, ch);
         }
         // And it starts a fire, which is the wild's to own: it pays
         // bloom where it burns and will not cross onto worked ground.
-        self.light_fire(x, y + 1, z, false);
-        Some((x, y, z))
+        if let Some(above) = struck.offset(0, 1, 0) {
+            self.light_fire_at(above, false);
+        }
+        Some(struck)
+    }
+
+    #[cfg(test)]
+    pub fn lightning_strike(&mut self, x: i32, z: i32) -> Option<(i32, i32, i32)> {
+        let surface =
+            crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z).ok()?;
+        self.lightning_strike_at(surface)
+            .map(crate::planet::BlockPos::centered)
     }
 
     pub fn ire_tier(&self) -> usize {
@@ -215,8 +296,13 @@ impl World {
     /// The tier as this ground feels it: the world's mood shifted by
     /// the local ledger (±20 regional ≈ ±2 tiers — an angry forest is
     /// menacing, not lethal; a tended valley forgives a lot).
+    #[cfg(test)]
     pub fn ire_tier_at(&self, x: i32, z: i32) -> usize {
         Self::tier_of((self.ire + self.regional_ire_at(x, z) * 3.0).clamp(0.0, 100.0))
+    }
+
+    pub fn ire_tier_at_surface(&self, pos: crate::planet::SurfacePos) -> usize {
+        Self::tier_of((self.ire + self.regional_ire_at_surface(pos) * 3.0).clamp(0.0, 100.0))
     }
 
     pub fn add_ire(&mut self, amt: f32) {
@@ -266,7 +352,7 @@ impl World {
             // The wild forgives, slowly: a cell held deeply blessed
             // for a full season earns ONE wildlife reseed — its
             // hunted-out chunks roll again when next visited.
-            let blessed: Vec<(i32, i32)> = self
+            let blessed: Vec<RegionCell> = self
                 .regional_ire
                 .iter()
                 .filter(|(_, v)| **v < -10.0)
@@ -277,10 +363,12 @@ impl World {
                 *streak += 1;
                 if *streak >= SEASON_DAYS {
                     self.blessed_streak.remove(&cell);
-                    let (cx0, cz0) = (cell.0 * 16, cell.1 * 16);
-                    for dx in 0..16 {
-                        for dz in 0..16 {
-                            self.mob_seeded.remove(&(cx0 + dx, cz0 + dz));
+                    let (cu0, cv0) = (u16::from(cell.u) * 16, u16::from(cell.v) * 16);
+                    for du in 0..16 {
+                        for dv in 0..16 {
+                            let pos = ChunkPos::new(cell.face, cu0 + du, cv0 + dv)
+                                .expect("regional ledger cells partition each face");
+                            self.mob_seeded.remove(&pos);
                         }
                     }
                     self.whispers
@@ -369,25 +457,26 @@ impl World {
     pub fn accept_offerings(&mut self) -> f32 {
         let (want, _) = self.season_want();
         // The ire cells whose country has no spirit left to hear.
-        let dead_country: std::collections::HashSet<(i32, i32)> = self
+        let dead_country: std::collections::HashSet<RegionCell> = self
             .hearts
             .values()
             .filter(|h| h.stage == 0)
-            .map(|h| (h.pos.0 >> 8, h.pos.2 >> 8))
+            .map(|h| RegionCell::from_surface(h.pos.surface()))
             .collect();
-        let mut taken: Vec<((i32, i32), ItemStack)> = Vec::new();
-        for (&(x, _, z), e) in self.block_entities.iter_mut() {
+        let mut taken: Vec<(RegionCell, ItemStack)> = Vec::new();
+        for (&pos, e) in self.block_entities.iter_mut() {
             let BlockEntity::Offering(o) = e else {
                 continue;
             };
+            let cell = RegionCell::from_surface(pos.surface());
             // In a country whose heart is dead the stone accepts
             // nothing. Not refused — unreceived. Nobody is home.
-            if dead_country.contains(&(x >> 8, z >> 8)) {
+            if dead_country.contains(&cell) {
                 continue;
             }
             for slot in o.slots.iter_mut() {
                 if let Some(s) = slot.take() {
-                    taken.push(((x, z), s));
+                    taken.push((cell, s));
                 }
             }
         }
@@ -397,13 +486,13 @@ impl World {
         // The season's want counts double — a bonus for listening,
         // never a penalty — and every stone credits its own valley.
         let mut value = 0.0f32;
-        for ((x, z), s) in &taken {
+        for (cell, s) in &taken {
             let mut v = self.offering_value(s);
             if self.satisfies_want(want, s) {
                 v *= 2.0;
             }
             value += v;
-            self.charge_cell(*x, *z, -v.min(6.0));
+            self.charge_cell(*cell, -v.min(6.0));
         }
         let refund = value.min(10.0);
         self.add_ire(-refund);
@@ -412,7 +501,7 @@ impl World {
 
     /// Grow a planted sapling into a full tree, mirroring the worldgen
     /// shapes. Returns false (sapling stays) if the trunk is blocked.
-    pub fn grow_tree(&mut self, x: i32, y: i32, z: i32, species: &str, rnd: u32) -> bool {
+    pub fn grow_tree_at(&mut self, pos: crate::planet::BlockPos, species: &str, rnd: u32) -> bool {
         let reg = self.reg.clone();
         let ids = |l: &str, f: &str| Some((reg.block_id(l)?, reg.block_id(f)?));
         let Some((log, leaf)) = (match species {
@@ -432,24 +521,31 @@ impl World {
         };
         // Clearance: the trunk column (above the sapling cell) must be open.
         for dy in 1..=trunk_h + 1 {
-            if self.get_block(x, y + dy, z) != AIR {
+            if pos
+                .offset(0, dy, 0)
+                .is_none_or(|at| self.get_block_at(at) != AIR)
+            {
                 return false;
             }
         }
-        let leaf_at = |w: &mut World, lx: i32, ly: i32, lz: i32| {
-            if ly > 0 && ly < CHUNK_Y as i32 && w.get_block(lx, ly, lz) == AIR {
-                w.set_block(lx, ly, lz, leaf);
+        let leaf_at = |w: &mut World, dx: i32, dy: i32, dz: i32| {
+            if let Some(at) = pos.offset(dx, dy, dz)
+                && at.y() > 0
+                && w.get_block_at(at) == AIR
+            {
+                w.set_block_at(at, leaf);
             }
         };
         for dy in 0..trunk_h {
-            self.set_block(x, y + dy, z, log);
+            if let Some(at) = pos.offset(0, dy, 0) {
+                self.set_block_at(at, log);
+            }
         }
-        let top = y + trunk_h;
         match species {
             "acacia" => {
                 for dx in -1..=1 {
                     for dz in -1..=1 {
-                        leaf_at(self, x + dx, top, z + dz);
+                        leaf_at(self, dx, trunk_h, dz);
                     }
                 }
             }
@@ -463,11 +559,11 @@ impl World {
                             if dx == 0 && dz == 0 && dy < 0 {
                                 continue;
                             }
-                            leaf_at(self, x + dx, top + dy, z + dz);
+                            leaf_at(self, dx, trunk_h + dy, dz);
                         }
                     }
                 }
-                leaf_at(self, x, top + 2, z);
+                leaf_at(self, 0, trunk_h + 2, 0);
             }
             _ => {
                 let big: i32 = if species == "jungle" { 3 } else { 2 };
@@ -477,13 +573,19 @@ impl World {
                             if dx == 0 && dz == 0 && dy < 0 {
                                 continue;
                             }
-                            leaf_at(self, x + dx, top + dy, z + dz);
+                            leaf_at(self, dx, trunk_h + dy, dz);
                         }
                     }
                 }
             }
         }
         true
+    }
+
+    #[cfg(test)]
+    pub fn grow_tree(&mut self, x: i32, y: i32, z: i32, species: &str, rnd: u32) -> bool {
+        crate::planet::BlockPos::of_world(x, y, z)
+            .is_some_and(|pos| self.grow_tree_at(pos, species, rnd))
     }
 
     /// Ire cost of breaking a block, by what it is.

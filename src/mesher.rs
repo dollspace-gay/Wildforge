@@ -6,6 +6,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::atlas::ATLAS_TILES;
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, ChunkPos};
+use crate::planet::{BlockPos, block_to_render, canonicalize_surface_point, local_frame};
 use crate::registry::{AIR, BlockId, Registry};
 use crate::world::World;
 
@@ -85,8 +86,8 @@ pub fn mesh_chunk(
     pos: ChunkPos,
     variants: &crate::atlas::TileVariants,
 ) -> ChunkMesh {
-    let bx = pos.x * CHUNK_X as i32;
-    let bz = pos.z * CHUNK_Z as i32;
+    let bx = i32::from(pos.u()) * CHUNK_X as i32;
+    let bz = i32::from(pos.v()) * CHUNK_Z as i32;
     let reg = &world.reg;
     let chunk = world.chunk(pos).expect("meshing missing chunk");
 
@@ -106,7 +107,12 @@ pub fn mesh_chunk(
         if lx >= 0 && lx < CHUNK_X as i32 && lz >= 0 && lz < CHUNK_Z as i32 {
             chunk.get(lx as usize, y as usize, lz as usize)
         } else {
-            world.get_block(bx + lx, y, bz + lz)
+            let surface = crate::planet::SurfacePos::canonicalized(pos.face(), bx + lx, bz + lz)
+                .expect("mesh neighbor lookup crosses at most one face edge");
+            world.get_block_at(
+                BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
+                    .expect("validated mesh neighbor height"),
+            )
         }
     };
     // Octant mask of a neighbor cell, for sub-voxel face culling across borders.
@@ -121,7 +127,12 @@ pub fn mesh_chunk(
         let (b, sk) = if lx >= 0 && lx < CHUNK_X as i32 && lz >= 0 && lz < CHUNK_Z as i32 {
             chunk.light(lx as usize, y as usize, lz as usize)
         } else {
-            world.light_rgb_at(bx + lx, y, bz + lz)
+            let surface = crate::planet::SurfacePos::canonicalized(pos.face(), bx + lx, bz + lz)
+                .expect("mesh light lookup crosses at most one face edge");
+            world.light_rgb_at_pos(
+                BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
+                    .expect("validated mesh light height"),
+            )
         };
         (
             [b[0] as f32 / 15.0, b[1] as f32 / 15.0, b[2] as f32 / 15.0],
@@ -133,6 +144,26 @@ pub fn mesh_chunk(
     // out of the sand into the open air above (these pockets are top-lit) so
     // carved interiors and risers beside partial neighbors aren't left black.
     let face_light = |lx: i32, y: i32, lz: i32| -> ([f32; 3], f32) { light(lx, y, lz) };
+
+    let curved = |u: f32, y: f32, v: f32, normal: [f32; 3]| {
+        let canonical = canonicalize_surface_point(pos.face(), f64::from(u), f64::from(v))
+            .expect("mesh vertices cross at most one face edge");
+        let local_normal = canonical.rotation.rotate_vec3(glam::Vec3::from(normal));
+        let frame = local_frame(canonical.point);
+        let world_normal = (frame.east * f64::from(local_normal.x)
+            + frame.up * f64::from(local_normal.y)
+            + frame.north * f64::from(local_normal.z))
+        .normalize();
+        let world_pos = block_to_render(canonical.point, f64::from(y));
+        (
+            [world_pos.x as f32, world_pos.y as f32, world_pos.z as f32],
+            [
+                world_normal.x as f32,
+                world_normal.y as f32,
+                world_normal.z as f32,
+            ],
+        )
+    };
 
     let tile_uv = |tx: u32, ty: u32, u: f32, v: f32| -> [f32; 2] {
         let ts = 1.0 / ATLAS_TILES as f32;
@@ -156,7 +187,8 @@ pub fn mesh_chunk(
                 // them. `None` for ordinary blocks leaves lighting untouched.
                 let emissive: Option<[f32; 3]> = if def.light_emit > 0 {
                     m.emitters.push(crate::lights::Emitter {
-                        pos: (bx + lx, y, bz + lz),
+                        pos: BlockPos::new(pos.face(), (bx + lx) as u16, y as u8, (bz + lz) as u16)
+                            .expect("meshed block is inside its chunk face"),
                         rgb: def.light_rgb,
                         emit: def.light_emit,
                     });
@@ -185,12 +217,14 @@ pub fn mesh_chunk(
                             let ys = [0.0, 0.0, 1.0, 1.0];
                             for i in 0..4 {
                                 let (qx, qz, u) = quad[i];
+                                let (curved_pos, curved_normal) =
+                                    curved(wx + qx, wy + ys[i], wz + qz, [0.0, 1.0, 0.0]);
                                 m.opaque_verts.push(Vertex {
-                                    pos: [wx + qx, wy + ys[i], wz + qz],
+                                    pos: curved_pos,
                                     uv: tile_uv(tx, ty, u, 1.0 - ys[i]),
                                     // Cross-quads have no single face; treat as
                                     // upward-lit vegetation.
-                                    normal: [0.0, 1.0, 0.0],
+                                    normal: curved_normal,
                                     light: emissive.unwrap_or([
                                         0.95 * cl[0],
                                         0.95 * cl[1],
@@ -235,10 +269,11 @@ pub fn mesh_chunk(
                                     4 | 5 => (x0 + c[0] * (x1 - x0), 1.0 - (y0 + c[1] * (y1 - y0))),
                                     _ => (x0 + c[0] * (x1 - x0), z0 + c[2] * (z1 - z0)),
                                 };
+                                let (curved_pos, curved_normal) = curved(px, py, pz, nf);
                                 m.opaque_verts.push(Vertex {
-                                    pos: [px, py, pz],
+                                    pos: curved_pos,
                                     uv: tile_uv(tx, ty, u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)),
-                                    normal: nf,
+                                    normal: curved_normal,
                                     light: lit,
                                     sky: sky_l,
                                 });
@@ -651,10 +686,11 @@ pub fn mesh_chunk(
                             _ => (c[0], c[2]),
                         };
                         let ao_f = 0.4 + 0.2 * ao[ci] as f32;
+                        let (curved_pos, curved_normal) = curved(px, py, pz, nrm);
                         verts.push(Vertex {
-                            pos: [px, py, pz],
+                            pos: curved_pos,
                             uv: tile_uv(tx, ty, u, v),
-                            normal: nrm,
+                            normal: curved_normal,
                             // Emitter faces glow at full strength (no AO dimming);
                             // ordinary faces keep their occluded block light.
                             light: emissive.unwrap_or([ao_f * fl[0], ao_f * fl[1], ao_f * fl[2]]),

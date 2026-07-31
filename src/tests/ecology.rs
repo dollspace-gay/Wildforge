@@ -160,7 +160,7 @@ fn herds_lean_homeward() {
     }
     for cx in -1..=1 {
         for cz in -1..=1 {
-            w.player_touched.insert((cx, cz));
+            w.player_touched.insert(tchunk(cx, cz));
         }
     }
     let si = reg.animal_id("base:deer").unwrap();
@@ -174,7 +174,12 @@ fn herds_lean_homeward() {
     // Seeding and repop add strangers mid-run; the tame flag finds
     // our trio no matter who else wanders in.
     let spread = |w: &World| -> f32 {
-        let trio: Vec<glam::Vec3> = w.mobs().iter().filter(|m| m.tamed).map(|m| m.pos).collect();
+        let trio: Vec<glam::Vec3> = w
+            .mobs()
+            .iter()
+            .filter(|m| m.tamed)
+            .map(|m| m.pos.local())
+            .collect();
         let mut s = 0.0f32;
         for i in 0..trio.len() {
             for j in (i + 1)..trio.len() {
@@ -212,7 +217,7 @@ fn a_calm_deer_minds_the_pen_but_panic_leaps() {
     }
     for cx in -1..=1 {
         for cz in -1..=1 {
-            w.player_touched.insert((cx, cz));
+            w.player_touched.insert(tchunk(cx, cz));
         }
     }
     let si = reg.animal_id("base:deer").unwrap();
@@ -287,8 +292,8 @@ fn the_heap_ripens_into_compost() {
 fn ctx(pos: glam::Vec3) -> crate::server::PlayerCtx {
     crate::server::PlayerCtx {
         id: 0,
-        pos,
-        spawn: glam::Vec3::ZERO,
+        pos: ep(pos),
+        spawn: ep(glam::Vec3::ZERO),
         attackable: true,
         aggro_mod: 0.0,
     }
@@ -402,7 +407,7 @@ fn the_desperate_winter_wolf_sizes_you_up_and_breaks_off() {
         .iter_mut()
         .find(|m| m.species == wolf_si)
         .expect("the wolf");
-    wolf.hurt(&def, 4.0, player);
+    wolf.hurt(&def, 4.0, ep(player));
     assert_eq!(
         wolf.state,
         crate::mobs::MobState::Flee,
@@ -844,7 +849,7 @@ fn the_lantern_fungus_lights_the_deep() {
     let mut found = 0;
     for cx in -8..8 {
         for cz in -8..8 {
-            w.ensure_chunk(ChunkPos { x: cx, z: cz });
+            w.ensure_chunk(tchunk(cx, cz));
             for lx in 0..16 {
                 for lz in 0..16 {
                     for y in 6..46 {
@@ -876,7 +881,7 @@ fn lightning_strikes_only_what_was_always_wild() {
     let mut wt = test_world_with("bolt-touched", reg.clone());
     let ht = wt.surface_height(8, 8);
     pad(&mut wt, &reg, 0, 16, 0, 16, ht);
-    wt.player_touched.insert((0, 0));
+    wt.player_touched.insert(tchunk(0, 0));
     assert!(
         wt.lightning_strike(8, 8).is_none(),
         "the wild never touches what players built"
@@ -926,7 +931,7 @@ fn the_bloom_erupts_and_burns_down() {
     // Persistence round-trip.
     let dir = tmp_dir("bloom-save");
     let mut w2 = World::new(9, dir.clone(), reg.clone());
-    w2.ensure_chunk(ChunkPos { x: 0, z: 0 });
+    w2.ensure_chunk(tchunk(0, 0));
     w2.add_bloom(40, 40, 2.5);
     save_world(&mut w2);
     let w3 = World::load_or_create(dir, reg.clone()).unwrap();
@@ -955,42 +960,100 @@ fn a_fallen_warden_leaves_the_land_stirring() {
 /// on dry ground, so the chunk stocked nothing at all.
 #[test]
 fn the_sea_keeps_its_own_life() {
+    use crate::planet::{FACE_CHUNKS, Face, SurfacePos};
+    use crate::worldgen::Biome;
+
     let reg = base_reg();
     let mut w = test_world_with("sea-roster", reg.clone());
+    let cod_si = reg.animal_id("base:cod").unwrap();
+    let mackerel_si = reg.animal_id("base:mackerel").unwrap();
+    let gull_si = reg.animal_id("base:gull").unwrap();
+    let trout_si = reg.animal_id("base:trout").unwrap();
+    let has = |world: &World, species: usize| world.mobs().iter().any(|mob| mob.species == species);
+
+    // Visit actual deep-ocean chunks all around the finite planet. The
+    // old test swept a square around the PosZ chart origin, which is now
+    // just one mostly-jungle country and is not representative of the sea.
     let mut open_water = 0;
-    for cx in -14..14 {
-        for cz in -14..14 {
-            w.ensure_chunk(ChunkPos { x: cx, z: cz });
-            if w.is_open_water(cx * 16 + 8, cz * 16 + 8) {
-                open_water += 1;
+    'ocean: for face in Face::ALL {
+        for cu in (0..FACE_CHUNKS).step_by(7) {
+            for cv in (0..FACE_CHUNKS).step_by(7) {
+                let center = SurfacePos::new(
+                    face,
+                    cu * crate::chunk::CHUNK_X as u16 + 8,
+                    cv * crate::chunk::CHUNK_Z as u16 + 8,
+                )
+                .unwrap();
+                if w.generator.surface_estimate_at(center) >= crate::chunk::SEA_LEVEL - 4 {
+                    continue;
+                }
+                w.ensure_chunk(crate::planet::ChunkPos::new(face, cu, cv).unwrap());
+                if w.is_open_water_at(center) {
+                    open_water += 1;
+                }
+                if open_water >= 24 && has(&w, cod_si) && has(&w, mackerel_si) && has(&w, gull_si) {
+                    break 'ocean;
+                }
             }
         }
     }
     assert!(open_water > 0, "this sweep has to contain some sea");
+
+    // Fresh water belongs to the surrounding country. Load cold,
+    // above-sea hydrology cells until the deterministic roster has had
+    // a representative set of river/lake chunks in which to roll trout.
+    'fresh: for face in Face::ALL {
+        for cu in (0..FACE_CHUNKS).step_by(5) {
+            for cv in (0..FACE_CHUNKS).step_by(5) {
+                let center = SurfacePos::new(
+                    face,
+                    cu * crate::chunk::CHUNK_X as u16 + 8,
+                    cv * crate::chunk::CHUNK_Z as u16 + 8,
+                )
+                .unwrap();
+                if !matches!(
+                    w.generator.biome_at(center),
+                    Biome::Taiga | Biome::Arctic | Biome::Mountains | Biome::Tundra
+                ) || w.generator.surface_estimate_at(center) <= crate::chunk::SEA_LEVEL + 2
+                    || w.generator.water_features_at(center).is_none()
+                {
+                    continue;
+                }
+                w.ensure_chunk(crate::planet::ChunkPos::new(face, cu, cv).unwrap());
+                if has(&w, trout_si) {
+                    break 'fresh;
+                }
+            }
+        }
+    }
+
     let count = |name: &str| {
         let si = reg.animal_id(name).unwrap();
         w.mobs().iter().filter(|m| m.species == si).count()
     };
     // Salt water: its own natives, below the surface and over it.
-    assert!(count("base:cod") > 0, "cod in the sea");
-    assert!(count("base:mackerel") > 0, "mackerel in the sea");
+    let cod = count("base:cod");
+    let mackerel = count("base:mackerel");
+    let gull = count("base:gull");
+    let trout = count("base:trout");
     assert!(
-        count("base:gull") > 0,
-        "gulls over it — a flier needs no ground"
+        cod > 0,
+        "cod in the sea (cod={cod}, mackerel={mackerel}, gull={gull}, trout={trout})"
     );
+    assert!(
+        mackerel > 0,
+        "mackerel in the sea (cod={cod}, mackerel={mackerel}, gull={gull}, trout={trout})"
+    );
+    assert!(gull > 0, "gulls over it — a flier needs no ground");
     // Fresh water still stocks the country's own fish, so the new
     // roster did not simply replace the old one.
-    assert!(count("base:trout") > 0, "trout still in cold fresh water");
+    assert!(trout > 0, "trout still in cold fresh water");
     // Every fish is actually IN water, not flopping on a hill.
     for m in w.mobs() {
         if !reg.animals[m.species].movement_swim {
             continue;
         }
-        let at = w.get_block(
-            m.pos.x.floor() as i32,
-            m.pos.y.floor() as i32,
-            m.pos.z.floor() as i32,
-        );
+        let at = m.pos.block().map_or(AIR, |pos| w.get_block_at(pos));
         assert!(
             reg.is_water(at),
             "{} spawned out of water at {:?}",
@@ -1011,7 +1074,7 @@ fn open_water_reads_as_ocean_not_as_the_coast_behind_it() {
     let (mut sea, mut land) = (None, None);
     for cx in -14..14 {
         for cz in -14..14 {
-            w.ensure_chunk(ChunkPos { x: cx, z: cz });
+            w.ensure_chunk(tchunk(cx, cz));
             let (x, z) = (cx * 16 + 8, cz * 16 + 8);
             if w.is_open_water(x, z) {
                 sea = sea.or(Some((x, z)));
@@ -1022,14 +1085,18 @@ fn open_water_reads_as_ocean_not_as_the_coast_behind_it() {
     }
     let (sx, sz) = sea.expect("some sea in this sweep");
     let (lx, lz) = land.expect("some land in this sweep");
-    assert_eq!(w.biome_here(sx, sz), Biome::Ocean, "you are in the sea");
+    assert_eq!(
+        w.biome_here_at(bp(sx, 0, sz).surface()),
+        Biome::Ocean,
+        "you are in the sea"
+    );
     assert_ne!(
         w.country_biome(sx, sz),
         Biome::Ocean,
         "the country it belongs to is still a country"
     );
     assert_eq!(
-        w.biome_here(lx, lz),
+        w.biome_here_at(bp(lx, 0, lz).surface()),
         w.country_biome(lx, lz),
         "on dry ground the two agree"
     );
@@ -1108,8 +1175,8 @@ fn a_flier_crosses_ground_instead_of_hanging_in_the_air() {
     for _ in 0..600 {
         w.tick_mobs(&[], 1.0, 0.05, &mut rng);
         let g = w.mobs().iter().find(|m| m.species == gull_si).unwrap();
-        travelled += (g.pos - last).length();
-        last = g.pos;
+        travelled += (g.pos.local() - last).length();
+        last = g.pos.local();
     }
     // Thirty seconds of flight. A cruising gull covers well over a
     // block a second; the old idle-heavy wander barely managed a third

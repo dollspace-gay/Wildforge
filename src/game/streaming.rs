@@ -62,16 +62,17 @@ impl Game {
         if !self.in_world {
             return 0;
         }
-        let pcx = (self.player.pos.x.floor() as i32).div_euclid(CHUNK_X as i32);
-        let pcz = (self.player.pos.z.floor() as i32).div_euclid(CHUNK_X as i32);
+        let Some(center) = self.player.pos.chunk() else {
+            return 0;
+        };
         let vd = self.config.view_dist;
         let mut pending = 0;
         for dx in -vd..=vd {
             for dz in -vd..=vd {
-                if !self.server.world.has_chunk(ChunkPos {
-                    x: pcx + dx,
-                    z: pcz + dz,
-                }) {
+                let pos = center.offset(dx, dz);
+                if pos.distance(center) <= f64::from(vd * CHUNK_X as i32) + 1.0
+                    && !self.server.world.has_chunk(pos)
+                {
                     pending += 1;
                 }
             }
@@ -83,30 +84,28 @@ impl Game {
                 .dirty_chunks()
                 .into_iter()
                 .filter(|pos| {
-                    [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().all(|(dx, dz)| {
-                        self.server.world.has_chunk(ChunkPos {
-                            x: pos.x + dx,
-                            z: pos.z + dz,
-                        })
-                    })
+                    [(-1, 0), (1, 0), (0, -1), (0, 1)]
+                        .iter()
+                        .all(|(dx, dz)| self.server.world.has_chunk(pos.offset(*dx, *dz)))
                 })
                 .count()
     }
 
     pub(super) fn stream_chunks(&mut self) {
         self.stream_t0 = std::time::Instant::now();
-        let pcx = (self.player.pos.x.floor() as i32).div_euclid(CHUNK_X as i32);
-        let pcz = (self.player.pos.z.floor() as i32).div_euclid(CHUNK_X as i32);
+        let Some(center) = self.player.pos.chunk() else {
+            return;
+        };
 
         // Generate missing chunks, nearest first.
         let mut wanted: Vec<(i32, ChunkPos)> = Vec::new();
         let vd = self.config.view_dist;
         for dx in -vd..=vd {
             for dz in -vd..=vd {
-                let pos = ChunkPos {
-                    x: pcx + dx,
-                    z: pcz + dz,
-                };
+                let pos = center.offset(dx, dz);
+                if pos.distance(center) > f64::from(vd * CHUNK_X as i32) + 1.0 {
+                    continue;
+                }
                 if !self.server.world.has_chunk(pos) {
                     wanted.push((dx * dx + dz * dz, pos));
                 }
@@ -147,10 +146,7 @@ impl Game {
                 if self.server.world.adopt_generated(pos, chunk) {
                     // New terrain changes neighbors' faces at the border.
                     for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                        self.server.world.mark_chunk_dirty(ChunkPos {
-                            x: pos.x + dx,
-                            z: pos.z + dz,
-                        });
+                        self.server.world.mark_chunk_dirty(pos.offset(dx, dz));
                     }
                 }
                 if t0.elapsed().as_millis() >= adopt_ms {
@@ -163,10 +159,7 @@ impl Game {
             for (_, pos) in wanted.into_iter().take(GEN_BUDGET) {
                 self.server.world.ensure_chunk(pos);
                 for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                    self.server.world.mark_chunk_dirty(ChunkPos {
-                        x: pos.x + dx,
-                        z: pos.z + dz,
-                    });
+                    self.server.world.mark_chunk_dirty(pos.offset(dx, dz));
                 }
             }
         }
@@ -175,10 +168,7 @@ impl Game {
         // the dedicated server runs (World::retain_chunks); here it is spelled
         // out because the renderer and the light cache have to let go too.
         let limit = vd + 2;
-        let far = self
-            .server
-            .world
-            .chunks_outside_all(&[ChunkPos { x: pcx, z: pcz }], limit);
+        let far = self.server.world.chunks_outside_all(&[center], limit);
         if !far.is_empty() {
             // Save only what leaves; a full save_modified here wrote
             // the whole world (palette, entities, mobs, stamps, every
@@ -205,15 +195,12 @@ impl Game {
             .world
             .dirty_chunks()
             .into_iter()
-            .map(|p| ((p.x - pcx).pow(2) + (p.z - pcz).pow(2), p))
+            .map(|p| (p.distance(center) as i32, p))
             .collect();
         dirty.retain(|(_, p)| {
-            [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().all(|(dx, dz)| {
-                self.server.world.has_chunk(ChunkPos {
-                    x: p.x + dx,
-                    z: p.z + dz,
-                })
-            })
+            [(-1, 0), (1, 0), (0, -1), (0, 1)]
+                .iter()
+                .all(|(dx, dz)| self.server.world.has_chunk(p.offset(*dx, *dz)))
         });
         dirty.sort_by_key(|(d, _)| *d);
         // Meshing spends whatever the shared 5ms streaming pool has
@@ -226,10 +213,7 @@ impl Game {
             self.server.world.mark_chunk_meshed(pos);
             // A remesh within the DDA occupancy grid's reach means occluder
             // blocks changed — mark the grid stale so shadows track the edit.
-            let (cx, cz) = (pos.x as f32 * 16.0 + 8.0, pos.z as f32 * 16.0 + 8.0);
-            if (cx - self.camera.pos.x).hypot(cz - self.camera.pos.z)
-                < crate::renderer::OCC_GRID as f32 / 2.0 + 16.0
-            {
+            if pos.distance(center) < f64::from(crate::renderer::OCC_GRID as u32) / 2.0 + 16.0 {
                 self.occ_dirty = true;
             }
             if self.stream_t0.elapsed().as_millis() >= stream_ms {
