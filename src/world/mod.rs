@@ -33,13 +33,9 @@ mod power;
 pub(crate) mod region;
 mod storage;
 
-#[cfg_attr(not(test), allow(unused_imports))]
-pub use hearts::ROOT_READY_FERT;
 pub use hearts::ROOT_READY_FRAC;
 #[cfg(test)]
-pub use hearts::{
-    HEART_CUTTING_DAYS, HEART_DEATH_STRAIN, HEART_SICKEN_STRAIN, ROOT_DAYS, ROOT_RADIUS,
-};
+pub use hearts::{HEART_CUTTING_DAYS, HEART_DEATH_STRAIN, HEART_SICKEN_STRAIN, ROOT_DAYS};
 pub use hearts::{Heart, heart_block_name, heart_form, heart_height, seed_nature, seed_of_form};
 pub use machines::{station_powered, worked_table_for};
 pub mod soil;
@@ -576,13 +572,6 @@ impl RegionCell {
             v: (surface.v() / Self::BLOCKS) as u8,
         }
     }
-
-    #[cfg(test)]
-    fn from_legacy(x: i32, z: i32) -> Self {
-        let surface = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
-            .expect("legacy regional coordinate is within the bounded porting window");
-        Self::from_surface(surface)
-    }
 }
 
 pub struct World {
@@ -959,14 +948,6 @@ impl World {
         })
     }
 
-    /// Queue an item drop at a cell (spawned by the game loop).
-    #[cfg(test)]
-    pub fn push_drop(&mut self, at: (i32, i32, i32), stack: ItemStack) {
-        if let Some(at) = crate::planet::BlockPos::of_world(at.0, at.1, at.2) {
-            self.push_drop_at(at, stack);
-        }
-    }
-
     pub fn push_drop_at(&mut self, at: crate::planet::BlockPos, stack: ItemStack) {
         self.pending_drops.push((at, stack));
     }
@@ -1014,17 +995,6 @@ impl World {
         entity: BlockEntity,
     ) -> Option<BlockEntity> {
         self.block_entities.insert(pos, entity)
-    }
-
-    #[cfg(test)]
-    pub fn ensure_block_entity(
-        &mut self,
-        pos: (i32, i32, i32),
-        default: BlockEntity,
-    ) -> &mut BlockEntity {
-        let pos = crate::planet::BlockPos::of_world(pos.0, pos.1, pos.2)
-            .expect("legacy block entity address is inside the planet");
-        self.block_entities.entry(pos).or_insert(default)
     }
 
     pub fn ensure_block_entity_at(
@@ -1198,45 +1168,6 @@ impl World {
             .unwrap_or(AIR)
     }
 
-    /// Fill a cubic RGBA occupancy grid (side `g`, `origin` = world cell of
-    /// texel (0,0,0)) for the DDA point-light shadow volume. Per cell: a = class
-    /// (255 opaque full block, 128 stained glass, 0 air/pass), rgb = the glass's
-    /// per-channel light filter (the shadow tint). Chunk-aware: one hash lookup
-    /// per (x,z) column, not per cell, so a full 128³ rebuild is a few ms.
-    #[cfg(test)]
-    pub fn fill_occupancy(&self, origin: [i32; 3], g: usize, buf: &mut [u8]) {
-        buf.iter_mut().for_each(|b| *b = 0);
-        let gi = g as i32;
-        for lz in 0..gi {
-            let wz = origin[2] + lz;
-            let cz = wz.rem_euclid(CHUNK_Z as i32) as usize;
-            for lx in 0..gi {
-                let wx = origin[0] + lx;
-                let pos = ChunkPos::of_world(wx, wz);
-                let Some(c) = self.chunks.get(&pos) else {
-                    continue;
-                };
-                let cx = wx.rem_euclid(CHUNK_X as i32) as usize;
-                for ly in 0..gi {
-                    let wy = origin[1] + ly;
-                    if wy < 0 || wy >= CHUNK_Y as i32 {
-                        continue;
-                    }
-                    let def = self.reg.block(c.get(cx, wy as usize, cz));
-                    let i = ((lz as usize * g + ly as usize) * g + lx as usize) * 4;
-                    if def.opaque {
-                        buf[i + 3] = 255;
-                    } else if def.glass {
-                        buf[i] = if def.light_filter[0] { 255 } else { 0 };
-                        buf[i + 1] = if def.light_filter[1] { 255 } else { 0 };
-                        buf[i + 2] = if def.light_filter[2] { 255 } else { 0 };
-                        buf[i + 3] = 128;
-                    }
-                }
-            }
-        }
-    }
-
     /// Metadata byte at a world position (octant mask for sub-voxel blocks).
     pub fn get_meta_at(&self, pos: crate::planet::BlockPos) -> u8 {
         let (x, y, z) = pos.local();
@@ -1252,18 +1183,6 @@ impl World {
         crate::planet::BlockPos::of_world(x, y, z)
             .map(|pos| self.get_meta_at(pos))
             .unwrap_or(0)
-    }
-
-    #[cfg(test)]
-    pub fn break_block(
-        &mut self,
-        pos: (i32, i32, i32),
-        tool: Option<ItemId>,
-        award_drop: bool,
-        affect_ire: bool,
-    ) -> Option<BlockBreak> {
-        let pos = BlockPos::of_world(pos.0, pos.1, pos.2)?;
-        self.break_block_at(pos, tool, award_drop, affect_ire)
     }
 
     pub fn break_block_at(
@@ -1582,25 +1501,9 @@ impl World {
         self.last_random.len()
     }
 
-    /// Where this world keeps its files.
-    #[cfg(test)]
-    pub fn save_dir(&self) -> &std::path::Path {
-        &self.save_dir
-    }
-
     /// The headroom a flier standing at `y` actually has: the first
     /// solid at or below it, and the first solid above it. Bounded so a
     /// mob in open sky or a sealed shaft costs a fixed scan.
-    #[cfg(test)]
-    pub fn air_column(&self, x: i32, y: i32, z: i32) -> (i32, i32) {
-        let pos = crate::planet::EntityPos::from_local(
-            crate::planet::Face::PosZ,
-            Vec3::new(x as f32 + 0.5, y as f32, z as f32 + 0.5),
-        )
-        .expect("legacy air column is inside PosZ");
-        self.air_column_at(pos, y)
-    }
-
     pub fn air_column_at(&self, pos: crate::planet::EntityPos, y: i32) -> (i32, i32) {
         let surface = crate::planet::SurfacePos::new(
             pos.face(),
@@ -1640,13 +1543,6 @@ impl World {
         self.reg.is_solid(self.get_block_at(at(y - 1)))
             && clear(self.get_block_at(at(y)))
             && clear(self.get_block_at(at(y + 1)))
-    }
-
-    #[cfg(test)]
-    fn standable(&self, x: i32, y: i32, z: i32) -> bool {
-        let surface = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
-            .expect("legacy standability query is inside PosZ");
-        self.standable_at(surface, y)
     }
 
     /// Somewhere a player can be put down: dry, solid-footed, and
@@ -1725,13 +1621,6 @@ impl World {
     /// Raise a small sand island for a castaway spawn: a low dome up
     /// out of the water with its own patch of dry ground. Returns the
     /// height of the ground at its center.
-    #[cfg(test)]
-    pub fn raise_castaway_isle(&mut self, cx: i32, cz: i32) -> i32 {
-        let center = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, cx, cz)
-            .expect("legacy island center is inside PosZ");
-        self.raise_castaway_isle_at(center)
-    }
-
     pub fn raise_castaway_isle_at(&mut self, center: crate::planet::SurfacePos) -> i32 {
         const R: i32 = 5;
         let sand = self.reg.block_id("base:sand").unwrap_or(AIR);

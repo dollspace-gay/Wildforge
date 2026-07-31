@@ -502,10 +502,10 @@ impl World {
                 *w += dt * rate;
                 if *w >= HELVE_STRIKE_SECS {
                     *w = 0.0;
-                    if let Some(out) = self.anvil_strike_at(pos) {
-                        if let Some(above) = pos.offset(0, 1, 0) {
-                            self.push_drop_at(above, out);
-                        }
+                    if let Some(out) = self.anvil_strike_at(pos)
+                        && let Some(above) = pos.offset(0, 1, 0)
+                    {
+                        self.push_drop_at(above, out);
                     }
                 }
                 continue;
@@ -713,11 +713,6 @@ impl World {
                 && gens.contains(&Some(self.get_block_at(*gpos)))
                 && self.power_at_pos(*gpos) > 0.0
         })
-    }
-
-    #[cfg(test)]
-    pub(super) fn generator_near(&self, pos: (i32, i32, i32), r: i32) -> bool {
-        BlockPos::of_world(pos.0, pos.1, pos.2).is_some_and(|at| self.generator_near_at(at, r))
     }
 
     pub fn tick_entities(&mut self, dt: f32) {

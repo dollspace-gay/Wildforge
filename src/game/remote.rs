@@ -30,10 +30,10 @@ impl Game {
             // movement is client-stated, so the host accepts it.
             if let Ok(s) = std::env::var("WILDFORGE_POS") {
                 let p: Vec<f32> = s.split(',').filter_map(|v| v.trim().parse().ok()).collect();
-                if p.len() == 3 {
-                    if let Ok(pos) = state.pos.relocated_local(Vec3::new(p[0], p[1], p[2])) {
-                        self.player = Player::new_at(pos);
-                    }
+                if p.len() == 3
+                    && let Ok(pos) = state.pos.relocated_local(Vec3::new(p[0], p[1], p[2]))
+                {
+                    self.player = Player::new_at(pos);
                 }
             }
             self.camera.follow_planet(self.player.eye());

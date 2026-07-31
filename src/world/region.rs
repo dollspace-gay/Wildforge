@@ -63,7 +63,7 @@ fn read_index(file: &mut fs::File) -> std::io::Result<Vec<(u32, u32)>> {
 ///
 pub fn read_chunk(dir: &Path, pos: ChunkPos) -> Option<Vec<u8>> {
     let path = region_path(dir, pos);
-    let found = (|| -> std::io::Result<Option<Vec<u8>>> {
+    (|| -> std::io::Result<Option<Vec<u8>>> {
         let mut file = fs::File::open(&path)?;
         let mut magic = [0u8; 4];
         file.read_exact(&mut magic)?;
@@ -81,8 +81,7 @@ pub fn read_chunk(dir: &Path, pos: ChunkPos) -> Option<Vec<u8>> {
         Ok(Some(buf))
     })()
     .ok()
-    .flatten();
-    found
+    .flatten()
 }
 
 /// Store one chunk's bytes, appending and then pointing the slot at them.

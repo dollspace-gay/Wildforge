@@ -101,11 +101,6 @@ impl World {
     /// which is what closes the lava-channel hole in "the tool tells"
     /// — you cannot dig a race into a forest without working the
     /// ground you dug it through.
-    #[cfg(test)]
-    pub(super) fn ignite_around(&mut self, x: i32, y: i32, z: i32) -> bool {
-        BlockPos::of_world(x, y, z).is_some_and(|pos| self.ignite_around_at(pos))
-    }
-
     pub(super) fn ignite_around_at(&mut self, pos: BlockPos) -> bool {
         let mine = self.player_touched.contains(&pos.chunk());
         let mut lit = false;

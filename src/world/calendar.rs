@@ -68,33 +68,13 @@ impl World {
         t < if self.season() == 3 { -0.05 } else { -0.35 }
     }
 
-    /// Legacy positive-Z fixture helper.
-    #[cfg(test)]
-    pub(super) fn snows_at(&self, x: i32, z: i32) -> bool {
-        crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
-            .is_ok_and(|pos| self.snows_at_surface(pos))
-    }
-
     /// Deserts stay dry: overcast skies, nothing falls.
     pub fn rains_at_surface(&self, pos: crate::planet::SurfacePos) -> bool {
         let c = self.generator.climate_at(pos);
         !(c.t > 0.6 && c.h < -0.5)
     }
 
-    /// Legacy positive-Z fixture helper.
-    #[cfg(test)]
-    pub(super) fn rains_at(&self, x: i32, z: i32) -> bool {
-        crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
-            .is_ok_and(|pos| self.rains_at_surface(pos))
-    }
-
     // ---------------- ire (reciprocity) ----------------
-
-    /// The regional ledger's cell for a position (~256-block country).
-    #[cfg(test)]
-    pub fn ire_cell(x: i32, z: i32) -> RegionCell {
-        RegionCell::from_legacy(x, z)
-    }
 
     /// The land's local standing at a canonical planetary surface cell.
     pub fn regional_ire_at_surface(&self, pos: crate::planet::SurfacePos) -> f32 {
@@ -196,13 +176,6 @@ impl World {
     }
 
     /// Tending pays the ground back its willingness to bloom.
-    #[cfg(test)]
-    pub fn ease_bloom_debt(&mut self, x: i32, z: i32, amount: f32) {
-        let pos = crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
-            .expect("legacy regional coordinate is within the bounded porting window");
-        self.ease_bloom_debt_at_surface(pos, amount);
-    }
-
     pub fn ease_bloom_debt_at_surface(&mut self, pos: crate::planet::SurfacePos, amount: f32) {
         let cell = RegionCell::from_surface(pos);
         if let Some(v) = self.bloom_spent.get_mut(&cell) {
@@ -580,12 +553,6 @@ impl World {
             }
         }
         true
-    }
-
-    #[cfg(test)]
-    pub fn grow_tree(&mut self, x: i32, y: i32, z: i32, species: &str, rnd: u32) -> bool {
-        crate::planet::BlockPos::of_world(x, y, z)
-            .is_some_and(|pos| self.grow_tree_at(pos, species, rnd))
     }
 
     /// Ire cost of breaking a block, by what it is.

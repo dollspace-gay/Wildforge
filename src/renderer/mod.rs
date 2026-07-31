@@ -59,10 +59,6 @@ struct Uniforms {
 
 /// Side of the cubic voxel-occupancy grid uploaded for DDA point-light shadows.
 pub const OCC_GRID: usize = 128;
-/// Snap granularity of the occupancy grid origin (world cells). The grid is
-/// rebuilt only when the camera crosses one of these steps.
-pub const OCC_STEP: i32 = 16;
-
 /// Sun shadow-map resolution (square). Keep in sync with SHADOW_RES in the shader.
 const SHADOW_RES: u32 = 2048;
 

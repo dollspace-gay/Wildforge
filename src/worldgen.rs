@@ -150,11 +150,6 @@ impl Volcano {
         (((wx - self.x).pow(2) + (wz - self.z).pow(2)) as f32).sqrt()
     }
 
-    /// Cone strength 0..1 at a column (1 = the crater's heart).
-    pub fn strength(&self, wx: i32, wz: i32) -> f32 {
-        (1.0 - self.dist(wx, wz) / self.radius).max(0.0)
-    }
-
     pub fn crater_r(&self) -> f32 {
         7.0 + self.radius * 0.07
     }
@@ -319,11 +314,8 @@ pub struct Generator {
     rocks: [BlockId; 11],
     mud: BlockId,
     lava: BlockId,
-    obsidian: BlockId,
     quartz_block: BlockId,
     amethyst_block: BlockId,
-    magma_vent: BlockId,
-    sulfur_ore: BlockId,
     bandwarp: Perlin,
     granite3d: Perlin,
     rivernoise: Perlin,
@@ -504,11 +496,8 @@ impl Generator {
             ],
             mud: b("base:mud"),
             lava: b("base:lava"),
-            obsidian: b("base:obsidian"),
             quartz_block: b("base:quartz_block"),
             amethyst_block: b("base:amethyst_block"),
-            magma_vent: b("base:magma_vent"),
-            sulfur_ore: b("base:sulfur_ore"),
             bandwarp: p(40),
             granite3d: p(42),
             rivernoise: p(50),
@@ -522,6 +511,7 @@ impl Generator {
         b != AIR && self.rocks.contains(&b)
     }
 
+    #[cfg(test)]
     const PLATE_SIZE: f64 = 1400.0;
 
     #[cfg(test)]
@@ -659,7 +649,7 @@ impl Generator {
             let (mut t, mut h, mut e) = (province.t, province.h, province.e);
             if province.neighbor != province.biome && province.edge < Self::PROVINCE_BLEND {
                 let depth = (province.edge / Self::PROVINCE_BLEND).clamp(0.0, 1.0);
-                let fringe = self.hash_surface(0x51f1_6e, pos) as f32 / u32::MAX as f32;
+                let fringe = self.hash_surface(0x0051_f16e, pos) as f32 / u32::MAX as f32;
                 if fringe > 0.5 + depth * 0.5 {
                     t = province.nt;
                     h = province.nh;
@@ -827,27 +817,6 @@ impl Generator {
         let pos = SurfacePos::from_centered(Face::PosZ, wx, wz)
             .expect("test province query is inside the positive-Z face");
         self.province_at(pos)
-    }
-
-    #[cfg(test)]
-    #[doc(hidden)]
-    pub fn province_center(&self, px: i32, pz: i32) -> (i32, i32) {
-        let cells = i32::from(Self::PROVINCE_CELLS);
-        let key = ProvinceKey {
-            face: Face::PosZ,
-            u: px.rem_euclid(cells) as u8,
-            v: pz.rem_euclid(cells) as u8,
-        };
-        let site = self.province_center_at(key);
-        (site.centered_u(), site.centered_v())
-    }
-
-    #[cfg(test)]
-    #[doc(hidden)]
-    pub fn heart_nearness(&self, wx: i32, wz: i32) -> f32 {
-        SurfacePos::from_centered(Face::PosZ, wx, wz)
-            .map(|pos| self.heart_nearness_at(pos))
-            .unwrap_or(0.0)
     }
 
     /// The stone and trim a country builds with.
@@ -1272,27 +1241,12 @@ impl Generator {
         SurfacePos::from_centered(Face::PosZ, wx, wz).is_ok_and(|pos| self.pluton_at_surface(pos))
     }
 
-    #[cfg(test)]
-    pub fn prospect(&self, wx: i32, wz: i32) -> ProspectReading {
-        self.prospect_at(
-            SurfacePos::from_centered(Face::PosZ, wx, wz)
-                .expect("test prospect is inside the positive-Z face"),
-        )
-    }
-
     /// The armor level sealing a column, if any (tests and tooling).
     #[cfg(test)]
     pub fn armor_at(&self, wx: i32, wz: i32) -> Option<i32> {
         let cl = self.climate(wx, wz);
         let pre = self.base_offset(wx, wz, &cl);
         self.hydrology(wx, wz, &cl, pre).2
-    }
-
-    #[cfg(test)]
-    pub fn armor_at_surface(&self, pos: SurfacePos) -> Option<i32> {
-        let climate = self.climate_at(pos);
-        let pre = self.base_offset_at(pos, &climate);
-        self.hydrology_at(pos, &climate, pre).2
     }
 
     #[cfg(test)]
@@ -1397,26 +1351,6 @@ impl Generator {
         self.column_params_at(pos).0 as i32
     }
 
-    #[cfg(test)]
-    fn density_at(&self, wx: f64, y: f64, wz: f64, offset: f32, factor: f32) -> f32 {
-        let mut n = 0.0f64;
-        let mut amp = 1.0;
-        let mut freq = 1.0;
-        for p in &self.base3d {
-            n += p.get([wx / 171.0 * freq, y / 128.0 * freq, wz / 171.0 * freq]) * amp;
-            freq *= 2.0;
-            amp *= 0.5;
-        }
-        let n = (n / 1.75) as f32; // ~[-1, 1]
-        let dy = offset - y as f32;
-        let s = if dy < 0.0 {
-            factor * 0.011
-        } else {
-            factor.max(3.0) * 0.026
-        };
-        n * 0.62 + dy * s
-    }
-
     fn density_at_planet(&self, pos: SurfacePos, y: f64, offset: f32, factor: f32) -> f32 {
         let mut noise = 0.0;
         let mut amplitude = 1.0;
@@ -1476,38 +1410,6 @@ impl Generator {
             }
         }
         (lat, lat_g)
-    }
-
-    /// Per-column stratigraphy: the top of each layer, gently warped
-    /// so bedding drifts instead of ruling straight lines. Returns
-    /// (basalt_top, basement_top, shale_top, limestone_top,
-    /// sandstone_top); above the last it's basement again — mountain
-    /// cores read as uplifted stone.
-    #[cfg(test)]
-    fn strata_bands(&self, wx: i32, wz: i32, cl: &Climate) -> [i32; 5] {
-        let x = wx as f64;
-        let z = wz as f64;
-        let w1 = self.bandwarp.get([x / 260.0, z / 260.0]) as f32;
-        let w2 = self.bandwarp.get([x / 170.0 + 7.3, z / 170.0 - 2.1]) as f32;
-        let wet = cl.h;
-        // Two plates smushed together: near a convergent boundary the
-        // bedding buckles into fold trains — anticlines and synclines
-        // marching along the range, so cliff faces show bent strata.
-        let tec = &cl.tec;
-        let fold = if tec.convergence > 0.12 && !tec.oceanic && !tec.neighbor_oceanic {
-            let belt = (-(tec.boundary_dist / 110.0).powi(2)).exp();
-            tec.convergence * belt * 26.0 * (tec.along / 24.0 + w1).sin()
-        } else {
-            0.0
-        };
-        let mesa = if Self::is_badlands(cl) { 42.0 } else { 0.0 };
-        [
-            (8.0 + w1 * 3.0) as i32,
-            (34.0 + w1 * 7.0 + fold * 0.5) as i32,
-            (50.0 + w2 * 5.0 + wet * 5.0 + fold) as i32,
-            (68.0 + w1 * 6.0 + fold) as i32,
-            (92.0 + w2 * 9.0 - wet * 6.0 + fold + mesa) as i32,
-        ]
     }
 
     fn strata_bands_at(&self, pos: SurfacePos, cl: &Climate) -> [i32; 5] {
@@ -2334,7 +2236,7 @@ impl Generator {
                     }
                     let lx = usize::from(site.u() % CHUNK_X as u16);
                     let lz = usize::from(site.v() % CHUNK_Z as u16);
-                    let ground = heights[lx as usize][lz as usize];
+                    let ground = heights[lx][lz];
                     // A site wants dry, standable ground; a country
                     // whose center drowns keeps its heart unbuilt, and
                     // the world reads such country as living.

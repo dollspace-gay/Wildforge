@@ -38,12 +38,6 @@ pub fn raycast(world: &World, origin: Vec3, dir: Vec3, max_dist: f32) -> Option<
     cast(world, origin, dir, max_dist, false)
 }
 
-/// Like `raycast`, but water is a hit too — what a bucket wants.
-#[cfg(test)]
-pub fn raycast_water(world: &World, origin: Vec3, dir: Vec3, max_dist: f32) -> Option<Hit> {
-    cast(world, origin, dir, max_dist, true)
-}
-
 #[cfg(test)]
 fn cast(world: &World, origin: Vec3, dir: Vec3, max_dist: f32, hit_water: bool) -> Option<Hit> {
     let dir = dir.normalize_or_zero();

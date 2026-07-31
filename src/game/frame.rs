@@ -8,20 +8,6 @@ fn local_sim_should_advance(paused: bool, hosting: bool) -> bool {
     !paused || hosting
 }
 
-/// Point-light shadows via voxel-grid DDA (config `point_shadows=grid`) rather
-/// than the legacy distance cube map. WILDFORGE_DDA_SHADOW=0/1 forces either
-/// path for A/B testing, overriding the setting; read once.
-fn dda_shadow_enabled(from_config: bool) -> bool {
-    use std::sync::OnceLock;
-    static E: OnceLock<Option<bool>> = OnceLock::new();
-    let override_ = *E.get_or_init(|| {
-        std::env::var("WILDFORGE_DDA_SHADOW")
-            .ok()
-            .map(|s| s.trim() != "0")
-    });
-    override_.unwrap_or(from_config)
-}
-
 const VIEWMODEL_SLEEVE_MIN: Vec3 = Vec3::new(-0.055, -0.09, -0.46);
 const VIEWMODEL_SLEEVE_MAX: Vec3 = Vec3::new(0.055, 0.02, 0.10);
 const VIEWMODEL_HAND_MIN: Vec3 = Vec3::new(-0.055, -0.09, 0.10);
@@ -431,10 +417,13 @@ impl Game {
         }
 
         // Footprints in snow: not juice — the trail is world state.
-        if self.in_world && !paused && self.multiplayer.remote.is_none() && self.player.on_ground {
-            if let Some(at) = self.player.pos.block() {
-                self.server.world.tread_at(at);
-            }
+        if self.in_world
+            && !paused
+            && self.multiplayer.remote.is_none()
+            && self.player.on_ground
+            && let Some(at) = self.player.pos.block()
+        {
+            self.server.world.tread_at(at);
         }
 
         // Footsteps: mine, my fellow players', and the creatures'.
@@ -1682,7 +1671,7 @@ impl Game {
             let cam = self.camera.pos;
             let mut tail: Vec<(f32, lights::DynLight)> = Vec::new();
             if let Some(r) = &self.multiplayer.remote {
-                for (id, _) in &r.players {
+                for id in r.players.keys() {
                     let Some(&held) = r.player_held.get(id) else {
                         continue;
                     };

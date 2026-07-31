@@ -34,14 +34,6 @@ impl World {
 
     /// Lift a block out of the grid and into the air (atomically: the
     /// cell empties in the same call, so it can't be duped).
-    #[cfg(test)]
-    pub(super) fn detach(&mut self, x: i32, y: i32, z: i32, b: BlockId) {
-        let Some(pos) = crate::planet::BlockPos::of_world(x, y, z) else {
-            return;
-        };
-        self.detach_at(pos, b);
-    }
-
     pub(super) fn detach_at(&mut self, pos: crate::planet::BlockPos, b: BlockId) {
         self.set_block_at(pos, AIR);
         self.falling.push(FallingBlock {

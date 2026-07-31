@@ -525,13 +525,15 @@ impl World {
             }
             // A maturing crop drew its meal from the soil below —
             // and stamped its family there for the rotation ledger.
-            if final_stage && family != 0 && !any_soil {
-                if let Some(below) = pos.offset(0, -1, 0) {
-                    let sb = self.get_block_at(below);
-                    if self.reg.block(sb).fert_tiles.is_some() {
-                        let meta = soil::soil_after_harvest(self.get_meta_at(below), family);
-                        self.set_block_meta_at(below, sb, meta);
-                    }
+            if final_stage
+                && family != 0
+                && !any_soil
+                && let Some(below) = pos.offset(0, -1, 0)
+            {
+                let sb = self.get_block_at(below);
+                if self.reg.block(sb).fert_tiles.is_some() {
+                    let meta = soil::soil_after_harvest(self.get_meta_at(below), family);
+                    self.set_block_meta_at(below, sb, meta);
                 }
             }
             self.set_block_at(pos, b);
@@ -725,10 +727,11 @@ impl World {
                         let fd = reg.block(cur);
                         if fd.crop_next.is_none() {
                             refunds += 1;
-                            if fd.crop_family != 0 && !fd.crop_any_soil {
-                                if let Some(below) = below {
-                                    drains.push((below, fd.crop_family));
-                                }
+                            if fd.crop_family != 0
+                                && !fd.crop_any_soil
+                                && let Some(below) = below
+                            {
+                                drains.push((below, fd.crop_family));
                             }
                         }
                         changes.push((at, cur));
@@ -830,13 +833,6 @@ impl World {
         }
     }
 
-    #[cfg(test)]
-    pub fn tread(&mut self, x: i32, y: i32, z: i32) {
-        if let Some(pos) = BlockPos::of_world(x, y, z) {
-            self.tread_at(pos);
-        }
-    }
-
     /// One flake of consequence: lay a snow layer on this column's
     /// surface if the storm is cold here and the sky can reach it.
     pub fn settle_snow_at(&mut self, surface: SurfacePos) {
@@ -857,13 +853,6 @@ impl World {
             return;
         }
         self.set_block_at(pos, layer);
-    }
-
-    #[cfg(test)]
-    pub fn settle_snow(&mut self, x: i32, z: i32) {
-        if let Ok(surface) = SurfacePos::from_centered(crate::planet::Face::PosZ, x, z) {
-            self.settle_snow_at(surface);
-        }
     }
 
     /// Is the water column under (x, y, z) at most `d` cells deep?
@@ -914,10 +903,9 @@ impl World {
                     })
                     .count()
                     >= 3
+                && let Some(above) = pos.offset(0, 1, 0)
             {
-                if let Some(above) = pos.offset(0, 1, 0) {
-                    self.set_block_at(above, self.reg.water_for_volume(1));
-                }
+                self.set_block_at(above, self.reg.water_for_volume(1));
             }
             return;
         }

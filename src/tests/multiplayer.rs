@@ -1523,8 +1523,6 @@ fn the_host_serves_the_view_distance_a_guest_asks_for() {
 
 #[test]
 fn a_world_releases_chunks_no_player_is_near() {
-    use crate::chunk::ChunkPos;
-
     let mut w = test_world("mp-residency");
     for x in -6..=6 {
         for z in -6..=6 {
@@ -1583,8 +1581,6 @@ fn a_world_releases_chunks_no_player_is_near() {
 
 #[test]
 fn failed_dirty_chunk_eviction_keeps_only_the_unsaved_ground() {
-    use crate::chunk::ChunkPos;
-
     let mut w = test_world("mp-residency-save-failure");
     let failed = tchunk(-2, 0);
     let saved = tchunk(2, 0);

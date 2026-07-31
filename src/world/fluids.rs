@@ -15,38 +15,15 @@ impl World {
         }
     }
 
-    #[doc(hidden)]
-    #[cfg(test)]
-    pub(super) fn schedule_water(&mut self, x: i32, y: i32, z: i32) {
-        if let Some(pos) = BlockPos::of_world(x, y, z) {
-            self.schedule_water_at(pos);
-        }
-    }
-
     pub(super) fn schedule_lava_at(&mut self, pos: BlockPos) {
         if self.lava_queued.insert(pos) {
             self.lava_queue.push_back(pos);
         }
     }
 
-    #[doc(hidden)]
-    #[cfg(test)]
-    pub(super) fn schedule_lava(&mut self, x: i32, y: i32, z: i32) {
-        if let Some(pos) = BlockPos::of_world(x, y, z) {
-            self.schedule_lava_at(pos);
-        }
-    }
-
     /// Wake both fluids around an edit: each tick skips cells that
     /// aren't its own fluid, and contact reactions need either side
     /// to notice the other.
-    #[cfg(test)]
-    pub fn wake_water(&mut self, x: i32, y: i32, z: i32) {
-        if let Some(pos) = BlockPos::of_world(x, y, z) {
-            self.wake_water_at(pos);
-        }
-    }
-
     pub fn wake_water_at(&mut self, pos: BlockPos) {
         self.schedule_water_at(pos);
         self.schedule_lava_at(pos);
@@ -273,12 +250,6 @@ impl World {
         }
     }
 
-    #[doc(hidden)]
-    #[cfg(test)]
-    pub(super) fn flow_potential(&self, x: i32, y: i32, z: i32) -> Option<u8> {
-        BlockPos::of_world(x, y, z).and_then(|pos| self.flow_potential_at(pos))
-    }
-
     /// Finite water (docs/water-and-ticks-plan.md): each level encodes
     /// volume — level 0 is 8 units, level 7 a 1-unit film. On wake a
     /// cell falls as far as it can, then equalizes toward its lowest
@@ -467,12 +438,6 @@ impl World {
         } else {
             self.reg.lava_volume(b)
         }
-    }
-
-    #[doc(hidden)]
-    #[cfg(test)]
-    fn lava_potential(&self, x: i32, y: i32, z: i32) -> Option<u8> {
-        BlockPos::of_world(x, y, z).and_then(|pos| self.lava_potential_at(pos))
     }
 
     /// Finite lava: the water rules with a stiffer wrist. Same

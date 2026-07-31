@@ -284,14 +284,13 @@ impl World {
         // Buried ruins leave a hint on the surface: a chimney stub.
         if st.buried.is_some()
             && let Some(cob) = reg.block_id("base:cobblestone")
+            && let Some(hint) = origin.offset(1, 0, 1)
         {
-            if let Some(hint) = origin.offset(1, 0, 1) {
-                let sy = self.surface_height_at(hint.surface());
-                if let Ok(base) = BlockPos::new(hint.face(), hint.u(), (sy + 1) as u8, hint.v()) {
-                    self.set_block_at(base, cob);
-                    if let Some(top) = base.offset(0, 1, 0) {
-                        self.set_block_at(top, cob);
-                    }
+            let sy = self.surface_height_at(hint.surface());
+            if let Ok(base) = BlockPos::new(hint.face(), hint.u(), (sy + 1) as u8, hint.v()) {
+                self.set_block_at(base, cob);
+                if let Some(top) = base.offset(0, 1, 0) {
+                    self.set_block_at(top, cob);
                 }
             }
         }

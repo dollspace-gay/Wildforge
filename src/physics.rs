@@ -373,11 +373,4 @@ impl Player {
             && -PLAYER_HALF_W < max.z
             && PLAYER_HALF_W > min.z
     }
-
-    /// Legacy PosZ fixture bridge.
-    #[cfg(test)]
-    #[doc(hidden)]
-    pub fn overlaps_block(&self, bx: i32, by: i32, bz: i32) -> bool {
-        BlockPos::of_world(bx, by, bz).is_some_and(|pos| self.overlaps_block_at(pos))
-    }
 }

@@ -71,18 +71,9 @@ impl Camera {
         .normalize()
     }
 
-    /// Planet-space horizontal forward, for rendering.
-    pub fn flat_forward(&self) -> Vec3 {
-        (self.east * self.yaw.cos() + self.north * self.yaw.sin()).normalize()
-    }
-
     /// Face-local horizontal forward, for movement and simulation.
     pub fn local_flat_forward(&self) -> Vec3 {
         Vec3::new(self.yaw.cos(), 0.0, self.yaw.sin()).normalize()
-    }
-
-    pub fn right(&self) -> Vec3 {
-        self.flat_forward().cross(self.up).normalize()
     }
 
     /// Face-local right, for movement and simulation.

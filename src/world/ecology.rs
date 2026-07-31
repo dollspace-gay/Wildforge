@@ -697,15 +697,6 @@ impl World {
     /// base, grass to bare dirt (which heals). The animal never
     /// breaks a placed block — it eats what the plant grew, not what
     /// the farmer built.
-    #[cfg(test)]
-    #[cfg(test)]
-    pub fn apply_bite(&mut self, (x, y, z): (i32, i32, i32)) {
-        let Some(pos) = crate::planet::BlockPos::of_world(x, y, z) else {
-            return;
-        };
-        self.apply_bite_at(pos);
-    }
-
     pub fn apply_bite_at(&mut self, pos: crate::planet::BlockPos) {
         let b = self.get_block_at(pos);
         let d = self.reg.block(b);

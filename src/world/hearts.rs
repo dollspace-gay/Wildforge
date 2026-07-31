@@ -232,12 +232,6 @@ impl World {
         }
     }
 
-    #[cfg(test)]
-    pub fn take_heart_cutting(&mut self, x: i32, z: i32) -> bool {
-        SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
-            .is_ok_and(|pos| self.take_heart_cutting_at(pos))
-    }
-
     /// A heart cut down. The raids stop that night — which is the
     /// whole trap: it WORKS, and the country never gives again.
     pub(super) fn heart_struck_at(&mut self, pos: BlockPos) {
@@ -279,12 +273,6 @@ impl World {
     /// otherwise, and a heart registers the moment its chunk loads.
     pub fn heart_alive_at_surface(&self, pos: SurfacePos) -> bool {
         self.heart_at_surface(pos).is_none_or(|h| h.alive())
-    }
-
-    #[cfg(test)]
-    pub fn heart_alive_at(&self, x: i32, z: i32) -> bool {
-        SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
-            .is_ok_and(|pos| self.heart_alive_at_surface(pos))
     }
 
     /// Record a heart the generator has just laid down.

@@ -300,7 +300,7 @@ impl Renderer {
             // layer, so don't draw them (the near cascade skips
             // nearly the whole loaded set).
             let reach = casc_radius + 30.0;
-            for (pos, gpu) in visible.iter().copied() {
+            for (_pos, gpu) in visible.iter().copied() {
                 if !chunk_in_range(gpu, f.cam_pos, reach) {
                     continue;
                 }
@@ -379,7 +379,7 @@ impl Renderer {
                     &self.pt_face_bg,
                     &[(layer as u32) * PT_FACE_STRIDE as u32],
                 );
-                for (pos, gpu) in visible.iter().copied() {
+                for (_pos, gpu) in visible.iter().copied() {
                     if let Some(m) = &gpu.opaque {
                         if !chunk_in_range(gpu, l.pos, l.range) {
                             continue;
@@ -428,7 +428,7 @@ impl Renderer {
                     &[(layer as u32) * PT_FACE_STRIDE as u32],
                 );
                 tp.set_bind_group(1, &self.atlas_bg, &[]);
-                for (pos, gpu) in visible.iter().copied() {
+                for (_pos, gpu) in visible.iter().copied() {
                     if let Some(m) = &gpu.water {
                         if !chunk_in_range(gpu, l.pos, l.range) {
                             continue;
@@ -487,7 +487,7 @@ impl Renderer {
             // Opaque terrain (frustum-culled)
             let planes = frustum_planes(&f.view_proj);
             pass.set_pipeline(&self.chunk_pipeline);
-            for (pos, gpu) in visible.iter().copied() {
+            for (_pos, gpu) in visible.iter().copied() {
                 if !chunk_visible(&planes, gpu, f.cam_pos) {
                     continue;
                 }
@@ -507,7 +507,7 @@ impl Renderer {
 
             // Water
             pass.set_pipeline(&self.water_pipeline);
-            for (pos, gpu) in visible.iter().copied() {
+            for (_pos, gpu) in visible.iter().copied() {
                 if !chunk_visible(&planes, gpu, f.cam_pos) {
                     continue;
                 }

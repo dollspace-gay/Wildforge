@@ -3017,7 +3017,7 @@ fn regional_ledgers_are_face_aware_and_round_trip() {
 
 #[test]
 fn a_chunk_pays_only_for_what_it_actually_holds() {
-    use crate::chunk::{CHUNK_CELLS, Chunk, ChunkPos};
+    use crate::chunk::{CHUNK_CELLS, Chunk};
 
     // Every plane used to be allocated dense and unconditionally: 128 KB of
     // blocks, 64 KB of metadata, 192 KB of block light and 64 KB of sky light
@@ -3192,7 +3192,7 @@ fn a_world_survives_a_save_and_reload_across_several_regions() {
 #[test]
 #[ignore = "measurement probe, not an assertion"]
 fn measure_chunk_composition() {
-    use crate::chunk::{CHUNK_CELLS, ChunkPos};
+    use crate::chunk::CHUNK_CELLS;
     use std::collections::HashSet;
     let mut w = test_world("compose");
     let (mut ids, mut meta_nz, mut sky_vals, mut lb_nz, mut n) =
