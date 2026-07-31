@@ -1159,22 +1159,30 @@ impl World {
     /// Apply test-fixture edits with normal edit logging, support checks, and
     /// fluid wakeups, but settle lighting only once per touched chunk.
     #[cfg(test)]
-    pub(crate) fn set_blocks_for_test(
-        &mut self,
-        edits: impl IntoIterator<Item = (i32, i32, i32, BlockId)>,
-    ) {
+    pub(crate) fn edit_fixture_for_test(&mut self, edit: impl FnOnce(&mut Self)) {
         assert!(
             !self.fluid_batch && !self.fixture_relight_batch && self.pending_relight.is_empty(),
             "test fixture edits cannot nest another relight batch"
         );
         self.fixture_relight_batch = true;
-        for (x, y, z, block) in edits {
-            self.set_block(x, y, z, block);
-        }
+        edit(self);
         self.fixture_relight_batch = false;
         for pos in std::mem::take(&mut self.pending_relight) {
             self.relight_and_cascade(pos);
         }
+    }
+
+    /// Convenience wrapper for block-only fixtures.
+    #[cfg(test)]
+    pub(crate) fn set_blocks_for_test(
+        &mut self,
+        edits: impl IntoIterator<Item = (i32, i32, i32, BlockId)>,
+    ) {
+        self.edit_fixture_for_test(|world| {
+            for (x, y, z, block) in edits {
+                world.set_block(x, y, z, block);
+            }
+        });
     }
 
     /// Install blank authoritative chunks for protocol fixtures that exercise

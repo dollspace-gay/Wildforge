@@ -669,7 +669,7 @@ cargo fmt --all -- --check                         PASS
 cargo clippy --locked --all-targets -- -D warnings PASS
 cargo +1.95.0 check --locked --all-targets         PASS
 cargo test --locked --all-targets                  PASS
-  373 passed; 12 ignored; 0 failed; 85.71 seconds
+  373 passed; 12 ignored; 0 failed; 27.95 seconds
 cargo build --locked --release                     PASS
 cargo deny check advisories                        PASS
 ```
@@ -679,6 +679,10 @@ Focused results:
 - Four serial end-to-end agent scenarios: 4 passed in 12.44 seconds. Before
   remediation, the smallest scenario was still running when stopped at
   206.30 seconds; the original all-target suite took 724.07 seconds.
+- The covered-heart fixture batches its ordinary block and fertility edits
+  through the test relight queue. Its isolated runtime fell from 63.62 to
+  0.52 seconds; the same four-thread non-agent suite fell from 93.12 to 69.10
+  seconds.
 - Registry tests: 30 passed.
 - Multiplayer tests: 18 passed, including failed dirty-chunk retention/retry,
   ordinary guest join/stream/edit, inventory authority, snapshot batching,
@@ -718,7 +722,7 @@ Focused results:
 | Missing CI quality gates | Completed | Working tree | PR/main workflow covers format, Clippy, MSRV, fast tests, agent tests, release, and advisories. |
 | Unspecified Rust version/toolchain | Completed | Working tree | MSRV 1.95 check passes; development/CI toolchain pinned to 1.96. |
 | Strict Clippy failures | Completed | Working tree | Strict all-target Clippy passes. |
-| Slow default all-target tests | Completed | Working tree | Full suite reduced from 724.07s to 85.71s after rebasing onto current `main`; agent group is 12.44s with a five-minute CI timeout. |
+| Slow default all-target tests | Completed | Working tree | Full suite reduced from 724.07s to 27.95s after batching the final pathological fixture; agent group is 12.44s with a five-minute CI timeout. |
 | Large maintenance hotspots | Completed increment | Working tree | Streaming and registry runtime boundaries extracted; authorization and formats unchanged. Further decomposition remains normal incremental maintenance, not a release blocker. |
 | Manual dependency auditing | Completed | Working tree | `cargo deny` passes with three documented, narrow exceptions; avoidable all-target paths removed. |
 | Missing concise prerequisites documentation | Completed | Working tree | README matches toolchain, CI commands, packages, backends, test budgets, and license. |

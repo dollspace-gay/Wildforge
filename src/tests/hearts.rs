@@ -1239,26 +1239,23 @@ fn ground_readiness_is_measured_at_the_heart_not_under_the_sky() {
             w.ensure_chunk(ChunkPos::of_world(hp.0 + cx * 16, hp.2 + cz * 16));
         }
     }
-    for cx in -1..=1 {
-        for cz in -1..=1 {
-            w.ensure_chunk(ChunkPos::of_world(hp.0 + cx * 16, hp.2 + cz * 16));
-        }
-    }
-    for dx in -r..=r {
-        for dz in -r..=r {
-            if dx * dx + dz * dz > r * r {
-                continue;
-            }
-            let (cx, cz) = (hp.0 + dx, hp.2 + dz);
-            if (dx, dz) != (0, 0) {
-                for up in 0..=6 {
-                    w.set_block(cx, hp.1 + up, cz, AIR);
+    w.edit_fixture_for_test(|world| {
+        for dx in -r..=r {
+            for dz in -r..=r {
+                if dx * dx + dz * dz > r * r {
+                    continue;
                 }
+                let (cx, cz) = (hp.0 + dx, hp.2 + dz);
+                if (dx, dz) != (0, 0) {
+                    for up in 0..=6 {
+                        world.set_block(cx, hp.1 + up, cz, AIR);
+                    }
+                }
+                world.set_block(cx, hp.1 - 1, cz, farm);
+                world.feed_soil(cx, hp.1 - 1, cz, 60);
             }
-            w.set_block(cx, hp.1 - 1, cz, farm);
-            w.feed_soil(cx, hp.1 - 1, cz, 60);
         }
-    }
+    });
     let (ready, total) = w.root_ground_ready(hp.0, hp.1, hp.2);
     assert!(ready * 2 > total, "the ground is living ({ready}/{total})");
     assert!(w.plant_heart_seed(hp.0, hp.1, hp.2).is_none(), "it takes");
@@ -1266,13 +1263,15 @@ fn ground_readiness_is_measured_at_the_heart_not_under_the_sky() {
     // Now roof the whole site over, as an edifice does, and ask again.
     // The answer must not change: the work is at the heart's level.
     let stone = b(&reg, "base:stone");
-    for dx in -r..=r {
-        for dz in -r..=r {
-            for up in 8..14 {
-                w.set_block(hp.0 + dx, hp.1 + up, hp.2 + dz, stone);
+    w.edit_fixture_for_test(|world| {
+        for dx in -r..=r {
+            for dz in -r..=r {
+                for up in 8..14 {
+                    world.set_block(hp.0 + dx, hp.1 + up, hp.2 + dz, stone);
+                }
             }
         }
-    }
+    });
     let (roofed, total2) = w.root_ground_ready(hp.0, hp.1, hp.2);
     assert_eq!(
         (roofed, total2),
