@@ -231,10 +231,17 @@ fn script_kv_persists_to_disk() {
         .or_default()
         .insert("k".into(), "v".into());
     let dir = tmp_dir("kv");
-    host.save_kv(&dir);
+    host.save_kv(&dir).unwrap();
     let host2 = crate::script::ScriptHost::new();
     host2.load_kv(&dir);
     assert_eq!(host2.kv.borrow()["m"]["k"], "v");
+
+    host.kv.borrow_mut().clear();
+    host.save_kv(&dir).unwrap();
+    assert!(
+        !dir.join("modstore.toml").exists(),
+        "an empty store removes its stale replace-in-full file"
+    );
 }
 
 #[test]
@@ -471,7 +478,7 @@ fn copper_aliases_migrate_old_worlds() {
         left -= run as usize;
     }
     std::fs::write(dir.join("c.0.0.wfc"), data).unwrap();
-    let mut w = World::load_or_create(dir, reg.clone());
+    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
     w.ensure_chunk(ChunkPos { x: 0, z: 0 });
     assert_eq!(
         w.get_block(4, 60, 4),

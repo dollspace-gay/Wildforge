@@ -2,6 +2,7 @@
 name = "wildforge"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.95"
 
 [dependencies]
 bytemuck = { version = "1.25.1", features = ["derive"] }
@@ -16,7 +17,7 @@ jacquard-oauth = { version = "0.12.1", default-features = false, features = ["br
 noise = "0.9.0"
 png = "0.18.1"
 pollster = "1.0.1"
-postcard = { version = "1", features = ["alloc"] }
+postcard = { version = "1", default-features = false, features = ["alloc"] }
 quinn = "0.11"
 rcgen = "0.13"
 ring = "0.17.14"
@@ -29,8 +30,13 @@ serde_json = "1.0"
 smol_str = { version = "0.3", features = ["serde"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
 toml = "1.1.3"
-wgpu = "26"
-winit = "0.30.13"
+# Wildforge's supported desktop backends are Vulkan/GLES on Linux and DX12 on
+# Windows. Keeping Metal disabled also keeps Apple-only dependencies out of the
+# audited graph until macOS is a supported target.
+wgpu = { version = "26", default-features = false, features = ["std", "parking_lot", "dx12", "gles", "vulkan", "wgsl"] }
+# The no-title Adwaita CSD still provides Wayland borders without pulling the
+# font-rendering dependency used only for client-side title text.
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita-notitle"] }
 
 [dev-dependencies]
 # Validate the WGSL shaders at test time (naga runs them at runtime otherwise).

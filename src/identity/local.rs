@@ -9,6 +9,8 @@ use ring::rand::{SecureRandom, SystemRandom};
 use ring::signature::{ED25519, Ed25519KeyPair, KeyPair, UnparsedPublicKey};
 use serde::{Deserialize, Serialize};
 
+use crate::persist::atomic_write;
+
 use super::{DeviceKeyId, IdentityError, NONCE_LEN, PlayerId, Principal};
 
 pub struct LocalIdentity {
@@ -189,67 +191,6 @@ pub(crate) fn load_or_create_ed25519_pkcs8(path: &Path) -> io::Result<Vec<u8>> {
 pub(crate) fn sha256(bytes: &[u8]) -> [u8; 32] {
     let hash = digest(&SHA256, bytes);
     hash.as_ref().try_into().unwrap()
-}
-
-pub(crate) fn atomic_write(path: &Path, bytes: &[u8], secret: bool) -> io::Result<()> {
-    #[cfg(not(unix))]
-    let _ = secret;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| io::Error::other("invalid output path"))?;
-    let temp = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
-    let mut options = OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    if secret {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(&temp)?;
-    let result = (|| {
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        replace_file(&temp, path)
-    })();
-    drop(file);
-    if result.is_err() {
-        let _ = fs::remove_file(&temp);
-    }
-    result
-}
-
-#[cfg(not(windows))]
-fn replace_file(temp: &Path, path: &Path) -> io::Result<()> {
-    fs::rename(temp, path)
-}
-
-#[cfg(windows)]
-fn replace_file(temp: &Path, path: &Path) -> io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{
-        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
-    };
-
-    let source: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
-    let destination: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-    // SAFETY: both buffers are NUL-terminated UTF-16 paths and remain alive
-    // for the duration of the call.
-    let moved = unsafe {
-        MoveFileExW(
-            source.as_ptr(),
-            destination.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if moved == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
 }
 
 fn atomic_create_secret(path: &Path, bytes: &[u8]) -> io::Result<()> {

@@ -1439,8 +1439,12 @@ fn a_world_releases_chunks_no_player_is_near() {
     assert!(loaded >= 169);
 
     // One player near the origin: distant ground goes.
-    let dropped = w.retain_chunks(&[ChunkPos { x: 0, z: 0 }], 2);
-    assert!(dropped > 0, "chunks far from every player must be released");
+    let report = w.retain_chunks(&[ChunkPos { x: 0, z: 0 }], 2);
+    assert!(
+        report.released > 0,
+        "chunks far from every player must be released"
+    );
+    assert!(report.is_ok(), "clean eviction: {}", report.summary());
     assert_eq!(w.chunk_count(), 25, "a radius of two keeps a 5x5");
     assert!(w.has_chunk(ChunkPos { x: 2, z: 2 }));
     assert!(!w.has_chunk(ChunkPos { x: 5, z: 5 }));
@@ -1453,7 +1457,8 @@ fn a_world_releases_chunks_no_player_is_near() {
             w.ensure_chunk(ChunkPos { x, z });
         }
     }
-    w.retain_chunks(&[ChunkPos { x: -5, z: -5 }, ChunkPos { x: 5, z: 5 }], 1);
+    let report = w.retain_chunks(&[ChunkPos { x: -5, z: -5 }, ChunkPos { x: 5, z: 5 }], 1);
+    assert!(report.is_ok(), "two-center eviction: {}", report.summary());
     assert!(
         w.has_chunk(ChunkPos { x: -5, z: -5 }),
         "first player's ground"
@@ -1475,8 +1480,48 @@ fn a_world_releases_chunks_no_player_is_near() {
         }
     }
     assert!(w.chunk_count() > 0);
-    w.retain_chunks(&[], 12);
+    let report = w.retain_chunks(&[], 12);
+    assert!(
+        report.is_ok(),
+        "empty-server eviction: {}",
+        report.summary()
+    );
     assert_eq!(w.chunk_count(), 0, "no players means no resident chunks");
+}
+
+#[test]
+fn failed_dirty_chunk_eviction_keeps_only_the_unsaved_ground() {
+    use crate::chunk::ChunkPos;
+
+    let mut w = test_world("mp-residency-save-failure");
+    let failed = ChunkPos { x: -2, z: 0 };
+    let saved = ChunkPos { x: 2, z: 0 };
+    for pos in [failed, saved] {
+        w.ensure_chunk(pos);
+        let x = pos.x * crate::chunk::CHUNK_X as i32;
+        let y = w.surface_height(x, 0) + 1;
+        let stone = w.reg.block_id("base:stone").unwrap();
+        w.set_block(x, y, 0, stone);
+    }
+    w.fail_chunk_save_for_test(failed, true);
+
+    let first = w.retain_chunks(&[], 0);
+    assert_eq!(
+        first.released, 24,
+        "every healthy fixture chunk still leaves"
+    );
+    assert_eq!(first.retained_dirty, 1);
+    assert_eq!(first.failures.len(), 1);
+    assert_eq!(w.chunk_count(), 1, "only the failed chunk remains");
+    assert!(w.has_chunk(failed), "the newest copy stays in memory");
+    assert!(!w.has_chunk(saved), "successful ground was released");
+
+    w.fail_chunk_save_for_test(failed, false);
+    let retry = w.retain_chunks(&[], 0);
+    assert_eq!(retry.released, 1);
+    assert_eq!(retry.retained_dirty, 0);
+    assert!(retry.is_ok(), "retry lands: {}", retry.summary());
+    assert!(!w.has_chunk(failed));
 }
 
 #[test]

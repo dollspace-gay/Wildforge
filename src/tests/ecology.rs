@@ -928,8 +928,8 @@ fn the_bloom_erupts_and_burns_down() {
     let mut w2 = World::new(9, dir.clone(), reg.clone());
     w2.ensure_chunk(ChunkPos { x: 0, z: 0 });
     w2.add_bloom(40, 40, 2.5);
-    w2.save_modified();
-    let w3 = World::load_or_create(dir, reg.clone());
+    save_world(&mut w2);
+    let w3 = World::load_or_create(dir, reg.clone()).unwrap();
     assert!(w3.bloom_at(40, 40) > 2.0, "the bloom ledger persists");
 }
 

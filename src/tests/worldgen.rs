@@ -1305,8 +1305,8 @@ fn adopted_worker_chunks_match_ensure() {
     // A saved copy on disk beats the worker's fresh terrain.
     let stone = b(&reg, "base:stone");
     a.set_block(3 * 16 + 4, 200, -2 * 16 + 4, stone);
-    a.save_modified();
-    let mut c = World::load_or_create(a.save_dir_for_test(), reg.clone());
+    save_world(&mut a);
+    let mut c = World::load_or_create(a.save_dir_for_test(), reg.clone()).unwrap();
     let fresh = c.generator.generate(pos, &reg);
     assert!(c.adopt_generated(pos, fresh));
     assert_eq!(

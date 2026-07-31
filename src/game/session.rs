@@ -18,8 +18,16 @@ impl Game {
 
     /// Load (or create) a world and enter it.
     pub(super) fn start_world(&mut self, name: &str) {
-        let mut world =
-            World::load_or_create(PathBuf::from("saves").join(name), self.content.reg.clone());
+        let mut world = match World::load_or_create(
+            PathBuf::from("saves").join(name),
+            self.content.reg.clone(),
+        ) {
+            Ok(world) => world,
+            Err(error) => {
+                self.toast(format!("Could not open world: {error}"));
+                return;
+            }
+        };
         // Dev: WILDFORGE_SPAWN="x,z" overrides the spawn search.
         let (sx, sz) = std::env::var("WILDFORGE_SPAWN")
             .ok()
@@ -211,14 +219,19 @@ impl Game {
     pub(super) fn new_world_mode(&mut self, mode: &str) {
         let name = next_world_name(std::path::Path::new("saves"), &self.worlds);
         let seed = (self.rand01() * u32::MAX as f32) as u32;
-        world::write_world_meta(&PathBuf::from("saves").join(&name), seed, mode, 0.0);
+        if let Err(error) =
+            world::write_world_meta(&PathBuf::from("saves").join(&name), seed, mode, 0.0)
+        {
+            self.toast(format!("Could not create world: {error}"));
+            return;
+        }
         self.refresh_worlds();
         self.start_world(&name);
     }
 
-    pub(super) fn save_player(&self) {
+    pub(super) fn save_player(&self) -> std::io::Result<()> {
         if !self.in_world || self.multiplayer.remote.is_some() {
-            return;
+            return Ok(());
         }
         use std::fmt::Write as _;
         let mut out = String::new();
@@ -261,11 +274,38 @@ impl Game {
             }
         }
         let world = self.server.world.save_dir_for_saving();
-        match identity::local_profile_path(&world, self.identity.device_id())
-            .and_then(|path| identity::atomic_write(&path, out.as_bytes(), false))
-        {
-            Ok(()) => identity::finish_local_profile_migration(&world),
-            Err(error) => eprintln!("identity: player profile save failed: {error}"),
+        let path = identity::local_profile_path(&world, self.identity.device_id())?;
+        identity::atomic_write(&path, out.as_bytes(), false)?;
+        identity::finish_local_profile_migration(&world);
+        Ok(())
+    }
+
+    /// Persist every local-session component and keep enough context for a
+    /// player-facing error. A remote guest owns none of this state.
+    pub(super) fn save_session(&mut self) -> Result<String, String> {
+        if self.multiplayer.remote.is_some() {
+            return Ok("remote session has no local world state".into());
+        }
+        let mut failures = Vec::new();
+        if let Err(error) = self.save_player() {
+            failures.push(format!("player profile: {error}"));
+        }
+        self.server.world.settle_falling();
+        let world_report = self.server.world.save_modified();
+        if !world_report.is_ok() {
+            failures.push(format!("world: {}", world_report.summary()));
+        }
+        let world_dir = self.server.world.save_dir_for_saving();
+        if let Err(error) = self.content.scripts.save_kv(&world_dir) {
+            failures.push(format!(
+                "mod storage ({}): {error}",
+                world_dir.join("modstore.toml").display()
+            ));
+        }
+        if failures.is_empty() {
+            Ok(world_report.summary())
+        } else {
+            Err(failures.join("; "))
         }
     }
 
@@ -343,11 +383,11 @@ impl Game {
     }
 
     pub(super) fn quit_to_title(&mut self) {
-        self.multiplayer.host = None; // closes connections
-        self.multiplayer.host_sleeping = false;
-        self.server.world.set_edit_logging(false);
         if self.multiplayer.remote.is_some() {
             self.multiplayer.remote = None;
+            self.multiplayer.host = None;
+            self.multiplayer.host_sleeping = false;
+            self.server.world.set_edit_logging(false);
             self.renderer.clear_chunks();
             self.server = server::Server::new(
                 World::new(0, PathBuf::from("saves/.none"), self.content.reg.clone()),
@@ -360,14 +400,16 @@ impl Game {
             self.set_screen(Screen::Title);
             return;
         }
-        if self.in_world {
-            self.save_player();
-            self.server.world.settle_falling();
-            self.server.world.save_modified();
-            self.content
-                .scripts
-                .save_kv(&self.server.world.save_dir_for_saving());
+        if self.in_world
+            && let Err(error) = self.save_session()
+        {
+            eprintln!("world: save and quit cancelled: {error}");
+            self.toast(format!("Could not save; still in world: {error}"));
+            return;
         }
+        self.multiplayer.host = None; // closes connections after durable save
+        self.multiplayer.host_sleeping = false;
+        self.server.world.set_edit_logging(false);
         self.renderer.clear_chunks();
         self.server = server::Server::new(
             World::new(0, PathBuf::from("saves/.none"), self.content.reg.clone()),

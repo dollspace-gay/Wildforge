@@ -24,6 +24,7 @@ mod mobs;
 mod mp;
 mod net;
 mod particles;
+mod persist;
 mod physics;
 mod raycast;
 mod registry;

@@ -14,11 +14,12 @@ use serde::{Deserialize, Serialize};
 pub mod atproto;
 #[path = "identity/local.rs"]
 mod local;
+pub(crate) use crate::persist::atomic_write;
 pub use local::{
     LocalIdentity, finish_local_profile_migration, identity_dir, local_player_id,
     local_profile_path, random_nonce, verify_signature,
 };
-pub(crate) use local::{atomic_write, load_or_create_ed25519_pkcs8, sha256};
+pub(crate) use local::{load_or_create_ed25519_pkcs8, sha256};
 
 pub const DISPLAY_NAME_MAX: usize = 16;
 pub const NONCE_LEN: usize = 32;

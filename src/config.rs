@@ -41,7 +41,7 @@ fn available_memory() -> Option<u64> {
         let text = std::fs::read_to_string("/proc/meminfo").ok()?;
         let line = text.lines().find(|l| l.starts_with("MemAvailable:"))?;
         let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
-        return Some(kb * 1024);
+        Some(kb * 1024)
     }
     #[cfg(windows)]
     {
@@ -227,7 +227,7 @@ impl Config {
     }
 
     pub fn save(&self) {
-        if let Err(e) = std::fs::write(path(), self.to_text()) {
+        if let Err(e) = crate::persist::atomic_write(&path(), self.to_text().as_bytes(), false) {
             eprintln!("config: save failed: {e}");
         }
     }

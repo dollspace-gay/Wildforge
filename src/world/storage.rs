@@ -7,8 +7,9 @@ impl World {
         self.save_dir.join("animals.toml")
     }
 
-    pub(super) fn save_mobs(&self) {
+    pub(super) fn save_mobs(&self) -> Vec<SaveFailure> {
         use std::fmt::Write as _;
+        let mut report = SaveReport::default();
         let mut out = String::new();
         for m in &self.mobs {
             let Some(def) = self.reg.animals.get(m.species) else {
@@ -51,11 +52,15 @@ impl World {
             }
             let _ = writeln!(out);
         }
-        if out.is_empty() {
-            let _ = fs::remove_file(self.mobs_path());
-        } else {
-            let _ = fs::write(self.mobs_path(), out);
-        }
+        let path = self.mobs_path();
+        report.record(
+            "animals",
+            path.clone(),
+            super::persistence::replace_or_remove(
+                &path,
+                (!out.is_empty()).then_some(out.as_bytes()),
+            ),
+        );
         // The regional ledger: compact (cell x, cell z, standing).
         let mut rb = Vec::with_capacity(self.regional_ire.len() * 12);
         for (&(x, z), &v) in &self.regional_ire {
@@ -63,11 +68,12 @@ impl World {
             rb.extend_from_slice(&z.to_le_bytes());
             rb.extend_from_slice(&v.to_le_bytes());
         }
-        if rb.is_empty() {
-            let _ = fs::remove_file(self.save_dir.join("rire"));
-        } else {
-            let _ = fs::write(self.save_dir.join("rire"), rb);
-        }
+        let path = self.save_dir.join("rire");
+        report.record(
+            "regional ire",
+            path.clone(),
+            super::persistence::replace_or_remove(&path, (!rb.is_empty()).then_some(rb.as_slice())),
+        );
         // The bloom ledger, same shape as rire.
         let mut bb = Vec::with_capacity(self.bloom.len() * 12);
         for (&(x, z), &v) in &self.bloom {
@@ -75,14 +81,17 @@ impl World {
             bb.extend_from_slice(&z.to_le_bytes());
             bb.extend_from_slice(&v.to_le_bytes());
         }
-        if bb.is_empty() {
-            let _ = fs::remove_file(self.save_dir.join("bloom"));
-        } else {
-            let _ = fs::write(self.save_dir.join("bloom"), bb);
-        }
-        let _ = fs::write(
-            self.save_dir.join("longwinter"),
-            if self.long_winter { b"1" } else { b"0" },
+        let path = self.save_dir.join("bloom");
+        report.record(
+            "bloom ledger",
+            path.clone(),
+            super::persistence::replace_or_remove(&path, (!bb.is_empty()).then_some(bb.as_slice())),
+        );
+        let path = self.save_dir.join("longwinter");
+        report.record(
+            "long winter",
+            path.clone(),
+            super::persistence::atomic_replace(&path, if self.long_winter { b"1" } else { b"0" }),
         );
         // The ground's spent willingness to bloom.
         let mut sb = Vec::with_capacity(self.bloom_spent.len() * 12);
@@ -91,11 +100,12 @@ impl World {
             sb.extend_from_slice(&z.to_le_bytes());
             sb.extend_from_slice(&v.to_le_bytes());
         }
-        if sb.is_empty() {
-            let _ = fs::remove_file(self.save_dir.join("bspent"));
-        } else {
-            let _ = fs::write(self.save_dir.join("bspent"), sb);
-        }
+        let path = self.save_dir.join("bspent");
+        report.record(
+            "bloom exhaustion",
+            path.clone(),
+            super::persistence::replace_or_remove(&path, (!sb.is_empty()).then_some(sb.as_slice())),
+        );
         // The hearts: (province x, z, site x, y, z, stage, strain,
         // rooting, graft, drift, regrow). The magic distinguishes this
         // from the older headerless 34-byte layout, which is otherwise
@@ -116,25 +126,40 @@ impl World {
             hb.extend_from_slice(&h.drift.to_le_bytes());
             hb.extend_from_slice(&h.regrow.to_le_bytes());
         }
-        if self.hearts.is_empty() {
-            let _ = fs::remove_file(self.save_dir.join("hearts"));
-        } else {
-            let _ = fs::write(self.save_dir.join("hearts"), hb);
-        }
+        let path = self.save_dir.join("hearts");
+        report.record(
+            "hearts",
+            path.clone(),
+            super::persistence::replace_or_remove(
+                &path,
+                (!self.hearts.is_empty()).then_some(hb.as_slice()),
+            ),
+        );
         // Seeded-chunk marks: compact binary pairs.
         let mut buf = Vec::with_capacity(self.mob_seeded.len() * 8);
         for (x, z) in &self.mob_seeded {
             buf.extend_from_slice(&x.to_le_bytes());
             buf.extend_from_slice(&z.to_le_bytes());
         }
-        let _ = fs::write(self.save_dir.join("aseeded"), buf);
+        let path = self.save_dir.join("aseeded");
+        report.record(
+            "animal seed marks",
+            path.clone(),
+            super::persistence::atomic_replace(&path, &buf),
+        );
         // Player-touched chunk marks: same shape.
         let mut pt = Vec::with_capacity(self.player_touched.len() * 8);
         for (x, z) in &self.player_touched {
             pt.extend_from_slice(&x.to_le_bytes());
             pt.extend_from_slice(&z.to_le_bytes());
         }
-        let _ = fs::write(self.save_dir.join("ptouched"), pt);
+        let path = self.save_dir.join("ptouched");
+        report.record(
+            "player-touched marks",
+            path.clone(),
+            super::persistence::atomic_replace(&path, &pt),
+        );
+        report.failures
     }
 
     pub(super) fn load_mobs(&mut self) {
@@ -380,9 +405,29 @@ impl World {
     /// Insert a network-streamed chunk, remapping host block ids to
     /// local ones. Relights and marks for remesh.
     pub fn insert_remote_chunk(&mut self, pos: ChunkPos, rle: &[u8], remap: &[BlockId]) {
+        self.insert_remote_chunks([(pos, rle)], remap);
+    }
+
+    /// Insert a group received in one network poll and settle their shared
+    /// borders through one lighting cascade.
+    pub fn insert_remote_chunks<'a>(
+        &mut self,
+        chunks: impl IntoIterator<Item = (ChunkPos, &'a [u8])>,
+        remap: &[BlockId],
+    ) {
+        let mut inserted = Vec::new();
+        for (pos, rle) in chunks {
+            if self.insert_remote_chunk_unlit(pos, rle, remap) {
+                inserted.push(pos);
+            }
+        }
+        self.relight_chunks_and_cascade(inserted);
+    }
+
+    fn insert_remote_chunk_unlit(&mut self, pos: ChunkPos, rle: &[u8], remap: &[BlockId]) -> bool {
         let is_v4 = rle.starts_with(b"WFC4");
         if !is_v4 && !rle.starts_with(b"WFC3") {
-            return;
+            return false;
         }
         let mut chunk = Chunk::new();
         let out = chunk.raw_mut();
@@ -412,7 +457,6 @@ impl World {
         chunk.dirty = true;
         chunk.compact();
         self.chunks.insert(pos, chunk);
-        self.relight_and_cascade(pos);
         // Neighbors need remeshing for the new border faces.
         for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
             let n = ChunkPos {
@@ -423,10 +467,23 @@ impl World {
                 c.dirty = true;
             }
         }
+        true
     }
 
     pub(super) fn save_chunk(&self, pos: ChunkPos) -> std::io::Result<()> {
-        let buf = self.chunk_rle(pos).unwrap_or_default();
+        #[cfg(test)]
+        if self.save_fail_chunks.contains(&pos) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "injected chunk save failure",
+            ));
+        }
+        let buf = self.chunk_rle(pos).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("chunk {},{} is not resident", pos.x, pos.z),
+            )
+        })?;
         super::region::write_chunk(&self.save_dir, pos, &buf)
     }
 
@@ -434,40 +491,60 @@ impl World {
     /// file, only if edited. With the autosave timer gone this is how
     /// most of the world reaches disk: a chunk is written once, as it
     /// leaves the view, instead of the whole world on a clock.
-    pub fn save_chunk_if_modified(&self, pos: ChunkPos) {
+    pub fn save_chunk_if_modified(&self, pos: ChunkPos) -> std::io::Result<bool> {
         if self.remote {
-            return;
+            return Ok(false);
         }
         if self.chunks.get(&pos).is_some_and(|chunk| chunk.modified) {
-            let _ = fs::create_dir_all(&self.save_dir);
-            let _ = self.save_chunk(pos);
+            self.save_chunk(pos)?;
+            return Ok(true);
         }
+        Ok(false)
     }
 
-    pub fn save_modified(&mut self) {
+    pub fn save_modified(&mut self) -> SaveReport {
+        let mut report = SaveReport::default();
         if self.remote {
-            return; // the host owns the world
+            return report; // the host owns the world
         }
-        let _ = fs::create_dir_all(&self.save_dir);
-        write_world_meta_full(
-            &self.save_dir,
-            self.seed,
-            &self.mode,
-            self.ire,
-            self.day,
-            self.weather,
+        report.record(
+            "save directory",
+            self.save_dir.clone(),
+            fs::create_dir_all(&self.save_dir),
+        );
+        let meta_path = self.save_dir.join("world.toml");
+        report.record(
+            "world metadata",
+            meta_path,
+            write_world_meta_full(
+                &self.save_dir,
+                self.seed,
+                &self.mode,
+                self.ire,
+                self.day,
+                self.weather,
+            ),
         );
         // Only when it would actually differ. The palette describes the
         // registry, not the world, so rewriting it on a timer was 4 KB
         // of churn every twenty seconds saying the same thing. It has
         // to land before the chunks below, which are written in the ids
         // it names.
-        if self.palette_stale {
-            self.write_palette();
-        }
-        self.save_entities();
-        self.save_mobs();
-        self.save_stamps();
+        let palette_ready = if self.palette_stale {
+            let path = self.save_dir.join("palette");
+            let ready = report.record("block palette", path, self.write_palette());
+            if ready {
+                self.palette_stale = false;
+            }
+            ready
+        } else {
+            true
+        };
+        let path = self.entities_path();
+        report.record("block entities", path, self.save_entities());
+        report.extend(self.save_mobs());
+        let path = self.save_dir.join("stamps");
+        report.record("random-tick stamps", path, self.save_stamps());
         let dirty: Vec<ChunkPos> = self
             .chunks
             .iter()
@@ -475,16 +552,29 @@ impl World {
             .map(|(pos, _)| *pos)
             .collect();
         for pos in dirty {
+            // Chunks use runtime numeric ids. If the palette naming those ids
+            // did not land, writing them would make the next load reinterpret
+            // otherwise healthy terrain under the stale palette.
+            if !palette_ready {
+                continue;
+            }
             // Clear only on a write that landed: a chunk whose file could
             // not be written stays queued for the next save.
-            if self.save_chunk(pos).is_ok()
-                && let Some(chunk) = self.chunks.get_mut(&pos)
-            {
-                chunk.modified = false;
+            match self.save_chunk(pos) {
+                Ok(()) => {
+                    report.chunks_saved += 1;
+                    if let Some(chunk) = self.chunks.get_mut(&pos) {
+                        chunk.modified = false;
+                    }
+                }
+                Err(error) => report.failures.push(SaveFailure::new(
+                    format!("chunk {},{}", pos.x, pos.z),
+                    super::region::region_path(&self.save_dir, pos),
+                    error,
+                )),
             }
         }
-        // Every loaded chunk now speaks the palette we just wrote.
-        self.palette_stale = false;
+        report
     }
 
     /// Remap all in-memory chunks from an old registry to the current one

@@ -121,9 +121,9 @@ fn hearts_survive_the_save() {
         if let Some(h) = w.hearts.get_mut(&key) {
             h.strain = 6.5;
         }
-        w.save_modified();
+        save_world(&mut w);
     }
-    let mut w = World::load_or_create(dir, reg.clone());
+    let mut w = World::load_or_create(dir, reg.clone()).unwrap();
     w.ensure_chunk(ChunkPos::of_world(sx, sz));
     let h = w.heart_at(sx, sz).expect("the ledger came back");
     assert_eq!(h.stage, 1, "a failing heart is still failing");
@@ -856,9 +856,9 @@ fn the_long_winter_survives_the_save() {
         let mut w = World::new(61, dir.clone(), reg.clone());
         w.ensure_chunk(ChunkPos { x: 0, z: 0 });
         w.long_winter = true;
-        w.save_modified();
+        save_world(&mut w);
     }
-    let w = World::load_or_create(dir, reg.clone());
+    let w = World::load_or_create(dir, reg.clone()).unwrap();
     assert!(w.long_winter, "a stopped year is still stopped");
     assert_eq!(w.season(), 3);
 }
@@ -931,10 +931,10 @@ fn the_cutting_timer_survives_a_save_and_old_saves_still_load() {
     let dir = w.save_dir().to_path_buf();
     assert!(w.take_heart_cutting(sx, sz));
     let pos = w.heart_at(sx, sz).unwrap().pos;
-    w.save_modified();
+    save_world(&mut w);
     drop(w);
 
-    let w = World::load_or_create(dir.clone(), reg.clone());
+    let w = World::load_or_create(dir.clone(), reg.clone()).unwrap();
     let loaded = w.heart_at(pos.0, pos.2).expect("the heart came back");
     assert!(
         (loaded.regrow - crate::world::HEART_CUTTING_DAYS).abs() < 0.01,
@@ -958,7 +958,7 @@ fn the_cutting_timer_survives_a_save_and_old_saves_still_load() {
     old.extend_from_slice(&0f32.to_le_bytes()); // drift
     assert_eq!(old.len(), 34, "the shape of the old record");
     std::fs::write(dir.join("hearts"), &old).unwrap();
-    let w = World::load_or_create(dir.clone(), reg.clone());
+    let w = World::load_or_create(dir.clone(), reg.clone()).unwrap();
     let loaded = w.heart_at(pos.0, pos.2).expect("an old heart still loads");
     assert!((loaded.strain - 3.5).abs() < 0.01, "its grievance survived");
     assert_eq!(loaded.regrow, 0.0, "and it is ready to give");
@@ -1143,7 +1143,7 @@ fn a_heart_registers_under_whatever_stands_over_it() {
         }
     }
     let pos = ChunkPos::of_world(sx, sz);
-    w.save_modified();
+    save_world(&mut w);
     w.unload_chunk(pos);
     w.ensure_chunk(pos);
     let after = w.heart_at(sx, sz).expect("still found under a roof");
@@ -1239,26 +1239,23 @@ fn ground_readiness_is_measured_at_the_heart_not_under_the_sky() {
             w.ensure_chunk(ChunkPos::of_world(hp.0 + cx * 16, hp.2 + cz * 16));
         }
     }
-    for cx in -1..=1 {
-        for cz in -1..=1 {
-            w.ensure_chunk(ChunkPos::of_world(hp.0 + cx * 16, hp.2 + cz * 16));
-        }
-    }
-    for dx in -r..=r {
-        for dz in -r..=r {
-            if dx * dx + dz * dz > r * r {
-                continue;
-            }
-            let (cx, cz) = (hp.0 + dx, hp.2 + dz);
-            if (dx, dz) != (0, 0) {
-                for up in 0..=6 {
-                    w.set_block(cx, hp.1 + up, cz, AIR);
+    w.edit_fixture_for_test(|world| {
+        for dx in -r..=r {
+            for dz in -r..=r {
+                if dx * dx + dz * dz > r * r {
+                    continue;
                 }
+                let (cx, cz) = (hp.0 + dx, hp.2 + dz);
+                if (dx, dz) != (0, 0) {
+                    for up in 0..=6 {
+                        world.set_block(cx, hp.1 + up, cz, AIR);
+                    }
+                }
+                world.set_block(cx, hp.1 - 1, cz, farm);
+                world.feed_soil(cx, hp.1 - 1, cz, 60);
             }
-            w.set_block(cx, hp.1 - 1, cz, farm);
-            w.feed_soil(cx, hp.1 - 1, cz, 60);
         }
-    }
+    });
     let (ready, total) = w.root_ground_ready(hp.0, hp.1, hp.2);
     assert!(ready * 2 > total, "the ground is living ({ready}/{total})");
     assert!(w.plant_heart_seed(hp.0, hp.1, hp.2).is_none(), "it takes");
@@ -1266,13 +1263,15 @@ fn ground_readiness_is_measured_at_the_heart_not_under_the_sky() {
     // Now roof the whole site over, as an edifice does, and ask again.
     // The answer must not change: the work is at the heart's level.
     let stone = b(&reg, "base:stone");
-    for dx in -r..=r {
-        for dz in -r..=r {
-            for up in 8..14 {
-                w.set_block(hp.0 + dx, hp.1 + up, hp.2 + dz, stone);
+    w.edit_fixture_for_test(|world| {
+        for dx in -r..=r {
+            for dz in -r..=r {
+                for up in 8..14 {
+                    world.set_block(hp.0 + dx, hp.1 + up, hp.2 + dz, stone);
+                }
             }
         }
-    }
+    });
     let (roofed, total2) = w.root_ground_ready(hp.0, hp.1, hp.2);
     assert_eq!(
         (roofed, total2),
