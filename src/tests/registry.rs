@@ -1239,23 +1239,35 @@ fn content_graph_is_complete_and_obtainable() {
     loop {
         let mut grew = false;
         for r in &reg.recipes {
-            if !ok.contains(&r.output.0) && r.pattern.iter().flatten().all(|i| ing_ok(i, &ok)) {
-                ok.insert(r.output.0);
-                grew = true;
+            if r.pattern.iter().flatten().all(|i| ing_ok(i, &ok)) {
+                grew |= ok.insert(r.output.0);
+                for (byproduct, count) in &r.byproducts {
+                    if *count > 0 {
+                        grew |= ok.insert(byproduct.0);
+                    }
+                }
             }
         }
         for s in &reg.smelts {
-            if !ok.contains(&s.output.0) && ing_ok(&s.input, &ok) {
-                ok.insert(s.output.0);
-                grew = true;
+            if ing_ok(&s.input, &ok) {
+                grew |= ok.insert(s.output.0);
+                if let Some((spit, count)) = s.spit
+                    && count > 0
+                {
+                    grew |= ok.insert(spit.0);
+                }
             }
         }
         // The steelworks: a fired bloomery turns charge into blooms,
         // and the anvil works blooms into bars (proven by sim tests).
         for b in &reg.bloomery {
-            if !ok.contains(&b.bloom.0) && ok.contains(&b.charge.0) && ok.contains(&b.fuel.0) {
-                ok.insert(b.bloom.0);
-                grew = true;
+            if ok.contains(&b.charge.0) && ok.contains(&b.fuel.0) {
+                grew |= ok.insert(b.bloom.0);
+                if reg.item(b.charge).materials.contains_key("iron")
+                    && let Some(slag) = reg.item_id("base:iron_slag")
+                {
+                    grew |= ok.insert(slag.0);
+                }
             }
         }
         for w in &reg.worked {
@@ -1264,9 +1276,39 @@ fn content_graph_is_complete_and_obtainable() {
                 grew = true;
             }
         }
+        // Durability breakage, clean machine dismantling, and forge salvage
+        // are runtime transformations rather than ordinary recipes. They are
+        // still edges in the survival content graph.
+        for item in &reg.items {
+            if let Some(damaged) = item.broken_into
+                && reg.item_id(&item.name).is_some_and(|id| ok.contains(&id.0))
+            {
+                grew |= ok.insert(damaged.0);
+            }
+        }
+        for block in &reg.blocks {
+            if let Some(bundle) = block.dismantles_to
+                && reg
+                    .item_id(&block.name)
+                    .is_some_and(|item| ok.contains(&item.0))
+            {
+                grew |= ok.insert(bundle.0);
+            }
+        }
+        for salvage in &reg.forge_salvage {
+            if ok.contains(&salvage.input.0) {
+                grew |= ok.insert(salvage.output.0);
+                grew |= ok.insert(salvage.byproduct.0);
+            }
+        }
         // The bucket: dip it in any fluid and it comes up full — a
         // code path, like shears. Water and lava alike.
-        for full_name in ["base:bucket_water", "base:bucket_lava"] {
+        for full_name in [
+            "base:bucket_water",
+            "base:bucket_brackish",
+            "base:bucket_salt",
+            "base:bucket_lava",
+        ] {
             if let (Some(b), Some(f)) = (reg.item_id("base:bucket"), reg.item_id(full_name))
                 && ok.contains(&b.0)
                 && !ok.contains(&f.0)
@@ -1370,9 +1412,9 @@ fn content_graph_is_complete_and_obtainable() {
                 ok.insert(clear.0);
                 grew = true;
             }
-            for (p, g) in &reg.kiln {
-                if !ok.contains(&g.0) && ok.contains(&p.0) {
-                    ok.insert(g.0);
+            for recipe in &reg.kiln {
+                if !ok.contains(&recipe.glass.0) && ok.contains(&recipe.powder.0) {
+                    ok.insert(recipe.glass.0);
                     grew = true;
                 }
             }
@@ -1437,7 +1479,9 @@ fn the_glass_cabinet_is_complete() {
         let p = it(&reg, powder);
         let gi = it(&reg, glass);
         assert!(
-            reg.kiln.iter().any(|(kp, kg)| *kp == p && *kg == gi),
+            reg.kiln
+                .iter()
+                .any(|recipe| recipe.powder == p && recipe.glass == gi),
             "the kiln knows {powder} -> {glass}"
         );
         assert!(reg.block(b(&reg, glass)).glass, "{glass} is glass");

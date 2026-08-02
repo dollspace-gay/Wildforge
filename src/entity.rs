@@ -87,6 +87,20 @@ impl ItemEntity {
         true
     }
 
+    pub fn loss_reason(&self, world: &World) -> &'static str {
+        let lava = self
+            .pos
+            .block()
+            .is_some_and(|pos| world.reg.is_lava(world.get_block_at(pos)));
+        if lava {
+            "lava oxidation/dispersal"
+        } else if self.age > DESPAWN {
+            "dropped-item despawn"
+        } else {
+            "invalid entity position"
+        }
+    }
+
     /// Emit this entity as a spinning, bobbing mini-cube (blocks) or a
     /// crossed pair of upright sprite quads (tools, sticks).
     /// Spawn pop: items ease 0.6x -> 1.0x over ~150ms with one small

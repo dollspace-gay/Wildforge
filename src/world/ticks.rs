@@ -21,7 +21,6 @@ impl World {
         let heap = reg.block_id("base:compost_heap");
         let heap_ready = reg.block_id("base:compost_heap_ready");
         let litter_id = reg.block_id("base:leaf_litter");
-        let season = self.season();
         let mut order: Vec<(f64, ChunkPos)> = self
             .chunks
             .keys()
@@ -31,8 +30,10 @@ impl World {
         order.truncate(K);
         let mut samples = 0;
         let mut changes = Vec::new();
-        // Evaporated film cells: applied without the crop-ire refund.
-        let mut dried: Vec<BlockPos> = Vec::new();
+        let mut freezes: Vec<BlockPos> = Vec::new();
+        let mut melts: Vec<BlockPos> = Vec::new();
+        let mut snow_melts: Vec<BlockPos> = Vec::new();
+        let mut evaporates: Vec<BlockPos> = Vec::new();
         // Fallow soil recovering (position, gain).
         let mut fed: Vec<(BlockPos, u8)> = Vec::new();
         // Plain swaps that earn no plant-ire credit (compost ripening,
@@ -59,6 +60,8 @@ impl World {
                     pos.v() * CHUNK_Z as u16 + lz as u16,
                 )
                 .expect("a sampled chunk cell is canonical");
+                let season = self.season_at_surface(at.surface());
+                let local_weather = self.weather_at_surface(at.surface());
                 let b = self.get_block_at(at);
                 let d = reg.block(b);
                 // An arc lamp whose generator stopped (or left) goes
@@ -128,12 +131,40 @@ impl World {
                     } else {
                         mult
                     };
+                    let (block_light, sky_light) = self.light_at_pos(at);
+                    let protected = block_light >= 10
+                        && (sky_light < 15
+                            || (1..=16)
+                                .filter_map(|dy| at.offset(0, dy, 0))
+                                .any(|pos| self.reg.block(self.get_block_at(pos)).glass));
+                    let effective_temperature =
+                        local_weather.temperature_c + if protected { 10.0 } else { 0.0 };
+                    let temperature_mult = if effective_temperature <= 0.0 {
+                        0.0
+                    } else if effective_temperature < 14.0 {
+                        effective_temperature / 14.0
+                    } else if effective_temperature <= 29.0 {
+                        1.0
+                    } else {
+                        ((42.0 - effective_temperature) / 13.0).clamp(0.0, 1.0)
+                    };
+                    let light_mult = (f32::from(block_light.max(sky_light)) / 12.0).clamp(0.0, 1.0);
+                    let moisture_mult = below
+                        .map_or_else(
+                            || self.soil_moisture_at_surface(at.surface()),
+                            |soil_pos| self.managed_soil_moisture_at(soil_pos),
+                        )
+                        .clamp(0.0, 1.25);
+                    let mult = mult * temperature_mult * light_mult * moisture_mult;
                     // Fertile loam runs half again over baseline;
                     // exhausted dust crawls (soil.rs).
                     let fmult = if d.crop_any_soil {
                         1.0
                     } else {
-                        soil::fert_mult(soil::fert_of(below.map_or(0, |pos| self.get_meta_at(pos))))
+                        below.map_or(0.0, |soil_pos| {
+                            soil::fert_mult(soil::fert_of(self.get_meta_at(soil_pos)))
+                                * self.crop_soil_multiplier_at(soil_pos)
+                        })
                     };
                     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                     if soil_ok
@@ -152,6 +183,47 @@ impl World {
                 // Fallow farmland recovers, twice as fast under winter
                 // (or snow) — the off season is the soil's turn.
                 if Some(b) == farmland {
+                    let soil_profile = self
+                        .planet_atlas
+                        .as_ref()
+                        .map(|atlas| atlas.biome_sample(at.surface()));
+                    let current_salt = self.get_soil_salinity_at(at);
+                    let irrigation_salt = [
+                        (1, 0, 0),
+                        (-1, 0, 0),
+                        (0, 1, 0),
+                        (0, -1, 0),
+                        (0, 0, 1),
+                        (0, 0, -1),
+                    ]
+                    .into_iter()
+                    .filter_map(|(du, dy, dv)| at.offset(du, dy, dv))
+                    .filter_map(|neighbor| self.water_mass_at(neighbor))
+                    .filter(|mass| mass.water_hu > 0)
+                    .map(|mass| mass.salinity())
+                    .max();
+                    let next_salt = if irrigation_salt.is_some_and(|salt| salt >= 48)
+                        && soil_profile.is_none_or(|soil| soil.drainage < 175)
+                    {
+                        current_salt
+                            .saturating_add(irrigation_salt.map_or(1, |salt| (salt / 32).max(1)))
+                    } else if local_weather.precipitation
+                        == crate::planet_atlas::PrecipitationForm::Rain
+                        && soil_profile.is_none_or(|soil| soil.drainage >= 72)
+                    {
+                        current_salt.saturating_sub(3)
+                    } else if irrigation_salt.is_some_and(|salt| salt < 24)
+                        && soil_profile.is_none_or(|soil| soil.drainage >= 96)
+                    {
+                        current_salt.saturating_sub(1)
+                    } else {
+                        current_salt
+                    };
+                    if next_salt != current_salt {
+                        self.set_soil_salinity_at(at, next_salt);
+                    }
+                    // A dead heart can stop supernatural renewal, never
+                    // rainfall, drainage, or salt transport.
                     if !living {
                         continue;
                     }
@@ -160,7 +232,14 @@ impl World {
                         above == AIR || Some(above) == snow_layer || Some(above) == snow_trod;
                     if resting {
                         *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
-                        if ((*rng >> 8) as f32 / (1 << 24) as f32) < 0.5 {
+                        let moisture = self.managed_soil_moisture_at(at).clamp(0.0, 1.0);
+                        let warmth = ((local_weather.temperature_c + 4.0) / 22.0).clamp(0.0, 1.0);
+                        let organic = soil_profile.map_or(0.7, |soil| {
+                            (f32::from(soil.organic) / 160.0).clamp(0.2, 1.2)
+                        });
+                        if ((*rng >> 8) as f32 / (1 << 24) as f32)
+                            < 0.5 * moisture * warmth.max(0.25) * organic
+                        {
                             let winterish = season == 3 || Some(above) == snow_layer;
                             let gain = if winterish {
                                 soil::FERT_FALLOW * 2
@@ -412,105 +491,41 @@ impl World {
                     && season == 3
                     && sky_open
                     && above.is_some_and(|pos| self.get_block_at(pos) == AIR)
-                    && self.generator.climate_at(at.surface()).t < 0.35
+                    && local_weather.temperature_c <= 0.0
                 {
-                    if let Some(ice) = ice {
-                        changes.push((at, ice));
+                    if ice.is_some() {
+                        freezes.push(at);
                     }
                     continue;
                 }
                 if Some(b) == ice
                     && (season == 0 || season == 1)
                     && sky_open
-                    && self.generator.climate_at(at.surface()).t > -0.35
+                    && local_weather.temperature_c > 1.0
                 {
-                    changes.push((at, self.reg.water_block(0)));
+                    melts.push(at);
                     continue;
                 }
                 // Snow layers melt under bright light or a warm season
                 // (footprints melt with them).
                 if Some(b) == snow_layer || Some(b) == snow_trod {
                     let (bl, _) = self.light_at_pos(at);
-                    let warm = season != 3 && self.generator.climate_at(at.surface()).t > -0.35;
+                    let warm = season != 3 && local_weather.temperature_c > 1.0;
                     if bl >= 12 || warm {
-                        changes.push((at, AIR));
+                        snow_melts.push(at);
                     }
                     continue;
                 }
-                // Sun dries shallow water. Summer draws shallow cells
-                // down toward a marshy film; a stranded 1-unit film is
-                // trivial and dries in any season short of winter. The
-                // cell and every water neighbor must be shallow — deep
-                // bodies are safe, and the sea can't be siphoned out
-                // through its beaches. Films survive only in pockets
-                // with 3+ SOLID walls (where rain_fill can re-seed a
-                // pond); a wide open sheet — the glaze a breached pool
-                // leaves behind — dries through, a small patch per hit
-                // so the shoreline visibly recedes.
-                if let Some(v) = reg.water_volume(b)
-                    && (season == 1 || (v == 1 && season != 3))
+                // Exposed detailed water evaporates into the same atlas
+                // atmosphere. Depth is not an exemption: large bodies last
+                // because their committed volume is large.
+                if reg.water_volume(b).is_some()
+                    && season != 3
                     && sky_open
                     && above.is_some_and(|pos| self.get_block_at(pos) == AIR)
-                    && self.generator.climate_at(at.surface()).t > -0.35
-                    && self.water_depth_at_most_pos(at, 2)
-                    && [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().all(|&(dx, dz)| {
-                        at.offset(dx, 0, dz)
-                            .is_none_or(|pos| self.water_depth_at_most_pos(pos, 2))
-                    })
+                    && local_weather.temperature_c > 5.0
                 {
-                    let solid_walls = |center: BlockPos| {
-                        [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                            .iter()
-                            .filter(|&&(dx, dz)| {
-                                center
-                                    .offset(dx, 0, dz)
-                                    .is_some_and(|pos| self.reg.is_solid(self.get_block_at(pos)))
-                            })
-                            .count()
-                    };
-                    if v > 1 {
-                        // Draw-down keeps ponds ponds: a basin (walls
-                        // or fellow water on 3+ sides) never loses its
-                        // film here, an exposed spill clears outright.
-                        let contained = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                            .iter()
-                            .filter(|&&(dx, dz)| {
-                                at.offset(dx, 0, dz).is_some_and(|pos| {
-                                    let n = self.get_block_at(pos);
-                                    self.reg.is_solid(n) || self.reg.is_water(n)
-                                })
-                            })
-                            .count()
-                            >= 3;
-                        if contained {
-                            changes.push((at, reg.water_for_volume(1)));
-                        } else {
-                            changes.push((at, AIR));
-                        }
-                    } else if solid_walls(at) < 3 {
-                        let mut patch = vec![at];
-                        let mut i = 0;
-                        while i < patch.len() && patch.len() < 16 {
-                            let current = patch[i];
-                            i += 1;
-                            for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                                let Some(neighbor) = current.offset(dx, 0, dz) else {
-                                    continue;
-                                };
-                                if !patch.contains(&neighbor)
-                                    && reg.water_volume(self.get_block_at(neighbor)) == Some(1)
-                                    && neighbor
-                                        .offset(0, 1, 0)
-                                        .is_some_and(|pos| self.get_block_at(pos) == AIR)
-                                    && self.water_depth_at_most_pos(neighbor, 2)
-                                    && solid_walls(neighbor) < 3
-                                {
-                                    patch.push(neighbor);
-                                }
-                            }
-                        }
-                        dried.extend(patch);
-                    }
+                    evaporates.push(at);
                 }
             }
         }
@@ -548,8 +563,19 @@ impl World {
             let reg = self.reg.clone();
             self.push_drop_at(at, crate::inventory::ItemStack::new(&reg, item, 1));
         }
-        for pos in dried {
-            self.set_block_at(pos, AIR);
+        if let Some(ice) = ice {
+            for pos in freezes {
+                self.freeze_water_at(pos, ice);
+            }
+        }
+        for pos in melts {
+            self.melt_ice_at(pos);
+        }
+        for pos in snow_melts {
+            self.melt_snow_at(pos);
+        }
+        for pos in evaporates {
+            self.evaporate_water_hu_at(pos, crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL);
         }
         for (pos, _species, rnd) in saplings {
             self.try_grow_sapling_at(pos, rnd);
@@ -577,7 +603,6 @@ impl World {
         let snow_layer = reg.block_id("base:snow_layer");
         let snow_trod = reg.block_id("base:snow_layer_trod");
         let farmland = reg.block_id("base:farmland");
-        let season = self.season();
         let day_len = crate::server::DAY_LENGTH as f64;
         // Sudden wholesale phase changes want a real absence behind
         // them; short gaps stay with the gradual burst mechanism.
@@ -599,10 +624,27 @@ impl World {
         // beyond that the expectations saturate anyway.
         let end_day = (self.clock / day_len) as i64;
         let start_day = ((self.clock - elapsed) / day_len) as i64;
-        let days: Vec<usize> = (start_day..end_day)
+        let chunk_center = crate::planet::SurfacePos::new(
+            pos.face(),
+            pos.u() * CHUNK_X as u16 + CHUNK_X as u16 / 2,
+            pos.v() * CHUNK_Z as u16 + CHUNK_Z as u16 / 2,
+        )
+        .expect("chunk center is canonical");
+        let latitude = self.latitude_at_surface(chunk_center);
+        let missed_days: Vec<u32> = (start_day..end_day)
             .rev()
             .take(96)
-            .map(|d| ((d.max(0) as u32 / SEASON_DAYS) % 4) as usize)
+            .map(|d| d.max(0) as u32)
+            .collect();
+        let days: Vec<usize> = missed_days
+            .iter()
+            .map(|&d| {
+                if self.long_winter {
+                    3
+                } else {
+                    crate::planet_atlas::local_season(d, latitude)
+                }
+            })
             .collect();
 
         // One pass over the chunk collects the cells the rules touch.
@@ -641,12 +683,17 @@ impl World {
         }
 
         let mut changes = Vec::new();
+        let mut water_freezes: Vec<BlockPos> = Vec::new();
+        let mut ice_melts: Vec<BlockPos> = Vec::new();
+        let mut offline_snow_melts: Vec<BlockPos> = Vec::new();
         let mut grow: Vec<(BlockPos, u32)> = Vec::new();
         let mut refunds = 0u32;
         let mut drains: Vec<(BlockPos, u8)> = Vec::new();
         let mut rested: Vec<(BlockPos, u8)> = Vec::new();
         for (at, b) in interesting {
             let d = reg.block(b);
+            let season = self.season_at_surface(at.surface());
+            let local_weather = self.weather_at_surface(at.surface());
             if Some(b) == farmland {
                 // An absent field rests: recovery integrated over the
                 // missed days (winter days restore double), only when
@@ -654,11 +701,25 @@ impl World {
                 let above = at.offset(0, 1, 0).map_or(AIR, |pos| self.get_block_at(pos));
                 let resting = above == AIR || Some(above) == snow_layer || Some(above) == snow_trod;
                 if resting {
+                    let sample = self
+                        .planet_atlas
+                        .as_ref()
+                        .map(|atlas| atlas.biome_sample(at.surface()));
+                    let moisture = self.managed_soil_moisture_at(at).clamp(0.0, 1.0);
+                    let warmth = ((local_weather.temperature_c + 4.0) / 22.0).clamp(0.1, 1.0);
+                    let organic = sample.map_or(0.7, |soil| {
+                        (f64::from(soil.organic) / 160.0).clamp(0.2, 1.2)
+                    });
                     let weight: f64 = days
                         .iter()
                         .map(|&s| if s == 3 { 2.0 } else { 1.0 })
                         .sum::<f64>();
-                    let e = ticks_per_day * 0.5 * weight * soil::FERT_FALLOW as f64;
+                    let e = ticks_per_day
+                        * 0.5
+                        * weight
+                        * soil::FERT_FALLOW as f64
+                        * f64::from(moisture * warmth)
+                        * organic;
                     let k = poisson(e, &mut r).min(soil::FERT_MAX as u32) as u8;
                     if k > 0 {
                         rested.push((at, k));
@@ -682,7 +743,28 @@ impl World {
                     continue;
                 }
                 let mut sum = 0.0;
-                for &s in &days {
+                let (block_light, sky_light) = self.light_at_pos(at);
+                let protected = block_light >= 10
+                    && (sky_light < 15
+                        || (1..=16)
+                            .filter_map(|dy| at.offset(0, dy, 0))
+                            .any(|pos| reg.block(self.get_block_at(pos)).glass));
+                let light_mult = (f32::from(block_light.max(sky_light)) / 12.0).clamp(0.0, 1.0);
+                let moisture_mult = below
+                    .map_or_else(
+                        || self.soil_moisture_at_surface(at.surface()),
+                        |soil_pos| self.managed_soil_moisture_at(soil_pos),
+                    )
+                    .clamp(0.0, 1.25);
+                let soil_mult = if d.crop_any_soil {
+                    1.0
+                } else {
+                    below.map_or(0.0, |soil_pos| {
+                        soil::fert_mult(soil::fert_of(self.get_meta_at(soil_pos)))
+                            * self.crop_soil_multiplier_at(soil_pos)
+                    })
+                };
+                for (&day, &s) in missed_days.iter().zip(&days) {
                     let mult = if d.crop_any_soil {
                         if s == 1 || s == 2 { 1.0 } else { 0.0 }
                     } else {
@@ -709,9 +791,24 @@ impl World {
                     } else {
                         mult
                     };
-                    sum += mult;
+                    let effective_temperature = self
+                        .temperature_at_surface_on_day(at.surface(), f64::from(day))
+                        + if protected { 10.0 } else { 0.0 };
+                    let temperature_mult = if effective_temperature <= 0.0 {
+                        0.0
+                    } else if effective_temperature < 14.0 {
+                        effective_temperature / 14.0
+                    } else if effective_temperature <= 29.0 {
+                        1.0
+                    } else {
+                        ((42.0 - effective_temperature) / 13.0).clamp(0.0, 1.0)
+                    };
+                    sum += mult * temperature_mult * light_mult * moisture_mult * soil_mult;
                 }
-                let k = poisson(ticks_per_day * d.crop_chance as f64 * sum, &mut r);
+                let k = poisson(
+                    ticks_per_day * d.crop_chance as f64 * f64::from(sum),
+                    &mut r,
+                );
                 if k > 0 {
                     let mut cur = b;
                     for _ in 0..k {
@@ -749,26 +846,26 @@ impl World {
                 && season == 3
                 && sky_open
                 && above.is_some_and(|pos| self.get_block_at(pos) == AIR)
-                && self.generator.climate_at(at.surface()).t < 0.35
+                && local_weather.temperature_c <= 0.0
             {
-                if let Some(ice) = ice {
-                    changes.push((at, ice));
+                if ice.is_some() {
+                    water_freezes.push(at);
                 }
                 continue;
             }
             if Some(b) == ice
                 && (season == 0 || season == 1)
                 && sky_open
-                && self.generator.climate_at(at.surface()).t > -0.35
+                && local_weather.temperature_c > 1.0
             {
-                changes.push((at, reg.water_block(0)));
+                ice_melts.push(at);
                 continue;
             }
             if Some(b) == snow_layer || Some(b) == snow_trod {
                 let (bl, _) = self.light_at_pos(at);
-                let warm = season != 3 && self.generator.climate_at(at.surface()).t > -0.35;
+                let warm = season != 3 && local_weather.temperature_c > 1.0;
                 if bl >= 12 || warm {
-                    changes.push((at, AIR));
+                    offline_snow_melts.push(at);
                 }
             }
         }
@@ -782,10 +879,21 @@ impl World {
                 c.dirty = true;
                 c.modified = true;
                 if self.log_edits {
-                    self.edit_log.push((at, nb, 0));
+                    self.edit_log.push((at, nb, 0, 0, 0));
                 }
             }
             self.wake_water_at(at);
+        }
+        if let Some(ice) = ice {
+            for at in water_freezes {
+                self.freeze_water_at(at, ice);
+            }
+        }
+        for at in ice_melts {
+            self.melt_ice_at(at);
+        }
+        for at in offline_snow_melts {
+            self.melt_snow_at(at);
         }
         if any {
             self.relight_and_cascade(pos);
@@ -852,24 +960,15 @@ impl World {
         if self.get_block_at(pos) != AIR || self.light_at_pos(pos).1 != 15 {
             return;
         }
-        self.set_block_at(pos, layer);
-    }
-
-    /// Is the water column under (x, y, z) at most `d` cells deep?
-    /// Non-water counts as depth zero (air and solid never block).
-    pub(super) fn water_depth_at_most_pos(&self, pos: BlockPos, d: i32) -> bool {
-        let mut depth = 0;
-        let mut at = Some(pos);
-        while let Some(cell) = at
-            && self.reg.is_water(self.get_block_at(cell))
+        if self.claim_precipitation_transfer(
+            surface,
+            crate::planet_atlas::PrecipitationForm::Snow,
+            crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL as u32,
+        ) != crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL as u32
         {
-            depth += 1;
-            if depth > d {
-                return false;
-            }
-            at = cell.offset(0, -1, 0);
+            return;
         }
-        true
+        self.set_block_water_at(pos, layer, 0, 0);
     }
 
     /// Rain refills the water it lands on: the first surface the
@@ -892,7 +991,19 @@ impl World {
             if let Some(v) = self.reg.water_volume(b)
                 && v < 8
             {
-                self.set_block_at(pos, self.reg.water_for_volume(v + 1));
+                if self.claim_precipitation_transfer(
+                    surface,
+                    crate::planet_atlas::PrecipitationForm::Rain,
+                    crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL as u32,
+                ) == crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL as u32
+                {
+                    let mut mass = self.water_mass_at(pos).unwrap_or_default();
+                    mass.add_assign(crate::planet_atlas::ReservoirMass::fresh(
+                        crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL,
+                    ))
+                    .expect("one voxel water parcel fits");
+                    self.write_water_mass_at(pos, mass);
+                }
             } else if self.reg.is_solid(b)
                 && y + 1 < CHUNK_Y as i32
                 && [(1, 0), (-1, 0), (0, 1), (0, -1)]
@@ -904,8 +1015,18 @@ impl World {
                     .count()
                     >= 3
                 && let Some(above) = pos.offset(0, 1, 0)
+                && self.claim_precipitation_transfer(
+                    surface,
+                    crate::planet_atlas::PrecipitationForm::Rain,
+                    crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL as u32,
+                ) == crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL as u32
             {
-                self.set_block_at(above, self.reg.water_for_volume(1));
+                self.write_water_mass_at(
+                    above,
+                    crate::planet_atlas::ReservoirMass::fresh(
+                        crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL,
+                    ),
+                );
             }
             return;
         }
@@ -926,6 +1047,31 @@ impl World {
         let Some(species) = self.reg.block(b).sapling.clone() else {
             return false;
         };
+        let target = match species.as_str() {
+            "spruce" => crate::worldgen::Biome::Taiga,
+            "jungle" => crate::worldgen::Biome::Jungle,
+            "acacia" => crate::worldgen::Biome::Savanna,
+            _ => crate::worldgen::Biome::Forest,
+        };
+        let compatibility = self.generator.graft_compatibility_at(pos.surface(), target);
+        let (block_light, sky_light) = self.light_at_pos(pos);
+        let sheltered = block_light >= 9
+            || sky_light < 15
+            || (1..=16)
+                .filter_map(|dy| pos.offset(0, dy, 0))
+                .any(|above| self.reg.block(self.get_block_at(above)).glass);
+        let watered = self.managed_soil_moisture_at(pos) >= 0.85;
+        if matches!(
+            compatibility,
+            crate::planet_atlas::GraftCompatibility::Marginal
+        ) && !watered
+            || matches!(
+                compatibility,
+                crate::planet_atlas::GraftCompatibility::Incompatible
+            ) && !(watered && sheltered)
+        {
+            return false;
+        }
         if self.grow_tree_at(pos, &species, rnd) {
             self.add_ire_at_surface(pos.surface(), -2.0);
             true

@@ -8,6 +8,27 @@ fn local_sim_should_advance(paused: bool, hosting: bool) -> bool {
     !paused || hosting
 }
 
+fn movement_axes(keys: &KeysDown) -> (f32, f32) {
+    static AUTO_MOVE: std::sync::OnceLock<Option<(f32, f32)>> = std::sync::OnceLock::new();
+    if let Some(axes) = *AUTO_MOVE.get_or_init(|| {
+        std::env::var("WILDFORGE_AUTO_MOVE").ok().and_then(|value| {
+            match value.to_ascii_uppercase().as_str() {
+                "A" => Some((0.0, -1.0)),
+                "D" => Some((0.0, 1.0)),
+                "W" => Some((1.0, 0.0)),
+                "S" => Some((-1.0, 0.0)),
+                _ => None,
+            }
+        })
+    }) {
+        return axes;
+    }
+    (
+        (keys.w as i32 - keys.s as i32) as f32,
+        (keys.d as i32 - keys.a as i32) as f32,
+    )
+}
+
 const VIEWMODEL_SLEEVE_MIN: Vec3 = Vec3::new(-0.055, -0.09, -0.46);
 const VIEWMODEL_SLEEVE_MAX: Vec3 = Vec3::new(0.055, 0.02, 0.10);
 const VIEWMODEL_HAND_MIN: Vec3 = Vec3::new(-0.055, -0.09, 0.10);
@@ -310,7 +331,11 @@ impl Game {
         self.presentation.ambient_timer -= dt;
         if !paused && self.presentation.ambient_timer <= 0.0 && self.presentation.juice {
             self.presentation.ambient_timer = 1.6 + self.vary() * 2.4;
-            let day = self.server.daylight() > 0.5;
+            let day = self
+                .server
+                .world
+                .daylight_at_surface(self.player.pos.surface())
+                > 0.5;
             let r1 = self.vary();
             let r2 = self.vary();
             let r3 = self.vary();
@@ -524,7 +549,18 @@ impl Game {
             self.remote_pump(dt);
         }
         if self.in_world {
+            let profile_frame = self.total_frames.is_multiple_of(60)
+                && std::env::var_os("WILDFORGE_PROFILE").is_some();
+            let stream_started = std::time::Instant::now();
             self.stream_chunks();
+            if profile_frame {
+                eprintln!(
+                    "profile: stream {:.2}ms, resident {}, dirty {}",
+                    stream_started.elapsed().as_secs_f64() * 1_000.0,
+                    self.server.world.chunk_count(),
+                    self.server.world.dirty_chunks().len(),
+                );
+            }
             // The authoritative simulation steps at its fixed tick; the
             // client applies the results as presentation.
             if self.multiplayer.remote.is_some() {
@@ -576,7 +612,16 @@ impl Game {
                     vec![ctx]
                 };
                 let mut evs = Vec::new();
+                let server_started = std::time::Instant::now();
                 self.server.advance(dt, &players, &mut evs);
+                if profile_frame {
+                    eprintln!(
+                        "profile: server {:.2}ms, mobs {}, projectiles {}",
+                        server_started.elapsed().as_secs_f64() * 1_000.0,
+                        self.server.world.mobs().len(),
+                        self.server.world.projectiles().len(),
+                    );
+                }
                 for ev in evs {
                     match ev {
                         server::SimEvent::PlayerHit { who, dmg, from } => {
@@ -584,7 +629,7 @@ impl Game {
                                 self.hurt_player_from_wild(dmg, from);
                             } else if let Some(sess) = &mut self.multiplayer.host {
                                 // `who` is that guest's own net id.
-                                sess.hurt_guest(who, dmg, from);
+                                sess.hurt_guest(&mut self.server, who, dmg, from);
                             }
                         }
                         server::SimEvent::BoltCast => self.sfx(Sfx::Bolt(1.2)),
@@ -616,15 +661,6 @@ impl Game {
                                 self.toast("The wild has accepted your offering.".to_string());
                             }
                         }
-                        server::SimEvent::WeatherChanged(w) => {
-                            // Presentation lerps from world.weather every
-                            // frame; only a breaking storm needs a latch:
-                            // no flash or rumble after the sky clears.
-                            if w != world::Weather::Storm {
-                                self.presentation.lightning = 0.0;
-                                self.presentation.thunder_delay = -1.0;
-                            }
-                        }
                         server::SimEvent::LongWinter(fell) => {
                             self.toast(if fell {
                                 "The year has stopped turning. Spring does not come.".to_string()
@@ -649,9 +685,9 @@ impl Game {
                     let center = pos.entity_center();
                     let a = self.rand01() * std::f32::consts::TAU;
                     let v = Vec3::new(a.cos() * 1.5, 2.5, a.sin() * 1.5);
-                    self.interaction
-                        .items
-                        .push(ItemEntity::new(center, v, s.item, s.count));
+                    let mut entity = ItemEntity::new(center, v, s.item, s.count);
+                    entity.durability = s.durability;
+                    self.interaction.items.push(entity);
                 }
                 // The wild's whispers reach the ear as toasts.
                 for line in std::mem::take(&mut self.server.world.whispers) {
@@ -702,14 +738,18 @@ impl Game {
 
     fn refresh_content_and_toasts(&mut self, dt: f32) {
         // The turning of the season repaints the leaves.
-        if self.in_world && self.server.world.season() != self.presentation.atlas_season {
+        let local_season = self
+            .server
+            .world
+            .season_at_surface(self.player.pos.surface());
+        if self.in_world && local_season != self.presentation.atlas_season {
             let mut atlas = atlas::build_atlas(
                 &self.content.reg.tex_files,
                 &atlas::pack_chain(&self.active_pack_id()),
                 &self.content.reg.tex_names,
             );
-            atlas::season_tint(&mut atlas.color, atlas.px, self.server.world.season());
-            self.presentation.atlas_season = self.server.world.season();
+            atlas::season_tint(&mut atlas.color, atlas.px, local_season);
+            self.presentation.atlas_season = local_season;
             self.content.pack_warnings = atlas.warnings;
             self.renderer.set_atlas(
                 &atlas.color,
@@ -744,9 +784,10 @@ impl Game {
         };
         let can_sim = self.server.world.has_chunk(pchunk) && !paused;
         if can_sim && self.ui_state.screen != Screen::Dead {
+            let (forward, strafe) = movement_axes(&self.input.keys);
             let input = physics::Input {
-                forward: (self.input.keys.w as i32 - self.input.keys.s as i32) as f32,
-                strafe: (self.input.keys.d as i32 - self.input.keys.a as i32) as f32,
+                forward,
+                strafe,
                 jump: self.input.keys.space,
                 sprint: self.input.keys.sprint && self.survival.hunger >= 6.0,
             };
@@ -768,11 +809,10 @@ impl Game {
             }
             self.update_food(dt, &input);
             if self.flying {
-                let mut wish = self.camera.local_flat_forward() * input.forward
-                    + self.camera.local_right() * input.strafe;
-                if wish.length_squared() > 1.0 {
-                    wish = wish.normalize();
-                }
+                let intent_length = input.forward.hypot(input.strafe).max(1.0);
+                let wish = (self.camera.local_flat_forward() * input.forward
+                    + self.camera.local_right() * input.strafe)
+                    / intent_length;
                 let mut v = wish * 9.0;
                 if self.input.keys.space {
                     v.y += 8.0;
@@ -849,15 +889,22 @@ impl Game {
     }
 
     fn build_and_render_frame(&mut self, dt: f32, now: Instant) {
-        // Day/night: daylight factor from a sun curve (full day on menus).
-        let sun = (self.server.time_of_day * std::f32::consts::TAU).sin();
+        let local_up = self.camera.up();
+        let sun_dir_true = if self.in_world {
+            self.server.world.sun_direction().as_vec3()
+        } else {
+            self.camera
+                .world_vector(Vec3::new(0.0, 1.0, 0.45))
+                .normalize()
+        };
+        let elev = sun_dir_true.dot(local_up);
         // Near-black floor: night is now carried by the moon (below), not a flat
         // ambient, so a new-moon night goes genuinely dark while a full moon
         // stays navigable. Torch light is unaffected (its own vertex channel).
         // This is the render brightness only; the sim's own daylight() (mob
         // spawns etc.) keeps its 0.12 floor untouched.
         let daylight = if self.in_world {
-            (sun * 2.5 + 0.5).clamp(0.02, 1.0)
+            (elev * 2.5 + 0.5).clamp(0.02, 1.0)
         } else {
             1.0
         };
@@ -875,21 +922,10 @@ impl Game {
         // shadows never degenerate. Warm direct light, cool sky-ambient fill,
         // both faded by `daylight` so night is lit only by the moonlit floor
         // and torches.
-        let ang = self.server.time_of_day * std::f32::consts::TAU;
-        let elev = ang.sin(); // 1 at noon, -1 at midnight
-        let horiz = ang.cos(); // +1 dawn -> 0 noon -> -1 dusk
         // Warm sun, clamped just over the horizon so its shadow never
         // degenerates while it's the active light.
-        let warm_sun_dir = self
-            .camera
-            .world_vector(Vec3::new(horiz * 0.8, elev.max(0.05) + 0.15, 0.45))
-            .normalize();
-        // Same azimuth/tilt but the true elevation (dips below the horizon at
-        // night), so the sky gradient can actually set and darken.
-        let sun_dir_true = self
-            .camera
-            .world_vector(Vec3::new(horiz * 0.8, elev, 0.45))
-            .normalize();
+        let sun_tangent = (sun_dir_true - local_up * elev).normalize_or_zero();
+        let warm_sun_dir = (sun_tangent + local_up * elev.max(0.05)).normalize();
         let sun_vis = elev.clamp(0.0, 1.0).sqrt(); // 0 below horizon
         // Golden hour: the sun's hue warms from near-white at noon to deep
         // orange as it nears the horizon.
@@ -908,15 +944,8 @@ impl Game {
             0.0
         };
         let moon_elev = -elev;
-        let moon_horiz = -horiz;
-        let moon_dir = self
-            .camera
-            .world_vector(Vec3::new(
-                moon_horiz * 0.8,
-                moon_elev.max(0.05) + 0.15,
-                0.45,
-            ))
-            .normalize();
+        let moon_tangent = -sun_tangent;
+        let moon_dir = (moon_tangent + local_up * moon_elev.max(0.05)).normalize();
         let moon_vis = moon_elev.clamp(0.0, 1.0).sqrt() * illum;
         // A strong, distinctly cold key so full-moon-lit faces clearly read as
         // lit — paired with a near-nothing fill (below) so shadows stay genuinely
@@ -938,12 +967,17 @@ impl Game {
         // Weather gloom: fronts dim the direct sun hard and the ambient
         // gently, gray the sky, and pull the fog in. Lerped over ~10 s
         // so transitions read as skies changing, not a light switch.
-        let gloom_target = if self.in_world {
-            match self.server.world.weather {
-                world::Weather::Clear => 0.0,
-                world::Weather::Overcast => 0.4,
-                world::Weather::Precip => 0.55,
-                world::Weather::Storm => 0.7,
+        let local_weather = self.in_world.then(|| {
+            self.server
+                .world
+                .weather_at_surface(self.player.pos.surface())
+        });
+        let gloom_target = if let Some(weather) = local_weather {
+            match weather.kind {
+                crate::planet_atlas::LocalWeather::Clear => 0.0,
+                crate::planet_atlas::LocalWeather::Overcast => 0.4,
+                crate::planet_atlas::LocalWeather::Precipitation => 0.55,
+                crate::planet_atlas::LocalWeather::Storm => 0.7,
             }
         } else {
             0.0
@@ -961,7 +995,9 @@ impl Game {
 
         // Storms flash: two frames of borrowed noon, thunder later.
         let mut daylight = daylight;
-        if self.in_world && self.server.world.weather == world::Weather::Storm {
+        if local_weather
+            .is_some_and(|weather| weather.kind == crate::planet_atlas::LocalWeather::Storm)
+        {
             self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
             if ((self.rng >> 8) as f32 / (1 << 24) as f32) < dt / 25.0 {
                 self.presentation.lightning = 0.12;
@@ -999,22 +1035,23 @@ impl Game {
                 // The pause menu holds the world's breath: no rain,
                 // no wind, no crickets until you come back.
                 None
-            } else if self.in_world
-                && self.server.world.weather.precipitating()
-                && self
-                    .player
-                    .pos
-                    .block()
-                    .is_some_and(|pos| self.server.world.rains_at_surface(pos.surface()))
-            {
-                Some(if self.server.world.weather == world::Weather::Storm {
-                    audio::Ambience::Storm
-                } else {
-                    audio::Ambience::Rain
-                })
+            } else if local_weather.is_some_and(|weather| {
+                weather.precipitation == crate::planet_atlas::PrecipitationForm::Rain
+            }) {
+                Some(
+                    if local_weather.is_some_and(|weather| {
+                        weather.kind == crate::planet_atlas::LocalWeather::Storm
+                    }) {
+                        audio::Ambience::Storm
+                    } else {
+                        audio::Ambience::Rain
+                    },
+                )
             } else if self.in_world
                 && self.presentation.juice
-                && self.server.world.weather == world::Weather::Overcast
+                && local_weather.is_some_and(|weather| {
+                    weather.kind == crate::planet_atlas::LocalWeather::Overcast
+                })
             {
                 // Wind is the forecast: every rain passes through it.
                 Some(audio::Ambience::Wind)
@@ -1217,6 +1254,7 @@ impl Game {
                 .map(|h| {
                     h.guests
                         .iter()
+                        .filter(|(_, guest)| guest.is_active())
                         .map(|(id, g)| {
                             let (p, y) = g.render_pos();
                             (*id, p, g.render_entity_pos(), y, g.held, g.style)
@@ -1403,7 +1441,7 @@ impl Game {
         }
         // Precipitation: a cylinder of falling quads around the camera.
         // Each streak owns a column; roofed columns stay dry.
-        if self.in_world && self.server.world.weather.precipitating() {
+        if local_weather.is_some_and(|weather| weather.kind.precipitating()) {
             let t = self.time_abs;
             let ts = 1.0 / atlas::ATLAS_TILES as f32;
             let inset = ts / 32.0;
@@ -1699,6 +1737,9 @@ impl Game {
             }
             if let Some(sess) = &self.multiplayer.host {
                 for (id, g) in &sess.guests {
+                    if !g.is_active() {
+                        continue;
+                    }
                     if g.held == u16::MAX {
                         continue;
                     }
@@ -1829,23 +1870,50 @@ impl Game {
             let forced: Option<u64> = std::env::var("WILDFORGE_SHOT_FRAME")
                 .ok()
                 .and_then(|v| v.parse().ok());
-            if self.chunk_work_pending() == 0 {
+            let minimum: u64 = std::env::var("WILDFORGE_SHOT_MIN_FRAME")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            // Direct world/join captures must not mistake a responsive
+            // pre-entry loading screen for a settled world. World opening is
+            // intentionally asynchronous now, so `chunk_work_pending()` can
+            // be zero before the background entry task hands over its first
+            // playable session.
+            let awaiting_direct_entry = !self.in_world
+                && (std::env::var_os("WILDFORGE_WORLD").is_some()
+                    || std::env::var_os("WILDFORGE_JOIN").is_some());
+            if !awaiting_direct_entry && self.chunk_work_pending() == 0 {
                 self.settled_frames += 1;
             } else {
                 self.settled_frames = 0;
             }
-            let ready = match forced {
-                Some(frame) => self.total_frames >= frame,
-                None => {
-                    self.settled_frames >= SHOT_SETTLE_FRAMES
-                        || self.total_frames >= SHOT_MAX_FRAMES
-                }
-            };
+            // A minimum frame keeps the ordinary settled-world requirement.
+            // It is useful when the visual under test needs simulation warmup;
+            // unlike SHOT_FRAME, it never captures half-meshed terrain.
+            let ready = !awaiting_direct_entry
+                && self.total_frames >= minimum
+                && match forced {
+                    Some(frame) => self.total_frames >= frame,
+                    None => {
+                        self.settled_frames >= SHOT_SETTLE_FRAMES
+                            || self.total_frames >= SHOT_MAX_FRAMES
+                    }
+                };
             match self.shot_at {
                 Some(at) if self.total_frames > at + 1 => std::process::exit(0),
                 None if ready => {
+                    let player = self.player.pos;
+                    let surface = crate::planet::SurfacePos::new(
+                        player.face(),
+                        player.u().floor() as u16,
+                        player.v().floor() as u16,
+                    )
+                    .expect("canonical player has a valid capture column");
+                    let column_top = self.server.world.surface_height_at(surface);
+                    let (opaque_chunks, water_chunks, empty_chunks) =
+                        self.renderer.chunk_mesh_counts();
                     eprintln!(
-                        "capture at frame {} ({}), fps {}, sim {:.2}ms draw {:.2}ms",
+                        "capture at frame {} ({}), fps {}, sim {:.2}ms draw {:.2}ms; player {:?} {:.1},{:.1},{:.1}, column top {}; chunks resident {}, gpu {}, opaque {}, water {}, empty {}, dirty {}",
                         self.total_frames,
                         if forced.is_some() {
                             "forced frame".to_string()
@@ -1857,6 +1925,17 @@ impl Game {
                         self.fps,
                         self.frame_ms.0,
                         self.frame_ms.1,
+                        player.face(),
+                        player.u(),
+                        player.y(),
+                        player.v(),
+                        column_top,
+                        self.server.world.chunk_count(),
+                        self.renderer.chunk_count(),
+                        opaque_chunks,
+                        water_chunks,
+                        empty_chunks,
+                        self.server.world.dirty_chunks().len(),
                     );
                     self.renderer.pending_screenshot = Some(path);
                     self.shot_at = Some(self.total_frames);
@@ -1882,8 +1961,14 @@ impl Game {
             } else {
                 String::new()
             };
+            let key_probe = match (self.input.keys.a, self.input.keys.d) {
+                (true, false) => " | KEY A",
+                (false, true) => " | KEY D",
+                (true, true) => " | KEYS A+D",
+                (false, false) => "",
+            };
             self.window.set_title(&format!(
-                "Wildforge — {} fps (sim {:.1}ms, draw {:.1}ms, {}) | XYZ {:.1} / {:.1} / {:.1}{biome}{}",
+                "Wildforge {BUILD_MARKER} — {} fps (sim {:.1}ms, draw {:.1}ms, {}) | XYZ {:.1} / {:.1} / {:.1}{biome}{key_probe}{}",
                 self.fps,
                 self.frame_ms.0,
                 self.frame_ms.1,
@@ -1921,7 +2006,11 @@ impl Game {
 
 #[cfg(test)]
 mod characterization {
-    use super::{VIEWMODEL_HAND_MIN, VIEWMODEL_SLEEVE_MAX, local_sim_should_advance};
+    use glam::Vec3;
+
+    use super::{
+        KeysDown, VIEWMODEL_HAND_MIN, VIEWMODEL_SLEEVE_MAX, local_sim_should_advance, movement_axes,
+    };
 
     #[test]
     fn pausing_stops_solo_sim_but_not_a_windowed_host() {
@@ -1933,6 +2022,54 @@ mod characterization {
     #[test]
     fn bare_viewmodel_skin_meets_the_sleeve() {
         assert_eq!(VIEWMODEL_SLEEVE_MAX.z, VIEWMODEL_HAND_MIN.z);
+    }
+
+    #[test]
+    fn d_key_moves_the_player_to_screen_right() {
+        let eye =
+            crate::planet::EntityPos::new(crate::planet::Face::PosZ, 1616.5, 82.0, 3312.5).unwrap();
+        let mut camera = crate::camera::Camera::new(Vec3::ZERO, 16.0 / 9.0);
+        camera.follow_planet(eye);
+        camera.yaw = -std::f32::consts::FRAC_PI_2;
+
+        let keys = KeysDown {
+            d: true,
+            ..KeysDown::default()
+        };
+        let (forward, strafe) = movement_axes(&keys);
+        let ahead = eye
+            .translated(camera.local_flat_forward() * 12.0)
+            .unwrap()
+            .pos;
+        let moved = eye
+            .translated(
+                camera.local_flat_forward() * (12.0 + forward) + camera.local_right() * strafe,
+            )
+            .unwrap()
+            .pos;
+        let ahead_clip = camera.view_proj() * (ahead.render_pos() - camera.pos).extend(1.0);
+        let moved_clip = camera.view_proj() * (moved.render_pos() - camera.pos).extend(1.0);
+        assert!(
+            moved_clip.x / moved_clip.w > ahead_clip.x / ahead_clip.w,
+            "D projected left: key-to-strafe sign and camera-right sign cancel"
+        );
+
+        let keys = KeysDown {
+            a: true,
+            ..KeysDown::default()
+        };
+        let (forward, strafe) = movement_axes(&keys);
+        let moved = eye
+            .translated(
+                camera.local_flat_forward() * (12.0 + forward) + camera.local_right() * strafe,
+            )
+            .unwrap()
+            .pos;
+        let moved_clip = camera.view_proj() * (moved.render_pos() - camera.pos).extend(1.0);
+        assert!(
+            moved_clip.x / moved_clip.w < ahead_clip.x / ahead_clip.w,
+            "A projected right: key-to-strafe sign and camera-right sign cancel"
+        );
     }
 }
 

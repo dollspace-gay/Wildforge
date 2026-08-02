@@ -7,6 +7,24 @@ impl Renderer {
         self.chunks.clear();
     }
 
+    pub fn chunk_count(&self) -> usize {
+        self.chunks.len()
+    }
+
+    pub fn chunk_mesh_counts(&self) -> (usize, usize, usize) {
+        self.chunks
+            .values()
+            .fold((0, 0, 0), |(opaque, water, empty), chunk| {
+                let has_opaque = chunk.opaque.is_some();
+                let has_water = chunk.water.is_some();
+                (
+                    opaque + usize::from(has_opaque),
+                    water + usize::from(has_water),
+                    empty + usize::from(!has_opaque && !has_water),
+                )
+            })
+    }
+
     /// Replace the synchronized atlas textures during hot reload.
     pub fn set_atlas(
         &mut self,

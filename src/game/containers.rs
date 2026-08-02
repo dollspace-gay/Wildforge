@@ -47,6 +47,20 @@ impl Game {
         }
         let reg = self.content.reg.clone();
         let n2 = self.interaction.craft_size * self.interaction.craft_size;
+        if let Some(repair) = crafting::match_repair(&reg, &self.interaction.craft_grid[..n2]) {
+            if self.ui_state.held_stack.is_some() {
+                return;
+            }
+            self.ui_state.held_stack = Some(repair.output);
+            crafting::consume_repair(&mut self.interaction.craft_grid[..n2], &repair);
+            if let Some(ledger) = &mut self.server.world.material_ledger
+                && let Err(error) = ledger.record_recipe_loss(&repair.scale_loss)
+            {
+                eprintln!("materials: repair scale accounting failed: {error}");
+            }
+            self.sfx(Sfx::Craft);
+            return;
+        }
         let Some(recipe) = crafting::match_recipe(
             &reg,
             &self.interaction.craft_grid[..n2],
@@ -55,6 +69,8 @@ impl Game {
             return;
         };
         let out = ItemStack::new(&reg, recipe.output, recipe.count);
+        let recipe_loss = recipe.loss.clone();
+        let recipe_byproducts = recipe.byproducts.clone();
         match self.ui_state.held_stack {
             None => {
                 self.ui_state.held_stack = Some(out);
@@ -70,6 +86,36 @@ impl Game {
             _ => return, // held stack can't take the output
         }
         crafting::consume(&mut self.interaction.craft_grid[..n2]);
+        if let Some(ledger) = &mut self.server.world.material_ledger
+            && let Err(error) = ledger.record_recipe_loss(&recipe_loss)
+        {
+            eprintln!("materials: crafting loss accounting failed: {error}");
+        }
+        for (item, count) in recipe_byproducts {
+            if crate::materials::is_secondary_item(&reg, item)
+                && let Some(ledger) = &mut self.server.world.material_ledger
+            {
+                let materials =
+                    crate::materials::stack_materials(&reg, ItemStack::new(&reg, item, count));
+                if let Err(error) = ledger.record_secondary_output(&materials) {
+                    eprintln!("materials: crafting secondary output failed: {error}");
+                }
+            }
+            let remainder = self.inventory.add(&reg, item, count);
+            if remainder != 0 {
+                let pos = self.player.pos.block();
+                if let (Some(pos), Some(ledger)) = (pos, &mut self.server.world.material_ledger)
+                    && let Err(error) = ledger.bury_stack(
+                        &reg,
+                        pos,
+                        ItemStack::new(&reg, item, remainder),
+                        "full inventory after crafting",
+                    )
+                {
+                    eprintln!("materials: crafting byproduct salvage failed: {error}");
+                }
+            }
+        }
         self.sfx(Sfx::Craft);
         if self.content.scripts.wants("on_craft") {
             let name = reg.item(recipe.output).name.clone();
@@ -337,7 +383,14 @@ impl Game {
             Some(world::BlockEntity::Forge(f)) => {
                 let ok = match held {
                     None => true,
-                    Some(h) if slot < 4 => reg.smelts.iter().any(|sm| sm.input.matches(h.item)),
+                    Some(h) if slot < 4 => {
+                        reg.smelts.iter().any(|sm| sm.input.matches(h.item))
+                            || reg
+                                .forge_salvage
+                                .iter()
+                                .any(|salvage| salvage.input == h.item)
+                            || crate::materials::is_reclaimable_stock(&reg, h.item)
+                    }
                     Some(h) => reg.fuel_value(h.item).is_some(),
                 };
                 (f, ok)
@@ -432,7 +485,7 @@ impl Game {
             return;
         }
         let base = reg.kiln_base;
-        let powders: Vec<ItemId> = reg.kiln.iter().map(|(p, _)| *p).collect();
+        let powders: Vec<ItemId> = reg.kiln.iter().map(|recipe| recipe.powder).collect();
         let ok_put = |it: ItemId| match slot {
             0..=3 => base.map(|(sa, _, _)| sa) == Some(it),
             4 => powders.contains(&it),

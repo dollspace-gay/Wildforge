@@ -39,6 +39,17 @@ impl World {
         true
     }
 
+    /// Adopt a worker result whose saved-vs-generated decision was already
+    /// made off-thread. Unlike `adopt_generated`, this path performs no cold
+    /// disk read and is safe inside a live host/client pump.
+    pub fn adopt_prepared(&mut self, pos: ChunkPos, chunk: Chunk, fresh: bool) -> bool {
+        if self.chunks.contains_key(&pos) || self.remote {
+            return false;
+        }
+        self.adopt_chunk(pos, chunk, fresh);
+        true
+    }
+
     /// The main-thread half of chunk arrival: bedrock heal, insert,
     /// structures, wildlife, stamps, seam wake, light, reconcile.
     fn adopt_chunk(&mut self, pos: ChunkPos, mut chunk: Chunk, fresh: bool) {
@@ -54,11 +65,30 @@ impl World {
                 }
             }
         }
+        if fresh {
+            self.commit_fresh_chunk_water(pos, &mut chunk);
+        }
         self.chunks.insert(pos, chunk);
+        if !fresh {
+            self.apply_loaded_material_retrogen(pos);
+        }
+        self.apply_loaded_water_inboxes();
         // Ruins place once, at first generation; placement marks the chunk
         // modified so it saves and never regenerates.
         if fresh {
             self.seed_structures(pos);
+        }
+        // Reserve the final physical voxels. In particular, ruins can replace
+        // host rock: reserving before their stamp left phantom ore underground.
+        if let (Some(atlas), Some(ledger), Some(chunk)) = (
+            &self.planet_atlas,
+            &mut self.material_ledger,
+            self.chunks.get(&pos),
+        ) && let Err(error) = ledger.reserve_fresh_chunk(atlas, &self.reg, pos, chunk)
+        {
+            // Do not hide a manifest gap. The deterministic chunk remains
+            // inspectable while audit reports the missing reservation.
+            eprintln!("materials: failed to reserve chunk {pos:?}: {error}");
         }
         // A heart standing in this chunk joins the ledger. The site is
         // deterministic, so a chunk loaded from an old save registers
@@ -71,57 +101,44 @@ impl World {
                 pos.v() * CHUNK_Z as u16 + CHUNK_Z as u16 / 2,
             )
             .expect("chunk center is canonical");
-            let home = self.generator.province_at(center).key;
-            let mut seen = Vec::new();
-            for du in -2..=2 {
-                for dv in -2..=2 {
-                    let key = self.generator.province_offset(home, du, dv);
-                    if seen.contains(&key) {
-                        continue;
+            for key in self.generator.province_keys_near(center, 24.0) {
+                let site = self.generator.province_center_at(key);
+                if ChunkPos::from_surface(site) != pos {
+                    continue;
+                }
+                // Find the site's base. A bole is solid, so the
+                // surface scan lands on its CROWN — walk down to
+                // the foot, which is the block the ledger keys on.
+                let is_heart = |w: &World, y: i32| {
+                    crate::planet::BlockPos::new(site.face(), site.u(), y as u8, site.v())
+                        .is_ok_and(|at| {
+                            w.reg
+                                .block(w.get_block_at(at))
+                                .name
+                                .starts_with("base:heart_")
+                        })
+                };
+                // Search a band around the surface rather than
+                // demanding the heart BE the surface block. Anything
+                // standing over the site — an edifice, or a roof a
+                // player put there — used to mean the country
+                // registered no heart at all: not a dead one, none.
+                // Wardens kept spawning and offerings kept being
+                // accepted while the whole arc quietly did not
+                // happen there.
+                let top = self.surface_height_at(site);
+                if let Some(crown) = (2..=(top + EDIFICE_CLEARANCE).min(CHUNK_Y as i32 - 1))
+                    .rev()
+                    .find(|&y| is_heart(self, y))
+                {
+                    let mut base = crown;
+                    while base > 1 && is_heart(self, base - 1) {
+                        base -= 1;
                     }
-                    seen.push(key);
-                    let site = self.generator.province_center_at(key);
-                    if ChunkPos::from_surface(site) != pos {
-                        continue;
-                    }
-                    // Find the site's base. A bole is solid, so the
-                    // surface scan lands on its CROWN — walk down to
-                    // the foot, which is the block the ledger keys on.
-                    let is_heart = |w: &World, y: i32| {
-                        crate::planet::BlockPos::new(site.face(), site.u(), y as u8, site.v())
-                            .is_ok_and(|at| {
-                                w.reg
-                                    .block(w.get_block_at(at))
-                                    .name
-                                    .starts_with("base:heart_")
-                            })
-                    };
-                    // Search a band around the surface rather than
-                    // demanding the heart BE the surface block. Anything
-                    // standing over the site — an edifice, or a roof a
-                    // player put there — used to mean the country
-                    // registered no heart at all: not a dead one, none.
-                    // Wardens kept spawning and offerings kept being
-                    // accepted while the whole arc quietly did not
-                    // happen there.
-                    let top = self.surface_height_at(site);
-                    if let Some(crown) = (2..=(top + EDIFICE_CLEARANCE).min(CHUNK_Y as i32 - 1))
-                        .rev()
-                        .find(|&y| is_heart(self, y))
-                    {
-                        let mut base = crown;
-                        while base > 1 && is_heart(self, base - 1) {
-                            base -= 1;
-                        }
-                        let at = crate::planet::BlockPos::new(
-                            site.face(),
-                            site.u(),
-                            base as u8,
-                            site.v(),
-                        )
-                        .expect("heart base is inside the world");
-                        self.register_heart(key, at);
-                    }
+                    let at =
+                        crate::planet::BlockPos::new(site.face(), site.u(), base as u8, site.v())
+                            .expect("heart base is inside the world");
+                    self.register_heart(key, at);
                 }
             }
         }
@@ -149,6 +166,305 @@ impl World {
                 self.last_random.insert(pos, self.clock);
             }
         }
+    }
+
+    fn apply_loaded_material_retrogen(&mut self, pos: ChunkPos) {
+        if !self.chunks.contains_key(&pos) {
+            return;
+        }
+        // Any authored edit, structure stamp, or block entity makes the whole
+        // chunk ineligible. This is deliberately conservative: host rock is
+        // plentiful; player trust is not.
+        if self.player_touched.contains(&pos)
+            || self.structure_chunks.contains(&pos)
+            || self.block_entities.keys().any(|at| at.chunk() == pos)
+        {
+            return;
+        }
+        let pending = self
+            .reg
+            .ores
+            .iter()
+            .filter(|ore| ore.mod_id != "base")
+            .filter(|ore| {
+                self.material_ledger
+                    .as_ref()
+                    .is_some_and(|ledger| ledger.retrogen_pending_for(&ore.resource_key, pos))
+            })
+            .map(|ore| (ore.resource_key.clone(), ore.block, ore.replaces))
+            .collect::<Vec<_>>();
+        if pending.is_empty() {
+            return;
+        }
+        let reference = self.generator.generate(pos, &self.reg);
+        let mut changed = false;
+        if let Some(chunk) = self.chunks.get_mut(&pos) {
+            for (_, ore_block, host) in &pending {
+                for y in 1..CHUNK_Y {
+                    for z in 0..CHUNK_Z {
+                        for x in 0..CHUNK_X {
+                            if reference.get(x, y, z) == *ore_block && chunk.get(x, y, z) == *host {
+                                chunk.set(x, y, z, *ore_block);
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if changed {
+                chunk.modified = true;
+                chunk.dirty = true;
+            }
+        }
+        // Voxel first, ledger marker second. A crash between them simply
+        // reruns the deterministic pass; already replaced ore is unchanged.
+        if changed {
+            // This direct write may be the first chunk saved after a mod was
+            // added. Land the naming palette first so a crash/reload cannot
+            // interpret the new ore's numeric id through the old palette.
+            if self.palette_stale {
+                if let Err(error) = self.write_palette() {
+                    eprintln!("materials: retrogen palette write failed: {error}");
+                    return;
+                }
+                self.palette_stale = false;
+                self.load_remap = self.read_palette_remap();
+            }
+            if let Err(error) = self.save_chunk(pos) {
+                eprintln!("materials: retrogen chunk write failed for {pos:?}: {error}");
+                return;
+            }
+        }
+        if let Some(ledger) = &mut self.material_ledger
+            && let Err(error) = ledger.mark_retrogen_chunk(
+                pending.into_iter().map(|(resource_key, _, _)| resource_key),
+                pos,
+            )
+        {
+            eprintln!("materials: retrogen marker write failed for {pos:?}: {error}");
+        }
+    }
+
+    fn commit_fresh_chunk_water(&mut self, pos: ChunkPos, chunk: &mut Chunk) {
+        let reg = self.reg.clone();
+        let (Some(atlas), Some(weather)) = (&self.planet_atlas, &mut self.planetary_weather) else {
+            return;
+        };
+        let existing = weather
+            .water
+            .commitments
+            .iter()
+            .filter(|commitment| commitment.chunk == pos)
+            .copied()
+            .collect::<Vec<_>>();
+        let mut records = chunk.hydrology_volumes().to_vec();
+        for record in &mut records {
+            let wanted_hu = i128::from(record.baseline_hu)
+                .saturating_sub(i128::from(record.residual_hu))
+                .clamp(0, i128::from(u64::MAX)) as u64;
+            let parcel = if let Some(commitment) = existing
+                .iter()
+                .find(|commitment| commitment.reservoir == record.reservoir)
+            {
+                commitment.mass
+            } else {
+                let Some(reservoir) = weather.water.reservoir_mut(record.reservoir) else {
+                    eprintln!(
+                        "water: chunk {:?} references missing reservoir {}",
+                        pos, record.reservoir
+                    );
+                    continue;
+                };
+                // The generated chunk already measured the local salinity of
+                // every voxel. Debit that exact salt mass from the named
+                // basin instead of taking a basin-average parcel, otherwise
+                // a fresh river chunk changes salinity merely by loading.
+                // Voxel fluid states are quantized in 32-HU visible units.
+                // If a dynamically lowered reservoir cannot fund the
+                // immutable baseline, leave its sub-level remainder coarse
+                // and materialize only water it actually owns.
+                let funded_hu = reservoir.coarse.water_hu.min(wanted_hu)
+                    / crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL
+                    * crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL;
+                let wanted = crate::planet_atlas::ReservoirMass {
+                    water_hu: funded_hu,
+                    salt_mass: if funded_hu == wanted_hu {
+                        record.salt_mass
+                    } else {
+                        0
+                    },
+                };
+                let parcel = if funded_hu == wanted_hu {
+                    reservoir
+                        .coarse
+                        .take_exact(wanted)
+                        .unwrap_or_else(|| reservoir.coarse.take(funded_hu))
+                } else {
+                    reservoir.coarse.take(funded_hu)
+                };
+                if parcel.water_hu != wanted_hu {
+                    eprintln!(
+                        "water: reservoir {} supplied {} of {} HU for chunk {:?}",
+                        record.reservoir, parcel.water_hu, wanted_hu, pos
+                    );
+                }
+                if weather
+                    .water
+                    .credit_detailed_to(Some(record.reservoir), parcel)
+                    .is_err()
+                {
+                    weather
+                        .water
+                        .reservoir_mut(record.reservoir)
+                        .expect("source reservoir still exists")
+                        .coarse
+                        .add_assign(parcel)
+                        .expect("rolled-back water commitment fits");
+                    continue;
+                }
+                weather
+                    .water
+                    .commitments
+                    .push(crate::planet_atlas::ChunkWaterCommitment {
+                        chunk: pos,
+                        reservoir: record.reservoir,
+                        mass: parcel,
+                    });
+                parcel
+            };
+            record.salt_mass = parcel.salt_mass;
+            record.residual_hu = i128::from(record.baseline_hu)
+                .saturating_sub(i128::from(parcel.water_hu))
+                .clamp(i128::from(i64::MIN), i128::from(i64::MAX))
+                as i64;
+
+            let mut cells = Vec::new();
+            for lx in 0..CHUNK_X {
+                for lz in 0..CHUNK_Z {
+                    let surface = crate::planet::SurfacePos::new(
+                        pos.face(),
+                        pos.u() * CHUNK_X as u16 + lx as u16,
+                        pos.v() * CHUNK_Z as u16 + lz as u16,
+                    )
+                    .expect("chunk column is canonical");
+                    let hydro = atlas.hydrology_sample(surface.center());
+                    let reservoir = if hydro.ocean_basin_id != 0 {
+                        Some(crate::planet_atlas::surface_reservoir_id(
+                            crate::planet_atlas::SurfaceReservoirKind::Ocean,
+                            u32::from(hydro.ocean_basin_id),
+                        ))
+                    } else if hydro.lake_basin_id != 0 {
+                        Some(crate::planet_atlas::surface_reservoir_id(
+                            crate::planet_atlas::SurfaceReservoirKind::Lake,
+                            hydro.lake_basin_id,
+                        ))
+                    } else if hydro.river_id != 0 {
+                        Some(crate::planet_atlas::surface_reservoir_id(
+                            crate::planet_atlas::SurfaceReservoirKind::River,
+                            hydro.river_id,
+                        ))
+                    } else {
+                        None
+                    };
+                    if reservoir != Some(record.reservoir) {
+                        continue;
+                    }
+                    for y in 1..CHUNK_Y {
+                        let block = chunk.get(lx, y, lz);
+                        if let Some(units) = reg.water_volume(block) {
+                            cells.push((lx, y, lz, units, false));
+                        } else if reg.block(block).name == "base:ice" {
+                            cells.push((lx, y, lz, 8, true));
+                        }
+                    }
+                }
+            }
+            let represented_hu = cells.iter().fold(0u64, |total, cell| {
+                total.saturating_add(
+                    u64::from(cell.3)
+                        .saturating_mul(crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL),
+                )
+            });
+            if represented_hu != parcel.water_hu {
+                cells.sort_by_key(|&(x, y, z, _, _)| (y, x, z));
+                let mut remaining_units =
+                    parcel.water_hu / crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL;
+                for cell in &mut cells {
+                    let (x, y, z, units, was_ice) = *cell;
+                    let kept = u64::from(units).min(remaining_units) as u8;
+                    remaining_units -= u64::from(kept);
+                    cell.3 = kept;
+                    let block = if kept == 0 {
+                        crate::registry::AIR
+                    } else if was_ice && kept == 8 {
+                        chunk.get(x, y, z)
+                    } else {
+                        reg.water_for_volume(kept)
+                    };
+                    chunk.set(x, y, z, block);
+                    if kept == 0 {
+                        chunk.set_water_salt(x, y, z, 0);
+                        chunk.set_meta(x, y, z, 0);
+                    }
+                }
+                debug_assert_eq!(remaining_units, 0);
+                cells.retain(|cell| cell.3 != 0);
+            }
+            if !cells.is_empty() {
+                let existing_total = cells.iter().fold(0u64, |total, &(x, y, z, _, _)| {
+                    total.saturating_add(u64::from(chunk.water_salt(x, y, z)))
+                });
+                // Usually these totals are identical and the atlas-authored
+                // per-column concentrations remain byte-for-byte unchanged.
+                // A recovered/legacy commitment can differ, so apportion its
+                // exact total by the existing local weights rather than
+                // flattening the whole chunk to one concentration.
+                if existing_total != parcel.salt_mass {
+                    let count = cells.len() as u64;
+                    let mut previous_allocation = 0u64;
+                    let mut cumulative_weight = 0u64;
+                    let mut allocations = Vec::with_capacity(cells.len());
+                    for (index, &(x, y, z, _, _)) in cells.iter().enumerate() {
+                        cumulative_weight =
+                            cumulative_weight.saturating_add(u64::from(chunk.water_salt(x, y, z)));
+                        let cumulative_allocation = if existing_total == 0 {
+                            (index as u64 + 1).saturating_mul(parcel.salt_mass) / count
+                        } else {
+                            (u128::from(parcel.salt_mass) * u128::from(cumulative_weight)
+                                / u128::from(existing_total)) as u64
+                        };
+                        allocations.push(
+                            cumulative_allocation
+                                .saturating_sub(previous_allocation)
+                                .min(u64::from(u16::MAX)),
+                        );
+                        previous_allocation = cumulative_allocation;
+                    }
+                    let mut remainder = parcel
+                        .salt_mass
+                        .saturating_sub(allocations.iter().copied().sum::<u64>());
+                    for allocation in &mut allocations {
+                        let extra = remainder.min(u64::from(u16::MAX) - *allocation);
+                        *allocation += extra;
+                        remainder -= extra;
+                        if remainder == 0 {
+                            break;
+                        }
+                    }
+                    debug_assert_eq!(remainder, 0);
+                    for (&(x, y, z, _, _), salt) in cells.iter().zip(allocations) {
+                        let salt = salt as u16;
+                        chunk.set_water_salt(x, y, z, salt);
+                        chunk.set_meta(x, y, z, (u64::from(salt) / 256).min(255) as u8);
+                    }
+                }
+            }
+        }
+        weather
+            .water
+            .commitments
+            .sort_by_key(|commitment| (commitment.chunk, commitment.reservoir));
+        chunk.set_hydrology_volumes(records);
     }
 
     // ---------------- ruins ----------------
@@ -237,8 +553,11 @@ impl World {
         let Some(st) = reg.structures.get(si).cloned() else {
             return;
         };
+        self.structure_chunks.insert(origin.chunk());
         let chest_block = reg.block_id("base:chest");
         let mut rng = seed ^ 0x5f37_59df;
+        let mut inherited_stacks = Vec::new();
+        let mut inherited_placements = Vec::new();
         for (ly, layer) in st.layers.iter().enumerate() {
             for (lz, row) in layer.iter().enumerate() {
                 for (lx, ch) in row.chars().enumerate() {
@@ -265,6 +584,7 @@ impl World {
                                         if i < CHEST_SLOTS {
                                             // Scatter through the chest.
                                             let slot = (i * 7 + (rng % 5) as usize) % CHEST_SLOTS;
+                                            inherited_stacks.push(stck);
                                             state.slots[slot] = Some(stck);
                                         }
                                     }
@@ -275,6 +595,10 @@ impl World {
                         c => {
                             if let Some(b) = st.palette.get(&c) {
                                 self.set_block_at(pos, *b);
+                                let materials = reg.block(*b).materials.clone();
+                                if !materials.is_empty() {
+                                    inherited_placements.push((pos, materials));
+                                }
                             }
                         }
                     }
@@ -293,6 +617,16 @@ impl World {
                     self.set_block_at(top, cob);
                 }
             }
+        }
+        if let Some(ledger) = &mut self.material_ledger
+            && let Err(error) = ledger.record_external_world_content(
+                &reg,
+                &inherited_stacks,
+                &inherited_placements,
+                "pre-genesis ruin inheritance",
+            )
+        {
+            eprintln!("materials: ruin inheritance accounting failed: {error}");
         }
     }
 

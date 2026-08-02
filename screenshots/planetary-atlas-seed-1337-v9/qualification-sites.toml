@@ -1,0 +1,279 @@
+[sites.coastal_volcanic_arc]
+face = "pos_y"
+atlas_u = 164
+atlas_v = 0
+surface_u = 5264
+surface_v = 16
+spawn = "pos_y,5264,16"
+local_noon = 0.28710228
+evidence = "continental arc volcano 78; edifice 54 blocks"
+
+[sites.contact_aureole]
+face = "pos_x"
+atlas_u = 146
+atlas_v = 12
+surface_u = 4688
+surface_v = 400
+spawn = "pos_x,4688,400"
+local_noon = 0.5180267
+evidence = "DikeSwarm intrusion 2; top depth 8; contact radius 274 blocks"
+
+[sites.continent_collision_range]
+face = "neg_x"
+atlas_u = 116
+atlas_v = 243
+surface_u = 3728
+surface_v = 7792
+spawn = "neg_x,3728,7792"
+local_noon = 0.98879254
+evidence = "continental collision; tectonic relief +64.34 blocks"
+
+[sites.continental_rift_valley]
+face = "pos_x"
+atlas_u = 211
+atlas_v = 220
+surface_u = 6768
+surface_v = 7056
+spawn = "pos_x,6768,7056"
+local_noon = 0.57894
+evidence = "continental rift; tectonic relief -23.60 blocks"
+
+[sites.delta_or_estuary]
+face = "neg_x"
+atlas_u = 166
+atlas_v = 50
+surface_u = 5328
+surface_v = 1616
+spawn = "neg_x,5328,1616"
+local_noon = 0.035262767
+evidence = "Delta; discharge 90303.00; salinity 24"
+
+[sites.desert_green_river]
+face = "neg_x"
+atlas_u = 116
+atlas_v = 37
+surface_u = 3728
+surface_v = 1200
+spawn = "neg_x,3728,1200"
+local_noon = 0.98933905
+evidence = "dry overlook vegetation 77 toward river at neg_x,116,36; arid zonal biome 3; riparian vegetation 177; contrast 100; discharge 32.8"
+
+[sites.driest_warm_land]
+face = "neg_z"
+atlas_u = 2
+atlas_v = 238
+surface_u = 80
+surface_v = 7632
+spawn = "neg_z,80,7632"
+local_noon = 0.6275864
+evidence = "aridity 8.000; annual precipitation 90.7; temperature 18.9 C"
+
+[sites.folded_strata]
+face = "neg_x"
+atlas_u = 143
+atlas_v = 215
+surface_u = 4592
+surface_v = 6896
+spawn = "neg_x,4592,6896"
+local_noon = 0.01431221
+evidence = "collision fold belt; strike [13535, 26777, -13171]; fault intensity 50690"
+
+[sites.hotspot_chain_oldest]
+face = "pos_x"
+atlas_u = 103
+atlas_v = 233
+surface_u = 3312
+surface_v = 7472
+spawn = "pos_x,3312,7472"
+local_noon = 0.476675
+evidence = "hotspot chain 1; age 36 Myr; erosion 44000"
+
+[sites.hotspot_chain_youngest]
+face = "pos_x"
+atlas_u = 96
+atlas_v = 251
+surface_u = 3088
+surface_v = 8048
+spawn = "pos_x,3088,8048"
+local_noon = 0.46861088
+evidence = "hotspot chain 1; age 0 Myr"
+
+[sites.island_arc]
+face = "pos_z"
+atlas_u = 132
+atlas_v = 69
+surface_u = 4240
+surface_v = 2224
+spawn = "pos_z,4240,2224"
+local_noon = 0.25403297
+evidence = "island arc volcano 65; edifice 118 blocks"
+
+[sites.major_river_mouth]
+face = "neg_x"
+atlas_u = 166
+atlas_v = 50
+surface_u = 5328
+surface_v = 1616
+spawn = "neg_x,5328,1616"
+local_noon = 0.035262767
+evidence = "Varmere River mouth into The World Ocean; discharge 90303.00; width 30.3"
+
+[sites.major_river_source]
+face = "neg_x"
+atlas_u = 141
+atlas_v = 58
+surface_u = 4528
+surface_v = 1872
+spawn = "neg_x,4528,1872"
+local_noon = 0.012214714
+evidence = "Varmere River source; 962 blocks long; order 3"
+
+[sites.multi_habitat_country]
+face = "pos_x"
+atlas_u = 227
+atlas_v = 229
+surface_u = 7280
+surface_v = 7344
+spawn = "pos_x,7280,7344"
+local_noon = 0.59550005
+evidence = "country 50; 12 habitat overlays and 7 zonal biomes across 1593 cells"
+
+[sites.natural_oasis_spring]
+face = "pos_x"
+atlas_u = 183
+atlas_v = 32
+surface_u = 5872
+surface_v = 1040
+spawn = "pos_x,5872,1040"
+local_noon = 0.55215114
+evidence = "dry overlook vegetation 74 toward spring at pos_x,184,32; fresh shallow groundwater head 65.4; oasis vegetation 142; contrast 68; permeability 50824"
+
+[sites.rain_shadow_leeward]
+face = "neg_x"
+atlas_u = 15
+atlas_v = 215
+surface_u = 496
+surface_v = 6896
+spawn = "neg_x,496,6896"
+local_noon = 0.8919149
+evidence = "downwind of rain-shadow pair; precipitation drop 764.0"
+
+[sites.rain_shadow_windward]
+face = "neg_x"
+atlas_u = 16
+atlas_v = 215
+surface_u = 528
+surface_v = 6896
+spawn = "neg_x,528,6896"
+local_noon = 0.89297193
+evidence = "summer windward precipitation drop 764.0"
+
+[sites.river_face_seam]
+face = "pos_x"
+atlas_u = 118
+atlas_v = 0
+surface_u = 3792
+surface_v = 16
+spawn = "pos_x,3792,16"
+local_noon = 0.4903768
+evidence = "Dunmere River crosses from pos_x to neg_y"
+
+[sites.subduction_trench]
+face = "neg_z"
+atlas_u = 54
+atlas_v = 111
+surface_u = 1744
+surface_v = 3568
+spawn = "neg_z,1744,3568"
+local_noon = 0.6833896
+evidence = "ocean-continent subduction; tectonic relief -21.29 blocks"
+
+[sites.temperate_coast]
+face = "neg_z"
+atlas_u = 2
+atlas_v = 249
+surface_u = 80
+surface_v = 7984
+spawn = "neg_z,80,7984"
+local_noon = 0.62743807
+evidence = "temperate biome 1; coastal salinity 0; vegetation 255"
+
+[sites.temperate_continental_interior]
+face = "pos_z"
+atlas_u = 49
+atlas_v = 26
+surface_u = 1584
+surface_v = 848
+spawn = "pos_z,1584,848"
+local_noon = 0.17521487
+evidence = "same zonal biome as temperate_coast; continentality 0.571; annual range 15.7"
+
+[sites.terminal_salt_lake]
+face = "pos_z"
+atlas_u = 63
+atlas_v = 33
+surface_u = 2032
+surface_v = 1072
+spawn = "pos_z,2032,1072"
+local_noon = 0.18932645
+evidence = "Selain Playa; SeasonalPlaya; salinity 255; seasonal range 0.06"
+
+[sites.through_flow_lake]
+face = "pos_x"
+atlas_u = 251
+atlas_v = 55
+surface_u = 8048
+surface_v = 1776
+spawn = "pos_x,8048,1776"
+local_noon = 0.619807
+evidence = "Lake Harun; ThroughFlowFresh; surface 87.02; spill 87.02; outlet pos_x"
+
+[sites.treeline_alpine]
+face = "pos_x"
+atlas_u = 244
+atlas_v = 238
+surface_u = 7824
+surface_v = 7632
+spawn = "pos_x,7824,7632"
+local_noon = 0.61322457
+evidence = "adjacent alpine cell; elevation 118.3; tree line 169"
+
+[sites.treeline_forest]
+face = "pos_x"
+atlas_u = 243
+atlas_v = 238
+surface_u = 7792
+surface_v = 7632
+spawn = "pos_x,7792,7632"
+local_noon = 0.6122138
+evidence = "forest/taiga below local tree line 169"
+
+[sites.weather_clear_hour_1]
+face = "pos_y"
+atlas_u = 246
+atlas_v = 240
+surface_u = 7888
+surface_v = 7696
+spawn = "pos_y,7888,7696"
+local_noon = 0.61932945
+evidence = "same hour as weather_raining_hour_1; cloud water 0; storm energy 0"
+
+[sites.weather_raining_hour_1]
+face = "neg_x"
+atlas_u = 117
+atlas_v = 62
+surface_u = 3760
+surface_v = 2000
+spawn = "neg_x,3760,2000"
+local_noon = 0.9905353
+evidence = "same hour as weather_clear_hour_1; precipitation units 1355; storm energy 2255; local relief 1.1 blocks"
+
+[sites.wettest_land]
+face = "neg_x"
+atlas_u = 16
+atlas_v = 214
+surface_u = 528
+surface_v = 6864
+spawn = "neg_x,528,6864"
+local_noon = 0.89301056
+evidence = "annual precipitation 4700.1; aridity 0.190"

@@ -128,9 +128,9 @@ pub fn seed_of_form(form: &str) -> &'static str {
     }
 }
 
-/// What a seed wakes: the country a grafted heart drifts toward. This
-/// is the terraforming lever — carry a jungle cutting into a dead
-/// desert and the country becomes jungle.
+/// What a seed wakes: the local ecology a grafted heart attempts to support.
+/// The planetary climate, water table, and distant country remain physical
+/// facts; incompatible cuttings strain instead of rewriting them.
 pub fn seed_nature(item_name: &str) -> Option<crate::worldgen::Biome> {
     use crate::worldgen::Biome as B;
     Some(match item_name {
@@ -249,7 +249,7 @@ impl World {
         self.orphan_wardens_at(h.pos.surface());
         // Take the rest of the site down with it: a half-cut heart is
         // not a thing, and the husk is what the country wears now.
-        let form = heart_form(self.generator.biome_at(h.pos.surface()));
+        let form = heart_form(self.generator.heart_biome_at(h.pos.surface()));
         if let Some(dead) = self.reg.block_id(&heart_block_name(form, 0)) {
             for dy in 0..heart_height(form) {
                 if let Some(at) = h.pos.offset(0, dy, 0) {
@@ -311,7 +311,7 @@ impl World {
     /// Make the blocks at a site match the form and stage its country
     /// wears now.
     fn reface_heart_site(&mut self, pos: BlockPos, stage: u8) {
-        let form = heart_form(self.generator.biome_at(pos.surface()));
+        let form = heart_form(self.generator.heart_biome_at(pos.surface()));
         let Some(want) = self.reg.block_id(&heart_block_name(form, stage)) else {
             return;
         };
@@ -338,7 +338,7 @@ impl World {
         if stage == 0 {
             self.orphan_wardens_at(h.pos.surface());
         }
-        let biome = self.generator.biome_at(h.pos.surface());
+        let biome = self.generator.heart_biome_at(h.pos.surface());
         let form = heart_form(biome);
         let Some(want) = self.reg.block_id(&heart_block_name(form, stage)) else {
             return;
@@ -365,7 +365,7 @@ impl World {
     /// stone in every direction from its chamber, and a disc that
     /// stopped inside that asked the player to excavate a pyramid.
     pub fn root_radius_at(&self, pos: SurfacePos) -> i32 {
-        let reach = crate::edifice::edifice_of(self.generator.biome_at(pos)).reach;
+        let reach = crate::edifice::edifice_of(self.generator.heart_biome_at(pos)).reach;
         ROOT_RADIUS.max(reach + 4)
     }
 
@@ -527,13 +527,42 @@ impl World {
         }
     }
 
-    /// A grafted country drifts toward the nature it was given, a
-    /// season at a time. This is the terraforming: what grows, what
-    /// spawns, what the ground is, all follow the heart.
+    /// A graft changes local ecology only when the physical site can support
+    /// it. Marginal grafts need sustained real moisture; grossly incompatible
+    /// ones remain stressed instead of rewriting planetary climate.
     pub(super) fn tick_graft(&mut self, day_frac: f32) {
-        for h in self.hearts.values_mut() {
-            if h.stage == 2 && h.graft.is_some() && h.drift < 1.0 {
-                h.drift = (h.drift + day_frac / (2.0 * SEASON_DAYS as f32)).min(1.0);
+        let keys = self.hearts.keys().copied().collect::<Vec<_>>();
+        for key in keys {
+            let Some(heart) = self.hearts.get(&key).copied() else {
+                continue;
+            };
+            let Some(graft) = heart.graft else { continue };
+            if heart.stage != 2 {
+                continue;
+            }
+            let compatibility = self
+                .generator
+                .graft_compatibility_at(heart.pos.surface(), graft);
+            let supported = self.managed_soil_moisture_at(heart.pos) >= 0.85;
+            if let Some(current) = self.hearts.get_mut(&key) {
+                match compatibility {
+                    crate::planet_atlas::GraftCompatibility::Compatible => {
+                        current.drift =
+                            (current.drift + day_frac / (2.0 * SEASON_DAYS as f32)).min(1.0);
+                    }
+                    crate::planet_atlas::GraftCompatibility::Marginal if supported => {
+                        current.drift =
+                            (current.drift + day_frac / (4.0 * SEASON_DAYS as f32)).min(0.75);
+                    }
+                    crate::planet_atlas::GraftCompatibility::Marginal => {
+                        current.drift = (current.drift - day_frac / SEASON_DAYS as f32).max(0.0);
+                    }
+                    crate::planet_atlas::GraftCompatibility::Incompatible => {
+                        current.drift = 0.0;
+                        current.strain =
+                            (current.strain + day_frac * 0.25).min(HEART_SICKEN_STRAIN - 0.01);
+                    }
+                }
             }
         }
     }
@@ -543,7 +572,15 @@ impl World {
     pub fn country_biome_at(&self, pos: SurfacePos) -> crate::worldgen::Biome {
         let key = self.generator.province_at(pos).key;
         match self.hearts.get(&key) {
-            Some(h) if h.stage == 2 && h.drift >= 0.5 && h.graft.is_some() => h.graft.unwrap(),
+            Some(h)
+                if h.stage == 2
+                    && h.drift >= 0.5
+                    && h.graft.is_some()
+                    && (!self.generator.has_planet_atlas()
+                        || geodesic_distance(h.pos.surface().center(), pos.center()) <= 180.0) =>
+            {
+                h.graft.unwrap()
+            }
             // Ungrafted country reads exactly as the map does — the
             // column's own label, fringe dither and terrain veto and
             // all. Only a graft overrides it.
@@ -585,6 +622,45 @@ impl World {
             .is_ok_and(|at| self.reg.is_water(self.get_block_at(at)))
     }
 
+    /// Live water-column conditions for ecology. A dug canal changes the
+    /// measured depth and carried salinity immediately, while the atlas still
+    /// supplies the large-scale discharge feeding that location.
+    pub fn aquatic_habitat_at(&self, pos: SurfacePos) -> Option<AquaticHabitat> {
+        let top = (1..crate::chunk::CHUNK_Y).rev().find_map(|y| {
+            let at = BlockPos::new(pos.face(), pos.u(), y as u8, pos.v()).ok()?;
+            self.reg.is_water(self.get_block_at(at)).then_some(at)
+        })?;
+        let salinity = self.get_meta_at(top);
+        let mut depth = 0u8;
+        let mut cursor = Some(top);
+        while let Some(at) = cursor {
+            if !self.reg.is_water(self.get_block_at(at)) {
+                break;
+            }
+            depth = depth.saturating_add(1);
+            cursor = at.offset(0, -1, 0);
+        }
+        let discharge = self
+            .planet_atlas
+            .as_ref()
+            .map(|atlas| atlas.hydrology_sample(pos.center()).discharge)
+            .unwrap_or(0.0);
+        Some(AquaticHabitat {
+            depth_blocks: depth,
+            temperature_c: self.weather_at_surface(pos).temperature_c,
+            discharge,
+            salinity,
+        })
+    }
+
+    /// Salinity of the uppermost materialized water cell in a column. Natural
+    /// water receives this concentration from the immutable hydrology atlas;
+    /// player-altered water retains whatever metadata its current flow path
+    /// has carried so far.
+    pub fn surface_water_salinity_at(&self, pos: SurfacePos) -> Option<u8> {
+        self.aquatic_habitat_at(pos).map(|habitat| habitat.salinity)
+    }
+
     #[cfg(test)]
     pub fn is_open_water(&self, x: i32, z: i32) -> bool {
         SurfacePos::from_centered(crate::planet::Face::PosZ, x, z)
@@ -624,23 +700,17 @@ impl World {
             from.v().floor() as u16,
         )
         .expect("a canonical entity has a canonical surface cell");
-        let here = self.generator.province_at(from_surface).key;
         let mut best: Option<(f64, SurfacePos, bool)> = None;
-        // Six provinces out is ~5000 blocks: further than anyone walks
-        // in one errand, and cheap because a centre is pure arithmetic.
-        for ku in -6..=6 {
-            for kv in -6..=6 {
-                let key = self.generator.province_offset(here, ku, kv);
-                let site = self.generator.province_center_at(key);
-                let ancient = self.is_ancient_scar_at(site);
-                let known_dead = self.hearts.get(&key).is_some_and(|h| h.stage == 0);
-                if !ancient && !known_dead {
-                    continue;
-                }
-                let d = geodesic_distance(from_surface.center(), site.center());
-                if best.is_none_or(|(b, _, _)| d < b) {
-                    best = Some((d, site, ancient));
-                }
+        for key in self.generator.province_keys_near(from_surface, 5_000.0) {
+            let site = self.generator.province_center_at(key);
+            let ancient = self.is_ancient_scar_at(site);
+            let known_dead = self.hearts.get(&key).is_some_and(|h| h.stage == 0);
+            if !ancient && !known_dead {
+                continue;
+            }
+            let d = geodesic_distance(from_surface.center(), site.center());
+            if best.is_none_or(|(b, _, _)| d < b) {
+                best = Some((d, site, ancient));
             }
         }
         let Some((d, site, ancient)) = best else {
@@ -684,7 +754,7 @@ impl World {
         };
         // Name the shape. They are no longer all alike, so a reader is
         // looking for a particular thing rather than "a heart".
-        let form = heart_form(self.generator.biome_at(h.pos.surface()));
+        let form = heart_form(self.generator.heart_biome_at(h.pos.surface()));
         let what = self
             .reg
             .block_id(&heart_block_name(form, h.stage))

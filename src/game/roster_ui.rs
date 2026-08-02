@@ -31,6 +31,7 @@ impl Game {
             rows.extend(
                 host.guests
                     .iter()
+                    .filter(|(_, guest)| guest.is_active())
                     .map(|(id, guest)| (*id, guest.public_label())),
             );
             rows

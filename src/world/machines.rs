@@ -389,10 +389,13 @@ impl World {
                 .and_then(|core| core.offset(0, 3, 0))
                 .is_some_and(|above| self.light_at_pos(above).1 == 15);
             let wet = !glassworks
-                && self.weather.precipitating()
-                && self.rains_at_surface(pos.surface())
+                && self.weather_at_surface(pos.surface()).precipitation
+                    == crate::planet_atlas::PrecipitationForm::Rain
                 && unroofed;
-            if wet && self.weather == Weather::Storm {
+            if wet
+                && self.weather_at_surface(pos.surface()).kind
+                    == crate::planet_atlas::LocalWeather::Storm
+            {
                 k.lit = false;
                 k.progress = 0.0;
                 self.swap_block_keep_entity_at(pos, "base:kiln");
@@ -412,10 +415,19 @@ impl World {
                         self.reg
                             .kiln
                             .iter()
-                            .find(|(pw, _)| *pw == p.item)
-                            .map(|(_, g)| *g)
+                            .find(|recipe| recipe.powder == p.item)
+                            .map(|recipe| recipe.glass)
                     });
                     let out_item = colored.unwrap_or(clear);
+                    let powder_materials = colored
+                        .and(k.powder)
+                        .map(|stack| {
+                            crate::materials::stack_materials(
+                                &self.reg,
+                                ItemStack { count: 1, ..stack },
+                            )
+                        })
+                        .unwrap_or_default();
                     if colored.is_some()
                         && let Some(p) = &mut k.powder
                     {
@@ -440,14 +452,39 @@ impl World {
                         }
                     };
                     eat(&mut k.sand, pairs * 2);
-                    eat(
-                        &mut k.fuel,
-                        if glassworks {
-                            (pairs * 2).div_ceil(2)
-                        } else {
-                            pairs * 2
-                        },
-                    );
+                    let fuel_used = if glassworks {
+                        (pairs * 2).div_ceil(2)
+                    } else {
+                        pairs * 2
+                    };
+                    let mut fuel_materials = crate::registry::MaterialVector::new();
+                    let mut remaining = fuel_used;
+                    for stack in k.fuel.iter().flatten() {
+                        let take = stack.count.min(remaining);
+                        remaining -= take;
+                        let materials = crate::materials::stack_materials(
+                            &self.reg,
+                            ItemStack {
+                                count: take,
+                                ..*stack
+                            },
+                        );
+                        for (material, amount) in materials {
+                            *fuel_materials.entry(material).or_default() += amount;
+                        }
+                        if remaining == 0 {
+                            break;
+                        }
+                    }
+                    eat(&mut k.fuel, fuel_used);
+                    if let Some(ledger) = &mut self.material_ledger {
+                        if let Err(error) = ledger.record_consumption(&powder_materials) {
+                            eprintln!("materials: kiln pigment accounting failed: {error}");
+                        }
+                        if let Err(error) = ledger.record_consumption(&fuel_materials) {
+                            eprintln!("materials: kiln fuel accounting failed: {error}");
+                        }
+                    }
                     let _ = fuel_item;
                     if out_n > 0 {
                         let reg = self.reg.clone();
@@ -629,6 +666,11 @@ impl World {
                 a.strikes = 0;
                 let mut out = ItemStack::new(&reg, def.output, 1);
                 out.count = def.count;
+                if let Some(ledger) = &mut self.material_ledger
+                    && let Err(error) = ledger.record_recipe_loss(&def.loss)
+                {
+                    eprintln!("materials: station process accounting failed: {error}");
+                }
                 return Some(out);
             }
         }
@@ -642,7 +684,38 @@ impl World {
         let (table, becomes) = self.reg.block(b).brush.clone()?;
         let mut items = self.roll_loot(&table, 1, rng);
         self.set_block_at(pos, becomes);
-        items.pop()
+        let found = items.pop();
+        if let (Some(stack), Some(ledger)) = (found, &mut self.material_ledger)
+            && let Err(error) =
+                ledger.record_external_stack(&self.reg, stack, "pre-genesis archaeology")
+        {
+            eprintln!("materials: archaeology accounting failed: {error}");
+        }
+        found
+    }
+
+    /// Natural, non-interactive ground can be sifted for the coarse regional
+    /// salvage pool. The brush does not need (and cannot reveal) the exact
+    /// place an item despawned; the finite ledger intentionally remembers
+    /// only a bounded 256-block recovery region.
+    pub fn can_sift_salvage_at(&self, pos: BlockPos) -> bool {
+        let block = self.reg.block(self.get_block_at(pos));
+        block.brush.is_none()
+            && block.interaction.is_none()
+            && block.hardness.is_some()
+            && block.material_class == crate::registry::MaterialClass::TransformativeFinite
+    }
+
+    /// Recover one usable item at the primitive 75% yield.
+    pub fn sift_salvage_at(&mut self, pos: BlockPos) -> std::io::Result<Option<ItemStack>> {
+        if !self.can_sift_salvage_at(pos) {
+            return Ok(None);
+        }
+        let reg = self.reg.clone();
+        let Some(ledger) = &mut self.material_ledger else {
+            return Ok(None);
+        };
+        ledger.recover_salvage_stack(&reg, crate::materials::SalvageRegion::at(pos), 750)
     }
 
     // Positive-Z adapters exist only for the pre-topology fixture suite.

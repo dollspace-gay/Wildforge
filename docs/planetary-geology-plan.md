@@ -1,13 +1,92 @@
 # Planetary geology — continents have a history
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and qualified (2026-07-31).**
 >
 > This is goal 3 of the planetary-world sequence. It requires
 > `docs/planet-topology-plan.md` and `docs/planet-atlas-plan.md`.
 
+## Implementation record — 2026-07-31
+
+**Goal 9 closure (2026-08-01).** Geology remains atlas algorithm 6 / geology
+schema 1 in the integrated generator-9 world. The final production seed-1337
+census contains 16 plates, 9 cratons, 7 major continents, 39 landmasses, 114
+volcanoes, 47 intrusions, and 61 finite mineral sites. The material audit
+finds three bronze-capable regions, 609 pessimistic complete technology arcs,
+all seven carbonate-flux regions usable, and redundant diamond, pitchblende,
+and rare-earth treasure sites. All unexplained tracked-material deltas are
+zero. Final evidence is indexed by `docs/planetary-qualification-plan.md`.
+
+Goal 3 replaces the atlas's placeholder physical fields with one deterministic
+spherical geological history. Plate sites use a jittered spherical Voronoi
+partition; Euler-pole motion classifies connected collision, subduction, rift,
+ridge, transform, passive, and interior regions without treating cube-face
+edges as borders. Independent accreted cratons establish continental crust.
+Boundary influence, crust age, erosion, sediment basins, and volcanism then
+produce the sea-level-solved continents, relief, bedrock, provinces, and
+stratigraphic frames consumed by voxel chunks.
+
+Volcanoes are finite global objects separated into continental arcs, island
+arcs, rifts, ocean ridges, and hotspots. Hotspot chains carry ordered ages and
+erosion, and production validation requires an emerged island arc. Intrusions
+carry bounded geometry and contact aureoles. Mineral deposits are immutable
+sites with host-rock rules, grade, and finite estimated tonnage; common
+progression minerals are distributed across every major continent, while each
+treasure class has redundant sites. Chunk generation consults these objects
+and budgets rather than inventing ore because a new chunk was visited.
+
+The Goal 3 atlas and world format break was intentional. Its qualification
+format was `WFA2`, with atlas format and algorithm versions `2`, world
+generator version `3`, and geology schema version `1` in `geology.wfg`.
+Goal 4 subsequently advanced the save format to `WFA3`/`WFD2`, Goal 5 to
+`WFA4`/`WFD2`, and Goal 6 to `WFA5`/`WFD3` plus `WFW1`. Goal 7 now ships
+`WFA6`, `biomes.wfb` schema `1`, atlas format and algorithm versions `6`, world
+generator version `7`, `WFC8` chunk/network records, and multiplayer protocol
+`23`. Dynamic schema remains `3`; water, geology, hydrology, and history
+schemas remain `1`. Older immutable atlases are refused rather than
+silently regenerating mountains or rerouting rivers beneath existing chunks.
+
+Measured production qualification for seed `1337` generated all 393,216 cells
+and the complete diagnostic export in 6.08 seconds with 282,608 KiB peak
+resident memory and no swaps. Persisted immutable genesis was 60,948,512 bytes,
+dynamic state 20,447,264 bytes, and geology 133,826 bytes. The accepted first
+attempt produced:
+
+- 16 plates, 9 cratons, 7 major continents, and 39 total landmasses,
+- 35.1598% land and 64.8402% ocean against a 64.84% target, with 99.1709% of
+  ocean cells connected to the largest ocean,
+- all seven detailed tectonic boundary classes plus passive and interior
+  cells,
+- 114 volcanoes (1 continental arc, 15 island arcs, 51 rift, 27 ridge, and 20
+  hotspot), 47 intrusions, and 58 finite mineral sites,
+- all 16 tracked mineral classes represented at least twice, including common
+  iron, copper, and coal on the major continents,
+- 63 stable diagnostic maps and legends, the globe preview, geology and census
+  reports, validation report, and exact visual-qualification coordinates.
+
+The automated suite proves spherical coverage and seam reciprocity,
+rotational boundary classification, causal landforms, ocean connectivity,
+post-erosion sea share, hotspot aging, strata continuity, contact
+metamorphism, host-rock restrictions, finite materialization, progression
+guarantees, serial/parallel determinism, persistence, export completeness, and
+chunk-order independence. The full repository run passed 413 tests, failed
+none, and left 12 explicit development/benchmark probes ignored. Formatting,
+strict Clippy, the release build, and the advisory audit also passed.
+
+Atlas maps and live in-world captures were reviewed for a collision range,
+rift valley, subduction trench and coastal arc, island arc, hotspot chain,
+folded strata, and contact aureole. The geological signals are present, but
+the current high-relief screenshots are visually stark: short streaming
+distance, white fog, primitive lighting, and exposed cave mouths obscure
+large-scale forms. That is an honest rendering limitation, not evidence of a
+missing geology field. Goal 4 supplied causal climate and local weather, and
+Goal 5 now supplies final drainage, lakes, ocean basins, erosion/deposition,
+and conservative placer routing. Goal 6 now supplies groundwater dynamics and
+the complete conserved water cycle; ecological biomes remain owned by Goal 7.
+
 ## Purpose
 
-The current generator has a good vocabulary—oceanic and continental plates,
+Before Goal 3, the generator had a good vocabulary—oceanic and continental
+plates,
 convergence, rifts, trenches, volcanoes, strata—but evaluates it as local
 planar noise. On a finite planet, geology can be globally coherent:
 continents have outlines, ranges continue across the map, ocean basins have
@@ -259,7 +338,7 @@ fields are removed rather than layered underneath the atlas.
   biome goal.
 - Finite lava remains voxel fluid; magma chambers are finite manifest
   volumes.
-- The pump receives groundwater integration in the water-cycle goal.
+- Pumps receive groundwater integration from the completed water-cycle layer.
 
 ## Headless maps and reports
 

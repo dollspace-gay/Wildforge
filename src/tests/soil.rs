@@ -248,6 +248,7 @@ fn soil_survives_the_save() {
         w.ensure_chunk(tchunk(0, 0));
         h = w.surface_height(4, 4);
         w.set_block_meta(4, h, 4, farm, soil::soil_meta(33, 2));
+        w.set_soil_salinity_at(bp(4, h, 4), 153);
         save_world(&mut w);
     }
     let mut w = World::load_or_create(dir, reg.clone()).unwrap();
@@ -255,5 +256,170 @@ fn soil_survives_the_save() {
     assert_eq!(w.get_block(4, h, 4), farm);
     assert_eq!(soil::fert_of(w.get_meta(4, h, 4)), 33, "fertility persists");
     assert_eq!(soil::family_of(w.get_meta(4, h, 4)), 2, "stamp persists");
+    assert_eq!(
+        w.get_soil_salinity_at(bp(4, h, 4)),
+        153,
+        "managed soil salinity persists in WFC8"
+    );
     assert_eq!(w.fertility_at(4, h, 4), 33);
+}
+
+#[test]
+fn saline_soil_blocks_crops_until_it_is_leached() {
+    let reg = base_reg();
+    let mut w = test_world_with("soil-salt-stress", reg.clone());
+    let farm = b(&reg, "base:farmland");
+    let h = w.surface_height(4, 4);
+    let at = bp(4, h, 4);
+    w.set_block_meta(4, h, 4, farm, soil::soil_meta(40, 0));
+    w.set_soil_salinity_at(at, 0);
+    let fresh = w.crop_soil_multiplier_at(at);
+    w.set_soil_salinity_at(at, 190);
+    assert_eq!(w.crop_soil_multiplier_at(at), 0.0);
+    assert!(fresh > 0.5);
+    assert!(
+        w.soil_failure_at(at)
+            .is_some_and(|reason| reason.contains("salt"))
+    );
+}
+
+#[test]
+fn crops_distinguish_waterlogged_well_drained_and_excessively_drained_soil() {
+    use crate::planet::Face;
+    use crate::planet_atlas::AtlasPos;
+
+    let reg = base_reg();
+    let mut atlas = crate::planet_atlas::PlanetAtlas::fixture(8_714, 16).unwrap();
+    let sites = [
+        AtlasPos::new(Face::PosZ, 2, 2, 16).unwrap(),
+        AtlasPos::new(Face::PosZ, 3, 2, 16).unwrap(),
+        AtlasPos::new(Face::PosZ, 4, 2, 16).unwrap(),
+    ];
+    for (site, drainage) in sites.into_iter().zip([24, 150, 245]) {
+        atlas.genesis.ground.get_mut(site).unwrap().drainage = drainage;
+    }
+    let atlas = std::sync::Arc::new(atlas);
+    let mut world = World::new_with_atlas(
+        8_714,
+        tmp_dir("soil-drainage-response"),
+        reg.clone(),
+        atlas.clone(),
+    );
+    let farm = b(&reg, "base:farmland");
+    let mut fields = Vec::new();
+    for site in sites {
+        let center = site.center(atlas.side());
+        let surface = crate::planet::SurfacePos::new(
+            center.face,
+            center.u.floor() as u16,
+            center.v.floor() as u16,
+        )
+        .unwrap();
+        world.ensure_chunk(crate::planet::ChunkPos::from_surface(surface));
+        let field =
+            crate::planet::BlockPos::new(surface.face(), surface.u(), 200, surface.v()).unwrap();
+        world.set_block_meta_at(field, farm, soil::soil_meta(40, 0));
+        world.set_soil_salinity_at(field, 0);
+        fields.push(field);
+    }
+
+    let waterlogged = world.crop_soil_multiplier_at(fields[0]);
+    let well_drained = world.crop_soil_multiplier_at(fields[1]);
+    let excessive = world.crop_soil_multiplier_at(fields[2]);
+    assert!(waterlogged < well_drained, "waterlogging slows roots");
+    assert!(excessive < well_drained, "excessive drainage dries roots");
+    assert!(
+        world
+            .soil_failure_at(fields[0])
+            .is_some_and(|reason| reason.contains("waterlogged")),
+        "the failure is communicated without a numerical dashboard"
+    );
+}
+
+#[test]
+fn irrigation_uses_a_debited_aquifer_parcel_and_wet_roots_read_it() {
+    let reg = base_reg();
+    let atlas = std::sync::Arc::new(crate::planet_atlas::PlanetAtlas::fixture(8_713, 16).unwrap());
+    let (index, atlas_pos) = atlas
+        .genesis
+        .ground
+        .iter()
+        .enumerate()
+        .find_map(|(index, (pos, ground))| {
+            let water = atlas.water_cycle.cells.get(pos)?;
+            let climate = atlas.genesis.climate.get(pos)?;
+            let terrain = atlas.genesis.terrain.get(pos)?;
+            let hydrology = atlas.genesis.hydrology.get(pos)?;
+            let baseline = (climate.mean_precipitation * 4.0).max(256.0)
+                * crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL as f32;
+            let moisture = water.soil.water_hu as f32 / baseline;
+            (ground.aquifer_permeability >= 8_192
+                && water.groundwater.water_hu >= crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL
+                && water.groundwater_head_milliblocks > 8_000
+                && terrain.eroded_elevation > crate::chunk::SEA_LEVEL as f32
+                && hydrology.ocean_basin_id == 0
+                && moisture < 1.0)
+                .then_some((index, pos))
+        })
+        .expect("fixture contains a dry field over a productive aquifer");
+    let point = atlas_pos.center(atlas.side());
+    let surface =
+        crate::planet::SurfacePos::new(point.face, point.u.floor() as u16, point.v.floor() as u16)
+            .unwrap();
+    let mut world = World::new_with_atlas(
+        8_713,
+        tmp_dir("finite-irrigation"),
+        reg.clone(),
+        atlas.clone(),
+    );
+    world.ensure_chunk(crate::planet::ChunkPos::from_surface(surface));
+    let head = atlas.water_cycle.cells.values()[index].groundwater_head_milliblocks / 1_000;
+    let y = head.clamp(6, crate::chunk::CHUNK_Y as i32 - 4) - 1;
+    let outlet =
+        crate::planet::BlockPos::new(surface.face(), surface.u(), y as u8, surface.v()).unwrap();
+    let soil_pos = outlet.offset(1, 0, 0).unwrap();
+    world.set_block_at(outlet, b(&reg, "base:stone"));
+    world.set_block_meta_at(soil_pos, b(&reg, "base:farmland"), soil::soil_meta(40, 0));
+    world.set_soil_salinity_at(soil_pos, 0);
+    let dry = world.managed_soil_moisture_at(soil_pos);
+    let groundwater_before = world
+        .planetary_weather_for_test()
+        .unwrap()
+        .water
+        .cells
+        .values()[index]
+        .groundwater;
+
+    world.break_block_at(outlet, None, false, false).unwrap();
+    let parcel = world
+        .water_mass_at(outlet)
+        .expect("the excavation becomes a spring-fed channel");
+    let groundwater_after = world
+        .planetary_weather_for_test()
+        .unwrap()
+        .water
+        .cells
+        .values()[index]
+        .groundwater;
+    assert_eq!(
+        groundwater_before.water_hu - groundwater_after.water_hu,
+        parcel.water_hu,
+        "visible irrigation water was pumped out of the named aquifer store"
+    );
+    assert_eq!(
+        groundwater_before.salt_mass - groundwater_after.salt_mass,
+        parcel.salt_mass
+    );
+    let irrigated = world.managed_soil_moisture_at(soil_pos);
+    assert!(
+        irrigated > dry && irrigated >= 1.0,
+        "real channel water changes root moisture ({dry:.2} -> {irrigated:.2})"
+    );
+    let weather = world.planetary_weather_for_test().unwrap();
+    let atmosphere = crate::planet_atlas::ReservoirMass::fresh(
+        crate::planet_atlas::dynamic_water_total(&weather.cells) as u64,
+    );
+    let audit = weather.water.audit(atmosphere);
+    assert_eq!(audit.unexplained_water_delta_hu, 0);
+    assert_eq!(audit.unexplained_salt_delta, 0);
 }

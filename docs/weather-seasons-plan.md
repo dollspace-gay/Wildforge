@@ -8,6 +8,13 @@ sun/sky dimming is CPU-side pre-scaling of the sun/ambient/sky colors
 rather than a shader uniform (identical result, no shader change);
 and a storm that breaks cancels any pending flash and thunder.
 
+> **Historical implementation record.** Planetary climate goal 4 superseded
+> the global `Weather` machine and northern-global season assumptions on
+> 2026-07-31. Current simulation uses authoritative local weather cells,
+> hemisphere-aware seasons, shared spherical solar geometry, and conservative
+> atmospheric water. The mechanics described below remain useful history, but
+> `docs/planetary-climate-plan.md` is the current contract.
+
 ## Why this fits Wildforge
 
 The wild already has a mood (ire). Weather gives that mood a sky:

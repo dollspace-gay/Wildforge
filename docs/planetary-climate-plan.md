@@ -1,17 +1,142 @@
 # Planetary climate — latitude, air, ocean, and rain
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and qualified (2026-07-31).**
 >
 > This is goal 4 of the planetary-world sequence. It requires the completed
 > topology, atlas, and geology goals.
 
+## Implementation record — 2026-07-31
+
+**Goal 9 closure (2026-08-01).** The integrated build retains the causal
+seasonal solver and WFD3 dynamic state under generator 9 / protocol 24. The
+production seed-1337 solver converged in `[93, 93, 90, 90]` iterations with
+maximum residual `0.019581556` and moisture-budget error
+`0.000007949769496917725`. A live production save advanced 44 accepted
+weather hours and one groundwater day with exact zero water/salt drift; a
+separate 12-hour whole-atlas probe and a ten-hour cold-streaming interleaving
+probe also close exactly. The final matrix records the rollback/capacity bugs
+found and fixed by those live runs.
+
+Goal 4 replaces independent temperature/humidity noise and the single global
+weather machine with one spherical causal climate and one authoritative
+mutable weather atlas. Runtime and genesis share a 23.5-degree axial tilt,
+144-day orbital year, manifest rotation axis and prime meridian, local solar
+geometry, hemisphere-aware seasons, polar day/night, and latitude/longitude
+derivation. The immutable solver stores four seasonal tables for temperature,
+wind, moisture, precipitation, potential evapotranspiration, aridity, snow
+persistence, continentality, ocean currents, and ocean heat anomaly.
+
+The climate-normal solver builds three circulation cells per hemisphere,
+conservative multi-neighbor moisture advection, convergence and subtropical
+descent, land fetch, maritime moderation, elevation cooling, coherent
+orographic lift/rain shadows, and broad current-driven coastal heat. It must
+converge within residual `0.02` or fail after 256 iterations. Dynamic vapor,
+cloud, pressure, heat, wind, storms, precipitation, soil moisture, snow,
+runoff, groundwater, and storage anomalies advance as deterministic sliced
+whole-planet passes. Integer transfer preserves every water unit across
+advection, precipitation, cube seams, save/reload, and the explicit
+coarse-to-voxel handoff. Ire may convert moist instability into stronger local
+storms but cannot add water.
+
+All former weather/season consumers now sample a planetary position: crops,
+foliage, wildlife, wardens, fire, snow/ice, windmills and other machines,
+offerings, UI, agents, sky, particles, lightning, audio, solo, dedicated host,
+and multiplayer guests. The global `Weather` enum and its save field are gone.
+Clients receive authoritative nearby weather cells across face seams. The
+Long Winter is a global supernatural −18 C thermal anomaly and growth winter;
+the real orbital sun and ordinary seasons continue underneath it.
+
+### Format and compatibility
+
+- immutable genesis is `WFA3`, atlas format and algorithm versions are `3`,
+- dynamic state is `WFD2`, dynamic schema version is `2`, and persists the
+  last completely accepted climate hour,
+- geology and history schemas remain `1`,
+- world generator version is `4`, and multiplayer protocol is `20`,
+- corrupt immutable climate is refused; corrupt dynamic state restores a
+  checksum-validated atomic backup or rebuilds its deterministic baseline.
+
+The break is intentional. Older atlas/world/protocol versions are not silently
+reinterpreted because doing so could move climatology, weather, or terrain
+under already materialized chunks.
+
+### Production qualification
+
+The final release binary generated deterministic seed `1337`, all 393,216
+cells, and the full diagnostic bundle in 29.74 seconds, using 417,924 KiB peak
+resident memory and no swap. Its immutable and dynamic files were byte-equal
+to the earlier qualified run, with SHA-256 hashes `76010b57d0ecfc5dcfdca5f5d09d52ac5ab44304d8aee7568872a45ff521f8b0`
+and `d2e475cfef76f3c43cfeb904f76ad4e0f8182eaf3304e36ac9c915d667eae422`.
+The immutable atlas is 98,697,248 bytes, dynamic state 25,165,864 bytes,
+geology 133,826 bytes, and estimated loaded atlas memory 127,535,810 bytes;
+all remain inside the atlas budgets. Diagnostic export itself took 18.61
+seconds and emitted 91 maps plus census, manifest, geology, weather tracks,
+mountain transects, globe preview, validation report, and exact qualification
+coordinates.
+
+The production seasonal iterations were `[93, 93, 90, 90]`, maximum residual
+`0.019581556`, and maximum floating moisture-budget error
+`0.000007949769496917725`. Area-weighted mean temperature is 14.25 C (−19.89
+to 32.30 C) and mean precipitation is 1,301.87 mm/year. The wettest land site
+receives 4,700.1 mm/year; the driest warm site receives 90.7 mm/year at 18.9 C
+and aridity 8.0. The strongest exported mountain transect loses 764.0 mm from
+windward to leeward. Dry, polar, temperate, and tropical climate areas all
+occupy substantial non-striped country.
+
+A 24-hour dynamic diagnostic kept unexplained water drift at exactly zero in
+every hour. Hour 1 contained 367,682 clear, 14,695 overcast, and 10,839
+precipitating cells; by hour 24 the moving field contained 193,831 clear,
+37,654 overcast, 160,321 precipitating, and 1,410 storm cells. A three-year
+test also preserved the exact starting water total.
+
+### Live and automated evidence
+
+The real client loaded the production atlas twice from the same hour-zero
+dynamic checksum. After one accepted weather hour, the NegX qualification site
+reported `PRECIPITATION`, +25 C, early autumn, while the distant PosX site
+simultaneously reported `CLEAR`, +16 C, early spring. The retained captures are
+`/tmp/wildforge-climate-rain-status-hour1-final.png` and
+`/tmp/wildforge-climate-clear-status-hour1-final.png`. A 10-second dedicated
+host smoke run loaded and advanced the same atlas at 357,812 KiB peak resident
+memory with no swap.
+
+The climate-specific suite has 17 relational, conservation, seam,
+persistence, locality, multiplayer, astronomy, Long Winter, and long-run
+tests. It proves warm/cold current signals reach the corresponding coasts,
+weather is simultaneously different in distant regions, and sliced updates
+are byte-deterministic. The real-client captures also exposed a still-stark
+tangent horizon on the NegX face at short view distance; that rendering
+limitation is recorded rather than misreported as a climate defect.
+
+The final repository-wide serial run passed 431 tests with zero failures and
+12 intentional developer/benchmark ignores in 10 minutes 13 seconds. It used
+287,740 KiB peak resident memory and no swap. Serial execution and
+`CARGO_BUILD_JOBS=1` are deliberate on the qualification machine: earlier
+parallel compilation exhausted its memory, which was a runner choice rather
+than evidence of a climate leak.
+
+Final repository gates also pass: formatting, all-target locked compilation,
+strict all-feature Clippy with warnings denied, the release build, dependency
+advisories, and the whitespace/error-marker audit.
+
+Notes versus the draft: v1 uses four seasonal samples rather than twelve and
+resolves mixed precipitation to rain or snow as permitted. This goal supplies
+conservative atmospheric weather and exact transfer amounts to voxel water;
+Goal 5 consumed those normals to provide routed rivers, lakes, oceans,
+baseline salinity, and finite voxel water. Goal 6 has since connected them to
+the complete reservoir cycle, springs, pumping, and multi-century audit; this
+climate goal does not claim that later work as its own. Goal 7's current
+shipping format is `WFA6`/`WFD3` plus `WFW1` and `biomes.wfb`, atlas algorithm
+`6`, world generator `7`, `WFC8` chunk/network records, and multiplayer
+protocol `23`.
+
 ## Purpose
 
-Wildforge currently samples temperature and humidity from independent noise
-and advances one global weather state. That can color an infinite world, but
-it cannot explain why one face of a mountain is forest and the other desert,
-why continental interiors dry out, why rain arrives from an ocean, or why the
-two hemispheres have opposite seasons.
+Before Goal 4, Wildforge sampled temperature and humidity from independent
+noise and advanced one global weather state. That could color an infinite
+world, but it could not explain why one face of a mountain is forest and the
+other desert, why continental interiors dry out, why rain arrives from an
+ocean, or why the two hemispheres have opposite seasons.
 
 This goal builds a simplified but causal planetary climate:
 
@@ -23,7 +148,7 @@ This goal builds a simplified but causal planetary climate:
 - atmospheric moisture originates in water and vegetation,
 - wind and terrain create orographic rain and rain shadows,
 - local weather moves through climate rather than toggling worldwide,
-- precipitation is a mass transfer consumed by the later water-cycle goal.
+- precipitation is a mass transfer consumed by the planetary water cycle.
 
 The target is process realism and stable, legible geography—not computational
 fluid dynamics.
@@ -163,8 +288,8 @@ At genesis equilibrium, atmospheric moisture enters from:
 - lake and wet-soil evaporation,
 - vegetation transpiration estimated from provisional cover.
 
-The dynamic water-cycle goal later debits real reservoirs. This goal computes
-the equilibrium rates and transfer coefficients.
+The completed dynamic water-cycle goal debits real reservoirs using the
+equilibrium rates and transfer coefficients computed here.
 
 ### Advection
 

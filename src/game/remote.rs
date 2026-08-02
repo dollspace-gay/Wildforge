@@ -152,6 +152,14 @@ impl Game {
                     granted_view_dist: 5,
                     asked_view_dist: 0,
                     wants: Default::default(),
+                    entry_required: Default::default(),
+                    entry_manifest_received: false,
+                    entry_ready_sent: false,
+                    entry_world_name: None,
+                    entry_center: None,
+                    entry_center_meshed: false,
+                    pending_entry_chunks: Default::default(),
+                    entry_activity: std::time::Instant::now(),
                 });
                 self.multiplayer.join_status = format!("{policy} - {admission} - SYNCING...");
             }
@@ -207,12 +215,24 @@ impl Game {
         let Some(mut r) = self.multiplayer.remote.take() else {
             return;
         };
-        if !r.client.is_connected() && self.in_world {
-            self.toast("Disconnected from host.".to_string());
-            self.quit_to_title();
-            return; // remote dropped
+        if !r.client.is_connected() {
+            if self.in_world {
+                self.toast("Disconnected from host.".to_string());
+                self.quit_to_title();
+            } else {
+                self.multiplayer.join_status = "DISCONNECTED DURING WORLD PREPARATION".into();
+                self.multiplayer.remote = None;
+            }
+            return;
         }
         let msgs = r.client.poll();
+        if !msgs.is_empty() {
+            r.entry_activity = std::time::Instant::now();
+        } else if !self.in_world && r.entry_activity.elapsed().as_secs() > 15 {
+            self.multiplayer.join_status = "WORLD PREPARATION TIMED OUT".into();
+            self.multiplayer.remote = None;
+            return;
+        }
         for msg in msgs {
             match msg {
                 net::S2C::Challenge { .. } => {}
@@ -236,8 +256,12 @@ impl Game {
                         &atlas::pack_chain(&self.active_pack_id()),
                         &self.content.reg.tex_names,
                     );
-                    atlas::season_tint(&mut atlas.color, atlas.px, self.server.world.season());
-                    self.presentation.atlas_season = self.server.world.season();
+                    let season = self
+                        .server
+                        .world
+                        .season_at_surface(self.player.pos.surface());
+                    atlas::season_tint(&mut atlas.color, atlas.px, season);
+                    self.presentation.atlas_season = season;
                     self.content.pack_warnings = atlas.warnings;
                     self.renderer.set_atlas(
                         &atlas.color,
@@ -270,6 +294,7 @@ impl Game {
                     );
                     world.set_remote(true);
                     self.gen_pool = None; // chunks come by wire
+                    self.mesh_pool = Some(crate::game::streaming::MeshPool::new());
                     world.mode = mode.clone();
                     world.ire = ire;
                     r.my_id = your_id;
@@ -299,8 +324,48 @@ impl Game {
                     self.renderer.clear_chunks();
                     self.apply_remote_player_state(&r, player_state, true);
                     self.creative = mode == "creative";
+                    self.in_world = false;
+                    r.entry_required.clear();
+                    r.entry_manifest_received = false;
+                    r.entry_ready_sent = false;
+                    r.entry_world_name = Some(world_name);
+                    r.entry_center = None;
+                    r.entry_center_meshed = false;
+                    r.pending_entry_chunks.clear();
+                    self.multiplayer.join_status = "PREPARING SAFE WORLD ENTRY...".into();
+                }
+                net::S2C::EntryManifest { spawn, required } => {
+                    if spawn != self.player.pos {
+                        self.multiplayer.join_status =
+                            "FAILED: ENTRY MANIFEST DID NOT MATCH WELCOME SPAWN".into();
+                        self.multiplayer.remote = None;
+                        return;
+                    }
+                    r.entry_required = required.into_iter().collect();
+                    r.entry_manifest_received = true;
+                    r.entry_center = spawn.chunk();
+                }
+                net::S2C::EntryProgress { resident, total } => {
+                    self.multiplayer.join_status =
+                        format!("PREPARING SAFE WORLD ENTRY... {resident}/{total}");
+                }
+                net::S2C::EntryAccepted => {
+                    if !r.entry_ready_sent || !r.entry_required.is_empty() {
+                        self.multiplayer.join_status =
+                            "FAILED: HOST ACCEPTED ENTRY BEFORE TERRAIN WAS READY".into();
+                        self.multiplayer.remote = None;
+                        return;
+                    }
+                    if !r.entry_center_meshed {
+                        self.multiplayer.join_status =
+                            "FAILED: HOST ACCEPTED ENTRY BEFORE THE FIRST FRAME WAS READY".into();
+                        self.multiplayer.remote = None;
+                        return;
+                    }
                     self.in_world = true;
                     self.set_screen(Screen::Playing);
+                    self.multiplayer.join_status.clear();
+                    let world_name = r.entry_world_name.take().unwrap_or_else(|| "world".into());
                     self.toast(format!("Joined {}.", world_name.to_uppercase()));
                 }
                 net::S2C::Refused(why) => {
@@ -323,19 +388,45 @@ impl Game {
                     let Ok(pos) = ChunkPos::new(face, u, v) else {
                         continue;
                     };
-                    r.wants.remove(&pos);
-                    self.server
-                        .world
-                        .insert_remote_chunk(pos, &rle, &r.block_map);
+                    // Never decode an arbitrarily large host burst inline.
+                    // A prepared host can encode the whole view faster than a
+                    // software-rendered client presents frames; inserting all
+                    // of those chunks here froze the UI immediately after
+                    // EntryAccepted. The paced adoption stage below is shared
+                    // by admission and ordinary view expansion.
+                    if !self.server.world.has_chunk(pos)
+                        && !r
+                            .pending_entry_chunks
+                            .iter()
+                            .any(|(queued, _)| *queued == pos)
+                    {
+                        // Proactively pushed chunks are pending too; marking
+                        // them wanted prevents the repair scan from asking for
+                        // duplicates before paced adoption reaches them.
+                        r.wants.insert(pos);
+                        r.pending_entry_chunks.push_back((pos, rle));
+                    }
                 }
-                net::S2C::BlockSet { pos, id, meta } => {
+                net::S2C::BlockSet {
+                    pos,
+                    id,
+                    meta,
+                    salt_mass,
+                    soil_salinity,
+                } => {
                     let local = r
                         .block_map
                         .get(id as usize)
                         .copied()
                         .unwrap_or(self.content.reg.unknown_block);
                     let old = self.server.world.get_block_at(pos);
-                    self.server.world.set_block_meta_at(pos, local, meta);
+                    self.server.world.set_block_state_at(
+                        pos,
+                        local,
+                        meta,
+                        salt_mass,
+                        soil_salinity,
+                    );
                     self.server.world.clear_pending_drops();
                     // Someone broke something: the world crumbles for
                     // everyone watching.
@@ -482,16 +573,13 @@ impl Game {
                         .collect();
                     self.server.world.replace_projectiles(projectiles);
                 }
-                net::S2C::TimeIre {
-                    time,
-                    ire,
-                    day,
-                    weather,
-                } => {
+                net::S2C::TimeIre { time, ire, day } => {
                     self.server.time_of_day = time;
                     self.server.world.ire = ire;
                     self.server.world.day = day;
-                    self.server.world.weather = world::Weather::from_u8(weather);
+                }
+                net::S2C::WeatherCells { side, cells } => {
+                    self.server.world.set_remote_weather(side, cells);
                 }
                 net::S2C::Hit { dmg, from } => self.hurt_player_from_wild(dmg, from),
                 net::S2C::Give {
@@ -700,6 +788,46 @@ impl Game {
                     self.toast(format!("Your server role is now {role:?}."));
                 }
             }
+        }
+        // Decode terrain at a fixed cadence. During admission this brings in
+        // the exact safety set; afterward it prevents a fast host's full-view
+        // burst from monopolizing the render/input thread. Once all nine entry
+        // chunks are resident, build the spawn chunk's first visible mesh
+        // before claiming readiness; Welcome by itself never exposes a blank
+        // world.
+        const REMOTE_CHUNKS_PER_FRAME: usize = 8;
+        let mut terrain_batch = Vec::with_capacity(REMOTE_CHUNKS_PER_FRAME);
+        for _ in 0..REMOTE_CHUNKS_PER_FRAME {
+            let Some((position, rle)) = r.pending_entry_chunks.pop_front() else {
+                break;
+            };
+            r.wants.remove(&position);
+            r.entry_required.remove(&position);
+            terrain_batch.push((position, rle));
+        }
+        if !terrain_batch.is_empty() {
+            self.server.world.insert_remote_chunks(
+                terrain_batch
+                    .iter()
+                    .map(|(position, rle)| (*position, rle.as_slice())),
+                &r.block_map,
+            );
+        }
+        if r.entry_manifest_received
+            && r.entry_required.is_empty()
+            && !r.entry_ready_sent
+            && let Some(center) = r.entry_center
+            && [(-1, 0), (1, 0), (0, -1), (0, 1)]
+                .iter()
+                .all(|(du, dv)| self.server.world.has_chunk(center.offset(*du, *dv)))
+        {
+            let mesh = mesher::mesh_chunk(&self.server.world, center, &self.content.tile_variants);
+            self.renderer.upload_chunk(center, &mesh);
+            self.presentation.lights.chunk_meshed(center, mesh.emitters);
+            self.server.world.mark_chunk_meshed(center);
+            r.entry_center_meshed = true;
+            r.client.send(&net::C2S::EntryReady);
+            r.entry_ready_sent = true;
         }
         // Snapshot smoothing: glide players and mobs along their spans,
         // dead-reckon bolts, advance walk cycles from apparent speed.

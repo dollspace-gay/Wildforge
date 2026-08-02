@@ -10,7 +10,7 @@ use glam::Vec3;
 
 use crate::mobs::MobEvent;
 use crate::planet::EntityPos;
-use crate::world::{Weather, World};
+use crate::world::World;
 
 /// Fixed simulation rate. Rendering runs faster and interpol- er, copes.
 pub const TICK: f32 = 1.0 / 30.0;
@@ -51,8 +51,6 @@ pub enum SimEvent {
     Dawn { offering_refund: f32 },
     /// The wild's ire crossed a tier boundary.
     IreTier { rose: bool, tier: usize },
-    /// The sky changed its mind (ambience/visual transitions).
-    WeatherChanged(Weather),
     /// The wild's own hand: a bolt landed here.
     Lightning(crate::planet::EntityPos),
     /// The year stopped turning, or started again.
@@ -106,8 +104,11 @@ impl Server {
 
     /// Current daylight factor (0.12 night floor .. 1.0 noon).
     pub fn daylight(&self) -> f32 {
-        let sun = (self.time_of_day * std::f32::consts::TAU).sin();
-        (sun * 2.5 + 0.5).clamp(0.12, 1.0)
+        let sun = crate::planet_atlas::solar_direction(
+            f64::from(self.world.day) + f64::from(self.time_of_day),
+            f64::from(self.time_of_day),
+        );
+        (sun.y as f32 * 2.5 + 0.5).clamp(0.12, 1.0)
     }
 
     /// Run the simulation forward by wall-clock `dt`, stepping at the
@@ -132,7 +133,9 @@ impl Server {
             }
             self.world.clock = Server::clock_of(self.world.day, self.time_of_day);
         }
-        self.step_weather(dt, events);
+        if let Err(error) = self.world.tick_planetary_weather(4_096) {
+            eprintln!("planetary weather update failed: {error}");
+        }
         let winter_before = self.world.long_winter;
         if self.world.tick_ire(dt / DAY_LENGTH) {
             let refund = self.world.accept_offerings();
@@ -177,15 +180,19 @@ impl Server {
         self.world.tick_falling(dt);
 
         // Creatures: wildlife, wardens, spawning, projectiles.
-        let dl = self.daylight();
+        let dl = players.first().map_or_else(
+            || self.daylight(),
+            |player| self.world.daylight_at_surface(player.pos.surface()),
+        );
         let mut rng = self.rng;
         let mob_events = self.world.tick_mobs(players, dl, dt, &mut rng);
         // Spawning pressure rings a random player each cycle.
         if !players.is_empty() {
             rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
             let p = &players[(rng >> 8) as usize % players.len()];
+            let local_daylight = self.world.daylight_at_surface(p.pos.surface());
             self.world
-                .tick_hostile_spawns(p.pos, p.spawn, dl, dt, &mut rng);
+                .tick_hostile_spawns(p.pos, p.spawn, local_daylight, dt, &mut rng);
         }
         self.rng = rng;
         for ev in mob_events {
@@ -241,7 +248,12 @@ impl Server {
         // Precipitation lands near players while it lasts: snow
         // sprinkles layers onto exposed cold ground, rain tops up
         // whatever surface water it finds.
-        if self.world.weather.precipitating() && !players.is_empty() {
+        if players.iter().any(|player| {
+            self.world
+                .weather_at_surface(player.pos.surface())
+                .kind
+                .precipitating()
+        }) {
             self.snow_timer += dt;
             if self.snow_timer >= 0.25 {
                 self.snow_timer = 0.0;
@@ -257,6 +269,9 @@ impl Server {
                         .block()
                         .and_then(|at| at.offset(dx, 0, dz))
                         .map(|at| at.surface())
+                        .filter(|surface| {
+                            self.world.weather_at_surface(*surface).kind.precipitating()
+                        })
                     {
                         self.world.settle_snow_at(surface);
                         self.world.rain_fill_at(surface);
@@ -269,13 +284,20 @@ impl Server {
         // Ire storms strike: every so often a bolt hunts natural
         // ground near a player, chars it fertile, and banks a bloom
         // — the wrath and the gift are the same event.
-        if self.world.weather == Weather::Storm && !players.is_empty() {
+        let storm_players: Vec<&PlayerCtx> = players
+            .iter()
+            .filter(|player| {
+                self.world.weather_at_surface(player.pos.surface()).kind
+                    == crate::planet_atlas::LocalWeather::Storm
+            })
+            .collect();
+        if !storm_players.is_empty() {
             self.bolt_timer -= dt;
             if self.bolt_timer <= 0.0 {
                 let mut rng = self.rng;
                 rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                 self.bolt_timer = 16.0 + ((rng >> 8) % 24) as f32;
-                let p = players[(rng >> 6) as usize % players.len()].pos;
+                let p = storm_players[(rng >> 6) as usize % storm_players.len()].pos;
                 rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                 let dx = ((rng >> 8) % 81) as i32 - 40;
                 rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
@@ -309,43 +331,11 @@ impl Server {
         }
     }
 
-    /// The weather front machine: mostly random, but storm odds lean on
-    /// the wild's ire. Durations are rolled per state, in day fractions.
-    fn step_weather(&mut self, dt: f32, events: &mut Vec<SimEvent>) {
-        self.world.weather_timer -= dt;
-        if self.world.weather_timer > 0.0 {
-            return;
-        }
-        let mut r01 = || {
-            self.rng = self.rng.wrapping_mul(1664525).wrapping_add(1013904223);
-            (self.rng >> 8) as f32 / (1 << 24) as f32
-        };
-        let (next, dur_days) = match self.world.weather {
-            Weather::Clear => (Weather::Overcast, 0.2 + r01() * 0.3),
-            Weather::Overcast => {
-                let storm_p = 0.1 + 0.5 * (self.world.ire / 100.0);
-                let roll = r01();
-                if roll < storm_p {
-                    (Weather::Storm, 0.1 + r01() * 0.2)
-                } else if roll < storm_p + (1.0 - storm_p) * 0.6 {
-                    (Weather::Precip, 0.2 + r01() * 0.6)
-                } else {
-                    (Weather::Clear, 0.5 + r01() * 1.5)
-                }
-            }
-            Weather::Precip => (Weather::Clear, 0.5 + r01() * 1.5),
-            Weather::Storm => (Weather::Overcast, 0.2 + r01() * 0.3),
-        };
-        self.world.weather = next;
-        self.world.weather_timer = dur_days * DAY_LENGTH;
-        events.push(SimEvent::WeatherChanged(next));
-    }
-
-    /// The night was slept through: the front moved on with it.
+    /// The night was slept through; the local weather atlas keeps evolving on
+    /// its own hourly clock rather than being re-rolled globally.
     pub fn sleep_to_dawn(&mut self) {
         self.time_of_day = 0.3;
         self.world.day = self.world.day.wrapping_add(1);
-        self.world.weather_timer = 0.0;
         self.world.clock = Server::clock_of(self.world.day, self.time_of_day);
     }
 

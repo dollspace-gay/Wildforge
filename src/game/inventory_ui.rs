@@ -124,17 +124,27 @@ impl Game {
         );
 
         let world = &self.server.world;
+        let season = world.season_at_surface(self.player.pos.surface());
         let third = ["EARLY", "MID", "LATE"][((world.season_progress() * 3.0) as usize).min(2)];
         ui.text_shadow(
             info_x,
             rect.1 + 139.0,
             1.4,
-            &format!(
-                "DAY {} - {third} {}",
-                world.day + 1,
-                world::SEASONS[world.season()]
-            ),
+            &format!("DAY {} - {third} {}", world.day + 1, world::SEASONS[season]),
             [0.78, 0.86, 1.0, 1.0],
+        );
+        let weather = world.weather_at_surface(self.player.pos.surface());
+        ui.text_shadow(
+            info_x,
+            rect.1 + 158.0,
+            1.0,
+            &format!(
+                "{}  {:+.0}C  WIND {:.1}",
+                weather.kind.name().to_uppercase(),
+                weather.temperature_c,
+                weather.wind[0].hypot(weather.wind[1]),
+            ),
+            [0.68, 0.76, 0.86, 1.0],
         );
     }
 
@@ -284,12 +294,17 @@ impl Game {
             ">",
             [1.0; 4],
         );
-        let result = crafting::match_recipe(
-            &self.content.reg,
-            &self.interaction.craft_grid[..count],
-            self.interaction.craft_size,
-        )
-        .map(|recipe| ItemStack::new(&self.content.reg, recipe.output, recipe.count));
+        let result =
+            crafting::match_repair(&self.content.reg, &self.interaction.craft_grid[..count])
+                .map(|repair| repair.output)
+                .or_else(|| {
+                    crafting::match_recipe(
+                        &self.content.reg,
+                        &self.interaction.craft_grid[..count],
+                        self.interaction.craft_size,
+                    )
+                    .map(|recipe| ItemStack::new(&self.content.reg, recipe.output, recipe.count))
+                });
         Self::draw_slot(
             &self.content.reg,
             ui,

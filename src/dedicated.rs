@@ -5,13 +5,30 @@ use super::*;
 /// Headless dedicated host: same binary, no window. `--server <world>`.
 pub(super) fn run_headless_server(world_name: &str) {
     let reg = Arc::new(registry::load(std::path::Path::new("mods")));
-    let world = match World::load_or_create(PathBuf::from("saves").join(world_name), reg.clone()) {
-        Ok(world) => world,
+    let mut world =
+        match World::load_or_create(PathBuf::from("saves").join(world_name), reg.clone()) {
+            Ok(world) => world,
+            Err(error) => {
+                eprintln!("server: could not open world \"{world_name}\": {error}");
+                std::process::exit(1);
+            }
+        };
+    let prepared_spawn = match world.prepare_common_spawn(|stage, completed, total| {
+        if completed == 0 || completed == total || completed.is_multiple_of(5) {
+            eprintln!("server: {stage} {completed}/{total}");
+        }
+    }) {
+        Ok(spawn) => spawn,
         Err(error) => {
-            eprintln!("server: could not open world \"{world_name}\": {error}");
+            eprintln!("server: could not prepare a qualified homeland: {error}");
             std::process::exit(1);
         }
     };
+    if let Some(ledger) = &world.material_ledger {
+        for notice in ledger.retrogen_notices() {
+            eprintln!("server: {notice}");
+        }
+    }
     let mut sim = server::Server::new(world, 0.3, 0xd5ed);
     sim.world.set_edit_logging(true);
     let mut sess = match mp::HostSession::start(world_name.to_string()) {
@@ -21,6 +38,7 @@ pub(super) fn run_headless_server(world_name: &str) {
             std::process::exit(1);
         }
     };
+    sess.fresh_spawn = Some(prepared_spawn);
     eprintln!(
         "wildforge --server \"{world_name}\": listening on port {} (LAN beacon on)",
         sess.net.port
@@ -60,7 +78,7 @@ pub(super) fn run_headless_server(world_name: &str) {
         for ev in evs {
             if let server::SimEvent::PlayerHit { who, dmg, from } = ev {
                 // `who` is the guest's own net id; no positional lookup.
-                sess.hurt_guest(who, dmg, from);
+                sess.hurt_guest(&mut sim, who, dmg, from);
             }
         }
         // Chunk residency. Nothing here ever released a chunk before: the
@@ -131,8 +149,9 @@ fn run_console_command(sess: &mut mp::HostSession, line: &str) {
         "players" => {
             let mut rows: Vec<String> = sess
                 .guests
-                .keys()
-                .filter_map(|id| sess.guest_identity_summary(*id).map(|summary| format!("{id}: {summary}")))
+                .iter()
+                .filter(|(_, guest)| guest.is_active())
+                .filter_map(|(id, _)| sess.guest_identity_summary(*id).map(|summary| format!("{id}: {summary}")))
                 .collect();
             rows.sort();
             Ok(Some(if rows.is_empty() { "no players connected".into() } else { rows.join("\n") }))

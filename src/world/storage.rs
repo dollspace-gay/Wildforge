@@ -1,4 +1,4 @@
-//! Mob/chunk persistence, planetary WFC5 streaming, saves, and registry remapping.
+//! Mob/chunk persistence, planetary chunk streaming, saves, and registry remapping.
 
 use super::*;
 
@@ -119,7 +119,7 @@ impl World {
         // Planetary hearts: province face/grid address, canonical block
         // site, stage, strain, rooting, graft, drift, and cutting timer.
         let mut hb = Vec::with_capacity(4 + self.hearts.len() * 28);
-        hb.extend_from_slice(b"WFH3");
+        hb.extend_from_slice(b"WFH4");
         for (&key, h) in &self.hearts {
             hb.extend_from_slice(&[key.face as u8, key.u, key.v, 0]);
             hb.push(h.pos.face() as u8);
@@ -169,6 +169,19 @@ impl World {
             "player-touched marks",
             path.clone(),
             super::persistence::atomic_replace(&path, &pt),
+        );
+        let mut structures = Vec::with_capacity(4 + self.structure_chunks.len() * 5);
+        structures.extend_from_slice(b"WFS1");
+        for pos in &self.structure_chunks {
+            structures.push(pos.face() as u8);
+            structures.extend_from_slice(&pos.u().to_le_bytes());
+            structures.extend_from_slice(&pos.v().to_le_bytes());
+        }
+        let path = self.save_dir.join("structured");
+        report.record(
+            "structure chunk marks",
+            path.clone(),
+            super::persistence::atomic_replace(&path, &structures),
         );
         report.failures
     }
@@ -317,7 +330,7 @@ impl World {
             }
         }
         if let Ok(data) = fs::read(self.save_dir.join("hearts"))
-            && let Some(body) = data.strip_prefix(b"WFH3")
+            && let Some(body) = data.strip_prefix(b"WFH4")
         {
             for p in body.chunks_exact(28) {
                 let f32_at = |o: usize| f32::from_le_bytes([p[o], p[o + 1], p[o + 2], p[o + 3]]);
@@ -387,12 +400,56 @@ impl World {
                 }
             }
         }
+        if let Ok(data) = fs::read(self.save_dir.join("structured")) {
+            for p in data
+                .strip_prefix(b"WFS1")
+                .unwrap_or_default()
+                .chunks_exact(5)
+            {
+                if let Some(face) = crate::planet::Face::from_u8(p[0])
+                    && let Ok(pos) = ChunkPos::new(
+                        face,
+                        u16::from_le_bytes([p[1], p[2]]),
+                        u16::from_le_bytes([p[3], p[4]]),
+                    )
+                {
+                    self.structure_chunks.insert(pos);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn chunk_loader(&self) -> ChunkLoader {
+        ChunkLoader {
+            save_dir: self.save_dir.clone(),
+            load_remap: self.load_remap.clone(),
+            reg: Arc::clone(&self.reg),
+            palette_stale: self.palette_stale,
+        }
     }
 
     pub(super) fn try_load_chunk(&self, pos: ChunkPos) -> Option<Chunk> {
+        self.chunk_loader().load(pos)
+    }
+}
+
+/// Immutable save decoder that can be cloned into cold-terrain workers.
+/// Disk I/O and WFC decoding therefore never need the simulation-owned World.
+#[derive(Clone)]
+pub(crate) struct ChunkLoader {
+    save_dir: PathBuf,
+    load_remap: Vec<crate::registry::BlockId>,
+    reg: Arc<Registry>,
+    palette_stale: bool,
+}
+
+impl ChunkLoader {
+    pub(crate) fn load(&self, pos: ChunkPos) -> Option<Chunk> {
         let data = super::region::read_chunk(&self.save_dir, pos)?;
         let mut chunk = Chunk::new();
-        if !data.starts_with(b"WFC5") {
+        let version8 = data.starts_with(b"WFC8");
+        let version7 = data.starts_with(b"WFC7");
+        if !version8 && !version7 && !data.starts_with(b"WFC6") {
             return None;
         }
         let out = chunk.raw_mut();
@@ -441,6 +498,84 @@ impl World {
         if offset != meta.len() {
             return None;
         }
+        if version8 || version7 {
+            let salt = chunk.water_salt_raw_mut();
+            let mut offset = 0;
+            while i + 4 <= data.len() && offset < salt.len() {
+                let count = u16::from_le_bytes([data[i], data[i + 1]]) as usize;
+                let value = u16::from_le_bytes([data[i + 2], data[i + 3]]);
+                let end = (offset + count).min(salt.len());
+                salt[offset..end].fill(value);
+                offset = end;
+                i += 4;
+            }
+            if offset != salt.len() {
+                return None;
+            }
+        } else {
+            for x in 0..CHUNK_X {
+                for z in 0..CHUNK_Z {
+                    for y in 0..CHUNK_Y {
+                        let volume = self.reg.water_volume(chunk.get(x, y, z)).unwrap_or(0);
+                        let salt = u16::from(volume)
+                            .saturating_mul(32)
+                            .saturating_mul(u16::from(chunk.meta(x, y, z)));
+                        chunk.set_water_salt(x, y, z, salt);
+                    }
+                }
+            }
+        }
+        if version8 {
+            let salinity = chunk.soil_salinity_raw_mut();
+            let mut offset = 0;
+            while i + 3 <= data.len() && offset < salinity.len() {
+                let count = u16::from_le_bytes([data[i], data[i + 1]]) as usize;
+                let value = data[i + 2];
+                let end = (offset + count).min(salinity.len());
+                salinity[offset..end].fill(value);
+                offset = end;
+                i += 3;
+            }
+            if offset != salinity.len() {
+                return None;
+            }
+        }
+        if i + 2 > data.len() {
+            return None;
+        }
+        let records = u16::from_le_bytes([data[i], data[i + 1]]) as usize;
+        i += 2;
+        let record_bytes = if version8 || version7 { 32 } else { 24 };
+        if data.len().saturating_sub(i) != records.saturating_mul(record_bytes) {
+            return None;
+        }
+        let mut hydrology = Vec::with_capacity(records);
+        for _ in 0..records {
+            let reservoir = u64::from_le_bytes(data[i..i + 8].try_into().ok()?);
+            let baseline_units = u64::from_le_bytes(data[i + 8..i + 16].try_into().ok()?);
+            let residual_units = i64::from_le_bytes(data[i + 16..i + 24].try_into().ok()?);
+            let salt_mass = if version8 || version7 {
+                u64::from_le_bytes(data[i + 24..i + 32].try_into().ok()?)
+            } else {
+                0
+            };
+            hydrology.push(crate::chunk::HydrologyVolumeRecord {
+                reservoir,
+                baseline_hu: if version8 || version7 {
+                    baseline_units
+                } else {
+                    baseline_units.saturating_mul(32)
+                },
+                residual_hu: if version8 || version7 {
+                    residual_units
+                } else {
+                    residual_units.saturating_mul(32)
+                },
+                salt_mass,
+            });
+            i += record_bytes;
+        }
+        chunk.set_hydrology_volumes(hydrology);
         chunk.dirty = true;
         // Planes the file turned out uniform in (no block state anywhere,
         // most often) shrink back to a single value.
@@ -454,59 +589,53 @@ impl World {
         chunk.modified = self.palette_stale;
         Some(chunk)
     }
+}
 
-    /// Planetary WFC5 block and metadata RLE, also used for chunk streaming.
+impl World {
+    /// Planetary WFC8 block/metadata/water-salt/soil-salt RLE and HU reservoir
+    /// residuals for disk. Derived light is deliberately omitted from saves.
     pub fn chunk_rle(&self, pos: ChunkPos) -> Option<Vec<u8>> {
         let chunk = self.chunks.get(&pos)?;
-        let mut buf: Vec<u8> = Vec::with_capacity(4096);
-        buf.extend_from_slice(b"WFC5");
-        // Runs come straight off the plane, so a uniform plane is one step
-        // rather than a scan of every cell. The u16 length field still caps
-        // a wire run, so long runs are split to fit it.
-        for (value, mut run) in chunk.block_runs() {
-            while run > 0 {
-                let take = run.min(u16::MAX as usize);
-                buf.extend_from_slice(&(take as u16).to_le_bytes());
-                buf.extend_from_slice(&value.to_le_bytes());
-                run -= take;
-            }
-        }
-        for (value, mut run) in chunk.meta_runs() {
-            while run > 0 {
-                let take = run.min(u16::MAX as usize);
-                buf.extend_from_slice(&(take as u16).to_le_bytes());
-                buf.push(value);
-                run -= take;
-            }
-        }
-        Some(buf)
+        Some(encode_chunk(chunk))
     }
 
-    /// Insert a network-streamed chunk, remapping host block ids to
-    /// local ones. Relights and marks for remesh.
+    /// Insert a network-streamed chunk, remapping host block ids to local
+    /// ones. Current hosts include their settled derived light; older payloads
+    /// remain compatible and are relit locally.
     pub fn insert_remote_chunk(&mut self, pos: ChunkPos, rle: &[u8], remap: &[BlockId]) {
         self.insert_remote_chunks([(pos, rle)], remap);
     }
 
-    /// Insert a group received in one network poll and settle their shared
-    /// borders through one lighting cascade.
+    /// Insert a group received in one network poll. Current WFC9 payloads carry
+    /// the host's settled light field. Legacy WFC6-WFC8 chunks settle their
+    /// shared borders through one fallback lighting cascade.
     pub fn insert_remote_chunks<'a>(
         &mut self,
         chunks: impl IntoIterator<Item = (ChunkPos, &'a [u8])>,
         remap: &[BlockId],
     ) {
-        let mut inserted = Vec::new();
+        let mut needs_relight = Vec::new();
         for (pos, rle) in chunks {
-            if self.insert_remote_chunk_unlit(pos, rle, remap) {
-                inserted.push(pos);
+            if self.insert_remote_chunk_unlit(pos, rle, remap) == Some(false) {
+                needs_relight.push(pos);
             }
         }
-        self.relight_chunks_and_cascade(inserted);
+        self.relight_chunks_and_cascade(needs_relight);
     }
 
-    fn insert_remote_chunk_unlit(&mut self, pos: ChunkPos, rle: &[u8], remap: &[BlockId]) -> bool {
-        if !rle.starts_with(b"WFC5") {
-            return false;
+    /// `Some(true)` means the payload supplied settled light, `Some(false)`
+    /// requests a legacy relight, and `None` rejects an invalid payload.
+    fn insert_remote_chunk_unlit(
+        &mut self,
+        pos: ChunkPos,
+        rle: &[u8],
+        remap: &[BlockId],
+    ) -> Option<bool> {
+        let version9 = rle.starts_with(b"WFC9");
+        let version8 = rle.starts_with(b"WFC8");
+        let version7 = rle.starts_with(b"WFC7");
+        if !version9 && !version8 && !version7 && !rle.starts_with(b"WFC6") {
+            return None;
         }
         let mut chunk = Chunk::new();
         let out = chunk.raw_mut();
@@ -522,7 +651,7 @@ impl World {
             i += 4;
         }
         if o != out.len() {
-            return false;
+            return None;
         }
         let meta = chunk.meta_raw_mut();
         let mut offset = 0;
@@ -535,8 +664,112 @@ impl World {
             i += 3;
         }
         if offset != meta.len() {
-            return false;
+            return None;
         }
+        if version9 || version8 || version7 {
+            let salt = chunk.water_salt_raw_mut();
+            let mut offset = 0;
+            while i + 4 <= rle.len() && offset < salt.len() {
+                let count = u16::from_le_bytes([rle[i], rle[i + 1]]) as usize;
+                let value = u16::from_le_bytes([rle[i + 2], rle[i + 3]]);
+                let end = (offset + count).min(salt.len());
+                salt[offset..end].fill(value);
+                offset = end;
+                i += 4;
+            }
+            if offset != salt.len() {
+                return None;
+            }
+        }
+        if version9 || version8 {
+            let salinity = chunk.soil_salinity_raw_mut();
+            let mut offset = 0;
+            while i + 3 <= rle.len() && offset < salinity.len() {
+                let count = u16::from_le_bytes([rle[i], rle[i + 1]]) as usize;
+                let value = rle[i + 2];
+                let end = (offset + count).min(salinity.len());
+                salinity[offset..end].fill(value);
+                offset = end;
+                i += 3;
+            }
+            if offset != salinity.len() {
+                return None;
+            }
+        }
+        if version9 {
+            let light = chunk.light_block_raw_mut();
+            let mut offset = 0;
+            while i + 5 <= rle.len() && offset < light.len() {
+                let count = u16::from_le_bytes([rle[i], rle[i + 1]]) as usize;
+                let value = [rle[i + 2], rle[i + 3], rle[i + 4]];
+                let end = (offset + count).min(light.len());
+                light[offset..end].fill(value);
+                offset = end;
+                i += 5;
+            }
+            if offset != light.len() {
+                return None;
+            }
+            let sky = chunk.light_sky_raw_mut();
+            let mut offset = 0;
+            while i + 3 <= rle.len() && offset < sky.len() {
+                let count = u16::from_le_bytes([rle[i], rle[i + 1]]) as usize;
+                let value = rle[i + 2];
+                let end = (offset + count).min(sky.len());
+                sky[offset..end].fill(value);
+                offset = end;
+                i += 3;
+            }
+            if offset != sky.len() {
+                return None;
+            }
+        }
+        if i + 2 > rle.len() {
+            return None;
+        }
+        let records = u16::from_le_bytes([rle[i], rle[i + 1]]) as usize;
+        i += 2;
+        let detailed_water = version9 || version8 || version7;
+        let record_bytes = if detailed_water { 32 } else { 24 };
+        if rle.len().saturating_sub(i) != records.saturating_mul(record_bytes) {
+            return None;
+        }
+        let mut hydrology = Vec::with_capacity(records);
+        for _ in 0..records {
+            let Ok(reservoir) = rle[i..i + 8].try_into().map(u64::from_le_bytes) else {
+                return None;
+            };
+            let Ok(baseline_units) = rle[i + 8..i + 16].try_into().map(u64::from_le_bytes) else {
+                return None;
+            };
+            let Ok(residual_units) = rle[i + 16..i + 24].try_into().map(i64::from_le_bytes) else {
+                return None;
+            };
+            let salt_mass = if detailed_water {
+                let Ok(value) = rle[i + 24..i + 32].try_into().map(u64::from_le_bytes) else {
+                    return None;
+                };
+                value
+            } else {
+                0
+            };
+            hydrology.push(crate::chunk::HydrologyVolumeRecord {
+                reservoir,
+                baseline_hu: if detailed_water {
+                    baseline_units
+                } else {
+                    baseline_units.saturating_mul(32)
+                },
+                residual_hu: if detailed_water {
+                    residual_units
+                } else {
+                    residual_units.saturating_mul(32)
+                },
+                salt_mass,
+            });
+            i += record_bytes;
+        }
+        chunk.set_hydrology_volumes(hydrology);
         chunk.dirty = true;
         chunk.compact();
         self.chunks.insert(pos, chunk);
@@ -547,7 +780,7 @@ impl World {
                 c.dirty = true;
             }
         }
-        true
+        Some(version9)
     }
 
     pub(super) fn save_chunk(&self, pos: ChunkPos) -> std::io::Result<()> {
@@ -596,15 +829,24 @@ impl World {
         report.record(
             "world metadata",
             meta_path,
-            write_world_meta_full(
-                &self.save_dir,
-                self.seed,
-                &self.mode,
-                self.ire,
-                self.day,
-                self.weather,
-            ),
+            write_world_meta_full(&self.save_dir, self.seed, &self.mode, self.ire, self.day),
         );
+        if let (Some(atlas), Some(weather)) = (&self.planet_atlas, &self.planetary_weather) {
+            report.record(
+                "planetary weather",
+                crate::planet_atlas::PlanetAtlas::planet_dir(&self.save_dir).join("dynamic.wfd"),
+                atlas
+                    .save_dynamic_snapshot(&self.save_dir, &weather.cells, &weather.water)
+                    .map_err(std::io::Error::other),
+            );
+        }
+        if let Some(ledger) = &self.material_ledger {
+            report.record(
+                "finite-material ledger",
+                self.save_dir.join("materials.wfm"),
+                ledger.save(),
+            );
+        }
         // Only when it would actually differ. The palette describes the
         // registry, not the world, so rewriting it on a timer was 4 KB
         // of churn every twenty seconds saying the same thing. It has
@@ -615,6 +857,7 @@ impl World {
             let ready = report.record("block palette", path, self.write_palette());
             if ready {
                 self.palette_stale = false;
+                self.load_remap = self.read_palette_remap();
             }
             ready
         } else {
@@ -681,4 +924,81 @@ impl World {
     }
 
     // ---------------- lighting ----------------
+}
+
+pub(crate) fn encode_chunk(chunk: &Chunk) -> Vec<u8> {
+    encode_chunk_state(chunk, false)
+}
+
+/// Live network form. Unlike the disk codec, WFC9 includes settled block and
+/// sky light so every guest does not recompute the host's identical derived
+/// field while a view is streaming in.
+pub(crate) fn encode_stream_chunk(chunk: &Chunk) -> Vec<u8> {
+    encode_chunk_state(chunk, true)
+}
+
+fn encode_chunk_state(chunk: &Chunk, include_light: bool) -> Vec<u8> {
+    let mut buf: Vec<u8> = Vec::with_capacity(4096);
+    buf.extend_from_slice(if include_light { b"WFC9" } else { b"WFC8" });
+    // Runs come straight off the plane, so a uniform plane is one step rather
+    // than a scan of every cell. Long runs are split for the u16 wire field.
+    for (value, mut run) in chunk.block_runs() {
+        while run > 0 {
+            let take = run.min(u16::MAX as usize);
+            buf.extend_from_slice(&(take as u16).to_le_bytes());
+            buf.extend_from_slice(&value.to_le_bytes());
+            run -= take;
+        }
+    }
+    for (value, mut run) in chunk.meta_runs() {
+        while run > 0 {
+            let take = run.min(u16::MAX as usize);
+            buf.extend_from_slice(&(take as u16).to_le_bytes());
+            buf.push(value);
+            run -= take;
+        }
+    }
+    for (value, mut run) in chunk.water_salt_runs() {
+        while run > 0 {
+            let take = run.min(u16::MAX as usize);
+            buf.extend_from_slice(&(take as u16).to_le_bytes());
+            buf.extend_from_slice(&value.to_le_bytes());
+            run -= take;
+        }
+    }
+    for (value, mut run) in chunk.soil_salinity_runs() {
+        while run > 0 {
+            let take = run.min(u16::MAX as usize);
+            buf.extend_from_slice(&(take as u16).to_le_bytes());
+            buf.push(value);
+            run -= take;
+        }
+    }
+    if include_light {
+        for (value, mut run) in chunk.light_block_runs() {
+            while run > 0 {
+                let take = run.min(u16::MAX as usize);
+                buf.extend_from_slice(&(take as u16).to_le_bytes());
+                buf.extend_from_slice(&value);
+                run -= take;
+            }
+        }
+        for (value, mut run) in chunk.light_sky_runs() {
+            while run > 0 {
+                let take = run.min(u16::MAX as usize);
+                buf.extend_from_slice(&(take as u16).to_le_bytes());
+                buf.push(value);
+                run -= take;
+            }
+        }
+    }
+    let records = chunk.hydrology_volumes();
+    buf.extend_from_slice(&(records.len().min(u16::MAX as usize) as u16).to_le_bytes());
+    for record in records.iter().take(u16::MAX as usize) {
+        buf.extend_from_slice(&record.reservoir.to_le_bytes());
+        buf.extend_from_slice(&record.baseline_hu.to_le_bytes());
+        buf.extend_from_slice(&record.residual_hu.to_le_bytes());
+        buf.extend_from_slice(&record.salt_mass.to_le_bytes());
+    }
+    buf
 }

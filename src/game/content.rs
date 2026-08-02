@@ -20,7 +20,9 @@ impl Game {
             &self.content.reg.tex_names,
         );
         let season = if self.in_world {
-            self.server.world.season()
+            self.server
+                .world
+                .season_at_surface(self.player.pos.surface())
         } else {
             1
         };
@@ -51,13 +53,55 @@ impl Game {
     pub(super) fn reload_mods(&mut self, forced: bool) {
         let old = self.content.reg.clone();
         let new_reg = Arc::new(registry::load(std::path::Path::new("mods")));
+        let mut migration_errors = new_reg.material_errors.clone();
+        if self.in_world {
+            for old_item in &old.items {
+                match new_reg.item_id(&old_item.name) {
+                    Some(item) if new_reg.item(item).materials != old_item.materials => {
+                        migration_errors.push(format!(
+                            "{} changes live-stack material identity; a migration is required",
+                            old_item.name
+                        ));
+                    }
+                    None if !old_item.materials.is_empty() => migration_errors.push(format!(
+                        "{} contains finite material and cannot be removed from a live world",
+                        old_item.name
+                    )),
+                    _ => {}
+                }
+            }
+            for old_block in &old.blocks {
+                match new_reg.block_id(&old_block.name) {
+                    Some(block) if new_reg.block(block).materials != old_block.materials => {
+                        migration_errors.push(format!(
+                            "{} changes live-voxel material identity; a migration is required",
+                            old_block.name
+                        ));
+                    }
+                    None if !old_block.materials.is_empty() => migration_errors.push(format!(
+                        "{} contains finite material and requires a persistent placeholder",
+                        old_block.name
+                    )),
+                    _ => {}
+                }
+            }
+        }
+        if !migration_errors.is_empty() {
+            for error in migration_errors.iter().take(3) {
+                eprintln!("mods: reload refused: {error}");
+                self.toast(format!("reload refused: {error}"));
+            }
+            return;
+        }
         let mut atlas = atlas::build_atlas(
             &new_reg.tex_files,
             &atlas::pack_chain(&self.active_pack_id()),
             &new_reg.tex_names,
         );
         let season = if self.in_world {
-            self.server.world.season()
+            self.server
+                .world
+                .season_at_surface(self.player.pos.surface())
         } else {
             1
         };
@@ -103,7 +147,19 @@ impl Game {
         self.content.reg = new_reg.clone();
         self.server.world.reg = new_reg.clone();
         self.server.world.remap_from(&old);
-        self.server.world.generator = worldgen::Generator::new(self.server.world.seed, &new_reg);
+        self.server.world.generator = self.server.world.planet_atlas().map_or_else(
+            || worldgen::Generator::new(self.server.world.seed, &new_reg),
+            |atlas| worldgen::Generator::with_atlas(self.server.world.seed, &new_reg, atlas),
+        );
+        if let (Some(atlas), Some(ledger)) = (
+            self.server.world.planet_atlas(),
+            &mut self.server.world.material_ledger,
+        ) && (ledger.reconcile_mod_manifests(&atlas, &new_reg)
+            | ledger.reconcile_saved_definitions(&new_reg))
+            && let Err(error) = ledger.save()
+        {
+            eprintln!("materials: could not persist hot-reload manifest: {error}");
+        }
         self.content.scripts.load_mods(&script_mod_dirs(&new_reg));
 
         let errors: Vec<String> = new_reg

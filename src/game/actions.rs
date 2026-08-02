@@ -117,6 +117,13 @@ impl Game {
     pub(super) fn toast_prospect(&mut self, pos: crate::planet::SurfacePos) {
         let r = self.server.world.generator.prospect_at(pos);
         let mut lines: Vec<String> = Vec::new();
+        if let Some(province) = &r.province_name {
+            if let Some(bedrock) = r.bedrock {
+                lines.push(format!("{province}: {} country.", bedrock.label()));
+            } else {
+                lines.push(province.clone());
+            }
+        }
         match r.pluton {
             Some(hit) if hit.distance == 0 => lines.push("Granite country underfoot.".into()),
             Some(hit) => lines.push(format!(
@@ -247,7 +254,7 @@ impl Game {
     /// sits in front of it.
     pub(super) fn mob_in_crosshair(&self, hit: &Option<raycast::PlanetHit>) -> Option<usize> {
         let origin = self.player.eye();
-        let dir = self.camera.local_forward();
+        let dir = self.camera.tangent_forward();
         // A wall in the way shields the mob behind it (approximate the
         // wall distance by its block center).
         let wall_t = hit
@@ -331,9 +338,15 @@ impl Game {
                 if n == 0 {
                     continue;
                 }
+                let stack = ItemStack::new(&reg, *item, n);
+                if let Some(ledger) = &mut self.server.world.material_ledger
+                    && let Err(error) =
+                        ledger.record_external_stack(&reg, stack, "wild creature drop")
+                {
+                    eprintln!("materials: creature drop accounting failed: {error}");
+                }
                 if m.last_hit_by != 0 {
                     // A guest's kill: their loot crosses the wire.
-                    let stack = ItemStack::new(&reg, *item, n);
                     self.server.world.queue_give(m.last_hit_by, stack);
                     continue;
                 }
@@ -431,17 +444,32 @@ impl Game {
                 let b = self.server.world.get_block_at(pos);
                 // Either fluid fills the bucket — a full cell only.
                 if reg.fluid_volume(b) == Some(8) {
+                    let water_class = self
+                        .server
+                        .world
+                        .water_mass_at(pos)
+                        .map(|mass| mass.water_class());
                     let full_item = if reg.is_lava(b) {
                         reg.item_id("base:bucket_lava")
                     } else {
-                        reg.item_id("base:bucket_water")
+                        reg.item_id(match water_class {
+                            Some(crate::planet_atlas::WaterClass::Brackish) => {
+                                "base:bucket_brackish"
+                            }
+                            Some(crate::planet_atlas::WaterClass::Salt) => "base:bucket_salt",
+                            _ => "base:bucket_water",
+                        })
                     };
-                    if let Some(r) = &self.multiplayer.remote {
+                    let moved = if let Some(r) = &self.multiplayer.remote {
                         r.client.send(&net::C2S::Scoop { pos });
-                    } else {
+                        true
+                    } else if reg.is_lava(b) {
                         self.server.world.set_block_at(pos, AIR);
-                    }
-                    if let Some(full) = full_item {
+                        true
+                    } else {
+                        self.server.world.scoop_water_at(pos).is_some()
+                    };
+                    if moved && let Some(full) = full_item {
                         self.inventory.slots[self.input.hotbar_sel] =
                             Some(ItemStack::new(&reg, full, 1));
                     }
@@ -451,7 +479,16 @@ impl Game {
             }
             return;
         }
-        if held.is_some() && held == reg.item_id("base:bucket_water") {
+        let held_water_class = if held == reg.item_id("base:bucket_water") {
+            Some(crate::planet_atlas::WaterClass::Fresh)
+        } else if held == reg.item_id("base:bucket_brackish") {
+            Some(crate::planet_atlas::WaterClass::Brackish)
+        } else if held == reg.item_id("base:bucket_salt") {
+            Some(crate::planet_atlas::WaterClass::Salt)
+        } else {
+            None
+        };
+        if let Some(water_class) = held_water_class {
             if self.input.right_held
                 && self.input.action_cooldown <= 0.0
                 && let Some(h) = &hit
@@ -462,8 +499,7 @@ impl Game {
                     if let Some(r) = &self.multiplayer.remote {
                         r.client.send(&net::C2S::Place { pos });
                     } else {
-                        let water = reg.water_block(0);
-                        self.server.world.place_block_at(pos, water);
+                        self.server.world.place_portable_water_at(pos, water_class);
                     }
                     if let Some(empty) = reg.item_id("base:bucket") {
                         self.inventory.slots[self.input.hotbar_sel] =
@@ -541,14 +577,16 @@ impl Game {
             self.interaction.fishing = Some((bobber, wait, bite));
         }
 
-        // Archaeology: sweeping a remnant is a slow, careful channel.
+        // Archaeology and regional salvage: sweeping a remnant or sifting
+        // ordinary ground is a slow, careful channel.
         let brush_held = held.is_some_and(|i| reg.item(i).brush_tool);
         let brush_target = hit.as_ref().map(|h| h.block).filter(|t| {
             brush_held
-                && reg
+                && (reg
                     .block(self.server.world.get_block_at(*t))
                     .brush
                     .is_some()
+                    || self.server.world.can_sift_salvage_at(*t))
         });
         if let (true, Some(target)) = (self.input.right_held, brush_target) {
             if self.interaction.brush_target != Some(target) {
@@ -568,9 +606,24 @@ impl Game {
                     }
                     return;
                 }
-                let mut r = self.rng;
-                let found = self.server.world.brush_block_at(target, &mut r);
-                self.rng = r;
+                let archaeology = reg
+                    .block(self.server.world.get_block_at(target))
+                    .brush
+                    .is_some();
+                let found = if archaeology {
+                    let mut r = self.rng;
+                    let found = self.server.world.brush_block_at(target, &mut r);
+                    self.rng = r;
+                    found
+                } else {
+                    match self.server.world.sift_salvage_at(target) {
+                        Ok(found) => found,
+                        Err(error) => {
+                            eprintln!("materials: regional salvage recovery failed: {error}");
+                            None
+                        }
+                    }
+                };
                 if let Some(stack) = found {
                     let center = crate::planet::EntityPos::new(
                         target.face(),
@@ -587,6 +640,11 @@ impl Game {
                     }
                     self.interaction.items.push(ent);
                     self.sfx(Sfx::Pickup);
+                    if !archaeology {
+                        self.toast("The brush turns up usable buried stock.".into());
+                    }
+                } else if !archaeology {
+                    self.toast("Nothing recoverable gathers in this ground yet.".into());
                 }
                 if !self.creative {
                     self.inventory.wear_tool(&reg, self.input.hotbar_sel);
@@ -926,6 +984,13 @@ impl Game {
                         // prediction until the snapshot echoes it.
                         if let Some(rc) = &self.multiplayer.remote {
                             rc.client.send(&net::C2S::FeedMob { id: mob_id });
+                        } else if !self.creative
+                            && let Err(error) = self
+                                .server
+                                .world
+                                .record_consumed_stacks([ItemStack::new(&reg, h, 1)])
+                        {
+                            eprintln!("materials: animal feed accounting failed: {error}");
                         }
                         let mut now_tamed = false;
                         if let Some(mob) = self.server.world.mob_mut(mi) {
@@ -1244,6 +1309,7 @@ impl Game {
                     // loam starts richer than bare dirt (soil.rs).
                     let meta = self.server.world.till_meta_at(h.block);
                     self.server.world.set_block_meta_at(h.block, farm, meta);
+                    self.server.world.initialize_tilled_soil_at(h.block);
                     self.inventory.wear_tool(&reg, self.input.hotbar_sel);
                     self.sfx(Sfx::Place);
                     self.input.action_cooldown = 0.3;
@@ -1411,6 +1477,14 @@ impl Game {
                         let name = reg.item(hi).name.clone();
                         if self.server.world.compost_fill_at(h.block, &name) {
                             self.inventory.take_one(self.input.hotbar_sel);
+                            if self.multiplayer.remote.is_none()
+                                && let Err(error) = self
+                                    .server
+                                    .world
+                                    .record_consumed_stacks([ItemStack::new(&reg, hi, 1)])
+                            {
+                                eprintln!("materials: compost feed accounting failed: {error}");
+                            }
                             self.sfx(Sfx::Place);
                             return;
                         }
@@ -1601,7 +1675,10 @@ impl Game {
                     // split back out (smoker rules, no screen).
                     self.input.action_cooldown = 0.3;
                     let powder = reg.item_id("base:rare_earth_powder");
-                    let is_fuel = held.is_some_and(|i| reg.fuel_value(i).is_some());
+                    // Separator persistence stores this bed as a count and
+                    // returns charcoal on dismantling, so admitting arbitrary
+                    // finite coal here would destroy its identity.
+                    let is_fuel = held == reg.item_id("base:charcoal");
                     self.server.world.ensure_block_entity_at(
                         h.block,
                         world::BlockEntity::Separator(Default::default()),
@@ -1694,6 +1771,17 @@ impl Game {
                         }
                         if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
                         {
+                            if let Some(item) = held
+                                && let Some(ledger) = &mut self.server.world.material_ledger
+                            {
+                                let materials = crate::materials::stack_materials(
+                                    &reg,
+                                    ItemStack::new(&reg, item, 1),
+                                );
+                                if let Err(error) = ledger.record_consumption(&materials) {
+                                    eprintln!("materials: firebox fuel accounting failed: {error}");
+                                }
+                            }
                             let e = self.server.world.block_entity_mut_at(&h.block);
                             if let Some(world::BlockEntity::Steam(s)) = e {
                                 s.fuel = (s.fuel + burn * 4.0).min(world::STEAM_FUEL_CAP);
@@ -1702,8 +1790,14 @@ impl Game {
                         }
                         return;
                     }
-                    let (f, wtr) = (s.fuel as u32, s.water as u32);
-                    self.toast(format!("Fire banked {f}s; boiler water {wtr}s."));
+                    let f = s.fuel as u32;
+                    let blocks =
+                        s.water.water_hu as f64 / crate::planet_atlas::HYDRO_UNITS_PER_BLOCK as f64;
+                    let salinity = s.water.salinity();
+                    self.toast(format!(
+                        "Fire banked {f}s; boiler water {blocks:.2} blocks (salinity {}).",
+                        salinity
+                    ));
                     return;
                 }
                 Some(station @ ("bloomery" | "kiln" | "forge"))
@@ -1758,6 +1852,12 @@ impl Game {
                     .map_or(AIR, |below| self.server.world.get_block_at(below));
                 if needs_farmland && Some(soil) != reg.block_id("base:farmland") {
                     return;
+                }
+                if needs_farmland
+                    && let Some(below) = pos.offset(0, -1, 0)
+                    && let Some(reason) = self.server.world.soil_failure_at(below)
+                {
+                    self.toast(reason.to_string());
                 }
                 // Cross blocks (torches, plants) need solid ground.
                 if bd.cross && !reg.is_solid(soil) {
@@ -1837,11 +1937,22 @@ impl Game {
             match cmd {
                 script::Cmd::SetBlock(pos, name) => {
                     if let Some(b) = reg.block_id(&name) {
-                        self.server.world.set_block_at(pos, b);
+                        self.server
+                            .world
+                            .set_block_authored_at(pos, b, "mod script world event");
                     }
                 }
                 script::Cmd::Give(name, n) => {
                     if let Some(item) = reg.item_id(&name) {
+                        if let Some(ledger) = &mut self.server.world.material_ledger
+                            && let Err(error) = ledger.record_external_stack(
+                                &reg,
+                                ItemStack::new(&reg, item, n),
+                                "mod script give",
+                            )
+                        {
+                            eprintln!("materials: script give accounting failed: {error}");
+                        }
                         let left = self.inventory.add(&reg, item, n);
                         if left > 0 {
                             self.drop_stack(ItemStack::new(&reg, item, left));

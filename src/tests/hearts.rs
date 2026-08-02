@@ -46,6 +46,174 @@ fn heart_block(world: &World, heart: crate::world::Heart) -> String {
 }
 
 #[test]
+fn dead_and_living_hearts_leave_planetary_climate_and_water_identical() {
+    let reg = base_reg();
+    let atlas = std::sync::Arc::new(crate::planet_atlas::PlanetAtlas::fixture(8_712, 8).unwrap());
+    let country = atlas.biomes.countries.first().expect("a country");
+    let point = country.heart_site.center(atlas.side());
+    let site = SurfacePos::new(point.face, point.u.floor() as u16, point.v.floor() as u16).unwrap();
+    let mut living = World::new_with_atlas(
+        8_712,
+        tmp_dir("living-heart-conservation"),
+        reg.clone(),
+        atlas.clone(),
+    );
+    let mut dead = World::new_with_atlas(8_712, tmp_dir("dead-heart-conservation"), reg, atlas);
+    let chunk = ChunkPos::from_surface(site);
+    living.ensure_chunk(chunk);
+    dead.ensure_chunk(chunk);
+    let key = dead.generator.province_at(site).key;
+    assert!(dead.heart_at_surface(site).is_some());
+    dead.set_heart_stage(key, 0);
+    assert!(!dead.heart_alive_at_surface(site));
+    assert!(living.heart_alive_at_surface(site));
+
+    assert!(living.tick_planetary_weather(usize::MAX).unwrap().is_some());
+    assert!(dead.tick_planetary_weather(usize::MAX).unwrap().is_some());
+    let living_weather = living.planetary_weather_for_test().unwrap();
+    let dead_weather = dead.planetary_weather_for_test().unwrap();
+    assert_eq!(living_weather.cells, dead_weather.cells);
+    assert_eq!(living_weather.water, dead_weather.water);
+    let atmosphere = |weather: &crate::planet_atlas::PlanetaryWeather| {
+        crate::planet_atlas::ReservoirMass::fresh(crate::planet_atlas::dynamic_water_total(
+            &weather.cells,
+        ) as u64)
+    };
+    for weather in [living_weather, dead_weather] {
+        let audit = weather.water.audit(atmosphere(weather));
+        assert_eq!(audit.unexplained_water_delta_hu, 0);
+        assert_eq!(audit.unexplained_salt_delta, 0);
+    }
+}
+
+#[test]
+fn foreign_grafts_follow_climate_and_marginal_ones_need_real_water() {
+    use crate::planet_atlas::GraftCompatibility;
+
+    let reg = base_reg();
+    let atlas = std::sync::Arc::new(crate::planet_atlas::PlanetAtlas::fixture(8_714, 32).unwrap());
+    let mut native = 0usize;
+    let mut incompatible = 0usize;
+    let mut marginal_site = None;
+    for country in &atlas.biomes.countries {
+        let point = country.heart_site.center(atlas.side());
+        let site =
+            SurfacePos::new(point.face, point.u.floor() as u16, point.v.floor() as u16).unwrap();
+        assert_eq!(
+            atlas.graft_compatibility_at(site, atlas.biome_sample(site).zonal_biome),
+            GraftCompatibility::Compatible,
+            "native ecology is always physically supportable"
+        );
+        native += 1;
+        for target in 1..=12u8 {
+            match atlas.graft_compatibility_at(site, target) {
+                GraftCompatibility::Incompatible => incompatible += 1,
+                GraftCompatibility::Marginal
+                    if marginal_site.is_none()
+                        && atlas
+                            .water_cycle
+                            .cells
+                            .get(country.heart_site)
+                            .unwrap()
+                            .groundwater
+                            .water_hu
+                            >= crate::planet_atlas::HYDRO_UNITS_PER_BLOCK =>
+                {
+                    marginal_site = Some((country.clone(), site, target));
+                }
+                _ => {}
+            }
+        }
+    }
+    assert!(native > 0 && incompatible > 0);
+    let (country, site, target) = marginal_site.expect("a marginal graft over a pumpable aquifer");
+    let target = Biome::from_index(target).unwrap();
+    let mut world = World::new_with_atlas(
+        8_714,
+        tmp_dir("marginal-graft-support"),
+        reg.clone(),
+        atlas.clone(),
+    );
+    world.ensure_chunk(ChunkPos::from_surface(site));
+    let heart = world
+        .heart_at_surface(site)
+        .expect("generated country heart");
+    let key = world.generator.province_at(site).key;
+    world.set_heart_stage(key, 2);
+    {
+        let state = world.hearts.get_mut(&key).unwrap();
+        state.graft = Some(target);
+        state.drift = 0.25;
+    }
+    let atlas_index = country.heart_site.index(atlas.side());
+    world
+        .planetary_weather_for_test_mut()
+        .unwrap()
+        .water
+        .cells
+        .values_mut()[atlas_index]
+        .soil = crate::planet_atlas::ReservoirMass::default();
+    let probes = [
+        (1, 0, 0),
+        (-1, 0, 0),
+        (0, 0, 1),
+        (0, 0, -1),
+        (1, 1, 0),
+        (-1, 1, 0),
+        (0, 1, 1),
+        (0, 1, -1),
+    ];
+    // A country heart may sit on a chunk edge. Missing chunks read as air,
+    // but cannot retain the detailed irrigation voxel written below, so the
+    // complete test chamber must be resident before choosing a channel.
+    for neighbor in probes
+        .into_iter()
+        .filter_map(|(du, dy, dv)| heart.pos.offset(du, dy, dv))
+    {
+        world.ensure_chunk(neighbor.chunk());
+    }
+    for neighbor in probes
+        .into_iter()
+        .filter_map(|(du, dy, dv)| heart.pos.offset(du, dy, dv))
+    {
+        if reg.is_water(world.get_block_at(neighbor)) {
+            world.set_block_at(neighbor, AIR);
+        }
+    }
+    assert!(world.managed_soil_moisture_at(heart.pos) < 0.85);
+    world.tick_ire(1.0);
+    let unsupported = world.hearts[&key].drift;
+    assert!(unsupported < 0.25, "an unsupported marginal graft recedes");
+
+    let parcel = world
+        .planetary_weather_for_test_mut()
+        .unwrap()
+        .pump_groundwater(
+            country.heart_site,
+            crate::planet_atlas::HYDRO_UNITS_PER_BLOCK,
+        );
+    assert_eq!(parcel.water_hu, crate::planet_atlas::HYDRO_UNITS_PER_BLOCK);
+    let class = world
+        .planetary_weather_for_test_mut()
+        .unwrap()
+        .move_detailed_to_portable(parcel)
+        .unwrap();
+    let channel = probes
+        .into_iter()
+        .filter_map(|(du, dy, dv)| heart.pos.offset(du, dy, dv))
+        .find(|neighbor| world.get_block_at(*neighbor) == AIR)
+        .expect("heart chamber has room for an irrigation channel");
+    assert!(world.place_portable_water_at(channel, class));
+    assert!(world.managed_soil_moisture_at(heart.pos) >= 0.85);
+    world.hearts.get_mut(&key).unwrap().drift = 0.0;
+    world.tick_ire(1.0);
+    assert!(
+        world.hearts[&key].drift > 0.0,
+        "the same marginal graft advances only while supplied with audited water"
+    );
+}
+
+#[test]
 fn generated_heart_has_a_finite_country_and_canonical_site() {
     let (world, site, key, heart) = living_heart(42, "planet-heart-find");
     assert_eq!(world.generator.province_at(site).key, key);
@@ -130,7 +298,7 @@ fn heart_stage_changes_reface_the_typed_site() {
 }
 
 #[test]
-fn planetary_heart_record_round_trips_wfh3() {
+fn planetary_heart_record_round_trips_wfh4() {
     let reg = base_reg();
     let dir = tmp_dir("planet-heart-save");
     let (site, key, expected);
@@ -151,7 +319,7 @@ fn planetary_heart_record_round_trips_wfh3() {
     }
     assert_eq!(
         std::fs::read(dir.join("hearts")).unwrap().get(..4),
-        Some(b"WFH3".as_slice())
+        Some(b"WFH4".as_slice())
     );
     let mut loaded = World::load_or_create(dir, reg).unwrap();
     loaded.ensure_chunk(ChunkPos::from_surface(site));

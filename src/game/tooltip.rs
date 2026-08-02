@@ -204,12 +204,19 @@ impl Game {
                     }
                 }
                 if self.hit(self.result_slot_rect()) {
-                    return crafting::match_recipe(
+                    return crafting::match_repair(
                         &self.content.reg,
                         &self.interaction.craft_grid[..n],
-                        self.interaction.craft_size,
                     )
-                    .map(|r| ItemStack::new(&self.content.reg, r.output, r.count));
+                    .map(|repair| repair.output)
+                    .or_else(|| {
+                        crafting::match_recipe(
+                            &self.content.reg,
+                            &self.interaction.craft_grid[..n],
+                            self.interaction.craft_size,
+                        )
+                        .map(|r| ItemStack::new(&self.content.reg, r.output, r.count))
+                    });
                 }
                 inv()
             }

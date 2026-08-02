@@ -7,7 +7,7 @@
 //! same rate limits, same shared ire. The layers above (perception,
 //! motion, work, mcp) only ever act through what a player could do.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -23,6 +23,9 @@ use crate::{identity, mp, net};
 /// How far an agent asks to see, in chunks. Enough to path somewhere it has
 /// not been; the host clamps it like anyone else's request.
 const AGENT_VIEW_DIST: u8 = 10;
+/// Keep stdio/MCP and movement responsive while a wide cold horizon arrives.
+/// The transport can deliver much faster than chunk adoption and lighting.
+const CHUNKS_PER_PUMP: usize = 2;
 
 mod mcp;
 mod motion;
@@ -81,6 +84,12 @@ pub struct Agent {
     /// Human-readable happenings, drained by the events tool.
     pub events: VecDeque<String>,
     pub behavior: Behavior,
+    pending_chunks: VecDeque<(ChunkPos, Vec<u8>)>,
+    entry_required: HashSet<ChunkPos>,
+    entry_manifest_received: bool,
+    entry_ready_sent: bool,
+    entry_world_name: Option<String>,
+    entry_activity: std::time::Instant,
     move_timer: f32,
     /// (pos sampled, seconds since) for stuck detection.
     stuck_probe: (crate::planet::EntityPos, f32),
@@ -152,6 +161,12 @@ impl Agent {
             mobs_rx: Default::default(),
             events: VecDeque::new(),
             behavior: Behavior::Idle,
+            pending_chunks: VecDeque::new(),
+            entry_required: HashSet::new(),
+            entry_manifest_received: false,
+            entry_ready_sent: false,
+            entry_world_name: None,
+            entry_activity: std::time::Instant::now(),
             move_timer: 0.0,
             stuck_probe: (default_origin, 0.0),
             mods_dir,
@@ -169,8 +184,8 @@ impl Agent {
             {
                 return Err(refusal);
             }
-            if start.elapsed().as_secs() > 15 {
-                return Err("timed out waiting for Welcome".into());
+            if agent.entry_activity.elapsed().as_secs() > 15 || start.elapsed().as_secs() > 120 {
+                return Err("timed out waiting for safe world entry".into());
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
@@ -239,23 +254,23 @@ impl Agent {
             self.event("disconnected from host".into());
             return;
         }
-        let mut chunks = Vec::new();
-        for msg in self.client.poll() {
+        let messages = self.client.poll();
+        if !messages.is_empty() {
+            self.entry_activity = std::time::Instant::now();
+        }
+        for msg in messages {
             match msg {
                 net::S2C::Chunk { face, u, v, rle } => {
                     if let Some(face) = crate::planet::Face::from_u8(face)
                         && let Ok(pos) = ChunkPos::new(face, u, v)
                     {
-                        chunks.push((pos, rle));
+                        self.pending_chunks.push_back((pos, rle));
                     }
                 }
-                other => {
-                    self.apply_chunks(&mut chunks);
-                    self.apply(other);
-                }
+                other => self.apply(other),
             }
         }
-        self.apply_chunks(&mut chunks);
+        self.apply_pending_chunks();
         if self.in_world {
             self.tick_behavior(dt);
             self.move_timer += dt;
@@ -271,15 +286,25 @@ impl Agent {
         }
     }
 
-    fn apply_chunks(&mut self, chunks: &mut Vec<(ChunkPos, Vec<u8>)>) {
-        if chunks.is_empty() {
-            return;
+    fn apply_pending_chunks(&mut self) {
+        if !self.pending_chunks.is_empty() {
+            let chunks: Vec<_> = self
+                .pending_chunks
+                .drain(..self.pending_chunks.len().min(CHUNKS_PER_PUMP))
+                .collect();
+            self.world.insert_remote_chunks(
+                chunks.iter().map(|(pos, rle)| (*pos, rle.as_slice())),
+                &self.block_map,
+            );
+            for (pos, _) in chunks {
+                self.entry_required.remove(&pos);
+            }
         }
-        self.world.insert_remote_chunks(
-            chunks.iter().map(|(pos, rle)| (*pos, rle.as_slice())),
-            &self.block_map,
-        );
-        chunks.clear();
+        if self.entry_manifest_received && self.entry_required.is_empty() && !self.entry_ready_sent
+        {
+            self.client.send(&net::C2S::EntryReady);
+            self.entry_ready_sent = true;
+        }
     }
 
     /// Pump for `secs` of wall time at a steady cadence (macros wait
@@ -339,8 +364,34 @@ impl Agent {
                 self.world = world;
                 self.time_of_day = time;
                 self.apply_player_state(player_state, true);
+                self.in_world = false;
+                self.entry_required.clear();
+                self.entry_manifest_received = false;
+                self.entry_ready_sent = false;
+                self.entry_world_name = Some(world_name);
+            }
+            net::S2C::EntryProgress { resident, total } => {
+                self.event(format!("preparing entry terrain: {resident}/{total}"));
+            }
+            net::S2C::EntryManifest { spawn, required } => {
+                if spawn != self.player.pos {
+                    self.event("refused: host entry manifest did not match Welcome spawn".into());
+                    return;
+                }
+                self.entry_required = required.into_iter().collect();
+                self.entry_manifest_received = true;
+            }
+            net::S2C::EntryAccepted => {
+                if !self.entry_ready_sent || !self.entry_required.is_empty() {
+                    self.event("refused: host accepted entry before terrain was decoded".into());
+                    return;
+                }
                 self.in_world = true;
-                self.event(format!("joined {world_name}"));
+                let world = self
+                    .entry_world_name
+                    .take()
+                    .unwrap_or_else(|| "world".into());
+                self.event(format!("joined {world}"));
             }
             net::S2C::Refused(why) => {
                 self.event(format!("refused: {}", why.detail));
@@ -353,13 +404,20 @@ impl Agent {
                     self.world.insert_remote_chunk(pos, &rle, &self.block_map);
                 }
             }
-            net::S2C::BlockSet { pos, id, meta } => {
+            net::S2C::BlockSet {
+                pos,
+                id,
+                meta,
+                salt_mass,
+                soil_salinity,
+            } => {
                 let local = self
                     .block_map
                     .get(id as usize)
                     .copied()
                     .unwrap_or(self.reg.unknown_block);
-                self.world.set_block_meta_at(pos, local, meta);
+                self.world
+                    .set_block_state_at(pos, local, meta, salt_mass, soil_salinity);
                 self.world.clear_pending_drops();
             }
             net::S2C::Players(part) => {
@@ -407,16 +465,13 @@ impl Agent {
                     .collect();
                 self.world.replace_mobs(mobs);
             }
-            net::S2C::TimeIre {
-                time,
-                ire,
-                day,
-                weather,
-            } => {
+            net::S2C::TimeIre { time, ire, day } => {
                 self.time_of_day = time;
                 self.world.ire = ire;
                 self.world.day = day;
-                self.world.weather = crate::world::Weather::from_u8(weather);
+            }
+            net::S2C::WeatherCells { side, cells } => {
+                self.world.set_remote_weather(side, cells);
             }
             net::S2C::Hit { dmg, from: _ } => {
                 self.health -= dmg;
@@ -496,12 +551,7 @@ impl Agent {
     /// Advance the standing behavior and step player physics.
     fn tick_behavior(&mut self, dt: f32) {
         let input = match std::mem::replace(&mut self.behavior, Behavior::Idle) {
-            Behavior::Idle => physics::Input {
-                forward: 0.0,
-                strafe: 0.0,
-                jump: false,
-                sprint: false,
-            },
+            Behavior::Idle => motion::idle(self.player.in_water),
             Behavior::GoTo { path, goal } => self.tick_goto(path, goal, dt),
             Behavior::Follow { id, distance } => self.tick_follow(id, distance, dt),
         };

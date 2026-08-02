@@ -118,11 +118,24 @@ impl World {
 
     pub fn till_meta_at(&self, pos: BlockPos) -> u8 {
         let name = self.reg.block(self.get_block_at(pos)).name.clone();
-        let base = if name == "base:grass" {
-            FERT_TILL_GRASS
-        } else {
-            FERT_TILL_DIRT
-        };
+        let base = self.planet_atlas.as_ref().map_or_else(
+            || {
+                if name == "base:grass" {
+                    FERT_TILL_GRASS
+                } else {
+                    FERT_TILL_DIRT
+                }
+            },
+            |atlas| {
+                let sample = atlas.biome_sample(pos.surface());
+                let baseline = (u16::from(sample.fertility) * u16::from(FERT_MAX) / 255) as u8;
+                if name == "base:grass" {
+                    baseline.saturating_add(6).min(FERT_MAX)
+                } else {
+                    baseline
+                }
+            },
+        );
         let sandy = [(1, 0), (-1, 0), (0, 1), (0, -1)]
             .iter()
             .filter_map(|&(du, dv)| pos.offset(du, 0, dv))
@@ -140,6 +153,89 @@ impl World {
             },
             0,
         )
+    }
+
+    pub fn initialize_tilled_soil_at(&mut self, pos: BlockPos) {
+        let baseline = self
+            .planet_atlas
+            .as_ref()
+            .map_or(0, |atlas| atlas.biome_sample(pos.surface()).salinity);
+        self.set_soil_salinity_at(pos, baseline);
+    }
+
+    /// Drainage and accumulated salt are independent of managed fertility.
+    /// Values around 96..=205 drain well; saturated or excessively sandy soil
+    /// slows crops, while severe salinity stops them.
+    pub fn crop_soil_multiplier_at(&self, pos: BlockPos) -> f32 {
+        let drainage = self
+            .planet_atlas
+            .as_ref()
+            .map_or(150, |atlas| atlas.biome_sample(pos.surface()).drainage);
+        let drainage_mult = if drainage < 48 {
+            f32::from(drainage) / 96.0
+        } else if drainage > 220 {
+            (1.0 - f32::from(drainage - 220) / 70.0).clamp(0.45, 1.0)
+        } else {
+            1.0
+        };
+        let salt = self.get_soil_salinity_at(pos);
+        let salt_mult = if salt >= 176 {
+            0.0
+        } else {
+            (1.0 - f32::from(salt) / 208.0).clamp(0.15, 1.0)
+        };
+        drainage_mult * salt_mult
+    }
+
+    /// Moisture available to managed roots. Planetary soil storage remains
+    /// the broad background; a real detailed-water voxel in an adjacent
+    /// channel supplies the field locally. That voxel has already been
+    /// debited from its river, aquifer, tank, or precipitation owner by the
+    /// finite-water machinery, so irrigation cannot work with painted water.
+    pub fn managed_soil_moisture_at(&self, pos: BlockPos) -> f32 {
+        let baseline = self.soil_moisture_at_surface(pos.surface());
+        let irrigated = [
+            (1, 0, 0),
+            (-1, 0, 0),
+            (0, 0, 1),
+            (0, 0, -1),
+            (1, 1, 0),
+            (-1, 1, 0),
+            (0, 1, 1),
+            (0, 1, -1),
+        ]
+        .into_iter()
+        .filter_map(|(du, dy, dv)| pos.offset(du, dy, dv))
+        .filter_map(|neighbor| self.water_mass_at(neighbor))
+        .any(|mass| mass.water_hu > 0);
+        if !irrigated {
+            return baseline;
+        }
+        let drainage = self
+            .planet_atlas
+            .as_ref()
+            .map_or(150, |atlas| atlas.biome_sample(pos.surface()).drainage);
+        baseline.max(if drainage < 48 { 1.35 } else { 1.0 })
+    }
+
+    pub fn soil_failure_at(&self, pos: BlockPos) -> Option<&'static str> {
+        let sample = self
+            .planet_atlas
+            .as_ref()
+            .map(|atlas| atlas.biome_sample(pos.surface()));
+        if self.get_soil_salinity_at(pos) >= 128 {
+            Some("The soil is white with salt; fresh water and drainage must leach it.")
+        } else if sample.is_some_and(|soil| soil.drainage < 42) {
+            Some("The ground is waterlogged; this crop needs drainage.")
+        } else if sample
+            .is_some_and(|soil| soil.habitat_flags & crate::planet_atlas::HABITAT_PERMAFROST != 0)
+        {
+            Some("The ground is frozen too deeply for these roots.")
+        } else if self.managed_soil_moisture_at(pos) < 0.18 {
+            Some("The soil is dry; irrigation must bring real water.")
+        } else {
+            None
+        }
     }
 
     /// Feed one item into a compost heap; the meta byte counts the

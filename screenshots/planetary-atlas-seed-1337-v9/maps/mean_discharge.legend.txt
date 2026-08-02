@@ -1,0 +1,7 @@
+layer = mean_discharge
+description = accumulated channel discharge
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = scalar
+minimum = 0.717911541
+maximum = 90976.234375000
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

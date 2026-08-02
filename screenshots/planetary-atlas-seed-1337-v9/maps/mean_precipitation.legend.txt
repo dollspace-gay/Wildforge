@@ -1,0 +1,7 @@
+layer = mean_precipitation
+description = annual precipitation
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = scalar
+minimum = 5.056992054
+maximum = 7979.393554688
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

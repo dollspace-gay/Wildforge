@@ -58,26 +58,36 @@ durability = 131
 id = "raw_copper"
 name = "Raw Copper"
 texture = "@raw_copper"
+material_class = "geologically_finite"
+materials = { copper = 1200 }
 
 [[item]]
 id = "raw_tin"
 name = "Raw Tin"
 texture = "@raw_tin"
+material_class = "geologically_finite"
+materials = { tin = 1200 }
 
 [[item]]
 id = "copper_ingot"
 name = "Copper Ingot"
 texture = "@copper_ingot"
+material_class = "geologically_finite"
+materials = { copper = 1200 }
 
 [[item]]
 id = "tin_ingot"
 name = "Tin Ingot"
 texture = "@tin_ingot"
+material_class = "geologically_finite"
+materials = { tin = 1200 }
 
 [[item]]
 id = "bronze_ingot"
 name = "Bronze Ingot"
 texture = "@bronze_ingot"
+material_class = "geologically_finite"
+materials = { copper = 900, tin = 300 }
 
 [[item]]
 id = "bronze_blend"
@@ -507,16 +517,22 @@ bedroll = true
 id = "raw_iron"
 name = "Raw Iron"
 texture = "@raw_iron"
+material_class = "geologically_finite"
+materials = { iron = 1200 }
 
 [[item]]
 id = "iron_ingot"
 name = "Iron Ingot"
 texture = "@iron_ingot"
+material_class = "geologically_finite"
+materials = { iron = 1200 }
 
 [[item]]
 id = "steel_ingot"
 name = "Steel Ingot"
 texture = "@steel_ingot"
+material_class = "geologically_finite"
+materials = { iron = 1200 }
 
 [[item]]
 id = "iron_pickaxe"
@@ -727,6 +743,13 @@ texture = "@steel_bloom"
 max_stack = 16
 
 [[item]]
+id = "iron_slag"
+name = "Iron-Rich Slag"
+texture = "@raw_iron"
+material_class = "geologically_finite"
+materials = { iron = 1200 }
+
+[[item]]
 id = "smith_hammer"
 name = "Smithing Hammer"
 texture = "@smith_hammer"
@@ -738,16 +761,22 @@ hammer = true
 id = "raw_cobalt"
 name = "Raw Cobalt"
 texture = "@cobalt_ore"
+material_class = "geologically_finite"
+materials = { cobalt = 1200 }
 
 [[item]]
 id = "raw_cinnabar"
 name = "Raw Cinnabar"
 texture = "@cinnabar_ore"
+material_class = "geologically_finite"
+materials = { mercury = 1200 }
 
 [[item]]
 id = "raw_manganese"
 name = "Raw Manganese"
 texture = "@manganese_ore"
+material_class = "geologically_finite"
+materials = { manganese = 1200 }
 
 [[item]]
 id = "verdigris_powder"
@@ -796,71 +825,99 @@ max_stack = 1
 id = "sulfur"
 name = "Sulfur"
 texture = "sulfur.png"
+material_class = "geologically_finite"
+materials = { sulfur = 1200 }
 
 [[item]]
 id = "quartz_shard"
 name = "Quartz"
 texture = "quartz_shard.png"
+material_class = "geologically_finite"
+materials = { quartz = 1200 }
 
 [[item]]
 id = "amethyst_shard"
 name = "Amethyst"
 texture = "amethyst_shard.png"
+material_class = "geologically_finite"
+materials = { amethyst = 1200 }
 
 [[item]]
 id = "coal"
 name = "Coal"
 texture = "coal.png"
+material_class = "consumptive"
+materials = { coal = 1200 }
 
 [[item]]
 id = "raw_gold"
 name = "Raw Gold"
 texture = "raw_gold.png"
+material_class = "geologically_finite"
+materials = { gold = 1200 }
 
 [[item]]
 id = "raw_galena"
 name = "Raw Galena"
 texture = "raw_galena.png"
+material_class = "geologically_finite"
+materials = { lead = 1200, silver = 400 }
 
 [[item]]
 id = "raw_chromite"
 name = "Raw Chromite"
 texture = "raw_chromite.png"
+material_class = "geologically_finite"
+materials = { chromium = 1200 }
 
 [[item]]
 id = "diamond"
 name = "Diamond"
 texture = "diamond.png"
+material_class = "geologically_finite"
+materials = { diamond = 1200 }
 
 [[item]]
 id = "raw_pitchblende"
 name = "Pitchblende"
 texture = "raw_pitchblende.png"
+material_class = "geologically_finite"
+materials = { uranium = 1200 }
 
 [[item]]
 id = "monazite_grit"
 name = "Monazite Grit"
 texture = "monazite_grit.png"
+material_class = "geologically_finite"
+materials = { rare_earth = 1200 }
 
 [[item]]
 id = "bastnasite"
 name = "Bastnasite"
 texture = "bastnasite.png"
+material_class = "geologically_finite"
+materials = { rare_earth = 1200 }
 
 [[item]]
 id = "gold_ingot"
 name = "Gold Ingot"
 texture = "gold_ingot.png"
+material_class = "geologically_finite"
+materials = { gold = 1200 }
 
 [[item]]
 id = "lead_ingot"
 name = "Lead Ingot"
 texture = "lead_ingot.png"
+material_class = "geologically_finite"
+materials = { lead = 1200 }
 
 [[item]]
 id = "silver_ingot"
 name = "Silver Ingot"
 texture = "silver_ingot.png"
+material_class = "geologically_finite"
+materials = { silver = 1200 }
 
 [[item]]
 id = "quartz_crucible"
@@ -893,6 +950,8 @@ texture = "uranium_powder.png"
 id = "rare_earth_powder"
 name = "Rare-Earth Powder"
 texture = "rare_earth_powder.png"
+material_class = "geologically_finite"
+materials = { rare_earth = 400 }
 
 [[item]]
 id = "crystal_lens"
@@ -923,6 +982,8 @@ durability = 96
 id = "salt_crystal"
 name = "Salt"
 texture = "salt_crystal.png"
+material_class = "geologically_finite"
+materials = { salt = 1200 }
 
 [[item]]
 id = "salted_meat"
@@ -1030,11 +1091,15 @@ texture = "cylinder.png"
 id = "neodymium"
 name = "Neodymium"
 texture = "neodymium.png"
+material_class = "geologically_finite"
+materials = { rare_earth = 400 }
 
 [[item]]
 id = "cerium"
 name = "Cerium"
 texture = "cerium.png"
+material_class = "geologically_finite"
+materials = { rare_earth = 400 }
 
 [[item]]
 id = "magnet"
@@ -1183,3 +1248,16 @@ max_stack = 1
 durability = 64
 striker = true
 
+# Exact water classes. These remain separate identities until item-stack
+# payload data can carry arbitrary salt mass.
+[[item]]
+id = "bucket_brackish"
+name = "Brackish Water Bucket"
+texture = "@bucket_water"
+max_stack = 1
+
+[[item]]
+id = "bucket_salt"
+name = "Salt Water Bucket"
+texture = "@bucket_water"
+max_stack = 1

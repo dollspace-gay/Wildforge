@@ -7,6 +7,18 @@
 > with one finite cube-sphere. Complete this document before beginning any
 > later planetary goal.
 
+## Integrated qualification closure — 2026-08-01
+
+Goal 9 re-audited the shipping path after all downstream systems and the
+world-entry remediation landed. The finite coordinate contract remains
+unchanged: six `8192 x 8192` faces, `512 x 512` surface chunks per face, local
+radial `y`, and no selectable flat save. Current worlds use generator 9 and
+protocol 24. Disk chunks remain WFC8; live chunk streams use WFC9 so the host
+can include exact derived block/sky light without making guests relight a cold
+horizon. Directed seam geometry, blocks, fluids, fire, falling blocks, shafts,
+players, mobs, weather, countries, hearts, persistence, and rendering are in
+the final matrix in `docs/planetary-qualification-plan.md`.
+
 ## Purpose
 
 Wildforge's world is currently an unbounded `(x, y, z)` lattice. That is the

@@ -27,6 +27,8 @@ fn block_edit_fans_out_through_one_authoritative_boundary() {
         Some(&(
             crate::planet::BlockPos::of_world(0, 200, 4).unwrap(),
             stone,
+            0,
+            0,
             0
         ))
     );
@@ -284,7 +286,13 @@ fn crops_grow_on_farmland_via_random_ticks() {
             }
         }
     }
-    assert!(advanced > 0, "farmland crops should advance");
+    let sample = w.weather_at_surface(bp(4, h + 1, 4).surface());
+    assert!(
+        advanced > 0,
+        "farmland crops should advance (local temperature {:.2} C, season {})",
+        sample.temperature_c,
+        w.season_at_surface(bp(4, h + 1, 4).surface())
+    );
     assert_eq!(w.get_block(6, h + 1, 6), seed0, "dirt crop must not grow");
     // Stage chain terminates at ripe (stage2) with a harvest def.
     let ripe = b(&reg, "base:wheat_seeds/stage2");
@@ -316,7 +324,9 @@ fn crops_grow_on_farmland_via_random_ticks() {
 
 #[test]
 fn world_meta_roundtrip_and_legacy_refusal() {
-    use crate::world::{WORLD_TOPOLOGY, load_world_meta, read_world_meta, write_world_meta};
+    use crate::world::{
+        WORLD_GENERATOR_VERSION, WORLD_TOPOLOGY, load_world_meta, read_world_meta, write_world_meta,
+    };
     let dir = tmp_dir("meta");
     write_world_meta(&dir, 777, "creative", 0.0).unwrap();
     assert_eq!(
@@ -328,7 +338,17 @@ fn world_meta_roundtrip_and_legacy_refusal() {
     assert!(text.contains("face_blocks = 8192"));
     assert!(text.contains("world_height = 256"));
     assert!(text.contains("planet_radius = 5215."));
-    assert!(text.contains("generator_version = 1"));
+    assert!(text.contains(&format!("generator_version = {WORLD_GENERATOR_VERSION}")));
+    let previous = text.replace(
+        &format!("generator_version = {WORLD_GENERATOR_VERSION}"),
+        "generator_version = 9",
+    );
+    std::fs::write(dir.join("world.toml"), previous).unwrap();
+    assert_eq!(
+        load_world_meta(&dir).unwrap().unwrap().seed,
+        777,
+        "the biome correction must not strand version-9 planets"
+    );
 
     // A flat save is rejected without modifying it.
     let dir2 = tmp_dir("meta2");
@@ -375,6 +395,35 @@ fn water_conserves_and_spreads_finite() {
     assert_eq!(total_water(&w), before + 8, "volume neither made nor lost");
     // One cell can't stay full on open ground: it spread into a film.
     assert!(reg.water_volume(w.get_block(4, y, 4)).unwrap_or(0) < 8);
+}
+
+#[test]
+fn flowing_water_moves_exact_salt_mass_with_deterministic_remainders() {
+    let reg = base_reg();
+    let mut world = test_world_with("saltwater-flow", reg.clone());
+    let y = world.surface_height(4, 4) + 5;
+    let stone = b(&reg, "base:stone");
+    for x in -4..=12 {
+        for z in -4..=12 {
+            world.set_block(x, y - 1, z, stone);
+        }
+    }
+    let source = crate::planet::BlockPos::of_world(4, y, 4).unwrap();
+    world.set_block_water_at(source, reg.water_block(0), 156, 40_000);
+    settle_water(&mut world);
+    let mut water_hu = 0u64;
+    let mut salt_mass = 0u64;
+    for x in -4..=12 {
+        for z in -4..=12 {
+            let at = crate::planet::BlockPos::of_world(x, y, z).unwrap();
+            if let Some(mass) = world.water_mass_at(at) {
+                water_hu += mass.water_hu;
+                salt_mass += mass.salt_mass;
+            }
+        }
+    }
+    assert_eq!(water_hu, 256);
+    assert_eq!(salt_mass, 40_000);
 }
 
 #[test]
@@ -653,7 +702,7 @@ fn random_ticks_visit_a_bounded_cohort() {
 }
 
 #[test]
-fn summer_dries_shallow_water_but_not_deep() {
+fn exposed_water_evaporates_without_a_depth_or_basin_exemption() {
     let reg = base_reg();
     let mut w = test_world_with("evap", reg.clone());
     w.day = crate::world::SEASON_DAYS; // summer
@@ -667,6 +716,7 @@ fn summer_dries_shallow_water_but_not_deep() {
             w.set_block(x, y, z, stone);
         }
     }
+    w.mobs_mut().clear();
     for (x, z) in [(4, 4), (5, 4), (4, 5), (5, 5)] {
         w.set_block(x, y, z, reg.water_block(0));
     }
@@ -689,17 +739,17 @@ fn summer_dries_shallow_water_but_not_deep() {
         w.random_tick(&mut rng);
         w.tick_water(1_000);
     }
-    for (x, z) in [(4, 4), (5, 4), (4, 5), (5, 5)] {
-        assert_eq!(
-            reg.water_volume(w.get_block(x, y, z)),
-            None,
-            "pan cell ({x},{z}) dried through (films persist only in 3-walled pockets)"
-        );
-    }
-    assert_eq!(
-        reg.water_volume(w.get_block(11, y, 4)),
-        Some(8),
-        "deep water is off the stove"
+    let pan_after = [(4, 4), (5, 4), (4, 5), (5, 5)]
+        .into_iter()
+        .map(|(x, z)| u32::from(reg.water_volume(w.get_block(x, y, z)).unwrap_or(0)))
+        .sum::<u32>();
+    assert!(pan_after < 32, "the exposed pan lost water to evaporation");
+    let shaft_after = ((y - 2)..=y)
+        .map(|yy| u32::from(reg.water_volume(w.get_block(11, yy, 4)).unwrap_or(0)))
+        .sum::<u32>();
+    assert!(
+        shaft_after < 24,
+        "surface depth is no longer a magical evaporation exemption"
     );
     assert_eq!(w.get_block(9, y, 9), AIR, "open spills dry entirely");
 }
@@ -708,7 +758,7 @@ fn summer_dries_shallow_water_but_not_deep() {
 fn rain_refills_surface_water() {
     let reg = base_reg();
     let mut w = test_world_with("rain", reg.clone());
-    w.day = crate::world::SEASON_DAYS; // summer: temperate columns rain
+    w.force_local_weather("rain");
     let stone = b(&reg, "base:stone");
     let h = w.surface_height(4, 4);
     let y = h + 8;
@@ -729,12 +779,42 @@ fn rain_refills_surface_water() {
 
 #[test]
 fn reconcile_catches_up_an_absent_chunk() {
-    use crate::worldgen::Biome;
-
     let reg = base_reg();
-    let dir = tmp_dir("reconcile");
-    let mut w = World::new(42, dir.clone(), reg.clone());
-    let anchor = find_biome(&w.generator, Biome::Arctic).expect("cold planetary country");
+    let dir = tmp_dir("reconcile").join("world");
+    crate::world::create_world_fixture_atomic(
+        &dir,
+        42,
+        "survival",
+        8,
+        &crate::planet_atlas::CancellationToken::default(),
+        |_| {},
+    )
+    .unwrap();
+    let mut w = World::load_or_create(dir.clone(), reg.clone()).unwrap();
+    let anchor = crate::planet::Face::ALL
+        .into_iter()
+        .flat_map(|face| {
+            (128u16..crate::planet::FACE_BLOCKS)
+                .step_by(256)
+                .flat_map(move |u| {
+                    (128u16..crate::planet::FACE_BLOCKS)
+                        .step_by(256)
+                        .map(move |v| crate::planet::SurfacePos::new(face, u, v).unwrap())
+                })
+        })
+        .find(|&pos| {
+            let latitude = w.latitude_at_surface(pos);
+            let (summer_day, winter_day) = if latitude < 0.0 {
+                (3 * crate::world::SEASON_DAYS, crate::world::SEASON_DAYS)
+            } else {
+                (crate::world::SEASON_DAYS, 3 * crate::world::SEASON_DAYS)
+            };
+            w.temperature_at_surface_on_day(pos, f64::from(winter_day)) < -0.5
+                && w.temperature_at_surface_on_day(pos, f64::from(summer_day)) > 8.0
+                && w.soil_moisture_at_surface(pos) > 0.35
+                && w.generator.surface_estimate_at(pos) > SEA_LEVEL + 2
+        })
+        .expect("seasonally freezing agricultural country");
     ensure_surface_neighborhood(&mut w, anchor, 1);
     let b = |n: &str| reg.block_id(n).unwrap();
     let y = 200;
@@ -754,16 +834,25 @@ fn reconcile_catches_up_an_absent_chunk() {
     }
     save_world(&mut w);
 
-    // Reopen the world a year later, in deep winter.
+    // Reopen the world more than a year later, at the start of local winter.
     let mut w2 = World::load_or_create(dir, reg.clone()).unwrap();
-    w2.day = 3 * crate::world::SEASON_DAYS;
+    w2.day = local_season_day(&w2, anchor, 3) + crate::planet_atlas::YEAR_DAYS;
     w2.clock = w2.day as f64 * 600.0;
     ensure_surface_neighborhood(&mut w2, anchor, 1);
     let iced = pool
         .iter()
         .filter(|&&pos| w2.get_block_at(pos) == b("base:ice"))
         .count();
-    assert!(iced >= 6, "the pool froze while you were away ({iced}/8)");
+    let winter_weather = w2.weather_at_surface(anchor);
+    assert!(
+        iced >= 6,
+        "the pool froze while you were away ({iced}/8 at {:.2} C, season {}, t {:.3}, latitude {:.3}, day {})",
+        winter_weather.temperature_c,
+        w2.season_at_surface(anchor),
+        w2.generator.climate_at(anchor).t,
+        w2.latitude_at_surface(anchor),
+        w2.day
+    );
     let grown = crops
         .iter()
         .filter(|&&pos| w2.get_block_at(pos) != b("base:wheat_seeds"))
@@ -804,12 +893,80 @@ fn water_defers_at_the_worlds_edge() {
 }
 
 #[test]
+fn material_checkpoint_failure_cancels_voxel_placement() {
+    let reg = base_reg();
+    let dir = tmp_dir("material-checkpoint-cancel").join("world");
+    crate::world::create_world_fixture_atomic(
+        &dir,
+        42,
+        "survival",
+        8,
+        &crate::planet_atlas::CancellationToken::default(),
+        |_| {},
+    )
+    .unwrap();
+    let mut world = World::load_or_create(dir.clone(), reg.clone()).unwrap();
+    let chunk = tchunk(0, 0);
+    world.ensure_chunk(chunk);
+    let surface = crate::planet::SurfacePos::new(
+        chunk.face(),
+        chunk.u() * crate::chunk::CHUNK_X as u16 + crate::chunk::CHUNK_X as u16 / 2,
+        chunk.v() * crate::chunk::CHUNK_Z as u16 + crate::chunk::CHUNK_Z as u16 / 2,
+    )
+    .unwrap();
+    let target = block_pos(surface, world.surface_height_at(surface) + 1);
+    assert_eq!(world.get_block_at(target), AIR);
+    let break_target = target.offset(0, 1, 0).unwrap();
+    let copper = reg.block_id("base:copper_block").unwrap();
+    world.set_block_at(break_target, copper);
+
+    // An existing directory cannot be atomically replaced by a ledger file.
+    // This deterministically exercises the same failed-checkpoint path as a
+    // Windows sharing/access denial without depending on host permissions.
+    let blocked = dir.join("blocked-ledger-path");
+    std::fs::create_dir(&blocked).unwrap();
+    world
+        .material_ledger
+        .as_mut()
+        .unwrap()
+        .force_checkpoint_failure_at(blocked);
+    assert!(!world.place_block_at(target, copper));
+    assert_eq!(
+        world.get_block_at(target),
+        AIR,
+        "a failed material journal must leave the voxel untouched"
+    );
+    assert!(
+        world
+            .break_block_at(break_target, None, true, true)
+            .is_none()
+    );
+    assert_eq!(
+        world.get_block_at(break_target),
+        copper,
+        "a failed material journal must not remove the voxel"
+    );
+    assert!(
+        !world.player_touched.contains(&chunk),
+        "a cancelled action must not suppress safe retrogen"
+    );
+}
+
+#[test]
 fn world_listing_only_includes_compatible_planets() {
     // Regression: the title list only read the legacy `seed` file, so
     // world.toml worlds were invisible and their folder names got reused
     // by NEW WORLD — inheriting the old player.toml (inventory carryover).
     let root = tmp_dir("listworlds");
-    crate::world::write_world_meta(&root.join("world1"), 42, "survival", 0.0).unwrap();
+    crate::world::create_world_fixture_atomic(
+        &root.join("world1"),
+        42,
+        "survival",
+        4,
+        &crate::planet_atlas::CancellationToken::default(),
+        |_| {},
+    )
+    .unwrap();
     std::fs::create_dir_all(root.join("old")).unwrap();
     std::fs::write(root.join("old/seed"), "7").unwrap();
     std::fs::create_dir_all(root.join("junk")).unwrap();
@@ -820,6 +977,28 @@ fn world_listing_only_includes_compatible_planets() {
         vec![("world1".to_string(), 42)],
         "only validated planetary worlds are selectable"
     );
+    let inspected = crate::world::inspect_worlds(&root);
+    let ready = inspected
+        .iter()
+        .find(|entry| entry.name == "world1")
+        .unwrap();
+    assert!(ready.playable);
+    assert!(ready.status.contains(&format!(
+        "GENERATOR {}",
+        crate::world::WORLD_GENERATOR_VERSION
+    )));
+    assert!(ready.status.contains(&format!(
+        "ATLAS {}",
+        crate::planet_atlas::ATLAS_FORMAT_VERSION
+    )));
+    assert!(ready.status.contains("CONTENT"));
+    let old = inspected.iter().find(|entry| entry.name == "old").unwrap();
+    assert!(!old.playable);
+    assert!(old.status.contains("INCOMPATIBLE"));
+    assert!(old.status.contains("legacy flat"));
+    let junk = inspected.iter().find(|entry| entry.name == "junk").unwrap();
+    assert!(!junk.playable);
+    assert!(junk.status.contains("INCOMPLETE"));
 }
 
 #[test]
@@ -1164,47 +1343,8 @@ fn server_ticks_at_fixed_rate_and_runs_the_world() {
 }
 
 #[test]
-fn weather_machine_rolls_legal_fronts_and_storms_lean_on_ire() {
-    use crate::world::Weather;
+fn calendar_advances_and_persists_without_a_global_weather_state() {
     let reg = base_reg();
-    let count_storms = |ire: f32, name: &str| -> (u32, bool) {
-        let mut w = World::new(42, tmp_dir(name), reg.clone());
-        w.ire = ire;
-        let mut sim = crate::server::Server::new(w, 0.3, 5);
-        let mut storms = 0;
-        let mut legal = true;
-        let mut prev = sim.world.weather;
-        let mut events = Vec::new();
-        for _ in 0..40_000 {
-            sim.advance(1.0, &[], &mut events);
-            sim.world.ire = ire; // hold it steady against decay
-            for e in events.drain(..) {
-                if let crate::server::SimEvent::WeatherChanged(next) = e {
-                    assert_eq!(next, sim.world.weather, "event carries the new front");
-                    legal &= match prev {
-                        Weather::Clear => next == Weather::Overcast,
-                        Weather::Overcast => next != Weather::Overcast,
-                        Weather::Precip => next == Weather::Clear,
-                        Weather::Storm => next == Weather::Overcast,
-                    };
-                    if next == Weather::Storm {
-                        storms += 1;
-                    }
-                    prev = next;
-                }
-            }
-        }
-        (storms, legal)
-    };
-    let (calm_storms, calm_legal) = count_storms(0.0, "wx-calm");
-    let (wrath_storms, wrath_legal) = count_storms(100.0, "wx-wrath");
-    assert!(calm_legal && wrath_legal, "only legal transitions");
-    assert!(
-        wrath_storms > calm_storms,
-        "storms lean on ire: {wrath_storms} vs {calm_storms}"
-    );
-
-    // The day advances when the clock wraps, and when the camp sleeps.
     let w = World::new(42, tmp_dir("wx-day"), reg.clone());
     let mut sim = crate::server::Server::new(w, 0.999, 5);
     let mut ev = Vec::new();
@@ -1214,18 +1354,16 @@ fn weather_machine_rolls_legal_fronts_and_storms_lean_on_ire() {
     assert_eq!(sim.world.day, 1, "midnight rolls the calendar");
     sim.sleep_to_dawn();
     assert_eq!(sim.world.day, 2, "sleeping skips into tomorrow");
-    assert!(sim.world.weather_timer <= 0.0, "the front re-rolls at dawn");
 
-    // Calendar persistence rides world.toml.
+    // Only the calendar rides world.toml. Local weather persists in the
+    // dynamic atlas snapshot and has no world-wide enum to serialize.
     let dir = tmp_dir("wx-persist");
     let mut w = World::new(42, dir.clone(), reg.clone());
     let midsummer = crate::world::SEASON_DAYS + crate::world::SEASON_DAYS / 2;
     w.day = midsummer;
-    w.weather = Weather::Storm;
     save_world(&mut w);
     let w2 = World::load_or_create(dir, reg).unwrap();
     assert_eq!(w2.day, midsummer);
-    assert_eq!(w2.weather, Weather::Storm);
     assert_eq!(w2.season(), 1, "a day and a half of seasons in is summer");
 }
 
@@ -1235,13 +1373,15 @@ fn winter_gates_growth_and_freezes_exposed_water() {
 
     let reg = base_reg();
     let mut w = World::new(42, tmp_dir("wx-winter"), reg.clone());
-    w.day = 3 * crate::world::SEASON_DAYS; // deep winter
     let b = |n: &str| reg.block_id(n).unwrap();
-    let anchor = find_biome_where(&w.generator, Biome::Taiga, |pos| {
+    let anchor = find_biome_where(&w.generator, Biome::Plains, |pos| {
         let t = w.generator.climate_at(pos).t;
-        (-0.35..0.35).contains(&t) && w.generator.surface_estimate_at(pos) > SEA_LEVEL + 2
+        let latitude = w.latitude_at_surface(pos);
+        let winter_temperature = t * 22.0 + 8.0 - latitude.sin().abs() as f32 * 14.0;
+        winter_temperature < -0.5 && w.generator.surface_estimate_at(pos) > SEA_LEVEL + 2
     })
     .expect("seasonally freezing planetary country");
+    w.day = local_season_day(&w, anchor, 3);
     ensure_surface_neighborhood(&mut w, anchor, 1);
     let y = 200;
 
@@ -1306,10 +1446,16 @@ fn winter_gates_growth_and_freezes_exposed_water() {
         .iter()
         .filter(|&&pos| w.get_block_at(pos) == b("base:ice"))
         .count();
-    assert!(iced > 0, "winter freezes exposed pools, froze {iced}");
+    let winter_weather = w.weather_at_surface(anchor);
+    assert!(
+        iced > 0,
+        "winter freezes exposed pools, froze {iced} at {:.2} C and latitude {:.1} degrees",
+        winter_weather.temperature_c,
+        w.latitude_at_surface(anchor).to_degrees()
+    );
 
     // ...and spring gives them back.
-    w.day = 0;
+    w.day = local_season_day(&w, anchor, 0);
     for _ in 0..1_000 {
         w.clock += 100.0;
         w.random_tick(&mut rng);
@@ -1337,13 +1483,14 @@ fn snow_settles_melts_and_snowballs_fly() {
     );
 
     // Snowfall settles one layer on a cold, sky-open column - once.
-    w.day = 3 * crate::world::SEASON_DAYS; // winter relaxes the snow line
     let cold = find_biome(&w.generator, Biome::Arctic).expect("cold land on the planet");
     let temperate = find_biome_where(&w.generator, Biome::Plains, |pos| {
         let t = w.generator.climate_at(pos).t;
-        (0.0..=0.5).contains(&t) && w.generator.surface_estimate_at(pos) > SEA_LEVEL + 2
+        (0.32..=0.5).contains(&t) && w.generator.surface_estimate_at(pos) > SEA_LEVEL + 2
     })
     .expect("temperate land on the planet");
+    w.day = local_season_day(&w, cold, 3);
+    w.force_local_weather("precip");
     ensure_surface_neighborhood(&mut w, cold, 1);
     ensure_surface_neighborhood(&mut w, temperate, 1);
     let cy = w.surface_height_at(cold);
@@ -1371,11 +1518,15 @@ fn snow_settles_melts_and_snowballs_fly() {
     let mut rng = 9u32;
     for _ in 0..30_000 {
         w.random_tick(&mut rng);
-        if w.get_block_at(snow) == AIR {
+        if w.get_block_at(snow) != layer {
             break;
         }
     }
-    assert_eq!(w.get_block_at(snow), AIR, "bright light clears snow");
+    assert_eq!(
+        reg.water_volume(w.get_block_at(snow)),
+        Some(1),
+        "bright light turns snow into its exact meltwater"
+    );
 
     // Breaking a snow block yields snowballs; the crafting loop closes.
     assert_eq!(
@@ -1438,23 +1589,9 @@ fn snow_settles_melts_and_snowballs_fly() {
 
 #[test]
 fn weather_and_season_touch_the_sim() {
-    use crate::world::Weather;
     let reg = base_reg();
-    // Rain speeds ire decay.
-    let mut w = World::new(42, tmp_dir("wx-ire"), reg.clone());
-    w.ire = 50.0;
-    w.weather = Weather::Clear;
-    w.tick_ire(0.5);
-    let dry = w.ire;
-    let mut w2 = World::new(42, tmp_dir("wx-ire2"), reg.clone());
-    w2.ire = 50.0;
-    w2.weather = Weather::Precip;
-    w2.tick_ire(0.5);
-    assert!(w2.ire < dry, "the land drinks: {} < {dry}", w2.ire);
-
     // Winter pauses breeding even for fed adults side by side.
     let mut w = test_world_with("wx-breed", reg.clone());
-    w.day = 3 * crate::world::SEASON_DAYS;
     let wild = reg
         .animals
         .iter()
@@ -1467,6 +1604,9 @@ fn weather_and_season_touch_the_sim() {
         }
     }
     let y = 140.05f32;
+    let breeding_surface = ep(glam::Vec3::new(4.5, y, 4.5)).surface();
+    w.day = local_season_day(&w, breeding_surface, 3);
+    assert_eq!(w.season_at_surface(breeding_surface), 3);
     let before = w.mob_count();
     for dx in 0..2 {
         let mut m = crate::mobs::Mob::new(wild, glam::Vec3::new(4.5 + dx as f32, y, 4.5), 0.0);
@@ -1485,17 +1625,13 @@ fn weather_and_season_touch_the_sim() {
     assert!(w.mob_count() <= before + 2, "no winter births");
     // Summer: the same pair bears young. Winter wander drifts them
     // apart, so stand them back side by side first.
-    w.day = crate::world::SEASON_DAYS;
+    w.day = local_season_day(&w, breeding_surface, 1);
+    assert_eq!(w.season_at_surface(breeding_surface), 1);
     for m in w.mobs_mut() {
         m.fed = true;
         m.breed_cd = 0.0;
     }
-    for (moved, m) in w
-        .mobs_mut()
-        .iter_mut()
-        .filter(|m| m.pos.y > 139.0)
-        .enumerate()
-    {
+    for (moved, m) in w.mobs_mut().iter_mut().enumerate() {
         m.pos = ep(glam::Vec3::new(4.5 + moved as f32, 140.05, 4.5));
         m.vel = glam::Vec3::ZERO;
     }
@@ -1576,12 +1712,23 @@ fn bedrock_floor_is_unbreakable_and_reseals_on_load() {
 #[test]
 fn snow_trod_swaps_persists_melts_and_drops() {
     let reg = base_reg();
-    let mut w = test_world_with("snow-trod", reg.clone());
+    let root = tmp_dir("snow-trod").join("world");
+    crate::world::create_world_fixture_atomic(
+        &root,
+        42,
+        "survival",
+        8,
+        &crate::planet_atlas::CancellationToken::default(),
+        |_| {},
+    )
+    .unwrap();
+    let mut w = World::load_or_create(root, reg.clone()).unwrap();
     let layer = b(&reg, "base:snow_layer");
     let trod = b(&reg, "base:snow_layer_trod");
     let dirt = b(&reg, "base:dirt");
     let surface =
         crate::planet::SurfacePos::from_centered(crate::planet::Face::PosZ, 3, 3).unwrap();
+    w.ensure_chunk(crate::planet::ChunkPos::from_surface(surface));
     let y = 200;
     let ground = block_pos(surface, y);
     let print = block_pos(surface, y + 1);
@@ -1619,11 +1766,15 @@ fn snow_trod_swaps_persists_melts_and_drops() {
     let mut rng = 5u32;
     for _ in 0..30_000 {
         w2.random_tick(&mut rng);
-        if w2.get_block_at(print) == AIR {
+        if w2.get_block_at(print) != trod {
             break;
         }
     }
-    assert_eq!(w2.get_block_at(print), AIR, "prints melt like snow");
+    assert_eq!(
+        reg.water_volume(w2.get_block_at(print)),
+        Some(1),
+        "prints thaw into the same exact meltwater as fresh snow"
+    );
 
     // Guests never tread locally; the host stamps prints for them.
     let mut wr = test_world_with("snow-trod-remote", reg.clone());
@@ -1957,7 +2108,7 @@ fn breached_pool_pours_over_the_edge() {
 }
 
 #[test]
-fn glaze_dries_while_marsh_pockets_keep_their_film() {
+fn exposed_glaze_and_marsh_films_both_evaporate() {
     let reg = base_reg();
     let mut w = test_world_with("glaze", reg.clone());
     w.day = 2 * crate::world::SEASON_DAYS; // autumn: not summer, not winter
@@ -1993,12 +2144,13 @@ fn glaze_dries_while_marsh_pockets_keep_their_film() {
     assert_eq!(sheet, 0, "the open glaze dries away");
     assert_eq!(
         reg.water_volume(w.get_block(11, y + 1, 1)),
-        Some(1),
-        "the walled marsh keeps its film for the rain"
+        None,
+        "walls do not grant a magical exemption from evaporation"
     );
     // And rain can start a pond from nothing in a walled pocket: dry
     // the pocket by hand, then let a shower find it.
     w.set_block(11, y + 1, 1, AIR);
+    w.force_local_weather("rain");
     w.rain_fill(11, 1);
     assert_eq!(
         reg.water_volume(w.get_block(11, y + 1, 1)),

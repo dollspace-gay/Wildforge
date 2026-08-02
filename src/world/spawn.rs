@@ -1,0 +1,1169 @@
+//! Shared planetary spawn selection.
+//!
+//! The selector is deliberately renderer- and transport-independent: solo,
+//! windowed hosts, and dedicated hosts must all begin at the same doorstep.
+
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::mpsc::channel;
+use std::sync::{Arc, Mutex};
+
+use super::*;
+use crate::planet::{FACE_BLOCKS, Face, SurfacePos};
+use crate::planet_atlas::{
+    BIOME_FOREST, BIOME_JUNGLE, BIOME_TAIGA, EDAPHIC_SHALLOW_ROCK, MineralKind, PlanetAtlas,
+    WaterBodyKind,
+};
+use serde::{Deserialize, Serialize};
+
+const FRESH_WATER_ATLAS_STEPS: u16 = 3;
+const MIN_VEGETATION: u8 = 72;
+const MIN_FERTILITY: u8 = 48;
+// A regional founding hinterland, roughly ten minutes of unimpeded walking.
+// Deposits stay meaningfully distant; this only guarantees that one viable
+// homeland shares a broad travel region with the two bootstrap metals. Seed 0
+// proved that the old 2,100-block tin cutoff could reject an otherwise healthy
+// planet whose nearest qualifying forest was 2,826 blocks away.
+const PREFERRED_COPPER_ACCESS_BLOCKS: f64 = 3_000.0;
+const PREFERRED_TIN_ACCESS_BLOCKS: f64 = 3_000.0;
+const CLOSE_COPPER_ACCESS_BLOCKS: u32 = 2_600;
+const CLOSE_TIN_ACCESS_BLOCKS: u32 = 2_100;
+const HEART_PROTECTION_BLOCKS: f64 = 64.0;
+const LOCAL_RESOURCE_REACH_BLOCKS: f64 = 48.0;
+const FRESH_WATER_REACH_BLOCKS: f64 = 96.0;
+pub const ENTRY_RADIUS_CHUNKS: i32 = 2;
+const SPAWN_MANIFEST_VERSION: u32 = 1;
+const MAX_SPAWN_MANIFEST_BYTES: u64 = 1024 * 1024;
+// Atlas cells are 32-block summaries. A forest cell can still land its exact
+// 80x80 trial region on a rocky shoulder with no reachable trunk, and nearby
+// fresh water can fall just outside the walkable voxel component. Eight
+// trials made otherwise valid seeds fail creation (seed 42 is the regression
+// case). Keep the expensive search bounded, but wide enough to cross a local
+// run of unlucky fine-detail samples.
+const MAX_VOXEL_CANDIDATES: usize = 96;
+const SPAWN_VERIFICATION_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct SpawnVerification {
+    contract_version: u32,
+    walkable_cells: usize,
+    safe_standing: bool,
+    reachable_wood: bool,
+    reachable_fresh_water: bool,
+    reachable_soil: bool,
+    reachable_stone: bool,
+    reachable_plants: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct SpawnManifest {
+    version: u32,
+    topology: String,
+    face_blocks: u16,
+    world_height: u16,
+    seed: u32,
+    generator_version: u32,
+    atlas_format_version: u32,
+    atlas_algorithm_version: u32,
+    atlas_checksum: u64,
+    content_hash: u64,
+    spawn_surface: SurfacePos,
+    spawn: crate::planet::EntityPos,
+    prepared_radius_chunks: i32,
+    chunks: Vec<ChunkPos>,
+    prepared_digest: u64,
+    verification: SpawnVerification,
+    completed_unix_seconds: u64,
+}
+
+#[derive(Clone, Copy)]
+struct SpawnCandidate {
+    surface: SurfacePos,
+    score: i64,
+    fresh_water_steps: u16,
+    copper_distance_blocks: u32,
+    tin_distance_blocks: u32,
+}
+
+impl SpawnCandidate {
+    fn preferred_resource_hinterland(self) -> bool {
+        f64::from(self.copper_distance_blocks) <= PREFERRED_COPPER_ACCESS_BLOCKS
+            && f64::from(self.tin_distance_blocks) <= PREFERRED_TIN_ACCESS_BLOCKS
+    }
+
+    fn farthest_bootstrap_resource(self) -> u32 {
+        self.copper_distance_blocks.max(self.tin_distance_blocks)
+    }
+
+    fn close_bootstrap_hinterland(self) -> bool {
+        self.copper_distance_blocks <= CLOSE_COPPER_ACCESS_BLOCKS
+            && self.tin_distance_blocks <= CLOSE_TIN_ACCESS_BLOCKS
+    }
+}
+
+#[derive(Default)]
+struct SpawnSelectionDiagnostics {
+    atlas_cells: usize,
+    viable_habitat: usize,
+    connected_land: usize,
+    manageable_relief: usize,
+    outside_protected_sites: usize,
+    resources_before_protection: usize,
+    resources_after_protection: usize,
+    best_resource_pair_blocks: Option<(u32, u32)>,
+    best_unprotected_resource_pair_blocks: Option<(u32, u32)>,
+    resource_site: Option<(Face, u16, u16)>,
+    resource_sites_near_heart: usize,
+    resource_sites_near_volcano: usize,
+}
+
+impl std::fmt::Display for SpawnSelectionDiagnostics {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} atlas cells, {} viable habitat, {} connected land, {} manageable relief, {} outside protected sites, {} resource-qualified before protection, {} after, best copper/tin distances {:?} blocks ({:?} outside protection), resource site {:?}, rejected near heart/volcano {}/{}",
+            self.atlas_cells,
+            self.viable_habitat,
+            self.connected_land,
+            self.manageable_relief,
+            self.outside_protected_sites,
+            self.resources_before_protection,
+            self.resources_after_protection,
+            self.best_resource_pair_blocks,
+            self.best_unprotected_resource_pair_blocks,
+            self.resource_site,
+            self.resource_sites_near_heart,
+            self.resource_sites_near_volcano,
+        )
+    }
+}
+
+fn fresh_water_distances(atlas: &PlanetAtlas) -> Vec<u16> {
+    let side = atlas.side();
+    let mut distance = vec![u16::MAX; atlas.genesis.hydrology.len()];
+    let mut queue = VecDeque::new();
+    for (pos, water) in atlas.genesis.hydrology.iter() {
+        let drinkable = water.salinity < 48
+            && water.baseline_water_units > 0
+            && matches!(
+                water.water_body,
+                WaterBodyKind::River
+                    | WaterBodyKind::Lake
+                    | WaterBodyKind::Delta
+                    | WaterBodyKind::Wetland
+            );
+        if drinkable {
+            distance[pos.index(side)] = 0;
+            queue.push_back(pos);
+        }
+    }
+    while let Some(pos) = queue.pop_front() {
+        let next_distance = distance[pos.index(side)].saturating_add(1);
+        if next_distance > FRESH_WATER_ATLAS_STEPS {
+            continue;
+        }
+        for neighbor in pos.neighbors4(side) {
+            let index = neighbor.index(side);
+            if next_distance < distance[index] {
+                distance[index] = next_distance;
+                queue.push_back(neighbor);
+            }
+        }
+    }
+    distance
+}
+
+fn traversable_component_sizes(atlas: &PlanetAtlas) -> Vec<usize> {
+    let side = atlas.side();
+    let count = atlas.genesis.terrain.len();
+    let passable = (0..count)
+        .map(|index| {
+            let terrain = atlas.genesis.terrain.values()[index];
+            let water = atlas.genesis.hydrology.values()[index];
+            terrain.landmass_id != 0
+                && terrain.eroded_elevation > (SEA_LEVEL + 2) as f32
+                && water.water_body == WaterBodyKind::Land
+        })
+        .collect::<Vec<_>>();
+    let mut component = vec![usize::MAX; count];
+    let mut sizes = Vec::new();
+    for start in 0..count {
+        if !passable[start] || component[start] != usize::MAX {
+            continue;
+        }
+        let id = sizes.len();
+        component[start] = id;
+        let mut queue =
+            VecDeque::from([crate::planet_atlas::AtlasPos::from_index(start, side)
+                .expect("atlas component index")]);
+        let mut size = 0usize;
+        while let Some(pos) = queue.pop_front() {
+            size += 1;
+            let elevation = atlas
+                .genesis
+                .terrain
+                .get(pos)
+                .expect("atlas component terrain")
+                .eroded_elevation;
+            for neighbor in pos.neighbors4(side) {
+                let index = neighbor.index(side);
+                if !passable[index] || component[index] != usize::MAX {
+                    continue;
+                }
+                let next_elevation = atlas
+                    .genesis
+                    .terrain
+                    .get(neighbor)
+                    .expect("atlas neighbor terrain")
+                    .eroded_elevation;
+                if (elevation - next_elevation).abs() > 28.0 {
+                    continue;
+                }
+                component[index] = id;
+                queue.push_back(neighbor);
+            }
+        }
+        sizes.push(size);
+    }
+    component
+        .into_iter()
+        .map(|id| sizes.get(id).copied().unwrap_or_default())
+        .collect()
+}
+
+fn qualified_atlas_candidates(
+    atlas: &PlanetAtlas,
+) -> (Vec<SpawnCandidate>, SpawnSelectionDiagnostics) {
+    let side = atlas.side();
+    let fresh_water = fresh_water_distances(atlas);
+    let traversable = traversable_component_sizes(atlas);
+    let mut landmass_cells = HashMap::<u16, usize>::new();
+    for terrain in atlas.genesis.terrain.values() {
+        if terrain.landmass_id != 0 {
+            *landmass_cells.entry(terrain.landmass_id).or_default() += 1;
+        }
+    }
+    let minimum_landmass_cells = usize::from((side / 2).clamp(2, 16));
+    let minimum_traversable_cells = usize::from((side / 2).clamp(8, 64));
+    let mut candidates = Vec::new();
+    let mut diagnostics = SpawnSelectionDiagnostics::default();
+    for (pos, terrain) in atlas.genesis.terrain.iter() {
+        diagnostics.atlas_cells += 1;
+        let index = pos.index(side);
+        let water = &atlas.genesis.hydrology.values()[index];
+        let biome = &atlas.genesis.biomes.values()[index];
+        let ground = &atlas.genesis.ground.values()[index];
+        if terrain.landmass_id == 0
+            || landmass_cells
+                .get(&terrain.landmass_id)
+                .copied()
+                .unwrap_or_default()
+                < minimum_landmass_cells
+            || terrain.eroded_elevation <= (SEA_LEVEL + 2) as f32
+            || water.water_body != WaterBodyKind::Land
+            || fresh_water[index] > FRESH_WATER_ATLAS_STEPS
+            || biome.vegetation_potential < MIN_VEGETATION
+            || ground.baseline_fertility < MIN_FERTILITY
+            || !matches!(
+                biome.baseline_biome,
+                BIOME_FOREST | BIOME_JUNGLE | BIOME_TAIGA
+            )
+            || biome.edaphic_flags & EDAPHIC_SHALLOW_ROCK != 0
+            || f32::from(biome.tree_line_y) <= terrain.eroded_elevation + 8.0
+        {
+            continue;
+        }
+        diagnostics.viable_habitat += 1;
+        if traversable[index] < minimum_traversable_cells {
+            continue;
+        }
+        diagnostics.connected_land += 1;
+        let maximum_relief = pos
+            .neighbors8(side)
+            .into_iter()
+            .map(|neighbor| {
+                (terrain.eroded_elevation
+                    - atlas
+                        .genesis
+                        .terrain
+                        .get(neighbor)
+                        .expect("atlas neighbor")
+                        .eroded_elevation)
+                    .abs()
+            })
+            .fold(0.0f32, f32::max);
+        if maximum_relief > 28.0 {
+            continue;
+        }
+        diagnostics.manageable_relief += 1;
+        let point = pos.center(side);
+        let deposit_distance = |kind| {
+            atlas
+                .geology
+                .deposits
+                .iter()
+                .filter(|deposit| deposit.mineral == kind)
+                .map(|deposit| crate::planet::geodesic_distance(point, deposit.pos.center(side)))
+                .fold(f64::INFINITY, f64::min)
+        };
+        let copper_distance = deposit_distance(MineralKind::Copper);
+        let tin_distance = deposit_distance(MineralKind::Tin);
+        let pair = (copper_distance.round() as u32, tin_distance.round() as u32);
+        if diagnostics.best_resource_pair_blocks.is_none_or(|current| {
+            pair.0.max(pair.1) < current.0.max(current.1)
+                || (pair.0.max(pair.1) == current.0.max(current.1) && pair < current)
+        }) {
+            diagnostics.best_resource_pair_blocks = Some(pair);
+        }
+        let has_resources = atlas
+            .nearest_deposit(point, MineralKind::Copper, PREFERRED_COPPER_ACCESS_BLOCKS)
+            .is_some()
+            && atlas
+                .nearest_deposit(point, MineralKind::Tin, PREFERRED_TIN_ACCESS_BLOCKS)
+                .is_some();
+        diagnostics.resources_before_protection += usize::from(has_resources);
+        if has_resources {
+            diagnostics.resource_site = Some((point.face, point.u as u16, point.v as u16));
+        }
+        let near_heart = atlas.country(biome.country_id).is_some_and(|country| {
+            crate::planet::geodesic_distance(point, country.heart_site.center(side))
+                < HEART_PROTECTION_BLOCKS
+        });
+        let near_volcano = atlas.geology.volcanoes.iter().any(|volcano| {
+            crate::planet::geodesic_distance(point, volcano.pos.center(side))
+                <= f64::from(volcano.edifice_radius_blocks) + 48.0
+        });
+        diagnostics.resource_sites_near_heart += usize::from(has_resources && near_heart);
+        diagnostics.resource_sites_near_volcano += usize::from(has_resources && near_volcano);
+        if near_heart || near_volcano {
+            continue;
+        }
+        diagnostics.outside_protected_sites += 1;
+        if diagnostics
+            .best_unprotected_resource_pair_blocks
+            .is_none_or(|current| {
+                pair.0.max(pair.1) < current.0.max(current.1)
+                    || (pair.0.max(pair.1) == current.0.max(current.1) && pair < current)
+            })
+        {
+            diagnostics.best_unprotected_resource_pair_blocks = Some(pair);
+        }
+        diagnostics.resources_after_protection += usize::from(has_resources);
+        let surface = SurfacePos::new(
+            point.face,
+            point.u.floor().clamp(0.0, f64::from(FACE_BLOCKS - 1)) as u16,
+            point.v.floor().clamp(0.0, f64::from(FACE_BLOCKS - 1)) as u16,
+        )
+        .expect("atlas cell center is a canonical surface position");
+        let score = i64::from(biome.vegetation_potential) * 8
+            + i64::from(ground.baseline_fertility) * 6
+            + i64::from(ground.organic) * 2
+            + i64::from(ground.soil_depth_decimeters) * 4
+            + i64::from(FRESH_WATER_ATLAS_STEPS - fresh_water[index]) * 80
+            - (maximum_relief * 12.0).round() as i64
+            - (terrain.eroded_elevation - 82.0).abs().round() as i64;
+        candidates.push(SpawnCandidate {
+            surface,
+            score,
+            fresh_water_steps: fresh_water[index],
+            copper_distance_blocks: pair.0,
+            tin_distance_blocks: pair.1,
+        });
+    }
+    (candidates, diagnostics)
+}
+
+/// Atlas summaries cannot prove that fine voxels put a trunk and water on the
+/// same walkable component. Interleave independent notions of a good homeland
+/// instead of spending the whole bounded search on one geographic cluster.
+fn spawn_candidate_portfolio(candidates: &[SpawnCandidate]) -> Vec<SpawnCandidate> {
+    let habitat_order = |left: &SpawnCandidate, right: &SpawnCandidate| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.fresh_water_steps.cmp(&right.fresh_water_steps))
+            .then_with(|| {
+                right
+                    .preferred_resource_hinterland()
+                    .cmp(&left.preferred_resource_hinterland())
+            })
+            .then_with(|| {
+                left.farthest_bootstrap_resource()
+                    .cmp(&right.farthest_bootstrap_resource())
+            })
+            .then_with(|| left.surface.cmp(&right.surface))
+    };
+    let mut water = candidates.to_vec();
+    water.sort_by(|left, right| {
+        left.fresh_water_steps
+            .cmp(&right.fresh_water_steps)
+            .then_with(|| habitat_order(left, right))
+    });
+    let mut habitat = candidates.to_vec();
+    habitat.sort_by(habitat_order);
+    let mut bootstrap = candidates
+        .iter()
+        .copied()
+        .filter(|candidate| candidate.close_bootstrap_hinterland())
+        .collect::<Vec<_>>();
+    bootstrap.sort_by(habitat_order);
+
+    let orders = [&water, &habitat, &bootstrap];
+    let mut selected = Vec::new();
+    let mut surfaces = HashSet::new();
+    for rank in 0..orders.iter().map(|order| order.len()).max().unwrap_or(0) {
+        for order in orders {
+            let Some(candidate) = order.get(rank).copied() else {
+                continue;
+            };
+            if surfaces.insert(candidate.surface) {
+                selected.push(candidate);
+                if selected.len() == MAX_VOXEL_CANDIDATES {
+                    return selected;
+                }
+            }
+        }
+    }
+    selected
+}
+
+fn chunks_around(surface: SurfacePos, radius: i32) -> Vec<ChunkPos> {
+    let center = ChunkPos::from_surface(surface);
+    let mut chunks = Vec::new();
+    for du in -radius..=radius {
+        for dv in -radius..=radius {
+            chunks.push(center.offset(du, dv));
+        }
+    }
+    chunks.sort_unstable();
+    chunks.dedup();
+    chunks
+}
+
+fn entry_chunks(surface: SurfacePos) -> Vec<ChunkPos> {
+    chunks_around(surface, ENTRY_RADIUS_CHUNKS)
+}
+
+pub(crate) fn player_entry_chunks(surface: SurfacePos) -> Vec<ChunkPos> {
+    chunks_around(surface, 1)
+}
+
+fn generate_trial_region(
+    seed: u32,
+    reg: Arc<Registry>,
+    atlas: Arc<PlanetAtlas>,
+    positions: &[ChunkPos],
+    mut progress: impl FnMut(usize, usize),
+) -> std::io::Result<Vec<(ChunkPos, Chunk)>> {
+    let (request, request_rx) = channel::<ChunkPos>();
+    let (ready_tx, ready) = channel::<(ChunkPos, Chunk)>();
+    let request_rx = Arc::new(Mutex::new(request_rx));
+    let worker_count = std::thread::available_parallelism()
+        .map(|count| count.get().saturating_sub(2).clamp(2, 4))
+        .unwrap_or(2)
+        .min(positions.len().max(1));
+    let mut workers = Vec::new();
+    for _ in 0..worker_count {
+        let request_rx = Arc::clone(&request_rx);
+        let ready_tx = ready_tx.clone();
+        let reg = Arc::clone(&reg);
+        let atlas = Arc::clone(&atlas);
+        workers.push(std::thread::spawn(move || {
+            let generator = crate::worldgen::Generator::with_atlas(seed, &reg, atlas);
+            loop {
+                let position = {
+                    let Ok(receiver) = request_rx.lock() else {
+                        return;
+                    };
+                    let Ok(position) = receiver.recv() else {
+                        return;
+                    };
+                    position
+                };
+                if ready_tx
+                    .send((position, generator.generate(position, &reg)))
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        }));
+    }
+    drop(ready_tx);
+    for position in positions {
+        request
+            .send(*position)
+            .map_err(|_| std::io::Error::other("spawn generation workers stopped"))?;
+    }
+    drop(request);
+    let mut generated = Vec::with_capacity(positions.len());
+    for completed in 1..=positions.len() {
+        generated.push(
+            ready
+                .recv()
+                .map_err(|_| std::io::Error::other("spawn generation worker failed"))?,
+        );
+        progress(completed, positions.len());
+    }
+    for worker in workers {
+        if worker.join().is_err() {
+            return Err(std::io::Error::other("spawn generation worker panicked"));
+        }
+    }
+    generated.sort_by_key(|(position, _)| *position);
+    Ok(generated)
+}
+
+#[derive(Clone, Copy)]
+struct TrialColumn {
+    height: i32,
+    safe: bool,
+    wood: bool,
+    drinkable_water: bool,
+    soil: bool,
+    stone: bool,
+    plant: bool,
+}
+
+struct TrialQualification {
+    spawn: SurfacePos,
+    verification: SpawnVerification,
+}
+
+fn qualify_trial_region(
+    reg: &Registry,
+    atlas: &PlanetAtlas,
+    center: SurfacePos,
+    chunks: &[(ChunkPos, Chunk)],
+) -> Result<TrialQualification, String> {
+    if chunks.len() != entry_chunks(center).len()
+        || chunks
+            .iter()
+            .map(|(position, _)| *position)
+            .collect::<Vec<_>>()
+            != entry_chunks(center)
+    {
+        return Err("trial chunk set does not match the required entry region".into());
+    }
+    let log_items = reg.tags.get("base:logs");
+    let log_blocks = reg
+        .blocks
+        .iter()
+        .enumerate()
+        .filter_map(|(index, block)| {
+            let item = reg.item_id(&block.name)?;
+            log_items
+                .is_some_and(|logs| logs.contains(&item))
+                .then_some(crate::registry::BlockId(index as u16))
+        })
+        .collect::<HashSet<_>>();
+    let is_soil = |name: &str| {
+        matches!(
+            name,
+            "base:grass" | "base:dirt" | "base:mud" | "base:sand" | "base:clay"
+        )
+    };
+    let is_stone = |name: &str| {
+        matches!(
+            name,
+            "base:stone"
+                | "base:gravel"
+                | "base:sandstone"
+                | "base:limestone"
+                | "base:shale"
+                | "base:granite"
+                | "base:marble"
+                | "base:slate"
+                | "base:quartzite"
+                | "base:basalt"
+        )
+    };
+    let mut columns = HashMap::<SurfacePos, TrialColumn>::new();
+    for (position, chunk) in chunks {
+        let origin = position.block_origin();
+        for x in 0..CHUNK_X {
+            for z in 0..CHUNK_Z {
+                let surface =
+                    SurfacePos::new(origin.face(), origin.u() + x as u16, origin.v() + z as u16)
+                        .expect("chunk-local surface is canonical");
+                let height = (0..CHUNK_Y)
+                    .rev()
+                    .find(|&y| reg.is_solid(chunk.get(x, y, z)))
+                    .unwrap_or(0) as i32;
+                let feet = (height + 1).clamp(0, CHUNK_Y as i32 - 1) as usize;
+                let head = (height + 2).clamp(0, CHUNK_Y as i32 - 1) as usize;
+                let clear = |block| !reg.is_solid(block) && !reg.is_fluid(block);
+                let mut column = TrialColumn {
+                    height,
+                    safe: height > SEA_LEVEL + 1
+                        && height + 2 < CHUNK_Y as i32
+                        && reg.is_solid(chunk.get(x, height as usize, z))
+                        && clear(chunk.get(x, feet, z))
+                        && clear(chunk.get(x, head, z)),
+                    wood: false,
+                    drinkable_water: false,
+                    soil: false,
+                    stone: false,
+                    plant: false,
+                };
+                let drinkable = atlas.hydrology_sample(surface.center()).salinity < 48;
+                for y in 1..CHUNK_Y {
+                    let block = chunk.get(x, y, z);
+                    let definition = reg.block(block);
+                    column.wood |= log_blocks.contains(&block);
+                    column.drinkable_water |= drinkable && reg.water_volume(block).is_some();
+                    column.soil |= is_soil(&definition.name);
+                    column.stone |= is_stone(&definition.name);
+                    column.plant |= (definition.cross && definition.burns > 0)
+                        || definition.name.ends_with("_leaves")
+                        || definition.name == "base:leaves";
+                    if reg.is_lava(block) && (y as i32 - height).abs() <= 3 {
+                        column.safe = false;
+                    }
+                }
+                columns.insert(surface, column);
+            }
+        }
+    }
+
+    // A safe doorstep must be in the trial's center chunk. This keeps the
+    // exact 5x5 prepared set centered on the final spawn even when the atlas
+    // candidate itself lies on a chunk boundary.
+    let center_chunk = ChunkPos::from_surface(center);
+    let mut spawn = None;
+    let mut spawn_score = f64::INFINITY;
+    for x in 0..CHUNK_X {
+        for z in 0..CHUNK_Z {
+            let origin = center_chunk.block_origin();
+            let surface =
+                SurfacePos::new(origin.face(), origin.u() + x as u16, origin.v() + z as u16)
+                    .expect("center chunk surface is canonical");
+            let Some(column) = columns.get(&surface).copied() else {
+                continue;
+            };
+            if !column.safe {
+                continue;
+            }
+            let maximum_step = crate::planet::neighbors4(surface)
+                .into_iter()
+                .filter_map(|neighbor| columns.get(&neighbor))
+                .map(|neighbor| (column.height - neighbor.height).abs())
+                .max()
+                .unwrap_or(i32::MAX);
+            if maximum_step > 2 {
+                continue;
+            }
+            let score = f64::from(maximum_step) * 100.0
+                + crate::planet::geodesic_distance(center.center(), surface.center());
+            if score < spawn_score {
+                spawn_score = score;
+                spawn = Some(surface);
+            }
+        }
+    }
+    let Some(spawn) = spawn else {
+        return Err("no dry two-block-high standing cell in the center chunk".into());
+    };
+
+    let mut queue = VecDeque::from([spawn]);
+    let mut visited = HashSet::from([spawn]);
+    let mut wood = false;
+    let mut water = false;
+    let mut soil = false;
+    let mut stone = false;
+    let mut plant = false;
+    let mut walkable_cells = 0;
+    while let Some(surface) = queue.pop_front() {
+        let column = columns[&surface];
+        let distance = crate::planet::geodesic_distance(spawn.center(), surface.center());
+        if distance <= LOCAL_RESOURCE_REACH_BLOCKS {
+            walkable_cells += 1;
+        }
+        let nearby = std::iter::once(surface).chain(crate::planet::neighbors4(surface));
+        for candidate in nearby {
+            if let Some(signal) = columns.get(&candidate) {
+                if distance <= LOCAL_RESOURCE_REACH_BLOCKS {
+                    wood |= signal.wood;
+                    soil |= signal.soil;
+                    stone |= signal.stone;
+                    plant |= signal.plant;
+                }
+                if distance <= FRESH_WATER_REACH_BLOCKS {
+                    water |= signal.drinkable_water;
+                }
+            }
+        }
+        for neighbor in crate::planet::neighbors4(surface) {
+            let Some(next) = columns.get(&neighbor) else {
+                continue;
+            };
+            if !next.safe
+                || (column.height - next.height).abs() > 1
+                || crate::planet::geodesic_distance(spawn.center(), neighbor.center())
+                    > FRESH_WATER_REACH_BLOCKS
+                || !visited.insert(neighbor)
+            {
+                continue;
+            }
+            queue.push_back(neighbor);
+        }
+    }
+    let verification = SpawnVerification {
+        contract_version: SPAWN_VERIFICATION_VERSION,
+        walkable_cells,
+        safe_standing: true,
+        reachable_wood: wood,
+        reachable_fresh_water: water,
+        reachable_soil: soil,
+        reachable_stone: stone,
+        reachable_plants: plant,
+    };
+    if verification.walkable_cells >= 32
+        && verification.reachable_wood
+        && verification.reachable_fresh_water
+        && verification.reachable_soil
+        && verification.reachable_stone
+        && verification.reachable_plants
+    {
+        Ok(TrialQualification {
+            spawn,
+            verification,
+        })
+    } else {
+        Err(format!(
+            "walkable={} wood={} fresh_water={} soil={} stone={} plants={}",
+            verification.walkable_cells,
+            verification.reachable_wood,
+            verification.reachable_fresh_water,
+            verification.reachable_soil,
+            verification.reachable_stone,
+            verification.reachable_plants,
+        ))
+    }
+}
+
+fn prepared_chunk_digest(save_dir: &std::path::Path, chunks: &[ChunkPos]) -> std::io::Result<u64> {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for position in chunks {
+        for byte in [position.face() as u8]
+            .into_iter()
+            .chain(position.u().to_le_bytes())
+            .chain(position.v().to_le_bytes())
+        {
+            hash = (hash ^ u64::from(byte)).wrapping_mul(0x1000_0000_01b3);
+        }
+        let payload = region::read_chunk(save_dir, *position).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("prepared spawn chunk {position:?} is missing"),
+            )
+        })?;
+        for byte in payload {
+            hash = (hash ^ u64::from(byte)).wrapping_mul(0x1000_0000_01b3);
+        }
+    }
+    Ok(hash)
+}
+
+fn validate_spawn_ledgers(world: &World) -> std::io::Result<()> {
+    let weather = world
+        .planetary_weather
+        .as_ref()
+        .ok_or_else(|| std::io::Error::other("planetary spawn requires a water ledger"))?;
+    let water = weather
+        .water
+        .audit(crate::planet_atlas::ReservoirMass::fresh(
+            crate::planet_atlas::dynamic_water_total(&weather.cells) as u64,
+        ));
+    if water.unexplained_water_delta_hu != 0 || water.unexplained_salt_delta != 0 {
+        return Err(std::io::Error::other(format!(
+            "prepared homeland water audit failed: {} HU, {} salt",
+            water.unexplained_water_delta_hu, water.unexplained_salt_delta
+        )));
+    }
+    let materials = world
+        .material_ledger
+        .as_ref()
+        .ok_or_else(|| std::io::Error::other("planetary spawn requires a material ledger"))?
+        .audit();
+    if !materials.is_balanced() {
+        return Err(std::io::Error::other(
+            "prepared homeland material audit has unexplained deltas",
+        ));
+    }
+    if !materials.is_qualified() {
+        return Err(std::io::Error::other(format!(
+            "prepared homeland material qualification failed: {}",
+            materials.qualification_failures.join("; ")
+        )));
+    }
+    Ok(())
+}
+
+impl World {
+    /// Pick one deterministic, naturally viable common spawn for every play
+    /// mode. Voxel-level refinement remains `safe_spawn_at`; unlike the old
+    /// dedicated path, its starting country is already dry, living land.
+    #[cfg(test)]
+    pub fn qualified_spawn_surface(&self) -> Option<SurfacePos> {
+        let Some(atlas) = self.planet_atlas.as_deref() else {
+            // Atlas-free fixtures retain a deterministic local doorstep.
+            return SurfacePos::new(Face::PosZ, FACE_BLOCKS / 2, FACE_BLOCKS / 2).ok();
+        };
+        let (candidates, _) = qualified_atlas_candidates(atlas);
+        candidates.first().map(|candidate| candidate.surface)
+    }
+
+    /// Load or create the world's persisted, fully materialized common
+    /// doorstep. The manifest is published only after all entry chunks and
+    /// conservation ledgers are durable.
+    pub fn prepare_common_spawn(
+        &mut self,
+        mut progress: impl FnMut(&str, usize, usize),
+    ) -> std::io::Result<crate::planet::EntityPos> {
+        let path = self.save_dir.join("spawn.toml");
+        if path.is_file() {
+            let metadata = fs::metadata(&path)?;
+            if metadata.len() > MAX_SPAWN_MANIFEST_BYTES {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "spawn manifest exceeds its size bound",
+                ));
+            }
+            let text = fs::read_to_string(&path)?;
+            let manifest: SpawnManifest = toml::from_str(&text).map_err(|error| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("invalid spawn manifest: {error}"),
+                )
+            })?;
+            let atlas = self
+                .planet_atlas
+                .as_deref()
+                .ok_or_else(|| std::io::Error::other("planetary spawn requires an atlas"))?;
+            if manifest.version != SPAWN_MANIFEST_VERSION
+                || manifest.topology != WORLD_TOPOLOGY
+                || manifest.face_blocks != FACE_BLOCKS
+                || manifest.world_height != CHUNK_Y as u16
+                || manifest.seed != self.seed
+                || !(super::MIN_SUPPORTED_WORLD_GENERATOR_VERSION..=WORLD_GENERATOR_VERSION)
+                    .contains(&manifest.generator_version)
+                || manifest.atlas_format_version != crate::planet_atlas::ATLAS_FORMAT_VERSION
+                || manifest.atlas_algorithm_version > crate::planet_atlas::ATLAS_ALGORITHM_VERSION
+                || manifest.atlas_checksum != atlas.manifest.genesis_checksum
+                || manifest.content_hash != atlas.manifest.content_hash
+                || manifest.spawn_surface != manifest.spawn.surface()
+                || manifest.prepared_radius_chunks != ENTRY_RADIUS_CHUNKS
+                || manifest.chunks != entry_chunks(manifest.spawn_surface)
+                || manifest.verification.contract_version != SPAWN_VERIFICATION_VERSION
+                || manifest.prepared_digest == 0
+                || manifest.completed_unix_seconds == 0
+                || manifest.verification.walkable_cells < 32
+                || !manifest.verification.safe_standing
+                || !manifest.verification.reachable_wood
+                || !manifest.verification.reachable_fresh_water
+                || !manifest.verification.reachable_soil
+                || !manifest.verification.reachable_stone
+                || !manifest.verification.reachable_plants
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "spawn manifest is incompatible with this planet",
+                ));
+            }
+            // `prepared_digest` is immutable creation evidence, not an
+            // eternal checksum: ecology, fluids, fire, and player edits may
+            // legitimately change these chunks after publication. Presence,
+            // decoding, ledger validation, and a live safe-entry check below
+            // distinguish a usable evolved homeland from corruption without
+            // rejecting ordinary play.
+            for (index, position) in manifest.chunks.iter().copied().enumerate() {
+                self.ensure_chunk(position);
+                progress(
+                    "loading prepared homeland",
+                    index + 1,
+                    manifest.chunks.len(),
+                );
+            }
+            validate_spawn_ledgers(self)?;
+            let spawn = self.prepared_spawn_position(manifest.spawn).ok_or_else(|| {
+                std::io::Error::other(
+                    "prepared homeland no longer contains a dry safe entry; explicit spawn repair is required",
+                )
+            })?;
+            self.common_spawn = Some(spawn);
+            return Ok(spawn);
+        }
+
+        let atlas = self
+            .planet_atlas
+            .clone()
+            .ok_or_else(|| std::io::Error::other("planetary spawn requires an atlas"))?;
+        progress("selecting homeland", 0, 1);
+        let (candidates, selection_diagnostics) = qualified_atlas_candidates(&atlas);
+        let candidates = spawn_candidate_portfolio(&candidates);
+        if candidates.is_empty() {
+            return Err(std::io::Error::other(format!(
+                "planet has no dry forest homeland with fresh water ({selection_diagnostics})",
+            )));
+        }
+
+        let mut winner = None;
+        let mut rejections = Vec::new();
+        for (candidate_index, candidate) in candidates.iter().enumerate() {
+            progress("testing homeland", candidate_index, candidates.len());
+            let positions = entry_chunks(candidate.surface);
+            let generated = generate_trial_region(
+                self.seed,
+                Arc::clone(&self.reg),
+                Arc::clone(&atlas),
+                &positions,
+                |completed, total| progress("generating homeland", completed, total),
+            )?;
+            match qualify_trial_region(&self.reg, &atlas, candidate.surface, &generated) {
+                Ok(qualification) => {
+                    winner = Some((candidate.surface, qualification, generated));
+                    break;
+                }
+                Err(reason) => rejections.push(format!(
+                    "{}:{}:{}: {reason}",
+                    candidate.surface.face().name(),
+                    candidate.surface.u(),
+                    candidate.surface.v()
+                )),
+            }
+        }
+        let Some((wanted, qualification, generated)) = winner else {
+            return Err(std::io::Error::other(format!(
+                "no candidate homeland passed voxel qualification: {}",
+                rejections.join("; ")
+            )));
+        };
+        let spawn_surface = qualification.spawn;
+
+        let total = generated.len();
+        for (index, (position, chunk)) in generated.into_iter().enumerate() {
+            self.adopt_generated(position, chunk);
+            progress("committing homeland", index + 1, total);
+        }
+        debug_assert_eq!(
+            entry_chunks(wanted),
+            entry_chunks(spawn_surface),
+            "voxel refinement remains in the candidate's center chunk"
+        );
+        let height = self.surface_height_at(spawn_surface) + 1;
+        let spawn = crate::planet::EntityPos::new(
+            spawn_surface.face(),
+            spawn_surface.u() as f32 + 0.5,
+            height as f32 + 0.2,
+            spawn_surface.v() as f32 + 0.5,
+        )
+        .expect("prepared spawn cell is canonical");
+
+        let initial_save = self.save_modified();
+        if !initial_save.is_ok() {
+            return Err(std::io::Error::other(format!(
+                "could not persist homeland ledgers: {}",
+                initial_save.summary()
+            )));
+        }
+        let chunks = entry_chunks(spawn.surface());
+        for (index, position) in chunks.iter().copied().enumerate() {
+            self.save_chunk(position)?;
+            progress("persisting homeland", index + 1, chunks.len());
+        }
+        let final_save = self.save_modified();
+        if !final_save.is_ok() {
+            return Err(std::io::Error::other(format!(
+                "could not finalize homeland ledgers: {}",
+                final_save.summary()
+            )));
+        }
+        validate_spawn_ledgers(self)?;
+        let prepared_digest = prepared_chunk_digest(&self.save_dir, &chunks)?;
+        let completed_unix_seconds = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let manifest = SpawnManifest {
+            version: SPAWN_MANIFEST_VERSION,
+            topology: WORLD_TOPOLOGY.to_string(),
+            face_blocks: FACE_BLOCKS,
+            world_height: CHUNK_Y as u16,
+            seed: self.seed,
+            generator_version: WORLD_GENERATOR_VERSION,
+            atlas_format_version: crate::planet_atlas::ATLAS_FORMAT_VERSION,
+            atlas_algorithm_version: crate::planet_atlas::ATLAS_ALGORITHM_VERSION,
+            atlas_checksum: atlas.manifest.genesis_checksum,
+            content_hash: atlas.manifest.content_hash,
+            spawn_surface,
+            spawn,
+            prepared_radius_chunks: ENTRY_RADIUS_CHUNKS,
+            chunks,
+            prepared_digest,
+            verification: qualification.verification,
+            completed_unix_seconds,
+        };
+        let text = toml::to_string_pretty(&manifest)
+            .map_err(|error| std::io::Error::other(format!("spawn manifest: {error}")))?;
+        crate::persist::atomic_write(&path, text.as_bytes(), false)?;
+        progress("homeland ready", 1, 1);
+        self.common_spawn = Some(spawn);
+        Ok(spawn)
+    }
+
+    fn prepared_spawn_position(
+        &self,
+        wanted: crate::planet::EntityPos,
+    ) -> Option<crate::planet::EntityPos> {
+        let origin = wanted.surface();
+        let mut best = None;
+        let mut best_score = i32::MAX;
+        for du in -32i32..=32 {
+            for dv in -32i32..=32 {
+                let Ok(surface) = SurfacePos::canonicalized(
+                    origin.face(),
+                    i32::from(origin.u()) + du,
+                    i32::from(origin.v()) + dv,
+                ) else {
+                    continue;
+                };
+                if !self.chunks.contains_key(&ChunkPos::from_surface(surface)) {
+                    continue;
+                }
+                let height = self.surface_height_at(surface);
+                let feet = height + 1;
+                if height <= SEA_LEVEL + 1 || !self.standable_at(surface, feet) {
+                    continue;
+                }
+                let slope = crate::planet::neighbors4(surface)
+                    .into_iter()
+                    .map(|neighbor| (height - self.surface_height_at(neighbor)).abs())
+                    .max()
+                    .unwrap_or_default();
+                if slope > 2 {
+                    continue;
+                }
+                let score = slope * 100 + du.abs() + dv.abs();
+                if score < best_score {
+                    best_score = score;
+                    best = crate::planet::EntityPos::new(
+                        surface.face(),
+                        f32::from(surface.u()) + 0.5,
+                        feet as f32 + 0.2,
+                        f32::from(surface.v()) + 0.5,
+                    )
+                    .ok();
+                }
+            }
+        }
+        best
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::planet_atlas::AtlasPos;
+
+    #[test]
+    fn freshwater_distance_crosses_cube_face_edges() {
+        let atlas = PlanetAtlas::fixture(8_101, 4).unwrap();
+        let distances = fresh_water_distances(&atlas);
+        assert_eq!(distances.len(), atlas.genesis.hydrology.len());
+        for face in Face::ALL {
+            for u in 0..atlas.side() {
+                for v in [0, atlas.side() - 1] {
+                    let pos = AtlasPos { face, u, v };
+                    for neighbor in pos.neighbors4(atlas.side()) {
+                        let a = distances[pos.index(atlas.side())];
+                        let b = distances[neighbor.index(atlas.side())];
+                        if a != u16::MAX && b != u16::MAX {
+                            assert!(a.abs_diff(b) <= 1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn atlas_free_world_has_the_canonical_fallback_doorstep() {
+        let reg = Arc::new(crate::registry::load(std::path::Path::new("mods")));
+        let world = World::new(99, std::path::PathBuf::new(), reg);
+        let spawn = world.qualified_spawn_surface().unwrap();
+        assert_eq!(spawn.face(), Face::PosZ);
+        assert_eq!(spawn.u(), FACE_BLOCKS / 2);
+        assert_eq!(spawn.v(), FACE_BLOCKS / 2);
+    }
+
+    #[test]
+    fn voxel_trial_requires_a_safe_walkable_resource_doorstep() {
+        let reg = Arc::new(crate::registry::load(std::path::Path::new("mods")));
+        let atlas = Arc::new(PlanetAtlas::fixture(1_337, 64).unwrap());
+        let atlas_pos = atlas
+            .genesis
+            .hydrology
+            .iter()
+            .find(|(pos, water)| {
+                water.water_body == WaterBodyKind::Land
+                    && pos.u > 2
+                    && pos.v > 2
+                    && pos.u + 3 < atlas.side()
+                    && pos.v + 3 < atlas.side()
+            })
+            .map(|(pos, _)| pos)
+            .unwrap();
+        let point = atlas_pos.center(atlas.side());
+        let center = SurfacePos::new(point.face, point.u as u16, point.v as u16).unwrap();
+        let stone = reg.block_id("base:stone").unwrap();
+        let dirt = reg.block_id("base:dirt").unwrap();
+        let grass = reg.block_id("base:grass").unwrap();
+        let log = reg.block_id("base:log").unwrap();
+        let bush = reg.block_id("base:berry_bush").unwrap();
+        let water = reg.water_for_volume(8);
+        let positions = entry_chunks(center);
+        let mut chunks = positions
+            .iter()
+            .map(|position| {
+                let mut chunk = Chunk::new();
+                for x in 0..CHUNK_X {
+                    for z in 0..CHUNK_Z {
+                        chunk.set(x, 64, z, stone);
+                        chunk.set(x, 65, z, dirt);
+                        chunk.set(x, 66, z, grass);
+                    }
+                }
+                (*position, chunk)
+            })
+            .collect::<Vec<_>>();
+        let center_chunk = ChunkPos::from_surface(center);
+        let chunk = chunks
+            .iter_mut()
+            .find(|(position, _)| *position == center_chunk)
+            .map(|(_, chunk)| chunk)
+            .unwrap();
+        chunk.set(5, 67, 5, log);
+        chunk.set(6, 67, 5, water);
+        chunk.set(7, 67, 5, bush);
+
+        let qualification = qualify_trial_region(&reg, &atlas, center, &chunks).unwrap();
+        assert!(qualification.verification.walkable_cells >= 32);
+        assert!(qualification.verification.reachable_wood);
+        assert!(qualification.verification.reachable_fresh_water);
+        assert!(qualification.verification.reachable_soil);
+        assert!(qualification.verification.reachable_stone);
+        assert!(qualification.verification.reachable_plants);
+    }
+
+    #[test]
+    #[ignore = "operator probe for WILDFORGE_PROBE_WORLD production atlas"]
+    fn production_spawn_selection_probe() {
+        let root = std::env::var_os("WILDFORGE_PROBE_WORLD")
+            .map(std::path::PathBuf::from)
+            .expect("set WILDFORGE_PROBE_WORLD");
+        let atlas = PlanetAtlas::load(&root).unwrap();
+        let (candidates, diagnostics) = qualified_atlas_candidates(&atlas);
+        eprintln!("{diagnostics}; candidates={}", candidates.len());
+        assert!(!candidates.is_empty());
+    }
+}

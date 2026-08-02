@@ -39,7 +39,21 @@ pub use hearts::{HEART_CUTTING_DAYS, HEART_DEATH_STRAIN, HEART_SICKEN_STRAIN, RO
 pub use hearts::{Heart, heart_block_name, heart_form, heart_height, seed_nature, seed_of_form};
 pub use machines::{station_powered, worked_table_for};
 pub mod soil;
+mod spawn;
+pub(crate) use spawn::player_entry_chunks;
+pub(crate) use storage::{ChunkLoader, encode_stream_chunk};
 mod ticks;
+
+/// Materialized water conditions used by fish and later aquatic biomes. Depth
+/// and salinity come from the live voxel column; temperature comes from local
+/// weather; discharge remains the immutable atlas's broad-flow prior.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AquaticHabitat {
+    pub depth_blocks: u8,
+    pub temperature_c: f32,
+    pub discharge: f32,
+    pub salinity: u8,
+}
 
 /// One persistence component that did not reach durable storage.
 #[derive(Debug)]
@@ -184,7 +198,7 @@ pub enum BlockEntity {
     Stall(StallState),
     /// A smoking rack: raw cuts curing over a live torch.
     Smoker(SmokerState),
-    /// A steam firebox: banked fire and boiler water, in seconds.
+    /// A steam firebox: banked fire and exact boiler water.
     Steam(SteamState),
     /// A rare-earth separator: powder in, neodymium and cerium out.
     Separator(SeparatorState),
@@ -233,9 +247,10 @@ pub const ELEC_RADIUS: i32 = 6;
 pub struct SteamState {
     /// Seconds of fire banked (coal fed by hand at the door).
     pub fuel: f32,
-    /// Seconds of boiler water banked (the boiler drinks adjacent
-    /// water cells — the pump earns its keep feeding a trough).
-    pub water: f32,
+    /// Exact boiler reservoir; evaporation leaves dissolved salt here.
+    pub water: crate::planet_atlas::ReservoirMass,
+    /// Numerator remainder for HU consumption at 256 HU / 15 seconds.
+    pub steam_numerator_remainder: u64,
 }
 
 /// One full water cell banks this many seconds of steam.
@@ -276,6 +291,9 @@ pub struct SignState {
 pub struct BloomeryState {
     pub charge: [Option<ItemStack>; 4],
     pub fuel: [Option<ItemStack>; 4],
+    /// Fractional, already-recovered stock waiting to add up to ordinary
+    /// recipe units. Forge instances use it; bloomeries leave it empty.
+    pub reclaim: crate::registry::MaterialVector,
     pub lit: bool,
     /// Seconds fired so far (out of BLOOMERY_FIRE_SECS).
     pub progress: f32,
@@ -381,7 +399,10 @@ pub struct FurnaceState {
 
 /// Stable save-format identifiers for the finite planetary world.
 pub const WORLD_TOPOLOGY: &str = "cube_sphere_v1";
-pub const WORLD_GENERATOR_VERSION: u32 = 1;
+// Version 10 makes visible biome terrain obey the atlas's zonal climate and
+// requires physically backed water before applying riparian vegetation.
+pub const WORLD_GENERATOR_VERSION: u32 = 10;
+const MIN_SUPPORTED_WORLD_GENERATOR_VERSION: u32 = 9;
 
 #[derive(Clone, Debug)]
 pub struct WorldMeta {
@@ -389,7 +410,6 @@ pub struct WorldMeta {
     pub mode: String,
     pub ire: f32,
     pub day: u32,
-    pub weather: Weather,
 }
 
 fn meta_value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
@@ -466,9 +486,11 @@ pub fn load_world_meta(dir: &std::path::Path) -> std::io::Result<Option<WorldMet
     let generator_version = meta_value(&text, "generator_version")
         .and_then(|value| value.parse::<u32>().ok())
         .ok_or_else(|| invalid_world_meta("planetary world is missing a generator_version"))?;
-    if generator_version != WORLD_GENERATOR_VERSION {
+    if !(MIN_SUPPORTED_WORLD_GENERATOR_VERSION..=WORLD_GENERATOR_VERSION)
+        .contains(&generator_version)
+    {
         return Err(invalid_world_meta(format!(
-            "unsupported generator version {generator_version}; expected {WORLD_GENERATOR_VERSION}"
+            "unsupported generator version {generator_version}; supported {MIN_SUPPORTED_WORLD_GENERATOR_VERSION}..={WORLD_GENERATOR_VERSION}"
         )));
     }
 
@@ -483,27 +505,26 @@ pub fn load_world_meta(dir: &std::path::Path) -> std::io::Result<Option<WorldMet
     let day = meta_value(&text, "day")
         .and_then(|value| value.parse::<u32>().ok())
         .unwrap_or(0);
-    let weather = Weather::from_name(meta_value(&text, "weather").unwrap_or("clear"));
     Ok(Some(WorldMeta {
         seed,
         mode,
         ire,
         day,
-        weather,
     }))
 }
 
 /// (seed, mode, ire) from a validated planetary `world.toml`.
 pub fn read_world_meta(dir: &std::path::Path) -> (Option<u32>, String, f32) {
-    let (seed, mode, ire, _, _) = read_world_meta_full(dir);
+    let (seed, mode, ire, _) = read_world_meta_full(dir);
     (seed, mode, ire)
 }
 
-/// Full metadata: (seed, mode, ire, day, weather).
-pub fn read_world_meta_full(dir: &std::path::Path) -> (Option<u32>, String, f32, u32, Weather) {
+/// Full metadata: (seed, mode, ire, day). Dynamic local weather lives in the
+/// atlas snapshot, never in a world-wide metadata field.
+pub fn read_world_meta_full(dir: &std::path::Path) -> (Option<u32>, String, f32, u32) {
     match load_world_meta(dir) {
-        Ok(Some(meta)) => (Some(meta.seed), meta.mode, meta.ire, meta.day, meta.weather),
-        Ok(None) | Err(_) => (None, "survival".to_string(), 0.0, 0, Weather::Clear),
+        Ok(Some(meta)) => (Some(meta.seed), meta.mode, meta.ire, meta.day),
+        Ok(None) | Err(_) => (None, "survival".to_string(), 0.0, 0),
     }
 }
 
@@ -513,7 +534,7 @@ pub fn write_world_meta(
     mode: &str,
     ire: f32,
 ) -> std::io::Result<()> {
-    write_world_meta_full(dir, seed, mode, ire, 0, Weather::Clear)
+    write_world_meta_full(dir, seed, mode, ire, 0)
 }
 
 pub fn write_world_meta_full(
@@ -522,15 +543,172 @@ pub fn write_world_meta_full(
     mode: &str,
     ire: f32,
     day: u32,
-    weather: Weather,
 ) -> std::io::Result<()> {
     let text = format!(
-        "topology = \"{WORLD_TOPOLOGY}\"\nface_blocks = {}\nworld_height = {CHUNK_Y}\nplanet_radius = {:.6}\ngenerator_version = {WORLD_GENERATOR_VERSION}\nseed = {seed}\nmode = \"{mode}\"\nire = {ire:.2}\nday = {day}\nweather = \"{}\"\n",
+        "topology = \"{WORLD_TOPOLOGY}\"\nface_blocks = {}\nworld_height = {CHUNK_Y}\nplanet_radius = {:.6}\ngenerator_version = {WORLD_GENERATOR_VERSION}\nseed = {seed}\nmode = \"{mode}\"\nire = {ire:.2}\nday = {day}\n",
         crate::planet::FACE_BLOCKS,
         crate::planet::PLANET_RADIUS,
-        weather.name()
     );
     crate::identity::atomic_write(&dir.join("world.toml"), text.as_bytes(), false)
+}
+
+/// Create a complete production world off to the side and publish it with a
+/// single directory rename. The browser therefore never sees `world.toml`
+/// without both its committed immutable atlas and qualified homeland.
+pub enum WorldCreationProgress {
+    Atlas(crate::planet_atlas::AtlasProgress),
+    Homeland {
+        stage: String,
+        completed: usize,
+        total: usize,
+    },
+}
+
+type HomelandPreparation<'a> = (Arc<Registry>, &'a mut dyn FnMut(WorldCreationProgress));
+
+pub fn create_world_atomic(
+    destination: &std::path::Path,
+    seed: u32,
+    mode: &str,
+    content_hash: u64,
+    reg: Arc<Registry>,
+    cancel: &crate::planet_atlas::CancellationToken,
+    mut progress: impl FnMut(WorldCreationProgress),
+) -> std::io::Result<()> {
+    if destination.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("world path already exists: {}", destination.display()),
+        ));
+    }
+    let atlas = crate::planet_atlas::PlanetAtlas::generate(
+        seed,
+        content_hash,
+        crate::planet_atlas::AtlasConfig::production(),
+        cancel,
+        |atlas| progress(WorldCreationProgress::Atlas(atlas)),
+    )
+    .map_err(std::io::Error::other)?;
+    publish_created_world(
+        destination,
+        seed,
+        mode,
+        atlas,
+        cancel,
+        Some((reg, &mut progress)),
+    )
+}
+
+#[cfg(test)]
+pub fn create_world_fixture_atomic(
+    destination: &std::path::Path,
+    seed: u32,
+    mode: &str,
+    side: u16,
+    cancel: &crate::planet_atlas::CancellationToken,
+    progress: impl FnMut(crate::planet_atlas::AtlasProgress),
+) -> std::io::Result<()> {
+    create_world_atomic_with_config(
+        destination,
+        seed,
+        mode,
+        0,
+        crate::planet_atlas::AtlasConfig::fixture(side),
+        cancel,
+        progress,
+    )
+}
+
+#[cfg(test)]
+fn create_world_atomic_with_config(
+    destination: &std::path::Path,
+    seed: u32,
+    mode: &str,
+    content_hash: u64,
+    config: crate::planet_atlas::AtlasConfig,
+    cancel: &crate::planet_atlas::CancellationToken,
+    progress: impl FnMut(crate::planet_atlas::AtlasProgress),
+) -> std::io::Result<()> {
+    if destination.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("world path already exists: {}", destination.display()),
+        ));
+    }
+    let atlas =
+        crate::planet_atlas::PlanetAtlas::generate(seed, content_hash, config, cancel, progress)
+            .map_err(std::io::Error::other)?;
+    publish_created_world(destination, seed, mode, atlas, cancel, None)
+}
+
+fn publish_created_world(
+    destination: &std::path::Path,
+    seed: u32,
+    mode: &str,
+    atlas: crate::planet_atlas::PlanetAtlas,
+    cancel: &crate::planet_atlas::CancellationToken,
+    mut homeland: Option<HomelandPreparation<'_>>,
+) -> std::io::Result<()> {
+    if cancel.is_cancelled() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "planet creation cancelled",
+        ));
+    }
+    let parent = destination
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    fs::create_dir_all(parent)?;
+    let name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| std::io::Error::other("invalid world path"))?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let temporary = parent.join(format!(".{name}.creating.{}.{}", std::process::id(), stamp));
+    fs::create_dir(&temporary)?;
+    let result = (|| {
+        atlas.write_new(&temporary).map_err(std::io::Error::other)?;
+        if cancel.is_cancelled() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "planet creation cancelled",
+            ));
+        }
+        write_world_meta(&temporary, seed, mode, 0.0)?;
+        if let Some((reg, progress)) = &mut homeland {
+            let mut world = World::load_or_create(temporary.clone(), Arc::clone(reg))?;
+            world.prepare_common_spawn(|stage, completed, total| {
+                progress(WorldCreationProgress::Homeland {
+                    stage: stage.to_owned(),
+                    completed,
+                    total,
+                });
+            })?;
+            if cancel.is_cancelled() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "planet creation cancelled during homeland preparation",
+                ));
+            }
+        }
+        crate::persist::publish_new_directory(&temporary, destination).map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!("could not publish the completed world directory: {error}"),
+            )
+        })?;
+        #[cfg(unix)]
+        fs::File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&temporary);
+    }
+    result
 }
 
 /// List compatible planetary worlds under `dir`: (name, seed), sorted.
@@ -542,13 +720,80 @@ pub fn list_worlds(dir: &std::path::Path) -> Vec<(String, u32)> {
             if name.starts_with('.') || !e.path().is_dir() {
                 continue;
             }
-            if let Ok(Some(meta)) = load_world_meta(&e.path()) {
+            if let Ok(Some(meta)) = load_world_meta(&e.path())
+                && crate::planet_atlas::PlanetAtlas::is_committed(&e.path())
+            {
                 out.push((name, meta.seed));
             }
         }
     }
     out.sort();
     out
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorldBrowserEntry {
+    pub name: String,
+    pub playable: bool,
+    pub status: String,
+}
+
+/// Cheap title-screen inspection. Full checksums and bounded file decoding
+/// remain in `PlanetAtlas::load` on the cancellable entry worker; browsing a
+/// save must not synchronously load roughly 180 MiB of planet state.
+pub fn inspect_worlds(dir: &std::path::Path) -> Vec<WorldBrowserEntry> {
+    let mut entries = Vec::new();
+    let Ok(read_dir) = fs::read_dir(dir) else {
+        return entries;
+    };
+    for entry in read_dir.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || !entry.path().is_dir() {
+            continue;
+        }
+        let status = match load_world_meta(&entry.path()) {
+            Err(error) => WorldBrowserEntry {
+                name,
+                playable: false,
+                status: format!("INCOMPATIBLE: {error}"),
+            },
+            Ok(None) => WorldBrowserEntry {
+                name,
+                playable: false,
+                status: "INCOMPLETE: NO PLANET METADATA".into(),
+            },
+            Ok(Some(_)) if !crate::planet_atlas::PlanetAtlas::is_committed(&entry.path()) => {
+                WorldBrowserEntry {
+                    name,
+                    playable: false,
+                    status: "INCOMPLETE OR CORRUPT PLANET ATLAS".into(),
+                }
+            }
+            Ok(Some(_)) => {
+                let manifest = fs::read_to_string(
+                    crate::planet_atlas::PlanetAtlas::planet_dir(&entry.path())
+                        .join("manifest.toml"),
+                )
+                .unwrap_or_default();
+                let atlas = meta_value(&manifest, "format_version").unwrap_or("?");
+                let content = meta_value(&manifest, "content_hash")
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .map(|value| format!("{value:016x}"))
+                    .unwrap_or_else(|| "unknown".into());
+                WorldBrowserEntry {
+                    name,
+                    playable: true,
+                    status: format!(
+                        "READY  GENERATOR {WORLD_GENERATOR_VERSION}  ATLAS {atlas}  CONTENT {}",
+                        &content[..content.len().min(8)]
+                    ),
+                }
+            }
+        };
+        entries.push(status);
+    }
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    entries
 }
 
 /// One 256×256-cell regional ledger tile on a particular cube face.
@@ -577,6 +822,19 @@ impl RegionCell {
 pub struct World {
     chunks: HashMap<ChunkPos, Chunk>,
     pub generator: Generator,
+    planet_atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
+    planetary_weather: Option<crate::planet_atlas::PlanetaryWeather>,
+    /// Persisted qualified doorstep, populated only after preparation or
+    /// successful manifest revalidation.
+    common_spawn: Option<crate::planet::EntityPos>,
+    /// Exact finite-material manifest and movement ledger. Guests do not own
+    /// one; the authoritative host persists it beside the atlas.
+    pub(crate) material_ledger: Option<crate::materials::MaterialLedger>,
+    /// Atlas-free unit fixtures can request a local condition explicitly.
+    /// Production worlds never consult this: their weather is atlas state.
+    weather_override: Option<crate::planet_atlas::LocalWeatherSample>,
+    remote_weather_side: u16,
+    remote_weather: HashMap<crate::planet_atlas::AtlasPos, crate::planet_atlas::LocalWeatherSample>,
     pub reg: Arc<Registry>,
     #[allow(dead_code)]
     pub seed: u32,
@@ -617,6 +875,10 @@ pub struct World {
     /// Chunks a player's hands have edited (placed or broken blocks):
     /// the green tide never seeds ground people made their own.
     pub(crate) player_touched: HashSet<ChunkPos>,
+    /// Chunks containing a generated ruin/shrine. Persisted separately from
+    /// the chunk's save-dirty bit so palette remaps never make retrogen
+    /// mistake a structure for untouched host rock (or vice versa).
+    structure_chunks: HashSet<ChunkPos>,
     /// Bloom ledger: days of post-wrath eruption left per 256-cell.
     pub(crate) bloom: HashMap<RegionCell, f32>,
     /// The spirits of the land, keyed by province.
@@ -654,13 +916,9 @@ pub struct World {
     remote: bool,
     /// Calendar day (increments at dawn, natural or slept-through).
     pub day: u32,
-    /// Current weather + seconds remaining on it (the Server's machine
-    /// drives this; it lives here so world.toml persistence is natural).
-    pub weather: Weather,
-    pub weather_timer: f32,
     /// Host mode: record block edits for broadcasting.
     log_edits: bool,
-    edit_log: Vec<(crate::planet::BlockPos, BlockId, u8)>,
+    edit_log: Vec<(crate::planet::BlockPos, BlockId, u8, u16, u8)>,
     /// Gravity blocks currently airborne.
     falling: Vec<FallingBlock>,
     /// (guest id, stack) owed over the wire: mining drops, kill loot,
@@ -770,58 +1028,31 @@ fn poisson(lambda: f64, r: &mut u32) -> u32 {
 pub const SEASON_DAYS: u32 = 36;
 pub const SEASONS: [&str; 4] = ["SPRING", "SUMMER", "AUTUMN", "WINTER"];
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Weather {
-    Clear,
-    Overcast,
-    /// Rain or snow, decided per column by climate + season.
-    Precip,
-    Storm,
-}
-
-impl Weather {
-    pub fn as_u8(self) -> u8 {
-        match self {
-            Weather::Clear => 0,
-            Weather::Overcast => 1,
-            Weather::Precip => 2,
-            Weather::Storm => 3,
-        }
-    }
-    pub fn from_u8(v: u8) -> Weather {
-        match v {
-            1 => Weather::Overcast,
-            2 => Weather::Precip,
-            3 => Weather::Storm,
-            _ => Weather::Clear,
-        }
-    }
-    pub fn name(self) -> &'static str {
-        match self {
-            Weather::Clear => "clear",
-            Weather::Overcast => "overcast",
-            Weather::Precip => "precip",
-            Weather::Storm => "storm",
-        }
-    }
-    pub fn from_name(s: &str) -> Weather {
-        match s {
-            "overcast" => Weather::Overcast,
-            "precip" | "rain" | "snow" => Weather::Precip,
-            "storm" => Weather::Storm,
-            _ => Weather::Clear,
-        }
-    }
-    /// Anything falling from the sky right now?
-    pub fn precipitating(self) -> bool {
-        matches!(self, Weather::Precip | Weather::Storm)
-    }
-}
-
 /// Hard cap on living mobs — memory/perf backstop, far above natural density.
 pub const MOB_CAP: usize = 320;
 
 impl World {
+    /// Move material carried by physically consumed stacks into the explicit
+    /// sink. Callers remove the gameplay objects; this keeps eating,
+    /// offerings, composting, and spoilage from becoming hidden deletion
+    /// paths for ingredients such as finite salt.
+    pub fn record_consumed_stacks(
+        &mut self,
+        stacks: impl IntoIterator<Item = ItemStack>,
+    ) -> std::io::Result<()> {
+        let mut total = crate::registry::MaterialVector::new();
+        for stack in stacks {
+            for (material, units) in crate::materials::stack_materials(&self.reg, stack) {
+                let stored = total.entry(material).or_default();
+                *stored = stored.saturating_add(units);
+            }
+        }
+        let Some(ledger) = &mut self.material_ledger else {
+            return Ok(());
+        };
+        ledger.record_consumption(&total)
+    }
+
     /// Position in the lunar cycle, 0..1 (0 = new moon, 0.5 = full moon). A
     /// pure, deterministic function of the persisted calendar `day`, so every
     /// client and every replay agrees. Constant across a given day (it steps at
@@ -844,9 +1075,52 @@ impl World {
     }
 
     pub fn new(seed: u32, save_dir: PathBuf, reg: Arc<Registry>) -> World {
+        Self::new_with_optional_atlas(seed, save_dir, reg, None)
+    }
+
+    pub fn new_with_atlas(
+        seed: u32,
+        save_dir: PathBuf,
+        reg: Arc<Registry>,
+        atlas: Arc<crate::planet_atlas::PlanetAtlas>,
+    ) -> World {
+        Self::new_with_optional_atlas(seed, save_dir, reg, Some(atlas))
+    }
+
+    fn new_with_optional_atlas(
+        seed: u32,
+        save_dir: PathBuf,
+        reg: Arc<Registry>,
+        planet_atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
+    ) -> World {
+        let planetary_weather = planet_atlas.as_ref().map(|atlas| {
+            crate::planet_atlas::PlanetaryWeather::new(
+                atlas.dynamic.clone(),
+                atlas.water_cycle.clone(),
+            )
+        });
+        let generator = planet_atlas.as_ref().map_or_else(
+            || Generator::new(seed, &reg),
+            |atlas| Generator::with_atlas(seed, &reg, atlas.clone()),
+        );
+        let material_ledger = planet_atlas.as_ref().and_then(|atlas| {
+            crate::materials::MaterialLedger::load_or_initialize(&save_dir, atlas, &reg)
+                .map_err(|error| {
+                    eprintln!("materials: could not open ledger: {error}");
+                    error
+                })
+                .ok()
+        });
         World {
             chunks: HashMap::new(),
-            generator: Generator::new(seed, &reg),
+            generator,
+            planet_atlas,
+            planetary_weather,
+            common_spawn: None,
+            material_ledger,
+            weather_override: None,
+            remote_weather_side: 0,
+            remote_weather: HashMap::new(),
             reg,
             seed,
             save_dir,
@@ -874,6 +1148,7 @@ impl World {
             whispers: Vec::new(),
             blessed_streak: HashMap::new(),
             player_touched: HashSet::new(),
+            structure_chunks: HashSet::new(),
             bloom: HashMap::new(),
             hearts: HashMap::new(),
             bloom_spent: HashMap::new(),
@@ -889,8 +1164,6 @@ impl World {
             day_progress: 0.0,
             remote: false,
             day: 0,
-            weather: Weather::Clear,
-            weather_timer: 0.0,
             log_edits: false,
             edit_log: Vec::new(),
             falling: Vec::new(),
@@ -899,6 +1172,27 @@ impl World {
             #[cfg(test)]
             save_fail_chunks: HashSet::new(),
         }
+    }
+
+    pub fn planet_atlas(&self) -> Option<Arc<crate::planet_atlas::PlanetAtlas>> {
+        self.planet_atlas.clone()
+    }
+
+    pub fn common_spawn(&self) -> Option<crate::planet::EntityPos> {
+        self.common_spawn
+    }
+
+    pub fn set_remote_weather(
+        &mut self,
+        side: u16,
+        cells: Vec<(
+            crate::planet_atlas::AtlasPos,
+            crate::planet_atlas::LocalWeatherSample,
+        )>,
+    ) {
+        self.remote_weather_side = side;
+        self.remote_weather.clear();
+        self.remote_weather.extend(cells);
     }
 
     /// Switch between authoritative storage and guest snapshot mode.
@@ -915,11 +1209,11 @@ impl World {
         self.log_edits = enabled;
     }
 
-    pub fn edits(&self) -> &[(crate::planet::BlockPos, BlockId, u8)] {
+    pub fn edits(&self) -> &[(crate::planet::BlockPos, BlockId, u8, u16, u8)] {
         &self.edit_log
     }
 
-    pub fn take_edits(&mut self) -> Vec<(crate::planet::BlockPos, BlockId, u8)> {
+    pub fn take_edits(&mut self) -> Vec<(crate::planet::BlockPos, BlockId, u8, u16, u8)> {
         std::mem::take(&mut self.edit_log)
     }
 
@@ -995,6 +1289,27 @@ impl World {
         entity: BlockEntity,
     ) -> Option<BlockEntity> {
         self.block_entities.insert(pos, entity)
+    }
+
+    /// Insert a development-authored machine/container while keeping every
+    /// finite stack in its buffers visible to the material ledger.
+    pub fn insert_block_entity_authored_at(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        entity: BlockEntity,
+        source: &str,
+    ) -> Option<BlockEntity> {
+        let old = self.block_entities.remove(&pos);
+        if let Some(previous) = old.as_ref()
+            && let Err(error) = self.record_admin_block_entity_deletion(previous)
+        {
+            eprintln!("materials: authored block-entity replacement failed: {error}");
+        }
+        if let Err(error) = self.record_external_block_entity_contents(&entity, source) {
+            eprintln!("materials: authored block-entity source failed: {error}");
+        }
+        self.block_entities.insert(pos, entity);
+        old
     }
 
     pub fn ensure_block_entity_at(
@@ -1120,6 +1435,14 @@ impl World {
     }
 
     #[cfg(test)]
+    pub fn mark_structure_chunk_for_test(&mut self, pos: ChunkPos) {
+        self.structure_chunks.insert(pos);
+        if let Some(chunk) = self.chunks.get_mut(&pos) {
+            chunk.modified = true;
+        }
+    }
+
+    #[cfg(test)]
     /// Entries held across the land's decaying ledgers.
     ///
     /// These are keyed per 256-block cell, persisted, and rewritten whole on
@@ -1152,6 +1475,20 @@ impl World {
         &mut self.chunks
     }
 
+    #[cfg(test)]
+    pub(crate) fn planetary_weather_for_test(
+        &self,
+    ) -> Option<&crate::planet_atlas::PlanetaryWeather> {
+        self.planetary_weather.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn planetary_weather_for_test_mut(
+        &mut self,
+    ) -> Option<&mut crate::planet_atlas::PlanetaryWeather> {
+        self.planetary_weather.as_mut()
+    }
+
     pub fn get_block_at(&self, pos: crate::planet::BlockPos) -> BlockId {
         let (x, y, z) = pos.local();
         match self.chunks.get(&pos.chunk()) {
@@ -1177,6 +1514,31 @@ impl World {
         }
     }
 
+    pub fn get_water_salt_at(&self, pos: crate::planet::BlockPos) -> u16 {
+        let (x, y, z) = pos.local();
+        self.chunks
+            .get(&pos.chunk())
+            .map_or(0, |chunk| chunk.water_salt(x, y, z))
+    }
+
+    pub fn get_soil_salinity_at(&self, pos: crate::planet::BlockPos) -> u8 {
+        let (x, y, z) = pos.local();
+        self.chunks
+            .get(&pos.chunk())
+            .map_or(0, |chunk| chunk.soil_salinity(x, y, z))
+    }
+
+    pub fn water_mass_at(
+        &self,
+        pos: crate::planet::BlockPos,
+    ) -> Option<crate::planet_atlas::ReservoirMass> {
+        let volume = self.reg.water_volume(self.get_block_at(pos))?;
+        Some(crate::planet_atlas::ReservoirMass {
+            water_hu: u64::from(volume) * crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL,
+            salt_mass: u64::from(self.get_water_salt_at(pos)),
+        })
+    }
+
     #[cfg(test)]
     #[doc(hidden)]
     pub fn get_meta(&self, x: i32, y: i32, z: i32) -> u8 {
@@ -1192,7 +1554,6 @@ impl World {
         award_drop: bool,
         affect_ire: bool,
     ) -> Option<BlockBreak> {
-        self.player_touched.insert(pos.chunk());
         let block = self.get_block_at(pos);
         if block == AIR || self.reg.block(block).hardness.is_none() {
             return None;
@@ -1200,13 +1561,54 @@ impl World {
         let drop = award_drop
             .then(|| self.reg.drops_for(block, tool))
             .flatten()
-            .map(|(item, count)| ItemStack::new(&self.reg, item, count));
+            .map(|(item, count)| {
+                let item = if tool.is_some() {
+                    self.reg.block(block).dismantles_to.unwrap_or(item)
+                } else {
+                    item
+                };
+                ItemStack::new(&self.reg, item, count)
+            });
+        let material_operation = {
+            let definition = self.reg.block(block);
+            if let Some(ledger) = self.material_ledger.as_mut() {
+                match ledger.begin_break(pos, &definition.name, &definition.materials) {
+                    Ok(operation) => operation,
+                    Err(error) => {
+                        eprintln!("materials: block break cancelled at {pos:?}: {error}");
+                        return None;
+                    }
+                }
+            } else {
+                None
+            }
+        };
+        self.player_touched.insert(pos.chunk());
         if affect_ire {
             let cost = self.ire_for_block(block);
             self.add_ire_at_surface(pos.surface(), cost);
         }
         let was_heart = self.reg.block(block).name.starts_with("base:heart_");
         self.set_block_at(pos, AIR);
+        if let Some(operation) = material_operation {
+            self.complete_material_operation(&operation);
+            if !award_drop
+                && let Some(ledger) = &mut self.material_ledger
+                && let Err(error) = ledger.record_admin_deletion(&operation.materials)
+            {
+                eprintln!("materials: could not record creative/admin deletion: {error}");
+            }
+            if award_drop
+                && drop.is_none()
+                && let Some(ledger) = &mut self.material_ledger
+                && let Err(error) =
+                    ledger.bury_materials(pos, &operation.materials, "destructive block breaking")
+            {
+                eprintln!("materials: could not move destructive breakage to salvage: {error}");
+            }
+        }
+        self.register_player_waterwork_at(pos);
+        self.seep_into_excavation_at(pos);
         if was_heart {
             self.heart_struck_at(pos);
         }
@@ -1222,12 +1624,27 @@ impl World {
     }
 
     pub fn place_block_at(&mut self, pos: BlockPos, block: BlockId) -> bool {
-        self.player_touched.insert(pos.chunk());
         if self.reg.blocks.get(block.0 as usize).is_none()
             || !self.reg.is_replaceable(self.get_block_at(pos))
         {
             return false;
         }
+        let material_operation = {
+            let before = self.reg.block(self.get_block_at(pos)).name.clone();
+            let definition = self.reg.block(block);
+            if let Some(ledger) = self.material_ledger.as_mut() {
+                match ledger.begin_place(pos, &before, &definition.name, &definition.materials) {
+                    Ok(operation) => operation,
+                    Err(error) => {
+                        eprintln!("materials: block placement cancelled at {pos:?}: {error}");
+                        return false;
+                    }
+                }
+            } else {
+                None
+            }
+        };
+        self.player_touched.insert(pos.chunk());
         // Soil arrives prepared. A block that carries fertility placed
         // at zero is dead ground that LOOKS tilled — it grows nothing
         // and it counts for nothing, which is a trap in either mode and
@@ -1236,8 +1653,15 @@ impl World {
         if self.reg.block(block).fert_tiles.is_some() {
             let meta = soil::soil_meta(soil::FERT_TILL_GRASS, 0);
             self.set_block_meta_at(pos, block, meta);
+            self.initialize_tilled_soil_at(pos);
         } else {
             self.set_block_at(pos, block);
+        }
+        if let Some(operation) = material_operation {
+            self.complete_material_operation(&operation);
+        }
+        if self.reg.is_solid(block) {
+            self.register_player_waterwork_at(pos);
         }
         // Power sources carry a marker entity from birth so the
         // station sweep finds them without scanning the world.
@@ -1262,6 +1686,35 @@ impl World {
         true
     }
 
+    fn complete_material_operation(&mut self, operation: &crate::materials::MaterialOperation) {
+        // The voxel lands first. If the process stops after this write, the
+        // pending operation replays exactly once on load. If the chunk write
+        // fails, leave the journal unapplied: disk still owns the old voxel.
+        if let Err(error) = self.save_chunk(operation.pos.chunk()) {
+            eprintln!(
+                "materials: tracked chunk write failed at {:?}; journal retained: {error}",
+                operation.pos
+            );
+            return;
+        }
+        let Some(ledger) = &mut self.material_ledger else {
+            return;
+        };
+        if let Err(error) = ledger.apply_operation(operation) {
+            eprintln!(
+                "materials: ledger operation {} failed: {error}",
+                operation.id
+            );
+            return;
+        }
+        if let Err(error) = ledger.finish_operation() {
+            eprintln!(
+                "materials: operation {} committed but journal cleanup failed: {error}",
+                operation.id
+            );
+        }
+    }
+
     #[cfg(test)]
     pub fn set_block(&mut self, x: i32, y: i32, z: i32, b: BlockId) {
         self.set_block_meta(x, y, z, b, 0);
@@ -1272,19 +1725,218 @@ impl World {
         self.set_block_meta_at(pos, block, 0);
     }
 
+    /// A mod/script-authored edit is an explicit source/sink, never an
+    /// untracked shortcut around finite extraction. This deliberately marks
+    /// the chunk touched so later retrogen cannot overwrite the authored cell.
+    pub fn set_block_authored_at(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        block: BlockId,
+        source: &str,
+    ) {
+        let old = self.get_block_at(pos);
+        if old == block {
+            return;
+        }
+        self.player_touched.insert(pos.chunk());
+        let mut before = self.reg.block(old).name.clone();
+        let old_materials = self.reg.block(old).materials.clone();
+        if !old_materials.is_empty() {
+            if self.break_block_at(pos, None, false, false).is_none() {
+                self.set_block_at(pos, AIR);
+                if let Some(ledger) = &mut self.material_ledger
+                    && let Err(error) = ledger.record_admin_deletion(&old_materials)
+                {
+                    eprintln!("materials: authored block deletion failed: {error}");
+                }
+            }
+            before = self.reg.block(AIR).name.clone();
+        }
+        // When the old block is nonmaterial, keep it in place until the
+        // authored-placement journal exists. The eventual chunk write then
+        // commits that replacement and the material addition together.
+        let materials = self.reg.block(block).materials.clone();
+        let material_operation = if materials.is_empty() {
+            None
+        } else if let Some(ledger) = &mut self.material_ledger {
+            match ledger.begin_authored_place(
+                pos,
+                &before,
+                &self.reg.block(block).name,
+                &materials,
+                source,
+            ) {
+                Ok(operation) => operation,
+                Err(error) => {
+                    eprintln!("materials: could not journal authored block at {pos:?}: {error}");
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        self.set_block_at(pos, block);
+        if let Some(operation) = material_operation {
+            self.complete_material_operation(&operation);
+        }
+    }
+
+    /// Account for a stack introduced by an explicit development/admin path.
+    pub fn record_external_stack(&mut self, stack: ItemStack, source: &str) -> std::io::Result<()> {
+        let reg = self.reg.clone();
+        let Some(ledger) = &mut self.material_ledger else {
+            return Ok(());
+        };
+        ledger.record_external_stack(&reg, stack, source)
+    }
+
+    /// Account for a stack overwritten by an explicit development/admin path.
+    pub fn record_admin_stack_deletion(&mut self, stack: ItemStack) -> std::io::Result<()> {
+        let reg = self.reg.clone();
+        let Some(ledger) = &mut self.material_ledger else {
+            return Ok(());
+        };
+        ledger.record_admin_stack_deletion(&reg, stack)
+    }
+
+    fn block_entity_stacks(entity: &BlockEntity) -> Vec<ItemStack> {
+        let mut stacks = Vec::new();
+        let mut add = |slots: &[Option<ItemStack>]| {
+            stacks.extend(slots.iter().flatten().copied());
+        };
+        match entity {
+            BlockEntity::Furnace(state) => {
+                add(&[state.input, state.fuel, state.output]);
+            }
+            BlockEntity::Chest(state) => add(&state.slots),
+            BlockEntity::Offering(state) => add(&state.slots),
+            BlockEntity::Bloomery(state) | BlockEntity::Forge(state) => {
+                add(&state.charge);
+                add(&state.fuel);
+            }
+            BlockEntity::Anvil(state) => add(&[state.bloom]),
+            BlockEntity::Kiln(state) => {
+                add(&state.sand);
+                add(&[state.powder]);
+                add(&state.fuel);
+            }
+            BlockEntity::Stall(state) => {
+                add(&state.goods);
+                add(&[state.price]);
+                add(&state.till);
+            }
+            BlockEntity::Smoker(state) => add(&state.meat),
+            BlockEntity::Clamp(_)
+            | BlockEntity::Sign(_)
+            | BlockEntity::Steam(_)
+            | BlockEntity::Separator(_) => {}
+        }
+        stacks
+    }
+
+    /// Account for all physical contents represented by a block entity,
+    /// including separator counters and a forge's fractional secondary stock.
+    pub fn record_external_block_entity_contents(
+        &mut self,
+        entity: &BlockEntity,
+        source: &str,
+    ) -> std::io::Result<()> {
+        for stack in Self::block_entity_stacks(entity) {
+            self.record_external_stack(stack, source)?;
+        }
+        if let BlockEntity::Bloomery(state) | BlockEntity::Forge(state) = entity {
+            let Some(ledger) = &mut self.material_ledger else {
+                return Ok(());
+            };
+            ledger.record_external_materials(&state.reclaim, true, source)?;
+        }
+        if let BlockEntity::Separator(state) = entity {
+            let counts = [
+                ("base:rare_earth_powder", state.powder),
+                ("base:charcoal", state.fuel),
+                ("base:neodymium", state.nd),
+                ("base:cerium", state.ce),
+            ];
+            for (name, count) in counts {
+                if count != 0
+                    && let Some(item) = self.reg.item_id(name)
+                {
+                    self.record_external_stack(ItemStack::new(&self.reg, item, count), source)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn record_admin_block_entity_deletion(&mut self, entity: &BlockEntity) -> std::io::Result<()> {
+        for stack in Self::block_entity_stacks(entity) {
+            self.record_admin_stack_deletion(stack)?;
+        }
+        if let BlockEntity::Bloomery(state) | BlockEntity::Forge(state) = entity {
+            let Some(ledger) = &mut self.material_ledger else {
+                return Ok(());
+            };
+            ledger.record_admin_secondary_deletion(&state.reclaim)?;
+        }
+        if let BlockEntity::Separator(state) = entity {
+            let counts = [
+                ("base:rare_earth_powder", state.powder),
+                ("base:charcoal", state.fuel),
+                ("base:neodymium", state.nd),
+                ("base:cerium", state.ce),
+            ];
+            for (name, count) in counts {
+                if count != 0
+                    && let Some(item) = self.reg.item_id(name)
+                {
+                    self.record_admin_stack_deletion(ItemStack::new(&self.reg, item, count))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Low-level typed mutation. Subsystems that already own a canonical
     /// address never convert it back through a planar tuple.
     pub fn set_block_meta_at(&mut self, pos: BlockPos, block: BlockId, meta: u8) {
+        self.set_block_water_at(pos, block, meta, 0);
+    }
+
+    /// Low-level block update carrying exact dissolved salt. Ordinary block
+    /// edits call this with zero; water transfers must provide the parcel's
+    /// mass and derive concentration metadata from it.
+    pub fn set_block_water_at(&mut self, pos: BlockPos, block: BlockId, meta: u8, salt_mass: u16) {
+        let soil_salinity = if self.reg.block(block).fert_tiles.is_some() {
+            self.get_soil_salinity_at(pos)
+        } else {
+            0
+        };
+        self.set_block_state_at(pos, block, meta, salt_mass, soil_salinity);
+    }
+
+    /// Exact authoritative voxel state used by chunk replication. Soil salt
+    /// is independent of dissolved water salt and must survive crop/meta edits.
+    pub fn set_block_state_at(
+        &mut self,
+        pos: BlockPos,
+        block: BlockId,
+        meta: u8,
+        salt_mass: u16,
+        soil_salinity: u8,
+    ) {
         let chunk_pos = pos.chunk();
         let (x, y, z) = pos.local();
         let old = self.get_block_at(pos);
         if let Some(chunk) = self.chunks.get_mut(&chunk_pos) {
             chunk.set(x, y, z, block);
             chunk.set_meta(x, y, z, meta);
+            chunk.set_water_salt(x, y, z, salt_mass);
+            chunk.set_soil_salinity(x, y, z, soil_salinity);
             chunk.dirty = true;
             chunk.modified = true;
             if self.log_edits {
-                self.edit_log.push((pos, block, meta));
+                self.edit_log
+                    .push((pos, block, meta, salt_mass, soil_salinity));
             }
         } else {
             return;
@@ -1364,7 +2016,19 @@ impl World {
                 BlockEntity::Chest(c) => c.slots.into_iter().flatten().collect(),
                 BlockEntity::Offering(o) => o.slots.into_iter().flatten().collect(),
                 BlockEntity::Bloomery(b) => b.charge.into_iter().chain(b.fuel).flatten().collect(),
-                BlockEntity::Forge(f) => f.charge.into_iter().chain(f.fuel).flatten().collect(),
+                BlockEntity::Forge(f) => {
+                    if !f.reclaim.is_empty()
+                        && let Some(ledger) = &mut self.material_ledger
+                        && let Err(error) = ledger.bury_materials(
+                            pos,
+                            &f.reclaim,
+                            "forge dismantled with fractional recovered stock",
+                        )
+                    {
+                        eprintln!("materials: forge stock salvage failed: {error}");
+                    }
+                    f.charge.into_iter().chain(f.fuel).flatten().collect()
+                }
                 BlockEntity::Sign(_) => Vec::new(),
                 BlockEntity::Stall(st) => st
                     .goods
@@ -1408,6 +2072,20 @@ impl World {
         }
     }
 
+    pub fn set_soil_salinity_at(&mut self, pos: BlockPos, salinity: u8) {
+        let block = self.get_block_at(pos);
+        if self.reg.block(block).fert_tiles.is_none() {
+            return;
+        }
+        self.set_block_state_at(
+            pos,
+            block,
+            self.get_meta_at(pos),
+            self.get_water_salt_at(pos),
+            salinity,
+        );
+    }
+
     /// Apply an authored group of edits with normal logging, support checks,
     /// and fluid wakeups, but settle lighting only once per touched chunk.
     pub(crate) fn edit_batch(&mut self, edit: impl FnOnce(&mut Self)) {
@@ -1418,9 +2096,8 @@ impl World {
         self.edit_relight_batch = true;
         edit(self);
         self.edit_relight_batch = false;
-        for pos in std::mem::take(&mut self.pending_relight) {
-            self.relight_and_cascade(pos);
-        }
+        let starts = std::mem::take(&mut self.pending_relight);
+        self.relight_chunks_and_cascade(starts);
     }
 
     #[cfg(test)]

@@ -9,7 +9,7 @@ use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 19;
+pub const PROTOCOL: u32 = 24;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -360,6 +360,9 @@ pub enum C2S {
     SetViewDistance {
         chunks: u8,
     },
+    /// The client has decoded every chunk in the host-declared entry set and
+    /// is ready to become a simulated world actor.
+    EntryReady,
     /// Ask the host to feed an adult mob from authoritative inventory.
     FeedMob {
         id: u32,
@@ -396,7 +399,8 @@ pub enum C2S {
         slot: u8,
         right: bool,
     },
-    /// Report a completed brush channel; the host validates and awards it.
+    /// Report a completed archaeology/salvage brush channel; the host
+    /// validates the terrain and awards any finite recovery.
     BrushBlock {
         pos: BlockPos,
     },
@@ -461,6 +465,20 @@ pub enum S2C {
         world_name: String,
         player_state: PlayerStateSnap,
     },
+    /// Heartbeat while the host is loading/generating the bounded safety set.
+    /// It may arrive before Welcome because the connection is authenticated
+    /// but deliberately not yet a world actor.
+    EntryProgress {
+        resident: u16,
+        total: u16,
+    },
+    /// Bounded admission terrain. Welcome supplies the palette first; the
+    /// client decodes this exact set, acknowledges it, and only then enters.
+    EntryManifest {
+        spawn: EntityPos,
+        required: Vec<crate::chunk::ChunkPos>,
+    },
+    EntryAccepted,
     PlayerState(PlayerStateSnap),
     Refused(Refusal),
     /// Host mods dir (scripts excluded) when content hashes differ.
@@ -476,6 +494,10 @@ pub enum S2C {
         id: u16,
         /// Octant mask for sub-voxel blocks; 0 for ordinary blocks.
         meta: u8,
+        /// Exact dissolved salt mass in a water/ice voxel.
+        salt_mass: u16,
+        /// Managed soil salinity left by irrigation and drainage.
+        soil_salinity: u8,
     },
     /// (id, pos, yaw, held wire item id, packed style) for every player in
     /// this guest's reach, host included (u16::MAX = empty hand). Datagram.
@@ -494,7 +516,15 @@ pub enum S2C {
         time: f32,
         ire: f32,
         day: u32,
-        weather: u8,
+    },
+    /// Authoritative local weather around this guest. Atlas identities and
+    /// samples cross cube-face seams using the host's canonical topology.
+    WeatherCells {
+        side: u16,
+        cells: Vec<(
+            crate::planet_atlas::AtlasPos,
+            crate::planet_atlas::LocalWeatherSample,
+        )>,
     },
     Hit {
         dmg: f32,

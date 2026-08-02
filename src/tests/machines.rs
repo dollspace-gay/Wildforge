@@ -382,7 +382,7 @@ fn glass_smelts_passes_light_and_grows_winter_crops() {
 
 #[test]
 fn bloomery_multiblock_fires_batches_and_fears_the_rain() {
-    use crate::world::{BLOOMERY_FIRE_SECS, BlockEntity, BloomeryState, Weather};
+    use crate::world::{BLOOMERY_FIRE_SECS, BlockEntity, BloomeryState};
     let reg = base_reg();
     let mut w = test_world_with("steel-fire", reg.clone());
     let my = 120; // open sky, far above terrain
@@ -415,7 +415,7 @@ fn bloomery_multiblock_fires_batches_and_fears_the_rain() {
         "the mouth glows"
     );
     // Clear skies: full rate. Fire it through.
-    w.weather = Weather::Clear;
+    w.force_local_weather("clear");
     let steps = (BLOOMERY_FIRE_SECS / 0.5) as i32 + 4;
     for _ in 0..steps {
         w.tick_entities(0.5);
@@ -465,7 +465,7 @@ fn bloomery_multiblock_fires_batches_and_fears_the_rain() {
     st.fuel[0] = Some(ItemStack::new(&reg, coal, 2));
     w.insert_block_entity((10, my, 10), BlockEntity::Bloomery(st));
     w.light_bloomery(10, my, 10).unwrap();
-    w.weather = Weather::Precip;
+    w.force_local_weather("precip");
     for _ in 0..20 {
         w.tick_entities(1.0);
     }
@@ -477,7 +477,7 @@ fn bloomery_multiblock_fires_batches_and_fears_the_rain() {
         "rain fires at half rate, got {}",
         b.progress
     );
-    w.weather = Weather::Storm;
+    w.force_local_weather("storm");
     w.tick_entities(1.0);
     let Some(BlockEntity::Bloomery(b)) = w.block_entity(&(10, my, 10)) else {
         panic!()
@@ -495,7 +495,7 @@ fn bloomery_multiblock_fires_batches_and_fears_the_rain() {
     b.lit = true;
     b.progress = 0.0;
     b.core = Some(bp(11, my, 10));
-    w.weather = Weather::Precip;
+    w.force_local_weather("precip");
     for _ in 0..10 {
         w.tick_entities(1.0);
     }
@@ -620,7 +620,7 @@ fn anvil_works_blooms_into_bars() {
 
 #[test]
 fn quern_grinds_minerals_and_kiln_colors_glass() {
-    use crate::world::{BlockEntity, KILN_FIRE_SECS, KilnState, Weather};
+    use crate::world::{BlockEntity, KILN_FIRE_SECS, KilnState};
     let reg = base_reg();
     let mut w = test_world_with("gw-kiln", reg.clone());
     let b = |n: &str| reg.block_id(n).unwrap();
@@ -672,7 +672,7 @@ fn quern_grinds_minerals_and_kiln_colors_glass() {
     }
     st.powder = Some(ItemStack::new(&reg, it2("base:cobalt_powder"), 1));
     w.insert_block_entity((20, my, 10), BlockEntity::Kiln(st));
-    w.weather = Weather::Clear;
+    w.force_local_weather("clear");
     assert!(w.light_kiln(20, my, 10).is_ok());
     assert_eq!(
         w.get_block(20, my, 10),
@@ -811,7 +811,7 @@ fn forge_wants_its_whole_workshop() {
 
 #[test]
 fn forge_batch_smelts_with_thrifty_fuel_in_any_weather() {
-    use crate::world::{BlockEntity, BloomeryState, FORGE_FIRE_SECS, Weather};
+    use crate::world::{BlockEntity, BloomeryState, FORGE_FIRE_SECS};
     let reg = base_reg();
     let mut w = test_world_with("forge-fire", reg.clone());
     let my = 120;
@@ -830,7 +830,7 @@ fn forge_batch_smelts_with_thrifty_fuel_in_any_weather() {
     w.insert_block_entity((10, my, 10), BlockEntity::Forge(st));
     assert!(w.light_forge(10, my, 10).is_ok(), "lights when charged");
     // A storm means nothing to a chimneyed workshop.
-    w.weather = Weather::Storm;
+    w.force_local_weather("storm");
     let steps = (FORGE_FIRE_SECS / 0.5) as i32 + 4;
     for _ in 0..steps {
         w.tick_entities(0.5);
@@ -945,7 +945,7 @@ fn legacy_food_stacks_initialize_instead_of_rotting() {
 
 #[test]
 fn chimneyed_kiln_is_a_glassworks() {
-    use crate::world::{BlockEntity, KILN_FIRE_SECS, KilnState, Weather};
+    use crate::world::{BlockEntity, KILN_FIRE_SECS, KilnState};
     let reg = base_reg();
     let mut w = test_world_with("glassworks", reg.clone());
     let my = 120;
@@ -977,7 +977,7 @@ fn chimneyed_kiln_is_a_glassworks() {
     st.fuel[0] = Some(ItemStack::new(&reg, coal, 2));
     w.insert_block_entity((mx, my, mz), BlockEntity::Kiln(st));
     assert!(w.light_kiln(mx, my, mz).is_ok());
-    w.weather = Weather::Storm; // and the storm means nothing
+    w.force_local_weather("storm"); // and the storm means nothing
     let steps = (KILN_FIRE_SECS / 0.5) as i32 + 4;
     for _ in 0..steps {
         w.tick_entities(0.5);

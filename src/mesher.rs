@@ -3,10 +3,13 @@
 //! water (translucent) meshes.
 
 use bytemuck::{Pod, Zeroable};
+use std::sync::Arc;
 
 use crate::atlas::ATLAS_TILES;
-use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, ChunkPos};
-use crate::planet::{BlockPos, block_to_render, canonicalize_surface_point, local_frame};
+use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, ChunkMeshSnapshot, ChunkPos};
+use crate::planet::{
+    BlockPos, SurfacePos, block_to_render, canonicalize_surface_point, local_frame,
+};
 use crate::registry::{AIR, BlockId, Registry};
 use crate::world::World;
 
@@ -35,6 +38,100 @@ pub struct ChunkMesh {
     pub emitters: Vec<crate::lights::Emitter>,
 }
 
+/// Immutable neighborhood needed to mesh one chunk off the render thread.
+/// The center copies only render-relevant planes, while the eight neighboring
+/// chunks contribute a one-cell halo. Copying whole neighbors made scheduling
+/// a supposedly asynchronous mesh cost several milliseconds on the render
+/// thread. A later edit marks the live chunk dirty again while this snapshot
+/// finishes, causing a fresh job without blocking the frame.
+pub struct ChunkMeshInput {
+    pos: ChunkPos,
+    reg: Arc<Registry>,
+    center: ChunkMeshSnapshot,
+    border: Box<[MeshBorderCell]>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct MeshBorderCell {
+    block: u16,
+    block_light: [u8; 3],
+    sky_light: u8,
+}
+
+impl ChunkMeshInput {
+    pub fn capture(world: &World, pos: ChunkPos) -> Option<Self> {
+        let center = world.chunk(pos)?.mesh_snapshot();
+        let mut border = vec![MeshBorderCell::default(); 68 * CHUNK_Y].into_boxed_slice();
+        let origin = pos.block_origin();
+        let mut capture_column = |lx: i32, lz: i32| {
+            let Some(column) = Self::border_column(lx, lz) else {
+                return;
+            };
+            let Ok(surface) = SurfacePos::canonicalized(
+                pos.face(),
+                i32::from(origin.u()) + lx,
+                i32::from(origin.v()) + lz,
+            ) else {
+                return;
+            };
+            let Some(chunk) = world.chunk(ChunkPos::from_surface(surface)) else {
+                return;
+            };
+            let x = usize::from(surface.u()) % CHUNK_X;
+            let z = usize::from(surface.v()) % CHUNK_Z;
+            for y in 0..CHUNK_Y {
+                let (block_light, sky_light) = chunk.light(x, y, z);
+                border[column * CHUNK_Y + y] = MeshBorderCell {
+                    block: chunk.get(x, y, z).0,
+                    block_light,
+                    sky_light,
+                };
+            }
+        };
+        for lx in -1..=CHUNK_X as i32 {
+            capture_column(lx, -1);
+            capture_column(lx, CHUNK_Z as i32);
+        }
+        for lz in 0..CHUNK_Z as i32 {
+            capture_column(-1, lz);
+            capture_column(CHUNK_X as i32, lz);
+        }
+        Some(Self {
+            pos,
+            reg: Arc::clone(&world.reg),
+            center,
+            border,
+        })
+    }
+
+    pub fn position(&self) -> ChunkPos {
+        self.pos
+    }
+
+    fn border_column(lx: i32, lz: i32) -> Option<usize> {
+        match (lx, lz) {
+            (-1..=16, -1) => Some((lx + 1) as usize),
+            (-1..=16, 16) => Some(18 + (lx + 1) as usize),
+            (-1, 0..=15) => Some(36 + lz as usize),
+            (16, 0..=15) => Some(52 + lz as usize),
+            _ => None,
+        }
+    }
+
+    fn block_at(&self, lx: i32, y: usize, lz: i32) -> BlockId {
+        Self::border_column(lx, lz).map_or(AIR, |column| {
+            BlockId(self.border[column * CHUNK_Y + y].block)
+        })
+    }
+
+    fn light_at(&self, lx: i32, y: usize, lz: i32) -> ([u8; 3], u8) {
+        Self::border_column(lx, lz).map_or(([0; 3], 0), |column| {
+            let cell = self.border[column * CHUNK_Y + y];
+            (cell.block_light, cell.sky_light)
+        })
+    }
+}
+
 /// How hard an emitter's own faces are pushed past the [0,1] range so the
 /// HDR/bloom pass makes them glow. The block-light channel already carries a
 /// self-lit "torch" term in the shader; for emitter tiles we overwrite it with
@@ -52,7 +149,10 @@ pub(crate) const NORMALS: [[i32; 3]; 6] = [
     [0, 0, -1],
 ];
 
-/// Corner offsets per face, wound CCW viewed from outside.
+/// Corner offsets per face, wound CCW viewed from outside in chart-local
+/// coordinates. A planet chart is intentionally `(east, radial-up, north)`, a
+/// left-handed frame, so triangle indices are emitted in reverse order after
+/// `curved` maps these corners into render space.
 pub(crate) const CORNERS: [[[f32; 3]; 4]; 6] = [
     [[1., 0., 1.], [1., 0., 0.], [1., 1., 0.], [1., 1., 1.]], // +X
     [[0., 0., 0.], [0., 0., 1.], [0., 1., 1.], [0., 1., 0.]], // -X
@@ -86,10 +186,19 @@ pub fn mesh_chunk(
     pos: ChunkPos,
     variants: &crate::atlas::TileVariants,
 ) -> ChunkMesh {
+    let input = ChunkMeshInput::capture(world, pos).expect("meshing missing chunk");
+    mesh_chunk_input(&input, variants)
+}
+
+pub fn mesh_chunk_input(
+    input: &ChunkMeshInput,
+    variants: &crate::atlas::TileVariants,
+) -> ChunkMesh {
+    let pos = input.position();
     let bx = i32::from(pos.u()) * CHUNK_X as i32;
     let bz = i32::from(pos.v()) * CHUNK_Z as i32;
-    let reg = &world.reg;
-    let chunk = world.chunk(pos).expect("meshing missing chunk");
+    let reg = &input.reg;
+    let chunk = &input.center;
 
     let mut m = ChunkMesh {
         opaque_verts: Vec::new(),
@@ -107,12 +216,7 @@ pub fn mesh_chunk(
         if lx >= 0 && lx < CHUNK_X as i32 && lz >= 0 && lz < CHUNK_Z as i32 {
             chunk.get(lx as usize, y as usize, lz as usize)
         } else {
-            let surface = crate::planet::SurfacePos::canonicalized(pos.face(), bx + lx, bz + lz)
-                .expect("mesh neighbor lookup crosses at most one face edge");
-            world.get_block_at(
-                BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
-                    .expect("validated mesh neighbor height"),
-            )
+            input.block_at(lx, y as usize, lz)
         }
     };
     // Octant mask of a neighbor cell, for sub-voxel face culling across borders.
@@ -127,12 +231,7 @@ pub fn mesh_chunk(
         let (b, sk) = if lx >= 0 && lx < CHUNK_X as i32 && lz >= 0 && lz < CHUNK_Z as i32 {
             chunk.light(lx as usize, y as usize, lz as usize)
         } else {
-            let surface = crate::planet::SurfacePos::canonicalized(pos.face(), bx + lx, bz + lz)
-                .expect("mesh light lookup crosses at most one face edge");
-            world.light_rgb_at_pos(
-                BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
-                    .expect("validated mesh light height"),
-            )
+            input.light_at(lx, y as usize, lz)
         };
         (
             [b[0] as f32 / 15.0, b[1] as f32 / 15.0, b[2] as f32 / 15.0],
@@ -235,11 +334,11 @@ pub fn mesh_chunk(
                             }
                             m.opaque_idx.extend_from_slice(&[
                                 base,
+                                base + 2,
                                 base + 1,
-                                base + 2,
                                 base,
-                                base + 2,
                                 base + 3,
+                                base + 2,
                             ]);
                         }
                     }
@@ -280,11 +379,11 @@ pub fn mesh_chunk(
                             }
                             m.opaque_idx.extend_from_slice(&[
                                 base,
+                                base + 2,
                                 base + 1,
-                                base + 2,
                                 base,
-                                base + 2,
                                 base + 3,
+                                base + 2,
                             ]);
                         }
                     };
@@ -701,20 +800,20 @@ pub fn mesh_chunk(
                     if ao[0] as u16 + ao[2] as u16 >= ao[1] as u16 + ao[3] as u16 {
                         idx.extend_from_slice(&[
                             base,
+                            base + 2,
                             base + 1,
-                            base + 2,
                             base,
-                            base + 2,
                             base + 3,
+                            base + 2,
                         ]);
                     } else {
                         idx.extend_from_slice(&[
                             base + 1,
+                            base + 3,
                             base + 2,
-                            base + 3,
                             base + 1,
-                            base + 3,
                             base,
+                            base + 3,
                         ]);
                     }
                 }

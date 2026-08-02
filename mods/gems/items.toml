@@ -2,3 +2,5 @@
 id = "ruby"
 name = "Ruby"
 texture = "ruby.png"
+material_class = "geologically_finite"
+materials = { ruby = 1200 }

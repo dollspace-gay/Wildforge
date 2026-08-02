@@ -20,6 +20,31 @@ fn project_world_label(
     Some(((ndc.x * 0.5 + 0.5) * width, (0.5 - ndc.y * 0.5) * height))
 }
 
+fn wrap_ui_status(text: &str, max_width: f32, scale: f32, max_lines: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        let candidate = if current.is_empty() {
+            word.to_owned()
+        } else {
+            format!("{current} {word}")
+        };
+        if !current.is_empty() && UiBatch::text_width(scale, &candidate) > max_width {
+            lines.push(std::mem::take(&mut current));
+            if lines.len() == max_lines {
+                return lines;
+            }
+            current.push_str(word);
+        } else {
+            current = candidate;
+        }
+    }
+    if !current.is_empty() && lines.len() < max_lines {
+        lines.push(current);
+    }
+    lines
+}
+
 impl Game {
     pub(super) fn hotbar_origin(&self) -> (f32, f32) {
         let w = self.renderer.config.width as f32;
@@ -103,6 +128,18 @@ impl Game {
         )
     }
 
+    pub(super) fn new_world_button_rect(&self, i: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (w / 2.0 - 150.0, h * 0.62 + i as f32 * 52.0, 300.0, 40.0)
+    }
+
+    pub(super) fn world_creation_cancel_rect(&self) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (w / 2.0 - 150.0, (h - 72.0).max(8.0), 300.0, 40.0)
+    }
+
     /// Kick button beside the pause menu, one row per connected guest.
     pub(super) fn kick_rect(&self, row: usize) -> (f32, f32, f32, f32) {
         let (bx, by, bw, _) = self.menu_button_rect(2);
@@ -114,6 +151,7 @@ impl Game {
         let mut rows: Vec<(u32, String)> = if let Some(h) = &self.multiplayer.host {
             h.guests
                 .iter()
+                .filter(|(_, guest)| guest.is_active())
                 .map(|(id, g)| (*id, g.public_label()))
                 .collect()
         } else if let Some(r) = &self.multiplayer.remote
@@ -491,6 +529,7 @@ impl Game {
 
     fn build_ui_inner(&mut self) {
         self.poll_account_task();
+        self.poll_world_creation();
         let mut ui = std::mem::replace(&mut self.ui, UiBatch::new());
         ui.clear();
         ui.press_dip = self.presentation.juice && self.presentation.press_dip > 0.0;
@@ -544,11 +583,30 @@ impl Game {
                 for (i, (name, seed)) in self.worlds.iter().take(6).enumerate() {
                     let y = self.title_row_y(i);
                     let label = format!("{}  SEED {}", name.to_uppercase(), seed);
-                    ui.text_shadow(w / 2.0 - 310.0, y + 13.0, 2.0, &label, [1.0; 4]);
+                    ui.text_shadow(w / 2.0 - 310.0, y + 7.0, 1.7, &label, [1.0; 4]);
+                    if let Some(detail) = self.world_details.get(name) {
+                        ui.text_shadow(
+                            w / 2.0 - 310.0,
+                            y + 27.0,
+                            1.0,
+                            detail,
+                            [0.58, 0.86, 0.67, 1.0],
+                        );
+                    }
                     let pr = self.title_play_rect(i);
                     Self::draw_button(&mut ui, pr, "PLAY", self.hit(pr));
                     let dr = self.title_delete_rect(i);
                     Self::draw_button(&mut ui, dr, "X", self.hit(dr));
+                }
+                if let Some((name, problem)) = self.world_problems.first() {
+                    let warning = format!("{}: {}", name.to_uppercase(), problem);
+                    ui.text_shadow(
+                        w / 2.0 - 310.0,
+                        h * 0.235,
+                        1.0,
+                        &warning,
+                        [1.0, 0.52, 0.42, 1.0],
+                    );
                 }
                 for (j, label) in [
                     "NEW SURVIVAL WORLD",
@@ -567,6 +625,111 @@ impl Game {
                     let r = self.title_action_rect(j);
                     Self::draw_button(&mut ui, r, label, self.hit(r));
                 }
+                self.ui = ui;
+                return;
+            }
+            Screen::NewWorld => {
+                ui.rect(0.0, 0.0, w, h, [0.02, 0.04, 0.08, 0.88]);
+                let title = format!("NEW {} PLANET", self.ui_state.new_world_mode.to_uppercase());
+                let title_width = UiBatch::text_width(4.0, &title);
+                ui.text_shadow(
+                    (w - title_width) / 2.0,
+                    h * 0.20,
+                    4.0,
+                    &title,
+                    [1.0, 0.95, 0.72, 1.0],
+                );
+                ui.text_shadow(
+                    w / 2.0 - 220.0,
+                    h * 0.34,
+                    1.5,
+                    "PLANET SEED",
+                    [0.72, 0.82, 0.76, 1.0],
+                );
+                ui.rect(
+                    w / 2.0 - 220.0,
+                    h * 0.38,
+                    440.0,
+                    42.0,
+                    [0.04, 0.06, 0.08, 0.98],
+                );
+                let seed = format!("{}_", self.ui_state.new_world_seed);
+                ui.text_shadow(
+                    w / 2.0 - 205.0,
+                    h * 0.39,
+                    2.0,
+                    &seed,
+                    [0.92, 0.96, 0.88, 1.0],
+                );
+                let hint = "ENTER A SEED OR ROLL ONE. THE SAME SEED + CONTENT + VERSION MAKES THE SAME PLANET.";
+                let hint_width = UiBatch::text_width(1.1, hint);
+                ui.text_shadow(
+                    (w - hint_width) / 2.0,
+                    h * 0.47,
+                    1.1,
+                    hint,
+                    [0.66, 0.72, 0.68, 1.0],
+                );
+                if !self.ui_state.new_world_status.is_empty() {
+                    for (line, status) in
+                        wrap_ui_status(&self.ui_state.new_world_status, w - 80.0, 1.2, 4)
+                            .iter()
+                            .enumerate()
+                    {
+                        let status_width = UiBatch::text_width(1.2, status);
+                        ui.text_shadow(
+                            (w - status_width) / 2.0,
+                            h * 0.52 + line as f32 * 13.0,
+                            1.2,
+                            status,
+                            [1.0, 0.52, 0.42, 1.0],
+                        );
+                    }
+                }
+                for (index, label) in ["CREATE PLANET", "ROLL SEED", "BACK"].iter().enumerate() {
+                    let rect = self.new_world_button_rect(index);
+                    Self::draw_button(&mut ui, rect, label, self.hit(rect));
+                }
+                self.ui = ui;
+                return;
+            }
+            Screen::CreatingWorld => {
+                ui.rect(0.0, 0.0, w, h, [0.02, 0.04, 0.08, 0.88]);
+                let title = "A WORLD IS BECOMING";
+                let title_width = UiBatch::text_width(4.0, title);
+                ui.text_shadow(
+                    (w - title_width) / 2.0,
+                    h * 0.28,
+                    4.0,
+                    title,
+                    [1.0, 0.95, 0.72, 1.0],
+                );
+                let status_width = UiBatch::text_width(2.5, &self.ui_state.creation_status);
+                ui.text_shadow(
+                    (w - status_width) / 2.0,
+                    h * 0.43,
+                    2.5,
+                    &self.ui_state.creation_status,
+                    [0.75, 0.95, 0.82, 1.0],
+                );
+                let (completed, total) = self.ui_state.creation_progress;
+                let fraction = completed as f32 / total.max(1) as f32;
+                ui.rect(
+                    w / 2.0 - 220.0,
+                    h * 0.52,
+                    440.0,
+                    16.0,
+                    [0.08, 0.1, 0.12, 0.95],
+                );
+                ui.rect(
+                    w / 2.0 - 218.0,
+                    h * 0.52 + 2.0,
+                    436.0 * fraction,
+                    12.0,
+                    [0.25, 0.72, 0.45, 1.0],
+                );
+                let cancel = self.world_creation_cancel_rect();
+                Self::draw_button(&mut ui, cancel, "CANCEL", self.hit(cancel));
                 self.ui = ui;
                 return;
             }
@@ -1297,6 +1460,9 @@ impl Game {
             }
             if let Some(hst) = &self.multiplayer.host {
                 for g in hst.guests.values() {
+                    if !g.is_active() {
+                        continue;
+                    }
                     self.draw_world_nameplate(
                         &mut ui,
                         &g.public_label(),
@@ -1422,6 +1588,8 @@ impl Game {
         match self.ui_state.screen {
             Screen::Playing
             | Screen::Title
+            | Screen::NewWorld
+            | Screen::CreatingWorld
             | Screen::Accounts
             | Screen::Moderation(_)
             | Screen::Mods
@@ -1845,7 +2013,10 @@ impl Game {
                     [0.7, 0.85, 0.65, 1.0],
                 );
                 // The stone states the season's appetite plainly.
-                let (_, want_line) = self.server.world.season_want();
+                let (_, want_line) = self
+                    .server
+                    .world
+                    .season_want_at_surface(self.player.pos.surface());
                 let want_line = want_line.to_uppercase();
                 let ww = UiBatch::text_width(1.5, &want_line);
                 ui.text_shadow(
@@ -1902,7 +2073,7 @@ impl Game {
                 let friends = match &self.multiplayer.host {
                     Some(h) => format!(
                         "FRIENDS: {} CONNECTED ({})",
-                        h.guests.len(),
+                        h.guests.values().filter(|guest| guest.is_active()).count(),
                         h.identity_policy.as_str().to_uppercase()
                     ),
                     None if self.multiplayer.remote.is_some() => "CONNECTED AS GUEST".to_string(),

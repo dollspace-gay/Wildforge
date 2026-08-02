@@ -4,6 +4,14 @@ use super::*;
 
 impl Game {
     pub(super) fn key(&mut self, code: KeyCode, pressed: bool, _event_loop: &ActiveEventLoop) {
+        if std::env::var_os("WILDFORGE_INPUT_TRACE").is_some()
+            && matches!(code, KeyCode::KeyA | KeyCode::KeyD)
+        {
+            eprintln!(
+                "input: {code:?} {}",
+                if pressed { "pressed" } else { "released" }
+            );
+        }
         match code {
             KeyCode::KeyW | KeyCode::ArrowUp => self.input.keys.w = pressed,
             KeyCode::KeyA | KeyCode::ArrowLeft => self.input.keys.a = pressed,
@@ -22,6 +30,8 @@ impl Game {
             KeyCode::ControlLeft | KeyCode::ControlRight => self.input.keys.sprint = pressed,
             KeyCode::Escape if pressed => match self.ui_state.screen {
                 Screen::Playing => self.set_screen(Screen::Paused),
+                Screen::CreatingWorld => self.cancel_world_creation(),
+                Screen::NewWorld => self.set_screen(Screen::Title),
                 Screen::Inventory
                 | Screen::Furnace(_)
                 | Screen::Chest(_)

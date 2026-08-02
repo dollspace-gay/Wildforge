@@ -16,7 +16,7 @@ impl ApplicationHandler for App {
             event_loop
                 .create_window(
                     Window::default_attributes()
-                        .with_title("Wildforge — loading world…")
+                        .with_title(format!("Wildforge {BUILD_MARKER} — loading world…"))
                         .with_inner_size(LogicalSize::new(1280, 720)),
                 )
                 .expect("create window"),
@@ -56,6 +56,31 @@ impl ApplicationHandler for App {
                 game.camera.aspect = size.width as f32 / size.height.max(1) as f32;
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                // New-planet seeds are explicit and reproducible. Keep this
+                // field deliberately numeric so the UI and world.toml agree
+                // on the complete u32 domain without a locale/parser layer.
+                if game.ui_state.screen == Screen::NewWorld && event.state.is_pressed() {
+                    match event.physical_key {
+                        PhysicalKey::Code(KeyCode::Backspace) => {
+                            game.ui_state.new_world_seed.pop();
+                        }
+                        PhysicalKey::Code(KeyCode::Enter) => game.create_new_world(),
+                        _ => {
+                            if let Some(text) = &event.text {
+                                for ch in text.chars() {
+                                    if ch.is_ascii_digit()
+                                        && game.ui_state.new_world_seed.len() < 10
+                                    {
+                                        game.ui_state.new_world_seed.push(ch);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) {
+                        return;
+                    }
+                }
                 // First-run/profile and ATProto account text entry. OAuth
                 // itself runs on a worker so the render/event loop stays live.
                 if game.ui_state.screen == Screen::Accounts && event.state.is_pressed() {

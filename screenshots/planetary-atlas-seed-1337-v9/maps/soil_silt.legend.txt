@@ -1,0 +1,7 @@
+layer = soil_silt
+description = soil silt fraction
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = scalar
+minimum = 35.000000000
+maximum = 126.000000000
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

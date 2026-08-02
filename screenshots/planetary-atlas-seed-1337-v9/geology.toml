@@ -1,0 +1,8394 @@
+schema_version = 1
+chosen_attempt = 0
+rejected_attempts = []
+target_ocean_fraction = 0.6484
+achieved_ocean_fraction = 0.6484020728292746
+raw_sea_level = 37.103546
+largest_ocean_share = 0.9917086061301296
+
+[[plates]]
+id = 0
+site_unit = [
+    0.00942278,
+    0.94854015,
+    0.31651676,
+]
+euler_pole = [
+    0.6714649,
+    0.7020888,
+    0.23707849,
+]
+angular_speed = 0.3377022
+
+[[plates]]
+id = 1
+site_unit = [
+    -0.39064658,
+    0.79327434,
+    -0.46702364,
+]
+euler_pole = [
+    0.5271442,
+    0.81176275,
+    0.25131714,
+]
+angular_speed = 0.3136929
+
+[[plates]]
+id = 2
+site_unit = [
+    0.6711362,
+    0.7354469,
+    -0.09324215,
+]
+euler_pole = [
+    -0.63710076,
+    0.6441597,
+    0.423274,
+]
+angular_speed = 1.0786372
+
+[[plates]]
+id = 3
+site_unit = [
+    -0.6563429,
+    0.5731095,
+    0.4906724,
+]
+euler_pole = [
+    -0.6070075,
+    -0.24410726,
+    0.7562761,
+]
+angular_speed = 0.7885761
+
+[[plates]]
+id = 4
+site_unit = [
+    0.14161204,
+    0.3858087,
+    -0.9116456,
+]
+euler_pole = [
+    -0.7429846,
+    0.117799684,
+    -0.6588605,
+]
+angular_speed = 0.77999395
+
+[[plates]]
+id = 5
+site_unit = [
+    0.52475286,
+    0.35535997,
+    0.7735332,
+]
+euler_pole = [
+    -0.56692046,
+    0.62221557,
+    0.5398601,
+]
+angular_speed = 0.8251247
+
+[[plates]]
+id = 6
+site_unit = [
+    -0.9548105,
+    0.16210407,
+    -0.2491167,
+]
+euler_pole = [
+    0.2971397,
+    0.94386446,
+    -0.14431852,
+]
+angular_speed = 1.1127084
+
+[[plates]]
+id = 7
+site_unit = [
+    0.84634656,
+    0.058823783,
+    -0.5293744,
+]
+euler_pole = [
+    -0.24391967,
+    -0.5366851,
+    -0.80775756,
+]
+angular_speed = 0.6031687
+
+[[plates]]
+id = 8
+site_unit = [
+    -0.24747722,
+    -0.001635729,
+    0.96889234,
+]
+euler_pole = [
+    0.29159546,
+    -0.49910867,
+    0.81600404,
+]
+angular_speed = 1.035775
+
+[[plates]]
+id = 9
+site_unit = [
+    -0.46765617,
+    -0.24824268,
+    -0.84833556,
+]
+euler_pole = [
+    -0.27102062,
+    0.9464919,
+    0.17521687,
+]
+angular_speed = 0.38896894
+
+[[plates]]
+id = 10
+site_unit = [
+    0.9227416,
+    -0.26362282,
+    0.2811601,
+]
+euler_pole = [
+    0.55839425,
+    -0.53036106,
+    0.6378974,
+]
+angular_speed = 0.69456804
+
+[[plates]]
+id = 11
+site_unit = [
+    -0.81185544,
+    -0.40487692,
+    0.42067263,
+]
+euler_pole = [
+    -0.5851701,
+    0.7153984,
+    -0.38181293,
+]
+angular_speed = 0.39047998
+
+[[plates]]
+id = 12
+site_unit = [
+    0.3537677,
+    -0.5872077,
+    -0.7280354,
+]
+euler_pole = [
+    0.46706817,
+    0.41568804,
+    0.780417,
+]
+angular_speed = 0.34276092
+
+[[plates]]
+id = 13
+site_unit = [
+    0.1552309,
+    -0.6774887,
+    0.71896625,
+]
+euler_pole = [
+    0.044932295,
+    -0.8912353,
+    -0.45130998,
+]
+angular_speed = 0.8112736
+
+[[plates]]
+id = 14
+site_unit = [
+    -0.506063,
+    -0.83791786,
+    -0.20443563,
+]
+euler_pole = [
+    -0.84043497,
+    -0.51311874,
+    -0.17429347,
+]
+angular_speed = 0.2969736
+
+[[plates]]
+id = 15
+site_unit = [
+    0.35199016,
+    -0.9358912,
+    -0.0145101845,
+]
+euler_pole = [
+    -0.81684077,
+    0.3908662,
+    0.42425787,
+]
+angular_speed = 0.37453517
+
+[[cratons]]
+id = 1
+center_unit = [
+    -0.9246927,
+    -0.37719876,
+    0.051618755,
+]
+nuclei = [
+    [
+    -0.9246927,
+    -0.37719876,
+    0.051618755,
+],
+    [
+    -0.95207983,
+    -0.30409256,
+    -0.032736808,
+],
+    [
+    -0.9547171,
+    -0.28998917,
+    -0.06649504,
+],
+]
+radius_radians = 0.496
+interior_age_myr = 2927
+
+[[cratons]]
+id = 2
+center_unit = [
+    0.08438244,
+    -0.94190806,
+    0.32509807,
+]
+nuclei = [
+    [
+    0.08438244,
+    -0.94190806,
+    0.32509807,
+],
+    [
+    -0.023005785,
+    -0.93089706,
+    0.36455637,
+],
+    [
+    0.2190474,
+    -0.9406119,
+    0.25935987,
+],
+]
+radius_radians = 0.47100002
+interior_age_myr = 3261
+
+[[cratons]]
+id = 3
+center_unit = [
+    -0.5042779,
+    -0.045878284,
+    -0.86232185,
+]
+nuclei = [
+    [
+    -0.5042779,
+    -0.045878284,
+    -0.86232185,
+],
+    [
+    -0.5975108,
+    -0.06828038,
+    -0.79894847,
+],
+    [
+    -0.608339,
+    -0.12050478,
+    -0.7844758,
+],
+]
+radius_radians = 0.495
+interior_age_myr = 3524
+
+[[cratons]]
+id = 4
+center_unit = [
+    -0.4552173,
+    -0.008412378,
+    0.8903406,
+]
+nuclei = [
+    [
+    -0.4552173,
+    -0.008412378,
+    0.8903406,
+],
+    [
+    -0.46529347,
+    -0.12209055,
+    0.876696,
+],
+    [
+    -0.35831562,
+    0.099419035,
+    0.92829186,
+],
+]
+radius_radians = 0.504
+interior_age_myr = 3030
+
+[[cratons]]
+id = 5
+center_unit = [
+    0.6672653,
+    -0.55620724,
+    -0.4953691,
+]
+nuclei = [
+    [
+    0.6672653,
+    -0.55620724,
+    -0.4953691,
+],
+    [
+    0.6819111,
+    -0.6141823,
+    -0.39721197,
+],
+    [
+    0.65046626,
+    -0.6552288,
+    -0.38414696,
+],
+]
+radius_radians = 0.47
+interior_age_myr = 2872
+
+[[cratons]]
+id = 6
+center_unit = [
+    -0.56556404,
+    0.79895246,
+    -0.20448059,
+]
+nuclei = [
+    [
+    -0.56556404,
+    0.79895246,
+    -0.20448059,
+],
+    [
+    -0.65330136,
+    0.74019367,
+    -0.15909338,
+],
+    [
+    -0.6010901,
+    0.72731197,
+    -0.33122203,
+],
+]
+radius_radians = 0.477
+interior_age_myr = 3094
+
+[[cratons]]
+id = 7
+center_unit = [
+    0.66307384,
+    -0.0103194155,
+    0.7484829,
+]
+nuclei = [
+    [
+    0.66307384,
+    -0.0103194155,
+    0.7484829,
+],
+    [
+    0.61323214,
+    -0.10815372,
+    0.7824635,
+],
+    [
+    0.73807853,
+    0.091786765,
+    0.6684424,
+],
+]
+radius_radians = 0.495
+interior_age_myr = 3040
+
+[[cratons]]
+id = 8
+center_unit = [
+    0.5517041,
+    0.40344703,
+    -0.72996783,
+]
+nuclei = [
+    [
+    0.5517041,
+    0.40344703,
+    -0.72996783,
+],
+    [
+    0.6359974,
+    0.33301544,
+    -0.6961379,
+],
+    [
+    0.61887777,
+    0.26971117,
+    -0.73773044,
+],
+]
+radius_radians = 0.468
+interior_age_myr = 2870
+
+[[cratons]]
+id = 9
+center_unit = [
+    0.3068215,
+    0.9117599,
+    0.27304658,
+]
+nuclei = [
+    [
+    0.3068215,
+    0.9117599,
+    0.27304658,
+],
+    [
+    0.40044942,
+    0.89208305,
+    0.20935152,
+],
+    [
+    0.35710216,
+    0.92462534,
+    0.13246146,
+],
+]
+radius_radians = 0.483
+interior_age_myr = 3574
+
+[[continents]]
+id = 1
+cell_count = 29171
+area = 25505466.75366211
+share_of_land = 0.21224475777040153
+major = true
+
+[[continents]]
+id = 2
+cell_count = 5
+area = 4615.0513916015625
+share_of_land = 0.000038404334026460714
+major = false
+
+[[continents]]
+id = 3
+cell_count = 769
+area = 673437.2966308594
+share_of_land = 0.005604035294764728
+major = false
+
+[[continents]]
+id = 4
+cell_count = 97
+area = 84383.12896728516
+share_of_land = 0.0007021975696640982
+major = false
+
+[[continents]]
+id = 5
+cell_count = 14666
+area = 12921246.83795166
+share_of_land = 0.10752467036576972
+major = true
+
+[[continents]]
+id = 6
+cell_count = 5
+area = 4179.719055175781
+share_of_land = 0.00003478169864453631
+major = false
+
+[[continents]]
+id = 7
+cell_count = 7
+area = 6051.422607421875
+share_of_land = 0.000050357154326304346
+major = false
+
+[[continents]]
+id = 8
+cell_count = 5
+area = 4628.9615478515625
+share_of_land = 0.00003852008794589862
+major = false
+
+[[continents]]
+id = 9
+cell_count = 14
+area = 13089.926574707031
+share_of_land = 0.00010892834551565806
+major = false
+
+[[continents]]
+id = 10
+cell_count = 23741
+area = 20729160.58654785
+share_of_land = 0.1724985357048561
+major = true
+
+[[continents]]
+id = 11
+cell_count = 17987
+area = 15630040.115844727
+share_of_land = 0.13006600155054238
+major = true
+
+[[continents]]
+id = 12
+cell_count = 2
+area = 1695.0576782226563
+share_of_land = 0.00001410549000321945
+major = false
+
+[[continents]]
+id = 13
+cell_count = 1
+area = 846.3886108398438
+share_of_land = 0.000007043256546619996
+major = false
+
+[[continents]]
+id = 14
+cell_count = 18552
+area = 16224882.092651367
+share_of_land = 0.13501600276002287
+major = true
+
+[[continents]]
+id = 15
+cell_count = 20
+area = 17360.949645996094
+share_of_land = 0.00014446983416798343
+major = false
+
+[[continents]]
+id = 16
+cell_count = 51
+area = 44364.87872314453
+share_of_land = 0.00036918410586448335
+major = false
+
+[[continents]]
+id = 17
+cell_count = 17
+area = 14790.011779785156
+share_of_land = 0.00012307567228391023
+major = false
+
+[[continents]]
+id = 18
+cell_count = 12
+area = 10418.655700683594
+share_of_land = 0.00008669925850964089
+major = false
+
+[[continents]]
+id = 19
+cell_count = 1771
+area = 1564840.8518676758
+share_of_land = 0.013021885494653654
+major = false
+
+[[continents]]
+id = 20
+cell_count = 14830
+area = 12670147.688964844
+share_of_land = 0.10543513879327228
+major = true
+
+[[continents]]
+id = 21
+cell_count = 1
+area = 870.5574951171875
+share_of_land = 0.0000072443788800620664
+major = false
+
+[[continents]]
+id = 22
+cell_count = 1
+area = 870.2335815429688
+share_of_land = 0.000007241683420348955
+major = false
+
+[[continents]]
+id = 23
+cell_count = 7
+area = 6145.666564941406
+share_of_land = 0.00005114140917363761
+major = false
+
+[[continents]]
+id = 24
+cell_count = 19
+area = 16056.520751953125
+share_of_land = 0.00013361497715560936
+major = false
+
+[[continents]]
+id = 25
+cell_count = 9604
+area = 8421437.580078125
+share_of_land = 0.07007932834656319
+major = true
+
+[[continents]]
+id = 26
+cell_count = 19
+area = 16722.006225585938
+share_of_land = 0.0001391528410384821
+major = false
+
+[[continents]]
+id = 27
+cell_count = 1440
+area = 1254942.9205322266
+share_of_land = 0.010443057512201735
+major = false
+
+[[continents]]
+id = 28
+cell_count = 3068
+area = 2638753.6854248047
+share_of_land = 0.021958493925555298
+major = false
+
+[[continents]]
+id = 29
+cell_count = 6
+area = 5075.732971191406
+share_of_land = 0.00004223791414533046
+major = false
+
+[[continents]]
+id = 30
+cell_count = 199
+area = 174422.4730834961
+share_of_land = 0.0014514635590429097
+major = false
+
+[[continents]]
+id = 31
+cell_count = 2
+area = 1800.7650146484375
+share_of_land = 0.000014985137814840968
+major = false
+
+[[continents]]
+id = 32
+cell_count = 17
+area = 15164.879760742188
+share_of_land = 0.00012619515112280194
+major = false
+
+[[continents]]
+id = 33
+cell_count = 13
+area = 11505.062561035156
+share_of_land = 0.00009573983648229502
+major = false
+
+[[continents]]
+id = 34
+cell_count = 1149
+area = 969177.5546264648
+share_of_land = 0.008065049634454114
+major = false
+
+[[continents]]
+id = 35
+cell_count = 11
+area = 9370.399658203125
+share_of_land = 0.00007797615408789248
+major = false
+
+[[continents]]
+id = 36
+cell_count = 18
+area = 16355.28564453125
+share_of_land = 0.0001361011611124836
+major = false
+
+[[continents]]
+id = 37
+cell_count = 206
+area = 171555.4077758789
+share_of_land = 0.0014276051608569694
+major = false
+
+[[continents]]
+id = 38
+cell_count = 363
+area = 305817.41326904297
+share_of_land = 0.002544871788787759
+major = false
+
+[[continents]]
+id = 39
+cell_count = 10
+area = 8376.440856933594
+share_of_land = 0.00006970488632217242
+major = false
+
+[[provinces]]
+id = 1
+name = "Falesh Province"
+dominant_bedrock = "shale"
+plate_id = 13
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 2
+name = "Ithfold Province"
+dominant_bedrock = "basalt"
+plate_id = 13
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 3
+name = "Karfold Province"
+dominant_bedrock = "basalt"
+plate_id = 13
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 4
+name = "Karbray Province"
+dominant_bedrock = "basalt"
+plate_id = 10
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 5
+name = "Normere Province"
+dominant_bedrock = "ultramafic"
+plate_id = 10
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 6
+name = "Belbray Province"
+dominant_bedrock = "ultramafic"
+plate_id = 15
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 7
+name = "Faldell Province"
+dominant_bedrock = "basalt"
+plate_id = 15
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 8
+name = "Ardell Province"
+dominant_bedrock = "basalt"
+plate_id = 15
+craton_id = 5
+basin = "deep_marine"
+
+[[provinces]]
+id = 9
+name = "Gorscar Province"
+dominant_bedrock = "shale"
+plate_id = 15
+craton_id = 5
+basin = "deep_marine"
+
+[[provinces]]
+id = 10
+name = "Gorreach Province"
+dominant_bedrock = "sandstone"
+plate_id = 15
+craton_id = 5
+basin = "marine_shelf"
+
+[[provinces]]
+id = 11
+name = "Arreach Province"
+dominant_bedrock = "limestone"
+plate_id = 15
+craton_id = 5
+basin = "marine_shelf"
+
+[[provinces]]
+id = 12
+name = "Gorvale Province"
+dominant_bedrock = "granite"
+plate_id = 15
+craton_id = 5
+basin = "closed"
+
+[[provinces]]
+id = 13
+name = "Falmere Province"
+dominant_bedrock = "basalt"
+plate_id = 15
+craton_id = 5
+basin = "rift"
+
+[[provinces]]
+id = 14
+name = "Ithreach Province"
+dominant_bedrock = "limestone"
+plate_id = 12
+craton_id = 5
+basin = "marine_shelf"
+
+[[provinces]]
+id = 15
+name = "Karesh Province"
+dominant_bedrock = "basalt"
+plate_id = 12
+craton_id = 5
+basin = "rift"
+
+[[provinces]]
+id = 16
+name = "Belreach Province"
+dominant_bedrock = "evaporite"
+plate_id = 12
+craton_id = 5
+basin = "closed"
+
+[[provinces]]
+id = 17
+name = "Morholm Province"
+dominant_bedrock = "evaporite"
+plate_id = 15
+craton_id = 5
+basin = "closed"
+
+[[provinces]]
+id = 18
+name = "Corholm Province"
+dominant_bedrock = "basalt"
+plate_id = 10
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 19
+name = "Belholm Province"
+dominant_bedrock = "basalt"
+plate_id = 10
+craton_id = 5
+basin = "deep_marine"
+
+[[provinces]]
+id = 20
+name = "Eldmere Province"
+dominant_bedrock = "shale"
+plate_id = 10
+craton_id = 5
+basin = "deep_marine"
+
+[[provinces]]
+id = 21
+name = "Falfold Province"
+dominant_bedrock = "shale"
+plate_id = 10
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 22
+name = "Eldesh Province"
+dominant_bedrock = "sandstone"
+plate_id = 10
+craton_id = 5
+basin = "marine_shelf"
+
+[[provinces]]
+id = 23
+name = "Mormere Province"
+dominant_bedrock = "limestone"
+plate_id = 10
+craton_id = 5
+basin = "marine_shelf"
+
+[[provinces]]
+id = 24
+name = "Halgard Province"
+dominant_bedrock = "limestone"
+plate_id = 13
+craton_id = 7
+basin = "marine_shelf"
+
+[[provinces]]
+id = 25
+name = "Ithvale Province"
+dominant_bedrock = "sandstone"
+plate_id = 13
+craton_id = 7
+basin = "marine_shelf"
+
+[[provinces]]
+id = 26
+name = "Eldscar Province"
+dominant_bedrock = "basalt"
+plate_id = 10
+craton_id = 5
+basin = "rift"
+
+[[provinces]]
+id = 27
+name = "Dunvale Province"
+dominant_bedrock = "sandstone"
+plate_id = 10
+craton_id = 7
+basin = "marine_shelf"
+
+[[provinces]]
+id = 28
+name = "Halvale Province"
+dominant_bedrock = "limestone"
+plate_id = 10
+craton_id = 7
+basin = "marine_shelf"
+
+[[provinces]]
+id = 29
+name = "Belmere Province"
+dominant_bedrock = "basalt"
+plate_id = 10
+craton_id = 7
+basin = "rift"
+
+[[provinces]]
+id = 30
+name = "Eldesh Province"
+dominant_bedrock = "granite"
+plate_id = 12
+craton_id = 5
+basin = "none"
+
+[[provinces]]
+id = 31
+name = "Dunesh Province"
+dominant_bedrock = "ultramafic"
+plate_id = 10
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 32
+name = "Belgard Province"
+dominant_bedrock = "shale"
+plate_id = 12
+craton_id = 5
+basin = "foreland"
+
+[[provinces]]
+id = 33
+name = "Arvale Province"
+dominant_bedrock = "evaporite"
+plate_id = 10
+craton_id = 5
+basin = "closed"
+
+[[provinces]]
+id = 34
+name = "Kargard Province"
+dominant_bedrock = "limestone"
+plate_id = 7
+craton_id = 5
+basin = "marine_shelf"
+
+[[provinces]]
+id = 35
+name = "Dunbray Province"
+dominant_bedrock = "shale"
+plate_id = 10
+craton_id = 5
+basin = "foreland"
+
+[[provinces]]
+id = 36
+name = "Ithdell Province"
+dominant_bedrock = "granite"
+plate_id = 10
+craton_id = 5
+basin = "none"
+
+[[provinces]]
+id = 37
+name = "Eldfold Province"
+dominant_bedrock = "evaporite"
+plate_id = 7
+craton_id = 5
+basin = "closed"
+
+[[provinces]]
+id = 38
+name = "Ithfold Province"
+dominant_bedrock = "basalt"
+plate_id = 7
+craton_id = 5
+basin = "rift"
+
+[[provinces]]
+id = 39
+name = "Morholm Province"
+dominant_bedrock = "ultramafic"
+plate_id = 10
+craton_id = 5
+basin = "deep_marine"
+
+[[provinces]]
+id = 40
+name = "Gorgard Province"
+dominant_bedrock = "shale"
+plate_id = 7
+craton_id = 5
+basin = "foreland"
+
+[[provinces]]
+id = 41
+name = "Normere Province"
+dominant_bedrock = "granite"
+plate_id = 7
+craton_id = 5
+basin = "none"
+
+[[provinces]]
+id = 42
+name = "Gorholm Province"
+dominant_bedrock = "sandstone"
+plate_id = 7
+craton_id = 5
+basin = "marine_shelf"
+
+[[provinces]]
+id = 43
+name = "Dunreach Province"
+dominant_bedrock = "granite"
+plate_id = 7
+craton_id = 5
+basin = "closed"
+
+[[provinces]]
+id = 44
+name = "Belgard Province"
+dominant_bedrock = "shale"
+plate_id = 7
+craton_id = 5
+basin = "deep_marine"
+
+[[provinces]]
+id = 45
+name = "Corgard Province"
+dominant_bedrock = "basalt"
+plate_id = 7
+craton_id = 5
+basin = "deep_marine"
+
+[[provinces]]
+id = 46
+name = "Gorvale Province"
+dominant_bedrock = "basalt"
+plate_id = 7
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 47
+name = "Belmere Province"
+dominant_bedrock = "limestone"
+plate_id = 7
+craton_id = 8
+basin = "marine_shelf"
+
+[[provinces]]
+id = 48
+name = "Corcairn Province"
+dominant_bedrock = "sandstone"
+plate_id = 7
+craton_id = 8
+basin = "marine_shelf"
+
+[[provinces]]
+id = 49
+name = "Halfold Province"
+dominant_bedrock = "shale"
+plate_id = 7
+craton_id = 8
+basin = "deep_marine"
+
+[[provinces]]
+id = 50
+name = "Ithesh Province"
+dominant_bedrock = "ultramafic"
+plate_id = 7
+craton_id = 5
+basin = "deep_marine"
+
+[[provinces]]
+id = 51
+name = "Halcairn Province"
+dominant_bedrock = "ultramafic"
+plate_id = 7
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 52
+name = "Belreach Province"
+dominant_bedrock = "shale"
+plate_id = 5
+craton_id = 7
+basin = "foreland"
+
+[[provinces]]
+id = 53
+name = "Karadan Province"
+dominant_bedrock = "ultramafic"
+plate_id = 7
+craton_id = 8
+basin = "deep_marine"
+
+[[provinces]]
+id = 54
+name = "Norvale Province"
+dominant_bedrock = "granite"
+plate_id = 10
+craton_id = 7
+basin = "closed"
+
+[[provinces]]
+id = 55
+name = "Gorfold Province"
+dominant_bedrock = "granite"
+plate_id = 5
+craton_id = 7
+basin = "none"
+
+[[provinces]]
+id = 56
+name = "Belesh Province"
+dominant_bedrock = "granite"
+plate_id = 5
+craton_id = 7
+basin = "closed"
+
+[[provinces]]
+id = 57
+name = "Falscar Province"
+dominant_bedrock = "limestone"
+plate_id = 5
+craton_id = 7
+basin = "marine_shelf"
+
+[[provinces]]
+id = 58
+name = "Moradan Province"
+dominant_bedrock = "shale"
+plate_id = 10
+craton_id = 7
+basin = "foreland"
+
+[[provinces]]
+id = 59
+name = "Haladan Province"
+dominant_bedrock = "granite"
+plate_id = 10
+craton_id = 7
+basin = "none"
+
+[[provinces]]
+id = 60
+name = "Arbray Province"
+dominant_bedrock = "basalt"
+plate_id = 7
+craton_id = 0
+basin = "marine_shelf"
+
+[[provinces]]
+id = 61
+name = "Norcairn Province"
+dominant_bedrock = "basalt"
+plate_id = 7
+craton_id = 0
+basin = "none"
+
+[[provinces]]
+id = 62
+name = "Kargard Province"
+dominant_bedrock = "basalt"
+plate_id = 7
+craton_id = 8
+basin = "deep_marine"
+
+[[provinces]]
+id = 63
+name = "Cordell Province"
+dominant_bedrock = "basalt"
+plate_id = 2
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 64
+name = "Dunbray Province"
+dominant_bedrock = "evaporite"
+plate_id = 10
+craton_id = 7
+basin = "closed"
+
+[[provinces]]
+id = 65
+name = "Dungard Province"
+dominant_bedrock = "granite"
+plate_id = 7
+craton_id = 8
+basin = "closed"
+
+[[provinces]]
+id = 66
+name = "Argard Province"
+dominant_bedrock = "basalt"
+plate_id = 5
+craton_id = 7
+basin = "rift"
+
+[[provinces]]
+id = 67
+name = "Dunadan Province"
+dominant_bedrock = "evaporite"
+plate_id = 7
+craton_id = 8
+basin = "closed"
+
+[[provinces]]
+id = 68
+name = "Norgard Province"
+dominant_bedrock = "evaporite"
+plate_id = 5
+craton_id = 7
+basin = "closed"
+
+[[provinces]]
+id = 69
+name = "Eldreach Province"
+dominant_bedrock = "sandstone"
+plate_id = 5
+craton_id = 7
+basin = "marine_shelf"
+
+[[provinces]]
+id = 70
+name = "Haldell Province"
+dominant_bedrock = "basalt"
+plate_id = 2
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 71
+name = "Dunbray Province"
+dominant_bedrock = "shale"
+plate_id = 2
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 72
+name = "Eldcairn Province"
+dominant_bedrock = "shale"
+plate_id = 5
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 73
+name = "Dunadan Province"
+dominant_bedrock = "limestone"
+plate_id = 2
+craton_id = 7
+basin = "marine_shelf"
+
+[[provinces]]
+id = 74
+name = "Eldmere Province"
+dominant_bedrock = "basalt"
+plate_id = 2
+craton_id = 8
+basin = "deep_marine"
+
+[[provinces]]
+id = 75
+name = "Dunadan Province"
+dominant_bedrock = "shale"
+plate_id = 2
+craton_id = 8
+basin = "deep_marine"
+
+[[provinces]]
+id = 76
+name = "Eldfold Province"
+dominant_bedrock = "ultramafic"
+plate_id = 2
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 77
+name = "Eldbray Province"
+dominant_bedrock = "granite"
+plate_id = 7
+craton_id = 8
+basin = "none"
+
+[[provinces]]
+id = 78
+name = "Dunmere Province"
+dominant_bedrock = "shale"
+plate_id = 7
+craton_id = 8
+basin = "foreland"
+
+[[provinces]]
+id = 79
+name = "Dunreach Province"
+dominant_bedrock = "basalt"
+plate_id = 7
+craton_id = 8
+basin = "rift"
+
+[[provinces]]
+id = 80
+name = "Corcairn Province"
+dominant_bedrock = "sandstone"
+plate_id = 2
+craton_id = 8
+basin = "marine_shelf"
+
+[[provinces]]
+id = 81
+name = "Arfold Province"
+dominant_bedrock = "limestone"
+plate_id = 2
+craton_id = 8
+basin = "marine_shelf"
+
+[[provinces]]
+id = 82
+name = "Gordell Province"
+dominant_bedrock = "basalt"
+plate_id = 2
+craton_id = 8
+basin = "rift"
+
+[[provinces]]
+id = 83
+name = "Falholm Province"
+dominant_bedrock = "ultramafic"
+plate_id = 2
+craton_id = 8
+basin = "deep_marine"
+
+[[provinces]]
+id = 84
+name = "Karesh Province"
+dominant_bedrock = "basalt"
+plate_id = 5
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 85
+name = "Coresh Province"
+dominant_bedrock = "evaporite"
+plate_id = 2
+craton_id = 8
+basin = "closed"
+
+[[provinces]]
+id = 86
+name = "Gorvale Province"
+dominant_bedrock = "basalt"
+plate_id = 5
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 87
+name = "Mordell Province"
+dominant_bedrock = "basalt"
+plate_id = 2
+craton_id = 9
+basin = "deep_marine"
+
+[[provinces]]
+id = 88
+name = "Falgard Province"
+dominant_bedrock = "ultramafic"
+plate_id = 2
+craton_id = 9
+basin = "deep_marine"
+
+[[provinces]]
+id = 89
+name = "Morgard Province"
+dominant_bedrock = "shale"
+plate_id = 2
+craton_id = 9
+basin = "deep_marine"
+
+[[provinces]]
+id = 90
+name = "Ithesh Province"
+dominant_bedrock = "basalt"
+plate_id = 5
+craton_id = 9
+basin = "deep_marine"
+
+[[provinces]]
+id = 91
+name = "Arvale Province"
+dominant_bedrock = "shale"
+plate_id = 5
+craton_id = 9
+basin = "deep_marine"
+
+[[provinces]]
+id = 92
+name = "Eldbray Province"
+dominant_bedrock = "sandstone"
+plate_id = 2
+craton_id = 9
+basin = "marine_shelf"
+
+[[provinces]]
+id = 93
+name = "Karbray Province"
+dominant_bedrock = "limestone"
+plate_id = 2
+craton_id = 9
+basin = "marine_shelf"
+
+[[provinces]]
+id = 94
+name = "Corholm Province"
+dominant_bedrock = "evaporite"
+plate_id = 2
+craton_id = 9
+basin = "closed"
+
+[[provinces]]
+id = 95
+name = "Morfold Province"
+dominant_bedrock = "ultramafic"
+plate_id = 5
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 96
+name = "Argard Province"
+dominant_bedrock = "granite"
+plate_id = 2
+craton_id = 9
+basin = "closed"
+
+[[provinces]]
+id = 97
+name = "Dunmere Province"
+dominant_bedrock = "ultramafic"
+plate_id = 5
+craton_id = 9
+basin = "deep_marine"
+
+[[provinces]]
+id = 98
+name = "Dunvale Province"
+dominant_bedrock = "granite"
+plate_id = 2
+craton_id = 9
+basin = "none"
+
+[[provinces]]
+id = 99
+name = "Karfold Province"
+dominant_bedrock = "limestone"
+plate_id = 5
+craton_id = 9
+basin = "marine_shelf"
+
+[[provinces]]
+id = 100
+name = "Falmere Province"
+dominant_bedrock = "sandstone"
+plate_id = 5
+craton_id = 9
+basin = "marine_shelf"
+
+[[provinces]]
+id = 101
+name = "Dunreach Province"
+dominant_bedrock = "shale"
+plate_id = 9
+craton_id = 3
+basin = "deep_marine"
+
+[[provinces]]
+id = 102
+name = "Halholm Province"
+dominant_bedrock = "shale"
+plate_id = 14
+craton_id = 3
+basin = "deep_marine"
+
+[[provinces]]
+id = 103
+name = "Coradan Province"
+dominant_bedrock = "basalt"
+plate_id = 14
+craton_id = 3
+basin = "deep_marine"
+
+[[provinces]]
+id = 104
+name = "Coradan Province"
+dominant_bedrock = "basalt"
+plate_id = 14
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 105
+name = "Karholm Province"
+dominant_bedrock = "ultramafic"
+plate_id = 14
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 106
+name = "Belreach Province"
+dominant_bedrock = "ultramafic"
+plate_id = 14
+craton_id = 1
+basin = "deep_marine"
+
+[[provinces]]
+id = 107
+name = "Arbray Province"
+dominant_bedrock = "shale"
+plate_id = 14
+craton_id = 1
+basin = "deep_marine"
+
+[[provinces]]
+id = 108
+name = "Belfold Province"
+dominant_bedrock = "limestone"
+plate_id = 14
+craton_id = 1
+basin = "marine_shelf"
+
+[[provinces]]
+id = 109
+name = "Gorcairn Province"
+dominant_bedrock = "sandstone"
+plate_id = 14
+craton_id = 1
+basin = "marine_shelf"
+
+[[provinces]]
+id = 110
+name = "Ithdell Province"
+dominant_bedrock = "basalt"
+plate_id = 14
+craton_id = 1
+basin = "rift"
+
+[[provinces]]
+id = 111
+name = "Karmere Province"
+dominant_bedrock = "limestone"
+plate_id = 11
+craton_id = 1
+basin = "marine_shelf"
+
+[[provinces]]
+id = 112
+name = "Eldfold Province"
+dominant_bedrock = "sandstone"
+plate_id = 11
+craton_id = 1
+basin = "marine_shelf"
+
+[[provinces]]
+id = 113
+name = "Arholm Province"
+dominant_bedrock = "shale"
+plate_id = 11
+craton_id = 1
+basin = "deep_marine"
+
+[[provinces]]
+id = 114
+name = "Corfold Province"
+dominant_bedrock = "ultramafic"
+plate_id = 11
+craton_id = 1
+basin = "deep_marine"
+
+[[provinces]]
+id = 115
+name = "Dunreach Province"
+dominant_bedrock = "ultramafic"
+plate_id = 11
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 116
+name = "Eldadan Province"
+dominant_bedrock = "basalt"
+plate_id = 11
+craton_id = 1
+basin = "rift"
+
+[[provinces]]
+id = 117
+name = "Halmere Province"
+dominant_bedrock = "ultramafic"
+plate_id = 11
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 118
+name = "Nordell Province"
+dominant_bedrock = "sandstone"
+plate_id = 9
+craton_id = 3
+basin = "marine_shelf"
+
+[[provinces]]
+id = 119
+name = "Eldmere Province"
+dominant_bedrock = "limestone"
+plate_id = 9
+craton_id = 3
+basin = "marine_shelf"
+
+[[provinces]]
+id = 120
+name = "Gorholm Province"
+dominant_bedrock = "ultramafic"
+plate_id = 14
+craton_id = 3
+basin = "deep_marine"
+
+[[provinces]]
+id = 121
+name = "Karbray Province"
+dominant_bedrock = "sandstone"
+plate_id = 14
+craton_id = 3
+basin = "marine_shelf"
+
+[[provinces]]
+id = 122
+name = "Halmere Province"
+dominant_bedrock = "limestone"
+plate_id = 14
+craton_id = 3
+basin = "marine_shelf"
+
+[[provinces]]
+id = 123
+name = "Morbray Province"
+dominant_bedrock = "shale"
+plate_id = 11
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 124
+name = "Belreach Province"
+dominant_bedrock = "shale"
+plate_id = 9
+craton_id = 3
+basin = "foreland"
+
+[[provinces]]
+id = 125
+name = "Corvale Province"
+dominant_bedrock = "evaporite"
+plate_id = 9
+craton_id = 3
+basin = "closed"
+
+[[provinces]]
+id = 126
+name = "Cormere Province"
+dominant_bedrock = "evaporite"
+plate_id = 14
+craton_id = 1
+basin = "closed"
+
+[[provinces]]
+id = 127
+name = "Falgard Province"
+dominant_bedrock = "shale"
+plate_id = 14
+craton_id = 3
+basin = "foreland"
+
+[[provinces]]
+id = 128
+name = "Dundell Province"
+dominant_bedrock = "evaporite"
+plate_id = 11
+craton_id = 1
+basin = "closed"
+
+[[provinces]]
+id = 129
+name = "Corcairn Province"
+dominant_bedrock = "sandstone"
+plate_id = 11
+craton_id = 4
+basin = "marine_shelf"
+
+[[provinces]]
+id = 130
+name = "Morvale Province"
+dominant_bedrock = "limestone"
+plate_id = 11
+craton_id = 4
+basin = "marine_shelf"
+
+[[provinces]]
+id = 131
+name = "Gorvale Province"
+dominant_bedrock = "shale"
+plate_id = 14
+craton_id = 1
+basin = "foreland"
+
+[[provinces]]
+id = 132
+name = "Arcairn Province"
+dominant_bedrock = "limestone"
+plate_id = 9
+craton_id = 1
+basin = "marine_shelf"
+
+[[provinces]]
+id = 133
+name = "Karreach Province"
+dominant_bedrock = "evaporite"
+plate_id = 9
+craton_id = 1
+basin = "closed"
+
+[[provinces]]
+id = 134
+name = "Falscar Province"
+dominant_bedrock = "granite"
+plate_id = 14
+craton_id = 1
+basin = "none"
+
+[[provinces]]
+id = 135
+name = "Falmere Province"
+dominant_bedrock = "sandstone"
+plate_id = 9
+craton_id = 1
+basin = "marine_shelf"
+
+[[provinces]]
+id = 136
+name = "Gorholm Province"
+dominant_bedrock = "basalt"
+plate_id = 9
+craton_id = 1
+basin = "rift"
+
+[[provinces]]
+id = 137
+name = "Corbray Province"
+dominant_bedrock = "sandstone"
+plate_id = 6
+craton_id = 1
+basin = "marine_shelf"
+
+[[provinces]]
+id = 138
+name = "Karcairn Province"
+dominant_bedrock = "shale"
+plate_id = 6
+craton_id = 1
+basin = "foreland"
+
+[[provinces]]
+id = 139
+name = "Dunfold Province"
+dominant_bedrock = "basalt"
+plate_id = 6
+craton_id = 1
+basin = "rift"
+
+[[provinces]]
+id = 140
+name = "Karmere Province"
+dominant_bedrock = "evaporite"
+plate_id = 6
+craton_id = 1
+basin = "closed"
+
+[[provinces]]
+id = 141
+name = "Cordell Province"
+dominant_bedrock = "granite"
+plate_id = 6
+craton_id = 1
+basin = "none"
+
+[[provinces]]
+id = 142
+name = "Ithcairn Province"
+dominant_bedrock = "basalt"
+plate_id = 9
+craton_id = 3
+basin = "rift"
+
+[[provinces]]
+id = 143
+name = "Norvale Province"
+dominant_bedrock = "shale"
+plate_id = 11
+craton_id = 1
+basin = "foreland"
+
+[[provinces]]
+id = 144
+name = "Dunvale Province"
+dominant_bedrock = "granite"
+plate_id = 11
+craton_id = 1
+basin = "none"
+
+[[provinces]]
+id = 145
+name = "Aresh Province"
+dominant_bedrock = "granite"
+plate_id = 9
+craton_id = 3
+basin = "closed"
+
+[[provinces]]
+id = 146
+name = "Dunfold Province"
+dominant_bedrock = "limestone"
+plate_id = 6
+craton_id = 3
+basin = "marine_shelf"
+
+[[provinces]]
+id = 147
+name = "Falholm Province"
+dominant_bedrock = "granite"
+plate_id = 6
+craton_id = 1
+basin = "closed"
+
+[[provinces]]
+id = 148
+name = "Karfold Province"
+dominant_bedrock = "basalt"
+plate_id = 6
+craton_id = 3
+basin = "rift"
+
+[[provinces]]
+id = 149
+name = "Dunholm Province"
+dominant_bedrock = "granite"
+plate_id = 11
+craton_id = 1
+basin = "closed"
+
+[[provinces]]
+id = 150
+name = "Mordell Province"
+dominant_bedrock = "granite"
+plate_id = 6
+craton_id = 3
+basin = "closed"
+
+[[provinces]]
+id = 151
+name = "Belfold Province"
+dominant_bedrock = "sandstone"
+plate_id = 6
+craton_id = 3
+basin = "marine_shelf"
+
+[[provinces]]
+id = 152
+name = "Dunadan Province"
+dominant_bedrock = "limestone"
+plate_id = 6
+craton_id = 1
+basin = "marine_shelf"
+
+[[provinces]]
+id = 153
+name = "Mormere Province"
+dominant_bedrock = "granite"
+plate_id = 11
+craton_id = 4
+basin = "closed"
+
+[[provinces]]
+id = 154
+name = "Corvale Province"
+dominant_bedrock = "granite"
+plate_id = 11
+craton_id = 4
+basin = "none"
+
+[[provinces]]
+id = 155
+name = "Belcairn Province"
+dominant_bedrock = "shale"
+plate_id = 11
+craton_id = 4
+basin = "foreland"
+
+[[provinces]]
+id = 156
+name = "Norholm Province"
+dominant_bedrock = "basalt"
+plate_id = 11
+craton_id = 1
+basin = "deep_marine"
+
+[[provinces]]
+id = 157
+name = "Ardell Province"
+dominant_bedrock = "basalt"
+plate_id = 11
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 158
+name = "Cormere Province"
+dominant_bedrock = "basalt"
+plate_id = 11
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 159
+name = "Belcairn Province"
+dominant_bedrock = "shale"
+plate_id = 6
+craton_id = 3
+basin = "deep_marine"
+
+[[provinces]]
+id = 160
+name = "Halvale Province"
+dominant_bedrock = "shale"
+plate_id = 6
+craton_id = 1
+basin = "deep_marine"
+
+[[provinces]]
+id = 161
+name = "Argard Province"
+dominant_bedrock = "ultramafic"
+plate_id = 6
+craton_id = 3
+basin = "deep_marine"
+
+[[provinces]]
+id = 162
+name = "Haldell Province"
+dominant_bedrock = "ultramafic"
+plate_id = 6
+craton_id = 1
+basin = "deep_marine"
+
+[[provinces]]
+id = 163
+name = "Halbray Province"
+dominant_bedrock = "shale"
+plate_id = 8
+craton_id = 4
+basin = "foreland"
+
+[[provinces]]
+id = 164
+name = "Karholm Province"
+dominant_bedrock = "shale"
+plate_id = 3
+craton_id = 4
+basin = "foreland"
+
+[[provinces]]
+id = 165
+name = "Belbray Province"
+dominant_bedrock = "ultramafic"
+plate_id = 6
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 166
+name = "Belreach Province"
+dominant_bedrock = "limestone"
+plate_id = 8
+craton_id = 4
+basin = "marine_shelf"
+
+[[provinces]]
+id = 167
+name = "Norgard Province"
+dominant_bedrock = "limestone"
+plate_id = 3
+craton_id = 4
+basin = "marine_shelf"
+
+[[provinces]]
+id = 168
+name = "Ithgard Province"
+dominant_bedrock = "basalt"
+plate_id = 3
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 169
+name = "Karfold Province"
+dominant_bedrock = "shale"
+plate_id = 3
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 170
+name = "Halesh Province"
+dominant_bedrock = "sandstone"
+plate_id = 3
+craton_id = 4
+basin = "marine_shelf"
+
+[[provinces]]
+id = 171
+name = "Arbray Province"
+dominant_bedrock = "basalt"
+plate_id = 3
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 172
+name = "Ithreach Province"
+dominant_bedrock = "basalt"
+plate_id = 3
+craton_id = 0
+basin = "marine_shelf"
+
+[[provinces]]
+id = 173
+name = "Halvale Province"
+dominant_bedrock = "basalt"
+plate_id = 3
+craton_id = 1
+basin = "deep_marine"
+
+[[provinces]]
+id = 174
+name = "Belbray Province"
+dominant_bedrock = "granite"
+plate_id = 3
+craton_id = 4
+basin = "closed"
+
+[[provinces]]
+id = 175
+name = "Falreach Province"
+dominant_bedrock = "basalt"
+plate_id = 6
+craton_id = 1
+basin = "deep_marine"
+
+[[provinces]]
+id = 176
+name = "Arholm Province"
+dominant_bedrock = "basalt"
+plate_id = 3
+craton_id = 1
+basin = "marine_shelf"
+
+[[provinces]]
+id = 177
+name = "Belreach Province"
+dominant_bedrock = "granite"
+plate_id = 3
+craton_id = 4
+basin = "none"
+
+[[provinces]]
+id = 178
+name = "Mormere Province"
+dominant_bedrock = "basalt"
+plate_id = 3
+craton_id = 1
+basin = "none"
+
+[[provinces]]
+id = 179
+name = "Halcairn Province"
+dominant_bedrock = "ultramafic"
+plate_id = 3
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 180
+name = "Armere Province"
+dominant_bedrock = "basalt"
+plate_id = 6
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 181
+name = "Halfold Province"
+dominant_bedrock = "basalt"
+plate_id = 3
+craton_id = 0
+basin = "none"
+
+[[provinces]]
+id = 182
+name = "Morvale Province"
+dominant_bedrock = "ultramafic"
+plate_id = 6
+craton_id = 6
+basin = "deep_marine"
+
+[[provinces]]
+id = 183
+name = "Karesh Province"
+dominant_bedrock = "ultramafic"
+plate_id = 3
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 184
+name = "Gorgard Province"
+dominant_bedrock = "shale"
+plate_id = 6
+craton_id = 6
+basin = "deep_marine"
+
+[[provinces]]
+id = 185
+name = "Karreach Province"
+dominant_bedrock = "limestone"
+plate_id = 6
+craton_id = 6
+basin = "marine_shelf"
+
+[[provinces]]
+id = 186
+name = "Aresh Province"
+dominant_bedrock = "sandstone"
+plate_id = 6
+craton_id = 6
+basin = "marine_shelf"
+
+[[provinces]]
+id = 187
+name = "Ithgard Province"
+dominant_bedrock = "basalt"
+plate_id = 6
+craton_id = 6
+basin = "deep_marine"
+
+[[provinces]]
+id = 188
+name = "Arreach Province"
+dominant_bedrock = "evaporite"
+plate_id = 6
+craton_id = 3
+basin = "closed"
+
+[[provinces]]
+id = 189
+name = "Morvale Province"
+dominant_bedrock = "shale"
+plate_id = 6
+craton_id = 3
+basin = "foreland"
+
+[[provinces]]
+id = 190
+name = "Halfold Province"
+dominant_bedrock = "granite"
+plate_id = 6
+craton_id = 3
+basin = "none"
+
+[[provinces]]
+id = 191
+name = "Falreach Province"
+dominant_bedrock = "basalt"
+plate_id = 3
+craton_id = 6
+basin = "deep_marine"
+
+[[provinces]]
+id = 192
+name = "Halholm Province"
+dominant_bedrock = "shale"
+plate_id = 3
+craton_id = 6
+basin = "deep_marine"
+
+[[provinces]]
+id = 193
+name = "Karbray Province"
+dominant_bedrock = "evaporite"
+plate_id = 6
+craton_id = 6
+basin = "closed"
+
+[[provinces]]
+id = 194
+name = "Goradan Province"
+dominant_bedrock = "granite"
+plate_id = 6
+craton_id = 6
+basin = "none"
+
+[[provinces]]
+id = 195
+name = "Karscar Province"
+dominant_bedrock = "shale"
+plate_id = 6
+craton_id = 6
+basin = "foreland"
+
+[[provinces]]
+id = 196
+name = "Gorvale Province"
+dominant_bedrock = "sandstone"
+plate_id = 3
+craton_id = 6
+basin = "marine_shelf"
+
+[[provinces]]
+id = 197
+name = "Ithreach Province"
+dominant_bedrock = "limestone"
+plate_id = 3
+craton_id = 6
+basin = "marine_shelf"
+
+[[provinces]]
+id = 198
+name = "Beldell Province"
+dominant_bedrock = "shale"
+plate_id = 3
+craton_id = 6
+basin = "foreland"
+
+[[provinces]]
+id = 199
+name = "Arcairn Province"
+dominant_bedrock = "granite"
+plate_id = 3
+craton_id = 6
+basin = "none"
+
+[[provinces]]
+id = 200
+name = "Dungard Province"
+dominant_bedrock = "ultramafic"
+plate_id = 3
+craton_id = 6
+basin = "deep_marine"
+
+[[provinces]]
+id = 201
+name = "Falreach Province"
+dominant_bedrock = "limestone"
+plate_id = 1
+craton_id = 3
+basin = "marine_shelf"
+
+[[provinces]]
+id = 202
+name = "Morgard Province"
+dominant_bedrock = "sandstone"
+plate_id = 1
+craton_id = 3
+basin = "marine_shelf"
+
+[[provinces]]
+id = 203
+name = "Ithdell Province"
+dominant_bedrock = "evaporite"
+plate_id = 3
+craton_id = 6
+basin = "closed"
+
+[[provinces]]
+id = 204
+name = "Morbray Province"
+dominant_bedrock = "limestone"
+plate_id = 1
+craton_id = 6
+basin = "marine_shelf"
+
+[[provinces]]
+id = 205
+name = "Halbray Province"
+dominant_bedrock = "sandstone"
+plate_id = 1
+craton_id = 6
+basin = "marine_shelf"
+
+[[provinces]]
+id = 206
+name = "Corholm Province"
+dominant_bedrock = "basalt"
+plate_id = 1
+craton_id = 6
+basin = "rift"
+
+[[provinces]]
+id = 207
+name = "Kargard Province"
+dominant_bedrock = "basalt"
+plate_id = 6
+craton_id = 6
+basin = "rift"
+
+[[provinces]]
+id = 208
+name = "Ithadan Province"
+dominant_bedrock = "evaporite"
+plate_id = 1
+craton_id = 6
+basin = "closed"
+
+[[provinces]]
+id = 209
+name = "Karmere Province"
+dominant_bedrock = "shale"
+plate_id = 1
+craton_id = 6
+basin = "foreland"
+
+[[provinces]]
+id = 210
+name = "Eldgard Province"
+dominant_bedrock = "granite"
+plate_id = 1
+craton_id = 6
+basin = "none"
+
+[[provinces]]
+id = 211
+name = "Gorbray Province"
+dominant_bedrock = "granite"
+plate_id = 3
+craton_id = 6
+basin = "closed"
+
+[[provinces]]
+id = 212
+name = "Dundell Province"
+dominant_bedrock = "granite"
+plate_id = 1
+craton_id = 6
+basin = "closed"
+
+[[provinces]]
+id = 213
+name = "Aresh Province"
+dominant_bedrock = "basalt"
+plate_id = 0
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 214
+name = "Halbray Province"
+dominant_bedrock = "basalt"
+plate_id = 0
+craton_id = 9
+basin = "deep_marine"
+
+[[provinces]]
+id = 215
+name = "Noresh Province"
+dominant_bedrock = "shale"
+plate_id = 0
+craton_id = 9
+basin = "deep_marine"
+
+[[provinces]]
+id = 216
+name = "Mordell Province"
+dominant_bedrock = "limestone"
+plate_id = 0
+craton_id = 9
+basin = "marine_shelf"
+
+[[provinces]]
+id = 217
+name = "Ithcairn Province"
+dominant_bedrock = "granite"
+plate_id = 0
+craton_id = 9
+basin = "none"
+
+[[provinces]]
+id = 218
+name = "Gorcairn Province"
+dominant_bedrock = "shale"
+plate_id = 0
+craton_id = 9
+basin = "foreland"
+
+[[provinces]]
+id = 219
+name = "Eldadan Province"
+dominant_bedrock = "sandstone"
+plate_id = 0
+craton_id = 9
+basin = "marine_shelf"
+
+[[provinces]]
+id = 220
+name = "Gorgard Province"
+dominant_bedrock = "granite"
+plate_id = 0
+craton_id = 9
+basin = "closed"
+
+[[provinces]]
+id = 221
+name = "Halholm Province"
+dominant_bedrock = "shale"
+plate_id = 5
+craton_id = 9
+basin = "foreland"
+
+[[provinces]]
+id = 222
+name = "Kargard Province"
+dominant_bedrock = "granite"
+plate_id = 5
+craton_id = 9
+basin = "closed"
+
+[[provinces]]
+id = 223
+name = "Karfold Province"
+dominant_bedrock = "ultramafic"
+plate_id = 0
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 224
+name = "Belscar Province"
+dominant_bedrock = "ultramafic"
+plate_id = 0
+craton_id = 9
+basin = "deep_marine"
+
+[[provinces]]
+id = 225
+name = "Halholm Province"
+dominant_bedrock = "basalt"
+plate_id = 5
+craton_id = 9
+basin = "rift"
+
+[[provinces]]
+id = 226
+name = "Aradan Province"
+dominant_bedrock = "shale"
+plate_id = 2
+craton_id = 9
+basin = "foreland"
+
+[[provinces]]
+id = 227
+name = "Dundell Province"
+dominant_bedrock = "basalt"
+plate_id = 0
+craton_id = 9
+basin = "rift"
+
+[[provinces]]
+id = 228
+name = "Dundell Province"
+dominant_bedrock = "basalt"
+plate_id = 2
+craton_id = 9
+basin = "rift"
+
+[[provinces]]
+id = 229
+name = "Karreach Province"
+dominant_bedrock = "basalt"
+plate_id = 0
+craton_id = 6
+basin = "deep_marine"
+
+[[provinces]]
+id = 230
+name = "Eldbray Province"
+dominant_bedrock = "ultramafic"
+plate_id = 0
+craton_id = 6
+basin = "deep_marine"
+
+[[provinces]]
+id = 231
+name = "Aradan Province"
+dominant_bedrock = "shale"
+plate_id = 0
+craton_id = 6
+basin = "deep_marine"
+
+[[provinces]]
+id = 232
+name = "Karmere Province"
+dominant_bedrock = "sandstone"
+plate_id = 0
+craton_id = 6
+basin = "marine_shelf"
+
+[[provinces]]
+id = 233
+name = "Norbray Province"
+dominant_bedrock = "limestone"
+plate_id = 0
+craton_id = 6
+basin = "marine_shelf"
+
+[[provinces]]
+id = 234
+name = "Dunvale Province"
+dominant_bedrock = "shale"
+plate_id = 0
+craton_id = 6
+basin = "foreland"
+
+[[provinces]]
+id = 235
+name = "Arscar Province"
+dominant_bedrock = "basalt"
+plate_id = 3
+craton_id = 6
+basin = "rift"
+
+[[provinces]]
+id = 236
+name = "Halcairn Province"
+dominant_bedrock = "granite"
+plate_id = 0
+craton_id = 6
+basin = "closed"
+
+[[provinces]]
+id = 237
+name = "Noradan Province"
+dominant_bedrock = "granite"
+plate_id = 0
+craton_id = 6
+basin = "none"
+
+[[provinces]]
+id = 238
+name = "Mordell Province"
+dominant_bedrock = "limestone"
+plate_id = 0
+craton_id = 6
+basin = "passive_margin"
+
+[[provinces]]
+id = 239
+name = "Dunmere Province"
+dominant_bedrock = "limestone"
+plate_id = 1
+craton_id = 6
+basin = "passive_margin"
+
+[[provinces]]
+id = 240
+name = "Norbray Province"
+dominant_bedrock = "shale"
+plate_id = 1
+craton_id = 6
+basin = "deep_marine"
+
+[[provinces]]
+id = 241
+name = "Dunvale Province"
+dominant_bedrock = "ultramafic"
+plate_id = 1
+craton_id = 6
+basin = "deep_marine"
+
+[[provinces]]
+id = 242
+name = "Dunholm Province"
+dominant_bedrock = "ultramafic"
+plate_id = 1
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 243
+name = "Gorfold Province"
+dominant_bedrock = "ultramafic"
+plate_id = 1
+craton_id = 9
+basin = "deep_marine"
+
+[[provinces]]
+id = 244
+name = "Beldell Province"
+dominant_bedrock = "shale"
+plate_id = 1
+craton_id = 9
+basin = "deep_marine"
+
+[[provinces]]
+id = 245
+name = "Dunfold Province"
+dominant_bedrock = "sandstone"
+plate_id = 0
+craton_id = 9
+basin = "passive_margin"
+
+[[provinces]]
+id = 246
+name = "Karmere Province"
+dominant_bedrock = "limestone"
+plate_id = 0
+craton_id = 9
+basin = "passive_margin"
+
+[[provinces]]
+id = 247
+name = "Corcairn Province"
+dominant_bedrock = "sandstone"
+plate_id = 1
+craton_id = 9
+basin = "marine_shelf"
+
+[[provinces]]
+id = 248
+name = "Eldreach Province"
+dominant_bedrock = "shale"
+plate_id = 1
+craton_id = 9
+basin = "foreland"
+
+[[provinces]]
+id = 249
+name = "Halscar Province"
+dominant_bedrock = "limestone"
+plate_id = 1
+craton_id = 9
+basin = "marine_shelf"
+
+[[provinces]]
+id = 250
+name = "Morscar Province"
+dominant_bedrock = "basalt"
+plate_id = 1
+craton_id = 9
+basin = "deep_marine"
+
+[[provinces]]
+id = 251
+name = "Corvale Province"
+dominant_bedrock = "basalt"
+plate_id = 1
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 252
+name = "Morscar Province"
+dominant_bedrock = "basalt"
+plate_id = 4
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 253
+name = "Halgard Province"
+dominant_bedrock = "basalt"
+plate_id = 2
+craton_id = 8
+basin = "marine_shelf"
+
+[[provinces]]
+id = 254
+name = "Ithbray Province"
+dominant_bedrock = "basalt"
+plate_id = 2
+craton_id = 8
+basin = "none"
+
+[[provinces]]
+id = 255
+name = "Ithesh Province"
+dominant_bedrock = "basalt"
+plate_id = 4
+craton_id = 8
+basin = "deep_marine"
+
+[[provinces]]
+id = 256
+name = "Morbray Province"
+dominant_bedrock = "shale"
+plate_id = 2
+craton_id = 8
+basin = "foreland"
+
+[[provinces]]
+id = 257
+name = "Aresh Province"
+dominant_bedrock = "granite"
+plate_id = 2
+craton_id = 8
+basin = "closed"
+
+[[provinces]]
+id = 258
+name = "Falreach Province"
+dominant_bedrock = "shale"
+plate_id = 4
+craton_id = 8
+basin = "deep_marine"
+
+[[provinces]]
+id = 259
+name = "Goresh Province"
+dominant_bedrock = "granite"
+plate_id = 2
+craton_id = 8
+basin = "none"
+
+[[provinces]]
+id = 260
+name = "Dunadan Province"
+dominant_bedrock = "limestone"
+plate_id = 4
+craton_id = 8
+basin = "marine_shelf"
+
+[[provinces]]
+id = 261
+name = "Arfold Province"
+dominant_bedrock = "shale"
+plate_id = 4
+craton_id = 8
+basin = "foreland"
+
+[[provinces]]
+id = 262
+name = "Norbray Province"
+dominant_bedrock = "basalt"
+plate_id = 1
+craton_id = 6
+basin = "deep_marine"
+
+[[provinces]]
+id = 263
+name = "Arbray Province"
+dominant_bedrock = "sandstone"
+plate_id = 4
+craton_id = 8
+basin = "marine_shelf"
+
+[[provinces]]
+id = 264
+name = "Beladan Province"
+dominant_bedrock = "granite"
+plate_id = 4
+craton_id = 8
+basin = "closed"
+
+[[provinces]]
+id = 265
+name = "Falholm Province"
+dominant_bedrock = "granite"
+plate_id = 4
+craton_id = 8
+basin = "none"
+
+[[provinces]]
+id = 266
+name = "Belgard Province"
+dominant_bedrock = "evaporite"
+plate_id = 4
+craton_id = 8
+basin = "closed"
+
+[[provinces]]
+id = 267
+name = "Mordell Province"
+dominant_bedrock = "ultramafic"
+plate_id = 4
+craton_id = 8
+basin = "deep_marine"
+
+[[provinces]]
+id = 268
+name = "Norreach Province"
+dominant_bedrock = "basalt"
+plate_id = 9
+craton_id = 3
+basin = "deep_marine"
+
+[[provinces]]
+id = 269
+name = "Nordell Province"
+dominant_bedrock = "basalt"
+plate_id = 9
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 270
+name = "Eldholm Province"
+dominant_bedrock = "basalt"
+plate_id = 12
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 271
+name = "Normere Province"
+dominant_bedrock = "ultramafic"
+plate_id = 12
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 272
+name = "Noresh Province"
+dominant_bedrock = "ultramafic"
+plate_id = 12
+craton_id = 5
+basin = "deep_marine"
+
+[[provinces]]
+id = 273
+name = "Falholm Province"
+dominant_bedrock = "shale"
+plate_id = 12
+craton_id = 5
+basin = "deep_marine"
+
+[[provinces]]
+id = 274
+name = "Goradan Province"
+dominant_bedrock = "sandstone"
+plate_id = 12
+craton_id = 5
+basin = "marine_shelf"
+
+[[provinces]]
+id = 275
+name = "Gormere Province"
+dominant_bedrock = "basalt"
+plate_id = 9
+craton_id = 0
+basin = "marine_shelf"
+
+[[provinces]]
+id = 276
+name = "Belscar Province"
+dominant_bedrock = "basalt"
+plate_id = 12
+craton_id = 5
+basin = "deep_marine"
+
+[[provinces]]
+id = 277
+name = "Gorbray Province"
+dominant_bedrock = "granite"
+plate_id = 12
+craton_id = 5
+basin = "closed"
+
+[[provinces]]
+id = 278
+name = "Karesh Province"
+dominant_bedrock = "basalt"
+plate_id = 15
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 279
+name = "Ithgard Province"
+dominant_bedrock = "shale"
+plate_id = 15
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 280
+name = "Ithscar Province"
+dominant_bedrock = "ultramafic"
+plate_id = 15
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 281
+name = "Eldvale Province"
+dominant_bedrock = "sandstone"
+plate_id = 15
+craton_id = 2
+basin = "marine_shelf"
+
+[[provinces]]
+id = 282
+name = "Ithadan Province"
+dominant_bedrock = "limestone"
+plate_id = 15
+craton_id = 2
+basin = "marine_shelf"
+
+[[provinces]]
+id = 283
+name = "Belreach Province"
+dominant_bedrock = "basalt"
+plate_id = 14
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 284
+name = "Corholm Province"
+dominant_bedrock = "shale"
+plate_id = 14
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 285
+name = "Correach Province"
+dominant_bedrock = "ultramafic"
+plate_id = 14
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 286
+name = "Belholm Province"
+dominant_bedrock = "limestone"
+plate_id = 14
+craton_id = 2
+basin = "marine_shelf"
+
+[[provinces]]
+id = 287
+name = "Dunadan Province"
+dominant_bedrock = "sandstone"
+plate_id = 14
+craton_id = 2
+basin = "marine_shelf"
+
+[[provinces]]
+id = 288
+name = "Morreach Province"
+dominant_bedrock = "basalt"
+plate_id = 15
+craton_id = 2
+basin = "rift"
+
+[[provinces]]
+id = 289
+name = "Halgard Province"
+dominant_bedrock = "basalt"
+plate_id = 14
+craton_id = 2
+basin = "rift"
+
+[[provinces]]
+id = 290
+name = "Ithbray Province"
+dominant_bedrock = "basalt"
+plate_id = 14
+craton_id = 1
+basin = "deep_marine"
+
+[[provinces]]
+id = 291
+name = "Norbray Province"
+dominant_bedrock = "granite"
+plate_id = 15
+craton_id = 2
+basin = "closed"
+
+[[provinces]]
+id = 292
+name = "Belcairn Province"
+dominant_bedrock = "shale"
+plate_id = 15
+craton_id = 2
+basin = "foreland"
+
+[[provinces]]
+id = 293
+name = "Duncairn Province"
+dominant_bedrock = "granite"
+plate_id = 14
+craton_id = 2
+basin = "closed"
+
+[[provinces]]
+id = 294
+name = "Arholm Province"
+dominant_bedrock = "shale"
+plate_id = 14
+craton_id = 2
+basin = "foreland"
+
+[[provinces]]
+id = 295
+name = "Corvale Province"
+dominant_bedrock = "sandstone"
+plate_id = 13
+craton_id = 2
+basin = "marine_shelf"
+
+[[provinces]]
+id = 296
+name = "Nordell Province"
+dominant_bedrock = "shale"
+plate_id = 13
+craton_id = 2
+basin = "foreland"
+
+[[provinces]]
+id = 297
+name = "Kardell Province"
+dominant_bedrock = "basalt"
+plate_id = 13
+craton_id = 2
+basin = "rift"
+
+[[provinces]]
+id = 298
+name = "Eldvale Province"
+dominant_bedrock = "granite"
+plate_id = 15
+craton_id = 2
+basin = "none"
+
+[[provinces]]
+id = 299
+name = "Karesh Province"
+dominant_bedrock = "granite"
+plate_id = 13
+craton_id = 2
+basin = "closed"
+
+[[provinces]]
+id = 300
+name = "Norgard Province"
+dominant_bedrock = "basalt"
+plate_id = 11
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 301
+name = "Belgard Province"
+dominant_bedrock = "shale"
+plate_id = 11
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 302
+name = "Gorscar Province"
+dominant_bedrock = "granite"
+plate_id = 14
+craton_id = 2
+basin = "none"
+
+[[provinces]]
+id = 303
+name = "Morgard Province"
+dominant_bedrock = "granite"
+plate_id = 13
+craton_id = 2
+basin = "none"
+
+[[provinces]]
+id = 304
+name = "Cordell Province"
+dominant_bedrock = "ultramafic"
+plate_id = 10
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 305
+name = "Ithreach Province"
+dominant_bedrock = "limestone"
+plate_id = 11
+craton_id = 2
+basin = "marine_shelf"
+
+[[provinces]]
+id = 306
+name = "Eldadan Province"
+dominant_bedrock = "sandstone"
+plate_id = 11
+craton_id = 2
+basin = "marine_shelf"
+
+[[provinces]]
+id = 307
+name = "Eldfold Province"
+dominant_bedrock = "basalt"
+plate_id = 10
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 308
+name = "Haldell Province"
+dominant_bedrock = "basalt"
+plate_id = 11
+craton_id = 2
+basin = "rift"
+
+[[provinces]]
+id = 309
+name = "Arfold Province"
+dominant_bedrock = "shale"
+plate_id = 10
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 310
+name = "Eldesh Province"
+dominant_bedrock = "granite"
+plate_id = 11
+craton_id = 2
+basin = "closed"
+
+[[provinces]]
+id = 311
+name = "Morreach Province"
+dominant_bedrock = "shale"
+plate_id = 11
+craton_id = 2
+basin = "foreland"
+
+[[provinces]]
+id = 312
+name = "Ithvale Province"
+dominant_bedrock = "granite"
+plate_id = 11
+craton_id = 2
+basin = "none"
+
+[[provinces]]
+id = 313
+name = "Belbray Province"
+dominant_bedrock = "shale"
+plate_id = 13
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 314
+name = "Norscar Province"
+dominant_bedrock = "ultramafic"
+plate_id = 11
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 315
+name = "Gorcairn Province"
+dominant_bedrock = "limestone"
+plate_id = 13
+craton_id = 2
+basin = "marine_shelf"
+
+[[provinces]]
+id = 316
+name = "Kargard Province"
+dominant_bedrock = "basalt"
+plate_id = 13
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 317
+name = "Norvale Province"
+dominant_bedrock = "ultramafic"
+plate_id = 13
+craton_id = 2
+basin = "deep_marine"
+
+[[provinces]]
+id = 318
+name = "Karreach Province"
+dominant_bedrock = "ultramafic"
+plate_id = 13
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 319
+name = "Corscar Province"
+dominant_bedrock = "ultramafic"
+plate_id = 13
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 320
+name = "Halbray Province"
+dominant_bedrock = "basalt"
+plate_id = 13
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 321
+name = "Falmere Province"
+dominant_bedrock = "shale"
+plate_id = 13
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 322
+name = "Ithscar Province"
+dominant_bedrock = "sandstone"
+plate_id = 13
+craton_id = 4
+basin = "marine_shelf"
+
+[[provinces]]
+id = 323
+name = "Dunesh Province"
+dominant_bedrock = "ultramafic"
+plate_id = 13
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 324
+name = "Morcairn Province"
+dominant_bedrock = "shale"
+plate_id = 13
+craton_id = 4
+basin = "foreland"
+
+[[provinces]]
+id = 325
+name = "Falholm Province"
+dominant_bedrock = "limestone"
+plate_id = 13
+craton_id = 4
+basin = "marine_shelf"
+
+[[provinces]]
+id = 326
+name = "Belvale Province"
+dominant_bedrock = "evaporite"
+plate_id = 11
+craton_id = 4
+basin = "closed"
+
+[[provinces]]
+id = 327
+name = "Norholm Province"
+dominant_bedrock = "basalt"
+plate_id = 13
+craton_id = 7
+basin = "rift"
+
+[[provinces]]
+id = 328
+name = "Halesh Province"
+dominant_bedrock = "evaporite"
+plate_id = 13
+craton_id = 4
+basin = "closed"
+
+[[provinces]]
+id = 329
+name = "Arreach Province"
+dominant_bedrock = "granite"
+plate_id = 13
+craton_id = 4
+basin = "none"
+
+[[provinces]]
+id = 330
+name = "Ithmere Province"
+dominant_bedrock = "granite"
+plate_id = 8
+craton_id = 4
+basin = "none"
+
+[[provinces]]
+id = 331
+name = "Gordell Province"
+dominant_bedrock = "evaporite"
+plate_id = 8
+craton_id = 4
+basin = "closed"
+
+[[provinces]]
+id = 332
+name = "Falscar Province"
+dominant_bedrock = "evaporite"
+plate_id = 13
+craton_id = 7
+basin = "closed"
+
+[[provinces]]
+id = 333
+name = "Ithscar Province"
+dominant_bedrock = "sandstone"
+plate_id = 8
+craton_id = 4
+basin = "marine_shelf"
+
+[[provinces]]
+id = 334
+name = "Dunmere Province"
+dominant_bedrock = "shale"
+plate_id = 8
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 335
+name = "Falfold Province"
+dominant_bedrock = "basalt"
+plate_id = 8
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 336
+name = "Belreach Province"
+dominant_bedrock = "basalt"
+plate_id = 8
+craton_id = 4
+basin = "marine_shelf"
+
+[[provinces]]
+id = 337
+name = "Arbray Province"
+dominant_bedrock = "basalt"
+plate_id = 8
+craton_id = 4
+basin = "none"
+
+[[provinces]]
+id = 338
+name = "Gorcairn Province"
+dominant_bedrock = "basalt"
+plate_id = 8
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 339
+name = "Morcairn Province"
+dominant_bedrock = "granite"
+plate_id = 8
+craton_id = 4
+basin = "closed"
+
+[[provinces]]
+id = 340
+name = "Argard Province"
+dominant_bedrock = "granite"
+plate_id = 13
+craton_id = 7
+basin = "closed"
+
+[[provinces]]
+id = 341
+name = "Beladan Province"
+dominant_bedrock = "basalt"
+plate_id = 8
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 342
+name = "Ithadan Province"
+dominant_bedrock = "shale"
+plate_id = 13
+craton_id = 7
+basin = "foreland"
+
+[[provinces]]
+id = 343
+name = "Eldesh Province"
+dominant_bedrock = "ultramafic"
+plate_id = 8
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 344
+name = "Belesh Province"
+dominant_bedrock = "granite"
+plate_id = 13
+craton_id = 7
+basin = "none"
+
+[[provinces]]
+id = 345
+name = "Norholm Province"
+dominant_bedrock = "shale"
+plate_id = 8
+craton_id = 7
+basin = "deep_marine"
+
+[[provinces]]
+id = 346
+name = "Haladan Province"
+dominant_bedrock = "sandstone"
+plate_id = 8
+craton_id = 7
+basin = "marine_shelf"
+
+[[provinces]]
+id = 347
+name = "Morbray Province"
+dominant_bedrock = "limestone"
+plate_id = 8
+craton_id = 7
+basin = "marine_shelf"
+
+[[provinces]]
+id = 348
+name = "Dunesh Province"
+dominant_bedrock = "granite"
+plate_id = 8
+craton_id = 7
+basin = "closed"
+
+[[provinces]]
+id = 349
+name = "Norbray Province"
+dominant_bedrock = "basalt"
+plate_id = 8
+craton_id = 7
+basin = "rift"
+
+[[provinces]]
+id = 350
+name = "Arfold Province"
+dominant_bedrock = "ultramafic"
+plate_id = 8
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 351
+name = "Cormere Province"
+dominant_bedrock = "basalt"
+plate_id = 8
+craton_id = 4
+basin = "rift"
+
+[[provinces]]
+id = 352
+name = "Gordell Province"
+dominant_bedrock = "basalt"
+plate_id = 5
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 353
+name = "Falbray Province"
+dominant_bedrock = "shale"
+plate_id = 5
+craton_id = 4
+basin = "deep_marine"
+
+[[provinces]]
+id = 354
+name = "Ithvale Province"
+dominant_bedrock = "ultramafic"
+plate_id = 5
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 355
+name = "Gormere Province"
+dominant_bedrock = "ultramafic"
+plate_id = 9
+craton_id = 3
+basin = "deep_marine"
+
+[[provinces]]
+id = 356
+name = "Falvale Province"
+dominant_bedrock = "ultramafic"
+plate_id = 9
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 357
+name = "Cordell Province"
+dominant_bedrock = "ultramafic"
+plate_id = 12
+craton_id = 8
+basin = "deep_marine"
+
+[[provinces]]
+id = 358
+name = "Mormere Province"
+dominant_bedrock = "shale"
+plate_id = 12
+craton_id = 8
+basin = "deep_marine"
+
+[[provinces]]
+id = 359
+name = "Correach Province"
+dominant_bedrock = "sandstone"
+plate_id = 12
+craton_id = 8
+basin = "marine_shelf"
+
+[[provinces]]
+id = 360
+name = "Moresh Province"
+dominant_bedrock = "limestone"
+plate_id = 12
+craton_id = 8
+basin = "marine_shelf"
+
+[[provinces]]
+id = 361
+name = "Correach Province"
+dominant_bedrock = "basalt"
+plate_id = 12
+craton_id = 8
+basin = "deep_marine"
+
+[[provinces]]
+id = 362
+name = "Belgard Province"
+dominant_bedrock = "ultramafic"
+plate_id = 4
+craton_id = 0
+basin = "deep_marine"
+
+[[provinces]]
+id = 363
+name = "Falgard Province"
+dominant_bedrock = "basalt"
+plate_id = 12
+craton_id = 8
+basin = "rift"
+
+[[provinces]]
+id = 364
+name = "Norscar Province"
+dominant_bedrock = "basalt"
+plate_id = 4
+craton_id = 0
+basin = "marine_shelf"
+
+[[provinces]]
+id = 365
+name = "Arbray Province"
+dominant_bedrock = "shale"
+plate_id = 12
+craton_id = 8
+basin = "foreland"
+
+[[provinces]]
+id = 366
+name = "Morgard Province"
+dominant_bedrock = "ultramafic"
+plate_id = 4
+craton_id = 3
+basin = "deep_marine"
+
+[[provinces]]
+id = 367
+name = "Belbray Province"
+dominant_bedrock = "shale"
+plate_id = 4
+craton_id = 3
+basin = "deep_marine"
+
+[[provinces]]
+id = 368
+name = "Duncairn Province"
+dominant_bedrock = "basalt"
+plate_id = 4
+craton_id = 8
+basin = "rift"
+
+[[provinces]]
+id = 369
+name = "Ithmere Province"
+dominant_bedrock = "limestone"
+plate_id = 4
+craton_id = 3
+basin = "marine_shelf"
+
+[[provinces]]
+id = 370
+name = "Mordell Province"
+dominant_bedrock = "sandstone"
+plate_id = 4
+craton_id = 3
+basin = "marine_shelf"
+
+[[provinces]]
+id = 371
+name = "Arholm Province"
+dominant_bedrock = "shale"
+plate_id = 4
+craton_id = 3
+basin = "foreland"
+
+[[provinces]]
+id = 372
+name = "Eldvale Province"
+dominant_bedrock = "evaporite"
+plate_id = 4
+craton_id = 3
+basin = "closed"
+
+[[provinces]]
+id = 373
+name = "Eldmere Province"
+dominant_bedrock = "basalt"
+plate_id = 4
+craton_id = 3
+basin = "rift"
+
+[[provinces]]
+id = 374
+name = "Ithmere Province"
+dominant_bedrock = "basalt"
+plate_id = 1
+craton_id = 3
+basin = "rift"
+
+[[provinces]]
+id = 375
+name = "Gordell Province"
+dominant_bedrock = "basalt"
+plate_id = 4
+craton_id = 3
+basin = "deep_marine"
+
+[[provinces]]
+id = 376
+name = "Karreach Province"
+dominant_bedrock = "shale"
+plate_id = 1
+craton_id = 3
+basin = "deep_marine"
+
+[[provinces]]
+id = 377
+name = "Corbray Province"
+dominant_bedrock = "basalt"
+plate_id = 1
+craton_id = 3
+basin = "deep_marine"
+
+[[stratigraphic_stacks]]
+id = 1
+name = "cratonic basement"
+layers_bottom_to_top = [
+    "granite",
+    "mixed_basement",
+    "sandstone",
+]
+nominal_thicknesses = [
+    28,
+    28,
+    28,
+]
+
+[[stratigraphic_stacks]]
+id = 2
+name = "passive shelf"
+layers_bottom_to_top = [
+    "mixed_basement",
+    "sandstone",
+    "limestone",
+    "shale",
+]
+nominal_thicknesses = [
+    28,
+    28,
+    28,
+    28,
+]
+
+[[stratigraphic_stacks]]
+id = 3
+name = "deep marine basin"
+layers_bottom_to_top = [
+    "basalt",
+    "shale",
+    "limestone",
+]
+nominal_thicknesses = [
+    28,
+    28,
+    28,
+]
+
+[[stratigraphic_stacks]]
+id = 4
+name = "foreland basin"
+layers_bottom_to_top = [
+    "mixed_basement",
+    "sandstone",
+    "shale",
+    "sandstone",
+]
+nominal_thicknesses = [
+    28,
+    28,
+    28,
+    28,
+]
+
+[[stratigraphic_stacks]]
+id = 5
+name = "continental rift"
+layers_bottom_to_top = [
+    "mixed_basement",
+    "basalt",
+    "shale",
+    "sandstone",
+]
+nominal_thicknesses = [
+    28,
+    28,
+    28,
+    28,
+]
+
+[[stratigraphic_stacks]]
+id = 6
+name = "closed evaporite basin"
+layers_bottom_to_top = [
+    "mixed_basement",
+    "sandstone",
+    "evaporite",
+]
+nominal_thicknesses = [
+    28,
+    28,
+    28,
+]
+
+[[stratigraphic_stacks]]
+id = 7
+name = "oceanic crust"
+layers_bottom_to_top = [
+    "ultramafic",
+    "basalt",
+    "shale",
+]
+nominal_thicknesses = [
+    28,
+    28,
+    28,
+]
+
+[[volcanoes]]
+id = 1
+source = "ocean_ridge"
+plate_id = 10
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 104
+edifice_height_blocks = 18
+crater_radius_blocks = 14
+crater_depth_blocks = 4
+chamber_depth_blocks = 47
+chamber_radius_blocks = 21
+chamber_volume_blocks = 27931
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 208
+erosion = 2750
+
+[volcanoes.pos]
+face = "PosX"
+u = 92
+v = 5
+
+[[volcanoes]]
+id = 2
+source = "rift"
+plate_id = 10
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 64
+edifice_height_blocks = 23
+crater_radius_blocks = 9
+crater_depth_blocks = 5
+chamber_depth_blocks = 41
+chamber_radius_blocks = 32
+chamber_volume_blocks = 98826
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 128
+erosion = 1742
+
+[volcanoes.pos]
+face = "PosX"
+u = 113
+v = 10
+
+[[volcanoes]]
+id = 3
+source = "rift"
+plate_id = 13
+chain_id = 0
+age_myr = 6
+edifice_radius_blocks = 80
+edifice_height_blocks = 20
+crater_radius_blocks = 11
+crater_depth_blocks = 5
+chamber_depth_blocks = 40
+chamber_radius_blocks = 33
+chamber_volume_blocks = 108384
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 160
+erosion = 8178
+
+[volcanoes.pos]
+face = "PosX"
+u = 2
+v = 12
+
+[[volcanoes]]
+id = 4
+source = "rift"
+plate_id = 15
+chain_id = 0
+age_myr = 8
+edifice_radius_blocks = 103
+edifice_height_blocks = 43
+crater_radius_blocks = 14
+crater_depth_blocks = 10
+chamber_depth_blocks = 43
+chamber_radius_blocks = 14
+chamber_volume_blocks = 8276
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 206
+erosion = 10016
+
+[volcanoes.pos]
+face = "PosX"
+u = 146
+v = 12
+
+[[volcanoes]]
+id = 5
+source = "rift"
+plate_id = 7
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 83
+edifice_height_blocks = 24
+crater_radius_blocks = 11
+crater_depth_blocks = 6
+chamber_depth_blocks = 20
+chamber_radius_blocks = 29
+chamber_volume_blocks = 73556
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 166
+erosion = 1101
+
+[volcanoes.pos]
+face = "PosX"
+u = 190
+v = 33
+
+[[volcanoes]]
+id = 6
+source = "rift"
+plate_id = 7
+chain_id = 0
+age_myr = 4
+edifice_radius_blocks = 63
+edifice_height_blocks = 30
+crater_radius_blocks = 9
+crater_depth_blocks = 7
+chamber_depth_blocks = 42
+chamber_radius_blocks = 19
+chamber_volume_blocks = 20687
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 126
+erosion = 9796
+
+[volcanoes.pos]
+face = "PosX"
+u = 177
+v = 52
+
+[[volcanoes]]
+id = 7
+source = "ocean_ridge"
+plate_id = 10
+chain_id = 0
+age_myr = 4
+edifice_radius_blocks = 88
+edifice_height_blocks = 17
+crater_radius_blocks = 12
+crater_depth_blocks = 4
+chamber_depth_blocks = 29
+chamber_radius_blocks = 23
+chamber_volume_blocks = 36695
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 176
+erosion = 1432
+
+[volcanoes.pos]
+face = "PosX"
+u = 131
+v = 156
+
+[[volcanoes]]
+id = 8
+source = "island_arc"
+plate_id = 7
+chain_id = 0
+age_myr = 11
+edifice_radius_blocks = 135
+edifice_height_blocks = 104
+crater_radius_blocks = 19
+crater_depth_blocks = 26
+chamber_depth_blocks = 43
+chamber_radius_blocks = 14
+chamber_volume_blocks = 8276
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 270
+erosion = 3407
+
+[volcanoes.pos]
+face = "PosX"
+u = 132
+v = 164
+
+[[volcanoes]]
+id = 9
+source = "ocean_ridge"
+plate_id = 10
+chain_id = 0
+age_myr = 11
+edifice_radius_blocks = 107
+edifice_height_blocks = 14
+crater_radius_blocks = 15
+crater_depth_blocks = 4
+chamber_depth_blocks = 34
+chamber_radius_blocks = 19
+chamber_volume_blocks = 20687
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 214
+erosion = 623
+
+[volcanoes.pos]
+face = "PosX"
+u = 121
+v = 171
+
+[[volcanoes]]
+id = 10
+source = "ocean_ridge"
+plate_id = 7
+chain_id = 0
+age_myr = 7
+edifice_radius_blocks = 103
+edifice_height_blocks = 18
+crater_radius_blocks = 14
+crater_depth_blocks = 4
+chamber_depth_blocks = 36
+chamber_radius_blocks = 32
+chamber_volume_blocks = 98826
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 206
+erosion = 3655
+
+[volcanoes.pos]
+face = "PosX"
+u = 132
+v = 173
+
+[[volcanoes]]
+id = 11
+source = "ocean_ridge"
+plate_id = 2
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 123
+edifice_height_blocks = 21
+crater_radius_blocks = 17
+crater_depth_blocks = 5
+chamber_depth_blocks = 33
+chamber_radius_blocks = 35
+chamber_volume_blocks = 129308
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 246
+erosion = 201
+
+[volcanoes.pos]
+face = "PosX"
+u = 84
+v = 189
+
+[[volcanoes]]
+id = 12
+source = "rift"
+plate_id = 5
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 106
+edifice_height_blocks = 30
+crater_radius_blocks = 15
+crater_depth_blocks = 7
+chamber_depth_blocks = 45
+chamber_radius_blocks = 19
+chamber_volume_blocks = 20687
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 212
+erosion = 8294
+
+[volcanoes.pos]
+face = "PosX"
+u = 68
+v = 190
+
+[[volcanoes]]
+id = 13
+source = "ocean_ridge"
+plate_id = 2
+chain_id = 0
+age_myr = 10
+edifice_radius_blocks = 112
+edifice_height_blocks = 28
+crater_radius_blocks = 16
+crater_depth_blocks = 7
+chamber_depth_blocks = 23
+chamber_radius_blocks = 32
+chamber_volume_blocks = 98826
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 224
+erosion = 9310
+
+[volcanoes.pos]
+face = "PosX"
+u = 75
+v = 192
+
+[[volcanoes]]
+id = 14
+source = "ocean_ridge"
+plate_id = 7
+chain_id = 0
+age_myr = 8
+edifice_radius_blocks = 86
+edifice_height_blocks = 22
+crater_radius_blocks = 12
+crater_depth_blocks = 5
+chamber_depth_blocks = 21
+chamber_radius_blocks = 17
+chamber_volume_blocks = 14818
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 172
+erosion = 10220
+
+[volcanoes.pos]
+face = "PosX"
+u = 174
+v = 197
+
+[[volcanoes]]
+id = 15
+source = "rift"
+plate_id = 5
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 103
+edifice_height_blocks = 36
+crater_radius_blocks = 14
+crater_depth_blocks = 9
+chamber_depth_blocks = 40
+chamber_radius_blocks = 15
+chamber_volume_blocks = 10179
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 206
+erosion = 6626
+
+[volcanoes.pos]
+face = "PosX"
+u = 63
+v = 204
+
+[[volcanoes]]
+id = 16
+source = "rift"
+plate_id = 2
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 86
+edifice_height_blocks = 30
+crater_radius_blocks = 12
+crater_depth_blocks = 7
+chamber_depth_blocks = 20
+chamber_radius_blocks = 14
+chamber_volume_blocks = 8276
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 172
+erosion = 4269
+
+[volcanoes.pos]
+face = "PosX"
+u = 199
+v = 215
+
+[[volcanoes]]
+id = 17
+source = "ocean_ridge"
+plate_id = 5
+chain_id = 0
+age_myr = 10
+edifice_radius_blocks = 94
+edifice_height_blocks = 23
+crater_radius_blocks = 13
+crater_depth_blocks = 5
+chamber_depth_blocks = 41
+chamber_radius_blocks = 33
+chamber_volume_blocks = 108384
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 188
+erosion = 3898
+
+[volcanoes.pos]
+face = "PosX"
+u = 57
+v = 218
+
+[[volcanoes]]
+id = 18
+source = "ocean_ridge"
+plate_id = 5
+chain_id = 0
+age_myr = 4
+edifice_radius_blocks = 82
+edifice_height_blocks = 29
+crater_radius_blocks = 11
+crater_depth_blocks = 7
+chamber_depth_blocks = 18
+chamber_radius_blocks = 24
+chamber_volume_blocks = 41693
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 164
+erosion = 2560
+
+[volcanoes.pos]
+face = "PosX"
+u = 52
+v = 228
+
+[[volcanoes]]
+id = 19
+source = "rift"
+plate_id = 2
+chain_id = 0
+age_myr = 10
+edifice_radius_blocks = 96
+edifice_height_blocks = 38
+crater_radius_blocks = 13
+crater_depth_blocks = 9
+chamber_depth_blocks = 18
+chamber_radius_blocks = 24
+chamber_volume_blocks = 41693
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 192
+erosion = 11254
+
+[volcanoes.pos]
+face = "PosX"
+u = 225
+v = 230
+
+[[volcanoes]]
+id = 20
+source = "rift"
+plate_id = 2
+chain_id = 0
+age_myr = 11
+edifice_radius_blocks = 76
+edifice_height_blocks = 31
+crater_radius_blocks = 10
+crater_depth_blocks = 7
+chamber_depth_blocks = 33
+chamber_radius_blocks = 23
+chamber_volume_blocks = 36695
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 152
+erosion = 4619
+
+[volcanoes.pos]
+face = "PosX"
+u = 251
+v = 246
+
+[[volcanoes]]
+id = 21
+source = "rift"
+plate_id = 11
+chain_id = 0
+age_myr = 5
+edifice_radius_blocks = 106
+edifice_height_blocks = 20
+crater_radius_blocks = 15
+crater_depth_blocks = 5
+chamber_depth_blocks = 38
+chamber_radius_blocks = 25
+chamber_volume_blocks = 47124
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 212
+erosion = 10649
+
+[volcanoes.pos]
+face = "NegX"
+u = 137
+v = 18
+
+[[volcanoes]]
+id = 22
+source = "rift"
+plate_id = 11
+chain_id = 0
+age_myr = 4
+edifice_radius_blocks = 99
+edifice_height_blocks = 23
+crater_radius_blocks = 14
+crater_depth_blocks = 5
+chamber_depth_blocks = 33
+chamber_radius_blocks = 22
+chamber_volume_blocks = 32114
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 198
+erosion = 892
+
+[volcanoes.pos]
+face = "NegX"
+u = 131
+v = 23
+
+[[volcanoes]]
+id = 23
+source = "rift"
+plate_id = 11
+chain_id = 0
+age_myr = 0
+edifice_radius_blocks = 98
+edifice_height_blocks = 35
+crater_radius_blocks = 14
+crater_depth_blocks = 8
+chamber_depth_blocks = 38
+chamber_radius_blocks = 14
+chamber_volume_blocks = 8276
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 196
+erosion = 3936
+
+[volcanoes.pos]
+face = "NegX"
+u = 118
+v = 34
+
+[[volcanoes]]
+id = 24
+source = "rift"
+plate_id = 14
+chain_id = 0
+age_myr = 4
+edifice_radius_blocks = 63
+edifice_height_blocks = 35
+crater_radius_blocks = 9
+crater_depth_blocks = 8
+chamber_depth_blocks = 29
+chamber_radius_blocks = 21
+chamber_volume_blocks = 27931
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 126
+erosion = 7216
+
+[volcanoes.pos]
+face = "NegX"
+u = 104
+v = 43
+
+[[volcanoes]]
+id = 25
+source = "rift"
+plate_id = 14
+chain_id = 0
+age_myr = 5
+edifice_radius_blocks = 91
+edifice_height_blocks = 39
+crater_radius_blocks = 13
+crater_depth_blocks = 9
+chamber_depth_blocks = 21
+chamber_radius_blocks = 29
+chamber_volume_blocks = 73556
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 182
+erosion = 3269
+
+[volcanoes.pos]
+face = "NegX"
+u = 55
+v = 50
+
+[[volcanoes]]
+id = 26
+source = "rift"
+plate_id = 9
+chain_id = 0
+age_myr = 6
+edifice_radius_blocks = 98
+edifice_height_blocks = 28
+crater_radius_blocks = 14
+crater_depth_blocks = 7
+chamber_depth_blocks = 46
+chamber_radius_blocks = 23
+chamber_volume_blocks = 36695
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 196
+erosion = 5286
+
+[volcanoes.pos]
+face = "NegX"
+u = 36
+v = 70
+
+[[volcanoes]]
+id = 27
+source = "rift"
+plate_id = 6
+chain_id = 0
+age_myr = 6
+edifice_radius_blocks = 65
+edifice_height_blocks = 21
+crater_radius_blocks = 9
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 34
+chamber_volume_blocks = 118539
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 130
+erosion = 1278
+
+[volcanoes.pos]
+face = "NegX"
+u = 32
+v = 87
+
+[[volcanoes]]
+id = 28
+source = "rift"
+plate_id = 9
+chain_id = 0
+age_myr = 11
+edifice_radius_blocks = 76
+edifice_height_blocks = 24
+crater_radius_blocks = 10
+crater_depth_blocks = 6
+chamber_depth_blocks = 44
+chamber_radius_blocks = 24
+chamber_volume_blocks = 41693
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 152
+erosion = 9179
+
+[volcanoes.pos]
+face = "NegX"
+u = 14
+v = 120
+
+[[volcanoes]]
+id = 29
+source = "island_arc"
+plate_id = 3
+chain_id = 0
+age_myr = 7
+edifice_radius_blocks = 89
+edifice_height_blocks = 117
+crater_radius_blocks = 12
+crater_depth_blocks = 29
+chamber_depth_blocks = 37
+chamber_radius_blocks = 22
+chamber_volume_blocks = 32114
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 178
+erosion = 8095
+
+[volcanoes.pos]
+face = "NegX"
+u = 223
+v = 149
+
+[[volcanoes]]
+id = 30
+source = "island_arc"
+plate_id = 6
+chain_id = 0
+age_myr = 1
+edifice_radius_blocks = 125
+edifice_height_blocks = 109
+crater_radius_blocks = 17
+crater_depth_blocks = 27
+chamber_depth_blocks = 18
+chamber_radius_blocks = 14
+chamber_volume_blocks = 8276
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 250
+erosion = 1897
+
+[volcanoes.pos]
+face = "NegX"
+u = 180
+v = 150
+
+[[volcanoes]]
+id = 31
+source = "island_arc"
+plate_id = 3
+chain_id = 0
+age_myr = 1
+edifice_radius_blocks = 119
+edifice_height_blocks = 111
+crater_radius_blocks = 17
+crater_depth_blocks = 27
+chamber_depth_blocks = 38
+chamber_radius_blocks = 16
+chamber_volume_blocks = 12354
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 238
+erosion = 3877
+
+[volcanoes.pos]
+face = "NegX"
+u = 186
+v = 154
+
+[[volcanoes]]
+id = 32
+source = "island_arc"
+plate_id = 3
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 84
+edifice_height_blocks = 116
+crater_radius_blocks = 12
+crater_depth_blocks = 29
+chamber_depth_blocks = 44
+chamber_radius_blocks = 22
+chamber_volume_blocks = 32114
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 168
+erosion = 2738
+
+[volcanoes.pos]
+face = "NegX"
+u = 180
+v = 163
+
+[[volcanoes]]
+id = 33
+source = "island_arc"
+plate_id = 3
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 91
+edifice_height_blocks = 110
+crater_radius_blocks = 13
+crater_depth_blocks = 27
+chamber_depth_blocks = 31
+chamber_radius_blocks = 16
+chamber_volume_blocks = 12354
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 182
+erosion = 10533
+
+[volcanoes.pos]
+face = "NegX"
+u = 160
+v = 196
+
+[[volcanoes]]
+id = 34
+source = "rift"
+plate_id = 6
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 71
+edifice_height_blocks = 27
+crater_radius_blocks = 10
+crater_depth_blocks = 6
+chamber_depth_blocks = 43
+chamber_radius_blocks = 29
+chamber_volume_blocks = 73556
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 142
+erosion = 7449
+
+[volcanoes.pos]
+face = "NegX"
+u = 58
+v = 232
+
+[[volcanoes]]
+id = 35
+source = "rift"
+plate_id = 6
+chain_id = 0
+age_myr = 7
+edifice_radius_blocks = 96
+edifice_height_blocks = 33
+crater_radius_blocks = 13
+crater_depth_blocks = 8
+chamber_depth_blocks = 20
+chamber_radius_blocks = 16
+chamber_volume_blocks = 12354
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 192
+erosion = 2539
+
+[volcanoes.pos]
+face = "NegX"
+u = 101
+v = 241
+
+[[volcanoes]]
+id = 36
+source = "rift"
+plate_id = 6
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 82
+edifice_height_blocks = 31
+crater_radius_blocks = 11
+crater_depth_blocks = 7
+chamber_depth_blocks = 18
+chamber_radius_blocks = 27
+chamber_volume_blocks = 59363
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 164
+erosion = 2090
+
+[volcanoes.pos]
+face = "NegX"
+u = 111
+v = 243
+
+[[volcanoes]]
+id = 37
+source = "rift"
+plate_id = 5
+chain_id = 0
+age_myr = 0
+edifice_radius_blocks = 80
+edifice_height_blocks = 31
+crater_radius_blocks = 11
+crater_depth_blocks = 7
+chamber_depth_blocks = 42
+chamber_radius_blocks = 18
+chamber_volume_blocks = 17589
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 160
+erosion = 10968
+
+[volcanoes.pos]
+face = "PosY"
+u = 245
+v = 39
+
+[[volcanoes]]
+id = 38
+source = "ocean_ridge"
+plate_id = 0
+chain_id = 0
+age_myr = 0
+edifice_radius_blocks = 108
+edifice_height_blocks = 28
+crater_radius_blocks = 15
+crater_depth_blocks = 7
+chamber_depth_blocks = 42
+chamber_radius_blocks = 25
+chamber_volume_blocks = 47124
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 216
+erosion = 1620
+
+[volcanoes.pos]
+face = "PosY"
+u = 61
+v = 45
+
+[[volcanoes]]
+id = 39
+source = "rift"
+plate_id = 0
+chain_id = 0
+age_myr = 5
+edifice_radius_blocks = 106
+edifice_height_blocks = 43
+crater_radius_blocks = 15
+crater_depth_blocks = 10
+chamber_depth_blocks = 18
+chamber_radius_blocks = 19
+chamber_volume_blocks = 20687
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 212
+erosion = 449
+
+[volcanoes.pos]
+face = "PosY"
+u = 221
+v = 48
+
+[[volcanoes]]
+id = 40
+source = "rift"
+plate_id = 3
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 62
+edifice_height_blocks = 43
+crater_radius_blocks = 8
+crater_depth_blocks = 10
+chamber_depth_blocks = 23
+chamber_radius_blocks = 25
+chamber_volume_blocks = 47124
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 124
+erosion = 3585
+
+[volcanoes.pos]
+face = "PosY"
+u = 44
+v = 90
+
+[[volcanoes]]
+id = 41
+source = "rift"
+plate_id = 2
+chain_id = 0
+age_myr = 6
+edifice_radius_blocks = 77
+edifice_height_blocks = 40
+crater_radius_blocks = 11
+crater_depth_blocks = 10
+chamber_depth_blocks = 37
+chamber_radius_blocks = 25
+chamber_volume_blocks = 47124
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 154
+erosion = 11670
+
+[volcanoes.pos]
+face = "PosY"
+u = 179
+v = 139
+
+[[volcanoes]]
+id = 42
+source = "rift"
+plate_id = 2
+chain_id = 0
+age_myr = 3
+edifice_radius_blocks = 83
+edifice_height_blocks = 20
+crater_radius_blocks = 11
+crater_depth_blocks = 5
+chamber_depth_blocks = 37
+chamber_radius_blocks = 17
+chamber_volume_blocks = 14818
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 166
+erosion = 171
+
+[volcanoes.pos]
+face = "PosY"
+u = 175
+v = 146
+
+[[volcanoes]]
+id = 43
+source = "rift"
+plate_id = 2
+chain_id = 0
+age_myr = 6
+edifice_radius_blocks = 74
+edifice_height_blocks = 23
+crater_radius_blocks = 10
+crater_depth_blocks = 5
+chamber_depth_blocks = 38
+chamber_radius_blocks = 21
+chamber_volume_blocks = 27931
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 148
+erosion = 102
+
+[volcanoes.pos]
+face = "PosY"
+u = 165
+v = 162
+
+[[volcanoes]]
+id = 44
+source = "ocean_ridge"
+plate_id = 1
+chain_id = 0
+age_myr = 4
+edifice_radius_blocks = 82
+edifice_height_blocks = 18
+crater_radius_blocks = 11
+crater_depth_blocks = 4
+chamber_depth_blocks = 42
+chamber_radius_blocks = 15
+chamber_volume_blocks = 10179
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 164
+erosion = 1072
+
+[volcanoes.pos]
+face = "PosY"
+u = 164
+v = 224
+
+[[volcanoes]]
+id = 45
+source = "island_arc"
+plate_id = 2
+chain_id = 0
+age_myr = 1
+edifice_radius_blocks = 107
+edifice_height_blocks = 109
+crater_radius_blocks = 15
+crater_depth_blocks = 27
+chamber_depth_blocks = 30
+chamber_radius_blocks = 16
+chamber_volume_blocks = 12354
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 214
+erosion = 1333
+
+[volcanoes.pos]
+face = "PosY"
+u = 189
+v = 225
+
+[[volcanoes]]
+id = 46
+source = "ocean_ridge"
+plate_id = 1
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 105
+edifice_height_blocks = 26
+crater_radius_blocks = 15
+crater_depth_blocks = 6
+chamber_depth_blocks = 20
+chamber_radius_blocks = 14
+chamber_volume_blocks = 8276
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 210
+erosion = 2397
+
+[volcanoes.pos]
+face = "PosY"
+u = 136
+v = 243
+
+[[volcanoes]]
+id = 47
+source = "island_arc"
+plate_id = 9
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 102
+edifice_height_blocks = 77
+crater_radius_blocks = 14
+crater_depth_blocks = 19
+chamber_depth_blocks = 41
+chamber_radius_blocks = 23
+chamber_volume_blocks = 36695
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 204
+erosion = 9710
+
+[volcanoes.pos]
+face = "NegY"
+u = 23
+v = 0
+
+[[volcanoes]]
+id = 48
+source = "ocean_ridge"
+plate_id = 9
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 86
+edifice_height_blocks = 26
+crater_radius_blocks = 12
+crater_depth_blocks = 6
+chamber_depth_blocks = 27
+chamber_radius_blocks = 17
+chamber_volume_blocks = 14818
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 172
+erosion = 9962
+
+[volcanoes.pos]
+face = "NegY"
+u = 83
+v = 2
+
+[[volcanoes]]
+id = 49
+source = "island_arc"
+plate_id = 9
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 115
+edifice_height_blocks = 112
+crater_radius_blocks = 16
+crater_depth_blocks = 28
+chamber_depth_blocks = 43
+chamber_radius_blocks = 16
+chamber_volume_blocks = 12354
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 230
+erosion = 1257
+
+[volcanoes.pos]
+face = "NegY"
+u = 40
+v = 1
+
+[[volcanoes]]
+id = 50
+source = "island_arc"
+plate_id = 9
+chain_id = 0
+age_myr = 5
+edifice_radius_blocks = 135
+edifice_height_blocks = 74
+crater_radius_blocks = 19
+crater_depth_blocks = 18
+chamber_depth_blocks = 41
+chamber_radius_blocks = 33
+chamber_volume_blocks = 108384
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 270
+erosion = 6749
+
+[volcanoes.pos]
+face = "NegY"
+u = 61
+v = 1
+
+[[volcanoes]]
+id = 51
+source = "ocean_ridge"
+plate_id = 14
+chain_id = 0
+age_myr = 6
+edifice_radius_blocks = 120
+edifice_height_blocks = 26
+crater_radius_blocks = 17
+crater_depth_blocks = 6
+chamber_depth_blocks = 34
+chamber_radius_blocks = 17
+chamber_volume_blocks = 14818
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 240
+erosion = 11550
+
+[volcanoes.pos]
+face = "NegY"
+u = 88
+v = 10
+
+[[volcanoes]]
+id = 52
+source = "ocean_ridge"
+plate_id = 12
+chain_id = 0
+age_myr = 4
+edifice_radius_blocks = 82
+edifice_height_blocks = 19
+crater_radius_blocks = 11
+crater_depth_blocks = 4
+chamber_depth_blocks = 41
+chamber_radius_blocks = 31
+chamber_volume_blocks = 89848
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 164
+erosion = 3172
+
+[volcanoes.pos]
+face = "NegY"
+u = 108
+v = 24
+
+[[volcanoes]]
+id = 53
+source = "ocean_ridge"
+plate_id = 12
+chain_id = 0
+age_myr = 0
+edifice_radius_blocks = 120
+edifice_height_blocks = 15
+crater_radius_blocks = 17
+crater_depth_blocks = 4
+chamber_depth_blocks = 37
+chamber_radius_blocks = 27
+chamber_volume_blocks = 59363
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 240
+erosion = 10596
+
+[volcanoes.pos]
+face = "NegY"
+u = 147
+v = 46
+
+[[volcanoes]]
+id = 54
+source = "ocean_ridge"
+plate_id = 12
+chain_id = 0
+age_myr = 5
+edifice_radius_blocks = 89
+edifice_height_blocks = 26
+crater_radius_blocks = 12
+crater_depth_blocks = 6
+chamber_depth_blocks = 24
+chamber_radius_blocks = 30
+chamber_volume_blocks = 81431
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 178
+erosion = 4757
+
+[volcanoes.pos]
+face = "NegY"
+u = 169
+v = 46
+
+[[volcanoes]]
+id = 55
+source = "rift"
+plate_id = 15
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 86
+edifice_height_blocks = 28
+crater_radius_blocks = 12
+crater_depth_blocks = 7
+chamber_depth_blocks = 22
+chamber_radius_blocks = 34
+chamber_volume_blocks = 118539
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 172
+erosion = 4509
+
+[volcanoes.pos]
+face = "NegY"
+u = 178
+v = 51
+
+[[volcanoes]]
+id = 56
+source = "rift"
+plate_id = 15
+chain_id = 0
+age_myr = 8
+edifice_radius_blocks = 103
+edifice_height_blocks = 27
+crater_radius_blocks = 14
+crater_depth_blocks = 6
+chamber_depth_blocks = 42
+chamber_radius_blocks = 32
+chamber_volume_blocks = 98826
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 206
+erosion = 7496
+
+[volcanoes.pos]
+face = "NegY"
+u = 190
+v = 52
+
+[[volcanoes]]
+id = 57
+source = "rift"
+plate_id = 15
+chain_id = 0
+age_myr = 3
+edifice_radius_blocks = 80
+edifice_height_blocks = 29
+crater_radius_blocks = 11
+crater_depth_blocks = 7
+chamber_depth_blocks = 46
+chamber_radius_blocks = 29
+chamber_volume_blocks = 73556
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 160
+erosion = 6543
+
+[volcanoes.pos]
+face = "NegY"
+u = 245
+v = 56
+
+[[volcanoes]]
+id = 58
+source = "ocean_ridge"
+plate_id = 15
+chain_id = 0
+age_myr = 0
+edifice_radius_blocks = 78
+edifice_height_blocks = 25
+crater_radius_blocks = 11
+crater_depth_blocks = 6
+chamber_depth_blocks = 28
+chamber_radius_blocks = 32
+chamber_volume_blocks = 98826
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 156
+erosion = 9036
+
+[volcanoes.pos]
+face = "NegY"
+u = 122
+v = 74
+
+[[volcanoes]]
+id = 59
+source = "ocean_ridge"
+plate_id = 15
+chain_id = 0
+age_myr = 5
+edifice_radius_blocks = 83
+edifice_height_blocks = 29
+crater_radius_blocks = 11
+crater_depth_blocks = 7
+chamber_depth_blocks = 38
+chamber_radius_blocks = 21
+chamber_volume_blocks = 27931
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 166
+erosion = 2705
+
+[volcanoes.pos]
+face = "NegY"
+u = 117
+v = 93
+
+[[volcanoes]]
+id = 60
+source = "rift"
+plate_id = 15
+chain_id = 0
+age_myr = 10
+edifice_radius_blocks = 90
+edifice_height_blocks = 33
+crater_radius_blocks = 12
+crater_depth_blocks = 8
+chamber_depth_blocks = 46
+chamber_radius_blocks = 14
+chamber_volume_blocks = 8276
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 180
+erosion = 3478
+
+[volcanoes.pos]
+face = "NegY"
+u = 110
+v = 126
+
+[[volcanoes]]
+id = 61
+source = "rift"
+plate_id = 13
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 103
+edifice_height_blocks = 24
+crater_radius_blocks = 14
+crater_depth_blocks = 6
+chamber_depth_blocks = 38
+chamber_radius_blocks = 16
+chamber_volume_blocks = 12354
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 206
+erosion = 386
+
+[volcanoes.pos]
+face = "NegY"
+u = 100
+v = 183
+
+[[volcanoes]]
+id = 62
+source = "rift"
+plate_id = 13
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 92
+edifice_height_blocks = 21
+crater_radius_blocks = 13
+crater_depth_blocks = 5
+chamber_depth_blocks = 41
+chamber_radius_blocks = 26
+chamber_volume_blocks = 53008
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 184
+erosion = 10845
+
+[volcanoes.pos]
+face = "PosZ"
+u = 253
+v = 19
+
+[[volcanoes]]
+id = 63
+source = "rift"
+plate_id = 13
+chain_id = 0
+age_myr = 5
+edifice_radius_blocks = 100
+edifice_height_blocks = 30
+crater_radius_blocks = 14
+crater_depth_blocks = 7
+chamber_depth_blocks = 26
+chamber_radius_blocks = 21
+chamber_volume_blocks = 27931
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 200
+erosion = 11513
+
+[volcanoes.pos]
+face = "PosZ"
+u = 249
+v = 29
+
+[[volcanoes]]
+id = 64
+source = "rift"
+plate_id = 10
+chain_id = 0
+age_myr = 1
+edifice_radius_blocks = 87
+edifice_height_blocks = 34
+crater_radius_blocks = 12
+crater_depth_blocks = 8
+chamber_depth_blocks = 28
+chamber_radius_blocks = 16
+chamber_volume_blocks = 12354
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 174
+erosion = 1405
+
+[volcanoes.pos]
+face = "PosZ"
+u = 250
+v = 39
+
+[[volcanoes]]
+id = 65
+source = "island_arc"
+plate_id = 8
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 108
+edifice_height_blocks = 118
+crater_radius_blocks = 15
+crater_depth_blocks = 29
+chamber_depth_blocks = 29
+chamber_radius_blocks = 30
+chamber_volume_blocks = 81431
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 216
+erosion = 2330
+
+[volcanoes.pos]
+face = "PosZ"
+u = 132
+v = 69
+
+[[volcanoes]]
+id = 66
+source = "rift"
+plate_id = 13
+chain_id = 0
+age_myr = 0
+edifice_radius_blocks = 95
+edifice_height_blocks = 24
+crater_radius_blocks = 13
+crater_depth_blocks = 6
+chamber_depth_blocks = 21
+chamber_radius_blocks = 17
+chamber_volume_blocks = 14818
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 190
+erosion = 1848
+
+[volcanoes.pos]
+face = "PosZ"
+u = 208
+v = 86
+
+[[volcanoes]]
+id = 67
+source = "rift"
+plate_id = 13
+chain_id = 0
+age_myr = 10
+edifice_radius_blocks = 81
+edifice_height_blocks = 31
+crater_radius_blocks = 11
+crater_depth_blocks = 7
+chamber_depth_blocks = 33
+chamber_radius_blocks = 22
+chamber_volume_blocks = 32114
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 162
+erosion = 574
+
+[volcanoes.pos]
+face = "PosZ"
+u = 202
+v = 88
+
+[[volcanoes]]
+id = 68
+source = "rift"
+plate_id = 5
+chain_id = 0
+age_myr = 5
+edifice_radius_blocks = 79
+edifice_height_blocks = 21
+crater_radius_blocks = 11
+crater_depth_blocks = 5
+chamber_depth_blocks = 32
+chamber_radius_blocks = 18
+chamber_volume_blocks = 17589
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 158
+erosion = 5057
+
+[volcanoes.pos]
+face = "PosZ"
+u = 179
+v = 116
+
+[[volcanoes]]
+id = 69
+source = "rift"
+plate_id = 5
+chain_id = 0
+age_myr = 4
+edifice_radius_blocks = 105
+edifice_height_blocks = 36
+crater_radius_blocks = 15
+crater_depth_blocks = 9
+chamber_depth_blocks = 25
+chamber_radius_blocks = 30
+chamber_volume_blocks = 81431
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 210
+erosion = 1108
+
+[volcanoes.pos]
+face = "PosZ"
+u = 176
+v = 123
+
+[[volcanoes]]
+id = 70
+source = "ocean_ridge"
+plate_id = 8
+chain_id = 0
+age_myr = 11
+edifice_radius_blocks = 101
+edifice_height_blocks = 24
+crater_radius_blocks = 14
+crater_depth_blocks = 6
+chamber_depth_blocks = 18
+chamber_radius_blocks = 35
+chamber_volume_blocks = 129308
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 202
+erosion = 10619
+
+[volcanoes.pos]
+face = "PosZ"
+u = 154
+v = 162
+
+[[volcanoes]]
+id = 71
+source = "rift"
+plate_id = 8
+chain_id = 0
+age_myr = 3
+edifice_radius_blocks = 104
+edifice_height_blocks = 21
+crater_radius_blocks = 14
+crater_depth_blocks = 5
+chamber_depth_blocks = 33
+chamber_radius_blocks = 23
+chamber_volume_blocks = 36695
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 208
+erosion = 2667
+
+[volcanoes.pos]
+face = "PosZ"
+u = 20
+v = 174
+
+[[volcanoes]]
+id = 72
+source = "ocean_ridge"
+plate_id = 5
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 92
+edifice_height_blocks = 13
+crater_radius_blocks = 13
+crater_depth_blocks = 4
+chamber_depth_blocks = 22
+chamber_radius_blocks = 20
+chamber_volume_blocks = 24128
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 184
+erosion = 1142
+
+[volcanoes.pos]
+face = "PosZ"
+u = 150
+v = 179
+
+[[volcanoes]]
+id = 73
+source = "ocean_ridge"
+plate_id = 8
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 110
+edifice_height_blocks = 17
+crater_radius_blocks = 15
+crater_depth_blocks = 4
+chamber_depth_blocks = 36
+chamber_radius_blocks = 31
+chamber_volume_blocks = 89848
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 220
+erosion = 9578
+
+[volcanoes.pos]
+face = "PosZ"
+u = 144
+v = 183
+
+[[volcanoes]]
+id = 74
+source = "rift"
+plate_id = 8
+chain_id = 0
+age_myr = 10
+edifice_radius_blocks = 105
+edifice_height_blocks = 21
+crater_radius_blocks = 15
+crater_depth_blocks = 5
+chamber_depth_blocks = 31
+chamber_radius_blocks = 20
+chamber_volume_blocks = 24128
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 210
+erosion = 6778
+
+[volcanoes.pos]
+face = "PosZ"
+u = 47
+v = 200
+
+[[volcanoes]]
+id = 75
+source = "ocean_ridge"
+plate_id = 5
+chain_id = 0
+age_myr = 10
+edifice_radius_blocks = 76
+edifice_height_blocks = 27
+crater_radius_blocks = 10
+crater_depth_blocks = 6
+chamber_depth_blocks = 19
+chamber_radius_blocks = 18
+chamber_volume_blocks = 17589
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 152
+erosion = 4282
+
+[volcanoes.pos]
+face = "PosZ"
+u = 126
+v = 220
+
+[[volcanoes]]
+id = 76
+source = "ocean_ridge"
+plate_id = 8
+chain_id = 0
+age_myr = 3
+edifice_radius_blocks = 75
+edifice_height_blocks = 12
+crater_radius_blocks = 10
+crater_depth_blocks = 4
+chamber_depth_blocks = 36
+chamber_radius_blocks = 21
+chamber_volume_blocks = 27931
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 11055
+
+[volcanoes.pos]
+face = "PosZ"
+u = 109
+v = 230
+
+[[volcanoes]]
+id = 77
+source = "ocean_ridge"
+plate_id = 0
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 75
+edifice_height_blocks = 24
+crater_radius_blocks = 10
+crater_depth_blocks = 6
+chamber_depth_blocks = 38
+chamber_radius_blocks = 14
+chamber_volume_blocks = 8276
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 129
+
+[volcanoes.pos]
+face = "PosZ"
+u = 102
+v = 237
+
+[[volcanoes]]
+id = 78
+source = "continental_arc"
+plate_id = 0
+chain_id = 0
+age_myr = 1
+edifice_radius_blocks = 107
+edifice_height_blocks = 54
+crater_radius_blocks = 15
+crater_depth_blocks = 13
+chamber_depth_blocks = 36
+chamber_radius_blocks = 24
+chamber_volume_blocks = 41693
+chemistry = "andesitic"
+hydrothermal_radius_blocks = 214
+erosion = 1273
+
+[volcanoes.pos]
+face = "PosY"
+u = 164
+v = 0
+
+[[volcanoes]]
+id = 79
+source = "ocean_ridge"
+plate_id = 9
+chain_id = 0
+age_myr = 0
+edifice_radius_blocks = 108
+edifice_height_blocks = 12
+crater_radius_blocks = 15
+crater_depth_blocks = 4
+chamber_depth_blocks = 34
+chamber_radius_blocks = 31
+chamber_volume_blocks = 89848
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 216
+erosion = 5040
+
+[volcanoes.pos]
+face = "NegZ"
+u = 142
+v = 43
+
+[[volcanoes]]
+id = 80
+source = "island_arc"
+plate_id = 4
+chain_id = 0
+age_myr = 4
+edifice_radius_blocks = 86
+edifice_height_blocks = 85
+crater_radius_blocks = 12
+crater_depth_blocks = 21
+chamber_depth_blocks = 37
+chamber_radius_blocks = 34
+chamber_volume_blocks = 118539
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 172
+erosion = 9196
+
+[volcanoes.pos]
+face = "NegZ"
+u = 106
+v = 101
+
+[[volcanoes]]
+id = 81
+source = "island_arc"
+plate_id = 4
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 102
+edifice_height_blocks = 77
+crater_radius_blocks = 14
+crater_depth_blocks = 19
+chamber_depth_blocks = 24
+chamber_radius_blocks = 17
+chamber_volume_blocks = 14818
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 204
+erosion = 6722
+
+[volcanoes.pos]
+face = "NegZ"
+u = 96
+v = 103
+
+[[volcanoes]]
+id = 82
+source = "rift"
+plate_id = 12
+chain_id = 0
+age_myr = 0
+edifice_radius_blocks = 98
+edifice_height_blocks = 39
+crater_radius_blocks = 14
+crater_depth_blocks = 9
+chamber_depth_blocks = 43
+chamber_radius_blocks = 25
+chamber_volume_blocks = 47124
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 196
+erosion = 5016
+
+[volcanoes.pos]
+face = "NegZ"
+u = 35
+v = 100
+
+[[volcanoes]]
+id = 83
+source = "island_arc"
+plate_id = 4
+chain_id = 0
+age_myr = 4
+edifice_radius_blocks = 98
+edifice_height_blocks = 105
+crater_radius_blocks = 14
+crater_depth_blocks = 26
+chamber_depth_blocks = 20
+chamber_radius_blocks = 31
+chamber_volume_blocks = 89848
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 196
+erosion = 4552
+
+[volcanoes.pos]
+face = "NegZ"
+u = 89
+v = 105
+
+[[volcanoes]]
+id = 84
+source = "island_arc"
+plate_id = 4
+chain_id = 0
+age_myr = 0
+edifice_radius_blocks = 112
+edifice_height_blocks = 115
+crater_radius_blocks = 16
+crater_depth_blocks = 28
+chamber_depth_blocks = 27
+chamber_radius_blocks = 22
+chamber_volume_blocks = 32114
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 224
+erosion = 6732
+
+[volcanoes.pos]
+face = "NegZ"
+u = 61
+v = 112
+
+[[volcanoes]]
+id = 85
+source = "rift"
+plate_id = 7
+chain_id = 0
+age_myr = 11
+edifice_radius_blocks = 97
+edifice_height_blocks = 38
+crater_radius_blocks = 13
+crater_depth_blocks = 9
+chamber_depth_blocks = 46
+chamber_radius_blocks = 34
+chamber_volume_blocks = 118539
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 194
+erosion = 9635
+
+[volcanoes.pos]
+face = "NegZ"
+u = 30
+v = 155
+
+[[volcanoes]]
+id = 86
+source = "rift"
+plate_id = 9
+chain_id = 0
+age_myr = 6
+edifice_radius_blocks = 89
+edifice_height_blocks = 33
+crater_radius_blocks = 12
+crater_depth_blocks = 8
+chamber_depth_blocks = 19
+chamber_radius_blocks = 15
+chamber_volume_blocks = 10179
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 178
+erosion = 3522
+
+[volcanoes.pos]
+face = "NegZ"
+u = 253
+v = 170
+
+[[volcanoes]]
+id = 87
+source = "rift"
+plate_id = 9
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 86
+edifice_height_blocks = 35
+crater_radius_blocks = 12
+crater_depth_blocks = 8
+chamber_depth_blocks = 41
+chamber_radius_blocks = 16
+chamber_volume_blocks = 12354
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 172
+erosion = 4689
+
+[volcanoes.pos]
+face = "NegZ"
+u = 196
+v = 175
+
+[[volcanoes]]
+id = 88
+source = "rift"
+plate_id = 4
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 77
+edifice_height_blocks = 40
+crater_radius_blocks = 11
+crater_depth_blocks = 10
+chamber_depth_blocks = 25
+chamber_radius_blocks = 34
+chamber_volume_blocks = 118539
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 154
+erosion = 525
+
+[volcanoes.pos]
+face = "NegZ"
+u = 27
+v = 180
+
+[[volcanoes]]
+id = 89
+source = "rift"
+plate_id = 9
+chain_id = 0
+age_myr = 11
+edifice_radius_blocks = 85
+edifice_height_blocks = 20
+crater_radius_blocks = 12
+crater_depth_blocks = 5
+chamber_depth_blocks = 41
+chamber_radius_blocks = 15
+chamber_volume_blocks = 10179
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 170
+erosion = 8063
+
+[volcanoes.pos]
+face = "NegZ"
+u = 242
+v = 191
+
+[[volcanoes]]
+id = 90
+source = "rift"
+plate_id = 1
+chain_id = 0
+age_myr = 5
+edifice_radius_blocks = 67
+edifice_height_blocks = 25
+crater_radius_blocks = 9
+crater_depth_blocks = 6
+chamber_depth_blocks = 38
+chamber_radius_blocks = 28
+chamber_volume_blocks = 66206
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 134
+erosion = 8585
+
+[volcanoes.pos]
+face = "NegZ"
+u = 233
+v = 196
+
+[[volcanoes]]
+id = 91
+source = "rift"
+plate_id = 4
+chain_id = 0
+age_myr = 9
+edifice_radius_blocks = 92
+edifice_height_blocks = 36
+crater_radius_blocks = 13
+crater_depth_blocks = 9
+chamber_depth_blocks = 36
+chamber_radius_blocks = 31
+chamber_volume_blocks = 89848
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 184
+erosion = 10545
+
+[volcanoes.pos]
+face = "NegZ"
+u = 22
+v = 197
+
+[[volcanoes]]
+id = 92
+source = "rift"
+plate_id = 7
+chain_id = 0
+age_myr = 8
+edifice_radius_blocks = 103
+edifice_height_blocks = 23
+crater_radius_blocks = 14
+crater_depth_blocks = 5
+chamber_depth_blocks = 44
+chamber_radius_blocks = 16
+chamber_volume_blocks = 12354
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 206
+erosion = 2456
+
+[volcanoes.pos]
+face = "NegZ"
+u = 16
+v = 201
+
+[[volcanoes]]
+id = 93
+source = "rift"
+plate_id = 7
+chain_id = 0
+age_myr = 7
+edifice_radius_blocks = 78
+edifice_height_blocks = 30
+crater_radius_blocks = 11
+crater_depth_blocks = 7
+chamber_depth_blocks = 31
+chamber_radius_blocks = 17
+chamber_volume_blocks = 14818
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 156
+erosion = 11371
+
+[volcanoes.pos]
+face = "NegZ"
+u = 13
+v = 212
+
+[[volcanoes]]
+id = 94
+source = "ocean_ridge"
+plate_id = 4
+chain_id = 0
+age_myr = 2
+edifice_radius_blocks = 122
+edifice_height_blocks = 29
+crater_radius_blocks = 17
+crater_depth_blocks = 7
+chamber_depth_blocks = 36
+chamber_radius_blocks = 16
+chamber_volume_blocks = 12354
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 244
+erosion = 8486
+
+[volcanoes.pos]
+face = "NegZ"
+u = 154
+v = 244
+
+[[volcanoes]]
+id = 95
+source = "hotspot"
+plate_id = 2
+chain_id = 1
+age_myr = 0
+edifice_radius_blocks = 76
+edifice_height_blocks = 36
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 0
+
+[volcanoes.pos]
+face = "PosX"
+u = 96
+v = 251
+
+[[volcanoes]]
+id = 96
+source = "hotspot"
+plate_id = 2
+chain_id = 1
+age_myr = 9
+edifice_radius_blocks = 91
+edifice_height_blocks = 31
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 11000
+
+[volcanoes.pos]
+face = "PosX"
+u = 98
+v = 247
+
+[[volcanoes]]
+id = 97
+source = "hotspot"
+plate_id = 2
+chain_id = 1
+age_myr = 18
+edifice_radius_blocks = 88
+edifice_height_blocks = 26
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 22000
+
+[volcanoes.pos]
+face = "PosX"
+u = 100
+v = 242
+
+[[volcanoes]]
+id = 98
+source = "hotspot"
+plate_id = 2
+chain_id = 1
+age_myr = 27
+edifice_radius_blocks = 86
+edifice_height_blocks = 21
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 33000
+
+[volcanoes.pos]
+face = "PosX"
+u = 101
+v = 238
+
+[[volcanoes]]
+id = 99
+source = "hotspot"
+plate_id = 2
+chain_id = 1
+age_myr = 36
+edifice_radius_blocks = 107
+edifice_height_blocks = 16
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 44000
+
+[volcanoes.pos]
+face = "PosX"
+u = 103
+v = 233
+
+[[volcanoes]]
+id = 100
+source = "hotspot"
+plate_id = 12
+chain_id = 2
+age_myr = 0
+edifice_radius_blocks = 79
+edifice_height_blocks = 36
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 0
+
+[volcanoes.pos]
+face = "NegZ"
+u = 52
+v = 11
+
+[[volcanoes]]
+id = 101
+source = "hotspot"
+plate_id = 12
+chain_id = 2
+age_myr = 9
+edifice_radius_blocks = 101
+edifice_height_blocks = 31
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 11000
+
+[volcanoes.pos]
+face = "NegZ"
+u = 55
+v = 7
+
+[[volcanoes]]
+id = 102
+source = "hotspot"
+plate_id = 12
+chain_id = 2
+age_myr = 18
+edifice_radius_blocks = 86
+edifice_height_blocks = 26
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 22000
+
+[volcanoes.pos]
+face = "NegZ"
+u = 58
+v = 3
+
+[[volcanoes]]
+id = 103
+source = "hotspot"
+plate_id = 12
+chain_id = 2
+age_myr = 27
+edifice_radius_blocks = 99
+edifice_height_blocks = 21
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 33000
+
+[volcanoes.pos]
+face = "NegZ"
+u = 62
+v = 0
+
+[[volcanoes]]
+id = 104
+source = "hotspot"
+plate_id = 12
+chain_id = 2
+age_myr = 36
+edifice_radius_blocks = 76
+edifice_height_blocks = 16
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 44000
+
+[volcanoes.pos]
+face = "NegY"
+u = 188
+v = 3
+
+[[volcanoes]]
+id = 105
+source = "hotspot"
+plate_id = 4
+chain_id = 3
+age_myr = 0
+edifice_radius_blocks = 88
+edifice_height_blocks = 36
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 0
+
+[volcanoes.pos]
+face = "NegZ"
+u = 79
+v = 126
+
+[[volcanoes]]
+id = 106
+source = "hotspot"
+plate_id = 4
+chain_id = 3
+age_myr = 9
+edifice_radius_blocks = 92
+edifice_height_blocks = 31
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 11000
+
+[volcanoes.pos]
+face = "NegZ"
+u = 84
+v = 129
+
+[[volcanoes]]
+id = 107
+source = "hotspot"
+plate_id = 4
+chain_id = 3
+age_myr = 18
+edifice_radius_blocks = 76
+edifice_height_blocks = 26
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 22000
+
+[volcanoes.pos]
+face = "NegZ"
+u = 89
+v = 131
+
+[[volcanoes]]
+id = 108
+source = "hotspot"
+plate_id = 4
+chain_id = 3
+age_myr = 27
+edifice_radius_blocks = 89
+edifice_height_blocks = 21
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 33000
+
+[volcanoes.pos]
+face = "NegZ"
+u = 95
+v = 134
+
+[[volcanoes]]
+id = 109
+source = "hotspot"
+plate_id = 4
+chain_id = 3
+age_myr = 36
+edifice_radius_blocks = 79
+edifice_height_blocks = 16
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 44000
+
+[volcanoes.pos]
+face = "NegZ"
+u = 100
+v = 136
+
+[[volcanoes]]
+id = 110
+source = "hotspot"
+plate_id = 6
+chain_id = 4
+age_myr = 0
+edifice_radius_blocks = 85
+edifice_height_blocks = 36
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 0
+
+[volcanoes.pos]
+face = "NegX"
+u = 48
+v = 205
+
+[[volcanoes]]
+id = 111
+source = "hotspot"
+plate_id = 6
+chain_id = 4
+age_myr = 9
+edifice_radius_blocks = 89
+edifice_height_blocks = 31
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 11000
+
+[volcanoes.pos]
+face = "NegX"
+u = 43
+v = 208
+
+[[volcanoes]]
+id = 112
+source = "hotspot"
+plate_id = 6
+chain_id = 4
+age_myr = 18
+edifice_radius_blocks = 103
+edifice_height_blocks = 26
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 22000
+
+[volcanoes.pos]
+face = "NegX"
+u = 38
+v = 211
+
+[[volcanoes]]
+id = 113
+source = "hotspot"
+plate_id = 6
+chain_id = 4
+age_myr = 27
+edifice_radius_blocks = 73
+edifice_height_blocks = 21
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 33000
+
+[volcanoes.pos]
+face = "NegX"
+u = 32
+v = 214
+
+[[volcanoes]]
+id = 114
+source = "hotspot"
+plate_id = 6
+chain_id = 4
+age_myr = 36
+edifice_radius_blocks = 75
+edifice_height_blocks = 16
+crater_radius_blocks = 8
+crater_depth_blocks = 5
+chamber_depth_blocks = 28
+chamber_radius_blocks = 22
+chamber_volume_blocks = 80000
+chemistry = "basaltic"
+hydrothermal_radius_blocks = 150
+erosion = 44000
+
+[volcanoes.pos]
+face = "NegX"
+u = 27
+v = 217
+
+[[intrusions]]
+id = 1
+kind = "carbonatite"
+plate_id = 10
+radius_blocks = 76
+top_depth_blocks = 16
+bottom_depth_blocks = 158
+volume_blocks = 377466
+contact_radius_blocks = 219
+chemistry = "carbonatitic"
+age_myr = 6
+
+[intrusions.pos]
+face = "PosX"
+u = 92
+v = 5
+
+[[intrusions]]
+id = 2
+kind = "dike_swarm"
+plate_id = 15
+radius_blocks = 72
+top_depth_blocks = 8
+bottom_depth_blocks = 142
+volume_blocks = 672122
+contact_radius_blocks = 274
+chemistry = "basaltic"
+age_myr = 12
+
+[intrusions.pos]
+face = "PosX"
+u = 146
+v = 12
+
+[[intrusions]]
+id = 3
+kind = "dike_swarm"
+plate_id = 10
+radius_blocks = 117
+top_depth_blocks = 12
+bottom_depth_blocks = 148
+volume_blocks = 462287
+contact_radius_blocks = 215
+chemistry = "basaltic"
+age_myr = 8
+
+[intrusions.pos]
+face = "PosX"
+u = 131
+v = 156
+
+[[intrusions]]
+id = 4
+kind = "dike_swarm"
+plate_id = 7
+radius_blocks = 116
+top_depth_blocks = 35
+bottom_depth_blocks = 166
+volume_blocks = 845686
+contact_radius_blocks = 222
+chemistry = "basaltic"
+age_myr = 11
+
+[intrusions.pos]
+face = "PosX"
+u = 132
+v = 173
+
+[[intrusions]]
+id = 5
+kind = "dike_swarm"
+plate_id = 2
+radius_blocks = 76
+top_depth_blocks = 9
+bottom_depth_blocks = 154
+volume_blocks = 336246
+contact_radius_blocks = 255
+chemistry = "basaltic"
+age_myr = 14
+
+[intrusions.pos]
+face = "PosX"
+u = 75
+v = 192
+
+[[intrusions]]
+id = 6
+kind = "dike_swarm"
+plate_id = 2
+radius_blocks = 78
+top_depth_blocks = 28
+bottom_depth_blocks = 189
+volume_blocks = 397628
+contact_radius_blocks = 249
+chemistry = "basaltic"
+age_myr = 13
+
+[intrusions.pos]
+face = "PosX"
+u = 199
+v = 215
+
+[[intrusions]]
+id = 7
+kind = "dike_swarm"
+plate_id = 2
+radius_blocks = 128
+top_depth_blocks = 8
+bottom_depth_blocks = 168
+volume_blocks = 938758
+contact_radius_blocks = 204
+chemistry = "basaltic"
+age_myr = 14
+
+[intrusions.pos]
+face = "PosX"
+u = 225
+v = 230
+
+[[intrusions]]
+id = 8
+kind = "dike_swarm"
+plate_id = 11
+radius_blocks = 114
+top_depth_blocks = 25
+bottom_depth_blocks = 172
+volume_blocks = 884834
+contact_radius_blocks = 213
+chemistry = "basaltic"
+age_myr = 8
+
+[intrusions.pos]
+face = "NegX"
+u = 131
+v = 23
+
+[[intrusions]]
+id = 9
+kind = "dike_swarm"
+plate_id = 14
+radius_blocks = 89
+top_depth_blocks = 17
+bottom_depth_blocks = 183
+volume_blocks = 320959
+contact_radius_blocks = 285
+chemistry = "basaltic"
+age_myr = 9
+
+[intrusions.pos]
+face = "NegX"
+u = 55
+v = 50
+
+[[intrusions]]
+id = 10
+kind = "dike_swarm"
+plate_id = 9
+radius_blocks = 75
+top_depth_blocks = 21
+bottom_depth_blocks = 168
+volume_blocks = 613355
+contact_radius_blocks = 291
+chemistry = "basaltic"
+age_myr = 15
+
+[intrusions.pos]
+face = "NegX"
+u = 14
+v = 120
+
+[[intrusions]]
+id = 11
+kind = "pluton"
+plate_id = 3
+radius_blocks = 89
+top_depth_blocks = 31
+bottom_depth_blocks = 127
+volume_blocks = 754849
+contact_radius_blocks = 247
+chemistry = "basaltic"
+age_myr = 5
+
+[intrusions.pos]
+face = "NegX"
+u = 186
+v = 154
+
+[[intrusions]]
+id = 12
+kind = "dike_swarm"
+plate_id = 6
+radius_blocks = 94
+top_depth_blocks = 9
+bottom_depth_blocks = 143
+volume_blocks = 738384
+contact_radius_blocks = 189
+chemistry = "basaltic"
+age_myr = 13
+
+[intrusions.pos]
+face = "NegX"
+u = 58
+v = 232
+
+[[intrusions]]
+id = 13
+kind = "dike_swarm"
+plate_id = 5
+radius_blocks = 112
+top_depth_blocks = 34
+bottom_depth_blocks = 133
+volume_blocks = 911202
+contact_radius_blocks = 243
+chemistry = "basaltic"
+age_myr = 4
+
+[intrusions.pos]
+face = "PosY"
+u = 245
+v = 39
+
+[[intrusions]]
+id = 14
+kind = "dike_swarm"
+plate_id = 3
+radius_blocks = 101
+top_depth_blocks = 27
+bottom_depth_blocks = 133
+volume_blocks = 618241
+contact_radius_blocks = 214
+chemistry = "basaltic"
+age_myr = 13
+
+[intrusions.pos]
+face = "PosY"
+u = 44
+v = 90
+
+[[intrusions]]
+id = 15
+kind = "dike_swarm"
+plate_id = 2
+radius_blocks = 81
+top_depth_blocks = 14
+bottom_depth_blocks = 133
+volume_blocks = 664391
+contact_radius_blocks = 212
+chemistry = "basaltic"
+age_myr = 10
+
+[intrusions.pos]
+face = "PosY"
+u = 165
+v = 162
+
+[[intrusions]]
+id = 16
+kind = "carbonatite"
+plate_id = 1
+radius_blocks = 76
+top_depth_blocks = 20
+bottom_depth_blocks = 145
+volume_blocks = 185226
+contact_radius_blocks = 223
+chemistry = "carbonatitic"
+age_myr = 13
+
+[intrusions.pos]
+face = "PosY"
+u = 136
+v = 243
+
+[[intrusions]]
+id = 17
+kind = "pluton"
+plate_id = 9
+radius_blocks = 88
+top_depth_blocks = 30
+bottom_depth_blocks = 179
+volume_blocks = 745578
+contact_radius_blocks = 198
+chemistry = "basaltic"
+age_myr = 13
+
+[intrusions.pos]
+face = "NegY"
+u = 40
+v = 1
+
+[[intrusions]]
+id = 18
+kind = "dike_swarm"
+plate_id = 12
+radius_blocks = 93
+top_depth_blocks = 26
+bottom_depth_blocks = 113
+volume_blocks = 922883
+contact_radius_blocks = 240
+chemistry = "basaltic"
+age_myr = 8
+
+[intrusions.pos]
+face = "NegY"
+u = 108
+v = 24
+
+[[intrusions]]
+id = 19
+kind = "dike_swarm"
+plate_id = 15
+radius_blocks = 96
+top_depth_blocks = 31
+bottom_depth_blocks = 182
+volume_blocks = 1007936
+contact_radius_blocks = 299
+chemistry = "basaltic"
+age_myr = 13
+
+[intrusions.pos]
+face = "NegY"
+u = 178
+v = 51
+
+[[intrusions]]
+id = 20
+kind = "dike_swarm"
+plate_id = 15
+radius_blocks = 86
+top_depth_blocks = 18
+bottom_depth_blocks = 114
+volume_blocks = 242836
+contact_radius_blocks = 294
+chemistry = "basaltic"
+age_myr = 4
+
+[intrusions.pos]
+face = "NegY"
+u = 122
+v = 74
+
+[[intrusions]]
+id = 21
+kind = "dike_swarm"
+plate_id = 13
+radius_blocks = 104
+top_depth_blocks = 28
+bottom_depth_blocks = 147
+volume_blocks = 896614
+contact_radius_blocks = 258
+chemistry = "basaltic"
+age_myr = 6
+
+[intrusions.pos]
+face = "NegY"
+u = 100
+v = 183
+
+[[intrusions]]
+id = 22
+kind = "dike_swarm"
+plate_id = 10
+radius_blocks = 123
+top_depth_blocks = 24
+bottom_depth_blocks = 185
+volume_blocks = 780713
+contact_radius_blocks = 196
+chemistry = "basaltic"
+age_myr = 5
+
+[intrusions.pos]
+face = "PosZ"
+u = 250
+v = 39
+
+[[intrusions]]
+id = 23
+kind = "dike_swarm"
+plate_id = 13
+radius_blocks = 130
+top_depth_blocks = 23
+bottom_depth_blocks = 125
+volume_blocks = 229020
+contact_radius_blocks = 218
+chemistry = "basaltic"
+age_myr = 14
+
+[intrusions.pos]
+face = "PosZ"
+u = 202
+v = 88
+
+[[intrusions]]
+id = 24
+kind = "carbonatite"
+plate_id = 8
+radius_blocks = 129
+top_depth_blocks = 29
+bottom_depth_blocks = 157
+volume_blocks = 583619
+contact_radius_blocks = 196
+chemistry = "carbonatitic"
+age_myr = 15
+
+[intrusions.pos]
+face = "PosZ"
+u = 154
+v = 162
+
+[[intrusions]]
+id = 25
+kind = "dike_swarm"
+plate_id = 8
+radius_blocks = 127
+top_depth_blocks = 20
+bottom_depth_blocks = 188
+volume_blocks = 827697
+contact_radius_blocks = 234
+chemistry = "basaltic"
+age_myr = 6
+
+[intrusions.pos]
+face = "PosZ"
+u = 144
+v = 183
+
+[[intrusions]]
+id = 26
+kind = "dike_swarm"
+plate_id = 8
+radius_blocks = 122
+top_depth_blocks = 26
+bottom_depth_blocks = 179
+volume_blocks = 815002
+contact_radius_blocks = 271
+chemistry = "basaltic"
+age_myr = 7
+
+[intrusions.pos]
+face = "PosZ"
+u = 109
+v = 230
+
+[[intrusions]]
+id = 27
+kind = "dike_swarm"
+plate_id = 9
+radius_blocks = 115
+top_depth_blocks = 8
+bottom_depth_blocks = 138
+volume_blocks = 435555
+contact_radius_blocks = 233
+chemistry = "basaltic"
+age_myr = 4
+
+[intrusions.pos]
+face = "NegZ"
+u = 142
+v = 43
+
+[[intrusions]]
+id = 28
+kind = "dike_swarm"
+plate_id = 12
+radius_blocks = 159
+top_depth_blocks = 33
+bottom_depth_blocks = 151
+volume_blocks = 501029
+contact_radius_blocks = 206
+chemistry = "basaltic"
+age_myr = 4
+
+[intrusions.pos]
+face = "NegZ"
+u = 35
+v = 100
+
+[[intrusions]]
+id = 29
+kind = "dike_swarm"
+plate_id = 7
+radius_blocks = 150
+top_depth_blocks = 19
+bottom_depth_blocks = 134
+volume_blocks = 1049930
+contact_radius_blocks = 232
+chemistry = "basaltic"
+age_myr = 15
+
+[intrusions.pos]
+face = "NegZ"
+u = 30
+v = 155
+
+[[intrusions]]
+id = 30
+kind = "dike_swarm"
+plate_id = 4
+radius_blocks = 158
+top_depth_blocks = 23
+bottom_depth_blocks = 147
+volume_blocks = 625048
+contact_radius_blocks = 202
+chemistry = "basaltic"
+age_myr = 13
+
+[intrusions.pos]
+face = "NegZ"
+u = 27
+v = 180
+
+[[intrusions]]
+id = 31
+kind = "dike_swarm"
+plate_id = 4
+radius_blocks = 133
+top_depth_blocks = 25
+bottom_depth_blocks = 166
+volume_blocks = 490113
+contact_radius_blocks = 267
+chemistry = "basaltic"
+age_myr = 13
+
+[intrusions.pos]
+face = "NegZ"
+u = 22
+v = 197
+
+[[intrusions]]
+id = 32
+kind = "dike_swarm"
+plate_id = 4
+radius_blocks = 74
+top_depth_blocks = 35
+bottom_depth_blocks = 186
+volume_blocks = 1033924
+contact_radius_blocks = 233
+chemistry = "basaltic"
+age_myr = 6
+
+[intrusions.pos]
+face = "NegZ"
+u = 154
+v = 244
+
+[[intrusions]]
+id = 33
+kind = "pluton"
+plate_id = 2
+radius_blocks = 143
+top_depth_blocks = 25
+bottom_depth_blocks = 141
+volume_blocks = 879913
+contact_radius_blocks = 230
+chemistry = "basaltic"
+age_myr = 22
+
+[intrusions.pos]
+face = "PosX"
+u = 100
+v = 242
+
+[[intrusions]]
+id = 34
+kind = "pluton"
+plate_id = 12
+radius_blocks = 85
+top_depth_blocks = 8
+bottom_depth_blocks = 133
+volume_blocks = 829635
+contact_radius_blocks = 208
+chemistry = "basaltic"
+age_myr = 4
+
+[intrusions.pos]
+face = "NegZ"
+u = 52
+v = 11
+
+[[intrusions]]
+id = 35
+kind = "carbonatite"
+plate_id = 12
+radius_blocks = 109
+top_depth_blocks = 21
+bottom_depth_blocks = 138
+volume_blocks = 446979
+contact_radius_blocks = 235
+chemistry = "carbonatitic"
+age_myr = 31
+
+[intrusions.pos]
+face = "NegZ"
+u = 62
+v = 0
+
+[[intrusions]]
+id = 36
+kind = "pluton"
+plate_id = 4
+radius_blocks = 124
+top_depth_blocks = 22
+bottom_depth_blocks = 169
+volume_blocks = 502434
+contact_radius_blocks = 212
+chemistry = "basaltic"
+age_myr = 13
+
+[intrusions.pos]
+face = "NegZ"
+u = 84
+v = 129
+
+[[intrusions]]
+id = 37
+kind = "pluton"
+plate_id = 4
+radius_blocks = 150
+top_depth_blocks = 33
+bottom_depth_blocks = 145
+volume_blocks = 936710
+contact_radius_blocks = 290
+chemistry = "basaltic"
+age_myr = 40
+
+[intrusions.pos]
+face = "NegZ"
+u = 100
+v = 136
+
+[[intrusions]]
+id = 38
+kind = "pluton"
+plate_id = 6
+radius_blocks = 124
+top_depth_blocks = 13
+bottom_depth_blocks = 115
+volume_blocks = 590544
+contact_radius_blocks = 238
+chemistry = "basaltic"
+age_myr = 22
+
+[intrusions.pos]
+face = "NegX"
+u = 38
+v = 211
+
+[[intrusions]]
+id = 39
+kind = "batholith"
+plate_id = 11
+radius_blocks = 238
+top_depth_blocks = 18
+bottom_depth_blocks = 190
+volume_blocks = 3649658
+contact_radius_blocks = 360
+chemistry = "rhyolitic"
+age_myr = 2327
+
+[intrusions.pos]
+face = "NegX"
+u = 137
+v = 59
+
+[[intrusions]]
+id = 40
+kind = "batholith"
+plate_id = 15
+radius_blocks = 197
+top_depth_blocks = 18
+bottom_depth_blocks = 190
+volume_blocks = 4717617
+contact_radius_blocks = 360
+chemistry = "rhyolitic"
+age_myr = 2661
+
+[intrusions.pos]
+face = "NegY"
+u = 143
+v = 186
+
+[[intrusions]]
+id = 41
+kind = "batholith"
+plate_id = 9
+radius_blocks = 251
+top_depth_blocks = 18
+bottom_depth_blocks = 190
+volume_blocks = 4700771
+contact_radius_blocks = 360
+chemistry = "rhyolitic"
+age_myr = 2924
+
+[intrusions.pos]
+face = "NegZ"
+u = 219
+v = 118
+
+[[intrusions]]
+id = 42
+kind = "batholith"
+plate_id = 8
+radius_blocks = 240
+top_depth_blocks = 18
+bottom_depth_blocks = 190
+volume_blocks = 5419310
+contact_radius_blocks = 360
+chemistry = "rhyolitic"
+age_myr = 2430
+
+[intrusions.pos]
+face = "PosZ"
+u = 45
+v = 126
+
+[[intrusions]]
+id = 43
+kind = "batholith"
+plate_id = 12
+radius_blocks = 182
+top_depth_blocks = 18
+bottom_depth_blocks = 190
+volume_blocks = 5559702
+contact_radius_blocks = 360
+chemistry = "rhyolitic"
+age_myr = 2272
+
+[intrusions.pos]
+face = "PosX"
+u = 232
+v = 13
+
+[[intrusions]]
+id = 44
+kind = "batholith"
+plate_id = 1
+radius_blocks = 267
+top_depth_blocks = 18
+bottom_depth_blocks = 190
+volume_blocks = 3273737
+contact_radius_blocks = 360
+chemistry = "rhyolitic"
+age_myr = 2494
+
+[intrusions.pos]
+face = "PosY"
+u = 23
+v = 169
+
+[[intrusions]]
+id = 45
+kind = "batholith"
+plate_id = 5
+radius_blocks = 234
+top_depth_blocks = 18
+bottom_depth_blocks = 190
+volume_blocks = 2005654
+contact_radius_blocks = 360
+chemistry = "rhyolitic"
+age_myr = 2440
+
+[intrusions.pos]
+face = "PosZ"
+u = 248
+v = 125
+
+[[intrusions]]
+id = 46
+kind = "batholith"
+plate_id = 4
+radius_blocks = 302
+top_depth_blocks = 18
+bottom_depth_blocks = 190
+volume_blocks = 3810572
+contact_radius_blocks = 360
+chemistry = "rhyolitic"
+age_myr = 2270
+
+[intrusions.pos]
+face = "NegZ"
+u = 20
+v = 211
+
+[[intrusions]]
+id = 47
+kind = "batholith"
+plate_id = 0
+radius_blocks = 203
+top_depth_blocks = 18
+bottom_depth_blocks = 190
+volume_blocks = 2816373
+contact_radius_blocks = 360
+chemistry = "rhyolitic"
+age_myr = 2974
+
+[intrusions.pos]
+face = "PosY"
+u = 185
+v = 76
+
+[[deposits]]
+id = 1
+mineral = "copper"
+host = "limestone"
+geological_province = 260
+landmass_id = 1
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 7225
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegZ"
+u = 47
+v = 155
+
+[[deposits]]
+id = 2
+mineral = "iron"
+host = "shale"
+geological_province = 32
+landmass_id = 1
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 13540
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosX"
+u = 191
+v = 27
+
+[[deposits]]
+id = 3
+mineral = "coal"
+host = "limestone"
+geological_province = 260
+landmass_id = 1
+source_body_id = 0
+radius_blocks = 176
+depth_min = 28
+depth_max = 120
+grade_ppm = 15702
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegZ"
+u = 47
+v = 159
+
+[[deposits]]
+id = 4
+mineral = "copper"
+host = "limestone"
+geological_province = 57
+landmass_id = 5
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 5483
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosZ"
+u = 224
+v = 108
+
+[[deposits]]
+id = 5
+mineral = "iron"
+host = "shale"
+geological_province = 52
+landmass_id = 5
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 1606
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosX"
+u = 13
+v = 137
+
+[[deposits]]
+id = 6
+mineral = "coal"
+host = "limestone"
+geological_province = 57
+landmass_id = 5
+source_body_id = 0
+radius_blocks = 176
+depth_min = 28
+depth_max = 120
+grade_ppm = 1586
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosZ"
+u = 207
+v = 162
+
+[[deposits]]
+id = 7
+mineral = "copper"
+host = "evaporite"
+geological_province = 128
+landmass_id = 10
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 14441
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 108
+v = 50
+
+[[deposits]]
+id = 8
+mineral = "iron"
+host = "basalt"
+geological_province = 142
+landmass_id = 10
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 8736
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 18
+v = 103
+
+[[deposits]]
+id = 9
+mineral = "coal"
+host = "evaporite"
+geological_province = 128
+landmass_id = 10
+source_body_id = 0
+radius_blocks = 176
+depth_min = 28
+depth_max = 120
+grade_ppm = 5064
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 108
+v = 54
+
+[[deposits]]
+id = 10
+mineral = "copper"
+host = "sandstone"
+geological_province = 333
+landmass_id = 11
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 12336
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosZ"
+u = 123
+v = 91
+
+[[deposits]]
+id = 11
+mineral = "iron"
+host = "shale"
+geological_province = 155
+landmass_id = 11
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 11729
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 244
+v = 141
+
+[[deposits]]
+id = 12
+mineral = "coal"
+host = "limestone"
+geological_province = 130
+landmass_id = 11
+source_body_id = 0
+radius_blocks = 176
+depth_min = 28
+depth_max = 120
+grade_ppm = 18225
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 246
+v = 61
+
+[[deposits]]
+id = 13
+mineral = "copper"
+host = "limestone"
+geological_province = 185
+landmass_id = 14
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 16874
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 79
+v = 214
+
+[[deposits]]
+id = 14
+mineral = "iron"
+host = "shale"
+geological_province = 198
+landmass_id = 14
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 1050
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 145
+v = 219
+
+[[deposits]]
+id = 15
+mineral = "coal"
+host = "limestone"
+geological_province = 185
+landmass_id = 14
+source_body_id = 0
+radius_blocks = 176
+depth_min = 28
+depth_max = 120
+grade_ppm = 4936
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 79
+v = 210
+
+[[deposits]]
+id = 16
+mineral = "copper"
+host = "limestone"
+geological_province = 93
+landmass_id = 20
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 6486
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosY"
+u = 201
+v = 144
+
+[[deposits]]
+id = 17
+mineral = "iron"
+host = "shale"
+geological_province = 218
+landmass_id = 20
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 13048
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosY"
+u = 170
+v = 143
+
+[[deposits]]
+id = 18
+mineral = "coal"
+host = "limestone"
+geological_province = 216
+landmass_id = 20
+source_body_id = 0
+radius_blocks = 176
+depth_min = 28
+depth_max = 120
+grade_ppm = 21233
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosY"
+u = 175
+v = 119
+
+[[deposits]]
+id = 19
+mineral = "copper"
+host = "sandstone"
+geological_province = 295
+landmass_id = 25
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 5162
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegY"
+u = 153
+v = 198
+
+[[deposits]]
+id = 20
+mineral = "iron"
+host = "shale"
+geological_province = 311
+landmass_id = 25
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 7142
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegY"
+u = 45
+v = 223
+
+[[deposits]]
+id = 21
+mineral = "coal"
+host = "sandstone"
+geological_province = 295
+landmass_id = 25
+source_body_id = 0
+radius_blocks = 176
+depth_min = 28
+depth_max = 120
+grade_ppm = 15356
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegY"
+u = 191
+v = 233
+
+[[deposits]]
+id = 22
+mineral = "copper"
+host = "limestone"
+geological_province = 166
+landmass_id = 11
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 18496
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosZ"
+u = 138
+v = 155
+
+[[deposits]]
+id = 23
+mineral = "copper"
+host = "evaporite"
+geological_province = 128
+landmass_id = 10
+source_body_id = 39
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 1808
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 132
+v = 48
+
+[[deposits]]
+id = 24
+mineral = "tin"
+host = "granite"
+geological_province = 299
+landmass_id = 25
+source_body_id = 0
+radius_blocks = 112
+depth_min = 4
+depth_max = 120
+grade_ppm = 7241
+tonnage_blocks = 2166
+max_blocks_per_chunk = 6
+eligible_chunk_upper_bound = 361
+
+[deposits.pos]
+face = "NegY"
+u = 84
+v = 198
+
+[[deposits]]
+id = 25
+mineral = "tin"
+host = "granite"
+geological_province = 330
+landmass_id = 11
+source_body_id = 0
+radius_blocks = 112
+depth_min = 4
+depth_max = 120
+grade_ppm = 12973
+tonnage_blocks = 2166
+max_blocks_per_chunk = 6
+eligible_chunk_upper_bound = 361
+
+[deposits.pos]
+face = "PosZ"
+u = 104
+v = 62
+
+[[deposits]]
+id = 26
+mineral = "tin"
+host = "granite"
+geological_province = 56
+landmass_id = 5
+source_body_id = 0
+radius_blocks = 112
+depth_min = 4
+depth_max = 120
+grade_ppm = 8533
+tonnage_blocks = 2166
+max_blocks_per_chunk = 6
+eligible_chunk_upper_bound = 361
+
+[deposits.pos]
+face = "PosX"
+u = 27
+v = 159
+
+[[deposits]]
+id = 27
+mineral = "iron"
+host = "shale"
+geological_province = 155
+landmass_id = 11
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 18396
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosZ"
+u = 46
+v = 15
+
+[[deposits]]
+id = 28
+mineral = "iron"
+host = "shale"
+geological_province = 209
+landmass_id = 14
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 7102
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 91
+v = 247
+
+[[deposits]]
+id = 29
+mineral = "cobalt"
+host = "basalt"
+geological_province = 110
+landmass_id = 10
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 16692
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 104
+v = 44
+
+[[deposits]]
+id = 30
+mineral = "cobalt"
+host = "basalt"
+geological_province = 142
+landmass_id = 10
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 7229
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegZ"
+u = 227
+v = 189
+
+[[deposits]]
+id = 31
+mineral = "cinnabar"
+host = "sandstone"
+geological_province = 281
+landmass_id = 27
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 3676
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegY"
+u = 232
+v = 195
+
+[[deposits]]
+id = 32
+mineral = "cinnabar"
+host = "granite"
+geological_province = 77
+landmass_id = 1
+source_body_id = 7
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 12546
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosX"
+u = 231
+v = 221
+
+[[deposits]]
+id = 33
+mineral = "manganese"
+host = "basalt"
+geological_province = 13
+landmass_id = 1
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 22622
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosX"
+u = 186
+v = 12
+
+[[deposits]]
+id = 34
+mineral = "manganese"
+host = "basalt"
+geological_province = 368
+landmass_id = 1
+source_body_id = 31
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 21558
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegZ"
+u = 21
+v = 197
+
+[[deposits]]
+id = 35
+mineral = "coal"
+host = "granite"
+geological_province = 299
+landmass_id = 25
+source_body_id = 0
+radius_blocks = 176
+depth_min = 28
+depth_max = 120
+grade_ppm = 12081
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegY"
+u = 232
+v = 225
+
+[[deposits]]
+id = 36
+mineral = "coal"
+host = "limestone"
+geological_province = 166
+landmass_id = 11
+source_body_id = 0
+radius_blocks = 176
+depth_min = 28
+depth_max = 120
+grade_ppm = 5869
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosZ"
+u = 46
+v = 104
+
+[[deposits]]
+id = 37
+mineral = "gold"
+host = "limestone"
+geological_province = 14
+landmass_id = 1
+source_body_id = 0
+radius_blocks = 112
+depth_min = 4
+depth_max = 120
+grade_ppm = 17783
+tonnage_blocks = 2102
+max_blocks_per_chunk = 5
+eligible_chunk_upper_bound = 361
+
+[deposits.pos]
+face = "NegY"
+u = 232
+v = 30
+
+[[deposits]]
+id = 38
+mineral = "gold"
+host = "slate"
+geological_province = 292
+landmass_id = 25
+source_body_id = 40
+radius_blocks = 112
+depth_min = 4
+depth_max = 120
+grade_ppm = 4856
+tonnage_blocks = 2166
+max_blocks_per_chunk = 6
+eligible_chunk_upper_bound = 361
+
+[deposits.pos]
+face = "NegY"
+u = 142
+v = 188
+
+[[deposits]]
+id = 39
+mineral = "galena"
+host = "limestone"
+geological_province = 14
+landmass_id = 1
+source_body_id = 0
+radius_blocks = 112
+depth_min = 4
+depth_max = 120
+grade_ppm = 13299
+tonnage_blocks = 2166
+max_blocks_per_chunk = 6
+eligible_chunk_upper_bound = 361
+
+[deposits.pos]
+face = "NegY"
+u = 232
+v = 15
+
+[[deposits]]
+id = 40
+mineral = "galena"
+host = "limestone"
+geological_province = 216
+landmass_id = 20
+source_body_id = 0
+radius_blocks = 112
+depth_min = 4
+depth_max = 120
+grade_ppm = 5241
+tonnage_blocks = 2166
+max_blocks_per_chunk = 6
+eligible_chunk_upper_bound = 361
+
+[deposits.pos]
+face = "PosY"
+u = 114
+v = 109
+
+[[deposits]]
+id = 41
+mineral = "chromite"
+host = "basalt"
+geological_province = 142
+landmass_id = 10
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 9405
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 6
+v = 137
+
+[[deposits]]
+id = 42
+mineral = "chromite"
+host = "basalt"
+geological_province = 82
+landmass_id = 1
+source_body_id = 7
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 1095
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosX"
+u = 230
+v = 235
+
+[[deposits]]
+id = 43
+mineral = "diamond"
+host = "granite"
+geological_province = 277
+landmass_id = 1
+source_body_id = 0
+radius_blocks = 64
+depth_min = 4
+depth_max = 90
+grade_ppm = 17243
+tonnage_blocks = 507
+max_blocks_per_chunk = 3
+eligible_chunk_upper_bound = 169
+
+[deposits.pos]
+face = "NegY"
+u = 232
+v = 45
+
+[[deposits]]
+id = 44
+mineral = "diamond"
+host = "granite"
+geological_province = 220
+landmass_id = 20
+source_body_id = 0
+radius_blocks = 64
+depth_min = 4
+depth_max = 90
+grade_ppm = 6728
+tonnage_blocks = 507
+max_blocks_per_chunk = 3
+eligible_chunk_upper_bound = 169
+
+[deposits.pos]
+face = "PosY"
+u = 114
+v = 79
+
+[[deposits]]
+id = 45
+mineral = "rare_earth"
+host = "granite"
+geological_province = 299
+landmass_id = 25
+source_body_id = 0
+radius_blocks = 64
+depth_min = 4
+depth_max = 120
+grade_ppm = 12829
+tonnage_blocks = 507
+max_blocks_per_chunk = 3
+eligible_chunk_upper_bound = 169
+
+[deposits.pos]
+face = "NegY"
+u = 80
+v = 200
+
+[[deposits]]
+id = 46
+mineral = "rare_earth"
+host = "granite"
+geological_province = 210
+landmass_id = 14
+source_body_id = 0
+radius_blocks = 64
+depth_min = 4
+depth_max = 120
+grade_ppm = 21917
+tonnage_blocks = 443
+max_blocks_per_chunk = 2
+eligible_chunk_upper_bound = 169
+
+[deposits.pos]
+face = "NegX"
+u = 75
+v = 247
+
+[[deposits]]
+id = 47
+mineral = "halite"
+host = "evaporite"
+geological_province = 128
+landmass_id = 10
+source_body_id = 0
+radius_blocks = 112
+depth_min = 28
+depth_max = 120
+grade_ppm = 7462
+tonnage_blocks = 2166
+max_blocks_per_chunk = 6
+eligible_chunk_upper_bound = 361
+
+[deposits.pos]
+face = "NegX"
+u = 114
+v = 53
+
+[[deposits]]
+id = 48
+mineral = "halite"
+host = "granite"
+geological_province = 277
+landmass_id = 1
+source_body_id = 0
+radius_blocks = 112
+depth_min = 28
+depth_max = 120
+grade_ppm = 21777
+tonnage_blocks = 2166
+max_blocks_per_chunk = 6
+eligible_chunk_upper_bound = 361
+
+[deposits.pos]
+face = "NegY"
+u = 253
+v = 48
+
+[[deposits]]
+id = 49
+mineral = "pitchblende"
+host = "granite"
+geological_province = 277
+landmass_id = 1
+source_body_id = 0
+radius_blocks = 64
+depth_min = 4
+depth_max = 120
+grade_ppm = 11216
+tonnage_blocks = 507
+max_blocks_per_chunk = 3
+eligible_chunk_upper_bound = 169
+
+[deposits.pos]
+face = "NegZ"
+u = 21
+v = 76
+
+[[deposits]]
+id = 50
+mineral = "pitchblende"
+host = "granite"
+geological_province = 153
+landmass_id = 11
+source_body_id = 0
+radius_blocks = 64
+depth_min = 4
+depth_max = 120
+grade_ppm = 21084
+tonnage_blocks = 507
+max_blocks_per_chunk = 3
+eligible_chunk_upper_bound = 169
+
+[deposits.pos]
+face = "NegX"
+u = 250
+v = 114
+
+[[deposits]]
+id = 51
+mineral = "geode"
+host = "limestone"
+geological_province = 166
+landmass_id = 11
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 21546
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosZ"
+u = 46
+v = 195
+
+[[deposits]]
+id = 52
+mineral = "geode"
+host = "limestone"
+geological_province = 146
+landmass_id = 10
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 21406
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 9
+v = 169
+
+[[deposits]]
+id = 53
+mineral = "other"
+host = "limestone"
+geological_province = 23
+landmass_id = 1
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 10715
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosX"
+u = 141
+v = 32
+
+[[deposits]]
+id = 54
+mineral = "other"
+host = "limestone"
+geological_province = 28
+landmass_id = 5
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 18328
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosX"
+u = 69
+v = 132
+
+[[deposits]]
+id = 55
+mineral = "other"
+host = "limestone"
+geological_province = 146
+landmass_id = 10
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 5016
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegX"
+u = 25
+v = 149
+
+[[deposits]]
+id = 56
+mineral = "other"
+host = "shale"
+geological_province = 163
+landmass_id = 11
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 3968
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosZ"
+u = 66
+v = 36
+
+[[deposits]]
+id = 57
+mineral = "other"
+host = "limestone"
+geological_province = 204
+landmass_id = 14
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 8599
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosY"
+u = 62
+v = 148
+
+[[deposits]]
+id = 58
+mineral = "other"
+host = "shale"
+geological_province = 218
+landmass_id = 20
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 13885
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "PosY"
+u = 169
+v = 147
+
+[[deposits]]
+id = 59
+mineral = "other"
+host = "sandstone"
+geological_province = 295
+landmass_id = 25
+source_body_id = 0
+radius_blocks = 176
+depth_min = 4
+depth_max = 120
+grade_ppm = 7009
+tonnage_blocks = 8748
+max_blocks_per_chunk = 12
+eligible_chunk_upper_bound = 729
+
+[deposits.pos]
+face = "NegY"
+u = 211
+v = 230
+
+[[deposits]]
+id = 60
+mineral = "gold"
+host = "limestone"
+geological_province = 14
+landmass_id = 1
+source_body_id = 37
+radius_blocks = 72
+depth_min = 64
+depth_max = 82
+grade_ppm = 5927
+tonnage_blocks = 64
+max_blocks_per_chunk = 2
+eligible_chunk_upper_bound = 32
+
+[deposits.pos]
+face = "NegY"
+u = 242
+v = 19
+
+[[deposits]]
+id = 61
+mineral = "rare_earth"
+host = "limestone"
+geological_province = 204
+landmass_id = 14
+source_body_id = 46
+radius_blocks = 72
+depth_min = 64
+depth_max = 82
+grade_ppm = 7305
+tonnage_blocks = 64
+max_blocks_per_chunk = 2
+eligible_chunk_upper_bound = 32
+
+[deposits.pos]
+face = "NegX"
+u = 58
+v = 245

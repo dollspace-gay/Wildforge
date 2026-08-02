@@ -56,7 +56,10 @@ jobs:
   agent-tests:
     name: Agent integration tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # This includes checkout, native packages, a cold Rust build, and the
+    # scenarios themselves. Five minutes cancelled rustc before the tests
+    # could even start on an empty runner cache.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Install native build dependencies

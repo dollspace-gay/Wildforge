@@ -41,6 +41,7 @@ name = "Meadow"
 version = "1.0.0"
 world_api = 2
 depends = ["base"]
+retrogen = "untouched_host_only"
 ```
 
 ## Names, and how things refer to each other
@@ -60,6 +61,56 @@ depends = ["base"]
 - Crops register hidden stage variants named `meadow:foo/stage1`,
   `/stage2`, ... — names containing `/` never appear in the item
   browser.
+
+## Finite material accounting
+
+Wildforge worlds are finite planets, so nonrenewable material cannot be
+created or silently deleted by a content definition. Blocks and items may
+declare an exact vector of integer canonical units:
+
+```toml
+material_class = "geologically_finite"
+materials = { copper = 1200 }
+salvage = { station = "forge", recovery = 0.90 }
+```
+
+One ordinary metal ingot is 1,200 canonical units. The number is deliberately
+divisible: a recipe can represent wire, fasteners, scale, and other partial
+objects without floating-point mass. Material keys are stable identities, not
+display labels; qualify a mod-owned family (for example
+`materials = { "foundry:iridium" = 1200 }`) so another mod cannot accidentally
+claim the same ledger account.
+
+Every definition has one `material_class`:
+
+| value | use |
+|---|---|
+| `renewable` | ecologically reproducible wood, fibre, food, hides, and similar goods |
+| `geologically_finite` | ore, metals, gems, salt, and other bounded virgin deposits |
+| `transformative_finite` | abundant but bounded stone, sand, clay, glass, and ceramics |
+| `consumptive` | intended sinks such as fuel, flux, and food |
+| `exceptional` | Wild or magical matter governed by its own source rules |
+
+Names provide a conservative default classification, but a mod should declare
+the class explicitly for economically meaningful content. Material identity
+propagates through balanced recipes, smelting, station work, block drops, and
+placeable item forms. If a transformation disperses material, declare that
+quantity in `loss`; if it produces a physical remainder, declare a
+`byproducts` item instead. A bad material graph is rejected when a world is
+opened.
+
+Durable tracked items default to 90% forge recovery, and tracked machine
+blocks default to 95% clean dismantling recovery. An explicit `salvage` table
+can override an item's station and recovery fraction from 0 through 1. Broken
+durables retain their material in a damaged object; the generated primitive
+path recovers 75%, while a forge collects fractional recovered stock until it
+can emit ordinary recipe-usable ingots or powders. Scale, slag, and other
+remainders stay in the finite ledger rather than being rounded away.
+
+Material vectors are part of save identity. Hot reload or restart may change
+art and behavior, but changing an existing item's or block's vector/class
+requires an explicit future migration. Removing a mod preserves named
+placeholders and their mass; reinstalling the same definitions restores them.
 
 ## blocks.toml
 
@@ -119,6 +170,8 @@ Every field, with defaults:
 | `brush` | none | `{ table = "loot_id", becomes = "..." }` — archaeology: brushing rolls the loot table, block transmutes |
 | `item` | `true` | set `false` to register no placeable item form (fluids, crop stages) |
 | `icon` | block texture | item-form icon override |
+| `material_class` | inferred | one of the five finite-material classes above |
+| `materials` | `{}` | exact material vector per block; a drop or matching held form may propagate it |
 
 ## items.toml
 
@@ -158,6 +211,9 @@ food = { hunger = 7, nutrition = { grain = 30 } }
 | `throw` | none | `{ speed = 18.0 }` — right-click throws the item as a projectile (snowballs); zero-damage throws still knock back |
 | `hammer` | `false` | works `[[worked]]` inputs on an anvil (a 2 s channel per strike) |
 | `glow` | none | `[r, g, b]` color × intensity — the item sheds a carried light while held (items that place a light-emitting block glow automatically; this is for the rest, e.g. a raw ember) |
+| `material_class` | inferred | one of the five finite-material classes above |
+| `materials` | `{}` | exact material vector per item; balanced transformations can infer an omitted output vector |
+| `salvage` | generated for tracked durables/machines | `{ station = "forge", recovery = 0.90 }`; recovery must be 0–1 |
 
 ## recipes.toml
 
@@ -196,6 +252,15 @@ speed = 1.5
   table). Recipes match anywhere in the grid and mirrored.
 - `keys` maps each character to an item name or a `#tag`.
 - `count` defaults to 1. `[[smelt]]` `time` defaults to 8 s.
+- A tracked `[[recipe]]` must balance exactly: all input material must equal
+  output × `count`, `byproducts = [{ item = "...", count = 1 }]`, plus
+  `loss = { material = units }`. Use a byproduct whenever the remainder is a
+  gameplay object; `loss` is the explicit dispersed/consumed sink.
+- A tracked `[[smelt]]` uses the same rule with optional
+  `spit = { item = "...", count = 1 }` and `loss = {...}`. A tracked
+  `[[worked]]` may also declare `loss`; its input must equal output × `count`
+  plus that loss. `[[kiln]]` must set `consumes = true` if its powder carries
+  finite material. Bloomery charge and bloom preserve the same vector.
 - `[[fuel]]` `burn` is seconds of furnace heat; `speed` (default 1.0)
   multiplies smelt rate while that fuel burns — base's `ember` smelts
   at 2×.
@@ -229,6 +294,10 @@ your own items **extends** the shared planks group, so your wood
 works in every existing plank recipe. Unknown items in a tag are
 skipped silently.
 
+Every member used through a tag in a tracked recipe must carry the exact same
+material vector. This prevents a substitution from turning a low-mass item
+into a high-mass output. A mismatched tag makes the material graph invalid.
+
 ## features.toml
 
 ```toml
@@ -245,6 +314,27 @@ y_range = [10, 40]
 The only `type` today is `"ore"`: random-walk veins of `block`
 replacing `replaces` (default `base:stone`). Defaults: `vein_size` 5
 (1–32), `per_chunk` 6 (0–64), `y_range` [4, 60].
+
+An ore feature's block/drop vector is its exact finite deposit unit. At planet
+creation it receives bounded manifest sites and materializing a chunk reserves
+the exact represented mass. If the same resource can occur in basalt,
+limestone, or another host, declare a feature for each exact `replaces` block;
+the shared resource key receives one quota, so host variants do not multiply
+the planet's supply.
+
+Any mod with `[[feature]]` entries must declare one policy in `mod.toml`:
+
+| `retrogen` value | existing-world behavior |
+|---|---|
+| `untouched_host_only` | deterministically replace only declared host blocks in untouched chunks; never touch player edits, structures, block entities, or existing deposits |
+| `secondary_recovery` | add processing for existing slag/tailings; terrain and virgin mass remain unchanged |
+| `world_event` | add nothing automatically; an authored event must record its external source |
+| `no_retrogen` | content is unavailable in that existing world and the player is told to create a new planet |
+
+Retrogen is atomic, recorded, versioned, and idempotent. The host tells every
+client which policy applies without exposing reserve coordinates. The planet
+manifest stores the content hash; changing saved material identity is not an
+implicit migration.
 
 ## animals.toml
 

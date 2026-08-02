@@ -96,20 +96,58 @@ WSLg cannot truly capture the mouse: the host Windows cursor can neither be
 hidden nor warped from inside Linux ([wslg#1361](https://github.com/microsoft/wslg/issues/1361),
 [wslg#240](https://github.com/microsoft/wslg/issues/240)), so under WSLg the
 game falls back to stable position-delta look — the cursor stays visible and
-look stops at the window edge. For proper capture, run the **native Windows
-build** instead (from the repo root, so the save folder is shared):
+look stops at the window edge. For proper capture, build and run the **native
+Windows build** instead:
 
 ```sh
 rustup target add x86_64-pc-windows-gnu   # once; needs mingw64-gcc installed
 cargo build --release --target x86_64-pc-windows-gnu
-./target/x86_64-pc-windows-gnu/release/wildforge.exe   # launches on Windows
+mkdir -p /mnt/c/Games/Wildforge
+cp target/x86_64-pc-windows-gnu/release/wildforge.exe /mnt/c/Games/Wildforge/
+cp -a mods /mnt/c/Games/Wildforge/
+cd /mnt/c/Games/Wildforge
+./wildforge.exe
 ```
+
+Do not run the native executable with its working directory inside
+`\\wsl.localhost`/`\\wsl$`. Windows then streams and saves chunks through the
+WSL network-filesystem bridge, which is dramatically slower than NTFS and can
+deny atomic save-file replacement. The base game and textures are embedded in
+the executable; copy `mods/` beside it to retain the repository's optional
+content. Saves then live in `C:\Games\Wildforge\saves` and remain reachable
+from WSL at `/mnt/c/Games/Wildforge/saves`.
 
 Sensitivity can be scaled with `WILDFORGE_SENS` (default `1.0`).
 
-The world saves automatically to `saves/world1/` (modified chunks only,
-RLE-compressed) and reloads on next launch. Delete that folder for a fresh
-world with a new seed.
+Worlds save under `saves/<name>/` and reload from the title screen. Immutable
+planet genesis is written once; ordinary saves rewrite only mutable planetary
+state and modified chunks.
+
+## One finite planet
+
+Every world is one closed cube-sphere: six `8192 x 8192` surface faces and a
+finite address space of 103,079,215,104 possible block cells. Walking across a
+face edge is ordinary travel, bearings remain continuous, and a full
+east/west circuit returns home after 32,768 surface blocks. Most voxel chunks
+do not exist yet; a complete global atlas establishes continents, geology,
+climate, drainage, biomes, countries, hearts, water, and mineral sites before
+the qualified homeland is prepared, then terrain materializes lazily as
+people travel.
+
+Create World opens an explicit seed screen: type any `u32` seed or roll one,
+then watch the named atlas and homeland stages. Cancellation removes the
+hidden temporary world rather than publishing a partial save. The title list
+shows seed, generator version, atlas version, content hash, and readiness;
+incompatible flat/old/corrupt folders are reported instead of silently
+reinterpreted. Entering an existing world is also asynchronous: play begins
+only after the persisted common homeland and that player's exact 3x3 safety
+region are resident.
+
+The planet is finite but not eagerly built. A 5x5 common homeland is prepared
+once, wider render-distance rings stream nearest-first, and solo, windowed
+host, dedicated host, graphical guest, and headless agent use the same entry
+contract. Guests cannot move, take damage, appear in the active roster, or
+affect simulation until their exact entry manifest is decoded and accepted.
 
 ## Controls
 
@@ -121,6 +159,7 @@ world with a new seed.
 | Ctrl | Sprint |
 | Hold left click | Mine block (per-block hardness; bedrock unbreakable) |
 | Right click | Place selected block (consumes from inventory) |
+| Hold right click with brush | Excavate a remnant, or sift ordinary stone/earth for regional salvage |
 | Middle click | Select targeted block if in hotbar |
 | 1–9 / scroll | Select hotbar slot |
 | E | Open/close inventory (click to move stacks, right-click half/one) |
@@ -288,19 +327,66 @@ stack, and a kiln with a chimney becomes a **glassworks** whose draft
 doubles what every fuel fires. Nomadic play stays valid, and hungry.
 Settling is the faster path, never the only one.
 
+## Finite materials
+
+Ore is not merely rare: every planet has a persisted manifest of bounded
+deposits, and every materialized ore block reserves exact mass from it. Mining,
+crafting, smelting, placing, machines, containers, cargo, and item entities
+transfer tracked material between named compartments. Fuel and process loss
+are explicit sinks; a bad content recipe is rejected instead of minting or
+deleting metal.
+
+Durability does not erase a tool's metal. A broken tracked tool becomes a
+damaged object: primitive work recovers 75%, a proper forge recovers 90%, and
+clean machine dismantling recovers 95%. The forge banks fractional stock until
+it can return an ordinary recipe-usable ingot or powder, so integer rounding
+cannot create material. Scale, slag, and tailings remain secondary material;
+advanced processes can recover some of them.
+
+Drops still despawn for performance, and lava still ruins things, but tracked
+mass moves into one bounded regional salvage pool rather than vanishing. Hold
+the excavation brush on ordinary stone or earth to sift that country at the
+primitive 75% yield. The pool intentionally stores no item coordinates, so it
+cannot become a supernatural lost-property locator. Death drops, animal cargo,
+machines (including their inventories), guests, and dedicated servers all use
+the same authoritative accounting paths.
+
+Operators can reconcile a saved planet without loading every voxel chunk:
+
+```sh
+wildforge --material-audit saves/world1
+```
+
+The report is aggregate-only: original and remaining virgin mass, underground,
+inventory/entity, placed, secondary, consumed/lost, external additions, and
+the unexplained delta for each material. It also checks bronze bootstrap,
+critical-site redundancy, flux access, treasure sites, and a pessimistic count
+of complete technology arcs. Exit status is 0 only when conservation and
+planet qualification both pass, 1 for a gap/failure (or unreadable data), and
+2 for incorrect command usage. Exact deposit coordinates never appear in
+ordinary player notices.
+
+The crash-safe files live beside the world as `materials.wfm` and the bounded
+`materials.wfm.log`; their previous compacted copies are
+`materials.wfm.bak` and `materials.wfm.log.bak`. A pending transaction is
+replayed exactly once after an interrupted write. Corrupt accounting is
+refused and reported—Wildforge never “repairs” a gap by inventing replacement
+mass.
+
 ## Weather & seasons
 
-The sky is part of the simulation. Server-owned weather fronts roll
-from clear through overcast into rain and back again, and storms lean
-on the wild's ire, so a WRATHFUL camp lives under thunder. Lightning
-borrows a frame of noon; rain and storm have their own ambience beds.
+The sky is part of the planetary simulation. Server-owned weather cells
+advect coherent fronts across the globe, so one country can be clear while
+another is under rain. Vapor and cloud water are conserved, mountains wring
+out windward air, and storms may lean on local ire without creating moisture.
+Lightning borrows a frame of noon; rain and storm have their own ambience
+beds.
 
-The calendar is persistent and the inventory shows the day. Foliage
-repaints each season. Crops surge in spring and stop in winter unless
-they're roofed and torchlit, which is how greenhouses fall out of rules
-you already knew. Berry bushes fruit in summer and autumn, wildlife
-bears young in spring and never in winter, and exposed lakes freeze for
-the cold months.
+The calendar is persistent and the inventory shows the local season, weather,
+temperature, and wind. Axial tilt gives the hemispheres opposite seasons;
+foliage, crops, wildlife, snow, ice, fire, machines, sky, and ambience all read
+their local planetary conditions. The supernatural Long Winter still chills
+and suppresses growth everywhere without pretending the orbit stopped.
 
 Snow is a material. Snowfall settles white layers on cold ground,
 shovels into throwable snowballs (harmless, but they knock you about),
@@ -323,11 +409,37 @@ There's no infinite-source trick anywhere; the oceans are just very
 large. An iron **bucket** carries a full cell, and films refuse, so you
 can't mint water out of puddles.
 
-The year moves it too. Shallow water dries to marshy films through a
-hot summer, autumn rain fills the beds back up, and winter owns the
-freeze. The world keeps living while you're away: come back after a
-season elsewhere and the lake you left liquid is frozen, the wheat you
-left green has grown.
+The finite planet knows its water before anyone visits it. Rain and snowmelt
+accumulate through seam-crossing watersheds into named tributaries, descending
+rivers, through-flow lakes, terminal salt lakes, estuaries, wetlands, and one
+dominant world ocean. Channels widen with discharge, dry-country headwaters
+may be empty gullies between wet seasons, and fish read the actual depth,
+flow, temperature, and salinity. Generating a distant shore reveals its
+budgeted water and recorded rounding residual; it does not create a new sea.
+
+The year moves it too, without a hidden faucet or drain. Evaporation moves
+fresh water into atmospheric vapor and leaves dissolved salt behind; rain and
+snow debit clouds, fill soil, recharge aquifers, run down catchments, and raise
+their receiving basins. Springs weaken under pumping and recover with
+recharge. Frozen water thaws back into the same audited cycle, while sea ice
+rejects most of its salt.
+
+Fresh, brackish, and salt water remain distinct in voxels and buckets. Pumps,
+flooded mines, boilers, and exhausted steam transfer exact water and salt
+rather than minting or deleting them. Saved chunks own the water they reveal,
+and unvisited country continues through the same server-owned coarse cycle.
+Operators can reconcile every reservoir with `wildforge --water-audit
+<world>`.
+
+To validate or deliberately rebuild a world's qualified entry region without
+admitting a player, then close both conservation ledgers, run:
+
+```sh
+wildforge --validate-entry saves/world1
+```
+
+The command exits nonzero for an incompatible atlas, failed preparation/save,
+water or salt drift, or a material-accounting/progression failure.
 
 ## Minerals & geology
 
@@ -677,8 +789,11 @@ Drop-in re-skins, no recompiling and no mod required. Design doc:
 
 ## Menus, worlds & settings
 
-- **Title screen**: list of worlds under `saves/` with their seeds — play any,
-  create a **new world with a random seed**, or delete one (with confirmation)
+- **Title screen**: lists compatible worlds with seed, generator/atlas
+  versions, content hash, and status; incompatible or corrupt folders show a
+  specific notice instead of becoming selectable. Create a survival or
+  creative planet by entering a seed or rolling one; creation/entry show live
+  progress and can be cancelled safely.
 - **Settings** (from title or pause menu): master **volume**, mouse
   sensitivity, render distance, and FOV — adjusted with sliders, applied live,
   persisted to `config.txt`
@@ -752,29 +867,25 @@ Dev cheat: `WILDFORGE_GIVE=1` starts with some items for testing.
 
 ## Features
 
-- Infinite procedural **3D terrain** (Caves & Cliffs style): a
-  lattice-interpolated density field with spline-shaped geography —
-  continentalness/erosion/ridges noises drive ocean basins, plains,
-  plateaus, and mountain ranges up to y≈230 with real overhangs and cliff
-  lips (16×16×256 chunks, sea level 64, bedrock floor); frustum-culled
-  rendering; design in `docs/terrain-v2-plan.md`
+- Finite procedural **planetary 3D terrain**: six seamless cube-sphere faces
+  with persisted plate geology, continents, climate, watersheds, oceans,
+  lakes, groundwater, and bounded material/water inventories; local 3D
+  density adds caves, overhangs, and cliff detail (16×16×256 chunks, sea
+  level 64, bedrock floor)
 - Layered noise caves: big "cheese" caverns deep down plus winding
   "spaghetti" tunnels whose entrances taper near the surface
 - Slope- and altitude-aware surfacing: steep faces expose bare stone,
   peaks above y≈170 carry snow caps, underwater floors are sand/gravel
-- **Eight biomes** by nearest-centroid matching in 5D climate space
-  (temperature, humidity, continentalness, erosion, ridges) — forest,
-  plains, desert (sand + cacti), jungle (dense giant canopies), scrubland
-  (patchy sand/grass + shrubs), taiga (conifers), arctic (snow cover,
-  frozen ocean ice), and mountains (bare stone, snow caps) — each with its
-  own surfaces, vegetation shapes, and densities; **five wood families**
+- **Causal zonal biomes and local habitats** derived from latitude, seasonal
+  climate, terrain, soil, and finite water. Riparian corridors, floodplains,
+  wetlands, oases, springs, shores, salt marshes, alpine ground, and aquatic
+  salinity classes overlay the regional biome instead of repainting an entire
+  country. **Five wood families**
   (oak, birch with flecked white bark, dark spruce, vivid jungle, olive
   acacia) grow per biome with distinct bark/leaf/ring textures, forests
   mix oak and birch, and every log crafts into its own colored planks —
   all plank types are interchangeable (and mixable) in recipes via
-  ingredient tags; biome placement
-  correlates with terrain shape because both read the same noise fields;
-  the current biome shows in the window title
+  ingredient tags; the current local biome shows in the window title
 - Chunk streaming with per-frame generation/meshing budgets, nearest-first
 - Face-culled chunk meshing with per-vertex ambient occlusion and
   Minecraft-style directional face shading (with anisotropy-fixing quad flips)
@@ -821,6 +932,11 @@ One binary, no server jar, ever:
   and, if your mods differ, **its entire mods folder** — you play with
   the host's content, no installing anything (scripts never leave the
   host; your texture pack stays yours).
+- **Safe admission**: the host prepares the same persisted common homeland as
+  solo play, streams an exact 3x3 entry manifest, and activates the guest only
+  after it is decoded and acknowledged. The rest of the requested view expands
+  nearest-first without stopping the server; a requested wide horizon is never
+  an admission prerequisite.
 - **Server-authoritative**: guests send requests; the host validates
   (reach, rate) and applies them through the same code paths local
   play uses, echoing results to everyone. Chunks stream in the save

@@ -1,0 +1,7 @@
+layer = potential_evapotranspiration
+description = potential evapotranspiration
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = scalar
+minimum = 89.999992371
+maximum = 1147.529174805
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

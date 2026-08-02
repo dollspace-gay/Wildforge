@@ -109,10 +109,12 @@ impl Player {
         self.in_water = self.body_in_water(world);
 
         // Horizontal wish velocity.
-        let mut wish = flat_fwd * input.forward + right * input.strafe;
-        if wish.length_squared() > 1.0 {
-            wish = wish.normalize();
-        }
+        // `flat_fwd` and `right` are chart deltas calibrated through the
+        // curved surface Jacobian. Their Euclidean chart lengths are not
+        // meaningful, so normalize the player's two orthogonal intent axes
+        // before combining them rather than renormalizing the chart vector.
+        let intent_length = input.forward.hypot(input.strafe).max(1.0);
+        let wish = (flat_fwd * input.forward + right * input.strafe) / intent_length;
         let speed = if self.in_water {
             SWIM_SPEED
         } else if input.sprint {

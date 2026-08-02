@@ -121,6 +121,13 @@ impl World {
                             );
                         }
                     }
+                    for (material, units) in &f.reclaim {
+                        let material = material.replace(['\\', '"'], "");
+                        let _ = writeln!(
+                            out,
+                            "[[forge.reclaim]]\nmaterial = \"{material}\"\nunits = {units}"
+                        );
+                    }
                     let _ = writeln!(out);
                 }
                 BlockEntity::Sign(sg) => {
@@ -215,8 +222,8 @@ impl World {
                 BlockEntity::Steam(s) => {
                     let _ = writeln!(
                         out,
-                        "[[steam]]\n{pos_line}\nfuel = {:?}\nwater = {:?}\n",
-                        s.fuel, s.water
+                        "[[steam]]\n{pos_line}\nfuel = {:?}\nwater_hu = {}\nsalt_mass = {}\nsteam_numerator_remainder = {}\n",
+                        s.fuel, s.water.water_hu, s.water.salt_mass, s.steam_numerator_remainder,
                     );
                 }
                 BlockEntity::Separator(sp) => {
@@ -296,6 +303,13 @@ impl World {
             core: Option<crate::planet::BlockPos>,
             #[serde(default)]
             slot: Vec<ChestSlotT>,
+            #[serde(default)]
+            reclaim: Vec<MaterialT>,
+        }
+        #[derive(Deserialize)]
+        struct MaterialT {
+            material: String,
+            units: u64,
         }
         #[derive(Deserialize)]
         struct SignT {
@@ -342,7 +356,13 @@ impl World {
             #[serde(default)]
             fuel: f32,
             #[serde(default)]
-            water: f32,
+            water: Option<f32>,
+            #[serde(default)]
+            water_hu: Option<u64>,
+            #[serde(default)]
+            salt_mass: u64,
+            #[serde(default)]
+            steam_numerator_remainder: u64,
         }
         #[derive(Deserialize)]
         struct SeparatorT {
@@ -488,6 +508,11 @@ impl World {
                 core: fo.core,
                 ..Default::default()
             };
+            for material in fo.reclaim {
+                if material.units != 0 {
+                    *state.reclaim.entry(material.material).or_default() += material.units;
+                }
+            }
             for sl in fo.slot {
                 if sl.index < 8
                     && let Some(item) = self.reg.item_id(&sl.item)
@@ -566,7 +591,16 @@ impl World {
                 st.pos,
                 BlockEntity::Steam(SteamState {
                     fuel: st.fuel,
-                    water: st.water,
+                    water: crate::planet_atlas::ReservoirMass {
+                        water_hu: st.water_hu.unwrap_or_else(|| {
+                            ((st.water.unwrap_or(0.0) / STEAM_SECS_PER_WATER)
+                                * crate::planet_atlas::HYDRO_UNITS_PER_BLOCK as f32)
+                                .round()
+                                .max(0.0) as u64
+                        }),
+                        salt_mass: st.salt_mass,
+                    },
+                    steam_numerator_remainder: st.steam_numerator_remainder,
                 }),
             );
         }

@@ -23,10 +23,10 @@ mod ui;
 
 use crate::*;
 const GEN_BUDGET: usize = 4; // chunk generations per frame (256-tall gen is pricey)
-const MESH_BUDGET: usize = 6; // chunk remeshes per frame
 const SHOT_SETTLE_FRAMES: u64 = 10;
 const SHOT_FIXED_DT: f32 = 1.0 / 60.0;
 const SHOT_MAX_FRAMES: u64 = 3000;
+const BUILD_MARKER: &str = "BIOME-R4";
 const REACH: f32 = 5.0;
 const MAX_HEALTH: f32 = 14.0; // base half-hearts (7 hearts)
 const MAX_AIR: f32 = 15.0; // seconds of breath
@@ -34,6 +34,8 @@ const MAX_AIR: f32 = 15.0; // seconds of breath
 #[derive(Clone, Copy, PartialEq)]
 enum Screen {
     Title,
+    NewWorld,
+    CreatingWorld,
     Accounts,
     Moderation(u32),
     Mods,
@@ -212,12 +214,53 @@ struct UiState {
     account_focus: u8,
     account_status: String,
     account_task: Option<std::sync::mpsc::Receiver<AccountTaskResult>>,
+    new_world_mode: String,
+    new_world_seed: String,
+    new_world_status: String,
     moderation_confirm: Option<u8>,
+    world_creation: Option<WorldCreationTask>,
+    world_entry: Option<WorldEntryTask>,
+    creation_status: String,
+    creation_progress: (usize, usize),
 }
 
 enum AccountTaskResult {
     Linked(Result<identity::atproto::AtprotoAccount, String>),
     Revoked(Result<(), String>),
+}
+
+enum WorldCreationEvent {
+    Progress(crate::world::WorldCreationProgress),
+    Complete {
+        name: String,
+        result: Result<(), String>,
+    },
+}
+
+struct WorldCreationTask {
+    receiver: std::sync::mpsc::Receiver<WorldCreationEvent>,
+    cancel: crate::planet_atlas::CancellationToken,
+}
+
+type PreparedWorld = (World, crate::planet::EntityPos, Vec<String>);
+type WorldEntryResult = Result<PreparedWorld, String>;
+
+enum WorldEntryEvent {
+    Progress {
+        stage: String,
+        completed: usize,
+        total: usize,
+    },
+    Complete {
+        name: String,
+        result: Box<WorldEntryResult>,
+    },
+}
+
+struct WorldEntryTask {
+    receiver: std::sync::mpsc::Receiver<WorldEntryEvent>,
+    cancel: crate::planet_atlas::CancellationToken,
+    created_here: bool,
 }
 
 impl Default for UiState {
@@ -243,7 +286,14 @@ impl Default for UiState {
             account_focus: 0,
             account_status: String::new(),
             account_task: None,
+            new_world_mode: "survival".into(),
+            new_world_seed: String::new(),
+            new_world_status: String::new(),
             moderation_confirm: None,
+            world_creation: None,
+            world_entry: None,
+            creation_status: String::new(),
+            creation_progress: (0, crate::planet_atlas::AtlasStage::ALL.len()),
         }
     }
 }
@@ -418,6 +468,16 @@ struct Remote {
     /// Chunks we have asked the host for and not yet received, so a gap is
     /// requested once rather than every frame until it lands.
     wants: std::collections::HashSet<ChunkPos>,
+    /// Host-declared bounded terrain that must be decoded before this
+    /// connection becomes a simulated player.
+    entry_required: std::collections::HashSet<ChunkPos>,
+    entry_manifest_received: bool,
+    entry_ready_sent: bool,
+    entry_world_name: Option<String>,
+    entry_center: Option<ChunkPos>,
+    entry_center_meshed: bool,
+    pending_entry_chunks: std::collections::VecDeque<(ChunkPos, Vec<u8>)>,
+    entry_activity: std::time::Instant,
 }
 
 struct Game {
@@ -445,9 +505,15 @@ struct Game {
     config: Config,
     audio: Option<Audio>,
     in_world: bool,
-    /// (name, seed) of every world under saves/.
+    /// (name, seed) of every compatible, committed world under saves/.
     worlds: Vec<(String, u32)>,
+    /// Browser-only metadata for compatible worlds and exact notices for
+    /// incompatible/corrupt/incomplete folders. Authoritative loading still
+    /// validates the complete atlas off-thread before entry.
+    world_details: std::collections::HashMap<String, String>,
+    world_problems: Vec<(String, String)>,
     gen_pool: Option<streaming::GenPool>,
+    mesh_pool: Option<streaming::MeshPool>,
     /// Start of this frame's streaming work (shared adopt+mesh budget).
     stream_t0: std::time::Instant,
     creative: bool,
@@ -552,34 +618,6 @@ pub(crate) fn browser_items(reg: &Registry, search: &str, creative: bool) -> Vec
                     || d.name.to_lowercase().contains(&q))
         })
         .collect()
-}
-
-fn find_spawn(world: &World) -> crate::planet::SurfacePos {
-    // Walk outward until we find dry land.
-    let g = &world.generator;
-    let center = crate::planet::SurfacePos::new(
-        crate::planet::Face::PosZ,
-        crate::planet::FACE_BLOCKS / 2,
-        crate::planet::FACE_BLOCKS / 2,
-    )
-    .expect("the planet face center is canonical");
-    let mut best = center;
-    'outer: for r in 0..64 {
-        let d = r * 8;
-        for (du, dv) in [(d, 0), (-d, 0), (0, d), (0, -d), (d, d), (-d, -d)] {
-            let candidate = crate::planet::SurfacePos::canonicalized(
-                center.face(),
-                i32::from(center.u()) + du,
-                i32::from(center.v()) + dv,
-            )
-            .expect("bounded spawn search canonicalizes across the planet");
-            if g.surface_estimate_at(candidate) > SEA_LEVEL + 1 {
-                best = candidate;
-                break 'outer;
-            }
-        }
-    }
-    best
 }
 
 impl Game {
@@ -697,7 +735,10 @@ impl Game {
             audio,
             in_world: false,
             worlds: Vec::new(),
+            world_details: Default::default(),
+            world_problems: Vec::new(),
             gen_pool: None,
+            mesh_pool: None,
             stream_t0: std::time::Instant::now(),
             creative: false,
             flying: false,
@@ -737,9 +778,26 @@ impl Game {
             .and_then(|account| account.handle.clone())
             .unwrap_or_default();
         g.apply_config();
+        // Capture/benchmark override only; applying it after `apply_config`
+        // keeps a diagnostic run from rewriting the player's saved slider.
+        if let Ok(view_dist) = std::env::var("WILDFORGE_VIEW_DIST")
+            && let Ok(view_dist) = view_dist.parse::<i32>()
+        {
+            g.config.view_dist =
+                view_dist.clamp(crate::config::MIN_VIEW_DIST, g.presentation.max_view_dist);
+        }
         g.refresh_worlds();
         // Dev/headless: open a specific menu screen for UI verification.
         match std::env::var("WILDFORGE_SCREEN").as_deref() {
+            Ok("newworld") => {
+                g.ui_state.new_world_seed = "20260801".into();
+                g.ui_state.screen = Screen::NewWorld;
+            }
+            Ok("creating") => {
+                g.ui_state.creation_status = "QUALIFYING HOMELAND".into();
+                g.ui_state.creation_progress = (17, 25);
+                g.ui_state.screen = Screen::CreatingWorld;
+            }
             Ok("mods") => g.ui_state.screen = Screen::Mods,
             Ok("packs") => g.ui_state.screen = Screen::Packs,
             Ok("settings") => g.ui_state.screen = Screen::Settings,

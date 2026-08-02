@@ -15,6 +15,109 @@ fn generation_is_deterministic() {
 }
 
 #[test]
+fn dry_atlas_desert_does_not_generate_as_forest() {
+    let reg = base_reg();
+    let atlas = std::sync::Arc::new(
+        crate::planet_atlas::PlanetAtlas::fixture(8_705, 64).expect("atlas fixture"),
+    );
+    let desert = atlas
+        .genesis
+        .biomes
+        .iter()
+        .find_map(|(pos, biome)| {
+            let hydro = atlas.genesis.hydrology.get(pos).unwrap();
+            let terrain = atlas.genesis.terrain.get(pos).unwrap();
+            (biome.baseline_biome == crate::planet_atlas::BIOME_DESERT
+                && biome.habitat_flags
+                    & (crate::planet_atlas::HABITAT_RIPARIAN
+                        | crate::planet_atlas::HABITAT_OASIS
+                        | crate::planet_atlas::HABITAT_WETLAND)
+                    == 0
+                && hydro.water_body == crate::planet_atlas::WaterBodyKind::Land
+                && terrain.eroded_elevation > SEA_LEVEL as f32 + 2.0)
+                .then_some(pos)
+        })
+        .expect("fixture contains a dry terrestrial desert cell");
+    let center = desert.center(atlas.side());
+    let surface = crate::planet::SurfacePos::new(
+        center.face,
+        center.u.floor() as u16,
+        center.v.floor() as u16,
+    )
+    .unwrap();
+    let generator = Generator::with_atlas(atlas.manifest.seed, &reg, atlas);
+    assert_eq!(generator.biome_at(surface), Biome::Desert);
+    let chunk = generator.generate(crate::planet::ChunkPos::from_surface(surface), &reg);
+    let grass = reg.block_id("base:grass").unwrap();
+    let mut grass_columns = 0usize;
+    let mut tree_blocks = 0usize;
+    for lx in 0..crate::chunk::CHUNK_X {
+        for lz in 0..crate::chunk::CHUNK_Z {
+            grass_columns += usize::from((1..CHUNK_Y).any(|y| chunk.get(lx, y, lz) == grass));
+            for y in 1..CHUNK_Y {
+                let name = &reg.block(chunk.get(lx, y, lz)).name;
+                tree_blocks += usize::from(name.ends_with("log") || name.ends_with("leaves"));
+            }
+        }
+    }
+    assert_eq!(grass_columns, 0, "dry desert grew turf");
+    assert_eq!(tree_blocks, 0, "dry desert generated forest blocks");
+}
+
+#[test]
+fn atlas_highlands_keep_a_coherent_surface_mantle() {
+    let reg = base_reg();
+    let atlas = std::sync::Arc::new(
+        crate::planet_atlas::PlanetAtlas::fixture(1_337, 16).expect("atlas fixture"),
+    );
+    let generator = Generator::with_atlas(1_337, &reg, atlas);
+    let mut sampled = 0usize;
+    let mut worst = usize::MAX;
+
+    for face in crate::planet::Face::ALL {
+        for (u, v) in [(256, 256), (2048, 6144), (4096, 4096), (7792, 7632)] {
+            let pos = crate::planet::ChunkPos::new(face, u / 16, v / 16).unwrap();
+            let chunk = generator.generate(pos, &reg);
+            for x in 0..crate::chunk::CHUNK_X {
+                for z in 0..crate::chunk::CHUNK_Z {
+                    let top = (1..CHUNK_Y).rev().find(|&y| {
+                        let def = reg.block(chunk.get(x, y, z));
+                        def.solid
+                            && def.burns == 0
+                            && def.height.is_none()
+                            && def.name != "base:ice"
+                            && !def.name.ends_with("_bricks")
+                    });
+                    let Some(top) = top else {
+                        continue;
+                    };
+                    if top < SEA_LEVEL as usize + 2 {
+                        continue;
+                    }
+                    let contiguous = (1..=top)
+                        .rev()
+                        .take_while(|&y| reg.is_solid(chunk.get(x, y, z)))
+                        .count();
+                    sampled += 1;
+                    worst = worst.min(contiguous);
+                    assert!(
+                        contiguous >= 8,
+                        "atlas terrain at {face:?} chunk {},{} local {x},{z} has only {contiguous} solid blocks beneath its surface",
+                        pos.u(),
+                        pos.v()
+                    );
+                }
+            }
+        }
+    }
+    assert!(
+        sampled > 1_000,
+        "mantle test sampled only {sampled} highland columns"
+    );
+    assert!(worst >= 8);
+}
+
+#[test]
 fn planetary_generator_is_continuous_across_every_face_edge() {
     use crate::planet::{Direction4, FACE_BLOCKS, Face, SurfacePos, step4};
 

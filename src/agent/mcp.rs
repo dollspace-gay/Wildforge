@@ -116,8 +116,22 @@ fn planetary_pos(args: &Value) -> Result<crate::planet::BlockPos, String> {
     let face = args
         .get("face")
         .and_then(Value::as_str)
-        .and_then(crate::planet::Face::from_name)
-        .ok_or("face must be PosX, NegX, PosY, NegY, PosZ, or NegZ")?;
+        .and_then(|name| {
+            crate::planet::Face::from_name(name).or(match name {
+                // Compatibility for the names the first MCP schema advertised.
+                "PosX" => Some(crate::planet::Face::PosX),
+                "NegX" => Some(crate::planet::Face::NegX),
+                "PosY" => Some(crate::planet::Face::PosY),
+                "NegY" => Some(crate::planet::Face::NegY),
+                "PosZ" => Some(crate::planet::Face::PosZ),
+                "NegZ" => Some(crate::planet::Face::NegZ),
+                _ => None,
+            })
+        })
+        .ok_or(
+            "face must be pos_x, neg_x, pos_y, neg_y, pos_z, or neg_z \
+             (legacy PosX, NegX, PosY, NegY, PosZ, and NegZ are also accepted)",
+        )?;
     let coord = |name: &str| {
         args.get(name)
             .and_then(Value::as_u64)
@@ -142,10 +156,29 @@ fn tool_schemas() -> Vec<Value> {
     let s = |d: &str| json!({"type": "string", "description": d});
     let pos = || {
         json!({
-            "face": s("planet face: PosX, NegX, PosY, NegY, PosZ, or NegZ"),
-            "u": num("bounded east coordinate, 0..8191"),
-            "y": num("radial block height, 0..255"),
-            "v": num("bounded north coordinate, 0..8191")
+            "face": {
+                "type": "string",
+                "enum": ["pos_x", "neg_x", "pos_y", "neg_y", "pos_z", "neg_z"],
+                "description": "canonical planet face"
+            },
+            "u": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 8191,
+                "description": "bounded east coordinate"
+            },
+            "y": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255,
+                "description": "radial block height"
+            },
+            "v": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 8191,
+                "description": "bounded north coordinate"
+            }
         })
     };
     vec![
@@ -420,5 +453,37 @@ fn call_tool(agent: &mut Agent, name: &str, args: &Value) -> String {
             "back on my feet".into()
         }
         other => format!("unknown tool {other}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn planetary_coordinates_use_canonical_faces_and_accept_legacy_aliases() {
+        let canonical = planetary_pos(&json!({"face": "pos_z", "u": 12, "y": 34, "v": 56}))
+            .expect("canonical MCP coordinate");
+        let legacy = planetary_pos(&json!({"face": "PosZ", "u": 12, "y": 34, "v": 56}))
+            .expect("legacy advertised MCP coordinate");
+        assert_eq!(canonical, legacy);
+        assert_eq!(canonical.face(), crate::planet::Face::PosZ);
+        assert!(planetary_pos(&json!({"face": "POS_Z", "u": 12, "y": 34, "v": 56})).is_err());
+        assert!(planetary_pos(&json!({"face": "pos_z", "u": 12.5, "y": 34, "v": 56})).is_err());
+    }
+
+    #[test]
+    fn coordinate_tool_schemas_publish_bounded_integer_coordinates() {
+        let tools = tool_schemas();
+        let at = tools
+            .iter()
+            .find(|tool| tool["name"] == "at")
+            .expect("at schema");
+        let properties = &at["inputSchema"]["properties"];
+        assert_eq!(properties["face"]["enum"][4], "pos_z");
+        assert_eq!(properties["u"]["type"], "integer");
+        assert_eq!(properties["u"]["maximum"], 8191);
+        assert_eq!(properties["y"]["maximum"], 255);
+        assert_eq!(properties["v"]["minimum"], 0);
     }
 }

@@ -3,7 +3,490 @@
 use super::*;
 
 impl World {
+    fn orbital_day(&self) -> f64 {
+        self.clock / f64::from(crate::server::DAY_LENGTH)
+    }
+
+    pub fn sun_direction(&self) -> glam::DVec3 {
+        let day = self.orbital_day();
+        crate::planet_atlas::solar_direction(day, day.fract())
+    }
+
+    pub fn latitude_at_surface(&self, pos: crate::planet::SurfacePos) -> f64 {
+        crate::planet_atlas::latitude_longitude(crate::planet::surface_to_unit(pos.center())).0
+    }
+
+    /// The local temperature for a particular orbital day. Offline crop
+    /// reconciliation uses this instead of applying today's weather to every
+    /// season the unloaded field missed.
+    pub(crate) fn temperature_at_surface_on_day(
+        &self,
+        pos: crate::planet::SurfacePos,
+        day: f64,
+    ) -> f32 {
+        if let (Some(atlas), Some(weather)) = (&self.planet_atlas, &self.planetary_weather) {
+            return weather
+                .sample(atlas, pos, day, self.long_winter)
+                .temperature_c;
+        }
+        if self.remote_weather_side > 0 {
+            let atlas_pos =
+                crate::planet_atlas::AtlasPos::from_surface(pos, self.remote_weather_side);
+            if let Some(sample) = self.remote_weather.get(&atlas_pos) {
+                return sample.temperature_c;
+            }
+        }
+        let climate = self.generator.climate_at(pos);
+        let latitude = self.latitude_at_surface(pos);
+        let orbital_phase = std::f64::consts::TAU * day / f64::from(crate::planet_atlas::YEAR_DAYS);
+        let seasonal_delta = (orbital_phase.sin() * latitude.sin() * 14.0) as f32;
+        climate.t * 22.0 + 8.0 + seasonal_delta
+    }
+
+    /// Local astronomical season. The Long Winter is a supernatural thermal
+    /// anomaly, so it suppresses growth everywhere without freezing the orbit.
+    pub fn season_at_surface(&self, pos: crate::planet::SurfacePos) -> usize {
+        if self.long_winter {
+            return 3;
+        }
+        crate::planet_atlas::local_season(self.day, self.latitude_at_surface(pos))
+    }
+
+    pub fn daylight_at_surface(&self, pos: crate::planet::SurfacePos) -> f32 {
+        let elevation = self
+            .sun_direction()
+            .dot(crate::planet::surface_to_unit(pos.center())) as f32;
+        (elevation * 2.5 + 0.5).clamp(0.12, 1.0)
+    }
+
+    pub fn weather_at_surface(
+        &self,
+        pos: crate::planet::SurfacePos,
+    ) -> crate::planet_atlas::LocalWeatherSample {
+        if let (Some(atlas), Some(weather)) = (&self.planet_atlas, &self.planetary_weather) {
+            return weather.sample(atlas, pos, self.orbital_day(), self.long_winter);
+        }
+        if self.remote_weather_side > 0 {
+            let atlas_pos =
+                crate::planet_atlas::AtlasPos::from_surface(pos, self.remote_weather_side);
+            if let Some(sample) = self.remote_weather.get(&atlas_pos) {
+                return *sample;
+            }
+        }
+        // Atlas-free fixtures and development worlds still need a physically
+        // sane local temperature. The old fixed +14 C spring/summer offset
+        // overheated the equator above crop tolerance and applied the same
+        // seasonal swing at every latitude. Preserve the generator's broad
+        // latitude field as the annual mean, then scale the orbital anomaly
+        // by signed latitude: no equatorial season spike, opposite
+        // hemispheres, strongest variation toward the poles.
+        let temperature_c = self.temperature_at_surface_on_day(pos, f64::from(self.day));
+        if let Some(mut sample) = self.weather_override {
+            sample.temperature_c = temperature_c;
+            if sample.kind.precipitating()
+                && sample.precipitation == crate::planet_atlas::PrecipitationForm::None
+            {
+                sample.precipitation = if temperature_c <= 0.0 {
+                    crate::planet_atlas::PrecipitationForm::Snow
+                } else {
+                    crate::planet_atlas::PrecipitationForm::Rain
+                };
+            }
+            return sample;
+        }
+        let kind = crate::planet_atlas::LocalWeather::Clear;
+        crate::planet_atlas::LocalWeatherSample {
+            kind,
+            precipitation: if !kind.precipitating() {
+                crate::planet_atlas::PrecipitationForm::None
+            } else if temperature_c <= 0.0 {
+                crate::planet_atlas::PrecipitationForm::Snow
+            } else {
+                crate::planet_atlas::PrecipitationForm::Rain
+            },
+            temperature_c,
+            ..crate::planet_atlas::LocalWeatherSample::default()
+        }
+    }
+
+    pub fn soil_moisture_at_surface(&self, pos: crate::planet::SurfacePos) -> f32 {
+        let (Some(atlas), Some(weather)) = (&self.planet_atlas, &self.planetary_weather) else {
+            return 1.0;
+        };
+        let atlas_pos = atlas.atlas_pos(pos);
+        let index = atlas_pos.index(atlas.side());
+        let baseline = (atlas.genesis.climate.values()[index].mean_precipitation * 4.0).max(256.0)
+            * crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL as f32;
+        (weather.water.cells.values()[index].soil.water_hu as f32 / baseline).clamp(0.0, 1.5)
+    }
+
+    /// Claim landed precipitation for materialization by the voxel water
+    /// cycle. Atlas worlds debit the exact coarse runoff/snow reserve; small
+    /// atlas-free fixtures retain their synthetic precipitation behavior.
+    pub(super) fn claim_precipitation_transfer(
+        &mut self,
+        pos: crate::planet::SurfacePos,
+        form: crate::planet_atlas::PrecipitationForm,
+        requested: u32,
+    ) -> u32 {
+        if let Some(atlas) = &self.planet_atlas {
+            let atlas_pos = atlas.atlas_pos(pos);
+            return self.planetary_weather.as_mut().map_or(0, |weather| {
+                weather.withdraw_water_cycle_transfer(atlas_pos, form, requested)
+            });
+        }
+        let sample = self.weather_at_surface(pos);
+        if sample.precipitation == form {
+            requested
+        } else {
+            0
+        }
+    }
+
+    /// Development/capture override. Water is only moved between vapor and
+    /// cloud; even a forced storm cannot mint atmospheric mass.
+    pub fn force_local_weather(&mut self, requested: &str) {
+        let (requested, forced_form) = match requested {
+            "overcast" => (
+                crate::planet_atlas::LocalWeather::Overcast,
+                crate::planet_atlas::PrecipitationForm::None,
+            ),
+            "rain" => (
+                crate::planet_atlas::LocalWeather::Precipitation,
+                crate::planet_atlas::PrecipitationForm::Rain,
+            ),
+            "snow" => (
+                crate::planet_atlas::LocalWeather::Precipitation,
+                crate::planet_atlas::PrecipitationForm::Snow,
+            ),
+            "precip" => (
+                crate::planet_atlas::LocalWeather::Precipitation,
+                crate::planet_atlas::PrecipitationForm::None,
+            ),
+            "storm" => (
+                crate::planet_atlas::LocalWeather::Storm,
+                crate::planet_atlas::PrecipitationForm::None,
+            ),
+            _ => (
+                crate::planet_atlas::LocalWeather::Clear,
+                crate::planet_atlas::PrecipitationForm::None,
+            ),
+        };
+        let Some(weather) = &mut self.planetary_weather else {
+            self.weather_override = Some(crate::planet_atlas::LocalWeatherSample {
+                kind: requested,
+                precipitation: forced_form,
+                precipitation_units: u16::from(requested.precipitating()),
+                ..crate::planet_atlas::LocalWeatherSample::default()
+            });
+            return;
+        };
+        self.weather_override = None;
+        for cell in weather.cells.cells.values_mut() {
+            let total = cell.atmospheric_vapor.saturating_add(cell.cloud_water);
+            match requested {
+                crate::planet_atlas::LocalWeather::Clear => {
+                    cell.atmospheric_vapor = total;
+                    cell.cloud_water = 0;
+                    cell.storm_energy = 0;
+                    cell.precipitation_rate = 0;
+                }
+                crate::planet_atlas::LocalWeather::Overcast => {
+                    cell.cloud_water = total / 3;
+                    cell.atmospheric_vapor = total - cell.cloud_water;
+                    cell.storm_energy = 8_000;
+                    cell.precipitation_rate = 0;
+                }
+                crate::planet_atlas::LocalWeather::Precipitation => {
+                    cell.cloud_water = total / 2;
+                    cell.atmospheric_vapor = total - cell.cloud_water;
+                    cell.storm_energy = 20_000;
+                    cell.precipitation_rate = 1;
+                }
+                crate::planet_atlas::LocalWeather::Storm => {
+                    cell.cloud_water = total * 2 / 3;
+                    cell.atmospheric_vapor = total - cell.cloud_water;
+                    cell.storm_energy = 52_000;
+                    cell.precipitation_rate = 1;
+                }
+            }
+        }
+    }
+
+    /// Slice one authoritative climate-hour update. A production pass is
+    /// spread over roughly three seconds of ordinary 30 Hz server ticks.
+    pub fn tick_planetary_weather(
+        &mut self,
+        budget: usize,
+    ) -> Result<Option<crate::planet_atlas::WeatherStepReport>, crate::planet_atlas::AtlasError>
+    {
+        let Some(atlas) = self.planet_atlas.clone() else {
+            return Ok(None);
+        };
+        let Some(weather) = self.planetary_weather.as_mut() else {
+            return Ok(None);
+        };
+        let day = self.clock / f64::from(crate::server::DAY_LENGTH);
+        let target_hour = (day * 24.0).floor().max(0.0) as u64;
+        if !weather.is_updating() && weather.completed_hours <= target_hour {
+            weather.begin_hour(weather.completed_hours);
+        }
+        let global_ire = self.ire;
+        let regional_ire = &self.regional_ire;
+        let report = weather.advance_slice(&atlas, day, budget, |pos| {
+            let center = pos.center(atlas.side());
+            let surface = crate::planet::SurfacePos::new(
+                center.face,
+                center
+                    .u
+                    .floor()
+                    .clamp(0.0, f64::from(crate::planet::FACE_BLOCKS - 1)) as u16,
+                center
+                    .v
+                    .floor()
+                    .clamp(0.0, f64::from(crate::planet::FACE_BLOCKS - 1)) as u16,
+            )
+            .expect("atlas center is a canonical surface position");
+            (global_ire
+                + regional_ire
+                    .get(&RegionCell::from_surface(surface))
+                    .copied()
+                    .unwrap_or(0.0)
+                    * 3.0)
+                .clamp(0.0, 100.0)
+        });
+        let report = match report {
+            Ok(report) => report,
+            Err(error) => {
+                weather.abort_failed_hour();
+                return Err(error);
+            }
+        };
+        if report.is_some() {
+            self.apply_loaded_water_inboxes();
+            // Springs and changing shorelines can touch hundreds of loaded
+            // water cells in one climate hour. Relighting after every cell
+            // made the window appear permanently frozen while the same
+            // connected chunks were rebuilt over and over. Preserve all
+            // ordinary mutation behavior, but settle their shared light field
+            // once after the complete water-cycle transaction.
+            self.edit_batch(|world| {
+                world.reconcile_loaded_springs();
+                world.reconcile_loaded_shores();
+            });
+        }
+        Ok(report)
+    }
+
+    pub(super) fn apply_loaded_water_inboxes(&mut self) {
+        let (Some(atlas), Some(weather)) = (&self.planet_atlas, &mut self.planetary_weather) else {
+            return;
+        };
+        // A sliced climate hour owns a second water-cell grid. Moving a flux
+        // inbox into the live grid after that cell was processed would be
+        // discarded by the final swap (the production cold-streaming loss).
+        // Keep the parcel in its explicit inbox until the transaction
+        // completes; `tick_planetary_weather` calls us immediately afterward.
+        if weather.is_updating() {
+            return;
+        }
+        let loaded = self
+            .chunks
+            .keys()
+            .map(|chunk| {
+                crate::planet_atlas::AtlasPos::from_surface(chunk.block_origin(), atlas.side())
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut index = 0;
+        while index < weather.water.inboxes.len() {
+            if !loaded.contains(&weather.water.inboxes[index].pos) {
+                index += 1;
+                continue;
+            }
+            let inbox = weather.water.inboxes.remove(index);
+            let cell_index = inbox.pos.index(weather.water.cells.side());
+            weather.water.cells.values_mut()[cell_index]
+                .runoff
+                .add_assign(inbox.mass)
+                .expect("loaded flux inbox fits runoff reservoir");
+        }
+    }
+
+    fn reconcile_loaded_springs(&mut self) {
+        let (Some(atlas), Some(weather)) = (&self.planet_atlas, &self.planetary_weather) else {
+            return;
+        };
+        let candidates = weather
+            .water
+            .springs
+            .iter()
+            .filter(|spring| spring.active && spring.last_discharge_hu >= 32)
+            .map(|spring| {
+                let center = spring.pos.center(atlas.side());
+                (
+                    spring.pos,
+                    crate::planet::SurfacePos::new(
+                        center.face,
+                        center.u.floor() as u16,
+                        center.v.floor() as u16,
+                    )
+                    .expect("spring center is canonical"),
+                    spring.outlet_milliblocks.div_euclid(1000),
+                )
+            })
+            .collect::<Vec<_>>();
+        for (atlas_pos, surface, outlet) in candidates {
+            if !self
+                .chunks
+                .contains_key(&crate::planet::ChunkPos::from_surface(surface))
+            {
+                continue;
+            }
+            let y = outlet.clamp(1, CHUNK_Y as i32 - 2) as u8;
+            let at = crate::planet::BlockPos::new(surface.face(), surface.u(), y, surface.v())
+                .expect("spring outlet is in shell");
+            let target = if self.get_block_at(at) == crate::registry::AIR {
+                Some(at)
+            } else {
+                at.offset(0, 1, 0)
+                    .filter(|above| self.get_block_at(*above) == crate::registry::AIR)
+            };
+            let Some(target) = target else { continue };
+            let claimed = self.planetary_weather.as_mut().map_or(
+                crate::planet_atlas::ReservoirMass::default(),
+                |weather| {
+                    weather.withdraw_water_cycle_mass(
+                        atlas_pos,
+                        crate::planet_atlas::PrecipitationForm::Rain,
+                        crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL as u32,
+                    )
+                },
+            );
+            if claimed.water_hu == crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL {
+                self.write_water_mass_at(target, claimed);
+            }
+        }
+    }
+
+    fn reconcile_loaded_shores(&mut self) {
+        let (Some(atlas), Some(weather)) = (&self.planet_atlas, &self.planetary_weather) else {
+            return;
+        };
+        let levels = weather
+            .water
+            .reservoirs
+            .iter()
+            .map(|reservoir| (reservoir.id, reservoir.level_milliblocks))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let chunks = self
+            .chunks
+            .keys()
+            .filter(|chunk| !self.player_touched.contains(chunk))
+            .copied()
+            .collect::<Vec<_>>();
+        let mut operations = Vec::<(crate::planet::BlockPos, u64, bool)>::new();
+        for chunk_pos in chunks {
+            for lx in 0..CHUNK_X {
+                for lz in 0..CHUNK_Z {
+                    let surface = crate::planet::SurfacePos::new(
+                        chunk_pos.face(),
+                        chunk_pos.u() * CHUNK_X as u16 + lx as u16,
+                        chunk_pos.v() * CHUNK_Z as u16 + lz as u16,
+                    )
+                    .expect("loaded chunk column is canonical");
+                    let hydro = atlas.hydrology_sample(surface.center());
+                    let reservoir = if hydro.ocean_basin_id != 0 {
+                        Some(crate::planet_atlas::surface_reservoir_id(
+                            crate::planet_atlas::SurfaceReservoirKind::Ocean,
+                            u32::from(hydro.ocean_basin_id),
+                        ))
+                    } else if hydro.lake_basin_id != 0 {
+                        Some(crate::planet_atlas::surface_reservoir_id(
+                            crate::planet_atlas::SurfaceReservoirKind::Lake,
+                            hydro.lake_basin_id,
+                        ))
+                    } else {
+                        None
+                    };
+                    let Some(reservoir) = reservoir else { continue };
+                    let Some(level) = levels.get(&reservoir) else {
+                        continue;
+                    };
+                    let desired = level.div_euclid(1000).clamp(1, CHUNK_Y as i32 - 2);
+                    let mut highest = None;
+                    for y in (1..CHUNK_Y).rev() {
+                        let at = crate::planet::BlockPos::new(
+                            surface.face(),
+                            surface.u(),
+                            y as u8,
+                            surface.v(),
+                        )
+                        .expect("shore height is inside shell");
+                        if self.reg.is_water(self.get_block_at(at)) {
+                            highest = Some(y as i32);
+                            break;
+                        }
+                    }
+                    let current =
+                        highest.unwrap_or_else(|| self.surface_height_at(surface).min(desired));
+                    if current > desired {
+                        for y in (desired + 1)..=current.min(desired + 2) {
+                            let at = crate::planet::BlockPos::new(
+                                surface.face(),
+                                surface.u(),
+                                y as u8,
+                                surface.v(),
+                            )
+                            .expect("shore height");
+                            if self.reg.is_water(self.get_block_at(at)) {
+                                operations.push((at, reservoir, false));
+                            }
+                        }
+                    } else if current < desired {
+                        for y in (current + 1)..=desired.min(current + 2) {
+                            let at = crate::planet::BlockPos::new(
+                                surface.face(),
+                                surface.u(),
+                                y as u8,
+                                surface.v(),
+                            )
+                            .expect("shore height");
+                            if self.get_block_at(at) == crate::registry::AIR {
+                                operations.push((at, reservoir, true));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for (at, reservoir, wet) in operations {
+            if wet {
+                let parcel = self.planetary_weather.as_mut().map_or(
+                    crate::planet_atlas::ReservoirMass::default(),
+                    |weather| {
+                        weather.materialize_surface_water(
+                            reservoir,
+                            crate::planet_atlas::HYDRO_UNITS_PER_BLOCK,
+                        )
+                    },
+                );
+                if parcel.water_hu == crate::planet_atlas::HYDRO_UNITS_PER_BLOCK {
+                    self.write_water_mass_at(at, parcel);
+                }
+            } else if let Some(mass) = self.water_mass_at(at) {
+                let returned = self
+                    .planetary_weather
+                    .as_mut()
+                    .is_some_and(|weather| weather.dematerialize_surface_water(reservoir, mass));
+                if returned {
+                    self.set_block_at(at, crate::registry::AIR);
+                }
+            }
+        }
+    }
+
     /// 0 spring, 1 summer, 2 autumn, 3 winter.
+    #[cfg(test)]
     pub fn season(&self) -> usize {
         // The Long Winter: enough countries dead and the year stops
         // turning. Everything winter already means — crops at zero,
@@ -61,17 +544,15 @@ impl World {
         (self.day % SEASON_DAYS) as f32 / SEASON_DAYS as f32
     }
 
-    /// Does precipitation fall as snow in this column? The threshold
-    /// relaxes in winter so taiga and cold-temperate lands whiten.
+    /// Does the local atmospheric column currently deliver snow?
     pub fn snows_at_surface(&self, pos: crate::planet::SurfacePos) -> bool {
-        let t = self.generator.climate_at(pos).t;
-        t < if self.season() == 3 { -0.05 } else { -0.35 }
+        self.weather_at_surface(pos).precipitation == crate::planet_atlas::PrecipitationForm::Snow
     }
 
-    /// Deserts stay dry: overcast skies, nothing falls.
+    /// Is any conservative precipitation transfer active in this column?
+    /// Deserts are not categorically vetoed; they simply receive little.
     pub fn rains_at_surface(&self, pos: crate::planet::SurfacePos) -> bool {
-        let c = self.generator.climate_at(pos);
-        !(c.t > 0.6 && c.h < -0.5)
+        self.weather_at_surface(pos).kind.precipitating()
     }
 
     // ---------------- ire (reciprocity) ----------------
@@ -298,11 +779,11 @@ impl World {
     /// (day rollover) — the moment offerings are accepted.
     pub fn tick_ire(&mut self, day_frac: f32) -> bool {
         // The wild breathes easier when the land drinks.
-        let decay = if self.weather.precipitating() {
-            5.0
-        } else {
-            4.0
-        };
+        let planetary_rain = self.planetary_weather.as_ref().is_some_and(|weather| {
+            weather.last_report.precipitation_units > 0
+                && weather.last_report.unexplained_water_drift == 0
+        });
+        let decay = if planetary_rain { 5.0 } else { 4.0 };
         self.add_ire(-decay * day_frac);
         // Grudges and gratitude both fade (2 per day toward zero).
         self.regional_ire.retain(|_, v| {
@@ -358,8 +839,17 @@ impl World {
     /// The season's appetite: what the wild wants brought this time
     /// of year, and how it says so. Fixed to the calendar — players
     /// learn the year, not a dice roll.
+    #[cfg(test)]
     pub fn season_want(&self) -> (usize, &'static str) {
-        match self.season() {
+        Self::want_for_season(self.season())
+    }
+
+    pub fn season_want_at_surface(&self, pos: crate::planet::SurfacePos) -> (usize, &'static str) {
+        Self::want_for_season(self.season_at_surface(pos))
+    }
+
+    fn want_for_season(season: usize) -> (usize, &'static str) {
+        match season {
             0 => (0, "The wild stirs. Seeds and saplings are welcome."),
             1 => (1, "The wild thirsts. Carried water is welcome."),
             2 => (2, "The wild gathers. First fruits are welcome."),
@@ -428,7 +918,6 @@ impl World {
     /// Dawn: the wild takes everything left on offering stones. Items are
     /// consumed regardless; the refund is capped at 10 per dawn.
     pub fn accept_offerings(&mut self) -> f32 {
-        let (want, _) = self.season_want();
         // The ire cells whose country has no spirit left to hear.
         let dead_country: std::collections::HashSet<RegionCell> = self
             .hearts
@@ -436,7 +925,7 @@ impl World {
             .filter(|h| h.stage == 0)
             .map(|h| RegionCell::from_surface(h.pos.surface()))
             .collect();
-        let mut taken: Vec<(RegionCell, ItemStack)> = Vec::new();
+        let mut taken: Vec<(RegionCell, usize, ItemStack)> = Vec::new();
         for (&pos, e) in self.block_entities.iter_mut() {
             let BlockEntity::Offering(o) = e else {
                 continue;
@@ -447,9 +936,19 @@ impl World {
             if dead_country.contains(&cell) {
                 continue;
             }
+            let latitude = crate::planet_atlas::latitude_longitude(crate::planet::surface_to_unit(
+                pos.surface().center(),
+            ))
+            .0;
+            let season = if self.long_winter {
+                3
+            } else {
+                crate::planet_atlas::local_season(self.day, latitude)
+            };
+            let (want, _) = Self::want_for_season(season);
             for slot in o.slots.iter_mut() {
                 if let Some(s) = slot.take() {
-                    taken.push((cell, s));
+                    taken.push((cell, want, s));
                 }
             }
         }
@@ -459,13 +958,16 @@ impl World {
         // The season's want counts double — a bonus for listening,
         // never a penalty — and every stone credits its own valley.
         let mut value = 0.0f32;
-        for (cell, s) in &taken {
+        for (cell, want, s) in &taken {
             let mut v = self.offering_value(s);
-            if self.satisfies_want(want, s) {
+            if self.satisfies_want(*want, s) {
                 v *= 2.0;
             }
             value += v;
             self.charge_cell(*cell, -v.min(6.0));
+        }
+        if let Err(error) = self.record_consumed_stacks(taken.iter().map(|(_, _, stack)| *stack)) {
+            eprintln!("materials: offering consumption accounting failed: {error}");
         }
         let refund = value.min(10.0);
         self.add_ire(-refund);

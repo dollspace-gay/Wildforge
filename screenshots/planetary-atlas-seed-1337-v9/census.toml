@@ -1,0 +1,540 @@
+cells = 393216
+physical_area = 341782637.7114258
+land_area = 120170066.96228027
+ocean_area = 221612570.7491455
+land_fraction = 0.3515979271707253
+ocean_fraction = 0.6484020728292746
+continent_and_island_count = 39
+elevation_histogram = [
+    135916,
+    10496,
+    16411,
+    92516,
+    122913,
+    8083,
+    5056,
+    1541,
+    284,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+]
+plate_count = 16
+craton_count = 9
+major_continent_count = 7
+chosen_geology_attempt = 0
+rejected_geology_attempts = 0
+largest_ocean_share = 0.9917086061301296
+oceanic_age_histogram = [
+    6423,
+    4974,
+    4914,
+    6474,
+    4820,
+    4754,
+    6309,
+    4716,
+    29300,
+    30966,
+    29448,
+    6648,
+]
+area_mean_temperature_c = 14.25098690852699
+minimum_temperature_c = -19.885498
+maximum_temperature_c = 32.301167
+area_mean_precipitation_mm = 1301.8740520613353
+maximum_precipitation_mm = 7979.3936
+area_mean_aridity = 1.5432745011126674
+maximum_aridity = 8.0
+drainage_edge_count = 137869
+river_length_blocks = 299289.95848826657
+river_receiver_distance_histogram = [
+    1519,
+    6128,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+]
+named_river_count = 878
+maximum_discharge = 90303.0
+maximum_channel_width_blocks = 30.3
+maximum_stream_order = 3
+ocean_basin_count = 24
+lake_count = 10
+terminal_lake_count = 7
+exorheic_lake_count = 3
+watershed_count = 12823
+floodplain_cells = 2224
+wetland_cells = 6062
+delta_cells = 557
+estuary_cells = 1637
+baseline_surface_water_units = 75745059763
+voxel_volume_residual = 608882147
+freshwater_units = 764816775365
+total_water_units = 3542941910093
+aquifer_storage_units = 694969114024
+resource_site_count = 61
+province_count = 500
+heart_count = 500
+country_route_count = 849
+
+[cells_by_face]
+neg_x = 65536
+neg_y = 65536
+neg_z = 65536
+pos_x = 65536
+pos_y = 65536
+pos_z = 65536
+
+[boundary_cells]
+convergent = 86492
+divergent = 112601
+interior = 169414
+transform = 24709
+
+[detailed_boundary_cells]
+continentalcollision = 54843
+continentalrift = 73262
+interior = 162509
+oceancontinentsubduction = 273
+oceanoceansubduction = 31376
+oceanridge = 39339
+passiveweak = 6905
+transform = 24709
+
+[bedrock_areas]
+basalt = 55818268.94415283
+evaporite = 10462144.225585938
+granite = 9341489.691894531
+limestone = 119306274.21435547
+marble = 689966.8541259766
+quartzite = 124563.55883789063
+sandstone = 44862410.45336914
+shale = 46379936.408447266
+slate = 185949.5551147461
+"ultramafic rock" = 54611633.80554199
+
+[volcanoes_by_source]
+continentalarc = 1
+hotspot = 20
+islandarc = 15
+oceanridge = 27
+rift = 51
+
+[intrusions_by_kind]
+batholith = 9
+carbonatite = 4
+dikeswarm = 27
+pluton = 7
+
+[deposits_by_mineral]
+chromite = 2
+cinnabar = 2
+coal = 9
+cobalt = 2
+copper = 9
+diamond = 2
+galena = 2
+geode = 2
+gold = 3
+halite = 2
+iron = 9
+manganese = 2
+"modded mineral" = 7
+pitchblende = 2
+"rare earth" = 3
+tin = 3
+
+[deposit_tonnage_by_mineral]
+chromite = 17496
+cinnabar = 17496
+coal = 78732
+cobalt = 17496
+copper = 78732
+diamond = 1014
+galena = 4332
+geode = 17496
+gold = 4332
+halite = 4332
+iron = 78732
+manganese = 17496
+"modded mineral" = 61236
+pitchblende = 1014
+"rare earth" = 1014
+tin = 6498
+
+[progression_sites_by_continent]
+landmass_10_chromite = 1
+landmass_10_coal = 1
+landmass_10_cobalt = 2
+landmass_10_copper = 2
+landmass_10_geode = 1
+landmass_10_halite = 1
+landmass_10_iron = 1
+"landmass_10_modded mineral" = 1
+landmass_11_coal = 2
+landmass_11_copper = 2
+landmass_11_geode = 1
+landmass_11_iron = 2
+"landmass_11_modded mineral" = 1
+landmass_11_pitchblende = 1
+landmass_11_tin = 1
+landmass_14_coal = 1
+landmass_14_copper = 1
+landmass_14_iron = 2
+"landmass_14_modded mineral" = 1
+"landmass_14_rare earth" = 2
+landmass_1_chromite = 1
+landmass_1_cinnabar = 1
+landmass_1_coal = 1
+landmass_1_copper = 1
+landmass_1_diamond = 1
+landmass_1_galena = 1
+landmass_1_gold = 2
+landmass_1_halite = 1
+landmass_1_iron = 1
+landmass_1_manganese = 2
+"landmass_1_modded mineral" = 1
+landmass_1_pitchblende = 1
+landmass_20_coal = 1
+landmass_20_copper = 1
+landmass_20_diamond = 1
+landmass_20_galena = 1
+landmass_20_iron = 1
+"landmass_20_modded mineral" = 1
+landmass_25_coal = 2
+landmass_25_copper = 1
+landmass_25_gold = 1
+landmass_25_iron = 1
+"landmass_25_modded mineral" = 1
+"landmass_25_rare earth" = 1
+landmass_25_tin = 1
+landmass_27_cinnabar = 1
+landmass_5_coal = 1
+landmass_5_copper = 1
+landmass_5_iron = 1
+"landmass_5_modded mineral" = 1
+landmass_5_tin = 1
+
+[climate_zone_areas]
+dry = 101147971.43511963
+polar = 57583922.61932373
+temperate = 69957341.4407959
+tropical = 113093402.21618652
+
+[biome_areas]
+1 = 1461533.948852539
+2 = 585068.1724853516
+3 = 57223871.120788574
+4 = 3938030.164794922
+5 = 1113061.1806640625
+6 = 12416181.465270996
+7 = 8684341.403320313
+8 = 57929.67663574219
+10 = 12009038.796264648
+11 = 14867586.592834473
+12 = 7813424.440368652
+13 = 221612570.7491455
+
+[biome_area_by_latitude_band]
+biome_10_band_3 = 82844.6128540039
+biome_10_band_4 = 4140756.327026367
+biome_10_band_5 = 2544884.901916504
+biome_10_band_6 = 2363766.837524414
+biome_10_band_7 = 2766769.305419922
+biome_10_band_8 = 110016.8115234375
+biome_11_band_1 = 939779.8232421875
+biome_11_band_10 = 6243867.709289551
+biome_11_band_11 = 1257339.8959350586
+biome_11_band_2 = 3268271.062927246
+biome_11_band_9 = 3158328.1014404297
+biome_12_band_2 = 178960.7251586914
+biome_12_band_3 = 3091905.3228149414
+biome_12_band_4 = 23106.493713378906
+biome_12_band_7 = 15351.853820800781
+biome_12_band_8 = 4248213.436767578
+biome_12_band_9 = 255886.60809326172
+biome_13_band_0 = 5476263.027587891
+biome_13_band_1 = 14004289.90814209
+biome_13_band_10 = 6950388.236206055
+biome_13_band_11 = 2318113.0659179688
+biome_13_band_2 = 17396980.80908203
+biome_13_band_3 = 26850587.53363037
+biome_13_band_4 = 23215766.26965332
+biome_13_band_5 = 26317404.622192383
+biome_13_band_6 = 27102853.014526367
+biome_13_band_7 = 28907648.9954834
+biome_13_band_8 = 25416557.97479248
+biome_13_band_9 = 17655717.291931152
+biome_1_band_2 = 8216.138244628906
+biome_1_band_3 = 760954.8706665039
+biome_1_band_8 = 689730.3302612305
+biome_1_band_9 = 2632.6096801757813
+biome_2_band_2 = 9849.190002441406
+biome_2_band_3 = 328389.38037109375
+biome_2_band_8 = 246829.6021118164
+biome_3_band_3 = 3473889.4193725586
+biome_3_band_4 = 12701263.790466309
+biome_3_band_5 = 14223868.386657715
+biome_3_band_6 = 13742956.150512695
+biome_3_band_7 = 8934562.428649902
+biome_3_band_8 = 4147330.9451293945
+biome_4_band_4 = 1181449.8505859375
+biome_4_band_5 = 1136827.6981201172
+biome_4_band_6 = 1005173.216003418
+biome_4_band_7 = 614579.4000854492
+biome_5_band_2 = 27712.71270751953
+biome_5_band_3 = 636364.9786987305
+biome_5_band_8 = 443660.45568847656
+biome_5_band_9 = 5323.0335693359375
+biome_6_band_2 = 6213181.206237793
+biome_6_band_3 = 118974.81762695313
+biome_6_band_8 = 22879.052307128906
+biome_6_band_9 = 6061146.389099121
+biome_7_band_0 = 347058.86865234375
+biome_7_band_1 = 2113992.393371582
+biome_7_band_10 = 3857914.6576538086
+biome_7_band_11 = 2246190.2451171875
+biome_7_band_2 = 77523.71398925781
+biome_7_band_9 = 41661.52453613281
+biome_8_band_10 = 5891.5216064453125
+biome_8_band_11 = 1678.6892700195313
+biome_8_band_6 = 8236.390319824219
+biome_8_band_7 = 23430.747985839844
+biome_8_band_8 = 18692.32745361328
+
+[biome_area_by_continent]
+biome_10_continent_1 = 2412949.362060547
+biome_10_continent_10 = 3380315.9849243164
+biome_10_continent_11 = 1490075.4786376953
+biome_10_continent_14 = 432203.9675292969
+biome_10_continent_15 = 7809.466979980469
+biome_10_continent_16 = 21743.97772216797
+biome_10_continent_17 = 14790.011779785156
+biome_10_continent_18 = 10418.655700683594
+biome_10_continent_28 = 1163670.6246948242
+biome_10_continent_29 = 2537.5283813476563
+biome_10_continent_3 = 279916.87481689453
+biome_10_continent_30 = 100395.90167236328
+biome_10_continent_34 = 387178.3133544922
+biome_10_continent_35 = 5965.407897949219
+biome_10_continent_36 = 2717.95068359375
+biome_10_continent_37 = 64960.48193359375
+biome_10_continent_38 = 180151.14807128906
+biome_10_continent_4 = 52172.64044189453
+biome_10_continent_5 = 1993906.4672851563
+biome_10_continent_6 = 835.9114379882813
+biome_10_continent_7 = 4322.6402587890625
+biome_11_continent_1 = 1335592.7001342773
+biome_11_continent_14 = 2879550.8247680664
+biome_11_continent_19 = 373404.41748046875
+biome_11_continent_20 = 7363584.721984863
+biome_11_continent_21 = 870.5574951171875
+biome_11_continent_22 = 870.2335815429688
+biome_11_continent_23 = 6145.666564941406
+biome_11_continent_25 = 2007489.3579711914
+biome_11_continent_26 = 15844.455993652344
+biome_11_continent_27 = 884233.6568603516
+biome_12_continent_1 = 3790422.7619628906
+biome_12_continent_10 = 837556.4495239258
+biome_12_continent_11 = 25419.376953125
+biome_12_continent_14 = 3003248.6529541016
+biome_12_continent_19 = 35604.20458984375
+biome_12_continent_25 = 103329.90313720703
+biome_12_continent_28 = 3356.8903198242188
+biome_12_continent_3 = 857.00146484375
+biome_12_continent_30 = 2625.9676513671875
+biome_12_continent_5 = 11003.231811523438
+biome_1_continent_1 = 518327.6508178711
+biome_1_continent_10 = 268559.27166748047
+biome_1_continent_11 = 121967.25036621094
+biome_1_continent_14 = 388496.6441040039
+biome_1_continent_19 = 78779.72235107422
+biome_1_continent_2 = 4615.0513916015625
+biome_1_continent_25 = 25140.305786132813
+biome_1_continent_28 = 2429.8324584960938
+biome_1_continent_30 = 7028.624450683594
+biome_1_continent_31 = 1800.7650146484375
+biome_1_continent_32 = 15164.879760742188
+biome_1_continent_33 = 11505.062561035156
+biome_1_continent_8 = 4628.9615478515625
+biome_1_continent_9 = 13089.926574707031
+biome_2_continent_1 = 234529.0877685547
+biome_2_continent_10 = 123989.99224853516
+biome_2_continent_11 = 17525.811889648438
+biome_2_continent_14 = 139185.0386352539
+biome_2_continent_19 = 30720.32501220703
+biome_2_continent_25 = 39117.916931152344
+biome_3_continent_1 = 13211003.510803223
+biome_3_continent_10 = 14576780.16418457
+biome_3_continent_11 = 13359568.619995117
+biome_3_continent_14 = 3597271.6459960938
+biome_3_continent_15 = 9551.482666015625
+biome_3_continent_16 = 22620.901000976563
+biome_3_continent_28 = 1315231.1086425781
+biome_3_continent_3 = 168100.5464477539
+biome_3_continent_30 = 20092.143188476563
+biome_3_continent_34 = 379502.03662109375
+biome_3_continent_37 = 59070.878662109375
+biome_3_continent_38 = 21815.528076171875
+biome_3_continent_4 = 32210.488525390625
+biome_3_continent_5 = 10451052.065979004
+biome_4_continent_1 = 816256.0391235352
+biome_4_continent_10 = 1218145.4568481445
+biome_4_continent_11 = 580880.8508911133
+biome_4_continent_12 = 1695.0576782226563
+biome_4_continent_13 = 846.3886108398438
+biome_4_continent_14 = 46866.752685546875
+biome_4_continent_28 = 154065.22930908203
+biome_4_continent_29 = 2538.20458984375
+biome_4_continent_3 = 224562.8739013672
+biome_4_continent_30 = 42524.89178466797
+biome_4_continent_34 = 202497.2046508789
+biome_4_continent_35 = 3404.9917602539063
+biome_4_continent_36 = 13637.3349609375
+biome_4_continent_37 = 47524.04718017578
+biome_4_continent_38 = 103850.73712158203
+biome_4_continent_39 = 8376.440856933594
+biome_4_continent_5 = 465285.07287597656
+biome_4_continent_6 = 3343.8076171875
+biome_4_continent_7 = 1728.7823486328125
+biome_5_continent_1 = 431952.57189941406
+biome_5_continent_10 = 281317.40295410156
+biome_5_continent_11 = 28898.050903320313
+biome_5_continent_14 = 290735.25646972656
+biome_5_continent_19 = 18295.545288085938
+biome_5_continent_25 = 60107.40881347656
+biome_5_continent_30 = 1754.9443359375
+biome_6_continent_1 = 2533494.7357177734
+biome_6_continent_10 = 39964.15008544922
+biome_6_continent_14 = 3784417.668334961
+biome_6_continent_19 = 1024573.2395629883
+biome_6_continent_20 = 814086.4819946289
+biome_6_continent_25 = 3961865.987915039
+biome_6_continent_27 = 257779.20166015625
+biome_7_continent_1 = 184324.14349365234
+biome_7_continent_14 = 1657396.7556152344
+biome_7_continent_19 = 3463.3975830078125
+biome_7_continent_20 = 4484906.274108887
+biome_7_continent_24 = 16056.520751953125
+biome_7_continent_25 = 2224386.699523926
+biome_7_continent_26 = 877.5502319335938
+biome_7_continent_27 = 112930.06201171875
+biome_8_continent_1 = 36614.189880371094
+biome_8_continent_10 = 2531.714111328125
+biome_8_continent_11 = 5704.676208496094
+biome_8_continent_14 = 5508.885559082031
+biome_8_continent_20 = 7570.210876464844
+
+[biome_area_by_elevation_band]
+biome_10_elevation_0 = 11417421.31036377
+biome_10_elevation_1 = 591617.4859008789
+biome_11_elevation_0 = 14597359.320007324
+biome_11_elevation_1 = 270227.27282714844
+biome_12_elevation_0 = 7198329.246704102
+biome_12_elevation_1 = 572175.5313110352
+biome_12_elevation_2 = 42919.662353515625
+biome_13_elevation_-1 = 94654323.24230957
+biome_13_elevation_-2 = 126957387.50036621
+biome_13_elevation_0 = 860.0064697265625
+biome_1_elevation_0 = 1450346.5466918945
+biome_1_elevation_1 = 11187.402160644531
+biome_2_elevation_0 = 576276.9431762695
+biome_2_elevation_1 = 8791.229309082031
+biome_3_elevation_0 = 53844851.16540527
+biome_3_elevation_1 = 3170336.0266723633
+biome_3_elevation_2 = 208683.9287109375
+biome_4_elevation_0 = 3937164.3533935547
+biome_4_elevation_1 = 865.8114013671875
+biome_5_elevation_0 = 1091186.3557739258
+biome_5_elevation_1 = 21874.82489013672
+biome_6_elevation_0 = 11762433.892456055
+biome_6_elevation_1 = 653747.5728149414
+biome_7_elevation_0 = 8231942.4201049805
+biome_7_elevation_1 = 452398.98321533203
+biome_8_elevation_1 = 56140.9189453125
+biome_8_elevation_2 = 1788.7576904296875
+
+[biome_area_by_water_availability]
+biome_10_aquatic = 1893639.721069336
+biome_10_water_connected = 10115399.075195313
+biome_11_aquatic = 1146527.7805786133
+biome_11_water_connected = 12502842.897399902
+biome_11_water_limited = 1218215.914855957
+biome_12_aquatic = 208087.79724121094
+biome_12_water_connected = 7120444.599304199
+biome_12_water_limited = 484892.0438232422
+biome_13_aquatic = 221612570.7491455
+biome_1_aquatic = 722203.2200317383
+biome_1_water_connected = 739330.7288208008
+biome_2_aquatic = 116337.42840576172
+biome_2_water_connected = 468730.74407958984
+biome_3_aquatic = 1431157.8444213867
+biome_3_water_connected = 52793815.93261719
+biome_3_water_limited = 2998897.34375
+biome_4_aquatic = 3033155.960510254
+biome_4_water_connected = 904874.204284668
+biome_5_aquatic = 72363.23315429688
+biome_5_water_connected = 1040697.9475097656
+biome_6_aquatic = 570430.2680664063
+biome_6_water_connected = 10340882.5914917
+biome_6_water_limited = 1504868.6057128906
+biome_7_aquatic = 1158738.5149536133
+biome_7_water_connected = 7191279.185852051
+biome_7_water_limited = 334323.70251464844
+biome_8_water_connected = 56249.26788330078
+biome_8_water_limited = 1680.4087524414063
+
+[habitat_areas]
+alpine = 119232.06707763672
+beach_dune = 4323613.831481934
+brackish = 1427113.2161865234
+cave_aquifer_outlet = 671979.4708862305
+estuary_delta = 1910492.1602172852
+floodplain = 1933655.9619140625
+freshwater = 8881956.589050293
+lakeshore = 44074.2724609375
+marine = 221656142.7123413
+oasis = 889851.5765380859
+permafrost = 44571756.54937744
+riparian = 109920695.69592285
+spring = 1387206.295288086
+volcanic_soil = 125898075.45794678
+wetland = 5479414.670349121
+
+[lake_classes]
+seasonalplaya = 6
+throughflowfresh = 3
+volcaniccrater = 1
+
+[nearest_resource_distance_bands]
+0 = 61
+"1-512 blocks" = 45674
+"2049-4096 blocks" = 93398
+"4097+ blocks" = 736
+"513-2048 blocks" = 253347
+unavailable = 0
+
+[max_nearest_deposit_distance_blocks]
+chromite = 11788.820409013508
+cinnabar = 11546.718675873426
+coal = 5631.734051485673
+cobalt = 13418.70778208099
+copper = 5734.514323361006
+diamond = 9584.373770354454
+galena = 10035.54623733885
+geode = 11889.924134984334
+gold = 13619.30587102789
+halite = 11526.4505242615
+iron = 6078.217490262769
+manganese = 13156.01110080396
+pitchblende = 9151.944566063516
+"rare earth" = 10559.928458130233
+tin = 11981.50067537396

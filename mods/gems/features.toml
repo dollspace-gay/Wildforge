@@ -4,4 +4,72 @@ block = "gems:ruby_ore"
 replaces = "base:stone"
 vein_size = 4
 per_chunk = 2
-y_range = [4, 24]
+y_range = [4, 120]
+
+# Finite mod-mineral provinces inherit the planet's actual basement. Declare
+# each exact host instead of pretending every continent is generic stone.
+# The per-deposit quota is shared by all of these feature variants, so this
+# broadens geological compatibility without multiplying the finite reserve.
+[[feature]]
+type = "ore"
+block = "gems:ruby_ore"
+replaces = "base:basalt"
+vein_size = 4
+per_chunk = 2
+y_range = [4, 120]
+
+[[feature]]
+type = "ore"
+block = "gems:ruby_ore"
+replaces = "base:sandstone"
+vein_size = 4
+per_chunk = 2
+y_range = [4, 120]
+
+[[feature]]
+type = "ore"
+block = "gems:ruby_ore"
+replaces = "base:limestone"
+vein_size = 4
+per_chunk = 2
+y_range = [4, 120]
+
+[[feature]]
+type = "ore"
+block = "gems:ruby_ore"
+replaces = "base:shale"
+vein_size = 4
+per_chunk = 2
+y_range = [4, 120]
+
+[[feature]]
+type = "ore"
+block = "gems:ruby_ore"
+replaces = "base:granite"
+vein_size = 4
+per_chunk = 2
+y_range = [4, 120]
+
+[[feature]]
+type = "ore"
+block = "gems:ruby_ore"
+replaces = "base:marble"
+vein_size = 4
+per_chunk = 2
+y_range = [4, 120]
+
+[[feature]]
+type = "ore"
+block = "gems:ruby_ore"
+replaces = "base:slate"
+vein_size = 4
+per_chunk = 2
+y_range = [4, 120]
+
+[[feature]]
+type = "ore"
+block = "gems:ruby_ore"
+replaces = "base:quartzite"
+vein_size = 4
+per_chunk = 2
+y_range = [4, 120]

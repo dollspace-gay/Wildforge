@@ -1,0 +1,7 @@
+layer = boundary_strike
+description = local strike of the nearest connected boundary run
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = direction
+minimum = -3.141565217
+maximum = 3.141592654
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue
