@@ -45,7 +45,13 @@ impl Game {
         }
         let save_dir = PathBuf::from("saves").join(name);
         let reg = self.content.reg.clone();
-        let profile_path = identity::local_profile_path(&save_dir, self.identity.device_id()).ok();
+        // The profile directory must not be created before the world is:
+        // `create_world_atomic` refuses a destination that already exists, so
+        // making `saves/<name>/players/` here first turned every fresh
+        // `WILDFORGE_WORLD` creation into "world path already exists". Capture
+        // the device id now and defer the profile-path setup into the worker,
+        // after the world has been created or loaded.
+        let device_id = self.identity.device_id();
         // Dev: WILDFORGE_SPAWN="face,u,v" bypasses the persisted common
         // homeland so visual fixtures can still pin an exact atlas site.
         let override_wanted = std::env::var("WILDFORGE_SPAWN").ok().and_then(|s| {
@@ -62,8 +68,9 @@ impl Game {
         let complete_name = name.to_owned();
         std::thread::spawn(move || {
             let result = (|| -> Result<_, String> {
-                let mut world = World::load_or_create(save_dir, reg)
+                let mut world = World::load_or_create(save_dir.clone(), reg)
                     .map_err(|error| format!("could not open world: {error}"))?;
+                let profile_path = identity::local_profile_path(&save_dir, device_id).ok();
                 let material_policy_notices = world
                     .material_ledger
                     .as_ref()
