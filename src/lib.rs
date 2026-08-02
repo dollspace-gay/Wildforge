@@ -8,6 +8,7 @@
 mod agent;
 mod atlas;
 mod audio;
+mod bounce;
 mod camera;
 mod chunk;
 mod config;

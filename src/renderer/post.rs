@@ -14,6 +14,11 @@ pub(super) struct PostTargets {
     pub(super) blur_v_bg: wgpu::BindGroup, // bloom_b -> bloom_a
     pub(super) composite_scene_bg: wgpu::BindGroup, // hdr  (group 0)
     pub(super) composite_bloom_bg: wgpu::BindGroup, // bloom_a (group 1)
+    /// Filler for group 1 of the bright pass, which shares the composite's
+    /// layout so it can read the exposure at group 2 but never touches group 1.
+    /// Points at the scene rather than at bloom_a, because bloom_a is what that
+    /// pass is writing and a pass may not sample its own target.
+    pub(super) bright_aux_bg: wgpu::BindGroup,
 }
 
 pub(super) fn create_post_targets(
@@ -80,6 +85,7 @@ pub(super) fn create_post_targets(
         blur_v_bg: in_bg("blur-v-bg", &bloom_b),
         composite_scene_bg: in_bg("composite-scene-bg", &hdr_view),
         composite_bloom_bg: tex_bg("composite-bloom-bg", &bloom_a),
+        bright_aux_bg: tex_bg("bright-aux-bg", &hdr_view),
         hdr_view,
         bloom_a,
         bloom_b,

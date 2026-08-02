@@ -1076,3 +1076,53 @@ fn export_png(
     enc.write_header()?.write_image_data(data)?;
     Ok(())
 }
+
+/// Mean albedo of every atlas slot, as a linear-light reflectance byte triple.
+///
+/// Bounced light needs to know what colour a surface hands back, and at one
+/// grid cell per block a whole tile collapses to a single colour anyway — the
+/// bounce is low-frequency, so the detail a tile carries is detail the bounce
+/// could not represent.
+///
+/// The average is taken in linear light, not over the stored sRGB bytes. Those
+/// bytes are a display encoding; adding them up and calling the total a
+/// reflectance overstates every mixed tile, because sRGB spends most of its
+/// range on the darks. The result is stored back as a plain linear fraction of
+/// 255, so the shader reads it with a divide and nothing else.
+///
+/// Fully transparent texels are skipped — a cross-shaped plant tile is mostly
+/// nothing, and averaging that nothing in would report every leaf as near-black.
+pub fn slot_albedo(color: &[u8], px: u32) -> Vec<[u8; 3]> {
+    let tp = px / ATLAS_TILES;
+    let to_linear = |b: u8| {
+        let s = b as f32 / 255.0;
+        if s <= 0.04045 {
+            s / 12.92
+        } else {
+            ((s + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let mut out = vec![[0u8; 3]; (ATLAS_TILES * ATLAS_TILES) as usize];
+    for (slot, mean) in out.iter_mut().enumerate() {
+        let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
+        let (mut sum, mut n) = ([0.0f32; 3], 0u32);
+        for y in 0..tp {
+            for x in 0..tp {
+                let i = (((ty * tp + y) * px + tx * tp + x) * 4) as usize;
+                if color[i + 3] == 0 {
+                    continue;
+                }
+                for c in 0..3 {
+                    sum[c] += to_linear(color[i + c]);
+                }
+                n += 1;
+            }
+        }
+        if n > 0 {
+            for c in 0..3 {
+                mean[c] = (sum[c] / n as f32 * 255.0).round().clamp(0.0, 255.0) as u8;
+            }
+        }
+    }
+    out
+}

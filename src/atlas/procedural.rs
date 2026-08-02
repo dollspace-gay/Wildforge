@@ -2307,6 +2307,23 @@ pub fn build_procedural(tp: u32) -> Vec<u8> {
         });
     }
 
+    // Slots 20-22: pigmented plaster — a lime render carrying one of the
+    // ground mineral pigments. Deliberately near-flat and strongly saturated:
+    // these are the surfaces a bounce-lighting test needs, where the colour a
+    // room takes on has one unambiguous cause. Mottling stays low-amplitude so
+    // a block's mean albedo actually describes it.
+    for (slot, base, grain) in [
+        (20u32, [196.0, 44.0, 38.0], [172.0, 58.0, 46.0]), // cinnabar red
+        (21, [40.0, 68.0, 198.0], [56.0, 82.0, 176.0]),    // cobalt blue
+        (22, [232.0, 228.0, 218.0], [212.0, 208.0, 198.0]), // bare lime white
+    ] {
+        tile(slot, &mut |px, py, u, v| {
+            let t = fbm(u, v, 4, 940 + slot);
+            let c = mix3(base, grain, t * 0.6);
+            rgba(c, speck(px, py, 943 + slot, 0.045), 255)
+        });
+    }
+
     // Row 2: item icons — 16px pixel art scaled up nearest-neighbor so it
     // stays crisp at any atlas resolution.
     let icons: [(u32, &[&str; 16], [f32; 3]); 7] = [

@@ -250,6 +250,9 @@ pub fn builtin_slots() -> std::collections::HashMap<String, u16> {
         ("player_moustache", crate::style::EXTRA_BASE + 2),
         ("player_beard_trim", crate::style::EXTRA_BASE + 3),
         ("player_beard_full", crate::style::EXTRA_BASE + 4),
+        ("red_plaster", 20),
+        ("blue_plaster", 21),
+        ("white_plaster", 22),
         ("unknown", 15),
         ("crack1", 16),
         ("crack2", 17),
@@ -267,7 +270,7 @@ mod season;
 
 pub use packs::{
     LayerParams, MAX_LAYERS, PackInfo, TileVariants, build_atlas, discover_packs,
-    embedded_base_tile, pack_chain, pack_source_of,
+    embedded_base_tile, pack_chain, pack_source_of, slot_albedo,
 };
 #[cfg(test)]
 pub(crate) use packs::{

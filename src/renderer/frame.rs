@@ -5,6 +5,62 @@ use super::*;
 /// Dev shadow-debug viz mode (WILDFORGE_SHADOW_DEBUG), read once. 0 = off;
 /// 1 = red-where-occluded, 2 = raw shadow factor, 3 = cube-face id,
 /// 4 = depth-compare margin. Rides in the uniform's pt_count.z.
+/// How much of the ambient floor a fully occluded corner keeps. 1 disables
+/// corner darkening entirely; 0 lets corners reach black. `WILDFORGE_AO_FLOOR`.
+fn ao_floor() -> f32 {
+    use std::sync::OnceLock;
+    static A: OnceLock<f32> = OnceLock::new();
+    *A.get_or_init(|| {
+        std::env::var("WILDFORGE_AO_FLOOR")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|v: &f32| (0.0..=1.0).contains(v))
+            .unwrap_or(0.1)
+    })
+}
+
+/// Scene value that maps to display white; past it the curve compresses rather
+/// than clips. Lower means the highlights roll sooner and the image reads
+/// brighter overall — at 8 the picture goes grey, because almost nothing in it
+/// is ever allowed to reach white. `WILDFORGE_WHITE` overrides it.
+fn white_point() -> f32 {
+    use std::sync::OnceLock;
+    static W: OnceLock<f32> = OnceLock::new();
+    *W.get_or_init(|| {
+        std::env::var("WILDFORGE_WHITE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|v: &f32| *v >= 0.25 && *v <= 64.0)
+            .unwrap_or(2.0)
+    })
+}
+
+/// What the exposure stops down to under full daylight.
+const DAY_EXPOSURE: f32 = 0.45;
+
+/// Scene exposure applied before the tone curve. `WILDFORGE_EXPOSURE` overrides
+/// it — the knob to reach for when the whole image reads too dark or too hot,
+/// as distinct from any one light being wrong.
+fn exposure(daylight: f32) -> f32 {
+    use std::sync::OnceLock;
+    static E: OnceLock<Option<f32>> = OnceLock::new();
+    let forced = *E.get_or_init(|| {
+        std::env::var("WILDFORGE_EXPOSURE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|v: &f32| *v > 0.0 && *v <= 64.0)
+    });
+    if let Some(e) = forced {
+        return e;
+    }
+    // Stopped down by day, open at night — an eye adapting, and the only way
+    // to spend a brighter sun on contrast rather than on brightness. Exposing
+    // for daylight is what makes its shadows deep; holding exposure flat just
+    // makes the whole image paler. Night keeps the old exposure exactly, so
+    // torchlight and moonlight read as they always did.
+    1.0 - (1.0 - DAY_EXPOSURE) * daylight.clamp(0.0, 1.0)
+}
+
 fn shadow_debug() -> u32 {
     use std::sync::OnceLock;
     static M: OnceLock<u32> = OnceLock::new();
@@ -70,7 +126,7 @@ impl Renderer {
                 self.config.height as f32,
             ],
             sun_dir: [f.sun_dir.x, f.sun_dir.y, f.sun_dir.z, 0.0],
-            sun_col: [f.sun_col.x, f.sun_col.y, f.sun_col.z, 0.0],
+            sun_col: [f.sun_col.x, f.sun_col.y, f.sun_col.z, ao_floor()],
             amb_col: [f.amb_col.x, f.amb_col.y, f.amb_col.z, f.ambient_floor],
             light_vp: light_vp.map(|m| m.to_cols_array_2d()),
             pt_count: [
@@ -121,6 +177,14 @@ impl Renderer {
                 self.atlas_interior_base as i32,
             ],
             layer: self.atlas_layer_params,
+            room_sh: {
+                let mut a = [[0.0f32; 4]; 4];
+                for (i, c) in f.room_sh.iter().enumerate() {
+                    a[i] = [c.x, c.y, c.z, 0.0];
+                }
+                a[0][3] = f.room_intensity;
+                a
+            },
         };
         // Upload a fresh occupancy grid when the camera crossed into a new region.
         if let Some(bytes) = f.occ_update {
@@ -588,13 +652,15 @@ impl Renderer {
         self.queue.write_buffer(
             &self.post_params_buf,
             0,
-            bytemuck::cast_slice(&[f.bloom.max(0.0), night, 0.0, 0.0]),
+            bytemuck::cast_slice(&[f.bloom.max(0.0), night, exposure(f.daylight), white_point()]),
         );
         {
             let mut bp = post_pass(&mut encoder, "bloom-bright", &self.post.bloom_a);
             if bloom_on {
                 bp.set_pipeline(&self.bright_pipeline);
                 bp.set_bind_group(0, &self.post.bright_bg, &[]);
+                bp.set_bind_group(1, &self.post.bright_aux_bg, &[]);
+                bp.set_bind_group(2, &self.post_params_bg, &[]);
                 bp.draw(0..3, 0..1);
             }
         }
