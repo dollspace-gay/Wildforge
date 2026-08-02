@@ -407,19 +407,127 @@ name = "Living Wood"
 texture = "@living_wood"
 
 [[item]]
+id = "thorn_fiber"
+name = "Thorn Fiber"
+texture = "@plant_fiber"
+arcane = { capacity = 256, conductivity = 700, stability = 300, resonance = { root = 3, gale = 1 }, on_destroy = "ambient" }
+
+[[item]]
+id = "dryad_heartwood"
+name = "Dryad Heartwood"
+texture = "@living_wood"
+arcane = { capacity = 768, conductivity = 550, stability = 750, resonance = { root = 5, echo = 1 }, on_destroy = "ambient" }
+
+[[item]]
 id = "ember"
 name = "Ember"
 texture = "@ember"
+arcane = { capacity = 512, conductivity = 900, stability = 250, resonance = { ember = 6, gale = 1 }, on_destroy = "dross" }
 
 [[item]]
 id = "frost_shard"
 name = "Frost Shard"
 texture = "@frost_shard"
+arcane = { capacity = 512, conductivity = 850, stability = 500, resonance = { tide = 5, echo = 1 }, on_destroy = "ambient" }
+
+# Harvests from the living Current. The stack is singular because its exact
+# charge follows it through the arcane ledger.
+[[item]]
+id = "rainbell_dew"
+name = "Rainbell Dew"
+texture = "cattail.png"
+places = "base:rainbell"
+arcane = { capacity = 96, conductivity = 610, stability = 520, resonance = { tide = 4, root = 1 }, on_destroy = "ambient" }
+
+[[item]]
+id = "hushwood_switch"
+name = "Hushwood Switch"
+texture = "heart_tree.png"
+places = "base:hushwood"
+arcane = { capacity = 320, conductivity = 260, stability = 920, resonance = { root = 4, echo = 2, stone = 1 }, on_destroy = "ambient" }
+
+[[item]]
+id = "stormvine_tendril"
+name = "Stormvine Tendril"
+texture = "heart_tree_top.png"
+places = "base:stormvine"
+arcane = { capacity = 400, conductivity = 930, stability = 220, resonance = { gale = 5, tide = 2, ember = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "cairnbloom_flower"
+name = "Cairnbloom Flower"
+texture = "meadow_bloom.png"
+places = "base:cairnbloom"
+arcane = { capacity = 72, conductivity = 760, stability = 560, resonance = { gale = 3, stone = 3 }, on_destroy = "ambient" }
+
+[[item]]
+id = "ashlace_tissue"
+name = "Ashlace Tissue"
+texture = "lantern_fungus.png"
+places = "base:ashlace"
+arcane = { capacity = 176, conductivity = 410, stability = 700, resonance = { echo = 3, stone = 2, root = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "pilgrim_root_cutting"
+name = "Pilgrim Root Cutting"
+texture = "leaf_litter.png"
+places = "base:pilgrim_root"
+arcane = { capacity = 144, conductivity = 940, stability = 540, resonance = { root = 5, echo = 1 }, on_destroy = "ambient" }
+
+[[item]]
+id = "lantern_reed_pith"
+name = "Lantern Reed Pith"
+texture = "cattail.png"
+places = "base:lantern_reed"
+arcane = { capacity = 240, conductivity = 520, stability = 620, resonance = { tide = 3, echo = 2, root = 1 }, on_destroy = "ambient" }
+
+[[item]]
+id = "nightglass_pod"
+name = "Nightglass Pod"
+texture = "arctic_seed.png"
+places = "base:nightglass"
+arcane = { capacity = 208, conductivity = 430, stability = 780, resonance = { stone = 3, tide = 2, echo = 1 }, on_destroy = "ambient" }
+
+[[item]]
+id = "frostlace_frond"
+name = "Frostlace Frond"
+texture = "tundra_seed.png"
+places = "base:frostlace"
+arcane = { capacity = 280, conductivity = 240, stability = 950, resonance = { stone = 4, gale = 2 }, on_destroy = "ambient" }
+
+[[item]]
+id = "tidekelp_blade"
+name = "Tidekelp Blade"
+texture = "kelp_item.png"
+places = "base:tidekelp"
+arcane = { capacity = 128, conductivity = 980, stability = 460, resonance = { tide = 5, gale = 1 }, on_destroy = "ambient" }
+
+[[item]]
+id = "echo_cap_ring"
+name = "Echo Cap Ring"
+texture = "@mushroom"
+places = "base:echo_cap"
+arcane = { capacity = 192, conductivity = 570, stability = 680, resonance = { echo = 5, root = 1 }, on_destroy = "ambient" }
+
+[[item]]
+id = "ember_petal"
+name = "Ember Petal"
+texture = "ember_poppy.png"
+places = "base:ember_poppy"
+arcane = { capacity = 120, conductivity = 820, stability = 260, resonance = { ember = 5, root = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "wellglass_shard"
+name = "Wellglass Shard"
+texture = "amethyst_shard.png"
+material_class = "exceptional"
+arcane = { capacity = 320, conductivity = 740, stability = 840, resonance = { stone = 3, tide = 1, echo = 1 }, on_destroy = "dross" }
 
 [[item]]
 id = "heartwood"
 name = "Heartwood"
 texture = "@heartwood"
+arcane = { capacity = 2048, conductivity = 650, stability = 900, resonance = { root = 5, stone = 2, echo = 1 }, on_destroy = "scar" }
 
 # ---- bows & ammo ----
 
@@ -703,10 +811,144 @@ texture = "@old_coin"
 
 [[item]]
 id = "etched_tablet"
-name = "Etched Tablet"
+name = "Maker's Tablet"
 texture = "@etched_tablet"
-max_stack = 16
+max_stack = 1
 tablet = true
+observation = { categories = ["archaeology"], properties = ["condition", "resonance"] }
+discovery = { kind = "artifact", evidence_class = "maker_tablet", authored_text = [
+  "The hand is not the source. It only gives the Current a road.",
+  "We agreed on the measure and disagreed on what the measure permitted.",
+  "Nothing was made. The working borrowed, carried, and returned.",
+  "Mara would seal every foul remainder. Oren called containment another kind of taking."
+] }
+
+[[item]]
+id = "maker_calibration_plate"
+name = "Maker's Calibration Plate"
+texture = "shale.png"
+max_stack = 1
+tablet = true
+observation = { categories = ["archaeology", "apparatus"], properties = ["stability", "resonance"] }
+discovery = { kind = "calibration_plate", evidence_class = "calibration_plate", calibration = "plate", authored_text = [
+  "Set the slate at still water; distrust the first answer.",
+  "Two marks agreed. The third wandered after the wellglass warmed."
+] }
+
+[[item]]
+id = "spent_charm_fitting"
+name = "Spent Charm Fitting"
+texture = "@bronze_ingot"
+max_stack = 1
+tablet = true
+observation = { categories = ["archaeology", "apparatus"], properties = ["condition", "resonance"] }
+discovery = { kind = "artifact", evidence_class = "spent_charm_fitting" }
+
+[[item]]
+id = "broken_focus"
+name = "Broken Focus"
+texture = "crystal_lens.png"
+max_stack = 1
+tablet = true
+observation = { categories = ["archaeology", "apparatus"], properties = ["stability", "condition"] }
+discovery = { kind = "artifact", evidence_class = "broken_focus" }
+
+[[item]]
+id = "sealed_dross_ampoule"
+name = "Sealed Dross Ampoule"
+texture = "crystal_lens.png"
+max_stack = 1
+tablet = true
+material_class = "exceptional"
+arcane = { capacity = 192, conductivity = 80, stability = 980, resonance = { echo = 2, stone = 2, ember = 1 }, on_destroy = "dross" }
+observation = { categories = ["archaeology", "sample"], properties = ["strength", "stability", "dross", "resonance"] }
+discovery = { kind = "artifact", evidence_class = "sealed_dross_ampoule" }
+
+[[item]]
+id = "site_survey_marks"
+name = "Maker's Site Survey"
+texture = "@etched_tablet"
+max_stack = 1
+tablet = true
+observation = { categories = ["archaeology", "region"], properties = ["strength", "drift", "resonance"] }
+discovery = { kind = "artifact", evidence_class = "site_survey_marks" }
+
+[[item]]
+id = "failed_containment_fragment"
+name = "Failed Containment Fragment"
+texture = "shale.png"
+max_stack = 1
+tablet = true
+observation = { categories = ["archaeology", "apparatus"], properties = ["stability", "dross", "condition"] }
+discovery = { kind = "artifact", evidence_class = "failed_containment_fragment" }
+
+[[item]]
+id = "field_ledger"
+name = "Field Ledger"
+texture = "leather_strip.png"
+max_stack = 1
+discovery = { kind = "field_ledger" }
+
+[[item]]
+id = "tuning_lens_frame"
+name = "Unfitted Tuning Lens"
+texture = "crystal_lens.png"
+max_stack = 1
+discovery = { kind = "lens_frame" }
+
+[[item]]
+id = "tuning_lens_mount"
+name = "Fitted Tuning Lens Mount"
+texture = "crystal_lens.png"
+max_stack = 1
+material_class = "exceptional"
+discovery = { kind = "lens_frame" }
+
+[[item]]
+id = "tuning_lens"
+name = "Tuning Lens"
+texture = "crystal_lens.png"
+max_stack = 1
+durability = 64
+material_class = "exceptional"
+arcane = { capacity = 320, conductivity = 740, stability = 840, resonance = { stone = 3, tide = 1, echo = 1 }, on_destroy = "dross" }
+observation = { categories = ["apparatus"], properties = ["strength", "stability", "resonance", "dross", "drift"] }
+discovery = { kind = "tuning_lens" }
+
+[[item]]
+id = "capacity_reference"
+name = "Capacity Reference Vessel"
+texture = "@glass"
+max_stack = 1
+discovery = { kind = "reference_object", experiment = "capacity" }
+
+[[item]]
+id = "conductivity_reference"
+name = "Conductivity Reference Bar"
+texture = "@copper_ingot"
+max_stack = 1
+discovery = { kind = "reference_object", experiment = "conductivity" }
+
+[[item]]
+id = "stability_reference"
+name = "Stability Reference Plate"
+texture = "polished_glass.png"
+max_stack = 1
+discovery = { kind = "reference_object", experiment = "stability" }
+
+[[item]]
+id = "biological_reference"
+name = "Biological Control Mat"
+texture = "@plant_fiber"
+max_stack = 1
+discovery = { kind = "reference_object", experiment = "biological_response" }
+
+[[item]]
+id = "dross_reference"
+name = "Sealed Dross Control"
+texture = "@charcoal"
+max_stack = 1
+discovery = { kind = "reference_object", experiment = "dross_response" }
 
 [[item]]
 id = "charm_quiet"
@@ -714,6 +956,7 @@ name = "Charm of Quiet"
 texture = "@charm_quiet"
 max_stack = 1
 charm = "quiet"
+arcane = { capacity = 4096, conductivity = 300, stability = 950, resonance = { echo = 3, gale = 1 }, on_destroy = "ambient" }
 
 [[item]]
 id = "charm_bark"
@@ -721,6 +964,7 @@ name = "Charm of Bark"
 texture = "@charm_bark"
 max_stack = 1
 charm = "bark"
+arcane = { capacity = 4096, conductivity = 250, stability = 950, resonance = { root = 3, stone = 2 }, on_destroy = "ambient" }
 
 [[item]]
 id = "charm_hunger"
@@ -728,6 +972,7 @@ name = "Charm of Slow Hunger"
 texture = "@charm_hunger"
 max_stack = 1
 charm = "hunger"
+arcane = { capacity = 4096, conductivity = 350, stability = 900, resonance = { root = 2, tide = 2, echo = 1 }, on_destroy = "ambient" }
 
 [[item]]
 id = "snowball"
@@ -814,6 +1059,7 @@ id = "bucket_water"
 name = "Water Bucket"
 texture = "@bucket_water"
 max_stack = 1
+observation = { categories = ["sample"], properties = ["strength", "drift", "dross", "condition"] }
 
 [[item]]
 id = "bucket_lava"
@@ -834,6 +1080,7 @@ name = "Quartz"
 texture = "quartz_shard.png"
 material_class = "geologically_finite"
 materials = { quartz = 1200 }
+arcane = { capacity = 384, conductivity = 900, stability = 850, resonance = { echo = 3, stone = 1 }, on_destroy = "ambient" }
 
 [[item]]
 id = "amethyst_shard"
@@ -841,6 +1088,7 @@ name = "Amethyst"
 texture = "amethyst_shard.png"
 material_class = "geologically_finite"
 materials = { amethyst = 1200 }
+arcane = { capacity = 768, conductivity = 850, stability = 900, resonance = { echo = 4, root = 1 }, on_destroy = "ambient" }
 
 [[item]]
 id = "coal"
@@ -1255,9 +1503,11 @@ id = "bucket_brackish"
 name = "Brackish Water Bucket"
 texture = "@bucket_water"
 max_stack = 1
+observation = { categories = ["sample"], properties = ["strength", "drift", "dross", "condition"] }
 
 [[item]]
 id = "bucket_salt"
 name = "Salt Water Bucket"
 texture = "@bucket_water"
 max_stack = 1
+observation = { categories = ["sample"], properties = ["strength", "drift", "dross", "condition"] }

@@ -26,6 +26,14 @@ pub enum Cmd {
     Hud(String),
     Sound(String),
     SpawnAnimal(String, EntityPos),
+    ArcaneMoveWorking {
+        mod_id: String,
+        from: u64,
+        to: u64,
+        resonance: String,
+        units: u64,
+        reason: String,
+    },
 }
 
 pub struct ScriptMod {
@@ -166,6 +174,24 @@ impl ScriptHost {
             };
             with_world(|w| i64::from(w.surface_height_at(surface)), -1)
         });
+        engine.register_fn("arcane_estimate", |face: &str, u: i64, v: i64| -> Map {
+            let Some(surface) = surface_pos(face, u, v) else {
+                return Map::new();
+            };
+            with_world(
+                |world| {
+                    let mut map = Map::new();
+                    let bands = world
+                        .planet_atlas()
+                        .map(|atlas| world.arcane_cue_at(atlas.atlas_pos(surface)))
+                        .unwrap_or([0; 2]);
+                    map.insert("current_band".into(), i64::from(bands[0]).into());
+                    map.insert("dross_band".into(), i64::from(bands[1]).into());
+                    map
+                },
+                Map::new(),
+            )
+        });
         engine.register_fn(
             "neighbor",
             |face: &str, u: i64, y: i64, v: i64, heading: &str| -> Map {
@@ -217,6 +243,32 @@ impl ScriptHost {
         engine.register_fn("play_sound", move |name: &str| {
             q.borrow_mut().push(Cmd::Sound(name.into()));
         });
+        let (q, cur) = (queue.clone(), current.clone());
+        engine.register_fn(
+            "arcane_move_working",
+            move |from: i64, to: i64, resonance: &str, units: i64, reason: &str| {
+                if from <= 0
+                    || to <= 0
+                    || from == to
+                    || units <= 0
+                    || units > i64::from(u32::MAX)
+                    || resonance.len() > 96
+                    || reason.is_empty()
+                    || reason.len() > 128
+                    || q.borrow().len() >= 256
+                {
+                    return;
+                }
+                q.borrow_mut().push(Cmd::ArcaneMoveWorking {
+                    mod_id: cur.borrow().clone(),
+                    from: from as u64,
+                    to: to as u64,
+                    resonance: resonance.into(),
+                    units: units as u64,
+                    reason: reason.into(),
+                });
+            },
+        );
         let q = queue.clone();
         engine.register_fn(
             "spawn_animal",

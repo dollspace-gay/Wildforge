@@ -19,6 +19,7 @@ fn shadow_debug() -> u32 {
 impl Renderer {
     pub fn render(&mut self, f: FrameInput) -> Result<(), wgpu::SurfaceError> {
         let outline = f.outline;
+        let outline_color = f.outline_color;
 
         // Sun light-space matrix: an orthographic box centered near the camera,
         // looking from the sun toward that center. Covers the near field; beyond
@@ -210,7 +211,7 @@ impl Renderer {
 
         if let Some(block) = outline {
             let e = 0.003f32;
-            let c = [0.05, 0.05, 0.05];
+            let c = outline_color;
             let p = |du: f64, dy: f64, dv: f64| {
                 let surface = crate::planet::SurfacePoint {
                     face: block.face(),

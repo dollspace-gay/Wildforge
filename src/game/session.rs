@@ -156,14 +156,23 @@ impl Game {
             // Named items land first (hotbar slots), then the kit.
             for name in extra.split(',').filter(|s| s.contains(':')) {
                 if let Some(item) = reg.item_id(name.trim()) {
-                    let left = self.inventory.add(&reg, item, 1);
-                    if left == 0
-                        && let Some(ledger) = &mut self.server.world.material_ledger
-                        && let Err(error) = ledger.record_external_stack(
-                            &reg,
-                            ItemStack::new(&reg, item, 1),
+                    let mut stack = ItemStack::new(&reg, item, 1);
+                    if let Some(at) = self.player.pos.block()
+                        && let Err(error) = self.server.world.bind_arcane_stack_at(
+                            at,
+                            &mut stack,
                             "development kit",
                         )
+                    {
+                        eprintln!("arcane: development kit item rejected: {error}");
+                        continue;
+                    }
+                    let left = self.inventory.add_stack(&reg, stack);
+                    if left == 0
+                        && let Err(error) = self
+                            .server
+                            .world
+                            .record_external_stack(stack, "development kit")
                     {
                         eprintln!("materials: development kit accounting failed: {error}");
                     }
@@ -368,6 +377,11 @@ impl Game {
                         self.ui_state.creation_progress =
                             (progress.completed_stages, progress.total_stages);
                     }
+                    world::WorldCreationProgress::Arcane(progress) => {
+                        self.ui_state.creation_status = progress.stage.label().into();
+                        self.ui_state.creation_progress =
+                            (progress.completed_stages, progress.total_stages);
+                    }
                     world::WorldCreationProgress::Homeland {
                         stage,
                         completed,
@@ -495,10 +509,11 @@ impl Game {
             if let Some(s) = s {
                 let _ = writeln!(
                     out,
-                    "[[slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                    "[[slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                     self.content.reg.item(s.item).name,
                     s.count,
-                    s.durability
+                    s.durability,
+                    s.arcane_id
                 );
             }
         }
@@ -506,10 +521,11 @@ impl Game {
             if let Some(s) = s {
                 let _ = writeln!(
                     out,
-                    "[[armor]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                    "[[armor]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                     self.content.reg.item(s.item).name,
                     s.count,
-                    s.durability
+                    s.durability,
+                    s.arcane_id
                 );
             }
         }
@@ -563,6 +579,7 @@ impl Game {
             count: u32,
             age: f32,
             durability: u32,
+            arcane_id: u64,
         }
         #[derive(Serialize)]
         struct File {
@@ -580,10 +597,11 @@ impl Game {
                 count: entity.count,
                 age: entity.age,
                 durability: entity.durability,
+                arcane_id: entity.arcane_id,
             })
             .collect();
         let text =
-            toml::to_string_pretty(&File { version: 1, drop }).map_err(std::io::Error::other)?;
+            toml::to_string_pretty(&File { version: 2, drop }).map_err(std::io::Error::other)?;
         crate::identity::atomic_write(&world.join("loose-items.toml"), text.as_bytes(), false)
     }
 
@@ -598,6 +616,8 @@ impl Game {
             count: u32,
             age: f32,
             durability: u32,
+            #[serde(default)]
+            arcane_id: u64,
         }
         #[derive(Deserialize)]
         struct File {
@@ -612,7 +632,7 @@ impl Game {
             eprintln!("items: could not parse loose-items.toml; file left untouched");
             return;
         };
-        if file.version != 1 {
+        if !(1..=2).contains(&file.version) {
             eprintln!(
                 "items: unsupported loose item save version {}",
                 file.version
@@ -636,6 +656,7 @@ impl Game {
             entity.durability = stored
                 .durability
                 .min(self.content.reg.item(item).durability);
+            entity.arcane_id = stored.arcane_id;
             self.interaction.items.push(entity);
         }
     }
@@ -648,6 +669,8 @@ impl Game {
             item: String,
             count: u32,
             durability: u32,
+            #[serde(default)]
+            arcane_id: u64,
         }
         #[derive(Deserialize)]
         struct P {
@@ -716,6 +739,7 @@ impl Game {
                     item,
                     count: s.count,
                     durability: s.durability,
+                    arcane_id: s.arcane_id,
                 });
             }
         }
@@ -727,6 +751,7 @@ impl Game {
                     item,
                     count: s.count,
                     durability: s.durability,
+                    arcane_id: s.arcane_id,
                 });
             }
         }

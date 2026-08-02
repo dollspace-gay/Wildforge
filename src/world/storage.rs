@@ -43,10 +43,11 @@ impl World {
                     if let Some(st) = st {
                         let _ = writeln!(
                             out,
-                            "[[mob.pack]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                            "[[mob.pack]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                             self.reg.item(st.item).name,
                             st.count,
-                            st.durability
+                            st.durability,
+                            st.arcane_id
                         );
                     }
                 }
@@ -198,6 +199,8 @@ impl World {
             count: u32,
             #[serde(default)]
             durability: u32,
+            #[serde(default)]
+            arcane_id: u64,
         }
         #[derive(Deserialize)]
         struct MobT {
@@ -267,6 +270,7 @@ impl World {
                                 item,
                                 count: sl.count,
                                 durability: sl.durability,
+                                arcane_id: sl.arcane_id,
                             });
                         }
                     }
@@ -847,6 +851,23 @@ impl World {
                 ledger.save(),
             );
         }
+        if let Some(ledger) = &self.arcane_ledger {
+            report.record(
+                "finite-Current ledger",
+                self.save_dir.join("arcane.wfc"),
+                ledger.save().map_err(std::io::Error::other),
+            );
+        }
+        if let Some(geography) = &mut self.arcane_geography {
+            report.record(
+                "planetary arcane geography",
+                crate::planet_atlas::PlanetAtlas::planet_dir(&self.save_dir)
+                    .join("arcane-geography.wad"),
+                geography
+                    .save_dynamic(&self.save_dir)
+                    .map_err(std::io::Error::other),
+            );
+        }
         // Only when it would actually differ. The palette describes the
         // registry, not the world, so rewriting it on a timer was 4 KB
         // of churn every twenty seconds saying the same thing. It has
@@ -865,6 +886,12 @@ impl World {
         };
         let path = self.entities_path();
         report.record("block entities", path, self.save_entities());
+        let path = self.save_dir.join("discovery.toml");
+        let discovery_result = self
+            .discovery_state
+            .as_mut()
+            .map_or(Ok(()), |state| state.save().map_err(std::io::Error::other));
+        report.record("discovery state", path, discovery_result);
         report.extend(self.save_mobs());
         let path = self.save_dir.join("stamps");
         report.record("random-tick stamps", path, self.save_stamps());

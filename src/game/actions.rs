@@ -274,108 +274,35 @@ impl Game {
     }
 
     /// Remove dead mobs: roll their drop table, spill items, notify mods.
-    pub(super) fn sweep_dead_mobs(&mut self) {
+    pub(super) fn present_settled_mob_death(&mut self, death: crate::world::SettledMobDeath) {
         let reg = self.content.reg.clone();
-        let mut i = 0;
-        while i < self.server.world.mob_count() {
-            if self.server.world.mob(i).is_some_and(|mob| mob.health > 0.0) {
-                i += 1;
-                continue;
-            }
-            let m = self.server.world.remove_mob(i);
-            let def = &reg.animals[m.species];
-            if def.hostile {
-                // Where a warden falls, the wild reclaims its own —
-                // the death site banks bloom (dryads leave a sapling).
-                if let Some(pos) = m.pos.block() {
-                    self.server.world.wild_falls_at(&def.name, pos);
-                }
-            }
-            if !def.hostile && !def.vehicle && !def.name.ends_with(":carcass") {
-                // The wild counts its dead — wardens are not
-                // individuals, and a TAMED animal is a household loss,
-                // not a wild one (though betrayal is still noticed).
-                // Vehicles are lumber; the wild never mourns a boat.
-                // A carcass is already counted: the predator's kill
-                // was nature's own.
-                self.server.world.add_ire_at_surface(
-                    crate::planet::SurfacePos::new(
-                        m.pos.face(),
-                        m.pos.u().floor() as u16,
-                        m.pos.v().floor() as u16,
-                    )
-                    .expect("mob death has a canonical surface"),
-                    if m.tamed { 1.0 } else { 2.0 },
-                );
-            }
-            self.sfx(Sfx::MobDeath(def.sound_pitch));
-            let (tile, at) = (
-                def.tile,
-                m.pos
-                    .translated(Vec3::new(0.0, 0.5, 0.0))
-                    .expect("death effect stays beside the mob")
-                    .pos
-                    .render_pos(),
+        let Some(def) = reg.animals.get(death.species) else {
+            return;
+        };
+        self.sfx(Sfx::MobDeath(def.sound_pitch));
+        let (tile, at) = (
+            def.tile,
+            death
+                .pos
+                .translated(Vec3::new(0.0, 0.5, 0.0))
+                .expect("death effect stays beside the mob")
+                .pos
+                .render_pos(),
+        );
+        self.juice_burst(at, tile, 12, 2.0);
+        if self.content.scripts.wants("on_animal_killed") {
+            self.content.scripts.dispatch(
+                &self.server.world,
+                "on_animal_killed",
+                (
+                    def.name.clone(),
+                    death.pos.face().name().to_string(),
+                    death.pos.u().floor() as i64,
+                    death.pos.y().floor() as i64,
+                    death.pos.v().floor() as i64,
+                ),
             );
-            self.juice_burst(at, tile, 12, 2.0);
-            // A laden carrier spills its pack where it falls.
-            if let Some(cargo) = &m.cargo {
-                for st in cargo.iter().flatten() {
-                    let at = m
-                        .pos
-                        .translated(Vec3::new(0.0, 0.6, 0.0))
-                        .expect("cargo spills beside its carrier")
-                        .pos;
-                    self.drop_stack_at(*st, at);
-                }
-            }
-            if m.growth < 1.0 {
-                continue; // the young return nothing (you monster)
-            }
-            for (item, min, max) in &def.drops {
-                let n = min + (self.rand01() * (*max - *min + 1) as f32) as u32;
-                let n = n.min(*max);
-                if n == 0 {
-                    continue;
-                }
-                let stack = ItemStack::new(&reg, *item, n);
-                if let Some(ledger) = &mut self.server.world.material_ledger
-                    && let Err(error) =
-                        ledger.record_external_stack(&reg, stack, "wild creature drop")
-                {
-                    eprintln!("materials: creature drop accounting failed: {error}");
-                }
-                if m.last_hit_by != 0 {
-                    // A guest's kill: their loot crosses the wire.
-                    self.server.world.queue_give(m.last_hit_by, stack);
-                    continue;
-                }
-                let a = self.rand01() * std::f32::consts::TAU;
-                let v = Vec3::new(a.cos() * 1.2, 2.5, a.sin() * 1.2);
-                self.interaction.items.push(ItemEntity::new(
-                    m.pos
-                        .translated(Vec3::new(0.0, def.height * 0.5, 0.0))
-                        .expect("mob loot begins beside the mob")
-                        .pos,
-                    v,
-                    *item,
-                    n,
-                ));
-            }
-            if self.content.scripts.wants("on_animal_killed") {
-                self.content.scripts.dispatch(
-                    &self.server.world,
-                    "on_animal_killed",
-                    (
-                        def.name.clone(),
-                        m.pos.face().name().to_string(),
-                        m.pos.u().floor() as i64,
-                        m.pos.y().floor() as i64,
-                        m.pos.v().floor() as i64,
-                    ),
-                );
-                self.apply_script_cmds();
-            }
+            self.apply_script_cmds();
         }
     }
 
@@ -577,6 +504,79 @@ impl Game {
             self.interaction.fishing = Some((bobber, wait, bite));
         }
 
+        // A tuning lens is deliberately slow and local. Holding the aim still
+        // for the full settle period produces one qualitative, signed record;
+        // moving off the target or releasing use starts the reading over.
+        let lens_held = self.inventory.slots[self.input.hotbar_sel].is_some_and(|stack| {
+            reg.item(stack.item)
+                .discovery
+                .as_ref()
+                .is_some_and(|definition| definition.kind == "tuning_lens")
+                && stack.arcane_id != 0
+        });
+        if self.input.right_held && lens_held {
+            let aim = hit.as_ref().map_or_else(
+                || self.player.pos.block().map(DiscoveryAim::Region),
+                |hit| Some(DiscoveryAim::Block(hit.block)),
+            );
+            let Some(aim) = aim else {
+                return;
+            };
+            if self.interaction.lens_target != Some(aim) {
+                self.interaction.lens_target = Some(aim);
+                self.interaction.lens_settle = 0.0;
+                if let Some(remote) = &self.multiplayer.remote {
+                    if let DiscoveryAim::Block(pos) = aim
+                        && reg
+                            .block(self.server.world.get_block_at(pos))
+                            .discovery_fixture
+                            .as_ref()
+                            .is_some_and(|fixture| fixture.kind == "experiment_apparatus")
+                    {
+                        let kind =
+                            crate::discovery::ExperimentKind::ALL[self.interaction.experiment_kind
+                                % crate::discovery::ExperimentKind::ALL.len()];
+                        remote.client.send(&net::C2S::BeginExperiment { pos, kind });
+                    } else {
+                        remote.client.send(&net::C2S::BeginObserve {
+                            target: match aim {
+                                DiscoveryAim::Region(_) => net::DiscoveryTargetSnap::Region,
+                                DiscoveryAim::Block(pos) => net::DiscoveryTargetSnap::Block(pos),
+                            },
+                        });
+                    }
+                }
+                self.sfx(Sfx::Lens(0.78));
+            }
+            let prior_settle = self.interaction.lens_settle;
+            self.interaction.lens_settle += dt;
+            if prior_settle < 0.62 && self.interaction.lens_settle >= 0.62 {
+                self.sfx(Sfx::Lens(0.96));
+            }
+            if self.interaction.lens_settle >= 1.25 {
+                self.interaction.lens_settle = 0.0;
+                self.interaction.lens_target = None;
+                self.input.right_held = false;
+                self.input.action_cooldown = 0.25;
+                if let DiscoveryAim::Block(pos) = aim
+                    && reg
+                        .block(self.server.world.get_block_at(pos))
+                        .discovery_fixture
+                        .as_ref()
+                        .is_some_and(|fixture| fixture.kind == "experiment_apparatus")
+                {
+                    self.settle_discovery_experiment(pos);
+                } else {
+                    self.settle_discovery_reading(aim);
+                }
+                self.sfx(Sfx::Click);
+            }
+            return;
+        } else {
+            self.interaction.lens_settle = 0.0;
+            self.interaction.lens_target = None;
+        }
+
         // Archaeology and regional salvage: sweeping a remnant or sifting
         // ordinary ground is a slow, careful channel.
         let brush_held = held.is_some_and(|i| reg.item(i).brush_tool);
@@ -638,6 +638,7 @@ impl Game {
                     if stack.durability < reg.item(stack.item).durability {
                         ent.durability = stack.durability;
                     }
+                    ent.arcane_id = stack.arcane_id;
                     self.interaction.items.push(ent);
                     self.sfx(Sfx::Pickup);
                     if !archaeology {
@@ -913,16 +914,19 @@ impl Game {
                                     .push(ItemEntity::new(center, v, drop.item, drop.count));
                             }
                             // Chance extras (leaves drop saplings).
-                            if let Some((item, ch)) = reg.block(b).bonus_drop
-                                && !self.creative
-                                && self.rand01() < ch
+                            if !self.creative
+                                && let Some(stack) =
+                                    self.server
+                                        .world
+                                        .roll_bonus_drop_at(target, b, &mut self.rng)
                             {
                                 let center = target.entity_at_height(0.3);
                                 let a = self.rand01() * std::f32::consts::TAU;
                                 let v = Vec3::new(a.cos() * 1.2, 2.2, a.sin() * 1.2);
-                                self.interaction
-                                    .items
-                                    .push(ItemEntity::new(center, v, item, 1));
+                                let mut entity =
+                                    ItemEntity::new(center, v, stack.item, stack.count);
+                                entity.arcane_id = stack.arcane_id;
+                                self.interaction.items.push(entity);
                             }
                         }
                     } else {
@@ -1107,7 +1111,17 @@ impl Game {
                     } else {
                         match self.server.world.try_light_clamp_at(pos) {
                             Ok(n) => {
+                                let consumed = self.inventory.slots[self.input.hotbar_sel];
                                 self.inventory.take_one(self.input.hotbar_sel);
+                                if !self.creative
+                                    && let Some(stack) = consumed
+                                {
+                                    self.server.world.retire_arcane_stack_at(
+                                        pos,
+                                        ItemStack { count: 1, ..stack },
+                                        "clamp ignition",
+                                    );
+                                }
                                 self.sfx(Sfx::Bolt(0.8));
                                 self.toast(format!(
                                     "The clamp smolders - {n} logs, {:.0} minutes.",
@@ -1194,9 +1208,10 @@ impl Game {
                 self.input.action_cooldown = 0.6;
                 return;
             }
-            // Etched tablets: the lost takers speak.
-            if held.is_some_and(|i| reg.item(i).tablet) {
-                self.read_tablet();
+            // Knowledge is physical: artifacts retain their generated words,
+            // while ledgers and folios expose only the signed records inside.
+            if held.is_some_and(|item| reg.item(item).discovery.is_some()) {
+                self.read_held_knowledge();
                 self.input.action_cooldown = 0.6;
                 return;
             }
@@ -1372,6 +1387,30 @@ impl Game {
                     self.set_screen(Screen::Chest(h.block));
                     return;
                 }
+                Some("discovery_folio") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.35;
+                    self.input.right_held = false;
+                    self.open_discovery_folio(h.block);
+                    return;
+                }
+                Some("discovery_writing") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.35;
+                    self.input.right_held = false;
+                    self.copy_at_writing_surface(h.block);
+                    return;
+                }
+                Some("discovery_lab") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.35;
+                    self.input.right_held = false;
+                    self.exchange_discovery_apparatus_item(h.block);
+                    return;
+                }
+                Some("lens_assembly") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.35;
+                    self.input.right_held = false;
+                    self.assemble_tuning_lens(h.block);
+                    return;
+                }
                 Some("heart") if self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.5;
                     self.input.right_held = false;
@@ -1476,14 +1515,20 @@ impl Game {
                     if let Some(hi) = held {
                         let name = reg.item(hi).name.clone();
                         if self.server.world.compost_fill_at(h.block, &name) {
-                            self.inventory.take_one(self.input.hotbar_sel);
-                            if self.multiplayer.remote.is_none()
-                                && let Err(error) = self
-                                    .server
-                                    .world
-                                    .record_consumed_stacks([ItemStack::new(&reg, hi, 1)])
+                            if let Some(consumed) =
+                                self.inventory.take_one_stack(self.input.hotbar_sel)
+                                && self.multiplayer.remote.is_none()
                             {
-                                eprintln!("materials: compost feed accounting failed: {error}");
+                                if let Err(error) =
+                                    self.server.world.record_consumed_stacks([consumed])
+                                {
+                                    eprintln!("materials: compost feed accounting failed: {error}");
+                                }
+                                self.server.world.retire_arcane_stack_at(
+                                    h.block,
+                                    consumed,
+                                    "magical biomass composted",
+                                );
                             }
                             self.sfx(Sfx::Place);
                             return;
@@ -1908,7 +1953,13 @@ impl Game {
                     if self.inventory.slots[self.input.hotbar_sel].is_none() && !self.creative {
                         return;
                     }
-                    if self.server.world.place_block_at(pos, block) {
+                    let placed = if self.creative {
+                        self.server.world.place_block_at(pos, block)
+                    } else {
+                        self.inventory.slots[self.input.hotbar_sel]
+                            .is_some_and(|stack| self.server.world.place_item_block_at(pos, stack))
+                    };
+                    if placed {
                         if !self.creative {
                             self.inventory.take_one(self.input.hotbar_sel);
                         }
@@ -1937,6 +1988,12 @@ impl Game {
             match cmd {
                 script::Cmd::SetBlock(pos, name) => {
                     if let Some(b) = reg.block_id(&name) {
+                        if reg.block(b).arcane_ecology.is_some() {
+                            eprintln!(
+                                "arcane ecology: script placement of {name} rejected; lifecycle sites are engine-owned"
+                            );
+                            continue;
+                        }
                         self.server
                             .world
                             .set_block_authored_at(pos, b, "mod script world event");
@@ -1944,18 +2001,51 @@ impl Game {
                 }
                 script::Cmd::Give(name, n) => {
                     if let Some(item) = reg.item_id(&name) {
+                        let item_definition = &reg.items[item.0 as usize];
+                        let ecology_product = item_definition.arcane_ecology.is_some()
+                            || item_definition
+                                .places
+                                .is_some_and(|block| reg.block(block).arcane_ecology.is_some())
+                            || reg.blocks.iter().any(|block| {
+                                block.arcane_ecology.is_some()
+                                    && block.drops.is_some_and(|(drop, _)| drop == item)
+                            });
+                        if ecology_product {
+                            eprintln!(
+                                "arcane ecology: script give of {name} rejected; growth and harvest are authoritative"
+                            );
+                            continue;
+                        }
+                        let mut stack = ItemStack::new(&reg, item, n);
+                        if reg.item(item).arcane.is_some() {
+                            if n != 1 {
+                                eprintln!("arcane: script give rejected a charged stack of {n}");
+                                continue;
+                            }
+                            let Some(at) = self.player.pos.block() else {
+                                continue;
+                            };
+                            if let Err(error) = self.server.world.bind_arcane_stack_at(
+                                at,
+                                &mut stack,
+                                "mod script discovery",
+                            ) {
+                                eprintln!("arcane: script give rejected: {error}");
+                                continue;
+                            }
+                        }
                         if let Some(ledger) = &mut self.server.world.material_ledger
-                            && let Err(error) = ledger.record_external_stack(
-                                &reg,
-                                ItemStack::new(&reg, item, n),
-                                "mod script give",
-                            )
+                            && let Err(error) =
+                                ledger.record_external_stack(&reg, stack, "mod script give")
                         {
                             eprintln!("materials: script give accounting failed: {error}");
                         }
-                        let left = self.inventory.add(&reg, item, n);
+                        let left = self.inventory.add_stack(&reg, stack);
                         if left > 0 {
-                            self.drop_stack(ItemStack::new(&reg, item, left));
+                            self.drop_stack(ItemStack {
+                                count: left,
+                                ..stack
+                            });
                         }
                     }
                 }
@@ -1967,6 +2057,36 @@ impl Game {
                         let mut m = mobs::Mob::new_at(si, pos, 0.0);
                         m.health = reg.animals[si].health;
                         self.server.world.spawn_mob(m);
+                    }
+                }
+                script::Cmd::ArcaneMoveWorking {
+                    mod_id,
+                    from,
+                    to,
+                    resonance,
+                    units,
+                    reason,
+                } => {
+                    let result = self
+                        .server
+                        .world
+                        .arcane_ledger
+                        .as_mut()
+                        .ok_or_else(|| "world has no arcane ledger".to_string())
+                        .and_then(|ledger| {
+                            ledger
+                                .mod_working_transfer(
+                                    &mod_id,
+                                    from,
+                                    to,
+                                    crate::arcane::Current::single(resonance, units),
+                                    &reason,
+                                )
+                                .map(|_| ())
+                                .map_err(|error| error.to_string())
+                        });
+                    if let Err(error) = result {
+                        eprintln!("[mod:{mod_id}] arcane transaction rejected: {error}");
                     }
                 }
                 script::Cmd::Sound(name) => {

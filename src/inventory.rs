@@ -13,6 +13,9 @@ pub struct ItemStack {
     pub count: u32,
     /// Remaining uses for tools; 0 for everything else.
     pub durability: u32,
+    /// Stable server-assigned identity of the corresponding Current account;
+    /// zero means this instance carries no bound Current.
+    pub arcane_id: u64,
 }
 
 impl ItemStack {
@@ -21,12 +24,16 @@ impl ItemStack {
             item,
             count,
             durability: reg.item(item).durability,
+            arcane_id: 0,
         }
     }
 
     /// Stacks merge only if same item and neither is a tool.
     pub fn can_merge(&self, reg: &Registry, other: &ItemStack) -> bool {
-        self.item == other.item && reg.item(self.item).tool.is_none()
+        self.item == other.item
+            && reg.item(self.item).tool.is_none()
+            && self.arcane_id == 0
+            && other.arcane_id == 0
     }
 }
 
@@ -146,13 +153,20 @@ impl Inventory {
     }
 
     pub fn take_one(&mut self, slot: usize) -> Option<ItemId> {
+        self.take_one_stack(slot).map(|stack| stack.item)
+    }
+
+    /// Remove one physical item without discarding its durable identity.
+    /// Charged stacks are singular, but keeping this general makes every
+    /// consuming caller safe if another identity-bearing item type appears.
+    pub fn take_one_stack(&mut self, slot: usize) -> Option<ItemStack> {
         let s = self.slots[slot].as_mut()?;
+        let taken = ItemStack { count: 1, ..*s };
         s.count -= 1;
-        let item = s.item;
         if s.count == 0 {
             self.slots[slot] = None;
         }
-        Some(item)
+        Some(taken)
     }
 
     /// Wear the tool in `slot` by one use. Finite tools become a full-mass
@@ -168,6 +182,7 @@ impl Inventory {
                         item: broken,
                         count: 1,
                         durability: 0,
+                        arcane_id: s.arcane_id,
                     });
                 }
             }

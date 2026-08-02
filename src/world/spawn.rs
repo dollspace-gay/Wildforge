@@ -800,6 +800,167 @@ fn validate_spawn_ledgers(world: &World) -> std::io::Result<()> {
 }
 
 impl World {
+    /// Census-backed discovery sites. New planets receive three independent
+    /// observational ruins in the prepared homeland. Existing planets use an
+    /// untouched prepared chunk when possible; if every candidate was already
+    /// worked, a single surface remnant is added without replacing authored
+    /// voxels. The persisted site keys make this retrogen idempotent.
+    fn ensure_spawn_discovery_sites(
+        &mut self,
+        spawn: SurfacePos,
+    ) -> std::io::Result<Vec<ChunkPos>> {
+        let structure = self
+            .reg
+            .structures
+            .iter()
+            .position(|structure| structure.name == "base:observational_outpost")
+            .ok_or_else(|| {
+                std::io::Error::other("base observational outpost content is missing")
+            })?;
+        let prepared_chunks = entry_chunks(spawn);
+        let prepared = prepared_chunks.iter().copied().collect::<HashSet<_>>();
+        // Site placement is a consequence of the already-qualified homeland,
+        // not another reason to reject it. Build the dry component a player
+        // can actually walk from the accepted doorstep, then choose origins
+        // nearest the three desired bearings. Fixed offsets failed valid
+        // coastal homelands whenever one bearing happened to land in water.
+        let mut dry_columns = HashMap::<SurfacePos, i32>::new();
+        for position in &prepared_chunks {
+            let origin = position.block_origin();
+            for x in 0..CHUNK_X {
+                for z in 0..CHUNK_Z {
+                    let surface = SurfacePos::new(
+                        origin.face(),
+                        origin.u() + x as u16,
+                        origin.v() + z as u16,
+                    )
+                    .expect("prepared chunks contain canonical surface cells");
+                    let y = self.surface_height_at(surface);
+                    let clear = |y: i32| {
+                        BlockPos::new(surface.face(), surface.u(), y as u8, surface.v()).is_ok_and(
+                            |pos| {
+                                let block = self.get_block_at(pos);
+                                !self.reg.is_solid(block) && !self.reg.is_fluid(block)
+                            },
+                        )
+                    };
+                    if y > SEA_LEVEL + 1 && y < CHUNK_Y as i32 - 8 && clear(y + 1) && clear(y + 2) {
+                        dry_columns.insert(surface, y);
+                    }
+                }
+            }
+        }
+        let mut reachable = HashSet::new();
+        let mut queue = VecDeque::new();
+        if dry_columns.contains_key(&spawn) {
+            reachable.insert(spawn);
+            queue.push_back(spawn);
+        }
+        while let Some(surface) = queue.pop_front() {
+            let height = dry_columns[&surface];
+            for neighbor in crate::planet::neighbors4(surface) {
+                if reachable.contains(&neighbor)
+                    || !prepared.contains(&ChunkPos::from_surface(neighbor))
+                {
+                    continue;
+                }
+                let Some(next_height) = dry_columns.get(&neighbor) else {
+                    continue;
+                };
+                if (height - next_height).abs() <= 1 {
+                    reachable.insert(neighbor);
+                    queue.push_back(neighbor);
+                }
+            }
+        }
+        if reachable.is_empty() {
+            return Err(std::io::Error::other(
+                "prepared homeland discovery census cannot reach its accepted doorstep",
+            ));
+        }
+        let desired = [(24, 0), (-24, 0), (0, 24)];
+        let mut changed = Vec::new();
+        let mut chosen = Vec::<SurfacePos>::new();
+        for (index, (base_u, base_v)) in desired.into_iter().enumerate() {
+            let key = format!("spawn-observational-site-v1-{index}");
+            if self.discovery_site_installed(&key) {
+                continue;
+            }
+            let target = SurfacePos::canonicalized(
+                spawn.face(),
+                i32::from(spawn.u()) + base_u,
+                i32::from(spawn.v()) + base_v,
+            )
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+            let mut dry = reachable
+                .iter()
+                .copied()
+                .filter(|surface| {
+                    chosen.iter().all(|prior| {
+                        crate::planet::geodesic_distance(prior.center(), surface.center()) >= 8.0
+                    })
+                })
+                .map(|surface| (surface, dry_columns[&surface]))
+                .collect::<Vec<_>>();
+            dry.sort_by(|(left, _), (right, _)| {
+                self.player_touched
+                    .contains(&ChunkPos::from_surface(*left))
+                    .cmp(
+                        &self
+                            .player_touched
+                            .contains(&ChunkPos::from_surface(*right)),
+                    )
+                    .then_with(|| {
+                        crate::planet::geodesic_distance(target.center(), left.center()).total_cmp(
+                            &crate::planet::geodesic_distance(target.center(), right.center()),
+                        )
+                    })
+                    .then_with(|| left.cmp(right))
+            });
+            let Some((origin_surface, surface_y)) = dry.first().copied() else {
+                return Err(std::io::Error::other(format!(
+                    "prepared homeland has fewer than three distinct reachable observational sites (stopped at {index})"
+                )));
+            };
+            chosen.push(origin_surface);
+            let origin = BlockPos::new(
+                origin_surface.face(),
+                origin_surface.u(),
+                surface_y as u8,
+                origin_surface.v(),
+            )
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+            if !self.player_touched.contains(&origin.chunk()) {
+                let seed = self.seed ^ 0xd15c_0000 ^ index as u32;
+                self.place_structure_at(structure, origin, seed);
+            } else {
+                // Explicit remnant fallback for an evolved homeland: add one
+                // brushable clue in the air above existing terrain. Never
+                // rewrite a player-authored cell to fake an untouched ruin.
+                let remnant = origin
+                    .offset(0, 1, 0)
+                    .ok_or_else(|| std::io::Error::other("discovery remnant exceeds world"))?;
+                if self.get_block_at(remnant) != AIR {
+                    return Err(std::io::Error::other(format!(
+                        "worked homeland has no non-destructive remnant cell for site {index}"
+                    )));
+                }
+                let cracked = self
+                    .reg
+                    .block_id("base:cracked_masonry")
+                    .ok_or_else(|| std::io::Error::other("cracked masonry content is missing"))?;
+                self.set_block_authored_at(
+                    remnant,
+                    cracked,
+                    "discovery remnant retrogen into worked homeland",
+                );
+            }
+            self.mark_discovery_site_installed(&key);
+            changed.push(origin.chunk());
+        }
+        Ok(changed)
+    }
+
     /// Pick one deterministic, naturally viable common spawn for every play
     /// mode. Voxel-level refinement remains `safe_spawn_at`; unlike the old
     /// dedicated path, its starting country is already dry, living land.
@@ -838,7 +999,7 @@ impl World {
             })?;
             let atlas = self
                 .planet_atlas
-                .as_deref()
+                .clone()
                 .ok_or_else(|| std::io::Error::other("planetary spawn requires an atlas"))?;
             if manifest.version != SPAWN_MANIFEST_VERSION
                 || manifest.topology != WORLD_TOPOLOGY
@@ -890,6 +1051,32 @@ impl World {
                     "prepared homeland no longer contains a dry safe entry; explicit spawn repair is required",
                 )
             })?;
+            let region = atlas.atlas_pos(spawn.surface());
+            if !self
+                .arcane_geography
+                .as_ref()
+                .is_some_and(|geography| geography.early_discovery_reachable(&atlas, region))
+            {
+                return Err(std::io::Error::other(
+                    "prepared homeland has no same-landmass early magical observation site",
+                ));
+            }
+            let changed = self.ensure_spawn_discovery_sites(spawn.surface())?;
+            if !changed.is_empty() {
+                // A structure origin can write through a neighboring chunk.
+                // Persist the complete prepared homeland so retrogen cannot
+                // leave half an outpost only resident in memory.
+                for position in entry_chunks(spawn.surface()) {
+                    self.save_chunk(position)?;
+                }
+                let save = self.save_modified();
+                if !save.is_ok() {
+                    return Err(std::io::Error::other(format!(
+                        "could not persist discovery-site retrogen: {}",
+                        save.summary()
+                    )));
+                }
+            }
             self.common_spawn = Some(spawn);
             return Ok(spawn);
         }
@@ -958,6 +1145,17 @@ impl World {
             spawn_surface.v() as f32 + 0.5,
         )
         .expect("prepared spawn cell is canonical");
+        let region = atlas.atlas_pos(spawn.surface());
+        if !self
+            .arcane_geography
+            .as_ref()
+            .is_some_and(|geography| geography.early_discovery_reachable(&atlas, region))
+        {
+            return Err(std::io::Error::other(
+                "qualified homeland has no same-landmass early magical observation site",
+            ));
+        }
+        let _ = self.ensure_spawn_discovery_sites(spawn.surface())?;
 
         let initial_save = self.save_modified();
         if !initial_save.is_ok() {
@@ -1153,6 +1351,174 @@ mod tests {
         assert!(qualification.verification.reachable_soil);
         assert!(qualification.verification.reachable_stone);
         assert!(qualification.verification.reachable_plants);
+    }
+
+    #[test]
+    fn homeland_census_installs_three_redundant_observational_sites_once() {
+        let root =
+            std::env::temp_dir().join(format!("wildforge-discovery-spawn-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let reg = Arc::new(crate::registry::load(std::path::Path::new("mods")));
+        let mut world = World::new(99, root.clone(), reg.clone());
+        world.discovery_state = Some(
+            crate::discovery::DiscoveryState::load_or_initialize(&root, 99, reg.content_hash)
+                .unwrap(),
+        );
+        let spawn = world.qualified_spawn_surface().unwrap();
+        let stone = reg.block_id("base:stone").unwrap();
+        let dirt = reg.block_id("base:dirt").unwrap();
+        let grass = reg.block_id("base:grass").unwrap();
+        for position in entry_chunks(spawn) {
+            let mut chunk = Chunk::new();
+            for x in 0..CHUNK_X {
+                for z in 0..CHUNK_Z {
+                    chunk.set(x, 64, z, stone);
+                    chunk.set(x, 65, z, dirt);
+                    chunk.set(x, 66, z, grass);
+                }
+            }
+            world.adopt_generated(position, chunk);
+        }
+        let installed = world.ensure_spawn_discovery_sites(spawn).unwrap();
+        assert_eq!(installed.len(), 3);
+        assert!(
+            world
+                .ensure_spawn_discovery_sites(spawn)
+                .unwrap()
+                .is_empty()
+        );
+        let mut evidence = HashMap::<String, usize>::new();
+        for (_, entity) in world.block_entities() {
+            if let BlockEntity::Chest(chest) = entity {
+                for stack in chest.slots.iter().flatten() {
+                    if let Some(class) = reg
+                        .item(stack.item)
+                        .discovery
+                        .as_ref()
+                        .and_then(|definition| definition.evidence_class.clone())
+                    {
+                        *evidence.entry(class).or_default() += 1;
+                    }
+                }
+            }
+        }
+        for class in crate::discovery::EVIDENCE_CLASSES {
+            assert!(
+                evidence.get(class).copied().unwrap_or_default() >= 3,
+                "foundational clue {class} is not independently redundant"
+            );
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn discovery_census_routes_around_a_wet_nominal_site() {
+        let root = std::env::temp_dir().join(format!(
+            "wildforge-discovery-wet-bearing-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let reg = Arc::new(crate::registry::load(std::path::Path::new("mods")));
+        let mut world = World::new(20260802, root.clone(), reg.clone());
+        world.discovery_state = Some(
+            crate::discovery::DiscoveryState::load_or_initialize(&root, 20260802, reg.content_hash)
+                .unwrap(),
+        );
+        let spawn = world.qualified_spawn_surface().unwrap();
+        let stone = reg.block_id("base:stone").unwrap();
+        let dirt = reg.block_id("base:dirt").unwrap();
+        let grass = reg.block_id("base:grass").unwrap();
+        for position in entry_chunks(spawn) {
+            let mut chunk = Chunk::new();
+            for x in 0..CHUNK_X {
+                for z in 0..CHUNK_Z {
+                    chunk.set(x, 64, z, stone);
+                    chunk.set(x, 65, z, dirt);
+                    chunk.set(x, 66, z, grass);
+                }
+            }
+            world.adopt_generated(position, chunk);
+        }
+        // Remove every column the old five-point fixed-offset search tried
+        // for its first outpost. The accepted homeland remains broadly dry.
+        for (du, dv) in [(24, 0), (24, 8), (32, 0), (24, -8), (16, 0)] {
+            let surface = SurfacePos::canonicalized(
+                spawn.face(),
+                i32::from(spawn.u()) + du,
+                i32::from(spawn.v()) + dv,
+            )
+            .unwrap();
+            for y in 64..=66 {
+                let pos = BlockPos::new(surface.face(), surface.u(), y, surface.v()).unwrap();
+                world.set_block_at(pos, AIR);
+            }
+        }
+
+        assert_eq!(world.ensure_spawn_discovery_sites(spawn).unwrap().len(), 3);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn discovery_retrogen_preserves_worked_homeland_and_adds_explicit_remnants() {
+        let root = std::env::temp_dir().join(format!(
+            "wildforge-discovery-retrogen-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let reg = Arc::new(crate::registry::load(std::path::Path::new("mods")));
+        let mut world = World::new(101, root.clone(), reg.clone());
+        world.discovery_state = Some(
+            crate::discovery::DiscoveryState::load_or_initialize(&root, 101, reg.content_hash)
+                .unwrap(),
+        );
+        let spawn = world.qualified_spawn_surface().unwrap();
+        let stone = reg.block_id("base:stone").unwrap();
+        let dirt = reg.block_id("base:dirt").unwrap();
+        let grass = reg.block_id("base:grass").unwrap();
+        let prepared = entry_chunks(spawn);
+        for position in &prepared {
+            let mut chunk = Chunk::new();
+            for x in 0..CHUNK_X {
+                for z in 0..CHUNK_Z {
+                    chunk.set(x, 64, z, stone);
+                    chunk.set(x, 65, z, dirt);
+                    chunk.set(x, 66, z, grass);
+                }
+            }
+            world.adopt_generated(*position, chunk);
+        }
+        world.player_touched.extend(prepared);
+        let sentinel = BlockPos::new(spawn.face(), spawn.u(), 67, spawn.v()).unwrap();
+        let planks = reg.block_id("base:planks").unwrap();
+        world.set_block_at(sentinel, planks);
+
+        assert_eq!(world.ensure_spawn_discovery_sites(spawn).unwrap().len(), 3);
+        assert_eq!(world.get_block_at(sentinel), planks);
+        assert!(
+            world
+                .block_entities()
+                .all(|(_, entity)| !matches!(entity, BlockEntity::Chest(_)))
+        );
+        let cracked = reg.block_id("base:cracked_masonry").unwrap();
+        let remnants = world
+            .chunks
+            .values()
+            .map(|chunk| {
+                (0..CHUNK_X)
+                    .flat_map(|x| (0..CHUNK_Z).map(move |z| (x, z)))
+                    .flat_map(|(x, z)| (67..72).map(move |y| (x, y, z)))
+                    .filter(|(x, y, z)| chunk.get(*x, *y, *z) == cracked)
+                    .count()
+            })
+            .sum::<usize>();
+        assert_eq!(remnants, 3);
+        assert!(
+            world
+                .ensure_spawn_discovery_sites(spawn)
+                .unwrap()
+                .is_empty()
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

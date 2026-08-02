@@ -60,7 +60,16 @@ fn num(v: f32) -> String {
 
 /// Every line of an item's tooltip, top to bottom, with its color.
 /// Pure so the wording can be tested without a window.
+#[cfg(test)]
 pub fn item_tooltip_lines(reg: &Registry, stack: ItemStack) -> Vec<(String, [f32; 4])> {
+    item_tooltip_lines_with_current(reg, stack, None)
+}
+
+fn item_tooltip_lines_with_current(
+    reg: &Registry,
+    stack: ItemStack,
+    current_units: Option<u64>,
+) -> Vec<(String, [f32; 4])> {
     let d = reg.item(stack.item);
     let mut lines = vec![(d.label.to_uppercase(), TITLE)];
 
@@ -139,6 +148,47 @@ pub fn item_tooltip_lines(reg: &Registry, stack: ItemStack) -> Vec<(String, [f32
     if d.glow.is_some() {
         lines.push(("GIVES LIGHT IN HAND".into(), EFFECT));
     }
+    if d.name == "base:ashlace_tissue" {
+        lines.push(("BINDS DROSS. DOES NOT CLEAN IT".into(), BODY));
+    }
+    if let Some(discovery) = &d.discovery {
+        let line = match discovery.kind.as_str() {
+            "tuning_lens" => Some("HOLD USE: SETTLE A QUALITATIVE READING"),
+            "lens_frame" => Some("FIT AT A LENS ASSEMBLY BENCH"),
+            "field_ledger" => Some("USE: OPEN SIGNED FIELD RECORDS"),
+            "survey_folio" => Some("MOUNT: INDEX A SETTLEMENT LIBRARY"),
+            "calibration_plate" => Some("CARRIED: NARROWS READING UNCERTAINTY"),
+            "artifact" => Some("USE: READ THIS MAKER'S SURVIVING CLAIM"),
+            "reference_object" => Some("PHYSICAL REFERENCE FOR CONTROLLED TRIALS"),
+            _ => None,
+        };
+        if let Some(line) = line {
+            lines.push((line.into(), EFFECT));
+        }
+        if let Some(class) = discovery.evidence_class.as_deref() {
+            lines.push((
+                format!("EVIDENCE: {}", class.replace('_', " ").to_uppercase()),
+                BODY,
+            ));
+        }
+    }
+    if let (Some(arcane), Some(units)) = (&d.arcane, current_units) {
+        lines.push((
+            format!(
+                "CURRENT: {}",
+                crate::arcane::qualitative_current(units, arcane.capacity).to_uppercase()
+            ),
+            EFFECT,
+        ));
+        let behavior = if arcane.stability_permille >= 750 {
+            "HOLDS CHARGE STEADILY"
+        } else if arcane.conductivity_permille >= 700 {
+            "CONDUCTS CHARGE READILY"
+        } else {
+            "CHARGE FEELS RESTLESS"
+        };
+        lines.push((behavior.into(), BODY));
+    }
     if d.durability > 0 {
         // The same field means two different things. On a tool it is
         // wear; on food it is freshness, burning down at
@@ -189,6 +239,9 @@ impl Game {
         };
         match self.ui_state.screen {
             Screen::Inventory => {
+                if self.ui_state.inventory_discovery_open {
+                    return None;
+                }
                 if self.ui_state.inventory_browser_open || self.ui_state.inventory_status_open {
                     return inv();
                 }
@@ -262,7 +315,8 @@ impl Game {
         let Some(stack) = self.hovered_item() else {
             return;
         };
-        let lines = item_tooltip_lines(&self.content.reg, stack);
+        let current = self.server.world.inspectable_item_current(stack.arcane_id);
+        let lines = item_tooltip_lines_with_current(&self.content.reg, stack, current);
         const S: f32 = 1.3;
         const PAD: f32 = 8.0;
         const LINE: f32 = 15.0;
@@ -382,5 +436,24 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn ecology_tooltips_are_qualitative_and_explain_sequestered_dross() {
+        let reg = reg();
+        let ashlace = reg.item_id("base:ashlace_tissue").unwrap();
+        let lines =
+            item_tooltip_lines_with_current(&reg, ItemStack::new(&reg, ashlace, 1), Some(137))
+                .into_iter()
+                .map(|(text, _)| text)
+                .collect::<Vec<_>>();
+        assert!(lines.iter().any(|line| line.contains("BINDS DROSS")));
+        assert!(lines.iter().any(|line| line.starts_with("CURRENT: ")));
+        assert!(
+            lines
+                .iter()
+                .filter(|line| line.starts_with("CURRENT: "))
+                .all(|line| !line.chars().any(|character| character.is_ascii_digit()))
+        );
     }
 }

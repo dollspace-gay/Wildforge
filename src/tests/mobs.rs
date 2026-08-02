@@ -792,6 +792,126 @@ fn wardens_dissolve_at_dawn_and_never_save() {
 }
 
 #[test]
+fn warden_current_balances_manifestation_dissolution_death_drops_and_heart_death() {
+    let reg = base_reg();
+    let dir = tmp_dir("warden-current-lifecycle");
+    let atlas = std::sync::Arc::new(crate::planet_atlas::PlanetAtlas::fixture(8_799, 16).unwrap());
+    atlas.write_new(&dir).unwrap();
+    let country = atlas.biomes.countries.first().expect("fixture country");
+    let point = country.heart_site.center(atlas.side());
+    let surface =
+        crate::planet::SurfacePos::new(point.face, point.u.floor() as u16, point.v.floor() as u16)
+            .unwrap();
+    let mut world = World::new_with_atlas(8_799, dir, reg.clone(), atlas.clone());
+    world.ensure_chunk(ChunkPos::from_surface(surface));
+    let y = world.surface_height_at(surface) + 1;
+    let pos = crate::planet::EntityPos::new(
+        surface.face(),
+        f32::from(surface.u()) + 0.5,
+        y as f32,
+        f32::from(surface.v()) + 0.5,
+    )
+    .unwrap();
+    let species = reg.animal_id("base:thornling").unwrap();
+    let capacity = reg.animals[species].arcane.as_ref().unwrap().capacity;
+    let heart = crate::arcane::ArcaneOwner::Heart(country.id);
+    let heart_before = world
+        .arcane_ledger
+        .as_ref()
+        .unwrap()
+        .account(&heart)
+        .unwrap()
+        .current
+        .total();
+
+    let manifest = |world: &mut World| {
+        let before = world.mob_count();
+        let mut mob = crate::mobs::Mob::new_at(species, pos, 0.0);
+        mob.health = reg.animals[species].health;
+        world.spawn_mob(mob);
+        (world.mob_count() > before).then(|| world.mobs().last().unwrap().id)
+    };
+    let first = manifest(&mut world).expect("heart funded first manifestation");
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert_eq!(
+        ledger
+            .account(&crate::arcane::ArcaneOwner::Mob(u64::from(first)))
+            .unwrap()
+            .current
+            .total(),
+        capacity
+    );
+    assert_eq!(
+        ledger.account(&heart).unwrap().current.total(),
+        heart_before - capacity
+    );
+
+    // With no nearby player, the ordinary retirement path dissolves the
+    // temporary manifestation and returns its full loan.
+    let mut rng = 91u32;
+    world.tick_mobs(&[], 1.0, 1.0 / 60.0, &mut rng);
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert!(
+        ledger
+            .account(&crate::arcane::ArcaneOwner::Mob(u64::from(first)))
+            .is_none()
+    );
+    assert_eq!(
+        ledger.account(&heart).unwrap().current.total(),
+        heart_before
+    );
+
+    let second = manifest(&mut world).expect("heart funded second manifestation");
+    let mob = world.mob_by_id_mut(second).unwrap();
+    mob.health = 0.0;
+    mob.growth = 1.0;
+    let deaths = world.settle_dead_mobs(&mut rng);
+    assert_eq!(deaths.len(), 1);
+    let drops = world.take_pending_drops();
+    assert!(!drops.is_empty());
+    assert!(drops.iter().all(|(_, stack)| stack.arcane_id != 0));
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert!(
+        ledger
+            .account(&crate::arcane::ArcaneOwner::Mob(u64::from(second)))
+            .is_none()
+    );
+    for (_, stack) in &drops {
+        assert!(
+            ledger
+                .account(&crate::arcane::ArcaneOwner::Item(stack.arcane_id))
+                .is_some()
+        );
+    }
+    assert!(ledger.audit().unwrap().is_balanced());
+
+    // The generated heart's death freezes the remaining reserve. A new
+    // manifestation is rejected instead of silently borrowing from Deep.
+    let province = world.generator.province_at(surface).key;
+    assert!(world.heart_at_surface(surface).is_some());
+    world.set_heart_stage(province, 0);
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .heart_frozen(country.id)
+    );
+    let count = world.mob_count();
+    assert!(manifest(&mut world).is_none());
+    assert_eq!(world.mob_count(), count);
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .audit()
+            .unwrap()
+            .is_balanced()
+    );
+}
+
+#[test]
 fn breeding_makes_babies_that_grow() {
     let reg = base_reg();
     let mut w = test_world("breed");

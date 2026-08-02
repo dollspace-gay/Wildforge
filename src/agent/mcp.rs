@@ -292,6 +292,82 @@ fn tool_schemas() -> Vec<Value> {
             json!({"item": s("food item name")}),
             &["item"],
         ),
+        tool(
+            "observe_magic",
+            "Settle a held tuning lens on a reachable block and write the host-authored qualitative reading to a physical ledger. Omit coordinates to survey the local region.",
+            {
+                let mut fields = pos().as_object().cloned().unwrap_or_default();
+                fields.insert(
+                    "ledger".into(),
+                    s("record-holder item, usually base:field_ledger"),
+                );
+                fields.insert("calibration".into(), s("optional calibration plate item"));
+                fields.insert("label".into(), s("optional short public label"));
+                Value::Object(fields)
+            },
+            &["ledger"],
+        ),
+        tool(
+            "read_knowledge",
+            "Read a physical artifact, field ledger, or carried survey folio. This reveals only records present in that item.",
+            json!({"item": s("item name in the pack")}),
+            &["item"],
+        ),
+        tool(
+            "read_folio",
+            "Read a reachable placed settlement survey folio.",
+            pos(),
+            &["face", "u", "y", "v"],
+        ),
+        tool(
+            "copy_observation",
+            "At a reachable writing surface, copy one signed observation between carried holders or an adjacent placed folio. Use the literal placed_folio plus the matching nested position. Location may be omitted.",
+            {
+                let mut fields = pos().as_object().cloned().unwrap_or_default();
+                fields.insert("source".into(), s("source item name or placed_folio"));
+                fields.insert(
+                    "source_folio".into(),
+                    json!({"type": "object", "properties": pos()}),
+                );
+                fields.insert("record_id".into(), json!({"type": "integer", "minimum": 1}));
+                fields.insert(
+                    "destination".into(),
+                    s("destination item name or placed_folio"),
+                );
+                fields.insert(
+                    "destination_folio".into(),
+                    json!({"type": "object", "properties": pos()}),
+                );
+                fields.insert(
+                    "include_location".into(),
+                    json!({"type": "boolean", "description": "copy site coordinates too (default false)"}),
+                );
+                Value::Object(fields)
+            },
+            &["face", "u", "y", "v", "source", "record_id", "destination"],
+        ),
+        tool(
+            "run_magic_experiment",
+            "Load one physical sample and the experiment's calibrated reference into a reachable apparatus, run a repeatable trial, and write its qualitative result to a ledger. The sample and reference remain installed and are not consumed.",
+            {
+                let mut fields = pos().as_object().cloned().unwrap_or_default();
+                fields.insert(
+                    "kind".into(),
+                    s("capacity | conductivity | stability | biological_response | dross_response"),
+                );
+                fields.insert("sample".into(), s("sample item in the pack"));
+                fields.insert("ledger".into(), s("record-holder item"));
+                fields.insert("calibration".into(), s("optional calibration plate item"));
+                Value::Object(fields)
+            },
+            &["face", "u", "y", "v", "kind", "sample", "ledger"],
+        ),
+        tool(
+            "assemble_tuning_lens",
+            "Use a reachable lens assembly bench to fit an initial frame and Echo Slate plate, or reuse a surviving fitted mount, with a replaceable Wellglass element from the pack.",
+            pos(),
+            &["face", "u", "y", "v"],
+        ),
         tool("respawn", "Respawn after death.", json!({}), &[]),
     ]
 }
@@ -446,6 +522,80 @@ fn call_tool(agent: &mut Agent, name: &str, args: &Value) -> String {
                 Err(e) => e,
             },
             None => need.into(),
+        },
+        "observe_magic" => {
+            let target = if args.get("face").is_some() {
+                match planetary_pos(args) {
+                    Ok(pos) => Some(pos),
+                    Err(error) => return error,
+                }
+            } else {
+                None
+            };
+            match gs("ledger") {
+                Some(ledger) => agent
+                    .observe_discovery(target, &ledger, gs("calibration").as_deref(), gs("label"))
+                    .unwrap_or_else(|error| error),
+                None => need.into(),
+            }
+        }
+        "read_knowledge" => match gs("item") {
+            Some(item) => agent.read_knowledge(&item).unwrap_or_else(|error| error),
+            None => need.into(),
+        },
+        "read_folio" => match planetary_pos(args) {
+            Ok(pos) => agent.read_folio(pos).unwrap_or_else(|error| error),
+            Err(error) => error,
+        },
+        "copy_observation" => {
+            let record_id = args.get("record_id").and_then(Value::as_u64);
+            let holder = |name: Option<String>, position: &str| match name.as_deref() {
+                Some("placed_folio") => args
+                    .get(position)
+                    .ok_or_else(|| format!("missing {position}"))
+                    .and_then(planetary_pos)
+                    .map(|pos| crate::net::RecordHolderSnap::Folio { pos }),
+                Some(name) => agent.discovery_holder_for_item(name),
+                None => Err(need.into()),
+            };
+            match (
+                planetary_pos(args),
+                holder(gs("source"), "source_folio"),
+                record_id,
+                holder(gs("destination"), "destination_folio"),
+            ) {
+                (Ok(writing_pos), Ok(source), Some(record_id), Ok(destination)) => agent
+                    .copy_observation(
+                        writing_pos,
+                        source,
+                        record_id,
+                        destination,
+                        args.get("include_location")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false),
+                    )
+                    .unwrap_or_else(|error| error),
+                (Err(error), _, _, _) | (_, Err(error), _, _) | (_, _, _, Err(error)) => error,
+                _ => need.into(),
+            }
+        }
+        "run_magic_experiment" => match (
+            planetary_pos(args),
+            gs("kind").and_then(|kind| crate::discovery::ExperimentKind::parse(&kind)),
+            gs("sample"),
+            gs("ledger"),
+        ) {
+            (Ok(pos), Some(kind), Some(sample), Some(ledger)) => agent
+                .run_discovery_experiment(pos, kind, &sample, &ledger, gs("calibration").as_deref())
+                .unwrap_or_else(|error| error),
+            (Err(error), _, _, _) => error,
+            _ => "missing or unknown experiment argument".into(),
+        },
+        "assemble_tuning_lens" => match planetary_pos(args) {
+            Ok(pos) => agent
+                .assemble_discovery_lens(pos)
+                .unwrap_or_else(|error| error),
+            Err(error) => error,
         },
         "respawn" => {
             agent.send(&crate::net::C2S::Respawn);

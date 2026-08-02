@@ -83,6 +83,9 @@ pub struct Agent {
     mobs_rx: net::SnapshotAssembler<net::MobSnap>,
     /// Human-readable happenings, drained by the events tool.
     pub events: VecDeque<String>,
+    last_discovery: Option<crate::discovery::ObservationSummary>,
+    last_discovery_records: Option<(Vec<crate::discovery::ObservationSummary>, u16)>,
+    last_knowledge_text: Option<String>,
     pub behavior: Behavior,
     pending_chunks: VecDeque<(ChunkPos, Vec<u8>)>,
     entry_required: HashSet<ChunkPos>,
@@ -160,6 +163,9 @@ impl Agent {
             players_rx: Default::default(),
             mobs_rx: Default::default(),
             events: VecDeque::new(),
+            last_discovery: None,
+            last_discovery_records: None,
+            last_knowledge_text: None,
             behavior: Behavior::Idle,
             pending_chunks: VecDeque::new(),
             entry_required: HashSet::new(),
@@ -233,6 +239,7 @@ impl Agent {
                     item: self.local_item(s.item)?,
                     count: s.count,
                     durability: s.durability,
+                    arcane_id: s.arcane_id,
                 })
             });
         }
@@ -242,6 +249,7 @@ impl Agent {
                 item: self.local_item(s.item)?,
                 count: s.count,
                 durability: s.durability,
+                arcane_id: s.arcane_id,
             })
         });
     }
@@ -258,6 +266,7 @@ impl Agent {
         if !messages.is_empty() {
             self.entry_activity = std::time::Instant::now();
         }
+        let mut block_updates = Vec::new();
         for msg in messages {
             match msg {
                 net::S2C::Chunk { face, u, v, rle } => {
@@ -267,10 +276,27 @@ impl Agent {
                         self.pending_chunks.push_back((pos, rle));
                     }
                 }
+                net::S2C::BlockSet {
+                    pos,
+                    id,
+                    meta,
+                    salt_mass,
+                    soil_salinity,
+                } => {
+                    let local = self
+                        .block_map
+                        .get(id as usize)
+                        .copied()
+                        .unwrap_or(self.reg.unknown_block);
+                    block_updates.push((pos, local, meta, salt_mass, soil_salinity));
+                }
                 other => self.apply(other),
             }
         }
         self.apply_pending_chunks();
+        if !block_updates.is_empty() {
+            self.world.apply_remote_block_states(block_updates);
+        }
         if self.in_world {
             self.tick_behavior(dt);
             self.move_timer += dt;
@@ -416,9 +442,13 @@ impl Agent {
                     .get(id as usize)
                     .copied()
                     .unwrap_or(self.reg.unknown_block);
-                self.world
-                    .set_block_state_at(pos, local, meta, salt_mass, soil_salinity);
-                self.world.clear_pending_drops();
+                self.world.apply_remote_block_states([(
+                    pos,
+                    local,
+                    meta,
+                    salt_mass,
+                    soil_salinity,
+                )]);
             }
             net::S2C::Players(part) => {
                 let Some(list) = self.players_rx.accept(part) else {
@@ -473,6 +503,39 @@ impl Agent {
             net::S2C::WeatherCells { side, cells } => {
                 self.world.set_remote_weather(side, cells);
             }
+            net::S2C::ArcaneCue {
+                bands,
+                dominant,
+                ecology,
+            } => {
+                self.world.set_remote_arcane_cue(bands, dominant, ecology);
+            }
+            net::S2C::ArcaneItems { charges } => {
+                self.world.set_remote_arcane_items(charges);
+            }
+            net::S2C::DiscoveryReport(record) => {
+                self.event(format!(
+                    "observed {}: {} ({})",
+                    record.category, record.reading, record.phenomenon_id
+                ));
+                self.last_discovery = Some(record);
+            }
+            net::S2C::DiscoveryRecords {
+                holder: _,
+                records,
+                capacity,
+            } => {
+                self.event(format!(
+                    "read discovery records: {}/{} entries",
+                    records.len(),
+                    capacity
+                ));
+                self.last_discovery_records = Some((records, capacity));
+            }
+            net::S2C::KnowledgeText { instance_id, text } => {
+                self.event(format!("read knowledge object {instance_id}: {text}"));
+                self.last_knowledge_text = Some(text);
+            }
             net::S2C::Hit { dmg, from: _ } => {
                 self.health -= dmg;
                 self.event(format!(
@@ -484,6 +547,8 @@ impl Agent {
                 item,
                 count,
                 durability,
+                arcane_id,
+                current_units,
             } => {
                 if let Some(local) = self.local_item(item) {
                     let reg = self.reg.clone();
@@ -491,6 +556,8 @@ impl Agent {
                     if durability > 0 {
                         stack.durability = durability;
                     }
+                    stack.arcane_id = arcane_id;
+                    self.world.set_remote_arcane_item(arcane_id, current_units);
                     let name = reg.item(local).name.clone();
                     let left = self.inventory.add_stack(&reg, stack);
                     self.event(format!("received {}x {name}", count.max(1) - left));
@@ -527,6 +594,7 @@ impl Agent {
                         item: self.local_item(s.item)?,
                         count: s.count,
                         durability: s.durability,
+                        arcane_id: s.arcane_id,
                     })
                 });
             }

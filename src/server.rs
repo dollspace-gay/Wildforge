@@ -47,6 +47,8 @@ pub enum SimEvent {
     BoltCast,
     /// Wildlife bred.
     Bred,
+    /// Authoritative death settlement completed; clients only present it.
+    MobDied(crate::world::SettledMobDeath),
     /// Day rolled over; offerings worth this much were accepted.
     Dawn { offering_refund: f32 },
     /// The wild's ire crossed a tier boundary.
@@ -135,6 +137,12 @@ impl Server {
         }
         if let Err(error) = self.world.tick_planetary_weather(4_096) {
             eprintln!("planetary weather update failed: {error}");
+        }
+        if let Err(error) = self.world.tick_arcane_geography(4_096) {
+            eprintln!("planetary Current update failed: {error}");
+        }
+        if let Err(error) = self.world.tick_arcane_ecology(512) {
+            eprintln!("planetary magical ecology update failed: {error}");
         }
         let winter_before = self.world.long_winter;
         if self.world.tick_ire(dt / DAY_LENGTH) {
@@ -235,6 +243,8 @@ impl Server {
                 }
             }
         }
+        let deaths = self.world.settle_dead_mobs(&mut self.rng);
+        events.extend(deaths.into_iter().map(SimEvent::MobDied));
         for (who, dmg) in self.world.tick_projectiles(players, dt) {
             if let Some(p) = players.get(who).filter(|p| p.attackable) {
                 events.push(SimEvent::PlayerHit {

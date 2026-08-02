@@ -16,9 +16,18 @@ impl Game {
 
     /// Is a charm of this kind worn?
     pub(super) fn charm(&self, kind: &str) -> bool {
-        self.survival.armor[4]
-            .as_ref()
-            .is_some_and(|s| self.content.reg.item(s.item).charm.as_deref() == Some(kind))
+        self.survival.armor[4].as_ref().is_some_and(|s| {
+            self.content.reg.item(s.item).charm.as_deref() == Some(kind)
+                && s.arcane_id != 0
+                && (self.server.world.is_remote()
+                    || self
+                        .server
+                        .world
+                        .arcane_ledger
+                        .as_ref()
+                        .and_then(|ledger| ledger.item_current_total(s.arcane_id))
+                        .is_some_and(|units| units != 0))
+        })
     }
 
     /// Damage from a warden: knockback away from the attacker, and the
@@ -43,6 +52,7 @@ impl Game {
                             item: broken,
                             count: 1,
                             durability: 0,
+                            arcane_id: st.arcane_id,
                         });
                     }
                 }
@@ -107,15 +117,6 @@ impl Game {
         }
     }
 
-    /// Spill a stack at a world position (mob cargo, wreck salvage).
-    pub(super) fn drop_stack_at(&mut self, stack: ItemStack, pos: crate::planet::EntityPos) {
-        let a = self.rand01() * std::f32::consts::TAU;
-        let v = Vec3::new(a.cos() * 1.2, 2.5 + self.rand01(), a.sin() * 1.2);
-        let mut entity = ItemEntity::new(pos, v, stack.item, stack.count);
-        entity.durability = stack.durability;
-        self.interaction.items.push(entity);
-    }
-
     pub(super) fn drop_stack(&mut self, stack: ItemStack) {
         let a = self.rand01() * std::f32::consts::TAU;
         let v = Vec3::new(a.cos() * 2.0, 3.0 + self.rand01() * 1.5, a.sin() * 2.0);
@@ -127,6 +128,7 @@ impl Game {
             .pos;
         let mut entity = ItemEntity::new(pos, v, stack.item, stack.count);
         entity.durability = stack.durability;
+        entity.arcane_id = stack.arcane_id;
         self.interaction.items.push(entity);
     }
 

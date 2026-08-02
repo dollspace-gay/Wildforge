@@ -957,6 +957,18 @@ impl Mob {
                         && world.get_block_at(cell.with_y((y + 1) as u8)) == crate::registry::AIR
                     {
                         1
+                    } else if matches!(
+                        d.name.as_str(),
+                        "base:rainbell"
+                            | "base:lantern_reed"
+                            | "base:lantern_reed_dim"
+                            | "base:tidekelp"
+                    ) {
+                        // Existing herbivores accept wet, ordinary-tissue
+                        // confluence forage. They avoid dross binders,
+                        // storm-charged vines, crystals, and fire followers;
+                        // magical habitat is not a universal animal buffet.
+                        2
                     } else {
                         0
                     };

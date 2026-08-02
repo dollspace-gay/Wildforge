@@ -45,6 +45,8 @@ struct StoredStack {
     item: String,
     count: u32,
     durability: u32,
+    #[serde(default)]
+    arcane_id: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -463,6 +465,7 @@ fn stored_stack(index: usize, stack: Option<ItemStack>, reg: &Registry) -> Optio
         item: reg.item(stack.item).name.clone(),
         count: stack.count,
         durability: stack.durability,
+        arcane_id: stack.arcane_id,
     })
 }
 
@@ -475,6 +478,7 @@ fn restore_stack(stack: &StoredStack, reg: &Registry) -> Option<ItemStack> {
         item,
         count: stack.count.min(reg.item(item).max_stack),
         durability: stack.durability.min(reg.item(item).durability),
+        arcane_id: stack.arcane_id,
     })
 }
 
@@ -483,6 +487,8 @@ fn stack_snap(stack: &Option<ItemStack>) -> Option<StackSnap> {
         item: stack.item.0,
         count: stack.count,
         durability: stack.durability,
+        arcane_id: stack.arcane_id,
+        current_units: 0,
     })
 }
 

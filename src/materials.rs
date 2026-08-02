@@ -2635,6 +2635,7 @@ mod tests {
             item: tool,
             count: 1,
             durability: 1,
+            arcane_id: 0,
         };
         assert!(
             crate::crafting::match_repair(
@@ -2670,6 +2671,7 @@ mod tests {
             item: tool,
             count: 1,
             durability: 1,
+            arcane_id: 0,
         };
         let part_stack = ItemStack::new(&reg, part, 1);
         ledger

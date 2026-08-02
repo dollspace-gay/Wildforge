@@ -347,6 +347,7 @@ impl World {
                                 item: smoked,
                                 count: st.count,
                                 durability: reg.item(smoked).durability,
+                                arcane_id: st.arcane_id,
                             });
                         }
                     }
@@ -922,7 +923,8 @@ impl World {
         // Byproducts pour out the furnace mouth (cupellation lead);
         // collected here because the entity map is borrowed.
         let mut spat: Vec<(BlockPos, ItemStack)> = Vec::new();
-        let mut material_fuels = Vec::<ItemStack>::new();
+        let mut material_fuels = Vec::<(BlockPos, ItemStack)>::new();
+        let mut arcane_inputs = Vec::<(BlockPos, ItemStack)>::new();
         let mut material_losses = Vec::<crate::registry::MaterialVector>::new();
         let mut secondary_recoveries = Vec::<crate::registry::MaterialVector>::new();
         for (&fpos, e) in self.block_entities.iter_mut() {
@@ -942,7 +944,7 @@ impl World {
                     f.burn_left = burn;
                     f.burn_total = burn;
                     f.burn_speed = speed;
-                    material_fuels.push(ItemStack { count: 1, ..fs });
+                    material_fuels.push((fpos, ItemStack { count: 1, ..fs }));
                     let left = fs.count - 1;
                     f.fuel = if left > 0 {
                         Some(ItemStack { count: left, ..fs })
@@ -961,6 +963,9 @@ impl World {
                         f.progress = 0.0;
                         // Consume one input, emit output.
                         if let Some(inp) = f.input {
+                            if inp.arcane_id != 0 {
+                                arcane_inputs.push((fpos, ItemStack { count: 1, ..inp }));
+                            }
                             if crate::materials::is_secondary_item(&reg, inp.item) {
                                 secondary_recoveries.push(crate::materials::stack_materials(
                                     &reg,
@@ -994,8 +999,8 @@ impl World {
             }
         }
         if let Some(ledger) = &mut self.material_ledger {
-            for stack in material_fuels {
-                let materials = crate::materials::stack_materials(&reg, stack);
+            for (_, stack) in &material_fuels {
+                let materials = crate::materials::stack_materials(&reg, *stack);
                 if let Err(error) = ledger.record_consumption(&materials) {
                     eprintln!("materials: furnace fuel accounting failed: {error}");
                 }
@@ -1010,6 +1015,12 @@ impl World {
                     eprintln!("materials: furnace secondary recovery failed: {error}");
                 }
             }
+        }
+        for (pos, stack) in material_fuels {
+            self.retire_arcane_stack_at(pos, stack, "furnace fuel consumed");
+        }
+        for (pos, stack) in arcane_inputs {
+            self.retire_arcane_stack_at(pos, stack, "furnace input transformed");
         }
         for (pos, stack) in spat {
             self.push_drop_at(pos, stack);

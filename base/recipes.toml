@@ -1180,3 +1180,72 @@ output = "base:fishing_rod"
 pattern = ["S", "C"]
 keys = { S = "base:steel_ingot", C = "base:cobblestone" }
 output = "base:fire_striker"
+
+# --- physical magical discovery: ordinary records and industrial optics ---
+
+[[recipe]]
+pattern = ["lll", "lcl", "lll"]
+keys = { l = "base:leather_strip", c = "base:charcoal" }
+output = "base:field_ledger"
+
+[[recipe]]
+pattern = ["lll", "lcl", "ppp"]
+keys = { l = "base:leather_strip", c = "base:charcoal", p = "#base:planks" }
+output = "base:survey_folio"
+
+[[recipe]]
+pattern = ["ppp", "lcl", "s.s"]
+keys = { p = "#base:planks", l = "base:leather_strip", c = "base:charcoal", s = "base:stick" }
+output = "base:writing_surface"
+
+[[recipe]]
+pattern = ["bgb", "sps", "b.b"]
+keys = { b = "base:bronze_ingot", g = "base:polished_glass", s = "base:silver_ingot", p = "base:glass" }
+output = "base:tuning_lens_frame"
+
+[[recipe]]
+pattern = ["fsw"]
+keys = { f = "base:tuning_lens_frame", s = "base:echo_slate", w = "base:wellglass_shard" }
+output = "base:tuning_lens"
+station = "lens_assembly_bench"
+
+[[recipe]]
+pattern = ["mw"]
+keys = { m = "base:tuning_lens_mount", w = "base:wellglass_shard" }
+output = "base:tuning_lens"
+station = "lens_assembly_bench"
+
+[[recipe]]
+pattern = ["bgb", "cpc", "b.b"]
+keys = { b = "base:bronze_ingot", g = "base:glass", c = "base:copper_ingot", p = "base:polished_glass" }
+output = "base:experiment_apparatus"
+
+[[recipe]]
+pattern = ["bgb", "ptp", "b.b"]
+keys = { b = "base:bronze_ingot", g = "base:glass", p = "#base:planks", t = "base:crafting_table" }
+output = "base:lens_assembly_bench"
+
+[[recipe]]
+pattern = ["g"]
+keys = { g = "base:glass" }
+output = "base:capacity_reference"
+
+[[recipe]]
+pattern = ["c"]
+keys = { c = "base:copper_ingot" }
+output = "base:conductivity_reference"
+
+[[recipe]]
+pattern = ["g"]
+keys = { g = "base:polished_glass" }
+output = "base:stability_reference"
+
+[[recipe]]
+pattern = ["f"]
+keys = { f = "base:plant_fiber" }
+output = "base:biological_reference"
+
+[[recipe]]
+pattern = ["c"]
+keys = { c = "base:charcoal" }
+output = "base:dross_reference"

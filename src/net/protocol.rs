@@ -9,7 +9,7 @@ use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 24;
+pub const PROTOCOL: u32 = 31;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -35,6 +35,11 @@ pub struct StackSnap {
     pub item: u16,
     pub count: u32,
     pub durability: u32,
+    /// Opaque host-assigned instance id. Guests can present it but cannot
+    /// mint or select one in a mutation request.
+    pub arcane_id: u64,
+    /// Bounded inspectable quantity; the authoritative mixture stays host-side.
+    pub current_units: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -50,6 +55,19 @@ pub struct PlayerStateSnap {
     pub inventory: Vec<Option<StackSnap>>,
     pub armor: Vec<Option<StackSnap>>,
     pub cursor: Option<StackSnap>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiscoveryTargetSnap {
+    Region,
+    Block(BlockPos),
+    Held { slot: u8 },
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecordHolderSnap {
+    Inventory { slot: u8 },
+    Folio { pos: BlockPos },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -404,6 +422,52 @@ pub enum C2S {
     BrushBlock {
         pos: BlockPos,
     },
+    /// Begin the physical settling interval. A later matching `Observe` is
+    /// refused unless this host-owned interval has elapsed.
+    BeginObserve {
+        target: DiscoveryTargetSnap,
+    },
+    /// Settle a held tuning lens on something physically measurable, then
+    /// write the host-authored result into a carried field ledger.
+    Observe {
+        target: DiscoveryTargetSnap,
+        ledger_slot: u8,
+        calibration_slot: Option<u8>,
+        label: Option<String>,
+    },
+    ReadKnowledge {
+        slot: u8,
+    },
+    OpenDiscovery {
+        holder: RecordHolderSnap,
+    },
+    CopyObservation {
+        writing_pos: BlockPos,
+        source: RecordHolderSnap,
+        record_id: u64,
+        destination: RecordHolderSnap,
+        include_location: bool,
+    },
+    /// Begin a controlled trial's physical settling interval.
+    BeginExperiment {
+        pos: BlockPos,
+        kind: crate::discovery::ExperimentKind,
+    },
+    /// Insert the selected physical sample/reference into an apparatus, or
+    /// retrieve one into an empty selected slot.
+    SetExperimentItem {
+        pos: BlockPos,
+        slot: u8,
+    },
+    RunExperiment {
+        pos: BlockPos,
+        kind: crate::discovery::ExperimentKind,
+        ledger_slot: u8,
+        calibration_slot: Option<u8>,
+    },
+    AssembleTuningLens {
+        pos: BlockPos,
+    },
     /// Steelworks: ask the host to light a charged bloomery or covered log pile.
     LightBloomery {
         pos: BlockPos,
@@ -526,6 +590,30 @@ pub enum S2C {
             crate::planet_atlas::LocalWeatherSample,
         )>,
     },
+    /// Coarse local perception only: `[ambient Current, dross]`, each 0..=4,
+    /// plus 0 for an unclear resonance or 1..=6 for one base-resonance sign.
+    ArcaneCue {
+        bands: [u8; 2],
+        dominant: u8,
+        /// Host-authored unaided observation and whether a nearby
+        /// stabilizer damps the Current's harmonic bed.
+        ecology: Option<(String, bool)>,
+    },
+    /// Complete, interest-managed charge view for item instances this player
+    /// can currently inspect. The host suppresses unchanged snapshots.
+    ArcaneItems {
+        charges: Vec<(u64, u64)>,
+    },
+    DiscoveryReport(crate::discovery::ObservationSummary),
+    DiscoveryRecords {
+        holder: RecordHolderSnap,
+        records: Vec<crate::discovery::ObservationSummary>,
+        capacity: u16,
+    },
+    KnowledgeText {
+        instance_id: u64,
+        text: String,
+    },
     Hit {
         dmg: f32,
         from: EntityPos,
@@ -534,6 +622,8 @@ pub enum S2C {
         item: u16,
         count: u32,
         durability: u32,
+        arcane_id: u64,
+        current_units: u64,
     },
     Container {
         pos: BlockPos,
@@ -637,5 +727,55 @@ mod tests {
             }),
         });
         assert!(largest_stock_auth.len() < PREAUTH_FRAME_MAX);
+    }
+
+    #[test]
+    fn a_full_survey_folio_fits_the_reliable_gameplay_budget() {
+        let position = BlockPos::of_world(1, 72, 2).unwrap();
+        let record = crate::discovery::ObservationSummary {
+            record_id: 1,
+            phenomenon_id: "base:representative_magical_phenomenon".into(),
+            category: "biological_response".into(),
+            reading: "strong / strained / root + echo / dross trace / drift northwest ± broad"
+                .into(),
+            properties: vec![
+                ("conductivity".into(), "conductive".into()),
+                (
+                    "biological response".into(),
+                    "reservoir / stabilizer".into(),
+                ),
+            ],
+            observer: crate::identity::PlayerId([7; 16]),
+            observer_name: "REPRESENTATIVE SURVEYOR".into(),
+            label: Some("bounded field label near the old spring".into()),
+            day: 999,
+            season: "late winter".into(),
+            location: Some(position),
+            provenance: crate::discovery::PlanetaryProvenance {
+                face: "pos_z".into(),
+                atlas_u: Some(12),
+                atlas_v: Some(14),
+                biome: "temperate rainforest".into(),
+                place: Some("The Long Watershed of Morrow Vale".into()),
+            },
+            obsolete_content: false,
+        };
+        let records = (0..crate::discovery::SURVEY_FOLIO_RECORDS)
+            .map(|index| crate::discovery::ObservationSummary {
+                record_id: index as u64 + 1,
+                ..record.clone()
+            })
+            .collect();
+        let frame = encode(&S2C::DiscoveryRecords {
+            holder: RecordHolderSnap::Folio { pos: position },
+            records,
+            capacity: crate::discovery::SURVEY_FOLIO_RECORDS as u16,
+        });
+        assert!(
+            frame.len() < CLIENT_FRAME_MAX,
+            "full survey folio uses {} of {} reliable bytes",
+            frame.len(),
+            CLIENT_FRAME_MAX
+        );
     }
 }

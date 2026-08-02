@@ -17,6 +17,7 @@ pub struct ItemEntity {
     pub age: f32,
     /// Non-zero: this drop carries specific durability (worn ruin tools).
     pub durability: u32,
+    pub arcane_id: u64,
 }
 
 const SIZE: f32 = 0.25;
@@ -33,6 +34,7 @@ impl ItemEntity {
             count,
             age: 0.0,
             durability: 0,
+            arcane_id: 0,
         }
     }
 

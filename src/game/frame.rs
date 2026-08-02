@@ -655,6 +655,9 @@ impl Game {
                             self.sfx(Sfx::Pickup);
                             self.toast("New life stirs in the wild.".to_string());
                         }
+                        server::SimEvent::MobDied(death) => {
+                            self.present_settled_mob_death(death);
+                        }
                         server::SimEvent::Dawn { offering_refund } => {
                             if offering_refund > 0.0 {
                                 self.sfx(Sfx::Pickup);
@@ -678,15 +681,13 @@ impl Game {
                         }
                     }
                 }
-                if self.multiplayer.remote.is_none() {
-                    self.sweep_dead_mobs();
-                }
                 for (pos, s) in self.server.world.take_pending_drops() {
                     let center = pos.entity_center();
                     let a = self.rand01() * std::f32::consts::TAU;
                     let v = Vec3::new(a.cos() * 1.5, 2.5, a.sin() * 1.5);
                     let mut entity = ItemEntity::new(center, v, s.item, s.count);
                     entity.durability = s.durability;
+                    entity.arcane_id = s.arcane_id;
                     self.interaction.items.push(entity);
                 }
                 // The wild's whispers reach the ear as toasts.
@@ -710,6 +711,37 @@ impl Game {
                             .to_string(),
                         );
                     }
+                }
+                // Before a tuning lens exists, magical geography is learned
+                // through signs rather than a debug number or raw atlas map.
+                // Guests use only the host's coarse local bands; solo/host
+                // players may ask their authoritative atlas for the same
+                // unaided qualitative vocabulary.
+                let arcane_sign = if self.multiplayer.remote.is_some() {
+                    Some(crate::arcane_geography::coarse_sensory_cue(
+                        self.server.world.remote_arcane_cue(),
+                        self.server.world.remote_arcane_dominant(),
+                    ))
+                } else {
+                    self.server.world.planet_atlas().and_then(|atlas| {
+                        self.server
+                            .world
+                            .arcane_survey_at(atlas.atlas_pos(surface), false)
+                            .map(|survey| survey.sensory_cue())
+                    })
+                };
+                if let Some(sign) = arcane_sign
+                    && self.presentation.arcane_signs.insert(sign.clone())
+                {
+                    self.toast(sign);
+                }
+                if let Some(observation) = self.server.world.perceived_arcane_ecology_at(surface)
+                    && self
+                        .presentation
+                        .arcane_signs
+                        .insert(observation.text.clone())
+                {
+                    self.toast(observation.text);
                 }
                 // Close container screens if their block vanished.
                 if let Screen::Furnace(pos)
@@ -1029,7 +1061,12 @@ impl Game {
             moon_fill,
         });
 
-        // The weather bed follows what's actually falling where you stand.
+        // Weather wins while it is audible; in fair conditions nearby living
+        // Current supplies its own restrained harmonic bed.
+        let ecology_ambience = self
+            .server
+            .world
+            .perceived_arcane_ecology_at(self.player.pos.surface());
         if let Some(a) = &self.audio {
             let want = if self.ui_state.screen == Screen::Paused {
                 // The pause menu holds the world's breath: no rain,
@@ -1055,6 +1092,11 @@ impl Game {
             {
                 // Wind is the forecast: every rain passes through it.
                 Some(audio::Ambience::Wind)
+            } else if self.in_world
+                && self.presentation.juice
+                && let Some(observation) = &ecology_ambience
+            {
+                Some(audio::Ambience::Current(observation.damped))
             } else if self.in_world && self.presentation.juice && daylight < 0.25 {
                 // The night bed: crickets while the wild is calm; a low
                 // hush once it turns wrathful. The ire meter, diegetic.
@@ -1094,6 +1136,12 @@ impl Game {
             .map(|h| h.block)
         } else {
             None
+        };
+        let outline_color = if self.interaction.lens_settle > 0.0 {
+            let phase = (self.time_abs * 10.0).sin() * 0.12;
+            [0.62 + phase, 0.48 + phase, 0.88]
+        } else {
+            [0.05, 0.05, 0.05]
         };
         let underwater = self.player.head_underwater(&self.server.world);
         let fog = (self.config.view_dist as f32 - 0.5) * CHUNK_X as f32 * (1.0 - 0.35 * gloom);
@@ -1841,6 +1889,7 @@ impl Game {
             occ_update: occ_grid.as_deref(),
             point_lights: &point_lights,
             outline,
+            outline_color,
             entity_verts: &entity_verts,
             entity_idx: &entity_idx,
             overlay_verts: &overlay_verts,

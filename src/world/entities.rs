@@ -9,7 +9,7 @@ impl World {
 
     pub(super) fn save_entities(&self) -> std::io::Result<()> {
         use std::fmt::Write as _;
-        let mut out = String::from("version = 3\n");
+        let mut out = String::from("version = 6\n");
         let pos_value = |pos: BlockPos| {
             format!(
                 "{{ face = \"{:?}\", u = {}, y = {}, v = {} }}",
@@ -28,10 +28,11 @@ impl World {
                         if let Some(s) = s {
                             let _ = writeln!(
                                 out,
-                                "{k} = {{ item = \"{}\", count = {}, durability = {} }}",
+                                "{k} = {{ item = \"{}\", count = {}, durability = {}, arcane_id = {} }}",
                                 self.reg.item(s.item).name,
                                 s.count,
-                                s.durability
+                                s.durability,
+                                s.arcane_id
                             );
                         }
                     };
@@ -53,10 +54,11 @@ impl World {
                         if let Some(st) = st {
                             let _ = writeln!(
                                 out,
-                                "[[chest.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                "[[chest.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                                 self.reg.item(st.item).name,
                                 st.count,
-                                st.durability
+                                st.durability,
+                                st.arcane_id
                             );
                         }
                     }
@@ -68,10 +70,11 @@ impl World {
                         if let Some(st) = st {
                             let _ = writeln!(
                                 out,
-                                "[[offering.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                "[[offering.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                                 self.reg.item(st.item).name,
                                 st.count,
-                                st.durability
+                                st.durability,
+                                st.arcane_id
                             );
                         }
                     }
@@ -91,10 +94,11 @@ impl World {
                         if let Some(st) = st {
                             let _ = writeln!(
                                 out,
-                                "[[bloomery.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                "[[bloomery.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                                 self.reg.item(st.item).name,
                                 st.count,
-                                st.durability
+                                st.durability,
+                                st.arcane_id
                             );
                         }
                     }
@@ -114,10 +118,11 @@ impl World {
                         if let Some(st) = st {
                             let _ = writeln!(
                                 out,
-                                "[[forge.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                "[[forge.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                                 self.reg.item(st.item).name,
                                 st.count,
-                                st.durability
+                                st.durability,
+                                st.arcane_id
                             );
                         }
                     }
@@ -157,10 +162,11 @@ impl World {
                         if let Some(stk) = stk {
                             let _ = writeln!(
                                 out,
-                                "[[stall.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                "[[stall.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                                 self.reg.item(stk.item).name,
                                 stk.count,
-                                stk.durability
+                                stk.durability,
+                                stk.arcane_id
                             );
                         }
                     }
@@ -172,10 +178,11 @@ impl World {
                         if let Some(st) = st {
                             let _ = writeln!(
                                 out,
-                                "[[smoker.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                "[[smoker.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                                 self.reg.item(st.item).name,
                                 st.count,
-                                st.durability
+                                st.durability,
+                                st.arcane_id
                             );
                         }
                     }
@@ -210,10 +217,11 @@ impl World {
                         if let Some(st) = st {
                             let _ = writeln!(
                                 out,
-                                "[[kiln.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                                "[[kiln.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                                 self.reg.item(st.item).name,
                                 st.count,
-                                st.durability
+                                st.durability,
+                                st.arcane_id
                             );
                         }
                     }
@@ -238,11 +246,38 @@ impl World {
                     if let Some(st) = &a.bloom {
                         let _ = writeln!(
                             out,
-                            "bloom = {{ item = \"{}\", count = {}, durability = {} }}",
+                            "bloom = {{ item = \"{}\", count = {}, durability = {}, arcane_id = {} }}",
                             self.reg.item(st.item).name,
                             st.count,
-                            st.durability
+                            st.durability,
+                            st.arcane_id
                         );
+                    }
+                    let _ = writeln!(out);
+                }
+                BlockEntity::SurveyFolio(folio) => {
+                    let _ = writeln!(
+                        out,
+                        "[[survey_folio]]\n{pos_line}\nobject_id = {}\n",
+                        folio.object_id
+                    );
+                }
+                BlockEntity::DiscoveryApparatus(apparatus) => {
+                    let _ = writeln!(out, "[[discovery_apparatus]]\n{pos_line}");
+                    for (name, stack) in [
+                        ("sample", apparatus.sample),
+                        ("reference", apparatus.reference),
+                    ] {
+                        if let Some(stack) = stack {
+                            let _ = writeln!(
+                                out,
+                                "{name} = {{ item = \"{}\", count = {}, durability = {}, arcane_id = {} }}",
+                                self.reg.item(stack.item).name,
+                                stack.count,
+                                stack.durability,
+                                stack.arcane_id
+                            );
+                        }
                     }
                     let _ = writeln!(out);
                 }
@@ -261,6 +296,8 @@ impl World {
             item: String,
             count: u32,
             durability: u32,
+            #[serde(default)]
+            arcane_id: u64,
         }
         #[derive(Deserialize)]
         struct FurnaceT {
@@ -283,6 +320,8 @@ impl World {
             item: String,
             count: u32,
             durability: u32,
+            #[serde(default)]
+            arcane_id: u64,
         }
         #[derive(Deserialize)]
         struct ChestT {
@@ -379,6 +418,19 @@ impl World {
             progress: f32,
         }
         #[derive(Deserialize)]
+        struct SurveyFolioT {
+            pos: crate::planet::BlockPos,
+            object_id: u64,
+        }
+        #[derive(Deserialize)]
+        struct DiscoveryApparatusT {
+            pos: crate::planet::BlockPos,
+            #[serde(default)]
+            sample: Option<SlotT>,
+            #[serde(default)]
+            reference: Option<SlotT>,
+        }
+        #[derive(Deserialize)]
         struct FileT {
             version: u32,
             #[serde(default)]
@@ -407,6 +459,10 @@ impl World {
             steam: Vec<SteamT>,
             #[serde(default)]
             separator: Vec<SeparatorT>,
+            #[serde(default)]
+            survey_folio: Vec<SurveyFolioT>,
+            #[serde(default)]
+            discovery_apparatus: Vec<DiscoveryApparatusT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else {
             return;
@@ -414,7 +470,7 @@ impl World {
         let Ok(parsed) = toml::from_str::<FileT>(&text) else {
             return;
         };
-        if parsed.version != 3 {
+        if !(3..=6).contains(&parsed.version) {
             return;
         }
         let conv = |s: Option<SlotT>| -> Option<ItemStack> {
@@ -424,6 +480,7 @@ impl World {
                 item,
                 count: s.count,
                 durability: s.durability,
+                arcane_id: s.arcane_id,
             })
         };
         for fu in parsed.furnace {
@@ -453,6 +510,7 @@ impl World {
                         item,
                         count: sl.count,
                         durability: sl.durability,
+                        arcane_id: sl.arcane_id,
                     });
                 }
             }
@@ -469,6 +527,7 @@ impl World {
                         item,
                         count: sl.count,
                         durability: sl.durability,
+                        arcane_id: sl.arcane_id,
                     });
                 }
             }
@@ -490,6 +549,7 @@ impl World {
                         item,
                         count: sl.count,
                         durability: sl.durability,
+                        arcane_id: sl.arcane_id,
                     });
                     if sl.index < 4 {
                         state.charge[sl.index] = st;
@@ -521,6 +581,7 @@ impl World {
                         item,
                         count: sl.count,
                         durability: sl.durability,
+                        arcane_id: sl.arcane_id,
                     });
                     if sl.index < 4 {
                         state.charge[sl.index] = st;
@@ -555,6 +616,7 @@ impl World {
                         item,
                         count: sl.count,
                         durability: sl.durability,
+                        arcane_id: sl.arcane_id,
                     });
                     match sl.index {
                         0..=5 => state.goods[sl.index] = stk,
@@ -580,6 +642,7 @@ impl World {
                         item,
                         count: sl.count,
                         durability: sl.durability,
+                        arcane_id: sl.arcane_id,
                     });
                 }
             }
@@ -640,6 +703,7 @@ impl World {
                         item,
                         count: sl.count,
                         durability: sl.durability,
+                        arcane_id: sl.arcane_id,
                     });
                     match sl.index {
                         0..=3 => state.sand[sl.index] = st,
@@ -656,6 +720,25 @@ impl World {
                 BlockEntity::Anvil(AnvilState {
                     bloom: conv(an.bloom),
                     strikes: an.strikes,
+                }),
+            );
+        }
+        for folio in parsed.survey_folio {
+            if folio.object_id != 0 {
+                self.block_entities.insert(
+                    folio.pos,
+                    BlockEntity::SurveyFolio(SurveyFolioState {
+                        object_id: folio.object_id,
+                    }),
+                );
+            }
+        }
+        for apparatus in parsed.discovery_apparatus {
+            self.block_entities.insert(
+                apparatus.pos,
+                BlockEntity::DiscoveryApparatus(DiscoveryApparatusState {
+                    sample: conv(apparatus.sample),
+                    reference: conv(apparatus.reference),
                 }),
             );
         }

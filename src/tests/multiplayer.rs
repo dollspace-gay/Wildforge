@@ -85,6 +85,36 @@ fn net_protocol_round_trips() {
         C2S::AttackMob { id: 3 },
         C2S::FeedMob { id: 12 },
         C2S::BrushBlock { pos: bp(4, 30, -2) },
+        C2S::BeginObserve {
+            target: crate::net::DiscoveryTargetSnap::Block(bp(4, 30, -2)),
+        },
+        C2S::Observe {
+            target: crate::net::DiscoveryTargetSnap::Block(bp(4, 30, -2)),
+            ledger_slot: 3,
+            calibration_slot: Some(4),
+            label: Some("north spring".into()),
+        },
+        C2S::CopyObservation {
+            writing_pos: bp(4, 30, -1),
+            source: crate::net::RecordHolderSnap::Inventory { slot: 3 },
+            record_id: 17,
+            destination: crate::net::RecordHolderSnap::Folio { pos: bp(5, 30, -1) },
+            include_location: false,
+        },
+        C2S::BeginExperiment {
+            pos: bp(5, 30, -2),
+            kind: crate::discovery::ExperimentKind::Conductivity,
+        },
+        C2S::SetExperimentItem {
+            pos: bp(5, 30, -2),
+            slot: 5,
+        },
+        C2S::RunExperiment {
+            pos: bp(5, 30, -2),
+            kind: crate::discovery::ExperimentKind::Conductivity,
+            ledger_slot: 3,
+            calibration_slot: Some(4),
+        },
         C2S::ContainerClick {
             pos: bp(1, 2, 3),
             slot: 4,
@@ -136,6 +166,11 @@ fn net_protocol_round_trips() {
                 crate::planet_atlas::LocalWeatherSample::default(),
             )],
         },
+        S2C::ArcaneCue {
+            bands: [2, 1],
+            dominant: 4,
+            ecology: Some(("Rainbells fold shut.".into(), false)),
+        },
         S2C::Chat {
             from: "a".into(),
             msg: "b".into(),
@@ -163,6 +198,8 @@ fn net_protocol_round_trips() {
             item: 2,
             count: 1,
             durability: 40,
+            arcane_id: 0,
+            current_units: 0,
         })),
         S2C::Mobs(crate::net::Snapshot::whole(
             1,
@@ -182,6 +219,42 @@ fn net_protocol_round_trips() {
         let back: S2C = decode(&encode(m)).expect("s2c decodes");
         assert_eq!(format!("{m:?}"), format!("{back:?}"));
     }
+}
+
+#[test]
+fn arcane_interest_updates_stay_within_the_network_budget() {
+    use crate::inventory::TOTAL_SLOTS;
+    use crate::net::{DATAGRAM_FLOOR, S2C, encode};
+
+    let cue = encode(&S2C::ArcaneCue {
+        bands: [4, 4],
+        dominant: 6,
+        ecology: Some((
+            "Lantern reeds bend over the spring margin; their amber light is steady, while the Current beneath them carries a muted tidal cadence. Ashlace farther upslope has caught a trace of dross in its grey-green threads without making it vanish."
+                .into(),
+            true,
+        )),
+    });
+    assert!(
+        cue.len() <= DATAGRAM_FLOOR,
+        "the longest normal qualitative ecology cue is {} bytes",
+        cue.len()
+    );
+
+    // A player can inspect only inventory, armor, and cursor custody. Use a
+    // deliberately conservative armor allowance so a future slot expansion
+    // fails this budget test before it silently bloats every host update.
+    let inspectable_slots = TOTAL_SLOTS + 8 + 1;
+    let items = encode(&S2C::ArcaneItems {
+        charges: (1..=inspectable_slots as u64)
+            .map(|id| (id, u64::MAX - id))
+            .collect(),
+    });
+    assert!(
+        items.len() <= DATAGRAM_FLOOR,
+        "{inspectable_slots} inspectable charge accounts encode to {} bytes",
+        items.len()
+    );
 }
 
 #[test]
@@ -670,6 +743,7 @@ fn loopback_join_stream_and_edit() {
         item: sword,
         count: 1,
         durability: 7,
+        arcane_id: 0,
     });
     client.send(&C2S::ContainerClick {
         pos: chest_pos,
@@ -1702,12 +1776,21 @@ fn a_crowded_world_still_reaches_the_guest() {
 
 #[test]
 fn a_guest_that_dropped_a_chunk_can_ask_for_it_again() {
-    let (mut sess, mut sim, mut client, id) = loopback_pair("mp-rechunk");
+    let (mut sess, mut sim, mut client, id, drained) = loopback_pair_drained("mp-rechunk");
     let gpos = Vec3::new(8.5, sim.world.surface_height(8, 8) as f32 + 1.0, 8.5);
     sess.guests.get_mut(&id).unwrap().pos = ep(gpos);
 
-    // Let the ring stream normally.
-    let mut first: Option<ChunkPos> = None;
+    // The host starts the ordinary ring as soon as admission completes, so
+    // the first chunk is allowed to share the poll that carried
+    // EntryAccepted. Ignoring the handshake drain made this test depend on
+    // thread scheduling even though the host had correctly recorded and sent
+    // the ground.
+    let mut first = drained.into_iter().find_map(|message| {
+        let S2C::Chunk { face, u, v, .. } = message else {
+            return None;
+        };
+        crate::planet::Face::from_u8(face).and_then(|face| ChunkPos::new(face, u, v).ok())
+    });
     for _ in 0..400 {
         sess.pump(&mut sim, Some((ep(gpos), 0.0, false, u16::MAX, 0)), 0.06);
         for msg in client.poll() {

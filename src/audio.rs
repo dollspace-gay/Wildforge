@@ -69,6 +69,8 @@ pub enum Sfx {
     Rumble,
     /// A nearby warden shifts its weight (pitched per species).
     Presence(f32),
+    /// Tuning-lens plate/needle tone; pitch communicates stability.
+    Lens(f32),
     Click,
     Hurt,
     Craft,
@@ -91,6 +93,8 @@ pub enum Ambience {
     Wind,
     /// The night bed; `true` = calm (crickets), `false` = wrathful hush.
     Night(bool),
+    /// Living Current nearby; `true` means a stabilizer has damped the bed.
+    Current(bool),
 }
 
 pub struct Audio {
@@ -227,6 +231,7 @@ fn synth(sfx: Sfx) -> Vec<f32> {
         Sfx::Grind => burst(0.30, 480.0, 90.0, 0.25, 0.8, 163),
         Sfx::Rumble => burst(0.35, 180.0, 55.0, 0.6, 0.6, 167),
         Sfx::Presence(p) => burst(0.25, 420.0 * p, 75.0 * p, 0.5, 0.7, 173),
+        Sfx::Lens(p) => chirp(0.08, 520.0 * p, 760.0 * p),
         Sfx::MobHurt(p) => burst(0.16, 320.0 * p, 110.0 * p, 0.5, 2.0, 121),
         Sfx::MobDeath(p) => burst(0.34, 240.0 * p, 55.0 * p, 0.7, 1.4, 122),
         Sfx::Bolt(p) => chirp(0.14, 900.0 * p, 300.0 * p),
@@ -246,6 +251,8 @@ fn ambience_loop(kind: Ambience) -> Vec<f32> {
         Ambience::Storm => (900.0, 0.8),
         Ambience::Wind => (500.0, 0.55),
         Ambience::Night(_) => (700.0, 0.30),
+        Ambience::Current(true) => (340.0, 0.12),
+        Ambience::Current(false) => (620.0, 0.18),
     };
     let alpha = (cutoff / RATE as f32).min(1.0);
     let mut lp = 0.0f32;
@@ -290,5 +297,52 @@ fn ambience_loop(kind: Ambience) -> Vec<f32> {
             start += 0.8 + rng.next() * 0.25;
         }
     }
+    if let Ambience::Current(damped) = kind {
+        // Two close partials drift into and out of phase over the exact loop.
+        // A stabilizer narrows the beating interval and suppresses noise; a
+        // reservoir-rich site sounds more restless without becoming a jingle.
+        let base = if damped { 109.0 } else { 123.0 };
+        let beat = if damped { 0.25 } else { 0.75 };
+        for (i, sample) in out.iter_mut().enumerate() {
+            let seconds = i as f32 / RATE as f32;
+            let seam = 0.5 - 0.5 * (seconds / dur * std::f32::consts::TAU).cos();
+            let a = (seconds * base * std::f32::consts::TAU).sin();
+            let b = (seconds * (base + beat) * std::f32::consts::TAU).sin();
+            let overtone = (seconds * base * 2.01 * std::f32::consts::TAU).sin();
+            *sample += (a + b) * 0.045 + overtone * 0.015 * seam;
+        }
+    }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn current_ambience_is_bounded_phase_shifted_and_stabilizer_distinct() {
+        let restless = ambience_loop(Ambience::Current(false));
+        let damped = ambience_loop(Ambience::Current(true));
+        assert_eq!(restless.len(), 4 * RATE as usize);
+        assert_eq!(damped.len(), restless.len());
+        assert!(
+            restless
+                .iter()
+                .chain(&damped)
+                .all(|sample| sample.is_finite())
+        );
+        assert!(
+            restless
+                .iter()
+                .chain(&damped)
+                .all(|sample| sample.abs() < 0.75)
+        );
+        assert!(
+            restless != damped,
+            "a stabilizer must change the audible bed"
+        );
+        let restless_energy = restless.iter().map(|sample| sample * sample).sum::<f32>();
+        let damped_energy = damped.iter().map(|sample| sample * sample).sum::<f32>();
+        assert!(damped_energy < restless_energy);
+    }
 }

@@ -208,6 +208,18 @@ struct UiState {
     browse_back: Vec<(ItemId, bool)>,
     inventory_status_open: bool,
     inventory_browser_open: bool,
+    inventory_discovery_open: bool,
+    discovery_holder: Option<net::RecordHolderSnap>,
+    discovery_copy_target: Option<net::RecordHolderSnap>,
+    discovery_writing_pos: Option<crate::planet::BlockPos>,
+    discovery_records: Vec<crate::discovery::ObservationSummary>,
+    discovery_capacity: u16,
+    discovery_page: usize,
+    discovery_sort: u8,
+    discovery_selected: [Option<u64>; 2],
+    discovery_include_location: bool,
+    discovery_label: String,
+    discovery_label_focus: bool,
     appearance_from_pause: bool,
     account_name: String,
     account_handle: String,
@@ -280,6 +292,18 @@ impl Default for UiState {
             browse_back: Vec::new(),
             inventory_status_open: false,
             inventory_browser_open: false,
+            inventory_discovery_open: false,
+            discovery_holder: None,
+            discovery_copy_target: None,
+            discovery_writing_pos: None,
+            discovery_records: Vec::new(),
+            discovery_capacity: 0,
+            discovery_page: 0,
+            discovery_sort: 0,
+            discovery_selected: [None; 2],
+            discovery_include_location: false,
+            discovery_label: String::new(),
+            discovery_label_focus: false,
             appearance_from_pause: false,
             account_name: String::new(),
             account_handle: String::new(),
@@ -303,6 +327,9 @@ struct InteractionState {
     bow_draw: f32,
     brushing: f32,
     brush_target: Option<crate::planet::BlockPos>,
+    lens_settle: f32,
+    lens_target: Option<DiscoveryAim>,
+    experiment_kind: usize,
     anvil_work: f32,
     anvil_pos: Option<crate::planet::BlockPos>,
     craft_grid: [Option<ItemStack>; 9],
@@ -325,6 +352,9 @@ impl Default for InteractionState {
             bow_draw: 0.0,
             brushing: 0.0,
             brush_target: None,
+            lens_settle: 0.0,
+            lens_target: None,
+            experiment_kind: 0,
             anvil_work: 0.0,
             anvil_pos: None,
             craft_grid: [None; 9],
@@ -338,6 +368,12 @@ impl Default for InteractionState {
     }
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum DiscoveryAim {
+    Region(crate::planet::BlockPos),
+    Block(crate::planet::BlockPos),
+}
+
 /// Cosmetic animation, particles, transient feedback, and light selection.
 struct PresentationState {
     /// Top of the view-distance slider on this machine, resolved once at
@@ -348,6 +384,9 @@ struct PresentationState {
     /// already whispered this session.
     last_ire_cell: Option<world::RegionCell>,
     whispered_cells: std::collections::HashSet<world::RegionCell>,
+    /// Qualitative magical signatures already presented this session. The
+    /// same ordinary condition does not toast on every atlas-cell crossing.
+    arcane_signs: std::collections::HashSet<String>,
     swing: f32,
     hand_bob: f32,
     weather_vis: f32,
@@ -385,6 +424,7 @@ impl PresentationState {
             max_view_dist: config::max_view_dist_for_memory(),
             last_ire_cell: None,
             whispered_cells: std::collections::HashSet::new(),
+            arcane_signs: std::collections::HashSet::new(),
             swing: 0.0,
             hand_bob: 0.0,
             weather_vis: 0.0,
@@ -630,7 +670,15 @@ impl Game {
             }
         }
         std::fs::create_dir_all("packs").ok();
-        let config = Config::load();
+        let mut config = Config::load();
+        // Dev/capture override, intentionally never persisted. Production
+        // planets can otherwise spend the entire bounded screenshot run
+        // filling a player's large everyday horizon before frame one.
+        if let Ok(distance) = std::env::var("WILDFORGE_VIEW_DIST")
+            && let Ok(distance) = distance.parse::<i32>()
+        {
+            config.view_dist = distance.clamp(config::MIN_VIEW_DIST, config::MAX_VIEW_DIST);
+        }
         let identity = identity::LocalIdentity::load_or_create(&identity::identity_dir())
             .expect("load or create local identity");
         let atproto_account = identity::atproto::AtprotoAccount::load(&identity::identity_dir())

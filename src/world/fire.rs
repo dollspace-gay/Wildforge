@@ -78,6 +78,15 @@ impl World {
         let leaves = (name == "base:grass")
             .then(|| self.reg.block_id("base:charred_soil"))
             .flatten();
+        if let Err(error) = self.settle_arcane_ecology_destruction(pos) {
+            eprintln!("arcane ecology: charged biomass could not burn at {pos:?}: {error}");
+            return;
+        }
+        if let Some(geography) = &mut self.arcane_geography
+            && let Some(atlas) = &self.planet_atlas
+        {
+            crate::arcane_ecology::record_fire_at(geography, atlas, pos.surface());
+        }
         match leaves {
             Some(ch) => self.set_block_at(pos, ch),
             None => self.set_block_at(pos, AIR),

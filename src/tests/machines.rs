@@ -166,14 +166,104 @@ fn ember_fuel_speeds_the_furnace() {
 }
 
 #[test]
+fn charged_furnace_fuel_and_inputs_leave_no_orphan_current() {
+    use crate::arcane::{ArcaneOwner, Reservoir};
+    use crate::world::{BlockEntity, FurnaceState};
+
+    let reg = base_reg();
+    let mut world = World::load_or_create(
+        tmp_dir("charged-furnace-lifecycle").join("world"),
+        reg.clone(),
+    )
+    .unwrap();
+    let at = crate::planet::BlockPos::of_world(0, 90, 0).unwrap();
+
+    let mut ember = ItemStack::new(&reg, it(&reg, "base:ember"), 1);
+    world
+        .bind_arcane_stack_at(at, &mut ember, "charged furnace test fuel")
+        .unwrap();
+    let ember_owner = ArcaneOwner::Item(ember.arcane_id);
+    let dross_before = world
+        .arcane_ledger
+        .as_ref()
+        .unwrap()
+        .audit()
+        .unwrap()
+        .reservoirs[&Reservoir::Dross];
+    world.insert_block_entity_at(
+        at,
+        BlockEntity::Furnace(FurnaceState {
+            input: Some(ItemStack::new(&reg, it(&reg, "base:raw_iron"), 1)),
+            fuel: Some(ember),
+            ..Default::default()
+        }),
+    );
+    world.tick_entities(0.1);
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert!(ledger.account(&ember_owner).is_none());
+    assert_eq!(
+        ledger.audit().unwrap().reservoirs[&Reservoir::Dross],
+        dross_before + 512,
+        "ember fuel disorders its exact charge"
+    );
+
+    let quartz_at = crate::planet::BlockPos::of_world(1, 90, 0).unwrap();
+    let mut quartz = ItemStack::new(&reg, it(&reg, "base:quartz_shard"), 1);
+    world
+        .bind_arcane_stack_at(quartz_at, &mut quartz, "charged furnace test input")
+        .unwrap();
+    let quartz_owner = ArcaneOwner::Item(quartz.arcane_id);
+    let ambient_before = world
+        .arcane_ledger
+        .as_ref()
+        .unwrap()
+        .audit()
+        .unwrap()
+        .reservoirs[&Reservoir::Ambient];
+    world.insert_block_entity_at(
+        quartz_at,
+        BlockEntity::Furnace(FurnaceState {
+            input: Some(quartz),
+            fuel: Some(ItemStack::new(&reg, it(&reg, "base:log"), 1)),
+            ..Default::default()
+        }),
+    );
+    for _ in 0..120 {
+        world.tick_entities(0.1);
+    }
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert!(ledger.account(&quartz_owner).is_none());
+    assert_eq!(
+        ledger.audit().unwrap().reservoirs[&Reservoir::Ambient],
+        ambient_before + 384,
+        "transformed quartz returns its exact charge to the environment"
+    );
+    assert!(ledger.audit().unwrap().is_balanced());
+}
+
+#[test]
 fn brushing_yields_once_and_transmutes() {
     let reg = base_reg();
-    let mut w = test_world("brushing");
+    // Archaeological finds may carry finite Current, so this fixture needs
+    // the same qualified atlas + ledger a production world always owns.
+    let mut w = World::load_or_create(tmp_dir("brushing").join("world"), reg.clone()).unwrap();
+    w.ensure_chunk(tchunk(0, 0));
     let masonry = reg.block_id("base:cracked_masonry").unwrap();
     w.set_block(3, 150, 3, masonry);
     let mut rng = 7u32;
     let found = w.brush_block(3, 150, 3, &mut rng).expect("artifact found");
     assert!(found.count >= 1);
+    if reg.item(found.item).arcane.is_some() {
+        assert_ne!(found.arcane_id, 0);
+        assert!(
+            w.arcane_ledger
+                .as_ref()
+                .unwrap()
+                .item_current_total(found.arcane_id)
+                .is_some(),
+            "a charged find remains in clean or explicitly sequestered item custody"
+        );
+    }
     assert_eq!(
         w.get_block(3, 150, 3),
         reg.block_id("base:cobblestone").unwrap(),
@@ -186,6 +276,51 @@ fn brushing_yields_once_and_transmutes() {
     // Breaking a remnant instead just drops cobble (greed loses the find).
     let d = reg.drops_for(masonry, None).unwrap();
     assert_eq!(reg.item(d.0).name, "base:cobblestone");
+}
+
+#[test]
+fn sealed_archaeological_dross_is_funded_and_materializes_once() {
+    use crate::arcane::ArcaneOwner;
+
+    let reg = base_reg();
+    let mut world =
+        World::load_or_create(tmp_dir("sealed-dross-brush").join("world"), reg.clone()).unwrap();
+    world.ensure_chunk(tchunk(0, 0));
+    let masonry = reg.block_id("base:cracked_masonry").unwrap();
+    let sealed = reg.item_id("base:sealed_dross_ampoule").unwrap();
+    let mut rng = 17u32;
+    let mut recovered = None;
+    for x in 1..15 {
+        for z in 1..15 {
+            world.set_block(x, 150, z, masonry);
+            let stack = world.brush_block(x, 150, z, &mut rng).unwrap();
+            if stack.item == sealed {
+                recovered = Some((x, z, stack));
+                break;
+            }
+        }
+        if recovered.is_some() {
+            break;
+        }
+    }
+    let (x, z, stack) = recovered.expect("the deterministic site set includes sealed dross");
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert!(
+        ledger
+            .account(&ArcaneOwner::Item(stack.arcane_id))
+            .is_none()
+    );
+    let contained = ledger.item_dross_total(stack.arcane_id);
+    assert!(
+        contained > 0,
+        "the ampoule owns an actual contained reservoir"
+    );
+    assert!(ledger.audit().unwrap().is_balanced());
+
+    assert!(world.brush_block(x, 150, z, &mut rng).is_none());
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert_eq!(ledger.item_dross_total(stack.arcane_id), contained);
+    assert!(ledger.audit().unwrap().is_balanced());
 }
 
 #[test]
@@ -932,6 +1067,7 @@ fn legacy_food_stacks_initialize_instead_of_rotting() {
         item: berry,
         count: 5,
         durability: 0,
+        arcane_id: 0,
     });
     w.insert_block_entity((4, sy + 1, 4), BlockEntity::Chest(c));
     w.tick_entities(20.0);

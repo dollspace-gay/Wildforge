@@ -51,8 +51,20 @@ impl Game {
             if self.ui_state.held_stack.is_some() {
                 return;
             }
+            let consumed_part = self.interaction.craft_grid[repair.part_slot];
             self.ui_state.held_stack = Some(repair.output);
             crafting::consume_repair(&mut self.interaction.craft_grid[..n2], &repair);
+            if self.multiplayer.remote.is_none()
+                && let Some(stack) = consumed_part
+                && stack.arcane_id != 0
+                && let Some(pos) = self.player.pos.block()
+            {
+                self.server.world.retire_arcane_stack_at(
+                    pos,
+                    ItemStack { count: 1, ..stack },
+                    "charged repair part consumed",
+                );
+            }
             if let Some(ledger) = &mut self.server.world.material_ledger
                 && let Err(error) = ledger.record_recipe_loss(&repair.scale_loss)
             {
@@ -71,6 +83,12 @@ impl Game {
         let out = ItemStack::new(&reg, recipe.output, recipe.count);
         let recipe_loss = recipe.loss.clone();
         let recipe_byproducts = recipe.byproducts.clone();
+        let charged_inputs = self.interaction.craft_grid[..n2]
+            .iter()
+            .flatten()
+            .filter(|stack| stack.arcane_id != 0)
+            .map(|stack| ItemStack { count: 1, ..*stack })
+            .collect::<Vec<_>>();
         match self.ui_state.held_stack {
             None => {
                 self.ui_state.held_stack = Some(out);
@@ -86,6 +104,17 @@ impl Game {
             _ => return, // held stack can't take the output
         }
         crafting::consume(&mut self.interaction.craft_grid[..n2]);
+        if self.multiplayer.remote.is_none()
+            && let Some(pos) = self.player.pos.block()
+        {
+            for stack in charged_inputs {
+                self.server.world.retire_arcane_stack_at(
+                    pos,
+                    stack,
+                    "charged crafting ingredient consumed",
+                );
+            }
+        }
         if let Some(ledger) = &mut self.server.world.material_ledger
             && let Err(error) = ledger.record_recipe_loss(&recipe_loss)
         {
@@ -444,7 +473,17 @@ impl Game {
         };
         match res {
             Ok(()) => {
+                let consumed = self.inventory.slots[slot];
                 self.inventory.take_one(slot);
+                if !self.creative
+                    && let Some(stack) = consumed
+                {
+                    self.server.world.retire_arcane_stack_at(
+                        pos,
+                        ItemStack { count: 1, ..stack },
+                        "high-heat station ignition",
+                    );
+                }
                 self.sfx(Sfx::Bolt(0.8));
                 self.toast(if kilnish {
                     "The kiln takes the ember. White heat.".to_string()

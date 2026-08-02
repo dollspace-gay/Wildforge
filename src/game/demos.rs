@@ -260,15 +260,27 @@ impl Game {
                     {
                         eprintln!("materials: held-item override deletion failed: {error}");
                     }
-                    let stack = ItemStack::new(&reg, item, 1);
-                    if let Err(error) = self
-                        .server
-                        .world
-                        .record_external_stack(stack, "development held-item override")
-                    {
-                        eprintln!("materials: held-item override source failed: {error}");
+                    let mut stack = ItemStack::new(&reg, item, 1);
+                    let accepted = self.player.pos.block().is_none_or(|at| {
+                        self.server
+                            .world
+                            .bind_arcane_stack_at(at, &mut stack, "development held-item override")
+                            .map_err(|error| {
+                                eprintln!("arcane: held-item override rejected: {error}");
+                                error
+                            })
+                            .is_ok()
+                    });
+                    if accepted {
+                        if let Err(error) = self
+                            .server
+                            .world
+                            .record_external_stack(stack, "development held-item override")
+                        {
+                            eprintln!("materials: held-item override source failed: {error}");
+                        }
+                        self.inventory.slots[self.input.hotbar_sel] = Some(stack);
                     }
-                    self.inventory.slots[self.input.hotbar_sel] = Some(stack);
                 }
                 None => eprintln!("WILDFORGE_HELD: no item named {name:?}"),
             }
@@ -300,6 +312,51 @@ impl Game {
         // layout screenshots (menu screens are handled at startup).
         if std::env::var("WILDFORGE_SCREEN").as_deref() == Ok("inventory") {
             self.set_screen(Screen::Inventory);
+        }
+        // Dev: plant the base magical ecology through the real cultivation
+        // path around the prepared doorstep. This is deliberately not a row
+        // of authored decorative blocks: each placement registers a distinct
+        // player-owned persistent site, begins empty, and must establish from
+        // the local water, nutrients, climate, and Current if the capture is
+        // allowed to run on.
+        if std::env::var("WILDFORGE_DEMO_MAGIC_ECOLOGY").is_ok() {
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            let mut planted = 0usize;
+            for (index, item_name) in [
+                "base:rainbell_dew",
+                "base:hushwood_switch",
+                "base:stormvine_tendril",
+                "base:cairnbloom_flower",
+                "base:ashlace_tissue",
+                "base:pilgrim_root_cutting",
+                "base:lantern_reed_pith",
+                "base:nightglass_pod",
+                "base:frostlace_frond",
+                "base:tidekelp_blade",
+                "base:echo_cap_ring",
+                "base:ember_petal",
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let x = bx - 6 + (index % 4) as i32 * 4;
+                let z = bz + 5 + (index / 4) as i32 * 4;
+                let y = demo_height!(self.server.world, chart, x, z);
+                let pos = chart.block(x, y + 1, z);
+                self.server.world.set_block_at(pos, AIR);
+                let Some(item) = self.content.reg.item_id(item_name) else {
+                    continue;
+                };
+                if self
+                    .server
+                    .world
+                    .place_item_block_at(pos, ItemStack::new(&self.content.reg, item, 1))
+                {
+                    planted += 1;
+                }
+            }
+            eprintln!("magical ecology demo registered {planted} cultivated sites");
         }
         // Dev: a ring of torches near spawn (lighting verification).
         if std::env::var("WILDFORGE_DEMO_TORCH").is_ok()

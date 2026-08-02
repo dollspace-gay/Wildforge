@@ -51,6 +51,7 @@ impl Game {
                     item: *remote.item_map.get(stack.item as usize)?.as_ref()?,
                     count: stack.count,
                     durability: stack.durability,
+                    arcane_id: stack.arcane_id,
                 })
             });
         }
@@ -64,6 +65,7 @@ impl Game {
                     item: *remote.item_map.get(stack.item as usize)?.as_ref()?,
                     count: stack.count,
                     durability: stack.durability,
+                    arcane_id: stack.arcane_id,
                 })
             });
         }
@@ -72,6 +74,7 @@ impl Game {
                 item: *remote.item_map.get(stack.item as usize)?.as_ref()?,
                 count: stack.count,
                 durability: stack.durability,
+                arcane_id: stack.arcane_id,
             })
         });
         self.survival.health = state.health;
@@ -233,6 +236,7 @@ impl Game {
             self.multiplayer.remote = None;
             return;
         }
+        let mut block_updates = Vec::new();
         for msg in msgs {
             match msg {
                 net::S2C::Challenge { .. } => {}
@@ -420,14 +424,7 @@ impl Game {
                         .copied()
                         .unwrap_or(self.content.reg.unknown_block);
                     let old = self.server.world.get_block_at(pos);
-                    self.server.world.set_block_state_at(
-                        pos,
-                        local,
-                        meta,
-                        salt_mass,
-                        soil_salinity,
-                    );
-                    self.server.world.clear_pending_drops();
+                    block_updates.push((pos, local, meta, salt_mass, soil_salinity));
                     // Someone broke something: the world crumbles for
                     // everyone watching.
                     if local == crate::registry::AIR
@@ -581,11 +578,37 @@ impl Game {
                 net::S2C::WeatherCells { side, cells } => {
                     self.server.world.set_remote_weather(side, cells);
                 }
+                net::S2C::ArcaneCue {
+                    bands,
+                    dominant,
+                    ecology,
+                } => {
+                    self.server
+                        .world
+                        .set_remote_arcane_cue(bands, dominant, ecology);
+                }
+                net::S2C::ArcaneItems { charges } => {
+                    self.server.world.set_remote_arcane_items(charges);
+                }
+                net::S2C::DiscoveryReport(record) => {
+                    self.present_discovery_record(&record);
+                }
+                net::S2C::DiscoveryRecords {
+                    holder,
+                    records,
+                    capacity,
+                } => self.receive_discovery_catalogue(holder, records, capacity),
+                net::S2C::KnowledgeText {
+                    instance_id: _,
+                    text,
+                } => self.toast(text),
                 net::S2C::Hit { dmg, from } => self.hurt_player_from_wild(dmg, from),
                 net::S2C::Give {
                     item,
                     count,
                     durability,
+                    arcane_id,
+                    current_units,
                 } => {
                     if let Some(Some(local)) = r.item_map.get(item as usize) {
                         let reg = self.content.reg.clone();
@@ -593,6 +616,10 @@ impl Game {
                         if durability > 0 {
                             stack.durability = durability;
                         }
+                        stack.arcane_id = arcane_id;
+                        self.server
+                            .world
+                            .set_remote_arcane_item(arcane_id, current_units);
                         let left = self.inventory.add_stack(&reg, stack);
                         if left == 0 {
                             // Guests harvest over the wire; the ramp
@@ -627,6 +654,7 @@ impl Game {
                             item: crate::registry::ItemId(sn.item),
                             count: sn.count,
                             durability: sn.durability,
+                            arcane_id: sn.arcane_id,
                         });
                     }
                     if let Some(m) = self.server.world.mob_by_id_mut(id) {
@@ -650,6 +678,7 @@ impl Game {
                             item: local,
                             count: s.count,
                             durability: s.durability,
+                            arcane_id: s.arcane_id,
                         })
                     };
                     let entity = match kind {
@@ -761,6 +790,7 @@ impl Game {
                             item: local,
                             count: s.count,
                             durability: s.durability,
+                            arcane_id: s.arcane_id,
                         })
                     });
                 }
@@ -812,6 +842,9 @@ impl Game {
                     .map(|(position, rle)| (*position, rle.as_slice())),
                 &r.block_map,
             );
+        }
+        if !block_updates.is_empty() {
+            self.server.world.apply_remote_block_states(block_updates);
         }
         if r.entry_manifest_received
             && r.entry_required.is_empty()

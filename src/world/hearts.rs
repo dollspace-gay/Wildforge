@@ -246,6 +246,16 @@ impl World {
             e.stage = 0;
             e.strain = HEART_DEATH_STRAIN;
         }
+        if let Some(country) = self
+            .planet_atlas
+            .as_ref()
+            .and_then(|atlas| atlas.country_at(h.pos.surface()))
+            .map(|country| country.id)
+            && let Some(ledger) = &mut self.arcane_ledger
+            && let Err(error) = ledger.set_heart_frozen(country, true)
+        {
+            eprintln!("arcane: could not freeze dead heart reserve: {error}");
+        }
         self.orphan_wardens_at(h.pos.surface());
         // Take the rest of the site down with it: a half-cut heart is
         // not a thing, and the husk is what the country wears now.
@@ -293,6 +303,17 @@ impl World {
             // A heart found for the first time has a cutting to spare.
             regrow: 0.0,
         });
+        if ancient
+            && let Some(country) = self
+                .planet_atlas
+                .as_ref()
+                .and_then(|atlas| atlas.country_at(pos.surface()))
+                .map(|country| country.id)
+            && let Some(ledger) = &mut self.arcane_ledger
+            && let Err(error) = ledger.set_heart_frozen(country, true)
+        {
+            eprintln!("arcane: could not freeze ancient heart reserve: {error}");
+        }
         // Old saves carry the three archetype hearts, aliased into the
         // country whose shape they matched — a taiga bole came back as
         // heart_forest. Re-reading the site on load heals that, and any
@@ -337,6 +358,16 @@ impl World {
         self.hearts.insert(key, h);
         if stage == 0 {
             self.orphan_wardens_at(h.pos.surface());
+        }
+        if let Some(country) = self
+            .planet_atlas
+            .as_ref()
+            .and_then(|atlas| atlas.country_at(h.pos.surface()))
+            .map(|country| country.id)
+            && let Some(ledger) = &mut self.arcane_ledger
+            && let Err(error) = ledger.set_heart_frozen(country, stage == 0)
+        {
+            eprintln!("arcane: could not update heart reserve state: {error}");
         }
         let biome = self.generator.heart_biome_at(h.pos.surface());
         let form = heart_form(biome);

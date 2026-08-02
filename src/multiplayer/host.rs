@@ -15,6 +15,7 @@ mod settings;
 mod streaming;
 
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use glam::Vec3;
 
@@ -32,6 +33,26 @@ use crate::world::{BlockEntity, World};
 use moderation::{BanIdentity, ModerationStore};
 use profiles::{PlayerRuntime, ProfileStore};
 pub use settings::ServerSettings;
+
+const DISCOVERY_SETTLE: Duration = Duration::from_millis(1_200);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PendingDiscoveryKind {
+    Observation(net::DiscoveryTargetSnap),
+    Experiment(BlockPos, crate::discovery::ExperimentKind),
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PendingDiscovery {
+    kind: PendingDiscoveryKind,
+    began: Instant,
+}
+
+impl PendingDiscovery {
+    fn settled_for(self, kind: PendingDiscoveryKind, now: Instant) -> bool {
+        self.kind == kind && now.saturating_duration_since(self.began) >= DISCOVERY_SETTLE
+    }
+}
 
 pub struct Guest {
     pub player_id: crate::identity::PlayerId,
@@ -67,6 +88,8 @@ pub struct Guest {
     has_moved: bool,
     sprinting: bool,
     action_cooldown: f32,
+    /// Host-owned proof that a lens or apparatus physically settled.
+    pending_discovery: Option<PendingDiscovery>,
     since_damage: f32,
     regen_timer: f32,
     starve_timer: f32,
@@ -92,6 +115,9 @@ pub struct Guest {
     chunk_window: f32,
     edits: u32,
     edit_window: f32,
+    /// Last bounded item-charge view sent to this guest. Keeping the sorted
+    /// snapshot here makes unchanged wire state cost nothing.
+    last_arcane_items: Vec<(u64, u64)>,
     /// Movement packets arrive at ~20 Hz; rendering interpolates from
     /// here toward (pos, yaw) so guests glide instead of stutter.
     /// Embedded render position and yaw at the start of the current network
@@ -356,12 +382,19 @@ impl HostSession {
             out.push(h);
         }
         for (id, g) in self.guests.iter().filter(|(_, guest)| guest.entry_ready) {
+            let quiet = self.profiles.as_ref().is_some_and(|profiles| {
+                g.armor[4].is_some_and(|stack| {
+                    stack.arcane_id != 0
+                        && profiles.registry_hint().item(stack.item).charm.as_deref()
+                            == Some("quiet")
+                })
+            });
             out.push(crate::server::PlayerCtx {
                 id: *id,
                 pos: g.pos,
                 spawn: g.pos,
                 attackable: true,
-                aggro_mod: 0.0,
+                aggro_mod: if quiet { -2.0 } else { 0.0 },
             });
         }
         out
@@ -492,7 +525,12 @@ impl HostSession {
             }
             if !creative {
                 let old = (g.health, g.hunger, g.nutrition);
-                let drain = 0.01 + if g.sprinting { 0.02 } else { 0.0 };
+                let hunger_charm = g.armor[4].is_some_and(|stack| {
+                    stack.arcane_id != 0
+                        && server.world.reg.item(stack.item).charm.as_deref() == Some("hunger")
+                });
+                let drain = (0.01 + if g.sprinting { 0.02 } else { 0.0 })
+                    * if hunger_charm { 0.85 } else { 1.0 };
                 g.hunger = (g.hunger - drain * dt).max(0.0);
                 for value in &mut g.nutrition {
                     *value = (*value - dt * 0.01).max(0.0);
@@ -568,6 +606,11 @@ impl HostSession {
                         item: s.item.0,
                         count: delivered,
                         durability: s.durability,
+                        arcane_id: s.arcane_id,
+                        current_units: server
+                            .world
+                            .inspectable_item_current(s.arcane_id)
+                            .unwrap_or(0),
                     },
                 );
             }
@@ -581,6 +624,13 @@ impl HostSession {
                 )
             {
                 eprintln!("materials: guest delivery overflow accounting failed: {error}");
+            }
+            if let Some((pos, left)) = overflow_at.filter(|(_, left)| *left != 0) {
+                server.world.retire_arcane_stack_at(
+                    pos,
+                    ItemStack { count: left, ..s },
+                    "full guest inventory",
+                );
             }
             self.send_player_state(owner);
         }
@@ -611,6 +661,11 @@ impl HostSession {
                                 item: stack.item.0,
                                 count: delivered,
                                 durability: stack.durability,
+                                arcane_id: stack.arcane_id,
+                                current_units: server
+                                    .world
+                                    .inspectable_item_current(stack.arcane_id)
+                                    .unwrap_or(0),
                             },
                         );
                         changed.insert(id);
@@ -630,6 +685,16 @@ impl HostSession {
                     )
                 {
                     eprintln!("materials: dedicated drop accounting failed: {error}");
+                }
+                if left != 0 {
+                    server.world.retire_arcane_stack_at(
+                        pos,
+                        ItemStack {
+                            count: left,
+                            ..stack
+                        },
+                        "uncollected dedicated-server drop",
+                    );
                 }
             }
             for id in changed {
@@ -762,6 +827,37 @@ impl HostSession {
                         .collect();
                 for (id, update) in updates {
                     self.net.send(id, &update);
+                }
+                for (id, guest) in self.guests.iter().filter(|(_, guest)| guest.entry_ready) {
+                    let region = atlas.atlas_pos(guest.pos.surface());
+                    let (bands, dominant) = server.world.arcane_sensory_cue_at(region);
+                    let ecology = server
+                        .world
+                        .arcane_ecology_observation_at(guest.pos.surface())
+                        .map(|observation| (observation.text, observation.damped));
+                    self.net.send(
+                        *id,
+                        &S2C::ArcaneCue {
+                            bands,
+                            dominant,
+                            ecology,
+                        },
+                    );
+                }
+                let item_updates = self
+                    .guests
+                    .iter()
+                    .filter(|(_, guest)| guest.entry_ready)
+                    .map(|(id, guest)| (*id, inspectable_arcane_items(&server.world, guest)))
+                    .collect::<Vec<_>>();
+                for (id, charges) in item_updates {
+                    let Some(guest) = self.guests.get_mut(&id) else {
+                        continue;
+                    };
+                    if guest.last_arcane_items != charges {
+                        guest.last_arcane_items.clone_from(&charges);
+                        self.net.send(id, &S2C::ArcaneItems { charges });
+                    }
                 }
             }
         }
@@ -1095,6 +1191,7 @@ impl HostSession {
                 has_moved: false,
                 sprinting: false,
                 action_cooldown: 0.0,
+                pending_discovery: None,
                 since_damage: 100.0,
                 regen_timer: 0.0,
                 starve_timer: 0.0,
@@ -1111,6 +1208,7 @@ impl HostSession {
                 chunk_window: 0.0,
                 edits: 0,
                 edit_window: 0.0,
+                last_arcane_items: Vec::new(),
                 render_from: (runtime.pos.render_pos(), 0.0),
                 net_age: 0.0,
                 net_interval: 0.05,
@@ -1323,7 +1421,11 @@ impl HostSession {
             .iter()
             .flatten()
             .filter_map(|stack| server_item_armor_points(stack, self.profiles.as_ref()))
-            .sum();
+            .sum::<u32>()
+            + u32::from(guest.armor[4].is_some_and(|stack| {
+                stack.arcane_id != 0
+                    && server.world.reg.item(stack.item).charm.as_deref() == Some("bark")
+            }));
         // This mirrors local survival: each point blocks four percent, capped.
         let reduced = amount.max(0.0) * (1.0 - armor_points.min(15) as f32 * 0.04);
         if armor_points > 0
@@ -1343,6 +1445,7 @@ impl HostSession {
                                 item: broken,
                                 count: 1,
                                 durability: 0,
+                                arcane_id: stack.arcane_id,
                             });
                     }
                 }
@@ -1567,6 +1670,14 @@ impl HostSession {
                 if let Some(stack) = result.drop {
                     server.world.queue_give(id, stack);
                 }
+                if !creative
+                    && let Some(stack) =
+                        server
+                            .world
+                            .roll_bonus_drop_at(pos, result.block, &mut server.rng)
+                {
+                    server.world.queue_give(id, stack);
+                }
                 self.send_player_state(id);
             }
             C2S::Scoop { pos } => {
@@ -1661,6 +1772,10 @@ impl HostSession {
                 };
                 let placed = if let Some(class) = water_class {
                     server.world.place_portable_water_at(pos, class)
+                } else if held_item == server.world.reg.item_id("base:bucket_lava") {
+                    server.world.place_block_at(pos, block)
+                } else if !creative {
+                    selected.is_some_and(|stack| server.world.place_item_block_at(pos, stack))
                 } else {
                     server.world.place_block_at(pos, block)
                 };
@@ -1842,6 +1957,8 @@ impl HostSession {
                     item: s.item.0,
                     count: s.count,
                     durability: s.durability,
+                    arcane_id: s.arcane_id,
+                    current_units: 0,
                 });
                 if let Some(g) = self.guests.get_mut(&id) {
                     g.cursor = held;
@@ -2042,6 +2159,478 @@ impl HostSession {
                     self.send_player_state(id);
                 }
             }
+            C2S::BeginObserve { target } => {
+                guest.pending_discovery = None;
+                let lens_ready = guest.action_cooldown <= 0.0
+                    && guest.inventory.slots[guest.hotbar].is_some_and(|stack| {
+                        server
+                            .world
+                            .reg
+                            .item(stack.item)
+                            .discovery
+                            .as_ref()
+                            .is_some_and(|definition| definition.kind == "tuning_lens")
+                            && stack.arcane_id != 0
+                    });
+                let target_ready = match target {
+                    net::DiscoveryTargetSnap::Region => guest.pos.block().is_some(),
+                    net::DiscoveryTargetSnap::Block(pos) => {
+                        discovery_reachable(&server.world, guest, pos)
+                    }
+                    net::DiscoveryTargetSnap::Held { slot } => guest
+                        .inventory
+                        .slots
+                        .get(usize::from(slot))
+                        .is_some_and(Option::is_some),
+                };
+                if lens_ready && target_ready {
+                    guest.pending_discovery = Some(PendingDiscovery {
+                        kind: PendingDiscoveryKind::Observation(target),
+                        began: Instant::now(),
+                    });
+                } else {
+                    self.net.send(
+                        id,
+                        &S2C::Toast("The tuning lens cannot begin settling on that target.".into()),
+                    );
+                }
+            }
+            C2S::Observe {
+                target,
+                ledger_slot,
+                calibration_slot,
+                label,
+            } => {
+                let settled = guest.pending_discovery.is_some_and(|pending| {
+                    pending.settled_for(PendingDiscoveryKind::Observation(target), Instant::now())
+                });
+                guest.pending_discovery = None;
+                if guest.action_cooldown > 0.0 || !settled {
+                    self.net.send(
+                        id,
+                        &S2C::Toast(
+                            "The reading was refused: hold the lens steady until it settles."
+                                .into(),
+                        ),
+                    );
+                    return;
+                }
+                let lens_slot = guest.hotbar;
+                if !guest.inventory.slots[lens_slot].is_some_and(|stack| {
+                    server
+                        .world
+                        .reg
+                        .item(stack.item)
+                        .discovery
+                        .as_ref()
+                        .is_some_and(|definition| definition.kind == "tuning_lens")
+                        && stack.arcane_id != 0
+                }) {
+                    self.net
+                        .send(id, &S2C::Toast("Hold a fitted tuning lens.".into()));
+                    return;
+                }
+                let holder = match discovery_holder_id(
+                    &mut server.world,
+                    guest,
+                    net::RecordHolderSnap::Inventory { slot: ledger_slot },
+                ) {
+                    Ok(holder) => holder,
+                    Err(error) => {
+                        self.net.send(id, &S2C::Toast(error));
+                        return;
+                    }
+                };
+                let calibration =
+                    match discovery_calibration(&mut server.world, guest, calibration_slot) {
+                        Ok(calibration) => calibration,
+                        Err(error) => {
+                            self.net.send(id, &S2C::Toast(error));
+                            return;
+                        }
+                    };
+                let measured = match target {
+                    net::DiscoveryTargetSnap::Region => guest
+                        .pos
+                        .block()
+                        .map(crate::world::ObservationTarget::Region),
+                    net::DiscoveryTargetSnap::Block(pos) => {
+                        discovery_reachable(&server.world, guest, pos)
+                            .then_some(crate::world::ObservationTarget::Block(pos))
+                    }
+                    net::DiscoveryTargetSnap::Held { slot } => guest
+                        .inventory
+                        .slots
+                        .get(usize::from(slot))
+                        .copied()
+                        .flatten()
+                        .zip(guest.pos.block())
+                        .map(|(stack, at)| crate::world::ObservationTarget::Item(stack, at)),
+                };
+                let Some(measured) = measured else {
+                    self.net.send(
+                        id,
+                        &S2C::Toast("The target is not physically measurable from here.".into()),
+                    );
+                    return;
+                };
+                match server.world.record_observation(
+                    holder,
+                    (guest.player_id, &guest.name),
+                    measured,
+                    calibration,
+                    label,
+                    None,
+                ) {
+                    Ok(summary) => {
+                        guest.action_cooldown = 1.25;
+                        let at = guest.pos.block().unwrap_or(measured.position());
+                        let spent =
+                            server
+                                .world
+                                .wear_tuning_lens_at(at, &mut guest.inventory, lens_slot);
+                        refresh_held(guest);
+                        self.net.send(id, &S2C::DiscoveryReport(summary));
+                        if spent {
+                            self.net.send(
+                                id,
+                                &S2C::Toast(
+                                    "The Wellglass element clouds; the fitted frame and plate remain."
+                                        .into(),
+                                ),
+                            );
+                        }
+                        self.send_player_state(id);
+                    }
+                    Err(error) => self
+                        .net
+                        .send(id, &S2C::Toast(format!("Observation refused: {error}"))),
+                }
+            }
+            C2S::ReadKnowledge { slot } => {
+                let index = usize::from(slot);
+                let Some(mut stack) = guest.inventory.slots.get(index).copied().flatten() else {
+                    return;
+                };
+                let Some(at) = guest.pos.block() else {
+                    return;
+                };
+                if let Err(error) = server.world.bind_discovery_stack_at(at, &mut stack) {
+                    self.net.send(id, &S2C::Toast(error.to_string()));
+                    return;
+                }
+                guest.inventory.slots[index] = Some(stack);
+                if let Some(text) = server.world.discovery_artifact_text(&mut stack, at) {
+                    guest.inventory.slots[index] = Some(stack);
+                    self.net.send(
+                        id,
+                        &S2C::KnowledgeText {
+                            instance_id: stack.arcane_id,
+                            text,
+                        },
+                    );
+                } else if let Ok(records) = server.world.discovery_summaries(stack.arcane_id, true)
+                {
+                    let capacity = if server
+                        .world
+                        .reg
+                        .item(stack.item)
+                        .discovery
+                        .as_ref()
+                        .is_some_and(|definition| definition.kind == "survey_folio")
+                    {
+                        crate::discovery::SURVEY_FOLIO_RECORDS
+                    } else {
+                        crate::discovery::FIELD_LEDGER_RECORDS
+                    };
+                    self.net.send(
+                        id,
+                        &S2C::DiscoveryRecords {
+                            holder: net::RecordHolderSnap::Inventory { slot },
+                            records,
+                            capacity: capacity as u16,
+                        },
+                    );
+                }
+                self.send_player_state(id);
+            }
+            C2S::OpenDiscovery { holder } => {
+                match discovery_holder_id(&mut server.world, guest, holder) {
+                    Ok(object_id) => match server.world.discovery_summaries(object_id, true) {
+                        Ok(records) => {
+                            let capacity =
+                                discovery_holder_capacity(&server.world, guest, holder) as u16;
+                            self.net.send(
+                                id,
+                                &S2C::DiscoveryRecords {
+                                    holder,
+                                    records,
+                                    capacity,
+                                },
+                            );
+                        }
+                        Err(error) => self.net.send(id, &S2C::Toast(error.to_string())),
+                    },
+                    Err(error) => self.net.send(id, &S2C::Toast(error)),
+                }
+            }
+            C2S::CopyObservation {
+                writing_pos,
+                source,
+                record_id,
+                destination,
+                include_location,
+            } => {
+                let writing_surface = discovery_reachable(&server.world, guest, writing_pos)
+                    && server
+                        .world
+                        .reg
+                        .block(server.world.get_block_at(writing_pos))
+                        .discovery_fixture
+                        .as_ref()
+                        .is_some_and(|fixture| fixture.kind == "writing_surface")
+                    && discovery_holder_at_writing_surface(source, writing_pos)
+                    && discovery_holder_at_writing_surface(destination, writing_pos);
+                if !writing_surface {
+                    self.net.send(
+                        id,
+                        &S2C::Toast(
+                            "Signed records can only be copied at a writing surface; placed folios must be adjacent."
+                                .into(),
+                        ),
+                    );
+                    return;
+                }
+                let source_id = match discovery_holder_id(&mut server.world, guest, source) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        self.net.send(id, &S2C::Toast(error));
+                        return;
+                    }
+                };
+                let destination_id =
+                    match discovery_holder_id(&mut server.world, guest, destination) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            self.net.send(id, &S2C::Toast(error));
+                            return;
+                        }
+                    };
+                match server.world.copy_discovery_record(
+                    source_id,
+                    record_id,
+                    destination_id,
+                    include_location,
+                ) {
+                    Ok(_) => {
+                        let _ = server.world.save_discovery();
+                        self.net.send(id, &S2C::Toast("Observation copied.".into()));
+                        if let Ok(records) = server.world.discovery_summaries(destination_id, true)
+                        {
+                            let capacity =
+                                discovery_holder_capacity(&server.world, guest, destination) as u16;
+                            self.net.send(
+                                id,
+                                &S2C::DiscoveryRecords {
+                                    holder: destination,
+                                    records,
+                                    capacity,
+                                },
+                            );
+                        }
+                    }
+                    Err(error) => self.net.send(id, &S2C::Toast(error.to_string())),
+                }
+            }
+            C2S::BeginExperiment { pos, kind } => {
+                guest.pending_discovery = None;
+                let fixture_ready = guest.action_cooldown <= 0.0
+                    && discovery_reachable(&server.world, guest, pos)
+                    && server
+                        .world
+                        .reg
+                        .block(server.world.get_block_at(pos))
+                        .discovery_fixture
+                        .as_ref()
+                        .is_some_and(|fixture| {
+                            fixture.kind == "experiment_apparatus"
+                                && fixture.experiments.contains(&kind)
+                        });
+                let lens_ready = guest.inventory.slots[guest.hotbar].is_some_and(|stack| {
+                    server
+                        .world
+                        .reg
+                        .item(stack.item)
+                        .discovery
+                        .as_ref()
+                        .is_some_and(|definition| definition.kind == "tuning_lens")
+                        && stack.arcane_id != 0
+                });
+                if fixture_ready && lens_ready {
+                    guest.pending_discovery = Some(PendingDiscovery {
+                        kind: PendingDiscoveryKind::Experiment(pos, kind),
+                        began: Instant::now(),
+                    });
+                } else {
+                    self.net.send(
+                        id,
+                        &S2C::Toast("The controlled trial cannot begin at that apparatus.".into()),
+                    );
+                }
+            }
+            C2S::SetExperimentItem { pos, slot } => {
+                if guest.action_cooldown > 0.0 || !discovery_reachable(&server.world, guest, pos) {
+                    return;
+                }
+                let index = usize::from(slot);
+                match server
+                    .world
+                    .exchange_experiment_item_at(pos, &mut guest.inventory, index)
+                {
+                    Ok(message) => {
+                        guest.action_cooldown = 0.25;
+                        refresh_held(guest);
+                        self.net.send(id, &S2C::Toast(message));
+                        self.send_player_state(id);
+                    }
+                    Err(error) => self.net.send(id, &S2C::Toast(error)),
+                }
+            }
+            C2S::RunExperiment {
+                pos,
+                kind,
+                ledger_slot,
+                calibration_slot,
+            } => {
+                let settled = guest.pending_discovery.is_some_and(|pending| {
+                    pending.settled_for(PendingDiscoveryKind::Experiment(pos, kind), Instant::now())
+                });
+                guest.pending_discovery = None;
+                if !settled
+                    || guest.action_cooldown > 0.0
+                    || !discovery_reachable(&server.world, guest, pos)
+                    || !server
+                        .world
+                        .reg
+                        .block(server.world.get_block_at(pos))
+                        .discovery_fixture
+                        .as_ref()
+                        .is_some_and(|fixture| {
+                            fixture.kind == "experiment_apparatus"
+                                && fixture.experiments.contains(&kind)
+                        })
+                {
+                    if !settled {
+                        self.net.send(
+                            id,
+                            &S2C::Toast(
+                                "The trial was refused: hold the apparatus steady until it settles."
+                                    .into(),
+                            ),
+                        );
+                    }
+                    return;
+                }
+                let lens_slot = guest.hotbar;
+                if !guest.inventory.slots[lens_slot].is_some_and(|stack| {
+                    server
+                        .world
+                        .reg
+                        .item(stack.item)
+                        .discovery
+                        .as_ref()
+                        .is_some_and(|definition| definition.kind == "tuning_lens")
+                        && stack.arcane_id != 0
+                }) {
+                    self.net
+                        .send(id, &S2C::Toast("Hold a fitted tuning lens.".into()));
+                    return;
+                }
+                let sample = match server.world.experiment_sample_at(pos, kind) {
+                    Ok(sample) => sample,
+                    Err(error) => {
+                        self.net.send(id, &S2C::Toast(error));
+                        return;
+                    }
+                };
+                let holder = match discovery_holder_id(
+                    &mut server.world,
+                    guest,
+                    net::RecordHolderSnap::Inventory { slot: ledger_slot },
+                ) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        self.net.send(id, &S2C::Toast(error));
+                        return;
+                    }
+                };
+                let calibration =
+                    match discovery_calibration(&mut server.world, guest, calibration_slot) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            self.net.send(id, &S2C::Toast(error));
+                            return;
+                        }
+                    };
+                match server.world.record_observation(
+                    holder,
+                    (guest.player_id, &guest.name),
+                    crate::world::ObservationTarget::Item(sample, pos),
+                    calibration,
+                    Some(kind.label().into()),
+                    Some(kind),
+                ) {
+                    Ok(summary) => {
+                        guest.action_cooldown = 1.25;
+                        let spent =
+                            server
+                                .world
+                                .wear_tuning_lens_at(pos, &mut guest.inventory, lens_slot);
+                        refresh_held(guest);
+                        self.net.send(id, &S2C::DiscoveryReport(summary));
+                        if spent {
+                            self.net.send(
+                                id,
+                                &S2C::Toast(
+                                    "The Wellglass element clouds; the fitted frame and plate remain."
+                                        .into(),
+                                ),
+                            );
+                        }
+                        self.send_player_state(id);
+                    }
+                    Err(error) => self.net.send(id, &S2C::Toast(error.to_string())),
+                }
+            }
+            C2S::AssembleTuningLens { pos } => {
+                if !discovery_reachable(&server.world, guest, pos)
+                    || server
+                        .world
+                        .reg
+                        .block(server.world.get_block_at(pos))
+                        .discovery_fixture
+                        .as_ref()
+                        .is_none_or(|fixture| fixture.kind != "lens_assembly")
+                {
+                    return;
+                }
+                match server
+                    .world
+                    .assemble_tuning_lens_at(pos, &mut guest.inventory)
+                {
+                    Ok(_) => {
+                        refresh_held(guest);
+                        self.net.send(
+                            id,
+                            &S2C::Toast(
+                                "The Wellglass settles against the Echo Slate plate.".into(),
+                            ),
+                        );
+                        self.send_player_state(id);
+                    }
+                    Err(error) => self.net.send(id, &S2C::Toast(error)),
+                }
+            }
             C2S::FireProjectile { direction, charge } => {
                 if guest.action_cooldown > 0.0 || !direction.is_finite() || direction.length() < 0.5
                 {
@@ -2172,8 +2761,18 @@ impl HostSession {
                     Ok(()) => {
                         if server.world.mode != "creative"
                             && let Some(ember) = server.world.reg.item_id("base:ember")
-                            && take_item(&mut guest.inventory, ember)
+                            && let Some(slot) =
+                                guest.inventory.slots.iter().position(|stack| {
+                                    stack.is_some_and(|stack| stack.item == ember)
+                                })
+                            && let Some(stack) = guest.inventory.slots[slot]
                         {
+                            guest.inventory.take_one(slot);
+                            server.world.retire_arcane_stack_at(
+                                pos,
+                                ItemStack { count: 1, ..stack },
+                                "high-heat station ignition",
+                            );
                             refresh_held(guest);
                             self.send_player_state(id);
                         }
@@ -2195,7 +2794,15 @@ impl HostSession {
                 match server.world.try_light_clamp_at(pos) {
                     Ok(n) => {
                         if server.world.mode != "creative" {
+                            let consumed = guest.inventory.slots[guest.hotbar];
                             guest.inventory.take_one(guest.hotbar);
+                            if let Some(stack) = consumed {
+                                server.world.retire_arcane_stack_at(
+                                    pos,
+                                    ItemStack { count: 1, ..stack },
+                                    "clamp ignition",
+                                );
+                            }
                             refresh_held(guest);
                             self.send_player_state(id);
                         }
@@ -2309,8 +2916,19 @@ impl HostSession {
                     if guest.cursor.is_some() {
                         return;
                     }
+                    let consumed_part = guest.craft_grid[repair.part_slot];
                     guest.cursor = Some(repair.output);
                     crate::crafting::consume_repair(&mut guest.craft_grid[..size * size], &repair);
+                    if let Some(stack) = consumed_part
+                        && stack.arcane_id != 0
+                        && let Some(pos) = guest.pos.block()
+                    {
+                        server.world.retire_arcane_stack_at(
+                            pos,
+                            ItemStack { count: 1, ..stack },
+                            "charged repair part consumed",
+                        );
+                    }
                     if let Some(ledger) = &mut server.world.material_ledger
                         && let Err(error) = ledger.record_recipe_loss(&repair.scale_loss)
                     {
@@ -2329,6 +2947,12 @@ impl HostSession {
                 let output = ItemStack::new(&server.world.reg, recipe.output, recipe.count);
                 let recipe_loss = recipe.loss.clone();
                 let recipe_byproducts = recipe.byproducts.clone();
+                let charged_inputs = guest.craft_grid[..size * size]
+                    .iter()
+                    .flatten()
+                    .filter(|stack| stack.arcane_id != 0)
+                    .map(|stack| ItemStack { count: 1, ..*stack })
+                    .collect::<Vec<_>>();
                 match guest.cursor {
                     None => guest.cursor = Some(output),
                     Some(cursor)
@@ -2344,6 +2968,15 @@ impl HostSession {
                     _ => return,
                 }
                 crate::crafting::consume(&mut guest.craft_grid[..size * size]);
+                if let Some(pos) = guest.pos.block() {
+                    for stack in charged_inputs {
+                        server.world.retire_arcane_stack_at(
+                            pos,
+                            stack,
+                            "charged crafting ingredient consumed",
+                        );
+                    }
+                }
                 if let Some(ledger) = &mut server.world.material_ledger
                     && let Err(error) = ledger.record_recipe_loss(&recipe_loss)
                 {
@@ -2631,7 +3264,9 @@ impl HostSession {
             | BlockEntity::Sign(_)
             | BlockEntity::Smoker(_)
             | BlockEntity::Steam(_)
-            | BlockEntity::Separator(_) => {}
+            | BlockEntity::Separator(_)
+            | BlockEntity::SurveyFolio(_)
+            | BlockEntity::DiscoveryApparatus(_) => {}
             BlockEntity::Chest(c) => {
                 if slot < c.slots.len() {
                     let (ns, nh) = click_stack(&reg, c.slots[slot], held, right);
@@ -2688,6 +3323,8 @@ impl HostSession {
             item: s.item.0,
             count: s.count,
             durability: s.durability,
+            arcane_id: s.arcane_id,
+            current_units: 0,
         });
         if let Some(guest) = self.guests.get_mut(&id) {
             guest.cursor = held;
@@ -2719,6 +3356,11 @@ impl HostSession {
                     item: s.item.0,
                     count: s.count,
                     durability: s.durability,
+                    arcane_id: s.arcane_id,
+                    current_units: server
+                        .world
+                        .inspectable_item_current(s.arcane_id)
+                        .unwrap_or(0),
                 })
             })
             .collect();
@@ -2734,6 +3376,11 @@ impl HostSession {
                 item: s.item.0,
                 count: s.count,
                 durability: s.durability,
+                arcane_id: s.arcane_id,
+                current_units: server
+                    .world
+                    .inspectable_item_current(s.arcane_id)
+                    .unwrap_or(0),
             })
         };
         let (kind, slots, aux): (u8, Vec<Option<StackSnap>>, Vec<f32>) = match entity {
@@ -2790,7 +3437,9 @@ impl HostSession {
             | BlockEntity::Sign(_)
             | BlockEntity::Smoker(_)
             | BlockEntity::Steam(_)
-            | BlockEntity::Separator(_) => return,
+            | BlockEntity::Separator(_)
+            | BlockEntity::SurveyFolio(_)
+            | BlockEntity::DiscoveryApparatus(_) => return,
         };
         self.net.send(
             id,
@@ -2808,6 +3457,145 @@ fn refresh_held(guest: &mut Guest) {
     guest.held = guest.inventory.slots[guest.hotbar]
         .map(|stack| stack.item.0)
         .unwrap_or(u16::MAX);
+}
+
+fn discovery_reachable(world: &World, guest: &Guest, pos: BlockPos) -> bool {
+    discovery_reachable_from(world, guest.pos, pos)
+}
+
+fn discovery_reachable_from(world: &World, actor: EntityPos, pos: BlockPos) -> bool {
+    if actor.distance_to(pos.entity_center()) > REACH {
+        return false;
+    }
+    let Ok(eye) = actor.translated(Vec3::new(0.0, crate::physics::EYE_HEIGHT, 0.0)) else {
+        return false;
+    };
+    let delta = eye.pos.local_delta_to(pos.entity_center());
+    crate::raycast::raycast_at(world, eye.pos, delta, delta.length() + 0.15)
+        .is_some_and(|hit| hit.block == pos)
+}
+
+fn discovery_holder_id(
+    world: &mut World,
+    guest: &mut Guest,
+    holder: net::RecordHolderSnap,
+) -> Result<u64, String> {
+    match holder {
+        net::RecordHolderSnap::Inventory { slot } => {
+            let index = usize::from(slot);
+            let mut stack = guest
+                .inventory
+                .slots
+                .get(index)
+                .copied()
+                .flatten()
+                .ok_or_else(|| "That pack slot is empty.".to_string())?;
+            let is_record_holder =
+                world
+                    .reg
+                    .item(stack.item)
+                    .discovery
+                    .as_ref()
+                    .is_some_and(|definition| {
+                        matches!(definition.kind.as_str(), "field_ledger" | "survey_folio")
+                    });
+            if !is_record_holder {
+                return Err("That item cannot hold observations.".into());
+            }
+            let at = guest
+                .pos
+                .block()
+                .ok_or_else(|| "Your position is outside the world.".to_string())?;
+            world
+                .bind_discovery_stack_at(at, &mut stack)
+                .map_err(|error| error.to_string())?;
+            guest.inventory.slots[index] = Some(stack);
+            Ok(stack.arcane_id)
+        }
+        net::RecordHolderSnap::Folio { pos } => {
+            if !discovery_reachable(world, guest, pos) {
+                return Err("The folio is out of reach or sight.".into());
+            }
+            let is_folio = world
+                .reg
+                .block(world.get_block_at(pos))
+                .discovery_fixture
+                .as_ref()
+                .is_some_and(|fixture| fixture.kind == "survey_folio");
+            if !is_folio {
+                return Err("There is no survey folio there.".into());
+            }
+            match world.block_entities().find(|(at, _)| **at == pos) {
+                Some((_, BlockEntity::SurveyFolio(folio))) if folio.object_id != 0 => {
+                    Ok(folio.object_id)
+                }
+                _ => Err("That survey folio has no recoverable record identity.".into()),
+            }
+        }
+    }
+}
+
+fn discovery_holder_capacity(world: &World, guest: &Guest, holder: net::RecordHolderSnap) -> usize {
+    match holder {
+        net::RecordHolderSnap::Folio { .. } => crate::discovery::SURVEY_FOLIO_RECORDS,
+        net::RecordHolderSnap::Inventory { slot } => {
+            if guest
+                .inventory
+                .slots
+                .get(usize::from(slot))
+                .and_then(Option::as_ref)
+                .and_then(|stack| world.reg.item(stack.item).discovery.as_ref())
+                .is_some_and(|definition| definition.kind == "survey_folio")
+            {
+                crate::discovery::SURVEY_FOLIO_RECORDS
+            } else {
+                crate::discovery::FIELD_LEDGER_RECORDS
+            }
+        }
+    }
+}
+
+fn discovery_holder_at_writing_surface(
+    holder: net::RecordHolderSnap,
+    writing_pos: BlockPos,
+) -> bool {
+    match holder {
+        net::RecordHolderSnap::Inventory { .. } => true,
+        net::RecordHolderSnap::Folio { pos } => [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            .into_iter()
+            .filter_map(|(du, dv)| writing_pos.offset(du, 0, dv))
+            .any(|adjacent| adjacent == pos),
+    }
+}
+
+fn discovery_calibration(
+    world: &mut World,
+    guest: &mut Guest,
+    slot: Option<u8>,
+) -> Result<crate::discovery::CalibrationGrade, String> {
+    let Some(slot) = slot else {
+        return Ok(crate::discovery::CalibrationGrade::Field);
+    };
+    let index = usize::from(slot);
+    let mut stack = guest
+        .inventory
+        .slots
+        .get(index)
+        .copied()
+        .flatten()
+        .ok_or_else(|| "That calibration slot is empty.".to_string())?;
+    let at = guest
+        .pos
+        .block()
+        .ok_or_else(|| "Your position is outside the world.".to_string())?;
+    world
+        .bind_discovery_stack_at(at, &mut stack)
+        .map_err(|error| error.to_string())?;
+    let calibration = world
+        .calibration_grade_for(stack)
+        .ok_or_else(|| "That is not a calibration plate.".to_string())?;
+    guest.inventory.slots[index] = Some(stack);
+    Ok(calibration)
 }
 
 fn server_item_armor_points(stack: &ItemStack, profiles: Option<&ProfileStore>) -> Option<u32> {
@@ -2845,6 +3633,21 @@ fn take_ammo(
         let _ = take_item(inventory, item);
     }
     Some(item)
+}
+
+fn inspectable_arcane_items(world: &World, guest: &Guest) -> Vec<(u64, u64)> {
+    let ids = guest
+        .inventory
+        .slots
+        .iter()
+        .chain(guest.armor.iter())
+        .chain(std::iter::once(&guest.cursor))
+        .flatten()
+        .filter_map(|stack| (stack.arcane_id != 0).then_some(stack.arcane_id))
+        .collect::<std::collections::BTreeSet<_>>();
+    ids.into_iter()
+        .map(|id| (id, world.inspectable_item_current(id).unwrap_or(0)))
+        .collect()
 }
 
 /// Build the host-id -> local-id block remap from a Welcome palette.
@@ -2926,6 +3729,69 @@ mod identity_tests {
             ModerationAction::Ban {
                 seconds: Some(86_401)
             }
+        ));
+    }
+
+    #[test]
+    fn discovery_completion_requires_a_matching_host_elapsed_ticket() {
+        let began = Instant::now();
+        let target = net::DiscoveryTargetSnap::Region;
+        let pending = PendingDiscovery {
+            kind: PendingDiscoveryKind::Observation(target),
+            began,
+        };
+        assert!(!pending.settled_for(
+            PendingDiscoveryKind::Observation(target),
+            began + DISCOVERY_SETTLE - Duration::from_millis(1)
+        ));
+        assert!(!pending.settled_for(
+            PendingDiscoveryKind::Observation(net::DiscoveryTargetSnap::Held { slot: 2 }),
+            began + DISCOVERY_SETTLE
+        ));
+        assert!(pending.settled_for(
+            PendingDiscoveryKind::Observation(target),
+            began + DISCOVERY_SETTLE
+        ));
+    }
+
+    #[test]
+    fn discovery_raycast_refuses_occluded_and_out_of_range_blocks() {
+        let reg = std::sync::Arc::new(crate::registry::load(std::path::Path::new("mods")));
+        let mut world = World::new(5, std::path::PathBuf::new(), reg.clone());
+        let actor =
+            EntityPos::from_local(crate::planet::Face::PosZ, Vec3::new(0.5, 80.0, 0.5)).unwrap();
+        let target = BlockPos::of_world(0, 81, 3).unwrap();
+        world.ensure_chunk(target.chunk());
+        world.set_block_at(target, reg.block_id("base:stone").unwrap());
+        assert!(discovery_reachable_from(&world, actor, target));
+
+        let wall = BlockPos::of_world(0, 81, 2).unwrap();
+        world.set_block_at(wall, reg.block_id("base:stone").unwrap());
+        assert!(!discovery_reachable_from(&world, actor, target));
+
+        let far = BlockPos::of_world(0, 81, 12).unwrap();
+        world.set_block_at(far, reg.block_id("base:stone").unwrap());
+        assert!(!discovery_reachable_from(&world, actor, far));
+    }
+
+    #[test]
+    fn placed_folio_copying_requires_physical_writing_surface_adjacency() {
+        let writing = BlockPos::of_world(0, 80, 0).unwrap();
+        assert!(discovery_holder_at_writing_surface(
+            net::RecordHolderSnap::Inventory { slot: 2 },
+            writing
+        ));
+        assert!(discovery_holder_at_writing_surface(
+            net::RecordHolderSnap::Folio {
+                pos: BlockPos::of_world(1, 80, 0).unwrap(),
+            },
+            writing
+        ));
+        assert!(!discovery_holder_at_writing_surface(
+            net::RecordHolderSnap::Folio {
+                pos: BlockPos::of_world(2, 80, 0).unwrap(),
+            },
+            writing
         ));
     }
 }

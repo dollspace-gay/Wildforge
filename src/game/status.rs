@@ -244,6 +244,12 @@ impl Game {
         let reg = self.content.reg.clone();
         for item in lost {
             let reason = item.loss_reason(&self.server.world);
+            if let Some(pos) = item.pos.block() {
+                let mut stack = ItemStack::new(&reg, item.item, item.count);
+                stack.durability = item.durability;
+                stack.arcane_id = item.arcane_id;
+                self.server.world.retire_arcane_stack_at(pos, stack, reason);
+            }
             if let (Some(pos), Some(ledger)) =
                 (item.pos.block(), &mut self.server.world.material_ledger)
             {
@@ -251,6 +257,7 @@ impl Game {
                 if item.durability != 0 {
                     stack.durability = item.durability;
                 }
+                stack.arcane_id = item.arcane_id;
                 if let Err(error) = ledger.bury_stack(&reg, pos, stack, reason) {
                     eprintln!("materials: dropped-item salvage failed: {error}");
                 }

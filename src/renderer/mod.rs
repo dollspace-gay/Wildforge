@@ -204,6 +204,7 @@ pub struct FrameInput<'a> {
     /// Dynamic colored point lights (accumulated in the chunk shader).
     pub point_lights: &'a [PointLight],
     pub outline: Option<crate::planet::BlockPos>,
+    pub outline_color: [f32; 3],
     /// Opaque world-space extras (item entities), drawn with the chunk shader.
     pub entity_verts: &'a [Vertex],
     pub entity_idx: &'a [u32],

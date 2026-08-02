@@ -281,6 +281,232 @@ impl Agent {
         (0..TOTAL_SLOTS).find(|&i| self.inventory.slots[i].is_some_and(|s| s.item == item))
     }
 
+    fn named_slot(&self, name: &str) -> Result<usize, String> {
+        let item = self
+            .reg
+            .item_id(name)
+            .ok_or_else(|| format!("unknown item {name}"))?;
+        self.slot_of(item)
+            .ok_or_else(|| format!("no {name} in the pack"))
+    }
+
+    pub fn discovery_holder_for_item(
+        &self,
+        name: &str,
+    ) -> Result<crate::net::RecordHolderSnap, String> {
+        Ok(crate::net::RecordHolderSnap::Inventory {
+            slot: self.named_slot(name)? as u8,
+        })
+    }
+
+    fn discovery_summary(record: &crate::discovery::ObservationSummary) -> String {
+        let mut out = format!(
+            "record {} | {} | {} | {}\nobserver: {} | day {} {}",
+            record.record_id,
+            record.phenomenon_id,
+            record.category,
+            record.reading,
+            record.observer_name,
+            record.day,
+            record.season
+        );
+        for (property, value) in &record.properties {
+            out.push_str(&format!("\n{property}: {value}"));
+        }
+        if let Some(label) = &record.label {
+            out.push_str(&format!("\nlabel: {label}"));
+        }
+        if let Some(position) = record.location {
+            out.push_str(&format!(
+                "\nlocation: {} {} {} {}",
+                position.face(),
+                position.u(),
+                position.y(),
+                position.v()
+            ));
+        } else {
+            out.push_str("\nlocation: omitted");
+        }
+        if record.obsolete_content {
+            out.push_str("\ncontent version: obsolete");
+        }
+        out
+    }
+
+    pub fn observe_discovery(
+        &mut self,
+        target: Option<crate::planet::BlockPos>,
+        ledger: &str,
+        calibration: Option<&str>,
+        label: Option<String>,
+    ) -> Result<String, String> {
+        self.select("base:tuning_lens")?;
+        let ledger_slot = self.named_slot(ledger)?;
+        let calibration_slot = calibration.map(|name| self.named_slot(name)).transpose()?;
+        if let Some(pos) = target {
+            if self.dist_to(pos) > REACH {
+                return Err("target is out of reach".into());
+            }
+            self.face_block(pos);
+        }
+        self.anchor_stance();
+        self.last_discovery = None;
+        self.send(&C2S::BeginObserve {
+            target: target.map_or(crate::net::DiscoveryTargetSnap::Region, |pos| {
+                crate::net::DiscoveryTargetSnap::Block(pos)
+            }),
+        });
+        self.pump_for(1.25);
+        self.send(&C2S::Observe {
+            target: target.map_or(crate::net::DiscoveryTargetSnap::Region, |pos| {
+                crate::net::DiscoveryTargetSnap::Block(pos)
+            }),
+            ledger_slot: ledger_slot as u8,
+            calibration_slot: calibration_slot.map(|slot| slot as u8),
+            label,
+        });
+        for _ in 0..80 {
+            self.pump_for(0.05);
+            if let Some(record) = self.last_discovery.take() {
+                return Ok(Self::discovery_summary(&record));
+            }
+        }
+        Err("the host did not produce an observation".into())
+    }
+
+    pub fn read_knowledge(&mut self, item: &str) -> Result<String, String> {
+        let slot = self.named_slot(item)?;
+        self.last_knowledge_text = None;
+        self.last_discovery_records = None;
+        self.send(&C2S::ReadKnowledge { slot: slot as u8 });
+        for _ in 0..40 {
+            self.pump_for(0.05);
+            if let Some(text) = self.last_knowledge_text.take() {
+                return Ok(text);
+            }
+            if let Some((records, capacity)) = self.last_discovery_records.take() {
+                let mut out = format!("records {}/{}", records.len(), capacity);
+                for record in records {
+                    out.push_str("\n\n");
+                    out.push_str(&Self::discovery_summary(&record));
+                }
+                return Ok(out);
+            }
+        }
+        Err("the host did not return readable knowledge".into())
+    }
+
+    pub fn read_folio(&mut self, pos: crate::planet::BlockPos) -> Result<String, String> {
+        if self.dist_to(pos) > REACH {
+            return Err("folio is out of reach".into());
+        }
+        self.face_block(pos);
+        self.anchor_stance();
+        self.last_discovery_records = None;
+        self.send(&C2S::OpenDiscovery {
+            holder: crate::net::RecordHolderSnap::Folio { pos },
+        });
+        for _ in 0..40 {
+            self.pump_for(0.05);
+            if let Some((records, capacity)) = self.last_discovery_records.take() {
+                let mut out = format!("records {}/{}", records.len(), capacity);
+                for record in records {
+                    out.push_str("\n\n");
+                    out.push_str(&Self::discovery_summary(&record));
+                }
+                return Ok(out);
+            }
+        }
+        Err("the host did not return the folio".into())
+    }
+
+    pub fn copy_observation(
+        &mut self,
+        writing_pos: crate::planet::BlockPos,
+        source: crate::net::RecordHolderSnap,
+        record_id: u64,
+        destination: crate::net::RecordHolderSnap,
+        include_location: bool,
+    ) -> Result<String, String> {
+        self.last_discovery_records = None;
+        self.send(&C2S::CopyObservation {
+            writing_pos,
+            source,
+            record_id,
+            destination,
+            include_location,
+        });
+        for _ in 0..40 {
+            self.pump_for(0.05);
+            if self.last_discovery_records.take().is_some() {
+                return Ok("observation copied by the host".into());
+            }
+        }
+        Err("the host did not confirm the copy".into())
+    }
+
+    pub fn run_discovery_experiment(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        kind: crate::discovery::ExperimentKind,
+        sample: &str,
+        ledger: &str,
+        calibration: Option<&str>,
+    ) -> Result<String, String> {
+        if self.dist_to(pos) > REACH {
+            return Err("apparatus is out of reach".into());
+        }
+        let sample_slot = self.named_slot(sample)?;
+        let ledger_slot = self.named_slot(ledger)?;
+        let reference_slot = self.named_slot(kind.reference_item())?;
+        let calibration_slot = calibration.map(|name| self.named_slot(name)).transpose()?;
+        self.face_block(pos);
+        self.anchor_stance();
+        self.send(&C2S::SetExperimentItem {
+            pos,
+            slot: sample_slot as u8,
+        });
+        self.pump_for(0.35);
+        self.send(&C2S::SetExperimentItem {
+            pos,
+            slot: reference_slot as u8,
+        });
+        self.pump_for(0.35);
+        self.select("base:tuning_lens")?;
+        self.anchor_stance();
+        self.last_discovery = None;
+        self.send(&C2S::BeginExperiment { pos, kind });
+        self.pump_for(1.25);
+        self.send(&C2S::RunExperiment {
+            pos,
+            kind,
+            ledger_slot: ledger_slot as u8,
+            calibration_slot: calibration_slot.map(|slot| slot as u8),
+        });
+        for _ in 0..80 {
+            self.pump_for(0.05);
+            if let Some(record) = self.last_discovery.take() {
+                return Ok(Self::discovery_summary(&record));
+            }
+        }
+        Err("the host did not complete the experiment".into())
+    }
+
+    pub fn assemble_discovery_lens(
+        &mut self,
+        pos: crate::planet::BlockPos,
+    ) -> Result<String, String> {
+        if self.dist_to(pos) > REACH {
+            return Err("assembly bench is out of reach".into());
+        }
+        self.face_block(pos);
+        self.anchor_stance();
+        self.send(&C2S::AssembleTuningLens { pos });
+        self.pump_for(0.4);
+        self.named_slot("base:tuning_lens")?;
+        Ok("tuning lens assembled".into())
+    }
+
     /// Craft one of the recipes the agent knows the shape of. The
     /// host re-validates the grid; a 3x3 shape honestly requires a
     /// crafting table within reach even though we hold the grid.

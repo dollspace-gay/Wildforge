@@ -736,7 +736,7 @@ fn iron_ore_generates_in_band() {
 #[test]
 fn structures_parse_and_place() {
     let reg = base_reg();
-    assert_eq!(reg.structures.len(), 6, "six base ruins");
+    assert_eq!(reg.structures.len(), 7, "seven base ruins");
     assert!(reg.loots.contains_key("base:ruin_artifacts"));
     assert!(reg.loots.contains_key("base:ruin_chest"));
     let cellar = reg
