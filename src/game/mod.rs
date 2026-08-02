@@ -567,6 +567,14 @@ struct Game {
     /// A chunk within the DDA occupancy grid's reach remeshed (a block edit),
     /// so the grid is stale and must be rebuilt even if the camera hasn't moved.
     occ_dirty: bool,
+    /// Mean albedo per block id, read off the atlas once at startup and written
+    /// into the occupancy grid so bounced light knows what colour each cell
+    /// hands back. Presentation only — the pack decides it, so it never enters
+    /// the sim or the protocol.
+    block_albedo: Vec<[u8; 3]>,
+    /// One probe's read on what colour the light around the player has become,
+    /// as SH-L1. Presentation only, recomputed from the world each frame.
+    room_light: bounce::RoomLight,
     /// Your chosen look (config `appearance`, style.rs palettes).
     style: style::Style,
     auto_shot: Option<String>,
@@ -696,6 +704,10 @@ impl Game {
         );
         let pack_warnings = atlas.warnings;
         let tile_variants = atlas.variants;
+        // Read the albedos off the finished atlas, before it is handed to the
+        // renderer — this is the last point at which the packed image and the
+        // slot assignments are both in hand.
+        let block_albedo = reg.block_albedo(&atlas::slot_albedo(&atlas.color, atlas.px));
         let renderer = pollster::block_on(renderer::Renderer::new(
             window.clone(),
             atlas.color,
@@ -794,6 +806,8 @@ impl Game {
             time_abs: 0.0,
             total_frames: 0,
             occ_dirty: false,
+            block_albedo,
+            room_light: bounce::RoomLight::new(),
             settled_frames: 0,
             shot_at: None,
             style: own_style,

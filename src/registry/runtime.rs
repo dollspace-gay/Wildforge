@@ -8,6 +8,29 @@ impl Registry {
         &self.blocks[id.0 as usize]
     }
 
+    /// Mean albedo of every block, indexed by id, for the bounce grid.
+    ///
+    /// One colour per block, averaged over its six faces: the grid stores a
+    /// cell, not a face, so a block that differs top from side (grass, a log)
+    /// reports the compromise. That costs nothing on the plain materials most
+    /// of a room is built from, and bounced light is too diffuse to have
+    /// resolved the difference anyway.
+    pub fn block_albedo(&self, slots: &[[u8; 3]]) -> Vec<[u8; 3]> {
+        self.blocks
+            .iter()
+            .map(|def| {
+                let mut sum = [0u32; 3];
+                for &tile in &def.tiles {
+                    let a = slots.get(tile as usize).copied().unwrap_or([0; 3]);
+                    for c in 0..3 {
+                        sum[c] += a[c] as u32;
+                    }
+                }
+                [(sum[0] / 6) as u8, (sum[1] / 6) as u8, (sum[2] / 6) as u8]
+            })
+            .collect()
+    }
+
     #[inline]
     pub fn item(&self, id: ItemId) -> &ItemDef {
         &self.items[id.0 as usize]

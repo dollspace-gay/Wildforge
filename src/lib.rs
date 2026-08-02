@@ -11,6 +11,7 @@ mod arcane_ecology;
 mod arcane_geography;
 mod atlas;
 mod audio;
+mod bounce;
 mod camera;
 mod chunk;
 mod config;

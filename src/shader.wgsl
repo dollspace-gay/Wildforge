@@ -13,7 +13,8 @@ struct Uniforms {
     misc: vec4<f32>,
     // xyz = normalized direction toward the sun (world space), w unused
     sun_dir: vec4<f32>,
-    // rgb = warm direct-sun color, already scaled by daylight; a unused
+    // rgb = warm direct-sun color, already scaled by daylight;
+    // a = how much of the ambient floor survives in a fully occluded corner
     sun_col: vec4<f32>,
     // rgb = cool sky-ambient fill, already scaled by daylight;
     // a = the ambient floor (the stark<->soft darkness knob)
@@ -48,6 +49,11 @@ struct Uniforms {
     //   [0] = (depth, opacity_min, opacity_max, dim)
     //   [1] = (mode, cutoff, _, _)  mode 0 = surface alpha, 1 = surface luminance
     layer: array<vec4<f32>, 64>,
+    // The room's own light as SH-L1 (L0 then the three L1 terms), in the same
+    // diffuse-multiplier convention as `sh` above. One probe's worth, from
+    // where the player is standing. [0].w carries how much sun is landing
+    // nearby, 0..1, measured without reference to what colour it comes back as.
+    room_sh: array<vec4<f32>, 4>,
 };
 
 const MAX_PT_LIGHTS: u32 = 8u;
@@ -75,6 +81,13 @@ const OCC_GRID: i32 = 128;
 // world around the camera, for exact point-light shadow marching. u.occ_origin
 // is the world-cell coordinate of texel (0,0,0).
 @group(2) @binding(5) var occ_tex: texture_3d<u32>;
+
+// What the flat fill falls to where no sun is landing at all, as a fraction of
+// itself. Not zero: a cave with a torch still has air in it, and the sky term
+// carries the night on its own.
+const AMB_MIN: f32 = 0.3;
+// The landing fraction at which the fill is considered fully paid for.
+const AMB_FULL: f32 = 0.35;
 
 const SHADOW_RES: f32 = 2048.0;
 const SHADOW_CASCADES: u32 = 3u;
@@ -111,6 +124,7 @@ struct VsIn {
     @location(2) normal: vec3<f32>,
     @location(3) light: vec3<f32>,
     @location(4) sky: f32,
+    @location(5) ao: f32,
 };
 
 struct VsOut {
@@ -120,6 +134,7 @@ struct VsOut {
     @location(2) world: vec3<f32>,
     @location(3) sky: f32,
     @location(4) normal: vec3<f32>,
+    @location(5) ao: f32,
 };
 
 @vertex
@@ -131,6 +146,7 @@ fn vs_chunk(in: VsIn) -> VsOut {
     out.sky = in.sky;
     out.world = in.pos;
     out.normal = in.normal;
+    out.ao = in.ao;
     return out;
 }
 
@@ -192,6 +208,17 @@ fn sh_irradiance(n: vec3<f32>) -> vec3<f32> {
     c += u.sh[6].rgb * (0.315392 * (3.0 * n.z * n.z - 1.0));
     c += u.sh[7].rgb * (1.092548 * n.x * n.z);
     c += u.sh[8].rgb * (0.546274 * (n.x * n.x - n.y * n.y));
+    return max(c, vec3<f32>(0.0));
+}
+
+// The room's bounced light arriving on a surface facing `n`. Only four
+// coefficients, because bounced light is smooth enough that the L1 lobe is all
+// there is to say about it: which way the colour is coming from, and how much.
+fn room_irradiance(n: vec3<f32>) -> vec3<f32> {
+    var c = u.room_sh[0].rgb * 0.282095;
+    c += u.room_sh[1].rgb * (0.488603 * n.y);
+    c += u.room_sh[2].rgb * (0.488603 * n.z);
+    c += u.room_sh[3].rgb * (0.488603 * n.x);
     return max(c, vec3<f32>(0.0));
 }
 
@@ -361,7 +388,7 @@ fn point_shadow_dda(world: vec3<f32>, normal: vec3<f32>, lp: vec3<f32>, radius: 
 // shade and ambient); `detail_n` is the relief-perturbed normal (drives the
 // directional sun and point-light N·L, so grooves self-shade). They're equal
 // for flat surfaces and non-relief geometry.
-fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f32, world: vec3<f32>) -> vec3<f32> {
+fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f32, ao: f32, world: vec3<f32>) -> vec3<f32> {
     if (dot(normal, normal) < 0.25) {
         // Pre-shaded billboards/entities: colored block light or grayscale sky,
         // whichever is brighter per channel, over a small floor.
@@ -390,6 +417,11 @@ fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f3
     // from a sliver through a door), so squaring-and-then-some makes interiors
     // fall dark while open sky (mask ~1) stays full.
     let amb = pow(sky, 2.5) * sh_irradiance(dn);
+    // The room's own light, which is what a sunbeam landing on something
+    // coloured actually does to the space around it. Faded in as the skylight
+    // mask closes: out under open sky the SH ambient above already carries
+    // this, and doubling it there would only wash the daylight out.
+    let bounce = room_irradiance(dn) * (1.0 - pow(sky, 2.5));
     // Hard-edged colored point lights: range-attenuated N·L, summed, gated by
     // the shadow term (voxel-grid DDA or the distance cube map). Each promoted
     // light also cancels its own baked flood-fill wrap (suppression) so its hard
@@ -488,7 +520,22 @@ fn world_light(normal: vec3<f32>, detail_n: vec3<f32>, light: vec3<f32>, sky: f3
     // Steady (colored) torch light from the baked voxel flood, minus each
     // promoted light's estimate.
     let torch = max(light - suppress, vec3<f32>(0.0)) * fs;
-    return max(sun + amb + torch + direct, vec3<f32>(u.amb_col.a));
+    // Corner openness against the flat floor, but not all the way to nothing:
+    // a fully wedged corner keeps sun_col.a of it. Letting it reach true black
+    // read as holes punched in the room rather than as shape.
+    let occ = mix(u.sun_col.a, 1.0, ao);
+    // The room's own light is occluded like any other ambient. Left flat it
+    // lays an even wash over every surface and undoes the corner darkening
+    // below it — the walls lose their shape exactly as the tint gets strong
+    // enough to notice.
+    // The flat fill follows how much light is actually about. It used to be a
+    // constant, so a room kept the same floor of brightness whether a broad
+    // noon beam or a thin evening sliver was coming through the window — only
+    // its colour changed. Tying it to the measured amount means a narrowing
+    // beam dims the room as well as tinting it, while the colour of the floor
+    // it happens to fall on moves the hue and nothing else.
+    let fill = u.amb_col.a * occ * mix(AMB_MIN, 1.0, min(u.room_sh[0].w / AMB_FULL, 1.0));
+    return max(sun + amb + bounce * occ + torch + direct, vec3<f32>(fill));
 }
 
 // Procedural sky radiance along a world-space view direction `rd`. An analytic
@@ -821,9 +868,9 @@ fn fs_chunk(in: VsOut) -> @location(0) vec4<f32> {
     }
     if (u.pt_count.z != 0u) {
         // Shadow-debug viz: bypass albedo/fog so the diagnostic color is pure.
-        return vec4<f32>(world_light(in.normal, s.normal, in.light, in.sky, in.world), 1.0);
+        return vec4<f32>(world_light(in.normal, s.normal, in.light, in.sky, in.ao, in.world), 1.0);
     }
-    let lit = world_light(in.normal, s.normal, in.light, in.sky, in.world);
+    let lit = world_light(in.normal, s.normal, in.light, in.sky, in.ao, in.world);
     let surface_lit = tex.rgb * lit;
     var rgb = surface_lit;
     if (s.layer_id != 0u) {
@@ -869,7 +916,7 @@ fn fs_chunk(in: VsOut) -> @location(0) vec4<f32> {
 @fragment
 fn fs_water(in: VsOut) -> @location(0) vec4<f32> {
     let tex = textureSample(atlas_tex, atlas_smp, in.uv);
-    var rgb = tex.rgb * world_light(in.normal, in.normal, in.light, in.sky, in.world);
+    var rgb = tex.rgb * world_light(in.normal, in.normal, in.light, in.sky, in.ao, in.world);
     // Sun specular glint: a sharp Blinn-Phong highlight where the sun reflects
     // into the eye, gated by sky visibility and cast shadows.
     if (dot(in.normal, in.normal) > 0.25) {

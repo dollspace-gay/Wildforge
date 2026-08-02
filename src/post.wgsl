@@ -19,6 +19,7 @@ struct PostParams { p: vec4<f32> };
 // Only fragments this bright bloom; keeps the crisp mid-range untouched.
 const THRESHOLD: f32 = 1.0;
 
+
 struct FsQuad {
     @builtin(position) clip: vec4<f32>,
     @location(0) uv: vec2<f32>,
@@ -44,7 +45,13 @@ fn vs_fullscreen(@builtin(vertex_index) vi: u32) -> FsQuad {
 @fragment
 fn fs_bright(in: FsQuad) -> @location(0) vec4<f32> {
     let c = textureSampleLevel(tex0, samp, in.uv, 0.0).rgb;
-    let l = max(max(c.r, c.g), c.b);
+    // Threshold on how bright this will actually be once exposed, not on the
+    // raw scene value. The threshold means "brighter than white on screen",
+    // and that only stays true if it is measured after exposure — otherwise
+    // raising the sun makes every white surface in daylight cross it, and
+    // ordinary things like a pale flower pick up a halo they have not earned.
+    // The output stays in scene units so the composite exposes it exactly once.
+    let l = max(max(c.r, c.g), c.b) * post.p.z;
     let knee = max(l - THRESHOLD, 0.0) / max(l, 1e-4);
     return vec4<f32>(c * knee, 1.0);
 }
@@ -72,14 +79,37 @@ fn fs_blur_v(in: FsQuad) -> @location(0) vec4<f32> {
     return vec4<f32>(gauss(vec2<f32>(0.0, 1.0), in.uv), 1.0);
 }
 
-// Composite: scene + intensity·bloom, clamped. The swapchain is sRGB, so the
-// linear value we write is encoded on store exactly as the direct pass used
-// to be — with bloom off (intensity 0) the image is unchanged.
+// Filmic tone curve (the ACES approximation). Maps an unbounded linear scene
+// onto the display by rolling the highlights off instead of cutting them, which
+// is what makes a value above 1 mean anything at all. Clamping — what this pass
+// used to do — throws that range away: a surface twice as bright as white and
+// one ten times as bright both came out the same flat white, so there was no
+// point in the sun being brighter than the sky. The shoulder is also where the
+// contrast comes from; a clamped image is flat right up to the point it dies.
+fn tonemap(x: vec3<f32>) -> vec3<f32> {
+    // Extended Reinhard, not the filmic ACES curve. ACES has a toe that crushes
+    // the very dark end hard — around a hundredth of white it multiplies by
+    // about a third — and a room lit by ambient alone lives entirely down
+    // there, so interiors went to mud while the daylight looked fine. This
+    // keeps the shadows where the lighting put them and still rolls the
+    // highlights off, which was the point: WHITE is the scene value that is
+    // allowed to reach display white, and anything past it compresses instead
+    // of clipping.
+    let wp = max(post.p.w, 0.25);
+    let w = wp * wp;
+    return clamp(x * (1.0 + x / w) / (1.0 + x), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+// Composite: expose, add bloom, tone-map, grade. The swapchain is sRGB, so the
+// linear value written here is encoded on store.
 @fragment
 fn fs_composite(in: FsQuad) -> @location(0) vec4<f32> {
     let scene = textureSampleLevel(tex0, samp, in.uv, 0.0).rgb;
     let bloom = textureSampleLevel(tex1, samp, in.uv, 0.0).rgb;
-    var c = clamp(scene + bloom * post.p.x, vec3<f32>(0.0), vec3<f32>(1.0));
+    // Exposure first, so the tone curve sees the scene at the brightness we
+    // mean it to have; then the curve, which is the only thing that decides
+    // what "too bright" looks like.
+    var c = tonemap((scene + bloom * post.p.x) * post.p.z);
     // Night color-grade (post.p.y = night factor, 0 by day .. 1 deep night):
     // slightly desaturate and cool the image toward blue so a moonlit scene
     // reads unmistakably cold even where surface albedo (green grass) can't take
