@@ -48,6 +48,20 @@ pub(super) fn portrait_depth(fovy: f32, pitch: f32, screen_h: f32, target_px: f3
         / ((fovy * 0.5).tan() * target_px.max(1.0)).max(0.001)
 }
 
+/// How much brighter direct sun is than the old parity-with-sky default.
+/// `WILDFORGE_SUN` overrides it.
+fn sun_scale() -> f32 {
+    use std::sync::OnceLock;
+    static S: OnceLock<f32> = OnceLock::new();
+    *S.get_or_init(|| {
+        std::env::var("WILDFORGE_SUN")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|v: &f32| *v > 0.0 && *v <= 100.0)
+            .unwrap_or(30.0)
+    })
+}
+
 impl Game {
     /// First-person viewmodel: your arm, or the block/item it holds,
     /// anchored low-right of the camera, walk-bobbed, and swung on use.
@@ -164,6 +178,7 @@ impl Game {
                         normal: [0.0, 0.0, 0.0],
                         light: [shade * lum.0, shade * lum.0, shade * lum.0],
                         sky: shade * lum.1,
+                        ao: 1.0,
                     });
                 }
                 idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -244,6 +259,7 @@ impl Game {
                             normal: [0.0, 0.0, 0.0],
                             light: [0.95 * lum.0, 0.95 * lum.0, 0.95 * lum.0],
                             sky: 0.95 * lum.1,
+                            ao: 1.0,
                         });
                     }
                     idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -931,7 +947,12 @@ impl Game {
         // orange as it nears the horizon.
         let noon = Vec3::new(1.0, 0.96, 0.86);
         let horizon = Vec3::new(1.0, 0.54, 0.26);
-        let warm_sun_col = horizon.lerp(noon, sun_vis) * (0.64 * sun_vis);
+        // Direct sun against skylight. Real sun is one to two orders of
+        // magnitude above the sky; ours sat at roughly parity, which is why
+        // shadows filled in flat and a window out-lit its own sunbeam. Raising
+        // it is only meaningful now that the composite tone-maps instead of
+        // clamping — the range has somewhere to go.
+        let warm_sun_col = horizon.lerp(noon, sun_vis) * (0.64 * sun_vis * sun_scale());
         let mut amb_col = Vec3::new(0.60, 0.68, 0.82) * (0.42 * daylight);
 
         // Moon: rides the anti-solar arc (up while the sun is down), cold and
@@ -1021,13 +1042,65 @@ impl Game {
 
         // Project the finished sky into SH ambient — the colored, directional
         // fill light — from the same values that drive the visible dome.
-        let sh_ambient = crate::sky::project(&crate::sky::SkyParams {
+        let sky_params = crate::sky::SkyParams {
             sun_dir: sun_dir_true,
             up: self.camera.up(),
             gloom,
             overcast: Vec3::from_array(self.renderer.sky_color),
             moon_fill,
-        });
+        };
+        let sh_ambient = crate::sky::project(&sky_params);
+        // And ask the room what colour its light has become. One probe, from
+        // where the player is standing — see bounce.rs for why it is only one.
+        //
+        // The probe works in the player's local chart — the flat, Y-up frame
+        // the whole estimate is written in — so the render-space eye and sun
+        // are expressed there first, through the same tangent basis the camera
+        // uses. Its answer is a colour and an amount, with no direction (see
+        // bounce.rs), and that rotation leaves both untouched, so nothing
+        // downstream needs to know which chart it was measured in.
+        let eye = self.player.eye();
+        let lf = crate::planet::local_frame(eye.surface_point());
+        let (east, up, north) = (lf.east.as_vec3(), lf.up.as_vec3(), lf.north.as_vec3());
+        let to_chart = |d: Vec3| Vec3::new(d.dot(east), d.dot(up), d.dot(north));
+        let sun_true_chart = to_chart(sun_dir_true);
+        let warm_sun_chart = to_chart(warm_sun_dir);
+        let sky_chart = crate::sky::SkyParams {
+            sun_dir: sun_true_chart,
+            up: Vec3::Y,
+            gloom,
+            overcast: Vec3::from_array(self.renderer.sky_color),
+            moon_fill,
+        };
+        self.room_light.update(
+            &self.server.world,
+            &self.block_albedo,
+            eye.local(),
+            warm_sun_chart,
+            sun_true_chart,
+            warm_sun_col,
+            &sky_chart,
+            // What the sun's brightness would be straight overhead, so
+            // "fully lit" means the same thing at any sun-strength setting.
+            0.64 * sun_scale(),
+            dt,
+            eye.face(),
+        );
+        if std::env::var("WILDFORGE_DEBUG").is_ok() && self.total_frames.is_multiple_of(60) {
+            let sh = self.room_light.sh();
+            eprintln!(
+                "room L0 {:.4},{:.4},{:.4}  L1y {:.4},{:.4},{:.4}  nonzero {}/128  cols {:?}  intensity {:.3}",
+                sh[0].x,
+                sh[0].y,
+                sh[0].z,
+                sh[1].x,
+                sh[1].y,
+                sh[1].z,
+                self.room_light.lit,
+                self.room_light.stats,
+                self.room_light.intensity
+            );
+        }
 
         // The weather bed follows what's actually falling where you stand.
         if let Some(a) = &self.audio {
@@ -1320,6 +1393,7 @@ impl Game {
                         normal: normal.to_array(),
                         light: lum.0,
                         sky: lum.1,
+                        ao: 1.0,
                     });
                 }
                 entity_idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -1375,6 +1449,7 @@ impl Game {
                                 normal: [0.0, 0.0, 0.0],
                                 light: [lum; 3],
                                 sky: lum,
+                                ao: 1.0,
                             });
                         }
                         idx.extend_from_slice(&[
@@ -1524,6 +1599,7 @@ impl Game {
                                 normal: [0.0, 0.0, 0.0],
                                 light: [0.5; 3],
                                 sky: 0.9,
+                                ao: 1.0,
                             });
                         }
                         entity_idx.extend_from_slice(&[
@@ -1586,6 +1662,7 @@ impl Game {
                     normal: [0.0, 0.0, 0.0],
                     light: [1.0; 3],
                     sky: 1.0,
+                    ao: 1.0,
                 });
             }
             overlay_idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -1799,7 +1876,15 @@ impl Game {
         } else {
             Vec::new()
         };
-        let ambient_floor = if self.config.stark { 0.04 } else { 0.12 };
+        // The flat fill under everything. It and the room tint are answering
+        // the same question — what lights a surface no lamp reaches — and at
+        // 0.12 the flat one is several times the honest one, so the room's own
+        // colour cannot be seen past it. WILDFORGE_AMBIENT_FLOOR to explore.
+        let ambient_floor = std::env::var("WILDFORGE_AMBIENT_FLOOR")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| (0.0..=1.0).contains(v))
+            .unwrap_or(if self.config.stark { 0.04 } else { 0.12 });
 
         let saved_cam = self.camera.pos;
         if self.presentation.nudge.1 > 0.0 {
@@ -1833,6 +1918,8 @@ impl Game {
             sun_dir_true,
             gloom,
             sh_ambient,
+            room_sh: self.room_light.sh(),
+            room_intensity: self.room_light.intensity,
             sun_col,
             amb_col,
             ambient_floor,

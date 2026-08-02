@@ -564,7 +564,7 @@ fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
         let vertex_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32x3, 3 => Float32x3, 4 => Float32],
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32x3, 3 => Float32x3, 4 => Float32, 5 => Float32],
         };
         let line_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<LineVertex>() as u64,
@@ -1022,7 +1022,9 @@ fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
                     cache: None,
                 })
             };
-        let bright_pipeline = make_post("bright", &bloom_layout, "fs_bright", HDR_FORMAT);
+        // The bright pass reads the composite params too: its threshold is in
+        // exposed terms, so it needs the same exposure the composite applies.
+        let bright_pipeline = make_post("bright", &composite_layout, "fs_bright", HDR_FORMAT);
         let blur_h_pipeline = make_post("blur-h", &bloom_layout, "fs_blur_h", HDR_FORMAT);
         let blur_v_pipeline = make_post("blur-v", &bloom_layout, "fs_blur_v", HDR_FORMAT);
         let composite_pipeline = make_post(

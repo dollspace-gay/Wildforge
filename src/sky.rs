@@ -49,7 +49,7 @@ fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
 }
 
 /// Low-frequency sky radiance along `dir` (normalized). Mirrors `shader.wgsl`.
-fn radiance(dir: Vec3, p: &SkyParams) -> Vec3 {
+pub(crate) fn radiance(dir: Vec3, p: &SkyParams) -> Vec3 {
     let up_axis = p.up.normalize_or_zero();
     let up = dir.dot(up_axis).clamp(0.0, 1.0);
     let se = p.sun_dir.dot(up_axis); // local sun elevation

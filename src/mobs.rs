@@ -180,6 +180,7 @@ impl Projectile {
                         normal: [0.0, 0.0, 0.0],
                         light: [1.0; 3], // bolts glow faintly
                         sky: 1.0,
+                        ao: 1.0,
                     });
                 }
                 idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -1275,6 +1276,7 @@ impl Mob {
                             (shade * lum.0[2]).min(2.0),
                         ],
                         sky: (shade * lum.1).min(2.0),
+                        ao: 1.0,
                     });
                 }
                 idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -1517,6 +1519,7 @@ pub(crate) fn emit_humanoid_interpolated(
                     normal,
                     light: lum.0,
                     sky: lum.1,
+                    ao: 1.0,
                 });
             }
             idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -1560,6 +1563,7 @@ pub(crate) fn emit_humanoid_interpolated(
                 normal: [0.0, 0.0, 0.0],
                 light: lum.0,
                 sky: lum.1,
+                ao: 1.0,
             });
         }
         idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);

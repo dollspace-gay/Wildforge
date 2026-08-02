@@ -547,6 +547,32 @@ tool = "shovel"
 drops = "base:dirt"
 brush = { table = "ruin_artifacts", becomes = "base:dirt" }
 
+# Pigmented plaster. Lime render carrying one of the ground mineral
+# pigments — the same cinnabar and cobalt the glassworks stains with,
+# spread on a wall instead of melted into a pane. Strongly saturated and
+# near-flat, which is what makes them useful for judging bounced light:
+# a room that goes red should have exactly one thing to blame.
+[[block]]
+id = "red_plaster"
+name = "Red Plaster"
+texture = "@red_plaster"
+hardness = 2.0
+tool = "pickaxe"
+
+[[block]]
+id = "blue_plaster"
+name = "Blue Plaster"
+texture = "@blue_plaster"
+hardness = 2.0
+tool = "pickaxe"
+
+[[block]]
+id = "white_plaster"
+name = "White Plaster"
+texture = "@white_plaster"
+hardness = 2.0
+tool = "pickaxe"
+
 # ---- steelworks ----
 
 [[block]]

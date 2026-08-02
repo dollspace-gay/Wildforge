@@ -169,6 +169,7 @@ impl ItemEntity {
                     normal,
                     light: lum.0,
                     sky: lum.1,
+                    ao: 1.0,
                 });
             }
             idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -227,6 +228,7 @@ impl ItemEntity {
                         normal: [0.0, 0.0, 0.0],
                         light: [0.95 * lum.0[0], 0.95 * lum.0[1], 0.95 * lum.0[2]],
                         sky: 0.95 * lum.1,
+                        ao: 1.0,
                     });
                 }
                 idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -270,6 +272,7 @@ pub fn emit_crack(block: BlockPos, progress: f32, verts: &mut Vec<Vertex>, idx: 
                 normal: [0.0, 0.0, 0.0],
                 light: [1.0; 3],
                 sky: 1.0,
+                ao: 1.0,
             });
         }
         idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);

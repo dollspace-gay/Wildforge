@@ -55,6 +55,9 @@ struct Uniforms {
     // interior-layer run (see Atlas::interior_base).
     occ_origin: [i32; 4],
     layer: [[f32; 4]; crate::atlas::MAX_LAYERS as usize * 2],
+    /// The room's own light as SH-L1 (L0 then the three L1 terms), a diffuse
+    /// multiplier in the same convention as `sh` above.
+    room_sh: [[f32; 4]; 4],
 }
 
 /// Side of the cubic voxel-occupancy grid uploaded for DDA point-light shadows.
@@ -188,6 +191,10 @@ pub struct FrameInput<'a> {
     pub gloom: f32,
     /// Sky ambient as 9 RGB SH coefficients (see `sky::project`).
     pub sh_ambient: [Vec3; 9],
+    /// The room's own bounced light, SH-L1 (see bounce.rs).
+    pub room_sh: [Vec3; 4],
+    /// How much sun is landing near the player, 0..1, colour-independent.
+    pub room_intensity: f32,
     /// Warm direct-sun color, already scaled by daylight.
     pub sun_col: Vec3,
     /// Cool sky-ambient color, already scaled by daylight.

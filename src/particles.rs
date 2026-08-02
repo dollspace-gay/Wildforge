@@ -136,6 +136,7 @@ impl Pool {
                             normal: [0.0, 0.0, 0.0],
                             light: [p.lum; 3],
                             sky: p.lum,
+                            ao: 1.0,
                         });
                     }
                     idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);

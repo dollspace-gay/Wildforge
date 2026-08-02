@@ -26,6 +26,13 @@ pub struct Vertex {
     /// Sky-visibility channel, 0..1, premultiplied by AO. Gates direct sun and
     /// scales the sky-ambient fill; the daylight uniform dims it at night.
     pub sky: f32,
+    /// Corner openness on its own, 0 = wedged into a corner, 1 = open. The
+    /// other two channels have AO folded in and then multiplied by a light
+    /// level, so indoors — where there is no skylight and no torch — there is
+    /// nothing left of it. Kept separate so the flat ambient floor can be
+    /// occluded too, which is the only way a corner lit by nothing but ambient
+    /// ever gets dark.
+    pub ao: f32,
 }
 
 pub struct ChunkMesh {
@@ -330,6 +337,7 @@ pub fn mesh_chunk_input(
                                         0.95 * cl[2],
                                     ]),
                                     sky: 0.95 * cs,
+                                    ao: 1.0,
                                 });
                             }
                             m.opaque_idx.extend_from_slice(&[
@@ -375,6 +383,7 @@ pub fn mesh_chunk_input(
                                     normal: curved_normal,
                                     light: lit,
                                     sky: sky_l,
+                                    ao: 1.0,
                                 });
                             }
                             m.opaque_idx.extend_from_slice(&[
@@ -794,6 +803,10 @@ pub fn mesh_chunk_input(
                             // ordinary faces keep their occluded block light.
                             light: emissive.unwrap_or([ao_f * fl[0], ao_f * fl[1], ao_f * fl[2]]),
                             sky: ao_f * fs,
+                            // Raw, and on the full 0..1 range rather than the
+                            // gentle 0.4..1 the other channels use: this one has
+                            // to be able to reach zero.
+                            ao: ao[ci] as f32 / 3.0,
                         });
                     }
                     // Flip the quad diagonal when AO is anisotropic.

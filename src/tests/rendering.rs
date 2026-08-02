@@ -29,6 +29,39 @@ fn wood_leaf_tiles_are_opaque_in_atlas() {
 }
 
 #[test]
+fn block_albedo_reports_the_colour_a_block_bounces() {
+    // The bounce grid stores one albedo per block, and every colour a room
+    // takes on comes through it. If it ever reported grey for the plasters the
+    // GI demo would go quietly monochrome and still look plausible, so pin the
+    // channel ordering here rather than trusting a screenshot to catch it.
+    let reg = base_reg();
+    let atlas = crate::atlas::build_atlas(&reg.tex_files, &[], &reg.tex_names);
+    let albedo = reg.block_albedo(&crate::atlas::slot_albedo(&atlas.color, atlas.px));
+
+    let of = |name: &str| albedo[reg.block_id(name).unwrap().0 as usize];
+    let (red, blue, white) = (
+        of("base:red_plaster"),
+        of("base:blue_plaster"),
+        of("base:white_plaster"),
+    );
+    assert!(
+        red[0] as u16 > 2 * red[1] as u16 && red[0] > red[2],
+        "red plaster should be dominantly red, got {red:?}"
+    );
+    assert!(
+        blue[2] as u16 > 2 * blue[1] as u16 && blue[2] > blue[0],
+        "blue plaster should be dominantly blue, got {blue:?}"
+    );
+    // Near-neutral and bright: it is the surface the bounce is read against,
+    // so a tint of its own would be indistinguishable from the effect.
+    let span = white.iter().max().unwrap() - white.iter().min().unwrap();
+    assert!(
+        white[0] > 150 && span < 40,
+        "white plaster should be bright and neutral, got {white:?}"
+    );
+}
+
+#[test]
 fn atlas_builds_with_mod_texture() {
     let root = tmp_dir("atlasmod");
     let dir = root.join("texmod");
