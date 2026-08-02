@@ -1,9 +1,58 @@
 # Planetary biomes — life follows climate, water, and ground
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and qualified (2026-07-31).**
 >
 > This is goal 7 of the planetary-world sequence. It requires completed
 > topology, atlas, geology, climate, hydrology, and water-cycle goals.
+
+## Implementation and qualification record
+
+**Goal 9 closure (2026-08-01).** Biome schema 1 remains current in generator
+9. The final seed-1337 atlas has 500 countries and hearts, 849 country routes,
+and all 393,216 cells represented in the validated visual/census bundle.
+Freshwater ecology now falls back to atlas habitat when a relevant voxel chunk
+is unloaded, so host interest streaming cannot turn a mapped river/lake into
+ocean ecology. Older Goal-7 screenshots made before the cube-face winding fix
+are explicitly excluded; the machine-checked final capture manifest lists
+only corrected renderer evidence.
+
+Goal 7 ships as atlas algorithm version 6, generator version 8, biome schema
+1 (`biomes.wfb`), chunk format WFC8, heart format WFH4, and protocol 23.
+The implementation keeps zonal biome, edaphic soil, hydrological habitat, and
+wild/heart state as separate causal layers. Geographic countries are a
+weighted partition over landmasses, watersheds, crests, and routes; they no
+longer impose climate. Habitat predicates are data-driven for animals and
+mods, while crop growth consumes real moisture, drainage, fertility,
+temperature, and persisted salinity.
+
+Production seed 1337 qualified the full 256-cell-side atlas:
+
+- 393,216 cells, 35.16% land, 39 emerged landmasses;
+- 500 geographic countries, 500 registered hearts, and 849 routes;
+- 878 named rivers, 2,224 floodplain cells, 6,062 wetland cells, 557 delta
+  cells, and 1,637 estuary cells;
+- 131,727,392 immutable bytes plus 503,218 biome bytes;
+- 28.52 seconds generation/export and 392,136 KiB measured generator peak RSS
+  with one build job; the exported report records 401,547,264 peak resident
+  bytes, below the 512 MiB generation envelope;
+- exact zero unexplained water and salt in the conservation audit.
+
+The automated suite covers causal zones, ecotones, seam-crossing habitat,
+groundwater-caused oases, pumping/recharge, deltas and estuaries, salt-marsh
+surface cover, country coverage/connectivity/barrier preference, every
+country heart and edifice, physically constrained grafts, connected wildlife
+migration/recovery, temperature/moisture/fertility/drainage/salinity crop
+response, real-water irrigation, save/load, determinism, and heart isolation
+from climate and conserved water. `qualification-sites.toml` records each
+visual site, its exact spawn, evidence, and longitude-correct local noon;
+headless client captures were run against the persisted production atlas at
+view distance 4 after the world settled. Generator 8 also keeps a coherent
+24-block density mantle and 12-block cave roof beneath atlas terrain; a
+multi-face regression grid verifies at least eight contiguous solid blocks
+under sampled highland surfaces while retaining caves and deliberate
+overhangs. The captures expose a remaining art/readability issue: pale strata
+can blend into the software-rendered fog even where production-column probes
+confirm a continuous solid shell.
 
 ## Purpose
 

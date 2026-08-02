@@ -404,6 +404,14 @@ input = "base:steel_bloom"
 output = "base:steel_ingot"
 strikes = 3
 
+# Old slag is a stockpile, not deleted iron. Re-firing it is the simplest
+# secondary-recovery route; the forge does it much more efficiently than
+# opening another mine.
+[[smelt]]
+input = "base:iron_slag"
+output = "base:iron_ingot"
+time = 12.0
+
 [[fuel]]
 item = "base:charcoal_block"
 burn = 160.0
@@ -600,22 +608,27 @@ clear = "base:glass"
 [[kiln]]
 powder = "base:verdigris_powder"
 glass = "base:teal_glass"
+consumes = true
 
 [[kiln]]
 powder = "base:ochre_powder"
 glass = "base:amber_glass"
+consumes = true
 
 [[kiln]]
 powder = "base:cobalt_powder"
 glass = "base:blue_glass"
+consumes = true
 
 [[kiln]]
 powder = "base:cinnabar_powder"
 glass = "base:red_glass"
+consumes = true
 
 [[kiln]]
 powder = "base:manganese_powder"
 glass = "base:violet_glass"
+consumes = true
 
 # ---- minerals & geology: dressed stone ----
 
@@ -665,6 +678,7 @@ output = "base:gold_ingot"
 [[smelt]]
 input = "base:raw_galena"
 output = "base:lead_ingot"
+loss = { silver = 400 }
 
 # Quartz fires into single-use cupellation crucibles.
 [[smelt]]
@@ -683,6 +697,7 @@ input = "base:charged_crucible"
 output = "base:silver_ingot"
 time = 12.0
 spit = { item = "base:lead_ingot", count = 2 }
+loss = { lead = 1200, quartz = 1200 }
 
 # ---- minerals & geology: powders, glass, and fine work ----
 
@@ -717,6 +732,7 @@ station = "quern"
 tool = "none"
 strikes = 3
 count = 2
+loss = { rare_earth = 400 }
 
 [[worked]]
 input = "base:bastnasite"
@@ -729,31 +745,38 @@ count = 3
 [[kiln]]
 powder = "base:chrome_powder"
 glass = "base:green_glass"
+consumes = true
 
 [[kiln]]
 powder = "base:raw_gold"
 glass = "base:cranberry_glass"
+consumes = true
 
 [[kiln]]
 powder = "base:silver_ingot"
 glass = "base:yellow_glass"
+consumes = true
 
 [[kiln]]
 powder = "base:tin_powder"
 glass = "base:milk_glass"
+consumes = true
 
 [[kiln]]
 powder = "base:rare_earth_powder"
 glass = "base:rose_glass"
+consumes = true
 
 [[kiln]]
 powder = "base:uranium_powder"
 glass = "base:glow_glass"
+consumes = true
 
 # Leaded crystal: cupellation lead colors nothing — it clarifies.
 [[kiln]]
 powder = "base:lead_ingot"
 glass = "base:crystal_glass"
+consumes = true
 
 # Fine glasswork: crystal cut with a diamond. Optics starts here.
 [[recipe]]
@@ -1157,4 +1180,3 @@ output = "base:fishing_rod"
 pattern = ["S", "C"]
 keys = { S = "base:steel_ingot", C = "base:cobblestone" }
 output = "base:fire_striker"
-

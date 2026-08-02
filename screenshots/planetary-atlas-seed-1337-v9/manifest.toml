@@ -1,0 +1,134 @@
+format_version = 6
+seed = 1337
+topology = "cube_sphere_v1"
+face_blocks = 8192
+atlas_cell_blocks = 32
+atlas_face_side = 256
+atlas_cell_count = 393216
+topology_version = 1
+atlas_algorithm_version = 6
+dynamic_schema_version = 3
+water_cycle_schema_version = 1
+history_schema_version = 1
+geology_schema_version = 1
+hydrology_schema_version = 1
+biome_schema_version = 1
+planet_radius = 5215.189175235227
+rotation_axis = [
+    0.0,
+    1.0,
+    0.0,
+]
+prime_meridian = [
+    0.0,
+    0.0,
+    1.0,
+]
+axial_tilt_degrees = 23.5
+climate_convergence_iterations = [
+    93,
+    93,
+    90,
+    90,
+]
+climate_max_residual = 0.019581556
+climate_moisture_budget_error = 0.000007949769496917725
+content_hash = 0
+genesis_checksum = 3001409808869552682
+dynamic_checksum = 17447001561629509220
+water_cycle_checksum = 3019703882202591764
+history_checksum = 3291191029635194998
+geology_checksum = 14673030231067166781
+hydrology_checksum = 12056346886163088686
+biome_checksum = 12724156767077050671
+genesis_bytes = 131727392
+dynamic_bytes = 12582952
+water_cycle_bytes = 31694082
+geology_bytes = 134755
+hydrology_bytes = 2755492
+biome_bytes = 503218
+complete = true
+
+[[stages]]
+id = "topology"
+schema_version = 1
+algorithm_version = 6
+checksum = 13528336520985366805
+elapsed_micros = 37644
+
+[[stages]]
+id = "tectonics_crust"
+schema_version = 1
+algorithm_version = 6
+checksum = 13862884412670039534
+elapsed_micros = 1026821
+
+[[stages]]
+id = "preliminary_elevation"
+schema_version = 1
+algorithm_version = 6
+checksum = 18443116737469063775
+elapsed_micros = 10542
+
+[[stages]]
+id = "climate_normals_winds"
+schema_version = 1
+algorithm_version = 6
+checksum = 5446397835017917166
+elapsed_micros = 4847031
+
+[[stages]]
+id = "erosion_basins_drainage"
+schema_version = 1
+algorithm_version = 6
+checksum = 13987313902838163905
+elapsed_micros = 1456945
+
+[[stages]]
+id = "hydrological_equilibrium"
+schema_version = 1
+algorithm_version = 6
+checksum = 13987313902838163905
+elapsed_micros = 47433
+
+[[stages]]
+id = "soils_groundwater_habitats"
+schema_version = 1
+algorithm_version = 6
+checksum = 199626534240983782
+elapsed_micros = 46499
+
+[[stages]]
+id = "biomes_provinces"
+schema_version = 1
+algorithm_version = 6
+checksum = 335659636595850165
+elapsed_micros = 2775874
+
+[[stages]]
+id = "finite_resource_sites"
+schema_version = 1
+algorithm_version = 6
+checksum = 11442422114127415101
+elapsed_micros = 2247
+
+[[stages]]
+id = "validation"
+schema_version = 1
+algorithm_version = 6
+checksum = 3001409808869552682
+elapsed_micros = 271032
+
+[layer_versions]
+biomes = 1
+climate = 2
+dynamic = 3
+geology_manifest = 1
+geometry = 1
+ground = 1
+history = 1
+hydrology = 2
+resources = 1
+tectonics = 1
+terrain = 1
+water_cycle = 1

@@ -1,17 +1,143 @@
 # Planetary water cycle — water leaves, travels, and returns
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and qualified (2026-07-31).**
 >
 > This is goal 6 of the planetary-world sequence. It requires completed
 > topology, atlas, geology, climate, and hydrology goals.
 
+## Implementation record — 2026-07-31
+
+**Goal 9 closure (2026-08-01).** WFW1 and the one-HU=`1/256`-voxel contract
+remain current in generator 9. The evolved production save closes at
+3,458,370,298,210 HU and 636,403,126,228,736 salt mass after 44 climate hours,
+with zero unexplained delta. Live testing found and fixed saturated transport
+spill and sliced-weather/detail-inbox interleaving defects. The configurable
+headless long-run harness defaults to 200 144-day years, reports the required
+reservoir/climate/habitat/memory metrics at years 1, 10, 100, and final, and
+uses the production weather, surface, groundwater, basin, and audit paths on
+a compact cube-sphere so the repository gate remains practical.
+
+Goal 6 closes the loop between the conservative atmospheric weather added by
+Goal 4, the finite basins and voxel water assigned by Goal 5, and every
+shipping gameplay path that moves water. One hydro unit (HU) is exactly
+`1/256` of a full voxel block, and every water owner carries integer HU plus
+integer salt mass. Transfers debit before crediting, preserve indivisible
+remainders deterministically, and are rejected when their source cannot fund
+them. The ledger distinguishes atmosphere, soil, snow and ice, groundwater,
+runoff, named coarse surface reservoirs, chunk-committed voxel water, pending
+exchanges, three portable water classes, industrial storage, and precipitated
+salt.
+
+The authoritative server advances surface/weather fluxes hourly and
+groundwater daily in deterministic slices. Rain and snow debit clouds;
+evaporation and transpiration credit vapor; infiltration fills soil and then
+aquifers; runoff follows the seam-crossing drainage graph; groundwater moves
+down head gradients; aquifers feed eligible perennial rivers and finite
+springs. Freeze/melt, salt rejection, brine concentration, terminal-lake salt
+precipitation, breached basins, and river/ocean mixing all preserve exact mass.
+An opened mine below the water table can receive groundwater seepage, and an
+excavation beneath mapped ocean country materializes a finite parcel debited
+from that ocean.
+
+Detailed/coarse ownership is explicit. Fresh chunks debit the exact local
+water and salt assigned by immutable hydrology and register a commitment to
+the same named ocean, lake, or river; local salinity is not replaced by a
+basin average. Saved chunks retain detailed authority. Inbox transfers bridge
+unloaded country, while shoreline reconciliation follows basin level without
+overwriting player-touched chunks. Waterfront excavation or masonry creates a
+stable chunk-local dynamic-basin marker, so player waterworks have an audited
+owner even before they contain water.
+
+Buckets now preserve fresh, brackish, or salt-water identity. Pumps debit
+visible named water or groundwater, boilers own their intake, and exhausted
+steam returns fresh vapor while dissolved salt remains in the machine. Voxel
+metadata and multiplayer block updates carry salinity, and host/guest chunk
+snapshots agree on fluid level, salt metadata, and hydrological ownership.
+
+### Formats and recovery
+
+- immutable genesis is `WFA6`; atlas format and generation algorithm are `6`,
+- mutable climate is `WFD3`, dynamic schema `3`,
+- exact water state is the new independently bounded `WFW1` file,
+- causal country/biome state is `biomes.wfb`, schema `1`,
+- history, geology, hydrology, and water-cycle schemas remain `1`,
+- the Goal-6 shipping point used world generator `7`, WFC8 chunk/network
+  records, and protocol `23`; integrated qualification now uses generator 9,
+  WFC8 on disk, network-only WFC9, and protocol 24.
+
+The dynamic and water files are published as one logical save generation.
+Load accepts only a checksum-consistent pair, recovers the last atomic backup
+pair when possible, and otherwise fails closed instead of combining weather
+from one hour with reservoirs from another. Older immutable, dynamic, water,
+chunk, world-generator, and protocol versions are not silently reinterpreted.
+
+### Production qualification
+
+The release build generated production seed `1337`, all six `256 × 256` atlas
+faces and the full diagnostic bundle in 28.78 seconds. Peak resident memory
+was 513,520 KiB (501.5 MiB), with zero swap: inside the 512 MiB generation
+budget by only 10,768 KiB, so the margin is valid but tight. Persisted files
+were 127,402,016 immutable bytes, 12,582,952 dynamic bytes, 31,670,157 water
+bytes, 134,448 geology bytes, 2,755,408 hydrology bytes, and 180 history bytes.
+Estimated loaded atlas memory is 176,622,896 bytes.
+
+The generated headless audit closed exactly at 3,542,941,318,509 HU and
+657,333,643,306,016 units of salt mass, with zero unexplained water and salt,
+zero pending exchanges, and named levels/salinity for every ocean, lake, and
+river. Reloading and rendering that same production world left the persisted
+audit unchanged. Diagnostics include water/salt reservoir totals, basin
+levels, largest aquifer drawdowns and pending exchanges, plus groundwater
+recharge, spring discharge, spring climate, and salinity maps. Operators can
+repeat the proof with:
+
+```sh
+wildforge --water-audit <world>
+```
+
+The 19-test water-cycle suite covers individual transfer conservation,
+two-century stability, save boundaries, serial/sliced equivalence, seams,
+salinity mixing, freezing, terminal salt, rain, snow, aquifers, springs,
+baseflow, drawdown, breaches, dynamic basins, ocean cave flooding, bucket and
+boiler classes, detailed commitments, and unloaded exchange. Related machine,
+world, hydrology, rendering, persistence, and multiplayer suites exercise the
+shipping integration.
+
+The final split all-target repository run passed 467 tests with zero failures
+and 13 intentional development/measurement probes ignored: 463 non-agent
+tests, followed by all four agent tests on one test thread. The default
+parallel non-agent runner peaked at 3,926,324 KiB even though compilation used
+`CARGO_BUILD_JOBS=1`; this confirms that constrained runners must also use
+`--test-threads=1`. The serial agent lane peaked at 115,584 KiB.
+Formatting, strict locked all-target/all-feature Clippy with warnings denied,
+the locked release build, dependency advisories, and the whitespace audit all
+pass.
+
+### Honest limitations
+
+The production atlas generator passes its memory budget, but the real release
+client used 797,644–903,924 KiB while rendering these atlas-heavy water sites;
+textures, meshes, renderer allocations, and the loaded planet all contribute.
+That is outside the atlas-generation budget, but it is relevant to the earlier
+out-of-memory report and leaves meaningful client-memory work for final
+planetary qualification.
+
+The real-client lake and estuary captures also exposed a presentation defect:
+in bright conditions broad water surfaces can blend almost completely into
+the sky, while the existing short-distance fog, exposed caves, and stark
+terrain silhouettes make valid shores look fragmented. The world loaded,
+settled, and rendered real atlas water, and its mass audit stayed exact; the
+captures are technical evidence, not promotional screenshots. V1 dynamic
+player basins are stable per-chunk ownership markers rather than a global
+arbitrary-dam connectivity solver. These limits do not relax conservation,
+but they should not be mistaken for finished water presentation.
+
 ## Purpose
 
-Visible voxel water is already finite, but the current “cycle” removes shallow
-water during evaporation and creates water during rain. There is no
-atmospheric reservoir, soil moisture, groundwater, or return path from steam
-and snow. On an infinite world those tuned effects can look seasonal. On a
-finite planet they would drift, drain, or mint water forever.
+Before Goal 6, visible voxel water was finite, but the old “cycle” removed
+shallow water during evaporation and created water during rain. It had no
+authoritative atmospheric reservoir, soil moisture, groundwater, or return
+path from steam and snow. On an infinite world those tuned effects could look
+seasonal. On a finite planet they would drift, drain, or mint water forever.
 
 This goal closes the planetary water cycle while retaining detailed voxel
 water where players interact.

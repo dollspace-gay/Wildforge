@@ -1,0 +1,81 @@
+qualification_version = 1
+implementation_date = "2026-08-01"
+review_machine = "Wildforge development host; America/Chicago; serial Cargo compilation; production runtime workers enabled"
+
+[atlas]
+id = "production-atlas-seed-1337"
+directory = "planetary-atlas-seed-1337-v9"
+seed = 1337
+generator_version = 9
+atlas_format_version = 6
+location = "complete six-face cube-sphere; 393216 atlas cells"
+season = "four immutable seasonal normals plus mutable genesis weather"
+time = "genesis hour 0"
+settings = "production 256x256 cells per face; 32 blocks per atlas cell; diagnostic layout 3x2"
+purpose = "All registered topology, geology, climate, hydrology, soil, biome, country, heart, material-site, and mutable water/weather layers. validation-report.toml is authoritative for the 132 map/legend pairs."
+
+[[capture]]
+id = "solo-qualified-entry"
+file = "qualification-entry-v9-final.png"
+seed = 20260801
+generator_version = 9
+location = "pos_z,1616.5,82.0,3312.5; persisted qualified common spawn"
+season = "saved production calendar"
+time = "daylight; clock frozen for automated capture"
+settings = "solo; view distance 12; 1280x720; 518 resident and 518 GPU chunk meshes; corrected cube-sphere winding"
+purpose = "First playable solo frame after asynchronous world entry and complete local horizon streaming."
+
+[[capture]]
+id = "remote-qualified-entry"
+file = "qualification-entry-v9-remote-final.png"
+seed = 20260801
+generator_version = 9
+location = "pos_z qualified common spawn; host-authoritative remote guest"
+season = "saved production calendar"
+time = "daylight rain; authoritative host weather"
+settings = "dedicated host plus graphical guest; protocol 24; WFC9 network light payload; view distance 12; 1280x720; 518 resident, 498 GPU meshes"
+purpose = "Playable graphical guest after exact 3x3 admission, paced full-view expansion, and host-derived lighting transfer."
+
+[[capture]]
+id = "seam-building"
+file = "qualification-seam-building-seed-20260801-v9.png"
+seed = 20260801
+generator_version = 9
+location = "pos_z,8180.5,110.0,4096.5; building crosses the pos_z east face seam"
+season = "saved production calendar"
+time = "daylight rain; clock frozen for automated capture"
+settings = "deterministic qualification fixture; view distance 7; 1280x720; frame 241; 149 resident and 135 GPU chunk meshes"
+purpose = "Opaque blocks, authored edits, light, and curved rendering remain continuous across a cube-face seam."
+
+[[capture]]
+id = "seam-water"
+file = "qualification-seam-water-seed-20260801-v9.png"
+seed = 20260801
+generator_version = 9
+location = "pos_z,8180.5,111.0,4096.5; finite water channel crosses the pos_z east face seam"
+season = "saved production calendar"
+time = "daylight rain; clock frozen for automated capture"
+settings = "deterministic qualification fixture; view distance 7; 1280x720; frame 236; 149 resident, 135 opaque and 6 water-bearing GPU chunk meshes"
+purpose = "Fluid surface geometry and banks remain continuous across a cube-face seam."
+
+[[capture]]
+id = "sea-horizon"
+file = "qualification-sea-horizon-seed-20260801-v9.png"
+seed = 20260801
+generator_version = 9
+location = "pos_x,128.5,65.0,128.5; production deep-ocean qualification site"
+season = "saved production calendar"
+time = "daylight; clock frozen for automated capture"
+settings = "view distance 14; 1280x720; frame 1827; 712 resident, 654 opaque and 654 water-bearing GPU chunk meshes"
+purpose = "Finite ocean, water rendering, and gently curved long horizon at the widest visual qualification distance."
+
+[[capture]]
+id = "natural-oasis"
+file = "qualification-natural-oasis-seed-20260801-v9.png"
+seed = 20260801
+generator_version = 9
+location = "pos_x,5848.5,84.2,1040.5; safe overlook 24 blocks west of atlas natural-oasis site pos_x,5872,1040"
+season = "saved production calendar"
+time = "local noon 0.55215114; clock frozen for automated capture"
+settings = "view distance 12; flyover altitude +18; 1280x720; frame 1014; 504 resident and 485 GPU chunk meshes"
+purpose = "Mapped finite spring water appears within its dry lowland setting; pumping/recharge behavior is covered by the deterministic oasis scenario."

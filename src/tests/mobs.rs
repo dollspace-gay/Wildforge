@@ -766,6 +766,7 @@ fn wardens_dissolve_at_dawn_and_never_save() {
         "ordinary wildlife survives"
     );
     // Dawn dissolve: full daylight on an open surface removes the warden.
+    w.clock = 0.25 * f64::from(crate::server::DAY_LENGTH);
     let player = Vec3::new(5.0, y, 5.0);
     let mut rng = 3u32;
     w.tick_mobs(

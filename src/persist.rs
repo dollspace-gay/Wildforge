@@ -62,6 +62,20 @@ pub(crate) fn remove_if_exists(path: &Path) -> io::Result<()> {
     }
 }
 
+/// Publish a newly created directory without replacing an existing target.
+/// Windows scanners can briefly hold a handle without delete sharing, so the
+/// final creation rename gets the same bounded retry as atomic file writes.
+pub(crate) fn publish_new_directory(source: &Path, destination: &Path) -> io::Result<()> {
+    #[cfg(not(windows))]
+    {
+        fs::rename(source, destination)
+    }
+    #[cfg(windows)]
+    {
+        retry_transient_windows_rename(|| fs::rename(source, destination))
+    }
+}
+
 #[cfg(unix)]
 fn sync_parent(parent: &Path) -> io::Result<()> {
     fs::File::open(parent)?.sync_all()
@@ -86,18 +100,47 @@ fn replace_file(temp: &Path, path: &Path) -> io::Result<()> {
 
     let source: Vec<u16> = temp.as_os_str().encode_wide().chain(Some(0)).collect();
     let destination: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-    // SAFETY: both buffers are NUL-terminated UTF-16 paths and remain alive
-    // for the duration of the call.
-    let moved = unsafe {
-        MoveFileExW(
-            source.as_ptr(),
-            destination.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if moved == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
+    // Windows Defender, indexers, and backup tools can briefly open a newly
+    // replaced save without FILE_SHARE_DELETE. The kernel reports that race
+    // as access denied or a sharing/lock violation. Retrying the same atomic
+    // replacement is safe: the source remains beside the destination until
+    // one MoveFileExW succeeds.
+    retry_transient_windows_rename(|| {
+        // SAFETY: both buffers are NUL-terminated UTF-16 paths and remain
+        // alive for the duration of the call.
+        let moved = unsafe {
+            MoveFileExW(
+                source.as_ptr(),
+                destination.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        if moved != 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    })
+}
+
+#[cfg(windows)]
+fn retry_transient_windows_rename(mut operation: impl FnMut() -> io::Result<()>) -> io::Result<()> {
+    const TRANSIENT_WINDOWS_ERRORS: [i32; 3] = [5, 32, 33];
+    const RETRY_DELAYS_MS: [u64; 6] = [0, 1, 2, 4, 8, 16];
+    for (attempt, delay_ms) in RETRY_DELAYS_MS.into_iter().enumerate() {
+        if delay_ms != 0 {
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+        }
+        let error = match operation() {
+            Ok(()) => return Ok(()),
+            Err(error) => error,
+        };
+        let transient = error
+            .raw_os_error()
+            .is_some_and(|code| TRANSIENT_WINDOWS_ERRORS.contains(&code));
+        if !transient || attempt + 1 == RETRY_DELAYS_MS.len() {
+            return Err(error);
+        }
     }
+    unreachable!("the Windows rename retry loop always returns")
 }

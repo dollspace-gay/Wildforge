@@ -25,6 +25,14 @@
 > - Stage 6 (stall buying, mob leading, boat riding, offering runs)
 >   remains open by design.
 
+> **Planetary entry follow-up (2026-08-01):** Agents now use protocol 24's
+> progress/manifest/acceptance gate and remain inert until the exact entry set
+> is decoded. Public coordinates are `{face,u,y,v}` with canonical
+> `neg_x`, `pos_x`, `neg_y`, `pos_y`, `neg_z`, and `pos_z` face strings;
+> legacy Rust-style aliases are input-only compatibility. Idle agents apply
+> ordinary swim-up input when unsupported in water. Their radius-10 mirror
+> expands only after admission and never invokes terrain generation.
+
 Drafted 2026-07-25 after design discussion with dollspace. Decisions
 settled: **agents are guests, not gods** — an agent connects over the
 same QUIC protocol as any player, gets a PlayerId and a roster row,
@@ -104,7 +112,8 @@ so does the agent.
 ## Action macros
 
 Locomotion:
-- `go_to(x, z | landmark)` — A* with jump/step/swim; completes,
+- `go_to(face, u, y, v | landmark)` — A* with jump/step/swim over canonical
+  planetary positions; completes,
   fails with a reason, or reports partial progress. Vertical intent
   ("get to the surface", "down to y 40") rides the same planner.
 - `follow(player, distance = 3)` — **the standing behavior.** The

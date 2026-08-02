@@ -1,0 +1,7 @@
+layer = plate_velocity
+description = Euler-pole plate velocity in the local tangent frame
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = direction
+minimum = -3.141565946
+maximum = 3.141568070
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

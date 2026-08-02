@@ -1,0 +1,7 @@
+layer = water_surface_elevation
+description = baseline water-surface elevation
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = scalar
+minimum = 64.000000000
+maximum = 134.253601074
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

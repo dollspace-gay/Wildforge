@@ -2,6 +2,62 @@
 
 use super::*;
 
+fn prepare_test_entry(session: &mut crate::mp::HostSession, sim: &crate::server::Server) {
+    let y = sim.world.surface_height(8, 8) as f32 + 1.0;
+    session.fresh_spawn = Some(ep(Vec3::new(8.5, y, 8.5)));
+}
+
+#[derive(Default)]
+struct TestEntry {
+    required: Option<std::collections::HashSet<ChunkPos>>,
+    ready_sent: bool,
+    accepted: bool,
+}
+
+fn acknowledge_test_entry(
+    client: &crate::net::Client,
+    entry: &mut TestEntry,
+    messages: &[crate::net::S2C],
+) {
+    for message in messages {
+        match message {
+            crate::net::S2C::EntryManifest { required, .. } => {
+                entry.required = Some(required.iter().copied().collect());
+            }
+            crate::net::S2C::Chunk { face, u, v, .. } => {
+                if let Some(position) = crate::planet::Face::from_u8(*face)
+                    .and_then(|face| ChunkPos::new(face, *u, *v).ok())
+                    && let Some(required) = &mut entry.required
+                {
+                    required.remove(&position);
+                }
+            }
+            crate::net::S2C::EntryAccepted => entry.accepted = true,
+            _ => {}
+        }
+    }
+    if entry
+        .required
+        .as_ref()
+        .is_some_and(|required| required.is_empty())
+        && !entry.ready_sent
+    {
+        client.send(&crate::net::C2S::EntryReady);
+        entry.ready_sent = true;
+    }
+}
+
+#[test]
+fn host_residency_keeps_the_prepared_doorstep_without_guests() {
+    let mut session = crate::mp::HostSession::start_on("spawn-residency".into(), 0).unwrap();
+    let spawn = ep(Vec3::new(17.5, 80.2, -9.5));
+    let chunk = spawn.chunk().unwrap();
+    session.fresh_spawn = Some(spawn);
+    let (centers, radius) = session.residency();
+    assert_eq!(centers, vec![chunk]);
+    assert_eq!(radius, 1);
+}
+
 #[test]
 fn net_protocol_round_trips() {
     use crate::net::{C2S, S2C, decode, encode};
@@ -40,6 +96,7 @@ fn net_protocol_round_trips() {
             target: 9,
             action: crate::net::ModerationAction::Mute { seconds: 600 },
         },
+        C2S::EntryReady,
         C2S::SleepRequest,
     ];
     for m in &c2s {
@@ -59,13 +116,25 @@ fn net_protocol_round_trips() {
             pos: crate::planet::BlockPos::from_centered(crate::planet::Face::PosZ, 1, 2, 3)
                 .unwrap(),
             id: 9,
-            meta: 0,
+            meta: 173,
+            salt_mass: 44_321,
+            soil_salinity: 91,
         },
         S2C::TimeIre {
             time: 0.5,
             ire: 33.0,
             day: 7,
-            weather: 2,
+        },
+        S2C::WeatherCells {
+            side: 8,
+            cells: vec![(
+                crate::planet_atlas::AtlasPos {
+                    face: crate::planet::Face::PosZ,
+                    u: 7,
+                    v: 4,
+                },
+                crate::planet_atlas::LocalWeatherSample::default(),
+            )],
         },
         S2C::Chat {
             from: "a".into(),
@@ -81,6 +150,15 @@ fn net_protocol_round_trips() {
             v: 0,
             rle: vec![1, 2, 3],
         },
+        S2C::EntryManifest {
+            spawn: ep(Vec3::new(1.5, 80.0, -3.5)),
+            required: vec![tchunk(0, 0), tchunk(1, 0)],
+        },
+        S2C::EntryProgress {
+            resident: 4,
+            total: 9,
+        },
+        S2C::EntryAccepted,
         S2C::HeldResult(Some(crate::net::StackSnap {
             item: 2,
             count: 1,
@@ -115,6 +193,7 @@ fn remote_roles_are_authorized_by_the_host_not_the_client_ui() {
     let world = test_world_with("mp-remote-roles", reg);
     let mut sim = crate::server::Server::new(world, 0.3, 5);
     let mut sess = crate::mp::HostSession::start_on("remote-roles".into(), 0).unwrap();
+    prepare_test_entry(&mut sess, &sim);
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", sess.net.port).parse().unwrap();
     let actor_identity =
         crate::identity::LocalIdentity::load_or_create(&tmp_dir("remote-role-actor")).unwrap();
@@ -139,10 +218,15 @@ fn remote_roles_are_authorized_by_the_host_not_the_client_ui() {
     )
     .unwrap();
 
+    let mut actor_entry = TestEntry::default();
+    let mut target_entry = TestEntry::default();
     for _ in 0..600 {
         sess.pump(&mut sim, None, 0.05);
-        let _ = actor.poll();
-        if sess.guests.len() == 2 {
+        let actor_messages = actor.poll();
+        let target_messages = target.poll();
+        acknowledge_test_entry(&actor, &mut actor_entry, &actor_messages);
+        acknowledge_test_entry(&target, &mut target_entry, &target_messages);
+        if actor_entry.accepted && target_entry.accepted {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
@@ -256,6 +340,7 @@ fn loopback_join_stream_and_edit() {
     let mut sim = crate::server::Server::new(world, 0.3, 5);
     sim.world.set_edit_logging(true);
     let mut sess = crate::mp::HostSession::start_on("loop".into(), 0).expect("host binds");
+    prepare_test_entry(&mut sess, &sim);
     let port = sess.net.port;
 
     // Guest connects over localhost, wearing a chosen look.
@@ -300,13 +385,16 @@ fn loopback_join_stream_and_edit() {
     let mut held_echo: Option<((u16, u32), (u16, u32))> = None;
     let mut got_chunk = false;
     let mut chunk_data: Option<(ChunkPos, Vec<u8>)> = None;
+    let mut entry = TestEntry::default();
     for _ in 0..600 {
         sess.pump(
             &mut sim,
             Some((ep(gpos), 0.0, false, host_held, host_style)),
             0.06,
         );
-        for msg in client.poll() {
+        let messages = client.poll();
+        acknowledge_test_entry(&client, &mut entry, &messages);
+        for msg in messages {
             match msg {
                 S2C::Welcome {
                     palette,
@@ -337,7 +425,7 @@ fn loopback_join_stream_and_edit() {
                 _ => {}
             }
         }
-        if welcome.is_some() && got_chunk {
+        if welcome.is_some() && got_chunk && entry.accepted {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -383,6 +471,10 @@ fn loopback_join_stream_and_edit() {
 
     // The streamed chunk decodes into an identical remote chunk.
     let (pos, rle) = chunk_data.unwrap();
+    assert!(
+        rle.starts_with(b"WFC9"),
+        "live terrain carries the host's settled light field"
+    );
     let mut remote = World::new(1, tmp_dir("mpguest"), reg.clone());
     remote.set_remote(true);
     let remap = crate::mp::block_remap(&remote, &palette);
@@ -393,6 +485,39 @@ fn loopback_join_stream_and_edit() {
         host_chunk.raw(),
         guest_chunk.raw(),
         "chunk survives the wire"
+    );
+    for x in 0..crate::chunk::CHUNK_X {
+        for z in 0..crate::chunk::CHUNK_Z {
+            for y in 0..crate::chunk::CHUNK_Y {
+                assert_eq!(
+                    guest_chunk.light(x, y, z),
+                    host_chunk.light(x, y, z),
+                    "guest reuses authoritative host lighting at {x},{y},{z}"
+                );
+            }
+        }
+    }
+    for x in 0..crate::chunk::CHUNK_X {
+        for z in 0..crate::chunk::CHUNK_Z {
+            for y in 0..crate::chunk::CHUNK_Y {
+                assert_eq!(host_chunk.meta(x, y, z), guest_chunk.meta(x, y, z));
+                assert_eq!(
+                    host_chunk.water_salt(x, y, z),
+                    guest_chunk.water_salt(x, y, z),
+                    "host and guest retain exact salt mass"
+                );
+                assert_eq!(
+                    host_chunk.soil_salinity(x, y, z),
+                    guest_chunk.soil_salinity(x, y, z),
+                    "host and guest retain managed soil salinity"
+                );
+            }
+        }
+    }
+    assert_eq!(
+        host_chunk.hydrology_volumes(),
+        guest_chunk.hydrology_volumes(),
+        "host and guest agree on detailed/coarse ownership"
     );
     // Remote worlds never generate on their own.
     assert!(!remote.ensure_chunk(tchunk(90, 90)));
@@ -910,6 +1035,7 @@ fn late_join_gets_complete_roster_and_duplicate_name_is_refused() {
         crate::identity::AdmissionPolicy::Open,
     )
     .unwrap();
+    prepare_test_entry(&mut sess, &sim);
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", sess.net.port).parse().unwrap();
     let first_identity =
         crate::identity::LocalIdentity::load_or_create(&tmp_dir("roster-one")).unwrap();
@@ -922,13 +1048,12 @@ fn late_join_gets_complete_roster_and_duplicate_name_is_refused() {
         None,
     )
     .unwrap();
+    let mut first_entry = TestEntry::default();
     for _ in 0..300 {
         sess.pump(&mut sim, None, 0.05);
-        if first
-            .poll()
-            .iter()
-            .any(|message| matches!(message, S2C::Welcome { .. }))
-        {
+        let messages = first.poll();
+        acknowledge_test_entry(&first, &mut first_entry, &messages);
+        if first_entry.accepted {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
@@ -947,9 +1072,12 @@ fn late_join_gets_complete_roster_and_duplicate_name_is_refused() {
     )
     .unwrap();
     let mut names = Vec::new();
+    let mut second_entry = TestEntry::default();
     for _ in 0..300 {
         sess.pump(&mut sim, None, 0.05);
-        for message in second.poll() {
+        let messages = second.poll();
+        acknowledge_test_entry(&second, &mut second_entry, &messages);
+        for message in messages {
             if let S2C::Welcome { roster, .. } = message {
                 names = roster
                     .into_iter()
@@ -1025,13 +1153,14 @@ fn atproto_required_refuses_a_local_client_before_admission() {
 }
 
 #[test]
-fn welcome_precedes_any_authenticated_gameplay_message() {
+fn pre_entry_gameplay_is_ignored_until_terrain_is_acknowledged() {
     use crate::net::{C2S, S2C};
 
     let reg = base_reg();
     let world = test_world_with("mp-auth-order", reg);
     let mut sim = crate::server::Server::new(world, 0.3, 7);
     let mut session = crate::mp::HostSession::start_on("auth-order".into(), 0).unwrap();
+    prepare_test_entry(&mut session, &sim);
     let identity =
         crate::identity::LocalIdentity::load_or_create(&tmp_dir("auth-order-client")).unwrap();
     let address: std::net::SocketAddr = format!("127.0.0.1:{}", session.net.port).parse().unwrap();
@@ -1051,12 +1180,117 @@ fn welcome_precedes_any_authenticated_gameplay_message() {
                 _ => {}
             }
         }
-        if order.contains(&"welcome") && order.contains(&"chat") {
+        if order.contains(&"welcome") {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    assert_eq!(order, ["welcome", "chat"]);
+    assert_eq!(order, ["welcome"]);
+}
+
+#[test]
+fn pending_guest_is_inert_until_the_exact_entry_set_is_acknowledged() {
+    use crate::net::{C2S, S2C};
+
+    let world = test_world("mp-entry-gate");
+    let mut sim = crate::server::Server::new(world, 0.3, 7);
+    let mut session = crate::mp::HostSession::start_on("entry-gate".into(), 0).unwrap();
+    prepare_test_entry(&mut session, &sim);
+    let identity =
+        crate::identity::LocalIdentity::load_or_create(&tmp_dir("entry-gate-client")).unwrap();
+    let address: std::net::SocketAddr = format!("127.0.0.1:{}", session.net.port).parse().unwrap();
+    let mut client =
+        crate::net::Client::connect(address, "Fern".into(), 0, 0, &identity, None).unwrap();
+    let mut required: Option<std::collections::HashSet<ChunkPos>> = None;
+    for _ in 0..1_000 {
+        let fx = session.pump(&mut sim, None, 0.05);
+        assert!(
+            fx.iter()
+                .all(|event| !matches!(event, crate::mp::HostFx::Joined(_))),
+            "a terrain-decoding connection was announced as joined"
+        );
+        for message in client.poll() {
+            match message {
+                S2C::EntryManifest {
+                    required: manifest, ..
+                } => required = Some(manifest.into_iter().collect()),
+                S2C::Chunk { face, u, v, .. } => {
+                    if let Some(position) = crate::planet::Face::from_u8(face)
+                        .and_then(|face| ChunkPos::new(face, u, v).ok())
+                        && let Some(required) = &mut required
+                    {
+                        required.remove(&position);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if required.as_ref().is_some_and(|set| set.is_empty()) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    assert!(required.is_some_and(|set| set.is_empty()));
+    let id = *session.guests.keys().next().unwrap();
+    let before = (
+        session.guests[&id].pos,
+        session.guests[&id].health,
+        session.guests[&id].hunger,
+    );
+    assert!(!session.guests[&id].is_active());
+    assert!(session.player_ctxs(None).is_empty());
+
+    client.send(&C2S::Move {
+        pos: ep(Vec3::new(100.5, 120.0, 100.5)),
+        yaw: 1.0,
+        hotbar: 0,
+        sprint: true,
+    });
+    client.send(&C2S::Chat("I should not exist yet".into()));
+    for _ in 0..40 {
+        session.pump(&mut sim, None, 0.25);
+        assert!(
+            client
+                .poll()
+                .iter()
+                .all(|message| !matches!(message, S2C::Chat { .. }))
+        );
+    }
+    assert_eq!(
+        (
+            session.guests[&id].pos,
+            session.guests[&id].health,
+            session.guests[&id].hunger,
+        ),
+        before,
+        "movement and survival are frozen before entry"
+    );
+
+    client.send(&C2S::EntryReady);
+    let mut accepted = false;
+    let mut announced = false;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while std::time::Instant::now() < deadline {
+        let fx = session.pump(&mut sim, None, 0.05);
+        announced |= fx
+            .iter()
+            .any(|event| matches!(event, crate::mp::HostFx::Joined(name) if name == "FERN"));
+        accepted |= client
+            .poll()
+            .iter()
+            .any(|message| matches!(message, S2C::EntryAccepted));
+        if accepted {
+            break;
+        }
+        // Reliable transport has its own runtime thread. A fixed-count busy
+        // loop can consume all 200 pumps before that thread is scheduled under
+        // the full serial suite, even though the host accepted correctly.
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(accepted);
+    assert!(announced);
+    assert!(session.guests[&id].is_active());
+    assert_eq!(session.player_ctxs(None).len(), 1);
 }
 
 #[test]
@@ -1067,6 +1301,7 @@ fn loopback_reconnect_reopens_the_same_server_profile() {
     let world = test_world_with("mp-reconnect", reg.clone());
     let mut sim = crate::server::Server::new(world, 0.3, 7);
     let mut session = crate::mp::HostSession::start_on("reconnect".into(), 0).unwrap();
+    prepare_test_entry(&mut session, &sim);
     let identity =
         crate::identity::LocalIdentity::load_or_create(&tmp_dir("reconnect-client")).unwrap();
     let address: std::net::SocketAddr = format!("127.0.0.1:{}", session.net.port).parse().unwrap();
@@ -1268,6 +1503,7 @@ fn loopback_pair_drained(
     let mut sim = crate::server::Server::new(world, 0.3, 5);
     sim.world.set_edit_logging(true);
     let mut sess = crate::mp::HostSession::start_on(name.into(), 0).expect("host binds");
+    prepare_test_entry(&mut sess, &sim);
     let addr: std::net::SocketAddr = format!("127.0.0.1:{}", sess.net.port).parse().unwrap();
     let identity =
         crate::identity::LocalIdentity::load_or_create(&tmp_dir(&format!("{name}-id"))).unwrap();
@@ -1275,10 +1511,38 @@ fn loopback_pair_drained(
         crate::net::Client::connect(addr, "tester".into(), sess.content_hash, 0, &identity, None)
             .expect("connect");
     let mut drained = Vec::new();
+    let mut required: Option<std::collections::HashSet<ChunkPos>> = None;
+    let mut entry_ready_sent = false;
     for _ in 0..600 {
         sess.pump(&mut sim, None, 0.05);
         let batch = client.poll();
-        let done = batch.iter().any(|m| matches!(m, S2C::Welcome { .. }));
+        for message in &batch {
+            match message {
+                S2C::EntryManifest {
+                    required: manifest, ..
+                } => required = Some(manifest.iter().copied().collect()),
+                S2C::Chunk { face, u, v, .. } => {
+                    if let Some(position) = crate::planet::Face::from_u8(*face)
+                        .and_then(|face| ChunkPos::new(face, *u, *v).ok())
+                        && let Some(required) = &mut required
+                    {
+                        required.remove(&position);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if required
+            .as_ref()
+            .is_some_and(|required| required.is_empty())
+            && !entry_ready_sent
+        {
+            client.send(&crate::net::C2S::EntryReady);
+            entry_ready_sent = true;
+        }
+        let done = batch
+            .iter()
+            .any(|message| matches!(message, S2C::EntryAccepted));
         drained.extend(batch);
         if done {
             break;
@@ -1299,6 +1563,7 @@ fn host_and_guest_cross_a_planet_seam_smoothly_with_both_faces_streamed() {
     let end = start.translated(Vec3::X * 0.7).unwrap().pos;
     assert_ne!(start.face(), end.face(), "fixture crosses a cube face");
     sess.guests.get_mut(&id).unwrap().prime_move_for_test(start);
+    let mut streamed_faces = std::collections::HashSet::new();
 
     client.send(&C2S::Move {
         pos: end,
@@ -1308,7 +1573,13 @@ fn host_and_guest_cross_a_planet_seam_smoothly_with_both_faces_streamed() {
     });
     for _ in 0..200 {
         sess.pump(&mut sim, Some((end, 0.4, false, u16::MAX, 0)), 0.0);
-        let _ = client.poll();
+        for message in client.poll() {
+            if let S2C::Chunk { face, .. } = message
+                && let Some(face) = Face::from_u8(face)
+            {
+                streamed_faces.insert(face);
+            }
+        }
         if sess.guests[&id].pos == end {
             break;
         }
@@ -1330,9 +1601,9 @@ fn host_and_guest_cross_a_planet_seam_smoothly_with_both_faces_streamed() {
         "embedded interpolation must not snap to either face endpoint"
     );
 
-    let mut streamed_faces = std::collections::HashSet::new();
     let mut saw_host_across = false;
-    for _ in 0..600 {
+    let streaming_deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while std::time::Instant::now() < streaming_deadline {
         sess.pump(&mut sim, Some((end, 0.4, false, u16::MAX, 0)), 0.06);
         for message in client.poll() {
             match message {
@@ -1357,6 +1628,10 @@ fn host_and_guest_cross_a_planet_seam_smoothly_with_both_faces_streamed() {
         {
             break;
         }
+        // Chunk load/generation and RLE encoding are intentionally off the
+        // host pump. Yield to those workers instead of treating 600
+        // zero-wall-time pumps as a completion deadline.
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
     let guest = &sess.guests[&id];
     assert!(
@@ -1743,6 +2018,7 @@ fn a_guest_receives_the_ring_it_was_granted() {
         if got.len() >= want {
             break;
         }
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
     assert_eq!(
         got.len(),

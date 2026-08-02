@@ -1,0 +1,7 @@
+layer = autumn_temperature
+description = autumn temperature
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = scalar
+minimum = -38.177661896
+maximum = 34.637317657
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

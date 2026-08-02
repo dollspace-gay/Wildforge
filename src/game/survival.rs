@@ -39,7 +39,11 @@ impl Game {
                     }
                     st.durability = st.durability.saturating_sub(1);
                     if st.durability == 0 {
-                        *a = None; // worn through
+                        *a = reg.item(st.item).broken_into.map(|broken| ItemStack {
+                            item: broken,
+                            count: 1,
+                            durability: 0,
+                        });
                     }
                 }
             }
@@ -76,8 +80,17 @@ impl Game {
         self.sfx(Sfx::Hurt);
         if self.survival.health <= 0.0 {
             self.survival.health = 0.0;
-            // Death: scatter the inventory and worn armor as item drops.
-            let stacks = self.inventory.drain();
+            // Death: scatter every player-owned stack. The cursor and craft
+            // grid are inventories too; clearing either would be an invisible
+            // finite-material sink.
+            let mut stacks = self.inventory.drain();
+            stacks.extend(self.ui_state.held_stack.take());
+            stacks.extend(
+                self.interaction
+                    .craft_grid
+                    .iter_mut()
+                    .filter_map(Option::take),
+            );
             for s in stacks {
                 self.drop_stack(s);
             }
@@ -90,7 +103,6 @@ impl Game {
             for s in worn {
                 self.drop_stack(s);
             }
-            self.ui_state.held_stack = None;
             self.set_screen(Screen::Dead);
         }
     }
@@ -99,9 +111,9 @@ impl Game {
     pub(super) fn drop_stack_at(&mut self, stack: ItemStack, pos: crate::planet::EntityPos) {
         let a = self.rand01() * std::f32::consts::TAU;
         let v = Vec3::new(a.cos() * 1.2, 2.5 + self.rand01(), a.sin() * 1.2);
-        self.interaction
-            .items
-            .push(ItemEntity::new(pos, v, stack.item, stack.count));
+        let mut entity = ItemEntity::new(pos, v, stack.item, stack.count);
+        entity.durability = stack.durability;
+        self.interaction.items.push(entity);
     }
 
     pub(super) fn drop_stack(&mut self, stack: ItemStack) {
@@ -113,9 +125,9 @@ impl Game {
             .translated(Vec3::new(0.0, 1.0, 0.0))
             .expect("dropped item begins beside the player")
             .pos;
-        self.interaction
-            .items
-            .push(ItemEntity::new(pos, v, stack.item, stack.count));
+        let mut entity = ItemEntity::new(pos, v, stack.item, stack.count);
+        entity.durability = stack.durability;
+        self.interaction.items.push(entity);
     }
 
     pub(super) fn respawn(&mut self) {

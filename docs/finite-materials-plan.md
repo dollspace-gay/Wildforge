@@ -1,10 +1,25 @@
 # Finite materials — a planet cannot hide deletion behind the frontier
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and qualified (2026-08-01).**
 >
 > This is goal 8 of the planetary-world sequence. It requires completed
 > planetary geology and should run after planetary biomes so every material
 > source and renewable cycle is known.
+
+## Implementation and qualification record — 2026-08-01
+
+The integrated generator-9 ledger records immutable deposit mass,
+materialization reservations, inventories/entities/placed blocks, secondary
+stock, explicit sinks, and external/operator adjustments in `materials.wfm`
+plus its bounded replay log and backups. The production seed-20260801 audit is
+balanced for every tracked material and passes progression qualification:
+three bronze-capable regions, 609 pessimistic complete technology arcs, all
+seven required carbonate-flux regions, and redundant diamond, pitchblende,
+and rare-earth sites. Retrogen policy validation, idempotence, removed-mod
+placeholders, crash replay, recovery, salvage, machine, drop/despawn, and
+guest/server transfers are covered by the final repository suite. The
+aggregate audit completes in under 0.01 seconds on the review host and exposes
+no secret coordinates.
 
 ## Purpose
 
@@ -316,13 +331,18 @@ edits. A crash cannot grant both ore block and mined item or delete both.
 Content definitions gain optional material accounting:
 
 ```toml
-materials = { iron = 1 }
+material_class = "geologically_finite"
+materials = { iron = 1200 }
 salvage = { station = "forge", recovery = 0.90 }
-consumes = { carbon = 1 }
-byproducts = ["base:slag"]
+
+loss = { iron = 60 }
+byproducts = [{ item = "base:iron_scale", count = 1 }]
 ```
 
-Exact schema is implementation-owned, but:
+One ordinary ingot is 1,200 integer canonical units. Recipes, smelts, and
+station work accept `loss`; recipes accept item/count `byproducts`, smelts
+accept a single item/count `spit`, and kilns consuming a finite powder must
+declare `consumes = true`. The remaining schema rules are:
 
 - mods use the same system,
 - recipes validate input/output accounting,
@@ -382,3 +402,34 @@ This goal is complete when:
 Do not mark this implemented because ore locations are finite. Finitude is
 playable only when the material that leaves a mine continues to have an
 accountable life.
+
+## Implementation and verification record
+
+Verified 2026-08-01 against the complete repository state for this goal:
+
+- `src/materials.rs` owns the finite deposit manifest, exact material
+  compartments, bounded regional salvage, checksummed delta log, recovery,
+  retrogen records, qualification proof, and operator audit.
+- `src/registry.rs` loads material classes and vectors, enforces balanced
+  recipes/tags/processes, generates the 75/90/95-percent recovery paths, and
+  preserves the saved material identity of removed or changed mod content.
+- `src/world/mod.rs`, `src/world/chunks.rs`, and the machine, persistence,
+  entity, calendar, game, and multiplayer paths journal extraction,
+  placement, processing, wear, repair, dismantling, food consumption,
+  spoilage, death/cargo delivery, dropped-item retirement, lava loss, and
+  explicit admin/development sources and sinks.
+- Production seed qualification proves bootstrap redundancy, flux coverage,
+  treasure sites, and pessimistic complete-technology capacity. Retrogen
+  tests prove host-only deterministic reservation, touched/structure safety,
+  idempotence, persistence, and player/operator notices.
+- The shipped player/operator workflow is documented in `README.md`; the
+  content and mod-author schema, policies, and recovery rules are documented
+  in `mods/README.md`.
+- `cargo fmt --all -- --check`, strict all-target Clippy, the locked serial
+  all-target test suite (506 passed, 13 intentionally ignored, 0 failed),
+  `cargo deny check advisories`, and the locked release build all pass.
+- A release build was run through the real game on a freshly generated
+  production planet with the steelworks capture fixture. Its offline
+  `--material-audit` reported zero unexplained deltas, named every development
+  source, and passed planetary qualification with 609 pessimistic technology
+  arcs against a requirement of 16.

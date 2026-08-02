@@ -80,6 +80,10 @@ pub struct Guest {
     /// rule — a set that only ever grew meant a guest who left an area and
     /// came back was never sent it again, and stood in a hole.
     sent_chunks: HashSet<ChunkPos>,
+    /// Pending admission is authenticated but not yet a world actor. The host
+    /// streams this exact safety set and waits for EntryReady.
+    entry_required: Vec<ChunkPos>,
+    entry_ready: bool,
     /// Granted view distance in chunks: what the guest asked for, clamped to
     /// `MAX_GUEST_VIEW_DIST`.
     view_dist: i32,
@@ -99,6 +103,12 @@ pub struct Guest {
 }
 
 impl Guest {
+    /// True only after the client has decoded and acknowledged its bounded
+    /// entry terrain. Pre-entry guests are transport state, not world actors.
+    pub fn is_active(&self) -> bool {
+        self.entry_ready
+    }
+
     /// View distance in chunks this guest was granted.
     #[cfg(test)]
     pub fn granted_view_dist(&self) -> i32 {
@@ -167,11 +177,15 @@ pub struct HostSession {
     pub admission_policy: AdmissionPolicy,
     host_name: Option<String>,
     profiles: Option<ProfileStore>,
+    pending_guests: HashMap<u32, PendingGuest>,
     moderation: Option<ModerationStore>,
     /// Principals kicked this session: refused if they reconnect.
     banned: HashSet<Principal>,
     /// Where new arrivals land, resolved once for the session.
     pub fresh_spawn: Option<EntityPos>,
+    /// Pure terrain work for cold guest horizons. Created lazily from the
+    /// authoritative world's seed/content; the host pump only adopts results.
+    chunk_jobs: Option<streaming::HostChunkJobs>,
     /// Horizon assigned before a client negotiates one. Tests may shrink this
     /// for compact protocol fixtures; production retains the legacy five.
     initial_view_dist: i32,
@@ -197,6 +211,17 @@ struct AuthenticatedJoin {
     public_handle: Option<String>,
     content_hash: u64,
     style: u32,
+}
+
+struct PendingGuest {
+    name: String,
+    principal: Principal,
+    verification_cached: bool,
+    verified_handle: Option<String>,
+    public_handle: Option<String>,
+    runtime: PlayerRuntime,
+    required: Vec<ChunkPos>,
+    progress_age: f32,
 }
 
 const REACH: f32 = 7.0;
@@ -306,9 +331,11 @@ impl HostSession {
             admission_policy,
             host_name: host_name.map(|name| name.to_string()),
             profiles: None,
+            pending_guests: HashMap::new(),
             moderation: None,
             banned: HashSet::new(),
             fresh_spawn: None,
+            chunk_jobs: None,
             initial_view_dist: 5,
             snapshot_timer: 0.0,
             snapshot_seq: 0,
@@ -328,7 +355,7 @@ impl HostSession {
         if let Some(h) = host {
             out.push(h);
         }
-        for (id, g) in self.guests.iter() {
+        for (id, g) in self.guests.iter().filter(|(_, guest)| guest.entry_ready) {
             out.push(crate::server::PlayerCtx {
                 id: *id,
                 pos: g.pos,
@@ -396,6 +423,7 @@ impl HostSession {
                     );
                 }
                 HostEvent::Left { id } => {
+                    self.pending_guests.remove(&id);
                     if let Some(g) = self.guests.remove(&id) {
                         if let Some(profiles) = &self.profiles
                             && let Err(e) =
@@ -403,8 +431,10 @@ impl HostSession {
                         {
                             eprintln!("profiles: save {} failed: {e}", g.name);
                         }
-                        self.net.broadcast(&S2C::Left { id });
-                        fx.push(HostFx::Left(g.name));
+                        if g.entry_ready {
+                            self.broadcast_ready(&S2C::Left { id });
+                            fx.push(HostFx::Left(g.name));
+                        }
                     }
                 }
                 HostEvent::Msg { id, msg } => {
@@ -413,10 +443,30 @@ impl HostSession {
             }
         }
 
+        let mut progress = Vec::new();
+        for (id, pending) in &mut self.pending_guests {
+            pending.progress_age += dt;
+            if pending.progress_age >= 1.0 {
+                pending.progress_age -= 1.0;
+                let resident = pending
+                    .required
+                    .iter()
+                    .filter(|position| server.world.has_chunk(**position))
+                    .count();
+                progress.push((*id, resident as u16, pending.required.len() as u16));
+            }
+        }
+        for (id, resident, total) in progress {
+            self.net.send(id, &S2C::EntryProgress { resident, total });
+        }
+
         // Rate-limit windows + movement interpolation clocks.
         let creative = server.world.mode == "creative";
         let mut survival_changed = Vec::new();
         for g in self.guests.values_mut() {
+            if !g.entry_ready {
+                continue;
+            }
             g.edit_window += dt;
             if g.edit_window >= 1.0 {
                 g.edit_window = 0.0;
@@ -475,7 +525,12 @@ impl HostSession {
             }
         }
         if self.state_timer + dt >= 1.0 && !survival_changed.is_empty() {
-            let ids: Vec<u32> = self.guests.keys().copied().collect();
+            let ids: Vec<u32> = self
+                .guests
+                .iter()
+                .filter(|(_, guest)| guest.entry_ready)
+                .map(|(id, _)| *id)
+                .collect();
             for id in ids {
                 self.send_player_state(id);
             }
@@ -483,25 +538,103 @@ impl HostSession {
 
         // Authoritative block edits out.
         if !server.world.edits().is_empty() {
-            for (pos, b, meta) in server.world.take_edits() {
-                self.net.broadcast(&S2C::BlockSet { pos, id: b.0, meta });
+            for (pos, b, meta, salt_mass, soil_salinity) in server.world.take_edits() {
+                if let Some(jobs) = &mut self.chunk_jobs {
+                    jobs.invalidate_encoded(pos.chunk());
+                }
+                self.broadcast_ready(&S2C::BlockSet {
+                    pos,
+                    id: b.0,
+                    meta,
+                    salt_mass,
+                    soil_salinity,
+                });
             }
         }
         // Items owed to guests (arrow recovery, mining, mob drops,
         // brush finds) — full stacks so durability crosses the wire.
         for (owner, s) in server.world.take_pending_gives() {
+            let mut delivered = 0;
+            let mut overflow_at = None;
             if let Some(guest) = self.guests.get_mut(&owner) {
-                let _ = guest.inventory.add_stack(&server.world.reg, s);
+                let left = guest.inventory.add_stack(&server.world.reg, s);
+                delivered = s.count - left;
+                overflow_at = guest.pos.block().map(|pos| (pos, left));
             }
-            self.net.send(
-                owner,
-                &S2C::Give {
-                    item: s.item.0,
-                    count: s.count,
-                    durability: s.durability,
-                },
-            );
+            if delivered != 0 {
+                self.net.send(
+                    owner,
+                    &S2C::Give {
+                        item: s.item.0,
+                        count: delivered,
+                        durability: s.durability,
+                    },
+                );
+            }
+            if let Some((pos, left)) = overflow_at.filter(|(_, left)| *left != 0)
+                && let Some(ledger) = &mut server.world.material_ledger
+                && let Err(error) = ledger.bury_stack(
+                    &server.world.reg,
+                    pos,
+                    ItemStack { count: left, ..s },
+                    "full guest inventory",
+                )
+            {
+                eprintln!("materials: guest delivery overflow accounting failed: {error}");
+            }
             self.send_player_state(owner);
+        }
+        // A windowed host turns world drops into rendered item entities in
+        // the frame loop. A dedicated server has no such client-side owner,
+        // so deliver to the nearest guest or bank finite overflow regionally.
+        if host.is_none() {
+            let mut changed = std::collections::BTreeSet::new();
+            for (pos, stack) in server.world.take_pending_drops() {
+                let nearest = self
+                    .guests
+                    .iter()
+                    .filter(|(_, guest)| guest.entry_ready)
+                    .min_by(|(_, a), (_, b)| {
+                        a.pos
+                            .distance_to(pos.entity_center())
+                            .total_cmp(&b.pos.distance_to(pos.entity_center()))
+                    })
+                    .map(|(id, _)| *id);
+                let left = nearest.map_or(stack.count, |id| {
+                    let guest = self.guests.get_mut(&id).expect("selected guest exists");
+                    let left = guest.inventory.add_stack(&server.world.reg, stack);
+                    let delivered = stack.count - left;
+                    if delivered != 0 {
+                        self.net.send(
+                            id,
+                            &S2C::Give {
+                                item: stack.item.0,
+                                count: delivered,
+                                durability: stack.durability,
+                            },
+                        );
+                        changed.insert(id);
+                    }
+                    left
+                });
+                if left != 0
+                    && let Some(ledger) = &mut server.world.material_ledger
+                    && let Err(error) = ledger.bury_stack(
+                        &server.world.reg,
+                        pos,
+                        ItemStack {
+                            count: left,
+                            ..stack
+                        },
+                        "uncollected dedicated-server drop",
+                    )
+                {
+                    eprintln!("materials: dedicated drop accounting failed: {error}");
+                }
+            }
+            for id in changed {
+                self.send_player_state(id);
+            }
         }
 
         self.stream_chunks(server);
@@ -518,6 +651,7 @@ impl HostSession {
             let open: Vec<(u32, BlockPos)> = self
                 .guests
                 .iter()
+                .filter(|(_, guest)| guest.entry_ready)
                 .filter_map(|(id, g)| g.container.map(|c| (*id, c)))
                 .collect();
             for (id, pos) in open {
@@ -531,7 +665,8 @@ impl HostSession {
             self.perish_timer -= 20.0;
             let reg = server.world.reg.clone();
             let mush = reg.item_id("base:spoiled_mush");
-            for g in self.guests.values_mut() {
+            let mut consumed = Vec::new();
+            for g in self.guests.values_mut().filter(|guest| guest.entry_ready) {
                 for s in g.inventory.slots.iter_mut() {
                     let Some(st) = s else { continue };
                     let full = reg.item(st.item).durability;
@@ -541,6 +676,7 @@ impl HostSession {
                     if st.durability == 0 {
                         st.durability = full;
                     } else if st.durability <= 20 {
+                        consumed.push(*st);
                         *s = mush.map(|m| {
                             let mut sp = ItemStack::new(&reg, m, 1);
                             sp.count = st.count;
@@ -551,12 +687,19 @@ impl HostSession {
                     }
                 }
             }
+            if let Err(error) = server.world.record_consumed_stacks(consumed) {
+                eprintln!("materials: spoiled guest food accounting failed: {error}");
+            }
         }
         // Vehicles follow their riders exactly (the rider's client
         // owns their motion; the boat is presentation that floats).
         {
-            let riders: Vec<(u32, EntityPos)> =
-                self.guests.iter().map(|(gid, g)| (*gid, g.pos)).collect();
+            let riders: Vec<(u32, EntityPos)> = self
+                .guests
+                .iter()
+                .filter(|(_, guest)| guest.entry_ready)
+                .map(|(gid, g)| (*gid, g.pos))
+                .collect();
             for m in server.world.mobs_mut() {
                 if let Some(rid) = m.ridden_by
                     && rid != 0
@@ -577,23 +720,66 @@ impl HostSession {
         self.state_timer += dt;
         if self.state_timer >= 1.0 {
             self.state_timer = 0.0;
-            self.net.broadcast(&S2C::TimeIre {
+            self.broadcast_ready(&S2C::TimeIre {
                 time: server.time_of_day,
                 ire: server.world.ire,
                 day: server.world.day,
-                weather: server.world.weather.as_u8(),
             });
+            if let Some(atlas) = server.world.planet_atlas() {
+                let side = atlas.side();
+                let updates: Vec<_> =
+                    self.guests
+                        .iter()
+                        .filter(|(_, guest)| guest.entry_ready)
+                        .map(|(id, guest)| {
+                            let center = atlas.atlas_pos(guest.pos.surface());
+                            let mut positions = vec![center];
+                            positions.extend(center.neighbors8(side));
+                            positions.sort();
+                            positions.dedup();
+                            let cells = positions
+                                .into_iter()
+                                .map(|pos| {
+                                    let center = pos.center(side);
+                                    let surface =
+                                        crate::planet::SurfacePos::new(
+                                            center.face,
+                                            center.u.floor().clamp(
+                                                0.0,
+                                                f64::from(crate::planet::FACE_BLOCKS - 1),
+                                            ) as u16,
+                                            center.v.floor().clamp(
+                                                0.0,
+                                                f64::from(crate::planet::FACE_BLOCKS - 1),
+                                            ) as u16,
+                                        )
+                                        .expect("atlas weather center is canonical");
+                                    (pos, server.world.weather_at_surface(surface))
+                                })
+                                .collect();
+                            (*id, S2C::WeatherCells { side, cells })
+                        })
+                        .collect();
+                for (id, update) in updates {
+                    self.net.send(id, &update);
+                }
+            }
         }
 
         // Sleep vote.
-        if !host_sleeping && !self.guests.values().any(|g| g.sleeping) {
+        if !host_sleeping && !self.guests.values().any(|g| g.entry_ready && g.sleeping) {
             self.sleep_settle = 0.0;
         }
-        if host_sleeping || self.guests.values().any(|g| g.sleeping) {
-            let present = self.guests.len() as u32 + host.is_some() as u32;
-            let sleeping =
-                self.guests.values().filter(|g| g.sleeping).count() as u32 + host_sleeping as u32;
-            self.net.broadcast(&S2C::Sleep { sleeping, present });
+        if host_sleeping || self.guests.values().any(|g| g.entry_ready && g.sleeping) {
+            let present = self.guests.values().filter(|g| g.entry_ready).count() as u32
+                + host.is_some() as u32;
+            let sleeping = self
+                .guests
+                .values()
+                .filter(|g| g.entry_ready && g.sleeping)
+                .count() as u32
+                + host_sleeping as u32;
+            self.broadcast_ready(&S2C::Sleep { sleeping, present });
             self.sleep_settle = if sleeping == present {
                 self.sleep_settle + dt
             } else {
@@ -606,24 +792,22 @@ impl HostSession {
                     server.world.accept_offerings();
                 }
                 server.sleep_to_dawn();
-                for g in self.guests.values_mut() {
+                for g in self.guests.values_mut().filter(|guest| guest.entry_ready) {
                     g.sleeping = false;
                 }
-                self.net.broadcast(&S2C::TimeIre {
+                self.broadcast_ready(&S2C::TimeIre {
                     time: server.time_of_day,
                     ire: server.world.ire,
                     day: server.world.day,
-                    weather: server.world.weather.as_u8(),
                 });
-                self.net
-                    .broadcast(&S2C::Toast("Dawn. The camp wakes.".into()));
+                self.broadcast_ready(&S2C::Toast("Dawn. The camp wakes.".into()));
                 fx.push(HostFx::AllSlept);
             }
         }
         fx
     }
 
-    fn on_join(&mut self, server: &mut Server, join: AuthenticatedJoin, fx: &mut Vec<HostFx>) {
+    fn on_join(&mut self, server: &mut Server, join: AuthenticatedJoin, _fx: &mut Vec<HostFx>) {
         let AuthenticatedJoin {
             id,
             display_name,
@@ -648,6 +832,10 @@ impl HostSession {
             .guests
             .values()
             .any(|guest| shares_principal(&guest.principals, &principals))
+            || self
+                .pending_guests
+                .values()
+                .any(|guest| shares_principal(&guest.runtime.principals, &principals))
         {
             self.net.send(
                 id,
@@ -664,6 +852,11 @@ impl HostSession {
             .values()
             .filter_map(|guest| DisplayName::parse(&guest.name).ok())
             .any(|other| other.collision_key() == display_name.collision_key())
+            || self
+                .pending_guests
+                .values()
+                .filter_map(|guest| DisplayName::parse(&guest.name).ok())
+                .any(|other| other.collision_key() == display_name.collision_key())
             || self
                 .host_name
                 .as_deref()
@@ -712,18 +905,21 @@ impl HostSession {
         let fresh_spawn = match self.fresh_spawn {
             Some(p) => p,
             None => {
-                let center = crate::planet::SurfacePos::new(
-                    crate::planet::Face::PosZ,
-                    crate::planet::FACE_BLOCKS / 2,
-                    crate::planet::FACE_BLOCKS / 2,
-                )
-                .expect("planet center is a valid spawn column");
-                let p = server.world.safe_spawn_at(center);
+                let Some(p) = server.world.common_spawn() else {
+                    self.refuse_server_error(
+                        id,
+                        "qualified common spawn",
+                        &std::io::Error::other(
+                            "world entry has not completed its preparation manifest",
+                        ),
+                    );
+                    return;
+                };
                 self.fresh_spawn = Some(p);
                 p
             }
         };
-        let mut runtime = match self.profiles.as_mut().unwrap().open_or_create(
+        let runtime = match self.profiles.as_mut().unwrap().open_or_create(
             &principals,
             &display_name,
             style,
@@ -748,11 +944,6 @@ impl HostSession {
                 return;
             }
         };
-        // A saved position goes stale — terrain regenerated under an old
-        // world, or someone built over the spot. Free it before the
-        // guest materializes inside a hill (mid-air and mid-swim saves
-        // pass through untouched).
-        runtime.pos = server.world.free_position_at(runtime.pos);
         if let Err(refusal) = self.moderation.as_mut().unwrap().admit(
             &runtime.principals,
             Some(runtime.player_id),
@@ -767,8 +958,50 @@ impl HostSession {
             let files = net::collect_mod_files(std::path::Path::new("mods"));
             self.net.send(id, &S2C::ModFiles(files));
         }
-        let palette: Vec<String> = reg.blocks.iter().map(|b| b.name.clone()).collect();
-        let items: Vec<String> = reg.items.iter().map(|i| i.name.clone()).collect();
+        let required = crate::world::player_entry_chunks(runtime.pos.surface());
+        self.pending_guests.insert(
+            id,
+            PendingGuest {
+                name,
+                principal,
+                verification_cached,
+                verified_handle,
+                public_handle,
+                runtime,
+                required,
+                progress_age: 0.0,
+            },
+        );
+    }
+
+    fn try_finish_pending_entry(&mut self, server: &mut Server, id: u32) {
+        let Some(mut pending) = self.pending_guests.remove(&id) else {
+            return;
+        };
+        if pending
+            .required
+            .iter()
+            .any(|position| !server.world.has_chunk(*position))
+        {
+            self.pending_guests.insert(id, pending);
+            return;
+        }
+        // Terrain is resident before a stale saved position is repaired, so
+        // the rescue scan cannot perform cold generation on the host pump.
+        pending.runtime.pos = server.world.free_position_at(pending.runtime.pos);
+        let required = crate::world::player_entry_chunks(pending.runtime.pos.surface());
+        if required
+            .iter()
+            .any(|position| !server.world.has_chunk(*position))
+        {
+            pending.required = required;
+            self.pending_guests.insert(id, pending);
+            return;
+        }
+
+        let reg = server.world.reg.clone();
+        let palette: Vec<String> = reg.blocks.iter().map(|block| block.name.clone()).collect();
+        let items: Vec<String> = reg.items.iter().map(|item| item.name.clone()).collect();
         let mut roster = Vec::new();
         if let Some(host_name) = &self.host_name {
             roster.push(roster::host_presence(host_name));
@@ -776,21 +1009,22 @@ impl HostSession {
         roster.extend(
             self.guests
                 .iter()
+                .filter(|(_, guest)| guest.entry_ready)
                 .map(|(id, guest)| roster::guest_presence(*id, guest)),
         );
         let presence = roster::presence(
             id,
-            name.clone(),
-            &principal,
-            verification_cached,
-            public_handle.clone(),
+            pending.name.clone(),
+            &pending.principal,
+            pending.verification_cached,
+            pending.public_handle.clone(),
         );
+        roster.push(presence);
         let role = self
             .moderation
             .as_ref()
-            .map(|store| store.role(&principal))
+            .map(|store| store.role(&pending.principal))
             .unwrap_or_default();
-        roster.push(presence.clone());
         self.net.send(
             id,
             &S2C::Welcome {
@@ -803,22 +1037,32 @@ impl HostSession {
                 your_id: id,
                 your_role: role,
                 roster,
-                spawn: runtime.pos,
+                spawn: pending.runtime.pos,
                 world_name: self.world_name.clone(),
-                player_state: runtime.to_snap(),
+                player_state: pending.runtime.to_snap(),
             },
         );
-        self.net.broadcast(&S2C::Joined { presence });
-        // The named world arrives with its names: every sign and
-        // waystone, so travelers read them without asking.
+        self.net.send(
+            id,
+            &S2C::EntryManifest {
+                spawn: pending.runtime.pos,
+                required: required.clone(),
+            },
+        );
+        if let Some(ledger) = &server.world.material_ledger {
+            for notice in ledger.retrogen_notices() {
+                self.net.send(id, &S2C::Toast(notice));
+            }
+        }
         let signs: Vec<(BlockPos, [String; 3])> = server
             .world
             .sign_texts()
-            .map(|(p, st)| (p, st.lines.clone()))
+            .map(|(position, sign)| (position, sign.lines.clone()))
             .collect();
         for (pos, lines) in signs {
             self.net.send(id, &S2C::SignText { pos, lines });
         }
+        let runtime = pending.runtime;
         self.guests.insert(
             id,
             Guest {
@@ -826,11 +1070,11 @@ impl HostSession {
                 principals: runtime.principals,
                 previous_names: runtime.previous_names,
                 first_seen: runtime.first_seen,
-                name: name.clone(),
-                principal,
-                verification_cached,
-                verified_handle,
-                public_handle,
+                name: pending.name,
+                principal: pending.principal,
+                verification_cached: pending.verification_cached,
+                verified_handle: pending.verified_handle,
+                public_handle: pending.public_handle,
                 pos: runtime.pos,
                 yaw: runtime.yaw,
                 container: None,
@@ -860,8 +1104,8 @@ impl HostSession {
                 command_window: 0.0,
                 airborne_rise: 0.0,
                 sent_chunks: HashSet::new(),
-                // Backward-compatible horizon for clients that do not
-                // negotiate one explicitly.
+                entry_required: required,
+                entry_ready: false,
                 view_dist: self.initial_view_dist,
                 chunk_requests: 0,
                 chunk_window: 0.0,
@@ -872,7 +1116,6 @@ impl HostSession {
                 net_interval: 0.05,
             },
         );
-        fx.push(HostFx::Joined(name));
     }
 
     fn refuse_server_error(&mut self, id: u32, area: &str, error: &std::io::Error) {
@@ -884,6 +1127,17 @@ impl HostSession {
             )),
         );
         self.net.kick(id);
+    }
+
+    /// Gameplay broadcasts exclude authenticated connections that are still
+    /// decoding their entry terrain. They do not yet have a coherent world
+    /// mirror and are not members of the active roster.
+    fn broadcast_ready(&self, msg: &S2C) {
+        for (id, guest) in &self.guests {
+            if guest.entry_ready {
+                self.net.send(*id, msg);
+            }
+        }
     }
 
     /// Kick a guest and refuse them for the rest of the session.
@@ -899,7 +1153,7 @@ impl HostSession {
             id,
             &S2C::Refused(Refusal::new(RefusalCode::Kicked, "kicked by host")),
         );
-        self.net.broadcast(&S2C::Left { id });
+        self.broadcast_ready(&S2C::Left { id });
         self.net.kick(id);
         Some(g.name)
     }
@@ -936,7 +1190,7 @@ impl HostSession {
         )?;
         self.net
             .send(id, &S2C::Refused(Refusal::new(RefusalCode::Banned, reason)));
-        self.net.broadcast(&S2C::Left { id });
+        self.broadcast_ready(&S2C::Left { id });
         self.net.kick(id);
         Ok(Some(g.name))
     }
@@ -1051,11 +1305,17 @@ impl HostSession {
 
     /// Apply simulation damage to server-owned survival state. The `Hit`
     /// packet is presentation; the following `PlayerState` is the authority.
-    pub fn hurt_guest(&mut self, id: u32, amount: f32, from: crate::planet::EntityPos) {
+    pub fn hurt_guest(
+        &mut self,
+        server: &mut Server,
+        id: u32,
+        amount: f32,
+        from: crate::planet::EntityPos,
+    ) {
         let Some(guest) = self.guests.get_mut(&id) else {
             return;
         };
-        if guest.health <= 0.0 {
+        if !guest.entry_ready || guest.health <= 0.0 {
             return;
         }
         let armor_points: u32 = guest
@@ -1076,7 +1336,14 @@ impl HostSession {
                     }
                     stack.durability = stack.durability.saturating_sub(1);
                     if stack.durability == 0 {
-                        *armor = None;
+                        *armor = registry
+                            .item(stack.item)
+                            .broken_into
+                            .map(|broken| ItemStack {
+                                item: broken,
+                                count: 1,
+                                durability: 0,
+                            });
                     }
                 }
             }
@@ -1084,10 +1351,21 @@ impl HostSession {
         guest.health = (guest.health - reduced).max(0.0);
         guest.since_damage = 0.0;
         if guest.health <= 0.0 {
-            let _ = guest.inventory.drain();
-            guest.armor = [None; 5];
-            guest.cursor = None;
-            guest.craft_grid = [None; 9];
+            let mut lost = guest.inventory.drain();
+            lost.extend(guest.armor.iter_mut().filter_map(Option::take));
+            lost.extend(guest.cursor.take());
+            lost.extend(guest.craft_grid.iter_mut().filter_map(Option::take));
+            if let (Some(pos), Some(ledger)) =
+                (guest.pos.block(), &mut server.world.material_ledger)
+            {
+                for stack in lost {
+                    if let Err(error) =
+                        ledger.bury_stack(&server.world.reg, pos, stack, "unrecovered death drop")
+                    {
+                        eprintln!("materials: guest death salvage failed: {error}");
+                    }
+                }
+            }
             refresh_held(guest);
         }
         self.net.send(id, &S2C::Hit { dmg: reduced, from });
@@ -1095,6 +1373,35 @@ impl HostSession {
     }
 
     fn on_msg(&mut self, server: &mut Server, id: u32, msg: C2S, fx: &mut Vec<HostFx>) {
+        if matches!(&msg, C2S::EntryReady) {
+            let accepted = {
+                let Some(guest) = self.guests.get_mut(&id) else {
+                    return;
+                };
+                if guest.entry_ready
+                    || guest
+                        .entry_required
+                        .iter()
+                        .any(|position| !guest.sent_chunks.contains(position))
+                {
+                    return;
+                }
+                guest.entry_ready = true;
+                (roster::guest_presence(id, guest), guest.name.clone())
+            };
+            self.net.send(id, &S2C::EntryAccepted);
+            self.broadcast_ready(&S2C::Joined {
+                presence: accepted.0,
+            });
+            fx.push(HostFx::Joined(accepted.1));
+            return;
+        }
+        // An authenticated connection is inert until it has acknowledged
+        // every host-declared entry chunk. In particular it cannot move,
+        // chat, moderate, request arbitrary terrain, or affect simulation.
+        if self.guests.get(&id).is_none_or(|guest| !guest.entry_ready) {
+            return;
+        }
         if let C2S::Moderate { target, action } = &msg {
             self.on_moderation_request(id, *target, *action);
             return;
@@ -1171,6 +1478,7 @@ impl HostSession {
             | C2S::Moderate { .. }
             | C2S::RequestChunk { .. }
             | C2S::SetViewDistance { .. }
+            | C2S::EntryReady
             | C2S::Bye => {}
             C2S::Move {
                 pos,
@@ -1273,10 +1581,18 @@ impl HostSession {
                 if server.world.reg.fluid_volume(b) != Some(8) {
                     return;
                 }
+                let water_class = server
+                    .world
+                    .water_mass_at(pos)
+                    .map(|mass| mass.water_class());
                 let full_name = if server.world.reg.is_lava(b) {
                     "base:bucket_lava"
                 } else {
-                    "base:bucket_water"
+                    match water_class {
+                        Some(crate::planet_atlas::WaterClass::Brackish) => "base:bucket_brackish",
+                        Some(crate::planet_atlas::WaterClass::Salt) => "base:bucket_salt",
+                        _ => "base:bucket_water",
+                    }
                 };
                 let Some(empty) = server.world.reg.item_id("base:bucket") else {
                     return;
@@ -1287,7 +1603,11 @@ impl HostSession {
                     return;
                 }
                 guest.edits += 1;
-                server.world.set_block_at(pos, crate::registry::AIR);
+                if server.world.reg.is_lava(b) {
+                    server.world.set_block_at(pos, crate::registry::AIR);
+                } else if server.world.scoop_water_at(pos).is_none() {
+                    return;
+                }
                 if server.world.mode != "creative"
                     && let Some(full) = server.world.reg.item_id(full_name)
                 {
@@ -1310,7 +1630,10 @@ impl HostSession {
                     .or_else(|| {
                         let item = selected.map(|stack| stack.item)?;
                         let reg = &server.world.reg;
-                        if Some(item) == reg.item_id("base:bucket_water") {
+                        if Some(item) == reg.item_id("base:bucket_water")
+                            || Some(item) == reg.item_id("base:bucket_brackish")
+                            || Some(item) == reg.item_id("base:bucket_salt")
+                        {
                             Some(reg.water_block(0))
                         } else if Some(item) == reg.item_id("base:bucket_lava") {
                             Some(reg.lava_for_volume(8))
@@ -1323,13 +1646,32 @@ impl HostSession {
                     let player = crate::physics::Player::new_at(guest.pos);
                     player.overlaps_block_at(pos)
                 };
-                if overlaps || !server.world.place_block_at(pos, block) {
+                if overlaps {
+                    return;
+                }
+                let held_item = selected.map(|stack| stack.item);
+                let water_class = if held_item == server.world.reg.item_id("base:bucket_water") {
+                    Some(crate::planet_atlas::WaterClass::Fresh)
+                } else if held_item == server.world.reg.item_id("base:bucket_brackish") {
+                    Some(crate::planet_atlas::WaterClass::Brackish)
+                } else if held_item == server.world.reg.item_id("base:bucket_salt") {
+                    Some(crate::planet_atlas::WaterClass::Salt)
+                } else {
+                    None
+                };
+                let placed = if let Some(class) = water_class {
+                    server.world.place_portable_water_at(pos, class)
+                } else {
+                    server.world.place_block_at(pos, block)
+                };
+                if !placed {
                     return;
                 }
                 guest.edits += 1;
                 if !creative {
-                    let held_item = selected.map(|stack| stack.item);
                     let full_bucket = held_item == server.world.reg.item_id("base:bucket_water")
+                        || held_item == server.world.reg.item_id("base:bucket_brackish")
+                        || held_item == server.world.reg.item_id("base:bucket_salt")
                         || held_item == server.world.reg.item_id("base:bucket_lava");
                     if full_bucket {
                         if let Some(empty) = server.world.reg.item_id("base:bucket") {
@@ -1402,6 +1744,15 @@ impl HostSession {
                         }
                         m.calm = 30.0;
                         if server.world.mode != "creative" {
+                            let consumed = guest.inventory.slots[guest.hotbar]
+                                .map(|stack| ItemStack::new(&reg, stack.item, 1));
+                            if let Some(stack) = consumed
+                                && let Err(error) = server.world.record_consumed_stacks([stack])
+                            {
+                                eprintln!(
+                                    "materials: guest animal feed accounting failed: {error}"
+                                );
+                            }
                             guest.inventory.take_one(guest.hotbar);
                             refresh_held(guest);
                             self.send_player_state(id);
@@ -1641,14 +1992,15 @@ impl HostSession {
                         lines: lines.clone(),
                     }),
                 );
-                self.net.broadcast(&S2C::SignText { pos, lines });
+                self.broadcast_ready(&S2C::SignText { pos, lines });
             }
             C2S::BrushBlock { pos } => {
                 if guest.pos.distance_to(pos.entity_center()) > REACH {
                     return;
                 }
                 let b = server.world.get_block_at(pos);
-                if server.world.reg.block(b).brush.is_none() {
+                let archaeology = server.world.reg.block(b).brush.is_some();
+                if !archaeology && !server.world.can_sift_salvage_at(pos) {
                     return;
                 }
                 if !guest.inventory.slots[guest.hotbar]
@@ -1656,11 +2008,33 @@ impl HostSession {
                 {
                     return;
                 }
-                let mut r = server.rng;
-                let found = server.world.brush_block_at(pos, &mut r);
-                server.rng = r;
+                let found = if archaeology {
+                    let mut r = server.rng;
+                    let found = server.world.brush_block_at(pos, &mut r);
+                    server.rng = r;
+                    found
+                } else {
+                    match server.world.sift_salvage_at(pos) {
+                        Ok(found) => found,
+                        Err(error) => {
+                            eprintln!("materials: guest regional salvage recovery failed: {error}");
+                            None
+                        }
+                    }
+                };
                 if let Some(stack) = found {
                     server.world.queue_give(id, stack);
+                    if !archaeology {
+                        self.net.send(
+                            id,
+                            &S2C::Toast("The brush turns up usable buried stock.".into()),
+                        );
+                    }
+                } else if !archaeology {
+                    self.net.send(
+                        id,
+                        &S2C::Toast("Nothing recoverable gathers in this ground yet.".into()),
+                    );
                 }
                 if server.world.mode != "creative" {
                     guest.inventory.wear_tool(&server.world.reg, guest.hotbar);
@@ -1928,6 +2302,23 @@ impl HostSession {
                 if !(2..=3).contains(&size) {
                     return;
                 }
+                if let Some(repair) = crate::crafting::match_repair(
+                    &server.world.reg,
+                    &guest.craft_grid[..size * size],
+                ) {
+                    if guest.cursor.is_some() {
+                        return;
+                    }
+                    guest.cursor = Some(repair.output);
+                    crate::crafting::consume_repair(&mut guest.craft_grid[..size * size], &repair);
+                    if let Some(ledger) = &mut server.world.material_ledger
+                        && let Err(error) = ledger.record_recipe_loss(&repair.scale_loss)
+                    {
+                        eprintln!("materials: guest repair scale accounting failed: {error}");
+                    }
+                    self.send_player_state(id);
+                    return;
+                }
                 let Some(recipe) = crate::crafting::match_recipe(
                     &server.world.reg,
                     &guest.craft_grid[..size * size],
@@ -1936,6 +2327,8 @@ impl HostSession {
                     return;
                 };
                 let output = ItemStack::new(&server.world.reg, recipe.output, recipe.count);
+                let recipe_loss = recipe.loss.clone();
+                let recipe_byproducts = recipe.byproducts.clone();
                 match guest.cursor {
                     None => guest.cursor = Some(output),
                     Some(cursor)
@@ -1951,6 +2344,37 @@ impl HostSession {
                     _ => return,
                 }
                 crate::crafting::consume(&mut guest.craft_grid[..size * size]);
+                if let Some(ledger) = &mut server.world.material_ledger
+                    && let Err(error) = ledger.record_recipe_loss(&recipe_loss)
+                {
+                    eprintln!("materials: guest crafting loss accounting failed: {error}");
+                }
+                for (item, count) in recipe_byproducts {
+                    if crate::materials::is_secondary_item(&server.world.reg, item)
+                        && let Some(ledger) = &mut server.world.material_ledger
+                    {
+                        let materials = crate::materials::stack_materials(
+                            &server.world.reg,
+                            ItemStack::new(&server.world.reg, item, count),
+                        );
+                        if let Err(error) = ledger.record_secondary_output(&materials) {
+                            eprintln!("materials: guest crafting secondary output failed: {error}");
+                        }
+                    }
+                    let remainder = guest.inventory.add(&server.world.reg, item, count);
+                    if remainder != 0
+                        && let (Some(pos), Some(ledger)) =
+                            (guest.pos.block(), &mut server.world.material_ledger)
+                        && let Err(error) = ledger.bury_stack(
+                            &server.world.reg,
+                            pos,
+                            ItemStack::new(&server.world.reg, item, remainder),
+                            "full guest inventory after crafting",
+                        )
+                    {
+                        eprintln!("materials: guest crafting byproduct salvage failed: {error}");
+                    }
+                }
                 self.send_player_state(id);
             }
             C2S::EatSelected => {
@@ -1974,6 +2398,10 @@ impl HostSession {
                     *value = (*value + add).min(100.0);
                 }
                 if server.world.mode != "creative" {
+                    let consumed = ItemStack::new(&server.world.reg, stack.item, 1);
+                    if let Err(error) = server.world.record_consumed_stacks([consumed]) {
+                        eprintln!("materials: guest eaten food accounting failed: {error}");
+                    }
                     guest.inventory.take_one(guest.hotbar);
                 }
                 refresh_held(guest);
@@ -2004,7 +2432,7 @@ impl HostSession {
                 guest.chat_count += 1;
                 let msg: String = msg.chars().take(200).collect();
                 let from = guest.name.clone();
-                self.net.broadcast(&S2C::Chat {
+                self.broadcast_ready(&S2C::Chat {
                     from: from.clone(),
                     msg: msg.clone(),
                 });
@@ -2100,7 +2528,7 @@ impl HostSession {
         let bloomery_chain = reg.bloomery.first().cloned();
         let kiln_base = reg.kiln_base;
         let kiln_powders: Vec<crate::registry::ItemId> =
-            reg.kiln.iter().map(|(powder, _)| *powder).collect();
+            reg.kiln.iter().map(|recipe| recipe.powder).collect();
         if self
             .guests
             .get(&id)
@@ -2159,6 +2587,8 @@ impl HostSession {
                     let ok_put = |it: crate::registry::ItemId| {
                         if slot < 4 {
                             reg.smelts.iter().any(|sm| sm.input.matches(it))
+                                || reg.forge_salvage.iter().any(|salvage| salvage.input == it)
+                                || crate::materials::is_reclaimable_stock(&reg, it)
                         } else {
                             reg.fuel_value(it).is_some()
                         }
@@ -2268,7 +2698,7 @@ impl HostSession {
     }
 
     pub fn broadcast_sign_at(&mut self, pos: BlockPos, lines: &[String; 3]) {
-        self.net.broadcast(&S2C::SignText {
+        self.broadcast_ready(&S2C::SignText {
             pos,
             lines: lines.clone(),
         });

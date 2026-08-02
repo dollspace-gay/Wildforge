@@ -1,9 +1,79 @@
 # Planet atlas — global knowledge before local chunks
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and qualified (2026-07-31).**
 >
 > This is goal 2 of the planetary-world sequence. It requires the completed
 > coordinate and topology work in `docs/planet-topology-plan.md`.
+
+## Implementation record — 2026-07-31
+
+**Goal 9 closure (2026-08-01).** The architecture below remains current, but
+its intermediate format measurements are historical. The integrated build is
+generator 9 / protocol 24, keeps WFA6/WFD3/WFW1 and atlas algorithm 6, writes
+WFC8 chunks to disk, and emits WFC9 chunks only on the network. A fresh
+production seed-1337 export generated 393,216 cells in 10.98 seconds at
+352,188 KiB generation peak RSS and emitted 132 validated map/legend pairs;
+the complete export peaked at 383,916 KiB. See the final qualification record
+and `screenshots/planetary-atlas-seed-1337-v9/`.
+
+The implementation follows the fixed production dimensions in this document:
+six `256 × 256` faces, `393,216` cells, and 32 logical surface columns per
+atlas cell. Immutable genesis, mutable planetary state, and sparse history are
+separate typed owners and separate persisted files. At the original Goal 2
+qualification, the on-disk formats were `WFA1` for genesis and `WFD1` for
+dynamic state; atlas format, generation algorithm, dynamic-state, and history
+schema versions were all `1`. The world generator version was `2`, making the
+intended pre-atlas format break explicit.
+
+Measured production qualification for seed `1337`:
+
+- headless creation and the complete diagnostic export took 2.49 seconds,
+- peak resident memory was 220,584 KiB (215.4 MiB), with zero swaps,
+- immutable genesis was 42,860,576 bytes (40.9 MiB),
+- dynamic state was 20,447,264 bytes (19.5 MiB),
+- estimated loaded atlas memory was 66,060,288 bytes (63.0 MiB),
+- all 393,216 cells, six faces, 42 registered maps, 42 legends, a globe
+  preview, TOML/CSV census, manifest, and validation report were emitted.
+
+Qualification passed formatting, strict Clippy, a release build, the advisory
+audit, and the complete repository test suite: 398 passed, zero failed, and 12
+explicit development/benchmark probes ignored. The atlas-specific suite covers
+serial/parallel determinism, every seam and corner, persistence and bounded
+decode failures, immutable corruption refusal, dynamic recovery, migration,
+atomic cancellation, export completeness, and chunk-order independence.
+
+Goal 3 subsequently expanded the immutable geological record. Its
+qualification values were `WFA2`, atlas format and algorithm versions `2`,
+geology schema version `1`, and world generator version `3`; immutable genesis
+was 60,948,512 bytes at production resolution.
+
+Goal 4 subsequently expanded the immutable seasonal-climate record and the
+mutable local-weather record. Its qualification values were `WFA3`/`WFD2`,
+atlas format and algorithm versions `3`, world generator version `4`, and
+multiplayer protocol `20`.
+
+Goal 5 subsequently supplied routed hydrology, Goal 6 closed the dynamic
+water cycle, and Goal 7 added causal soil/biome/country state. Current shipping
+values are `WFA6` for genesis, `WFD3` for climate state, `WFW1` for exact water
+state, and `biomes.wfb` schema `1`; atlas format and algorithm versions are `6`,
+world generator version was `7`, chunk/save/network records were `WFC8`, and
+multiplayer protocol was `23`. Generator 9 / protocol 24 now retain WFC8 for
+disk but use WFC9 for host-streamed chunks. The measurements below and the former
+127,402,016-byte `WFA5` result remain historical qualification records, not
+the current save format.
+
+At the original Goal 2 qualification, scientific values were deliberately
+deterministic placeholders, as this goal permits. Goal 3 replaced plate
+mechanics, continents, strata, and geological manifests; Goal 4 replaced
+climate normals and global weather with causal seasonal fields and conserved
+local weather; Goal 5 replaced placeholder drainage with finite oceans,
+routed rivers, lake basins, salinity, and voxel volume accounting; Goal 6
+connected those baselines to exact atmosphere, soil, snow, aquifer, runoff,
+surface, portable, and industrial reservoirs. Ecological biomes and exact
+material lifecycles remain owned by Goals 7–8. The base atlas architecture
+provides independent persistence, recovery, and bounded sliced iteration, but
+the Goal 6 implementation record is the proof that rain now recharges
+aquifers and the dynamic water/salt ledger closes.
 
 ## Purpose
 
@@ -114,7 +184,10 @@ World creation writes:
 
 ```text
 saves/<world>/planet/genesis.wfa
-saves/<world>/planet/hydrology.wfd
+saves/<world>/planet/dynamic.wfd
+saves/<world>/planet/history.wfh
+saves/<world>/planet/geology.wfg
+saves/<world>/planet/hydrology.wfy
 saves/<world>/planet/manifest.toml
 ```
 

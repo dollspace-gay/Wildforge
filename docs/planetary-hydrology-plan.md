@@ -1,13 +1,134 @@
 # Planetary hydrology — every river goes somewhere
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and qualified (2026-07-31).**
 >
 > This is goal 5 of the planetary-world sequence. It requires completed
 > topology, atlas, geology, and climate goals.
 
+## Implementation record — 2026-07-31
+
+**Goal 9 closure (2026-08-01).** Hydrology schema 1 remains authoritative in
+generator 9. The final production seed-1337 export contains 24 ocean basins,
+10 lakes, 878 named rivers, 12,823 watersheds, 2,224 floodplain cells, 6,062
+wetland cells, 557 delta cells, and 1,637 estuary cells. Generator 9 fixes
+fractional basin-fill quantization so atlas-owned rivers/lakes/oceans alone
+decide wet columns; the atlas-free noise hydrology retained for compact unit
+fixtures and inert remote mirrors is not an authoritative shipping generator.
+Directed seam, chunk-order, salinity, breach, and exact residual tests are in
+the final qualification matrix.
+
+Goal 5 replaces local noise rivers and placeholder lakes with one immutable,
+whole-planet drainage solution. A deterministic seam-aware priority flood
+resolves flats and depressions, assigns every cell a terminating receiver,
+accumulates four-season climate runoff, and iterates bounded erosion and
+deposition. The resulting atlas owns oceans, lake basins and hypsometry,
+watersheds, named rivers, channel beds, seasonal discharge, sediment and
+dissolved load, salinity, floodplains, wetlands, deltas, estuaries, and exact
+baseline surface-water accounting.
+
+Voxel generation samples that atlas before local decoration. Major channels
+carve descending valleys, low-gradient reaches meander without moving their
+endpoints, intermittent streams become dry gullies in their baseline season,
+and perennial channels, lakes, and oceans materialize finite 1–8-unit water.
+Bed and bank material follows substrate and deposition; salinity is recorded
+in voxel metadata. Each materialized chunk stores the quantization residual,
+so loading a chunk reveals assigned water rather than minting it. Chunk
+records and network snapshots use `WFC6` and carry that residual explicitly.
+
+### Formats and integration
+
+- immutable genesis is `WFA4`, atlas format and generation algorithm versions
+  are `4`, and the hydrology layer schema is `1` in `hydrology.wfy`,
+- mutable weather remains `WFD2`; history and geology schemas remain `1`,
+- world generator version is `5`, chunk/network records are `WFC6`, and
+  multiplayer protocol is `21`,
+- older immutable atlases and old chunk/network encodings are rejected rather
+  than silently rerouting water beneath already materialized terrain.
+
+Aquatic animals now declare temperature, depth, discharge, and salinity
+niches, and spawning reads the actual water column plus atlas discharge.
+Waystones use deterministic river, lake, sea, and watershed names when their
+sign is blank. Clay and alluvial sediment follow depositional masks. Gold and
+rare-earth placer tonnage is conservatively transferred from a finite source
+deposit to its downstream drainage path; source plus placer mass is unchanged.
+
+### Production qualification
+
+The final serial release probe generated deterministic seed `1337`, all six
+`256 × 256` faces, and 393,216 atlas cells in 8.15 seconds. Creation,
+persistence, and the complete diagnostic export took 24.36 seconds. Peak
+resident memory was 502,576 KiB (490.8 MiB), with zero swap, inside the 512 MiB
+qualification envelope. The persisted files are 127,402,016 immutable bytes,
+25,165,864 dynamic bytes, 134,448 geology bytes, and 2,755,408 hydrology bytes;
+estimated loaded atlas memory is 157,420,848 bytes.
+
+The accepted planet contains:
+
+- one dominant world ocean holding 99.1709% of ocean cells, 24 total marine
+  basins, 10 lakes (three through-flow and seven terminal), and 12,823
+  watersheds,
+- 878 named rivers spanning 299,290 blocks, with maximum discharge 90,303,
+  maximum bankfull width 21.64 blocks, and maximum Strahler order 3,
+- 2,224 floodplain cells, 6,062 wetland cells, and 2,194 estuary cells,
+- 75,745,040,690 baseline surface-water units plus a recorded 608,944,922-unit
+  voxel-quantization residual,
+- 109 diagnostic maps and legends, a globe preview, lake/ocean manifests,
+  river profiles, census, validation report, and exact qualification sites.
+
+Seed `1337` produced estuaries but no delta cells; this is a valid outcome for
+its mouth slopes and energy. Deterministic arid and depositional fixtures also
+exercise seasonal playas, saline terminal lakes, deltas, wetlands, and
+floodplains, so the implementation is not relying on a hard-coded showcase
+seed.
+
+### Verification and visual record
+
+The hydrology suite covers graph termination and cycles, all twelve cube-face
+seams and the seven-neighbor cube-corner singularity, deterministic flats,
+runoff causality, tributaries, beds, channel scaling, climate contrasts,
+ocean/lake storage curves and budgets, salinity, erosion resistance, meanders,
+deltas/estuaries, placers, voxel continuity and residuals, chunk order,
+resting banks, persistence/network round trips, aquatic habitat, and names.
+Atlas, geology, and ecology regression suites also pass with the new layer.
+
+The final locked, all-target, single-thread repository run passed 446 tests,
+failed none, and left 13 explicit development/measurement probes ignored in
+613.98 seconds. Formatting, strict all-feature Clippy with warnings denied,
+the release build, and the whitespace/error-marker audit pass. RustSec passes
+with the two reviewed unreachable-operation exceptions
+`RUSTSEC-2026-0119` and `RUSTSEC-2023-0071`; their dependency paths, threat
+analysis, and upstream removal conditions are maintained in
+`docs/dependency-advisories.md`. The remaining `atomic-polyfill` notice is an
+accepted unmaintained transitive crate, not a vulnerability.
+
+The production maps and qualification records were reviewed for a mountain
+source and tributaries, the 962-block Varmere River across geological regions,
+a 764 mm windward/lee precipitation contrast, through-flow Lake Harun and its
+outlet, the terminal Selain Playa, the Varmere estuary, and the Dunmere River
+crossing from `pos_x` to `neg_y`. The real client loaded the production world
+and materialized source, river, lake, and estuary water at their recorded
+coordinates.
+
+The live captures also make an existing presentation defect impossible to
+miss: large exposed cave mouths, white distance fog, and severe-looking
+terrain slabs at high-relief viewpoints obscure the regional landform. This
+same limitation was recorded by Goals 3 and 4. It does not contradict the
+voxel connectivity, bed, bank, volume, or seam checks, but these captures are
+not suitable promotional screenshots. Fixing the renderer/terrain
+presentation remains honest follow-up work rather than a hydrology result.
+
+Notes versus the design: static genesis stores four inherited climate seasons,
+not a continuously solved hydrograph. This goal establishes finite baselines
+and exact coarse-to-voxel handoff; Goal 6 has since added rainfall recharge,
+groundwater flow, springs, evaporation feedback, audited player waterworks,
+and long-run salt mixing. Goal 7's historical shipping point was
+`WFA6`/`WFD3` plus `WFW1` and `biomes.wfb`, world generator `7`, WFC8, and
+protocol `23`; integrated qualification now uses generator 9, WFC8 on disk,
+network-only WFC9, and protocol 24.
+
 ## Purpose
 
-The present rivers are locally carved noise bands and lakes are local noise
+Before Goal 5, rivers were locally carved noise bands and lakes were local noise
 basins. They can look river-like, but they do not begin in catchments,
 accumulate tributaries, descend through a watershed, cross continents, and
 reach an ocean or terminal lake.
@@ -24,7 +145,8 @@ This goal solves the finite planet's static hydrological geography:
 - seamless voxel materialization.
 
 Dynamic rain, evaporation, groundwater recharge, spring discharge, and
-player-driven level changes land in the following water-cycle goal.
+player-driven level changes are now supplied by the completed water-cycle
+goal.
 
 ## Hydrological elevation
 
@@ -214,8 +336,8 @@ The immutable atlas is the original land, not a command to restore it.
 - Breaking a natural dam may drain a lake.
 - Building a dam may impound a river.
 - Voxel edits override genesis and persist.
-- Atlas drainage remains a broad routing prior; dynamic surface routing near
-  player changes belongs to the water-cycle goal.
+- Atlas drainage remains a broad routing prior; the water-cycle layer owns
+  dynamic surface routing and audited basin markers near player changes.
 - No load or reconcile pass rebuilds an atlas river through a player
   structure.
 

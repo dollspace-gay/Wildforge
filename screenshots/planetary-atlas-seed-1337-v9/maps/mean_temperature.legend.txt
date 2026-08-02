@@ -1,0 +1,7 @@
+layer = mean_temperature
+description = annual mean temperature in Celsius
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = scalar
+minimum = -19.885498047
+maximum = 32.301166534
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

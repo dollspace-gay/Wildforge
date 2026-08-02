@@ -1,5 +1,17 @@
 # Build artifacts
 /target
+/dist
+*.exe
+*.zip
+
+# Generated planetary/world-state blobs
+*.wfa
+*.wfb
+*.wfd
+*.wfg
+*.wfh
+*.wfw
+*.wfy
 
 # Player data and local settings
 /saves/
@@ -9,6 +21,8 @@ config.txt
 # Screenshots and scratch output
 *.ppm
 screenshot-*.png
+/screenshots/*.png
+/screenshots/**/*.png
 
 # Editor/OS noise
 .DS_Store

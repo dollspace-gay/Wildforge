@@ -1,0 +1,7 @@
+layer = prevailing_wind
+description = local tangent-frame wind direction
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = direction
+minimum = -3.141590118
+maximum = 3.141584158
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

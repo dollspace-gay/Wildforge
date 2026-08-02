@@ -76,14 +76,21 @@ impl Game {
 
     /// Touch a waystone: learn it, then hear where the others stand.
     pub(super) fn read_waystone(&mut self, pos: crate::planet::BlockPos) {
+        let surface = pos.surface();
         let name = match self.server.world.block_entity_at(&pos) {
             Some(world::BlockEntity::Sign(sg)) if !sg.lines[0].is_empty() => sg.lines[0].clone(),
             _ => {
-                self.toast("The stone is unnamed. Write it first.".to_string());
-                return;
+                let atlas_name =
+                    self.server.world.planet_atlas().and_then(|atlas| {
+                        atlas.hydrological_name_at(surface).map(ToOwned::to_owned)
+                    });
+                let Some(atlas_name) = atlas_name else {
+                    self.toast("The stone is unnamed. Write it first.".to_string());
+                    return;
+                };
+                atlas_name
             }
         };
-        let surface = pos.surface();
         let known = self
             .interaction
             .attuned
@@ -157,7 +164,7 @@ impl Game {
             .multiplayer
             .host
             .as_ref()
-            .is_some_and(|h| !h.guests.is_empty())
+            .is_some_and(|h| h.guests.values().any(|guest| guest.is_active()))
         {
             self.multiplayer.host_sleeping = true;
             self.survival.spawn_point = self.player.pos;

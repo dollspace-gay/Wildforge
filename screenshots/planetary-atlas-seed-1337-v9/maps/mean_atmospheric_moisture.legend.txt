@@ -1,0 +1,7 @@
+layer = mean_atmospheric_moisture
+description = equilibrium atmospheric moisture
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = scalar
+minimum = 0.481580794
+maximum = 705.083984375
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

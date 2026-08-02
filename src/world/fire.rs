@@ -147,6 +147,22 @@ impl World {
             let meta = self.get_meta_at(pos);
             let mine = meta & MINE != 0;
             let life = meta & !MINE;
+            let weather = self.weather_at_surface(pos.surface());
+            let exposed = self.light_at_pos(pos).1 == 15;
+            if exposed
+                && weather.precipitation == crate::planet_atlas::PrecipitationForm::Rain
+                && (weather.kind == crate::planet_atlas::LocalWeather::Storm || life <= 2)
+            {
+                self.set_block_at(pos, AIR);
+                changed = true;
+                continue;
+            }
+            let wind_speed = weather.wind[0].hypot(weather.wind[1]);
+            let damp_penalty = if exposed && weather.kind.precipitating() {
+                3
+            } else {
+                0
+            };
 
             // Reach for fuel. Sides and below first, then up: fire
             // climbs, but it takes the near thing first.
@@ -173,7 +189,9 @@ impl World {
                     continue;
                 }
                 *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
-                if (*rng >> 16) % 10 >= burns as u32 {
+                let spread_threshold =
+                    (u32::from(burns) + wind_speed.round() as u32).saturating_sub(damp_penalty);
+                if (*rng >> 16) % 10 >= spread_threshold {
                     continue; // damp today
                 }
                 self.consume(fuel, mine);

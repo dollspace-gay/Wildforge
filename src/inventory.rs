@@ -155,14 +155,20 @@ impl Inventory {
         Some(item)
     }
 
-    /// Wear the tool in `slot` by one use; destroys it at zero durability.
+    /// Wear the tool in `slot` by one use. Finite tools become a full-mass
+    /// damaged object at zero durability; renewable/stone tools may still
+    /// break apart because they are outside the exact metal ledger.
     pub fn wear_tool(&mut self, reg: &Registry, slot: usize) {
         if let Some(s) = self.slots[slot].as_mut() {
             // Anything with a durability pool wears: tools and swords.
             if reg.item(s.item).durability > 0 {
                 s.durability = s.durability.saturating_sub(1);
                 if s.durability == 0 {
-                    self.slots[slot] = None;
+                    self.slots[slot] = reg.item(s.item).broken_into.map(|broken| ItemStack {
+                        item: broken,
+                        count: 1,
+                        durability: 0,
+                    });
                 }
             }
         }

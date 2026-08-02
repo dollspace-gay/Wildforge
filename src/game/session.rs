@@ -14,90 +14,134 @@ impl Game {
 
     pub(super) fn refresh_worlds(&mut self) {
         self.worlds = world::list_worlds(std::path::Path::new("saves"));
+        let inspection = world::inspect_worlds(std::path::Path::new("saves"));
+        self.world_details = inspection
+            .iter()
+            .filter(|entry| entry.playable)
+            .map(|entry| (entry.name.clone(), entry.status.clone()))
+            .collect();
+        self.world_problems = inspection
+            .into_iter()
+            .filter(|entry| !entry.playable)
+            .map(|entry| (entry.name, entry.status))
+            .collect();
     }
 
-    /// Load (or create) a world and enter it.
+    /// Load/prepare a world off-thread. `Screen::CreatingWorld` remains
+    /// responsive until both the common homeland and a saved player's local
+    /// safety region are resident; only then does `finish_world_entry` create
+    /// the player session.
     pub(super) fn start_world(&mut self, name: &str) {
-        let mut world = match World::load_or_create(
-            PathBuf::from("saves").join(name),
-            self.content.reg.clone(),
-        ) {
-            Ok(world) => world,
-            Err(error) => {
-                self.toast(format!("Could not open world: {error}"));
-                return;
-            }
-        };
-        // Dev: WILDFORGE_SPAWN="face,u,v" overrides the planetary spawn search.
-        let wanted = std::env::var("WILDFORGE_SPAWN")
-            .ok()
-            .and_then(|s| {
-                let mut fields = s.split(',').map(str::trim);
-                let face = crate::planet::Face::from_name(fields.next()?)?;
-                let u = fields.next()?.parse().ok()?;
-                let v = fields.next()?.parse().ok()?;
-                fields.next().is_none().then_some(())?;
-                crate::planet::SurfacePos::new(face, u, v).ok()
-            })
-            .unwrap_or_else(|| find_spawn(&world));
-        let spawn_chunk = ChunkPos::from_surface(wanted);
-        for dx in -1..=1 {
-            for dz in -1..=1 {
-                world.ensure_chunk(spawn_chunk.offset(dx, dz));
-            }
-        }
-        // 3D terrain can put the "highest solid" on an overhang lip or a
-        // spike; refine to a locally flat, dry column so spawning is safe.
-        let wanted = {
-            let mut best = wanted;
-            let mut best_score = i32::MAX;
-            for dx in -12..=12 {
-                for dz in -12..=12 {
-                    let candidate = crate::planet::SurfacePos::canonicalized(
-                        wanted.face(),
-                        i32::from(wanted.u()) + dx,
-                        i32::from(wanted.v()) + dz,
-                    )
-                    .expect("spawn refinement crosses at most one face edge");
-                    let h = world.surface_height_at(candidate);
-                    if h <= SEA_LEVEL + 1 {
-                        continue;
-                    }
-                    let mut slope = 0;
-                    for neighbor in crate::planet::neighbors4(candidate) {
-                        slope = slope.max((h - world.surface_height_at(neighbor)).abs());
-                    }
-                    let score = slope * 100 + dx.abs() + dz.abs();
-                    if slope <= 1 {
-                        best = candidate;
-                        best_score = 0;
-                        break;
-                    }
-                    if score < best_score {
-                        best_score = score;
-                        best = candidate;
-                    }
-                }
-                if best_score == 0 {
-                    break;
-                }
-            }
-            best
-        };
-        // Whatever the refinement picked, guarantee it: dry, solid
-        // underfoot, above the tideline — and if this is open ocean,
-        // land gets raised rather than the player getting dropped in
-        // it. (The old path fell back to the unrefined column, which
-        // is how spawns ended up on the seabed.)
-        let spawn = world.safe_spawn_at(wanted);
+        self.start_world_with_origin(name, false);
+    }
 
+    fn start_created_world(&mut self, name: &str) {
+        self.start_world_with_origin(name, true);
+    }
+
+    fn start_world_with_origin(&mut self, name: &str, created_here: bool) {
+        if self.ui_state.world_entry.is_some() {
+            return;
+        }
+        let save_dir = PathBuf::from("saves").join(name);
+        let reg = self.content.reg.clone();
+        let profile_path = identity::local_profile_path(&save_dir, self.identity.device_id()).ok();
+        // Dev: WILDFORGE_SPAWN="face,u,v" bypasses the persisted common
+        // homeland so visual fixtures can still pin an exact atlas site.
+        let override_wanted = std::env::var("WILDFORGE_SPAWN").ok().and_then(|s| {
+            let mut fields = s.split(',').map(str::trim);
+            let face = crate::planet::Face::from_name(fields.next()?)?;
+            let u = fields.next()?.parse().ok()?;
+            let v = fields.next()?.parse().ok()?;
+            fields.next().is_none().then_some(())?;
+            crate::planet::SurfacePos::new(face, u, v).ok()
+        });
+        let cancel = crate::planet_atlas::CancellationToken::default();
+        let worker_cancel = cancel.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let complete_name = name.to_owned();
+        std::thread::spawn(move || {
+            let result = (|| -> Result<_, String> {
+                let mut world = World::load_or_create(save_dir, reg)
+                    .map_err(|error| format!("could not open world: {error}"))?;
+                let material_policy_notices = world
+                    .material_ledger
+                    .as_ref()
+                    .map_or_else(Vec::new, |ledger| ledger.retrogen_notices());
+                let progress_sender = sender.clone();
+                let spawn = if let Some(wanted) = override_wanted {
+                    let chunks = crate::world::player_entry_chunks(wanted);
+                    for (index, position) in chunks.iter().copied().enumerate() {
+                        world.ensure_chunk(position);
+                        let _ = progress_sender.send(WorldEntryEvent::Progress {
+                            stage: "LOADING DEVELOPMENT ENTRY".into(),
+                            completed: index + 1,
+                            total: chunks.len(),
+                        });
+                    }
+                    world.safe_spawn_at(wanted)
+                } else {
+                    world
+                        .prepare_common_spawn(|stage, completed, total| {
+                            let _ = progress_sender.send(WorldEntryEvent::Progress {
+                                stage: stage.to_uppercase(),
+                                completed,
+                                total,
+                            });
+                        })
+                        .map_err(|error| format!("could not prepare a homeland: {error}"))?
+                };
+                if worker_cancel.is_cancelled() {
+                    return Err("world entry cancelled".into());
+                }
+                if let Some(saved) = profile_path.as_deref().and_then(saved_profile_position) {
+                    let chunks = crate::world::player_entry_chunks(saved.surface());
+                    for (index, position) in chunks.iter().copied().enumerate() {
+                        world.ensure_chunk(position);
+                        let _ = progress_sender.send(WorldEntryEvent::Progress {
+                            stage: "LOADING SAVED DOORSTEP".into(),
+                            completed: index + 1,
+                            total: chunks.len(),
+                        });
+                    }
+                }
+                if worker_cancel.is_cancelled() {
+                    return Err("world entry cancelled".into());
+                }
+                Ok((world, spawn, material_policy_notices))
+            })();
+            let _ = sender.send(WorldEntryEvent::Complete {
+                name: complete_name,
+                result: Box::new(result),
+            });
+        });
+        self.ui_state.world_entry = Some(WorldEntryTask {
+            receiver,
+            cancel,
+            created_here,
+        });
+        self.ui_state.creation_status = "OPENING PLANET".into();
+        self.ui_state.creation_progress = (0, 1);
+        self.set_screen(Screen::CreatingWorld);
+    }
+
+    fn finish_world_entry(
+        &mut self,
+        name: &str,
+        world: World,
+        spawn: crate::planet::EntityPos,
+        material_policy_notices: Vec<String>,
+    ) {
         self.renderer.clear_chunks();
         // Background generators for this world's seed (heavy terrain
         // math off the main thread; guests never generate).
         self.gen_pool = Some(crate::game::streaming::GenPool::new(
             world.seed,
             self.content.reg.clone(),
+            world.planet_atlas(),
+            world.chunk_loader(),
         ));
+        self.mesh_pool = Some(crate::game::streaming::MeshPool::new());
         self.server = server::Server::new(world, 0.3, self.rng ^ 0x5ee1);
         self.player = Player::new_at(spawn);
         self.survival.spawn_point = self.player.pos;
@@ -112,7 +156,17 @@ impl Game {
             // Named items land first (hotbar slots), then the kit.
             for name in extra.split(',').filter(|s| s.contains(':')) {
                 if let Some(item) = reg.item_id(name.trim()) {
-                    self.inventory.add(&reg, item, 1);
+                    let left = self.inventory.add(&reg, item, 1);
+                    if left == 0
+                        && let Some(ledger) = &mut self.server.world.material_ledger
+                        && let Err(error) = ledger.record_external_stack(
+                            &reg,
+                            ItemStack::new(&reg, item, 1),
+                            "development kit",
+                        )
+                    {
+                        eprintln!("materials: development kit accounting failed: {error}");
+                    }
                 }
             }
             for (name, n) in [
@@ -130,7 +184,18 @@ impl Game {
                 ("base:leather_chestplate", 1),
             ] {
                 if let Some(item) = reg.item_id(name) {
-                    self.inventory.add(&reg, item, n);
+                    let left = self.inventory.add(&reg, item, n);
+                    let added = n - left;
+                    if added != 0
+                        && let Some(ledger) = &mut self.server.world.material_ledger
+                        && let Err(error) = ledger.record_external_stack(
+                            &reg,
+                            ItemStack::new(&reg, item, added),
+                            "development kit",
+                        )
+                    {
+                        eprintln!("materials: development kit accounting failed: {error}");
+                    }
                 }
             }
             // Auto-equip a starter set so armor pips show in shots.
@@ -139,6 +204,15 @@ impl Game {
                     && let Some((slot, _)) = reg.item(item).armor
                 {
                     self.survival.armor[slot as usize] = Some(ItemStack::new(&reg, item, 1));
+                    if let Some(ledger) = &mut self.server.world.material_ledger
+                        && let Err(error) = ledger.record_external_stack(
+                            &reg,
+                            ItemStack::new(&reg, item, 1),
+                            "development kit auto-equip",
+                        )
+                    {
+                        eprintln!("materials: development armor accounting failed: {error}");
+                    }
                 }
             }
         }
@@ -165,14 +239,9 @@ impl Game {
         self.flying = false;
         self.in_world = true;
         if self.load_player(&PathBuf::from("saves").join(name)) {
-            // Ensure the chunk under the restored position exists.
-            if let Some(cp) = self.player.pos.chunk() {
-                for dx in -1..=1 {
-                    for dz in -1..=1 {
-                        self.server.world.ensure_chunk(cp.offset(dx, dz));
-                    }
-                }
-            }
+            // The entry worker loaded this exact 3x3 before handing the
+            // World to the session. Repairs below therefore inspect resident
+            // terrain and cannot turn first-frame setup into cold generation.
             // A malformed/development profile below the sealed shell is
             // settled onto valid ground; there is no planetary void mechanic.
             if self.player.pos.y < 1.0 {
@@ -199,6 +268,7 @@ impl Game {
         self.content
             .scripts
             .load_kv(&PathBuf::from("saves").join(name));
+        self.load_loose_items(&PathBuf::from("saves").join(name));
         if self.content.scripts.wants("on_world_start") {
             self.content.scripts.dispatch(
                 &self.server.world,
@@ -208,24 +278,180 @@ impl Game {
             self.apply_script_cmds();
         }
         self.set_screen(Screen::Playing);
+        for notice in material_policy_notices {
+            self.toast(notice);
+        }
         // Everything the capture harness stages lives in demos.rs: forty
         // scenes and sixty-odd environment variables, none of which is
         // part of starting a world.
         self.apply_dev_overrides(spawn);
     }
 
-    /// Create a fresh world folder with a random seed and enter it.
-    pub(super) fn new_world_mode(&mut self, mode: &str) {
-        let name = next_world_name(std::path::Path::new("saves"), &self.worlds);
+    pub(super) fn open_new_world(&mut self, mode: &str) {
+        self.ui_state.new_world_mode = mode.to_string();
+        self.roll_new_world_seed();
+        self.ui_state.new_world_status.clear();
+        self.set_screen(Screen::NewWorld);
+    }
+
+    pub(super) fn roll_new_world_seed(&mut self) {
         let seed = (self.rand01() * u32::MAX as f32) as u32;
-        if let Err(error) =
-            world::write_world_meta(&PathBuf::from("saves").join(&name), seed, mode, 0.0)
-        {
-            self.toast(format!("Could not create world: {error}"));
+        self.ui_state.new_world_seed = seed.to_string();
+    }
+
+    /// Create a fresh world folder with the player-visible seed and enter it.
+    pub(super) fn create_new_world(&mut self) {
+        if self.ui_state.world_creation.is_some() {
             return;
         }
-        self.refresh_worlds();
-        self.start_world(&name);
+        let Ok(seed) = self.ui_state.new_world_seed.parse::<u32>() else {
+            self.ui_state.new_world_status = "SEED MUST BE AN INTEGER FROM 0 TO 4294967295".into();
+            return;
+        };
+        self.ui_state.new_world_status.clear();
+        let mode = self.ui_state.new_world_mode.clone();
+        let name = next_world_name(std::path::Path::new("saves"), &self.worlds);
+        let destination = PathBuf::from("saves").join(&name);
+        let content_hash = crate::planet_atlas::genesis_content_hash(std::path::Path::new("mods"));
+        let cancel = crate::planet_atlas::CancellationToken::default();
+        let worker_cancel = cancel.clone();
+        let worker_reg = self.content.reg.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let complete_name = name.clone();
+        std::thread::spawn(move || {
+            let progress_sender = sender.clone();
+            let result = world::create_world_atomic(
+                &destination,
+                seed,
+                &mode,
+                content_hash,
+                worker_reg,
+                &worker_cancel,
+                move |progress| {
+                    let _ = progress_sender.send(WorldCreationEvent::Progress(progress));
+                },
+            )
+            .map_err(|error| error.to_string());
+            let _ = sender.send(WorldCreationEvent::Complete {
+                name: complete_name,
+                result,
+            });
+        });
+        self.ui_state.world_creation = Some(WorldCreationTask { receiver, cancel });
+        self.ui_state.creation_status = "SHAPING PLANET".into();
+        self.ui_state.creation_progress = (0, crate::planet_atlas::AtlasStage::ALL.len());
+        self.set_screen(Screen::CreatingWorld);
+    }
+
+    pub(super) fn cancel_world_creation(&mut self) {
+        if let Some(task) = &self.ui_state.world_creation {
+            task.cancel.cancel();
+            self.ui_state.creation_status = "CANCELLING PLANET CREATION".into();
+        } else if let Some(task) = &self.ui_state.world_entry {
+            task.cancel.cancel();
+            self.ui_state.creation_status = "CANCELLING WORLD ENTRY".into();
+        }
+    }
+
+    pub(super) fn poll_world_creation(&mut self) {
+        let events: Vec<_> = self
+            .ui_state
+            .world_creation
+            .as_ref()
+            .map(|task| task.receiver.try_iter().collect())
+            .unwrap_or_default();
+        for event in events {
+            match event {
+                WorldCreationEvent::Progress(progress) => match progress {
+                    world::WorldCreationProgress::Atlas(progress) => {
+                        self.ui_state.creation_status = progress.stage.label().into();
+                        self.ui_state.creation_progress =
+                            (progress.completed_stages, progress.total_stages);
+                    }
+                    world::WorldCreationProgress::Homeland {
+                        stage,
+                        completed,
+                        total,
+                    } => {
+                        self.ui_state.creation_status = stage.to_uppercase();
+                        self.ui_state.creation_progress = (completed, total);
+                    }
+                },
+                WorldCreationEvent::Complete { name, result } => {
+                    self.ui_state.world_creation = None;
+                    match result {
+                        Ok(()) => {
+                            self.refresh_worlds();
+                            self.start_created_world(&name);
+                        }
+                        Err(error) => {
+                            if error.contains("cancel") {
+                                self.set_screen(Screen::NewWorld);
+                                self.toast("Planet creation cancelled".into());
+                            } else {
+                                eprintln!("world: creation of {name} failed: {error}");
+                                self.ui_state.new_world_status =
+                                    format!("CREATION FAILED: {error}");
+                                self.set_screen(Screen::NewWorld);
+                                self.toast(format!("Could not create world: {error}"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let entry_events: Vec<_> = self
+            .ui_state
+            .world_entry
+            .as_ref()
+            .map(|task| task.receiver.try_iter().collect())
+            .unwrap_or_default();
+        for event in entry_events {
+            match event {
+                WorldEntryEvent::Progress {
+                    stage,
+                    completed,
+                    total,
+                } => {
+                    self.ui_state.creation_status = stage;
+                    self.ui_state.creation_progress = (completed, total);
+                }
+                WorldEntryEvent::Complete { name, result } => {
+                    let created_here = self
+                        .ui_state
+                        .world_entry
+                        .as_ref()
+                        .is_some_and(|task| task.created_here);
+                    self.ui_state.world_entry = None;
+                    match *result {
+                        Ok((world, spawn, notices)) => {
+                            self.finish_world_entry(&name, world, spawn, notices);
+                        }
+                        Err(error) => {
+                            if error.contains("cancel") {
+                                self.set_screen(if created_here {
+                                    Screen::NewWorld
+                                } else {
+                                    Screen::Title
+                                });
+                                self.toast("World entry cancelled".into());
+                            } else {
+                                eprintln!("world: entry into {name} failed: {error}");
+                                if created_here {
+                                    self.ui_state.new_world_status =
+                                        format!("WORLD WAS CREATED, BUT ENTRY FAILED: {error}");
+                                    self.set_screen(Screen::NewWorld);
+                                } else {
+                                    self.set_screen(Screen::Title);
+                                }
+                                self.toast(format!("Could not enter world: {error}"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub(super) fn save_player(&self) -> std::io::Result<()> {
@@ -304,12 +530,15 @@ impl Game {
         if let Err(error) = self.save_player() {
             failures.push(format!("player profile: {error}"));
         }
+        let world_dir = self.server.world.save_dir_for_saving();
+        if let Err(error) = self.save_loose_items(&world_dir) {
+            failures.push(format!("loose items: {error}"));
+        }
         self.server.world.settle_falling();
         let world_report = self.server.world.save_modified();
         if !world_report.is_ok() {
             failures.push(format!("world: {}", world_report.summary()));
         }
-        let world_dir = self.server.world.save_dir_for_saving();
         if let Err(error) = self.content.scripts.save_kv(&world_dir) {
             failures.push(format!(
                 "mod storage ({}): {error}",
@@ -320,6 +549,94 @@ impl Game {
             Ok(world_report.summary())
         } else {
             Err(failures.join("; "))
+        }
+    }
+
+    fn save_loose_items(&self, world: &std::path::Path) -> std::io::Result<()> {
+        use serde::Serialize;
+
+        #[derive(Serialize)]
+        struct StoredDrop {
+            pos: crate::planet::EntityPos,
+            vel: [f32; 3],
+            item: String,
+            count: u32,
+            age: f32,
+            durability: u32,
+        }
+        #[derive(Serialize)]
+        struct File {
+            version: u32,
+            drop: Vec<StoredDrop>,
+        }
+        let drop = self
+            .interaction
+            .items
+            .iter()
+            .map(|entity| StoredDrop {
+                pos: entity.pos,
+                vel: entity.vel.to_array(),
+                item: self.content.reg.item(entity.item).name.clone(),
+                count: entity.count,
+                age: entity.age,
+                durability: entity.durability,
+            })
+            .collect();
+        let text =
+            toml::to_string_pretty(&File { version: 1, drop }).map_err(std::io::Error::other)?;
+        crate::identity::atomic_write(&world.join("loose-items.toml"), text.as_bytes(), false)
+    }
+
+    fn load_loose_items(&mut self, world: &std::path::Path) {
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct StoredDrop {
+            pos: crate::planet::EntityPos,
+            vel: [f32; 3],
+            item: String,
+            count: u32,
+            age: f32,
+            durability: u32,
+        }
+        #[derive(Deserialize)]
+        struct File {
+            version: u32,
+            #[serde(default)]
+            drop: Vec<StoredDrop>,
+        }
+        let Ok(text) = std::fs::read_to_string(world.join("loose-items.toml")) else {
+            return;
+        };
+        let Ok(file) = toml::from_str::<File>(&text) else {
+            eprintln!("items: could not parse loose-items.toml; file left untouched");
+            return;
+        };
+        if file.version != 1 {
+            eprintln!(
+                "items: unsupported loose item save version {}",
+                file.version
+            );
+            return;
+        }
+        for stored in file.drop {
+            let Some(item) = self.content.reg.item_id(&stored.item) else {
+                eprintln!("items: retained unknown loose item name {}", stored.item);
+                continue;
+            };
+            if stored.count == 0
+                || !stored.age.is_finite()
+                || stored.vel.iter().any(|value| !value.is_finite())
+            {
+                continue;
+            }
+            let mut entity =
+                ItemEntity::new(stored.pos, Vec3::from_array(stored.vel), item, stored.count);
+            entity.age = stored.age.max(0.0);
+            entity.durability = stored
+                .durability
+                .min(self.content.reg.item(item).durability);
+            self.interaction.items.push(entity);
         }
     }
 
@@ -423,6 +740,8 @@ impl Game {
             self.multiplayer.host_sleeping = false;
             self.server.world.set_edit_logging(false);
             self.renderer.clear_chunks();
+            self.gen_pool = None;
+            self.mesh_pool = None;
             self.server = server::Server::new(
                 World::new(0, PathBuf::from("saves/.none"), self.content.reg.clone()),
                 0.3,
@@ -445,6 +764,8 @@ impl Game {
         self.multiplayer.host_sleeping = false;
         self.server.world.set_edit_logging(false);
         self.renderer.clear_chunks();
+        self.gen_pool = None;
+        self.mesh_pool = None;
         self.server = server::Server::new(
             World::new(0, PathBuf::from("saves/.none"), self.content.reg.clone()),
             0.3,
@@ -455,4 +776,22 @@ impl Game {
         self.refresh_worlds();
         self.set_screen(Screen::Title);
     }
+}
+
+fn saved_profile_position(path: &std::path::Path) -> Option<crate::planet::EntityPos> {
+    #[derive(serde::Deserialize)]
+    struct Position {
+        version: u32,
+        face: u8,
+        u: f32,
+        y: f32,
+        v: f32,
+    }
+    let text = std::fs::read_to_string(path).ok()?;
+    let saved: Position = toml::from_str(&text).ok()?;
+    if saved.version != 2 {
+        return None;
+    }
+    let face = crate::planet::Face::from_u8(saved.face)?;
+    crate::planet::EntityPos::new(face, saved.u, saved.y, saved.v).ok()
 }

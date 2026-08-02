@@ -1,0 +1,7 @@
+layer = dynamic_topography
+description = long-wavelength mantle topography contribution
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = scalar
+minimum = -6.387553215
+maximum = 6.724852085
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

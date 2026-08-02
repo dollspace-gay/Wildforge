@@ -1,0 +1,7 @@
+layer = winter_wind
+description = winter prevailing wind
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = direction
+minimum = -3.141592741
+maximum = 3.141575575
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

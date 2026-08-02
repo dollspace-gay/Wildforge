@@ -321,7 +321,12 @@ impl Renderer {
         // camp) used to stack ~50 passes into one frame and blow the
         // vsync deadline; now the update spreads across frames, each
         // face serving its old picture until replaced.
-        let mut face_budget = 6usize;
+        // One cube face per frame keeps shadowed point lights fully featured
+        // while preventing a newly discovered torch (or a remeshed emitter
+        // chunk) from stacking six terrain passes into one visible hitch. The
+        // cache retains the previous complete cube until the replacement has
+        // converged over the next six frames.
+        let mut face_budget = 1usize;
         for (li, l) in f.point_lights.iter().take(MAX_PT_LIGHTS).enumerate() {
             // DDA marches the voxel occupancy grid for occlusion, so the
             // distance cube (and its tint companion) go unused — skip the whole

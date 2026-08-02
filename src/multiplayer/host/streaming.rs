@@ -1,15 +1,254 @@
 //! Guest terrain delivery and perception-bounded world snapshots.
 
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
+
 use super::HostSession;
-use crate::chunk::ChunkPos;
+use crate::chunk::{Chunk, ChunkPos};
 use crate::net::{self, MobSnap, S2C, batch_snapshot};
 use crate::planet::EntityPos;
+use crate::registry::Registry;
 use crate::server::Server;
 
 /// Chunks pushed per guest per pump. The ring is paced so a guest asking for
 /// a wide view does not make the host generate hundreds of chunks in one
 /// frame; `RequestChunk` fills anything the pacing misses.
-const CHUNKS_PER_PUMP: usize = 8;
+const CHUNKS_PER_PUMP: usize = 2;
+const MAX_GENERATION_IN_FLIGHT: usize = 32;
+const ADOPT_PER_PUMP: usize = 2;
+const ADOPT_BUDGET: Duration = Duration::from_millis(4);
+
+/// Renderer-independent cold terrain workers for a host. Generation is pure;
+/// only the simulation thread adopts results and commits world side effects.
+pub(super) struct HostChunkJobs {
+    generation_queue: Arc<(Mutex<GenerationQueue>, Condvar)>,
+    ready: Receiver<(ChunkPos, Chunk, bool)>,
+    in_flight: HashSet<ChunkPos>,
+    encode_request: Sender<(ChunkPos, u64, Chunk)>,
+    encoded: Receiver<(ChunkPos, u64, Vec<u8>)>,
+    encoding: HashSet<(ChunkPos, u64)>,
+    encoded_cache: HashMap<ChunkPos, (u64, Arc<Vec<u8>>)>,
+    revisions: HashMap<ChunkPos, u64>,
+}
+
+#[derive(Default)]
+struct GenerationQueue {
+    entry: VecDeque<ChunkPos>,
+    ordinary: VecDeque<ChunkPos>,
+    stopped: bool,
+}
+
+impl HostChunkJobs {
+    fn new(
+        seed: u32,
+        reg: Arc<Registry>,
+        atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
+        loader: crate::world::ChunkLoader,
+    ) -> Self {
+        let (ready_tx, ready) = channel();
+        let (encode_request, encode_rx) = channel::<(ChunkPos, u64, Chunk)>();
+        let (encoded_tx, encoded) = channel();
+        let generation_queue = Arc::new((Mutex::new(GenerationQueue::default()), Condvar::new()));
+        let workers = std::thread::available_parallelism()
+            .map(|count| count.get().saturating_sub(2).clamp(2, 4))
+            .unwrap_or(2);
+        for _ in 0..workers {
+            let generation_queue = Arc::clone(&generation_queue);
+            let ready_tx = ready_tx.clone();
+            let reg = Arc::clone(&reg);
+            let atlas = atlas.clone();
+            let loader = loader.clone();
+            std::thread::spawn(move || {
+                let generator = atlas.map_or_else(
+                    || crate::worldgen::Generator::new(seed, &reg),
+                    |atlas| crate::worldgen::Generator::with_atlas(seed, &reg, atlas),
+                );
+                loop {
+                    let pos = {
+                        let (lock, wake) = &*generation_queue;
+                        let Ok(mut queue) = lock.lock() else {
+                            return;
+                        };
+                        loop {
+                            if let Some(pos) = queue.entry.pop_front() {
+                                break pos;
+                            }
+                            if let Some(pos) = queue.ordinary.pop_front() {
+                                break pos;
+                            }
+                            if queue.stopped {
+                                return;
+                            }
+                            let Ok(next) = wake.wait(queue) else {
+                                return;
+                            };
+                            queue = next;
+                        }
+                    };
+                    let loaded = loader.load(pos);
+                    let fresh = loaded.is_none();
+                    let chunk = loaded.unwrap_or_else(|| generator.generate(pos, &reg));
+                    if ready_tx.send((pos, chunk, fresh)).is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+        let encode_rx = Arc::new(Mutex::new(encode_rx));
+        for _ in 0..2 {
+            let encode_rx = Arc::clone(&encode_rx);
+            let encoded_tx = encoded_tx.clone();
+            std::thread::spawn(move || {
+                loop {
+                    let request = {
+                        let Ok(receiver) = encode_rx.lock() else {
+                            return;
+                        };
+                        let Ok(request) = receiver.recv() else {
+                            return;
+                        };
+                        request
+                    };
+                    let (pos, revision, chunk) = request;
+                    let payload = crate::world::encode_stream_chunk(&chunk);
+                    if encoded_tx.send((pos, revision, payload)).is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+        Self {
+            generation_queue,
+            ready,
+            in_flight: HashSet::new(),
+            encode_request,
+            encoded,
+            encoding: HashSet::new(),
+            encoded_cache: HashMap::new(),
+            revisions: HashMap::new(),
+        }
+    }
+
+    fn enqueue(&mut self, pos: ChunkPos, entry_priority: bool) {
+        let (lock, wake) = &*self.generation_queue;
+        let Ok(mut queue) = lock.lock() else {
+            return;
+        };
+        if self.in_flight.contains(&pos) {
+            if entry_priority
+                && let Some(index) = queue.ordinary.iter().position(|queued| *queued == pos)
+            {
+                queue.ordinary.remove(index);
+                queue.entry.push_back(pos);
+                wake.notify_one();
+            }
+            return;
+        }
+        if self.in_flight.len() >= MAX_GENERATION_IN_FLIGHT {
+            if !entry_priority {
+                return;
+            }
+            // A newly pending player's collision region preempts the farthest
+            // ordinary queued request. Running work is left pure and bounded.
+            let Some(displaced) = queue.ordinary.pop_back() else {
+                return;
+            };
+            self.in_flight.remove(&displaced);
+        }
+        self.in_flight.insert(pos);
+        if entry_priority {
+            queue.entry.push_back(pos);
+        } else {
+            queue.ordinary.push_back(pos);
+        }
+        wake.notify_one();
+    }
+
+    fn cancel_queued(&mut self, wanted: &impl Fn(ChunkPos) -> bool) {
+        let (lock, _) = &*self.generation_queue;
+        let Ok(mut queue) = lock.lock() else {
+            return;
+        };
+        let mut removed = Vec::new();
+        queue.entry.retain(|position| {
+            let keep = wanted(*position);
+            if !keep {
+                removed.push(*position);
+            }
+            keep
+        });
+        queue.ordinary.retain(|position| {
+            let keep = wanted(*position);
+            if !keep {
+                removed.push(*position);
+            }
+            keep
+        });
+        for position in removed {
+            self.in_flight.remove(&position);
+        }
+    }
+
+    fn drain_into(&mut self, server: &mut Server, wanted: &impl Fn(ChunkPos) -> bool) {
+        let started = Instant::now();
+        for _ in 0..ADOPT_PER_PUMP {
+            let Ok((pos, chunk, fresh)) = self.ready.try_recv() else {
+                break;
+            };
+            self.in_flight.remove(&pos);
+            if wanted(pos) {
+                server.world.adopt_prepared(pos, chunk, fresh);
+            }
+            if started.elapsed() >= ADOPT_BUDGET {
+                break;
+            }
+        }
+        while let Ok((pos, revision, payload)) = self.encoded.try_recv() {
+            self.encoding.remove(&(pos, revision));
+            if wanted(pos) && self.revisions.get(&pos).copied().unwrap_or(0) == revision {
+                self.encoded_cache
+                    .insert(pos, (revision, Arc::new(payload)));
+            }
+        }
+        self.encoded_cache.retain(|position, _| wanted(*position));
+    }
+
+    fn encoded_or_enqueue(&mut self, pos: ChunkPos, chunk: &Chunk) -> Option<Arc<Vec<u8>>> {
+        let revision = self.revisions.get(&pos).copied().unwrap_or(0);
+        if let Some((cached_revision, payload)) = self.encoded_cache.get(&pos)
+            && *cached_revision == revision
+        {
+            return Some(Arc::clone(payload));
+        }
+        if self.encoding.insert((pos, revision))
+            && self
+                .encode_request
+                .send((pos, revision, chunk.clone()))
+                .is_err()
+        {
+            self.encoding.remove(&(pos, revision));
+        }
+        None
+    }
+
+    pub(super) fn invalidate_encoded(&mut self, pos: ChunkPos) {
+        let revision = self.revisions.entry(pos).or_default();
+        *revision = revision.wrapping_add(1);
+        self.encoded_cache.remove(&pos);
+    }
+}
+
+impl Drop for HostChunkJobs {
+    fn drop(&mut self) {
+        let (lock, wake) = &*self.generation_queue;
+        if let Ok(mut queue) = lock.lock() {
+            queue.stopped = true;
+            wake.notify_all();
+        }
+    }
+}
 
 /// How far, in blocks, a guest is told about mobs, bolts and tumbling sand.
 /// A little inside its terrain horizon: things it cannot see are things it
@@ -21,12 +260,74 @@ fn snapshot_reach(view_dist: i32) -> f32 {
 impl HostSession {
     /// Stream the nearest missing chunks for each guest, paced per pump.
     pub(super) fn stream_chunks(&mut self, server: &mut Server) {
+        self.ensure_chunk_jobs(server);
+        let entry_required: HashSet<ChunkPos> = self
+            .pending_guests
+            .values()
+            .flat_map(|pending| pending.required.iter().copied())
+            .chain(
+                self.guests
+                    .values()
+                    .filter(|guest| !guest.entry_ready)
+                    .flat_map(|guest| guest.entry_required.iter().copied()),
+            )
+            .collect();
+        let active_regions: Vec<(ChunkPos, i32)> = self
+            .guests
+            .values()
+            .filter(|guest| guest.entry_ready)
+            .filter_map(|guest| guest.pos.chunk().map(|center| (center, guest.view_dist)))
+            .collect();
+        let wanted = |position: ChunkPos| {
+            entry_required.contains(&position)
+                || active_regions.iter().any(|(center, radius)| {
+                    position.distance(*center) <= f64::from(*radius * 16) + 1.0
+                })
+        };
+        if let Some(jobs) = &mut self.chunk_jobs {
+            jobs.cancel_queued(&wanted);
+            for pending in self.pending_guests.values() {
+                for &pos in &pending.required {
+                    if !server.world.has_chunk(pos) {
+                        jobs.enqueue(pos, true);
+                    }
+                }
+            }
+        }
+        if let Some(jobs) = &mut self.chunk_jobs {
+            jobs.drain_into(server, &wanted);
+        }
+        let prepared: Vec<u32> = self
+            .pending_guests
+            .iter()
+            .filter(|(_, pending)| {
+                pending
+                    .required
+                    .iter()
+                    .all(|position| server.world.has_chunk(*position))
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for id in prepared {
+            self.try_finish_pending_entry(server, id);
+        }
         let guest_ids: Vec<u32> = self.guests.keys().copied().collect();
         for id in guest_ids {
-            let (gpos, vd) = {
+            let (gpos, vd, entry_ready, entry_required) = {
                 let g = &self.guests[&id];
-                (g.pos, g.view_dist)
+                (g.pos, g.view_dist, g.entry_ready, g.entry_required.clone())
             };
+            if !entry_ready {
+                let needed: Vec<_> = entry_required
+                    .into_iter()
+                    .filter(|pos| !self.guests[&id].sent_chunks.contains(pos))
+                    .take(CHUNKS_PER_PUMP)
+                    .collect();
+                for pos in needed {
+                    self.stream_chunk(server, id, pos);
+                }
+                continue;
+            }
             let Some(center) = gpos.chunk() else {
                 continue;
             };
@@ -82,10 +383,15 @@ impl HostSession {
         if let Some((pos, yaw, held, style)) = host {
             everyone.push((0u32, pos, yaw, held, style));
         }
-        for (id, g) in &self.guests {
+        for (id, g) in self.guests.iter().filter(|(_, guest)| guest.entry_ready) {
             everyone.push((*id, g.pos, g.yaw, g.held, g.style));
         }
-        let ids: Vec<u32> = self.guests.keys().copied().collect();
+        let ids: Vec<u32> = self
+            .guests
+            .iter()
+            .filter(|(_, guest)| guest.entry_ready)
+            .map(|(id, _)| *id)
+            .collect();
         for id in ids {
             let Some(g) = self.guests.get(&id) else {
                 continue;
@@ -151,18 +457,52 @@ impl HostSession {
 
     /// Resident centers and radius requested by active guests.
     pub fn residency(&self) -> (Vec<ChunkPos>, i32) {
-        let centers = self.guests.values().filter_map(|g| g.pos.chunk()).collect();
-        let radius = self.guests.values().map(|g| g.view_dist).max().unwrap_or(0);
+        let mut centers = self
+            .guests
+            .values()
+            .filter_map(|g| g.pos.chunk())
+            .collect::<Vec<_>>();
+        centers.extend(
+            self.pending_guests
+                .values()
+                .flat_map(|pending| pending.required.iter().copied()),
+        );
+        if let Some(spawn) = self.fresh_spawn.and_then(|spawn| spawn.chunk())
+            && !centers.contains(&spawn)
+        {
+            centers.push(spawn);
+        }
+        centers.sort();
+        centers.dedup();
+        // Dedicated residency adds a two-chunk simulation apron. A one-chunk
+        // base radius keeps the corners of the square 5x5 prepared homeland
+        // (distance sqrt(8), rounded up to three) resident even with no
+        // guests; zero retained only its inscribed 17 chunks.
+        let radius = self.guests.values().map(|g| g.view_dist).max().unwrap_or(1);
         (centers, radius)
     }
 
     /// Generate, encode, and send one chunk, remembering that the guest has
     /// it. The single path for both the streaming ring and `RequestChunk`.
     pub(super) fn stream_chunk(&mut self, server: &mut Server, id: u32, pos: ChunkPos) {
-        server.world.ensure_chunk(pos);
-        let Some(rle) = server.world.chunk_rle(pos) else {
+        if !server.world.has_chunk(pos) {
+            self.ensure_chunk_jobs(server);
+            if let Some(jobs) = &mut self.chunk_jobs {
+                jobs.enqueue(pos, false);
+            }
+            return;
+        }
+        let Some(chunk) = server.world.chunk(pos) else {
             // Nothing to send — do not record it as sent or the ring skips
             // this chunk forever and the guest cannot repair the hole.
+            return;
+        };
+        self.ensure_chunk_jobs(server);
+        let Some(rle) = self
+            .chunk_jobs
+            .as_mut()
+            .and_then(|jobs| jobs.encoded_or_enqueue(pos, chunk))
+        else {
             return;
         };
         self.net.send(
@@ -171,11 +511,22 @@ impl HostSession {
                 face: pos.face() as u8,
                 u: pos.u(),
                 v: pos.v(),
-                rle,
+                rle: (*rle).clone(),
             },
         );
         if let Some(g) = self.guests.get_mut(&id) {
             g.sent_chunks.insert(pos);
+        }
+    }
+
+    fn ensure_chunk_jobs(&mut self, server: &Server) {
+        if self.chunk_jobs.is_none() {
+            self.chunk_jobs = Some(HostChunkJobs::new(
+                server.world.seed,
+                Arc::clone(&server.world.reg),
+                server.world.planet_atlas(),
+                server.world.chunk_loader(),
+            ));
         }
     }
 

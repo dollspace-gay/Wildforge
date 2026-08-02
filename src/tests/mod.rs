@@ -13,8 +13,12 @@ use crate::registry::{self, AIR, Registry};
 use crate::world::World;
 
 mod agent;
+mod atlas;
+mod climate;
 mod ecology;
+mod geology;
 mod hearts;
+mod hydrology;
 mod identity;
 mod machines;
 mod mobs;
@@ -24,6 +28,7 @@ mod player;
 mod registry_tests;
 mod rendering;
 mod soil;
+mod water_cycle;
 mod world;
 mod worldgen;
 
@@ -59,6 +64,15 @@ fn surface_offset(pos: crate::planet::SurfacePos, du: i32, dv: i32) -> crate::pl
         i32::from(pos.v()) + dv,
     )
     .expect("small test offset canonicalizes on the finite planet")
+}
+
+fn local_season_day(world: &World, pos: crate::planet::SurfacePos, season: usize) -> u32 {
+    let northern_season = if world.latitude_at_surface(pos) < 0.0 {
+        (season + 2) % 4
+    } else {
+        season
+    };
+    northern_season as u32 * crate::world::SEASON_DAYS
 }
 
 fn block_pos(pos: crate::planet::SurfacePos, y: i32) -> crate::planet::BlockPos {
@@ -166,7 +180,7 @@ fn write_demo_mod(root: &Path) {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("mod.toml"),
-        "id = \"testium\"\nname = \"Testium\"\nversion = \"1.0.0\"\nworld_api = 2\ndepends = [\"base\"]\n",
+        "id = \"testium\"\nname = \"Testium\"\nversion = \"1.0.0\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
     )
     .unwrap();
     std::fs::write(

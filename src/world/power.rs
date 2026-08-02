@@ -24,16 +24,6 @@ type Step = (BlockPos, crate::planet::Direction6);
 /// race's flow flickers cell to cell as it equalizes).
 pub const WHEEL_SPINDOWN_SECS: f32 = 8.0;
 
-/// Wind strength by weather: the only machine that loves a storm.
-pub fn wind_rate(w: Weather) -> f32 {
-    match w {
-        Weather::Clear => 0.6,
-        Weather::Overcast => 0.8,
-        Weather::Precip => 1.0,
-        Weather::Storm => 1.4,
-    }
-}
-
 impl World {
     /// Steam drives shafts like a wheel does, anywhere coal and
     /// water reach: an engine runs while a boiler beside it, firebox
@@ -66,7 +56,7 @@ impl World {
             };
             if let Some(BlockEntity::Steam(s)) = self.block_entities.get(&firebox_pos)
                 && s.fuel > 0.0
-                && s.water > 0.0
+                && s.water.water_hu > 0
             {
                 return Some(firebox_pos);
             }
@@ -152,7 +142,16 @@ impl World {
         {
             return 0.0;
         }
-        wind_rate(self.weather)
+        let weather = self.weather_at_surface(pos.surface());
+        let speed = weather.wind[0].hypot(weather.wind[1]);
+        (0.45
+            + speed * 0.75
+            + if weather.kind == crate::planet_atlas::LocalWeather::Storm {
+                0.25
+            } else {
+                0.0
+            })
+        .clamp(0.35, 1.6)
     }
 
     /// The rate a station's shaft line delivers: walk the millwork

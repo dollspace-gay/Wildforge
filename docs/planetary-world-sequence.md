@@ -1,6 +1,7 @@
 # The finite planet — master design and `/goal` execution sequence
 
-> **Status: design sequence complete; goal 1 implemented and qualified, goals 2–9 pending.**
+> **Status: all nine goals and world-entry remediation implemented and
+> qualified (2026-08-01).**
 >
 > This document is the index, dependency contract, and final definition of
 > done for Wildforge's transition from an infinite plane to one finite living
@@ -65,6 +66,8 @@ reopen an earlier goal's fixed decisions.
         │
 8. finite materials and retrogen
         │
+qualification prerequisite: world entry and cold streaming
+        │
 9. integrated planetary qualification
 ```
 
@@ -106,6 +109,8 @@ Produces:
 
 ### Goal 2
 
+**Implementation status:** complete and qualified (2026-07-31).
+
 ```text
 /goal complete all features in the design document docs/planet-atlas-plan.md
 ```
@@ -119,6 +124,8 @@ Produces:
 - atlas export and census tools.
 
 ### Goal 3
+
+**Implementation status:** complete and qualified (2026-07-31).
 
 ```text
 /goal complete all features in the design document docs/planetary-geology-plan.md
@@ -134,6 +141,8 @@ Produces:
 
 ### Goal 4
 
+**Implementation status:** complete and qualified (2026-07-31).
+
 ```text
 /goal complete all features in the design document docs/planetary-climate-plan.md
 ```
@@ -148,6 +157,8 @@ Produces:
 
 ### Goal 5
 
+**Implementation status:** complete and qualified (2026-07-31).
+
 ```text
 /goal complete all features in the design document docs/planetary-hydrology-plan.md
 ```
@@ -161,6 +172,8 @@ Produces:
 - seamless voxel rivers/lakes/oceans with known baseline volume.
 
 ### Goal 6
+
+**Implementation status:** complete and qualified (2026-07-31).
 
 ```text
 /goal complete all features in the design document docs/planetary-water-cycle-plan.md
@@ -177,6 +190,8 @@ Produces:
 
 ### Goal 7
 
+**Implementation status:** complete and qualified (2026-07-31).
+
 ```text
 /goal complete all features in the design document docs/planetary-biomes-plan.md
 ```
@@ -191,6 +206,8 @@ Produces:
 
 ### Goal 8
 
+**Implementation status:** complete and qualified (2026-08-01).
+
 ```text
 /goal complete all features in the design document docs/finite-materials-plan.md
 ```
@@ -204,6 +221,23 @@ Produces:
 - finite-world mod retrogen policies.
 
 ### Goal 9
+
+**Implementation status:** complete and qualified (2026-08-01).
+
+Before running final qualification, complete the live-test remediation:
+
+```text
+/goal complete all features in the design document docs/world-entry-streaming-plan.md
+```
+
+This prepares and persists one qualified common spawn, removes synchronous
+cold generation from the host pump, gives clients an explicit preparation and
+entry-ready state, and closes the agent swimming/coordinate contract defects.
+It was discovered by testing the integrated production planet and therefore
+sits between feature implementation and final qualification without
+renumbering the original nine planetary goals.
+
+Then run:
 
 ```text
 /goal complete all features in the design document docs/planetary-qualification-plan.md
@@ -332,6 +366,7 @@ Every goal preserves these.
 | Finite-world repair/recycling | Materials | Recipe/lifecycle conservation |
 | Safe mod resources after creation | Materials | Retrogen qualification |
 | All systems agree end to end | Qualification | Full audit and scenario matrix |
+| Qualified responsive world entry | World entry remediation + qualification | Production cold solo/host/guest/agent matrix |
 
 No requirement is “shared” without one document owning its implementation and
 the final qualification goal proving the integration.
@@ -404,8 +439,10 @@ This sequence is complete only after goal 9 proves:
 - old infinite behavior no longer ships,
 - all player, modder, agent, and operator documentation tells the new truth.
 
-Until then, individual planetary goals may be implemented, but the finite
-planet as a whole is not.
+The 2026-08-01 qualification run satisfied this definition: the full suite,
+release build, static/security gates, production save entry validator,
+century-scale conservation harness, atlas diagnostics, multiplayer streaming
+and corrected graphical evidence all passed.
 
 ## Follow-on sequence
 

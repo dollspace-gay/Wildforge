@@ -1,0 +1,7 @@
+layer = tree_line
+description = latitude-sensitive tree-line elevation
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = scalar
+minimum = 97.000000000
+maximum = 202.000000000
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

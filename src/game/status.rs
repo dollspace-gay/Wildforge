@@ -43,7 +43,8 @@ impl Game {
             self.survival.perish_accum -= SWEEP;
             let reg = self.content.reg.clone();
             let mush = reg.item_id("base:spoiled_mush");
-            let age = |s: &mut Option<ItemStack>| {
+            let mut consumed = Vec::new();
+            let mut age = |s: &mut Option<ItemStack>| {
                 let Some(st) = s else { return };
                 let full = reg.item(st.item).durability;
                 if reg.item(st.item).food.is_none() || full == 0 {
@@ -52,6 +53,7 @@ impl Game {
                 if st.durability == 0 {
                     st.durability = full;
                 } else if st.durability <= step {
+                    consumed.push(*st);
                     *s = mush.map(|m| {
                         let mut sp = ItemStack::new(&reg, m, 1);
                         sp.count = st.count;
@@ -65,6 +67,11 @@ impl Game {
                 age(s);
             }
             age(&mut self.ui_state.held_stack);
+            if self.multiplayer.remote.is_none()
+                && let Err(error) = self.server.world.record_consumed_stacks(consumed)
+            {
+                eprintln!("materials: spoiled carried food accounting failed: {error}");
+            }
         }
         // Nutrition decays slowly (~full to empty over long play).
         for n in self.survival.nutrition.iter_mut() {
@@ -126,6 +133,14 @@ impl Game {
                     self.survival.hunger = (self.survival.hunger + f.hunger).min(20.0);
                     for (n, add) in self.survival.nutrition.iter_mut().zip(&f.nutrition) {
                         *n = (*n + add).min(100.0);
+                    }
+                    let consumed = self.inventory.slots[self.input.hotbar_sel]
+                        .map(|stack| ItemStack::new(&self.content.reg, stack.item, 1));
+                    if self.multiplayer.remote.is_none()
+                        && let Some(stack) = consumed
+                        && let Err(error) = self.server.world.record_consumed_stacks([stack])
+                    {
+                        eprintln!("materials: eaten food accounting failed: {error}");
                     }
                     self.inventory.take_one(self.input.hotbar_sel);
                     self.sfx(Sfx::Pickup);
@@ -216,8 +231,31 @@ impl Game {
     }
 
     pub(super) fn update_items(&mut self, dt: f32) {
-        let world = &self.server.world;
-        self.interaction.items.retain_mut(|it| it.update(world, dt));
+        let mut kept = Vec::with_capacity(self.interaction.items.len());
+        let mut lost = Vec::new();
+        for mut item in self.interaction.items.drain(..) {
+            if item.update(&self.server.world, dt) {
+                kept.push(item);
+            } else {
+                lost.push(item);
+            }
+        }
+        self.interaction.items = kept;
+        let reg = self.content.reg.clone();
+        for item in lost {
+            let reason = item.loss_reason(&self.server.world);
+            if let (Some(pos), Some(ledger)) =
+                (item.pos.block(), &mut self.server.world.material_ledger)
+            {
+                let mut stack = ItemStack::new(&reg, item.item, item.count);
+                if item.durability != 0 {
+                    stack.durability = item.durability;
+                }
+                if let Err(error) = ledger.bury_stack(&reg, pos, stack, reason) {
+                    eprintln!("materials: dropped-item salvage failed: {error}");
+                }
+            }
+        }
         if self.ui_state.screen == Screen::Dead {
             return;
         }

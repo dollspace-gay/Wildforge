@@ -1,0 +1,7 @@
+layer = aquifer_permeability
+description = normalized aquifer permeability
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = scalar
+minimum = 8598.000000000
+maximum = 53712.000000000
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

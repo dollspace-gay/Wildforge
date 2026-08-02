@@ -2,10 +2,10 @@
 //! Vanilla content is the built-in `base` mod, registered through the same
 //! TOML path external mods use.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[path = "registry/runtime.rs"]
 mod runtime;
@@ -13,6 +13,40 @@ mod runtime;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct BlockId(pub u16);
 pub const AIR: BlockId = BlockId(0);
+
+/// Economically meaningful material classes. Every content definition has
+/// one, even when it does not participate in the exact finite-material
+/// ledger. This makes omissions visible to tools and mods instead of letting
+/// "unclassified" become an accidental sixth class.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MaterialClass {
+    Renewable,
+    GeologicallyFinite,
+    TransformativeFinite,
+    Consumptive,
+    Exceptional,
+}
+
+pub type MaterialVector = BTreeMap<String, u64>;
+
+/// How much useful material a workshop can recover from an object. Values
+/// are integer permille so persistence and validation never depend on float
+/// rounding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SalvageDef {
+    pub station: String,
+    pub recovery_permille: u16,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrogenPolicy {
+    UntouchedHostOnly,
+    SecondaryRecovery,
+    WorldEvent,
+    NoRetrogen,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ItemId(pub u16);
@@ -92,6 +126,9 @@ pub struct BlockDef {
     /// Crop rotation family (1..=3); 0 = not a crop. Stamped into the
     /// soil at maturation so monoculture drains harder than rotation.
     pub crop_family: u8,
+    pub material_class: MaterialClass,
+    pub materials: MaterialVector,
+    pub dismantles_to: Option<ItemId>,
 }
 
 /// Resolve a block's per-channel emission from its level and optional color.
@@ -191,6 +228,15 @@ pub struct ItemDef {
     pub glow: Option<[f32; 3]>,
     /// Works blooms on an anvil.
     pub hammer: bool,
+    /// Recoverable finite constituents per item, in canonical integer units.
+    pub materials: MaterialVector,
+    /// True only when the content file fixes the vector. Derived vectors may
+    /// be recomputed as upstream recipe identities reach their fixed point.
+    pub materials_declared: bool,
+    pub material_class: MaterialClass,
+    pub salvage: Option<SalvageDef>,
+    /// A zero-durability finite item changes identity instead of vanishing.
+    pub broken_into: Option<ItemId>,
 }
 
 /// One box of an animal's model. Sizes/offsets in px (16 px = 1 block);
@@ -221,6 +267,12 @@ pub struct AnimalDef {
     pub label: String,
     /// Lowercase biome names this species spawns in.
     pub biomes: Vec<String>,
+    /// Optional local climate/habitat predicates. Every predicate must match;
+    /// biome names remain supported as convenient compound tags.
+    pub habitats: Vec<String>,
+    pub temperature_c: Option<[f32; 2]>,
+    pub vegetation: Option<[u8; 2]>,
+    pub elevation: Option<[i16; 2]>,
     pub health: f32,
     pub speed: f32,
     /// Player distance that spooks it (0 = bold, only flees when hurt).
@@ -248,6 +300,10 @@ pub struct AnimalDef {
     pub movement_float: bool,
     /// Swimmers live inside the water and never leave it willingly.
     pub movement_swim: bool,
+    /// Physical water conditions this swimmer can inhabit. Non-swimmers do
+    /// not carry this record. Defaults keep third-party swimmers compatible,
+    /// while base species declare narrower ecological niches.
+    pub aquatic: Option<AquaticHabitatDef>,
     /// The model carries a `wing*` box, so this floater is a bird and
     /// not a wisp: it beats, and it cruises high.
     pub winged: bool,
@@ -276,6 +332,25 @@ pub struct AnimalDef {
     pub fierce: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AquaticHabitatDef {
+    pub temperature_c: [f32; 2],
+    pub depth_blocks: [u8; 2],
+    pub discharge: [f32; 2],
+    pub salinity: [u8; 2],
+}
+
+impl Default for AquaticHabitatDef {
+    fn default() -> Self {
+        Self {
+            temperature_c: [-5.0, 40.0],
+            depth_blocks: [2, u8::MAX],
+            discharge: [0.0, f32::MAX],
+            salinity: [0, u8::MAX],
+        }
+    }
+}
+
 /// A recipe slot requirement: one exact item, or any member of a tag.
 #[derive(Clone, Debug)]
 pub enum Ingredient {
@@ -299,6 +374,10 @@ pub struct RecipeDef {
     pub pattern: Vec<Option<Ingredient>>,
     pub output: ItemId,
     pub count: u32,
+    /// Explicitly dispersed/consumed finite mass. The validator requires the
+    /// input vector to equal output + byproducts + this vector.
+    pub loss: MaterialVector,
+    pub byproducts: Vec<(ItemId, u32)>,
 }
 
 #[derive(Clone, Debug)]
@@ -309,6 +388,15 @@ pub struct SmeltDef {
     /// Byproduct spat out the furnace mouth as item drops (cupellation:
     /// the silver stays in the slot, the lead pours out).
     pub spit: Option<(ItemId, u32)>,
+    pub loss: MaterialVector,
+}
+
+#[derive(Clone, Debug)]
+pub struct ForgeSalvageDef {
+    pub input: ItemId,
+    pub output: ItemId,
+    pub byproduct: ItemId,
+    pub recovery_permille: u16,
 }
 
 /// A bloomery batch chain: charge + fuel fire into blooms.
@@ -329,6 +417,14 @@ pub struct WorkedDef {
     pub station: String,
     pub needs_hammer: bool,
     pub count: u32,
+    pub loss: MaterialVector,
+}
+
+#[derive(Clone, Debug)]
+pub struct KilnDef {
+    pub powder: ItemId,
+    pub glass: ItemId,
+    pub consumes: bool,
 }
 
 /// How a mineral deposit grows from its seed cell.
@@ -354,6 +450,10 @@ pub struct OreFeature {
     /// Per-vein roll probability: 1.0 plants every roll, fractions
     /// thin a host down to traces (the bronze bootstrap lives here).
     pub chance: f32,
+    /// Stable content identity, not the runtime block id.
+    pub resource_key: String,
+    pub mod_id: String,
+    pub retrogen: RetrogenPolicy,
 }
 
 /// One weighted entry in a loot table.
@@ -391,10 +491,13 @@ pub struct ModInfo {
     pub version: String,
     pub path: Option<PathBuf>,
     pub has_script: bool,
+    pub retrogen: Option<RetrogenPolicy>,
     pub error: Option<String>,
 }
 
+#[derive(Clone)]
 pub struct Registry {
+    pub content_hash: u64,
     pub blocks: Vec<BlockDef>,
     pub items: Vec<ItemDef>,
     pub recipes: Vec<RecipeDef>,
@@ -408,12 +511,13 @@ pub struct Registry {
     pub unknown_block: BlockId,
     pub mods: Vec<ModInfo>,
     pub smelts: Vec<SmeltDef>,
+    pub forge_salvage: Vec<ForgeSalvageDef>,
     /// (fuel ingredient, burn seconds, smelt-speed multiplier)
     pub fuels: Vec<(Ingredient, f32, f32)>,
     /// Bloomery firing chains (the steelworks).
     pub bloomery: Vec<BloomeryDef>,
     /// Kiln color chains: powder -> glass.
-    pub kiln: Vec<(ItemId, ItemId)>,
+    pub kiln: Vec<KilnDef>,
     /// Kiln staples: (sand, fuel, clear glass output).
     pub kiln_base: Option<(ItemId, ItemId, ItemId)>,
     /// Anvil work recipes (bloom -> bar).
@@ -427,6 +531,10 @@ pub struct Registry {
     pub animals: Vec<AnimalDef>,
     pub structures: Vec<StructureDef>,
     pub loots: HashMap<String, Vec<LootEntry>>,
+    /// Load-time conservation/schema failures. Keeping these attached to the
+    /// registry lets the mods screen explain a bad pack and lets production
+    /// world creation refuse it without panicking the content browser.
+    pub material_errors: Vec<String>,
 }
 
 // ---------------- TOML schema ----------------
@@ -442,6 +550,8 @@ struct ModToml {
     version: Option<String>,
     #[serde(default)]
     depends: Vec<String>,
+    #[serde(default)]
+    retrogen: Option<RetrogenPolicy>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -531,6 +641,10 @@ struct BlockToml {
     /// Register an item form for placing (default true).
     #[serde(default = "yes")]
     item: bool,
+    #[serde(default)]
+    material_class: Option<MaterialClass>,
+    #[serde(default)]
+    materials: MaterialVector,
 }
 
 #[derive(Deserialize, Clone)]
@@ -546,6 +660,62 @@ struct BonusDropToml {
 
 fn yes() -> bool {
     true
+}
+
+fn inferred_material_class(name: &str) -> MaterialClass {
+    let local = name.rsplit(':').next().unwrap_or(name);
+    if local.contains("heart")
+        || local.contains("charm")
+        || local.contains("ember")
+        || local.contains("frost")
+        || local.contains("living_")
+    {
+        MaterialClass::Exceptional
+    } else if local.contains("coal")
+        || local.contains("charcoal")
+        || local.contains("fuel")
+        || local.contains("food")
+        || local.contains("bread")
+    {
+        MaterialClass::Consumptive
+    } else if local.contains("ore")
+        || local.starts_with("raw_")
+        || local.contains("ingot")
+        || local.contains("metal")
+        || local.contains("diamond")
+        || local.contains("monazite")
+        || local.contains("bastnasite")
+    {
+        MaterialClass::GeologicallyFinite
+    } else if local.contains("stone")
+        || local.contains("sand")
+        || local.contains("clay")
+        || local.contains("glass")
+        || local.contains("brick")
+        || local.contains("ceramic")
+        || local.contains("gravel")
+        || local.contains("dirt")
+    {
+        MaterialClass::TransformativeFinite
+    } else {
+        MaterialClass::Renewable
+    }
+}
+
+fn salvage_def(
+    raw: &Option<SalvageToml>,
+    errs: &mut Vec<String>,
+    name: &str,
+) -> Option<SalvageDef> {
+    raw.as_ref().map(|salvage| {
+        if !(0.0..=1.0).contains(&salvage.recovery) {
+            errs.push(format!("{name}: salvage recovery must be between 0 and 1"));
+        }
+        SalvageDef {
+            station: salvage.station.clone(),
+            recovery_permille: (salvage.recovery.clamp(0.0, 1.0) * 1000.0).round() as u16,
+        }
+    })
 }
 
 #[derive(Deserialize, Clone)]
@@ -628,6 +798,18 @@ struct ItemToml {
     /// Carried-light color for non-placeable glowing items.
     #[serde(default)]
     glow: Option<[f32; 3]>,
+    #[serde(default)]
+    material_class: Option<MaterialClass>,
+    #[serde(default)]
+    materials: MaterialVector,
+    #[serde(default)]
+    salvage: Option<SalvageToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct SalvageToml {
+    station: String,
+    recovery: f32,
 }
 
 #[derive(Deserialize, Clone)]
@@ -673,6 +855,14 @@ struct AnimalToml {
     name: Option<String>,
     biomes: Vec<String>,
     #[serde(default)]
+    habitats: Vec<String>,
+    #[serde(default)]
+    temperature_c: Option<[f32; 2]>,
+    #[serde(default)]
+    vegetation: Option<[u8; 2]>,
+    #[serde(default)]
+    elevation: Option<[i16; 2]>,
+    #[serde(default)]
     health: Option<f32>,
     #[serde(default)]
     speed: Option<f32>,
@@ -702,6 +892,8 @@ struct AnimalToml {
     #[serde(default)]
     movement: Option<String>,
     #[serde(default)]
+    aquatic: Option<AquaticHabitatToml>,
+    #[serde(default)]
     emissive: bool,
     #[serde(default)]
     glow: Option<[f32; 3]>,
@@ -725,6 +917,18 @@ struct AnimalToml {
     vehicle: bool,
 }
 
+#[derive(Deserialize, Clone, Default)]
+struct AquaticHabitatToml {
+    #[serde(default)]
+    temperature_c: Option<[f32; 2]>,
+    #[serde(default)]
+    depth_blocks: Option<[u8; 2]>,
+    #[serde(default)]
+    discharge: Option<[f32; 2]>,
+    #[serde(default)]
+    salinity: Option<[u8; 2]>,
+}
+
 #[derive(Deserialize, Clone)]
 struct ProjectileToml {
     tex: String,
@@ -743,6 +947,17 @@ struct RecipeToml {
     output: String,
     #[serde(default)]
     count: Option<u32>,
+    #[serde(default)]
+    loss: MaterialVector,
+    #[serde(default)]
+    byproducts: Vec<ByproductToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct ByproductToml {
+    item: String,
+    #[serde(default = "one_u32")]
+    count: u32,
 }
 
 #[derive(Deserialize, Clone)]
@@ -753,6 +968,8 @@ struct SmeltToml {
     time: Option<f32>,
     #[serde(default)]
     spit: Option<SpitToml>,
+    #[serde(default)]
+    loss: MaterialVector,
 }
 
 #[derive(Deserialize, Clone)]
@@ -781,6 +998,8 @@ struct BloomeryToml {
 struct KilnToml {
     powder: String,
     glass: String,
+    #[serde(default)]
+    consumes: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -804,6 +1023,8 @@ struct WorkedToml {
     tool: Option<String>,
     #[serde(default)]
     count: Option<u32>,
+    #[serde(default)]
+    loss: MaterialVector,
 }
 
 #[derive(Deserialize, Clone)]
@@ -996,6 +1217,13 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         toml::from_str(&read("animals.toml")).map_err(|e| format!("animals.toml: {e}"))?;
     let structures: StructuresFile =
         toml::from_str(&read("structures.toml")).map_err(|e| format!("structures.toml: {e}"))?;
+    if !features.feature.is_empty() && m.retrogen.is_none() {
+        return Err(
+            "mod.toml: a worldgen feature requires retrogen = \"untouched_host_only\", \
+             \"secondary_recovery\", \"world_event\", or \"no_retrogen\""
+                .into(),
+        );
+    }
     let has_script = dir.join("main.rhai").exists();
     Ok(RawMod {
         info: ModInfo {
@@ -1004,6 +1232,7 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
             version: m.version.unwrap_or_else(|| "0.0.0".into()),
             path: Some(dir.to_path_buf()),
             has_script,
+            retrogen: m.retrogen,
             error: None,
         },
         depends: m.depends,
@@ -1044,6 +1273,7 @@ fn base_mod() -> RawMod {
             // from the repo root; the README says as much).
             path: Some(std::path::PathBuf::from("base")),
             has_script: false,
+            retrogen: Some(RetrogenPolicy::UntouchedHostOnly),
             error: None,
         },
         depends: vec![],
@@ -1086,6 +1316,7 @@ pub fn load(mods_dir: &Path) -> Registry {
                     version: String::new(),
                     path: Some(dir),
                     has_script: false,
+                    retrogen: None,
                     error: Some(e),
                 }),
             }
@@ -1126,10 +1357,12 @@ pub fn load(mods_dir: &Path) -> Registry {
         }
     }
 
-    build(
+    let mut registry = build(
         order.into_iter().map(|i| raws.remove_stable(i)).collect(),
         failed,
-    )
+    );
+    registry.content_hash = crate::planet_atlas::genesis_content_hash(mods_dir);
+    registry
 }
 
 trait RemoveStable {
@@ -1145,6 +1378,7 @@ impl RemoveStable for Vec<RawMod> {
                 version: String::new(),
                 path: None,
                 has_script: false,
+                retrogen: None,
                 error: None,
             },
             depends: vec![],
@@ -1170,6 +1404,7 @@ impl RemoveStable for Vec<RawMod> {
 
 fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let mut reg = Registry {
+        content_hash: 0,
         blocks: Vec::new(),
         items: Vec::new(),
         recipes: Vec::new(),
@@ -1181,6 +1416,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         unknown_block: AIR,
         mods: Vec::new(),
         smelts: Vec::new(),
+        forge_salvage: Vec::new(),
         fuels: Vec::new(),
         bloomery: Vec::new(),
         worked: Vec::new(),
@@ -1192,6 +1428,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         animals: Vec::new(),
         structures: Vec::new(),
         loots: HashMap::new(),
+        material_errors: Vec::new(),
     };
     let mut tex_slots: HashMap<String, u16> = crate::atlas::builtin_slots();
     let mut next_slot: u16 = crate::atlas::FIRST_FREE_SLOT;
@@ -1230,6 +1467,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         light_rgb: [0, 0, 0],
         fert_tiles: None,
         crop_family: 0,
+        material_class: MaterialClass::Renewable,
+        materials: MaterialVector::new(),
+        dismantles_to: None,
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
     reg.blocks.push(air);
@@ -1406,6 +1646,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                         })
                     })
                     .unwrap_or(0),
+                material_class: b
+                    .material_class
+                    .unwrap_or_else(|| inferred_material_class(&full)),
+                materials: b.materials.clone(),
+                dismantles_to: None,
             });
             reg.block_by_name.insert(full.clone(), id);
             if let Some(bd) = &b.bonus_drop {
@@ -1503,6 +1748,13 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     throw_speed: None,
                     hammer: false,
                     glow: None,
+                    materials: b.materials.clone(),
+                    materials_declared: !b.materials.is_empty(),
+                    material_class: b
+                        .material_class
+                        .unwrap_or_else(|| inferred_material_class(&full)),
+                    salvage: None,
+                    broken_into: None,
                 });
                 reg.item_by_name.insert(full, iid);
             }
@@ -1571,6 +1823,13 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 throw_speed: it.throw.as_ref().map(|t| t.speed.unwrap_or(18.0)),
                 hammer: it.hammer,
                 glow: it.glow,
+                materials: it.materials.clone(),
+                materials_declared: !it.materials.is_empty(),
+                material_class: it
+                    .material_class
+                    .unwrap_or_else(|| inferred_material_class(&full)),
+                salvage: salvage_def(&it.salvage, &mut errs, &full),
+                broken_into: None,
             });
             reg.item_by_name.insert(full, iid);
         }
@@ -1686,6 +1945,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         light_rgb: [0, 0, 0],
         fert_tiles: None,
         crop_family: 0,
+        material_class: MaterialClass::TransformativeFinite,
+        materials: MaterialVector::new(),
+        dismantles_to: None,
     });
     reg.block_by_name.insert("base:unknown".into(), unk);
     reg.unknown_block = unk;
@@ -1806,6 +2068,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 output,
                 time: s.time.unwrap_or(8.0),
                 spit,
+                loss: s.loss.clone(),
             });
         }
     }
@@ -1834,6 +2097,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 station: w.station.clone().unwrap_or_else(|| "anvil".into()),
                 needs_hammer: w.tool.as_deref().unwrap_or("hammer") == "hammer",
                 count: w.count.unwrap_or(1).max(1),
+                loss: w.loss.clone(),
             });
         }
     }
@@ -1842,7 +2106,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             lookup_item(&reg, &modid, &k.powder),
             lookup_item(&reg, &modid, &k.glass),
         ) {
-            reg.kiln.push((p, g));
+            reg.kiln.push(KilnDef {
+                powder: p,
+                glass: g,
+                consumes: k.consumes,
+            });
         }
     }
     for (modid, k) in pending_kiln_bases {
@@ -1918,10 +2186,25 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             height = height.max((b.at[1] + b.size[1]) / 16.0);
         }
         let winged = model.iter().any(|b| b.name.starts_with("wing"));
+        let movement_swim = a.movement.as_deref() == Some("swim");
+        let aquatic = movement_swim.then(|| {
+            let mut habitat = AquaticHabitatDef::default();
+            if let Some(configured) = &a.aquatic {
+                habitat.temperature_c = configured.temperature_c.unwrap_or(habitat.temperature_c);
+                habitat.depth_blocks = configured.depth_blocks.unwrap_or(habitat.depth_blocks);
+                habitat.discharge = configured.discharge.unwrap_or(habitat.discharge);
+                habitat.salinity = configured.salinity.unwrap_or(habitat.salinity);
+            }
+            habitat
+        });
         reg.animals.push(AnimalDef {
             name: full,
             label: a.name.clone().unwrap_or_else(|| a.id.clone()),
             biomes: a.biomes.iter().map(|b| b.to_lowercase()).collect(),
+            habitats: a.habitats.iter().map(|tag| tag.to_lowercase()).collect(),
+            temperature_c: a.temperature_c,
+            vegetation: a.vegetation,
+            elevation: a.elevation,
             health: a.health.unwrap_or(8.0),
             speed: a.speed.unwrap_or(2.0),
             flee_range: a.flee_range.unwrap_or(6.0),
@@ -1939,7 +2222,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             aggro_range: a.aggro_range.unwrap_or(12.0),
             ire_min: a.ire_min.unwrap_or(0.0),
             movement_float: a.movement.as_deref() == Some("float"),
-            movement_swim: a.movement.as_deref() == Some("swim"),
+            movement_swim,
+            aquatic,
             winged,
             emissive: a.emissive,
             glow: a.glow,
@@ -2052,6 +2336,15 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 pattern,
                 output: out,
                 count: r.count.unwrap_or(1),
+                loss: r.loss.clone(),
+                byproducts: r
+                    .byproducts
+                    .iter()
+                    .filter_map(|byproduct| {
+                        lookup_item(&reg, &modid, &byproduct.item)
+                            .map(|item| (item, byproduct.count))
+                    })
+                    .collect(),
             });
         }
     }
@@ -2097,6 +2390,14 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 _ => VeinShape::Walk,
             },
             chance: f.chance.unwrap_or(1.0).clamp(0.0, 1.0),
+            resource_key: reg.block(block).name.clone(),
+            mod_id: modid.clone(),
+            retrogen: reg
+                .mods
+                .iter()
+                .find(|info| info.id == modid)
+                .and_then(|info| info.retrogen)
+                .unwrap_or(RetrogenPolicy::NoRetrogen),
         });
     }
 
@@ -2145,12 +2446,502 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             throw_speed: None,
             hammer: false,
             glow: None,
+            materials: d.materials.clone(),
+            materials_declared: !d.materials.is_empty(),
+            material_class: d.material_class,
+            salvage: None,
+            broken_into: None,
         });
         reg.item_by_name.insert(format!("{name}/place"), iid);
     }
 
+    reconcile_material_definitions(&mut reg);
     reg.mods.append(&mut failed);
     reg
+}
+
+fn add_materials(into: &mut MaterialVector, from: &MaterialVector, multiplier: u64) {
+    for (material, units) in from {
+        *into.entry(material.clone()).or_default() = into
+            .get(material)
+            .copied()
+            .unwrap_or_default()
+            .saturating_add(units.saturating_mul(multiplier));
+    }
+    into.retain(|_, units| *units != 0);
+}
+
+fn ingredient_materials(reg: &Registry, ingredient: &Ingredient) -> Option<MaterialVector> {
+    match ingredient {
+        Ingredient::One(item) => Some(reg.item(*item).materials.clone()),
+        Ingredient::Any(items) => {
+            let first = items
+                .first()
+                .map(|item| reg.item(*item).materials.clone())?;
+            items
+                .iter()
+                .all(|item| reg.item(*item).materials == first)
+                .then_some(first)
+        }
+    }
+}
+
+fn subtract_materials(total: &MaterialVector, sinks: &MaterialVector) -> Option<MaterialVector> {
+    let mut left = total.clone();
+    for (material, units) in sinks {
+        let value = left.get_mut(material)?;
+        *value = value.checked_sub(*units)?;
+    }
+    left.retain(|_, units| *units != 0);
+    Some(left)
+}
+
+fn per_item_materials(total: &MaterialVector, count: u32) -> Option<MaterialVector> {
+    let divisor = u64::from(count.max(1));
+    total
+        .iter()
+        .map(|(material, units)| {
+            units
+                .is_multiple_of(divisor)
+                .then(|| (material.clone(), units / divisor))
+        })
+        .collect()
+}
+
+fn set_materials_if_missing(reg: &mut Registry, item: ItemId, materials: MaterialVector) -> bool {
+    if reg.item(item).materials_declared || reg.item(item).materials == materials {
+        return false;
+    }
+    let definition = &mut reg.items[item.0 as usize];
+    definition.materials = materials;
+    if !matches!(
+        definition.material_class,
+        MaterialClass::Consumptive | MaterialClass::Exceptional
+    ) {
+        definition.material_class = MaterialClass::GeologicallyFinite;
+    }
+    true
+}
+
+/// Close material identity over all transformation graphs, then validate the
+/// fixed point. Content authors annotate geological sources and intentional
+/// sinks; ordinary components inherit exact constituents from their recipes.
+fn reconcile_material_definitions(reg: &mut Registry) {
+    for _ in 0..reg.items.len().min(64) {
+        let mut changed = false;
+        for recipe in reg.recipes.clone() {
+            let mut input = MaterialVector::new();
+            let mut known = true;
+            for ingredient in recipe.pattern.iter().flatten() {
+                if let Some(vector) = ingredient_materials(reg, ingredient) {
+                    add_materials(&mut input, &vector, 1);
+                } else {
+                    known = false;
+                }
+            }
+            if !known {
+                continue;
+            }
+            let mut sinks = recipe.loss.clone();
+            for (item, count) in &recipe.byproducts {
+                add_materials(&mut sinks, &reg.item(*item).materials, u64::from(*count));
+            }
+            if let Some(remaining) = subtract_materials(&input, &sinks)
+                && let Some(per_item) = per_item_materials(&remaining, recipe.count)
+            {
+                changed |= set_materials_if_missing(reg, recipe.output, per_item);
+            }
+        }
+        for smelt in reg.smelts.clone() {
+            let Some(input) = ingredient_materials(reg, &smelt.input) else {
+                continue;
+            };
+            let mut sinks = smelt.loss.clone();
+            if let Some((item, count)) = smelt.spit {
+                add_materials(&mut sinks, &reg.item(item).materials, u64::from(count));
+            }
+            if let Some(output) = subtract_materials(&input, &sinks) {
+                changed |= set_materials_if_missing(reg, smelt.output, output);
+            }
+        }
+        for worked in reg.worked.clone() {
+            let input = reg.item(worked.input).materials.clone();
+            if let Some(remaining) = subtract_materials(&input, &worked.loss)
+                && let Some(output) = per_item_materials(&remaining, worked.count)
+            {
+                changed |= set_materials_if_missing(reg, worked.output, output);
+            }
+        }
+        for bloomery in reg.bloomery.clone() {
+            let input = reg.item(bloomery.charge).materials.clone();
+            changed |= set_materials_if_missing(reg, bloomery.bloom, input);
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    // A block's held form and placed form are one material object. Ore blocks
+    // without a held form inherit their exact drop vector.
+    for block_index in 0..reg.blocks.len() {
+        let block_id = BlockId(block_index as u16);
+        let direct = reg
+            .item_id(&reg.blocks[block_index].name)
+            .map(|item| reg.item(item).materials.clone())
+            .filter(|materials| !materials.is_empty());
+        let dropped = reg.blocks[block_index]
+            .drops
+            .map(|(item, count)| {
+                let mut materials = MaterialVector::new();
+                add_materials(&mut materials, &reg.item(item).materials, u64::from(count));
+                materials
+            })
+            .filter(|materials| !materials.is_empty());
+        if let Some(materials) = direct.or(dropped) {
+            reg.blocks[block_index].materials = materials;
+            reg.blocks[block_index].material_class = MaterialClass::GeologicallyFinite;
+        }
+        // Creative-only state items are still classified and carry identity
+        // if an operator places one into a survival world.
+        for item in &mut reg.items {
+            if item.places == Some(block_id) && item.materials.is_empty() {
+                item.materials = reg.blocks[block_index].materials.clone();
+                item.material_class = reg.blocks[block_index].material_class;
+            }
+        }
+    }
+
+    for item in &mut reg.items {
+        if !item.materials.is_empty() && item.salvage.is_none() {
+            // Food reuses the durability field as a freshness clock. It is a
+            // consumable, not a metal object that belongs in a forge.
+            if (item.durability > 0 && item.food.is_none()) || item.armor.is_some() {
+                item.salvage = Some(SalvageDef {
+                    station: "forge".into(),
+                    recovery_permille: 900,
+                });
+            } else if item.places.is_some() {
+                item.salvage = Some(SalvageDef {
+                    station: "dismantling".into(),
+                    recovery_permille: 950,
+                });
+            }
+        }
+    }
+
+    register_salvage_content(reg);
+    validate_material_graph(reg);
+}
+
+fn split_recovery(
+    materials: &MaterialVector,
+    recovery_permille: u16,
+) -> (MaterialVector, MaterialVector) {
+    let mut recovered = MaterialVector::new();
+    let mut remainder = MaterialVector::new();
+    for (material, units) in materials {
+        let keep = units.saturating_mul(u64::from(recovery_permille)) / 1000;
+        if keep != 0 {
+            recovered.insert(material.clone(), keep);
+        }
+        if *units != keep {
+            remainder.insert(material.clone(), units - keep);
+        }
+    }
+    (recovered, remainder)
+}
+
+fn push_salvage_item(
+    reg: &mut Registry,
+    source: &ItemDef,
+    suffix: &str,
+    label_prefix: &str,
+    materials: MaterialVector,
+) -> ItemId {
+    let item = ItemId(reg.items.len() as u16);
+    let name = format!("{}/{suffix}", source.name);
+    reg.items.push(ItemDef {
+        name: name.clone(),
+        label: format!("{label_prefix} {}", source.label),
+        icon: source.icon,
+        max_stack: 64,
+        tool: None,
+        durability: 0,
+        places: None,
+        food: None,
+        damage: 1.0,
+        bow: None,
+        ammo: None,
+        armor: None,
+        bedroll: false,
+        shears: false,
+        charm: None,
+        tablet: false,
+        striker: false,
+        creative_only: false,
+        brush_tool: false,
+        throw_speed: None,
+        hammer: false,
+        glow: None,
+        materials,
+        materials_declared: true,
+        material_class: MaterialClass::GeologicallyFinite,
+        salvage: None,
+        broken_into: None,
+    });
+    reg.item_by_name.insert(name, item);
+    item
+}
+
+fn register_salvage_content(reg: &mut Registry) {
+    let durable = reg
+        .items
+        .iter()
+        .take(reg.items.len())
+        .enumerate()
+        .filter(|(_, item)| {
+            item.durability > 0 && item.food.is_none() && !item.materials.is_empty()
+        })
+        .map(|(index, item)| (ItemId(index as u16), item.clone()))
+        .collect::<Vec<_>>();
+    for (original_id, original) in durable {
+        let damaged = push_salvage_item(
+            reg,
+            &original,
+            "damaged",
+            "Damaged",
+            original.materials.clone(),
+        );
+        reg.items[damaged.0 as usize].max_stack = 1;
+        reg.items[damaged.0 as usize].salvage = Some(SalvageDef {
+            station: "forge".into(),
+            recovery_permille: 900,
+        });
+        reg.items[original_id.0 as usize].broken_into = Some(damaged);
+
+        let (primitive, primitive_scale) = split_recovery(&original.materials, 750);
+        let primitive_out = push_salvage_item(
+            reg,
+            &original,
+            "primitive_scrap",
+            "Crude Scrap from",
+            primitive,
+        );
+        let primitive_tail = push_salvage_item(
+            reg,
+            &original,
+            "primitive_scale",
+            "Scale from",
+            primitive_scale,
+        );
+        reg.recipes.push(RecipeDef {
+            w: 1,
+            h: 1,
+            pattern: vec![Some(Ingredient::One(damaged))],
+            output: primitive_out,
+            count: 1,
+            loss: MaterialVector::new(),
+            byproducts: vec![(primitive_tail, 1)],
+        });
+
+        let (forge, forge_scale) = split_recovery(&original.materials, 900);
+        let forge_out =
+            push_salvage_item(reg, &original, "forge_scrap", "Forged Stock from", forge);
+        let forge_tail = push_salvage_item(
+            reg,
+            &original,
+            "forge_scale",
+            "Forge Scale from",
+            forge_scale,
+        );
+        reg.forge_salvage.push(ForgeSalvageDef {
+            input: damaged,
+            output: forge_out,
+            byproduct: forge_tail,
+            recovery_permille: 900,
+        });
+    }
+
+    let machine_blocks = reg
+        .blocks
+        .iter()
+        .enumerate()
+        .filter(|(_, block)| {
+            !block.materials.is_empty()
+                && matches!(
+                    block.interaction.as_deref(),
+                    Some(
+                        "furnace"
+                            | "bloomery"
+                            | "kiln"
+                            | "forge"
+                            | "anvil"
+                            | "quern"
+                            | "millstone"
+                            | "sawmill"
+                            | "lathe"
+                            | "iron_lathe"
+                            | "boring"
+                            | "pump"
+                            | "generator"
+                            | "separator"
+                            | "firebox"
+                    )
+                )
+        })
+        .filter_map(|(index, block)| {
+            reg.item_id(&block.name)
+                .map(|item| (BlockId(index as u16), reg.item(item).clone()))
+        })
+        .collect::<Vec<_>>();
+    for (block, source) in machine_blocks {
+        let bundle = push_salvage_item(
+            reg,
+            &source,
+            "dismantling_bundle",
+            "Dismantled",
+            source.materials.clone(),
+        );
+        reg.items[bundle.0 as usize].max_stack = 1;
+        reg.items[bundle.0 as usize].salvage = Some(SalvageDef {
+            station: "dismantling".into(),
+            recovery_permille: 950,
+        });
+        reg.blocks[block.0 as usize].dismantles_to = Some(bundle);
+        let (recovered, scale) = split_recovery(&source.materials, 950);
+        let output = push_salvage_item(
+            reg,
+            &source,
+            "dismantled_stock",
+            "Clean Stock from",
+            recovered,
+        );
+        let byproduct = push_salvage_item(
+            reg,
+            &source,
+            "dismantling_scale",
+            "Dismantling Scale from",
+            scale,
+        );
+        reg.forge_salvage.push(ForgeSalvageDef {
+            input: bundle,
+            output,
+            byproduct,
+            recovery_permille: 950,
+        });
+    }
+
+    // Lit/running machine blocks deliberately have no item form; they drop
+    // the canonical cold machine. Give those state variants the same clean
+    // dismantling bundle instead of accidentally making a running machine a
+    // 100%-recovery loophole.
+    let inherited = reg
+        .blocks
+        .iter()
+        .enumerate()
+        .filter(|(_, block)| block.dismantles_to.is_none() && !block.materials.is_empty())
+        .filter_map(|(index, block)| {
+            let dropped_item = block.drops?.0;
+            let canonical_block = reg.item(dropped_item).places?;
+            let bundle = reg.block(canonical_block).dismantles_to?;
+            Some((index, bundle))
+        })
+        .collect::<Vec<_>>();
+    for (index, bundle) in inherited {
+        reg.blocks[index].dismantles_to = Some(bundle);
+    }
+}
+
+fn validate_material_graph(reg: &mut Registry) {
+    let mut errors = Vec::new();
+    for (index, recipe) in reg.recipes.iter().enumerate() {
+        let mut input = MaterialVector::new();
+        let mut valid_tags = true;
+        for ingredient in recipe.pattern.iter().flatten() {
+            if let Some(vector) = ingredient_materials(reg, ingredient) {
+                add_materials(&mut input, &vector, 1);
+            } else {
+                valid_tags = false;
+            }
+        }
+        if !valid_tags {
+            errors.push(format!(
+                "recipe {index}: tag members have unequal material mass"
+            ));
+            continue;
+        }
+        let mut accounted = recipe.loss.clone();
+        add_materials(
+            &mut accounted,
+            &reg.item(recipe.output).materials,
+            u64::from(recipe.count),
+        );
+        for (item, count) in &recipe.byproducts {
+            add_materials(
+                &mut accounted,
+                &reg.item(*item).materials,
+                u64::from(*count),
+            );
+        }
+        if input != accounted {
+            errors.push(format!(
+                "recipe {index} -> {} is not material-balanced: input {input:?}, accounted {accounted:?}",
+                reg.item(recipe.output).name
+            ));
+        }
+    }
+    for (index, smelt) in reg.smelts.iter().enumerate() {
+        let Some(input) = ingredient_materials(reg, &smelt.input) else {
+            errors.push(format!(
+                "smelt {index}: tag members have unequal material mass"
+            ));
+            continue;
+        };
+        let mut accounted = smelt.loss.clone();
+        add_materials(&mut accounted, &reg.item(smelt.output).materials, 1);
+        if let Some((item, count)) = smelt.spit {
+            add_materials(&mut accounted, &reg.item(item).materials, u64::from(count));
+        }
+        if input != accounted {
+            errors.push(format!(
+                "smelt {index} -> {} is not material-balanced: input {input:?}, accounted {accounted:?}",
+                reg.item(smelt.output).name
+            ));
+        }
+    }
+    for (index, worked) in reg.worked.iter().enumerate() {
+        let input = reg.item(worked.input).materials.clone();
+        let mut accounted = worked.loss.clone();
+        add_materials(
+            &mut accounted,
+            &reg.item(worked.output).materials,
+            u64::from(worked.count),
+        );
+        if input != accounted {
+            errors.push(format!(
+                "worked {index} -> {} is not material-balanced: input {input:?}, accounted {accounted:?}",
+                reg.item(worked.output).name
+            ));
+        }
+    }
+    for (index, kiln) in reg.kiln.iter().enumerate() {
+        if !reg.item(kiln.powder).materials.is_empty() && !kiln.consumes {
+            errors.push(format!(
+                "kiln {index} consumes finite {} without consumes = true",
+                reg.item(kiln.powder).name
+            ));
+        }
+    }
+    for (index, bloomery) in reg.bloomery.iter().enumerate() {
+        let input = &reg.item(bloomery.charge).materials;
+        let output = &reg.item(bloomery.bloom).materials;
+        if input != output {
+            errors.push(format!(
+                "bloomery {index} changes charge identity: {input:?} -> {output:?}"
+            ));
+        }
+    }
+    reg.material_errors = errors;
 }
 
 fn qualify(modid: &str, name: &str) -> String {
@@ -2158,5 +2949,92 @@ fn qualify(modid: &str, name: &str) -> String {
         name.to_string()
     } else {
         format!("{modid}:{name}")
+    }
+}
+
+impl Registry {
+    /// Recreate named save placeholders before palette remapping. Their
+    /// qualified names remain the removed mod's names, so chunks never get
+    /// rewritten as an anonymous `base:unknown`; reinstalling the mod maps
+    /// the same palette names back to the real definitions.
+    pub fn install_saved_placeholders(
+        &mut self,
+        world: &Path,
+        ledger: &crate::materials::MaterialLedger,
+    ) -> std::io::Result<usize> {
+        let Ok(palette) = std::fs::read_to_string(world.join("palette")) else {
+            return Ok(0);
+        };
+        let mut added = 0;
+        for name in palette
+            .lines()
+            .filter_map(|line| line.split_once(' ').map(|(_, name)| name.trim()))
+        {
+            if self.block_by_name.contains_key(name) {
+                continue;
+            }
+            let mod_id = name.split_once(':').map(|(id, _)| id).unwrap_or_default();
+            let materials = ledger
+                .block_manifests
+                .get(name)
+                .map(|definition| definition.materials.clone())
+                .or_else(|| {
+                    ledger
+                        .retrogen
+                        .values()
+                        .find(|record| record.resource_key == name || record.mod_id == mod_id)
+                        .map(|record| record.unit_materials.clone())
+                })
+                .unwrap_or_default();
+            let id = BlockId(self.blocks.len() as u16);
+            let mut placeholder = self.block(self.unknown_block).clone();
+            placeholder.name = name.to_string();
+            placeholder.label = format!("Missing content: {name}");
+            placeholder.materials = materials;
+            if !placeholder.materials.is_empty() {
+                placeholder.material_class = MaterialClass::GeologicallyFinite;
+            }
+            self.blocks.push(placeholder);
+            self.block_by_name.insert(name.to_string(), id);
+            added += 1;
+        }
+        for (name, saved) in &ledger.item_manifests {
+            if self.item_by_name.contains_key(name) {
+                continue;
+            }
+            let id = ItemId(self.items.len() as u16);
+            self.items.push(ItemDef {
+                name: name.clone(),
+                label: format!("Missing content: {name}"),
+                icon: crate::atlas::UNKNOWN_SLOT,
+                max_stack: saved.max_stack.max(1),
+                tool: None,
+                durability: saved.durability,
+                places: self.block_id(name),
+                food: None,
+                damage: 1.0,
+                bow: None,
+                ammo: None,
+                armor: None,
+                bedroll: false,
+                shears: false,
+                charm: None,
+                tablet: false,
+                striker: false,
+                creative_only: false,
+                brush_tool: false,
+                throw_speed: None,
+                hammer: false,
+                glow: None,
+                materials: saved.materials.clone(),
+                materials_declared: true,
+                material_class: saved.material_class,
+                salvage: None,
+                broken_into: None,
+            });
+            self.item_by_name.insert(name.clone(), id);
+            added += 1;
+        }
+        Ok(added)
     }
 }

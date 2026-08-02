@@ -1,8 +1,8 @@
 //! Client chunk generation, unloading, remeshing, and GPU upload budgets.
 //!
 //! Terrain math is pure, so generation runs on background workers; the
-//! main thread only adopts finished chunks (light, seams, reconcile)
-//! and meshes, each on a per-frame time budget.
+//! main thread only adopts finished chunks (light, seams, reconcile), captures
+//! immutable mesh inputs, and uploads completed meshes on a per-frame budget.
 
 use std::collections::HashSet;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -11,35 +11,102 @@ use std::sync::{Arc, Mutex};
 /// A pool of background chunk generators for the current world.
 pub(super) struct GenPool {
     pub(super) req: Sender<ChunkPos>,
-    pub(super) done: Receiver<(ChunkPos, crate::chunk::Chunk)>,
+    pub(super) done: Receiver<(ChunkPos, crate::chunk::Chunk, bool)>,
     pub(super) in_flight: HashSet<ChunkPos>,
 }
 
+struct MeshJob {
+    input: mesher::ChunkMeshInput,
+    variants: atlas::TileVariants,
+    signature: MeshSignature,
+}
+
+type MeshSignature = Vec<(u16, Vec<u16>)>;
+type MeshResult = (ChunkPos, mesher::ChunkMesh, MeshSignature);
+
+pub(super) struct MeshPool {
+    req: Sender<MeshJob>,
+    done: Receiver<MeshResult>,
+    in_flight: HashSet<ChunkPos>,
+}
+
+impl MeshPool {
+    pub(super) fn new() -> Self {
+        let (req, req_rx) = channel::<MeshJob>();
+        let (done_tx, done) = channel();
+        let req_rx = Arc::new(Mutex::new(req_rx));
+        let workers = std::thread::available_parallelism()
+            .map(|count| (count.get() / 4).clamp(1, 2))
+            .unwrap_or(1);
+        for _ in 0..workers {
+            let req_rx = Arc::clone(&req_rx);
+            let done_tx = done_tx.clone();
+            std::thread::spawn(move || {
+                loop {
+                    let job = {
+                        let Ok(receiver) = req_rx.lock() else {
+                            return;
+                        };
+                        let Ok(job) = receiver.recv() else {
+                            return;
+                        };
+                        job
+                    };
+                    let position = job.input.position();
+                    let mesh = mesher::mesh_chunk_input(&job.input, &job.variants);
+                    if done_tx.send((position, mesh, job.signature)).is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+        Self {
+            req,
+            done,
+            in_flight: HashSet::new(),
+        }
+    }
+}
+
 impl GenPool {
-    pub(super) fn new(seed: u32, reg: Arc<Registry>) -> GenPool {
+    pub(super) fn new(
+        seed: u32,
+        reg: Arc<Registry>,
+        atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
+        loader: crate::world::ChunkLoader,
+    ) -> GenPool {
         let (req, req_rx) = channel::<ChunkPos>();
         let (done_tx, done) = channel();
         let req_rx = Arc::new(Mutex::new(req_rx));
-        // Leave a couple of cores for the render thread and the OS,
-        // and take the rest. This was capped at four however many the
-        // machine had, which is what made a large view distance take
-        // thousands of frames to fill rather than seconds.
+        // World generation is memory-heavy as well as CPU-heavy. Consuming
+        // every logical core starved rendering, meshing, and the simulation
+        // during the exact period when the player first starts walking.
+        // Half the machine (up to eight workers) keeps terrain arriving while
+        // reserving real headroom for a responsive game.
         let workers = std::thread::available_parallelism()
-            .map(|n| n.get().saturating_sub(2).clamp(2, 24))
-            .unwrap_or(4);
+            .map(|n| (n.get() / 2).clamp(1, 8))
+            .unwrap_or(2);
         for _ in 0..workers {
             let rx = Arc::clone(&req_rx);
             let tx = done_tx.clone();
             let reg = reg.clone();
+            let atlas = atlas.clone();
+            let loader = loader.clone();
             std::thread::spawn(move || {
-                let generator = crate::worldgen::Generator::new(seed, &reg);
+                let generator = atlas.map_or_else(
+                    || crate::worldgen::Generator::new(seed, &reg),
+                    |atlas| crate::worldgen::Generator::with_atlas(seed, &reg, atlas),
+                );
                 loop {
                     let pos = {
                         let Ok(guard) = rx.lock() else { return };
                         let Ok(pos) = guard.recv() else { return };
                         pos
                     };
-                    if tx.send((pos, generator.generate(pos, &reg))).is_err() {
+                    let loaded = loader.load(pos);
+                    let fresh = loaded.is_none();
+                    let chunk = loaded.unwrap_or_else(|| generator.generate(pos, &reg));
+                    if tx.send((pos, chunk, fresh)).is_err() {
                         return; // the world moved on
                     }
                 }
@@ -56,6 +123,23 @@ impl GenPool {
 use super::*;
 
 impl Game {
+    fn effective_view_dist(&self) -> i32 {
+        self.multiplayer
+            .remote
+            .as_ref()
+            .map_or(self.config.view_dist, |remote| {
+                remote.granted_view_dist.min(self.config.view_dist)
+            })
+    }
+
+    fn chunk_mesh_ready(&self, position: ChunkPos, center: ChunkPos, view_dist: i32) -> bool {
+        [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().all(|(du, dv)| {
+            let neighbor = position.offset(*du, *dv);
+            let expected = neighbor.distance(center) <= f64::from(view_dist * CHUNK_X as i32) + 1.0;
+            !expected || self.server.world.has_chunk(neighbor)
+        })
+    }
+
     /// Outstanding generation/remesh work used to settle deterministic
     /// headless captures before the screenshot fires.
     pub(super) fn chunk_work_pending(&self) -> usize {
@@ -65,7 +149,7 @@ impl Game {
         let Some(center) = self.player.pos.chunk() else {
             return 0;
         };
-        let vd = self.config.view_dist;
+        let vd = self.effective_view_dist();
         let mut pending = 0;
         for dx in -vd..=vd {
             for dz in -vd..=vd {
@@ -77,18 +161,19 @@ impl Game {
                 }
             }
         }
+        let mesh_in_flight = self
+            .mesh_pool
+            .as_ref()
+            .map_or(0, |pool| pool.in_flight.len());
         pending
             + self
                 .server
                 .world
                 .dirty_chunks()
                 .into_iter()
-                .filter(|pos| {
-                    [(-1, 0), (1, 0), (0, -1), (0, 1)]
-                        .iter()
-                        .all(|(dx, dz)| self.server.world.has_chunk(pos.offset(*dx, *dz)))
-                })
+                .filter(|position| self.chunk_mesh_ready(*position, center, vd))
                 .count()
+            + mesh_in_flight
     }
 
     pub(super) fn stream_chunks(&mut self) {
@@ -99,7 +184,7 @@ impl Game {
 
         // Generate missing chunks, nearest first.
         let mut wanted: Vec<(i32, ChunkPos)> = Vec::new();
-        let vd = self.config.view_dist;
+        let vd = self.effective_view_dist();
         for dx in -vd..=vd {
             for dz in -vd..=vd {
                 let pos = center.offset(dx, dz);
@@ -119,12 +204,10 @@ impl Game {
         let vd_us = vd.max(1) as usize;
         let flight = (vd_us * 3).clamp(12, 192);
         let ask = (vd_us * 6).clamp(24, 384);
-        // Adoption and meshing share one time budget so they cannot
-        // stack; it grows with the view because there is simply more to
-        // bring in, and a bigger view is a deliberate choice to spend
-        // frame time on distance.
-        let adopt_ms = (vd_us as u128 / 2).clamp(3, 12);
-        let stream_ms = (vd_us as u128).clamp(5, 28);
+        // Adoption keeps a wall-clock budget; meshing below has a fixed
+        // two-job concurrency budget because a single job can itself exceed a
+        // small millisecond allowance.
+        const ADOPT_BUDGET_MS: u128 = 3;
         if let Some(pool) = &mut self.gen_pool {
             // Keep the workers fed a nearest-first pipeline.
             for (_, pos) in wanted.iter().take(ask) {
@@ -135,21 +218,19 @@ impl Game {
                     let _ = pool.req.send(*pos);
                 }
             }
-            // Adopt what's ready, on a time budget — adoption still
-            // pays light and seams on this thread. This budget and the
-            // mesh budget below are ONE 5ms pool: they used to stack
-            // (6ms + 6ms) and could eat 12ms of every streaming frame
-            // by themselves.
+            // Adopt what's ready on a time budget. Lighting and seam repair
+            // still belong to the authoritative world on this thread, while
+            // pure mesh construction runs in the bounded pool below.
             let t0 = self.stream_t0;
-            while let Ok((pos, chunk)) = pool.done.try_recv() {
+            while let Ok((pos, chunk, fresh)) = pool.done.try_recv() {
                 pool.in_flight.remove(&pos);
-                if self.server.world.adopt_generated(pos, chunk) {
+                if self.server.world.adopt_prepared(pos, chunk, fresh) {
                     // New terrain changes neighbors' faces at the border.
                     for (dx, dz) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
                         self.server.world.mark_chunk_dirty(pos.offset(dx, dz));
                     }
                 }
-                if t0.elapsed().as_millis() >= adopt_ms {
+                if t0.elapsed().as_millis() >= ADOPT_BUDGET_MS {
                     break;
                 }
             }
@@ -189,7 +270,43 @@ impl Game {
             }
         }
 
-        // Remesh dirty chunks (only those whose 4 neighbors exist), nearest first.
+        let current_variant_signature = self.content.tile_variants.signature();
+        let completed_meshes = if let Some(pool) = &mut self.mesh_pool {
+            let mut completed = Vec::new();
+            while let Ok((position, mesh, signature)) = pool.done.try_recv() {
+                pool.in_flight.remove(&position);
+                completed.push((position, mesh, signature));
+            }
+            completed
+        } else {
+            Vec::new()
+        };
+        for (position, mesh, signature) in completed_meshes {
+            let still_current = signature == current_variant_signature
+                && self
+                    .server
+                    .world
+                    .chunk(position)
+                    .is_some_and(|chunk| !chunk.dirty);
+            if !still_current {
+                continue;
+            }
+            self.renderer.upload_chunk(position, &mesh);
+            self.presentation
+                .lights
+                .chunk_meshed(position, mesh.emitters);
+            if position.distance(center) < f64::from(crate::renderer::OCC_GRID as u32) / 2.0 + 16.0
+            {
+                self.occ_dirty = true;
+            }
+        }
+
+        // Remesh dirty chunks nearest first, once every neighbor expected in
+        // this view has arrived. That avoids repeatedly rebuilding frontier
+        // chunks as an eight-chunk network batch expands around them. A
+        // circular residency set still has an outer boundary; neighbors beyond
+        // the negotiated radius are deliberately sampled as air, so the ring
+        // that used to remain invisible forever is meshed exactly once.
         let mut dirty: Vec<(i32, ChunkPos)> = self
             .server
             .world
@@ -197,27 +314,46 @@ impl Game {
             .into_iter()
             .map(|p| (p.distance(center) as i32, p))
             .collect();
-        dirty.retain(|(_, p)| {
-            [(-1, 0), (1, 0), (0, -1), (0, 1)]
-                .iter()
-                .all(|(dx, dz)| self.server.world.has_chunk(p.offset(*dx, *dz)))
-        });
+        dirty.retain(|(_, position)| self.chunk_mesh_ready(*position, center, vd));
+        let mesh_in_flight = self
+            .mesh_pool
+            .as_ref()
+            .map(|pool| pool.in_flight.clone())
+            .unwrap_or_default();
+        dirty.retain(|(_, position)| !mesh_in_flight.contains(position));
         dirty.sort_by_key(|(d, _)| *d);
-        // Meshing spends whatever the shared 5ms streaming pool has
-        // left after adoption.
-        let mesh_cap = (vd_us).clamp(MESH_BUDGET, 64);
-        for (_, pos) in dirty.into_iter().take(mesh_cap) {
-            let mesh = mesher::mesh_chunk(&self.server.world, pos, &self.content.tile_variants);
-            self.renderer.upload_chunk(pos, &mesh);
-            self.presentation.lights.chunk_meshed(pos, mesh.emitters);
-            self.server.world.mark_chunk_meshed(pos);
-            // A remesh within the DDA occupancy grid's reach means occluder
-            // blocks changed — mark the grid stale so shadows track the edit.
-            if pos.distance(center) < f64::from(crate::renderer::OCC_GRID as u32) / 2.0 + 16.0 {
-                self.occ_dirty = true;
-            }
-            if self.stream_t0.elapsed().as_millis() >= stream_ms {
-                break;
+        // Snapshot at most one job per frame and keep two total outstanding.
+        // The old scoped threads were joined immediately, putting 40–60 ms of
+        // supposedly background work straight back onto every render frame.
+        let available = self
+            .mesh_pool
+            .as_ref()
+            .map_or(0, |pool| 2usize.saturating_sub(pool.in_flight.len()));
+        let jobs = dirty
+            .into_iter()
+            .take(available.min(1))
+            .filter_map(|(_, position)| {
+                mesher::ChunkMeshInput::capture(&self.server.world, position).map(|input| MeshJob {
+                    input,
+                    variants: self.content.tile_variants.clone(),
+                    signature: current_variant_signature.clone(),
+                })
+            })
+            .collect::<Vec<_>>();
+        for job in jobs {
+            let position = job.input.position();
+            let sent = self.mesh_pool.as_mut().is_some_and(|pool| {
+                if pool.req.send(job).is_ok() {
+                    pool.in_flight.insert(position);
+                    true
+                } else {
+                    false
+                }
+            });
+            if sent {
+                // This snapshot owns the current dirty state. Any subsequent
+                // edit flips it dirty again while the worker is running.
+                self.server.world.mark_chunk_meshed(position);
             }
         }
     }

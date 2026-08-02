@@ -1,6 +1,6 @@
 //! Chunk storage: 16x16 columns of blocks, 256 cells tall.
 //!
-//! Each of the four per-voxel planes is stored uniform-or-dense. A chunk with
+//! Each per-voxel plane is stored uniform-or-dense. A chunk with
 //! no torch in it holds one `[0,0,0]` instead of 65,536 of them, and a chunk
 //! with no block state holds one zero instead of 65,536. Those two planes are
 //! 256 KB of the 448 KB a chunk used to cost unconditionally, and the
@@ -17,11 +17,24 @@ pub const SEA_LEVEL: i32 = 64;
 /// Cells in one chunk.
 pub const CHUNK_CELLS: usize = CHUNK_X * CHUNK_Y * CHUNK_Z;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HydrologyVolumeRecord {
+    /// Stable encoded ocean/lake/river identifier from the immutable atlas.
+    pub reservoir: u64,
+    /// Continuous atlas allocation in hydro units (1/256 block).
+    pub baseline_hu: u64,
+    /// `baseline_hu - materialized_hu` retained in coarse storage.
+    pub residual_hu: i64,
+    /// Exact salt mass represented by the materialized water allocation.
+    pub salt_mass: u64,
+}
+
 /// One per-voxel plane: a single value, or one value per cell.
 ///
 /// Promotes to dense on the first write that disagrees with the uniform value,
 /// and can be compacted back when a whole-plane rewrite (a relight, a load)
 /// turns out uniform again.
+#[derive(Clone)]
 pub enum Plane<T> {
     Uniform(T),
     Dense(Box<[T]>),
@@ -137,6 +150,7 @@ impl<T: Copy + PartialEq> Iterator for PlaneRuns<'_, T> {
     }
 }
 
+#[derive(Clone)]
 pub struct Chunk {
     /// Indexed [x][z][y] flattened: (x * CHUNK_Z + z) * CHUNK_Y + y
     blocks: Plane<u16>,
@@ -145,13 +159,51 @@ pub struct Chunk {
     /// amount of greens in it. Zero for blocks that carry no state.
     /// Unlike the light planes this IS gameplay state and is saved.
     meta: Plane<u8>,
+    /// Exact dissolved salt mass for water/ice in this voxel. Concentration
+    /// metadata is derived from this and visible volume; u16 covers a full
+    /// 256-HU cell at salinity 255.
+    water_salt: Plane<u16>,
+    /// Managed topsoil salinity. This is separate from dissolved water salt:
+    /// irrigation can leave salt behind after its water drains or evaporates.
+    soil_salinity: Plane<u8>,
     /// Torch/emitter light per channel (r,g,b), each 0..15, same indexing.
     /// Derived — never saved.
     light_block: Plane<[u8; 3]>,
     /// Sky light 0..15, scaled by the daylight uniform at render time.
     light_sky: Plane<u8>,
+    hydrology_volumes: Vec<HydrologyVolumeRecord>,
     pub dirty: bool,    // needs remesh
     pub modified: bool, // differs from freshly generated terrain (needs save)
+}
+
+/// The immutable planes needed to build a chunk mesh on a worker thread.
+/// Gameplay-only water, salinity, and hydrology state deliberately stay in
+/// the authoritative chunk instead of being copied every time terrain is
+/// remeshed.
+#[derive(Clone)]
+pub(crate) struct ChunkMeshSnapshot {
+    blocks: Plane<u16>,
+    meta: Plane<u8>,
+    light_block: Plane<[u8; 3]>,
+    light_sky: Plane<u8>,
+}
+
+impl ChunkMeshSnapshot {
+    #[inline]
+    pub(crate) fn get(&self, x: usize, y: usize, z: usize) -> BlockId {
+        BlockId(self.blocks.get(Chunk::idx(x, y, z)))
+    }
+
+    #[inline]
+    pub(crate) fn meta(&self, x: usize, y: usize, z: usize) -> u8 {
+        self.meta.get(Chunk::idx(x, y, z))
+    }
+
+    #[inline]
+    pub(crate) fn light(&self, x: usize, y: usize, z: usize) -> ([u8; 3], u8) {
+        let index = Chunk::idx(x, y, z);
+        (self.light_block.get(index), self.light_sky.get(index))
+    }
 }
 
 impl Chunk {
@@ -159,10 +211,22 @@ impl Chunk {
         Chunk {
             blocks: Plane::uniform(0),
             meta: Plane::uniform(0),
+            water_salt: Plane::uniform(0),
+            soil_salinity: Plane::uniform(0),
             light_block: Plane::uniform([0; 3]),
             light_sky: Plane::uniform(0),
+            hydrology_volumes: Vec::new(),
             dirty: true,
             modified: false,
+        }
+    }
+
+    pub(crate) fn mesh_snapshot(&self) -> ChunkMeshSnapshot {
+        ChunkMeshSnapshot {
+            blocks: self.blocks.clone(),
+            meta: self.meta.clone(),
+            light_block: self.light_block.clone(),
+            light_sky: self.light_sky.clone(),
         }
     }
 
@@ -199,6 +263,26 @@ impl Chunk {
         self.light_sky = Plane::from_slice(sky);
     }
 
+    /// Derived light runs for the multiplayer chunk codec. Disk chunks omit
+    /// these planes and rebuild them; a live host already owns the exact
+    /// settled field, so streaming it avoids repeating an expensive cascade
+    /// on every guest.
+    pub fn light_block_runs(&self) -> PlaneRuns<'_, [u8; 3]> {
+        self.light_block.runs()
+    }
+
+    pub fn light_sky_runs(&self) -> PlaneRuns<'_, u8> {
+        self.light_sky.runs()
+    }
+
+    pub fn light_block_raw_mut(&mut self) -> &mut [[u8; 3]] {
+        self.light_block.densify()
+    }
+
+    pub fn light_sky_raw_mut(&mut self) -> &mut [u8] {
+        self.light_sky.densify()
+    }
+
     #[inline]
     pub fn get(&self, x: usize, y: usize, z: usize) -> BlockId {
         BlockId(self.blocks.get(Self::idx(x, y, z)))
@@ -229,6 +313,8 @@ impl Chunk {
     pub fn compact(&mut self) {
         self.blocks.compact();
         self.meta.compact();
+        self.water_salt.compact();
+        self.soil_salinity.compact();
         self.light_block.compact();
         self.light_sky.compact();
     }
@@ -253,13 +339,60 @@ impl Chunk {
         self.meta.densify()
     }
 
+    #[inline]
+    pub fn water_salt(&self, x: usize, y: usize, z: usize) -> u16 {
+        self.water_salt.get(Self::idx(x, y, z))
+    }
+
+    #[inline]
+    pub fn set_water_salt(&mut self, x: usize, y: usize, z: usize, salt_mass: u16) {
+        self.water_salt.set(Self::idx(x, y, z), salt_mass);
+    }
+
+    pub fn water_salt_runs(&self) -> PlaneRuns<'_, u16> {
+        self.water_salt.runs()
+    }
+
+    pub fn water_salt_raw_mut(&mut self) -> &mut [u16] {
+        self.water_salt.densify()
+    }
+
+    #[inline]
+    pub fn soil_salinity(&self, x: usize, y: usize, z: usize) -> u8 {
+        self.soil_salinity.get(Self::idx(x, y, z))
+    }
+
+    #[inline]
+    pub fn set_soil_salinity(&mut self, x: usize, y: usize, z: usize, salinity: u8) {
+        self.soil_salinity.set(Self::idx(x, y, z), salinity);
+    }
+
+    pub fn soil_salinity_runs(&self) -> PlaneRuns<'_, u8> {
+        self.soil_salinity.runs()
+    }
+
+    pub fn soil_salinity_raw_mut(&mut self) -> &mut [u8] {
+        self.soil_salinity.densify()
+    }
+
+    pub fn hydrology_volumes(&self) -> &[HydrologyVolumeRecord] {
+        &self.hydrology_volumes
+    }
+
+    pub fn set_hydrology_volumes(&mut self, records: Vec<HydrologyVolumeRecord>) {
+        self.hydrology_volumes = records;
+    }
+
     /// Heap bytes this chunk holds. A chunk of open air costs nothing here;
     /// a chunk of mixed terrain with a torch in it costs the lot.
     #[cfg(test)]
     pub fn heap_bytes(&self) -> usize {
         self.blocks.heap_bytes()
             + self.meta.heap_bytes()
+            + self.water_salt.heap_bytes()
+            + self.soil_salinity.heap_bytes()
             + self.light_block.heap_bytes()
             + self.light_sky.heap_bytes()
+            + self.hydrology_volumes.capacity() * std::mem::size_of::<HydrologyVolumeRecord>()
     }
 }

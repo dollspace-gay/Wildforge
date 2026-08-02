@@ -224,7 +224,7 @@ impl Agent {
                 goal.y(),
                 goal.v()
             ));
-            return idle();
+            return idle(self.player.in_water);
         };
         // Stuck? Replan once per probe window; give up if pinned.
         self.stuck_probe.1 += dt;
@@ -233,7 +233,7 @@ impl Agent {
             self.stuck_probe = (self.player.pos, 0.0);
             if moved < 0.4 {
                 let Some(start) = cell_of(self.player.pos) else {
-                    return idle();
+                    return idle(self.player.in_water);
                 };
                 match self.astar(start, goal) {
                     Some((p, _)) if p.len() > 1 => path = p,
@@ -245,7 +245,7 @@ impl Agent {
                             self.player.pos.y(),
                             self.player.pos.v()
                         ));
-                        return idle();
+                        return idle(self.player.in_water);
                     }
                 }
             }
@@ -278,7 +278,7 @@ impl Agent {
                 }
                 None => {
                     self.event("lost the trail; standing at last-seen".into());
-                    idle()
+                    idle(self.player.in_water)
                 }
             };
         };
@@ -297,7 +297,7 @@ impl Agent {
         self.behavior = Behavior::Follow { id, distance };
         if gap <= distance + 0.5 && target.is_none() {
             self.stuck_probe = (self.player.pos, 0.0);
-            return idle(); // close enough: stand and wait
+            return idle(self.player.in_water); // close enough: stand or tread water
         }
         // Stuck on the trail: replan through A* straight to the leader.
         self.stuck_probe.1 += dt;
@@ -344,11 +344,29 @@ impl Agent {
     }
 }
 
-pub fn idle() -> physics::Input {
+pub fn idle(in_water: bool) -> physics::Input {
     physics::Input {
         forward: 0.0,
         strafe: 0.0,
-        jump: false,
+        // Agents think in multi-second macros. Ordinary player swim input is
+        // their competence-layer equivalent of treading water between turns.
+        jump: in_water,
         sprint: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn idle_agent_treads_water_without_moving_horizontally() {
+        let wet = idle(true);
+        assert!(wet.jump);
+        assert_eq!(wet.forward, 0.0);
+        assert_eq!(wet.strafe, 0.0);
+        assert!(!wet.sprint);
+
+        assert!(!idle(false).jump);
     }
 }

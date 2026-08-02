@@ -59,7 +59,11 @@ impl DemoChart {
 
 macro_rules! demo_set {
     ($world:expr, $chart:expr, $x:expr, $y:expr, $z:expr, $block:expr $(,)?) => {
-        ($world).set_block_at(($chart).block($x, $y, $z), $block)
+        ($world).set_block_authored_at(
+            ($chart).block($x, $y, $z),
+            $block,
+            "development capture scene",
+        )
     };
 }
 
@@ -83,7 +87,11 @@ macro_rules! demo_height {
 
 macro_rules! demo_insert {
     ($world:expr, $chart:expr, $pos:expr, $entity:expr $(,)?) => {
-        ($world).insert_block_entity_at(($chart).block_tuple($pos), $entity)
+        ($world).insert_block_entity_authored_at(
+            ($chart).block_tuple($pos),
+            $entity,
+            "development capture scene",
+        )
     };
 }
 
@@ -94,9 +102,28 @@ macro_rules! demo_mob {
 }
 
 macro_rules! demo_drop {
-    ($world:expr, $chart:expr, $pos:expr, $stack:expr $(,)?) => {
-        ($world).push_drop_at(($chart).block_tuple($pos), $stack)
-    };
+    ($world:expr, $chart:expr, $pos:expr, $stack:expr $(,)?) => {{
+        let stack = $stack;
+        if let Err(error) = ($world).record_external_stack(stack, "development capture loose item")
+        {
+            eprintln!("materials: capture drop source failed: {error}");
+        }
+        ($world).push_drop_at(($chart).block_tuple($pos), stack)
+    }};
+}
+
+macro_rules! demo_anvil_put {
+    ($world:expr, $chart:expr, $pos:expr, $stack:expr $(,)?) => {{
+        let stack = $stack;
+        let inserted = ($world).anvil_put_at(($chart).block_tuple($pos), stack);
+        if inserted
+            && let Err(error) =
+                ($world).record_external_stack(stack, "development capture workstation")
+        {
+            eprintln!("materials: capture workstation source failed: {error}");
+        }
+        inserted
+    }};
 }
 
 macro_rules! demo_ire {
@@ -124,6 +151,19 @@ macro_rules! demo_fire {
 }
 
 impl Game {
+    fn give_dev_item(&mut self, reg: &Registry, item: ItemId, count: u32) {
+        let left = self.inventory.add(reg, item, count);
+        let added = count.saturating_sub(left);
+        if added != 0
+            && let Err(error) = self.server.world.record_external_stack(
+                ItemStack::new(reg, item, added),
+                "development capture inventory",
+            )
+        {
+            eprintln!("materials: capture inventory source failed: {error}");
+        }
+    }
+
     /// Stage whatever scene the environment asks for, once, at world start.
     ///
     /// Called immediately after the world is loaded and the player is placed,
@@ -168,8 +208,9 @@ impl Game {
         match std::env::var("WILDFORGE_SCREEN").as_deref() {
             Ok("inventory") => self.set_screen(Screen::Inventory),
             Ok("status") => {
-                self.ui_state.inventory_status_open = true;
                 self.set_screen(Screen::Inventory);
+                self.ui_state.inventory_status_open = true;
+                self.ui_state.inventory_browser_open = false;
             }
             _ => {}
         }
@@ -186,6 +227,21 @@ impl Game {
         {
             self.server.world.day = d;
         }
+        // Planetary visual qualification needs to show a whole valley,
+        // shoreline, or treeline rather than whatever happens to occupy the
+        // player's eye-height foreground. Lift only automated captures into a
+        // stationary creative flyover; ordinary starts and interactive play
+        // are untouched.
+        if self.auto_shot.is_some()
+            && let Ok(height) = std::env::var("WILDFORGE_SHOT_ALTITUDE")
+            && let Ok(height) = height.parse::<f32>()
+        {
+            self.player.pos.y = (self.player.pos.y + height.clamp(0.0, 96.0))
+                .min(crate::chunk::CHUNK_Y as f32 - 3.0);
+            self.player.vel = Vec3::ZERO;
+            self.flying = true;
+            self.camera.follow_planet(self.player.eye());
+        }
         if self.auto_shot.is_some() {
             self.server.freeze_clock = true;
         }
@@ -199,8 +255,20 @@ impl Game {
                 .or_else(|| reg.item_id(&format!("base:{name}")))
             {
                 Some(item) => {
-                    self.inventory.slots[self.input.hotbar_sel] =
-                        Some(ItemStack::new(&reg, item, 1));
+                    if let Some(previous) = self.inventory.slots[self.input.hotbar_sel]
+                        && let Err(error) = self.server.world.record_admin_stack_deletion(previous)
+                    {
+                        eprintln!("materials: held-item override deletion failed: {error}");
+                    }
+                    let stack = ItemStack::new(&reg, item, 1);
+                    if let Err(error) = self
+                        .server
+                        .world
+                        .record_external_stack(stack, "development held-item override")
+                    {
+                        eprintln!("materials: held-item override source failed: {error}");
+                    }
+                    self.inventory.slots[self.input.hotbar_sel] = Some(stack);
                 }
                 None => eprintln!("WILDFORGE_HELD: no item named {name:?}"),
             }
@@ -529,6 +597,16 @@ impl Game {
                         {
                             cargo[0] = Some(ItemStack::new(&reg2, salt, 24));
                             cargo[5] = Some(ItemStack::new(&reg2, salt, 8));
+                        }
+                        for count in [24, 8] {
+                            if let Some(salt) = reg2.item_id("base:salt_crystal")
+                                && let Err(error) = self.server.world.record_external_stack(
+                                    ItemStack::new(&reg2, salt, count),
+                                    "development capture animal cargo",
+                                )
+                            {
+                                eprintln!("materials: capture cargo source failed: {error}");
+                            }
                         }
                         self.set_screen(Screen::MobCargo(id));
                     }
@@ -1018,8 +1096,10 @@ impl Game {
                     demo_set!(w, chart, mx + 7, y + 1, mz + 2, mill);
                     if let Some(copper) = reg2.item_id("base:raw_copper") {
                         for _ in 0..4 {
-                            w.anvil_put_at(
-                                chart.block(mx + 7, y + 1, mz + 2),
+                            demo_anvil_put!(
+                                w,
+                                chart,
+                                (mx + 7, y + 1, mz + 2),
                                 ItemStack::new(&reg2, copper, 1),
                             );
                         }
@@ -1029,8 +1109,10 @@ impl Game {
                     demo_set!(w, chart, mx + 9, y + 1, mz + 2, saw);
                     if let Some(log) = reg2.item_id("base:log") {
                         for _ in 0..3 {
-                            w.anvil_put_at(
-                                chart.block(mx + 9, y + 1, mz + 2),
+                            demo_anvil_put!(
+                                w,
+                                chart,
+                                (mx + 9, y + 1, mz + 2),
                                 ItemStack::new(&reg2, log, 1),
                             );
                         }
@@ -1041,8 +1123,10 @@ impl Game {
                     demo_set!(w, chart, mx + 9, y + 1, mz + 4, helve);
                     demo_set!(w, chart, mx + 9, y + 1, mz + 5, anvil);
                     if let Some(bl) = reg2.item_id("base:steel_bloom") {
-                        w.anvil_put_at(
-                            chart.block(mx + 9, y + 1, mz + 5),
+                        demo_anvil_put!(
+                            w,
+                            chart,
+                            (mx + 9, y + 1, mz + 5),
                             ItemStack::new(&reg2, bl, 1),
                         );
                     }
@@ -1058,14 +1142,18 @@ impl Game {
                     demo_set!(w, chart, mx + 6, y + 1, mz + 1, ilathe);
                     demo_set!(w, chart, mx + 5, y + 1, mz, vice);
                     if let Some(cu) = reg2.item_id("base:copper_ingot") {
-                        w.anvil_put_at(
-                            chart.block(mx + 4, y + 1, mz + 1),
+                        demo_anvil_put!(
+                            w,
+                            chart,
+                            (mx + 4, y + 1, mz + 1),
                             ItemStack::new(&reg2, cu, 1),
                         );
                     }
                     if let Some(fe) = reg2.item_id("base:iron_ingot") {
-                        w.anvil_put_at(
-                            chart.block(mx + 6, y + 1, mz + 1),
+                        demo_anvil_put!(
+                            w,
+                            chart,
+                            (mx + 6, y + 1, mz + 1),
                             ItemStack::new(&reg2, fe, 1),
                         );
                     }
@@ -1105,7 +1193,10 @@ impl Game {
                         (ex, y + 1, ez),
                         crate::world::BlockEntity::Steam(crate::world::SteamState {
                             fuel: 900.0,
-                            water: 900.0,
+                            water: crate::planet_atlas::ReservoirMass::fresh(
+                                60 * crate::planet_atlas::HYDRO_UNITS_PER_BLOCK,
+                            ),
+                            steam_numerator_remainder: 0,
                         }),
                     );
                 }
@@ -1206,7 +1297,7 @@ impl Game {
             }
             let reg = self.content.reg.clone();
             if let Some(t) = reg.item_id("base:torch") {
-                self.inventory.add(&reg, t, 5);
+                self.give_dev_item(&reg, t, 5);
             }
         }
 
@@ -1281,7 +1372,7 @@ impl Game {
             // shots), WILDFORGE_SEL=8 keeps the hand empty.
             let reg = self.content.reg.clone();
             if let Some(t) = reg.item_id("base:torch") {
-                self.inventory.add(&reg, t, 5);
+                self.give_dev_item(&reg, t, 5);
             }
         }
 
@@ -1491,13 +1582,30 @@ impl Game {
         // materials) for screenshots and hands-on QA.
         if std::env::var("WILDFORGE_DEMO_STEELWORKS").is_ok() {
             let b = |n: &str| self.content.reg.block_id(n);
-            if let (Some(fb), Some(mouth), Some(anvil)) = (
+            if let (Some(fb), Some(mouth), Some(anvil), Some(floor)) = (
                 b("base:firebrick"),
                 b("base:bloomery"),
                 b("base:stone_anvil"),
+                b("base:cobblestone"),
             ) {
                 let (sx, sz) = (spawn.x as i32 + 6, spawn.z as i32 + 4);
-                let sy = demo_height!(self.server.world, chart, sx, sz) + 1;
+                // Build the fixture from the player's actual ground plane.
+                // `surface_height` includes leaves, which used to perch a
+                // bloomery on a tree canopy on forested seeds. A thick,
+                // cleared terrace is deterministic on coasts, hills, and
+                // wooded starts alike.
+                let floor_y = spawn.y.floor() as i32 - 1;
+                for x in (spawn.x as i32 + 1)..=(spawn.x as i32 + 9) {
+                    for z in (spawn.z as i32 + 1)..=(spawn.z as i32 + 15) {
+                        for y in (floor_y - 2)..=floor_y {
+                            demo_set!(self.server.world, chart, x, y, z, floor);
+                        }
+                        for y in (floor_y + 1)..=(floor_y + 14) {
+                            demo_set!(self.server.world, chart, x, y, z, AIR);
+                        }
+                    }
+                }
+                let sy = floor_y + 1;
                 // Core at (sx, sy, sz); mouth on its -X side.
                 for ly in 0..3 {
                     for rx in -1..=1i32 {
@@ -1521,7 +1629,7 @@ impl Game {
                 demo_set!(self.server.world, chart, sx - 3, sy, sz + 2, anvil);
                 // A second stack, already charged and burning.
                 let (lx, lz) = (sx, sz + 8);
-                let ly = demo_height!(self.server.world, chart, lx, lz) + 1;
+                let ly = floor_y + 1;
                 for dy in 0..3 {
                     for rx in -1..=1i32 {
                         for rz in -1..=1i32 {
@@ -1564,8 +1672,10 @@ impl Game {
                 }
                 // A bloom resting on the anvil, ready for the hammer.
                 if let Some(bl) = reg2.item_id("base:steel_bloom") {
-                    self.server.world.anvil_put_at(
-                        chart.block(sx - 3, sy, sz + 2),
+                    demo_anvil_put!(
+                        self.server.world,
+                        chart,
+                        (sx - 3, sy, sz + 2),
                         ItemStack::new(&reg2, bl, 1),
                     );
                 }
@@ -1580,7 +1690,7 @@ impl Game {
                     ("base:dirt", 32),
                 ] {
                     if let Some(item) = reg.item_id(name) {
-                        self.inventory.add(&reg, item, n);
+                        self.give_dev_item(&reg, item, n);
                     }
                 }
             }
@@ -1620,7 +1730,8 @@ impl Game {
         }
 
         if std::env::var("WILDFORGE_DEMO_GLASSWORKS").is_ok() {
-            let b = |n: &str| self.content.reg.block_id(n);
+            let reg = self.content.reg.clone();
+            let b = |n: &str| reg.block_id(n);
             if let (Some(fb), Some(kiln), Some(quern)) =
                 (b("base:firebrick"), b("base:kiln"), b("base:quern"))
             {
@@ -1646,7 +1757,6 @@ impl Game {
                 }
                 demo_set!(self.server.world, chart, sx - 1, sy, sz, kiln);
                 demo_set!(self.server.world, chart, sx - 3, sy, sz + 2, quern);
-                let reg = self.content.reg.clone();
                 if let (Some(sand), Some(coal), Some(pow)) = (
                     reg.item_id("base:sand"),
                     reg.item_id("base:charcoal"),
@@ -1676,7 +1786,7 @@ impl Game {
                     ("base:glass", 8),
                 ] {
                     if let Some(item) = reg.item_id(name) {
-                        self.inventory.add(&reg, item, n);
+                        self.give_dev_item(&reg, item, n);
                     }
                 }
                 // Torches behind stained panes: the light comes out
@@ -1757,14 +1867,19 @@ impl Game {
         {
             self.server.world.day = (v % 4) * world::SEASON_DAYS;
         }
+        // Calendar overrides must move the authoritative simulation clock too.
+        // Local astronomy and climate sample `World::clock`; leaving it at the
+        // pre-override value makes a capture's sky disagree with its weather.
+        self.server.world.clock = (f64::from(self.server.world.day)
+            + f64::from(self.server.time_of_day.rem_euclid(1.0)))
+            * f64::from(crate::server::DAY_LENGTH);
         if let Ok(v) = std::env::var("WILDFORGE_WEATHER") {
-            self.server.world.weather = world::Weather::from_name(&v);
-            self.server.world.weather_timer = 1.0e9; // pinned for the session
-            self.presentation.weather_vis = match self.server.world.weather {
-                world::Weather::Clear => 0.0,
-                world::Weather::Overcast => 0.4,
-                world::Weather::Precip => 0.55,
-                world::Weather::Storm => 0.7,
+            self.server.world.force_local_weather(&v);
+            self.presentation.weather_vis = match v.as_str() {
+                "overcast" => 0.4,
+                "precip" | "rain" | "snow" => 0.55,
+                "storm" => 0.7,
+                _ => 0.0,
             };
         }
         // Dev: a row of wardens near spawn (rendering/combat verification).
@@ -1823,7 +1938,7 @@ impl Game {
                 .grow_tree_at(chart.block(sx + 6, ty, sz - 8), "oak", 3);
             for name in ["base:bedroll", "base:oak_sapling"] {
                 if let Some(item) = reg.item_id(name) {
-                    self.inventory.add(&reg, item, 1);
+                    self.give_dev_item(&reg, item, 1);
                 }
             }
         }
@@ -2098,8 +2213,7 @@ impl Game {
                         ..Default::default()
                     }),
                 );
-                self.inventory
-                    .add(&reg, reg.item_id("base:copper_ingot").unwrap(), 7);
+                self.give_dev_item(&reg, reg.item_id("base:copper_ingot").unwrap(), 7);
                 self.set_screen(Screen::Furnace(chart.block_tuple(p)));
             }
         }
@@ -2264,7 +2378,7 @@ impl Game {
 
         self.server.world.edit_batch(|world| {
             for (pos, block) in edits {
-                world.set_block_at(pos, block);
+                world.set_block_authored_at(pos, block, "development qualification scene");
             }
         });
         self.player.vel = Vec3::ZERO;

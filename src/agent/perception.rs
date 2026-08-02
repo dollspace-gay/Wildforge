@@ -62,16 +62,17 @@ impl Agent {
             return "outside the voxel shell".into();
         };
         let py = i32::from(feet.y());
+        let weather = self.world.weather_at_surface(feet.surface());
         let mut out = String::new();
         out.push_str(&format!(
-            "pos {} {} {} {}; {}; day {}; {:?}; health {:.0}/14 hunger {:.0}/20\n",
+            "pos {} {} {} {}; {}; day {}; {}; health {:.0}/14 hunger {:.0}/20\n",
             feet.face().name(),
             feet.u(),
             feet.y(),
             feet.v(),
             time_phase(self.time_of_day),
             self.world.day,
-            self.world.weather,
+            weather.kind.name(),
             self.health,
             self.hunger,
         ));
@@ -330,7 +331,7 @@ impl Agent {
             self.health,
             self.hunger,
             time_phase(self.time_of_day),
-            format!("{:?}", self.world.weather).to_lowercase(),
+            self.world.weather_at_surface(p.surface()).kind.name(),
         )
     }
 }

@@ -9,8 +9,17 @@ const STAMPS_MAGIC: &[u8] = b"WFS3-PLANET-1200";
 
 impl World {
     /// Load a world from disk (reads seed + palette) or create a fresh one.
-    pub fn load_or_create(save_dir: PathBuf, reg: Arc<Registry>) -> std::io::Result<World> {
-        let existing = load_world_meta(&save_dir)?;
+    pub fn load_or_create(save_dir: PathBuf, mut reg: Arc<Registry>) -> std::io::Result<World> {
+        if !reg.material_errors.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "content material accounting failed:\n{}",
+                    reg.material_errors.join("\n")
+                ),
+            ));
+        }
+        let mut existing = load_world_meta(&save_dir)?;
         let seed = existing.as_ref().map(|meta| meta.seed).unwrap_or_else(|| {
             std::env::var("WILDFORGE_SEED")
                 .ok()
@@ -22,22 +31,127 @@ impl World {
                         .unwrap_or(1337)
                 })
         });
-        let (mode, ire, day, weather) = existing
-            .map(|meta| (meta.mode, meta.ire, meta.day, meta.weather))
-            .unwrap_or_else(|| ("survival".to_string(), 0.0, 0, Weather::Clear));
-        write_world_meta_full(&save_dir, seed, &mode, ire, day, weather)?;
-        let mut w = World::new(seed, save_dir, reg);
+        if existing.is_none() {
+            #[cfg(not(test))]
+            create_world_atomic(
+                &save_dir,
+                seed,
+                "survival",
+                crate::planet_atlas::genesis_content_hash(std::path::Path::new("mods")),
+                Arc::clone(&reg),
+                &crate::planet_atlas::CancellationToken::default(),
+                |progress| match progress {
+                    WorldCreationProgress::Atlas(progress) => {
+                        eprintln!("world creation: {}", progress.stage.label())
+                    }
+                    WorldCreationProgress::Homeland {
+                        stage,
+                        completed,
+                        total,
+                    } => eprintln!("world creation: {stage} {completed}/{total}"),
+                },
+            )?;
+            #[cfg(test)]
+            create_world_fixture_atomic(
+                &save_dir,
+                seed,
+                "survival",
+                8,
+                &crate::planet_atlas::CancellationToken::default(),
+                |_| {},
+            )?;
+            existing = load_world_meta(&save_dir)?;
+        }
+        let (mode, ire, day) = existing
+            .map(|meta| (meta.mode, meta.ire, meta.day))
+            .unwrap_or_else(|| ("survival".to_string(), 0.0, 0));
+        #[cfg(not(test))]
+        let atlas =
+            crate::planet_atlas::PlanetAtlas::load(&save_dir).map_err(std::io::Error::other)?;
+        #[cfg(test)]
+        let atlas = match crate::planet_atlas::PlanetAtlas::load_fixture(&save_dir) {
+            Ok(atlas) => atlas,
+            Err(crate::planet_atlas::AtlasError::Io(error))
+                if error.kind() == std::io::ErrorKind::NotFound =>
+            {
+                // Existing test worlds made through `World::new` predate the
+                // atlas fixture. Production builds refuse this state.
+                let fixture = crate::planet_atlas::PlanetAtlas::fixture(seed, 8)
+                    .map_err(std::io::Error::other)?;
+                fixture
+                    .write_new(&save_dir)
+                    .map_err(std::io::Error::other)?;
+                fixture
+            }
+            Err(error) => return Err(std::io::Error::other(error)),
+        };
+        if let Ok(ledger) = crate::materials::MaterialLedger::load(&save_dir) {
+            let added = Arc::make_mut(&mut reg).install_saved_placeholders(&save_dir, &ledger)?;
+            ledger.validate_saved_definitions(&reg)?;
+            if added != 0 {
+                eprintln!(
+                    "materials: restored {added} named placeholder block definitions for removed mods"
+                );
+            }
+        }
+        // A finite world must never continue with accounting silently
+        // disabled. This also leaves the independently written backup intact
+        // for an operator-led recovery instead of inventing replacement mass.
+        let material_ledger =
+            crate::materials::MaterialLedger::load_or_initialize(&save_dir, &atlas, &reg)?;
+        write_world_meta_full(&save_dir, seed, &mode, ire, day)?;
+        let mut w = World::new_with_atlas(seed, save_dir, reg, Arc::new(atlas));
+        w.material_ledger = Some(material_ledger);
         w.mode = mode;
         w.ire = ire;
         w.day = day;
-        w.weather = weather;
         w.clock = day as f64 * crate::server::DAY_LENGTH as f64;
         w.load_remap = w.read_palette_remap();
         w.palette_stale = !w.palette_matches_registry();
         w.load_entities();
         w.load_mobs();
         w.load_stamps();
+        w.replay_pending_material_operation()?;
         Ok(w)
+    }
+
+    fn replay_pending_material_operation(&mut self) -> std::io::Result<()> {
+        let pending = self
+            .material_ledger
+            .as_ref()
+            .map(crate::materials::MaterialLedger::pending_operation)
+            .transpose()?
+            .flatten();
+        let Some(operation) = pending else {
+            return Ok(());
+        };
+        self.ensure_chunk(operation.pos.chunk());
+        let current = self
+            .reg
+            .block(self.get_block_at(operation.pos))
+            .name
+            .clone();
+        let ledger = self
+            .material_ledger
+            .as_mut()
+            .ok_or_else(|| std::io::Error::other("material journal exists without a ledger"))?;
+        if current == operation.after {
+            ledger.apply_operation(&operation)?;
+            ledger.finish_operation()?;
+        } else if current == operation.before_block_name() {
+            // The voxel write never landed, so the un-applied operation is a
+            // harmless aborted transaction.
+            ledger.finish_operation()?;
+        } else {
+            return Err(std::io::Error::other(format!(
+                "material journal {} expected voxel {} or {}, found {}; restore the chunk/ledger backup",
+                operation.id,
+                operation.before_block_name(),
+                operation.after,
+                current
+            )));
+        }
+        Ok(())
     }
 
     /// Per-chunk random-tick stamps: compact (x, z, time) triples.

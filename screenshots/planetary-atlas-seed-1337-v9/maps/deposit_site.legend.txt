@@ -1,0 +1,7 @@
+layer = deposit_site
+description = finite deposit-site reference
+layout = 3x2: pos_x,neg_x,pos_y / neg_y,pos_z,neg_z; u left-to-right, v top-to-bottom
+kind = categorical
+minimum = 0.000000000
+maximum = 61.000000000
+color = scalar: navy-cyan-yellow-red; categorical: stable id hash (zero black); direction: cyclic hue

@@ -82,7 +82,6 @@ impl Game {
                         mode,
                         self.server.world.ire,
                         self.server.world.day,
-                        self.server.world.weather,
                     );
                     match saved {
                         Ok(()) => {
@@ -115,7 +114,8 @@ impl Game {
                         let host_name = identity::DisplayName::parse(&self.config.display_name)
                             .expect("configured display name is valid");
                         match mp::HostSession::start_windowed(wname, host_name) {
-                            Ok(sess) => {
+                            Ok(mut sess) => {
+                                sess.fresh_spawn = self.server.world.common_spawn();
                                 self.server.world.set_edit_logging(true);
                                 self.toast(format!(
                                     "Open to friends on port {} (LAN + direct IP).",
@@ -246,10 +246,10 @@ impl Game {
                 }
                 if self.hit(self.title_action_rect(0)) {
                     self.sfx(Sfx::Click);
-                    self.new_world_mode("survival");
+                    self.open_new_world("survival");
                 } else if self.hit(self.title_action_rect(1)) {
                     self.sfx(Sfx::Click);
-                    self.new_world_mode("creative");
+                    self.open_new_world("creative");
                 } else if self.hit(self.title_action_rect(2)) {
                     self.sfx(Sfx::Click);
                     self.multiplayer.discovery = net::Discovery::start().ok();
@@ -276,6 +276,25 @@ impl Game {
                     self.set_screen(Screen::Settings);
                 } else if self.hit(self.title_action_rect(8)) {
                     event_loop.exit();
+                }
+            }
+            Screen::NewWorld => {
+                if self.hit(self.new_world_button_rect(0)) {
+                    self.sfx(Sfx::Click);
+                    self.create_new_world();
+                } else if self.hit(self.new_world_button_rect(1)) {
+                    self.sfx(Sfx::Click);
+                    self.roll_new_world_seed();
+                    self.ui_state.new_world_status.clear();
+                } else if self.hit(self.new_world_button_rect(2)) {
+                    self.sfx(Sfx::Click);
+                    self.set_screen(Screen::Title);
+                }
+            }
+            Screen::CreatingWorld => {
+                if self.hit(self.world_creation_cancel_rect()) {
+                    self.sfx(Sfx::Click);
+                    self.cancel_world_creation();
                 }
             }
             Screen::Accounts => {

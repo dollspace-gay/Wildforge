@@ -80,6 +80,253 @@ impl World {
         h
     }
 
+    fn animal_environment_suitable(
+        &self,
+        def: &crate::registry::AnimalDef,
+        pos: SurfacePos,
+        wet: bool,
+        biome: &str,
+    ) -> bool {
+        if !def.biomes.iter().any(|allowed| allowed == biome) {
+            return false;
+        }
+        let temperature = self.weather_at_surface(pos).temperature_c;
+        if def
+            .temperature_c
+            .is_some_and(|range| temperature < range[0] || temperature > range[1])
+        {
+            return false;
+        }
+        let elevation = if self.chunks.contains_key(&ChunkPos::from_surface(pos)) {
+            self.surface_height_at(pos)
+        } else {
+            self.generator.surface_estimate_at(pos)
+        } as i16;
+        if def
+            .elevation
+            .is_some_and(|range| elevation < range[0] || elevation > range[1])
+        {
+            return false;
+        }
+        let Some(atlas) = &self.planet_atlas else {
+            return true;
+        };
+        let sample = atlas.biome_sample(pos);
+        if def.vegetation.is_some_and(|range| {
+            sample.vegetation_potential < range[0] || sample.vegetation_potential > range[1]
+        }) {
+            return false;
+        }
+        let climate = atlas.genesis.climate.values()[atlas.atlas_pos(pos).index(atlas.side())];
+        def.habitats.iter().all(|tag| match tag.as_str() {
+            "warm" => climate.mean_temperature >= 15.0,
+            "cold" => climate.mean_temperature <= 7.0,
+            "humid" => climate.mean_precipitation >= 780.0,
+            "arid" => climate.aridity >= 1.02,
+            "riparian" => sample.habitat_flags & crate::planet_atlas::HABITAT_RIPARIAN != 0,
+            "wetland" => sample.habitat_flags & crate::planet_atlas::HABITAT_WETLAND != 0,
+            "freshwater" => {
+                sample.habitat_flags
+                    & (crate::planet_atlas::HABITAT_AQUATIC_FRESH
+                        | crate::planet_atlas::HABITAT_RIPARIAN
+                        | crate::planet_atlas::HABITAT_WETLAND
+                        | crate::planet_atlas::HABITAT_SPRING
+                        | crate::planet_atlas::HABITAT_LAKESHORE)
+                    != 0
+            }
+            "marine" => {
+                sample.habitat_flags
+                    & (crate::planet_atlas::HABITAT_AQUATIC_SALT
+                        | crate::planet_atlas::HABITAT_BEACH_DUNE
+                        | crate::planet_atlas::HABITAT_SALT_MARSH)
+                    != 0
+            }
+            "alpine" => sample.habitat_flags & crate::planet_atlas::HABITAT_ALPINE != 0,
+            "saline" => {
+                sample.salinity >= 64
+                    || sample.habitat_flags
+                        & (crate::planet_atlas::HABITAT_AQUATIC_BRACKISH
+                            | crate::planet_atlas::HABITAT_AQUATIC_SALT
+                            | crate::planet_atlas::HABITAT_SALT_MARSH)
+                        != 0
+            }
+            "volcanic_soil" => {
+                sample.habitat_flags & crate::planet_atlas::HABITAT_VOLCANIC_SOIL != 0
+            }
+            "ocean" => wet && biome == "ocean",
+            other => biome == other,
+        })
+    }
+
+    fn animal_habitat_suitable(
+        &self,
+        def: &crate::registry::AnimalDef,
+        pos: SurfacePos,
+        wet: bool,
+        biome: &str,
+    ) -> bool {
+        if !self.animal_environment_suitable(def, pos, wet, biome) {
+            return false;
+        }
+        if def.prey.is_empty() {
+            return true;
+        }
+        let prey_present = self.mobs.iter().any(|mob| {
+            def.prey.contains(&mob.species)
+                && mob.pos.block().is_some_and(|at| {
+                    crate::planet::geodesic_distance(at.surface().center(), pos.center()) < 128.0
+                })
+        });
+        prey_present
+            || def.prey.iter().any(|species| {
+                self.reg
+                    .animals
+                    .get(*species)
+                    .is_some_and(|prey| self.animal_environment_suitable(prey, pos, wet, biome))
+            })
+    }
+
+    fn animal_biome_name(&self, pos: SurfacePos, wet: bool) -> String {
+        if wet {
+            let salinity = self.surface_water_salinity_at(pos);
+            if let Some(atlas) = &self.planet_atlas {
+                let sample = atlas.biome_sample(pos);
+                let atlas_salt = sample.habitat_flags
+                    & (crate::planet_atlas::HABITAT_AQUATIC_BRACKISH
+                        | crate::planet_atlas::HABITAT_AQUATIC_SALT)
+                    != 0;
+                if salinity.is_some_and(|value| value >= 64) || (salinity.is_none() && atlas_salt) {
+                    return "ocean".to_string();
+                }
+                // Freshwater is an overlay on the surrounding terrestrial
+                // ecology, not a salt ocean biome. A newly materialized
+                // channel can have no water at this exact surface column
+                // even though the wet caller and immutable atlas identify
+                // its connected freshwater habitat, so use that atlas fact
+                // as the fallback rather than the country's ocean label.
+                let atlas_fresh =
+                    sample.habitat_flags & crate::planet_atlas::HABITAT_AQUATIC_FRESH != 0;
+                if salinity.is_none() && !atlas_fresh {
+                    return self.country_biome_at(pos).name().to_lowercase();
+                }
+                let local = crate::worldgen::Biome::from_index(sample.zonal_biome)
+                    .filter(|biome| *biome != crate::worldgen::Biome::Ocean)
+                    .or_else(|| {
+                        atlas.country(sample.country_id).and_then(|country| {
+                            crate::worldgen::Biome::from_index(country.dominant_biome)
+                        })
+                    });
+                if let Some(local) = local {
+                    return local.name().to_lowercase();
+                }
+            }
+            if salinity.is_some_and(|value| value >= 64) {
+                return "ocean".to_string();
+            }
+        }
+        self.country_biome_at(pos).name().to_lowercase()
+    }
+
+    fn atlas_animal_context(
+        &self,
+        pos: crate::planet_atlas::AtlasPos,
+    ) -> (SurfacePos, bool, String) {
+        let atlas = self
+            .planet_atlas
+            .as_ref()
+            .expect("atlas context requires atlas");
+        let center = pos.center(atlas.side());
+        let surface = SurfacePos::new(
+            center.face,
+            center
+                .u
+                .floor()
+                .clamp(0.0, f64::from(crate::planet::FACE_BLOCKS - 1)) as u16,
+            center
+                .v
+                .floor()
+                .clamp(0.0, f64::from(crate::planet::FACE_BLOCKS - 1)) as u16,
+        )
+        .expect("atlas center is a canonical surface cell");
+        let sample = atlas.biome_sample(surface);
+        let wet = sample.habitat_flags
+            & (crate::planet_atlas::HABITAT_AQUATIC_FRESH
+                | crate::planet_atlas::HABITAT_AQUATIC_BRACKISH
+                | crate::planet_atlas::HABITAT_AQUATIC_SALT)
+            != 0;
+        let biome = if sample.habitat_flags
+            & (crate::planet_atlas::HABITAT_AQUATIC_BRACKISH
+                | crate::planet_atlas::HABITAT_AQUATIC_SALT)
+            != 0
+        {
+            "ocean".to_string()
+        } else if sample.habitat_flags & crate::planet_atlas::HABITAT_WETLAND != 0
+            && !matches!(
+                sample.zonal_biome,
+                crate::planet_atlas::BIOME_ARCTIC
+                    | crate::planet_atlas::BIOME_TUNDRA
+                    | crate::planet_atlas::BIOME_MOUNTAINS
+            )
+        {
+            // Wetland is an edaphic override of the broad zonal biome.
+            // Mirroring WorldGenerator::biome_at here matters: otherwise a
+            // frog can live in a loaded swamp but cannot migrate through the
+            // same swamp while its neighboring chunk is unloaded.
+            "swamp".to_string()
+        } else {
+            crate::worldgen::Biome::from_index(sample.zonal_biome)
+                .filter(|biome| *biome != crate::worldgen::Biome::Ocean)
+                .or_else(|| {
+                    atlas.country(sample.country_id).and_then(|country| {
+                        crate::worldgen::Biome::from_index(country.dominant_biome)
+                    })
+                })
+                .unwrap_or_else(|| self.country_biome_at(surface))
+                .name()
+                .to_lowercase()
+        };
+        (surface, wet, biome)
+    }
+
+    /// Recovery/migration may use only a habitat cell joined to another
+    /// suitable cell in the seam-safe atlas graph. Initial populations may
+    /// occupy small refugia; once lost, those do not respawn from arbitrary
+    /// chunk odds.
+    fn animal_habitat_network_connected(
+        &self,
+        def: &crate::registry::AnimalDef,
+        pos: SurfacePos,
+    ) -> bool {
+        let Some(atlas) = &self.planet_atlas else {
+            return true;
+        };
+        atlas
+            .atlas_pos(pos)
+            .neighbors4(atlas.side())
+            .into_iter()
+            .map(|neighbor| self.atlas_animal_context(neighbor))
+            .any(|(surface, wet, biome)| {
+                self.animal_environment_suitable(def, surface, wet, &biome)
+            })
+    }
+
+    #[cfg(test)]
+    pub fn animal_habitat_suitable_at(&self, species: usize, pos: SurfacePos, wet: bool) -> bool {
+        let Some(def) = self.reg.animals.get(species) else {
+            return false;
+        };
+        let biome = self.animal_biome_name(pos, wet);
+        self.animal_habitat_suitable(def, pos, wet, &biome)
+    }
+
+    #[cfg(test)]
+    pub fn animal_habitat_network_connected_at(&self, species: usize, pos: SurfacePos) -> bool {
+        self.reg
+            .animals
+            .get(species)
+            .is_some_and(|def| self.animal_habitat_network_connected(def, pos))
+    }
+
     /// Deterministic per-chunk wildlife roll: at most one species' group.
     pub(super) fn seed_wildlife(&mut self, pos: ChunkPos) {
         if self.mobs.len() >= MOB_CAP {
@@ -96,24 +343,19 @@ impl World {
             return;
         }
         let reg = self.reg.clone();
-        // What a country IS, not what the map first called it: a
-        // grafted heart drags its country's life after it.
-        let biome = self.country_biome_at(center).name().to_lowercase();
-        // Open sea keeps its own roster. A country's culture is a fact
-        // about its land, and the water over a drowned shelf belongs to
-        // neither the forest behind it nor the deer in that forest.
-        let here = if self.is_open_water_at(center) {
-            "ocean".to_string()
-        } else {
-            biome.clone()
-        };
+        // Salt sea keeps its own roster; fresh water inherits the climate
+        // and habitat around its watershed.
+        let here = self.animal_biome_name(center, true);
         for (si, def) in reg.animals.iter().enumerate() {
             // Wildlife only — wardens come and go with the spawner.
             // Swimmers roll in the water pass below; letting them share
             // this slot meant a fish only ever spawned in a chunk where
             // every land animal of the biome had already failed its
             // rarity roll, which is why the sea looked empty.
-            if def.hostile || def.movement_swim || !def.biomes.contains(&here) {
+            if def.hostile
+                || def.movement_swim
+                || !self.animal_habitat_suitable(def, center, false, &here)
+            {
                 continue;
             }
             let roll = self.mob_hash_at(center, 7000 + si as u32);
@@ -143,7 +385,10 @@ impl World {
             .iter()
             .enumerate()
             .filter_map(|(index, def)| {
-                (!def.hostile && def.movement_swim && def.biomes.contains(&here)).then_some(index)
+                (!def.hostile
+                    && def.movement_swim
+                    && self.animal_habitat_suitable(def, center, true, &here))
+                .then_some(index)
             })
             .collect();
         let swimmer_start = if swimmers.is_empty() {
@@ -243,11 +488,28 @@ impl World {
         if self.mobs.len() >= MOB_CAP {
             return false;
         }
-        let swim = self
-            .reg
-            .animals
-            .get(species)
-            .is_some_and(|d| d.movement_swim);
+        let Some(definition) = self.reg.animals.get(species) else {
+            return false;
+        };
+        let swim = definition.movement_swim;
+        if swim {
+            let Some(habitat) = self.aquatic_habitat_at(surface) else {
+                return false;
+            };
+            let preference = definition.aquatic.unwrap_or_default();
+            if !(preference.depth_blocks[0]..=preference.depth_blocks[1])
+                .contains(&habitat.depth_blocks)
+                || (self.planet_atlas.is_some()
+                    && (!(preference.temperature_c[0]..=preference.temperature_c[1])
+                        .contains(&habitat.temperature_c)
+                        || !(preference.discharge[0]..=preference.discharge[1])
+                            .contains(&habitat.discharge)
+                        || !(preference.salinity[0]..=preference.salinity[1])
+                            .contains(&habitat.salinity)))
+            {
+                return false;
+            }
+        }
         // Category budget: a full lake never starves the land spawns.
         if swim {
             let reg = self.reg.clone();
@@ -318,13 +580,16 @@ impl World {
     pub fn tick_mobs(
         &mut self,
         players: &[crate::server::PlayerCtx],
-        daylight: f32,
+        fallback_daylight: f32,
         dt: f32,
         rng: &mut u32,
     ) -> Vec<MobEvent> {
         let fallback_player = players.first().map(|p| p.pos);
         let reg = self.reg.clone();
         let mut events = Vec::new();
+        let fallback_season = fallback_player
+            .map(|player| self.season_at_surface(player.surface()))
+            .unwrap_or_else(|| crate::planet_atlas::local_season(self.day, 0.0));
         // Stamp stable ids on anything new (spawns, births, loaded saves).
         for m in &mut self.mobs {
             if m.id == 0 {
@@ -344,11 +609,23 @@ impl World {
                     .then_some((m.species, m.pos))
             })
             .collect();
+        let local_conditions: HashMap<u32, (usize, f32)> = self
+            .mobs
+            .iter()
+            .map(|mob| {
+                let surface = mob.pos.surface();
+                (
+                    mob.id,
+                    (
+                        self.season_at_surface(surface),
+                        self.daylight_at_surface(surface),
+                    ),
+                )
+            })
+            .collect();
         // The trophic pre-pass: hungry predators pick their quarry,
         // desperation is graded (deep hunger plus night or winter),
         // and prey with a stalker on top of it bolts.
-        let winter = self.season() == 3;
-        let night = daylight < 0.35;
         let snapshot: Vec<(u32, usize, crate::planet::EntityPos)> =
             self.mobs.iter().map(|m| (m.id, m.species, m.pos)).collect();
         let mut spooked: Vec<(u32, crate::planet::EntityPos)> = Vec::new();
@@ -356,12 +633,16 @@ impl World {
             let Some(d) = reg.animals.get(m.species) else {
                 continue;
             };
+            let (season, daylight) = local_conditions
+                .get(&m.id)
+                .copied()
+                .unwrap_or((fallback_season, fallback_daylight));
             m.bold = !d.hostile
                 && !d.fierce
                 && !d.prey.is_empty()
                 && d.attack > 0.0
                 && m.belly < crate::mobs::BELLY_DESPERATE
-                && (winter || night);
+                && (season == 3 || daylight < 0.35);
             if d.prey.is_empty() || d.belly_secs <= 0.0 || m.belly > 0.0 || m.growth < 1.0 {
                 m.quarry = None;
                 continue;
@@ -460,6 +741,7 @@ impl World {
         }
         // Rot: the ground takes whatever the vultures leave.
         let mut rotted: Vec<crate::planet::EntityPos> = Vec::new();
+        let mut retired_cargo: Vec<(BlockPos, ItemStack)> = Vec::new();
         mobs.retain_mut(|m| {
             if reg
                 .animals
@@ -469,6 +751,14 @@ impl World {
                 m.rot -= dt;
                 if m.rot <= 0.0 {
                     rotted.push(m.pos);
+                    if let Some(cargo) = m.cargo.take() {
+                        let at = m.pos.block().unwrap_or_else(|| {
+                            let surface = m.pos.surface();
+                            BlockPos::new(surface.face(), surface.u(), 1, surface.v())
+                                .expect("canonical mob surface has a shell floor")
+                        });
+                        retired_cargo.extend(cargo.into_iter().flatten().map(|stack| (at, stack)));
+                    }
                     return false;
                 }
             }
@@ -486,14 +776,21 @@ impl World {
         // Wardens are expressions of the wild, not creatures: they dissolve
         // in daylight (sky-lit cells only — torchlight never banishes them)
         // and when the player leaves them far behind.
-        mobs.retain(|m| {
+        mobs.retain_mut(|m| {
             let Some(def) = reg.animals.get(m.species) else {
+                if let Some(cargo) = m.cargo.take() {
+                    let at = m.pos.block().unwrap_or_else(|| {
+                        let surface = m.pos.surface();
+                        BlockPos::new(surface.face(), surface.u(), 1, surface.v())
+                            .expect("canonical mob surface has a shell floor")
+                    });
+                    retired_cargo.extend(cargo.into_iter().flatten().map(|stack| (at, stack)));
+                }
                 return false;
             };
-            if m.pos.y() < -20.0 {
-                return false; // fell out of the world somehow
-            }
-            if def.hostile && m.masterless {
+            let keep = if m.pos.y() < -20.0 {
+                false // fell out of the world somehow
+            } else if def.hostile && m.masterless {
                 // Left over when the heart died and never recalled:
                 // no daylight dissolves them, nothing sends them, and
                 // they do not stop. Only distance retires them.
@@ -501,9 +798,8 @@ impl World {
                     .iter()
                     .map(|p| m.pos.local_delta_to(p.pos).length_squared())
                     .fold(f32::INFINITY, f32::min);
-                return near <= 120.0 * 120.0;
-            }
-            if !def.hostile {
+                near <= 120.0 * 120.0
+            } else if !def.hostile {
                 // Fish are ambience-plus-resource: the water has
                 // fish while someone's there to see it.
                 if def.movement_swim {
@@ -511,33 +807,52 @@ impl World {
                         .iter()
                         .map(|p| m.pos.local_delta_to(p.pos).length_squared())
                         .fold(f32::INFINITY, f32::min);
-                    return near <= 96.0 * 96.0;
+                    near <= 96.0 * 96.0
+                } else {
+                    true
                 }
-                return true;
-            }
-            let near = players
-                .iter()
-                .map(|p| m.pos.local_delta_to(p.pos).length_squared())
-                .fold(f32::INFINITY, f32::min);
-            if near > 80.0 * 80.0 {
-                return false;
-            }
-            let Some(light_pos) = m
-                .pos
-                .translated(glam::Vec3::new(0.0, 0.5, 0.0))
-                .ok()
-                .and_then(|p| p.pos.block())
-            else {
-                return false;
+            } else {
+                let near = players
+                    .iter()
+                    .map(|p| m.pos.local_delta_to(p.pos).length_squared())
+                    .fold(f32::INFINITY, f32::min);
+                if near > 80.0 * 80.0 {
+                    false
+                } else if let Some(light_pos) = m
+                    .pos
+                    .translated(glam::Vec3::new(0.0, 0.5, 0.0))
+                    .ok()
+                    .and_then(|p| p.pos.block())
+                {
+                    let (_, sl) = self.light_at_pos(light_pos);
+                    let local_daylight = local_conditions
+                        .get(&m.id)
+                        .map_or(fallback_daylight, |(_, daylight)| *daylight);
+                    sl as f32 * local_daylight < 7.0
+                } else {
+                    false
+                }
             };
-            let (_, sl) = self.light_at_pos(light_pos);
-            sl as f32 * daylight < 7.0
+            if !keep && let Some(cargo) = m.cargo.take() {
+                let at = m.pos.block().unwrap_or_else(|| {
+                    let surface = m.pos.surface();
+                    BlockPos::new(surface.face(), surface.u(), 1, surface.v())
+                        .expect("canonical mob surface has a shell floor")
+                });
+                retired_cargo.extend(cargo.into_iter().flatten().map(|stack| (at, stack)));
+            }
+            keep
         });
+        for (at, stack) in retired_cargo {
+            self.push_drop_at(at, stack);
+        }
         // Husbandry: two fed adults of a species near each other bear
         // young - but not in winter; spring is the birthing season.
-        let winter = self.season() == 3;
         let mut births: Vec<(usize, usize)> = Vec::new();
         for i in 0..mobs.len() {
+            let winter = local_conditions
+                .get(&mobs[i].id)
+                .is_some_and(|(season, _)| *season == 3);
             if winter || births.iter().any(|&(a, b)| a == i || b == i) {
                 continue;
             }
@@ -581,8 +896,11 @@ impl World {
         // player and only under the local cap.
         // Spring teems, winter starves: the repop clock runs at double
         // or half speed with the season.
+        let repop_season = fallback_player
+            .map(|player| self.season_at_surface(player.surface()))
+            .unwrap_or(fallback_season);
         self.repop_timer += dt
-            * match self.season() {
+            * match repop_season {
                 0 => 2.0,
                 3 => 0.5,
                 _ => 1.0,
@@ -634,11 +952,7 @@ impl World {
                         surface.v(),
                     )
                     .is_ok_and(|pos| self.reg.is_water(self.get_block_at(pos)));
-                    let biome = if wet && self.is_open_water_at(surface) {
-                        "ocean".to_string()
-                    } else {
-                        self.country_biome_at(surface).name().to_lowercase()
-                    };
+                    let biome = self.animal_biome_name(surface, wet);
                     // Wildlife only — wardens have their own spawner.
                     let eligible: Vec<usize> = reg
                         .animals
@@ -651,7 +965,10 @@ impl World {
                             } else {
                                 !d.movement_swim
                             };
-                            !d.hostile && placeable && d.biomes.contains(&biome)
+                            !d.hostile
+                                && placeable
+                                && self.animal_habitat_suitable(d, surface, wet, &biome)
+                                && self.animal_habitat_network_connected(d, surface)
                         })
                         .map(|(i, _)| i)
                         .collect();
@@ -848,7 +1165,9 @@ impl World {
         if watcher_near {
             return;
         }
-        if self.weather == Weather::Storm && tier >= 2 {
+        if self.weather_at_surface(player_surface).kind == crate::planet_atlas::LocalWeather::Storm
+            && tier >= 2
+        {
             budget += 1; // dark skies are cover
         }
         let near_hostiles = self
@@ -917,7 +1236,9 @@ impl World {
                         let a1 = self.get_block_at(at);
                         let a2 = at.offset(0, 1, 0).map_or(AIR, |pos| self.get_block_at(pos));
                         (self.reg.is_solid(ground) && a1 == AIR && a2 == AIR).then_some((i, y))
-                    } else if d.biomes.contains(&biome) && surface_y > SEA_LEVEL {
+                    } else if self.animal_habitat_suitable(d, surface, false, &biome)
+                        && surface_y > SEA_LEVEL
+                    {
                         Some((i, surface_y + 1))
                     } else {
                         None

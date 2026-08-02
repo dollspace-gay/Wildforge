@@ -78,7 +78,7 @@ impl TestHost {
                     // (settling snow eats block placements) and for
                     // seeded wildlife to wander into placement cells.
                     // The agent tests exercise the wire, not the wild.
-                    sim.world.weather = crate::world::Weather::Clear;
+                    sim.world.force_local_weather("clear");
                     sim.world.replace_mobs(Vec::new());
                     sess.pump(sim, None, 0.02);
                     let players = sess.player_ctxs(None);

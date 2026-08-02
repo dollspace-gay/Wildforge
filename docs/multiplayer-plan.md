@@ -15,6 +15,15 @@ rendezvous remains v2/out-of-repo as specified. Loopback-tested.
 > prototype. `multiplayer-identity-plan.md` supersedes them for persistent
 > local profiles, optional ATProto accounts, and public-server moderation.
 
+> **Planetary entry follow-up (2026-08-01):** The message sketch below is a
+> historical WFC3 prototype, not the current wire. Protocol 24 uses canonical
+> face/u/y/v positions, `EntryProgress` -> exact 3x3 `EntryManifest` ->
+> `EntryLoaded` -> host `EntryAccepted`, and keeps pending guests out of
+> simulation and the active roster. Disk chunks are WFC8; network-only WFC9
+> carries host-derived light. Wider views stream asynchronously after
+> admission, and a guest mirror never generates authoritative terrain. See
+> `docs/world-entry-streaming-plan.md` for the implemented contract.
+
 ## Dependencies
 
 `quinn` (QUIC: encryption via rustls, reliable streams + unreliable

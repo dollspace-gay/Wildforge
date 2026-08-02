@@ -3,6 +3,17 @@
 Implemented 2026-07-22. This is the operator/player companion to
 `multiplayer-identity-plan.md`.
 
+Before advertising a migrated or repaired planet, an operator can validate or
+rebuild its prepared homeland and run both conservation audits without
+admitting anyone:
+
+```sh
+wildforge --validate-entry saves/<world>
+```
+
+The command exits nonzero on incompatible/corrupt planet data, failed entry
+preparation or save, water/salt drift, or material/progression audit failure.
+
 ## What an identity means
 
 Every installation creates an Ed25519 device key in `identity/` and every

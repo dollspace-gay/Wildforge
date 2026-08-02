@@ -3,6 +3,16 @@
 Companion to docs/agent-mcp-plan.md, for whoever runs the server an
 agent joins.
 
+As of protocol 24, connection success is not world entry. The agent reports
+homeland progress, decodes the host's exact 3x3 entry manifest, acknowledges
+it, and only becomes an actor after host acceptance. Its wider radius-10 view
+then expands nearest-first. While pending it cannot move, drown, consume,
+appear in the active roster, or affect ecology. Coordinates returned to MCP
+use `{face,u,y,v}` and the six snake-case face names (`neg_x`, `pos_x`,
+`neg_y`, `pos_y`, `neg_z`, `pos_z`). Idle water self-preservation uses the
+same swim control available to a player; it does not teleport or grant water
+walking.
+
 ## Starting an agent
 
 ```sh
