@@ -568,13 +568,28 @@ fn exporter_covers_every_registered_layer_and_all_faces() {
     assert_eq!(report.cell_count, 6 * 4 * 4);
     assert_eq!(report.registered_layers.len(), report.exported_maps.len());
     for layer in &report.registered_layers {
-        assert!(root.join(format!("maps/{layer}.png")).is_file());
+        let png = root.join(format!("maps/{layer}.png"));
+        assert!(png.is_file());
+        assert!(
+            std::fs::read(&png)
+                .expect("read generated atlas map")
+                .starts_with(b"\x89PNG\r\n\x1a\n"),
+            "exported atlas layer is a PNG: {}",
+            png.display()
+        );
         assert!(root.join(format!("maps/{layer}.legend.txt")).is_file());
     }
     let census = atlas.census().unwrap();
     assert_eq!(census.cells_by_face.values().sum::<usize>(), census.cells);
     assert!((census.land_fraction + census.ocean_fraction - 1.0).abs() < 1e-9);
-    assert!(root.join("globe_preview.png").is_file());
+    let preview = root.join("globe_preview.png");
+    assert!(preview.is_file());
+    assert!(
+        std::fs::read(&preview)
+            .expect("read generated globe preview")
+            .starts_with(b"\x89PNG\r\n\x1a\n"),
+        "generated globe preview is a PNG"
+    );
     assert!(root.join("validation-report.toml").is_file());
     assert!(root.join("geology.toml").is_file());
     assert!(root.join("hydrology.toml").is_file());

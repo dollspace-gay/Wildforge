@@ -141,14 +141,17 @@ view, and prevents outer-ring dirty/remesh churn.
 
 ### Diagnostics and visual evidence
 
-- `screenshots/planetary-atlas-seed-1337-v9/` contains the six-face maps,
-  globe preview, census, manifests, transects, river profiles, weather tracks,
-  qualification sites and exact water audit.
+- `screenshots/planetary-atlas-seed-1337-v9/` retains the text census,
+  manifests, map legends, transects, river profiles, weather tracks,
+  qualification sites and exact water audit. Generated PNG maps and the globe
+  preview remain local evidence and are ignored by Git.
 - `screenshots/planetary-qualification.toml` is the sidecar for corrected
   solo, remote, seam-building, seam-water, sea-horizon and natural-oasis
-  captures. `tests::rendering::planetary_visual_capture_manifest_is_complete`
-  checks metadata, PNG signatures, exporter status and all 132 map/legend
-  pairs.
+  captures. The PNGs remain ignored local evidence;
+  `tests::rendering::planetary_visual_capture_manifest_is_complete` checks the
+  tracked metadata, safe PNG declarations, exporter status and all 132 map
+  legends. `tests::atlas::exporter_covers_every_registered_layer_and_all_faces`
+  generates fresh temporary output and checks the actual PNG signatures.
 - Older `screenshot-goal7-*` images visibly contain the pre-fix culling bug
   and are not qualification evidence. They remain only as a historical defect
   record; the validated manifest excludes them.

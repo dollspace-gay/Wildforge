@@ -623,7 +623,25 @@ fn curved_chunk_meshes_join_and_cull_across_a_cube_face() {
 #[test]
 fn planetary_visual_capture_manifest_is_complete() {
     use std::collections::HashSet;
-    use std::path::Path;
+    use std::path::{Component, Path};
+
+    let assert_relative_png = |relative: &str| {
+        let path = Path::new(relative);
+        assert!(
+            !path.is_absolute(),
+            "PNG declaration is relative: {relative}"
+        );
+        assert_eq!(
+            path.extension().and_then(|extension| extension.to_str()),
+            Some("png"),
+            "PNG declaration has a .png suffix: {relative}"
+        );
+        assert!(
+            path.components()
+                .all(|component| matches!(component, Component::Normal(_))),
+            "PNG declaration cannot escape the evidence directory: {relative}"
+        );
+    };
 
     let screenshots = Path::new(env!("CARGO_MANIFEST_DIR")).join("screenshots");
     let manifest_path = screenshots.join("planetary-qualification.toml");
@@ -644,6 +662,7 @@ fn planetary_visual_capture_manifest_is_complete() {
     for field in [
         "id",
         "directory",
+        "preview",
         "location",
         "season",
         "time",
@@ -661,6 +680,7 @@ fn planetary_visual_capture_manifest_is_complete() {
     assert!(atlas["seed"].as_integer().is_some());
     assert!(atlas["generator_version"].as_integer().is_some());
     let atlas_root = screenshots.join(atlas["directory"].as_str().unwrap());
+    assert_relative_png(atlas["preview"].as_str().unwrap());
     // The persisted manifest intentionally contains the full u64 checksum
     // domain, while generic `toml::Value` is limited to TOML's signed integer
     // domain. The production atlas loader validates those checksums; this
@@ -694,15 +714,11 @@ fn planetary_visual_capture_manifest_is_complete() {
         .expect("exported atlas maps");
     assert_eq!(registered.len(), 132, "current qualification layer count");
     assert_eq!(exported.len(), registered.len());
-    assert!(atlas_root.join("globe_preview.png").is_file());
     for map in exported {
         let relative = map.as_str().expect("map path is text");
+        assert_relative_png(relative);
         let path = atlas_root.join(relative);
-        assert!(
-            path.is_file(),
-            "exported atlas map exists: {}",
-            path.display()
-        );
+        assert_eq!(path.parent(), Some(atlas_root.join("maps").as_path()));
         let legend = path.with_extension("legend.txt");
         assert!(
             legend.is_file(),
@@ -736,14 +752,8 @@ fn planetary_visual_capture_manifest_is_complete() {
         assert!(ids.insert(capture["id"].as_str().unwrap()));
         let file = capture["file"].as_str().unwrap();
         assert!(files.insert(file), "capture files are unique");
-        let png = screenshots.join(file);
-        let bytes = std::fs::read(&png)
-            .unwrap_or_else(|error| panic!("read capture {}: {error}", png.display()));
-        assert!(
-            bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
-            "capture is a PNG: {}",
-            png.display()
-        );
+        assert_relative_png(file);
+        assert_eq!(Path::new(file).components().count(), 1);
     }
 }
 

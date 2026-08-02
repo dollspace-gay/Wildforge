@@ -5,6 +5,7 @@ review_machine = "Wildforge development host; America/Chicago; serial Cargo comp
 [atlas]
 id = "production-atlas-seed-1337"
 directory = "planetary-atlas-seed-1337-v9"
+preview = "globe_preview.png"
 seed = 1337
 generator_version = 9
 atlas_format_version = 6

@@ -1602,7 +1602,7 @@ fn host_and_guest_cross_a_planet_seam_smoothly_with_both_faces_streamed() {
     );
 
     let mut saw_host_across = false;
-    let streaming_deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let streaming_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while std::time::Instant::now() < streaming_deadline {
         sess.pump(&mut sim, Some((end, 0.4, false, u16::MAX, 0)), 0.06);
         for message in client.poll() {
@@ -1625,12 +1625,16 @@ fn host_and_guest_cross_a_planet_seam_smoothly_with_both_faces_streamed() {
         if guest.holds_chunk_at(start.chunk().unwrap())
             && guest.holds_chunk_at(end.chunk().unwrap())
             && saw_host_across
+            && streamed_faces.contains(&start.face())
+            && streamed_faces.contains(&end.face())
         {
             break;
         }
         // Chunk load/generation and RLE encoding are intentionally off the
-        // host pump. Yield to those workers instead of treating 600
-        // zero-wall-time pumps as a completion deadline.
+        // host pump, and recording a reliable send is not the same as the
+        // client having polled it. Yield until both sides of that contract
+        // are observed instead of racing the transport after send-side state
+        // happens to become complete.
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
     let guest = &sess.guests[&id];
