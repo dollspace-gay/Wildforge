@@ -606,6 +606,7 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
     let arrow_item = it(&reg, "base:arrow");
     // Arrow flying at the deer: hits through the normal hurt path.
     w.spawn_projectile(crate::mobs::Projectile {
+        stable_id: 0,
         pos: ep(Vec3::new(8.5, 220.5, 5.0)),
         vel: Vec3::new(0.0, 0.5, 18.0),
         tile: 0,
@@ -647,6 +648,7 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
         w.set_block(2, y, 20, stone);
     }
     w.spawn_projectile(crate::mobs::Projectile {
+        stable_id: 0,
         pos: ep(Vec3::new(2.5, 222.5, 16.0)),
         vel: Vec3::new(0.0, 0.0, 16.0),
         tile: 0,

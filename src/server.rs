@@ -62,6 +62,8 @@ pub enum SimEvent {
     Lightning(crate::planet::EntityPos),
     /// The year stopped turning, or started again.
     LongWinter(bool),
+    /// A bounded working reached its host-owned completion/interruption edge.
+    Working(crate::workings::WorkingResult, crate::workings::WorkingCue),
 }
 
 pub struct Server {
@@ -155,6 +157,12 @@ impl Server {
         if let Err(error) = self.world.tick_arcane_ecology(512) {
             eprintln!("planetary magical ecology update failed: {error}");
         }
+        events.extend(
+            self.world
+                .tick_workings()
+                .into_iter()
+                .map(|(result, cue)| SimEvent::Working(result, cue)),
+        );
         let winter_before = self.world.long_winter;
         if self.world.tick_ire(dt / DAY_LENGTH) {
             let refund = self.world.accept_offerings();

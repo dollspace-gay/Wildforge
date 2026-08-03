@@ -127,6 +127,36 @@ fn item_tooltip_lines_with_current(
     if let Some(effect) = d.charm.as_deref().and_then(charm_line) {
         lines.push((effect.to_string(), EFFECT));
     }
+    if d.implement
+        .as_ref()
+        .is_some_and(|implement| implement.kind == crate::implements::ImplementItemKind::Wand)
+    {
+        lines.push(("WAND WORKINGS (TARGET + HOLD USE)".into(), EFFECT));
+        let labels = reg
+            .workings
+            .values()
+            .filter(|working| working.mode == crate::workings::DeliveryMode::Wand)
+            .map(|working| working.label.to_uppercase())
+            .collect::<Vec<_>>();
+        for group in labels.chunks(4) {
+            lines.push((group.join(" / "), BODY));
+        }
+        lines.push(("RELEASE COMMITS / CTRL + USE FORCES OVERDRAW".into(), WEAR));
+    }
+    if d.places
+        .is_some_and(|block| reg.block(block).interaction.as_deref() == Some("binding_frame"))
+    {
+        lines.push(("CONSTRUCTED RITUALS".into(), EFFECT));
+        let labels = reg
+            .workings
+            .values()
+            .filter(|working| working.mode == crate::workings::DeliveryMode::Ritual)
+            .map(|working| working.label.to_uppercase())
+            .collect::<Vec<_>>();
+        for group in labels.chunks(3) {
+            lines.push((group.join(" / "), BODY));
+        }
+    }
     if d.bedroll {
         lines.push(("USE: SLEEP TO DAWN, SET SPAWN".into(), EFFECT));
     }
@@ -486,5 +516,40 @@ mod tests {
                 .filter(|line| line.starts_with("CURRENT: "))
                 .all(|line| !line.chars().any(|character| character.is_ascii_digit()))
         );
+    }
+
+    #[test]
+    fn wand_and_frame_tooltips_publish_the_installed_working_catalogue() {
+        let reg = reg();
+        let wand = lines_for(&reg, "base:bound_wand");
+        for label in [
+            "TRACE",
+            "GLEAM",
+            "KINDLE",
+            "NUDGE",
+            "ROOTWAKE",
+            "DRAW",
+            "FIELDMEND",
+            "HOLDFAST",
+        ] {
+            assert!(
+                wand.iter().any(|line| line.contains(label)),
+                "wand tooltip omitted {label}: {wand:?}"
+            );
+        }
+        assert!(wand.iter().any(|line| line.contains("CTRL + USE")));
+
+        let frame = lines_for(&reg, "base:binding_frame");
+        for label in [
+            "SETTLING RITE",
+            "ROOTING BED",
+            "WARD BOUNDARY",
+            "TRANSFER CIRCLE",
+        ] {
+            assert!(
+                frame.iter().any(|line| line.contains(label)),
+                "binding-frame tooltip omitted {label}: {frame:?}"
+            );
+        }
     }
 }

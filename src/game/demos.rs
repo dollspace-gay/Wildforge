@@ -1372,6 +1372,7 @@ impl Game {
                             water: crate::planet_atlas::ReservoirMass::fresh(
                                 60 * crate::planet_atlas::HYDRO_UNITS_PER_BLOCK,
                             ),
+                            draft_closed: false,
                             steam_numerator_remainder: 0,
                         }),
                     );
@@ -2393,7 +2394,8 @@ impl Game {
                 self.set_screen(Screen::Furnace(chart.block_tuple(p)));
             }
         }
-        if std::env::var("WILDFORGE_DEMO_IMPLEMENTS").is_ok()
+        if (std::env::var("WILDFORGE_DEMO_IMPLEMENTS").is_ok()
+            || std::env::var("WILDFORGE_DEMO_WORKINGS").is_ok())
             && let Err(error) = self.stage_implements_demo(spawn)
         {
             eprintln!("implements demo could not be staged: {error}");
@@ -2556,6 +2558,43 @@ impl Game {
         self.camera.follow_planet(self.player.eye());
         self.camera.yaw = -std::f32::consts::FRAC_PI_2;
         self.camera.pitch = -0.16;
+        if std::env::var("WILDFORGE_DEMO_WORKINGS").is_ok() {
+            let source = self
+                .player
+                .pos
+                .block()
+                .ok_or("the workings capture player has no physical source cell")?;
+            let actor = identity::local_player_id(
+                &self.server.world.save_dir_for_saving(),
+                self.identity.device_id(),
+            )
+            .unwrap_or(identity::PlayerId([0; 16]));
+            let result = self.server.world.begin_wand_working(
+                actor.0,
+                &self.config.display_name,
+                source,
+                wand.arcane_id,
+                "base:gleam",
+                crate::workings::WorkingTargetIntent::None,
+                Some(&self.inventory),
+                false,
+            )?;
+            self.server.world.clock += f64::from(crate::workings::MIN_WAND_SETTLE_SECONDS) + 0.01;
+            self.server.world.activate_working(result.stable_id)?;
+            if let Some(cue) = self
+                .server
+                .world
+                .working_cues()
+                .into_iter()
+                .find(|cue| cue.stable_id == result.stable_id)
+            {
+                self.present_working_cue(cue);
+            }
+            eprintln!(
+                "workings demo: active Gleam {} from wand {}",
+                result.stable_id, wand.arcane_id
+            );
+        }
         eprintln!(
             "implements demo: frame {frame:?}, wand id {}, charge {}, layout containment {}",
             wand.arcane_id,

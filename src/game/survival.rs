@@ -95,6 +95,31 @@ impl Game {
         self.sfx(Sfx::Hurt);
         if self.survival.health <= 0.0 {
             self.survival.health = 0.0;
+            if let Some(channel) = self.interaction.working.take() {
+                if let Some(remote) = &self.multiplayer.remote {
+                    remote.client.send(&net::C2S::OperateWorking {
+                        working_id: channel.working_id,
+                        held_instance: channel.wand_id,
+                        target: channel.target,
+                        intent: crate::workings::WorkingIntent::Cancel,
+                    });
+                } else if channel.stable_id != 0 {
+                    let prior = self
+                        .server
+                        .world
+                        .working_cues()
+                        .into_iter()
+                        .find(|cue| cue.stable_id == channel.stable_id);
+                    if let Ok(result) = self.server.world.interrupt_working(channel.stable_id)
+                        && let Some(mut cue) = prior
+                    {
+                        cue.kind = result.cue;
+                        cue.warning_band = result.warning_band;
+                        cue.completion_permille = 1_000;
+                        self.present_working_cue(cue);
+                    }
+                }
+            }
             // Death: scatter every player-owned stack. The cursor and craft
             // grid are inventories too; clearing either would be an invisible
             // finite-material sink.
@@ -134,7 +159,7 @@ impl Game {
         let mut entity = ItemEntity::new(pos, v, stack.item, stack.count);
         entity.durability = stack.durability;
         entity.arcane_id = stack.arcane_id;
-        self.interaction.items.push(entity);
+        self.server.world.spawn_loose_item(entity);
     }
 
     pub(super) fn respawn(&mut self) {

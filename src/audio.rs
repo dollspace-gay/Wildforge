@@ -77,6 +77,9 @@ pub enum Sfx {
     ImplementTransfer,
     /// Physical stress in a bound object: low scrape under a brittle ring.
     ImplementStrain,
+    /// Working discord rises deterministically with the same visible 0..=3
+    /// warning band used by particles and outlines.
+    WorkingStrain(u8),
     /// A trigger with no usable Current behind its structural spark.
     ImplementEmpty,
     /// A containment or implement fracture, deliberately unlike thunder.
@@ -245,6 +248,10 @@ fn synth(sfx: Sfx) -> Vec<f32> {
         Sfx::ImplementUse => chirp(0.16, 360.0, 610.0),
         Sfx::ImplementTransfer => chirp(0.28, 240.0, 980.0),
         Sfx::ImplementStrain => burst(0.24, 720.0, 85.0, 0.28, 1.1, 181),
+        Sfx::WorkingStrain(band) => {
+            let pitch = 1.0 + f32::from(band.min(3)) * 0.18;
+            burst(0.24, 720.0 * pitch, 85.0 * pitch, 0.28, 1.1, 181)
+        }
         Sfx::ImplementEmpty => burst(0.10, 190.0, 0.0, 0.0, 2.4, 183),
         Sfx::ImplementFailure => burst(0.65, 1250.0, 42.0, 0.58, 0.75, 187),
         Sfx::MobHurt(p) => burst(0.16, 320.0 * p, 110.0 * p, 0.5, 2.0, 121),

@@ -1,6 +1,6 @@
 # The Current — master magic design and `/goal` execution sequence
 
-> **Status: goals 1–4 implemented and production-qualified; goals 5–9 remain.**
+> **Status: goals 1–6 implemented and production-qualified; goals 7–9 remain.**
 >
 > This document is the index, dependency contract, vocabulary, and final
 > definition of done for player magic in Wildforge. Run it only after
@@ -290,7 +290,7 @@ Produces:
 - one charm slot and no linear best-item ladder,
 - complete durability, salvage, wire, and mod behavior.
 
-### Goal 6
+### Goal 6 — implemented and production-qualified 2026-08-03
 
 ```text
 /goal complete all features in the design document docs/magic-workings-plan.md

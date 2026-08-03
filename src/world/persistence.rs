@@ -152,6 +152,12 @@ impl World {
         let implements_state =
             crate::implements::ImplementsState::load_or_initialize(&save_dir, reg.content_hash)
                 .map_err(std::io::Error::other)?;
+        let workings_state = crate::workings::WorkingsState::load_or_initialize(
+            &save_dir,
+            reg.content_hash,
+            &reg.workings,
+        )
+        .map_err(std::io::Error::other)?;
         write_world_meta_full(&save_dir, seed, &mode, ire, day)?;
         let mut w = World::new_with_preloaded_atlas(seed, save_dir, reg, Arc::new(atlas));
         w.material_ledger = Some(material_ledger);
@@ -159,6 +165,7 @@ impl World {
         w.arcane_geography = Some(arcane_geography);
         w.discovery_state = Some(discovery_state);
         w.implements_state = Some(implements_state);
+        w.workings_state = Some(workings_state);
         w.mode = mode;
         w.ire = ire;
         w.day = day;
@@ -170,8 +177,17 @@ impl World {
         // unmaterialized account back or remove a stale pre-commit stack
         // before any player, container, drop, or mob can observe it.
         if let Some(ledger) = &mut w.arcane_ledger {
+            let active_workings = w
+                .workings_state
+                .as_ref()
+                .map_or_else(std::collections::BTreeSet::new, |state| state.active_ids());
+            let workings_max = w
+                .workings_state
+                .as_ref()
+                .map_or(0, crate::workings::WorkingsState::max_working_id);
+            ledger.reconcile_working_id_floor(workings_max);
             ledger
-                .reconcile_transient_owners()
+                .reconcile_transient_owners(&active_workings)
                 .map_err(std::io::Error::other)?;
             ledger
                 .reconcile_durable_item_owners(&w.save_dir)
@@ -194,8 +210,21 @@ impl World {
         w.migrate_loaded_entity_charms();
         w.load_mobs();
         w.migrate_loaded_mob_charms();
+        w.load_loose_items();
         w.load_stamps();
+        let interrupted = w
+            .interrupt_loaded_wand_workings()
+            .map_err(std::io::Error::other)?;
+        if interrupted != 0 {
+            eprintln!(
+                "workings: interrupted {interrupted} held wand channel(s) whose session ended at restart"
+            );
+        }
         w.replay_pending_material_operation()?;
+        let replayed = w.replay_pending_workings().map_err(std::io::Error::other)?;
+        if replayed != 0 {
+            eprintln!("workings: completed {replayed} crash-safe pending effect(s)");
+        }
         Ok(w)
     }
 

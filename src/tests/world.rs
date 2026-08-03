@@ -2502,6 +2502,7 @@ fn snow_settles_melts_and_snowballs_fly() {
     m.health = 10.0;
     w.spawn_mob(m);
     w.spawn_projectile(crate::mobs::Projectile {
+        stable_id: 0,
         pos: ep(Vec3::new(4.5, sy + 0.4, 3.0)),
         vel: Vec3::new(0.0, 0.0, 12.0),
         tile: 0,

@@ -338,7 +338,6 @@ struct InteractionState {
     anvil_pos: Option<crate::planet::BlockPos>,
     craft_grid: [Option<ItemStack>; 9],
     craft_size: usize,
-    items: Vec<ItemEntity>,
     breaking: Option<(crate::planet::BlockPos, f32)>,
     /// Waystones this player has touched: (name, x, z). Loaded from a
     /// per-world sidecar; purely local knowledge, never synced.
@@ -351,6 +350,16 @@ struct InteractionState {
     /// Last authoritative revision observed for each binding frame. Reliable
     /// mutations echo a new value and stale concurrent requests are refused.
     binding_revisions: std::collections::HashMap<crate::planet::BlockPos, u64>,
+    working: Option<LocalWorkingChannel>,
+}
+
+struct LocalWorkingChannel {
+    stable_id: u64,
+    working_id: String,
+    wand_id: u64,
+    target: crate::workings::WorkingTargetIntent,
+    held_secs: f32,
+    hold_sent: bool,
 }
 
 impl Default for InteractionState {
@@ -366,12 +375,12 @@ impl Default for InteractionState {
             anvil_pos: None,
             craft_grid: [None; 9],
             craft_size: 2,
-            items: Vec::new(),
             breaking: None,
             attuned: Vec::new(),
             riding: None,
             fishing: None,
             binding_revisions: std::collections::HashMap::new(),
+            working: None,
         }
     }
 }
@@ -424,6 +433,10 @@ struct PresentationState {
     lights: lights::Director,
     player_gait: std::collections::HashMap<u32, (Vec3, f32)>,
     demo_lights: Vec<lights::DynLight>,
+    /// Last host-authored active cue by stable working id. Dedicated guests
+    /// refresh this bounded presentation cache once per second; local play
+    /// reads the authoritative state directly.
+    working_cues: std::collections::HashMap<u64, (crate::workings::WorkingCue, f32)>,
 }
 
 impl PresentationState {
@@ -463,6 +476,7 @@ impl PresentationState {
             lights: lights::Director::new(),
             player_gait: Default::default(),
             demo_lights: Vec::new(),
+            working_cues: Default::default(),
         }
     }
 
@@ -507,6 +521,7 @@ struct Remote {
     players_rx: net::SnapshotAssembler<net::PlayerSnap>,
     mobs_rx: net::SnapshotAssembler<net::MobSnap>,
     bolts_rx: net::SnapshotAssembler<net::BoltSnap>,
+    loose_items_rx: net::SnapshotAssembler<net::LooseItemSnap>,
     falling_rx: net::SnapshotAssembler<net::FallSnap>,
     /// View distance the host granted, in chunks. Terrain past it is not
     /// coming, so the fog and the eviction radius both respect it.

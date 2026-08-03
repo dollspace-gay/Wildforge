@@ -30,6 +30,7 @@ mod registry_tests;
 mod rendering;
 mod soil;
 mod water_cycle;
+mod workings;
 mod world;
 mod worldgen;
 

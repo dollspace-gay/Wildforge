@@ -103,6 +103,7 @@ pub fn click_stack(
     }
 }
 
+#[derive(Clone)]
 pub struct Inventory {
     pub slots: [Option<ItemStack>; TOTAL_SLOTS],
 }

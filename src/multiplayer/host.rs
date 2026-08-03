@@ -90,6 +90,9 @@ pub struct Guest {
     action_cooldown: f32,
     /// Host-owned proof that a lens or apparatus physically settled.
     pending_discovery: Option<PendingDiscovery>,
+    /// At most one held wand channel per player. The durable transaction is
+    /// owned by the world; this is only the request-routing handle.
+    active_working: Option<u64>,
     since_damage: f32,
     regen_timer: f32,
     hunger_charm_credit: f32,
@@ -198,6 +201,7 @@ pub enum HostFx {
         cue: crate::implements::ImplementCue,
         visual: Option<crate::implements::ImplementVisual>,
     },
+    WorkingEvent(crate::workings::WorkingCue),
     /// Everyone slept: the host's own dawn side-effects should run.
     AllSlept,
 }
@@ -524,6 +528,12 @@ impl HostSession {
                 HostEvent::Left { id } => {
                     self.pending_guests.remove(&id);
                     if let Some(g) = self.guests.remove(&id) {
+                        if let Err(error) = server.world.interrupt_actor_workings(g.player_id.0) {
+                            eprintln!(
+                                "workings: disconnect settlement for {} failed: {error}",
+                                g.player_id
+                            );
+                        }
                         if let Some(profiles) = &self.profiles
                             && let Err(e) =
                                 profiles.save(&PlayerRuntime::from_guest(&g), &server.world.reg)
@@ -644,6 +654,39 @@ impl HostSession {
                 }
             }
         }
+        let out_of_range = self
+            .guests
+            .iter()
+            .filter_map(|(id, guest)| {
+                let active = guest.active_working?;
+                let source = guest.pos.block()?;
+                (!server.world.wand_working_reachable_from(active, source)).then_some((*id, active))
+            })
+            .collect::<Vec<_>>();
+        for (id, active) in out_of_range {
+            let mut cue = server
+                .world
+                .working_cues()
+                .into_iter()
+                .find(|cue| cue.stable_id == active);
+            if let Some(guest) = self.guests.get_mut(&id) {
+                guest.active_working = None;
+            }
+            if let Ok(mut result) = server.world.interrupt_working(active) {
+                result.message =
+                    "The wand path leaves its bounded reach and breaks cleanly.".into();
+                if let Some(cue) = cue.as_mut() {
+                    cue.kind = result.cue;
+                    cue.warning_band = result.warning_band;
+                    cue.completion_permille = 1_000;
+                }
+                self.net.send(id, &S2C::WorkingResult(result));
+                if let Some(cue) = cue {
+                    self.broadcast_ready(&S2C::WorkingEvent(cue.clone()));
+                    fx.push(HostFx::WorkingEvent(cue));
+                }
+            }
+        }
         if self.state_timer + dt >= 1.0 && !survival_changed.is_empty() {
             let ids: Vec<u32> = self
                 .guests
@@ -716,72 +759,66 @@ impl HostSession {
             }
             self.send_player_state(owner);
         }
-        // A windowed host turns world drops into rendered item entities in
-        // the frame loop. A dedicated server has no such client-side owner,
-        // so deliver to the nearest guest or bank finite overflow regionally.
-        if host.is_none() {
-            let mut changed = std::collections::BTreeSet::new();
-            for (pos, stack) in server.world.take_pending_drops() {
-                let nearest = self
-                    .guests
-                    .iter()
-                    .filter(|(_, guest)| guest.entry_ready)
-                    .min_by(|(_, a), (_, b)| {
-                        a.pos
-                            .distance_to(pos.entity_center())
-                            .total_cmp(&b.pos.distance_to(pos.entity_center()))
-                    })
-                    .map(|(id, _)| *id);
-                let left = nearest.map_or(stack.count, |id| {
-                    let guest = self.guests.get_mut(&id).expect("selected guest exists");
-                    let left = guest.inventory.add_stack(&server.world.reg, stack);
-                    let delivered = stack.count - left;
-                    if delivered != 0 {
-                        self.net.send(
-                            id,
-                            &S2C::Give {
-                                item: stack.item.0,
-                                count: delivered,
-                                durability: stack.durability,
-                                arcane_id: stack.arcane_id,
-                                current_units: server
-                                    .world
-                                    .inspectable_item_current(stack.arcane_id)
-                                    .unwrap_or(0),
-                            },
-                        );
-                        changed.insert(id);
-                    }
-                    left
-                });
-                if left != 0
-                    && let Some(ledger) = &mut server.world.material_ledger
-                    && let Err(error) = ledger.bury_stack(
-                        &server.world.reg,
-                        pos,
-                        ItemStack {
-                            count: left,
-                            ..stack
-                        },
-                        "uncollected dedicated-server drop",
-                    )
-                {
-                    eprintln!("materials: dedicated drop accounting failed: {error}");
-                }
-                if left != 0 {
-                    server.world.retire_arcane_stack_at(
-                        pos,
-                        ItemStack {
-                            count: left,
-                            ..stack
-                        },
-                        "uncollected dedicated-server drop",
-                    );
-                }
+        // Dropped items are the same host-owned physical entities on a
+        // windowed or dedicated host. Nearby guests pick them up through the
+        // authoritative inventory; full packs leave the remainder in-world.
+        let mut loose = server.world.take_loose_items();
+        let mut changed = std::collections::BTreeSet::new();
+        let mut index = 0;
+        while index < loose.len() {
+            let item = &loose[index];
+            let nearest = (item.age > crate::entity::PICKUP_DELAY)
+                .then(|| {
+                    self.guests
+                        .iter()
+                        .filter(|(_, guest)| guest.entry_ready && guest.health > 0.0)
+                        .filter_map(|(id, guest)| {
+                            let target = guest.pos.translated(Vec3::new(0.0, 0.9, 0.0)).ok()?.pos;
+                            let distance = item.pos.distance_to(target);
+                            (distance < 1.4).then_some((*id, distance))
+                        })
+                        .min_by(|(left_id, left), (right_id, right)| {
+                            left.total_cmp(right).then_with(|| left_id.cmp(right_id))
+                        })
+                        .map(|(id, _)| id)
+                })
+                .flatten();
+            let Some(id) = nearest else {
+                index += 1;
+                continue;
+            };
+            let mut stack = ItemStack::new(&server.world.reg, item.item, item.count);
+            stack.durability = item.durability;
+            stack.arcane_id = item.arcane_id;
+            let guest = self.guests.get_mut(&id).expect("selected guest exists");
+            let left = guest.inventory.add_stack(&server.world.reg, stack);
+            let delivered = stack.count.saturating_sub(left);
+            if delivered != 0 {
+                self.net.send(
+                    id,
+                    &S2C::Give {
+                        item: stack.item.0,
+                        count: delivered,
+                        durability: stack.durability,
+                        arcane_id: stack.arcane_id,
+                        current_units: server
+                            .world
+                            .inspectable_item_current(stack.arcane_id)
+                            .unwrap_or(0),
+                    },
+                );
+                changed.insert(id);
             }
-            for id in changed {
-                self.send_player_state(id);
+            if left == 0 {
+                loose.swap_remove(index);
+            } else {
+                loose[index].count = left;
+                index += 1;
             }
+        }
+        server.world.replace_loose_items(loose);
+        for id in changed {
+            self.send_player_state(id);
         }
 
         self.stream_chunks(server);
@@ -813,29 +850,72 @@ impl HostSession {
             let reg = server.world.reg.clone();
             let mush = reg.item_id("base:spoiled_mush");
             let mut consumed = Vec::new();
-            for g in self.guests.values_mut().filter(|guest| guest.entry_ready) {
-                for s in g.inventory.slots.iter_mut() {
+            let step = (20.0 * crate::world::FRESHNESS_PER_SEC) as u32;
+            let mut aged_guests = Vec::new();
+            for (guest_id, g) in self
+                .guests
+                .iter_mut()
+                .filter(|(_, guest)| guest.entry_ready)
+            {
+                let mut changed = false;
+                for (slot, s) in g.inventory.slots.iter_mut().enumerate() {
                     let Some(st) = s else { continue };
                     let full = reg.item(st.item).durability;
-                    if reg.item(st.item).food.is_none() || full == 0 {
+                    let food = reg.item(st.item).food.is_some();
+                    let viable_seed = reg.item(st.item).name.ends_with("_seed");
+                    if (!food && !viable_seed) || full == 0 {
                         continue;
                     }
                     if st.durability == 0 {
                         st.durability = full;
-                    } else if st.durability <= 20 {
-                        consumed.push(*st);
-                        *s = mush.map(|m| {
-                            let mut sp = ItemStack::new(&reg, m, 1);
-                            sp.count = st.count;
-                            sp
-                        });
+                        changed = true;
                     } else {
-                        st.durability -= 20;
+                        let actual_step =
+                            server
+                                .world
+                                .holdfast_age_step(g.player_id.0, slot, *st, step, 20);
+                        if st.durability > actual_step {
+                            st.durability -= actual_step;
+                            changed = true;
+                            continue;
+                        }
+                        if food {
+                            consumed.push(*st);
+                            *s = mush.map(|m| {
+                                let mut sp = ItemStack::new(&reg, m, 1);
+                                sp.count = st.count;
+                                sp
+                            });
+                        } else {
+                            st.durability = 0;
+                        }
+                        changed = true;
                     }
+                }
+                if let Some(at) = g.pos.block() {
+                    for slot in 0..g.inventory.slots.len() {
+                        if let Some(stack) = g.inventory.slots[slot]
+                            && let Err(error) = server.world.leak_fragile_item_charge(
+                                g.player_id.0,
+                                slot,
+                                stack,
+                                at,
+                                20,
+                            )
+                        {
+                            eprintln!("arcane specimen leakage failed: {error}");
+                        }
+                    }
+                }
+                if changed {
+                    aged_guests.push(*guest_id);
                 }
             }
             if let Err(error) = server.world.record_consumed_stacks(consumed) {
                 eprintln!("materials: spoiled guest food accounting failed: {error}");
+            }
+            for guest_id in aged_guests {
+                self.send_player_state(guest_id);
             }
         }
         // Vehicles follow their riders exactly (the rider's client
@@ -872,6 +952,13 @@ impl HostSession {
                 ire: server.world.ire,
                 day: server.world.day,
             });
+            // Active effects are durable host state, not one-shot animation
+            // packets. Refreshing these small qualitative cues lets late
+            // joiners and packet-delayed guests see Gleam, ritual paths, and
+            // persistent warning bands without exposing private accounting.
+            for cue in server.world.working_cues() {
+                self.broadcast_ready(&S2C::WorkingEvent(cue));
+            }
             if let Some(atlas) = server.world.planet_atlas() {
                 let side = atlas.side();
                 let updates: Vec<_> =
@@ -1227,6 +1314,39 @@ impl HostSession {
             }
         }
 
+        match server.world.resume_pending_inventory_workings(
+            pending.runtime.player_id.0,
+            &mut pending.runtime.inventory,
+        ) {
+            Ok(ids) if !ids.is_empty() => {
+                let checkpoint = self.profiles.as_ref().map_or_else(
+                    || {
+                        Err(std::io::Error::other(
+                            "profile store is unavailable for pending Fieldmend replay",
+                        ))
+                    },
+                    |profiles| profiles.save(&pending.runtime, &server.world.reg),
+                );
+                if let Err(error) = checkpoint {
+                    eprintln!(
+                        "workings: resumed guest Fieldmend remains pending after checkpoint failure: {error}"
+                    );
+                } else {
+                    for working in ids {
+                        if let Err(error) = server.world.finish_inventory_working(working) {
+                            eprintln!(
+                                "workings: guest Fieldmend profile landed but finalization failed: {error}"
+                            );
+                        }
+                    }
+                }
+            }
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!("workings: pending guest Fieldmend is inconsistent: {error}")
+            }
+        }
+
         let reg = server.world.reg.clone();
         let palette: Vec<String> = reg.blocks.iter().map(|block| block.name.clone()).collect();
         let items: Vec<String> = reg.items.iter().map(|item| item.name.clone()).collect();
@@ -1324,6 +1444,7 @@ impl HostSession {
                 sprinting: false,
                 action_cooldown: 0.0,
                 pending_discovery: None,
+                active_working: None,
                 since_damage: 100.0,
                 regen_timer: 0.0,
                 hunger_charm_credit: 0.0,
@@ -1371,6 +1492,10 @@ impl HostSession {
                 self.net.send(*id, msg);
             }
         }
+    }
+
+    pub fn broadcast_working_cue(&self, cue: crate::workings::WorkingCue) {
+        self.broadcast_ready(&S2C::WorkingEvent(cue));
     }
 
     /// Kick a guest and refuse them for the rest of the session.
@@ -1545,6 +1670,11 @@ impl HostSession {
         amount: f32,
         from: crate::planet::EntityPos,
     ) {
+        let ready_observers = self
+            .guests
+            .iter()
+            .filter_map(|(observer, guest)| guest.entry_ready.then_some(*observer))
+            .collect::<Vec<_>>();
         let Some(guest) = self.guests.get_mut(&id) else {
             return;
         };
@@ -1597,6 +1727,33 @@ impl HostSession {
         guest.health = (guest.health - reduced).max(0.0);
         guest.since_damage = 0.0;
         if guest.health <= 0.0 {
+            guest.active_working = None;
+            let prior = server
+                .world
+                .working_cues()
+                .into_iter()
+                .filter(|cue| {
+                    server
+                        .world
+                        .workings_state
+                        .as_ref()
+                        .and_then(|state| state.active.get(&cue.stable_id))
+                        .is_some_and(|transaction| transaction.actor == guest.player_id.0)
+                })
+                .map(|cue| (cue.stable_id, cue))
+                .collect::<std::collections::HashMap<_, _>>();
+            if let Ok(results) = server.world.interrupt_actor_workings(guest.player_id.0) {
+                for result in results {
+                    if let Some(mut cue) = prior.get(&result.stable_id).cloned() {
+                        cue.kind = result.cue;
+                        cue.warning_band = result.warning_band;
+                        cue.completion_permille = 1_000;
+                        for observer in &ready_observers {
+                            self.net.send(*observer, &S2C::WorkingEvent(cue.clone()));
+                        }
+                    }
+                }
+            }
             let mut lost = guest.inventory.drain();
             lost.extend(guest.armor.iter_mut().filter_map(Option::take));
             lost.extend(guest.cursor.take());
@@ -1742,7 +1899,10 @@ impl HostSession {
             }
             _ => {}
         }
-        let implement_observers = if matches!(&msg, C2S::OperateBindingFrame { .. }) {
+        let implement_observers = if matches!(
+            &msg,
+            C2S::OperateBindingFrame { .. } | C2S::OperateWorking { .. }
+        ) {
             self.guests
                 .iter()
                 .filter(|(_, guest)| guest.entry_ready)
@@ -2908,6 +3068,123 @@ impl HostSession {
                     }
                 }
             }
+            C2S::OperateWorking {
+                working_id,
+                held_instance,
+                target,
+                intent,
+            } => {
+                if guest.action_cooldown > 0.0
+                    && matches!(
+                        intent,
+                        crate::workings::WorkingIntent::Start
+                            | crate::workings::WorkingIntent::StartForced
+                    )
+                {
+                    return;
+                }
+                let prior = guest.active_working.and_then(|active| {
+                    server
+                        .world
+                        .working_cues()
+                        .into_iter()
+                        .find(|cue| cue.stable_id == active)
+                });
+                match operate_guest_working(
+                    &mut server.world,
+                    guest,
+                    &working_id,
+                    held_instance,
+                    target,
+                    intent,
+                ) {
+                    Ok(mut result) => {
+                        if result.phase == Some(crate::workings::WorkingPhase::PendingApply) {
+                            let checkpoint = self
+                                .profiles
+                                .as_ref()
+                                .ok_or_else(|| {
+                                    "The authoritative profile store is unavailable.".to_string()
+                                })
+                                .and_then(|profiles| {
+                                    profiles
+                                        .save(&PlayerRuntime::from_guest(guest), &server.world.reg)
+                                        .map_err(|error| error.to_string())
+                                });
+                            match checkpoint.and_then(|()| {
+                                server.world.finish_inventory_working(result.stable_id)
+                            }) {
+                                Ok(finished) => result = finished,
+                                Err(message) => {
+                                    guest.active_working = Some(result.stable_id);
+                                    self.net.send(
+                                        id,
+                                        &S2C::WorkingResult(crate::workings::WorkingResult {
+                                            success: false,
+                                            stable_id: result.stable_id,
+                                            phase: Some(
+                                                crate::workings::WorkingPhase::PendingApply,
+                                            ),
+                                            cue: crate::workings::WorkingCueKind::Strain,
+                                            warning_band: result.warning_band,
+                                            message: format!(
+                                                "Fieldmend landed but its profile checkpoint failed: {message}"
+                                            ),
+                                        }),
+                                    );
+                                    return;
+                                }
+                            }
+                        }
+                        guest.action_cooldown = if matches!(
+                            intent,
+                            crate::workings::WorkingIntent::Start
+                                | crate::workings::WorkingIntent::StartForced
+                                | crate::workings::WorkingIntent::Release
+                        ) {
+                            crate::workings::WAND_RECOVERY_SECONDS
+                        } else {
+                            0.05
+                        };
+                        let mut cue = server
+                            .world
+                            .working_cues()
+                            .into_iter()
+                            .find(|cue| cue.stable_id == result.stable_id)
+                            .or(prior);
+                        if let Some(cue) = cue.as_mut()
+                            && result.phase.is_none()
+                        {
+                            cue.kind = result.cue;
+                            cue.completion_permille = 1_000;
+                        }
+                        if let Some(cue) = cue {
+                            let event_pos = cue.source.entity_center();
+                            for (observer, observer_pos) in &implement_observers {
+                                if *observer != id
+                                    && observer_pos.horizontal_distance_to(event_pos) <= 96.0
+                                {
+                                    self.net.send(*observer, &S2C::WorkingEvent(cue.clone()));
+                                }
+                            }
+                            fx.push(HostFx::WorkingEvent(cue));
+                        }
+                        self.net.send(id, &S2C::WorkingResult(result));
+                        self.send_player_state(id);
+                    }
+                    Err(message) => self.net.send(
+                        id,
+                        &S2C::WorkingResult(crate::workings::WorkingResult {
+                            success: false,
+                            stable_id: guest.active_working.unwrap_or_default(),
+                            phase: None,
+                            cue: crate::workings::WorkingCueKind::Refuse,
+                            warning_band: 0,
+                            message,
+                        }),
+                    ),
+                }
+            }
             C2S::FireProjectile { direction, charge } => {
                 if guest.action_cooldown > 0.0 || !direction.is_finite() || direction.length() < 0.5
                 {
@@ -2949,6 +3226,7 @@ impl HostSession {
                     .expect("guest projectile starts beside the player")
                     .pos;
                 server.world.spawn_projectile(crate::mobs::Projectile {
+                    stable_id: 0,
                     pos,
                     vel: direction * speed.min(40.0),
                     tile,
@@ -3742,6 +4020,149 @@ fn refresh_held(guest: &mut Guest) {
 
 fn discovery_reachable(world: &World, guest: &Guest, pos: BlockPos) -> bool {
     discovery_reachable_from(world, guest.pos, pos)
+}
+
+fn operate_guest_working(
+    world: &mut World,
+    guest: &mut Guest,
+    working_id: &str,
+    held_instance: u64,
+    target: crate::workings::WorkingTargetIntent,
+    intent: crate::workings::WorkingIntent,
+) -> Result<crate::workings::WorkingResult, String> {
+    use crate::workings::{WorkingHandler, WorkingIntent, WorkingTargetIntent};
+
+    let source = guest
+        .pos
+        .block()
+        .ok_or("The player is outside a valid working cell.")?;
+    let actor = guest.player_id.0;
+    match intent {
+        WorkingIntent::Start | WorkingIntent::StartForced => {
+            let forced = intent == WorkingIntent::StartForced;
+            if guest.active_working.is_some() {
+                return Err("Finish or cancel the working already in hand.".into());
+            }
+            if working_id == "base:auto_ritual" {
+                if forced {
+                    return Err("A physical ritual has no forced wand draw mode.".into());
+                }
+                let WorkingTargetIntent::Ritual { controller } = target else {
+                    return Err("A contextual ritual requires its physical controller.".into());
+                };
+                if held_instance != 0 || !discovery_reachable(world, guest, controller) {
+                    return Err("The ritual controller is out of sight or reach.".into());
+                }
+                return world.begin_contextual_ritual(actor, &guest.name, controller);
+            }
+            let definition = world
+                .reg
+                .workings
+                .get(working_id)
+                .cloned()
+                .ok_or("That working is not registered on this host.")?;
+            if definition.mode == crate::workings::DeliveryMode::Ritual {
+                if forced {
+                    return Err("A physical ritual has no forced wand draw mode.".into());
+                }
+                let WorkingTargetIntent::Ritual { controller } = target else {
+                    return Err("A constructed ritual requires its physical controller.".into());
+                };
+                if held_instance != 0 {
+                    return Err(
+                        "Ritual authority belongs to its apparatus, not a held item.".into(),
+                    );
+                }
+                if !discovery_reachable(world, guest, controller) {
+                    return Err("The ritual controller is out of sight or reach.".into());
+                }
+                let result = world.begin_ritual(actor, &guest.name, working_id, controller)?;
+                guest.active_working = Some(result.stable_id);
+                return Ok(result);
+            }
+            let held = guest.inventory.slots[guest.hotbar]
+                .ok_or("A physical wand must be held to begin a working.")?;
+            if held.arcane_id == 0
+                || held.arcane_id != held_instance
+                || world
+                    .reg
+                    .item(held.item)
+                    .implement
+                    .as_ref()
+                    .is_none_or(|definition| {
+                        definition.kind != crate::implements::ImplementItemKind::Wand
+                    })
+            {
+                return Err(
+                    "The requested held instance is not the host-authoritative wand.".into(),
+                );
+            }
+            if definition.mode != crate::workings::DeliveryMode::Wand {
+                return Err(
+                    "A constructed ritual cannot be requested as a held wand working.".into(),
+                );
+            }
+            let result = world.begin_wand_working(
+                actor,
+                &guest.name,
+                source,
+                held_instance,
+                working_id,
+                target,
+                Some(&guest.inventory),
+                forced,
+            )?;
+            guest.active_working = Some(result.stable_id);
+            Ok(result)
+        }
+        WorkingIntent::Hold | WorkingIntent::Release | WorkingIntent::Cancel => {
+            let active = guest
+                .active_working
+                .ok_or("There is no active working to hold, release, or cancel.")?;
+            let transaction = world
+                .workings_state
+                .as_ref()
+                .and_then(|state| state.active.get(&active))
+                .ok_or("The host no longer has that active working.")?;
+            let apparatus_matches = match transaction.apparatus {
+                crate::workings::WorkingApparatus::Wand { instance_id, .. } => {
+                    instance_id == held_instance
+                }
+                crate::workings::WorkingApparatus::Ritual { controller, .. } => {
+                    held_instance == 0
+                        && matches!(target, WorkingTargetIntent::Ritual { controller: at } if at == controller)
+                }
+            };
+            if transaction.actor != actor
+                || transaction.definition.id != working_id
+                || !apparatus_matches
+            {
+                return Err("Working identity, actor, or held apparatus no longer matches.".into());
+            }
+            let handler = transaction.definition.handler;
+            if intent != WorkingIntent::Cancel && !world.wand_working_reachable_from(active, source)
+            {
+                guest.active_working = None;
+                let mut result = world.interrupt_working(active)?;
+                result.message =
+                    "The wand path leaves its bounded reach and breaks cleanly.".into();
+                return Ok(result);
+            }
+            let result = match intent {
+                WorkingIntent::Hold => world.activate_working(active),
+                WorkingIntent::Release if handler == WorkingHandler::Fieldmend => {
+                    world.complete_inventory_working(active, &mut guest.inventory)
+                }
+                WorkingIntent::Release => world.release_working(active),
+                WorkingIntent::Cancel => world.cancel_working(active),
+                WorkingIntent::Start | WorkingIntent::StartForced => unreachable!(),
+            }?;
+            if !matches!(intent, WorkingIntent::Hold) {
+                guest.active_working = None;
+            }
+            Ok(result)
+        }
+    }
 }
 
 fn discovery_reachable_from(world: &World, actor: EntityPos, pos: BlockPos) -> bool {

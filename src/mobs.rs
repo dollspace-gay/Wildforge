@@ -66,6 +66,10 @@ pub enum MobEvent {
 /// A bolt in flight: warden thorn/ember/frost, or a player's arrow.
 #[derive(Clone, Debug)]
 pub struct Projectile {
+    /// Session-stable host identity used by bounded entity workings and wire
+    /// interpolation. Projectiles are intentionally transient across a world
+    /// restart; an active transaction targeting one settles as interrupted.
+    pub stable_id: u64,
     pub pos: EntityPos,
     pub vel: Vec3,
     pub tile: u16,
@@ -810,6 +814,7 @@ impl Mob {
                                         + Vec3::new(0.0, 0.9, 0.0))
                                     .normalize_or_zero();
                                     events.push(MobEvent::Cast(Projectile {
+                                        stable_id: 0,
                                         pos: muzzle
                                             .translated(aim * 0.6)
                                             .expect("bolt starts beside its caster")

@@ -241,7 +241,7 @@ wand_component = { role = "body", capacity = 999999999, conductivity = 1000, sta
     assert!(bad.item_id("badwand:infinite_body").is_none());
 }
 
-fn embodied_implements_world(tag: &str) -> World {
+pub(super) fn embodied_implements_world(tag: &str) -> World {
     let reg = base_reg();
     let dir = tmp_dir(tag);
     let atlas = std::sync::Arc::new(crate::planet_atlas::PlanetAtlas::fixture(8_805, 16).unwrap());
@@ -249,7 +249,9 @@ fn embodied_implements_world(tag: &str) -> World {
     World::new_with_atlas(8_805, dir, reg, atlas)
 }
 
-fn install_frame_fixture(world: &mut World) -> (crate::planet::BlockPos, crate::planet::BlockPos) {
+pub(super) fn install_frame_fixture(
+    world: &mut World,
+) -> (crate::planet::BlockPos, crate::planet::BlockPos) {
     let frame = bp(8, 100, 8);
     let vessel = bp(7, 100, 8);
     let center = frame.chunk();
@@ -271,7 +273,10 @@ fn install_frame_fixture(world: &mut World) -> (crate::planet::BlockPos, crate::
     (frame, vessel)
 }
 
-fn assemble_fixture_wand(world: &mut World, frame: crate::planet::BlockPos) -> (ItemStack, u64) {
+pub(super) fn assemble_fixture_wand(
+    world: &mut World,
+    frame: crate::planet::BlockPos,
+) -> (ItemStack, u64) {
     use crate::implements::FrameAction;
 
     let mut inventory = Inventory::new();
@@ -322,7 +327,11 @@ fn assemble_fixture_wand(world: &mut World, frame: crate::planet::BlockPos) -> (
     (stack, assembled.revision)
 }
 
-fn drain_fixture_item_to_spark(world: &mut World, pos: crate::planet::BlockPos, id: u64) {
+pub(super) fn drain_fixture_item_to_spark(
+    world: &mut World,
+    pos: crate::planet::BlockPos,
+    id: u64,
+) {
     use crate::arcane::{ArcaneAuthority, ArcaneOwner, ArcaneTransaction};
 
     let owner = ArcaneOwner::Item(id);

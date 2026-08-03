@@ -417,6 +417,72 @@ impl World {
                 }
             }
         }
+
+        // Samples mounted in the discovery apparatus are neither inventory
+        // nor a cellar. They still live on the same ordinary aging clock; an
+        // active Holdfast may only reduce this real decrement. Collect first
+        // so the workings ledger can be updated without aliasing block state.
+        let mounted: Vec<(BlockPos, u8, ItemStack)> = self
+            .block_entities
+            .iter()
+            .filter_map(|(&pos, entity)| match entity {
+                BlockEntity::DiscoveryApparatus(apparatus) => Some(
+                    [apparatus.sample, apparatus.reference]
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(move |(bay, stack)| stack.map(|stack| (pos, bay as u8, stack)))
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let ordinary_step = (PERISH_SWEEP_SECS * FRESHNESS_PER_SEC) as u32;
+        for (pos, bay, expected) in mounted {
+            let definition = reg.item(expected.item);
+            let is_food = definition.food.is_some();
+            let is_seed = definition.name.ends_with("_seed");
+            if (!is_food && !is_seed) || definition.durability == 0 {
+                continue;
+            }
+            let step = self.holdfast_mounted_age_step(
+                pos,
+                bay,
+                expected,
+                ordinary_step,
+                PERISH_SWEEP_SECS as u32,
+            );
+            let Some(BlockEntity::DiscoveryApparatus(apparatus)) =
+                self.block_entities.get_mut(&pos)
+            else {
+                continue;
+            };
+            let slot = match bay {
+                0 => &mut apparatus.sample,
+                1 => &mut apparatus.reference,
+                _ => continue,
+            };
+            let Some(stack) = slot.as_mut() else {
+                continue;
+            };
+            if *stack != expected {
+                continue;
+            }
+            if stack.durability == 0 {
+                stack.durability = definition.durability;
+            } else if stack.durability > step {
+                stack.durability -= step;
+            } else if is_food {
+                consumed.push(*stack);
+                *slot = mush.map(|item| {
+                    let mut spoiled = ItemStack::new(&reg, item, 1);
+                    spoiled.count = stack.count;
+                    spoiled
+                });
+            } else {
+                stack.durability = 0;
+            }
+        }
         if let Err(error) = self.record_consumed_stacks(consumed) {
             eprintln!("materials: spoiled container food accounting failed: {error}");
         }
@@ -784,7 +850,7 @@ impl World {
             let Some(BlockEntity::Steam(s)) = self.block_entities.get(&pos) else {
                 continue;
             };
-            let running = boiler_here && s.fuel > 0.0 && s.water.water_hu > 0;
+            let running = !s.draft_closed && boiler_here && s.fuel > 0.0 && s.water.water_hu > 0;
             if running {
                 let micros = (f64::from(dt) * 1_000_000.0).round().max(0.0) as u64;
                 let numerator = self
@@ -910,6 +976,7 @@ impl World {
     }
 
     pub fn tick_entities(&mut self, dt: f32) {
+        self.tick_loose_items(dt);
         self.tick_steam(dt);
         self.tick_separators(dt);
         self.tick_bloomeries(dt);

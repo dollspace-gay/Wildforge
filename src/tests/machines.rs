@@ -2,6 +2,42 @@
 
 use super::*;
 
+fn clear_machine_outputs(world: &mut World) {
+    world.clear_pending_drops();
+    world.clear_loose_items();
+}
+
+fn take_machine_outputs(world: &mut World) -> Vec<ItemStack> {
+    let mut outputs = world
+        .take_pending_drops()
+        .into_iter()
+        .map(|(_, stack)| stack)
+        .collect::<Vec<_>>();
+    outputs.extend(world.take_loose_items().into_iter().map(|item| ItemStack {
+        item: item.item,
+        count: item.count,
+        durability: item.durability,
+        arcane_id: item.arcane_id,
+    }));
+    outputs
+}
+
+fn machine_output_count(world: &World, item: crate::registry::ItemId) -> u32 {
+    world
+        .pending_drops()
+        .iter()
+        .filter(|(_, stack)| stack.item == item)
+        .map(|(_, stack)| stack.count)
+        .chain(
+            world
+                .loose_items()
+                .iter()
+                .filter(|entity| entity.item == item)
+                .map(|entity| entity.count),
+        )
+        .sum()
+}
+
 #[test]
 fn furnace_smelts_with_fuel_over_time() {
     use crate::world::{BlockEntity, FurnaceState};
@@ -903,13 +939,10 @@ fn cupellation_splits_silver_from_lead() {
     );
     assert!(f.input.is_none(), "the cupel is spent");
     let lead = it(&reg, "base:lead_ingot");
-    let spat: u32 = w
-        .take_pending_drops()
+    let spat: u32 = take_machine_outputs(&mut w)
         .into_iter()
-        .filter(|(p, s)| {
-            *p == crate::planet::BlockPos::of_world(pos.0, pos.1, pos.2).unwrap() && s.item == lead
-        })
-        .map(|(_, s)| s.count)
+        .filter(|stack| stack.item == lead)
+        .map(|stack| stack.count)
         .sum();
     assert_eq!(spat, 2, "the lead pours out the mouth");
 }
@@ -980,12 +1013,7 @@ fn forge_batch_smelts_with_thrifty_fuel_in_any_weather() {
     );
     let fuel_left: u32 = f.fuel.iter().flatten().map(|s| s.count).sum();
     assert_eq!(fuel_left, 4, "8 items burned 4 fuel (2 per fuel)");
-    let minted: u32 = w
-        .pending_drops()
-        .iter()
-        .filter(|(_, s)| s.item == ingot)
-        .map(|(_, s)| s.count)
-        .sum();
+    let minted = machine_output_count(&w, ingot);
     assert_eq!(minted, 8, "eight ingots spat at the mouth");
 }
 
@@ -1488,15 +1516,14 @@ fn the_millstone_grinds_a_load_unattended() {
             "the millstone piles a batch"
         );
     }
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..12 {
         w.tick_entities(0.5);
     }
-    let ground: u32 = w
-        .take_pending_drops()
+    let ground: u32 = take_machine_outputs(&mut w)
         .into_iter()
-        .filter(|(_, s)| s.item == it(&reg, "base:verdigris_powder"))
-        .map(|(_, s)| s.count)
+        .filter(|stack| stack.item == it(&reg, "base:verdigris_powder"))
+        .map(|stack| stack.count)
         .sum();
     assert_eq!(ground, 8, "four ores grind to eight powder in one firing");
 }
@@ -1515,15 +1542,14 @@ fn the_sawmill_rips_logs_and_the_helve_works_the_anvil() {
     for _ in 0..3 {
         assert!(w.anvil_put(saw, ItemStack::new(&reg, log, 1)));
     }
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..12 {
         w.tick_entities(0.5);
     }
-    let planks: u32 = w
-        .take_pending_drops()
+    let planks: u32 = take_machine_outputs(&mut w)
         .into_iter()
-        .filter(|(_, s)| s.item == it(&reg, "base:planks"))
-        .map(|(_, s)| s.count)
+        .filter(|stack| stack.item == it(&reg, "base:planks"))
+        .map(|stack| stack.count)
         .sum();
     assert_eq!(planks, 18, "the sawmill cuts six a log, hands cut four");
     // The helve hammer hangs off a gear (nothing comes off a shaft's
@@ -1534,14 +1560,14 @@ fn the_sawmill_rips_logs_and_the_helve_works_the_anvil() {
     w.set_block(anvil.0, anvil.1, anvil.2, b(&reg, "base:stone_anvil"));
     let bloom = it(&reg, "base:steel_bloom");
     assert!(w.anvil_put(anvil, ItemStack::new(&reg, bloom, 1)));
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..30 {
         w.tick_entities(0.5);
     }
     assert!(
-        w.take_pending_drops()
+        take_machine_outputs(&mut w)
             .iter()
-            .any(|(_, s)| s.item == it(&reg, "base:steel_ingot")),
+            .any(|stack| stack.item == it(&reg, "base:steel_ingot")),
         "three helve strikes finish the bar with nobody watching"
     );
     assert_eq!(
@@ -1571,27 +1597,26 @@ fn the_lathes_hold_their_tolerances() {
     );
     let copper = it(&reg, "base:copper_ingot");
     assert!(w.anvil_put(crude, ItemStack::new(&reg, copper, 1)));
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..16 {
         w.tick_entities(0.5);
     }
-    let screws: u32 = w
-        .take_pending_drops()
+    let screws: u32 = take_machine_outputs(&mut w)
         .into_iter()
-        .filter(|(_, s)| s.item == it(&reg, "base:screw"))
-        .map(|(_, s)| s.count)
+        .filter(|stack| stack.item == it(&reg, "base:screw"))
+        .map(|stack| stack.count)
         .sum();
     assert_eq!(screws, 2, "one soft ingot turns two screws");
     // The iron lathe: true tolerance, but only with workholding.
     let precise = (wx - 1, wy, wz + 1);
     w.set_block(precise.0, precise.1, precise.2, b(&reg, "base:iron_lathe"));
     assert!(w.anvil_put(precise, ItemStack::new(&reg, iron, 1)));
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..16 {
         w.tick_entities(0.5);
     }
     assert!(
-        w.take_pending_drops().is_empty(),
+        take_machine_outputs(&mut w).is_empty(),
         "no vice, no cut: the work only spins"
     );
     w.set_block(
@@ -1604,9 +1629,9 @@ fn the_lathes_hold_their_tolerances() {
         w.tick_entities(0.5);
     }
     assert!(
-        w.take_pending_drops()
+        take_machine_outputs(&mut w)
             .iter()
-            .any(|(_, s)| s.item == it(&reg, "base:iron_shaft")),
+            .any(|stack| stack.item == it(&reg, "base:iron_shaft")),
         "vice held, shaft turned true"
     );
 }
@@ -1652,14 +1677,14 @@ fn the_boring_mill_bores_and_the_pump_drains_the_mine() {
         "a gear is no station"
     );
     assert!(w.anvil_put(bore, ItemStack::new(&reg, plate, 1)));
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..40 {
         w.tick_entities(0.5);
     }
     assert!(
-        w.take_pending_drops()
+        take_machine_outputs(&mut w)
             .iter()
-            .any(|(_, s)| s.item == it(&reg, "base:cylinder")),
+            .any(|stack| stack.item == it(&reg, "base:cylinder")),
         "eight true turns bore the cylinder"
     );
     // The pump: a flooded shaft under it, an open cell beside it.
@@ -1775,7 +1800,7 @@ fn the_separator_splits_the_rare_earth_and_the_generator_lights_the_lamp() {
     w.set_block(mill.0, mill.1, mill.2, b(&reg, "base:millstone"));
     let copper = it(&reg, "base:raw_copper");
     assert!(w.anvil_put(mill, ItemStack::new(&reg, copper, 1)));
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..14 {
         w.tick_entities(0.5);
     }
@@ -1790,9 +1815,9 @@ fn the_separator_splits_the_rare_earth_and_the_generator_lights_the_lamp() {
         "light without torches"
     );
     assert!(
-        w.take_pending_drops()
+        take_machine_outputs(&mut w)
             .iter()
-            .any(|(_, s)| s.item == it(&reg, "base:verdigris_powder")),
+            .any(|stack| stack.item == it(&reg, "base:verdigris_powder")),
         "the electric quern grinds in the field, no shaft to it"
     );
     // Cut the line: the generator stops and the lamp dies with it.

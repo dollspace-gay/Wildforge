@@ -45,6 +45,7 @@ mod style;
 #[cfg(test)]
 mod tests;
 mod ui;
+mod workings;
 mod world;
 mod worldgen;
 
@@ -80,6 +81,25 @@ use world::World;
 /// Run Wildforge using process arguments and the platform event loop.
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|arg| arg == "--workings-audit") {
+        let Some(world) = args.get(i + 1).map(PathBuf::from) else {
+            eprintln!("usage: wildforge --workings-audit <world>");
+            std::process::exit(2);
+        };
+        match workings::audit_world(&world) {
+            Ok(audit) => {
+                print!("{}", audit.render());
+                if !audit.is_qualified() {
+                    std::process::exit(1);
+                }
+            }
+            Err(error) => {
+                eprintln!("workings audit failed: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if let Some(i) = args.iter().position(|arg| arg == "--implements-audit") {
         let Some(world) = args.get(i + 1).map(PathBuf::from) else {
             eprintln!("usage: wildforge --implements-audit <world>");

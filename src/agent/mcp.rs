@@ -382,6 +382,24 @@ fn tool_schemas() -> Vec<Value> {
             },
             &["face", "u", "y", "v", "action"],
         ),
+        tool(
+            "working",
+            "Aim, start, hold, release, or cancel the same host-authoritative wand workings and constructed rituals available to players. Start needs a target kind and any relevant physical target; later intents continue the active request.",
+            json!({
+                "working": s("qualified id, e.g. base:trace or base:ward_boundary"),
+                "intent": s("aim | start | force | hold | release | cancel"),
+                "target": s("none | block | water | entity | inventory | ritual"),
+                "target_pos": {"type": "object", "properties": pos()},
+                "secondary_pos": {"type": "object", "properties": pos()},
+                "entity_id": {"type": "integer", "minimum": 1},
+                "target_slot": {"type": "integer", "minimum": 0, "maximum": 45},
+                "material_slot": {"type": "integer", "minimum": 0, "maximum": 45},
+                "magnitude": {"type": "integer", "minimum": 1, "maximum": 64},
+                "water_hu": {"type": "integer", "enum": [32, 64]},
+                "item": s("wand item to select before start (not used by rituals)")
+            }),
+            &["working", "intent"],
+        ),
         tool("respawn", "Respawn after death.", json!({}), &[]),
     ]
 }
@@ -637,6 +655,96 @@ fn call_tool(agent: &mut Agent, name: &str, args: &Value) -> String {
             (Err(error), _) => error,
             _ => need.into(),
         },
+        "working" => {
+            let Some(working) = gs("working") else {
+                return "missing working id".into();
+            };
+            let Some(intent) = gs("intent") else {
+                return "missing working intent".into();
+            };
+            if intent == "aim" {
+                return args
+                    .get("target_pos")
+                    .ok_or_else(|| "aim needs target_pos".to_string())
+                    .and_then(planetary_pos)
+                    .and_then(|pos| agent.aim_working_at(pos))
+                    .unwrap_or_else(|error| error);
+            }
+            if intent != "start" && intent != "force" && intent != "start_forced" {
+                let intent = match intent.as_str() {
+                    "hold" => Some(crate::workings::WorkingIntent::Hold),
+                    "release" => Some(crate::workings::WorkingIntent::Release),
+                    "cancel" => Some(crate::workings::WorkingIntent::Cancel),
+                    _ => None,
+                };
+                return intent
+                    .ok_or_else(|| "unknown working intent".to_string())
+                    .and_then(|intent| agent.continue_working(intent))
+                    .unwrap_or_else(|error| error);
+            }
+            let target_kind = gs("target").unwrap_or_else(|| "none".into());
+            let target_pos = || {
+                args.get("target_pos")
+                    .ok_or_else(|| "that target needs target_pos".to_string())
+                    .and_then(planetary_pos)
+            };
+            let secondary_pos = || {
+                args.get("secondary_pos")
+                    .ok_or_else(|| "that target needs secondary_pos".to_string())
+                    .and_then(planetary_pos)
+            };
+            let target = match target_kind.as_str() {
+                "none" => Ok(crate::workings::WorkingTargetIntent::None),
+                "block" => target_pos().map(|pos| crate::workings::WorkingTargetIntent::Block {
+                    pos,
+                    adjacent: args
+                        .get("secondary_pos")
+                        .and_then(|value| planetary_pos(value).ok()),
+                }),
+                "water" => target_pos().and_then(|from| {
+                    secondary_pos().map(|to| crate::workings::WorkingTargetIntent::Water {
+                        from,
+                        to,
+                        water_hu: args.get("water_hu").and_then(Value::as_u64).unwrap_or(32),
+                    })
+                }),
+                "entity" => args
+                    .get("entity_id")
+                    .and_then(Value::as_u64)
+                    .filter(|id| *id != 0)
+                    .map(|stable_id| crate::workings::WorkingTargetIntent::Entity { stable_id })
+                    .ok_or_else(|| "entity target needs entity_id".to_string()),
+                "inventory" => args
+                    .get("target_slot")
+                    .and_then(Value::as_u64)
+                    .and_then(|slot| u8::try_from(slot).ok())
+                    .map(
+                        |target_slot| crate::workings::WorkingTargetIntent::Inventory {
+                            target_slot,
+                            material_slot: args
+                                .get("material_slot")
+                                .and_then(Value::as_u64)
+                                .and_then(|slot| u8::try_from(slot).ok()),
+                            magnitude: args.get("magnitude").and_then(Value::as_u64).unwrap_or(1)
+                                as u32,
+                        },
+                    )
+                    .ok_or_else(|| "inventory target needs target_slot".to_string()),
+                "ritual" => target_pos()
+                    .map(|controller| crate::workings::WorkingTargetIntent::Ritual { controller }),
+                _ => Err("unknown working target kind".into()),
+            };
+            target
+                .and_then(|target| {
+                    agent.start_working(
+                        &working,
+                        target,
+                        gs("item").as_deref(),
+                        intent == "force" || intent == "start_forced",
+                    )
+                })
+                .unwrap_or_else(|error| error)
+        }
         "respawn" => {
             agent.send(&crate::net::C2S::Respawn);
             agent.pump_for(0.3);

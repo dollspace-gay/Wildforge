@@ -115,6 +115,38 @@ fn net_protocol_round_trips() {
             ledger_slot: 3,
             calibration_slot: Some(4),
         },
+        C2S::OperateWorking {
+            working_id: "base:nudge".into(),
+            held_instance: 0x1234_5678_9abc_def0,
+            target: crate::workings::WorkingTargetIntent::Entity {
+                stable_id: (1u64 << 62) + 17,
+            },
+            intent: crate::workings::WorkingIntent::StartForced,
+        },
+        C2S::OperateWorking {
+            working_id: "base:nudge".into(),
+            held_instance: 0x1234_5678_9abc_def0,
+            target: crate::workings::WorkingTargetIntent::Entity {
+                stable_id: (1u64 << 62) + 17,
+            },
+            intent: crate::workings::WorkingIntent::Hold,
+        },
+        C2S::OperateWorking {
+            working_id: "base:nudge".into(),
+            held_instance: 0x1234_5678_9abc_def0,
+            target: crate::workings::WorkingTargetIntent::Entity {
+                stable_id: (1u64 << 62) + 17,
+            },
+            intent: crate::workings::WorkingIntent::Release,
+        },
+        C2S::OperateWorking {
+            working_id: "base:nudge".into(),
+            held_instance: 0x1234_5678_9abc_def0,
+            target: crate::workings::WorkingTargetIntent::Entity {
+                stable_id: (1u64 << 62) + 17,
+            },
+            intent: crate::workings::WorkingIntent::Cancel,
+        },
         C2S::ContainerClick {
             pos: bp(1, 2, 3),
             slot: 4,
@@ -201,6 +233,24 @@ fn net_protocol_round_trips() {
             arcane_id: 0,
             current_units: 0,
         })),
+        S2C::WorkingResult(crate::workings::WorkingResult {
+            success: true,
+            stable_id: 91,
+            phase: Some(crate::workings::WorkingPhase::Active),
+            cue: crate::workings::WorkingCueKind::Active,
+            warning_band: 2,
+            message: "Nudge settles under visible strain.".into(),
+        }),
+        S2C::WorkingEvent(crate::workings::WorkingCue {
+            stable_id: 91,
+            working_id: "base:nudge".into(),
+            handler: crate::workings::WorkingHandler::Nudge,
+            source: bp(1, 70, 1),
+            path: vec![bp(1, 70, 1), bp(3, 70, 1)],
+            kind: crate::workings::WorkingCueKind::Active,
+            warning_band: 2,
+            completion_permille: 350,
+        }),
         S2C::Mobs(crate::net::Snapshot::whole(
             1,
             vec![crate::net::MobSnap {
@@ -1538,6 +1588,45 @@ fn a_split_snapshot_is_applied_only_once_it_is_whole() {
     let ids: Vec<u32> = got.iter().map(|m| m.id).collect();
     let want: Vec<u32> = sent.iter().map(|m| m.id).collect();
     assert_eq!(ids, want, "order and identity survive reassembly");
+}
+
+#[test]
+fn host_owned_loose_item_ids_survive_batched_guest_and_agent_snapshots() {
+    use crate::net::{DATAGRAM_FLOOR, S2C, SnapshotAssembler, batch_snapshot, decode};
+
+    let sent = (0..200)
+        .map(|index| crate::net::LooseItemSnap {
+            id: (1u64 << 62) + index,
+            pos: ep(Vec3::new(index as f32 * 0.25, 80.0, 0.5)),
+            vel: Vec3::new(0.1, 0.0, -0.1),
+            item: (index % 16) as u16,
+            count: (index % 64 + 1) as u32,
+            age: index as f32 * 0.1,
+            durability: index as u32,
+            arcane_id: 0,
+        })
+        .collect::<Vec<_>>();
+    let parts = batch_snapshot(11, sent.clone(), DATAGRAM_FLOOR, S2C::LooseItems);
+    assert!(parts.len() > 1);
+    assert!(parts.iter().all(|part| part.len() <= DATAGRAM_FLOOR));
+
+    let mut receiver: SnapshotAssembler<crate::net::LooseItemSnap> = Default::default();
+    let mut delivered = None;
+    for bytes in parts {
+        let Some(S2C::LooseItems(part)) = decode::<S2C>(&bytes) else {
+            panic!("loose-item snapshot did not decode")
+        };
+        if let Some(items) = receiver.accept(part) {
+            delivered = Some(items);
+        }
+    }
+    let delivered = delivered.expect("the whole loose-item generation arrives");
+    assert_eq!(delivered.len(), sent.len());
+    assert_eq!(
+        delivered.iter().map(|item| item.id).collect::<Vec<_>>(),
+        sent.iter().map(|item| item.id).collect::<Vec<_>>()
+    );
+    assert!(delivered.iter().all(|item| item.id < (1u64 << 63)));
 }
 
 #[test]

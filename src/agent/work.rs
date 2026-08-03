@@ -21,6 +21,16 @@ impl Agent {
         }
     }
 
+    pub fn aim_working_at(&mut self, pos: crate::planet::BlockPos) -> Result<String, String> {
+        if self.dist_to(pos) > REACH {
+            return Err("working target is out of reach".into());
+        }
+        self.face_block(pos);
+        self.anchor_stance();
+        self.pump_for(0.1);
+        Ok(format!("aiming at {pos:?}"))
+    }
+
     /// State the stance RELIABLY before an edit: position and held
     /// slot normally ride lossy datagrams, and a dropped hotbar
     /// update makes the host refuse a Place it should love.
@@ -572,6 +582,111 @@ impl Agent {
             }
         }
         Err("the host did not complete the binding-frame operation".into())
+    }
+
+    /// Aim and begin one host-authoritative wand working or constructed
+    /// ritual. The agent sends the same intent packet as a windowed guest and
+    /// waits for the ordinary result/cues; no privileged world mutation path
+    /// exists here.
+    pub fn start_working(
+        &mut self,
+        working_id: &str,
+        target: crate::workings::WorkingTargetIntent,
+        held_item: Option<&str>,
+        forced: bool,
+    ) -> Result<String, String> {
+        use crate::workings::WorkingTargetIntent;
+        if self.active_working_request.is_some() {
+            return Err("finish or cancel the active working first".into());
+        }
+        let held_instance = if matches!(target, WorkingTargetIntent::Ritual { .. }) {
+            0
+        } else {
+            if let Some(item) = held_item {
+                self.select(item)?;
+            }
+            self.inventory.slots[self.hotbar]
+                .filter(|stack| stack.arcane_id != 0)
+                .map(|stack| stack.arcane_id)
+                .ok_or("select a physical charged wand before starting the working")?
+        };
+        let aim = match target {
+            WorkingTargetIntent::Block { pos, .. } => Some(pos),
+            WorkingTargetIntent::Water { from, .. } => Some(from),
+            WorkingTargetIntent::Ritual { controller } => Some(controller),
+            WorkingTargetIntent::None
+            | WorkingTargetIntent::Entity { .. }
+            | WorkingTargetIntent::Inventory { .. } => None,
+        };
+        if let Some(pos) = aim {
+            if self.dist_to(pos) > REACH {
+                return Err("working target is out of reach".into());
+            }
+            self.face_block(pos);
+        }
+        self.anchor_stance();
+        self.last_working_result = None;
+        self.send(&C2S::OperateWorking {
+            working_id: working_id.into(),
+            held_instance,
+            target,
+            intent: if forced {
+                crate::workings::WorkingIntent::StartForced
+            } else {
+                crate::workings::WorkingIntent::Start
+            },
+        });
+        for _ in 0..80 {
+            self.pump_for(0.05);
+            if let Some(result) = self.last_working_result.take() {
+                if result.success && result.phase.is_some() {
+                    self.active_working_request = Some((working_id.into(), held_instance, target));
+                }
+                return if result.success {
+                    Ok(result.message)
+                } else {
+                    Err(result.message)
+                };
+            }
+        }
+        Err("the host did not answer the working start request".into())
+    }
+
+    pub fn continue_working(
+        &mut self,
+        intent: crate::workings::WorkingIntent,
+    ) -> Result<String, String> {
+        if matches!(
+            intent,
+            crate::workings::WorkingIntent::Start | crate::workings::WorkingIntent::StartForced
+        ) {
+            return Err("use start_working for a new working".into());
+        }
+        let (working_id, held_instance, target) = self
+            .active_working_request
+            .clone()
+            .ok_or("there is no active working to hold, release, or cancel")?;
+        self.last_working_result = None;
+        self.send(&C2S::OperateWorking {
+            working_id,
+            held_instance,
+            target,
+            intent,
+        });
+        for _ in 0..80 {
+            self.pump_for(0.05);
+            if let Some(result) = self.last_working_result.take() {
+                if result.success && result.phase.is_none() {
+                    self.active_working_request = None;
+                }
+                return if result.success {
+                    Ok(result.message)
+                } else {
+                    Err(result.message)
+                };
+            }
+        }
+        Err("the host did not answer the working intent".into())
     }
 
     /// Craft one of the recipes the agent knows the shape of. The

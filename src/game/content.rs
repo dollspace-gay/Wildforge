@@ -133,8 +133,9 @@ impl Game {
             *slot = fix_stack(&new_reg, *slot);
         }
         self.ui_state.held_stack = fix_stack(&new_reg, self.ui_state.held_stack);
-        self.interaction
-            .items
+        self.server
+            .world
+            .loose_items_mut()
             .retain_mut(|e| match remap_item(&new_reg, e.item) {
                 Some(item) => {
                     e.item = item;

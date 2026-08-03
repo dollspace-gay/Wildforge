@@ -816,6 +816,7 @@ impl Game {
                             mp::HostFx::ImplementActivation { pos, cue, visual } => {
                                 self.present_implement_activation(pos, cue, visual, None);
                             }
+                            mp::HostFx::WorkingEvent(cue) => self.present_working_cue(cue),
                             mp::HostFx::AllSlept => {
                                 self.multiplayer.host_sleeping = false;
                                 self.survival.spawn_point = self.player.pos;
@@ -902,6 +903,13 @@ impl Game {
                                 format!("The wild settles - {name}.")
                             });
                         }
+                        server::SimEvent::Working(result, cue) => {
+                            if let Some(session) = &self.multiplayer.host {
+                                session.broadcast_working_cue(cue.clone());
+                            }
+                            self.present_working_cue(cue);
+                            self.toast(result.message);
+                        }
                     }
                 }
                 for (pos, s) in self.server.world.take_pending_drops() {
@@ -911,7 +919,7 @@ impl Game {
                     let mut entity = ItemEntity::new(center, v, s.item, s.count);
                     entity.durability = s.durability;
                     entity.arcane_id = s.arcane_id;
-                    self.interaction.items.push(entity);
+                    self.server.world.spawn_loose_item(entity);
                 }
                 // The wild's whispers reach the ear as toasts.
                 for line in std::mem::take(&mut self.server.world.whispers) {
@@ -1417,9 +1425,54 @@ impl Game {
         } else {
             None
         };
-        let outline_color = if self.interaction.lens_settle > 0.0 {
+        let held_wand = self.inventory.slots[self.input.hotbar_sel].is_some_and(|stack| {
+            stack.arcane_id != 0
+                && self
+                    .content
+                    .reg
+                    .item(stack.item)
+                    .implement
+                    .as_ref()
+                    .is_some_and(|definition| {
+                        definition.kind == crate::implements::ImplementItemKind::Wand
+                    })
+        });
+        let active_warning = if self.multiplayer.remote.is_some() {
+            self.presentation
+                .working_cues
+                .values()
+                .map(|(cue, _)| cue.warning_band)
+                .max()
+                .unwrap_or_default()
+        } else {
+            self.server
+                .world
+                .working_cues()
+                .into_iter()
+                .map(|cue| cue.warning_band)
+                .max()
+                .unwrap_or_default()
+        };
+        let outline_color = if active_warning >= 2 {
+            let phase = (self.time_abs * 12.0).sin() * 0.16;
+            [0.92, 0.20 + phase.max(0.0), 0.12]
+        } else if self.interaction.lens_settle > 0.0 {
             let phase = (self.time_abs * 10.0).sin() * 0.12;
             [0.62 + phase, 0.48 + phase, 0.88]
+        } else if held_wand {
+            outline.map_or([0.42, 0.34, 0.68], |pos| {
+                let block = self.server.world.get_block_at(pos);
+                let definition = self.content.reg.block(block);
+                if self.content.reg.is_water(block) {
+                    [0.18, 0.64, 0.92]
+                } else if definition.crop_next.is_some() || definition.sapling.is_some() {
+                    [0.26, 0.78, 0.38]
+                } else if definition.burns != 0 {
+                    [0.94, 0.46, 0.14]
+                } else {
+                    [0.42, 0.34, 0.68]
+                }
+            })
         } else {
             [0.05, 0.05, 0.05]
         };
@@ -1440,7 +1493,7 @@ impl Game {
                 s as f32 / 15.0,
             )
         };
-        for it in &self.interaction.items {
+        for it in self.server.world.loose_items() {
             let lum = sample(&self.server.world, it.pos);
             it.emit(&self.content.reg, lum, &mut entity_verts, &mut entity_idx);
         }
@@ -2037,6 +2090,37 @@ impl Game {
         }
         // Point lights: promote nearby emitters + the dynamic set.
         let mut dyn_lights = self.presentation.demo_lights.clone();
+        self.presentation
+            .working_cues
+            .retain(|_, (_, seen)| self.time_abs - *seen <= 2.5);
+        let active_workings = if self.multiplayer.remote.is_some() {
+            self.presentation
+                .working_cues
+                .values()
+                .map(|(cue, _)| cue.clone())
+                .collect::<Vec<_>>()
+        } else {
+            self.server.world.working_cues()
+        };
+        for cue in active_workings
+            .iter()
+            .filter(|cue| cue.handler == crate::workings::WorkingHandler::Gleam)
+        {
+            let Some(target) = cue.path.last().copied() else {
+                continue;
+            };
+            let warning = f32::from(cue.warning_band.min(3)) / 3.0;
+            dyn_lights.push(lights::DynLight {
+                key: lights::Key::Working(cue.stable_id),
+                pos: target.entity_center().render_pos(),
+                color: Vec3::new(
+                    0.56 + warning * 0.25,
+                    0.74 - warning * 0.18,
+                    1.0 - warning * 0.25,
+                ),
+                range: 5.0,
+            });
+        }
         // The held torch: your own body of light, real shadows and all.
         // Anchored to the body center, never the facing — a camera-
         // relative offset made the light orbit the head when turning,

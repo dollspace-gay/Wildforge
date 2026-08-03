@@ -9,9 +9,9 @@ mod protocol;
 #[cfg_attr(not(test), allow(unused_imports))]
 pub use protocol::{
     AtprotoClaim, BoltSnap, C2S, DATAGRAM_FLOOR, DiscoveryTargetSnap, FallSnap, InventoryArea,
-    MAX_GUEST_VIEW_DIST, MobSnap, ModerationAction, PROTOCOL, PlayerPresence, PlayerSnap,
-    PlayerStateSnap, RecordHolderSnap, Refusal, RefusalCode, S2C, Snapshot, SnapshotAssembler,
-    StackSnap, batch_snapshot, decode, encode,
+    LooseItemSnap, MAX_GUEST_VIEW_DIST, MobSnap, ModerationAction, PROTOCOL, PlayerPresence,
+    PlayerSnap, PlayerStateSnap, RecordHolderSnap, Refusal, RefusalCode, S2C, Snapshot,
+    SnapshotAssembler, StackSnap, batch_snapshot, decode, encode,
 };
 
 #[path = "net/handshake.rs"]

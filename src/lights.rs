@@ -28,6 +28,8 @@ pub enum Key {
     Mob(u32),
     /// Another player's carried light (by player id).
     RemoteHeld(u32),
+    /// A host-authored temporary Gleam working.
+    Working(u64),
     /// Dev demo hooks.
     Demo(u32),
 }
@@ -329,6 +331,7 @@ fn key_bits(k: Key) -> u64 {
         Key::Held => 1 << 62,
         Key::Mob(id) => (2 << 62) | id as u64,
         Key::RemoteHeld(id) => (3 << 62) | ((id as u64) << 20),
+        Key::Working(id) => (3 << 62) | (1 << 61) | (id & ((1 << 61) - 1)),
         Key::Demo(id) => (3 << 62) | id as u64,
     }
 }

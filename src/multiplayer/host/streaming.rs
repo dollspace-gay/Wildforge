@@ -440,6 +440,7 @@ impl HostSession {
                 .iter()
                 .filter(|p| near_entity(p.pos))
                 .map(|p| net::BoltSnap {
+                    id: p.stable_id,
                     pos: p.pos,
                     vel: p.vel,
                     tile: p.tile,
@@ -447,6 +448,27 @@ impl HostSession {
                 })
                 .collect();
             self.send_snapshot(id, batch_snapshot(seq, bolts, budget, S2C::Bolts));
+
+            let loose_items: Vec<net::LooseItemSnap> = server
+                .world
+                .loose_items()
+                .iter()
+                .filter(|item| near_entity(item.pos))
+                .map(|item| net::LooseItemSnap {
+                    id: item.stable_id,
+                    pos: item.pos,
+                    vel: item.vel,
+                    item: item.item.0,
+                    count: item.count,
+                    age: item.age,
+                    durability: item.durability,
+                    arcane_id: item.arcane_id,
+                })
+                .collect();
+            self.send_snapshot(
+                id,
+                batch_snapshot(seq, loose_items, budget, S2C::LooseItems),
+            );
 
             // Sent even when empty so guests clear their last tumble.
             let falls: Vec<net::FallSnap> = server

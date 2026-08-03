@@ -711,6 +711,9 @@ pub struct Registry {
     pub arcane_sites: Vec<ArcaneSiteRule>,
     /// Qualified block/item lifecycle definitions, validated at pack load.
     pub arcane_ecology: BTreeMap<String, ArcaneEcologyDef>,
+    /// Declarative shells around the closed set of native working handlers.
+    /// The definitions carry costs and bounds, never mutation callbacks.
+    pub workings: BTreeMap<String, crate::workings::WorkingDef>,
     pub arcane_errors: Vec<String>,
 }
 
@@ -1980,6 +1983,7 @@ struct RawMod {
     loots: Vec<LootToml>,
     resonances: Vec<ResonanceToml>,
     arcane_sites: Vec<ArcaneSiteToml>,
+    workings: Vec<crate::workings::RawWorkingDef>,
 }
 
 // ---------------- loading ----------------
@@ -1992,6 +1996,7 @@ const BASE_FEATURES: &str = include_str!("../base/features.toml");
 const BASE_ALIASES: &str = include_str!("../base/aliases.toml");
 const BASE_ANIMALS: &str = include_str!("../base/animals.toml");
 const BASE_STRUCTURES: &str = include_str!("../base/structures.toml");
+const BASE_WORKINGS: &str = include_str!("../base/workings.toml");
 pub const WORLD_API_VERSION: u32 = 2;
 
 fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
@@ -2029,6 +2034,17 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
     if arcane.schema_version.is_some_and(|version| version != 1) {
         return Err("arcane.toml: schema_version must be 1".into());
     }
+    let workings: crate::workings::WorkingsFile =
+        toml::from_str(&read("workings.toml")).map_err(|e| format!("workings.toml: {e}"))?;
+    if workings
+        .schema_version
+        .is_some_and(|version| version != crate::workings::WORKINGS_SCHEMA_VERSION)
+    {
+        return Err(format!(
+            "workings.toml: schema_version must be {}",
+            crate::workings::WORKINGS_SCHEMA_VERSION
+        ));
+    }
     if !features.feature.is_empty() && m.retrogen.is_none() {
         return Err(
             "mod.toml: a worldgen feature requires retrogen = \"untouched_host_only\", \
@@ -2065,6 +2081,7 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         loots: structures.loot,
         resonances: arcane.resonance,
         arcane_sites: arcane.sites,
+        workings: workings.working,
     })
 }
 
@@ -2077,6 +2094,8 @@ fn base_mod() -> RawMod {
     let aliases: AliasesFile = toml::from_str(BASE_ALIASES).expect("base aliases.toml");
     let animals: AnimalsFile = toml::from_str(BASE_ANIMALS).expect("base animals.toml");
     let structures: StructuresFile = toml::from_str(BASE_STRUCTURES).expect("base structures.toml");
+    let workings: crate::workings::WorkingsFile =
+        toml::from_str(BASE_WORKINGS).expect("base workings.toml");
     RawMod {
         info: ModInfo {
             id: "base".into(),
@@ -2108,6 +2127,7 @@ fn base_mod() -> RawMod {
         loots: structures.loot,
         resonances: Vec::new(),
         arcane_sites: Vec::new(),
+        workings: workings.working,
     }
 }
 
@@ -2215,6 +2235,7 @@ impl RemoveStable for Vec<RawMod> {
             aliases: vec![],
             resonances: vec![],
             arcane_sites: vec![],
+            workings: vec![],
         };
         std::mem::replace(&mut self[idx], dummy)
     }
@@ -2250,6 +2271,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         arcane_registry: crate::arcane::ResonanceRegistry::base(),
         arcane_sites: Vec::new(),
         arcane_ecology: BTreeMap::new(),
+        workings: BTreeMap::new(),
         arcane_errors: Vec::new(),
     };
     for raw in &raws {
@@ -2283,6 +2305,33 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     active: true,
                 },
             );
+        }
+    }
+    // Working shells resolve only after every provider's resonance identities
+    // exist. A bad shell is never installed, and the shared content error gate
+    // prevents authoritative worlds from opening with only part of a pack.
+    for raw in &raws {
+        for working in &raw.workings {
+            match crate::workings::WorkingDef::from_raw(&raw.info.id, working.clone()) {
+                Ok(definition) => {
+                    if !reg
+                        .arcane_registry
+                        .definitions
+                        .contains_key(&definition.focus)
+                    {
+                        reg.arcane_errors.push(format!(
+                            "{}: unknown focus resonance {}",
+                            definition.id, definition.focus
+                        ));
+                    } else if reg.workings.contains_key(&definition.id) {
+                        reg.arcane_errors
+                            .push(format!("{}: duplicate working identity", definition.id));
+                    } else {
+                        reg.workings.insert(definition.id.clone(), definition);
+                    }
+                }
+                Err(error) => reg.arcane_errors.push(error.to_string()),
+            }
         }
     }
     const SITE_REQUIREMENTS: [&str; 9] = [

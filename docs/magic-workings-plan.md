@@ -1,10 +1,78 @@
 # Workings — magic changes processes, not material truth
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and production-qualified (2026-08-03).**
 >
 > This is goal 6 of `docs/magic-sequence.md`. It requires goals 1–5 and the
 > qualified physics, water, ecology, material, fire, machine, persistence, and
 > multiplayer systems.
+
+## Implementation record — 2026-08-03
+
+Goal 6 is live through one declarative twelve-entry registry: eight wand
+workings (Trace, Gleam, Kindle, Nudge, Rootwake, Draw, Fieldmend, and
+Holdfast) and four constructed rituals (Settling Rite, Rooting Bed, Ward
+Boundary, and Transfer Circle). Each shell selects one closed native handler;
+registration rejects unknown handlers, cross-domain capabilities, missing
+physical obligations, raw mutation, and forbidden or unbounded effects.
+
+Every operation uses the same host-owned linked transaction. It records stable
+actor and apparatus identity, exact versioned targets, Current custody,
+physical debits, a closed typed effect, wear, strain, dross, path, timing, and
+interruption disposition. Start reserves before mutation, competing source or
+target use rejects cleanly, completion is write-ahead and exact-once, and
+cancel, interrupt, disconnect, death, unload, save/load, process restart, and
+crash replay settle deterministically. Held wand channels interrupt at restart
+or when the actor leaves line of sight/range; embodied continue-unloaded
+rituals resume from their durable stable id and authoritative schedule.
+
+The base handlers retain their physical truth:
+
+- Trace requires a real fitted tuning lens and reports only bounded local
+  drift, leakage, wakes, and recent working evidence. Gleam holds a temporary
+  dynamic light and never places a light voxel.
+- Kindle delegates ignition, fuel, spread, provenance, and liability to the
+  ordinary fire system. Nudge changes only ordinary velocity on one host-owned
+  projectile/drop or the persistent draft state of one embodied firebox; it
+  neither teleports nor edits terrain.
+- Rootwake advances one declared biological interval only after climate,
+  season, living-heart, light, space, water, soil, nutrient, and species
+  checks, and pays the real water/nutrient budget. Draw moves one exact parcel
+  with its salt, thermal load, dross, and fixed-point remainder and refuses
+  overflow atomically.
+- Fieldmend consumes matching finite material, caps restoration at original
+  quality, leaves ordinary residue, and checkpoints the player profile before
+  final settlement. Holdfast quarters real age or leakage while continuously
+  supplied; it never reverses age, revives an expired heart seed, or replaces
+  bulk preservation.
+- Transfer Circle conservatively relocates adjacent mounted charge. Rooting
+  Bed reserves and advances a bounded physical bed even while unloaded.
+  Settling Rite slows one adjacent process and routes rather than deletes its
+  dross into a wearing real vessel. Ward Boundary validates a closed player
+  construction and spends supply against projectiles, wardens, wakes, and
+  dross; pressure and Ire scale cost, broken segments leak, overload is
+  deterministic, and neither stored Ire nor ordinary players/animals/actions
+  are suppressed.
+
+Local play, windowed hosting, dedicated hosts, guests, and agents all dispatch
+through the same authority methods. The wire carries intent and stable ids,
+not client-authored costs or mutation state; agents can aim, start, hold,
+release, and cancel and perceive ordinary working, projectile, and loose-item
+cues. Remote presentation replicates type, source, target/containment path,
+completion, and warning band. Restrained source/target/path particles, dynamic
+Gleam light, target outlines, qualitative catalogue tooltips, discordant sound
+with visual warning equivalents, and no gameplay camera displacement cover
+the presentation/accessibility contract.
+
+Qualification covers 41 focused Workings and contract tests plus the shared
+arcane, material, water, ecology, fire, machine, persistence, protocol,
+multiplayer, renderer, and agent suites. Before the final `main` integration,
+the repository gate passed 696 non-agent tests with 22 intentional operator
+probes ignored and six serial end-to-end QUIC agent scenarios, strict Clippy,
+formatting, and optimized Linux and Windows release builds. A native Windows
+DX12 capture on an RTX 3090 exercised a physically assembled wand and active
+authoritative Gleam at 1280x720: 138/138 resident chunks were uploaded, the
+capture reported 53 FPS, 7.64 ms simulation and 9.19 ms draw time, and no dirty
+chunks. Final integrated gate results are recorded by the completing commit.
 
 ## Purpose
 

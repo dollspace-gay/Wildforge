@@ -637,6 +637,7 @@ fn floaters_hover_and_projectiles_collide() {
     let stone = reg.block_id("base:stone").unwrap();
     w.set_block(10, 200, 10, stone);
     let mut p = crate::mobs::Projectile {
+        stable_id: 0,
         pos: ep(Vec3::new(10.5, 200.5, 7.0)),
         vel: Vec3::new(0.0, 0.0, 20.0),
         tile: 0,
@@ -669,6 +670,7 @@ fn floaters_hover_and_projectiles_collide() {
         "bolt stopped by the wall"
     );
     w.spawn_projectile(crate::mobs::Projectile {
+        stable_id: 0,
         pos: ep(Vec3::new(4.5, 120.9, 2.0)),
         vel: Vec3::new(0.0, 0.0, 12.0),
         tile: 0,

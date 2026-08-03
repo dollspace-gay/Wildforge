@@ -151,6 +151,7 @@ impl Game {
                     players_rx: Default::default(),
                     mobs_rx: Default::default(),
                     bolts_rx: Default::default(),
+                    loose_items_rx: Default::default(),
                     falling_rx: Default::default(),
                     // Until the host answers, assume the old fixed ring.
                     granted_view_dist: 5,
@@ -564,6 +565,7 @@ impl Game {
                     let projectiles = snaps
                         .into_iter()
                         .map(|s| mobs::Projectile {
+                            stable_id: s.id,
                             pos: s.pos,
                             // Dead-reckoned between snapshots below.
                             vel: s.vel,
@@ -576,6 +578,25 @@ impl Game {
                         })
                         .collect();
                     self.server.world.replace_projectiles(projectiles);
+                }
+                net::S2C::LooseItems(part) => {
+                    let Some(snaps) = r.loose_items_rx.accept(part) else {
+                        continue;
+                    };
+                    let items = snaps
+                        .into_iter()
+                        .filter_map(|snap| {
+                            let item = (*r.item_map.get(snap.item as usize)?)?;
+                            let mut entity = ItemEntity::new(snap.pos, snap.vel, item, snap.count);
+                            entity.stable_id = snap.id;
+                            entity.age = snap.age;
+                            entity.durability =
+                                snap.durability.min(self.content.reg.item(item).durability);
+                            entity.arcane_id = snap.arcane_id;
+                            Some(entity)
+                        })
+                        .collect();
+                    self.server.world.replace_loose_items(items);
                 }
                 net::S2C::TimeIre { time, ire, day } => {
                     self.server.time_of_day = time;
@@ -652,6 +673,27 @@ impl Game {
                         r.player_age = r.player_age.min(r.player_interval * 0.5);
                     }
                 }
+                net::S2C::WorkingResult(result) => {
+                    if result.success {
+                        if let Some(channel) = self.interaction.working.as_mut()
+                            && result.phase.is_some()
+                        {
+                            channel.stable_id = result.stable_id;
+                        }
+                        if result.phase.is_none() {
+                            self.interaction.working = None;
+                        }
+                    } else {
+                        self.interaction.working = None;
+                    }
+                    self.toast(result.message);
+                    self.sfx(if result.success {
+                        Sfx::ImplementUse
+                    } else {
+                        Sfx::ImplementFailure
+                    });
+                }
+                net::S2C::WorkingEvent(cue) => self.present_working_cue(cue),
                 net::S2C::Hit { dmg, from } => self.hurt_player_from_wild(dmg, from),
                 net::S2C::Give {
                     item,

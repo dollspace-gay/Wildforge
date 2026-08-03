@@ -230,8 +230,12 @@ impl World {
                 BlockEntity::Steam(s) => {
                     let _ = writeln!(
                         out,
-                        "[[steam]]\n{pos_line}\nfuel = {:?}\nwater_hu = {}\nsalt_mass = {}\nsteam_numerator_remainder = {}\n",
-                        s.fuel, s.water.water_hu, s.water.salt_mass, s.steam_numerator_remainder,
+                        "[[steam]]\n{pos_line}\nfuel = {:?}\nwater_hu = {}\nsalt_mass = {}\ndraft_closed = {}\nsteam_numerator_remainder = {}\n",
+                        s.fuel,
+                        s.water.water_hu,
+                        s.water.salt_mass,
+                        s.draft_closed,
+                        s.steam_numerator_remainder,
                     );
                 }
                 BlockEntity::Separator(sp) => {
@@ -444,6 +448,8 @@ impl World {
             water_hu: Option<u64>,
             #[serde(default)]
             salt_mass: u64,
+            #[serde(default)]
+            draft_closed: bool,
             #[serde(default)]
             steam_numerator_remainder: u64,
         }
@@ -737,6 +743,7 @@ impl World {
                         }),
                         salt_mass: st.salt_mass,
                     },
+                    draft_closed: st.draft_closed,
                     steam_numerator_remainder: st.steam_numerator_remainder,
                 }),
             );

@@ -580,6 +580,46 @@ impl Game {
 
     pub(super) fn operate_binding_frame(&mut self, pos: crate::planet::BlockPos) {
         let slot = self.input.hotbar_sel;
+        if self.inventory.slots[slot].is_none() {
+            if let Some(remote) = &self.multiplayer.remote {
+                remote.client.send(&net::C2S::OperateWorking {
+                    working_id: "base:auto_ritual".into(),
+                    held_instance: 0,
+                    target: crate::workings::WorkingTargetIntent::Ritual { controller: pos },
+                    intent: crate::workings::WorkingIntent::Start,
+                });
+                return;
+            }
+            let player_id = crate::identity::local_player_id(
+                &self.server.world.save_dir_for_saving(),
+                self.identity.device_id(),
+            )
+            .unwrap_or(crate::identity::PlayerId([0; 16]));
+            match self.server.world.begin_contextual_ritual(
+                player_id.0,
+                &self.config.display_name,
+                pos,
+            ) {
+                Ok(result) => {
+                    if let Some(cue) = self
+                        .server
+                        .world
+                        .working_cues()
+                        .into_iter()
+                        .find(|cue| cue.stable_id == result.stable_id)
+                    {
+                        self.present_working_cue(cue);
+                    }
+                    self.toast(result.message);
+                    self.sfx(Sfx::ImplementUse);
+                }
+                Err(error) => {
+                    self.toast(error);
+                    self.sfx(Sfx::ImplementFailure);
+                }
+            }
+            return;
+        }
         let expected_revision = self.interaction.binding_revisions.get(&pos).copied();
         if let Some(remote) = &self.multiplayer.remote {
             remote.client.send(&net::C2S::OperateBindingFrame {

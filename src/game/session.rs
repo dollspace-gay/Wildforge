@@ -234,7 +234,7 @@ impl Game {
         }
         self.ui_state.held_stack = None;
         self.interaction.craft_grid = [None; 9];
-        self.interaction.items.clear();
+        self.server.world.clear_loose_items();
         self.interaction.breaking = None;
         self.survival.health = MAX_HEALTH;
         self.survival.killed_by_wild = false;
@@ -580,6 +580,7 @@ impl Game {
 
         #[derive(Serialize)]
         struct StoredDrop {
+            stable_id: u64,
             pos: crate::planet::EntityPos,
             vel: [f32; 3],
             item: String,
@@ -594,10 +595,12 @@ impl Game {
             drop: Vec<StoredDrop>,
         }
         let drop = self
-            .interaction
-            .items
+            .server
+            .world
+            .loose_items()
             .iter()
             .map(|entity| StoredDrop {
+                stable_id: entity.stable_id,
                 pos: entity.pos,
                 vel: entity.vel.to_array(),
                 item: self.content.reg.item(entity.item).name.clone(),
@@ -608,15 +611,24 @@ impl Game {
             })
             .collect();
         let text =
-            toml::to_string_pretty(&File { version: 2, drop }).map_err(std::io::Error::other)?;
+            toml::to_string_pretty(&File { version: 3, drop }).map_err(std::io::Error::other)?;
         crate::identity::atomic_write(&world.join("loose-items.toml"), text.as_bytes(), false)
     }
 
     fn load_loose_items(&mut self, world: &std::path::Path) {
         use serde::Deserialize;
 
+        // World::load_or_create owns the v3 host-authoritative format. This
+        // reader remains only as a migration fallback for older session
+        // worlds that reached the game before world-side adoption.
+        if !self.server.world.loose_items().is_empty() {
+            return;
+        }
+
         #[derive(Deserialize)]
         struct StoredDrop {
+            #[serde(default)]
+            stable_id: u64,
             pos: crate::planet::EntityPos,
             vel: [f32; 3],
             item: String,
@@ -639,7 +651,7 @@ impl Game {
             eprintln!("items: could not parse loose-items.toml; file left untouched");
             return;
         };
-        if !(1..=2).contains(&file.version) {
+        if !(1..=3).contains(&file.version) {
             eprintln!(
                 "items: unsupported loose item save version {}",
                 file.version
@@ -659,6 +671,7 @@ impl Game {
             }
             let mut entity =
                 ItemEntity::new(stored.pos, Vec3::from_array(stored.vel), item, stored.count);
+            entity.stable_id = stored.stable_id;
             entity.age = stored.age.max(0.0);
             entity.durability = stored
                 .durability
@@ -686,7 +699,7 @@ impl Game {
                     entity.arcane_id = stack.arcane_id;
                 }
             }
-            self.interaction.items.push(entity);
+            self.server.world.spawn_loose_item(entity);
         }
     }
 
@@ -800,6 +813,30 @@ impl Game {
                 );
             }
         }
+        if let Ok(player_id) = identity::local_player_id(dir, self.identity.device_id()) {
+            match self
+                .server
+                .world
+                .resume_pending_inventory_workings(player_id.0, &mut self.inventory)
+            {
+                Ok(ids) if !ids.is_empty() => match self.save_player() {
+                    Ok(()) => {
+                        for id in ids {
+                            if let Err(error) = self.server.world.finish_inventory_working(id) {
+                                eprintln!("workings: resumed Fieldmend could not finish: {error}");
+                            }
+                        }
+                    }
+                    Err(error) => eprintln!(
+                        "workings: resumed Fieldmend remains pending because its profile checkpoint failed: {error}"
+                    ),
+                },
+                Ok(_) => {}
+                Err(error) => {
+                    eprintln!("workings: pending local Fieldmend is inconsistent: {error}")
+                }
+            }
+        }
         true
     }
 
@@ -817,7 +854,7 @@ impl Game {
                 0.3,
                 1,
             );
-            self.interaction.items.clear();
+            self.server.world.clear_loose_items();
             self.in_world = false;
             self.refresh_worlds();
             self.set_screen(Screen::Title);
@@ -841,7 +878,7 @@ impl Game {
             0.3,
             1,
         );
-        self.interaction.items.clear();
+        self.server.world.clear_loose_items();
         self.in_world = false;
         self.refresh_worlds();
         self.set_screen(Screen::Title);

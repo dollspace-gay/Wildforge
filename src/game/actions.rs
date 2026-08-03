@@ -115,6 +115,68 @@ impl Game {
         self.juice_burst(pos.render_pos(), tile, count, 1.4);
     }
 
+    pub(super) fn present_working_cue(&mut self, cue: crate::workings::WorkingCue) {
+        use crate::workings::WorkingCueKind;
+        if matches!(
+            cue.kind,
+            WorkingCueKind::Complete | WorkingCueKind::Cancel | WorkingCueKind::Refuse
+        ) {
+            self.presentation.working_cues.remove(&cue.stable_id);
+        } else {
+            self.presentation
+                .working_cues
+                .insert(cue.stable_id, (cue.clone(), self.time_abs));
+        }
+        self.presentation.swing = 1.0;
+        self.sfx(
+            if cue.warning_band >= 2
+                || matches!(cue.kind, WorkingCueKind::Strain | WorkingCueKind::Overload)
+            {
+                Sfx::WorkingStrain(cue.warning_band)
+            } else if matches!(cue.kind, WorkingCueKind::Refuse) {
+                Sfx::ImplementFailure
+            } else {
+                Sfx::ImplementUse
+            },
+        );
+        if !self.presentation.juice {
+            return;
+        }
+        let source_tile = *crate::atlas::builtin_slots()
+            .get("ember")
+            .unwrap_or(&crate::atlas::UNKNOWN_SLOT);
+        let target_tile = *crate::atlas::builtin_slots()
+            .get("water")
+            .unwrap_or(&crate::atlas::UNKNOWN_SLOT);
+        let path_tile = *crate::atlas::builtin_slots()
+            .get("stone")
+            .unwrap_or(&crate::atlas::UNKNOWN_SLOT);
+        self.juice_burst(
+            cue.source.entity_center().render_pos(),
+            source_tile,
+            4,
+            0.75,
+        );
+        if let Some(target) = cue.path.last().copied() {
+            self.juice_burst(
+                target.entity_center().render_pos(),
+                target_tile,
+                if cue.warning_band >= 2 { 10 } else { 6 },
+                1.0,
+            );
+        }
+        let inner = cue.path.len().saturating_sub(2);
+        let stride = inner.div_ceil(8).max(1);
+        for pos in cue.path.iter().skip(1).take(inner).step_by(stride) {
+            self.juice_burst(
+                pos.entity_center().render_pos(),
+                path_tile,
+                if cue.warning_band >= 2 { 3 } else { 1 },
+                0.28,
+            );
+        }
+    }
+
     /// Advance a remote player's walk phase from their motion.
     pub(super) fn gait_for(&mut self, id: u32, pos: Vec3, dt: f32) -> (f32, f32) {
         let e = self
@@ -325,6 +387,7 @@ impl Game {
             return;
         }
         self.server.world.spawn_projectile(mobs::Projectile {
+            stable_id: 0,
             pos: eye
                 .translated(dir * 0.4)
                 .expect("projectile muzzle stays near the player")
@@ -410,6 +473,9 @@ impl Game {
             REACH,
         );
         let held = self.inventory.slots[self.input.hotbar_sel].map(|s| s.item);
+        if self.interact_wand(dt, hit.as_ref()) {
+            return;
+        }
 
         // The bucket: scoop a full water cell or pour it back — the
         // A boat in hand launches onto struck water.
@@ -733,7 +799,7 @@ impl Game {
                         ent.durability = stack.durability;
                     }
                     ent.arcane_id = stack.arcane_id;
-                    self.interaction.items.push(ent);
+                    self.server.world.spawn_loose_item(ent);
                     self.sfx(Sfx::Pickup);
                     if !archaeology {
                         self.toast("The brush turns up usable buried stock.".into());
@@ -831,7 +897,7 @@ impl Game {
                         f32::from(target.v()) + 0.5,
                     )
                     .expect("worked item remains above its station");
-                    self.interaction.items.push(ItemEntity::new(
+                    self.server.world.spawn_loose_item(ItemEntity::new(
                         center,
                         Vec3::new(0.0, 2.0, 0.0),
                         out.item,
@@ -992,7 +1058,7 @@ impl Game {
                                 && let Some(item) = reg.item_id(&reg.block(b).name)
                             {
                                 let center = target.entity_at_height(0.3);
-                                self.interaction.items.push(ItemEntity::new(
+                                self.server.world.spawn_loose_item(ItemEntity::new(
                                     center,
                                     Vec3::new(0.0, 2.2, 0.0),
                                     item,
@@ -1003,9 +1069,9 @@ impl Game {
                                 let center = target.entity_at_height(0.3);
                                 let a = self.rand01() * std::f32::consts::TAU;
                                 let v = Vec3::new(a.cos() * 1.2, 2.2, a.sin() * 1.2);
-                                self.interaction
-                                    .items
-                                    .push(ItemEntity::new(center, v, drop.item, drop.count));
+                                self.server.world.spawn_loose_item(ItemEntity::new(
+                                    center, v, drop.item, drop.count,
+                                ));
                             }
                             // Chance extras (leaves drop saplings).
                             if !self.creative
@@ -1020,7 +1086,7 @@ impl Game {
                                 let mut entity =
                                     ItemEntity::new(center, v, stack.item, stack.count);
                                 entity.arcane_id = stack.arcane_id;
-                                self.interaction.items.push(entity);
+                                self.server.world.spawn_loose_item(entity);
                             }
                         }
                     } else {
@@ -1266,6 +1332,7 @@ impl Game {
                     let vel = dir * speed;
                     let tile = reg.item(item).icon;
                     self.server.world.spawn_projectile(mobs::Projectile {
+                        stable_id: 0,
                         pos,
                         vel,
                         tile,
@@ -1539,9 +1606,24 @@ impl Game {
                         return;
                     }
                     if holding_seed {
+                        if self.inventory.slots[self.input.hotbar_sel]
+                            .is_some_and(|stack| stack.durability == 0)
+                        {
+                            self.toast(
+                                "The cutting is still matter, but its living interval has spent itself."
+                                    .to_string(),
+                            );
+                            return;
+                        }
                         // What you carry decides what wakes: its own
                         // kind reawakens, a stranger's replaces.
-                        match self.server.world.plant_heart_seed_from_at(h.block, carried) {
+                        let seed_stack = self.inventory.slots[self.input.hotbar_sel]
+                            .expect("holding_seed was derived from this authoritative slot");
+                        match self
+                            .server
+                            .world
+                            .plant_heart_seed_stack_at(h.block, seed_stack)
+                        {
                             Some(refusal) => self.toast(refusal),
                             None => {
                                 self.inventory.take_one(self.input.hotbar_sel);
@@ -2079,6 +2161,388 @@ impl Game {
                 }
             }
         }
+    }
+
+    fn interact_wand(&mut self, dt: f32, hit: Option<&raycast::PlanetHit>) -> bool {
+        use crate::workings::{WorkingIntent, WorkingTargetIntent};
+
+        let left_range = if self.multiplayer.remote.is_none() {
+            self.interaction.working.as_ref().and_then(|channel| {
+                let source = self.player.pos.block()?;
+                (channel.stable_id != 0
+                    && !self
+                        .server
+                        .world
+                        .wand_working_reachable_from(channel.stable_id, source))
+                .then_some(channel.stable_id)
+            })
+        } else {
+            None
+        };
+        if let Some(stable_id) = left_range {
+            self.interaction.working = None;
+            let mut cue = self
+                .server
+                .world
+                .working_cues()
+                .into_iter()
+                .find(|cue| cue.stable_id == stable_id);
+            match self.server.world.interrupt_working(stable_id) {
+                Ok(result) => {
+                    if let Some(cue) = cue.as_mut() {
+                        cue.kind = result.cue;
+                        cue.warning_band = result.warning_band;
+                        cue.completion_permille = 1_000;
+                    }
+                    if let Some(cue) = cue {
+                        self.present_working_cue(cue);
+                    }
+                    self.toast("The wand path leaves its bounded reach and breaks cleanly.".into());
+                }
+                Err(error) => self.toast(error),
+            }
+            return true;
+        }
+
+        let held_stack = self.inventory.slots[self.input.hotbar_sel];
+        let held_wand = held_stack.filter(|stack| {
+            stack.arcane_id != 0
+                && self
+                    .content
+                    .reg
+                    .item(stack.item)
+                    .implement
+                    .as_ref()
+                    .is_some_and(|definition| {
+                        definition.kind == crate::implements::ImplementItemKind::Wand
+                    })
+        });
+        if let Some(channel) = self.interaction.working.as_ref()
+            && held_wand.is_none_or(|wand| wand.arcane_id != channel.wand_id)
+        {
+            let channel = self.interaction.working.take().unwrap();
+            if let Some(remote) = &self.multiplayer.remote {
+                remote.client.send(&net::C2S::OperateWorking {
+                    working_id: channel.working_id,
+                    held_instance: channel.wand_id,
+                    target: channel.target,
+                    intent: WorkingIntent::Cancel,
+                });
+            } else if channel.stable_id != 0
+                && let Err(error) = self.server.world.interrupt_working(channel.stable_id)
+            {
+                self.toast(error);
+            }
+            return true;
+        }
+        let Some(wand) = held_wand else {
+            return false;
+        };
+        if let Some(channel) = self.interaction.working.as_mut() {
+            if self.input.right_held {
+                channel.held_secs += dt;
+                if channel.held_secs >= crate::workings::MIN_WAND_SETTLE_SECONDS
+                    && !channel.hold_sent
+                {
+                    channel.hold_sent = true;
+                    let working_id = channel.working_id.clone();
+                    let wand_id = channel.wand_id;
+                    let target = channel.target;
+                    let stable_id = channel.stable_id;
+                    if let Some(remote) = &self.multiplayer.remote {
+                        remote.client.send(&net::C2S::OperateWorking {
+                            working_id,
+                            held_instance: wand_id,
+                            target,
+                            intent: WorkingIntent::Hold,
+                        });
+                    } else if stable_id != 0 {
+                        match self.server.world.activate_working(stable_id) {
+                            Ok(result) => self.toast(result.message),
+                            Err(error) if !error.contains("cannot move") => self.toast(error),
+                            Err(_) => {}
+                        }
+                    }
+                }
+                return true;
+            }
+            let channel = self.interaction.working.take().unwrap();
+            if let Some(remote) = &self.multiplayer.remote {
+                remote.client.send(&net::C2S::OperateWorking {
+                    working_id: channel.working_id,
+                    held_instance: channel.wand_id,
+                    target: channel.target,
+                    intent: WorkingIntent::Release,
+                });
+            } else if channel.stable_id != 0 {
+                let completion = if channel.working_id == "base:fieldmend" {
+                    self.server
+                        .world
+                        .complete_inventory_working(channel.stable_id, &mut self.inventory)
+                } else {
+                    self.server.world.release_working(channel.stable_id)
+                };
+                match completion {
+                    Ok(result) => {
+                        if result.phase == Some(crate::workings::WorkingPhase::PendingApply) {
+                            match self.save_player() {
+                                Ok(()) => match self
+                                    .server
+                                    .world
+                                    .finish_inventory_working(channel.stable_id)
+                                {
+                                    Ok(finished) => self.toast(finished.message),
+                                    Err(error) => self.toast(error),
+                                },
+                                Err(error) => self.toast(format!(
+                                    "Fieldmend landed, but its profile checkpoint failed: {error}"
+                                )),
+                            }
+                        } else {
+                            self.toast(result.message);
+                        }
+                        self.sfx(Sfx::ImplementUse);
+                    }
+                    Err(error) => {
+                        self.toast(error);
+                        self.sfx(Sfx::ImplementFailure);
+                    }
+                }
+            }
+            self.input.action_cooldown = crate::workings::WAND_RECOVERY_SECONDS;
+            return true;
+        }
+        if !self.input.right_held || self.input.action_cooldown > 0.0 {
+            return false;
+        }
+        let source = match self.player.pos.block() {
+            Some(source) => source,
+            None => return true,
+        };
+        let water_hit = raycast::raycast_water_at(
+            &self.server.world,
+            self.player.eye(),
+            self.camera.local_forward(),
+            REACH,
+        )
+        .filter(|water| {
+            self.content
+                .reg
+                .is_water(self.server.world.get_block_at(water.block))
+        });
+        let eye = self.player.eye();
+        let forward = self.camera.local_forward().normalize_or_zero();
+        let entity_target = self
+            .server
+            .world
+            .projectiles()
+            .iter()
+            .map(|projectile| (projectile.pos, projectile.stable_id, 0.45))
+            .chain(
+                self.server
+                    .world
+                    .loose_items()
+                    .iter()
+                    .map(|item| (item.pos, item.stable_id, 0.35)),
+            )
+            .filter_map(|(pos, stable_id, radius)| {
+                let delta = eye.local_delta_to(pos);
+                let along = delta.dot(forward);
+                (along > 0.0 && along <= REACH && (delta - forward * along).length() <= radius)
+                    .then_some((along, stable_id))
+            })
+            .min_by(|left, right| left.0.total_cmp(&right.0))
+            .map(|(_, stable_id)| stable_id);
+        let (working_id, target) = if let Some(stable_id) = entity_target {
+            (
+                "base:nudge".to_string(),
+                WorkingTargetIntent::Entity { stable_id },
+            )
+        } else if let Some(water) = water_hit
+            && (self
+                .content
+                .reg
+                .is_air(self.server.world.get_block_at(water.adjacent))
+                || self
+                    .content
+                    .reg
+                    .is_water(self.server.world.get_block_at(water.adjacent)))
+        {
+            (
+                "base:draw".to_string(),
+                WorkingTargetIntent::Water {
+                    from: water.block,
+                    to: water.adjacent,
+                    water_hu: crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL,
+                },
+            )
+        } else if let Some(hit) = hit {
+            let block = self.server.world.get_block_at(hit.block);
+            let definition = self.content.reg.block(block);
+            if definition.interaction.as_deref() == Some("discovery_lab")
+                && (self.multiplayer.remote.is_some()
+                    || self.server.world.holdfast_mounted_target_at(hit.block))
+            {
+                // The client identifies only the physical mount. Its hidden
+                // sample contents remain host-owned and are validated by the
+                // Holdfast handler before any Current is reserved.
+                (
+                    "base:holdfast".to_string(),
+                    WorkingTargetIntent::Block {
+                        pos: hit.block,
+                        adjacent: None,
+                    },
+                )
+            } else if self.server.world.is_nudge_mechanism_at(hit.block) {
+                (
+                    "base:nudge".to_string(),
+                    WorkingTargetIntent::Block {
+                        pos: hit.block,
+                        adjacent: None,
+                    },
+                )
+            } else if definition.crop_next.is_some() || definition.sapling.is_some() {
+                (
+                    "base:rootwake".to_string(),
+                    WorkingTargetIntent::Block {
+                        pos: hit.block,
+                        adjacent: None,
+                    },
+                )
+            } else if definition.burns != 0 {
+                (
+                    "base:kindle".to_string(),
+                    WorkingTargetIntent::Block {
+                        pos: hit.block,
+                        adjacent: Some(hit.adjacent),
+                    },
+                )
+            } else {
+                (
+                    "base:trace".to_string(),
+                    WorkingTargetIntent::Block {
+                        pos: hit.block,
+                        adjacent: None,
+                    },
+                )
+            }
+        } else {
+            // Inventory workings use a physical little tableau instead of a
+            // spell hotbar: target immediately right of the wand, matching
+            // stock one slot farther right. With no valid tableau, empty-air
+            // use remains Gleam.
+            let target_slot = (self.input.hotbar_sel + 1) % crate::inventory::HOTBAR_SLOTS;
+            let material_slot = (self.input.hotbar_sel + 2) % crate::inventory::HOTBAR_SLOTS;
+            let staged = self.inventory.slots[target_slot];
+            let matching = staged.and_then(|target| {
+                let definition = self.content.reg.item(target.item);
+                let repair = self
+                    .content
+                    .reg
+                    .item_id(&format!("{}/forge_scrap", definition.name))?;
+                self.inventory.slots[material_slot]
+                    .is_some_and(|stock| stock.item == repair && stock.count == 1)
+                    .then_some(())
+            });
+            let fragile = staged.is_some_and(|stack| {
+                let definition = self.content.reg.item(stack.item);
+                stack.count == 1
+                    && definition.durability != 0
+                    && (definition.food.is_some()
+                        || definition.name.ends_with("_seed")
+                        || (definition.arcane.is_some() && definition.places.is_some()))
+            });
+            if matching.is_some() {
+                (
+                    "base:fieldmend".to_string(),
+                    WorkingTargetIntent::Inventory {
+                        target_slot: target_slot as u8,
+                        material_slot: Some(material_slot as u8),
+                        magnitude: 16,
+                    },
+                )
+            } else if fragile {
+                (
+                    "base:holdfast".to_string(),
+                    WorkingTargetIntent::Inventory {
+                        target_slot: target_slot as u8,
+                        material_slot: None,
+                        magnitude: 1,
+                    },
+                )
+            } else {
+                ("base:gleam".to_string(), WorkingTargetIntent::None)
+            }
+        };
+        // Ctrl + use is an explicit unsafe choice. It never changes the
+        // effect requested by the client; it only authorizes the host to draw
+        // below the measured safe floor with visible, deterministic cost.
+        let forced = self.input.keys.sprint;
+        let start_intent = if forced {
+            WorkingIntent::StartForced
+        } else {
+            WorkingIntent::Start
+        };
+        if let Some(remote) = &self.multiplayer.remote {
+            remote.client.send(&net::C2S::OperateWorking {
+                working_id: working_id.clone(),
+                held_instance: wand.arcane_id,
+                target,
+                intent: start_intent,
+            });
+            self.interaction.working = Some(LocalWorkingChannel {
+                stable_id: 0,
+                working_id,
+                wand_id: wand.arcane_id,
+                target,
+                held_secs: 0.0,
+                hold_sent: false,
+            });
+        } else {
+            let player_id = identity::local_player_id(
+                &self.server.world.save_dir_for_saving(),
+                self.identity.device_id(),
+            )
+            .unwrap_or(identity::PlayerId([0; 16]));
+            let result = self.server.world.begin_wand_working(
+                player_id.0,
+                &self.config.display_name,
+                source,
+                wand.arcane_id,
+                &working_id,
+                target,
+                Some(&self.inventory),
+                forced,
+            );
+            match result {
+                Ok(result) => {
+                    if let Some(cue) = self
+                        .server
+                        .world
+                        .working_cues()
+                        .into_iter()
+                        .find(|cue| cue.stable_id == result.stable_id)
+                    {
+                        self.present_working_cue(cue);
+                    }
+                    self.toast(result.message);
+                    self.interaction.working = Some(LocalWorkingChannel {
+                        stable_id: result.stable_id,
+                        working_id,
+                        wand_id: wand.arcane_id,
+                        target,
+                        held_secs: 0.0,
+                        hold_sent: false,
+                    });
+                }
+                Err(error) => {
+                    self.toast(error);
+                    self.sfx(Sfx::ImplementFailure);
+                }
+            }
+        }
+        self.input.action_cooldown = 0.1;
+        true
     }
 
     /// Apply world mutations queued by scripts during the last dispatch.

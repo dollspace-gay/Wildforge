@@ -168,6 +168,36 @@ impl Agent {
         for (species, (n, d)) in counts {
             out.push_str(&format!("{n}x {species} nearby (closest {d:.0})\n"));
         }
+        for item in self
+            .world
+            .loose_items()
+            .iter()
+            .filter(|item| item.pos.distance_to(p) < 32.0)
+        {
+            let delta = p.local_delta_to(item.pos);
+            out.push_str(&format!(
+                "dropped {}x {} (entity id {}) {:.0} blocks {}\n",
+                item.count,
+                self.reg.item(item.item).name,
+                item.stable_id,
+                item.pos.distance_to(p),
+                octant(delta.x as i32, delta.z as i32),
+            ));
+        }
+        for projectile in self
+            .world
+            .projectiles()
+            .iter()
+            .filter(|projectile| projectile.pos.distance_to(p) < 32.0)
+        {
+            let delta = p.local_delta_to(projectile.pos);
+            out.push_str(&format!(
+                "projectile (entity id {}) {:.0} blocks {}\n",
+                projectile.stable_id,
+                projectile.pos.distance_to(p),
+                octant(delta.x as i32, delta.z as i32),
+            ));
+        }
         out
     }
 

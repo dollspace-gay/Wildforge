@@ -9,7 +9,7 @@ use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 34;
+pub const PROTOCOL: u32 = 37;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -100,11 +100,24 @@ pub struct FallSnap {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BoltSnap {
+    pub id: u64,
     pub pos: EntityPos,
     /// Guests dead-reckon between snapshots.
     pub vel: Vec3,
     pub tile: u16,
     pub age: f32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LooseItemSnap {
+    pub id: u64,
+    pub pos: EntityPos,
+    pub vel: Vec3,
+    pub item: u16,
+    pub count: u32,
+    pub age: f32,
+    pub durability: u32,
+    pub arcane_id: u64,
 }
 
 /// One part of a 20 Hz world snapshot.
@@ -485,6 +498,14 @@ pub enum C2S {
         action: crate::implements::FrameAction,
         expected_revision: Option<u64>,
     },
+    /// A wand/ritual request contains no trusted cost or mutation state. The
+    /// host reconstructs raycasts, held identity, targets, ledgers, and phase.
+    OperateWorking {
+        working_id: String,
+        held_instance: u64,
+        target: crate::workings::WorkingTargetIntent,
+        intent: crate::workings::WorkingIntent,
+    },
     /// Steelworks: ask the host to light a charged bloomery or covered log pile.
     LightBloomery {
         pos: BlockPos,
@@ -585,6 +606,7 @@ pub enum S2C {
     Players(Snapshot<PlayerSnap>),
     Mobs(Snapshot<MobSnap>),
     Bolts(Snapshot<BoltSnap>),
+    LooseItems(Snapshot<LooseItemSnap>),
     /// Airborne gravity blocks (sand mid-tumble). Datagram.
     Falling(Snapshot<FallSnap>),
     /// The view distance the host actually granted, in chunks. The guest
@@ -648,6 +670,10 @@ pub enum S2C {
         cue: crate::implements::ImplementCue,
         visual: Option<crate::implements::ImplementVisual>,
     },
+    WorkingResult(crate::workings::WorkingResult),
+    /// Interest-managed type/source/path/completion cue. No exact private
+    /// Current mixture or hidden target state crosses the wire.
+    WorkingEvent(crate::workings::WorkingCue),
     Hit {
         dmg: f32,
         from: EntityPos,

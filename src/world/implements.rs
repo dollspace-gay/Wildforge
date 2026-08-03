@@ -21,7 +21,7 @@ impl World {
     /// available to sparse apparatus transactions. This is a custody handoff,
     /// not recharge: Geography loses exactly what the regional Ambient owner
     /// gains, with the geography files committed through the same journal.
-    fn ensure_regional_ambient_units(
+    pub(super) fn ensure_regional_ambient_units(
         &mut self,
         region: crate::planet_atlas::AtlasPos,
         requested: u64,
@@ -4468,7 +4468,7 @@ fn apparatus_neighbors(pos: BlockPos) -> Vec<BlockPos> {
     out
 }
 
-fn add_current(
+pub(super) fn add_current(
     map: &mut BTreeMap<ArcaneOwner, Current>,
     owner: ArcaneOwner,
     current: &Current,
@@ -4483,7 +4483,7 @@ fn physical_component(reg: &crate::registry::Registry, stack: ItemStack) -> Impl
     }
 }
 
-fn transaction_from_maps(
+pub(super) fn transaction_from_maps(
     ledger: &mut crate::arcane::ArcaneLedger,
     debits: BTreeMap<ArcaneOwner, Current>,
     credits: BTreeMap<ArcaneOwner, Current>,

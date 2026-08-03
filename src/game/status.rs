@@ -62,36 +62,74 @@ impl Game {
         self.survival.perish_accum += dt;
         if self.survival.perish_accum >= SWEEP {
             self.survival.perish_accum -= SWEEP;
-            let reg = self.content.reg.clone();
-            let mush = reg.item_id("base:spoiled_mush");
-            let mut consumed = Vec::new();
-            let mut age = |s: &mut Option<ItemStack>| {
-                let Some(st) = s else { return };
-                let full = reg.item(st.item).durability;
-                if reg.item(st.item).food.is_none() || full == 0 {
-                    return;
+            if self.multiplayer.remote.is_none() {
+                let reg = self.content.reg.clone();
+                let mush = reg.item_id("base:spoiled_mush");
+                let mut consumed = Vec::new();
+                let actor = crate::identity::local_player_id(
+                    &self.server.world.save_dir_for_saving(),
+                    self.identity.device_id(),
+                )
+                .unwrap_or(crate::identity::PlayerId([0; 16]))
+                .0;
+                let mut age = |slot: Option<usize>, s: &mut Option<ItemStack>| {
+                    let Some(st) = s else { return };
+                    let full = reg.item(st.item).durability;
+                    let food = reg.item(st.item).food.is_some();
+                    let viable_seed = reg.item(st.item).name.ends_with("_seed");
+                    if (!food && !viable_seed) || full == 0 {
+                        return;
+                    }
+                    if st.durability == 0 {
+                        st.durability = full;
+                    } else {
+                        let actual_step = slot.map_or(step, |slot| {
+                            self.server.world.holdfast_age_step(
+                                actor,
+                                slot,
+                                *st,
+                                step,
+                                SWEEP as u32,
+                            )
+                        });
+                        if st.durability > actual_step {
+                            st.durability -= actual_step;
+                            return;
+                        }
+                        if food {
+                            consumed.push(*st);
+                            *s = mush.map(|m| {
+                                let mut sp = ItemStack::new(&reg, m, 1);
+                                sp.count = st.count;
+                                sp
+                            });
+                        } else {
+                            st.durability = 0;
+                        }
+                    }
+                };
+                for (slot, s) in self.inventory.slots.iter_mut().enumerate() {
+                    age(Some(slot), s);
                 }
-                if st.durability == 0 {
-                    st.durability = full;
-                } else if st.durability <= step {
-                    consumed.push(*st);
-                    *s = mush.map(|m| {
-                        let mut sp = ItemStack::new(&reg, m, 1);
-                        sp.count = st.count;
-                        sp
-                    });
-                } else {
-                    st.durability -= step;
+                age(None, &mut self.ui_state.held_stack);
+                if let Some(at) = self.player.pos.block() {
+                    for slot in 0..self.inventory.slots.len() {
+                        if let Some(stack) = self.inventory.slots[slot]
+                            && let Err(error) = self.server.world.leak_fragile_item_charge(
+                                actor,
+                                slot,
+                                stack,
+                                at,
+                                SWEEP as u32,
+                            )
+                        {
+                            eprintln!("arcane specimen leakage failed: {error}");
+                        }
+                    }
                 }
-            };
-            for s in self.inventory.slots.iter_mut() {
-                age(s);
-            }
-            age(&mut self.ui_state.held_stack);
-            if self.multiplayer.remote.is_none()
-                && let Err(error) = self.server.world.record_consumed_stacks(consumed)
-            {
-                eprintln!("materials: spoiled carried food accounting failed: {error}");
+                if let Err(error) = self.server.world.record_consumed_stacks(consumed) {
+                    eprintln!("materials: spoiled carried food accounting failed: {error}");
+                }
             }
         }
         // Nutrition decays slowly (~full to empty over long play).
@@ -251,45 +289,14 @@ impl Game {
         self.survival.damage_flash = (self.survival.damage_flash - dt).max(0.0);
     }
 
-    pub(super) fn update_items(&mut self, dt: f32) {
-        let mut kept = Vec::with_capacity(self.interaction.items.len());
-        let mut lost = Vec::new();
-        for mut item in self.interaction.items.drain(..) {
-            if item.update(&self.server.world, dt) {
-                kept.push(item);
-            } else {
-                lost.push(item);
-            }
-        }
-        self.interaction.items = kept;
-        let reg = self.content.reg.clone();
-        for item in lost {
-            let reason = item.loss_reason(&self.server.world);
-            let pos = item.pos.block();
-            let mut implement_materials_handled = false;
-            if let Some(pos) = pos {
-                let mut stack = ItemStack::new(&reg, item.item, item.count);
-                stack.durability = item.durability;
-                stack.arcane_id = item.arcane_id;
-                implement_materials_handled =
-                    self.server.world.retire_arcane_stack_at(pos, stack, reason);
-            }
-            if let (Some(pos), Some(ledger)) = (pos, &mut self.server.world.material_ledger)
-                && !implement_materials_handled
-            {
-                let mut stack = ItemStack::new(&reg, item.item, item.count);
-                if item.durability != 0 {
-                    stack.durability = item.durability;
-                }
-                stack.arcane_id = item.arcane_id;
-                if let Err(error) = ledger.bury_stack(&reg, pos, stack, reason) {
-                    eprintln!("materials: dropped-item salvage failed: {error}");
-                }
-            }
-        }
-        if self.ui_state.screen == Screen::Dead {
+    pub(super) fn update_items(&mut self, _dt: f32) {
+        // Physics, lifetime, collision, and loss accounting are host-owned.
+        // A guest only renders snapshots and receives authoritative Give
+        // messages; it never predicts an inventory pickup.
+        if self.multiplayer.remote.is_some() || self.ui_state.screen == Screen::Dead {
             return;
         }
+        let mut items = self.server.world.take_loose_items();
         // Pickup: magnetize into the inventory.
         let target = self
             .player
@@ -298,16 +305,12 @@ impl Game {
             .expect("pickup target stays beside the player")
             .pos;
         let mut i = 0;
-        while i < self.interaction.items.len() {
-            let it = &self.interaction.items[i];
+        while i < items.len() {
+            let it = &items[i];
             let d = it.pos.distance_to(target);
             if it.age > entity::PICKUP_DELAY && d < 1.4 {
                 let it_pos = it.pos;
-                let (item, count, dur) = (
-                    self.interaction.items[i].item,
-                    self.interaction.items[i].count,
-                    self.interaction.items[i].durability,
-                );
+                let (item, count, dur) = (items[i].item, items[i].count, items[i].durability);
                 let reg = self.content.reg.clone();
                 let left = if dur > 0 {
                     let mut stack = ItemStack::new(&reg, item, count);
@@ -350,13 +353,14 @@ impl Game {
                     }
                 }
                 if left == 0 {
-                    self.interaction.items.swap_remove(i);
+                    items.swap_remove(i);
                     continue;
                 } else {
-                    self.interaction.items[i].count = left;
+                    items[i].count = left;
                 }
             }
             i += 1;
         }
+        self.server.world.replace_loose_items(items);
     }
 }

@@ -11,11 +11,16 @@ use std::sync::Arc;
 use glam::Vec3;
 
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
+use crate::entity::ItemEntity;
 use crate::inventory::ItemStack;
 use crate::mobs::{Mob, MobEvent, ProjHit, Projectile};
 use crate::planet::BlockPos;
 use crate::registry::{AIR, BlockId, ItemId, Registry};
 use crate::worldgen::Generator;
+
+/// Dropped-item ids occupy a high, signed-64-safe namespace so they cannot
+/// collide with ordinary projectile ids and still round-trip through TOML.
+const LOOSE_ITEM_ID_BASE: u64 = 1u64 << 62;
 
 mod calendar;
 mod chunks;
@@ -47,6 +52,7 @@ mod spawn;
 pub(crate) use spawn::player_entry_chunks;
 pub(crate) use storage::{ChunkLoader, encode_stream_chunk};
 mod ticks;
+mod workings;
 
 /// Materialized water conditions used by fish and later aquatic biomes. Depth
 /// and salinity come from the live voxel column; temperature comes from local
@@ -302,6 +308,10 @@ pub struct SteamState {
     pub fuel: f32,
     /// Exact boiler reservoir; evaporation leaves dissolved salt here.
     pub water: crate::planet_atlas::ReservoirMass,
+    /// Physical draft latch operated by hand or a bounded Nudge. This belongs
+    /// to the embodied firebox, not generic voxel metadata, whose bits have
+    /// unrelated meanings for other blocks and must reset on visual swaps.
+    pub draft_closed: bool,
     /// Numerator remainder for HU consumption at 256 HU / 15 seconds.
     pub steam_numerator_remainder: u64,
 }
@@ -904,6 +914,13 @@ pub struct World {
     /// Physical construction, wear, and provenance for stable charge-bearing
     /// implements. Exact Current remains in `arcane_ledger`.
     pub(crate) implements_state: Option<crate::implements::ImplementsState>,
+    /// Host-owned multi-tick magical transactions. Each active id has exact
+    /// Current custody in `ArcaneOwner::Working` and survives unload/restart.
+    pub(crate) workings_state: Option<crate::workings::WorkingsState>,
+    /// Sparse exact temperature/dross carriers for detailed water touched by
+    /// conservative magical transfer. Ordinary untouched water derives its
+    /// baseline temperature from weather and costs no per-voxel allocation.
+    pub(crate) water_carriers: Option<crate::workings::WaterCarrierState>,
     /// Atlas-free unit fixtures can request a local condition explicitly.
     /// Production worlds never consult this: their weather is atlas state.
     weather_override: Option<crate::planet_atlas::LocalWeatherSample>,
@@ -985,6 +1002,12 @@ pub struct World {
     pending_drops: Vec<(crate::planet::BlockPos, ItemStack)>,
     mobs: Vec<crate::mobs::Mob>,
     projectiles: Vec<Projectile>,
+    next_projectile_id: u64,
+    /// Ordinary dropped items are host-owned entities, not renderer-local
+    /// decorations. This makes pickup, collision, persistence, replication,
+    /// and Nudge share one authority.
+    loose_items: Vec<ItemEntity>,
+    next_loose_item_id: u64,
     hostile_spawn_timer: f32,
     /// Chunks whose wildlife roll already happened (persisted).
     mob_seeded: HashSet<ChunkPos>,
@@ -1013,6 +1036,8 @@ pub struct World {
     next_mob_id: u32,
     #[cfg(test)]
     save_fail_chunks: HashSet<ChunkPos>,
+    #[cfg(test)]
+    fail_loose_item_save: bool,
 }
 
 /// Ire tier names, index = tier.
@@ -1275,6 +1300,26 @@ impl World {
                 })
                 .ok()
         });
+        let workings_state = authority_atlas.and_then(|_| {
+            crate::workings::WorkingsState::load_or_initialize(
+                &save_dir,
+                reg.content_hash,
+                &reg.workings,
+            )
+            .map_err(|error| {
+                eprintln!("workings: could not open transaction state: {error}");
+                error
+            })
+            .ok()
+        });
+        let water_carriers = authority_atlas.and_then(|_| {
+            crate::workings::WaterCarrierState::load_or_initialize(&save_dir)
+                .map_err(|error| {
+                    eprintln!("workings: could not open detailed water carriers: {error}");
+                    error
+                })
+                .ok()
+        });
         World {
             chunks: HashMap::new(),
             generator,
@@ -1286,6 +1331,8 @@ impl World {
             arcane_geography,
             discovery_state,
             implements_state,
+            workings_state,
+            water_carriers,
             weather_override: None,
             remote_weather_side: 0,
             remote_weather: HashMap::new(),
@@ -1329,6 +1376,9 @@ impl World {
             long_winter: false,
             mobs: Vec::new(),
             projectiles: Vec::new(),
+            next_projectile_id: 1,
+            loose_items: Vec::new(),
+            next_loose_item_id: LOOSE_ITEM_ID_BASE,
             hostile_spawn_timer: 0.0,
             mob_seeded: HashSet::new(),
             repop_timer: 0.0,
@@ -1345,6 +1395,8 @@ impl World {
             next_mob_id: 1,
             #[cfg(test)]
             save_fail_chunks: HashSet::new(),
+            #[cfg(test)]
+            fail_loose_item_save: false,
         }
     }
 
@@ -1430,9 +1482,103 @@ impl World {
         let Some(geography) = &mut self.arcane_geography else {
             return Ok(0);
         };
-        geography
+        let before = geography.dynamic.completed_steps;
+        let processed = geography
             .advance_toward(self.clock.max(0.0) as u64, budget)
-            .map_err(std::io::Error::other)
+            .map_err(std::io::Error::other)?;
+        let advanced = geography.dynamic.completed_steps != before;
+        if advanced {
+            self.pressure_wards_from_arcane_environment();
+        }
+        Ok(processed)
+    }
+
+    /// Once per authoritative Current transport step, translate actual local
+    /// wakes and dross custody into ward pressure. The ward consumes its own
+    /// supply; it neither deletes the environmental load nor edits Ire.
+    fn pressure_wards_from_arcane_environment(&mut self) {
+        let Some(atlas) = self.planet_atlas.as_ref() else {
+            return;
+        };
+        let controllers = self
+            .workings_state
+            .as_ref()
+            .into_iter()
+            .flat_map(|state| state.active.values())
+            .filter_map(|transaction| {
+                if transaction.phase != crate::workings::WorkingPhase::Active {
+                    return None;
+                }
+                match &transaction.effect {
+                    crate::workings::WorkingEffect::Ward { controller, .. } => Some(*controller),
+                    _ => None,
+                }
+            })
+            .collect::<Vec<_>>();
+        let pressures = controllers
+            .into_iter()
+            .filter_map(|controller| {
+                let region = atlas.atlas_pos(controller.surface());
+                let geography = self.arcane_geography.as_ref()?;
+                let cell = geography
+                    .dynamic
+                    .cells
+                    .get(region.index(geography.manifest.side))?;
+                let wake = if cell.wake_id != 0 {
+                    geography
+                        .dynamic
+                        .wakes
+                        .iter()
+                        .find(|wake| wake.id == u64::from(cell.wake_id))
+                        .map(|wake| {
+                            wake.charge
+                                .into_iter()
+                                .chain(wake.dross)
+                                .map(u64::from)
+                                .sum::<u64>()
+                        })
+                        .unwrap_or_default()
+                } else {
+                    0
+                };
+                let sparse_dross = self.arcane_ledger.as_ref().map_or(0, |ledger| {
+                    [
+                        crate::arcane::DrossMedium::Soil,
+                        crate::arcane::DrossMedium::Water,
+                        crate::arcane::DrossMedium::Air,
+                    ]
+                    .into_iter()
+                    .filter_map(|medium| {
+                        ledger.account(&crate::arcane::ArcaneOwner::Dross { region, medium })
+                    })
+                    .fold(0u64, |sum, account| {
+                        sum.saturating_add(account.current.total())
+                    })
+                });
+                Some((
+                    controller,
+                    wake,
+                    cell.dross_total().saturating_add(sparse_dross),
+                ))
+            })
+            .collect::<Vec<_>>();
+        let bounded = |units: u64| {
+            if units == 0 {
+                0
+            } else {
+                units.div_ceil(64).clamp(1, 32)
+            }
+        };
+        for (controller, wake, dross) in pressures {
+            let wake = bounded(wake);
+            if wake != 0 {
+                self.resist_supernatural_pressure_at(controller, "wake", wake);
+            }
+            let dross = bounded(dross);
+            if dross != 0 {
+                self.resist_supernatural_pressure_at(controller, "dross", dross);
+            }
+        }
     }
 
     /// Sliced whole-planet magical succession. Residency never enters the
@@ -2057,6 +2203,11 @@ impl World {
         } else {
             self.save_fail_chunks.remove(&pos);
         }
+    }
+
+    #[cfg(test)]
+    pub fn fail_loose_item_save_for_test(&mut self, fail: bool) {
+        self.fail_loose_item_save = fail;
     }
 
     #[cfg(test)]
@@ -2972,6 +3123,10 @@ impl World {
         let chunk_pos = pos.chunk();
         let (x, y, z) = pos.local();
         let old = self.get_block_at(pos);
+        let old_holds_water_carrier =
+            self.reg.is_water(old) || self.reg.block(old).name == "base:ice";
+        let new_holds_water_carrier =
+            self.reg.is_water(block) || self.reg.block(block).name == "base:ice";
         if let Some(chunk) = self.chunks.get_mut(&chunk_pos) {
             chunk.set(x, y, z, block);
             chunk.set_meta(x, y, z, meta);
@@ -2985,6 +3140,15 @@ impl World {
             }
         } else {
             return;
+        }
+        if old_holds_water_carrier
+            && !new_holds_water_carrier
+            && let Some(carriers) = self.water_carriers.as_mut()
+        {
+            // The regional arcane ledger remains authoritative for the dross;
+            // this only retires a no-longer-physical per-voxel allocation.
+            // Ice deliberately retains the allocation for exact thawing.
+            carriers.cells.remove(&pos);
         }
         if x == 0 {
             self.mark_chunk_dirty(chunk_pos.offset(-1, 0));
@@ -3051,9 +3215,13 @@ impl World {
             self.relight_and_cascade(chunk_pos);
         }
 
-        // A changed block invalidates any machine state living there and
-        // returns its inventory at that exact planetary address.
-        if let Some(entity) = self.block_entities.remove(&pos) {
+        // Changing material identity invalidates the machine living here.
+        // Metadata is ordinary state on the same physical block (crop stage,
+        // mechanism latch, water level) and must not silently delete its
+        // embodied block entity.
+        if old != block
+            && let Some(entity) = self.block_entities.remove(&pos)
+        {
             let spilled: Vec<ItemStack> = match entity {
                 BlockEntity::Furnace(f) => {
                     [f.input, f.fuel, f.output].into_iter().flatten().collect()

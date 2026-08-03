@@ -10,6 +10,102 @@ pub struct SettledMobDeath {
 }
 
 impl World {
+    pub fn loose_items(&self) -> &[crate::entity::ItemEntity] {
+        &self.loose_items
+    }
+
+    pub fn loose_items_mut(&mut self) -> &mut Vec<crate::entity::ItemEntity> {
+        &mut self.loose_items
+    }
+
+    pub fn spawn_loose_item(&mut self, mut item: crate::entity::ItemEntity) -> u64 {
+        if item.stable_id == 0 {
+            item.stable_id = self.next_loose_item_id.max(LOOSE_ITEM_ID_BASE);
+        }
+        self.next_loose_item_id = self
+            .next_loose_item_id
+            .max(item.stable_id.saturating_add(1))
+            .max(LOOSE_ITEM_ID_BASE);
+        let id = item.stable_id;
+        self.loose_items.push(item);
+        id
+    }
+
+    pub fn replace_loose_items(&mut self, items: Vec<crate::entity::ItemEntity>) {
+        self.next_loose_item_id = items
+            .iter()
+            .map(|item| item.stable_id)
+            .max()
+            .unwrap_or(LOOSE_ITEM_ID_BASE - 1)
+            .saturating_add(1)
+            .max(LOOSE_ITEM_ID_BASE);
+        self.loose_items = items;
+    }
+
+    pub fn take_loose_items(&mut self) -> Vec<crate::entity::ItemEntity> {
+        std::mem::take(&mut self.loose_items)
+    }
+
+    pub fn clear_loose_items(&mut self) {
+        self.loose_items.clear();
+    }
+
+    pub fn for_each_loose_item_mut(
+        &mut self,
+        mut update: impl FnMut(&mut crate::entity::ItemEntity),
+    ) {
+        for item in &mut self.loose_items {
+            update(item);
+        }
+    }
+
+    /// Advance ordinary dropped-item physics and settle material/arcane loss
+    /// at the same host authority that owns Nudge and pickup.
+    pub(super) fn tick_loose_items(&mut self, dt: f32) {
+        let pending = std::mem::take(&mut self.pending_drops);
+        for (pos, stack) in pending {
+            let id = self.next_loose_item_id.max(LOOSE_ITEM_ID_BASE);
+            let angle = ((id ^ (id >> 31)) as u32) as f32 / u32::MAX as f32 * std::f32::consts::TAU;
+            let mut item = crate::entity::ItemEntity::new(
+                pos.entity_center(),
+                glam::Vec3::new(angle.cos() * 1.5, 2.5, angle.sin() * 1.5),
+                stack.item,
+                stack.count,
+            );
+            item.durability = stack.durability;
+            item.arcane_id = stack.arcane_id;
+            self.spawn_loose_item(item);
+        }
+
+        let mut kept = Vec::with_capacity(self.loose_items.len());
+        let mut lost = Vec::new();
+        for mut item in std::mem::take(&mut self.loose_items) {
+            if item.update(self, dt) {
+                kept.push(item);
+            } else {
+                lost.push(item);
+            }
+        }
+        self.loose_items = kept;
+        let reg = self.reg.clone();
+        for item in lost {
+            let reason = item.loss_reason(self);
+            let Some(pos) = item.pos.block() else {
+                continue;
+            };
+            let mut stack = ItemStack::new(&reg, item.item, item.count);
+            stack.durability = item.durability;
+            stack.arcane_id = item.arcane_id;
+            let implement_materials_handled = self.retire_arcane_stack_at(pos, stack, reason);
+            if !implement_materials_handled
+                && let Some(ledger) = &mut self.material_ledger
+                && let Err(error) = ledger.bury_stack(&reg, pos, stack, reason)
+            {
+                eprintln!("materials: dropped-item salvage failed: {error}");
+            }
+        }
+    }
+
     pub fn mobs(&self) -> &[Mob] {
         &self.mobs
     }
@@ -272,10 +368,26 @@ impl World {
     }
 
     pub fn spawn_projectile(&mut self, projectile: Projectile) {
+        let mut projectile = projectile;
+        if projectile.stable_id == 0 {
+            projectile.stable_id = self.next_projectile_id.max(1);
+            self.next_projectile_id = projectile.stable_id.saturating_add(1).max(1);
+        } else {
+            self.next_projectile_id = self
+                .next_projectile_id
+                .max(projectile.stable_id.saturating_add(1));
+        }
         self.projectiles.push(projectile);
     }
 
     pub fn replace_projectiles(&mut self, projectiles: Vec<Projectile>) {
+        self.next_projectile_id = projectiles
+            .iter()
+            .map(|projectile| projectile.stable_id)
+            .max()
+            .unwrap_or_default()
+            .saturating_add(1)
+            .max(1);
         self.projectiles = projectiles;
     }
 
@@ -910,7 +1022,24 @@ impl World {
                     .then(|| m.pos.translated(sum / count).ok().map(|moved| moved.pos))
                     .flatten();
                 m.unstick(self, def);
+                let before = m.pos;
                 m.tick(self, def, players, dt, rng, &mut events);
+                if def.name.contains(":warden")
+                    && let Some(cell) = m.pos.block()
+                    && self.resist_supernatural_pressure_at(
+                        cell,
+                        "warden",
+                        def.attack.max(1.0).ceil() as u64,
+                    )
+                {
+                    // A supplied ward resists rather than destroys the Wild's
+                    // creature. Overload returns false and lets the crossing
+                    // stand; successful resistance restores the exact ordinary
+                    // pre-step position and leaves collision/AI authoritative.
+                    m.pos = before;
+                    m.vel = glam::Vec3::ZERO;
+                    m.state_timer = m.state_timer.max(0.2);
+                }
             }
         }
         // The kill lands: the prey leaves a carcass where it fell
@@ -1274,40 +1403,60 @@ impl World {
         let mut mob_hits: Vec<(usize, f32, crate::planet::EntityPos)> = Vec::new();
         let mut drops: Vec<(crate::planet::BlockPos, crate::registry::ItemId)> = Vec::new();
         let mut projectiles = std::mem::take(&mut self.projectiles);
-        projectiles.retain_mut(|p| match p.tick(self, players, dt) {
-            ProjHit::None => true,
-            ProjHit::Expired => false,
-            ProjHit::Player(i) => {
-                dmg.push((i, p.damage));
-                false
+        projectiles.retain_mut(|p| {
+            if self.projectile_reserved_by_working(p.stable_id) {
+                return true;
             }
-            ProjHit::Mob(i) => {
-                let from = p
-                    .pos
-                    .translated(-p.vel * dt)
-                    .map(|moved| moved.pos)
-                    .unwrap_or(p.pos);
-                mob_hits.push((i, p.damage, from));
-                false
+            let hit = p.tick(self, players, dt);
+            // Resistance is checked before dispatching the hit. Otherwise a
+            // bolt that reaches a player in this very tick bypasses the ward
+            // while a slower bolt one cell away is stopped.
+            if !p.from_player
+                && p.pos.block().is_some_and(|cell| {
+                    self.resist_supernatural_pressure_at(
+                        cell,
+                        "projectile",
+                        p.damage.max(1.0).ceil() as u64,
+                    )
+                })
+            {
+                return false;
             }
-            ProjHit::Block => {
-                if let Some(it) = p.drop_item {
-                    if p.owner != 0 {
-                        // A guest's arrow: hand it back over the wire.
-                        let stack = ItemStack::new(&self.reg, it, 1);
-                        self.pending_gives.push((p.owner, stack));
-                    } else {
-                        let back = p
-                            .pos
-                            .translated(-p.vel * dt * 2.0)
-                            .map(|moved| moved.pos)
-                            .unwrap_or(p.pos);
-                        if let Some(back) = back.block() {
-                            drops.push((back, it));
+            match hit {
+                ProjHit::None => true,
+                ProjHit::Expired => false,
+                ProjHit::Player(i) => {
+                    dmg.push((i, p.damage));
+                    false
+                }
+                ProjHit::Mob(i) => {
+                    let from = p
+                        .pos
+                        .translated(-p.vel * dt)
+                        .map(|moved| moved.pos)
+                        .unwrap_or(p.pos);
+                    mob_hits.push((i, p.damage, from));
+                    false
+                }
+                ProjHit::Block => {
+                    if let Some(it) = p.drop_item {
+                        if p.owner != 0 {
+                            // A guest's arrow: hand it back over the wire.
+                            let stack = ItemStack::new(&self.reg, it, 1);
+                            self.pending_gives.push((p.owner, stack));
+                        } else {
+                            let back = p
+                                .pos
+                                .translated(-p.vel * dt * 2.0)
+                                .map(|moved| moved.pos)
+                                .unwrap_or(p.pos);
+                            if let Some(back) = back.block() {
+                                drops.push((back, it));
+                            }
                         }
                     }
+                    false
                 }
-                false
             }
         });
         self.projectiles = projectiles;

@@ -49,15 +49,17 @@ For quick feedback, CI runs non-agent tests separately:
 cargo test --locked --all-targets -- --skip tests::agent::
 ```
 
-The four end-to-end QUIC agent scenarios retain their own serial lane:
+The six end-to-end QUIC agent scenarios retain their own serial lane:
 
 ```sh
 cargo test --locked tests::agent:: -- --test-threads=1
 ```
 
-They completed in 12.44 seconds on the 2026-07-30 review machine and have a
-five-minute CI timeout. The fast lane should also stay below five minutes;
-crossing either budget is treated as a performance regression.
+They completed in 19.75 seconds on the 2026-08-03 review machine and have a
+30-minute cold-run CI timeout so compilation cannot self-cancel the scenarios.
+The scenarios themselves should remain comfortably below five minutes; the
+fast lane has the same runtime budget, and crossing either is treated as a
+performance regression.
 
 ## Architecture
 

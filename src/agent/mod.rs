@@ -81,6 +81,8 @@ pub struct Agent {
     /// Snapshots arrive split when they outgrow one datagram.
     players_rx: net::SnapshotAssembler<net::PlayerSnap>,
     mobs_rx: net::SnapshotAssembler<net::MobSnap>,
+    bolts_rx: net::SnapshotAssembler<net::BoltSnap>,
+    loose_items_rx: net::SnapshotAssembler<net::LooseItemSnap>,
     /// Human-readable happenings, drained by the events tool.
     pub events: VecDeque<String>,
     last_discovery: Option<crate::discovery::ObservationSummary>,
@@ -88,6 +90,8 @@ pub struct Agent {
     last_knowledge_text: Option<String>,
     last_binding_frame: Option<(crate::planet::BlockPos, crate::implements::FrameResult)>,
     binding_revisions: HashMap<crate::planet::BlockPos, u64>,
+    last_working_result: Option<crate::workings::WorkingResult>,
+    active_working_request: Option<(String, u64, crate::workings::WorkingTargetIntent)>,
     pub behavior: Behavior,
     pending_chunks: VecDeque<(ChunkPos, Vec<u8>)>,
     entry_required: HashSet<ChunkPos>,
@@ -164,12 +168,16 @@ impl Agent {
             trail: HashMap::new(),
             players_rx: Default::default(),
             mobs_rx: Default::default(),
+            bolts_rx: Default::default(),
+            loose_items_rx: Default::default(),
             events: VecDeque::new(),
             last_discovery: None,
             last_discovery_records: None,
             last_knowledge_text: None,
             last_binding_frame: None,
             binding_revisions: HashMap::new(),
+            last_working_result: None,
+            active_working_request: None,
             behavior: Behavior::Idle,
             pending_chunks: VecDeque::new(),
             entry_required: HashSet::new(),
@@ -623,6 +631,69 @@ impl Agent {
             net::S2C::Sleep { sleeping, present } => {
                 self.event(format!("{sleeping}/{present} sleeping"));
             }
+            net::S2C::WorkingResult(result) => {
+                if result.success && result.phase.is_none() {
+                    self.active_working_request = None;
+                }
+                self.last_working_result = Some(result.clone());
+                self.event(format!("working: {}", result.message));
+            }
+            net::S2C::WorkingEvent(cue) => {
+                let path = cue
+                    .path
+                    .iter()
+                    .map(|pos| format!("{}:{}:{}:{}", pos.face().name(), pos.u(), pos.y(), pos.v()))
+                    .collect::<Vec<_>>()
+                    .join(" -> ");
+                self.event(format!(
+                    "working cue {}: {} {:?}, warning {}, completion {}/1000, visible path {}",
+                    cue.stable_id,
+                    cue.working_id,
+                    cue.kind,
+                    cue.warning_band,
+                    cue.completion_permille,
+                    path
+                ));
+            }
+            net::S2C::Bolts(part) => {
+                if let Some(snaps) = self.bolts_rx.accept(part) {
+                    self.world.replace_projectiles(
+                        snaps
+                            .into_iter()
+                            .map(|snap| crate::mobs::Projectile {
+                                stable_id: snap.id,
+                                pos: snap.pos,
+                                vel: snap.vel,
+                                tile: snap.tile,
+                                damage: 0.0,
+                                age: snap.age,
+                                from_player: false,
+                                drop_item: None,
+                                owner: 0,
+                            })
+                            .collect(),
+                    );
+                }
+            }
+            net::S2C::LooseItems(part) => {
+                if let Some(snaps) = self.loose_items_rx.accept(part) {
+                    let items = snaps
+                        .into_iter()
+                        .filter_map(|snap| {
+                            let item = (*self.item_map.get(snap.item as usize)?)?;
+                            let mut entity = crate::entity::ItemEntity::new(
+                                snap.pos, snap.vel, item, snap.count,
+                            );
+                            entity.stable_id = snap.id;
+                            entity.age = snap.age;
+                            entity.durability = snap.durability.min(self.reg.item(item).durability);
+                            entity.arcane_id = snap.arcane_id;
+                            Some(entity)
+                        })
+                        .collect();
+                    self.world.replace_loose_items(items);
+                }
+            }
             // The agent takes whatever ring the host grants; it has no
             // renderer, so there is no fog to keep honest.
             net::S2C::ViewDistance { .. } => {}
@@ -631,7 +702,6 @@ impl Agent {
             net::S2C::Container { .. }
             | net::S2C::MobCargo { .. }
             | net::S2C::ImplementActivation { .. }
-            | net::S2C::Bolts(_)
             | net::S2C::Falling(_) => {}
         }
     }

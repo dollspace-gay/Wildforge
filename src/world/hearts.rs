@@ -479,6 +479,26 @@ impl World {
         refusal
     }
 
+    /// Host-authoritative heart planting entry point. Living interval is item
+    /// state, so callers may not reduce a carried stack to a biome enum and
+    /// accidentally let an expired cutting take root.
+    pub fn plant_heart_seed_stack_at(
+        &mut self,
+        pos: BlockPos,
+        stack: crate::inventory::ItemStack,
+    ) -> Option<String> {
+        let definition = self.reg.item(stack.item);
+        let Some(nature) = seed_nature(&definition.name) else {
+            return Some("That physical item is not a heart cutting.".into());
+        };
+        if stack.count == 0 || definition.durability == 0 || stack.durability == 0 {
+            return Some(
+                "The cutting is still matter, but its living interval has spent itself.".into(),
+            );
+        }
+        self.plant_heart_seed_from_at(pos, Some(nature))
+    }
+
     /// Plant a quickened seed at a dead site. Returns the refusal to
     /// say out loud, or None when the rooting has begun.
     pub fn plant_heart_seed_at(&mut self, pos: BlockPos) -> Option<String> {

@@ -1088,6 +1088,15 @@ impl ArcaneLedger {
         Ok(id)
     }
 
+    /// A completed working no longer has an Active account, but its durable
+    /// Workings audit history still forbids identity reuse after a crash
+    /// between journal append and the next parent-ledger checkpoint.
+    pub(crate) fn reconcile_working_id_floor(&mut self, completed_or_active_max: u64) {
+        self.next_working_id = self
+            .next_working_id
+            .max(completed_or_active_max.saturating_add(1));
+    }
+
     pub fn allocate_scar_id(&mut self) -> Result<u64, ArcaneError> {
         let id = self.next_scar_id;
         self.next_scar_id = self
@@ -1483,16 +1492,21 @@ impl ArcaneLedger {
         Ok(scan_durable_item_owners(world, self, false)?.status())
     }
 
-    /// Mob manifestations and goal-1 Working accounts deliberately have no
-    /// durable physical owner. Any such account found while opening a closed
-    /// world belongs to a process that ended before retiring it. Roll the
-    /// exact mixture back to Deep rather than guessing its former country,
-    /// location, or intended working result.
-    pub(crate) fn reconcile_transient_owners(&mut self) -> Result<usize, ArcaneError> {
+    /// Mob manifestations and working accounts absent from the durable
+    /// Workings sidecar have no physical owner. Preserve recognized active
+    /// transactions across restart; roll only actual orphans back to Deep.
+    pub(crate) fn reconcile_transient_owners(
+        &mut self,
+        active_workings: &BTreeSet<u64>,
+    ) -> Result<usize, ArcaneError> {
         let orphaned = self
             .accounts
             .keys()
-            .filter(|owner| matches!(owner, ArcaneOwner::Mob(_) | ArcaneOwner::Working(_)))
+            .filter(|owner| match owner {
+                ArcaneOwner::Mob(_) => true,
+                ArcaneOwner::Working(id) => !active_workings.contains(id),
+                _ => false,
+            })
             .cloned()
             .collect::<Vec<_>>();
         let recovered = orphaned.len();
@@ -2391,6 +2405,8 @@ fn validate_linked_path(file: &LinkedFileReplacement) -> Result<(), ArcaneError>
                 | "planet/manifest.toml"
         ),
         "implements" => file.relative_path == crate::implements::IMPLEMENTS_FILE,
+        "workings" => file.relative_path == crate::workings::WORKINGS_FILE,
+        "loose_items" => file.relative_path == "loose-items.toml",
         _ => false,
     };
     if !allowed {
@@ -2780,8 +2796,8 @@ pub struct ArcaneAudit {
     pub ambient_checksum: u64,
     pub last_delta_sequence: u64,
     pub durable_items: DurableItemStatus,
-    /// Mob/Working accounts found in a closed save have no durable owner and
-    /// will be rolled back during the next authoritative open.
+    /// Mob accounts and Working accounts absent from the durable Workings
+    /// sidecar will be rolled back during the next authoritative open.
     pub dormant_transient_accounts: usize,
     pub geography_present: bool,
     pub geography_total: u64,
@@ -2848,10 +2864,17 @@ pub fn audit_world(world: &Path) -> Result<ArcaneAudit, ArcaneError> {
     let ledger = ArcaneLedger::load(world)?;
     let mut audit = ledger.audit()?;
     audit.durable_items = scan_durable_item_owners(world, &ledger, false)?.status();
+    let active_workings = crate::workings::WorkingsState::load(world)
+        .map_err(|error| ArcaneError::Corrupt(error.to_string()))?
+        .map_or_else(BTreeSet::new, |state| state.active_ids());
     audit.dormant_transient_accounts = ledger
         .accounts
         .keys()
-        .filter(|owner| matches!(owner, ArcaneOwner::Mob(_) | ArcaneOwner::Working(_)))
+        .filter(|owner| match owner {
+            ArcaneOwner::Mob(_) => true,
+            ArcaneOwner::Working(id) => !active_workings.contains(id),
+            _ => false,
+        })
         .count();
     let geography_manifest =
         crate::planet_atlas::PlanetAtlas::planet_dir(world).join("arcane-geography.toml");
@@ -3691,7 +3714,12 @@ mod tests {
         assert!(!unsafe_audit.is_balanced());
 
         let mut reopened = ArcaneLedger::load(&root).unwrap();
-        assert_eq!(reopened.reconcile_transient_owners().unwrap(), 2);
+        assert_eq!(
+            reopened
+                .reconcile_transient_owners(&BTreeSet::new())
+                .unwrap(),
+            2
+        );
         assert!(reopened.account(&ArcaneOwner::Mob(77)).is_none());
         assert!(reopened.account(&ArcaneOwner::Working(88)).is_none());
         assert_eq!(
