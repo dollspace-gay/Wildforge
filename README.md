@@ -117,6 +117,10 @@ the executable; copy `mods/` beside it to retain the repository's optional
 content. Saves then live in `C:\Games\Wildforge\saves` and remain reachable
 from WSL at `/mnt/c/Games/Wildforge/saves`.
 
+Graphical performance qualification likewise uses that native Windows build,
+not WSL's `llvmpipe` software renderer. Wildforge rejects CPU rendering
+adapters at startup rather than reporting their timings as game performance.
+
 Sensitivity can be scaled with `WILDFORGE_SENS` (default `1.0`).
 
 Worlds save under `saves/<name>/` and reload from the title screen. Immutable

@@ -73,7 +73,7 @@ includes:
 | Discovery save ceiling | 32 MiB |
 | Fresh seed `20260802` census | 3 sites / 29 objects / all 7 evidence classes |
 | Fresh discovery save | 10,931 bytes |
-| Live debug capture | 63 resident/GPU chunks; 5.56 ms sim / 37.60 ms draw |
+| Native Windows GPU capture | RTX 3090/D3D12; 60 FPS; 530 resident / 514 GPU chunks; 6.58 ms sim / 9.12 ms draw |
 
 Production creation and reopen of seed `20260802` completed with a qualified
 discovery audit: zero invalid signatures and dangling references. The Arcane
@@ -81,7 +81,9 @@ audit reconciled 1,610,612,736 units exactly and reported five charged item
 accounts, five durable references, and zero orphan, invalid, or duplicate
 references. The live graphical client entered the fresh planet and produced
 `screenshots/magic-discovery-live.png` with the fitted lens rendered in hand;
-a second clean-save capture reopened without recovery warnings.
+a second clean-save capture reopened without recovery warnings. Final visual
+qualification ran through the native Windows D3D12 build on an RTX 3090; WSL
+software-renderer timings are deliberately excluded from performance evidence.
 
 The scope boundary is intentional: this goal supplies observation, evidence,
 experimentation, and shared physical knowledge. Craftable charm descendants,
