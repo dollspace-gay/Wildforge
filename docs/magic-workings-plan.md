@@ -65,14 +65,16 @@ the presentation/accessibility contract.
 
 Qualification covers 41 focused Workings and contract tests plus the shared
 arcane, material, water, ecology, fire, machine, persistence, protocol,
-multiplayer, renderer, and agent suites. Before the final `main` integration,
-the repository gate passed 696 non-agent tests with 22 intentional operator
-probes ignored and six serial end-to-end QUIC agent scenarios, strict Clippy,
-formatting, and optimized Linux and Windows release builds. A native Windows
-DX12 capture on an RTX 3090 exercised a physically assembled wand and active
-authoritative Gleam at 1280x720: 138/138 resident chunks were uploaded, the
-capture reported 53 FPS, 7.64 ms simulation and 9.19 ms draw time, and no dirty
-chunks. Final integrated gate results are recorded by the completing commit.
+multiplayer, renderer, and agent suites. After fetching current `origin/main`
+(already an ancestor of this branch), the final repository gate passed 696
+non-agent tests with 22 intentional operator probes ignored and seven serial
+end-to-end QUIC agent scenarios in 22.01 seconds, including a dedicated-host
+aim/start/hold/release/cancel Working lifecycle. Formatting, strict Clippy,
+the advisory audit, and optimized Linux and Windows release builds also pass.
+A native Windows DX12 capture on an RTX 3090 exercised a physically assembled
+wand and active authoritative Gleam at 1280x720: 138/138 resident chunks were
+uploaded, the capture reported 53 FPS, 7.64 ms simulation and 9.19 ms draw
+time, and no dirty chunks.
 
 ## Purpose
 

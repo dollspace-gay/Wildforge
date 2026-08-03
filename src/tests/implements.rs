@@ -255,9 +255,11 @@ pub(super) fn install_frame_fixture(
     let frame = bp(8, 100, 8);
     let vessel = bp(7, 100, 8);
     let center = frame.chunk();
-    world.insert_empty_chunks_for_test(
-        (-1..=1).flat_map(|du| (-1..=1).map(move |dv| center.offset(du, dv))),
-    );
+    let missing = (-1..=1)
+        .flat_map(|du| (-1..=1).map(move |dv| center.offset(du, dv)))
+        .filter(|chunk| !world.has_chunk(*chunk))
+        .collect::<Vec<_>>();
+    world.insert_empty_chunks_for_test(missing);
     for (pos, block) in [
         (frame, b(&world.reg, "base:binding_frame")),
         (bp(9, 100, 8), b(&world.reg, "base:focus_mount")),
