@@ -1,10 +1,18 @@
 # Alchemy — preparations bind power into matter
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and production-qualified 2026-08-03.**
 >
 > This is goal 7 of `docs/magic-sequence.md`. It requires goals 1–6 and the
 > qualified food, spoilage, glassworks, water, fire, crop, health, and
 > container systems.
+>
+> Qualification covers the eight-preparation base roster, four embodied
+> apparatus paths, exact batch/dose/material/water/Current custody, named
+> process failures, spoilage and disposal, authoritative status effects,
+> multiplayer and agent operation, closed mod validation, bounded population
+> budgets, and GPU-rendered UI/audio/visual feedback. The locked all-targets
+> suite passed 737 tests with no failures; formatting, Clippy, advisories,
+> native and Windows release builds, and the generated-artifact audit passed.
 
 ## Purpose
 

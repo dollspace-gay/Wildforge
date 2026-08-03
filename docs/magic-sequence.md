@@ -1,6 +1,6 @@
 # The Current — master magic design and `/goal` execution sequence
 
-> **Status: goals 1–6 implemented and production-qualified; goals 7–9 remain.**
+> **Status: goals 1–7 implemented and production-qualified; goals 8–9 remain.**
 >
 > This document is the index, dependency contract, vocabulary, and final
 > definition of done for player magic in Wildforge. Run it only after
@@ -306,7 +306,7 @@ Produces:
 - hard guards against conjuration, transmutation, teleportation, and
   logistics bypass.
 
-### Goal 7
+### Goal 7 — implemented and production-qualified 2026-08-03
 
 ```text
 /goal complete all features in the design document docs/magic-alchemy-plan.md
