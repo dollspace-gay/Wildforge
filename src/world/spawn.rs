@@ -524,9 +524,49 @@ struct TrialColumn {
     plant: bool,
 }
 
+#[derive(Debug)]
 struct TrialQualification {
     spawn: SurfacePos,
     verification: SpawnVerification,
+}
+
+/// Why a trial region fell short, plus the best safe spawn it still offered (if
+/// any). A region can miss the full six-resource bar yet still hold a safe
+/// standing doorstep; keeping that as a fallback lets world creation degrade to
+/// a playable-but-lean homeland instead of dead-ending on a demanding seed.
+#[derive(Debug)]
+struct TrialReject {
+    reason: String,
+    fallback: Option<TrialQualification>,
+}
+
+/// A chosen homeland: its atlas surface, the qualified spawn, and the trial
+/// chunks already generated for it (committed as the world's first region).
+type HomelandTrial = (SurfacePos, TrialQualification, Vec<(ChunkPos, Chunk)>);
+
+impl SpawnVerification {
+    fn is_fully_qualified(&self) -> bool {
+        self.walkable_cells >= 32
+            && self.reachable_wood
+            && self.reachable_fresh_water
+            && self.reachable_soil
+            && self.reachable_stone
+            && self.reachable_plants
+    }
+
+    /// How many of the five bootstrap resources this spawn can actually reach.
+    fn resource_score(&self) -> u32 {
+        [
+            self.reachable_wood,
+            self.reachable_fresh_water,
+            self.reachable_soil,
+            self.reachable_stone,
+            self.reachable_plants,
+        ]
+        .into_iter()
+        .filter(|&reachable| reachable)
+        .count() as u32
+    }
 }
 
 fn qualify_trial_region(
@@ -534,7 +574,7 @@ fn qualify_trial_region(
     atlas: &PlanetAtlas,
     center: SurfacePos,
     chunks: &[(ChunkPos, Chunk)],
-) -> Result<TrialQualification, String> {
+) -> Result<TrialQualification, TrialReject> {
     if chunks.len() != entry_chunks(center).len()
         || chunks
             .iter()
@@ -542,7 +582,10 @@ fn qualify_trial_region(
             .collect::<Vec<_>>()
             != entry_chunks(center)
     {
-        return Err("trial chunk set does not match the required entry region".into());
+        return Err(TrialReject {
+            reason: "trial chunk set does not match the required entry region".into(),
+            fallback: None,
+        });
     }
     let log_items = reg.tags.get("base:logs");
     let log_blocks = reg
@@ -661,7 +704,10 @@ fn qualify_trial_region(
         }
     }
     let Some(spawn) = spawn else {
-        return Err("no dry two-block-high standing cell in the center chunk".into());
+        return Err(TrialReject {
+            reason: "no dry two-block-high standing cell in the center chunk".into(),
+            fallback: None,
+        });
     };
 
     let mut queue = VecDeque::from([spawn]);
@@ -717,19 +763,13 @@ fn qualify_trial_region(
         reachable_stone: stone,
         reachable_plants: plant,
     };
-    if verification.walkable_cells >= 32
-        && verification.reachable_wood
-        && verification.reachable_fresh_water
-        && verification.reachable_soil
-        && verification.reachable_stone
-        && verification.reachable_plants
-    {
+    if verification.is_fully_qualified() {
         Ok(TrialQualification {
             spawn,
             verification,
         })
     } else {
-        Err(format!(
+        let reason = format!(
             "walkable={} wood={} fresh_water={} soil={} stone={} plants={}",
             verification.walkable_cells,
             verification.reachable_wood,
@@ -737,7 +777,16 @@ fn qualify_trial_region(
             verification.reachable_soil,
             verification.reachable_stone,
             verification.reachable_plants,
-        ))
+        );
+        // A safe doorstep with only some resources nearby is still somewhere a
+        // player can stand and start — kept as a fallback for the caller.
+        Err(TrialReject {
+            reason,
+            fallback: Some(TrialQualification {
+                spawn,
+                verification,
+            }),
+        })
     }
 }
 
@@ -908,6 +957,11 @@ impl World {
         }
 
         let mut winner = None;
+        // The best safe-but-resource-incomplete homeland seen so far, kept only
+        // to keep world creation from dead-ending: if nothing clears the full
+        // bar, spawning somewhere lean beats refusing to make the world at all.
+        let mut fallback: Option<HomelandTrial> = None;
+        let mut fallback_score = (0u32, 0usize);
         let mut rejections = Vec::new();
         for (candidate_index, candidate) in candidates.iter().enumerate() {
             progress("testing homeland", candidate_index, candidates.len());
@@ -924,20 +978,59 @@ impl World {
                     winner = Some((candidate.surface, qualification, generated));
                     break;
                 }
-                Err(reason) => rejections.push(format!(
-                    "{}:{}:{}: {reason}",
-                    candidate.surface.face().name(),
-                    candidate.surface.u(),
-                    candidate.surface.v()
-                )),
+                Err(reject) => {
+                    rejections.push(format!(
+                        "{}:{}:{}: {}",
+                        candidate.surface.face().name(),
+                        candidate.surface.u(),
+                        candidate.surface.v(),
+                        reject.reason,
+                    ));
+                    // Rank incomplete homelands by resources reachable, then by
+                    // how much room there is to walk. Only used if no candidate
+                    // clears the full bar.
+                    if let Some(effort) = reject.fallback {
+                        let score = (
+                            effort.verification.resource_score(),
+                            effort.verification.walkable_cells,
+                        );
+                        if fallback.is_none() || score > fallback_score {
+                            fallback_score = score;
+                            fallback = Some((candidate.surface, effort, generated));
+                        }
+                    }
+                }
             }
         }
-        let Some((wanted, qualification, generated)) = winner else {
-            return Err(std::io::Error::other(format!(
-                "no candidate homeland passed voxel qualification: {}",
-                rejections.join("; ")
-            )));
+        let (wanted, qualification, generated) = match winner.or(fallback) {
+            Some(chosen) => chosen,
+            None => {
+                return Err(std::io::Error::other(format!(
+                    "no candidate homeland had a safe standing doorstep: {}",
+                    rejections.join("; ")
+                )));
+            }
         };
+        if !qualification.verification.is_fully_qualified() {
+            let v = &qualification.verification;
+            eprintln!(
+                "spawn: no homeland cleared the full resource bar for seed {}; \
+                 using the best safe doorstep at {}:{}:{} \
+                 (walkable={} wood={} water={} soil={} stone={} plants={}); \
+                 {} candidate(s) rejected",
+                self.seed,
+                wanted.face().name(),
+                wanted.u(),
+                wanted.v(),
+                v.walkable_cells,
+                v.reachable_wood,
+                v.reachable_fresh_water,
+                v.reachable_soil,
+                v.reachable_stone,
+                v.reachable_plants,
+                rejections.len(),
+            );
+        }
         let spawn_surface = qualification.spawn;
 
         let total = generated.len();
