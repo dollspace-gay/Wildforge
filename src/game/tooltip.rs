@@ -181,6 +181,44 @@ fn item_tooltip_lines_with_current(
     if d.name == "base:ashlace_tissue" {
         lines.push(("BINDS DROSS. DOES NOT CLEAN IT".into(), BODY));
     }
+    if let Some(preparation) = reg
+        .preparations
+        .values()
+        .find(|preparation| preparation.output_item == d.name)
+    {
+        let verb = match preparation.application {
+            crate::alchemy::ApplicationKind::Drink => "DRINK ONE EXACT DOSE",
+            crate::alchemy::ApplicationKind::Plot => "APPLY TO ONE VIABLE PLOT",
+            crate::alchemy::ApplicationKind::Wash => "WASH ONE SMALL TARGET",
+            crate::alchemy::ApplicationKind::Coat => "COAT ONE STABLE SPECIMEN",
+        };
+        lines.push((format!("USE: {verb}"), EFFECT));
+        let effect = match preparation.handler {
+            crate::alchemy::PreparationHandler::TraceSight => "BOUNDED LOW-LIGHT TRACE SIGHT",
+            crate::alchemy::PreparationHandler::NaturalRecovery => {
+                "RECOVERY PAID BY HUNGER + NUTRITION"
+            }
+            crate::alchemy::PreparationHandler::RootUptake => {
+                "SUPPLIES WATER + NUTRIENTS. DOES NOT CREATE GROWTH"
+            }
+            crate::alchemy::PreparationHandler::StrainRelief => {
+                "LESS PERSONAL STRAIN. LOWER THROUGHPUT"
+            }
+            crate::alchemy::PreparationHandler::DrossWash => {
+                "MOVES BOUNDED DROSS INTO PHYSICAL WASTE"
+            }
+            crate::alchemy::PreparationHandler::PreserveSpecimen => {
+                "SLOWS AGE + LEAKAGE. NEVER RESETS AGE"
+            }
+            crate::alchemy::PreparationHandler::ThroughputSurge => {
+                "MORE THROUGHPUT + DRAIN + OVERDRAW"
+            }
+            crate::alchemy::PreparationHandler::DrossAntidote => {
+                "REDUCES BODILY HARM. DOES NOT CLEAN THE REGION"
+            }
+        };
+        lines.push((effect.into(), BODY));
+    }
     if let Some(discovery) = &d.discovery {
         let line = match discovery.kind.as_str() {
             "tuning_lens" => Some("HOLD USE: SETTLE A QUALITATIVE READING"),
@@ -361,6 +399,13 @@ impl Game {
                     .as_ref()
                     .is_some_and(|definition| definition.kind == "tuning_lens")
             });
+        lines.extend(
+            self.server
+                .world
+                .preparation_tooltip(stack, has_lens)
+                .into_iter()
+                .map(|line| (line, EFFECT)),
+        );
         let implement = self.server.world.implement_tooltip(stack, has_lens);
         if !implement.is_empty() {
             // The implement resolver knows its actual component-derived
@@ -516,6 +561,32 @@ mod tests {
                 .filter(|line| line.starts_with("CURRENT: "))
                 .all(|line| !line.chars().any(|character| character.is_ascii_digit()))
         );
+    }
+
+    #[test]
+    fn every_preparation_explains_its_target_cost_or_limit() {
+        let reg = reg();
+        for preparation in reg.preparations.values() {
+            let lines = lines_for(&reg, &preparation.output_item);
+            assert!(
+                lines.iter().any(|line| line.starts_with("USE: ")),
+                "{} has no application instruction: {lines:?}",
+                preparation.id
+            );
+            assert!(
+                lines.iter().any(|line| {
+                    line.contains("DOES NOT")
+                        || line.contains("BOUNDED")
+                        || line.contains("PAID")
+                        || line.contains("MOVES")
+                        || line.contains("NEVER")
+                        || line.contains("DRAIN")
+                        || line.contains("THROUGHPUT")
+                }),
+                "{} hides its principal cost or limit: {lines:?}",
+                preparation.id
+            );
+        }
     }
 
     #[test]

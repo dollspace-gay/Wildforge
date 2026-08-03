@@ -6,6 +6,7 @@
 //! F2 screenshot, F11 fullscreen.
 
 mod agent;
+pub mod alchemy;
 mod arcane;
 mod arcane_ecology;
 mod arcane_geography;

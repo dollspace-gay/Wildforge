@@ -645,6 +645,7 @@ fn floaters_hover_and_projectiles_collide() {
         age: 0.0,
         from_player: false,
         drop_item: None,
+        preparation_payload: None,
         owner: 0,
     };
     let mut outcome = crate::mobs::ProjHit::None;
@@ -678,6 +679,7 @@ fn floaters_hover_and_projectiles_collide() {
         age: 0.0,
         from_player: false,
         drop_item: None,
+        preparation_payload: None,
         owner: 0,
     });
     let mut dmg = 0.0;

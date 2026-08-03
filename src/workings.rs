@@ -576,7 +576,7 @@ pub struct WorkingQuote {
 
 /// Visible inputs to deterministic strain. All quantities are integer
 /// permille or native unit counts; there is no hidden failure roll.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StrainInputs {
     pub resonance_mismatch_permille: u16,
     pub component_instability_permille: u16,
@@ -588,6 +588,33 @@ pub struct StrainInputs {
     pub contamination_permille: u16,
     pub interruption: bool,
     pub forced_overdraw_units: u64,
+    /// Actor-bound preparation modifier. One thousand is ordinary strain;
+    /// lower values reduce personal strain without revising fixed apparatus
+    /// dross or physical damage.
+    #[serde(default = "default_strain_permille")]
+    pub personal_strain_permille: u16,
+}
+
+const fn default_strain_permille() -> u16 {
+    1_000
+}
+
+impl Default for StrainInputs {
+    fn default() -> Self {
+        Self {
+            resonance_mismatch_permille: 0,
+            component_instability_permille: 0,
+            throughput: 0,
+            safe_throughput: 0,
+            local_capacity_permille: 0,
+            below_safe_floor_units: 0,
+            apparatus_damage_permille: 0,
+            contamination_permille: 0,
+            interruption: false,
+            forced_overdraw_units: 0,
+            personal_strain_permille: 1_000,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -606,6 +633,7 @@ pub fn deterministic_strain(inputs: StrainInputs) -> Result<StrainOutcome, Worki
         || inputs.local_capacity_permille > 1_000
         || inputs.apparatus_damage_permille > 1_000
         || inputs.contamination_permille > 1_000
+        || inputs.personal_strain_permille > 1_000
     {
         return Err(WorkingError::InvalidOperation(
             "strain inputs use permille values outside 0..=1000".into(),
@@ -642,6 +670,10 @@ pub fn deterministic_strain(inputs: StrainInputs) -> Result<StrainOutcome, Worki
     if inputs.interruption {
         score = score.checked_add(1_000).ok_or(WorkingError::Overflow)?;
     }
+    score = score
+        .checked_mul(u64::from(inputs.personal_strain_permille))
+        .ok_or(WorkingError::Overflow)?
+        .div_ceil(1_000);
     let strain = u32::try_from(score.min(u64::from(u32::MAX))).unwrap_or(u32::MAX);
     let extra_dross = score.div_ceil(1_000);
     let warning_band = match score {

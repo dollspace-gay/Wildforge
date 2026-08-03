@@ -833,6 +833,21 @@ impl MaterialLedger {
             .map(Some)
     }
 
+    /// Stage matter metabolized or otherwise consumed by a linked magical
+    /// operation. Keeping this distinct from recipe loss preserves the
+    /// material audit's explanation while allowing the Current owner and the
+    /// embodied preparation to commit in the same recovery journal.
+    pub(crate) fn stage_linked_consumption(
+        &self,
+        materials: &MaterialVector,
+    ) -> std::io::Result<Option<(Self, Vec<u8>)>> {
+        if materials.is_empty() {
+            return Ok(None);
+        }
+        self.stage_linked_delta(MaterialDeltaAction::Consumption(materials.clone()))
+            .map(Some)
+    }
+
     pub(crate) fn stage_linked_bury_materials(
         &self,
         pos: BlockPos,

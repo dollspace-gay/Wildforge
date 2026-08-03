@@ -817,6 +817,7 @@ impl Game {
                                 self.present_implement_activation(pos, cue, visual, None);
                             }
                             mp::HostFx::WorkingEvent(cue) => self.present_working_cue(cue),
+                            mp::HostFx::AlchemyEvent(cue) => self.present_alchemy_cue(cue),
                             mp::HostFx::AllSlept => {
                                 self.multiplayer.host_sleeping = false;
                                 self.survival.spawn_point = self.player.pos;
@@ -909,6 +910,12 @@ impl Game {
                             }
                             self.present_working_cue(cue);
                             self.toast(result.message);
+                        }
+                        server::SimEvent::Alchemy(cue) => {
+                            if let Some(session) = &self.multiplayer.host {
+                                session.broadcast_alchemy_cue(cue.clone());
+                            }
+                            self.present_alchemy_cue(cue);
                         }
                     }
                 }
@@ -2290,11 +2297,47 @@ impl Game {
         // the same question — what lights a surface no lamp reaches — and at
         // 0.12 the flat one is several times the honest one, so the room's own
         // colour cannot be seen past it. WILDFORGE_AMBIENT_FLOOR to explore.
-        let ambient_floor = std::env::var("WILDFORGE_AMBIENT_FLOOR")
+        let mut ambient_floor = std::env::var("WILDFORGE_AMBIENT_FLOOR")
             .ok()
             .and_then(|v| v.parse::<f32>().ok())
             .filter(|v| (0.0..=1.0).contains(v))
             .unwrap_or(if self.config.stark { 0.04 } else { 0.12 });
+        // Clear-eye is adaptation, not x-ray vision: it lifts only the final
+        // low-light floor and gives already-authorized local Current signs a
+        // very faint resonance tint. Guests use the same coarse strength and
+        // dominant-category packet they receive without the preparation; no
+        // ore, entity, inventory, exact mixture, or server-hidden state enters
+        // the frame.
+        let trace_strength =
+            f32::from(self.survival.preparation_modifiers.trace_sight).min(250.0) / 250.0;
+        let darkness = (1.0 - daylight).clamp(0.0, 1.0);
+        let trace_adaptation = trace_strength * 0.055 * darkness;
+        ambient_floor = (ambient_floor + trace_adaptation).min(0.18);
+        if trace_strength > 0.0 {
+            let (bands, dominant) = if self.multiplayer.remote.is_some() {
+                (
+                    self.server.world.remote_arcane_cue(),
+                    self.server.world.remote_arcane_dominant(),
+                )
+            } else if let Some(atlas) = self.server.world.planet_atlas() {
+                self.server
+                    .world
+                    .arcane_sensory_cue_at(atlas.atlas_pos(self.player.pos.surface()))
+            } else {
+                ([0; 2], 0)
+            };
+            let local_sign = f32::from(bands[0].max(bands[1]).min(4)) / 4.0;
+            let resonance = match dominant {
+                1 => Vec3::new(0.55, 0.92, 0.52), // root
+                2 => Vec3::new(0.36, 0.76, 0.94), // tide
+                3 => Vec3::new(1.00, 0.56, 0.30), // ember
+                4 => Vec3::new(0.78, 0.78, 0.72), // stone
+                5 => Vec3::new(0.62, 0.80, 1.00), // gale
+                6 => Vec3::new(0.48, 0.72, 1.00), // echo
+                _ => Vec3::splat(0.72),
+            };
+            amb_col += resonance * (0.025 * trace_strength * local_sign * darkness);
+        }
 
         let saved_cam = self.camera.pos;
         if self.presentation.nudge.1 > 0.0 {

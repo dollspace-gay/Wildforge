@@ -291,7 +291,7 @@ impl Agent {
         (0..TOTAL_SLOTS).find(|&i| self.inventory.slots[i].is_some_and(|s| s.item == item))
     }
 
-    fn named_slot(&self, name: &str) -> Result<usize, String> {
+    pub(crate) fn named_slot(&self, name: &str) -> Result<usize, String> {
         let item = self
             .reg
             .item_id(name)
@@ -582,6 +582,136 @@ impl Agent {
             }
         }
         Err("the host did not complete the binding-frame operation".into())
+    }
+
+    /// Perform one ordinary host-authoritative laboratory action and wait for
+    /// its reliable revision/result echo. Agents use precisely the same
+    /// station request as windowed guests.
+    pub fn operate_alchemy(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        action: crate::alchemy::ApparatusAction,
+        held_item: Option<&str>,
+    ) -> Result<String, String> {
+        if self.dist_to(pos) > REACH {
+            return Err("alchemy apparatus is out of reach".into());
+        }
+        self.pump_for(0.2);
+        if let Some(item) = held_item {
+            self.select(item)?;
+        }
+        let action = match action {
+            crate::alchemy::ApparatusAction::Grind { .. } => {
+                crate::alchemy::ApparatusAction::Grind {
+                    inventory_slot: self.hotbar as u8,
+                }
+            }
+            crate::alchemy::ApparatusAction::LoadCarrier { .. } => {
+                crate::alchemy::ApparatusAction::LoadCarrier {
+                    inventory_slot: self.hotbar as u8,
+                }
+            }
+            crate::alchemy::ApparatusAction::LoadFilter { .. } => {
+                crate::alchemy::ApparatusAction::LoadFilter {
+                    inventory_slot: self.hotbar as u8,
+                }
+            }
+            crate::alchemy::ApparatusAction::Charge {
+                inventory_slot: Some(_),
+                units,
+            } => crate::alchemy::ApparatusAction::Charge {
+                inventory_slot: Some(self.hotbar as u8),
+                units,
+            },
+            crate::alchemy::ApparatusAction::Decant { .. } => {
+                crate::alchemy::ApparatusAction::Decant {
+                    vessel_slot: self.hotbar as u8,
+                }
+            }
+            crate::alchemy::ApparatusAction::Clean { filter_slot, .. } => {
+                crate::alchemy::ApparatusAction::Clean {
+                    water_slot: self.hotbar as u8,
+                    filter_slot,
+                }
+            }
+            crate::alchemy::ApparatusAction::Repair { .. } => {
+                crate::alchemy::ApparatusAction::Repair {
+                    material_slot: self.hotbar as u8,
+                }
+            }
+            crate::alchemy::ApparatusAction::PressOil { .. } => {
+                crate::alchemy::ApparatusAction::PressOil {
+                    seed_slot: self.hotbar as u8,
+                }
+            }
+            action => action,
+        };
+        self.face_block(pos);
+        self.anchor_stance();
+        if !matches!(action, crate::alchemy::ApparatusAction::Inspect)
+            && !self.alchemy_revisions.contains_key(&pos)
+        {
+            self.last_alchemy_result = None;
+            self.send(&C2S::OperateAlchemy {
+                pos,
+                expected_revision: None,
+                action: crate::alchemy::ApparatusAction::Inspect,
+            });
+            for _ in 0..50 {
+                self.pump_for(0.05);
+                if self.alchemy_revisions.contains_key(&pos) {
+                    break;
+                }
+            }
+            if !self.alchemy_revisions.contains_key(&pos) {
+                return Err("the host did not return the apparatus revision".into());
+            }
+            self.pump_for(0.2);
+        }
+        self.last_alchemy_result = None;
+        self.send(&C2S::OperateAlchemy {
+            pos,
+            expected_revision: self.alchemy_revisions.get(&pos).copied(),
+            action,
+        });
+        for _ in 0..60 {
+            self.pump_for(0.05);
+            if let Some((at, result)) = self.last_alchemy_result.take()
+                && at == pos
+            {
+                return Ok(format!(
+                    "{}; revision {}; batch {}; volume {}; next {:?}",
+                    result.cue.message,
+                    result.revision,
+                    result.batch_id,
+                    result.volume_units,
+                    result.next_step
+                ));
+            }
+        }
+        Err("the host did not complete the alchemy operation".into())
+    }
+
+    pub fn apply_preparation(
+        &mut self,
+        item: &str,
+        target: crate::alchemy::AlchemyTarget,
+    ) -> Result<String, String> {
+        let slot = self.named_slot(item)?;
+        self.hotbar = slot.min(crate::inventory::HOTBAR_SLOTS - 1);
+        self.anchor_stance();
+        self.last_preparation_result = None;
+        self.send(&C2S::UsePreparation {
+            slot: slot as u8,
+            target,
+        });
+        for _ in 0..60 {
+            self.pump_for(0.05);
+            if let Some(result) = self.last_preparation_result.take() {
+                return Ok(result.message);
+            }
+        }
+        Err("the host did not complete the preparation application".into())
     }
 
     /// Aim and begin one host-authoritative wand working or constructed

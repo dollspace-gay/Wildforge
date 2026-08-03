@@ -120,6 +120,24 @@ impl Game {
                     }
                 }
             }
+            if self.multiplayer.remote.is_none()
+                && let Some(actor_pos) = self.player.pos.block()
+            {
+                let actor = crate::identity::local_player_id(
+                    &self.server.world.save_dir_for_saving(),
+                    self.identity.device_id(),
+                )
+                .unwrap_or(crate::identity::PlayerId([0; 16]));
+                if let Err(error) = self
+                    .server
+                    .world
+                    .settle_preparations_on_death(actor.0, actor_pos)
+                {
+                    eprintln!("alchemy: local death settlement failed: {error}");
+                }
+                self.survival.preparation_modifiers =
+                    crate::alchemy::PreparationModifiers::default();
+            }
             // Death: scatter every player-owned stack. The cursor and craft
             // grid are inventories too; clearing either would be an invisible
             // finite-material sink.

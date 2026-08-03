@@ -1402,11 +1402,13 @@ impl World {
         let mut dmg: Vec<(usize, f32)> = Vec::new();
         let mut mob_hits: Vec<(usize, f32, crate::planet::EntityPos)> = Vec::new();
         let mut drops: Vec<(crate::planet::BlockPos, crate::registry::ItemId)> = Vec::new();
+        let mut preparation_spills: Vec<(crate::planet::BlockPos, ItemStack)> = Vec::new();
         let mut projectiles = std::mem::take(&mut self.projectiles);
         projectiles.retain_mut(|p| {
             if self.projectile_reserved_by_working(p.stable_id) {
                 return true;
             }
+            let prior_cell = p.pos.block();
             let hit = p.tick(self, players, dt);
             // Resistance is checked before dispatching the hit. Otherwise a
             // bolt that reaches a player in this very tick bypasses the ward
@@ -1420,7 +1422,18 @@ impl World {
                     )
                 })
             {
+                if let (Some(at), Some(stack)) =
+                    (p.pos.block().or(prior_cell), p.preparation_payload.take())
+                {
+                    preparation_spills.push((at, stack));
+                }
                 return false;
+            }
+            if !matches!(hit, ProjHit::None)
+                && let (Some(at), Some(stack)) =
+                    (p.pos.block().or(prior_cell), p.preparation_payload.take())
+            {
+                preparation_spills.push((at, stack));
             }
             match hit {
                 ProjHit::None => true,
@@ -1470,6 +1483,23 @@ impl World {
         }
         for (pos, it) in drops {
             self.push_drop_at(pos, ItemStack::new(&reg, it, 1));
+        }
+        for (pos, stack) in preparation_spills {
+            match self.destroy_preparation_container_at(pos, stack, "thrown vessel impact") {
+                Ok(true) => {}
+                Ok(false) => {
+                    // An unexpected non-preparation stable payload remains
+                    // recoverable rather than being silently erased.
+                    self.push_drop_at(pos, stack);
+                }
+                Err(error) => {
+                    eprintln!(
+                        "alchemy: failed to settle thrown vessel {} at {:?}: {error}",
+                        stack.arcane_id, pos
+                    );
+                    self.push_drop_at(pos, stack);
+                }
+            }
         }
         dmg
     }

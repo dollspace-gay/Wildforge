@@ -1328,3 +1328,50 @@ output = "base:bark_charm_blank"
 pattern = ["lgl", ".b."]
 keys = { l = "base:leather_strip", g = "base:glass", b = "base:bronze_ingot" }
 output = "base:hunger_charm_blank"
+
+# --- embodied alchemy laboratory ---
+# Solvents and filled preparations are deliberately absent: alcohol/oil are
+# made through timed vessel operations and every magical batch lives in its
+# apparatus before exact-volume decanting.
+
+[[recipe]]
+pattern = ["g.g", ".g."]
+keys = { g = "base:glass" }
+output = "base:glass_bottle"
+count = 3
+
+[[recipe]]
+pattern = ["ggg", "g.g", "ggg"]
+keys = { g = "base:glass" }
+output = "base:glass_jar"
+
+[[recipe]]
+pattern = ["ff"]
+keys = { f = "base:plant_fiber" }
+output = "base:filter_cloth"
+
+[[recipe]]
+pattern = ["sc"]
+keys = { s = "base:still_salt", c = "base:compost" }
+output = "base:mineral_nutrient"
+count = 2
+
+[[recipe]]
+pattern = ["c.c", ".c.", "ppp"]
+keys = { c = "base:cobblestone", p = "#base:planks" }
+output = "base:alchemy_mortar"
+
+[[recipe]]
+pattern = ["g.g", "bgb", "bbb"]
+keys = { g = "base:glass", b = "base:bronze_ingot" }
+output = "base:infusion_basin"
+
+[[recipe]]
+pattern = ["ggg", "gcg", "bbb"]
+keys = { g = "base:glass", c = "base:copper_ingot", b = "base:bronze_ingot" }
+output = "base:alembic"
+
+[[recipe]]
+pattern = ["fcf", "g.g", "ppp"]
+keys = { f = "base:filter_cloth", c = "base:charcoal", g = "base:glass", p = "#base:planks" }
+output = "base:filter_stand"

@@ -70,7 +70,9 @@ pub(super) fn run_headless_server(world_name: &str) {
                 mp::HostFx::Left(n) => eprintln!("server: {n} left"),
                 mp::HostFx::Chat { from, msg } => eprintln!("<{from}> {msg}"),
                 mp::HostFx::AllSlept => eprintln!("server: the camp sleeps to dawn"),
-                mp::HostFx::ImplementActivation { .. } | mp::HostFx::WorkingEvent(_) => {}
+                mp::HostFx::ImplementActivation { .. }
+                | mp::HostFx::WorkingEvent(_)
+                | mp::HostFx::AlchemyEvent(_) => {}
             }
         }
         let players = sess.authoritative_player_ctxs(&sim.world, None);
@@ -83,6 +85,7 @@ pub(super) fn run_headless_server(world_name: &str) {
                     sess.hurt_guest(&mut sim, who, dmg, from);
                 }
                 server::SimEvent::Working(_, cue) => sess.broadcast_working_cue(cue),
+                server::SimEvent::Alchemy(cue) => sess.broadcast_alchemy_cue(cue),
                 _ => {}
             }
         }

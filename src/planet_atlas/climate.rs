@@ -1257,6 +1257,172 @@ impl PlanetaryWeather {
         Some(parcel)
     }
 
+    /// Move one exact portable vessel into a host-owned industrial
+    /// subdivision such as an alchemy batch. The returned mass is the
+    /// subdivision's custody record; the planetary aggregate remains in the
+    /// industrial ledger until use, spill, or disposal returns it.
+    pub fn move_portable_to_industrial(
+        &mut self,
+        class: WaterClass,
+        requested_hu: u64,
+    ) -> Option<ReservoirMass> {
+        let expected = self.preview_move_portable_to_industrial(class, requested_hu)?;
+        let parcel = self.water.ledger.portable[class as usize].take(requested_hu);
+        debug_assert_eq!(parcel, expected);
+        if self.water.ledger.industrial.add_assign(parcel).is_err() {
+            self.water.ledger.portable[class as usize]
+                .add_assign(parcel)
+                .expect("portable alchemy rollback fits");
+            return None;
+        }
+        Some(parcel)
+    }
+
+    pub fn preview_move_portable_to_industrial(
+        &self,
+        class: WaterClass,
+        requested_hu: u64,
+    ) -> Option<ReservoirMass> {
+        if requested_hu == 0 {
+            return None;
+        }
+        let mut portable = self.water.ledger.portable[class as usize];
+        let parcel = portable.take(requested_hu);
+        (parcel.water_hu == requested_hu
+            && self.water.ledger.industrial.checked_add(parcel).is_some())
+        .then_some(parcel)
+    }
+
+    /// Preflight and perform the common cleaning exchange without cloning
+    /// whole-planet weather: one portable vessel enters industrial custody,
+    /// then that cleaning water plus an existing exact residue parcel enter
+    /// the local runoff cell together.
+    pub fn preview_portable_exchange_to_runoff(
+        &self,
+        pos: AtlasPos,
+        class: WaterClass,
+        requested_hu: u64,
+        existing_industrial: ReservoirMass,
+    ) -> Option<ReservoirMass> {
+        let parcel = self.preview_move_portable_to_industrial(class, requested_hu)?;
+        let industrial_after = self.water.ledger.industrial.checked_add(parcel)?;
+        let runoff_parcel = parcel.checked_add(existing_industrial)?;
+        if industrial_after.water_hu < runoff_parcel.water_hu
+            || industrial_after.salt_mass < runoff_parcel.salt_mass
+        {
+            return None;
+        }
+        self.water
+            .cells
+            .values()
+            .get(pos.index(self.water.cells.side()))?
+            .runoff
+            .checked_add(runoff_parcel)?;
+        Some(parcel)
+    }
+
+    pub fn portable_exchange_to_runoff(
+        &mut self,
+        pos: AtlasPos,
+        class: WaterClass,
+        requested_hu: u64,
+        existing_industrial: ReservoirMass,
+    ) -> Option<ReservoirMass> {
+        let expected = self.preview_portable_exchange_to_runoff(
+            pos,
+            class,
+            requested_hu,
+            existing_industrial,
+        )?;
+        let parcel = self.move_portable_to_industrial(class, requested_hu)?;
+        debug_assert_eq!(parcel, expected);
+        let runoff_parcel = parcel.checked_add(existing_industrial)?;
+        let returned = self.return_industrial_exact_to_runoff(pos, runoff_parcel);
+        debug_assert!(returned, "preflighted cleaning-water exchange failed");
+        returned.then_some(parcel)
+    }
+
+    /// Settle an exact industrial subdivision back into local soil. This is
+    /// used for drinking, plot application, and responsible liquid disposal;
+    /// salt travels with the same parcel instead of being relabelled fresh.
+    pub fn can_return_industrial_exact_to_soil(&self, pos: AtlasPos, mass: ReservoirMass) -> bool {
+        if self.water.ledger.industrial.water_hu < mass.water_hu
+            || self.water.ledger.industrial.salt_mass < mass.salt_mass
+        {
+            return false;
+        }
+        let index = pos.index(self.water.cells.side());
+        let in_scratch = self.active_hour.is_some() && index < self.cursor;
+        let soil = if in_scratch {
+            self.water_scratch.get(index).map(|cell| cell.soil)
+        } else {
+            self.water.cells.values().get(index).map(|cell| cell.soil)
+        };
+        soil.and_then(|soil| soil.checked_add(mass)).is_some()
+    }
+
+    pub fn return_industrial_exact_to_soil(&mut self, pos: AtlasPos, mass: ReservoirMass) -> bool {
+        if self.water.ledger.industrial.take_exact(mass).is_none() {
+            return false;
+        }
+        let index = pos.index(self.water.cells.side());
+        let in_scratch = self.active_hour.is_some() && index < self.cursor;
+        let water = if in_scratch {
+            &mut self.water_scratch[index]
+        } else {
+            &mut self.water.cells.values_mut()[index]
+        };
+        if water.soil.add_assign(mass).is_err() {
+            self.water
+                .ledger
+                .industrial
+                .add_assign(mass)
+                .expect("industrial soil rollback fits");
+            return false;
+        }
+        true
+    }
+
+    pub fn return_industrial_exact_to_runoff(
+        &mut self,
+        pos: AtlasPos,
+        mass: ReservoirMass,
+    ) -> bool {
+        if self.water.ledger.industrial.take_exact(mass).is_none() {
+            return false;
+        }
+        let index = pos.index(self.water.cells.side());
+        if self.water.cells.values_mut()[index]
+            .runoff
+            .add_assign(mass)
+            .is_err()
+        {
+            self.water
+                .ledger
+                .industrial
+                .add_assign(mass)
+                .expect("industrial runoff rollback fits");
+            return false;
+        }
+        true
+    }
+
+    pub fn can_return_industrial_exact_to_runoff(
+        &self,
+        pos: AtlasPos,
+        mass: ReservoirMass,
+    ) -> bool {
+        self.water.ledger.industrial.water_hu >= mass.water_hu
+            && self.water.ledger.industrial.salt_mass >= mass.salt_mass
+            && self
+                .water
+                .cells
+                .values()
+                .get(pos.index(self.water.cells.side()))
+                .and_then(|cell| cell.runoff.checked_add(mass))
+                .is_some()
+    }
+
     pub fn materialize_surface_water(
         &mut self,
         reservoir_id: u64,
@@ -1416,8 +1582,27 @@ impl PlanetaryWeather {
         parcel
     }
 
+    /// Move process water into local atmospheric vapor. Existing ordinary
+    /// machines use this unrestricted form; subsystems with water already in
+    /// flight use `exhaust_industrial_vapor_excluding` so another machine
+    /// cannot spend their custody.
     pub fn exhaust_industrial_vapor(&mut self, pos: AtlasPos, requested_hu: u64) -> u64 {
-        let water_hu = requested_hu.min(self.water.ledger.industrial.water_hu);
+        self.exhaust_industrial_vapor_excluding(pos, requested_hu, 0)
+    }
+
+    pub fn exhaust_industrial_vapor_excluding(
+        &mut self,
+        pos: AtlasPos,
+        requested_hu: u64,
+        reserved_hu: u64,
+    ) -> u64 {
+        let available = self
+            .water
+            .ledger
+            .industrial
+            .water_hu
+            .saturating_sub(reserved_hu);
+        let water_hu = requested_hu.min(available);
         if water_hu == 0 || water_hu > u64::from(u32::MAX) {
             return 0;
         }

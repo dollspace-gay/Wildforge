@@ -1856,6 +1856,44 @@ observation = { categories = ["mineral"], properties = ["strength", "stability",
 arcane_ecology = { roles = ["reservoir", "catalyst"], kind = "finite_mineral", habitat = ["mafic_host"], charge_capacity = 112, uptake_per_day = 0, release_per_day = 0, source = "ambient", resonance = { ember = 3, gale = 3, stone = 1 }, dross_tolerance = 14, water_per_day_hu = 0, nutrient_per_day = 0, reproduction = "none", seasons = [true, true, true, true], carrying_capacity = 1, harvest = "destructive", regrowth_days = 0, min_stability = 0, max_stability = 1000, min_richness = 0 }
 item = false
 
+# ---- embodied alchemy laboratory ----
+
+[[block]]
+id = "alchemy_mortar"
+name = "Mortar and Grinding Slab"
+texture = "millstone.png"
+hardness = 2.5
+tool = "pickaxe"
+interaction = "alchemy_mortar"
+observation = { categories = ["apparatus"], properties = ["condition", "stability", "dross"] }
+
+[[block]]
+id = "infusion_basin"
+name = "Infusion Basin"
+texture = "polished_glass.png"
+hardness = 2.0
+tool = "pickaxe"
+interaction = "alchemy_basin"
+observation = { categories = ["apparatus", "sample"], properties = ["condition", "strength", "stability", "resonance", "dross"] }
+
+[[block]]
+id = "alembic"
+name = "Alembic"
+texture = "boiler.png"
+hardness = 3.0
+tool = "pickaxe"
+interaction = "alchemy_alembic"
+observation = { categories = ["apparatus", "sample"], properties = ["condition", "strength", "stability", "resonance", "dross"] }
+
+[[block]]
+id = "filter_stand"
+name = "Filter Stand"
+texture = "crystal_glass.png"
+hardness = 2.0
+tool = "axe"
+interaction = "alchemy_filter"
+observation = { categories = ["apparatus", "sample"], properties = ["condition", "strength", "stability", "dross"] }
+
 [[block]]
 id = "echo_slate"
 name = "Echo Slate"

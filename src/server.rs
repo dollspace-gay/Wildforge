@@ -64,6 +64,9 @@ pub enum SimEvent {
     LongWinter(bool),
     /// A bounded working reached its host-owned completion/interruption edge.
     Working(crate::workings::WorkingResult, crate::workings::WorkingCue),
+    /// Bounded alchemy process/spoilage/leak cue; physical state is already
+    /// committed by the host before presentation sees it.
+    Alchemy(crate::alchemy::AlchemyCue),
 }
 
 pub struct Server {
@@ -84,6 +87,10 @@ pub struct Server {
     /// an ordinary no-magic tick never scans every block entity.
     implements_timer: f32,
     implements_cursor: usize,
+    /// Alchemy spoilage and leakage are slow processes. Tick them at a
+    /// bounded one-second cadence rather than cloning/scanning the alchemy
+    /// sidecar on every 20 Hz simulation step.
+    alchemy_timer: f32,
     snow_timer: f32,
     bolt_timer: f32,
     prev_tier: usize,
@@ -106,6 +113,7 @@ impl Server {
             random_timer: 0.0,
             implements_timer: 0.0,
             implements_cursor: 0,
+            alchemy_timer: 0.0,
             snow_timer: 0.0,
             bolt_timer: 24.0,
             prev_tier,
@@ -163,6 +171,14 @@ impl Server {
                 .into_iter()
                 .map(|(result, cue)| SimEvent::Working(result, cue)),
         );
+        self.alchemy_timer += dt;
+        if self.alchemy_timer >= 1.0 {
+            self.alchemy_timer %= 1.0;
+            match self.world.tick_alchemy(128) {
+                Ok(cues) => events.extend(cues.into_iter().map(SimEvent::Alchemy)),
+                Err(error) => eprintln!("alchemy update failed: {error}"),
+            }
+        }
         let winter_before = self.world.long_winter;
         if self.world.tick_ire(dt / DAY_LENGTH) {
             let refund = self.world.accept_offerings();

@@ -177,6 +177,41 @@ impl Game {
         }
     }
 
+    pub(super) fn present_alchemy_cue(&mut self, cue: crate::alchemy::AlchemyCue) {
+        use crate::alchemy::AlchemyCueKind;
+        self.presentation.swing = 1.0;
+        self.sfx(match cue.kind {
+            AlchemyCueKind::Grind => Sfx::Grind,
+            AlchemyCueKind::Bubble | AlchemyCueKind::Drip | AlchemyCueKind::Pour => Sfx::Splash,
+            AlchemyCueKind::Filter | AlchemyCueKind::Clean => Sfx::Click,
+            AlchemyCueKind::Leak
+            | AlchemyCueKind::Overcharge
+            | AlchemyCueKind::Spoil
+            | AlchemyCueKind::Pulse => Sfx::ImplementStrain,
+            AlchemyCueKind::Drink | AlchemyCueKind::Apply => Sfx::Pickup,
+        });
+        if self.presentation.juice {
+            let tile_name = if cue.color[0] > cue.color[1] && cue.color[0] > cue.color[2] {
+                "ember"
+            } else if cue.color[2] > cue.color[0] {
+                "water"
+            } else {
+                "plant"
+            };
+            let tile = *crate::atlas::builtin_slots()
+                .get(tile_name)
+                .unwrap_or(&crate::atlas::UNKNOWN_SLOT);
+            let count = 3 + usize::from(cue.intensity) / 20;
+            self.juice_burst(
+                cue.pos.entity_center().render_pos(),
+                tile,
+                count.min(18),
+                0.9,
+            );
+        }
+        self.toast(cue.message);
+    }
+
     /// Advance a remote player's walk phase from their motion.
     pub(super) fn gait_for(&mut self, id: u32, pos: Vec3, dt: f32) -> (f32, f32) {
         let e = self
@@ -399,6 +434,7 @@ impl Game {
             from_player: true,
             // Arrows that stick into terrain are recoverable.
             drop_item: (!self.creative).then_some(arrow_id),
+            preparation_payload: None,
             owner: 0,
         });
         if !self.creative {
@@ -620,6 +656,65 @@ impl Game {
                     self.sfx(Sfx::Splash);
                 }
             }
+            return;
+        }
+
+        // Stable preparation bottles are not generic food. Their saved dose
+        // identity decides the bounded application and the host performs the
+        // water/Current/status transaction.
+        let preparation_application =
+            self.inventory.slots[self.input.hotbar_sel].and_then(|stack| {
+                (stack.arcane_id != 0).then_some(())?;
+                let item_name = &reg.item(stack.item).name;
+                reg.preparations
+                    .values()
+                    .find(|definition| definition.output_item == *item_name)
+                    .map(|definition| definition.application)
+            });
+        if self.input.right_held
+            && self.input.action_cooldown <= 0.0
+            && let Some(application) = preparation_application
+        {
+            let adjacent_slot = (self.input.hotbar_sel + 1) % crate::inventory::HOTBAR_SLOTS;
+            let adjacent_id = self.inventory.slots[adjacent_slot]
+                .filter(|stack| stack.count == 1)
+                .map_or(0, |stack| stack.arcane_id);
+            let target = match application {
+                crate::alchemy::ApplicationKind::Drink => crate::alchemy::AlchemyTarget::SelfActor,
+                crate::alchemy::ApplicationKind::Plot => {
+                    let Some(hit) = &hit else {
+                        self.toast("Aim Root Wash at one plot or rooting bed.".into());
+                        return;
+                    };
+                    crate::alchemy::AlchemyTarget::Plot(hit.block)
+                }
+                crate::alchemy::ApplicationKind::Wash => {
+                    if let Some(hit) = &hit {
+                        crate::alchemy::AlchemyTarget::Surface(hit.block)
+                    } else if adjacent_id != 0 {
+                        crate::alchemy::AlchemyTarget::Item(adjacent_id)
+                    } else {
+                        self.toast(
+                            "Aim Ashlace Wash at a small surface, or carry one stable tool immediately right of it."
+                                .into(),
+                        );
+                        return;
+                    }
+                }
+                crate::alchemy::ApplicationKind::Coat => {
+                    if adjacent_id == 0 {
+                        self.toast(
+                            "Carry one stable botanical specimen immediately right of the Frostlace jar."
+                                .into(),
+                        );
+                        return;
+                    }
+                    crate::alchemy::AlchemyTarget::Item(adjacent_id)
+                }
+            };
+            self.use_selected_preparation(target);
+            self.input.right_held = false;
+            self.input.action_cooldown = 0.3;
             return;
         }
 
@@ -1311,11 +1406,21 @@ impl Game {
                     return;
                 }
             }
-            // Throwables (snowballs): loosed from the hand.
-            if let Some(speed) = held.and_then(|i| reg.item(i).throw_speed)
-                && (self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some())
-            {
+            // Throwables are loosed from the hand. A preparation remains a
+            // stable physical vessel in flight even in creative mode; it may
+            // never be cloned or discarded as a cosmetic projectile.
+            if let Some(speed) = held.and_then(|i| reg.item(i).throw_speed) {
                 let item = held.unwrap();
+                let selected = self.inventory.slots[self.input.hotbar_sel];
+                let state_bearing = selected.is_some_and(|stack| stack.arcane_id != 0);
+                let removed = if self.creative && !state_bearing {
+                    None
+                } else {
+                    self.inventory.take_one_stack(self.input.hotbar_sel)
+                };
+                if state_bearing && removed.is_none() {
+                    return;
+                }
                 let dir = self.camera.local_forward();
                 if let Some(rc) = &self.multiplayer.remote {
                     rc.client.send(&net::C2S::FireProjectile {
@@ -1340,6 +1445,7 @@ impl Game {
                         age: 0.0,
                         from_player: true,
                         drop_item: None,
+                        preparation_payload: removed.filter(|stack| stack.arcane_id != 0),
                         owner: 0,
                     });
                 }
@@ -1576,6 +1682,14 @@ impl Game {
                     self.input.action_cooldown = 0.35;
                     self.input.right_held = false;
                     self.operate_binding_frame(h.block);
+                    return;
+                }
+                Some("alchemy_mortar" | "alchemy_basin" | "alchemy_alembic" | "alchemy_filter")
+                    if self.input.action_cooldown <= 0.0 =>
+                {
+                    self.input.action_cooldown = 0.25;
+                    self.input.right_held = false;
+                    self.operate_alchemy_contextual(h.block);
                     return;
                 }
                 Some("heart") if self.input.action_cooldown <= 0.0 => {

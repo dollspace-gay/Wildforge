@@ -13,6 +13,7 @@ use crate::registry::{self, AIR, Registry};
 use crate::world::World;
 
 mod agent;
+mod alchemy;
 mod atlas;
 mod climate;
 mod ecology;

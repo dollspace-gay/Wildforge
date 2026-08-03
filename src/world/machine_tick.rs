@@ -372,6 +372,18 @@ impl World {
         let reg = self.reg.clone();
         let mush = reg.item_id("base:spoiled_mush");
         let mut consumed = Vec::new();
+        let alchemy_container_ids = self
+            .alchemy_state
+            .as_ref()
+            .map(|state| {
+                state
+                    .containers
+                    .keys()
+                    .copied()
+                    .collect::<std::collections::BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+        let mut preparation_assessments = Vec::<(ItemStack, i32, u64)>::new();
         let cellar_at: Vec<(BlockPos, bool)> = self
             .block_entities
             .iter()
@@ -389,6 +401,13 @@ impl World {
         for (pos, cellar) in cellar_at {
             let rate = PERISH_SWEEP_SECS * FRESHNESS_PER_SEC;
             let step = if cellar { rate / 4.0 } else { rate } as u32;
+            let storage_ticks = ((PERISH_SWEEP_SECS * 20.0) as u64)
+                .checked_div(if cellar { 4 } else { 1 })
+                .unwrap_or_default();
+            let storage_temperature_millic =
+                (self.weather_at_surface(pos.surface()).temperature_c * 1_000.0)
+                    .round()
+                    .clamp(i32::MIN as f32, i32::MAX as f32) as i32;
             let Some(e) = self.block_entities.get_mut(&pos) else {
                 continue;
             };
@@ -399,6 +418,10 @@ impl World {
             };
             for s in slots.iter_mut() {
                 let Some(st) = s else { continue };
+                if st.arcane_id != 0 && alchemy_container_ids.contains(&st.arcane_id) {
+                    preparation_assessments.push((*st, storage_temperature_millic, storage_ticks));
+                    continue;
+                }
                 let full = reg.item(st.item).durability;
                 if reg.item(st.item).food.is_none() || full == 0 {
                     continue;
@@ -415,6 +438,13 @@ impl World {
                 } else {
                     st.durability -= step;
                 }
+            }
+        }
+        for (stack, temperature_millic, ordinary_age_ticks) in preparation_assessments {
+            if let Err(error) =
+                self.age_preparation_storage(stack, temperature_millic, ordinary_age_ticks)
+            {
+                eprintln!("alchemy: stored preparation aging failed: {error}");
             }
         }
 
@@ -870,7 +900,15 @@ impl World {
                 let exhausted = if let (Some(atlas), Some(weather)) =
                     (&self.planet_atlas, &mut self.planetary_weather)
                 {
-                    weather.exhaust_industrial_vapor(atlas.atlas_pos(pos.surface()), requested)
+                    let alchemy_reserved = self
+                        .alchemy_state
+                        .as_ref()
+                        .map_or(0, |state| state.total_water_custody().water_hu);
+                    weather.exhaust_industrial_vapor_excluding(
+                        atlas.atlas_pos(pos.surface()),
+                        requested,
+                        alchemy_reserved,
+                    )
                 } else {
                     requested
                 };

@@ -79,6 +79,10 @@ pub struct Projectile {
     pub from_player: bool,
     /// Item recovered when this sticks into a block (arrows).
     pub drop_item: Option<crate::registry::ItemId>,
+    /// A state-bearing preparation vessel carried intact until impact. Unlike
+    /// an arrow's simple item id, this preserves the stable container id so
+    /// breakage can settle its exact liquid, matter, Current, and dross.
+    pub preparation_payload: Option<crate::inventory::ItemStack>,
     /// 0 = the host/local player; guests get their arrows back by wire.
     pub owner: u32,
 }
@@ -825,6 +829,7 @@ impl Mob {
                                         age: 0.0,
                                         from_player: false,
                                         drop_item: None,
+                                        preparation_payload: None,
                                         owner: 0,
                                     }));
                                 }

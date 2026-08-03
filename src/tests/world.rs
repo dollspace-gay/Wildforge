@@ -2510,6 +2510,7 @@ fn snow_settles_melts_and_snowballs_fly() {
         age: 0.0,
         from_player: true,
         drop_item: None,
+        preparation_payload: None,
         owner: 0,
     });
     for _ in 0..60 {

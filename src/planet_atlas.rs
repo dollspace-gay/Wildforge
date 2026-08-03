@@ -866,6 +866,7 @@ pub fn genesis_content_hash(mods_dir: &Path) -> u64 {
         include_bytes!("../base/animals.toml").as_slice(),
         include_bytes!("../base/structures.toml").as_slice(),
         include_bytes!("../base/workings.toml").as_slice(),
+        include_bytes!("../base/preparations.toml").as_slice(),
     ] {
         extend(content);
     }

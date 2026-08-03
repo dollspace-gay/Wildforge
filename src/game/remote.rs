@@ -574,6 +574,7 @@ impl Game {
                             age: s.age,
                             from_player: false,
                             drop_item: None,
+                            preparation_payload: None,
                             owner: 0,
                         })
                         .collect();
@@ -658,6 +659,23 @@ impl Game {
                         crate::implements::ImplementCue::Failure => Sfx::ImplementFailure,
                     });
                 }
+                net::S2C::AlchemyResult { pos, result } => {
+                    self.interaction
+                        .alchemy_revisions
+                        .insert(pos, result.revision);
+                    self.present_alchemy_cue(result.cue);
+                }
+                net::S2C::PreparationResult(result) => {
+                    self.present_alchemy_cue(result.cue);
+                }
+                net::S2C::PreparationState {
+                    modifiers,
+                    bodily_dross,
+                } => {
+                    self.survival.preparation_modifiers = modifiers;
+                    self.survival.bodily_dross = bodily_dross;
+                }
+                net::S2C::AlchemyEvent(cue) => self.present_alchemy_cue(cue),
                 net::S2C::ImplementActivation {
                     actor,
                     pos,

@@ -158,6 +158,9 @@ impl World {
             &reg.workings,
         )
         .map_err(std::io::Error::other)?;
+        let alchemy_state =
+            crate::alchemy::AlchemyState::load_or_initialize(&save_dir, reg.content_hash)
+                .map_err(std::io::Error::other)?;
         write_world_meta_full(&save_dir, seed, &mode, ire, day)?;
         let mut w = World::new_with_preloaded_atlas(seed, save_dir, reg, Arc::new(atlas));
         w.material_ledger = Some(material_ledger);
@@ -166,6 +169,7 @@ impl World {
         w.discovery_state = Some(discovery_state);
         w.implements_state = Some(implements_state);
         w.workings_state = Some(workings_state);
+        w.alchemy_state = Some(alchemy_state);
         w.mode = mode;
         w.ire = ire;
         w.day = day;
@@ -188,6 +192,15 @@ impl World {
             ledger.reconcile_working_id_floor(workings_max);
             ledger
                 .reconcile_transient_owners(&active_workings)
+                .map_err(std::io::Error::other)?;
+            let active_alchemy = w
+                .alchemy_state
+                .as_ref()
+                .map_or_else(std::collections::BTreeSet::new, |state| {
+                    state.active_arcane_ids()
+                });
+            ledger
+                .reconcile_alchemy_owners(&active_alchemy)
                 .map_err(std::io::Error::other)?;
             ledger
                 .reconcile_durable_item_owners(&w.save_dir)

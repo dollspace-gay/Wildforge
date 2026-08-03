@@ -1656,3 +1656,190 @@ name = "Salt Water Bucket"
 texture = "@bucket_water"
 max_stack = 1
 observation = { categories = ["sample"], properties = ["strength", "drift", "dross", "condition"] }
+
+# ---- embodied alchemy carriers, vessels, media, doses, and waste ----
+
+[[item]]
+id = "glass_bottle"
+name = "Glass Bottle"
+texture = "polished_glass.png"
+
+[[item]]
+id = "glass_jar"
+name = "Glass Jar"
+texture = "crystal_glass.png"
+
+[[item]]
+id = "fermented_alcohol"
+name = "Fermented Spirit"
+texture = "cranberry_glass.png"
+max_stack = 16
+
+[[item]]
+id = "plant_oil"
+name = "Pressed Plant Oil"
+texture = "yellow_glass.png"
+max_stack = 16
+
+[[item]]
+id = "filter_cloth"
+name = "Filter Cloth"
+texture = "@plant_fiber"
+max_stack = 16
+
+[[item]]
+id = "mineral_nutrient"
+name = "Mineral Nutrient"
+texture = "salt_crystal.png"
+max_stack = 16
+
+[[item]]
+id = "spent_mash"
+name = "Spent Mash"
+texture = "spoiled_mush.png"
+max_stack = 16
+
+[[item]]
+id = "spent_carrier"
+name = "Spent Carrier"
+texture = "clay_ball.png"
+max_stack = 16
+
+[[item]]
+id = "mineral_sludge"
+name = "Mineral Sludge"
+texture = "clay_ball.png"
+max_stack = 16
+
+[[item]]
+id = "spent_filter"
+name = "Spent Filter"
+texture = "@charcoal"
+max_stack = 1
+arcane = { capacity = 512, conductivity = 20, stability = 980, resonance = { echo = 1, root = 1, stone = 1, gale = 1, ember = 1, tide = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "dross_sludge"
+name = "Sequestered Dross Sludge"
+texture = "@cobalt_powder"
+max_stack = 1
+arcane = { capacity = 512, conductivity = 40, stability = 980, resonance = { echo = 1, root = 1, stone = 1, gale = 1, ember = 1, tide = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "volatile_mash"
+name = "Volatile Mash"
+texture = "ember_poppy.png"
+max_stack = 1
+
+[[item]]
+id = "clear_eye_tincture"
+name = "Clear-eye Tincture"
+texture = "crystal_glass.png"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 128, conductivity = 180, stability = 860, resonance = { echo = 5, tide = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "hearth_tonic"
+name = "Hearth Tonic"
+texture = "rose_glass.png"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 128, conductivity = 120, stability = 820, resonance = { root = 5, ember = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "root_wash"
+name = "Root Wash"
+texture = "green_glass.png"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 128, conductivity = 150, stability = 800, resonance = { root = 5, tide = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "settling_draught"
+name = "Settling Draught"
+texture = "milk_glass.png"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 128, conductivity = 90, stability = 900, resonance = { stone = 5, tide = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "ashlace_wash"
+name = "Ashlace Wash"
+texture = "polished_glass.png"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 128, conductivity = 110, stability = 920, resonance = { echo = 4, stone = 2 }, on_destroy = "dross" }
+
+[[item]]
+id = "frostlace_suspension"
+name = "Frostlace Suspension"
+texture = "glow_glass.png"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 128, conductivity = 70, stability = 960, resonance = { stone = 4, tide = 2 }, on_destroy = "dross" }
+
+[[item]]
+id = "storm_cordial"
+name = "Storm Cordial"
+texture = "yellow_glass.png"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 128, conductivity = 440, stability = 560, resonance = { gale = 5, ember = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "scouring_antidote"
+name = "Scouring Antidote"
+texture = "@cobalt_powder"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 128, conductivity = 80, stability = 940, resonance = { stone = 4, echo = 2 }, on_destroy = "dross" }
+
+# Named deterministic failures retain a stable batch id and exact contents.
+[[item]]
+id = "weak_extraction"
+name = "Weak Extraction"
+texture = "polished_glass.png"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 128, conductivity = 120, stability = 620, resonance = { echo = 1, root = 1, stone = 1, gale = 1, ember = 1, tide = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "scorched_mash"
+name = "Scorched Mash"
+texture = "spoiled_mush.png"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 128, conductivity = 360, stability = 280, resonance = { echo = 1, root = 1, stone = 1, gale = 1, ember = 2, tide = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "broken_emulsion"
+name = "Broken Emulsion"
+texture = "milk_glass.png"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 128, conductivity = 220, stability = 420, resonance = { echo = 1, root = 1, stone = 1, gale = 1, ember = 1, tide = 2 }, on_destroy = "dross" }
+
+[[item]]
+id = "spent_liquor"
+name = "Spent Liquor"
+texture = "cranberry_glass.png"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 128, conductivity = 70, stability = 700, resonance = { echo = 1, root = 1, stone = 1, gale = 1, ember = 1, tide = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "fouled_batch"
+name = "Fouled Batch"
+texture = "@cobalt_powder"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 128, conductivity = 160, stability = 360, resonance = { echo = 1, root = 1, stone = 1, gale = 1, ember = 1, tide = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "overcharged_batch"
+name = "Overcharged Batch"
+texture = "glow_glass.png"
+max_stack = 1
+throw_speed = 12.0
+arcane = { capacity = 256, conductivity = 520, stability = 180, resonance = { echo = 1, root = 1, stone = 1, gale = 1, ember = 1, tide = 1 }, on_destroy = "dross" }

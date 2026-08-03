@@ -1673,6 +1673,82 @@ fn content_graph_is_complete_and_obtainable() {
         if failable_implement && let Some(fragments) = reg.item_id("base:implement_fragment") {
             grew |= ok.insert(fragments.0);
         }
+        // Apothecary carriers and preparations are embodied station
+        // lifecycles, not crafting-grid recipes. Close those runtime edges
+        // only when every ordinary input and the relevant laboratory blocks
+        // are already obtainable.
+        let has = |name: &str, ok: &HashSet<u16>| {
+            reg.item_id(name).is_some_and(|item| ok.contains(&item.0))
+        };
+        if [
+            "base:infusion_basin",
+            "base:bucket_water",
+            "base:wheat",
+            "base:berry",
+        ]
+        .into_iter()
+        .all(|name| has(name, &ok))
+            && let Some(output) = reg.item_id("base:fermented_alcohol")
+        {
+            grew |= ok.insert(output.0);
+        }
+        if ["base:alchemy_mortar", "base:wheat_seeds"]
+            .into_iter()
+            .all(|name| has(name, &ok))
+            && let Some(output) = reg.item_id("base:plant_oil")
+        {
+            grew |= ok.insert(output.0);
+        }
+        let laboratory_ready = [
+            "base:alchemy_mortar",
+            "base:infusion_basin",
+            "base:alembic",
+            "base:filter_stand",
+            "base:arcane_conductor",
+            "base:filter_cloth",
+        ]
+        .into_iter()
+        .all(|name| has(name, &ok));
+        if laboratory_ready {
+            for preparation in reg.preparations.values() {
+                let inputs_ready = has(&preparation.solvent_item, &ok)
+                    && has(&preparation.empty_vessel, &ok)
+                    && preparation
+                        .ingredients
+                        .iter()
+                        .all(|ingredient| has(&ingredient.item, &ok));
+                if !inputs_ready {
+                    continue;
+                }
+                for name in [&preparation.output_item, &preparation.residue_item] {
+                    if let Some(item) = reg.item_id(name) {
+                        grew |= ok.insert(item.0);
+                    }
+                }
+                for failure in crate::alchemy::BatchFailure::ALL {
+                    if let Some(item) = reg.item_id(failure.item_id()) {
+                        grew |= ok.insert(item.0);
+                    }
+                }
+                if preparation
+                    .steps
+                    .contains(&crate::alchemy::ProcessStep::Filter)
+                    && let Some(item) = reg.item_id("base:spent_filter")
+                {
+                    grew |= ok.insert(item.0);
+                }
+                if preparation.handler == crate::alchemy::PreparationHandler::DrossWash
+                    && let Some(item) = reg.item_id("base:dross_sludge")
+                {
+                    grew |= ok.insert(item.0);
+                }
+                if preparation.handler == crate::alchemy::PreparationHandler::PreserveSpecimen
+                    && let Some(item) = reg.item_id("base:spent_carrier")
+                {
+                    grew |= ok.insert(item.0);
+                }
+            }
+        }
         // The bucket: dip it in any fluid and it comes up full — a
         // code path, like shears. Water and lava alike.
         for full_name in [

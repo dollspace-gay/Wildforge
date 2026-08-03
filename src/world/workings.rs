@@ -2555,14 +2555,17 @@ impl World {
         if elapsed_seconds == 0 || stack.arcane_id == 0 || stack.count != 1 {
             return Ok(0);
         }
-        let definition = self.reg.item(stack.item);
-        let Some(arcane) = definition.arcane.as_ref() else {
-            return Ok(0);
+        let (stability_permille, botanical) = {
+            let definition = self.reg.item(stack.item);
+            let Some(arcane) = definition.arcane.as_ref() else {
+                return Ok(0);
+            };
+            (arcane.stability_permille, definition.places.is_some())
         };
-        if definition.places.is_none() {
+        if !botanical {
             return Ok(0);
         }
-        let instability = u64::from(1_000u16.saturating_sub(arcane.stability_permille));
+        let instability = u64::from(1_000u16.saturating_sub(stability_permille));
         let ordinary = instability
             .saturating_mul(u64::from(elapsed_seconds))
             .div_ceil(2_000)
@@ -2613,6 +2616,11 @@ impl World {
         } else {
             ordinary
         };
+        let temperature_millic = (self.weather_at_surface(at.surface()).temperature_c * 1_000.0)
+            .round()
+            .clamp(i32::MIN as f32, i32::MAX as f32) as i32;
+        let requested =
+            self.coated_specimen_age_advance(stack.arcane_id, requested, temperature_millic);
         let owner = ArcaneOwner::Item(stack.arcane_id);
         let (source_version, mut current) = match self
             .arcane_ledger
@@ -2932,6 +2940,7 @@ impl World {
         let quote = definition
             .quote(magnitude, distance, duration_ticks)
             .map_err(|error| error.to_string())?;
+        let preparation_modifiers = self.preparation_modifiers(actor);
         let source_owner = ArcaneOwner::Item(source_vessel_id);
         let region = self
             .planet_atlas
@@ -2966,6 +2975,7 @@ impl World {
             safe_throughput: definition.safe_throughput.max(1),
             local_capacity_permille,
             apparatus_damage_permille: apparatus_damage.min(1_000),
+            personal_strain_permille: preparation_modifiers.strain_permille,
             ..StrainInputs::default()
         })
         .map_err(|error| error.to_string())?;
@@ -3125,6 +3135,17 @@ impl World {
         {
             return Err("The wand is visibly too damaged or strained to channel safely.".into());
         }
+        let preparation_modifiers = self.preparation_modifiers(actor);
+        let charge_required = quote
+            .charge
+            .saturating_mul(u64::from(preparation_modifiers.drain_permille))
+            .div_ceil(1_000);
+        let prepared_safe_throughput = definition
+            .safe_throughput
+            .min(resolved.safe_transfer)
+            .saturating_mul(u64::from(preparation_modifiers.throughput_permille))
+            .div_ceil(1_000)
+            .max(1);
         let region = self
             .planet_atlas
             .as_ref()
@@ -3141,15 +3162,14 @@ impl World {
                     .total()
                     .saturating_sub(STRUCTURAL_SPARK_UNITS)
             });
-        if wand_usable < quote.charge && definition.ambient {
+        if wand_usable < charge_required && definition.ambient {
             // A normal draw exports enough local custody to leave the
             // measured floor intact. Explicit forced draw exports only the
             // missing effect charge, so crossing the floor is real, finite,
             // legible, and subsequently priced by deterministic strain.
             self.ensure_regional_ambient_units(
                 region,
-                quote
-                    .charge
+                charge_required
                     .saturating_sub(wand_usable)
                     .saturating_add(if forced { 0 } else { AMBIENT_SAFE_FLOOR }),
                 "working drew measured local Ambient Current",
@@ -3161,7 +3181,7 @@ impl World {
             .arcane_ledger
             .as_mut()
             .ok_or("The world has no finite Current ledger.")?;
-        let mut remaining = quote.charge;
+        let mut remaining = charge_required;
         let mut current_debits = Vec::new();
         let mut reserved = Current::default();
         if let Some(account) = ledger.account(&wand_owner).cloned() {
@@ -3235,20 +3255,15 @@ impl World {
             )
             .unwrap_or(1_000),
         );
-        let over_safe = quote
-            .charge
-            .saturating_sub(definition.safe_throughput.min(resolved.safe_transfer));
+        let over_safe = charge_required.saturating_sub(prepared_safe_throughput);
         let below_floor = ledger.account(&ambient_owner).map_or(0, |account| {
             AMBIENT_SAFE_FLOOR.saturating_sub(account.current.total())
         });
         let strain = crate::workings::deterministic_strain(StrainInputs {
             resonance_mismatch_permille: mismatch,
             component_instability_permille: 1_000u16.saturating_sub(resolved.stability),
-            throughput: quote.charge,
-            safe_throughput: definition
-                .safe_throughput
-                .min(resolved.safe_transfer)
-                .max(1),
+            throughput: charge_required,
+            safe_throughput: prepared_safe_throughput,
             local_capacity_permille,
             below_safe_floor_units: below_floor,
             apparatus_damage_permille: ((u64::from(instance.wear) * 1_000)
@@ -3256,14 +3271,17 @@ impl World {
                 as u16,
             contamination_permille: (instance.strain / 10).min(1_000) as u16,
             interruption: false,
-            forced_overdraw_units: u64::from(forced).saturating_mul(over_safe.max(below_floor)),
+            forced_overdraw_units: u64::from(forced)
+                .saturating_mul(over_safe.max(below_floor))
+                .saturating_mul(u64::from(preparation_modifiers.overdraw_permille))
+                .div_ceil(1_000),
+            personal_strain_permille: preparation_modifiers.strain_permille,
         })
         .map_err(|error| error.to_string())?;
         if strain.refuses {
             return Err("The forced overdraw exceeds this visibly damaged apparatus.".into());
         }
-        let apparatus_dross = quote
-            .charge
+        let apparatus_dross = charge_required
             .saturating_mul(u64::from(resolved.dross_per_thousand))
             .div_ceil(1_000);
         let dross_units = quote

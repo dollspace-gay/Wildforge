@@ -714,6 +714,9 @@ pub struct Registry {
     /// Declarative shells around the closed set of native working handlers.
     /// The definitions carry costs and bounds, never mutation callbacks.
     pub workings: BTreeMap<String, crate::workings::WorkingDef>,
+    /// Declarative physical preparation/process contracts. Effects resolve to
+    /// the closed native alchemy handler set; no data pack gains raw mutation.
+    pub preparations: BTreeMap<String, crate::alchemy::PreparationDef>,
     pub arcane_errors: Vec<String>,
 }
 
@@ -1984,6 +1987,7 @@ struct RawMod {
     resonances: Vec<ResonanceToml>,
     arcane_sites: Vec<ArcaneSiteToml>,
     workings: Vec<crate::workings::RawWorkingDef>,
+    preparations: Vec<crate::alchemy::RawPreparationDef>,
 }
 
 // ---------------- loading ----------------
@@ -1997,6 +2001,7 @@ const BASE_ALIASES: &str = include_str!("../base/aliases.toml");
 const BASE_ANIMALS: &str = include_str!("../base/animals.toml");
 const BASE_STRUCTURES: &str = include_str!("../base/structures.toml");
 const BASE_WORKINGS: &str = include_str!("../base/workings.toml");
+const BASE_PREPARATIONS: &str = include_str!("../base/preparations.toml");
 pub const WORLD_API_VERSION: u32 = 2;
 
 fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
@@ -2045,6 +2050,17 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
             crate::workings::WORKINGS_SCHEMA_VERSION
         ));
     }
+    let preparations: crate::alchemy::PreparationsFile = toml::from_str(&read("preparations.toml"))
+        .map_err(|e| format!("preparations.toml: {e}"))?;
+    if preparations
+        .schema_version
+        .is_some_and(|version| version != crate::alchemy::PREPARATIONS_SCHEMA_VERSION)
+    {
+        return Err(format!(
+            "preparations.toml: schema_version must be {}",
+            crate::alchemy::PREPARATIONS_SCHEMA_VERSION
+        ));
+    }
     if !features.feature.is_empty() && m.retrogen.is_none() {
         return Err(
             "mod.toml: a worldgen feature requires retrogen = \"untouched_host_only\", \
@@ -2082,6 +2098,7 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         resonances: arcane.resonance,
         arcane_sites: arcane.sites,
         workings: workings.working,
+        preparations: preparations.preparation,
     })
 }
 
@@ -2096,6 +2113,8 @@ fn base_mod() -> RawMod {
     let structures: StructuresFile = toml::from_str(BASE_STRUCTURES).expect("base structures.toml");
     let workings: crate::workings::WorkingsFile =
         toml::from_str(BASE_WORKINGS).expect("base workings.toml");
+    let preparations: crate::alchemy::PreparationsFile =
+        toml::from_str(BASE_PREPARATIONS).expect("base preparations.toml");
     RawMod {
         info: ModInfo {
             id: "base".into(),
@@ -2128,6 +2147,7 @@ fn base_mod() -> RawMod {
         resonances: Vec::new(),
         arcane_sites: Vec::new(),
         workings: workings.working,
+        preparations: preparations.preparation,
     }
 }
 
@@ -2236,6 +2256,7 @@ impl RemoveStable for Vec<RawMod> {
             resonances: vec![],
             arcane_sites: vec![],
             workings: vec![],
+            preparations: vec![],
         };
         std::mem::replace(&mut self[idx], dummy)
     }
@@ -2272,6 +2293,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         arcane_sites: Vec::new(),
         arcane_ecology: BTreeMap::new(),
         workings: BTreeMap::new(),
+        preparations: BTreeMap::new(),
         arcane_errors: Vec::new(),
     };
     for raw in &raws {
@@ -3448,7 +3470,16 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             reg.block_id(&qualify(modid, &it_toml.1))
                 .or_else(|| reg.block_id(&it_toml.1)),
         ) {
-            reg.items[item.0 as usize].places = Some(block);
+            let inherited_ecology = reg.block(block).arcane_ecology.clone();
+            let item_name = reg.item(item).name.clone();
+            let definition = &mut reg.items[item.0 as usize];
+            definition.places = Some(block);
+            if definition.arcane_ecology.is_none() {
+                definition.arcane_ecology = inherited_ecology.clone();
+            }
+            if let Some(ecology) = inherited_ecology {
+                reg.arcane_ecology.entry(item_name).or_insert(ecology);
+            }
         }
     }
     for (modid, r) in pending_recipes {
@@ -3625,6 +3656,35 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             discovery: None,
         });
         reg.item_by_name.insert(format!("{name}/place"), iid);
+    }
+
+    // Preparations resolve after items so their physical solvent, ingredient,
+    // vessel, residue, and output identities can all be proven. Invalid data
+    // never installs a partial effect shell.
+    for raw in &raws {
+        for preparation in &raw.preparations {
+            if reg.preparations.len() >= crate::alchemy::MAX_PREPARATION_DEFINITIONS {
+                reg.arcane_errors.push(format!(
+                    "{}: preparation registry exceeds its {}-definition safety bound",
+                    raw.info.id,
+                    crate::alchemy::MAX_PREPARATION_DEFINITIONS
+                ));
+                continue;
+            }
+            match crate::alchemy::PreparationDef::from_raw(&raw.info.id, preparation.clone()) {
+                Ok(definition) => {
+                    if reg.preparations.contains_key(&definition.id) {
+                        reg.arcane_errors
+                            .push(format!("{}: duplicate preparation identity", definition.id));
+                    } else if let Err(error) = definition.validate_registry(&reg) {
+                        reg.arcane_errors.push(error.to_string());
+                    } else {
+                        reg.preparations.insert(definition.id.clone(), definition);
+                    }
+                }
+                Err(error) => reg.arcane_errors.push(error.to_string()),
+            }
+        }
     }
 
     reconcile_material_definitions(&mut reg);

@@ -14,6 +14,108 @@ fn workings_world(tag: &str) -> (World, crate::planet::BlockPos, ItemStack) {
     (world, player_source, wand)
 }
 
+#[test]
+fn storm_cordial_prices_real_wand_current_and_keeps_its_warning_visible() {
+    use crate::alchemy::ActivePreparationStatus;
+
+    let actor = [70; 16];
+    let (mut ordinary, ordinary_source, ordinary_wand) =
+        workings_world("workings-storm-cordial-ordinary");
+    let (mut storm, storm_source, storm_wand) = workings_world("workings-storm-cordial-active");
+    let definition = storm.reg.preparations["base:storm_cordial"].clone();
+    let now = (storm.clock.max(0.0) * 20.0).round() as u64;
+    let (source_batch, status_id) = {
+        let state = storm.alchemy_state.as_mut().unwrap();
+        (
+            state.allocate_batch_id().unwrap(),
+            state.allocate_status_id().unwrap(),
+        )
+    };
+    storm.alchemy_state.as_mut().unwrap().statuses.insert(
+        actor,
+        vec![ActivePreparationStatus {
+            status_id,
+            preparation_id: definition.id.clone(),
+            definition_version: definition.version,
+            source_batch,
+            actor,
+            dose_volume_units: definition.dose_units,
+            active_current: Default::default(),
+            dross_current: Default::default(),
+            started_tick: now,
+            last_tick: now,
+            due_tick: now.saturating_add(definition.effect.duration_ticks),
+            recovery_until_tick: now
+                .saturating_add(definition.effect.duration_ticks)
+                .saturating_add(definition.effect.recovery_ticks),
+            stack_group: definition.stack_group.clone(),
+            completed_units: 0,
+            refresh_count: 0,
+            overdose_until_tick: 0,
+        }],
+    );
+
+    let modifiers = storm.preparation_modifiers(actor);
+    assert_eq!(
+        modifiers.throughput_permille,
+        definition.effect.throughput_permille
+    );
+    assert_eq!(modifiers.drain_permille, definition.effect.drain_permille);
+    assert_eq!(
+        modifiers.overdraw_permille,
+        definition.effect.overdraw_permille
+    );
+    assert!(modifiers.storm_warning);
+
+    let ordinary_started = ordinary
+        .begin_trace_working(
+            actor,
+            "ordinary trace fixture",
+            ordinary_source,
+            ordinary_wand.arcane_id,
+            ordinary_source.offset(1, 0, 0).unwrap(),
+            20,
+            false,
+        )
+        .unwrap();
+    let storm_started = storm
+        .begin_trace_working(
+            actor,
+            "storm cordial trace fixture",
+            storm_source,
+            storm_wand.arcane_id,
+            storm_source.offset(1, 0, 0).unwrap(),
+            20,
+            false,
+        )
+        .unwrap();
+    let ordinary_charge = ordinary.workings_state.as_ref().unwrap().active
+        [&ordinary_started.stable_id]
+        .reserved_current
+        .total();
+    let storm_transaction =
+        &storm.workings_state.as_ref().unwrap().active[&storm_started.stable_id];
+    assert_eq!(
+        storm_transaction.reserved_current.total(),
+        ordinary_charge
+            .saturating_mul(u64::from(definition.effect.drain_permille))
+            .div_ceil(1_000),
+        "Storm Cordial advertised extra drain without pricing it into the real reservation"
+    );
+    assert!(storm_transaction.reserved_current.total() > ordinary_charge);
+
+    storm.clock = (now + 41) as f64 / 20.0;
+    let ticked = storm
+        .tick_preparation_statuses(actor, storm_source, Default::default())
+        .unwrap();
+    assert!(ticked.modifiers.storm_warning);
+    assert!(ticked.cues.iter().any(|cue| {
+        cue.kind == crate::alchemy::AlchemyCueKind::Pulse
+            && cue.message.contains("drain")
+            && cue.message.contains("overdraw")
+    }));
+}
+
 fn ritual_world(
     tag: &str,
 ) -> (
@@ -1286,6 +1388,7 @@ fn nudge_uses_one_locked_projectile_and_ordinary_velocity_without_teleporting() 
         age: 0.0,
         from_player: true,
         drop_item: None,
+        preparation_payload: None,
         owner: 0,
     });
     let position_before = world.projectiles()[0].pos;
@@ -2195,6 +2298,7 @@ fn ward_is_closed_supplied_ire_costed_and_breaks_without_rewriting_construction(
         age: 0.0,
         from_player: false,
         drop_item: None,
+        preparation_payload: None,
         owner: 0,
     });
     let players = [crate::server::PlayerCtx {
@@ -2229,6 +2333,7 @@ fn ward_is_closed_supplied_ire_costed_and_breaks_without_rewriting_construction(
         age: 0.0,
         from_player: true,
         drop_item: None,
+        preparation_payload: None,
         owner: 7,
     });
     assert!(world.tick_projectiles(&players, 0.05).is_empty());

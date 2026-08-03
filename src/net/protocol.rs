@@ -9,7 +9,7 @@ use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 37;
+pub const PROTOCOL: u32 = 38;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -498,6 +498,20 @@ pub enum C2S {
         action: crate::implements::FrameAction,
         expected_revision: Option<u64>,
     },
+    /// One reliable, revision-guarded apparatus intent. The host supplies the
+    /// stable actor identity and reconstructs inventory, liquid, time, and
+    /// ledger consequences; none of those quantities are trusted here.
+    OperateAlchemy {
+        pos: BlockPos,
+        expected_revision: Option<u64>,
+        action: crate::alchemy::ApparatusAction,
+    },
+    /// Apply one stable preparation container from authoritative inventory.
+    /// The target is intent only; the host resolves the saved dose/effect.
+    UsePreparation {
+        slot: u8,
+        target: crate::alchemy::AlchemyTarget,
+    },
     /// A wand/ritual request contains no trusted cost or mutation state. The
     /// host reconstructs raycasts, held identity, targets, ledgers, and phase.
     OperateWorking {
@@ -661,6 +675,20 @@ pub enum S2C {
         pos: BlockPos,
         result: crate::implements::FrameResult,
     },
+    AlchemyResult {
+        pos: BlockPos,
+        result: crate::alchemy::AlchemyResult,
+    },
+    PreparationResult(crate::alchemy::PreparationUseResult),
+    /// The receiving player's own approved, qualitative active modifiers.
+    /// Exact charge mixtures and other actors' statuses never cross the wire.
+    PreparationState {
+        modifiers: crate::alchemy::PreparationModifiers,
+        bodily_dross: u64,
+    },
+    /// Interest-managed public apparatus/application cue. It intentionally
+    /// contains no exact private mixture, hidden status, or inventory data.
+    AlchemyEvent(crate::alchemy::AlchemyCue),
     /// Interest-managed presentation of another actor's authoritative
     /// implement operation. It contains no private charge mixture or
     /// provenance; the normal player snapshot remains the held-model source.

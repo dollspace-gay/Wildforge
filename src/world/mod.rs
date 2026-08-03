@@ -22,6 +22,7 @@ use crate::worldgen::Generator;
 /// collide with ordinary projectile ids and still round-trip through TOML.
 const LOOSE_ITEM_ID_BASE: u64 = 1u64 << 62;
 
+mod alchemy;
 mod calendar;
 mod chunks;
 mod discovery;
@@ -917,6 +918,9 @@ pub struct World {
     /// Host-owned multi-tick magical transactions. Each active id has exact
     /// Current custody in `ArcaneOwner::Working` and survives unload/restart.
     pub(crate) workings_state: Option<crate::workings::WorkingsState>,
+    /// Exact apparatus, batch, vessel, and timed preparation state. The host
+    /// owns this sidecar; guests receive only bounded station/status cues.
+    pub(crate) alchemy_state: Option<crate::alchemy::AlchemyState>,
     /// Sparse exact temperature/dross carriers for detailed water touched by
     /// conservative magical transfer. Ordinary untouched water derives its
     /// baseline temperature from weather and costs no per-voxel allocation.
@@ -1312,6 +1316,14 @@ impl World {
             })
             .ok()
         });
+        let alchemy_state = authority_atlas.and_then(|_| {
+            crate::alchemy::AlchemyState::load_or_initialize(&save_dir, reg.content_hash)
+                .map_err(|error| {
+                    eprintln!("alchemy: could not open state: {error}");
+                    error
+                })
+                .ok()
+        });
         let water_carriers = authority_atlas.and_then(|_| {
             crate::workings::WaterCarrierState::load_or_initialize(&save_dir)
                 .map_err(|error| {
@@ -1332,6 +1344,7 @@ impl World {
             discovery_state,
             implements_state,
             workings_state,
+            alchemy_state,
             water_carriers,
             weather_override: None,
             remote_weather_side: 0,
@@ -1875,6 +1888,19 @@ impl World {
             return false;
         }
         if self
+            .alchemy_state
+            .as_ref()
+            .is_some_and(|state| state.containers.contains_key(&stack.arcane_id))
+        {
+            if let Err(error) = self.destroy_preparation_container_at(at, stack, reason) {
+                eprintln!("alchemy: destructive container settlement failed: {error}");
+            }
+            // The exact dose sidecar owns both its ingredient and vessel
+            // vectors, even if settlement reported a recoverable error. Do
+            // not let the generic item-material path double-count either.
+            return true;
+        }
+        if self
             .implements_state
             .as_ref()
             .is_some_and(|state| state.instance(stack.arcane_id).is_some())
@@ -2354,6 +2380,34 @@ impl World {
             .unwrap_or(0);
         let block_definition = self.reg.block(block);
         let held_tool_kind = tool.and_then(|item| self.reg.item(item).tool.map(|tool| tool.0));
+        let alchemy_apparatus = matches!(
+            block_definition.interaction.as_deref(),
+            Some("alchemy_mortar" | "alchemy_basin" | "alchemy_alembic" | "alchemy_filter")
+        );
+        let release_alchemy_installation = if alchemy_apparatus {
+            let installed = self
+                .alchemy_state
+                .as_ref()
+                .and_then(|state| state.apparatus.get(&pos));
+            if installed.is_some_and(|apparatus| {
+                apparatus.batch.is_some()
+                    || !apparatus.residue_materials.is_empty()
+                    || apparatus.filter_burden != 0
+                    || apparatus.filter_medium.is_some()
+            }) || self
+                .alchemy_state
+                .as_ref()
+                .is_some_and(|state| state.ordinary_jobs.contains_key(&pos))
+            {
+                // A pick swing cannot orphan conserved liquid, residue,
+                // filter, or a timed carrier job. The player must drain and
+                // clean it first.
+                return None;
+            }
+            installed.is_some()
+        } else {
+            false
+        };
         let breaking_binding_frame =
             block_definition.interaction.as_deref() == Some("binding_frame");
         let controlled_frame_break = award_drop
@@ -2661,6 +2715,11 @@ impl World {
             self.add_ire_at_surface(pos.surface(), cost);
         }
         let was_heart = self.reg.block(block).name.starts_with("base:heart_");
+        if release_alchemy_installation && let Some(state) = &mut self.alchemy_state {
+            // A clean empty installation has no conserved contents. Its
+            // sidecar identity is released with the ordinary block edit.
+            state.apparatus.remove(&pos);
+        }
         self.set_block_at(pos, if leaves_bud { block } else { AIR });
         if let Some(stack) = &mut drop
             && self.reg.item(stack.item).arcane.is_some()

@@ -210,6 +210,9 @@ pub enum ArcaneOwner {
     Mob(u64),
     Player([u8; 16]),
     Working(u64),
+    /// Host-owned preparation batch or timed bodily status. The id is
+    /// durable in `alchemy.wfa`; it is not a client-forgeable item identity.
+    Alchemy(u64),
     Dross {
         region: AtlasPos,
         medium: DrossMedium,
@@ -222,6 +225,8 @@ pub enum ArcaneOwner {
     /// harvesting transformer tissue never launders contamination into clean
     /// bound Current.
     ItemDross(u64),
+    /// Dross still physically held by an alchemical batch or active status.
+    AlchemyDross(u64),
 }
 
 impl ArcaneOwner {
@@ -233,10 +238,10 @@ impl ArcaneOwner {
             Self::Heart(_) | Self::Block { .. } | Self::Item(_) | Self::Player(_) => {
                 Reservoir::Bound
             }
-            Self::Mob(_) | Self::Working(_) => Reservoir::Active,
+            Self::Mob(_) | Self::Working(_) | Self::Alchemy(_) => Reservoir::Active,
             Self::Dross { .. } => Reservoir::Dross,
             Self::Scar(_) => Reservoir::Scar,
-            Self::ItemDross(_) => Reservoir::Dross,
+            Self::ItemDross(_) | Self::AlchemyDross(_) => Reservoir::Dross,
         }
     }
 
@@ -250,10 +255,12 @@ impl ArcaneOwner {
             Self::Mob(_) => "mob",
             Self::Player(_) => "player",
             Self::Working(_) => "working",
+            Self::Alchemy(_) => "alchemy",
             Self::Dross { .. } => "dross",
             Self::Scar(_) => "scar",
             Self::Geography => "geography",
             Self::ItemDross(_) => "item_dross",
+            Self::AlchemyDross(_) => "alchemy_dross",
         }
     }
 }
@@ -1539,6 +1546,47 @@ impl ArcaneLedger {
         Ok(recovered)
     }
 
+    /// Alchemy owns its own durable transient census. A crash before the
+    /// sidecar replacement can leave a journaled owner without a batch or
+    /// status; recover that custody to Deep instead of inventing a batch.
+    pub(crate) fn reconcile_alchemy_owners(
+        &mut self,
+        active_alchemy: &BTreeSet<u64>,
+    ) -> Result<usize, ArcaneError> {
+        let orphaned = self
+            .accounts
+            .keys()
+            .filter(|owner| match owner {
+                ArcaneOwner::Alchemy(id) | ArcaneOwner::AlchemyDross(id) => {
+                    !active_alchemy.contains(id)
+                }
+                _ => false,
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let recovered = orphaned.len();
+        for owner in orphaned {
+            if self
+                .accounts
+                .get(&owner)
+                .is_some_and(|account| account.current.is_empty())
+            {
+                self.accounts.remove(&owner);
+            } else {
+                self.move_all(
+                    owner,
+                    ArcaneOwner::Deep,
+                    "crash recovery rolled back an undurable alchemy owner",
+                )?;
+            }
+        }
+        if recovered != 0 {
+            self.save()?;
+            eprintln!("arcane: recovered {recovered} undurable alchemy accounts");
+        }
+        Ok(recovered)
+    }
+
     pub(crate) fn item_matches(&self, id: u64, content_id: &str) -> bool {
         let accounts = [
             self.accounts.get(&ArcaneOwner::Item(id)),
@@ -2406,6 +2454,7 @@ fn validate_linked_path(file: &LinkedFileReplacement) -> Result<(), ArcaneError>
         ),
         "implements" => file.relative_path == crate::implements::IMPLEMENTS_FILE,
         "workings" => file.relative_path == crate::workings::WORKINGS_FILE,
+        "alchemy" => file.relative_path == crate::alchemy::ALCHEMY_FILE,
         "loose_items" => file.relative_path == "loose-items.toml",
         _ => false,
     };
@@ -2528,7 +2577,7 @@ fn decode_frames(bytes: &[u8]) -> (Vec<ArcaneDelta>, usize, bool) {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct DurableItemStatus {
+pub struct DurableItemStatus {
     pub item_accounts: usize,
     pub durable_references: usize,
     pub orphan_accounts: usize,
@@ -2867,12 +2916,18 @@ pub fn audit_world(world: &Path) -> Result<ArcaneAudit, ArcaneError> {
     let active_workings = crate::workings::WorkingsState::load(world)
         .map_err(|error| ArcaneError::Corrupt(error.to_string()))?
         .map_or_else(BTreeSet::new, |state| state.active_ids());
+    let active_alchemy = crate::alchemy::AlchemyState::load_existing(world)
+        .map_err(|error| ArcaneError::Corrupt(error.to_string()))?
+        .map_or_else(BTreeSet::new, |state| state.active_arcane_ids());
     audit.dormant_transient_accounts = ledger
         .accounts
         .keys()
         .filter(|owner| match owner {
             ArcaneOwner::Mob(_) => true,
             ArcaneOwner::Working(id) => !active_workings.contains(id),
+            ArcaneOwner::Alchemy(id) | ArcaneOwner::AlchemyDross(id) => {
+                !active_alchemy.contains(id)
+            }
             _ => false,
         })
         .count();

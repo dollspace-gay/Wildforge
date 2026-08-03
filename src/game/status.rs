@@ -72,8 +72,44 @@ impl Game {
                 )
                 .unwrap_or(crate::identity::PlayerId([0; 16]))
                 .0;
+                let pack_temperature_millic = (self
+                    .server
+                    .world
+                    .weather_at_surface(self.player.pos.surface())
+                    .temperature_c
+                    * 1_000.0)
+                    .round()
+                    .clamp(i32::MIN as f32, i32::MAX as f32)
+                    as i32;
+                let sweep_ticks = (SWEEP * 20.0).round() as u64;
                 let mut age = |slot: Option<usize>, s: &mut Option<ItemStack>| {
                     let Some(st) = s else { return };
+                    if st.arcane_id != 0 {
+                        let holdfast_step = slot.map_or(step, |slot| {
+                            self.server.world.holdfast_age_step(
+                                actor,
+                                slot,
+                                *st,
+                                step,
+                                SWEEP as u32,
+                            )
+                        });
+                        let ordinary_age_ticks = sweep_ticks
+                            .saturating_mul(u64::from(holdfast_step))
+                            .div_ceil(u64::from(step.max(1)));
+                        match self.server.world.age_preparation_storage(
+                            *st,
+                            pack_temperature_millic,
+                            ordinary_age_ticks,
+                        ) {
+                            Ok(Some(_)) => return,
+                            Ok(None) => {}
+                            Err(error) => {
+                                eprintln!("alchemy: carried storage aging failed: {error}");
+                                return;
+                            }
+                        }
+                    }
                     let full = reg.item(st.item).durability;
                     let food = reg.item(st.item).food.is_some();
                     let viable_seed = reg.item(st.item).name.ends_with("_seed");
@@ -83,7 +119,7 @@ impl Game {
                     if st.durability == 0 {
                         st.durability = full;
                     } else {
-                        let actual_step = slot.map_or(step, |slot| {
+                        let holdfast_step = slot.map_or(step, |slot| {
                             self.server.world.holdfast_age_step(
                                 actor,
                                 slot,
@@ -92,6 +128,15 @@ impl Game {
                                 SWEEP as u32,
                             )
                         });
+                        let actual_step = if st.arcane_id == 0 {
+                            holdfast_step
+                        } else {
+                            self.server.world.coated_specimen_age_advance(
+                                st.arcane_id,
+                                u64::from(holdfast_step),
+                                pack_temperature_millic,
+                            ) as u32
+                        };
                         if st.durability > actual_step {
                             st.durability -= actual_step;
                             return;
@@ -138,6 +183,47 @@ impl Game {
         }
         let maxh = self.max_health();
         self.survival.health = self.survival.health.min(maxh);
+        if self.multiplayer.remote.is_none() {
+            self.survival.alchemy_accum += dt;
+            if self.survival.alchemy_accum >= 1.0 {
+                self.survival.alchemy_accum %= 1.0;
+                if let Some(actor_pos) = self.player.pos.block() {
+                    let actor = crate::identity::local_player_id(
+                        &self.server.world.save_dir_for_saving(),
+                        self.identity.device_id(),
+                    )
+                    .unwrap_or(crate::identity::PlayerId([0; 16]));
+                    let physiology = crate::alchemy::PreparationPhysiology {
+                        health: self.survival.health,
+                        max_health: maxh,
+                        hunger: self.survival.hunger,
+                        nutrition: self.survival.nutrition,
+                        strain: 0.0,
+                        bodily_dross: self.survival.bodily_dross,
+                    };
+                    match self
+                        .server
+                        .world
+                        .tick_preparation_statuses(actor.0, actor_pos, physiology)
+                    {
+                        Ok(result) => {
+                            self.survival.health = result.physiology.health;
+                            self.survival.hunger = result.physiology.hunger;
+                            self.survival.nutrition = result.physiology.nutrition;
+                            self.survival.bodily_dross = result.physiology.bodily_dross;
+                            self.survival.preparation_modifiers = result.modifiers;
+                            for cue in result.cues {
+                                if let Some(session) = &self.multiplayer.host {
+                                    session.broadcast_alchemy_cue(cue.clone());
+                                }
+                                self.present_alchemy_cue(cue);
+                            }
+                        }
+                        Err(error) => eprintln!("alchemy status update failed: {error}"),
+                    }
+                }
+            }
+        }
         // Food-gated regen (replaces free idle regen). Raw pitchblende
         // in your pack quietly pauses it — a whisper, not a mechanic;
         // ground powder and fired glass are safe.

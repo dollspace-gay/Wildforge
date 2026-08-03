@@ -1022,6 +1022,12 @@ impl World {
             .as_ref()
             .map_or(Ok(()), |state| state.save().map_err(std::io::Error::other));
         report.record("working transaction state", path, workings_result);
+        let path = self.save_dir.join(crate::alchemy::ALCHEMY_FILE);
+        let alchemy_result = self
+            .alchemy_state
+            .as_ref()
+            .map_or(Ok(()), |state| state.save().map_err(std::io::Error::other));
+        report.record("alchemy state", path, alchemy_result);
         let path = self.save_dir.join(crate::workings::WATER_CARRIERS_FILE);
         let carrier_result = self
             .water_carriers

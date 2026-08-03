@@ -90,6 +90,9 @@ pub struct Agent {
     last_knowledge_text: Option<String>,
     last_binding_frame: Option<(crate::planet::BlockPos, crate::implements::FrameResult)>,
     binding_revisions: HashMap<crate::planet::BlockPos, u64>,
+    last_alchemy_result: Option<(crate::planet::BlockPos, crate::alchemy::AlchemyResult)>,
+    alchemy_revisions: HashMap<crate::planet::BlockPos, u64>,
+    last_preparation_result: Option<crate::alchemy::PreparationUseResult>,
     last_working_result: Option<crate::workings::WorkingResult>,
     active_working_request: Option<(String, u64, crate::workings::WorkingTargetIntent)>,
     pub behavior: Behavior,
@@ -176,6 +179,9 @@ impl Agent {
             last_knowledge_text: None,
             last_binding_frame: None,
             binding_revisions: HashMap::new(),
+            last_alchemy_result: None,
+            alchemy_revisions: HashMap::new(),
+            last_preparation_result: None,
             last_working_result: None,
             active_working_request: None,
             behavior: Behavior::Idle,
@@ -563,6 +569,29 @@ impl Agent {
                 self.binding_revisions.insert(pos, result.revision);
                 self.last_binding_frame = Some((pos, result));
             }
+            net::S2C::AlchemyResult { pos, result } => {
+                self.event(format!("alchemy at {pos:?}: {}", result.cue.message));
+                self.alchemy_revisions.insert(pos, result.revision);
+                self.last_alchemy_result = Some((pos, result));
+            }
+            net::S2C::PreparationResult(result) => {
+                self.event(format!("preparation: {}", result.message));
+                self.last_preparation_result = Some(result);
+            }
+            net::S2C::PreparationState {
+                modifiers,
+                bodily_dross,
+            } => {
+                if modifiers.storm_warning || modifiers.trace_sight != 0 || bodily_dross != 0 {
+                    self.event(format!(
+                        "preparation state: trace {}, throughput {}/1000, bodily dross {bodily_dross}",
+                        modifiers.trace_sight, modifiers.throughput_permille
+                    ));
+                }
+            }
+            net::S2C::AlchemyEvent(cue) => {
+                self.event(format!("alchemy cue {:?}: {}", cue.kind, cue.message));
+            }
             net::S2C::Hit { dmg, from: _ } => {
                 self.health -= dmg;
                 self.event(format!(
@@ -669,6 +698,7 @@ impl Agent {
                                 age: snap.age,
                                 from_player: false,
                                 drop_item: None,
+                                preparation_payload: None,
                                 owner: 0,
                             })
                             .collect(),

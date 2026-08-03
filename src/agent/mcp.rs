@@ -383,6 +383,51 @@ fn tool_schemas() -> Vec<Value> {
             &["face", "u", "y", "v", "action"],
         ),
         tool(
+            "alchemy",
+            "Use the ordinary host-authoritative laboratory actions: inspect/begin/grind/transfer/load/heat/agitate/advance/charge/sample/decant/clean/repair/drain/dismantle/ferment/press, or drink/apply one stable preparation.",
+            {
+                let mut fields = pos().as_object().cloned().unwrap_or_default();
+                fields.insert("action".into(), s("inspect | begin | grind | transfer | load | media | heat | agitate | advance | charge | sample | decant | clean | repair | drain | dismantle | ferment | press | use"));
+                fields.insert(
+                    "preparation".into(),
+                    s("qualified recipe id for begin, or preparation item for use"),
+                );
+                fields.insert(
+                    "item".into(),
+                    s("held ingredient/carrier/vessel/water/seed/charge vessel"),
+                );
+                fields.insert("filter".into(), s("optional filter item for clean"));
+                fields.insert("wheat".into(), s("wheat item for ferment"));
+                fields.insert("berry".into(), s("berry item for ferment"));
+                fields.insert(
+                    "destination".into(),
+                    json!({"type": "object", "properties": pos()}),
+                );
+                fields.insert(
+                    "target_pos".into(),
+                    json!({"type": "object", "properties": pos()}),
+                );
+                fields.insert("target".into(), s("self | plot | surface | item for use"));
+                fields.insert("target_item".into(), s("stable carried item to wash/coat"));
+                fields.insert(
+                    "step".into(),
+                    s("heat | agitate | settle | distill | filter | cool"),
+                );
+                fields.insert("agitation".into(), s("still | stirred | shaken"));
+                fields.insert("route".into(), s("soil | runoff | air | sealed_waste"));
+                fields.insert(
+                    "temperature_millic".into(),
+                    json!({"type": "integer", "minimum": -50000, "maximum": 250000}),
+                );
+                fields.insert(
+                    "units".into(),
+                    json!({"type": "integer", "minimum": 0, "maximum": 65536}),
+                );
+                Value::Object(fields)
+            },
+            &["face", "u", "y", "v", "action"],
+        ),
+        tool(
             "working",
             "Aim, start, hold, release, or cancel the same host-authoritative wand workings and constructed rituals available to players. Start needs a target kind and any relevant physical target; later intents continue the active request.",
             json!({
@@ -655,6 +700,141 @@ fn call_tool(agent: &mut Agent, name: &str, args: &Value) -> String {
             (Err(error), _) => error,
             _ => need.into(),
         },
+        "alchemy" => {
+            use crate::alchemy::{
+                AgitationKind, AlchemyTarget, ApparatusAction, DisposalRoute, ProcessStep,
+            };
+            let pos = match planetary_pos(args) {
+                Ok(pos) => pos,
+                Err(error) => return error,
+            };
+            let Some(action_name) = gs("action") else {
+                return "missing alchemy action".into();
+            };
+            let route = || match gs("route").as_deref() {
+                Some("soil") => Ok(DisposalRoute::Soil),
+                Some("runoff") => Ok(DisposalRoute::Runoff),
+                Some("air") => Ok(DisposalRoute::Air),
+                Some("sealed_waste") => Ok(DisposalRoute::SealedWaste),
+                _ => Err("missing or unknown disposal route".to_string()),
+            };
+            let step = || match gs("step").as_deref() {
+                Some("heat") => Ok(ProcessStep::Heat),
+                Some("agitate") => Ok(ProcessStep::Agitate),
+                Some("settle") => Ok(ProcessStep::Settle),
+                Some("distill") => Ok(ProcessStep::Distill),
+                Some("filter") => Ok(ProcessStep::Filter),
+                Some("cool") => Ok(ProcessStep::Cool),
+                _ => Err("missing or unknown process step".to_string()),
+            };
+            if action_name == "use" {
+                let Some(preparation) = gs("preparation") else {
+                    return "use needs a preparation item".into();
+                };
+                let target = match gs("target").as_deref().unwrap_or("self") {
+                    "self" => Ok(AlchemyTarget::SelfActor),
+                    "plot" => args
+                        .get("target_pos")
+                        .ok_or_else(|| "plot use needs target_pos".to_string())
+                        .and_then(planetary_pos)
+                        .map(AlchemyTarget::Plot),
+                    "surface" => args
+                        .get("target_pos")
+                        .ok_or_else(|| "surface use needs target_pos".to_string())
+                        .and_then(planetary_pos)
+                        .map(AlchemyTarget::Surface),
+                    "item" => gs("target_item")
+                        .ok_or_else(|| "item use needs target_item".to_string())
+                        .and_then(|name| agent.named_slot(&name))
+                        .and_then(|slot| {
+                            agent.inventory.slots[slot]
+                                .filter(|stack| stack.count == 1 && stack.arcane_id != 0)
+                                .map(|stack| AlchemyTarget::Item(stack.arcane_id))
+                                .ok_or_else(|| "target item needs one stable identity".to_string())
+                        }),
+                    _ => Err("unknown preparation target".to_string()),
+                };
+                return target
+                    .and_then(|target| agent.apply_preparation(&preparation, target))
+                    .unwrap_or_else(|error| error);
+            }
+            let held = gs("item");
+            let action = match action_name.as_str() {
+                "inspect" => Ok(ApparatusAction::Inspect),
+                "begin" => gs("preparation")
+                    .ok_or_else(|| "begin needs preparation".to_string())
+                    .map(|preparation_id| ApparatusAction::Begin { preparation_id }),
+                "grind" => Ok(ApparatusAction::Grind { inventory_slot: 0 }),
+                "transfer" => args
+                    .get("destination")
+                    .ok_or_else(|| "transfer needs destination".to_string())
+                    .and_then(planetary_pos)
+                    .map(|destination| ApparatusAction::TransferMash { destination }),
+                "load" => Ok(ApparatusAction::LoadCarrier { inventory_slot: 0 }),
+                "media" => Ok(ApparatusAction::LoadFilter { inventory_slot: 0 }),
+                "heat" => args
+                    .get("temperature_millic")
+                    .and_then(Value::as_i64)
+                    .and_then(|value| i32::try_from(value).ok())
+                    .ok_or_else(|| "heat needs temperature_millic".to_string())
+                    .map(|temperature_millic| ApparatusAction::SetHeat { temperature_millic }),
+                "agitate" => match gs("agitation").as_deref() {
+                    Some("still") => Ok(AgitationKind::Still),
+                    Some("stirred") => Ok(AgitationKind::Stirred),
+                    Some("shaken") => Ok(AgitationKind::Shaken),
+                    _ => Err("agitate needs still, stirred, or shaken".to_string()),
+                }
+                .map(|agitation| ApparatusAction::SetAgitation { agitation }),
+                "advance" => step().map(|step| ApparatusAction::Advance { step }),
+                "charge" => args
+                    .get("units")
+                    .and_then(Value::as_u64)
+                    .ok_or_else(|| "charge needs units".to_string())
+                    .map(|units| ApparatusAction::Charge {
+                        inventory_slot: held.as_ref().map(|_| 0),
+                        units,
+                    }),
+                "sample" => Ok(ApparatusAction::Sample),
+                "decant" => Ok(ApparatusAction::Decant { vessel_slot: 0 }),
+                "clean" => gs("filter")
+                    .map(|name| agent.named_slot(&name).map(|slot| slot as u8))
+                    .transpose()
+                    .map(|filter_slot| ApparatusAction::Clean {
+                        water_slot: 0,
+                        filter_slot,
+                    }),
+                "repair" => Ok(ApparatusAction::Repair { material_slot: 0 }),
+                "drain" => route().map(|route| ApparatusAction::Drain { route }),
+                "dismantle" => route().map(|route| ApparatusAction::Dismantle { route }),
+                "ferment" => match (held.as_deref(), gs("wheat"), gs("berry")) {
+                    (Some(water), Some(wheat), Some(berry)) => agent
+                        .named_slot(water)
+                        .and_then(|water_slot| {
+                            Ok((
+                                water_slot,
+                                agent.named_slot(&wheat)?,
+                                agent.named_slot(&berry)?,
+                            ))
+                        })
+                        .map(|(water_slot, wheat_slot, berry_slot)| {
+                            ApparatusAction::FermentAlcohol {
+                                water_slot: water_slot as u8,
+                                wheat_slot: wheat_slot as u8,
+                                berry_slot: berry_slot as u8,
+                            }
+                        }),
+                    _ => Err("ferment needs item (water), wheat, and berry".to_string()),
+                },
+                "press" => Ok(ApparatusAction::PressOil { seed_slot: 0 }),
+                _ => Err("unknown alchemy action".to_string()),
+            };
+            match action {
+                Ok(action) => agent
+                    .operate_alchemy(pos, action, held.as_deref())
+                    .unwrap_or_else(|error| error),
+                Err(error) => error,
+            }
+        }
         "working" => {
             let Some(working) = gs("working") else {
                 return "missing working id".into();

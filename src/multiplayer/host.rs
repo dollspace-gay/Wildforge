@@ -80,6 +80,7 @@ pub struct Guest {
     pub health: f32,
     pub hunger: f32,
     pub nutrition: [f32; 5],
+    pub bodily_dross: u64,
     pub spawn: EntityPos,
     pub pitch: f32,
     pub hotbar: usize,
@@ -202,6 +203,7 @@ pub enum HostFx {
         visual: Option<crate::implements::ImplementVisual>,
     },
     WorkingEvent(crate::workings::WorkingCue),
+    AlchemyEvent(crate::alchemy::AlchemyCue),
     /// Everyone slept: the host's own dawn side-effects should run.
     AllSlept,
 }
@@ -654,6 +656,66 @@ impl HostSession {
                 }
             }
         }
+        if self.state_timer + dt >= 1.0 {
+            let mut status_cues = Vec::new();
+            for (id, guest) in &mut self.guests {
+                if !guest.entry_ready {
+                    continue;
+                }
+                let Some(actor_pos) = guest.pos.block() else {
+                    continue;
+                };
+                let max_health = 14.0
+                    + guest
+                        .nutrition
+                        .iter()
+                        .filter(|&&value| value >= 40.0)
+                        .count() as f32
+                        * 2.0;
+                let physiology = crate::alchemy::PreparationPhysiology {
+                    health: guest.health,
+                    max_health,
+                    hunger: guest.hunger,
+                    nutrition: guest.nutrition,
+                    strain: 0.0,
+                    bodily_dross: guest.bodily_dross,
+                };
+                match server.world.tick_preparation_statuses(
+                    guest.player_id.0,
+                    actor_pos,
+                    physiology,
+                ) {
+                    Ok(result) => {
+                        guest.health = result.physiology.health;
+                        guest.hunger = result.physiology.hunger;
+                        guest.nutrition = result.physiology.nutrition;
+                        guest.bodily_dross = result.physiology.bodily_dross;
+                        self.net.send(
+                            *id,
+                            &S2C::PreparationState {
+                                modifiers: result.modifiers,
+                                bodily_dross: guest.bodily_dross,
+                            },
+                        );
+                        status_cues.extend(result.cues);
+                    }
+                    Err(error) => eprintln!(
+                        "alchemy: status update for {} failed: {error}",
+                        guest.player_id
+                    ),
+                }
+            }
+            for cue in status_cues {
+                for (observer, guest) in &self.guests {
+                    if guest.entry_ready
+                        && guest.pos.horizontal_distance_to(cue.pos.entity_center()) <= 96.0
+                    {
+                        self.net.send(*observer, &S2C::AlchemyEvent(cue.clone()));
+                    }
+                }
+                fx.push(HostFx::AlchemyEvent(cue));
+            }
+        }
         let out_of_range = self
             .guests
             .iter()
@@ -851,6 +913,7 @@ impl HostSession {
             let mush = reg.item_id("base:spoiled_mush");
             let mut consumed = Vec::new();
             let step = (20.0 * crate::world::FRESHNESS_PER_SEC) as u32;
+            let sweep_ticks = 20u64 * 20;
             let mut aged_guests = Vec::new();
             for (guest_id, g) in self
                 .guests
@@ -858,8 +921,40 @@ impl HostSession {
                 .filter(|(_, guest)| guest.entry_ready)
             {
                 let mut changed = false;
+                let pack_temperature_millic = (server
+                    .world
+                    .weather_at_surface(g.pos.surface())
+                    .temperature_c
+                    * 1_000.0)
+                    .round()
+                    .clamp(i32::MIN as f32, i32::MAX as f32)
+                    as i32;
                 for (slot, s) in g.inventory.slots.iter_mut().enumerate() {
                     let Some(st) = s else { continue };
+                    if st.arcane_id != 0 {
+                        let holdfast_step =
+                            server
+                                .world
+                                .holdfast_age_step(g.player_id.0, slot, *st, step, 20);
+                        let ordinary_age_ticks = sweep_ticks
+                            .saturating_mul(u64::from(holdfast_step))
+                            .div_ceil(u64::from(step.max(1)));
+                        match server.world.age_preparation_storage(
+                            *st,
+                            pack_temperature_millic,
+                            ordinary_age_ticks,
+                        ) {
+                            Ok(Some(newly_spoiled)) => {
+                                changed |= newly_spoiled;
+                                continue;
+                            }
+                            Ok(None) => {}
+                            Err(error) => {
+                                eprintln!("alchemy: guest storage aging failed: {error}");
+                                continue;
+                            }
+                        }
+                    }
                     let full = reg.item(st.item).durability;
                     let food = reg.item(st.item).food.is_some();
                     let viable_seed = reg.item(st.item).name.ends_with("_seed");
@@ -870,10 +965,19 @@ impl HostSession {
                         st.durability = full;
                         changed = true;
                     } else {
-                        let actual_step =
+                        let holdfast_step =
                             server
                                 .world
                                 .holdfast_age_step(g.player_id.0, slot, *st, step, 20);
+                        let actual_step = if st.arcane_id == 0 {
+                            holdfast_step
+                        } else {
+                            server.world.coated_specimen_age_advance(
+                                st.arcane_id,
+                                u64::from(holdfast_step),
+                                pack_temperature_millic,
+                            ) as u32
+                        };
                         if st.durability > actual_step {
                             st.durability -= actual_step;
                             changed = true;
@@ -1435,6 +1539,7 @@ impl HostSession {
                 health: runtime.health,
                 hunger: runtime.hunger,
                 nutrition: runtime.nutrition,
+                bodily_dross: runtime.bodily_dross,
                 spawn: runtime.spawn,
                 pitch: runtime.pitch,
                 hotbar: runtime.hotbar,
@@ -1496,6 +1601,10 @@ impl HostSession {
 
     pub fn broadcast_working_cue(&self, cue: crate::workings::WorkingCue) {
         self.broadcast_ready(&S2C::WorkingEvent(cue));
+    }
+
+    pub fn broadcast_alchemy_cue(&self, cue: crate::alchemy::AlchemyCue) {
+        self.broadcast_ready(&S2C::AlchemyEvent(cue));
     }
 
     /// Kick a guest and refuse them for the rest of the session.
@@ -1754,6 +1863,16 @@ impl HostSession {
                     }
                 }
             }
+            if let Some(actor_pos) = guest.pos.block().or_else(|| guest.spawn.block())
+                && let Err(error) = server
+                    .world
+                    .settle_preparations_on_death(guest.player_id.0, actor_pos)
+            {
+                eprintln!(
+                    "alchemy: hosted death settlement for {} failed: {error}",
+                    guest.player_id
+                );
+            }
             let mut lost = guest.inventory.drain();
             lost.extend(guest.armor.iter_mut().filter_map(Option::take));
             lost.extend(guest.cursor.take());
@@ -1901,7 +2020,10 @@ impl HostSession {
         }
         let implement_observers = if matches!(
             &msg,
-            C2S::OperateBindingFrame { .. } | C2S::OperateWorking { .. }
+            C2S::OperateBindingFrame { .. }
+                | C2S::OperateWorking { .. }
+                | C2S::OperateAlchemy { .. }
+                | C2S::UsePreparation { .. }
         ) {
             self.guests
                 .iter()
@@ -3068,6 +3190,104 @@ impl HostSession {
                     }
                 }
             }
+            C2S::OperateAlchemy {
+                pos,
+                expected_revision,
+                action,
+            } => {
+                if guest.action_cooldown > 0.0
+                    || !discovery_reachable(&server.world, guest, pos)
+                    || !matches!(
+                        server
+                            .world
+                            .reg
+                            .block(server.world.get_block_at(pos))
+                            .interaction
+                            .as_deref(),
+                        Some(
+                            "alchemy_mortar"
+                                | "alchemy_basin"
+                                | "alchemy_alembic"
+                                | "alchemy_filter"
+                        )
+                    )
+                {
+                    return;
+                }
+                let request = crate::alchemy::AlchemyRequest {
+                    actor: guest.player_id.0,
+                    actor_label: guest.name.clone(),
+                    expected_revision,
+                    action,
+                };
+                match server
+                    .world
+                    .operate_alchemy(pos, &mut guest.inventory, request)
+                {
+                    Ok(result) => {
+                        guest.action_cooldown = 0.15;
+                        refresh_held(guest);
+                        let cue = result.cue.clone();
+                        for (observer, observer_pos) in &implement_observers {
+                            if *observer != id
+                                && observer_pos.horizontal_distance_to(cue.pos.entity_center())
+                                    <= 96.0
+                            {
+                                self.net.send(*observer, &S2C::AlchemyEvent(cue.clone()));
+                            }
+                        }
+                        fx.push(HostFx::AlchemyEvent(cue));
+                        self.net.send(id, &S2C::AlchemyResult { pos, result });
+                        self.send_player_state(id);
+                    }
+                    Err(error) => self.net.send(id, &S2C::Toast(error)),
+                }
+            }
+            C2S::UsePreparation { slot, target } => {
+                if guest.action_cooldown > 0.0 {
+                    return;
+                }
+                let Some(actor_pos) = guest.pos.block() else {
+                    return;
+                };
+                let target_is_reachable = match target {
+                    crate::alchemy::AlchemyTarget::SelfActor => true,
+                    crate::alchemy::AlchemyTarget::Plot(pos)
+                    | crate::alchemy::AlchemyTarget::Surface(pos) => {
+                        discovery_reachable(&server.world, guest, pos)
+                    }
+                    crate::alchemy::AlchemyTarget::Item(item_id) => item_id != 0,
+                };
+                if !target_is_reachable {
+                    return;
+                }
+                match server.world.use_preparation(
+                    guest.player_id.0,
+                    &guest.name,
+                    actor_pos,
+                    &mut guest.inventory,
+                    usize::from(slot),
+                    target,
+                ) {
+                    Ok(result) => {
+                        guest.action_cooldown = 0.3;
+                        refresh_held(guest);
+                        let cue = result.cue.clone();
+                        for (observer, observer_pos) in &implement_observers {
+                            if *observer != id
+                                && observer_pos.horizontal_distance_to(cue.pos.entity_center())
+                                    <= 96.0
+                            {
+                                self.net.send(*observer, &S2C::AlchemyEvent(cue.clone()));
+                            }
+                        }
+                        fx.push(HostFx::AlchemyEvent(cue));
+                        self.net.send(id, &S2C::PreparationResult(result));
+                        self.send_player_state(id);
+                    }
+                    Err(error) => self.net.send(id, &S2C::Toast(error)),
+                }
+            }
             C2S::OperateWorking {
                 working_id,
                 held_instance,
@@ -3195,30 +3415,44 @@ impl HostSession {
                 let Some(selected) = selected else { return };
                 let def = server.world.reg.item(selected.item).clone();
                 let creative = server.world.mode == "creative";
-                let (speed, damage, tile, drop_item) = if let Some(bow) = def.bow {
-                    let Some(ammo) =
-                        take_ammo(&mut guest.inventory, &server.world.reg, "arrow", creative)
-                    else {
+                let (speed, damage, tile, drop_item, preparation_payload) =
+                    if let Some(bow) = def.bow {
+                        let Some(ammo) =
+                            take_ammo(&mut guest.inventory, &server.world.reg, "arrow", creative)
+                        else {
+                            return;
+                        };
+                        let charge = charge.clamp(0.0, 1.0);
+                        if !creative {
+                            guest.inventory.wear_tool(&server.world.reg, guest.hotbar);
+                        }
+                        (
+                            bow.speed * (0.6 + 0.4 * charge),
+                            bow.damage * (0.45 + 0.55 * charge),
+                            server.world.reg.item(ammo).icon,
+                            (!creative).then_some(ammo),
+                            None,
+                        )
+                    } else if let Some(speed) = def.throw_speed {
+                        let state_bearing = selected.arcane_id != 0;
+                        let removed = if creative && !state_bearing {
+                            None
+                        } else {
+                            guest.inventory.take_one_stack(guest.hotbar)
+                        };
+                        if state_bearing && removed.is_none() {
+                            return;
+                        }
+                        (
+                            speed,
+                            0.0,
+                            def.icon,
+                            None,
+                            removed.filter(|stack| stack.arcane_id != 0),
+                        )
+                    } else {
                         return;
                     };
-                    let charge = charge.clamp(0.0, 1.0);
-                    if !creative {
-                        guest.inventory.wear_tool(&server.world.reg, guest.hotbar);
-                    }
-                    (
-                        bow.speed * (0.6 + 0.4 * charge),
-                        bow.damage * (0.45 + 0.55 * charge),
-                        server.world.reg.item(ammo).icon,
-                        (!creative).then_some(ammo),
-                    )
-                } else if let Some(speed) = def.throw_speed {
-                    if !creative {
-                        guest.inventory.take_one(guest.hotbar);
-                    }
-                    (speed, 0.0, def.icon, None)
-                } else {
-                    return;
-                };
                 guest.action_cooldown = 0.25;
                 let pos = guest
                     .pos
@@ -3234,6 +3468,7 @@ impl HostSession {
                     age: 0.0,
                     from_player: true,
                     drop_item,
+                    preparation_payload,
                     owner: id,
                 });
                 refresh_held(guest);

@@ -614,6 +614,7 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
         age: 0.0,
         from_player: true,
         drop_item: Some(arrow_item),
+        preparation_payload: None,
         owner: 0,
     });
     let far = Vec3::new(300.0, 80.0, 300.0);
@@ -656,6 +657,7 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
         age: 0.0,
         from_player: true,
         drop_item: Some(arrow_item),
+        preparation_payload: None,
         owner: 0,
     });
     for _ in 0..40 {

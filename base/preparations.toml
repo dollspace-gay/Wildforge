@@ -1,0 +1,284 @@
+schema_version = 1
+
+[[preparation]]
+id = "clear_eye_tincture"
+label = "Clear-eye Tincture"
+process = "distill"
+handler = "trace_sight"
+application = "drink"
+carrier = "alcohol"
+solvent_item = "base:fermented_alcohol"
+solvent_units = 256
+dissolved_units = 0
+ingredients = [
+  { item = "base:echo_cap_ring", count = 1, retention_permille = 760 },
+  { item = "base:rainbell_dew", count = 1, retention_permille = 880 },
+]
+charge_units = 18
+resonance = "base:echo"
+charge_rate = [1, 4]
+dross_units = 2
+steps = ["grind", "load", "heat", "charge", "distill", "cool", "filter"]
+temperature_millic = [65000, 85000]
+process_ticks = 2400
+agitation = "still"
+cleanliness_min = 820
+output_item = "base:clear_eye_tincture"
+empty_vessel = "base:glass_bottle"
+doses = 4
+dose_units = 64
+residue_item = "base:spent_mash"
+residue_count = 1
+shelf_life_ticks = 1209600
+storage_temperature_millic = [-10000, 30000]
+stack_group = "trace_sight"
+effect = { duration_ticks = 3600, recovery_ticks = 1200, strength = 120 }
+description = "Improves low-light adaptation and weak local trace visibility without revealing inventories, ore, exact hidden entities, or global state."
+
+[[preparation]]
+id = "hearth_tonic"
+label = "Hearth Tonic"
+process = "infuse"
+handler = "natural_recovery"
+application = "drink"
+carrier = "fresh_water"
+solvent_item = "base:bucket_water"
+solvent_units = 256
+dissolved_units = 0
+ingredients = [
+  { item = "base:pilgrim_root_cutting", count = 1, retention_permille = 820 },
+  { item = "base:forest_stew", count = 1, retention_permille = 900 },
+]
+charge_units = 24
+resonance = "base:root"
+charge_rate = [1, 5]
+dross_units = 3
+steps = ["grind", "load", "heat", "agitate", "charge", "settle"]
+temperature_millic = [38000, 62000]
+process_ticks = 1800
+agitation = "stirred"
+cleanliness_min = 760
+output_item = "base:hearth_tonic"
+empty_vessel = "base:glass_bottle"
+doses = 4
+dose_units = 64
+residue_item = "base:spent_mash"
+residue_count = 1
+shelf_life_ticks = 604800
+storage_temperature_millic = [-5000, 20000]
+stack_group = "natural_recovery"
+effect = { duration_ticks = 2400, recovery_ticks = 1800, strength = 8, hunger_cost_milli = 2500, nutrient_cost = 8 }
+description = "Accelerates ordinary recovery by spending hunger and nutritional reserve over time; it neither replaces food nor raises maximum health."
+
+[[preparation]]
+id = "root_wash"
+label = "Root Wash"
+process = "infuse"
+handler = "root_uptake"
+application = "plot"
+carrier = "fresh_water"
+solvent_item = "base:bucket_water"
+solvent_units = 256
+dissolved_units = 0
+ingredients = [
+  { item = "base:rainbell_dew", count = 1, retention_permille = 940 },
+  { item = "base:ember_petal", count = 1, retention_permille = 620 },
+  { item = "base:mineral_nutrient", count = 1, retention_permille = 900 },
+]
+charge_units = 20
+resonance = "base:root"
+charge_rate = [1, 4]
+dross_units = 3
+steps = ["grind", "load", "agitate", "charge", "settle"]
+temperature_millic = [10000, 35000]
+process_ticks = 1600
+agitation = "stirred"
+cleanliness_min = 700
+output_item = "base:root_wash"
+empty_vessel = "base:glass_bottle"
+doses = 4
+dose_units = 64
+residue_item = "base:mineral_sludge"
+residue_count = 1
+shelf_life_ticks = 432000
+storage_temperature_millic = [-5000, 28000]
+stack_group = "root_uptake"
+effect = { duration_ticks = 1200, recovery_ticks = 400, strength = 500, nutrient_cost = 4, water_hu = 64 }
+description = "Supplies one plot with its declared water and nutrients to improve uptake; excessive concentration burns or salts rather than creating growth."
+
+[[preparation]]
+id = "settling_draught"
+label = "Settling Draught"
+process = "infuse"
+handler = "strain_relief"
+application = "drink"
+carrier = "alcohol"
+solvent_item = "base:fermented_alcohol"
+solvent_units = 256
+dissolved_units = 0
+ingredients = [
+  { item = "base:hushwood_switch", count = 1, retention_permille = 720 },
+  { item = "base:frostlace_frond", count = 1, retention_permille = 840 },
+]
+charge_units = 28
+resonance = "base:stone"
+charge_rate = [1, 3]
+dross_units = 2
+steps = ["grind", "load", "agitate", "charge", "settle", "filter"]
+temperature_millic = [5000, 25000]
+process_ticks = 2600
+agitation = "still"
+cleanliness_min = 850
+output_item = "base:settling_draught"
+empty_vessel = "base:glass_bottle"
+doses = 4
+dose_units = 64
+residue_item = "base:spent_filter"
+residue_count = 1
+shelf_life_ticks = 1209600
+storage_temperature_millic = [-15000, 18000]
+stack_group = "strain_control"
+effect = { duration_ticks = 4800, recovery_ticks = 7200, strength = 300, throughput_permille = 750 }
+description = "Reduces bodily strain while slightly lowering maximum wand throughput; it cannot revise the dross already produced by an apparatus."
+
+[[preparation]]
+id = "ashlace_wash"
+label = "Ashlace Wash"
+process = "filter"
+handler = "dross_wash"
+application = "wash"
+carrier = "brine"
+solvent_item = "base:bucket_salt"
+solvent_units = 256
+dissolved_units = 0
+ingredients = [
+  { item = "base:ashlace_tissue", count = 1, retention_permille = 900 },
+  { item = "base:charcoal", count = 1, retention_permille = 300 },
+  { item = "base:filter_cloth", count = 1, retention_permille = 200 },
+]
+charge_units = 16
+resonance = "base:echo"
+charge_rate = [1, 3]
+dross_units = 2
+steps = ["grind", "load", "agitate", "charge", "settle", "filter"]
+temperature_millic = [5000, 35000]
+process_ticks = 2200
+agitation = "stirred"
+cleanliness_min = 780
+output_item = "base:ashlace_wash"
+empty_vessel = "base:glass_bottle"
+doses = 4
+dose_units = 64
+residue_item = "base:dross_sludge"
+residue_count = 1
+shelf_life_ticks = 864000
+storage_temperature_millic = [-5000, 26000]
+stack_group = "dross_wash"
+effect = { duration_ticks = 600, recovery_ticks = 200, strength = 100, dross_capacity = 32 }
+description = "Transfers a bounded mobile dross burden from a small target into recoverable sludge and wastewater; no Current or waste is erased."
+
+[[preparation]]
+id = "frostlace_suspension"
+label = "Frostlace Suspension"
+process = "infuse"
+handler = "preserve_specimen"
+application = "coat"
+carrier = "plant_oil"
+solvent_item = "base:plant_oil"
+solvent_units = 256
+dissolved_units = 0
+ingredients = [
+  { item = "base:frostlace_frond", count = 1, retention_permille = 920 },
+  { item = "base:nightglass_pod", count = 1, retention_permille = 760 },
+]
+charge_units = 22
+resonance = "base:stone"
+charge_rate = [1, 3]
+dross_units = 2
+steps = ["grind", "load", "agitate", "charge", "settle", "filter"]
+temperature_millic = [-10000, 12000]
+process_ticks = 2800
+agitation = "stirred"
+cleanliness_min = 840
+output_item = "base:frostlace_suspension"
+empty_vessel = "base:glass_jar"
+doses = 4
+dose_units = 64
+residue_item = "base:spent_mash"
+residue_count = 1
+shelf_life_ticks = 1728000
+storage_temperature_millic = [-30000, 12000]
+stack_group = "specimen_preservation"
+effect = { duration_ticks = 14400, recovery_ticks = 400, strength = 400, preservation_permille = 250 }
+description = "Coats one fragile seed or charged botanical specimen and slows age and leakage without resetting either or preserving bulk food economically."
+
+[[preparation]]
+id = "storm_cordial"
+label = "Storm Cordial"
+process = "distill"
+handler = "throughput_surge"
+application = "drink"
+carrier = "alcohol"
+solvent_item = "base:fermented_alcohol"
+solvent_units = 256
+dissolved_units = 0
+ingredients = [
+  { item = "base:stormvine_tendril", count = 1, retention_permille = 860 },
+  { item = "base:ember_petal", count = 1, retention_permille = 700 },
+]
+charge_units = 32
+resonance = "base:gale"
+charge_rate = [2, 5]
+dross_units = 6
+steps = ["grind", "load", "heat", "charge", "distill", "cool", "filter"]
+temperature_millic = [52000, 76000]
+process_ticks = 2000
+agitation = "shaken"
+cleanliness_min = 800
+output_item = "base:storm_cordial"
+empty_vessel = "base:glass_bottle"
+doses = 4
+dose_units = 64
+residue_item = "base:volatile_mash"
+residue_count = 1
+shelf_life_ticks = 345600
+storage_temperature_millic = [-10000, 18000]
+stack_group = "wand_throughput"
+effect = { duration_ticks = 2400, recovery_ticks = 9600, strength = 250, throughput_permille = 1250, drain_permille = 1400, overdraw_permille = 1600 }
+description = "Raises safe personal wand throughput briefly while increasing reservoir drain and forced-overdraw escalation with persistent visible and audible warnings."
+
+[[preparation]]
+id = "scouring_antidote"
+label = "Scouring Antidote"
+process = "filter"
+handler = "dross_antidote"
+application = "drink"
+carrier = "fresh_water"
+solvent_item = "base:bucket_water"
+solvent_units = 256
+dissolved_units = 0
+ingredients = [
+  { item = "base:ashlace_tissue", count = 2, retention_permille = 920 },
+  { item = "base:still_salt", count = 1, retention_permille = 700 },
+  { item = "base:charcoal", count = 1, retention_permille = 250 },
+]
+charge_units = 26
+resonance = "base:stone"
+charge_rate = [1, 4]
+dross_units = 3
+steps = ["grind", "load", "agitate", "charge", "settle", "filter"]
+temperature_millic = [8000, 32000]
+process_ticks = 3000
+agitation = "stirred"
+cleanliness_min = 900
+output_item = "base:scouring_antidote"
+empty_vessel = "base:glass_bottle"
+doses = 4
+dose_units = 64
+residue_item = "base:dross_sludge"
+residue_count = 2
+shelf_life_ticks = 864000
+storage_temperature_millic = [-5000, 22000]
+stack_group = "dross_antidote"
+effect = { duration_ticks = 3600, recovery_ticks = 7200, strength = 180, dross_capacity = 24 }
+description = "Reduces bodily dross harm by moving a bounded burden into declared sequestration and excretion paths; polluted laboratories remain dangerous."

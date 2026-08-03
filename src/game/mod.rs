@@ -123,6 +123,12 @@ struct SurvivalState {
     exhaustion_regen: f32,
     /// Accumulator for the pack's food-freshness sweep.
     perish_accum: f32,
+    /// Host-authoritative preparation effects advance at one-second cadence.
+    alchemy_accum: f32,
+    /// Personal exposure burden available to bounded antidote handlers. The
+    /// regional dross ledger remains separate and is never cleared by this.
+    bodily_dross: u64,
+    preparation_modifiers: crate::alchemy::PreparationModifiers,
     /// Seconds of slow-hunger benefit already paid for by one authoritative
     /// fixed-interval charm debit.
     hunger_charm_credit: f32,
@@ -147,6 +153,9 @@ impl SurvivalState {
             eating: 0.0,
             exhaustion_regen: 0.0,
             perish_accum: 0.0,
+            alchemy_accum: 0.0,
+            bodily_dross: 0,
+            preparation_modifiers: crate::alchemy::PreparationModifiers::default(),
             hunger_charm_credit: 0.0,
             starve_timer: 0.0,
             air: MAX_AIR,
@@ -350,6 +359,11 @@ struct InteractionState {
     /// Last authoritative revision observed for each binding frame. Reliable
     /// mutations echo a new value and stale concurrent requests are refused.
     binding_revisions: std::collections::HashMap<crate::planet::BlockPos, u64>,
+    /// Last authoritative revision observed for each alchemy installation.
+    alchemy_revisions: std::collections::HashMap<crate::planet::BlockPos, u64>,
+    /// Recipe highlighted by empty-hand mortar interaction.
+    alchemy_recipe: usize,
+    alchemy_recipe_initialized: bool,
     working: Option<LocalWorkingChannel>,
 }
 
@@ -380,6 +394,9 @@ impl Default for InteractionState {
             riding: None,
             fishing: None,
             binding_revisions: std::collections::HashMap::new(),
+            alchemy_revisions: std::collections::HashMap::new(),
+            alchemy_recipe: 0,
+            alchemy_recipe_initialized: false,
             working: None,
         }
     }
