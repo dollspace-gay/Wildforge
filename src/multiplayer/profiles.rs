@@ -557,7 +557,10 @@ mod tests {
                 .unwrap();
             profile.pos = planet_spawn(Vec3::new(8.0, 70.0, 9.0));
             let item = reg.item_id("base:torch").unwrap();
-            profile.inventory.slots[0] = Some(ItemStack::new(&reg, item, 3));
+            profile.inventory.slots[0] = Some(ItemStack {
+                arcane_id: 0xfeed_beef,
+                ..ItemStack::new(&reg, item, 1)
+            });
             store.save(&profile, &reg).unwrap();
             let stored: StoredProfile = toml::from_str(
                 &std::fs::read_to_string(
@@ -583,7 +586,8 @@ mod tests {
             .unwrap();
         assert_eq!(profile.player_id, first_id);
         assert_eq!(profile.pos.local(), Vec3::new(8.0, 70.0, 9.0));
-        assert_eq!(profile.inventory.slots[0].unwrap().count, 3);
+        assert_eq!(profile.inventory.slots[0].unwrap().count, 1);
+        assert_eq!(profile.inventory.slots[0].unwrap().arcane_id, 0xfeed_beef);
         assert_eq!(profile.display_name, "FERN");
         assert!(profile.previous_names.contains(&"MOSS".to_string()));
     }

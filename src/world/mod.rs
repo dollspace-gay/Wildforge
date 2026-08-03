@@ -27,6 +27,7 @@ mod entities;
 mod fire;
 mod fluids;
 mod hearts;
+mod implements;
 mod lighting;
 mod machine_tick;
 mod machines;
@@ -211,6 +212,11 @@ pub enum BlockEntity {
     /// A controlled trial holds its sample and calibrated reference in world
     /// custody. Experiments read these bays without consuming either.
     DiscoveryApparatus(DiscoveryApparatusState),
+    /// Physical mounts and completed output of a binding frame. Components
+    /// remain ordinary item stacks while the frame holds them.
+    BindingFrame(BindingFrameState),
+    /// The placed shell owns exactly one stable vessel item identity.
+    ChargeVessel(ChargeVesselState),
 }
 
 #[derive(Default)]
@@ -222,6 +228,33 @@ pub struct SurveyFolioState {
 pub struct DiscoveryApparatusState {
     pub sample: Option<ItemStack>,
     pub reference: Option<ItemStack>,
+}
+
+#[derive(Default)]
+pub struct BindingFrameState {
+    pub body: Option<ItemStack>,
+    pub reservoir: Option<ItemStack>,
+    pub focus: Option<ItemStack>,
+    pub binding: Option<ItemStack>,
+    pub output: Option<ItemStack>,
+    pub revision: u64,
+}
+
+impl BindingFrameState {
+    pub fn mounts(&self) -> [Option<ItemStack>; 4] {
+        [self.body, self.reservoir, self.focus, self.binding]
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.mounts().into_iter().all(|stack| stack.is_none()) && self.output.is_none()
+    }
+}
+
+#[derive(Default)]
+pub struct ChargeVesselState {
+    pub vessel: Option<ItemStack>,
+    pub damage: u16,
+    pub revision: u64,
 }
 
 #[derive(Default)]
@@ -868,6 +901,9 @@ pub struct World {
     /// Guests hold only bounded summaries; the host owns the signing key and
     /// object census beside the world's other finite ledgers.
     pub(crate) discovery_state: Option<crate::discovery::DiscoveryState>,
+    /// Physical construction, wear, and provenance for stable charge-bearing
+    /// implements. Exact Current remains in `arcane_ledger`.
+    pub(crate) implements_state: Option<crate::implements::ImplementsState>,
     /// Atlas-free unit fixtures can request a local condition explicitly.
     /// Production worlds never consult this: their weather is atlas state.
     weather_override: Option<crate::planet_atlas::LocalWeatherSample>,
@@ -882,6 +918,8 @@ pub struct World {
     /// Exact charge only for opaque item ids the host says this guest may
     /// inspect. Replaced as a bounded snapshot; never populated from clients.
     remote_arcane_items: HashMap<u64, u64>,
+    remote_implements: HashMap<u64, crate::implements::ImplementPublicState>,
+    remote_apparatus: HashMap<crate::planet::BlockPos, crate::implements::ApparatusCue>,
     pub reg: Arc<Registry>,
     #[allow(dead_code)]
     pub seed: u32,
@@ -1229,6 +1267,14 @@ impl World {
                 })
                 .ok()
         });
+        let implements_state = authority_atlas.and_then(|_| {
+            crate::implements::ImplementsState::load_or_initialize(&save_dir, reg.content_hash)
+                .map_err(|error| {
+                    eprintln!("implements: could not open state: {error}");
+                    error
+                })
+                .ok()
+        });
         World {
             chunks: HashMap::new(),
             generator,
@@ -1239,6 +1285,7 @@ impl World {
             arcane_ledger,
             arcane_geography,
             discovery_state,
+            implements_state,
             weather_override: None,
             remote_weather_side: 0,
             remote_weather: HashMap::new(),
@@ -1246,6 +1293,8 @@ impl World {
             remote_arcane_dominant: 0,
             remote_arcane_ecology: None,
             remote_arcane_items: HashMap::new(),
+            remote_implements: HashMap::new(),
+            remote_apparatus: HashMap::new(),
             reg,
             seed,
             save_dir,
@@ -1590,6 +1639,7 @@ impl World {
         self.arcane_ecology_observation_at(surface)
     }
 
+    #[cfg(test)]
     pub fn set_remote_arcane_items(&mut self, charges: Vec<(u64, u64)>) {
         self.remote_arcane_items.clear();
         self.remote_arcane_items
@@ -1608,7 +1658,7 @@ impl World {
         }
         self.arcane_ledger
             .as_ref()
-            .and_then(|ledger| ledger.item_current_total(id))
+            .and_then(|ledger| ledger.item_clean_total(id))
             .or_else(|| self.remote_arcane_items.get(&id).copied())
     }
 
@@ -1674,12 +1724,22 @@ impl World {
         at: crate::planet::BlockPos,
         stack: ItemStack,
         reason: &str,
-    ) {
+    ) -> bool {
         if stack.arcane_id == 0 {
-            return;
+            return false;
+        }
+        if self
+            .implements_state
+            .as_ref()
+            .is_some_and(|state| state.instance(stack.arcane_id).is_some())
+        {
+            if let Err(error) = self.retire_implement_at(at, stack, reason) {
+                eprintln!("implements: destructive item settlement failed: {error}");
+            }
+            return true;
         }
         let Some(atlas) = &self.planet_atlas else {
-            return;
+            return false;
         };
         let region = atlas.atlas_pos(at.surface());
         let disposition = self
@@ -1691,7 +1751,7 @@ impl World {
                 arcane.on_destroy
             });
         let Some(ledger) = &mut self.arcane_ledger else {
-            return;
+            return false;
         };
         if ledger.item_current_total(stack.arcane_id).is_none() {
             eprintln!(
@@ -1699,7 +1759,7 @@ impl World {
                 self.reg.item(stack.item).name,
                 stack.arcane_id
             );
-            return;
+            return false;
         }
         let destination = match disposition {
             crate::registry::ArcaneDisposition::Ambient => {
@@ -1723,6 +1783,7 @@ impl World {
         if let Err(error) = ledger.move_all_item(stack.arcane_id, destination, reason) {
             eprintln!("arcane: destructive item transfer failed: {error}");
         }
+        false
     }
 
     /// Charge newly discovered/generated content from the finite reserve of
@@ -1778,6 +1839,10 @@ impl World {
                     crate::arcane::ArcaneOwner::ItemDross(stack.arcane_id),
                     "sealed archaeological dross containment",
                 )
+                .map_err(std::io::Error::other)?;
+        }
+        if self.reg.item(stack.item).charm_def.is_some() {
+            self.ensure_charm_instance_at(at, stack, reason)
                 .map_err(std::io::Error::other)?;
         }
         Ok(())
@@ -2136,6 +2201,23 @@ impl World {
         let tool_tier = tool
             .and_then(|item| self.reg.item(item).tool.map(|(_, _, tier)| tier))
             .unwrap_or(0);
+        let block_definition = self.reg.block(block);
+        let held_tool_kind = tool.and_then(|item| self.reg.item(item).tool.map(|tool| tool.0));
+        let breaking_binding_frame =
+            block_definition.interaction.as_deref() == Some("binding_frame");
+        let controlled_frame_break = award_drop
+            && held_tool_kind == block_definition.tool
+            && (!block_definition.requires_tool || tool_tier >= block_definition.min_tier);
+        if block_definition.interaction.as_deref() == Some("charge_vessel")
+            && (held_tool_kind != block_definition.tool
+                || block_definition.requires_tool && tool_tier < block_definition.min_tier)
+        {
+            // A placed vessel is an embodied container, not a free inventory
+            // pickup. The correct dismantling tool returns its exact physical
+            // item/identity through the block-entity spill path; bare hands or
+            // an undersized tool leave it in place.
+            return None;
+        }
         let ecology_plan = self.arcane_geography.as_ref().and_then(|geography| {
             crate::arcane_ecology::plan_harvest(geography, &self.reg, pos, tool_tier)
         });
@@ -2207,6 +2289,13 @@ impl World {
                 None
             }
         };
+        if breaking_binding_frame
+            && let Err(error) = self.settle_binding_frame_break_at(pos, controlled_frame_break)
+        {
+            eprintln!("implements: binding-frame break cancelled at {pos:?}: {error}");
+            cancel_unapplied_material_operation(self.material_ledger.as_ref(), &material_operation);
+            return None;
+        }
         let mut arcane_harvest_handled = ecology_site_present || is_finite_resonant_mineral;
         let mut leaves_bud = false;
         if award_drop {
@@ -2526,6 +2615,11 @@ impl World {
                     .entry(pos)
                     .or_insert_with(|| BlockEntity::DiscoveryApparatus(Default::default()));
             }
+            Some("binding_frame") => {
+                self.block_entities
+                    .entry(pos)
+                    .or_insert_with(|| BlockEntity::BindingFrame(Default::default()));
+            }
             _ => {}
         }
         true
@@ -2542,6 +2636,29 @@ impl World {
         };
         if !self.place_block_at(pos, block) {
             return false;
+        }
+        if self
+            .reg
+            .item(stack.item)
+            .implement
+            .as_ref()
+            .is_some_and(|definition| {
+                definition.kind == crate::implements::ImplementItemKind::ChargeVessel
+            })
+        {
+            if stack.count != 1 {
+                self.set_block_at(pos, AIR);
+                return false;
+            }
+            self.block_entities.insert(
+                pos,
+                BlockEntity::ChargeVessel(ChargeVesselState {
+                    vessel: Some(ItemStack { count: 1, ..stack }),
+                    damage: 0,
+                    revision: 0,
+                }),
+            );
+            return true;
         }
         if self
             .reg
@@ -2720,7 +2837,7 @@ impl World {
         ledger.record_admin_stack_deletion(&reg, stack)
     }
 
-    fn block_entity_stacks(entity: &BlockEntity) -> Vec<ItemStack> {
+    pub(crate) fn block_entity_stacks(entity: &BlockEntity) -> Vec<ItemStack> {
         let mut stacks = Vec::new();
         let mut add = |slots: &[Option<ItemStack>]| {
             stacks.extend(slots.iter().flatten().copied());
@@ -2748,6 +2865,11 @@ impl World {
             }
             BlockEntity::Smoker(state) => add(&state.meat),
             BlockEntity::DiscoveryApparatus(state) => add(&[state.sample, state.reference]),
+            BlockEntity::BindingFrame(state) => {
+                add(&state.mounts());
+                add(&[state.output]);
+            }
+            BlockEntity::ChargeVessel(state) => add(&[state.vessel]),
             BlockEntity::Clamp(_)
             | BlockEntity::Sign(_)
             | BlockEntity::Steam(_)
@@ -2996,6 +3118,13 @@ impl World {
                         .flatten()
                         .collect()
                 }
+                BlockEntity::BindingFrame(frame) => frame
+                    .mounts()
+                    .into_iter()
+                    .chain([frame.output])
+                    .flatten()
+                    .collect(),
+                BlockEntity::ChargeVessel(vessel) => vessel.vessel.into_iter().collect(),
                 BlockEntity::Kiln(k) => k
                     .sand
                     .into_iter()

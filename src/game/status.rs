@@ -25,8 +25,29 @@ impl Game {
         if self.creative {
             return;
         }
-        // Activity-based hunger drain (the hunger charm slows it).
-        let charm_mult = if self.charm("hunger") { 0.85 } else { 1.0 };
+        // The hunger charm prepays one fixed five-second interval. If the
+        // debit fails or the charm depletes, no fraction of the benefit is
+        // applied and ordinary starvation resumes immediately.
+        if self.survival.hunger_charm_credit <= 0.0
+            && let Some(mut charm) = self.survival.armor[4]
+            && self.content.reg.item(charm.item).charm.as_deref() == Some("hunger")
+            && let Some(pos) = self.player.pos.block()
+            && self.server.world.debit_charm_at(
+                pos,
+                &mut charm,
+                "hunger",
+                "slow-hunger charm prepaid an active interval",
+            )
+        {
+            self.survival.armor[4] = Some(charm);
+            self.survival.hunger_charm_credit = crate::implements::HUNGER_CHARM_INTERVAL_SECS;
+        }
+        let charm_mult = if self.survival.hunger_charm_credit > 0.0 {
+            self.survival.hunger_charm_credit = (self.survival.hunger_charm_credit - dt).max(0.0);
+            crate::implements::HUNGER_CHARM_MULTIPLIER
+        } else {
+            1.0
+        };
         let mut drain = 0.01 * charm_mult;
         if input.sprint && (input.forward != 0.0 || input.strafe != 0.0) {
             drain += 0.02;
@@ -244,14 +265,17 @@ impl Game {
         let reg = self.content.reg.clone();
         for item in lost {
             let reason = item.loss_reason(&self.server.world);
-            if let Some(pos) = item.pos.block() {
+            let pos = item.pos.block();
+            let mut implement_materials_handled = false;
+            if let Some(pos) = pos {
                 let mut stack = ItemStack::new(&reg, item.item, item.count);
                 stack.durability = item.durability;
                 stack.arcane_id = item.arcane_id;
-                self.server.world.retire_arcane_stack_at(pos, stack, reason);
+                implement_materials_handled =
+                    self.server.world.retire_arcane_stack_at(pos, stack, reason);
             }
-            if let (Some(pos), Some(ledger)) =
-                (item.pos.block(), &mut self.server.world.material_ledger)
+            if let (Some(pos), Some(ledger)) = (pos, &mut self.server.world.material_ledger)
+                && !implement_materials_handled
             {
                 let mut stack = ItemStack::new(&reg, item.item, item.count);
                 if item.durability != 0 {

@@ -360,6 +360,14 @@ pub struct ItemDef {
     pub shears: bool,
     /// Passive charm effect: "quiet" | "bark" | "hunger" (one charm slot).
     pub charm: Option<String>,
+    /// Bounded authoritative charm behavior. Legacy string declarations are
+    /// upgraded into this form during registry load.
+    pub charm_def: Option<crate::implements::CharmDef>,
+    /// One physical role in a component-built wand.
+    pub wand_component: Option<crate::implements::WandComponentDef>,
+    /// A finished implement shell whose per-instance state lives in the
+    /// world's implements sidecar.
+    pub implement: Option<crate::implements::ImplementItemDef>,
     /// Right-click reads a line from the lost takers.
     pub tablet: bool,
     /// Right-click to set light to something. The one place a fire
@@ -1382,7 +1390,11 @@ struct ItemToml {
     #[serde(default)]
     shears: bool,
     #[serde(default)]
-    charm: Option<String>,
+    charm: Option<CharmToml>,
+    #[serde(default)]
+    wand_component: Option<crate::implements::WandComponentDef>,
+    #[serde(default)]
+    implement: Option<crate::implements::ImplementItemDef>,
     #[serde(default)]
     tablet: bool,
     #[serde(default)]
@@ -1412,6 +1424,47 @@ struct ItemToml {
     observation: Option<ObservationToml>,
     #[serde(default)]
     discovery: Option<DiscoveryItemToml>,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(untagged)]
+enum CharmToml {
+    Legacy(String),
+    Detailed(crate::implements::CharmDef),
+}
+
+impl CharmToml {
+    fn effect_id(&self) -> String {
+        match self {
+            Self::Legacy(effect) => effect.clone(),
+            Self::Detailed(definition) => definition.effect.id().into(),
+        }
+    }
+
+    fn definition(&self) -> Option<crate::implements::CharmDef> {
+        match self {
+            Self::Legacy(effect) => {
+                let effect = match effect.as_str() {
+                    "quiet" => crate::implements::CharmEffect::Quiet,
+                    "bark" => crate::implements::CharmEffect::Bark,
+                    "hunger" => crate::implements::CharmEffect::Hunger,
+                    _ => return None,
+                };
+                Some(crate::implements::CharmDef {
+                    effect,
+                    charge_per_trigger: match effect {
+                        crate::implements::CharmEffect::Quiet => 2,
+                        crate::implements::CharmEffect::Bark => 4,
+                        crate::implements::CharmEffect::Hunger => 1,
+                    },
+                    capacity: 4_096,
+                    stability: 800,
+                    dross_per_transfer: 25,
+                })
+            }
+            Self::Detailed(definition) => Some(definition.clone()),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -2693,6 +2746,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     bedroll: false,
                     shears: false,
                     charm: None,
+                    charm_def: None,
+                    wand_component: None,
+                    implement: None,
                     tablet: false,
                     striker: false,
                     creative_only: false,
@@ -2796,11 +2852,39 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     None
                 }
             };
+            let charm_def = it.charm.as_ref().and_then(CharmToml::definition);
+            if let Some(raw_charm) = &it.charm {
+                match &charm_def {
+                    Some(definition) => {
+                        if let Err(error) = crate::implements::validate_charm(&full, definition) {
+                            let error = error.to_string();
+                            errs.push(error.clone());
+                            reg.arcane_errors.push(error);
+                        }
+                    }
+                    None => {
+                        let error =
+                            format!("{full}: unknown charm effect {}", raw_charm.effect_id());
+                        errs.push(error.clone());
+                        reg.arcane_errors.push(error);
+                    }
+                }
+            }
+            if let Some(component) = &it.wand_component
+                && let Err(error) = crate::implements::validate_component(&full, component)
+            {
+                let error = error.to_string();
+                errs.push(error.clone());
+                reg.arcane_errors.push(error);
+            }
             let one_only = tool.is_some()
                 || it.bow.is_some()
                 || armor.is_some()
                 || arcane.is_some()
-                || discovery.is_some();
+                || discovery.is_some()
+                || charm_def.is_some()
+                || it.wand_component.is_some()
+                || it.implement.is_some();
             reg.items.push(ItemDef {
                 name: full.clone(),
                 label: it.name.clone().unwrap_or_else(|| it.id.clone()),
@@ -2823,7 +2907,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 armor,
                 bedroll: it.bedroll,
                 shears: it.shears,
-                charm: it.charm.clone(),
+                charm: it.charm.as_ref().map(CharmToml::effect_id),
+                charm_def,
+                wand_component: it.wand_component.clone(),
+                implement: it.implement.clone(),
                 tablet: it.tablet,
                 striker: it.striker,
                 creative_only: false,
@@ -3468,6 +3555,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             bedroll: false,
             shears: false,
             charm: None,
+            charm_def: None,
+            wand_component: None,
+            implement: None,
             tablet: false,
             striker: false,
             creative_only: true,
@@ -3798,6 +3888,9 @@ fn push_salvage_item(
         bedroll: false,
         shears: false,
         charm: None,
+        charm_def: None,
+        wand_component: None,
+        implement: None,
         tablet: false,
         striker: false,
         creative_only: false,
@@ -4089,7 +4182,7 @@ fn validate_arcane_graph(reg: &mut Registry) {
     let mut errors = Vec::new();
     {
         let mut charged_output = |kind: &str, index: usize, item: ItemId| {
-            if reg.item(item).arcane.is_some() {
+            if reg.item(item).arcane.is_some() && reg.item(item).implement.is_none() {
                 errors.push(format!(
                     "{kind} {index} has charged output {}; transformations cannot create Current",
                     reg.item(item).name
@@ -4225,6 +4318,9 @@ impl Registry {
                 bedroll: false,
                 shears: false,
                 charm: None,
+                charm_def: None,
+                wand_component: None,
+                implement: None,
                 tablet: false,
                 striker: false,
                 creative_only: false,
@@ -4314,6 +4410,9 @@ impl Registry {
                 bedroll: false,
                 shears: false,
                 charm: None,
+                charm_def: None,
+                wand_component: None,
+                implement: None,
                 tablet: false,
                 striker: false,
                 creative_only: false,

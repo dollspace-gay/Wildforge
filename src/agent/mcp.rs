@@ -368,6 +368,20 @@ fn tool_schemas() -> Vec<Value> {
             pos(),
             &["face", "u", "y", "v"],
         ),
+        tool(
+            "binding_frame",
+            "Use the same physical binding-frame actions as a player. Contextual mounts/retrieves/assembles from the current authoritative state; explicit actions inspect, calibrate, bind charms, transfer, discharge, disassemble, swap a focus, or repair.",
+            {
+                let mut fields = pos().as_object().cloned().unwrap_or_default();
+                fields.insert("action".into(), s("contextual | exchange | assemble | bind_charm | transfer | discharge | disassemble | swap_focus | repair | calibrate | inspect"));
+                fields.insert(
+                    "item".into(),
+                    s("optional item to hold/select before acting"),
+                );
+                Value::Object(fields)
+            },
+            &["face", "u", "y", "v", "action"],
+        ),
         tool("respawn", "Respawn after death.", json!({}), &[]),
     ]
 }
@@ -596,6 +610,32 @@ fn call_tool(agent: &mut Agent, name: &str, args: &Value) -> String {
                 .assemble_discovery_lens(pos)
                 .unwrap_or_else(|error| error),
             Err(error) => error,
+        },
+        "binding_frame" => match (planetary_pos(args), gs("action")) {
+            (Ok(pos), Some(action)) => {
+                let action = match action.as_str() {
+                    "contextual" => Some(crate::implements::FrameAction::Contextual),
+                    "exchange" => Some(crate::implements::FrameAction::ExchangeSelected),
+                    "assemble" => Some(crate::implements::FrameAction::Assemble),
+                    "bind_charm" => Some(crate::implements::FrameAction::BindCharm),
+                    "transfer" => Some(crate::implements::FrameAction::Transfer),
+                    "discharge" => Some(crate::implements::FrameAction::SafeDischarge),
+                    "disassemble" => Some(crate::implements::FrameAction::Disassemble),
+                    "swap_focus" => Some(crate::implements::FrameAction::SwapFocus),
+                    "repair" => Some(crate::implements::FrameAction::Repair),
+                    "calibrate" => Some(crate::implements::FrameAction::Calibrate),
+                    "inspect" => Some(crate::implements::FrameAction::Inspect),
+                    _ => None,
+                };
+                match action {
+                    Some(action) => agent
+                        .operate_binding_frame(pos, action, gs("item").as_deref())
+                        .unwrap_or_else(|error| error),
+                    None => "unknown binding-frame action".into(),
+                }
+            }
+            (Err(error), _) => error,
+            _ => need.into(),
         },
         "respawn" => {
             agent.send(&crate::net::C2S::Respawn);

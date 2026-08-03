@@ -27,6 +27,9 @@ pub struct PlayerCtx {
     pub attackable: bool,
     /// Charm of quiet: shrinks warden attention.
     pub aggro_mod: f32,
+    /// The exact physical quiet charm whose prepaid concealment may be
+    /// debited if it changes a warden's attention result.
+    pub quiet_charm: Option<crate::inventory::ItemStack>,
 }
 
 /// Things the simulation did that the client must present or apply.
@@ -47,6 +50,8 @@ pub enum SimEvent {
     BoltCast,
     /// Wildlife bred.
     Bred,
+    /// A quiet charm changed an attention result and was debited.
+    QuietSheltered { who: u32 },
     /// Authoritative death settlement completed; clients only present it.
     MobDied(crate::world::SettledMobDeath),
     /// Day rolled over; offerings worth this much were accepted.
@@ -73,6 +78,10 @@ pub struct Server {
     lava_timer: f32,
     fire_timer: f32,
     random_timer: f32,
+    /// Physical implement leakage/failure is sampled at a bounded cadence;
+    /// an ordinary no-magic tick never scans every block entity.
+    implements_timer: f32,
+    implements_cursor: usize,
     snow_timer: f32,
     bolt_timer: f32,
     prev_tier: usize,
@@ -93,6 +102,8 @@ impl Server {
             lava_timer: 0.0,
             fire_timer: 0.0,
             random_timer: 0.0,
+            implements_timer: 0.0,
+            implements_cursor: 0,
             snow_timer: 0.0,
             bolt_timer: 24.0,
             prev_tier,
@@ -185,6 +196,11 @@ impl Server {
 
         // Machines and gravity.
         self.world.tick_entities(dt);
+        self.implements_timer += dt;
+        if self.implements_timer >= 5.0 {
+            self.implements_timer %= 5.0;
+            self.world.tick_implements(&mut self.implements_cursor);
+        }
         self.world.tick_falling(dt);
 
         // Creatures: wildlife, wardens, spawning, projectiles.
@@ -219,6 +235,35 @@ impl Server {
                     events.push(SimEvent::BoltCast);
                 }
                 MobEvent::Bred => events.push(SimEvent::Bred),
+                MobEvent::QuietSheltered { player: who, mob } => {
+                    let mut paid = false;
+                    if let Some(player) = players.get(who)
+                        && let Some(mut charm) = player.quiet_charm
+                        && let Some(pos) = player.pos.block()
+                        && self.world.debit_charm_at(
+                            pos,
+                            &mut charm,
+                            "quiet",
+                            "quiet charm changed a warden attention result",
+                        )
+                    {
+                        paid = true;
+                        events.push(SimEvent::QuietSheltered { who: player.id });
+                    }
+                    // Perception tentatively identified the exact case where
+                    // quiet would matter. If the atomic debit loses a race or
+                    // the account is depleted, restore the ordinary attention
+                    // result immediately; no unpaid tick of concealment leaks
+                    // through the two-phase decision.
+                    if !paid
+                        && let Some(player) = players.get(who)
+                        && let Some(warden) = self.world.mob_by_id_mut(mob)
+                    {
+                        warden.state = crate::mobs::MobState::Hunt;
+                        warden.state_timer = 0.0;
+                        warden.target = player.pos;
+                    }
+                }
                 // Kills are settled inside tick_mobs; none escape.
                 MobEvent::Killed(_) => {}
                 MobEvent::Ate(pos) => self.world.apply_bite_at(pos),

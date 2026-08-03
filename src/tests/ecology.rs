@@ -296,6 +296,7 @@ fn ctx(pos: glam::Vec3) -> crate::server::PlayerCtx {
         spawn: ep(glam::Vec3::ZERO),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     }
 }
 

@@ -626,6 +626,7 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
                     spawn: ep(Vec3::ZERO),
                     attackable: true,
                     aggro_mod: 0.0,
+                    quiet_charm: None,
                 }],
                 1.0 / 30.0,
             )
@@ -663,6 +664,7 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 30.0,
         );

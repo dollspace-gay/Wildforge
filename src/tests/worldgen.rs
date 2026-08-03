@@ -1342,6 +1342,7 @@ fn bench_sim_tick() {
         spawn: ep(glam::Vec3::new(8.0, 80.0, 8.0)),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     }];
     let mut evs = Vec::new();
     // Warm up, then time 300 fixed ticks.
@@ -1387,6 +1388,7 @@ fn bench_tick_parts() {
         spawn: ep(glam::Vec3::new(8.0, 80.0, 8.0)),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     }];
     let mut evs = Vec::new();
     for _ in 0..30 {

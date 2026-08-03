@@ -1145,6 +1145,7 @@ fn charms_and_tablets_work() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0 / 60.0,
         &mut rng,
@@ -1162,6 +1163,7 @@ fn charms_and_tablets_work() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: -2.0,
+            quiet_charm: None,
         }],
         1.0 / 60.0,
         &mut rng,
@@ -1631,6 +1633,45 @@ fn content_graph_is_complete_and_obtainable() {
                 grew |= ok.insert(salvage.output.0);
                 grew |= ok.insert(salvage.byproduct.0);
             }
+        }
+        // Implements are made and failed through the embodied binding-frame
+        // lifecycle rather than synthetic grid recipes. Model those runtime
+        // edges only when the complete apparatus and at least one obtainable
+        // component for every physical role are present.
+        let frame_ready = [
+            "base:binding_frame",
+            "base:focus_mount",
+            "base:arcane_conductor",
+            "base:charge_vessel",
+            "base:containment_post",
+        ]
+        .into_iter()
+        .all(|name| reg.item_id(name).is_some_and(|item| ok.contains(&item.0)));
+        let component_roster_ready =
+            crate::implements::ComponentRole::ALL
+                .into_iter()
+                .all(|role| {
+                    reg.items.iter().enumerate().any(|(index, item)| {
+                        ok.contains(&(index as u16))
+                            && item
+                                .wand_component
+                                .as_ref()
+                                .is_some_and(|component| component.role == role)
+                    })
+                });
+        if frame_ready
+            && component_roster_ready
+            && let Some(wand) = reg.item_id("base:bound_wand")
+        {
+            grew |= ok.insert(wand.0);
+        }
+        // Heat/strain failure conserves an implement as one stable fragment
+        // bundle. This is another runtime transformation, not a recipe.
+        let failable_implement = ["base:bound_wand", "base:charge_vessel"]
+            .into_iter()
+            .any(|name| reg.item_id(name).is_some_and(|item| ok.contains(&item.0)));
+        if failable_implement && let Some(fragments) = reg.item_id("base:implement_fragment") {
+            grew |= ok.insert(fragments.0);
         }
         // The bucket: dip it in any fluid and it comes up full — a
         // code path, like shears. Water and lava alike.

@@ -507,6 +507,73 @@ impl Agent {
         Ok("tuning lens assembled".into())
     }
 
+    pub fn operate_binding_frame(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        action: crate::implements::FrameAction,
+        held_item: Option<&str>,
+    ) -> Result<String, String> {
+        if self.dist_to(pos) > REACH {
+            return Err("binding frame is out of reach".into());
+        }
+        // Frame verbs share the player's host-owned action cooldown. The
+        // previous helper returned as soon as the result arrived, so a
+        // bounded multi-step assembly immediately sent its next verb while
+        // the host was still cooling down and then waited forever for a
+        // response the host had correctly refused. Pace before every verb;
+        // this is transport choreography, not client authority.
+        self.pump_for(0.3);
+        if let Some(item) = held_item {
+            self.select(item)?;
+        }
+        self.face_block(pos);
+        self.anchor_stance();
+        if action != crate::implements::FrameAction::Inspect
+            && !self.binding_revisions.contains_key(&pos)
+        {
+            self.last_binding_frame = None;
+            self.send(&C2S::OperateBindingFrame {
+                pos,
+                slot: self.hotbar as u8,
+                action: crate::implements::FrameAction::Inspect,
+                expected_revision: None,
+            });
+            for _ in 0..50 {
+                self.pump_for(0.05);
+                if self.binding_revisions.contains_key(&pos) {
+                    break;
+                }
+            }
+            if !self.binding_revisions.contains_key(&pos) {
+                return Err("the host did not return the binding-frame revision".into());
+            }
+            // Inspect is itself a successful frame action and starts the same
+            // host cooldown. Wait before issuing the requested mutation.
+            self.pump_for(0.3);
+        }
+        self.last_binding_frame = None;
+        self.send(&C2S::OperateBindingFrame {
+            pos,
+            slot: self.hotbar as u8,
+            action,
+            expected_revision: self.binding_revisions.get(&pos).copied(),
+        });
+        for _ in 0..50 {
+            self.pump_for(0.05);
+            if let Some((at, result)) = self.last_binding_frame.take()
+                && at == pos
+            {
+                let mut text = result.message;
+                for line in result.lines {
+                    text.push('\n');
+                    text.push_str(&line);
+                }
+                return if result.success { Ok(text) } else { Err(text) };
+            }
+        }
+        Err("the host did not complete the binding-frame operation".into())
+    }
+
     /// Craft one of the recipes the agent knows the shape of. The
     /// host re-validates the grid; a 3x3 shape honestly requires a
     /// crafting table within reach even though we hold the grid.

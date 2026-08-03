@@ -20,6 +20,7 @@ mod geology;
 mod hearts;
 mod hydrology;
 mod identity;
+mod implements;
 mod machines;
 mod mobs;
 mod multiplayer;

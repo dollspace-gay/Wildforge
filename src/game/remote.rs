@@ -138,6 +138,7 @@ impl Game {
                     players: Default::default(),
                     player_positions: Default::default(),
                     player_held: Default::default(),
+                    player_implement: Default::default(),
                     player_style: Default::default(),
                     names: Default::default(),
                     sleeping: false,
@@ -453,15 +454,21 @@ impl Game {
                     r.player_positions.retain(|id, _| present.contains(id));
                     r.player_lerp.retain(|id, _| present.contains(id));
                     r.player_held.retain(|id, _| present.contains(id));
+                    r.player_implement.retain(|id, _| present.contains(id));
                     r.player_style.retain(|id, _| present.contains(id));
                     // New span: from wherever each player currently
                     // renders, toward the fresh snapshot.
                     let t = (r.player_age / r.player_interval.max(0.001)).clamp(0.0, 1.0);
-                    for (id, pos, yaw, held, pstyle) in list {
+                    for (id, pos, yaw, held, pstyle, implement) in list {
                         if id == r.my_id {
                             continue;
                         }
                         r.player_held.insert(id, held);
+                        if let Some(visual) = implement {
+                            r.player_implement.insert(id, visual);
+                        } else {
+                            r.player_implement.remove(&id);
+                        }
                         r.player_style.insert(id, pstyle);
                         r.player_positions.insert(id, pos);
                         let render_pos = pos.render_pos();
@@ -587,8 +594,18 @@ impl Game {
                         .world
                         .set_remote_arcane_cue(bands, dominant, ecology);
                 }
-                net::S2C::ArcaneItems { charges } => {
-                    self.server.world.set_remote_arcane_items(charges);
+                net::S2C::ArcaneItems {
+                    reset,
+                    charges,
+                    implements,
+                    apparatus,
+                } => {
+                    if reset {
+                        self.server.world.clear_remote_implement_snapshot();
+                    }
+                    self.server.world.extend_remote_arcane_items(charges);
+                    self.server.world.extend_remote_implements(implements);
+                    self.server.world.extend_remote_apparatus(apparatus);
                 }
                 net::S2C::DiscoveryReport(record) => {
                     self.present_discovery_record(&record);
@@ -602,6 +619,39 @@ impl Game {
                     instance_id: _,
                     text,
                 } => self.toast(text),
+                net::S2C::BindingFrameResult { pos, result } => {
+                    self.interaction
+                        .binding_revisions
+                        .insert(pos, result.revision);
+                    let cue = result.cue;
+                    self.presentation.swing = 1.0;
+                    self.toast(result.message);
+                    for line in result.lines.into_iter().take(3) {
+                        self.toast(line);
+                    }
+                    self.sfx(match cue {
+                        crate::implements::ImplementCue::Use => Sfx::ImplementUse,
+                        crate::implements::ImplementCue::Transfer => Sfx::ImplementTransfer,
+                        crate::implements::ImplementCue::Strain => Sfx::ImplementStrain,
+                        crate::implements::ImplementCue::Empty => Sfx::ImplementEmpty,
+                        crate::implements::ImplementCue::Failure => Sfx::ImplementFailure,
+                    });
+                }
+                net::S2C::ImplementActivation {
+                    actor,
+                    pos,
+                    cue,
+                    visual,
+                } => {
+                    let item_map = r.item_map.clone();
+                    self.present_implement_activation(pos, cue, visual, Some(&item_map));
+                    // The next player snapshot remains authoritative for the
+                    // held model; this short-lived event only drives the
+                    // visible settling gesture and local envelope.
+                    if actor != r.my_id {
+                        r.player_age = r.player_age.min(r.player_interval * 0.5);
+                    }
+                }
                 net::S2C::Hit { dmg, from } => self.hurt_player_from_wild(dmg, from),
                 net::S2C::Give {
                     item,

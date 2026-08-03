@@ -276,7 +276,7 @@ Produces:
 - copyable physical records and settlement libraries,
 - shared multiplayer knowledge with no permanent class locks.
 
-### Goal 5
+### Goal 5 — implemented and production-qualified 2026-08-03
 
 ```text
 /goal complete all features in the design document docs/magic-implements-plan.md

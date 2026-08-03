@@ -578,6 +578,53 @@ impl Game {
         }
     }
 
+    pub(super) fn operate_binding_frame(&mut self, pos: crate::planet::BlockPos) {
+        let slot = self.input.hotbar_sel;
+        let expected_revision = self.interaction.binding_revisions.get(&pos).copied();
+        if let Some(remote) = &self.multiplayer.remote {
+            remote.client.send(&net::C2S::OperateBindingFrame {
+                pos,
+                slot: slot as u8,
+                action: crate::implements::FrameAction::Contextual,
+                expected_revision,
+            });
+            return;
+        }
+        match self.server.world.operate_binding_frame(
+            pos,
+            &mut self.inventory,
+            slot,
+            crate::implements::FrameAction::Contextual,
+            expected_revision,
+            "local-player",
+        ) {
+            Ok(result) => {
+                self.interaction
+                    .binding_revisions
+                    .insert(pos, result.revision);
+                self.presentation.swing = 1.0;
+                self.toast(result.message);
+                for line in result.lines.into_iter().take(3) {
+                    self.toast(line);
+                }
+                self.sfx(match result.cue {
+                    crate::implements::ImplementCue::Use => Sfx::ImplementUse,
+                    crate::implements::ImplementCue::Transfer => Sfx::ImplementTransfer,
+                    crate::implements::ImplementCue::Strain => Sfx::ImplementStrain,
+                    crate::implements::ImplementCue::Empty => Sfx::ImplementEmpty,
+                    crate::implements::ImplementCue::Failure => Sfx::ImplementFailure,
+                });
+            }
+            Err(error) => {
+                self.sfx(match crate::implements::error_cue(&error) {
+                    crate::implements::ImplementCue::Empty => Sfx::ImplementEmpty,
+                    _ => Sfx::ImplementFailure,
+                });
+                self.toast(error);
+            }
+        }
+    }
+
     pub(super) fn copy_at_writing_surface(&mut self, writing_pos: crate::planet::BlockPos) {
         let held_slot = self.input.hotbar_sel;
         let Some(mut held) = self.inventory.slots[held_slot] else {

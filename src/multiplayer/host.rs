@@ -92,6 +92,7 @@ pub struct Guest {
     pending_discovery: Option<PendingDiscovery>,
     since_damage: f32,
     regen_timer: f32,
+    hunger_charm_credit: f32,
     starve_timer: f32,
     chat_count: u8,
     chat_window: f32,
@@ -118,6 +119,8 @@ pub struct Guest {
     /// Last bounded item-charge view sent to this guest. Keeping the sorted
     /// snapshot here makes unchanged wire state cost nothing.
     last_arcane_items: Vec<(u64, u64)>,
+    last_implements: Vec<crate::implements::ImplementPublicState>,
+    last_apparatus: Vec<crate::implements::ApparatusCue>,
     /// Movement packets arrive at ~20 Hz; rendering interpolates from
     /// here toward (pos, yaw) so guests glide instead of stutter.
     /// Embedded render position and yaw at the start of the current network
@@ -190,6 +193,11 @@ pub enum HostFx {
     },
     Joined(String),
     Left(String),
+    ImplementActivation {
+        pos: EntityPos,
+        cue: crate::implements::ImplementCue,
+        visual: Option<crate::implements::ImplementVisual>,
+    },
     /// Everyone slept: the host's own dawn side-effects should run.
     AllSlept,
 }
@@ -373,8 +381,17 @@ impl HostSession {
     }
 
     /// PlayerCtx list for the simulation: host (when windowed) + guests.
-    pub fn player_ctxs(
+    pub fn authoritative_player_ctxs(
         &self,
+        world: &crate::world::World,
+        host: Option<crate::server::PlayerCtx>,
+    ) -> Vec<crate::server::PlayerCtx> {
+        self.player_ctxs_impl(Some(world), host)
+    }
+
+    fn player_ctxs_impl(
+        &self,
+        world: Option<&crate::world::World>,
         host: Option<crate::server::PlayerCtx>,
     ) -> Vec<crate::server::PlayerCtx> {
         let mut out = Vec::new();
@@ -382,19 +399,29 @@ impl HostSession {
             out.push(h);
         }
         for (id, g) in self.guests.iter().filter(|(_, guest)| guest.entry_ready) {
-            let quiet = self.profiles.as_ref().is_some_and(|profiles| {
-                g.armor[4].is_some_and(|stack| {
-                    stack.arcane_id != 0
-                        && profiles.registry_hint().item(stack.item).charm.as_deref()
-                            == Some("quiet")
-                })
+            let quiet_charm = self.profiles.as_ref().and_then(|profiles| {
+                g.armor[4]
+                    .is_some_and(|stack| {
+                        stack.arcane_id != 0
+                            && profiles.registry_hint().item(stack.item).charm.as_deref()
+                                == Some("quiet")
+                    })
+                    .then_some(g.armor[4])
+                    .flatten()
             });
+            let quiet_charm = quiet_charm
+                .filter(|stack| world.is_none_or(|world| world.charm_can_pay(*stack, "quiet")));
             out.push(crate::server::PlayerCtx {
                 id: *id,
                 pos: g.pos,
                 spawn: g.pos,
                 attackable: true,
-                aggro_mod: if quiet { -2.0 } else { 0.0 },
+                aggro_mod: if quiet_charm.is_some() {
+                    -crate::implements::QUIET_CHARM_AGGRO_REDUCTION
+                } else {
+                    0.0
+                },
+                quiet_charm,
             });
         }
         out
@@ -405,6 +432,14 @@ impl HostSession {
         self.initial_view_dist = chunks.clamp(2, MAX_GUEST_VIEW_DIST as i32);
     }
 
+    #[cfg(test)]
+    pub fn player_ctxs(
+        &self,
+        host: Option<crate::server::PlayerCtx>,
+    ) -> Vec<crate::server::PlayerCtx> {
+        self.player_ctxs_impl(None, host)
+    }
+
     /// Everything the host does per frame: drain guest messages, apply
     /// them authoritatively, stream state back.
     /// `host`: (pos, yaw, sleeping) for a windowed host; None when
@@ -413,6 +448,37 @@ impl HostSession {
         &mut self,
         server: &mut Server,
         host: Option<(EntityPos, f32, bool, u16, u32)>,
+        dt: f32,
+    ) -> Vec<HostFx> {
+        self.pump_inner(server, host, None, dt)
+    }
+
+    pub fn pump_with_host_stack(
+        &mut self,
+        server: &mut Server,
+        host: Option<(EntityPos, f32, bool, Option<ItemStack>, u32)>,
+        dt: f32,
+    ) -> Vec<HostFx> {
+        let visual = host
+            .and_then(|(_, _, _, stack, _)| stack)
+            .and_then(|stack| server.world.implement_visual(stack));
+        let host = host.map(|(pos, yaw, sleeping, stack, style)| {
+            (
+                pos,
+                yaw,
+                sleeping,
+                stack.map_or(u16::MAX, |stack| stack.item.0),
+                style,
+            )
+        });
+        self.pump_inner(server, host, visual, dt)
+    }
+
+    fn pump_inner(
+        &mut self,
+        server: &mut Server,
+        host: Option<(EntityPos, f32, bool, u16, u32)>,
+        host_visual: Option<crate::implements::ImplementVisual>,
         dt: f32,
     ) -> Vec<HostFx> {
         let host_pos = host.map(|(p, _, _, _, _)| p).unwrap_or_else(|| {
@@ -525,12 +591,28 @@ impl HostSession {
             }
             if !creative {
                 let old = (g.health, g.hunger, g.nutrition);
-                let hunger_charm = g.armor[4].is_some_and(|stack| {
-                    stack.arcane_id != 0
-                        && server.world.reg.item(stack.item).charm.as_deref() == Some("hunger")
-                });
+                if g.hunger_charm_credit <= 0.0
+                    && let Some(mut charm) = g.armor[4]
+                    && server.world.reg.item(charm.item).charm.as_deref() == Some("hunger")
+                    && let Some(pos) = g.pos.block()
+                    && server.world.debit_charm_at(
+                        pos,
+                        &mut charm,
+                        "hunger",
+                        "guest slow-hunger charm prepaid an active interval",
+                    )
+                {
+                    g.armor[4] = Some(charm);
+                    g.hunger_charm_credit = crate::implements::HUNGER_CHARM_INTERVAL_SECS;
+                }
+                let hunger_charm = g.hunger_charm_credit > 0.0;
+                g.hunger_charm_credit = (g.hunger_charm_credit - dt).max(0.0);
                 let drain = (0.01 + if g.sprinting { 0.02 } else { 0.0 })
-                    * if hunger_charm { 0.85 } else { 1.0 };
+                    * if hunger_charm {
+                        crate::implements::HUNGER_CHARM_MULTIPLIER
+                    } else {
+                        1.0
+                    };
                 g.hunger = (g.hunger - drain * dt).max(0.0);
                 for value in &mut g.nutrition {
                     *value = (*value - dt * 0.01).max(0.0);
@@ -705,7 +787,7 @@ impl HostSession {
         self.stream_chunks(server);
         self.stream_snapshots(
             server,
-            host.map(|_| (host_pos, host_yaw, host_held, host_style)),
+            host.map(|_| (host_pos, host_yaw, host_held, host_style, host_visual)),
             dt,
         );
         // Open containers stay live: furnaces smelt and other players
@@ -850,13 +932,45 @@ impl HostSession {
                     .filter(|(_, guest)| guest.entry_ready)
                     .map(|(id, guest)| (*id, inspectable_arcane_items(&server.world, guest)))
                     .collect::<Vec<_>>();
-                for (id, charges) in item_updates {
+                for (id, (charges, implements, apparatus)) in item_updates {
                     let Some(guest) = self.guests.get_mut(&id) else {
                         continue;
                     };
-                    if guest.last_arcane_items != charges {
+                    if guest.last_arcane_items != charges
+                        || guest.last_implements != implements
+                        || guest.last_apparatus != apparatus
+                    {
                         guest.last_arcane_items.clone_from(&charges);
-                        self.net.send(id, &S2C::ArcaneItems { charges });
+                        guest.last_implements.clone_from(&implements);
+                        guest.last_apparatus.clone_from(&apparatus);
+                        // Public implement metadata is bounded to 1 KiB per
+                        // identity, but a legitimately open chest/cargo pack
+                        // can expose many identities at once. Split the
+                        // reliable replacement snapshot so no mod-valid
+                        // inventory can exceed the transport frame budget.
+                        const IMPLEMENTS_PER_FRAME: usize = 16;
+                        let batches = implements.len().div_ceil(IMPLEMENTS_PER_FRAME).max(1);
+                        for batch in 0..batches {
+                            let start = batch * IMPLEMENTS_PER_FRAME;
+                            let end = (start + IMPLEMENTS_PER_FRAME).min(implements.len());
+                            self.net.send(
+                                id,
+                                &S2C::ArcaneItems {
+                                    reset: batch == 0,
+                                    charges: if batch == 0 {
+                                        charges.clone()
+                                    } else {
+                                        Vec::new()
+                                    },
+                                    implements: implements[start..end].to_vec(),
+                                    apparatus: if batch == 0 {
+                                        apparatus.clone()
+                                    } else {
+                                        Vec::new()
+                                    },
+                                },
+                            );
+                        }
                     }
                 }
             }
@@ -1095,6 +1209,24 @@ impl HostSession {
             return;
         }
 
+        if let Some(at) = pending.runtime.pos.block() {
+            let migrated = server.world.migrate_legacy_player_charms(
+                at,
+                &mut pending.runtime.inventory,
+                &mut pending.runtime.armor,
+                &mut pending.runtime.cursor,
+                &format!("multiplayer profile {}", pending.runtime.player_id),
+            );
+            if migrated != 0
+                && let Some(profiles) = self.profiles.as_ref()
+                && let Err(error) = profiles.save(&pending.runtime, &server.world.reg)
+            {
+                eprintln!(
+                    "implements: migrated {migrated} guest charms but profile save failed: {error}"
+                );
+            }
+        }
+
         let reg = server.world.reg.clone();
         let palette: Vec<String> = reg.blocks.iter().map(|block| block.name.clone()).collect();
         let items: Vec<String> = reg.items.iter().map(|item| item.name.clone()).collect();
@@ -1194,6 +1326,7 @@ impl HostSession {
                 pending_discovery: None,
                 since_damage: 100.0,
                 regen_timer: 0.0,
+                hunger_charm_credit: 0.0,
                 starve_timer: 0.0,
                 chat_count: 0,
                 chat_window: 0.0,
@@ -1209,6 +1342,8 @@ impl HostSession {
                 edits: 0,
                 edit_window: 0.0,
                 last_arcane_items: Vec::new(),
+                last_implements: Vec::new(),
+                last_apparatus: Vec::new(),
                 render_from: (runtime.pos.render_pos(), 0.0),
                 net_age: 0.0,
                 net_interval: 0.05,
@@ -1416,16 +1551,24 @@ impl HostSession {
         if !guest.entry_ready || guest.health <= 0.0 {
             return;
         }
-        let armor_points: u32 = guest
+        let mut armor_points: u32 = guest
             .armor
             .iter()
             .flatten()
             .filter_map(|stack| server_item_armor_points(stack, self.profiles.as_ref()))
-            .sum::<u32>()
-            + u32::from(guest.armor[4].is_some_and(|stack| {
-                stack.arcane_id != 0
-                    && server.world.reg.item(stack.item).charm.as_deref() == Some("bark")
-            }));
+            .sum();
+        if let Some(mut charm) = guest.armor[4]
+            && let Some(pos) = guest.pos.block()
+            && server.world.debit_charm_at(
+                pos,
+                &mut charm,
+                "bark",
+                "guest bark charm prevented warden damage",
+            )
+        {
+            guest.armor[4] = Some(charm);
+            armor_points = armor_points.saturating_add(crate::implements::BARK_CHARM_ARMOR_POINTS);
+        }
         // This mirrors local survival: each point blocks four percent, capped.
         let reduced = amount.max(0.0) * (1.0 - armor_points.min(15) as f32 * 0.04);
         if armor_points > 0
@@ -1458,15 +1601,53 @@ impl HostSession {
             lost.extend(guest.armor.iter_mut().filter_map(Option::take));
             lost.extend(guest.cursor.take());
             lost.extend(guest.craft_grid.iter_mut().filter_map(Option::take));
-            if let (Some(pos), Some(ledger)) =
-                (guest.pos.block(), &mut server.world.material_ledger)
-            {
+            // Death moves physical stacks into the world's ordinary drop
+            // path. Burying them here destroyed the durable reference while
+            // leaving a charged implement account behind (and made hosted
+            // death behave differently from local death). A windowed host
+            // renders these as loose items; a dedicated host routes them
+            // through its bounded delivery/banking policy.
+            if let Some(pos) = guest.pos.block().or_else(|| guest.spawn.block()) {
                 for stack in lost {
-                    if let Err(error) =
-                        ledger.bury_stack(&server.world.reg, pos, stack, "unrecovered death drop")
+                    server.world.push_drop_at(pos, stack);
+                }
+            } else {
+                // A valid player should always have either a present or spawn
+                // block. If corrupted coordinates defeat both, settle every
+                // charged identity explicitly instead of leaking custody.
+                let fallback = crate::planet::BlockPos::new(
+                    guest.pos.face(),
+                    guest
+                        .pos
+                        .u()
+                        .floor()
+                        .clamp(0.0, f32::from(crate::planet::FACE_BLOCKS - 1))
+                        as u16,
+                    0,
+                    guest
+                        .pos
+                        .v()
+                        .floor()
+                        .clamp(0.0, f32::from(crate::planet::FACE_BLOCKS - 1))
+                        as u16,
+                )
+                .expect("clamped player surface is a block");
+                for stack in lost {
+                    if let Some(ledger) = &mut server.world.material_ledger
+                        && let Err(error) = ledger.bury_stack(
+                            &server.world.reg,
+                            fallback,
+                            stack,
+                            "invalid-position hosted death",
+                        )
                     {
-                        eprintln!("materials: guest death salvage failed: {error}");
+                        eprintln!("materials: guest death settlement failed: {error}");
                     }
+                    server.world.retire_arcane_stack_at(
+                        fallback,
+                        stack,
+                        "invalid-position hosted death",
+                    );
                 }
             }
             refresh_held(guest);
@@ -1561,6 +1742,15 @@ impl HostSession {
             }
             _ => {}
         }
+        let implement_observers = if matches!(&msg, C2S::OperateBindingFrame { .. }) {
+            self.guests
+                .iter()
+                .filter(|(_, guest)| guest.entry_ready)
+                .map(|(observer, guest)| (*observer, guest.pos))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         let Some(guest) = self.guests.get_mut(&id) else {
             return;
         };
@@ -2631,6 +2821,93 @@ impl HostSession {
                     Err(error) => self.net.send(id, &S2C::Toast(error)),
                 }
             }
+            C2S::OperateBindingFrame {
+                pos,
+                slot,
+                action,
+                expected_revision,
+            } => {
+                if guest.action_cooldown > 0.0
+                    || !discovery_reachable(&server.world, guest, pos)
+                    || server
+                        .world
+                        .reg
+                        .block(server.world.get_block_at(pos))
+                        .interaction
+                        .as_deref()
+                        != Some("binding_frame")
+                {
+                    return;
+                }
+                let index = usize::from(slot);
+                let actor = guest.player_id.to_string();
+                match server.world.operate_binding_frame(
+                    pos,
+                    &mut guest.inventory,
+                    index,
+                    action,
+                    expected_revision,
+                    &actor,
+                ) {
+                    Ok(result) => {
+                        guest.action_cooldown = 0.25;
+                        refresh_held(guest);
+                        let event_pos = pos.entity_center();
+                        let visual =
+                            server
+                                .world
+                                .block_entity_at(&pos)
+                                .and_then(|entity| match entity {
+                                    crate::world::BlockEntity::BindingFrame(frame) => frame
+                                        .output
+                                        .and_then(|stack| server.world.implement_visual(stack)),
+                                    _ => None,
+                                });
+                        for (observer, observer_pos) in &implement_observers {
+                            if *observer != id
+                                && observer_pos.horizontal_distance_to(event_pos) <= 96.0
+                            {
+                                self.net.send(
+                                    *observer,
+                                    &S2C::ImplementActivation {
+                                        actor: id,
+                                        pos: event_pos,
+                                        cue: result.cue,
+                                        visual,
+                                    },
+                                );
+                            }
+                        }
+                        fx.push(HostFx::ImplementActivation {
+                            pos: event_pos,
+                            cue: result.cue,
+                            visual,
+                        });
+                        self.net.send(id, &S2C::BindingFrameResult { pos, result });
+                        self.send_player_state(id);
+                    }
+                    Err(error) => {
+                        let revision = match server.world.block_entity_at(&pos) {
+                            Some(crate::world::BlockEntity::BindingFrame(frame)) => frame.revision,
+                            _ => 0,
+                        };
+                        self.net.send(
+                            id,
+                            &S2C::BindingFrameResult {
+                                pos,
+                                result: crate::implements::FrameResult {
+                                    success: false,
+                                    revision,
+                                    cue: crate::implements::error_cue(&error),
+                                    message: error,
+                                    preview: None,
+                                    lines: Vec::new(),
+                                },
+                            },
+                        );
+                    }
+                }
+            }
             C2S::FireProjectile { direction, charge } => {
                 if guest.action_cooldown > 0.0 || !direction.is_finite() || direction.length() < 0.5
                 {
@@ -3266,7 +3543,9 @@ impl HostSession {
             | BlockEntity::Steam(_)
             | BlockEntity::Separator(_)
             | BlockEntity::SurveyFolio(_)
-            | BlockEntity::DiscoveryApparatus(_) => {}
+            | BlockEntity::DiscoveryApparatus(_)
+            | BlockEntity::BindingFrame(_)
+            | BlockEntity::ChargeVessel(_) => {}
             BlockEntity::Chest(c) => {
                 if slot < c.slots.len() {
                     let (ns, nh) = click_stack(&reg, c.slots[slot], held, right);
@@ -3439,7 +3718,9 @@ impl HostSession {
             | BlockEntity::Steam(_)
             | BlockEntity::Separator(_)
             | BlockEntity::SurveyFolio(_)
-            | BlockEntity::DiscoveryApparatus(_) => return,
+            | BlockEntity::DiscoveryApparatus(_)
+            | BlockEntity::BindingFrame(_)
+            | BlockEntity::ChargeVessel(_) => return,
         };
         self.net.send(
             id,
@@ -3635,19 +3916,66 @@ fn take_ammo(
     Some(item)
 }
 
-fn inspectable_arcane_items(world: &World, guest: &Guest) -> Vec<(u64, u64)> {
-    let ids = guest
+fn inspectable_arcane_items(
+    world: &World,
+    guest: &Guest,
+) -> (
+    Vec<(u64, u64)>,
+    Vec<crate::implements::ImplementPublicState>,
+    Vec<crate::implements::ApparatusCue>,
+) {
+    let mut ids = guest
         .inventory
         .slots
         .iter()
         .chain(guest.armor.iter())
         .chain(std::iter::once(&guest.cursor))
+        .chain(guest.craft_grid.iter())
         .flatten()
         .filter_map(|stack| (stack.arcane_id != 0).then_some(stack.arcane_id))
         .collect::<std::collections::BTreeSet<_>>();
-    ids.into_iter()
-        .map(|id| (id, world.inspectable_item_current(id).unwrap_or(0)))
-        .collect()
+    if let Some(pos) = guest.container
+        && let Some(entity) = world.block_entity_at(&pos)
+    {
+        ids.extend(
+            World::block_entity_stacks(entity)
+                .into_iter()
+                .filter_map(|stack| (stack.arcane_id != 0).then_some(stack.arcane_id)),
+        );
+    }
+    if let Some(mob_id) = guest.mob_cargo
+        && let Some(cargo) = world.mob_by_id(mob_id).and_then(|mob| mob.cargo.as_ref())
+    {
+        ids.extend(
+            cargo
+                .iter()
+                .flatten()
+                .filter_map(|stack| (stack.arcane_id != 0).then_some(stack.arcane_id)),
+        );
+    }
+    let charges = ids
+        .iter()
+        .map(|id| (*id, world.inspectable_item_current(*id).unwrap_or(0)))
+        .collect();
+    let implements = ids
+        .iter()
+        .filter_map(|id| {
+            let instance = world
+                .implements_state
+                .as_ref()
+                .and_then(|state| state.instance(*id))?;
+            let dross = world
+                .arcane_ledger
+                .as_ref()
+                .map_or(0, |ledger| ledger.item_dross_total(*id));
+            Some(crate::implements::ImplementPublicState::from_authority(
+                instance, dross,
+            ))
+        })
+        .collect();
+    let mut apparatus = world.apparatus_cues_near(guest.pos, 48.0);
+    apparatus.sort_by_key(|cue| cue.pos);
+    (charges, implements, apparatus)
 }
 
 /// Build the host-id -> local-id block remap from a Welcome palette.

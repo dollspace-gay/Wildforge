@@ -1249,3 +1249,82 @@ output = "base:biological_reference"
 pattern = ["c"]
 keys = { c = "base:charcoal" }
 output = "base:dross_reference"
+
+# --- embodied magical implements: mundane fabrication, magical binding in-world ---
+
+[[recipe]]
+pattern = ["s", "p", "s"]
+keys = { s = "base:stick", p = "#base:planks" }
+output = "base:seasoned_wand_body"
+
+[[recipe]]
+pattern = ["gw", "bg"]
+keys = { g = "base:glass", w = "base:wellglass_shard", b = "base:bronze_ingot" }
+output = "base:small_vessel_reservoir"
+
+[[recipe]]
+pattern = ["b", "s"]
+keys = { b = "base:bronze_ingot", s = "base:still_salt" }
+output = "base:ritual_rod_socket"
+
+[[recipe]]
+pattern = ["b.b", ".s."]
+keys = { b = "base:bronze_ingot", s = "base:leather_strip" }
+output = "base:bronze_wand_binding"
+
+[[recipe]]
+pattern = ["s.s", ".l."]
+keys = { s = "base:silver_ingot", l = "base:leather_strip" }
+output = "base:silver_wand_binding"
+
+[[recipe]]
+pattern = ["l.l", ".s."]
+keys = { l = "base:lead_ingot", s = "base:still_salt" }
+output = "base:lead_wand_binding"
+
+[[recipe]]
+pattern = ["s.s", ".l."]
+keys = { s = "base:steel_ingot", l = "base:leather_strip" }
+output = "base:steel_wand_binding"
+
+[[recipe]]
+pattern = ["bgb", "c.c", "bpb"]
+keys = { b = "base:bronze_ingot", g = "base:glass", c = "base:copper_ingot", p = "#base:planks" }
+output = "base:binding_frame"
+
+[[recipe]]
+pattern = [".b.", "gsg", ".b."]
+keys = { b = "base:bronze_ingot", g = "base:glass", s = "base:silver_ingot" }
+output = "base:focus_mount"
+
+[[recipe]]
+pattern = ["ccc", "qqq"]
+keys = { c = "base:copper_ingot", q = "base:choirstone" }
+output = "base:arcane_conductor"
+count = 3
+
+[[recipe]]
+pattern = ["bgb", "gwg", "bgb"]
+keys = { b = "base:bronze_ingot", g = "base:glass", w = "base:wellglass_shard" }
+output = "base:charge_vessel"
+
+[[recipe]]
+pattern = ["h", "s"]
+keys = { h = "base:hushwood_switch", s = "base:still_salt" }
+output = "base:containment_post"
+count = 2
+
+[[recipe]]
+pattern = ["lsl", ".b."]
+keys = { l = "base:leather_strip", s = "base:silver_ingot", b = "base:bronze_ingot" }
+output = "base:quiet_charm_blank"
+
+[[recipe]]
+pattern = ["lpl", ".b."]
+keys = { l = "base:leather_strip", p = "#base:planks", b = "base:bronze_ingot" }
+output = "base:bark_charm_blank"
+
+[[recipe]]
+pattern = ["lgl", ".b."]
+keys = { l = "base:leather_strip", g = "base:glass", b = "base:bronze_ingot" }
+output = "base:hunger_charm_blank"

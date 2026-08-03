@@ -246,14 +246,40 @@ fn arcane_interest_updates_stay_within_the_network_budget() {
     // fails this budget test before it silently bloats every host update.
     let inspectable_slots = TOTAL_SLOTS + 8 + 1;
     let items = encode(&S2C::ArcaneItems {
+        reset: true,
         charges: (1..=inspectable_slots as u64)
             .map(|id| (id, u64::MAX - id))
             .collect(),
+        implements: Vec::new(),
+        apparatus: Vec::new(),
     });
     assert!(
         items.len() <= DATAGRAM_FLOOR,
         "{inspectable_slots} inspectable charge accounts encode to {} bytes",
         items.len()
+    );
+
+    // ArcaneItems uses the reliable channel and the host chunks public
+    // implement metadata at sixteen records. Prove the worst declared
+    // per-record budget plus a deliberately generous visible-owner and
+    // apparatus census remains below the transport's 64 KiB frame ceiling.
+    let apparatus = (0..128)
+        .map(|index| crate::implements::ApparatusCue {
+            pos: bp(index % 32, 100, index / 32),
+            charge_band: 3,
+            strain_band: 3,
+        })
+        .collect();
+    let fixed = encode(&S2C::ArcaneItems {
+        reset: true,
+        charges: (1..=128).map(|id| (id, u64::MAX - id)).collect(),
+        implements: Vec::new(),
+        apparatus,
+    })
+    .len();
+    assert!(
+        fixed + 16 * crate::implements::MAX_IMPLEMENT_PUBLIC_BYTES < 64 * 1024,
+        "chunked implement snapshot can exceed its reliable frame budget"
     );
 }
 
@@ -1989,6 +2015,7 @@ fn the_wild_hurts_the_guest_it_actually_struck() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         },
         PlayerCtx {
             id: 77,
@@ -1996,6 +2023,7 @@ fn the_wild_hurts_the_guest_it_actually_struck() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         },
     ];
     // The event the sim emits for the SECOND entry names 77, not 1.
@@ -2038,6 +2066,7 @@ fn wildlife_returns_to_every_country_someone_lives_in() {
         spawn: ep(p),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     };
     let home = Vec3::new(8.0, w.surface_height(8, 8) as f32 + 1.0, 8.0);
     let away = Vec3::new(far as f32, w.surface_height(far, 8) as f32 + 1.0, 8.0);

@@ -2046,6 +2046,70 @@ impl ArcaneGeography {
         Ok(self.audit()?.as_current())
     }
 
+    /// Move a bounded amount of local Ambient Current out of the planetary
+    /// geography subledger. The caller must durably pair the returned mixture
+    /// with an equal `ArcaneOwner::Geography` debit and either accept the
+    /// staged geography files or roll this mutation back.
+    pub(crate) fn export_ambient_for_apparatus(
+        &mut self,
+        pos: AtlasPos,
+        requested: u64,
+    ) -> Result<Current, ArcaneGeographyError> {
+        if requested == 0 || pos.u >= self.manifest.side || pos.v >= self.manifest.side {
+            return Err(ArcaneGeographyError::Corrupt(
+                "apparatus requested an invalid geography export".into(),
+            ));
+        }
+        let cell = self
+            .dynamic
+            .cells
+            .get_mut(pos.index(self.manifest.side))
+            .ok_or_else(|| {
+                ArcaneGeographyError::Corrupt("apparatus source cell is absent".into())
+            })?;
+        let available = cell.ambient.into_iter().map(u64::from).sum::<u64>();
+        let wanted = requested.min(available);
+        if wanted == 0 {
+            return Err(ArcaneGeographyError::Corrupt(
+                "the attached magical place has no Ambient Current to export".into(),
+            ));
+        }
+        let mut remaining = wanted;
+        let mut exported = Current::default();
+        for (slot, resonance) in BASE_RESONANCES.iter().enumerate() {
+            let amount = remaining.min(u64::from(cell.ambient[slot]));
+            if amount == 0 {
+                continue;
+            }
+            let amount_u16 = u16::try_from(amount).map_err(|_| ArcaneGeographyError::Overflow)?;
+            cell.ambient[slot] = cell.ambient[slot]
+                .checked_sub(amount_u16)
+                .ok_or(ArcaneGeographyError::Overflow)?;
+            self.dynamic.ecology.exported[slot] = self.dynamic.ecology.exported[slot]
+                .checked_add(amount)
+                .ok_or(ArcaneGeographyError::Overflow)?;
+            exported
+                .checked_add(&Current::single(*resonance, amount))
+                .map_err(|_| ArcaneGeographyError::Overflow)?;
+            remaining -= amount;
+            if remaining == 0 {
+                break;
+            }
+        }
+        if remaining != 0 || exported.total() != wanted {
+            return Err(ArcaneGeographyError::Corrupt(
+                "apparatus geography export did not settle exactly".into(),
+            ));
+        }
+        self.dynamic.ecology.event_sequence = self
+            .dynamic
+            .ecology
+            .event_sequence
+            .checked_add(1)
+            .ok_or(ArcaneGeographyError::Overflow)?;
+        Ok(exported)
+    }
+
     pub fn survey(&self, pos: AtlasPos, tuning_lens: bool) -> ArcaneSurvey {
         let index = pos.index(self.manifest.side);
         let control = self.controls[index];

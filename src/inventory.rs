@@ -28,7 +28,9 @@ impl ItemStack {
         }
     }
 
-    /// Stacks merge only if same item and neither is a tool.
+    /// Stacks merge only if same item, neither is a tool, and neither carries
+    /// stable instance state.  An identity names one physical object and may
+    /// never be copied into a larger count by an inventory convenience path.
     pub fn can_merge(&self, reg: &Registry, other: &ItemStack) -> bool {
         self.item == other.item
             && reg.item(self.item).tool.is_none()
@@ -122,8 +124,7 @@ impl Inventory {
                     break;
                 }
                 if let Some(s) = slot
-                    && s.item == stack.item
-                    && reg.item(s.item).tool.is_none()
+                    && s.can_merge(reg, &stack)
                     && s.count < max
                 {
                     let take = count.min(max - s.count);

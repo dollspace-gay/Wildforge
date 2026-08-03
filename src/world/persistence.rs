@@ -149,12 +149,16 @@ impl World {
         let discovery_state =
             crate::discovery::DiscoveryState::load_or_initialize(&save_dir, seed, reg.content_hash)
                 .map_err(std::io::Error::other)?;
+        let implements_state =
+            crate::implements::ImplementsState::load_or_initialize(&save_dir, reg.content_hash)
+                .map_err(std::io::Error::other)?;
         write_world_meta_full(&save_dir, seed, &mode, ire, day)?;
         let mut w = World::new_with_preloaded_atlas(seed, save_dir, reg, Arc::new(atlas));
         w.material_ledger = Some(material_ledger);
         w.arcane_ledger = Some(arcane_ledger);
         w.arcane_geography = Some(arcane_geography);
         w.discovery_state = Some(discovery_state);
+        w.implements_state = Some(implements_state);
         w.mode = mode;
         w.ire = ire;
         w.day = day;
@@ -173,8 +177,23 @@ impl World {
                 .reconcile_durable_item_owners(&w.save_dir)
                 .map_err(std::io::Error::other)?;
         }
+        if let (Some(ledger), Some(implements)) =
+            (w.arcane_ledger.as_ref(), w.implements_state.as_mut())
+        {
+            let recovered = implements
+                .reconcile_ledger(ledger)
+                .map_err(std::io::Error::other)?;
+            if recovered != 0 {
+                implements.save().map_err(std::io::Error::other)?;
+                eprintln!(
+                    "implements: removed {recovered} construction records rolled back after an interrupted physical-owner save"
+                );
+            }
+        }
         w.load_entities();
+        w.migrate_loaded_entity_charms();
         w.load_mobs();
+        w.migrate_loaded_mob_charms();
         w.load_stamps();
         w.replay_pending_material_operation()?;
         Ok(w)

@@ -1824,6 +1824,7 @@ materials = { choirstone = 1200 }
 arcane = { capacity = 72, conductivity = 980, stability = 520, resonance = { stone = 3, echo = 2, gale = 1 }, on_destroy = "ambient" }
 observation = { categories = ["mineral"], properties = ["strength", "stability", "resonance", "conductivity", "capacity"] }
 arcane_ecology = { roles = ["conductor", "indicator"], kind = "finite_mineral", habitat = ["metamorphic_host"], charge_capacity = 64, uptake_per_day = 0, release_per_day = 0, source = "ambient", resonance = { stone = 3, echo = 2, gale = 1 }, dross_tolerance = 12, water_per_day_hu = 0, nutrient_per_day = 0, reproduction = "none", seasons = [true, true, true, true], carrying_capacity = 1, harvest = "destructive", regrowth_days = 0, min_stability = 0, max_stability = 1000, min_richness = 0 }
+item = false
 
 [[block]]
 id = "still_salt"
@@ -1838,6 +1839,7 @@ materials = { still_salt = 1200 }
 arcane = { capacity = 96, conductivity = 110, stability = 980, resonance = { stone = 4, tide = 1 }, on_destroy = "dross" }
 observation = { categories = ["mineral"], properties = ["strength", "stability", "resonance", "conductivity", "capacity"] }
 arcane_ecology = { roles = ["stabilizer", "transformer"], kind = "finite_mineral", habitat = ["evaporite_host"], charge_capacity = 80, uptake_per_day = 0, release_per_day = 0, source = "ambient", resonance = { stone = 4, tide = 1 }, dross_tolerance = 96, water_per_day_hu = 0, nutrient_per_day = 0, reproduction = "none", seasons = [true, true, true, true], carrying_capacity = 1, harvest = "destructive", regrowth_days = 0, min_stability = 0, max_stability = 1000, min_richness = 0 }
+item = false
 
 [[block]]
 id = "wake_iron"
@@ -1852,6 +1854,7 @@ materials = { wake_iron = 1200 }
 arcane = { capacity = 128, conductivity = 1000, stability = 180, resonance = { ember = 3, gale = 3, stone = 1 }, on_destroy = "dross" }
 observation = { categories = ["mineral"], properties = ["strength", "stability", "resonance", "conductivity", "capacity"] }
 arcane_ecology = { roles = ["reservoir", "catalyst"], kind = "finite_mineral", habitat = ["mafic_host"], charge_capacity = 112, uptake_per_day = 0, release_per_day = 0, source = "ambient", resonance = { ember = 3, gale = 3, stone = 1 }, dross_tolerance = 14, water_per_day_hu = 0, nutrient_per_day = 0, reproduction = "none", seasons = [true, true, true, true], carrying_capacity = 1, harvest = "destructive", regrowth_days = 0, min_stability = 0, max_stability = 1000, min_richness = 0 }
+item = false
 
 [[block]]
 id = "echo_slate"
@@ -1866,6 +1869,7 @@ materials = { echo_slate = 1200 }
 arcane = { capacity = 88, conductivity = 460, stability = 820, resonance = { echo = 5, stone = 2 }, on_destroy = "ambient" }
 observation = { categories = ["mineral"], properties = ["strength", "stability", "resonance", "conductivity", "capacity"] }
 arcane_ecology = { roles = ["indicator", "reservoir"], kind = "finite_mineral", habitat = ["sedimentary_host"], charge_capacity = 72, uptake_per_day = 0, release_per_day = 0, source = "ambient", resonance = { echo = 5, stone = 2 }, dross_tolerance = 20, water_per_day_hu = 0, nutrient_per_day = 0, reproduction = "none", seasons = [true, true, true, true], carrying_capacity = 1, harvest = "destructive", regrowth_days = 0, min_stability = 0, max_stability = 1000, min_richness = 0 }
+item = false
 
 # ---- the hearts of the land ----
 # One per province, in the form its country wears. Each has a sick
@@ -2321,6 +2325,65 @@ tool = "pickaxe"
 interaction = "lens_assembly"
 discovery_fixture = { kind = "lens_assembly" }
 observation = { categories = ["apparatus"], properties = ["condition"] }
+
+[[block]]
+id = "binding_frame"
+name = "Binding Frame"
+texture = { top = "@table_top", side = "@bronze_block", bottom = "@planks" }
+hardness = 4.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 2
+interaction = "binding_frame"
+observation = { categories = ["apparatus"], properties = ["condition", "stability", "dross"] }
+
+[[block]]
+id = "focus_mount"
+name = "Focus Mount"
+texture = "@bronze_block"
+hardness = 3.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 2
+interaction = "focus_mount"
+observation = { categories = ["apparatus"], properties = ["condition"] }
+
+[[block]]
+id = "arcane_conductor"
+name = "Choirstone Conductor"
+texture = "quartzite.png"
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 3
+interaction = "arcane_conductor"
+material_class = "geologically_finite"
+materials = { choirstone = 1200, copper = 1200 }
+observation = { categories = ["apparatus"], properties = ["condition", "conductivity", "drift"] }
+
+[[block]]
+id = "charge_vessel"
+name = "Charge Vessel"
+texture = { top = "@glass", side = "amethyst_block.png", bottom = "@bronze_block" }
+hardness = 4.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 2
+interaction = "charge_vessel"
+item = false
+drops = "none"
+# Authoritative charge-band presentation supplies the light. A dormant or
+# uncalibrated vessel must not glow merely because its block exists.
+observation = { categories = ["apparatus"], properties = ["strength", "condition", "stability", "dross", "resonance"] }
+
+[[block]]
+id = "containment_post"
+name = "Containment Post"
+texture = { top = "@spruce_log_top", side = "heart_tree.png", bottom = "@spruce_log_top" }
+hardness = 2.5
+tool = "axe"
+interaction = "containment"
+observation = { categories = ["apparatus"], properties = ["condition", "stability"] }
 
 [[block]]
 id = "fire"

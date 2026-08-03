@@ -892,6 +892,12 @@ impl World {
             .as_mut()
             .map_or(Ok(()), |state| state.save().map_err(std::io::Error::other));
         report.record("discovery state", path, discovery_result);
+        let path = self.save_dir.join(crate::implements::IMPLEMENTS_FILE);
+        let implements_result = self
+            .implements_state
+            .as_ref()
+            .map_or(Ok(()), |state| state.save().map_err(std::io::Error::other));
+        report.record("implement state", path, implements_result);
         report.extend(self.save_mobs());
         let path = self.save_dir.join("stamps");
         report.record("random-tick stamps", path, self.save_stamps());

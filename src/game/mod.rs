@@ -123,6 +123,9 @@ struct SurvivalState {
     exhaustion_regen: f32,
     /// Accumulator for the pack's food-freshness sweep.
     perish_accum: f32,
+    /// Seconds of slow-hunger benefit already paid for by one authoritative
+    /// fixed-interval charm debit.
+    hunger_charm_credit: f32,
     starve_timer: f32,
     air: f32,
     since_damage: f32,
@@ -144,6 +147,7 @@ impl SurvivalState {
             eating: 0.0,
             exhaustion_regen: 0.0,
             perish_accum: 0.0,
+            hunger_charm_credit: 0.0,
             starve_timer: 0.0,
             air: MAX_AIR,
             since_damage: 100.0,
@@ -344,6 +348,9 @@ struct InteractionState {
     /// A cast line: (bobber cell center, seconds to the bite, bite
     /// window remaining). The water decides when.
     fishing: Option<(crate::planet::EntityPos, f32, f32)>,
+    /// Last authoritative revision observed for each binding frame. Reliable
+    /// mutations echo a new value and stale concurrent requests are refused.
+    binding_revisions: std::collections::HashMap<crate::planet::BlockPos, u64>,
 }
 
 impl Default for InteractionState {
@@ -364,6 +371,7 @@ impl Default for InteractionState {
             attuned: Vec::new(),
             riding: None,
             fishing: None,
+            binding_revisions: std::collections::HashMap::new(),
         }
     }
 }
@@ -481,6 +489,7 @@ struct Remote {
     player_positions: std::collections::HashMap<u32, crate::planet::EntityPos>,
     /// Wire item id each player holds (from Players snapshots).
     player_held: std::collections::HashMap<u32, u16>,
+    player_implement: std::collections::HashMap<u32, crate::implements::ImplementVisual>,
     /// Packed Style per player (from Players snapshots).
     player_style: std::collections::HashMap<u32, u32>,
     names: std::collections::HashMap<u32, String>,
@@ -495,7 +504,7 @@ struct Remote {
     mob_interval: f32,
     /// Snapshots arrive split when they are too big for one datagram; these
     /// hold the parts until a generation is whole.
-    players_rx: net::SnapshotAssembler<(u32, crate::planet::EntityPos, f32, u16, u32)>,
+    players_rx: net::SnapshotAssembler<net::PlayerSnap>,
     mobs_rx: net::SnapshotAssembler<net::MobSnap>,
     bolts_rx: net::SnapshotAssembler<net::BoltSnap>,
     falling_rx: net::SnapshotAssembler<net::FallSnap>,

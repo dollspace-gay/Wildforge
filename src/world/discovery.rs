@@ -509,12 +509,41 @@ impl World {
             .ok_or_else(|| DiscoveryError::Corrupt("observation needs arcane geography".into()))?;
         let item_instance = match target {
             ObservationTarget::Item(stack, _) => Some(stack.arcane_id),
-            _ => None,
+            ObservationTarget::Block(pos) => {
+                self.block_entity_at(&pos).and_then(|entity| match entity {
+                    crate::world::BlockEntity::ChargeVessel(vessel) => {
+                        vessel.vessel.map(|stack| stack.arcane_id)
+                    }
+                    crate::world::BlockEntity::BindingFrame(frame) => {
+                        frame.output.map(|stack| stack.arcane_id)
+                    }
+                    _ => None,
+                })
+            }
+            ObservationTarget::Region(_) => None,
         };
         let artifact_origin = item_instance.and_then(|id| {
             self.discovery_state
                 .as_ref()
                 .and_then(|state| state.artifact_origin(id))
+        });
+        let implement_instance = item_instance.and_then(|id| {
+            self.implements_state
+                .as_ref()
+                .and_then(|state| state.instance(id))
+        });
+        let item_current = item_instance.and_then(|id| {
+            self.arcane_ledger
+                .as_ref()
+                .and_then(|ledger| ledger.account(&crate::arcane::ArcaneOwner::Item(id)))
+                .map(|account| account.current.clone())
+        });
+        let observed_item_units = item_current.as_ref().map(|current| {
+            if implement_instance.is_some() {
+                crate::implements::usable_charge(current.total())
+            } else {
+                current.total()
+            }
         });
         let (phenomenon_id, observation, arcane, ecology, category) = match target {
             ObservationTarget::Region(_) => (
@@ -554,12 +583,7 @@ impl World {
                 )
             }
         };
-        let strength = item_instance
-            .and_then(|id| {
-                self.arcane_ledger
-                    .as_ref()
-                    .and_then(|ledger| ledger.item_current_total(id))
-            })
+        let strength = observed_item_units
             .map(strength_of)
             .or_else(|| {
                 arcane
@@ -567,17 +591,52 @@ impl World {
                     .map(|definition| strength_of(definition.capacity))
             })
             .unwrap_or_else(|| map_survey_strength(survey.strength));
-        let stability = arcane
-            .as_ref()
-            .map(|definition| stability_of(definition.stability_permille))
+        let implement_stability = implement_instance.map(|instance| match &instance.kind {
+            crate::implements::ImplementKind::Wand { resolved, .. } => resolved.stability,
+            crate::implements::ImplementKind::Charm { stability, .. } => *stability,
+            crate::implements::ImplementKind::Vessel { containment, .. } => *containment,
+            crate::implements::ImplementKind::Fragments { .. } => 0,
+        });
+        let stability = implement_stability
+            .map(stability_of)
+            .or_else(|| {
+                arcane
+                    .as_ref()
+                    .map(|definition| stability_of(definition.stability_permille))
+            })
             .unwrap_or_else(|| map_survey_condition(survey.condition));
-        let mixture_components = arcane
+        let mixture_components = item_current
             .as_ref()
-            .map(|definition| definition.resonance.len())
+            .map(|current| {
+                if observed_item_units == Some(0) {
+                    0
+                } else {
+                    current.parts().len()
+                }
+            })
+            .or_else(|| arcane.as_ref().map(|definition| definition.resonance.len()))
             .unwrap_or(survey.dominant_resonances.len());
-        let resonances = arcane
+        let resonances = item_current
             .as_ref()
-            .map(|definition| definition.resonance.keys().take(2).cloned().collect())
+            .map(|current| {
+                if observed_item_units == Some(0) {
+                    return Vec::new();
+                }
+                let mut parts = current.parts().iter().collect::<Vec<_>>();
+                parts.sort_by(|(a_name, a_units), (b_name, b_units)| {
+                    b_units.cmp(a_units).then_with(|| a_name.cmp(b_name))
+                });
+                parts
+                    .into_iter()
+                    .take(2)
+                    .map(|(name, _)| name.clone())
+                    .collect()
+            })
+            .or_else(|| {
+                arcane
+                    .as_ref()
+                    .map(|definition| definition.resonance.keys().take(2).cloned().collect())
+            })
             .unwrap_or_else(|| {
                 survey
                     .dominant_resonances

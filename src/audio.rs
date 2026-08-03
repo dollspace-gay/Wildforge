@@ -71,6 +71,16 @@ pub enum Sfx {
     Presence(f32),
     /// Tuning-lens plate/needle tone; pitch communicates stability.
     Lens(f32),
+    /// Restrained shaped-Current activation: a short stable two-tone settle.
+    ImplementUse,
+    /// Current moving through apparatus: a rising conductive sweep.
+    ImplementTransfer,
+    /// Physical stress in a bound object: low scrape under a brittle ring.
+    ImplementStrain,
+    /// A trigger with no usable Current behind its structural spark.
+    ImplementEmpty,
+    /// A containment or implement fracture, deliberately unlike thunder.
+    ImplementFailure,
     Click,
     Hurt,
     Craft,
@@ -232,6 +242,11 @@ fn synth(sfx: Sfx) -> Vec<f32> {
         Sfx::Rumble => burst(0.35, 180.0, 55.0, 0.6, 0.6, 167),
         Sfx::Presence(p) => burst(0.25, 420.0 * p, 75.0 * p, 0.5, 0.7, 173),
         Sfx::Lens(p) => chirp(0.08, 520.0 * p, 760.0 * p),
+        Sfx::ImplementUse => chirp(0.16, 360.0, 610.0),
+        Sfx::ImplementTransfer => chirp(0.28, 240.0, 980.0),
+        Sfx::ImplementStrain => burst(0.24, 720.0, 85.0, 0.28, 1.1, 181),
+        Sfx::ImplementEmpty => burst(0.10, 190.0, 0.0, 0.0, 2.4, 183),
+        Sfx::ImplementFailure => burst(0.65, 1250.0, 42.0, 0.58, 0.75, 187),
         Sfx::MobHurt(p) => burst(0.16, 320.0 * p, 110.0 * p, 0.5, 2.0, 121),
         Sfx::MobDeath(p) => burst(0.34, 240.0 * p, 55.0 * p, 0.7, 1.4, 122),
         Sfx::Bolt(p) => chirp(0.14, 900.0 * p, 300.0 * p),

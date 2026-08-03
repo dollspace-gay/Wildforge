@@ -2264,6 +2264,7 @@ fn server_ticks_at_fixed_rate_and_runs_the_world() {
         spawn: ep(Vec3::new(-500.0, 70.0, -500.0)),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     };
     let t0 = sv.time_of_day;
     let mut evs = Vec::new();

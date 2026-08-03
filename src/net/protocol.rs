@@ -9,7 +9,7 @@ use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 31;
+pub const PROTOCOL: u32 = 34;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -56,6 +56,15 @@ pub struct PlayerStateSnap {
     pub armor: Vec<Option<StackSnap>>,
     pub cursor: Option<StackSnap>,
 }
+
+pub type PlayerSnap = (
+    u32,
+    EntityPos,
+    f32,
+    u16,
+    u32,
+    Option<crate::implements::ImplementVisual>,
+);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiscoveryTargetSnap {
@@ -468,6 +477,14 @@ pub enum C2S {
     AssembleTuningLens {
         pos: BlockPos,
     },
+    /// One reliable host-authoritative binding-frame operation. The revision
+    /// serializes concurrent users without trusting client-supplied mounts.
+    OperateBindingFrame {
+        pos: BlockPos,
+        slot: u8,
+        action: crate::implements::FrameAction,
+        expected_revision: Option<u64>,
+    },
     /// Steelworks: ask the host to light a charged bloomery or covered log pile.
     LightBloomery {
         pos: BlockPos,
@@ -565,7 +582,7 @@ pub enum S2C {
     },
     /// (id, pos, yaw, held wire item id, packed style) for every player in
     /// this guest's reach, host included (u16::MAX = empty hand). Datagram.
-    Players(Snapshot<(u32, EntityPos, f32, u16, u32)>),
+    Players(Snapshot<PlayerSnap>),
     Mobs(Snapshot<MobSnap>),
     Bolts(Snapshot<BoltSnap>),
     /// Airborne gravity blocks (sand mid-tumble). Datagram.
@@ -602,7 +619,11 @@ pub enum S2C {
     /// Complete, interest-managed charge view for item instances this player
     /// can currently inspect. The host suppresses unchanged snapshots.
     ArcaneItems {
+        /// First reliable frame of a complete replacement snapshot.
+        reset: bool,
         charges: Vec<(u64, u64)>,
+        implements: Vec<crate::implements::ImplementPublicState>,
+        apparatus: Vec<crate::implements::ApparatusCue>,
     },
     DiscoveryReport(crate::discovery::ObservationSummary),
     DiscoveryRecords {
@@ -613,6 +634,19 @@ pub enum S2C {
     KnowledgeText {
         instance_id: u64,
         text: String,
+    },
+    BindingFrameResult {
+        pos: BlockPos,
+        result: crate::implements::FrameResult,
+    },
+    /// Interest-managed presentation of another actor's authoritative
+    /// implement operation. It contains no private charge mixture or
+    /// provenance; the normal player snapshot remains the held-model source.
+    ImplementActivation {
+        actor: u32,
+        pos: EntityPos,
+        cue: crate::implements::ImplementCue,
+        visual: Option<crate::implements::ImplementVisual>,
     },
     Hit {
         dmg: f32,

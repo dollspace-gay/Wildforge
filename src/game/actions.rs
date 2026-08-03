@@ -36,6 +36,85 @@ impl Game {
         }
     }
 
+    pub(super) fn held_art_stack(&self, stack: Option<ItemStack>) -> mobs::HeldArt {
+        let Some(stack) = stack else {
+            return mobs::HeldArt::None;
+        };
+        if let Some(visual) = self.server.world.implement_visual(stack) {
+            return self.held_art_implement(visual, |wire| Some(ItemId(wire)));
+        }
+        self.held_art(Some(stack.item))
+    }
+
+    pub(super) fn held_art_implement(
+        &self,
+        visual: crate::implements::ImplementVisual,
+        mut map: impl FnMut(u16) -> Option<ItemId>,
+    ) -> mobs::HeldArt {
+        let icon = |item: Option<ItemId>| {
+            item.map(|item| self.content.reg.item(item).icon)
+                .unwrap_or(crate::atlas::UNKNOWN_SLOT)
+        };
+        mobs::HeldArt::Wand {
+            body: icon(map(visual.body)),
+            reservoir: icon(map(visual.reservoir)),
+            focus: icon(map(visual.focus)),
+            binding: icon(map(visual.binding)),
+            focus_shape: visual.focus_shape,
+            charge_band: visual.charge_band.min(3),
+        }
+    }
+
+    /// Present an authoritative implement event without learning exact charge
+    /// or provenance. `wire_items` is present for a guest receiving host item
+    /// ids; a windowed host passes `None` because its visual already names the
+    /// local registry.
+    pub(super) fn present_implement_activation(
+        &mut self,
+        pos: crate::planet::EntityPos,
+        cue: crate::implements::ImplementCue,
+        visual: Option<crate::implements::ImplementVisual>,
+        wire_items: Option<&[Option<ItemId>]>,
+    ) {
+        let sound = match cue {
+            crate::implements::ImplementCue::Use => Sfx::ImplementUse,
+            crate::implements::ImplementCue::Transfer => Sfx::ImplementTransfer,
+            crate::implements::ImplementCue::Strain => Sfx::ImplementStrain,
+            crate::implements::ImplementCue::Empty => Sfx::ImplementEmpty,
+            crate::implements::ImplementCue::Failure => Sfx::ImplementFailure,
+        };
+        self.sfx(sound);
+        if !self.presentation.juice {
+            return;
+        }
+        let focus_item = visual.and_then(|visual| {
+            wire_items.map_or_else(
+                || {
+                    self.content
+                        .reg
+                        .items
+                        .get(visual.focus as usize)
+                        .map(|_| ItemId(visual.focus))
+                },
+                |map| map.get(visual.focus as usize).copied().flatten(),
+            )
+        });
+        let tile = focus_item
+            .map(|item| self.content.reg.item(item).icon)
+            .unwrap_or_else(|| {
+                *crate::atlas::builtin_slots()
+                    .get("ember")
+                    .unwrap_or(&crate::atlas::UNKNOWN_SLOT)
+            });
+        let count = match cue {
+            crate::implements::ImplementCue::Transfer => 10,
+            crate::implements::ImplementCue::Failure => 18,
+            crate::implements::ImplementCue::Use | crate::implements::ImplementCue::Strain => 6,
+            crate::implements::ImplementCue::Empty => 2,
+        };
+        self.juice_burst(pos.render_pos(), tile, count, 1.4);
+    }
+
     /// Advance a remote player's walk phase from their motion.
     pub(super) fn gait_for(&mut self, id: u32, pos: Vec3, dt: f32) -> (f32, f32) {
         let e = self
@@ -69,6 +148,21 @@ impl Game {
             bd.light_rgb[2] as f32 / emit,
         );
         Some((color * 1.8 * (emit / 14.0), emit + 2.0))
+    }
+
+    pub(super) fn implement_glow(
+        &self,
+        visual: crate::implements::ImplementVisual,
+    ) -> Option<(Vec3, f32)> {
+        let band = visual.charge_band.min(3);
+        if band == 0 {
+            return None;
+        }
+        let strength = f32::from(band) / 3.0;
+        Some((
+            Vec3::new(0.32, 0.58, 0.95) * (0.32 + strength * 0.48),
+            3.5 + strength * 3.5,
+        ))
     }
 
     /// Read the country at a spot and toast it: the prospector's
@@ -1409,6 +1503,12 @@ impl Game {
                     self.input.action_cooldown = 0.35;
                     self.input.right_held = false;
                     self.assemble_tuning_lens(h.block);
+                    return;
+                }
+                Some("binding_frame") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.35;
+                    self.input.right_held = false;
+                    self.operate_binding_frame(h.block);
                     return;
                 }
                 Some("heart") if self.input.action_cooldown <= 0.0 => {

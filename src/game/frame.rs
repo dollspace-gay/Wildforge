@@ -74,6 +74,7 @@ impl Game {
         }
         let reg = self.content.reg.clone();
         let held = self.inventory.slots[self.input.hotbar_sel];
+        let implement_visual = held.and_then(|stack| self.server.world.implement_visual(stack));
 
         // Camera basis: f forward, r screen-right, u screen-up.
         let f = self.camera.forward();
@@ -105,9 +106,14 @@ impl Game {
         let bob_x = self.presentation.hand_bob.sin() * 0.02 * moving;
         let bob_y = -(self.presentation.hand_bob * 2.0).sin().abs() * 0.025 * moving;
         let mut anchor = self.camera.pos + f * 0.60 + r * (0.47 + bob_x) + u * (-0.46 + bob_y);
-        // Swing sweeps toward where you're aiming; a drawn bow comes
-        // toward center.
-        anchor += (f * 0.08 - u * 0.05 - r * 0.08) * arc;
+        // Implements settle into the sight line and then relax; other tools
+        // keep the established strike swing. A wand is an instrument, not a
+        // gun whose muzzle automatically kicks on every use.
+        if implement_visual.is_some() {
+            anchor += (f * 0.10 + u * 0.10 - r * 0.15) * arc;
+        } else {
+            anchor += (f * 0.08 - u * 0.05 - r * 0.08) * arc;
+        }
         anchor += (-r * 0.16 + f * 0.04) * bow_charge;
         if self.survival.eating > 0.0 {
             // Nibbling: toward the face, jittering.
@@ -120,8 +126,18 @@ impl Game {
 
         // Local space: x right, y up, z forward. The swing dips the tip
         // forward-down and sweeps it inward, hinged at the wrist.
-        let a = arc * 0.85;
-        let b = arc * 0.8;
+        let a = arc
+            * if implement_visual.is_some() {
+                0.16
+            } else {
+                0.85
+            };
+        let b = arc
+            * if implement_visual.is_some() {
+                0.12
+            } else {
+                0.8
+            };
         let xf = |q: Vec3| -> Vec3 {
             let (sa, ca) = a.sin_cos();
             let q = Vec3::new(q.x, q.y * ca - q.z * sa, q.y * sa + q.z * ca);
@@ -184,6 +200,56 @@ impl Game {
                 idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
             }
         }
+        // A thin, double-sided material panel used for first-person focus
+        // silhouettes. Degenerate corners are intentional for spear tips.
+        fn panel(
+            verts: &mut Vec<mesher::Vertex>,
+            idx: &mut Vec<u32>,
+            xf: &dyn Fn(Vec3) -> Vec3,
+            corners: [Vec3; 4],
+            slot: u16,
+            lum: (f32, f32),
+            glow: u8,
+        ) {
+            let ts = 1.0 / atlas::ATLAS_TILES as f32;
+            let inset = ts / 32.0;
+            let (tx, ty) = (
+                slot as u32 % atlas::ATLAS_TILES,
+                slot as u32 / atlas::ATLAS_TILES,
+            );
+            for flip in [false, true] {
+                let base = verts.len() as u32;
+                let order = if flip {
+                    [1usize, 0, 3, 2]
+                } else {
+                    [0, 1, 2, 3]
+                };
+                for (corner, (uu, vv)) in
+                    order
+                        .into_iter()
+                        .zip([(0.0f32, 1.0f32), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0)])
+                {
+                    let wp = xf(corners[corner]);
+                    let shine = f32::from(glow) * 0.16;
+                    verts.push(mesher::Vertex {
+                        pos: wp.to_array(),
+                        uv: [
+                            tx as f32 * ts + inset + uu * (ts - 2.0 * inset),
+                            ty as f32 * ts + inset + vv * (ts - 2.0 * inset),
+                        ],
+                        normal: [0.0, 0.0, 0.0],
+                        light: [
+                            (lum.0 + shine * 0.65).min(1.4),
+                            (lum.0 + shine * 0.85).min(1.4),
+                            (lum.0 + shine).min(1.4),
+                        ],
+                        sky: lum.1,
+                        ao: 1.0,
+                    });
+                }
+                idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+            }
+        }
         // Pre-rotations in local space (3/4 view for blocks, arm angle).
         let pre_y = |ang: f32| {
             move |q: Vec3| {
@@ -198,9 +264,138 @@ impl Game {
             }
         };
 
-        match held {
+        match (held, implement_visual) {
+            (Some(_), Some(visual)) => {
+                let item_icon = |wire: u16| reg.item(ItemId(wire)).icon;
+                let body = item_icon(visual.body);
+                let reservoir = item_icon(visual.reservoir);
+                let focus = item_icon(visual.focus);
+                let binding = item_icon(visual.binding);
+                let charge = visual.charge_band.min(3);
+
+                // A long, material-textured body with visibly separate
+                // reservoir and ferrules. The focus geometry, not merely its
+                // colour, identifies the family of future workings.
+                cube(
+                    verts,
+                    idx,
+                    &xf,
+                    Vec3::new(-0.035, -0.18, 0.035),
+                    Vec3::new(0.035, 0.48, 0.105),
+                    [body; 6],
+                    lum,
+                );
+                cube(
+                    verts,
+                    idx,
+                    &xf,
+                    Vec3::new(-0.105, -0.07, 0.015),
+                    Vec3::new(0.105, 0.13, 0.125),
+                    [reservoir; 6],
+                    ((lum.0 + f32::from(charge) * 0.10).min(1.35), lum.1),
+                );
+                for y in [0.10f32, 0.34] {
+                    cube(
+                        verts,
+                        idx,
+                        &xf,
+                        Vec3::new(-0.075, y, 0.020),
+                        Vec3::new(0.075, y + 0.045, 0.120),
+                        [binding; 6],
+                        lum,
+                    );
+                }
+                // Item art does not share a common opaque footprint: the
+                // mineral focus tiles fill most of their square while the
+                // reservoir/body sprites have transparent margins. Keep the
+                // focus geometry physically narrower than the shaft assembly
+                // so an opaque Echo Slate does not become a detached shield.
+                let center = Vec3::new(0.0, 0.525, 0.07);
+                let rect = |cx: f32, cy: f32, hw: f32, hh: f32| {
+                    [
+                        Vec3::new(cx - hw, cy - hh, center.z),
+                        Vec3::new(cx + hw, cy - hh, center.z),
+                        Vec3::new(cx + hw, cy + hh, center.z),
+                        Vec3::new(cx - hw, cy + hh, center.z),
+                    ]
+                };
+                match visual.focus_shape {
+                    1 => panel(
+                        verts,
+                        idx,
+                        &xf,
+                        [
+                            center + Vec3::new(0.0, -0.075, 0.0),
+                            center + Vec3::new(0.075, 0.0, 0.0),
+                            center + Vec3::new(0.0, 0.075, 0.0),
+                            center + Vec3::new(-0.075, 0.0, 0.0),
+                        ],
+                        focus,
+                        lum,
+                        charge,
+                    ),
+                    2 => {
+                        panel(
+                            verts,
+                            idx,
+                            &xf,
+                            rect(0.0, center.y, 0.095, 0.018),
+                            focus,
+                            lum,
+                            charge,
+                        );
+                        for x in [-0.068f32, 0.068] {
+                            panel(
+                                verts,
+                                idx,
+                                &xf,
+                                rect(x, center.y + 0.048, 0.018, 0.062),
+                                focus,
+                                lum,
+                                charge,
+                            );
+                        }
+                    }
+                    3 => panel(
+                        verts,
+                        idx,
+                        &xf,
+                        [
+                            center + Vec3::new(-0.052, -0.062, 0.0),
+                            center + Vec3::new(0.052, -0.062, 0.0),
+                            center + Vec3::new(0.0, 0.103, 0.0),
+                            center + Vec3::new(0.0, 0.103, 0.0),
+                        ],
+                        focus,
+                        lum,
+                        charge,
+                    ),
+                    _ => {
+                        panel(
+                            verts,
+                            idx,
+                            &xf,
+                            rect(0.0, center.y, 0.032, 0.062),
+                            focus,
+                            lum,
+                            charge,
+                        );
+                        for x in [-0.058f32, 0.058] {
+                            panel(
+                                verts,
+                                idx,
+                                &xf,
+                                rect(x, center.y + 0.038, 0.016, 0.055),
+                                focus,
+                                lum,
+                                charge,
+                            );
+                        }
+                    }
+                }
+            }
             // A block rides as a mini-cube, turned for a 3/4 view.
-            Some(st)
+            (Some(st), None)
                 if reg
                     .item(st.item)
                     .places
@@ -221,7 +416,7 @@ impl Game {
             }
             // Anything else shows as its icon: a flat angled card,
             // drawn double-sided like dropped item sprites.
-            Some(st) => {
+            (Some(st), None) => {
                 let slot = reg.item(st.item).icon;
                 let ts = 1.0 / atlas::ATLAS_TILES as f32;
                 let inset = ts / 32.0;
@@ -267,7 +462,7 @@ impl Game {
             }
             // Bare hand: your forearm — sleeve in your shirt color,
             // hand in your skin tone (the same body others see).
-            None => {
+            (None, _) => {
                 let skin = style::skin_tile(&self.style);
                 let sleeve = style::shirt_tile(&self.style);
                 let ty = pre_y(-0.30);
@@ -587,16 +782,20 @@ impl Game {
                     pos: self.player.pos,
                     spawn: self.survival.spawn_point,
                     attackable: self.survival.attackable(self.creative),
-                    aggro_mod: if self.charm("quiet") { -2.0 } else { 0.0 },
+                    aggro_mod: if self.charm("quiet") {
+                        -crate::implements::QUIET_CHARM_AGGRO_REDUCTION
+                    } else {
+                        0.0
+                    },
+                    quiet_charm: self.survival.armor[4]
+                        .filter(|stack| self.server.world.charm_can_pay(*stack, "quiet")),
                 };
                 // Hosting: guests are simulated players too, and their
                 // requests apply before the tick.
                 let players = if let Some(mut sess) = self.multiplayer.host.take() {
                     self.server.world.set_edit_logging(true);
-                    let held = self.inventory.slots[self.input.hotbar_sel]
-                        .map(|st| st.item.0)
-                        .unwrap_or(u16::MAX);
-                    let fx = sess.pump(
+                    let held = self.inventory.slots[self.input.hotbar_sel];
+                    let fx = sess.pump_with_host_stack(
                         &mut self.server,
                         Some((
                             self.player.pos,
@@ -614,6 +813,9 @@ impl Game {
                             }
                             mp::HostFx::Joined(n) => self.toast(format!("{n} joined.")),
                             mp::HostFx::Left(n) => self.toast(format!("{n} left.")),
+                            mp::HostFx::ImplementActivation { pos, cue, visual } => {
+                                self.present_implement_activation(pos, cue, visual, None);
+                            }
                             mp::HostFx::AllSlept => {
                                 self.multiplayer.host_sleeping = false;
                                 self.survival.spawn_point = self.player.pos;
@@ -621,7 +823,7 @@ impl Game {
                             }
                         }
                     }
-                    let players = sess.player_ctxs(Some(ctx));
+                    let players = sess.authoritative_player_ctxs(&self.server.world, Some(ctx));
                     self.multiplayer.host = Some(sess);
                     players
                 } else {
@@ -670,6 +872,11 @@ impl Game {
                         server::SimEvent::Bred => {
                             self.sfx(Sfx::Pickup);
                             self.toast("New life stirs in the wild.".to_string());
+                        }
+                        server::SimEvent::QuietSheltered { who } => {
+                            if who == 0 {
+                                self.sfx(Sfx::Click);
+                            }
                         }
                         server::SimEvent::MobDied(death) => {
                             self.present_settled_mob_death(death);
@@ -1340,18 +1547,23 @@ impl Game {
                 .unwrap_or_default();
             for (id, pos, logical, yaw) in entries {
                 let gait = self.gait_for(id, pos, dt);
-                let (held, st) = {
+                let (held, implement, st) = {
                     let r = self.multiplayer.remote.as_ref().unwrap();
                     let held = r
                         .player_held
                         .get(&id)
                         .and_then(|w| r.item_map.get(*w as usize).copied().flatten());
+                    let implement = r.player_implement.get(&id).copied().map(|visual| {
+                        self.held_art_implement(visual, |wire| {
+                            r.item_map.get(wire as usize).copied().flatten()
+                        })
+                    });
                     let st = r
                         .player_style
                         .get(&id)
                         .map(|v| style::Style::unpack(*v))
                         .unwrap_or_default();
-                    (held, st)
+                    (held, implement, st)
                 };
                 let lum = sample(&self.server.world, logical);
                 mobs::emit_humanoid_interpolated(
@@ -1360,7 +1572,7 @@ impl Game {
                     yaw,
                     &Self::humanoid_art(st),
                     gait,
-                    self.held_art(held),
+                    implement.unwrap_or_else(|| self.held_art(held)),
                     lum,
                     &mut entity_verts,
                     &mut entity_idx,
@@ -1368,7 +1580,16 @@ impl Game {
             }
         }
         if self.multiplayer.host.is_some() {
-            let entries: Vec<(u32, Vec3, crate::planet::EntityPos, f32, u16, u32)> = self
+            type GuestRenderEntry = (
+                u32,
+                Vec3,
+                crate::planet::EntityPos,
+                f32,
+                u16,
+                u32,
+                Option<crate::implements::ImplementVisual>,
+            );
+            let entries: Vec<GuestRenderEntry> = self
                 .multiplayer
                 .host
                 .as_ref()
@@ -1378,12 +1599,14 @@ impl Game {
                         .filter(|(_, guest)| guest.is_active())
                         .map(|(id, g)| {
                             let (p, y) = g.render_pos();
-                            (*id, p, g.render_entity_pos(), y, g.held, g.style)
+                            let implement = g.inventory.slots[g.hotbar]
+                                .and_then(|stack| self.server.world.implement_visual(stack));
+                            (*id, p, g.render_entity_pos(), y, g.held, g.style, implement)
                         })
                         .collect()
                 })
                 .unwrap_or_default();
-            for (id, pos, logical, yaw, held_wire, pstyle) in entries {
+            for (id, pos, logical, yaw, held_wire, pstyle, implement) in entries {
                 let gait = self.gait_for(id, pos, dt);
                 let held = if held_wire == u16::MAX {
                     None
@@ -1397,7 +1620,9 @@ impl Game {
                     yaw,
                     &Self::humanoid_art(style::Style::unpack(pstyle)),
                     gait,
-                    self.held_art(held),
+                    implement
+                        .map(|visual| self.held_art_implement(visual, |wire| Some(ItemId(wire))))
+                        .unwrap_or_else(|| self.held_art(held)),
                     lum,
                     &mut entity_verts,
                     &mut entity_idx,
@@ -1733,7 +1958,7 @@ impl Game {
                 self.time_abs * 0.8,
                 &Self::humanoid_art(self.style),
                 (self.time_abs * 2.2, 0.35),
-                self.held_art(self.inventory.slots[self.input.hotbar_sel].map(|st| st.item)),
+                self.held_art_stack(self.inventory.slots[self.input.hotbar_sel]),
                 ([0.95, 0.93, 0.90], 0.0),
                 &mut hand_verts,
                 &mut hand_idx,
@@ -1780,7 +2005,7 @@ impl Game {
                 face_camera,
                 &Self::humanoid_art(self.style),
                 (0.0, 0.0),
-                self.held_art(self.inventory.slots[self.input.hotbar_sel].map(|st| st.item)),
+                self.held_art_stack(self.inventory.slots[self.input.hotbar_sel]),
                 ([0.95, 0.93, 0.90], 0.0),
                 &mut hand_verts,
                 &mut hand_idx,
@@ -1819,14 +2044,56 @@ impl Game {
         // thrashed the cube cache). Remote helds anchor the same way.
         if self.in_world
             && let Some(stack) = self.inventory.slots[self.input.hotbar_sel]
-            && let Some((color, range)) = self.held_glow(stack.item)
         {
+            let glow = self
+                .server
+                .world
+                .implement_visual(stack)
+                .and_then(|visual| self.implement_glow(visual))
+                .or_else(|| self.held_glow(stack.item));
+            if let Some((color, range)) = glow {
+                dyn_lights.push(lights::DynLight {
+                    key: lights::Key::Held,
+                    pos: self.camera.pos - self.camera.up() * 0.15,
+                    color,
+                    range,
+                });
+            }
+        }
+        // Placed charge vessels are not unconditional glowing blocks. Their
+        // restrained light follows the authoritative qualitative charge band;
+        // guests receive only these nearby bands, never exact custody. Damage
+        // warms the hue and a nearby strained vessel gives a sparse warning
+        // envelope even when nobody has a frame screen open.
+        let apparatus_cues = if self.in_world {
+            self.server.world.apparatus_cues_near(self.player.pos, 48.0)
+        } else {
+            Vec::new()
+        };
+        for cue in &apparatus_cues {
+            if cue.charge_band == 0 {
+                continue;
+            }
+            let strength = 0.35 + f32::from(cue.charge_band.min(3)) * 0.24;
+            let strain = f32::from(cue.strain_band.min(3)) / 3.0;
+            let color = Vec3::new(
+                0.35 + strain * 0.35,
+                0.62 - strain * 0.12,
+                0.95 - strain * 0.22,
+            ) * strength;
             dyn_lights.push(lights::DynLight {
-                key: lights::Key::Held,
-                pos: self.camera.pos - self.camera.up() * 0.15,
+                key: lights::Key::Block(cue.pos),
+                pos: cue.pos.entity_center().render_pos(),
                 color,
-                range,
+                range: 2.5 + f32::from(cue.charge_band.min(3)) * 1.7,
             });
+        }
+        if self.total_frames.is_multiple_of(300)
+            && apparatus_cues.iter().any(|cue| {
+                cue.strain_band >= 2 && self.player.pos.distance_to(cue.pos.entity_center()) <= 12.0
+            })
+        {
+            self.sfx(Sfx::ImplementStrain);
         }
         // The remaining dynamic slots go to whatever is closest: other
         // players' torches or glowing wardens.
@@ -1839,8 +2106,13 @@ impl Game {
                         continue;
                     };
                     let local = r.item_map.get(held as usize).copied().flatten();
-                    if let Some(item) = local
-                        && let Some((color, range)) = self.held_glow(item)
+                    let glow = r
+                        .player_implement
+                        .get(id)
+                        .copied()
+                        .and_then(|visual| self.implement_glow(visual))
+                        .or_else(|| local.and_then(|item| self.held_glow(item)));
+                    if let Some((color, range)) = glow
                         && let Some(logical) = r.player_positions.get(id).copied()
                     {
                         let pos = logical
@@ -1865,10 +2137,16 @@ impl Game {
                     if !g.is_active() {
                         continue;
                     }
-                    if g.held == u16::MAX {
-                        continue;
-                    }
-                    if let Some((color, range)) = self.held_glow(ItemId(g.held)) {
+                    let stack = g.inventory.slots[g.hotbar];
+                    let glow = stack
+                        .and_then(|stack| self.server.world.implement_visual(stack))
+                        .and_then(|visual| self.implement_glow(visual))
+                        .or_else(|| {
+                            (g.held != u16::MAX)
+                                .then_some(ItemId(g.held))
+                                .and_then(|item| self.held_glow(item))
+                        });
+                    if let Some((color, range)) = glow {
                         let p = g
                             .render_entity_pos()
                             .translated(Vec3::new(0.0, 1.4, 0.0))

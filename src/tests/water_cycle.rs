@@ -525,6 +525,7 @@ fn production_server_interleaving_conserves_weather() {
         spawn,
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     }];
     let center = spawn.chunk().unwrap();
     let mut streaming = (-10..=10)

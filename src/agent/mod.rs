@@ -79,13 +79,15 @@ pub struct Agent {
     /// Breadcrumbs per player: the trail follow() chases.
     trail: HashMap<u32, VecDeque<crate::planet::EntityPos>>,
     /// Snapshots arrive split when they outgrow one datagram.
-    players_rx: net::SnapshotAssembler<(u32, crate::planet::EntityPos, f32, u16, u32)>,
+    players_rx: net::SnapshotAssembler<net::PlayerSnap>,
     mobs_rx: net::SnapshotAssembler<net::MobSnap>,
     /// Human-readable happenings, drained by the events tool.
     pub events: VecDeque<String>,
     last_discovery: Option<crate::discovery::ObservationSummary>,
     last_discovery_records: Option<(Vec<crate::discovery::ObservationSummary>, u16)>,
     last_knowledge_text: Option<String>,
+    last_binding_frame: Option<(crate::planet::BlockPos, crate::implements::FrameResult)>,
+    binding_revisions: HashMap<crate::planet::BlockPos, u64>,
     pub behavior: Behavior,
     pending_chunks: VecDeque<(ChunkPos, Vec<u8>)>,
     entry_required: HashSet<ChunkPos>,
@@ -166,6 +168,8 @@ impl Agent {
             last_discovery: None,
             last_discovery_records: None,
             last_knowledge_text: None,
+            last_binding_frame: None,
+            binding_revisions: HashMap::new(),
             behavior: Behavior::Idle,
             pending_chunks: VecDeque::new(),
             entry_required: HashSet::new(),
@@ -457,7 +461,7 @@ impl Agent {
                 let present: std::collections::HashSet<u32> =
                     list.iter().map(|(id, ..)| *id).collect();
                 self.players.retain(|id, _| present.contains(id));
-                for (id, pos, yaw, _held, _style) in list {
+                for (id, pos, yaw, _held, _style, _implement) in list {
                     if id == self.my_id {
                         continue;
                     }
@@ -510,8 +514,18 @@ impl Agent {
             } => {
                 self.world.set_remote_arcane_cue(bands, dominant, ecology);
             }
-            net::S2C::ArcaneItems { charges } => {
-                self.world.set_remote_arcane_items(charges);
+            net::S2C::ArcaneItems {
+                reset,
+                charges,
+                implements,
+                apparatus,
+            } => {
+                if reset {
+                    self.world.clear_remote_implement_snapshot();
+                }
+                self.world.extend_remote_arcane_items(charges);
+                self.world.extend_remote_implements(implements);
+                self.world.extend_remote_apparatus(apparatus);
             }
             net::S2C::DiscoveryReport(record) => {
                 self.event(format!(
@@ -535,6 +549,11 @@ impl Agent {
             net::S2C::KnowledgeText { instance_id, text } => {
                 self.event(format!("read knowledge object {instance_id}: {text}"));
                 self.last_knowledge_text = Some(text);
+            }
+            net::S2C::BindingFrameResult { pos, result } => {
+                self.event(format!("binding frame: {}", result.message));
+                self.binding_revisions.insert(pos, result.revision);
+                self.last_binding_frame = Some((pos, result));
             }
             net::S2C::Hit { dmg, from: _ } => {
                 self.health -= dmg;
@@ -611,6 +630,7 @@ impl Agent {
             // the agent's world-model (fast follows).
             net::S2C::Container { .. }
             | net::S2C::MobCargo { .. }
+            | net::S2C::ImplementActivation { .. }
             | net::S2C::Bolts(_)
             | net::S2C::Falling(_) => {}
         }

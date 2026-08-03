@@ -22,6 +22,7 @@ mod edifice;
 mod entity;
 mod game;
 mod identity;
+mod implements;
 mod inventory;
 mod lights;
 mod materials;
@@ -79,6 +80,25 @@ use world::World;
 /// Run Wildforge using process arguments and the platform event loop.
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|arg| arg == "--implements-audit") {
+        let Some(world) = args.get(i + 1).map(PathBuf::from) else {
+            eprintln!("usage: wildforge --implements-audit <world>");
+            std::process::exit(2);
+        };
+        match implements::audit_world(&world) {
+            Ok(audit) => {
+                print!("{}", audit.render());
+                if !audit.is_qualified() {
+                    std::process::exit(1);
+                }
+            }
+            Err(error) => {
+                eprintln!("implements audit failed: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if let Some(i) = args.iter().position(|arg| arg == "--discovery-audit") {
         let Some(world) = args.get(i + 1).map(PathBuf::from) else {
             eprintln!("usage: wildforge --discovery-audit <world>");

@@ -52,6 +52,8 @@ pub enum MobEvent {
     Cast(Projectile),
     /// A wildlife pair bred at this position.
     Bred,
+    /// A quiet charm kept this mob outside its reduced attention interval.
+    QuietSheltered { player: usize, mob: u32 },
     /// A grazer took its bite: the world applies the plant's loss.
     Ate(crate::planet::BlockPos),
     /// A predator's kill landed: the prey (by id) becomes a carcass.
@@ -256,6 +258,9 @@ pub struct Mob {
     pub belly: f32,
     /// Seconds until digestion finishes (> 0 after any meal).
     pub digest: f32,
+    /// Debounces sustained concealment so one warden charges one bounded
+    /// interval rather than every simulation tick.
+    quiet_notice: f32,
 }
 
 fn r01(rng: &mut u32) -> f32 {
@@ -335,6 +340,7 @@ impl Mob {
             // A grace period before the first meal matters.
             belly: 240.0,
             digest: 0.0,
+            quiet_notice: 0.0,
         }
     }
 
@@ -438,6 +444,7 @@ impl Mob {
         self.cast_cd = (self.cast_cd - dt).max(0.0);
         self.calm = (self.calm - dt).max(0.0);
         self.breed_cd = (self.breed_cd - dt).max(0.0);
+        self.quiet_notice = (self.quiet_notice - dt).max(0.0);
         if self.growth < 1.0 {
             self.growth = (self.growth + dt / 1200.0).min(1.0);
         }
@@ -483,16 +490,27 @@ impl Mob {
             }
         }
         // Wardens take notice (the quiet charm shortens their attention).
-        if let Some((_, p)) = prey
+        if let Some((player_index, p)) = prey
             && (def.hostile || def.fierce || (self.bold && def.attack > 0.0))
             && !self.tamed
             && !self.watcher
             && self.state != MobState::Hunt
         {
             let range = (def.aggro_range + p.aggro_mod).max(2.0);
-            if self.pos.local_delta_to(p.pos).length_squared() < range * range {
+            let distance_sq = self.pos.local_delta_to(p.pos).length_squared();
+            if distance_sq < range * range {
                 self.state = MobState::Hunt;
                 self.lose_aggro = 0.0;
+            } else if p.quiet_charm.is_some()
+                && p.aggro_mod < 0.0
+                && distance_sq < def.aggro_range * def.aggro_range
+                && self.quiet_notice <= 0.0
+            {
+                self.quiet_notice = 5.0;
+                events.push(MobEvent::QuietSheltered {
+                    player: player_index,
+                    mob: self.id,
+                });
             }
         }
 
@@ -1328,6 +1346,16 @@ pub enum HeldArt {
     Cube([u16; 6]),
     /// Anything else: the item's icon as a small sprite.
     Sprite(u16),
+    /// Four visibly separate wand materials. `focus_shape` changes geometry,
+    /// so focus identity remains readable without color vision.
+    Wand {
+        body: u16,
+        reservoir: u16,
+        focus: u16,
+        binding: u16,
+        focus_shape: u8,
+        charge_band: u8,
+    },
 }
 
 /// A player's body: Steve-proportioned boxes on a 16px-per-block
@@ -1559,7 +1587,7 @@ pub(crate) fn emit_humanoid_interpolated(
         let dy = hy0 - pivot;
         Vec3::new(ax / 16.0, pivot + dy * cs - hz0 * ss, dy * ss + hz0 * cs)
     };
-    let mut emit_held_quad = |corners: [(Vec3, f32, f32); 4], slot: u16| {
+    let mut emit_held_quad = |corners: [(Vec3, f32, f32); 4], slot: u16, glow: u8| {
         let (tx, ty) = (slot as u32 % ATLAS_TILES, slot as u32 / ATLAS_TILES);
         let base = verts.len() as u32;
         for (lp, u, v) in corners {
@@ -1573,7 +1601,11 @@ pub(crate) fn emit_humanoid_interpolated(
                     ty as f32 * ts + inset + v * (ts - 2.0 * inset),
                 ],
                 normal: [0.0, 0.0, 0.0],
-                light: lum.0,
+                light: [
+                    (lum.0[0] + f32::from(glow) * 0.12).min(1.4),
+                    (lum.0[1] + f32::from(glow) * 0.18).min(1.4),
+                    (lum.0[2] + f32::from(glow) * 0.24).min(1.4),
+                ],
                 sky: lum.1,
                 ao: 1.0,
             });
@@ -1602,7 +1634,7 @@ pub(crate) fn emit_humanoid_interpolated(
                     };
                     (lp, u, v)
                 });
-                emit_held_quad(quad, tiles[f]);
+                emit_held_quad(quad, tiles[f], 0);
             }
         }
         HeldArt::Sprite(icon) => {
@@ -1632,7 +1664,103 @@ pub(crate) fn emit_humanoid_interpolated(
                             0.0,
                         ),
                     ];
-                    emit_held_quad(quad, icon);
+                    emit_held_quad(quad, icon, 0);
+                }
+            }
+        }
+        HeldArt::Wand {
+            body,
+            reservoir,
+            focus,
+            binding,
+            focus_shape,
+            charge_band,
+        } => {
+            let mut panel = |center: Vec3, half_w: f32, half_h: f32, slot: u16, glow: u8| {
+                for z in [-0.012, 0.012] {
+                    emit_held_quad(
+                        [
+                            (center + Vec3::new(-half_w, -half_h, z), 0.0, 1.0),
+                            (center + Vec3::new(half_w, -half_h, z), 1.0, 1.0),
+                            (center + Vec3::new(half_w, half_h, z), 1.0, 0.0),
+                            (center + Vec3::new(-half_w, half_h, z), 0.0, 0.0),
+                        ],
+                        slot,
+                        glow,
+                    );
+                }
+            };
+            let shaft = hand_center + Vec3::new(0.0, 5.2 / 16.0, 0.0);
+            panel(shaft, 0.75 / 16.0, 5.8 / 16.0, body, 0);
+            panel(
+                hand_center + Vec3::new(0.0, 3.0 / 16.0, 0.0),
+                1.9 / 16.0,
+                1.55 / 16.0,
+                reservoir,
+                charge_band.saturating_sub(1),
+            );
+            for y in [0.2 / 16.0, 6.0 / 16.0] {
+                panel(
+                    hand_center + Vec3::new(0.0, y, 0.0),
+                    1.45 / 16.0,
+                    0.45 / 16.0,
+                    binding,
+                    0,
+                );
+            }
+            let tip = hand_center + Vec3::new(0.0, 12.0 / 16.0, 0.0);
+            match focus_shape {
+                1 => {
+                    // A broad diamond/slate.
+                    emit_held_quad(
+                        [
+                            (tip + Vec3::new(0.0, -1.5 / 16.0, 0.0), 0.5, 1.0),
+                            (tip + Vec3::new(1.5 / 16.0, 0.0, 0.0), 1.0, 0.5),
+                            (tip + Vec3::new(0.0, 1.5 / 16.0, 0.0), 0.5, 0.0),
+                            (tip + Vec3::new(-1.5 / 16.0, 0.0, 0.0), 0.0, 0.5),
+                        ],
+                        focus,
+                        charge_band,
+                    );
+                }
+                2 => {
+                    // Forked choirstone geometry.
+                    panel(tip, 1.9 / 16.0, 0.42 / 16.0, focus, charge_band);
+                    for x in [-1.4 / 16.0, 1.4 / 16.0] {
+                        panel(
+                            tip + Vec3::new(x, 0.95 / 16.0, 0.0),
+                            0.38 / 16.0,
+                            1.2 / 16.0,
+                            focus,
+                            charge_band,
+                        );
+                    }
+                }
+                3 => {
+                    // Narrow wake-iron spearhead.
+                    emit_held_quad(
+                        [
+                            (tip + Vec3::new(-0.95 / 16.0, -1.2 / 16.0, 0.0), 0.0, 1.0),
+                            (tip + Vec3::new(0.95 / 16.0, -1.2 / 16.0, 0.0), 1.0, 1.0),
+                            (tip + Vec3::new(0.0, 2.0 / 16.0, 0.0), 0.5, 0.0),
+                            (tip + Vec3::new(0.0, 2.0 / 16.0, 0.0), 0.5, 0.0),
+                        ],
+                        focus,
+                        charge_band,
+                    );
+                }
+                _ => {
+                    // Living/root crown.
+                    panel(tip, 0.75 / 16.0, 1.15 / 16.0, focus, charge_band);
+                    for x in [-1.2 / 16.0, 1.2 / 16.0] {
+                        panel(
+                            tip + Vec3::new(x, 0.75 / 16.0, 0.0),
+                            0.32 / 16.0,
+                            1.0 / 16.0,
+                            focus,
+                            charge_band,
+                        );
+                    }
                 }
             }
         }

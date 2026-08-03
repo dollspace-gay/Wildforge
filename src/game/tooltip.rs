@@ -316,7 +316,38 @@ impl Game {
             return;
         };
         let current = self.server.world.inspectable_item_current(stack.arcane_id);
-        let lines = item_tooltip_lines_with_current(&self.content.reg, stack, current);
+        let mut lines = item_tooltip_lines_with_current(&self.content.reg, stack, current);
+        let has_lens = self
+            .inventory
+            .slots
+            .iter()
+            .chain(self.survival.armor.iter())
+            .flatten()
+            .any(|held| {
+                self.content
+                    .reg
+                    .item(held.item)
+                    .discovery
+                    .as_ref()
+                    .is_some_and(|definition| definition.kind == "tuning_lens")
+            });
+        let implement = self.server.world.implement_tooltip(stack, has_lens);
+        if !implement.is_empty() {
+            // The implement resolver knows its actual component-derived
+            // capacity; remove the generic content-manifest reading so the
+            // card never shows two contradictory charge bands.
+            lines.retain(|(line, _)| {
+                !line.starts_with("CURRENT:")
+                    && line != "HOLDS CHARGE STEADILY"
+                    && line != "CONDUCTS CHARGE READILY"
+                    && line != "CHARGE FEELS RESTLESS"
+            });
+            lines.extend(
+                implement
+                    .into_iter()
+                    .map(|line| (line.to_uppercase(), EFFECT)),
+            );
+        }
         const S: f32 = 1.3;
         const PAD: f32 = 8.0;
         const LINE: f32 = 15.0;

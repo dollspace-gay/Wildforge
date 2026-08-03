@@ -31,6 +31,7 @@ fn mob_settles_on_ground_and_flees_from_damage() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 60.0,
             &mut rng,
@@ -60,6 +61,7 @@ fn mob_settles_on_ground_and_flees_from_damage() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 60.0,
             &mut rng,
@@ -79,6 +81,7 @@ fn mob_settles_on_ground_and_flees_from_damage() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 60.0,
             &mut rng,
@@ -110,6 +113,7 @@ fn skittish_flees_players_bold_does_not() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0 / 60.0,
         &mut rng,
@@ -124,6 +128,7 @@ fn skittish_flees_players_bold_does_not() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0 / 60.0,
         &mut rng,
@@ -289,6 +294,7 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0,
             1.0 / 60.0,
@@ -321,6 +327,7 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0,
         1.0 / 60.0,
@@ -363,6 +370,7 @@ fn warden_hunts_strikes_and_caster_fires() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0 / 60.0,
         &mut rng,
@@ -381,6 +389,7 @@ fn warden_hunts_strikes_and_caster_fires() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 60.0,
             &mut rng,
@@ -406,6 +415,7 @@ fn warden_hunts_strikes_and_caster_fires() {
             spawn: ep(Vec3::ZERO),
             attackable: false,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0 / 60.0,
         &mut rng,
@@ -433,6 +443,7 @@ fn warden_hunts_strikes_and_caster_fires() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 60.0,
             &mut rng,
@@ -561,6 +572,7 @@ fn a_hostile_mob_pursues_across_every_planet_seam() {
             spawn: player,
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }];
         let mut mob = crate::mobs::Mob::new_at(species, start, 0.0);
         mob.health = def.health;
@@ -606,6 +618,7 @@ fn floaters_hover_and_projectiles_collide() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 60.0,
             &mut rng,
@@ -643,6 +656,7 @@ fn floaters_hover_and_projectiles_collide() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 30.0,
         );
@@ -674,6 +688,7 @@ fn floaters_hover_and_projectiles_collide() {
                     spawn: ep(Vec3::ZERO),
                     attackable: true,
                     aggro_mod: 0.0,
+                    quiet_charm: None,
                 }],
                 1.0 / 30.0,
             )
@@ -776,6 +791,7 @@ fn wardens_dissolve_at_dawn_and_never_save() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0,
         1.0 / 60.0,
@@ -932,6 +948,7 @@ fn breeding_makes_babies_that_grow() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0,
         1.0 / 60.0,
@@ -963,6 +980,7 @@ fn breeding_makes_babies_that_grow() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0,
             1.0 / 60.0,
@@ -984,6 +1002,7 @@ fn breeding_makes_babies_that_grow() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0,
         1.0 / 60.0,
@@ -1051,6 +1070,7 @@ fn feeding_tames_and_tamed_animals_stand_their_ground() {
         spawn: ep(Vec3::ZERO),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     }];
     let mut rng = 3u32;
     let mut events = Vec::new();
@@ -1091,6 +1111,7 @@ fn led_animals_follow_and_leads_snap_at_range() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }]
     };
     // Handler 7 blocks east: the deer walks after them.
@@ -1177,6 +1198,7 @@ fn boats_float_carry_cargo_and_wreck_into_salvage() {
         spawn: ep(Vec3::ZERO),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     }];
     let mut rng = 9u32;
     let mut events = Vec::new();
@@ -1220,6 +1242,7 @@ fn the_watcher_warns_stands_down_or_graduates() {
         spawn: ep(Vec3::ZERO),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     }];
     let mut rng = 7u32;
     let mut events = Vec::new();

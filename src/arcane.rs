@@ -154,7 +154,7 @@ impl Current {
         Ok(out)
     }
 
-    fn checked_add(&mut self, other: &Self) -> Result<(), ArcaneError> {
+    pub(crate) fn checked_add(&mut self, other: &Self) -> Result<(), ArcaneError> {
         for (name, units) in &other.parts {
             let next = self
                 .parts
@@ -169,7 +169,7 @@ impl Current {
         Ok(())
     }
 
-    fn checked_sub(&mut self, other: &Self) -> Result<(), ArcaneError> {
+    pub(crate) fn checked_sub(&mut self, other: &Self) -> Result<(), ArcaneError> {
         for (name, units) in &other.parts {
             let available = self.parts.get(name).copied().unwrap_or_default();
             let next = available.checked_sub(*units).ok_or_else(|| {
@@ -1097,7 +1097,7 @@ impl ArcaneLedger {
         Ok(id)
     }
 
-    fn system_transaction_id(&mut self) -> Result<TransactionId, ArcaneError> {
+    pub(crate) fn system_transaction_id(&mut self) -> Result<TransactionId, ArcaneError> {
         let sequence = self.next_system_transaction;
         self.next_system_transaction = self
             .next_system_transaction
@@ -1405,6 +1405,15 @@ impl ArcaneLedger {
         }
     }
 
+    /// Clean usable Current carried by an item, excluding sequestered dross.
+    /// Implement effects and transfer previews must use this rather than the
+    /// combined custody total.
+    pub fn item_clean_total(&self, item_id: u64) -> Option<u64> {
+        self.accounts
+            .get(&ArcaneOwner::Item(item_id))
+            .map(|account| account.current.total())
+    }
+
     pub fn item_dross_total(&self, item_id: u64) -> u64 {
         self.accounts
             .get(&ArcaneOwner::ItemDross(item_id))
@@ -1461,6 +1470,17 @@ impl ArcaneLedger {
         }
         scan = scan_durable_item_owners(world, self, false)?;
         Ok(scan.status())
+    }
+
+    /// Read-only durable-reference evidence for subsystem audits that need
+    /// parent-ledger integrity without loading or regenerating a planet atlas.
+    /// This also permits deliberately tiny fixture planets to exercise their
+    /// real save formats.
+    pub(crate) fn durable_item_status(
+        &self,
+        world: &Path,
+    ) -> Result<DurableItemStatus, ArcaneError> {
+        Ok(scan_durable_item_owners(world, self, false)?.status())
     }
 
     /// Mob manifestations and goal-1 Working accounts deliberately have no
@@ -1772,6 +1792,26 @@ impl ArcaneLedger {
             if movement.current.is_empty() {
                 return Err(ArcaneError::InvalidTransaction("empty credit".into()));
             }
+            if let (Some(existing), Some(replacement)) = (
+                self.accounts.get(&movement.owner),
+                movement.content_id.as_deref(),
+            ) && existing.content_id.as_deref() != Some(replacement)
+            {
+                let mut removed = Current::default();
+                for debit in transaction
+                    .debits
+                    .iter()
+                    .filter(|debit| debit.owner == movement.owner)
+                {
+                    removed.checked_add(&debit.current)?;
+                }
+                if removed != existing.current {
+                    return Err(ArcaneError::InvalidTransaction(
+                        "an item content identity may change only after its old custody is fully debited"
+                            .into(),
+                    ));
+                }
+            }
             credit_total.checked_add(&movement.current)?;
         }
         if debit_total.total_checked()? != credit_total.total_checked()? {
@@ -1877,8 +1917,9 @@ impl ArcaneLedger {
                     version: 0,
                     content_id: movement.content_id.clone(),
                 });
+            let replaces_identity = account.current.is_empty();
             account.current.checked_add(&movement.current)?;
-            if account.content_id.is_none() {
+            if replaces_identity || account.content_id.is_none() {
                 account.content_id.clone_from(&movement.content_id);
             }
         }
@@ -2349,6 +2390,7 @@ fn validate_linked_path(file: &LinkedFileReplacement) -> Result<(), ArcaneError>
                 | "planet/arcane-geography.toml"
                 | "planet/manifest.toml"
         ),
+        "implements" => file.relative_path == crate::implements::IMPLEMENTS_FILE,
         _ => false,
     };
     if !allowed {
@@ -2561,7 +2603,11 @@ fn stack_table_valid(
         return Some((true, 0));
     }
     let valid = if declared_charged {
-        id != 0 && ledger.item_matches(id, item)
+        // A declared magical shell (most importantly a craftable charge
+        // vessel) may exist physically before a host-authoritative binding
+        // gives it Current. Zero is therefore an explicitly dormant state;
+        // every nonzero identity must still match saved finite custody.
+        id == 0 || ledger.item_matches(id, item)
     } else {
         id == 0
     };
@@ -3061,6 +3107,91 @@ mod tests {
 
         assert!(ledger.item_matches(id, "base:sealed_dross_ampoule"));
         assert_eq!(ledger.item_dross_total(id), definition.capacity);
+        assert!(ledger.audit().unwrap().is_balanced());
+    }
+
+    #[test]
+    fn item_content_identity_changes_only_with_full_custody_replacement() {
+        let (_root, _atlas, reg, mut ledger) = fixture("item-identity-replacement", false);
+        let item = reg.item_id("base:ember").unwrap();
+        let definition = reg.item(item).arcane.as_ref().unwrap();
+        let id = ledger
+            .bind_new_item(
+                ArcaneOwner::Deep,
+                definition,
+                "base:ember",
+                "identity replacement fixture",
+            )
+            .unwrap();
+        let owner = ArcaneOwner::Item(id);
+        let account = ledger.account(&owner).unwrap().clone();
+        let mut remainder = account.current.clone();
+        let partial_current = remainder.take_units(1, std::iter::empty()).unwrap();
+        let replacement_id = ledger.system_transaction_id().unwrap();
+        let partial = ArcaneTransaction {
+            id: replacement_id,
+            reads: vec![AccountRead {
+                owner: owner.clone(),
+                expected_version: account.version,
+            }],
+            debits: vec![ArcaneMove {
+                owner: owner.clone(),
+                current: partial_current.clone(),
+                content_id: None,
+            }],
+            credits: vec![ArcaneMove {
+                owner: owner.clone(),
+                current: partial_current,
+                content_id: Some("base:implement_fragment".into()),
+            }],
+            transforms: Vec::new(),
+            authority: ArcaneAuthority::System,
+            reason: "invalid partial content replacement".into(),
+            content_id: "base:implement_fragment".into(),
+            linked: Vec::new(),
+        };
+        let error = ledger.commit(partial).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("only after its old custody is fully debited")
+        );
+        assert_eq!(
+            ledger.account(&owner).unwrap().content_id.as_deref(),
+            Some("base:ember")
+        );
+
+        let account = ledger.account(&owner).unwrap().clone();
+        let full = ArcaneTransaction {
+            // Validation failure did not advance the durable origin
+            // high-water; an authoritative retry therefore reuses the same
+            // sequence instead of creating a permanent gap.
+            id: replacement_id,
+            reads: vec![AccountRead {
+                owner: owner.clone(),
+                expected_version: account.version,
+            }],
+            debits: vec![ArcaneMove {
+                owner: owner.clone(),
+                current: account.current.clone(),
+                content_id: None,
+            }],
+            credits: vec![ArcaneMove {
+                owner: owner.clone(),
+                current: account.current,
+                content_id: Some("base:implement_fragment".into()),
+            }],
+            transforms: Vec::new(),
+            authority: ArcaneAuthority::System,
+            reason: "valid full content replacement".into(),
+            content_id: "base:implement_fragment".into(),
+            linked: Vec::new(),
+        };
+        ledger.commit(full).unwrap();
+        assert_eq!(
+            ledger.account(&owner).unwrap().content_id.as_deref(),
+            Some("base:implement_fragment")
+        );
         assert!(ledger.audit().unwrap().is_balanced());
     }
 

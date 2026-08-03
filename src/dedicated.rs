@@ -70,9 +70,10 @@ pub(super) fn run_headless_server(world_name: &str) {
                 mp::HostFx::Left(n) => eprintln!("server: {n} left"),
                 mp::HostFx::Chat { from, msg } => eprintln!("<{from}> {msg}"),
                 mp::HostFx::AllSlept => eprintln!("server: the camp sleeps to dawn"),
+                mp::HostFx::ImplementActivation { .. } => {}
             }
         }
-        let players = sess.player_ctxs(None);
+        let players = sess.authoritative_player_ctxs(&sim.world, None);
         let mut evs = Vec::new();
         sim.advance(dt, &players, &mut evs);
         for ev in evs {

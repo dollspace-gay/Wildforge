@@ -9,7 +9,7 @@ impl World {
 
     pub(super) fn save_entities(&self) -> std::io::Result<()> {
         use std::fmt::Write as _;
-        let mut out = String::from("version = 6\n");
+        let mut out = String::from("version = 8\n");
         let pos_value = |pos: BlockPos| {
             format!(
                 "{{ face = \"{:?}\", u = {}, y = {}, v = {} }}",
@@ -281,6 +281,50 @@ impl World {
                     }
                     let _ = writeln!(out);
                 }
+                BlockEntity::BindingFrame(frame) => {
+                    let _ = writeln!(
+                        out,
+                        "[[binding_frame]]\n{pos_line}\nrevision = {}",
+                        frame.revision
+                    );
+                    for (name, stack) in [
+                        ("body", frame.body),
+                        ("reservoir", frame.reservoir),
+                        ("focus", frame.focus),
+                        ("binding", frame.binding),
+                        ("output", frame.output),
+                    ] {
+                        if let Some(stack) = stack {
+                            let _ = writeln!(
+                                out,
+                                "{name} = {{ item = \"{}\", count = {}, durability = {}, arcane_id = {} }}",
+                                self.reg.item(stack.item).name,
+                                stack.count,
+                                stack.durability,
+                                stack.arcane_id
+                            );
+                        }
+                    }
+                    let _ = writeln!(out);
+                }
+                BlockEntity::ChargeVessel(vessel) => {
+                    let _ = writeln!(
+                        out,
+                        "[[charge_vessel]]\n{pos_line}\ndamage = {}\nrevision = {}",
+                        vessel.damage, vessel.revision
+                    );
+                    if let Some(stack) = vessel.vessel {
+                        let _ = writeln!(
+                            out,
+                            "vessel = {{ item = \"{}\", count = {}, durability = {}, arcane_id = {} }}",
+                            self.reg.item(stack.item).name,
+                            stack.count,
+                            stack.durability,
+                            stack.arcane_id
+                        );
+                    }
+                    let _ = writeln!(out);
+                }
             }
         }
         super::persistence::replace_or_remove(
@@ -431,6 +475,32 @@ impl World {
             reference: Option<SlotT>,
         }
         #[derive(Deserialize)]
+        struct BindingFrameT {
+            pos: crate::planet::BlockPos,
+            #[serde(default)]
+            body: Option<SlotT>,
+            #[serde(default)]
+            reservoir: Option<SlotT>,
+            #[serde(default)]
+            focus: Option<SlotT>,
+            #[serde(default)]
+            binding: Option<SlotT>,
+            #[serde(default)]
+            output: Option<SlotT>,
+            #[serde(default)]
+            revision: u64,
+        }
+        #[derive(Deserialize)]
+        struct ChargeVesselT {
+            pos: crate::planet::BlockPos,
+            #[serde(default)]
+            vessel: Option<SlotT>,
+            #[serde(default)]
+            damage: u16,
+            #[serde(default)]
+            revision: u64,
+        }
+        #[derive(Deserialize)]
         struct FileT {
             version: u32,
             #[serde(default)]
@@ -463,6 +533,10 @@ impl World {
             survey_folio: Vec<SurveyFolioT>,
             #[serde(default)]
             discovery_apparatus: Vec<DiscoveryApparatusT>,
+            #[serde(default)]
+            binding_frame: Vec<BindingFrameT>,
+            #[serde(default)]
+            charge_vessel: Vec<ChargeVesselT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else {
             return;
@@ -470,7 +544,7 @@ impl World {
         let Ok(parsed) = toml::from_str::<FileT>(&text) else {
             return;
         };
-        if !(3..=6).contains(&parsed.version) {
+        if !(3..=8).contains(&parsed.version) {
             return;
         }
         let conv = |s: Option<SlotT>| -> Option<ItemStack> {
@@ -739,6 +813,29 @@ impl World {
                 BlockEntity::DiscoveryApparatus(DiscoveryApparatusState {
                     sample: conv(apparatus.sample),
                     reference: conv(apparatus.reference),
+                }),
+            );
+        }
+        for frame in parsed.binding_frame {
+            self.block_entities.insert(
+                frame.pos,
+                BlockEntity::BindingFrame(BindingFrameState {
+                    body: conv(frame.body),
+                    reservoir: conv(frame.reservoir),
+                    focus: conv(frame.focus),
+                    binding: conv(frame.binding),
+                    output: conv(frame.output),
+                    revision: frame.revision,
+                }),
+            );
+        }
+        for vessel in parsed.charge_vessel {
+            self.block_entities.insert(
+                vessel.pos,
+                BlockEntity::ChargeVessel(ChargeVesselState {
+                    vessel: conv(vessel.vessel),
+                    damage: vessel.damage.min(1_000),
+                    revision: vessel.revision,
                 }),
             );
         }

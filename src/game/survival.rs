@@ -11,7 +11,7 @@ impl Game {
             .flatten()
             .filter_map(|s| self.content.reg.item(s.item).armor.map(|(_, p)| p))
             .sum();
-        base + if self.charm("bark") { 1 } else { 0 }
+        base
     }
 
     /// Is a charm of this kind worn?
@@ -19,14 +19,7 @@ impl Game {
         self.survival.armor[4].as_ref().is_some_and(|s| {
             self.content.reg.item(s.item).charm.as_deref() == Some(kind)
                 && s.arcane_id != 0
-                && (self.server.world.is_remote()
-                    || self
-                        .server
-                        .world
-                        .arcane_ledger
-                        .as_ref()
-                        .and_then(|ledger| ledger.item_current_total(s.arcane_id))
-                        .is_some_and(|units| units != 0))
+                && self.server.world.charm_can_pay(*s, kind)
         })
     }
 
@@ -37,7 +30,19 @@ impl Game {
         if self.creative || self.ui_state.screen == Screen::Dead {
             return;
         }
-        let pts = self.armor_points();
+        let mut pts = self.armor_points();
+        if let Some(mut charm) = self.survival.armor[4]
+            && let Some(pos) = self.player.pos.block()
+            && self.server.world.debit_charm_at(
+                pos,
+                &mut charm,
+                "bark",
+                "bark charm prevented warden damage",
+            )
+        {
+            self.survival.armor[4] = Some(charm);
+            pts = pts.saturating_add(crate::implements::BARK_CHARM_ARMOR_POINTS);
+        }
         let amount = reduced_damage(amount, pts);
         if pts > 0 {
             let reg = self.content.reg.clone();

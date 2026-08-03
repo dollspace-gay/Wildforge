@@ -664,6 +664,28 @@ impl Game {
                 .durability
                 .min(self.content.reg.item(item).durability);
             entity.arcane_id = stored.arcane_id;
+            if let Some(at) = stored.pos.block()
+                && self.content.reg.item(item).charm_def.is_some()
+            {
+                let mut stack = ItemStack {
+                    item,
+                    count: stored.count,
+                    durability: entity.durability,
+                    arcane_id: stored.arcane_id,
+                };
+                if self
+                    .server
+                    .world
+                    .ensure_charm_instance_at(
+                        at,
+                        &mut stack,
+                        "explicit planetary loose-item charm migration",
+                    )
+                    .is_ok()
+                {
+                    entity.arcane_id = stack.arcane_id;
+                }
+            }
             self.interaction.items.push(entity);
         }
     }
@@ -760,6 +782,22 @@ impl Game {
                     durability: s.durability,
                     arcane_id: s.arcane_id,
                 });
+            }
+        }
+        if let Some(at) = self.player.pos.block() {
+            let migrated = self.server.world.migrate_legacy_player_charms(
+                at,
+                &mut self.inventory,
+                &mut self.survival.armor,
+                &mut self.ui_state.held_stack,
+                "local player",
+            );
+            if migrated != 0
+                && let Err(error) = self.save_player()
+            {
+                eprintln!(
+                    "implements: migrated {migrated} local charms but profile save failed: {error}"
+                );
             }
         }
         true
