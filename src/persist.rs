@@ -57,7 +57,22 @@ pub(crate) fn remove_if_exists(path: &Path) -> io::Result<()> {
                 .unwrap_or_else(|| Path::new("."));
             sync_parent(parent)
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            // Windows also reports a path whose parent is not a directory
+            // (for example a file where a directory belongs) as NotFound, so
+            // a broken save path could otherwise be read as "the file was
+            // already gone" and hide a real failure. Only a genuinely missing
+            // target file under a real directory is the requested state.
+            let parent = path
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            if fs::metadata(parent).is_ok_and(|meta| meta.is_dir()) {
+                Ok(())
+            } else {
+                Err(error)
+            }
+        }
         Err(error) => Err(error),
     }
 }
