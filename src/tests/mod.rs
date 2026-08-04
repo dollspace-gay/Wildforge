@@ -22,6 +22,7 @@ mod hydrology;
 mod identity;
 mod machines;
 mod mobs;
+mod multiblock;
 mod multiplayer;
 mod player;
 #[path = "registry.rs"]

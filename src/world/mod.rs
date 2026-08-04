@@ -27,6 +27,7 @@ mod hearts;
 mod lighting;
 mod machine_tick;
 mod machines;
+pub(crate) mod multiblock;
 mod persistence;
 mod power;
 #[cfg_attr(test, allow(unused))]

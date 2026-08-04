@@ -1,5 +1,6 @@
 //! Falling blocks, multiblock machines, clamps, anvils, and archaeology.
 
+use super::multiblock::{BlockConstraint, MultiblockShape, Rotation, ShapeCell, match_shape};
 use super::*;
 
 /// A powered station's batch limit: what one loading can hold.
@@ -182,31 +183,10 @@ impl World {
     /// open: the chimney that turns a station into a workshop. Rain
     /// never reaches a chimneyed fire.
     fn has_chimney_at(&self, core: BlockPos) -> bool {
-        let Some(fb) = self.reg.block_id("base:firebrick") else {
+        let Some(shape) = chimney_shape(&self.reg) else {
             return false;
         };
-        for ly in 3..6 {
-            let Some(flue) = core.offset(0, ly, 0) else {
-                return false;
-            };
-            if self.get_block_at(flue) != AIR {
-                return false;
-            }
-            for rx in -1..=1 {
-                for rz in -1..=1 {
-                    if rx == 0 && rz == 0 {
-                        continue;
-                    }
-                    if core
-                        .offset(rx, ly, rz)
-                        .is_none_or(|at| self.get_block_at(at) != fb)
-                    {
-                        return false;
-                    }
-                }
-            }
-        }
-        true
+        match_shape(self, core, &shape).is_some()
     }
 
     /// A kiln whose stack carries the chimney is a GLASSWORKS: the
@@ -245,36 +225,7 @@ impl World {
     /// three-wide awning of solid or glass at post-top height. A
     /// stall trades only while it stands (trade & travel, stage 3).
     pub fn check_stall_at(&self, pos: BlockPos) -> bool {
-        let logs = self.reg.tags.get("base:logs").cloned().unwrap_or_default();
-        let is_log = |b: BlockId| {
-            self.reg
-                .item_id(&self.reg.block(b).name)
-                .is_some_and(|i| logs.contains(&i))
-        };
-        let awning_ok = |b: BlockId| self.reg.is_solid(b) || self.reg.block(b).glass;
-        'axes: for (dx, dz) in [(1, 0), (0, 1)] {
-            for side in [-1, 1] {
-                let Some(post) = pos.offset(dx * side, 0, dz * side) else {
-                    continue 'axes;
-                };
-                let Some(post_top) = post.offset(0, 1, 0) else {
-                    continue 'axes;
-                };
-                if !is_log(self.get_block_at(post)) || !is_log(self.get_block_at(post_top)) {
-                    continue 'axes;
-                }
-            }
-            for i in -1..=1 {
-                if pos
-                    .offset(dx * i, 2, dz * i)
-                    .is_none_or(|at| !awning_ok(self.get_block_at(at)))
-                {
-                    continue 'axes;
-                }
-            }
-            return true;
-        }
-        false
+        match_shape(self, pos, &stall_shape()).is_some()
     }
 
     /// The shared shell scan: the stack is the stack; the mouth block
@@ -284,40 +235,8 @@ impl World {
         pos: BlockPos,
         mouth: &[Option<BlockId>; 2],
     ) -> Option<BlockPos> {
-        let fb = self.reg.block_id("base:firebrick")?;
-        'dirs: for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let Some(core) = pos.offset(dx, 0, dz) else {
-                continue;
-            };
-            for ly in 0..3 {
-                if core
-                    .offset(0, ly, 0)
-                    .is_none_or(|at| self.get_block_at(at) != AIR)
-                {
-                    continue 'dirs;
-                }
-                for rx in -1..=1 {
-                    for rz in -1..=1 {
-                        if rx == 0 && rz == 0 {
-                            continue;
-                        }
-                        let Some(at) = core.offset(rx, ly, rz) else {
-                            continue 'dirs;
-                        };
-                        let b = self.get_block_at(at);
-                        if at == pos && ly == 0 {
-                            if !mouth.contains(&Some(b)) {
-                                continue 'dirs;
-                            }
-                        } else if b != fb {
-                            continue 'dirs;
-                        }
-                    }
-                }
-            }
-            return Some(core);
-        }
-        None
+        let shape = stack_shape(&self.reg, mouth)?;
+        match_shape(self, pos, &shape).map(|result| result.core)
     }
 
     /// Light a charged bloomery. Errors name what's missing.
@@ -790,4 +709,96 @@ impl World {
     }
 
     // ---------------- wildlife ----------------
+}
+
+/// The shared shell: a 3-wide, 3-tall firebrick ring around an open core
+/// cell (1,0,0) from the mouth anchor, with the mouth block filling the
+/// cell opposite the core on the base course. Tries all four cardinal
+/// directions; the first that satisfies the ring returns its core.
+fn stack_shape(reg: &Registry, mouth: &[Option<BlockId>; 2]) -> Option<MultiblockShape> {
+    let fb = reg.block_id("base:firebrick")?;
+    let mut cells = Vec::with_capacity(3 * 8 + 3);
+    for ly in 0..3 {
+        // Core column: open air.
+        cells.push(ShapeCell {
+            offset: (1, ly, 0),
+            constraint: BlockConstraint::Air,
+        });
+        for rx in -1..=1 {
+            for rz in -1..=1 {
+                if rx == 0 && rz == 0 {
+                    continue;
+                }
+                let offset = (1 + rx, ly, rz);
+                let constraint = if offset == (0, 0, 0) {
+                    BlockConstraint::OneOf(mouth.iter().flatten().copied().collect())
+                } else {
+                    BlockConstraint::Exact(fb)
+                };
+                cells.push(ShapeCell { offset, constraint });
+            }
+        }
+    }
+    Some(MultiblockShape {
+        cells,
+        core: (1, 0, 0),
+        rotations: &Rotation::CARDINAL,
+    })
+}
+
+/// Three more courses of firebrick ring over the stack's core, flue
+/// open — the chimney that makes a station a workshop. Rotation-invariant.
+fn chimney_shape(reg: &Registry) -> Option<MultiblockShape> {
+    let fb = reg.block_id("base:firebrick")?;
+    let mut cells = Vec::with_capacity(3 * 8 + 3);
+    for ly in 3..6 {
+        cells.push(ShapeCell {
+            offset: (0, ly, 0),
+            constraint: BlockConstraint::Air,
+        });
+        for rx in -1..=1 {
+            for rz in -1..=1 {
+                if rx == 0 && rz == 0 {
+                    continue;
+                }
+                cells.push(ShapeCell {
+                    offset: (rx, ly, rz),
+                    constraint: BlockConstraint::Exact(fb),
+                });
+            }
+        }
+    }
+    Some(MultiblockShape {
+        cells,
+        core: (0, 0, 0),
+        rotations: &[Rotation::R0],
+    })
+}
+
+/// A market stall: two log posts flanking the counter (two tall), bridged
+/// by a three-wide awning of solid or glass at post-top height. Tries both
+/// axes; the stall stands while either reads true.
+fn stall_shape() -> MultiblockShape {
+    let mut cells = Vec::with_capacity(7);
+    for side in [-1, 1] {
+        cells.push(ShapeCell {
+            offset: (side, 0, 0),
+            constraint: BlockConstraint::Tag("base:logs"),
+        });
+        cells.push(ShapeCell {
+            offset: (side, 1, 0),
+            constraint: BlockConstraint::Tag("base:logs"),
+        });
+    }
+    for i in -1..=1 {
+        cells.push(ShapeCell {
+            offset: (i, 2, 0),
+            constraint: BlockConstraint::SolidOrGlass,
+        });
+    }
+    MultiblockShape {
+        cells,
+        core: (0, 0, 0),
+        rotations: &Rotation::CARDINAL,
+    }
 }
