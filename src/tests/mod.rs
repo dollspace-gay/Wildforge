@@ -27,6 +27,7 @@ mod machines;
 mod mobs;
 mod multiplayer;
 mod player;
+mod qualification;
 #[path = "registry.rs"]
 mod registry_tests;
 mod rendering;

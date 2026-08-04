@@ -22,6 +22,9 @@ mods/<your_mod>/
   recipes.toml      [[recipe]], [[smelt]], [[fuel]] entries
   tags.toml         [[tag]] item groups for recipes
   features.toml     [[feature]] worldgen (ore veins)
+  arcane.toml       [[resonance]] and [[arcane_site]] entries
+  workings.toml     [[working]] entries using qualified native handlers
+  preparations.toml [[preparation]] physical process/effect entries
   animals.toml      [[animal]] creatures, with box models
   structures.toml   [[structure]] templates + [[loot]] tables
   aliases.toml      [[alias]] lossless renames for old saves
@@ -111,6 +114,166 @@ Material vectors are part of save identity. Hot reload or restart may change
 art and behavior, but changing an existing item's or block's vector/class
 requires an explicit future migration. Removing a mod preserves named
 placeholders and their mass; reinstalling the same definitions restores them.
+
+## Finite magic content
+
+Magic definitions use the same finite-world contract as ordinary materials.
+An arcane item declares bounded charge capacity and where its charge goes when
+the item is destroyed; an organism also declares physical habitat, water,
+nutrient, reproduction, harvest, and carrying-capacity rules. Workings and
+preparations select from closed, host-owned handlers. They cannot install a raw
+callback, credit Current, spawn charged matter, scan private state, transmute,
+teleport, or silently delete water, material, charge, or dross.
+
+`arcane.toml`, `workings.toml`, and `preparations.toml` currently have schema
+version 1. A mod-owned resonance and geology-gated site look like this:
+
+```toml
+schema_version = 1
+
+[[resonance]]
+id = "verdance"
+label = "Verdance"
+
+[[arcane_site]]
+id = "singing_fault"
+requires = ["fault", "carbonate_rock"]
+capacity_factor = 1.15
+resonance = { "base:echo" = 2, "base:stone" = 1 }
+rarity = 0.02
+radius_cells = 3
+```
+
+The site inherits the mod's `retrogen` policy. `untouched_host_only` may add it
+only to eligible, unmodified host cells; it never rewrites explored terrain or
+invented historical custody. Resonance ids are stable save identities. Rename
+ordinary content through `aliases.toml`; changing or removing a resonance,
+charged definition, working, or preparation must preserve the saved qualified
+id and its ledger custody or use an explicit future migration.
+
+Blocks and items may carry these inline tables:
+
+```toml
+# On a cross-shaped plant block.
+arcane = { capacity = 120, conductivity = 600, stability = 600, resonance = { "base:tide" = 3, "base:root" = 1 }, on_destroy = "ambient" }
+arcane_ecology = { roles = ["gatherer", "indicator"], habitat = ["wetland"], charge_capacity = 96, uptake_per_day = 3, release_per_day = 1, source = "ambient", resonance = { "base:tide" = 3, "base:root" = 1 }, dross_tolerance = 12, water_per_day_hu = 12, nutrient_per_day = 2, reproduction = "spore", seasons = [true, true, true, true], carrying_capacity = 12, harvest = "spore", regrowth_days = 8, min_stability = 0, max_stability = 1000, min_richness = 0 }
+
+# On a geologically finite ore block with an ordinary [[feature]] seam.
+material_class = "geologically_finite"
+materials = { songstone = 1200 }
+arcane = { capacity = 70, conductivity = 900, stability = 500, resonance = { "base:stone" = 3, "base:echo" = 1 }, on_destroy = "ambient" }
+arcane_ecology = { roles = ["conductor", "indicator"], kind = "finite_mineral", habitat = ["sedimentary_host"], charge_capacity = 64, uptake_per_day = 0, release_per_day = 0, source = "ambient", resonance = { "base:stone" = 3, "base:echo" = 1 }, dross_tolerance = 8, water_per_day_hu = 0, nutrient_per_day = 0, reproduction = "none", seasons = [true, true, true, true], carrying_capacity = 1, harvest = "destructive", regrowth_days = 0, min_stability = 0, max_stability = 1000, min_richness = 0 }
+
+# On item definitions.
+wand_component = { role = "body", capacity = 160, conductivity = 260, stability = 920, resonance = { "base:root" = 4, "base:echo" = 2 }, repair_material = "base:stick", containment = 180 }
+charm = { effect = "quiet", charge_per_trigger = 2, capacity = 4096, stability = 950, dross_per_transfer = 12 }
+```
+
+Crystals use `kind = "crystal"`, a physical host habitat,
+`reproduction = "bud"`, `harvest = "seed_preserving"`, a positive
+`regrowth_days`, `crystal_stages`, and `preserving_tool_tier`. Finite minerals
+must use the nonreproducing/destructive combination above and have a finite
+material vector plus an ordinary worldgen feature. Validation rejects a
+renewable source without physical uptake, duplicate harvest routes, unknown
+roles/habitats/resonances, out-of-range permille values, and unbounded growth.
+
+A working is a declarative cost and targeting shell around one of the twelve
+native handlers. This complete minimal entry observes only local visible
+arcane state:
+
+```toml
+schema_version = 1
+
+[[working]]
+id = "patient_trace"
+label = "Patient Trace"
+handler = "trace"
+mode = "wand"
+focus = "base:echo"
+charge = 8
+charge_per_second = 1
+dross = 1
+safe_throughput = 12
+range = 8
+max_magnitude = 1
+max_targets = 1
+max_duration_ticks = 1200
+target = ["visible_arcane", "self"]
+interruption = "end_continuous"
+disposition = "split"
+wear = 1
+ambient = true
+description = "A bounded local trace aid."
+```
+
+The accepted handler names are `trace`, `gleam`, `ignite`, `nudge`,
+`rootwake`, `draw`, `fieldmend`, `holdfast`, `settling_rite`, `rooting_bed`,
+`ward_boundary`, and `transfer_circle`. The handler fixes the delivery mode,
+targets, physical obligations, and effect kind; a definition may narrow them
+and set costs, but cannot substitute arbitrary behavior.
+
+A preparation likewise declares its entire physical batch and residue chain:
+
+```toml
+schema_version = 1
+
+[[preparation]]
+id = "mire_tonic"
+label = "Mire Tonic"
+process = "distill"
+handler = "trace_sight"
+application = "drink"
+carrier = "alcohol"
+solvent_item = "base:fermented_alcohol"
+solvent_units = 256
+dissolved_units = 0
+ingredients = [
+  { item = "base:echo_cap_ring", count = 1, retention_permille = 760 },
+  { item = "base:rainbell_dew", count = 1, retention_permille = 880 },
+]
+charge_units = 12
+resonance = "base:echo"
+charge_rate = [1, 3]
+dross_units = 2
+steps = ["grind", "load", "heat", "charge", "distill", "cool", "filter"]
+temperature_millic = [60000, 82000]
+process_ticks = 1200
+agitation = "still"
+cleanliness_min = 800
+output_item = "mirecraft:mire_tonic"
+empty_vessel = "base:glass_bottle"
+doses = 4
+dose_units = 64
+residue_item = "mirecraft:spent_mire"
+residue_count = 1
+shelf_life_ticks = 604800
+storage_temperature_millic = [-10000, 30000]
+stack_group = "mire_sight"
+effect = { duration_ticks = 1200, recovery_ticks = 600, strength = 80 }
+description = "A bounded local trace aid with a physical residue."
+```
+
+The output and residue items must exist. Dose volume must exactly partition
+the solvent, ingredients must be obtainable physical items, and the selected
+native effect handler determines which additional effect debits are required.
+For example, `transmute_matter` is not a handler and causes the mod to fail
+validation instead of partially loading its preparation.
+
+A nonstructural scar manifestation is a block with no item form and a strict
+scar table, for example:
+
+```toml
+item = false
+solid = false
+opaque = false
+dross_scar = { kind = "wet_film", handler = "water_margin_film", carriers = ["air", "water", "soil"], min_band = "seep", status = "perception_warp", activity = "arcane_squall", max_sites_per_region = 1 }
+```
+
+Scar handlers, carriers, threshold bands, statuses, and activities are also
+closed enums. They express bounded removable growth/status pressure; they do
+not authorize replacement of player construction or inventory mutation. The
+registry fixture tests in `src/tests/registry.rs` load each form above and
+also prove representative forbidden definitions fail closed.
 
 ## blocks.toml
 

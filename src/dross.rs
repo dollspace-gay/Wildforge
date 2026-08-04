@@ -2479,7 +2479,18 @@ mod tests {
         crate::registry::Registry,
         crate::arcane_geography::ArcaneGeography,
     ) {
-        let atlas = PlanetAtlas::fixture(seed, 8).unwrap();
+        fixture_with_side(seed, 8)
+    }
+
+    fn fixture_with_side(
+        seed: u32,
+        side: u16,
+    ) -> (
+        PlanetAtlas,
+        crate::registry::Registry,
+        crate::arcane_geography::ArcaneGeography,
+    ) {
+        let atlas = PlanetAtlas::fixture(seed, side).unwrap();
         let registry = crate::registry::load(Path::new("__no_dross_fixture_mods__"));
         let mut geography = crate::arcane_geography::ArcaneGeography::generate(
             &atlas,
@@ -3265,6 +3276,137 @@ mod tests {
             .dross_state
             .validate(geography.dynamic.cells.len(), atlas.side())
             .unwrap();
+    }
+
+    #[test]
+    fn century_equivalent_magic_use_and_stopped_abuse_are_exact_and_bounded() {
+        const CENTURY_HOURS: u64 = 100 * 365 * 24;
+        let (atlas, registry, mut baseline) = fixture_with_side(0xd205_5008, 2);
+        for cell in &mut baseline.dynamic.cells {
+            // The fixture needs enough movable Current to fund both practice
+            // and cleanup without relying on a production-world distribution.
+            cell.ambient = [30_000; 6];
+            cell.dross = [0; 6];
+        }
+        baseline
+            .dynamic
+            .dross_state
+            .cells
+            .fill(DrossCellState::default());
+        let exact_total = environmental_and_ambient_total(&baseline);
+
+        let mut untouched = baseline.clone();
+        advance_fully(
+            &mut untouched,
+            &atlas,
+            &registry,
+            CENTURY_HOURS,
+            usize::MAX,
+            &[],
+            &BTreeSet::new(),
+        );
+        assert_eq!(environmental_and_ambient_total(&untouched), exact_total);
+        assert!(untouched.dynamic.dross_state.scars.is_empty());
+
+        let home = AtlasPos {
+            face: crate::planet::Face::PosZ,
+            u: 0,
+            v: 0,
+        };
+        let home_index = home.index(atlas.side());
+        let mut careful = baseline.clone();
+        for month in 0..1_200u64 {
+            // One small, explicitly funded practice session per month. The
+            // Current leaves Ambient before it enters Dross.
+            careful.dynamic.cells[home_index].ambient[0] -= 2;
+            careful.dynamic.cells[home_index].dross[0] += 2;
+            advance_fully(
+                &mut careful,
+                &atlas,
+                &registry,
+                (month + 1) * CENTURY_HOURS / 1_200,
+                usize::MAX,
+                &[],
+                &BTreeSet::new(),
+            );
+        }
+        assert_eq!(environmental_and_ambient_total(&careful), exact_total);
+        assert!(
+            careful
+                .dynamic
+                .dross_state
+                .cells
+                .iter()
+                .all(|cell| cell.band < DrossBand::Seep)
+        );
+        assert!(careful.dynamic.dross_state.scars.is_empty());
+
+        let mut abuse = baseline;
+        let sources = [
+            home,
+            home.step(Direction4::East, atlas.side()).pos,
+            home.step(Direction4::North, atlas.side()).pos,
+        ];
+        for source in sources {
+            let index = source.index(atlas.side());
+            abuse.controls[index].capacity = 64;
+            abuse.controls[index].stability = 0;
+            for slot in 0..3 {
+                abuse.dynamic.cells[index].ambient[slot] -= 6_000;
+            }
+            abuse.dynamic.dross_state.cells[index].airborne[0] = 6_000;
+            abuse.dynamic.dross_state.cells[index].waterborne[1] = 6_000;
+            abuse.dynamic.cells[index].dross[2] = 6_000;
+        }
+        advance_fully(&mut abuse, &atlas, &registry, 22, 3, &[], &BTreeSet::new());
+        let damaged = abuse
+            .dynamic
+            .dross_state
+            .cells
+            .iter()
+            .filter(|cell| cell.band >= DrossBand::Scar)
+            .count();
+        assert!(damaged >= sources.len());
+        assert!(damaged < abuse.dynamic.cells.len());
+        assert_eq!(environmental_and_ambient_total(&abuse), exact_total);
+
+        for control in &mut abuse.controls {
+            control.recovery_potential = 6_144;
+        }
+        advance_fully(
+            &mut abuse,
+            &atlas,
+            &registry,
+            CENTURY_HOURS,
+            usize::MAX,
+            &[],
+            &BTreeSet::new(),
+        );
+        assert_eq!(environmental_and_ambient_total(&abuse), exact_total);
+        assert!(
+            abuse
+                .dynamic
+                .dross_state
+                .cells
+                .iter()
+                .all(|cell| cell.band < DrossBand::Scar)
+        );
+        let breaches = abuse.dynamic.dross_state.breach_count;
+        advance_fully(
+            &mut abuse,
+            &atlas,
+            &registry,
+            CENTURY_HOURS + 100,
+            1,
+            &[],
+            &BTreeSet::new(),
+        );
+        assert_eq!(abuse.dynamic.dross_state.breach_count, breaches);
+        assert_eq!(environmental_and_ambient_total(&abuse), exact_total);
+        eprintln!(
+            "century magic profile: hours={CENTURY_HOURS} exact_current={exact_total} careful_sessions=1200 abuse_sources={} damaged_cells={damaged} recovery_breaches={breaches}",
+            sources.len(),
+        );
     }
 
     #[test]

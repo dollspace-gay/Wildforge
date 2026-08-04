@@ -144,6 +144,73 @@ fn pump_until(
 }
 
 #[test]
+fn four_identity_magic_society_shares_one_unprivileged_host() {
+    let host = TestHost::start_with_discovery("agent-magic-society");
+    let mut agents = [
+        Agent::connect_for_test(host.addr, "SURVEYOR").expect("surveyor joins"),
+        Agent::connect_for_test(host.addr, "CULTIVATOR").expect("cultivator joins"),
+        Agent::connect_for_test(host.addr, "BINDER").expect("binder joins"),
+        Agent::connect_for_test(host.addr, "APOTHECARY").expect("apothecary joins"),
+    ];
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while std::time::Instant::now() < deadline {
+        for agent in &mut agents {
+            agent.pump(0.02);
+        }
+        if host.with(|session, _| session.guests.len() == 4) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let identities = host.with(|session, _| {
+        session
+            .guests
+            .values()
+            .map(|guest| guest.player_id)
+            .collect::<std::collections::HashSet<_>>()
+    });
+    assert_eq!(
+        identities.len(),
+        4,
+        "four roles collapsed onto one identity"
+    );
+    for (agent, role) in agents.iter().zip([
+        "survey records ready",
+        "cultivation stock ready",
+        "wand workshop ready",
+        "waste station ready",
+    ]) {
+        agent.send(&crate::net::C2S::Chat(role.into()));
+    }
+    assert!(
+        pump_until(
+            &mut agents[0],
+            std::time::Duration::from_secs(15),
+            |agent| {
+                [
+                    "survey records ready",
+                    "cultivation stock ready",
+                    "wand workshop ready",
+                    "waste station ready",
+                ]
+                .into_iter()
+                .all(|role| agent.events.iter().any(|event| event.contains(role)))
+            },
+        ),
+        "the four physical roles did not share the ordinary society channel: {:?}",
+        agents[0].events
+    );
+    host.with(|session, _| {
+        assert!(session.guests.values().all(|guest| {
+            guest
+                .principals
+                .iter()
+                .any(|principal| principal == &guest.principal)
+        }));
+    });
+}
+
+#[test]
 fn the_agent_earns_and_reads_a_host_signed_magic_observation() {
     let host = TestHost::start_with_discovery("agent-discovery");
     let mut agent = Agent::connect_for_test(host.addr, "OBSERVER").expect("observer joins");

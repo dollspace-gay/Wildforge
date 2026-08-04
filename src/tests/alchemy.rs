@@ -290,6 +290,38 @@ fn base_apothecary_roster_is_closed_physical_and_volume_balanced() {
 }
 
 #[test]
+fn closed_world_alchemy_audit_reconciles_all_parent_ledgers() {
+    let mut world = super::implements::embodied_implements_world("alchemy-closed-audit");
+    let mut inventory = Inventory::new();
+    let dose_id = mint_ready_dose(&mut world, &mut inventory, 0, "base:hearth_tonic", 17, 3);
+    let stack = inventory.slots[0].take().unwrap();
+    let mut entity = crate::entity::ItemEntity::new(
+        ep(glam::vec3(0.5, 101.0, 0.5)),
+        glam::Vec3::ZERO,
+        stack.item,
+        stack.count,
+    );
+    entity.durability = stack.durability;
+    entity.arcane_id = stack.arcane_id;
+    world.loose_items_mut().push(entity);
+    save_world(&mut world);
+
+    let audit = crate::alchemy::audit_world(&world.save_dir_for_test()).unwrap();
+    assert!(audit.is_qualified(), "{}", audit.render());
+    assert_eq!(audit.containers, 1);
+    assert_eq!(audit.clean_current, 17);
+    assert_eq!(audit.dross_current, 3);
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .account(&ArcaneOwner::Item(dose_id))
+            .is_some()
+    );
+}
+
+#[test]
 fn every_base_preparation_completes_through_its_real_apparatus_sequence() {
     use crate::alchemy::{ApparatusKind, CarrierKind};
 

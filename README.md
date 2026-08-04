@@ -49,7 +49,7 @@ For quick feedback, CI runs non-agent tests separately:
 cargo test --locked --all-targets -- --skip tests::agent::
 ```
 
-The seven end-to-end QUIC agent scenarios retain their own serial lane:
+The ten end-to-end QUIC agent scenarios retain their own serial lane:
 
 ```sh
 cargo test --locked tests::agent:: -- --test-threads=1
@@ -87,6 +87,13 @@ platform/app -> client Game -> Server simulation -> World/content
   authoritative World operations used by local play.
 - `atlas/`, `registry.rs`, and `script.rs` form the content pipeline, using
   stable names at persistence and synchronization boundaries.
+- `arcane.rs` owns the conserved Current ledger. `arcane_geography.rs` and
+  `arcane_ecology.rs` own its finite planetary distribution and living sites;
+  `discovery.rs`, `implements.rs`, `workings.rs`, `alchemy.rs`, and `dross.rs`
+  own the player-facing practice. Their `world/` counterparts apply physical
+  effects through the same authoritative World transactions as mundane play.
+  `magic_qualification.rs` is an offline fail-closed audit; it is not a second
+  simulation or a survival-client endpoint.
 
 The rationale, compatibility constraints, and two-pass refactor record live
 in [the modularization plan](docs/modularization-plan.md). A separate reusable
@@ -164,7 +171,7 @@ affect simulation until their exact entry manifest is decoded and accepted.
 | Space | Jump / swim up |
 | Ctrl | Sprint |
 | Hold left click | Mine block (per-block hardness; bedrock unbreakable) |
-| Right click | Place selected block (consumes from inventory) |
+| Hold right click | Contextual use: place a block, work an apparatus, aim a tuning lens, apply a preparation, or channel the selected wand working |
 | Hold right click with brush | Excavate a remnant, or sift ordinary stone/earth for regional salvage |
 | Middle click | Select targeted block if in hotbar |
 | 1–9 / scroll | Select hotbar slot |
@@ -217,6 +224,77 @@ every claim asserted, so the docs can't drift from the code.
   gender-neutral; identity is yours to pick.
 - Ships with `mods/gems` — a worked example adding deep ruby ore (tier-2
   gated), items, recipes, and a scripted milestone counter.
+
+## A finite magical practice
+
+Magic belongs to the same planet as ore, rain, food, and politics. The
+**Current** is finite: it lies deep, moves through geography, gathers at
+confluences, wells, stills, echoes, heartshadows, and wakes, and can become
+bound in living things, minerals, tools, preparations, waste, and scars. A
+charge is always moved from a named reservoir. Magic cannot conjure or
+transmute ordinary matter, teleport people or cargo, erase water/material
+costs, or turn a local instrument into a global scanner.
+
+The path begins with signs rather than a spell menu. Ruins contain old charms
+and clues from earlier makers, while redundant overland remnants provide a
+solo construction route. Make a tuning lens and field ledger, take qualitative
+observations, run repeatable physical experiments, copy selected records into
+a shared folio, and decide whether to include the location. Recipes are public
+in the item browser; a ruin charm is a desirable head start, never a unique
+gate.
+
+Magical plants and minerals obey real habitats. Rainbell wants a wet margin,
+Hushwood an old forest, Stormvine actual warm storms, and desert Nightglass a
+cool dark niche. Wellglass grows only from a seed with room and enough local
+Current. Choirstone, Still Salt, Wake Iron, and Echo Slate are regionally
+finite geology. Harvest, cultivation, fire, water, nutrients, and collapse all
+close the same planetary ledgers.
+
+Binding frames combine physical bodies, reservoirs, foci, and bindings into
+wands with different tradeoffs. Charge vessels, adjacent conductors, and
+containment blocks move finite Current; long-distance charge travels as cargo.
+The three charms are craftable, charged implements. Eight wand workings and
+four constructed rites perform bounded process changes, and an apothecary's
+mortar, basin, alembic, and filter stand make eight preparations from real
+solvents, ingredients, heat, time, vessels, and residues.
+
+Carelessness produces **Dross**. Dross is not Ire: Dross is conserved magical
+waste in air, water, soil, organisms, containers, apparatus, or scars; Ire is
+the Wild's relational memory of attributed harm and tending. A place warns
+through Clear, Trace, Strained, Seep, Scar, and Breach Risk cues before severe
+effects. Scarring is consequential but recoverable: stop the source, contain
+mobile waste, excavate manifestations, filter or sequester it, restore habitat,
+and let viable hearts/ecologies slowly reorder it. The waste itself changes
+Ire only when it causes actual ecological harm.
+
+Dedicated hosts remain authoritative. Players and agents receive local,
+qualitative signs and physical records—not exact hidden Current, global Dross
+maps, private provenance, or operator audits. The final design and evidence
+live in [the magic sequence](docs/magic-sequence.md) and
+[qualification record](docs/magic-qualification-implementation.md).
+
+### Magic operator diagnostics
+
+These commands open a stopped/offline world and print exact administrative
+state. Keep their output private from ordinary players:
+
+```sh
+wildforge --magic-qualification <world> --mods mods --output magic-report.txt
+wildforge --arcane-audit <world>
+wildforge --arcane-geography-audit <world>
+wildforge --arcane-geography-export <world> --output <output-directory>
+wildforge --arcane-ecology-audit <world>
+wildforge --discovery-audit <world>
+wildforge --implements-audit <world>
+wildforge --workings-audit <world>
+wildforge --alchemy-audit <world>
+wildforge --arcane-atlas <world> --layer dross --output <output-directory>
+```
+
+Post-creation base magic is installed by the versioned world reopen/migration.
+New mod sites, organisms, crystals, and finite minerals require an explicit
+`untouched_host_only` policy; deterministic retrogen adds only empty untouched
+candidates and never rewrites worked ground or invents custody.
 
 ## Mechanization — the machine-tool age
 

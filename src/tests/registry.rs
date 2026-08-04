@@ -184,6 +184,113 @@ arcane = { capacity = 33, conductivity = 625, stability = 875, resonance = { ver
     );
 }
 
+#[test]
+fn fixture_mod_preparation_uses_a_closed_residue_chain_and_rejects_forbidden_handlers() {
+    let root = tmp_dir("alchemy-valid-mod");
+    let dir = root.join("mirecraft");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"mirecraft\"\nworld_api = 2\ndepends = [\"base\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("items.toml"),
+        r#"
+[[item]]
+id = "mire_tonic"
+name = "Mire Tonic"
+texture = "@glass_bottle"
+max_stack = 1
+arcane = { capacity = 64, conductivity = 300, stability = 800, resonance = { "base:echo" = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "spent_mire"
+name = "Spent Mire"
+texture = "@compost"
+material_class = "consumptive"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("preparations.toml"),
+        r#"
+schema_version = 1
+
+[[preparation]]
+id = "mire_tonic"
+label = "Mire Tonic"
+process = "distill"
+handler = "trace_sight"
+application = "drink"
+carrier = "alcohol"
+solvent_item = "base:fermented_alcohol"
+solvent_units = 256
+dissolved_units = 0
+ingredients = [
+  { item = "base:echo_cap_ring", count = 1, retention_permille = 760 },
+  { item = "base:rainbell_dew", count = 1, retention_permille = 880 },
+]
+charge_units = 12
+resonance = "base:echo"
+charge_rate = [1, 3]
+dross_units = 2
+steps = ["grind", "load", "heat", "charge", "distill", "cool", "filter"]
+temperature_millic = [60000, 82000]
+process_ticks = 1200
+agitation = "still"
+cleanliness_min = 800
+output_item = "mirecraft:mire_tonic"
+empty_vessel = "base:glass_bottle"
+doses = 4
+dose_units = 64
+residue_item = "mirecraft:spent_mire"
+residue_count = 1
+shelf_life_ticks = 604800
+storage_temperature_millic = [-10000, 30000]
+stack_group = "mire_sight"
+effect = { duration_ticks = 1200, recovery_ticks = 600, strength = 80 }
+description = "A bounded local trace aid with a physical spent-mire residue."
+"#,
+    )
+    .unwrap();
+    let valid = registry::load(&root);
+    assert!(valid.arcane_errors.is_empty(), "{:?}", valid.arcane_errors);
+    let preparation = &valid.preparations["mirecraft:mire_tonic"];
+    assert_eq!(preparation.output_item, "mirecraft:mire_tonic");
+    assert_eq!(preparation.residue_item, "mirecraft:spent_mire");
+    assert_eq!(
+        preparation.handler,
+        crate::alchemy::PreparationHandler::TraceSight
+    );
+
+    let bad_root = tmp_dir("alchemy-forbidden-mod");
+    let bad_dir = bad_root.join("goldmaker");
+    std::fs::create_dir_all(&bad_dir).unwrap();
+    std::fs::write(
+        bad_dir.join("mod.toml"),
+        "id = \"goldmaker\"\nworld_api = 2\ndepends = [\"base\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        bad_dir.join("preparations.toml"),
+        "schema_version = 1\n[[preparation]]\nid = \"gold\"\nlabel = \"Gold\"\nprocess = \"infuse\"\nhandler = \"transmute_matter\"\n",
+    )
+    .unwrap();
+    let invalid = registry::load(&bad_root);
+    let error = invalid
+        .mods
+        .iter()
+        .find(|info| info.id == "goldmaker")
+        .and_then(|info| info.error.as_deref())
+        .unwrap_or_default();
+    assert!(
+        error.contains("preparations.toml") || error.contains("unknown variant"),
+        "{error}"
+    );
+    assert!(!invalid.preparations.contains_key("goldmaker:gold"));
+}
+
 fn write_ecology_fixture_mod(root: &Path, blocks: &str, features: Option<&str>) {
     let dir = root.join("ecofix");
     std::fs::create_dir_all(&dir).unwrap();

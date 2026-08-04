@@ -1,0 +1,200 @@
+Wildforge magic qualification schema 1
+World: saves/magic-dross-smoke
+Content hash: 56d6eb32e06c7ca1
+Elapsed: 49477303 us
+
+Arcane audit schema 1 algorithm 1 (1000 subunits/unit)
+Genesis: 1610612736
+Accounted: 1610612736
+Unexplained delta: 0
+Registry hash: 576988a5a38646e7
+Ledger checksum: 462d97e17be5b19b
+Deep checksum: ea8e47e326150918
+Ambient checksum: af63bd4c8601b7df
+Last transaction: 6
+External adjustment: 0
+Durable items: 3 accounts, 3 references, 0 orphan accounts, 0 invalid references, 0 duplicate references
+Dormant transient owners: 0
+Geography: present=true, total=1409286144, checksum=eda046df97f30ae0, custody_matches=true
+Reservoirs:
+  deep     168050176
+  ambient  1409286144
+  bound    33275840
+  active   0
+  dross    576
+  scar     0
+Resonance:
+  base:echo            268435456
+  base:ember           268435456
+  base:gale            268435456
+  base:root            268435456
+  base:stone           268435456
+  base:tide            268435456
+Bound/active owner classes:
+  deep                 168050176
+  geography            1409286144
+  heart                33275840
+  item_dross           576
+
+Arcane geography audit
+Genesis: 1409286144
+External imported: 0
+Accounted: 1409286144
+Deep: 949202835
+Ambient: 460070378
+Dross: 0
+Wakes: 0
+Ecology: 12931 (dross 0)
+Net exported: 0
+Checksum: eda046df97f30ae0
+Resonances:
+  base:root: 234881024
+  base:tide: 234881024
+  base:ember: 234881024
+  base:stone: 234881024
+  base:gale: 234881024
+  base:echo: 234881024
+Places:
+  confluence: 123
+  well: 158
+  still: 159
+  echo: 6550
+  heartshadow: 500
+Ledger custody matches: true
+
+Arcane ecology audit
+Sites: 676 (natural 676, cultivated 0, collapsed 0)
+Charge: 12931
+Dross: 0
+Nutrients: 2640944
+Transpired water: 0 HU
+Checksum: 3d9b5d07bb193a03
+  tropical mangrove confluence: 16
+  temperate old-growth confluence: 12
+  boreal or alpine glass heath: 7
+  volcanic ember garden: 99
+  desert night oasis: 118
+  polar auroral lichen field: 8
+  freshwater spring marsh: 21
+  marine current reef: 341
+  deep cave echo garden: 54
+Required ecological breadth: 7 roles, 9 habitat expressions, status=qualified
+
+Discovery audit: 25 objects, 0 records, 0 invalid signatures, 0 dangling references, 9561 bytes
+Sites: 3 installed, 0 recovered
+Evidence: {"broken_focus": 3, "calibration_plate": 5, "failed_containment_fragment": 3, "maker_tablet": 4, "sealed_dross_ampoule": 3, "site_survey_marks": 4, "spent_charm_fitting": 3}
+status: qualified
+
+Implements audit schema 2 resolver 1
+Content hash: 51bfbf5bb1cb9b85
+Sidecar: 17 / 67108864 bytes
+Instances: 0 (0 wands, 0 charms, 0 vessels, 0 fragment bundles; 0 creative-marked)
+Custody: 0 clean Current, 0 retained dross
+Tracked construction matter: 0 material units
+Integrity: 0 missing accounts, 0 content mismatches, 0 over capacity
+Metadata: max instance 0 / 4096 bytes, max public 0 / 1024 bytes
+Audit events: 0 / 4096
+Parent arcane audit balanced: true
+Parent material audit balanced: true
+Qualified: true
+
+Workings audit schema 1
+Content hash: 51bfbf5bb1cb9b85
+Sidecar: 3422 / 67108864 bytes
+Definitions: 12 / 65536
+Active: 0 / 4096 (0 rituals / 1024; 0 pending apply)
+History: 0 / 4096
+Integrity: 0 missing active accounts, 0 mismatched reservations, 0 orphan working accounts, 0 invalid transactions
+Parent Current conserved: true
+Qualified: true
+
+Alchemy audit schema 1
+Content hash: 51bfbf5bb1cb9b85
+Sidecar: 27 / 67108864 bytes
+Embodied state: 0 apparatus, 0 batches, 0 filled containers, 0 statuses, 0 root treatments, 0 coatings, 0 pollution sites, 0 ordinary jobs
+History: 0 / 4096
+Custody: 0 water HU, 0 salt, 0 clean Current, 0 dross Current, 0 tracked material units
+Integrity: 0 missing arcane accounts, 0 mismatched arcane accounts, industrial water overdrawn=false
+Parent ledgers: Current=true, water/salt=true, material=true
+Qualified: true
+
+Dross audit
+Current dross: 576
+Known/unknown provenance: 0 / 576
+Completed transport hours: 0
+Unexplained arcane delta: 0
+Scar sites: 0 active, 0 resolved, 0 materialized
+Contained: 576 units in 3 owners
+Projected environmental recovery: no observed bounded rate (contained burden requires treatment)
+Carriers:
+  airborne             0
+  waterborne           0
+  soil/sediment        0
+  organism             0
+  contained            576
+  apparatus            0
+  manifested scar      0
+Resonance:
+  base:echo            576
+Burden bands (cells / physical area):
+  clear        393216 / 341782637.711
+  trace        0 / 0.000
+  strained     0 / 0.000
+  seep         0 / 0.000
+  scar         0 / 0.000
+  breach risk  0 / 0.000
+Damaging-band physical area: 0.000
+Saved population exposure:
+  clear        0
+  trace        0
+  strained     0
+  seep         0
+  scar         0
+  breach risk  0
+Generation by attributed process:
+  sealed archaeological dross containment 576 (576000/1000h)
+Reordering by process:
+Top generating installations:
+  3                    192
+  2                    192
+  1                    192
+Countries with burden:
+Watersheds with burden:
+
+Planetary water/salt audit
+Water expected: 4716702572299 HU
+Water accounted: 4716702572299 HU
+Water unexplained delta: 0 HU
+Salt expected: 916212404381888
+Salt accounted: 916212404381888
+Salt unexplained delta: 0
+
+material              original  unmaterialized  underground  inventory/entity  placed  secondary  consumed/lost  external  unexplained
+amethyst               20995200        20995200            0                 0       0          0              0         0            0
+choirstone             73483200        73483200            0                 0       0          0              0         0            0
+chromium               20995200        20995200            0                 0       0          0              0         0            0
+coal                   94478400        94478400            0                 0       0          0              0         0            0
+cobalt                 20995200        20995200            0                 0       0          0              0         0            0
+copper                 94478400        94478400            0              3600       0          0              0      3600            0
+diamond                 1216800         1216800            0                 0       0          0              0         0            0
+gold                    5198400         5198400            0                 0       0          0              0         0            0
+iron                   94478400        94478400            0              1200       0          0              0      1200            0
+lead                    5198400         5198400            0                 0       0          0              0         0            0
+manganese              20995200        20995200            0                 0       0          0              0         0            0
+mercury                20995200        20995200            0                 0       0          0              0         0            0
+quartz                 20995200        20995200            0                 0       0          0              0         0            0
+rare_earth              1216800         1216800            0                 0       0          0              0         0            0
+ruby                   73483200        73483200            0                 0       0          0              0         0            0
+salt                   10396800        10396800            0                 0       0          0              0         0            0
+silver                  1732800         1732800            0                 0       0          0              0         0            0
+sulfur                 20995200        20995200            0                 0       0          0              0         0            0
+tin                     7797600         7797600            0              1200       0          0              0      1200            0
+uranium                 1216800         1216800            0                 0       0          0              0         0            0
+status: BALANCED (all unexplained deltas are zero)
+qualification: bronze regions 3, pessimistic complete technology arcs 609 (required 16), critical sites {"coal": 9, "copper": 9, "iron": 9, "tin": 3}
+qualification: carbonate flux on 7/7 major continents; treasure sites {"diamond": 2, "pitchblende": 2, "rare earth": 4}
+qualification status: PASS
+retrogen gems:ruby_ore: included in atlas genesis
+external source pre-genesis ruin inheritance: {"copper": 3600, "iron": 1200, "tin": 1200}
+
+MAGIC QUALIFICATION: PASS
