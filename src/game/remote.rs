@@ -673,7 +673,8 @@ impl Game {
                             world::BlockEntity::Furnace(f)
                         }
                         4 => {
-                            let mut k = world::KilnState {
+                            let mut k = world::MachineInstance {
+                                kind: world::multiblock::MachineKind::Kiln,
                                 lit: aux.first().copied().unwrap_or(0.0) > 0.5,
                                 progress: aux.get(1).copied().unwrap_or(0.0)
                                     * world::KILN_FIRE_SECS,
@@ -682,12 +683,12 @@ impl Game {
                             for (i, sl) in slots.iter().enumerate().take(9) {
                                 let st = conv(sl);
                                 match i {
-                                    0..=3 => k.sand[i] = st,
-                                    4 => k.powder = st,
+                                    0..=3 => k.charge[i] = st,
+                                    4 => k.reagent = st,
                                     _ => k.fuel[i - 5] = st,
                                 }
                             }
-                            world::BlockEntity::Kiln(k)
+                            world::BlockEntity::Multiblock(k)
                         }
                         6 => {
                             let mut st = world::StallState::default();
@@ -712,7 +713,13 @@ impl Game {
                             } else {
                                 world::BLOOMERY_FIRE_SECS
                             };
-                            let mut b = world::BloomeryState {
+                            let mkind = if kind == 5 {
+                                world::multiblock::MachineKind::Forge
+                            } else {
+                                world::multiblock::MachineKind::Bloomery
+                            };
+                            let mut b = world::MachineInstance {
+                                kind: mkind,
                                 lit: aux.first().copied().unwrap_or(0.0) > 0.5,
                                 progress: aux.get(1).copied().unwrap_or(0.0) * secs,
                                 ..Default::default()
@@ -724,11 +731,7 @@ impl Game {
                                     b.fuel[i - 4] = conv(s);
                                 }
                             }
-                            if kind == 5 {
-                                world::BlockEntity::Forge(b)
-                            } else {
-                                world::BlockEntity::Bloomery(b)
-                            }
+                            world::BlockEntity::Multiblock(b)
                         }
                         _ => {
                             let mut o = world::OfferingState::default();

@@ -22,6 +22,13 @@ items = [
 ]
 
 [[tag]]
+id = "firebrick"
+items = [
+  "base:firebrick",
+  "base:firebrick_advanced",
+]
+
+[[tag]]
 id = "meats"
 items = [
   "base:raw_venison",

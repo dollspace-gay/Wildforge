@@ -1652,7 +1652,8 @@ impl Game {
                 // its own shell check and firing clock.
                 let forge = matches!(
                     self.server.world.block_entity_at(&pos),
-                    Some(world::BlockEntity::Forge(_))
+                    Some(world::BlockEntity::Multiblock(b))
+                        if b.kind == world::multiblock::MachineKind::Forge
                 );
                 let title = if forge { "FORGE" } else { "BLOOMERY" };
                 let tw = UiBatch::text_width(3.0, title);
@@ -1664,8 +1665,7 @@ impl Game {
                         self.server.world.check_bloomery_at(pos).is_none()
                     };
                     match self.server.world.block_entity_at(&pos) {
-                        Some(world::BlockEntity::Bloomery(b))
-                        | Some(world::BlockEntity::Forge(b)) => {
+                        Some(world::BlockEntity::Multiblock(b)) => {
                             let mut v = [None; 8];
                             v[..4].copy_from_slice(&b.charge);
                             v[4..].copy_from_slice(&b.fuel);
@@ -1754,10 +1754,10 @@ impl Game {
                 let (slots, lit, progress, breached) = {
                     let breached = self.server.world.check_kiln_at(pos).is_none();
                     match self.server.world.block_entity_at(&pos) {
-                        Some(world::BlockEntity::Kiln(k)) => {
+                        Some(world::BlockEntity::Multiblock(k)) => {
                             let mut v = [None; 9];
-                            v[..4].copy_from_slice(&k.sand);
-                            v[4] = k.powder;
+                            v[..4].copy_from_slice(&k.charge);
+                            v[4] = k.reagent;
                             v[5..].copy_from_slice(&k.fuel);
                             (v, k.lit, k.progress / world::KILN_FIRE_SECS, breached)
                         }

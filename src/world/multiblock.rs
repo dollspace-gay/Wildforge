@@ -49,6 +49,7 @@ pub enum BlockConstraint {
     /// The block must be one of these ids (e.g. a machine's mouth blocks).
     OneOf(Vec<BlockId>),
     /// The block must be a single named id (e.g. firebrick).
+    #[allow(dead_code)]
     Exact(BlockId),
     /// The block's item must belong to the named tag (e.g. `"base:logs"`).
     Tag(&'static str),
@@ -86,10 +87,7 @@ pub struct MatchResult {
     /// The matched core, in world coordinates.
     pub core: BlockPos,
     /// Every matched cell position mapped to the block actually there.
-    /// Collected now even though nothing consumes it yet: Pattern A stat
-    /// folding (spec Part 2.1) will read this, and gathering it here avoids
-    /// a second refactor later.
-    #[allow(dead_code)]
+    /// Read by Pattern A stat folding (spec Part 2.1) on revalidation.
     pub matched: HashMap<BlockPos, BlockId>,
 }
 
@@ -147,4 +145,123 @@ fn block_in_tag(reg: &Registry, tag: &str, block: BlockId) -> bool {
         reg.item_id(&reg.block(block).name)
             .is_some_and(|item| tagged.contains(&item))
     })
+}
+
+/// Which registered machine a generic multiblock instance is. Doubles as
+/// the instance's shape ID: each kind maps one-to-one to its shell shape
+/// (built in [`crate::world::machines`]).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
+pub enum MachineKind {
+    #[default]
+    Bloomery,
+    Forge,
+    Kiln,
+    Separator,
+}
+
+impl MachineKind {
+    /// The save/UI name for this kind.
+    pub fn name(self) -> &'static str {
+        match self {
+            MachineKind::Bloomery => "bloomery",
+            MachineKind::Forge => "forge",
+            MachineKind::Kiln => "kiln",
+            MachineKind::Separator => "separator",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<MachineKind> {
+        match name {
+            "bloomery" => Some(MachineKind::Bloomery),
+            "forge" => Some(MachineKind::Forge),
+            "kiln" => Some(MachineKind::Kiln),
+            "separator" => Some(MachineKind::Separator),
+            _ => None,
+        }
+    }
+}
+
+/// Folded Pattern A stats of a matched multiblock shell. Recomputed on
+/// revalidation, never per tick.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct EffectiveStats {
+    /// Sum of the matched shell cells' heat retention.
+    pub heat: u32,
+    /// Number of matched cells carrying a nonzero heat contribution.
+    pub heat_cells: u32,
+    /// Whether the shell carries a chimney over its core (a kiln becomes
+    /// a glassworks). Set by revalidation, not per tick.
+    pub chimney: bool,
+}
+
+impl EffectiveStats {
+    /// Fires at 1.0x on an all-base shell; a hotter ring (an advanced
+    /// firebrick tier in a ring position) fires proportionally faster.
+    pub fn heat_multiplier(self) -> f32 {
+        if self.heat_cells == 0 {
+            1.0
+        } else {
+            self.heat as f32 / self.heat_cells as f32
+        }
+    }
+}
+
+/// Combine every matched cell's block-property contribution into the
+/// instance's effective stats (Pattern A, spec Part 2.1). The combination
+/// rule is fixed per stat (heat sums) and lives here, not per machine.
+pub fn fold_stats(world: &World, matched: &HashMap<BlockPos, BlockId>) -> EffectiveStats {
+    let mut stats = EffectiveStats::default();
+    for &block in matched.values() {
+        let heat = world.reg.block(block).heat_retention;
+        if heat > 0 {
+            stats.heat += heat;
+            stats.heat_cells += 1;
+        }
+    }
+    stats
+}
+
+/// The axis-aligned cell-offset ranges a shape's cells occupy over every
+/// allowed rotation, relative to the anchor. A machine's edit region
+/// derives from this, so an edit hook can decide in O(1) whether a block
+/// change could possibly have touched a given instance's shell.
+pub fn shape_extent(shape: &MultiblockShape) -> ((i32, i32, i32), (i32, i32, i32)) {
+    let mut min = (i32::MAX, i32::MAX, i32::MAX);
+    let mut max = (i32::MIN, i32::MIN, i32::MIN);
+    for &rotation in shape.rotations {
+        for cell in &shape.cells {
+            let o = rotation.apply(cell.offset);
+            min.0 = min.0.min(o.0);
+            min.1 = min.1.min(o.1);
+            min.2 = min.2.min(o.2);
+            max.0 = max.0.max(o.0);
+            max.1 = max.1.max(o.1);
+            max.2 = max.2.max(o.2);
+        }
+        let c = rotation.apply(shape.core);
+        min.0 = min.0.min(c.0);
+        min.1 = min.1.min(c.1);
+        min.2 = min.2.min(c.2);
+        max.0 = max.0.max(c.0);
+        max.1 = max.1.max(c.1);
+        max.2 = max.2.max(c.2);
+    }
+    (min, max)
+}
+
+/// True if `pos` (same face as `anchor`) lies within `(min, max)` cell
+/// offsets of `anchor`. Pure arithmetic: the edit hook pays nothing per
+/// instance it does not actually revalidate.
+pub fn pos_within_extent(
+    pos: BlockPos,
+    anchor: BlockPos,
+    (min, max): ((i32, i32, i32), (i32, i32, i32)),
+) -> bool {
+    if pos.face() != anchor.face() {
+        return false;
+    }
+    let dx = i32::from(pos.u()) - i32::from(anchor.u());
+    let dy = i32::from(pos.y()) - i32::from(anchor.y());
+    let dz = i32::from(pos.v()) - i32::from(anchor.v());
+    dx >= min.0 && dx <= max.0 && dy >= min.1 && dy <= max.1 && dz >= min.2 && dz <= max.2
 }

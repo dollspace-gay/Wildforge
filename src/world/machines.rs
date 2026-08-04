@@ -1,6 +1,9 @@
 //! Falling blocks, multiblock machines, clamps, anvils, and archaeology.
 
-use super::multiblock::{BlockConstraint, MultiblockShape, Rotation, ShapeCell, match_shape};
+use super::multiblock::{
+    BlockConstraint, MachineKind, MatchResult, MultiblockShape, Rotation, ShapeCell, fold_stats,
+    match_shape, shape_extent,
+};
 use super::*;
 
 /// A powered station's batch limit: what one loading can hold.
@@ -119,11 +122,9 @@ impl World {
     /// core beside the mouth wrapped in a 3-wide, 3-tall firebrick
     /// ring (23 firebrick + the mouth), open on top. Returns the core.
     pub fn check_bloomery_at(&self, pos: BlockPos) -> Option<BlockPos> {
-        let mouth = [
-            self.reg.block_id("base:bloomery"),
-            self.reg.block_id("base:bloomery_lit"),
-        ];
-        self.check_stack_at(pos, &mouth)
+        MachineKind::Bloomery
+            .validate(self, pos)
+            .map(|result| result.core)
     }
 
     /// Validate the forge: the firebrick stack with a forge mouth,
@@ -132,60 +133,24 @@ impl World {
     /// stone anvil within three blocks of the mouth. A building, not
     /// a block: the workshop is the capital (economy plan, leg 2).
     pub fn check_forge_at(&self, pos: BlockPos) -> Option<BlockPos> {
-        let mouth = [
-            self.reg.block_id("base:forge"),
-            self.reg.block_id("base:forge_lit"),
-        ];
-        let core = self.check_stack_at(pos, &mouth)?;
-        if !self.has_chimney_at(core) {
-            return None;
-        }
-        let anvil = self.reg.block_id("base:stone_anvil")?;
-        for dx in -3i32..=3 {
-            for dz in -3i32..=3 {
-                for dy in -1..=1 {
-                    if pos
-                        .offset(dx, dy, dz)
-                        .is_some_and(|at| self.get_block_at(at) == anvil)
-                    {
-                        return Some(core);
-                    }
-                }
-            }
-        }
-        None
+        MachineKind::Forge
+            .validate(self, pos)
+            .map(|result| result.core)
     }
 
     /// Light a charged forge. Errors name what's missing.
     pub fn light_forge_at(&mut self, pos: BlockPos) -> Result<(), &'static str> {
-        let core = self
-            .check_forge_at(pos)
+        let matched = MachineKind::Forge
+            .validate(self, pos)
             .ok_or("the forge wants its stack, chimney, and anvil")?;
-        let Some(BlockEntity::Forge(f)) = self.block_entities.get_mut(&pos) else {
-            return Err("nothing charged");
-        };
-        if f.lit {
-            return Err("already firing");
-        }
-        let n_charge: u32 = f.charge.iter().flatten().map(|s| s.count).sum();
-        let n_fuel: u32 = f.fuel.iter().flatten().map(|s| s.count).sum();
-        if n_charge < 1 || n_fuel < 1 {
-            return Err("needs charge and fuel");
-        }
-        f.lit = true;
-        f.progress = 0.0;
-        f.core = Some(core);
-        self.swap_block_keep_entity_at(pos, "base:forge_lit");
-        Ok(())
+        self.light_machine_at(pos, MachineKind::Forge, matched)
     }
 
     /// Three more courses of firebrick ring over the stack, flue
     /// open: the chimney that turns a station into a workshop. Rain
     /// never reaches a chimneyed fire.
-    fn has_chimney_at(&self, core: BlockPos) -> bool {
-        let Some(shape) = chimney_shape(&self.reg) else {
-            return false;
-        };
+    pub(crate) fn has_chimney_at(&self, core: BlockPos) -> bool {
+        let shape = chimney_shape();
         match_shape(self, core, &shape).is_some()
     }
 
@@ -204,20 +169,16 @@ impl World {
     /// The same stack with a separator in its mouth splits the mixed
     /// rare-earth powder instead (mechanization stage 6).
     pub fn check_separator_at(&self, pos: BlockPos) -> Option<BlockPos> {
-        let mouth = [
-            self.reg.block_id("base:separator"),
-            self.reg.block_id("base:separator_lit"),
-        ];
-        self.check_stack_at(pos, &mouth)
+        MachineKind::Separator
+            .validate(self, pos)
+            .map(|result| result.core)
     }
 
     /// The same stack with a kiln in its mouth fires glass instead.
     pub fn check_kiln_at(&self, pos: BlockPos) -> Option<BlockPos> {
-        let mouth = [
-            self.reg.block_id("base:kiln"),
-            self.reg.block_id("base:kiln_lit"),
-        ];
-        self.check_stack_at(pos, &mouth)
+        MachineKind::Kiln
+            .validate(self, pos)
+            .map(|result| result.core)
     }
 
     /// Validate a market stall at its counter: two log posts (two
@@ -228,81 +189,89 @@ impl World {
         match_shape(self, pos, &stall_shape()).is_some()
     }
 
-    /// The shared shell scan: the stack is the stack; the mouth block
-    /// decides the craft.
-    pub(super) fn check_stack_at(
-        &self,
+    /// Light a charged machine on a validated shell: fold its stats,
+    /// flip the mouth block to its lit face, and bank the fire.
+    fn light_machine_at(
+        &mut self,
         pos: BlockPos,
-        mouth: &[Option<BlockId>; 2],
-    ) -> Option<BlockPos> {
-        let shape = stack_shape(&self.reg, mouth)?;
-        match_shape(self, pos, &shape).map(|result| result.core)
+        kind: MachineKind,
+        matched: MatchResult,
+    ) -> Result<(), &'static str> {
+        let wants = match kind {
+            MachineKind::Bloomery => (2, 2),
+            MachineKind::Forge => (1, 1),
+            MachineKind::Kiln => (2, 2),
+            MachineKind::Separator => (0, 0),
+        };
+        let mut stats = fold_stats(self, &matched.matched);
+        if kind == MachineKind::Kiln {
+            stats.chimney = self.has_chimney_at(matched.core);
+        }
+        let lit_block = match kind {
+            MachineKind::Bloomery => "base:bloomery_lit",
+            MachineKind::Forge => "base:forge_lit",
+            MachineKind::Kiln => "base:kiln_lit",
+            MachineKind::Separator => "base:separator_lit",
+        };
+        let Some(BlockEntity::Multiblock(m)) = self.block_entities.get_mut(&pos) else {
+            return Err("nothing charged");
+        };
+        if m.kind != kind || m.lit {
+            return Err("already firing");
+        }
+        let n_charge: u32 = m.charge.iter().flatten().map(|s| s.count).sum();
+        let n_fuel: u32 = m.fuel.iter().flatten().map(|s| s.count).sum();
+        if n_charge < wants.0 || n_fuel < wants.1 {
+            return Err(match kind {
+                MachineKind::Bloomery => "needs at least 2 charge and 2 charcoal",
+                MachineKind::Forge => "needs charge and fuel",
+                MachineKind::Kiln => "needs at least 2 sand and 2 charcoal",
+                MachineKind::Separator => "nothing to charge",
+            });
+        }
+        m.lit = true;
+        m.progress = 0.0;
+        m.core = Some(matched.core);
+        m.stats = stats;
+        self.swap_block_keep_entity_at(pos, lit_block);
+        Ok(())
     }
 
     /// Light a charged bloomery. Errors name what's missing.
     pub fn light_bloomery_at(&mut self, pos: BlockPos) -> Result<(), &'static str> {
-        let core = self.check_bloomery_at(pos).ok_or("the stack is breached")?;
-        let Some(BlockEntity::Bloomery(b)) = self.block_entities.get_mut(&pos) else {
-            return Err("nothing charged");
-        };
-        if b.lit {
-            return Err("already firing");
-        }
-        let n_charge: u32 = b.charge.iter().flatten().map(|s| s.count).sum();
-        let n_fuel: u32 = b.fuel.iter().flatten().map(|s| s.count).sum();
-        if n_charge < 2 || n_fuel < 2 {
-            return Err("needs at least 2 charge and 2 charcoal");
-        }
-        b.lit = true;
-        b.progress = 0.0;
-        b.core = Some(core);
-        self.swap_block_keep_entity_at(pos, "base:bloomery_lit");
-        Ok(())
+        let matched = MachineKind::Bloomery
+            .validate(self, pos)
+            .ok_or("the stack is breached")?;
+        self.light_machine_at(pos, MachineKind::Bloomery, matched)
     }
 
     /// Light a charged kiln. Errors name what's missing.
     pub fn light_kiln_at(&mut self, pos: BlockPos) -> Result<(), &'static str> {
-        let core = self.check_kiln_at(pos).ok_or("the stack is breached")?;
-        let Some(BlockEntity::Kiln(k)) = self.block_entities.get_mut(&pos) else {
-            return Err("nothing charged");
-        };
-        if k.lit {
-            return Err("already firing");
-        }
-        let n_sand: u32 = k.sand.iter().flatten().map(|s| s.count).sum();
-        let n_fuel: u32 = k.fuel.iter().flatten().map(|s| s.count).sum();
-        if n_sand < 2 || n_fuel < 2 {
-            return Err("needs at least 2 sand and 2 charcoal");
-        }
-        k.lit = true;
-        k.progress = 0.0;
-        k.core = Some(core);
-        self.swap_block_keep_entity_at(pos, "base:kiln_lit");
-        Ok(())
+        let matched = MachineKind::Kiln
+            .validate(self, pos)
+            .ok_or("the stack is breached")?;
+        self.light_machine_at(pos, MachineKind::Kiln, matched)
     }
 
-    /// Fire every lit kiln: shared shell/weather rules, glass out.
+    /// Fire every lit kiln: shared shell/weather rules, glass out. The
+    /// shell is revalidated by the edit hook, not here; a chimneyed
+    /// kiln reads its glassworks bonus from the folded stats.
     pub(super) fn tick_kilns(&mut self, dt: f32) {
         let keys: Vec<BlockPos> = self
             .block_entities
             .iter()
-            .filter(|(_, e)| matches!(e, BlockEntity::Kiln(k) if k.lit))
+            .filter(|(_, e)| {
+                matches!(e, BlockEntity::Multiblock(m) if m.kind == MachineKind::Kiln && m.lit)
+            })
             .map(|(k, _)| *k)
             .collect();
         for pos in keys {
-            let Some(BlockEntity::Kiln(mut k)) = self.block_entities.remove(&pos) else {
+            let Some(BlockEntity::Multiblock(mut k)) = self.block_entities.remove(&pos) else {
                 continue;
             };
-            if self.check_kiln_at(pos).is_none() {
-                k.lit = false;
-                k.progress = 0.0;
-                self.swap_block_keep_entity_at(pos, "base:kiln");
-                self.block_entities.insert(pos, BlockEntity::Kiln(k));
-                continue;
-            }
             // A chimneyed kiln is a glassworks: rain can't reach the
             // fire, and the draft doubles what each fuel fires.
-            let glassworks = self.check_glassworks_at(pos).is_some();
+            let glassworks = k.stats.chimney;
             let unroofed = k
                 .core
                 .and_then(|core| core.offset(0, 3, 0))
@@ -318,19 +287,20 @@ impl World {
                 k.lit = false;
                 k.progress = 0.0;
                 self.swap_block_keep_entity_at(pos, "base:kiln");
-                self.block_entities.insert(pos, BlockEntity::Kiln(k));
+                self.block_entities.insert(pos, BlockEntity::Multiblock(k));
                 continue;
             }
-            k.progress += dt * if wet { 0.5 } else { 1.0 };
+            let heat = k.stats.heat_multiplier();
+            k.progress += dt * if wet { 0.5 } else { 1.0 } * heat;
             if k.progress >= KILN_FIRE_SECS {
                 if let Some((_, fuel_item, clear)) = self.reg.kiln_base {
-                    let n_sand: u32 = k.sand.iter().flatten().map(|s| s.count).sum();
+                    let n_sand: u32 = k.charge.iter().flatten().map(|s| s.count).sum();
                     let n_fuel: u32 = k.fuel.iter().flatten().map(|s| s.count).sum();
                     let fuel_reach = if glassworks { n_fuel * 2 } else { n_fuel };
                     let pairs = n_sand.min(fuel_reach) / 2;
                     let out_n = pairs * 2;
                     // One powder colors the whole batch.
-                    let colored = k.powder.as_ref().and_then(|p| {
+                    let colored = k.reagent.as_ref().and_then(|p| {
                         self.reg
                             .kiln
                             .iter()
@@ -339,7 +309,7 @@ impl World {
                     });
                     let out_item = colored.unwrap_or(clear);
                     let powder_materials = colored
-                        .and(k.powder)
+                        .and(k.reagent)
                         .map(|stack| {
                             crate::materials::stack_materials(
                                 &self.reg,
@@ -348,11 +318,11 @@ impl World {
                         })
                         .unwrap_or_default();
                     if colored.is_some()
-                        && let Some(p) = &mut k.powder
+                        && let Some(p) = &mut k.reagent
                     {
                         p.count -= 1;
                         if p.count == 0 {
-                            k.powder = None;
+                            k.reagent = None;
                         }
                     }
                     let eat = |slots: &mut [Option<ItemStack>; 4], mut n: u32| {
@@ -370,7 +340,7 @@ impl World {
                             }
                         }
                     };
-                    eat(&mut k.sand, pairs * 2);
+                    eat(&mut k.charge, pairs * 2);
                     let fuel_used = if glassworks {
                         (pairs * 2).div_ceil(2)
                     } else {
@@ -409,7 +379,7 @@ impl World {
                         let reg = self.reg.clone();
                         let mut out = ItemStack::new(&reg, out_item, 1);
                         out.count = out_n;
-                        for s in k.sand.iter_mut() {
+                        for s in k.charge.iter_mut() {
                             if s.is_none() {
                                 *s = Some(out);
                                 break;
@@ -421,7 +391,7 @@ impl World {
                 k.progress = 0.0;
                 self.swap_block_keep_entity_at(pos, "base:kiln");
             }
-            self.block_entities.insert(pos, BlockEntity::Kiln(k));
+            self.block_entities.insert(pos, BlockEntity::Multiblock(k));
         }
     }
 
@@ -711,12 +681,97 @@ impl World {
     // ---------------- wildlife ----------------
 }
 
+impl MachineKind {
+    /// The two mouth blocks a kind routes its craft through: the handed
+    /// and lit faces of its mouth station.
+    fn mouth(self, reg: &Registry) -> [Option<BlockId>; 2] {
+        let (a, b) = match self {
+            MachineKind::Bloomery => ("base:bloomery", "base:bloomery_lit"),
+            MachineKind::Forge => ("base:forge", "base:forge_lit"),
+            MachineKind::Kiln => ("base:kiln", "base:kiln_lit"),
+            MachineKind::Separator => ("base:separator", "base:separator_lit"),
+        };
+        [reg.block_id(a), reg.block_id(b)]
+    }
+
+    /// Validate this kind's full shell at `anchor`: the firebrick stack,
+    /// the mouth block, and — for the forge — the chimney and anvil.
+    /// Returns the match result (core + folded cell map) on success.
+    pub fn validate(self, world: &World, anchor: BlockPos) -> Option<MatchResult> {
+        let shape = stack_shape(&self.mouth(&world.reg));
+        let matched = match_shape(world, anchor, &shape)?;
+        if self == MachineKind::Forge {
+            if !world.has_chimney_at(matched.core) {
+                return None;
+            }
+            let anvil = world.reg.block_id("base:stone_anvil")?;
+            let mut found = false;
+            for dx in -3i32..=3 {
+                for dz in -3i32..=3 {
+                    for dy in -1..=1 {
+                        if anchor
+                            .offset(dx, dy, dz)
+                            .is_some_and(|at| world.get_block_at(at) == anvil)
+                        {
+                            found = true;
+                        }
+                    }
+                }
+            }
+            if !found {
+                return None;
+            }
+        }
+        Some(matched)
+    }
+
+    /// The axis-aligned block-cell region (relative to `anchor`) that an
+    /// edit must fall inside to warrant revalidating this instance. Covers
+    /// the shell cells, the core, the forge's chimney, and its anvil scan.
+    pub fn edit_region(
+        self,
+        world: &World,
+        _anchor: BlockPos,
+    ) -> ((i32, i32, i32), (i32, i32, i32)) {
+        let shell = shape_extent(&stack_shape(&self.mouth(&world.reg)));
+        if self == MachineKind::Kiln {
+            // A kiln's stats read the chimney too (glassworks): cover the
+            // three courses of ring over the core, which sits one cell
+            // out from the anchor in any cardinal direction.
+            let (mn, mx) = shell;
+            return (
+                (mn.0.min(-2), mn.1, mn.2.min(-2)),
+                (mx.0.max(2), mx.1.max(5), mx.2.max(2)),
+            );
+        }
+        if self != MachineKind::Forge {
+            return shell;
+        }
+        // Union with the chimney (three courses over the core) and the
+        // anvil search box (3x3x3 around the mouth anchor).
+        let chimney = shape_extent(&chimney_shape());
+        let (mut mn, mut mx) = (shell.0, shell.1);
+        mn.0 = mn.0.min(chimney.0.0);
+        mn.1 = mn.1.min(chimney.0.1);
+        mn.2 = mn.2.min(chimney.0.2);
+        mx.0 = mx.0.max(chimney.1.0);
+        mx.1 = mx.1.max(chimney.1.1);
+        mx.2 = mx.2.max(chimney.1.2);
+        mn.0 = mn.0.min(-3);
+        mn.1 = mn.1.min(-1);
+        mn.2 = mn.2.min(-3);
+        mx.0 = mx.0.max(3);
+        mx.1 = mx.1.max(1);
+        mx.2 = mx.2.max(3);
+        (mn, mx)
+    }
+}
+
 /// The shared shell: a 3-wide, 3-tall firebrick ring around an open core
 /// cell (1,0,0) from the mouth anchor, with the mouth block filling the
 /// cell opposite the core on the base course. Tries all four cardinal
 /// directions; the first that satisfies the ring returns its core.
-fn stack_shape(reg: &Registry, mouth: &[Option<BlockId>; 2]) -> Option<MultiblockShape> {
-    let fb = reg.block_id("base:firebrick")?;
+fn stack_shape(mouth: &[Option<BlockId>; 2]) -> MultiblockShape {
     let mut cells = Vec::with_capacity(3 * 8 + 3);
     for ly in 0..3 {
         // Core column: open air.
@@ -733,23 +788,23 @@ fn stack_shape(reg: &Registry, mouth: &[Option<BlockId>; 2]) -> Option<Multibloc
                 let constraint = if offset == (0, 0, 0) {
                     BlockConstraint::OneOf(mouth.iter().flatten().copied().collect())
                 } else {
-                    BlockConstraint::Exact(fb)
+                    // Any firebrick tier holds a stack together.
+                    BlockConstraint::Tag("base:firebrick")
                 };
                 cells.push(ShapeCell { offset, constraint });
             }
         }
     }
-    Some(MultiblockShape {
+    MultiblockShape {
         cells,
         core: (1, 0, 0),
         rotations: &Rotation::CARDINAL,
-    })
+    }
 }
 
 /// Three more courses of firebrick ring over the stack's core, flue
 /// open — the chimney that makes a station a workshop. Rotation-invariant.
-fn chimney_shape(reg: &Registry) -> Option<MultiblockShape> {
-    let fb = reg.block_id("base:firebrick")?;
+fn chimney_shape() -> MultiblockShape {
     let mut cells = Vec::with_capacity(3 * 8 + 3);
     for ly in 3..6 {
         cells.push(ShapeCell {
@@ -763,16 +818,16 @@ fn chimney_shape(reg: &Registry) -> Option<MultiblockShape> {
                 }
                 cells.push(ShapeCell {
                     offset: (rx, ly, rz),
-                    constraint: BlockConstraint::Exact(fb),
+                    constraint: BlockConstraint::Tag("base:firebrick"),
                 });
             }
         }
     }
-    Some(MultiblockShape {
+    MultiblockShape {
         cells,
         core: (0, 0, 0),
         rotations: &[Rotation::R0],
-    })
+    }
 }
 
 /// A market stall: two log posts flanking the counter (two tall), bridged

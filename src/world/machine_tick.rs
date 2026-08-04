@@ -1,30 +1,26 @@
 //! Runtime ticking for bloomeries, clamps, furnaces, and related machines.
 
+use super::multiblock::MachineKind;
 use super::*;
 
 impl World {
     /// Advance machines. Returns true if any visible state changed.
-    /// Fire every lit bloomery: validate the shell, let the weather
-    /// slow or douse an unroofed stack, and cash the batch when done.
+    /// Fire every lit bloomery: the weather can slow or douse an
+    /// unroofed stack, and the batch is cashed when the fire's done.
+    /// The shell itself is revalidated by the edit hook, not here.
     pub(super) fn tick_bloomeries(&mut self, dt: f32) {
         let keys: Vec<BlockPos> = self
             .block_entities
             .iter()
-            .filter(|(_, e)| matches!(e, BlockEntity::Bloomery(b) if b.lit))
+            .filter(|(_, e)| {
+                matches!(e, BlockEntity::Multiblock(m) if m.kind == MachineKind::Bloomery && m.lit)
+            })
             .map(|(k, _)| *k)
             .collect();
         for pos in keys {
-            let Some(BlockEntity::Bloomery(mut b)) = self.block_entities.remove(&pos) else {
+            let Some(BlockEntity::Multiblock(mut b)) = self.block_entities.remove(&pos) else {
                 continue;
             };
-            if self.check_bloomery_at(pos).is_none() {
-                // Breached mid-fire: the heat escapes, the charge survives.
-                b.lit = false;
-                b.progress = 0.0;
-                self.swap_block_keep_entity_at(pos, "base:bloomery");
-                self.block_entities.insert(pos, BlockEntity::Bloomery(b));
-                continue;
-            }
             // An unroofed stack fights the rain and loses to a storm.
             let unroofed = b
                 .core
@@ -37,10 +33,11 @@ impl World {
                 b.lit = false;
                 b.progress = 0.0;
                 self.swap_block_keep_entity_at(pos, "base:bloomery");
-                self.block_entities.insert(pos, BlockEntity::Bloomery(b));
+                self.block_entities.insert(pos, BlockEntity::Multiblock(b));
                 continue;
             }
-            b.progress += dt * if wet { 0.5 } else { 1.0 };
+            let heat = b.stats.heat_multiplier();
+            b.progress += dt * if wet { 0.5 } else { 1.0 } * heat;
             if b.progress >= BLOOMERY_FIRE_SECS {
                 // Cash the batch: 2 charge + 2 fuel per bloom, +2 bonus
                 // blooms on a full 8+8 firing.
@@ -137,7 +134,7 @@ impl World {
                 b.progress = 0.0;
                 self.swap_block_keep_entity_at(pos, "base:bloomery");
             }
-            self.block_entities.insert(pos, BlockEntity::Bloomery(b));
+            self.block_entities.insert(pos, BlockEntity::Multiblock(b));
         }
     }
 
@@ -145,25 +142,21 @@ impl World {
     /// it — the workshop's edge over the open stack. A firing smelts
     /// any furnace recipe in batch at FORGE_ITEMS_PER_FUEL per fuel,
     /// spitting outputs (and cupellation byproducts) at the mouth.
+    /// The shell is revalidated by the edit hook, not here.
     pub(super) fn tick_forges(&mut self, dt: f32) {
         let keys: Vec<BlockPos> = self
             .block_entities
             .iter()
-            .filter(|(_, e)| matches!(e, BlockEntity::Forge(f) if f.lit))
+            .filter(|(_, e)| {
+                matches!(e, BlockEntity::Multiblock(m) if m.kind == MachineKind::Forge && m.lit)
+            })
             .map(|(k, _)| *k)
             .collect();
         for pos in keys {
-            let Some(BlockEntity::Forge(mut f)) = self.block_entities.remove(&pos) else {
+            let Some(BlockEntity::Multiblock(mut f)) = self.block_entities.remove(&pos) else {
                 continue;
             };
-            if self.check_forge_at(pos).is_none() {
-                f.lit = false;
-                f.progress = 0.0;
-                self.swap_block_keep_entity_at(pos, "base:forge");
-                self.block_entities.insert(pos, BlockEntity::Forge(f));
-                continue;
-            }
-            f.progress += dt;
+            f.progress += dt * f.stats.heat_multiplier();
             if f.progress >= FORGE_FIRE_SECS {
                 let reg = self.reg.clone();
                 let n_fuel: u32 = f.fuel.iter().flatten().map(|s| s.count).sum();
@@ -305,7 +298,7 @@ impl World {
                 f.progress = 0.0;
                 self.swap_block_keep_entity_at(pos, "base:forge");
             }
-            self.block_entities.insert(pos, BlockEntity::Forge(f));
+            self.block_entities.insert(pos, BlockEntity::Multiblock(f));
         }
     }
 
@@ -854,21 +847,21 @@ impl World {
 
     /// Fire every charged separator on a valid firebrick stack: one
     /// powder and one fuel a batch, neodymium and cerium out — the
-    /// rare-earth thread, finally honest (mechanization stage 6).
+    /// rare-earth thread, finally honest (mechanization stage 6). The
+    /// shell is revalidated by the edit hook, not here.
     pub(super) fn tick_separators(&mut self, dt: f32) {
         let reg = self.reg.clone();
         let keys: Vec<BlockPos> = self
             .block_entities
             .iter()
-            .filter(|(_, e)| matches!(e, BlockEntity::Separator(_)))
+            .filter(|(_, e)| matches!(e, BlockEntity::Multiblock(m) if m.kind == MachineKind::Separator))
             .map(|(k, _)| *k)
             .collect();
         for pos in keys {
-            let valid = self.check_separator_at(pos).is_some();
-            let Some(BlockEntity::Separator(sp)) = self.block_entities.get_mut(&pos) else {
+            let Some(BlockEntity::Multiblock(mut sp)) = self.block_entities.remove(&pos) else {
                 continue;
             };
-            let working = valid && sp.powder >= 1 && sp.fuel >= 1;
+            let working = sp.powder >= 1 && sp.separator_fuel >= 1;
             if !working {
                 sp.progress = 0.0;
             } else {
@@ -876,9 +869,9 @@ impl World {
                 if sp.progress >= SEPARATE_SECS {
                     sp.progress = 0.0;
                     sp.powder -= 1;
-                    sp.fuel -= 1;
-                    sp.nd += 1;
-                    sp.ce += 2;
+                    sp.separator_fuel -= 1;
+                    sp.neodymium += 1;
+                    sp.cerium += 2;
                 }
             }
             let want = if working {
@@ -889,6 +882,7 @@ impl World {
             if Some(self.get_block_at(pos)) != reg.block_id(want) {
                 self.swap_block_keep_entity_at(pos, want);
             }
+            self.block_entities.insert(pos, BlockEntity::Multiblock(sp));
         }
     }
 

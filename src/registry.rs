@@ -129,6 +129,12 @@ pub struct BlockDef {
     pub material_class: MaterialClass,
     pub materials: MaterialVector,
     pub dismantles_to: Option<ItemId>,
+    /// Pattern A stat contribution this block lends a matched multiblock
+    /// shell. Base firebrick is 1; an "advanced" tier raises it. Folding
+    /// is pure data: the sum of the matched shell's cells (see
+    /// [`crate::world::multiblock::fold_stats`]), never dispatched per
+    /// machine.
+    pub heat_retention: u32,
 }
 
 /// Resolve a block's per-channel emission from its level and optional color.
@@ -645,6 +651,9 @@ struct BlockToml {
     material_class: Option<MaterialClass>,
     #[serde(default)]
     materials: MaterialVector,
+    /// Pattern A heat contribution (see BlockDef::heat_retention).
+    #[serde(default)]
+    heat_retention: u32,
 }
 
 #[derive(Deserialize, Clone)]
@@ -1470,6 +1479,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         material_class: MaterialClass::Renewable,
         materials: MaterialVector::new(),
         dismantles_to: None,
+        heat_retention: 0,
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
     reg.blocks.push(air);
@@ -1651,6 +1661,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     .unwrap_or_else(|| inferred_material_class(&full)),
                 materials: b.materials.clone(),
                 dismantles_to: None,
+                heat_retention: b.heat_retention,
             });
             reg.block_by_name.insert(full.clone(), id);
             if let Some(bd) = &b.bonus_drop {
@@ -1948,6 +1959,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         material_class: MaterialClass::TransformativeFinite,
         materials: MaterialVector::new(),
         dismantles_to: None,
+        heat_retention: 0,
     });
     reg.block_by_name.insert("base:unknown".into(), unk);
     reg.unknown_block = unk;

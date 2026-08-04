@@ -28,7 +28,8 @@ use crate::net::{
 };
 use crate::planet::{BlockPos, EntityPos};
 use crate::server::Server;
-use crate::world::{BlockEntity, World};
+use crate::world::multiblock::MachineKind;
+use crate::world::{BlockEntity, MachineInstance, World};
 use moderation::{BanIdentity, ModerationStore};
 use profiles::{PlayerRuntime, ProfileStore};
 pub use settings::ServerSettings;
@@ -2113,9 +2114,18 @@ impl HostSession {
                 let default = match kind {
                     0 => BlockEntity::Chest(Default::default()),
                     1 => BlockEntity::Furnace(Default::default()),
-                    3 => BlockEntity::Bloomery(Default::default()),
-                    4 => BlockEntity::Kiln(Default::default()),
-                    5 => BlockEntity::Forge(Default::default()),
+                    3 => BlockEntity::Multiblock(MachineInstance {
+                        kind: MachineKind::Bloomery,
+                        ..Default::default()
+                    }),
+                    4 => BlockEntity::Multiblock(MachineInstance {
+                        kind: MachineKind::Kiln,
+                        ..Default::default()
+                    }),
+                    5 => BlockEntity::Multiblock(MachineInstance {
+                        kind: MachineKind::Forge,
+                        ..Default::default()
+                    }),
                     6 => BlockEntity::Stall(Default::default()),
                     _ => BlockEntity::Offering(Default::default()),
                 };
@@ -2541,7 +2551,7 @@ impl HostSession {
         };
         let mut held = self.guests.get(&id).and_then(|guest| guest.cursor);
         match entity {
-            BlockEntity::Bloomery(bl) => {
+            BlockEntity::Multiblock(bl) if bl.kind == MachineKind::Bloomery => {
                 // Sealed while firing; charge takes ore-chain items,
                 // the bank takes its fuel. Taking out is always fine.
                 if !bl.lit && slot < 8 {
@@ -2559,7 +2569,7 @@ impl HostSession {
                     }
                 }
             }
-            BlockEntity::Kiln(kl) => {
+            BlockEntity::Multiblock(kl) if kl.kind == MachineKind::Kiln => {
                 // Sealed while firing. Sand slots 0-3, powder 4, fuel
                 // 5-8; puts validate against the kiln tables.
                 if !kl.lit && slot < 9 {
@@ -2569,8 +2579,8 @@ impl HostSession {
                         _ => kiln_base.map(|(_, fuel, _)| fuel) == Some(it),
                     };
                     let s = match slot {
-                        0..=3 => &mut kl.sand[slot],
-                        4 => &mut kl.powder,
+                        0..=3 => &mut kl.charge[slot],
+                        4 => &mut kl.reagent,
                         _ => &mut kl.fuel[slot - 5],
                     };
                     if held.is_none() || held.map(|h| ok_put(h.item)) == Some(true) {
@@ -2580,7 +2590,7 @@ impl HostSession {
                     }
                 }
             }
-            BlockEntity::Forge(fo) => {
+            BlockEntity::Multiblock(fo) if fo.kind == MachineKind::Forge => {
                 // Sealed while firing; charge takes anything with a
                 // smelt, the bank takes anything that burns.
                 if !fo.lit && slot < 8 {
@@ -2631,7 +2641,7 @@ impl HostSession {
             | BlockEntity::Sign(_)
             | BlockEntity::Smoker(_)
             | BlockEntity::Steam(_)
-            | BlockEntity::Separator(_) => {}
+            | BlockEntity::Multiblock(_) => {}
             BlockEntity::Chest(c) => {
                 if slot < c.slots.len() {
                     let (ns, nh) = click_stack(&reg, c.slots[slot], held, right);
@@ -2744,7 +2754,7 @@ impl HostSession {
                 vec![f.progress, f.burn_left, f.burn_total],
             ),
             BlockEntity::Offering(o) => (2, o.slots.iter().map(snap).collect(), Vec::new()),
-            BlockEntity::Bloomery(b) => (
+            BlockEntity::Multiblock(b) if b.kind == MachineKind::Bloomery => (
                 3,
                 b.charge.iter().chain(b.fuel.iter()).map(snap).collect(),
                 vec![
@@ -2752,11 +2762,11 @@ impl HostSession {
                     b.progress / crate::world::BLOOMERY_FIRE_SECS,
                 ],
             ),
-            BlockEntity::Kiln(k) => (
+            BlockEntity::Multiblock(k) if k.kind == MachineKind::Kiln => (
                 4,
-                k.sand
+                k.charge
                     .iter()
-                    .chain([&k.powder])
+                    .chain([&k.reagent])
                     .chain(k.fuel.iter())
                     .map(snap)
                     .collect(),
@@ -2765,7 +2775,7 @@ impl HostSession {
                     k.progress / crate::world::KILN_FIRE_SECS,
                 ],
             ),
-            BlockEntity::Forge(f) => (
+            BlockEntity::Multiblock(f) if f.kind == MachineKind::Forge => (
                 5,
                 f.charge.iter().chain(f.fuel.iter()).map(snap).collect(),
                 vec![
@@ -2790,7 +2800,7 @@ impl HostSession {
             | BlockEntity::Sign(_)
             | BlockEntity::Smoker(_)
             | BlockEntity::Steam(_)
-            | BlockEntity::Separator(_) => return,
+            | BlockEntity::Multiblock(_) => return,
         };
         self.net.send(
             id,

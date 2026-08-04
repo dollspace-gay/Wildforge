@@ -16,7 +16,7 @@ use crate::mobs::{Mob, MobEvent, ProjHit, Projectile};
 use crate::planet::BlockPos;
 use crate::registry::{AIR, BlockId, ItemId, Registry};
 use crate::worldgen::Generator;
-
+use multiblock::pos_within_extent;
 mod calendar;
 mod chunks;
 mod ecology;
@@ -188,11 +188,12 @@ pub enum BlockEntity {
     Furnace(FurnaceState),
     Chest(ChestState),
     Offering(OfferingState),
-    Bloomery(BloomeryState),
+    /// A validated multiblock shell (bloomery/forge/kiln/separator):
+    /// one generic representation carrying the shape ID and the state
+    /// any furnace-style machine needs (spec Part 2.1 groundwork).
+    Multiblock(MachineInstance),
     Clamp(ClampState),
     Anvil(AnvilState),
-    Kiln(KilnState),
-    Forge(BloomeryState),
     /// Three short lines on a post (a waystone uses line 0 as its name).
     Sign(SignState),
     /// A market stall counter: goods, a price, and the owner's till.
@@ -201,21 +202,45 @@ pub enum BlockEntity {
     Smoker(SmokerState),
     /// A steam firebox: banked fire and exact boiler water.
     Steam(SteamState),
-    /// A rare-earth separator: powder in, neodymium and cerium out.
-    Separator(SeparatorState),
 }
 
 #[derive(Default)]
-pub struct SeparatorState {
-    pub powder: u32,
-    pub fuel: u32,
-    pub nd: u32,
-    pub ce: u32,
+pub struct MachineInstance {
+    /// Which registered machine this is — its shape ID.
+    pub kind: crate::world::multiblock::MachineKind,
+    /// Whether the fire is lit.
+    pub lit: bool,
+    /// Seconds fired so far.
     pub progress: f32,
+    /// Hollow core cell of the validated shell (set on lighting).
+    pub core: Option<BlockPos>,
+    /// Four primary input slots (bloomery/forge charge, kiln sand).
+    pub charge: [Option<ItemStack>; 4],
+    /// A single reagent slot (the kiln's pigment).
+    pub reagent: Option<ItemStack>,
+    /// Four fuel slots.
+    pub fuel: [Option<ItemStack>; 4],
+    /// Fractional, already-recovered stock waiting to add up to ordinary
+    /// recipe units. Forge instances use it; bloomeries leave it empty.
+    pub reclaim: crate::registry::MaterialVector,
+    /// Separator input/output counts (rare-earth powder and charcoal in;
+    /// neodymium and cerium out).
+    pub powder: u32,
+    pub separator_fuel: u32,
+    pub neodymium: u32,
+    pub cerium: u32,
+    /// Folded Pattern A stats of the validated shell (spec Part 2.1).
+    /// Recomputed on revalidation, never per tick.
+    pub stats: crate::world::multiblock::EffectiveStats,
+    /// Reserved space so slot-based module state (spec Part 1.3) can be
+    /// added without a second rewrite of this representation. The slot
+    /// schema is deliberately NOT designed in this task.
+    #[allow(dead_code)]
+    pub slots_placeholder: (),
 }
 
-/// The world's year stops when this many countries are dead AND
-/// they are this share of every country anyone has seen.
+/// The world's year stops when this many countries are dead AND they are
+/// this share of every country anyone has seen.
 pub const LONG_WINTER_MIN_DEAD: usize = 3;
 pub const LONG_WINTER_FRAC: f32 = 0.5;
 
@@ -241,6 +266,13 @@ pub const RANDOM_TICKS_PER_CHUNK_SEC: f64 = 8.0;
 
 /// Seconds per separator batch (1 powder + 1 fuel -> 1 Nd + 2 Ce).
 pub const SEPARATE_SECS: f32 = 45.0;
+
+/// Two and a half minutes of white heat per glass batch. Deliberately
+/// left on the wall clock when the day doubled: how long a player
+/// stands waiting on a kiln is a question about patience, not about
+/// the calendar.
+pub const KILN_FIRE_SECS: f32 = 150.0;
+
 /// How far a running generator's field reaches (lamps, the quern).
 pub const ELEC_RADIUS: i32 = 6;
 
@@ -286,40 +318,8 @@ pub struct SignState {
     pub lines: [String; 3],
 }
 
-/// The steelworks stack: a batch of charge + fuel, fired for half a
-/// day inside a validated firebrick shell.
+/// The glass kiln's fire duration.
 #[derive(Default)]
-pub struct BloomeryState {
-    pub charge: [Option<ItemStack>; 4],
-    pub fuel: [Option<ItemStack>; 4],
-    /// Fractional, already-recovered stock waiting to add up to ordinary
-    /// recipe units. Forge instances use it; bloomeries leave it empty.
-    pub reclaim: crate::registry::MaterialVector,
-    pub lit: bool,
-    /// Seconds fired so far (out of BLOOMERY_FIRE_SECS).
-    pub progress: f32,
-    /// Hollow core cell of the validated stack (set on lighting).
-    pub core: Option<BlockPos>,
-}
-
-/// The glass kiln: sand + one powder + charcoal, fired hot and fast.
-#[derive(Default)]
-pub struct KilnState {
-    pub sand: [Option<ItemStack>; 4],
-    pub powder: Option<ItemStack>,
-    pub fuel: [Option<ItemStack>; 4],
-    pub lit: bool,
-    pub progress: f32,
-    pub core: Option<BlockPos>,
-}
-
-/// Two and a half minutes of white heat per glass batch. Deliberately
-/// left on the wall clock when the day doubled: how long a player
-/// stands waiting on a kiln is a question about patience, not about
-/// the calendar.
-pub const KILN_FIRE_SECS: f32 = 150.0;
-
-/// A covered log pile smoldering into charcoal.
 pub struct ClampState {
     pub logs: Vec<BlockPos>,
     /// Seconds remaining until the whole pile converts.
@@ -862,6 +862,10 @@ pub struct World {
     edit_relight_batch: bool,
     /// Accumulator for the food-freshness sweep (containers).
     perish_accum: f32,
+    /// Multiblock revalidations triggered by block edits since construction.
+    /// Test-only: proves the 2c edit hook is scoped, not global.
+    #[cfg(test)]
+    multiblock_revalidations: usize,
     /// Seconds of work banked per powered station (transient: a
     /// partial strike is honest to lose across a save).
     station_work: HashMap<BlockPos, f32>,
@@ -1171,12 +1175,20 @@ impl World {
             pending_gives: Vec::new(),
             next_mob_id: 1,
             #[cfg(test)]
+            multiblock_revalidations: 0,
+            #[cfg(test)]
             save_fail_chunks: HashSet::new(),
         }
     }
 
     pub fn planet_atlas(&self) -> Option<Arc<crate::planet_atlas::PlanetAtlas>> {
         self.planet_atlas.clone()
+    }
+
+    /// Test-only: how many instances the 2c edit hook has revalidated.
+    #[cfg(test)]
+    pub(crate) fn multiblock_revalidations(&self) -> usize {
+        self.multiblock_revalidations
     }
 
     pub fn common_spawn(&self) -> Option<crate::planet::EntityPos> {
@@ -1678,9 +1690,12 @@ impl World {
                     .or_insert_with(|| BlockEntity::Steam(Default::default()));
             }
             Some("separator") => {
-                self.block_entities
-                    .entry(pos)
-                    .or_insert_with(|| BlockEntity::Separator(Default::default()));
+                self.block_entities.entry(pos).or_insert_with(|| {
+                    BlockEntity::Multiblock(MachineInstance {
+                        kind: crate::world::multiblock::MachineKind::Separator,
+                        ..Default::default()
+                    })
+                });
             }
             _ => {}
         }
@@ -1811,26 +1826,19 @@ impl World {
             }
             BlockEntity::Chest(state) => add(&state.slots),
             BlockEntity::Offering(state) => add(&state.slots),
-            BlockEntity::Bloomery(state) | BlockEntity::Forge(state) => {
+            BlockEntity::Multiblock(state) => {
                 add(&state.charge);
+                add(&[state.reagent]);
                 add(&state.fuel);
             }
             BlockEntity::Anvil(state) => add(&[state.bloom]),
-            BlockEntity::Kiln(state) => {
-                add(&state.sand);
-                add(&[state.powder]);
-                add(&state.fuel);
-            }
             BlockEntity::Stall(state) => {
                 add(&state.goods);
                 add(&[state.price]);
                 add(&state.till);
             }
             BlockEntity::Smoker(state) => add(&state.meat),
-            BlockEntity::Clamp(_)
-            | BlockEntity::Sign(_)
-            | BlockEntity::Steam(_)
-            | BlockEntity::Separator(_) => {}
+            BlockEntity::Clamp(_) | BlockEntity::Sign(_) | BlockEntity::Steam(_) => {}
         }
         stacks
     }
@@ -1845,18 +1853,16 @@ impl World {
         for stack in Self::block_entity_stacks(entity) {
             self.record_external_stack(stack, source)?;
         }
-        if let BlockEntity::Bloomery(state) | BlockEntity::Forge(state) = entity {
+        if let BlockEntity::Multiblock(state) = entity {
             let Some(ledger) = &mut self.material_ledger else {
                 return Ok(());
             };
             ledger.record_external_materials(&state.reclaim, true, source)?;
-        }
-        if let BlockEntity::Separator(state) = entity {
             let counts = [
                 ("base:rare_earth_powder", state.powder),
-                ("base:charcoal", state.fuel),
-                ("base:neodymium", state.nd),
-                ("base:cerium", state.ce),
+                ("base:charcoal", state.separator_fuel),
+                ("base:neodymium", state.neodymium),
+                ("base:cerium", state.cerium),
             ];
             for (name, count) in counts {
                 if count != 0
@@ -1873,18 +1879,16 @@ impl World {
         for stack in Self::block_entity_stacks(entity) {
             self.record_admin_stack_deletion(stack)?;
         }
-        if let BlockEntity::Bloomery(state) | BlockEntity::Forge(state) = entity {
+        if let BlockEntity::Multiblock(state) = entity {
             let Some(ledger) = &mut self.material_ledger else {
                 return Ok(());
             };
             ledger.record_admin_secondary_deletion(&state.reclaim)?;
-        }
-        if let BlockEntity::Separator(state) = entity {
             let counts = [
                 ("base:rare_earth_powder", state.powder),
-                ("base:charcoal", state.fuel),
-                ("base:neodymium", state.nd),
-                ("base:cerium", state.ce),
+                ("base:charcoal", state.separator_fuel),
+                ("base:neodymium", state.neodymium),
+                ("base:cerium", state.cerium),
             ];
             for (name, count) in counts {
                 if count != 0
@@ -2016,19 +2020,37 @@ impl World {
                 }
                 BlockEntity::Chest(c) => c.slots.into_iter().flatten().collect(),
                 BlockEntity::Offering(o) => o.slots.into_iter().flatten().collect(),
-                BlockEntity::Bloomery(b) => b.charge.into_iter().chain(b.fuel).flatten().collect(),
-                BlockEntity::Forge(f) => {
-                    if !f.reclaim.is_empty()
+                BlockEntity::Multiblock(m) => {
+                    let reg = &self.reg;
+                    let mut stacks: Vec<ItemStack> =
+                        m.charge.into_iter().chain(m.fuel).flatten().collect();
+                    if let Some(r) = m.reagent {
+                        stacks.push(r);
+                    }
+                    let mut push = |name: &str, count: u32| {
+                        if count > 0
+                            && let Some(item) = reg.item_id(name)
+                        {
+                            let mut stack = ItemStack::new(reg, item, 1);
+                            stack.count = count;
+                            stacks.push(stack);
+                        }
+                    };
+                    if !m.reclaim.is_empty()
                         && let Some(ledger) = &mut self.material_ledger
                         && let Err(error) = ledger.bury_materials(
                             pos,
-                            &f.reclaim,
-                            "forge dismantled with fractional recovered stock",
+                            &m.reclaim,
+                            "machine dismantled with fractional recovered stock",
                         )
                     {
-                        eprintln!("materials: forge stock salvage failed: {error}");
+                        eprintln!("materials: machine stock salvage failed: {error}");
                     }
-                    f.charge.into_iter().chain(f.fuel).flatten().collect()
+                    push("base:rare_earth_powder", m.powder);
+                    push("base:charcoal", m.separator_fuel);
+                    push("base:neodymium", m.neodymium);
+                    push("base:cerium", m.cerium);
+                    stacks
                 }
                 BlockEntity::Sign(_) => Vec::new(),
                 BlockEntity::Stall(st) => st
@@ -2042,35 +2064,84 @@ impl World {
                 BlockEntity::Clamp(_) => Vec::new(),
                 BlockEntity::Anvil(a) => a.bloom.into_iter().collect(),
                 BlockEntity::Steam(_) => Vec::new(),
-                BlockEntity::Separator(separator) => {
-                    let mut out = Vec::new();
-                    let mut push = |name: &str, count: u32| {
-                        if count > 0
-                            && let Some(item) = self.reg.item_id(name)
-                        {
-                            let mut stack = ItemStack::new(&self.reg, item, 1);
-                            stack.count = count;
-                            out.push(stack);
-                        }
-                    };
-                    push("base:rare_earth_powder", separator.powder);
-                    push("base:charcoal", separator.fuel);
-                    push("base:neodymium", separator.nd);
-                    push("base:cerium", separator.ce);
-                    out
-                }
-                BlockEntity::Kiln(k) => k
-                    .sand
-                    .into_iter()
-                    .chain(k.fuel)
-                    .chain([k.powder])
-                    .flatten()
-                    .collect(),
             };
             for stack in spilled {
                 self.push_drop_at(pos, stack);
             }
         }
+
+        // Event-driven multiblock revalidation (Phase 2, spec Part 1.2's
+        // scaling note): a real block change anywhere within a registered
+        // instance's shell region re-runs that instance's shape match and
+        // re-folds its stats immediately — no dependence on the machine
+        // being lit or ticked. Water and meta-only edits keep `old ==
+        // block` and skip this; remote replicas let the host decide.
+        if !self.remote && old != block {
+            self.revalidate_multiblocks_around(pos);
+        }
+    }
+
+    /// Revalidate every registered multiblock instance whose shell region
+    /// could contain the edited position. The per-instance test is O(1)
+    /// arithmetic ([`crate::world::multiblock::pos_within_extent`]); only
+    /// instances actually in range re-run their shape match.
+    fn revalidate_multiblocks_around(&mut self, pos: BlockPos) {
+        let keys: Vec<BlockPos> = self
+            .block_entities
+            .iter()
+            .filter(|(anchor, entity)| {
+                let BlockEntity::Multiblock(m) = entity else {
+                    return false;
+                };
+                let extent = m.kind.edit_region(self, **anchor);
+                pos_within_extent(pos, **anchor, extent)
+            })
+            .map(|(anchor, _)| *anchor)
+            .collect();
+        #[cfg(test)]
+        {
+            self.multiblock_revalidations += keys.len();
+        }
+        for anchor in keys {
+            self.revalidate_machine_at(anchor);
+        }
+    }
+
+    /// Re-match one instance. On success the shell's folded stats are
+    /// refreshed (a tier swap changes the effective heat). On failure a
+    /// lit machine is doused right here, reaching the same end state
+    /// `tick_kilns` used to reach by polling.
+    fn revalidate_machine_at(&mut self, anchor: BlockPos) {
+        let Some(BlockEntity::Multiblock(mut m)) = self.block_entities.remove(&anchor) else {
+            return;
+        };
+        let kind = m.kind;
+        let was_lit = m.lit;
+        let Some(matched) = kind.validate(self, anchor) else {
+            if was_lit && kind != crate::world::multiblock::MachineKind::Separator {
+                m.lit = false;
+                m.progress = 0.0;
+                let unlit = match kind {
+                    crate::world::multiblock::MachineKind::Bloomery => "base:bloomery",
+                    crate::world::multiblock::MachineKind::Forge => "base:forge",
+                    crate::world::multiblock::MachineKind::Kiln => "base:kiln",
+                    crate::world::multiblock::MachineKind::Separator => "base:separator",
+                };
+                self.swap_block_keep_entity_at(anchor, unlit);
+            }
+            self.block_entities
+                .insert(anchor, BlockEntity::Multiblock(m));
+            return;
+        };
+        let mut stats = crate::world::multiblock::fold_stats(self, &matched.matched);
+        if kind == crate::world::multiblock::MachineKind::Kiln {
+            stats.chimney = self.has_chimney_at(matched.core);
+        }
+        if stats != m.stats {
+            m.stats = stats;
+        }
+        self.block_entities
+            .insert(anchor, BlockEntity::Multiblock(m));
     }
 
     pub fn set_soil_salinity_at(&mut self, pos: BlockPos, salinity: u8) {

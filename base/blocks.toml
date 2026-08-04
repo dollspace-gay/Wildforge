@@ -579,11 +579,25 @@ tool = "pickaxe"
 id = "firebrick"
 name = "Firebrick"
 # Stone baked around a warden's ember: the only shell that holds a
-# bloomery's heat.
+# bloomery's heat. Its Pattern A heat retention (1) is the baseline a
+# whole shell measures itself against.
 texture = "@firebrick"
 hardness = 7.0
 tool = "pickaxe"
 requires_tool = true
+heat_retention = 1
+
+[[block]]
+id = "firebrick_advanced"
+name = "Advanced Firebrick"
+# Dev/test ring block: hotter than plain firebrick so stat folding has
+# something to fold. Proves firebrick-tier substitution changes a
+# machine's effective output without a distinct mouth special-case.
+texture = "@firebrick"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+heat_retention = 2
 
 [[block]]
 id = "bloomery"

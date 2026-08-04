@@ -1335,9 +1335,10 @@ impl Game {
                         w,
                         chart,
                         (px, y + 1, pz),
-                        crate::world::BlockEntity::Separator(crate::world::SeparatorState {
+                        crate::world::BlockEntity::Multiblock(crate::world::MachineInstance {
+                            kind: crate::world::multiblock::MachineKind::Separator,
                             powder: 4,
-                            fuel: 4,
+                            separator_fuel: 4,
                             ..Default::default()
                         }),
                     );
@@ -1772,7 +1773,10 @@ impl Game {
                     reg2.item_id("base:iron_ingot"),
                     reg2.item_id("base:charcoal"),
                 ) {
-                    let mut st = world::BloomeryState::default();
+                    let mut st = world::MachineInstance {
+                        kind: world::multiblock::MachineKind::Bloomery,
+                        ..Default::default()
+                    };
                     for i in 0..4 {
                         st.charge[i] = Some(ItemStack::new(&reg2, iron, 2));
                         st.fuel[i] = Some(ItemStack::new(&reg2, coal, 2));
@@ -1781,7 +1785,7 @@ impl Game {
                         self.server.world,
                         chart,
                         (lx - 1, ly, lz),
-                        world::BlockEntity::Bloomery(st)
+                        world::BlockEntity::Multiblock(st)
                     );
                     let _ = self
                         .server
@@ -1880,17 +1884,20 @@ impl Game {
                     reg.item_id("base:charcoal"),
                     reg.item_id("base:cobalt_powder"),
                 ) {
-                    let mut st = world::KilnState::default();
+                    let mut st = world::MachineInstance {
+                        kind: world::multiblock::MachineKind::Kiln,
+                        ..Default::default()
+                    };
                     for i in 0..4 {
-                        st.sand[i] = Some(ItemStack::new(&reg, sand, 2));
+                        st.charge[i] = Some(ItemStack::new(&reg, sand, 2));
                         st.fuel[i] = Some(ItemStack::new(&reg, coal, 2));
                     }
-                    st.powder = Some(ItemStack::new(&reg, pow, 1));
+                    st.reagent = Some(ItemStack::new(&reg, pow, 1));
                     demo_insert!(
                         self.server.world,
                         chart,
                         (sx - 1, sy, sz),
-                        world::BlockEntity::Kiln(st)
+                        world::BlockEntity::Multiblock(st)
                     );
                     let _ = self.server.world.light_kiln_at(chart.block(sx - 1, sy, sz));
                 }

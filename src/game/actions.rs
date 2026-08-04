@@ -1681,10 +1681,13 @@ impl Game {
                     let is_fuel = held == reg.item_id("base:charcoal");
                     self.server.world.ensure_block_entity_at(
                         h.block,
-                        world::BlockEntity::Separator(Default::default()),
+                        world::BlockEntity::Multiblock(world::MachineInstance {
+                            kind: world::multiblock::MachineKind::Separator,
+                            ..Default::default()
+                        }),
                     );
                     let valid = self.server.world.check_separator_at(h.block).is_some();
-                    let Some(world::BlockEntity::Separator(sp)) =
+                    let Some(world::BlockEntity::Multiblock(sp)) =
                         self.server.world.block_entity_mut_at(&h.block)
                     else {
                         return;
@@ -1696,7 +1699,7 @@ impl Game {
                         }
                         if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
                         {
-                            if let Some(world::BlockEntity::Separator(sp)) =
+                            if let Some(world::BlockEntity::Multiblock(sp)) =
                                 self.server.world.block_entity_mut_at(&h.block)
                             {
                                 sp.powder += 1;
@@ -1709,33 +1712,33 @@ impl Game {
                         return;
                     }
                     if is_fuel {
-                        if sp.fuel >= 8 {
+                        if sp.separator_fuel >= 8 {
                             self.toast("The firebed is full.".to_string());
                             return;
                         }
                         if self.creative || self.inventory.take_one(self.input.hotbar_sel).is_some()
                         {
-                            if let Some(world::BlockEntity::Separator(sp)) =
+                            if let Some(world::BlockEntity::Multiblock(sp)) =
                                 self.server.world.block_entity_mut_at(&h.block)
                             {
-                                sp.fuel += 1;
+                                sp.separator_fuel += 1;
                             }
                             self.sfx(Sfx::Place);
                         }
                         return;
                     }
                     if held.is_none() {
-                        let (nd, ce) = (sp.nd, sp.ce);
+                        let (nd, ce) = (sp.neodymium, sp.cerium);
                         if nd == 0 && ce == 0 {
-                            let (p, f) = (sp.powder, sp.fuel);
+                            let (p, f) = (sp.powder, sp.separator_fuel);
                             self.toast(format!("Powder {p}, fuel {f}, nothing split yet."));
                             return;
                         }
-                        if let Some(world::BlockEntity::Separator(sp)) =
+                        if let Some(world::BlockEntity::Multiblock(sp)) =
                             self.server.world.block_entity_mut_at(&h.block)
                         {
-                            sp.nd = 0;
-                            sp.ce = 0;
+                            sp.neodymium = 0;
+                            sp.cerium = 0;
                         }
                         for (name, n) in [("base:neodymium", nd), ("base:cerium", ce)] {
                             if n > 0
@@ -1808,20 +1811,21 @@ impl Game {
                         rc.client.send(&net::C2S::OpenContainer { pos: h.block });
                         return;
                     }
-                    let (default, screen) = match station {
-                        "kiln" => (
-                            world::BlockEntity::Kiln(Default::default()),
-                            Screen::Kiln(h.block),
-                        ),
+                    let (kind, screen) = match station {
+                        "kiln" => (world::multiblock::MachineKind::Kiln, Screen::Kiln(h.block)),
                         "forge" => (
-                            world::BlockEntity::Forge(Default::default()),
+                            world::multiblock::MachineKind::Forge,
                             Screen::Bloomery(h.block),
                         ),
                         _ => (
-                            world::BlockEntity::Bloomery(Default::default()),
+                            world::multiblock::MachineKind::Bloomery,
                             Screen::Bloomery(h.block),
                         ),
                     };
+                    let default = world::BlockEntity::Multiblock(world::MachineInstance {
+                        kind,
+                        ..Default::default()
+                    });
                     self.server.world.ensure_block_entity_at(h.block, default);
                     self.set_screen(screen);
                     return;
