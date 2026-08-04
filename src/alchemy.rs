@@ -376,6 +376,15 @@ pub struct PreparationModifiers {
     pub drain_permille: u16,
     pub overdraw_permille: u16,
     pub storm_warning: bool,
+    /// Host-authoritative environmental dross presentation. Zero is clear;
+    /// 1..=5 follows trace, strained, seep, scar, and breach risk.
+    pub dross_band: u8,
+    /// Non-color accessibility grammar: 0 clear, 1 haze, 2 pulse, 3 branch,
+    /// 4 broken ring, 5 repeating shear.
+    pub dross_pattern: u8,
+    pub recovery_permille: u16,
+    pub perception_permille: u16,
+    pub stamina_permille: u16,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -407,6 +416,11 @@ impl Default for PreparationModifiers {
             drain_permille: 1_000,
             overdraw_permille: 1_000,
             storm_warning: false,
+            dross_band: 0,
+            dross_pattern: 0,
+            recovery_permille: 1_000,
+            perception_permille: 1_000,
+            stamina_permille: 1_000,
         }
     }
 }

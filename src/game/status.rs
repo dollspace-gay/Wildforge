@@ -2,7 +2,28 @@
 
 use super::*;
 
+pub(super) fn dross_warning_text(band: u8) -> (&'static str, &'static str) {
+    match band {
+        1 => ("TRACE", "GLASS HAZE"),
+        2 => ("STRAINED", "TWO-PULSE HUM"),
+        3 => ("SEEP", "BRANCHING SIGN"),
+        4 => ("SCAR", "BROKEN RING"),
+        5 => ("BREACH RISK", "REPEATING SHEAR"),
+        _ => ("CLEAR", "EVEN FIELD"),
+    }
+}
+
 impl Game {
+    pub(super) fn present_dross_cue(&mut self, cue: crate::dross::DrossCue) {
+        match cue.kind {
+            crate::dross::DrossCueKind::BreachForecast => self.sfx(Sfx::DrossWarning(5)),
+            crate::dross::DrossCueKind::Breach { activity } => self.sfx(Sfx::DrossBreach(
+                activity.unwrap_or(crate::dross::ScarActivityHandler::Shear),
+            )),
+        }
+        self.toast(cue.accessible_text().to_string());
+    }
+
     pub(super) fn toast(&mut self, msg: String) {
         self.presentation.toasts.push((msg, 4.0));
         if self.presentation.toasts.len() > 5 {
@@ -207,11 +228,20 @@ impl Game {
                         .tick_preparation_statuses(actor.0, actor_pos, physiology)
                     {
                         Ok(result) => {
+                            let old_dross_band = self.survival.preparation_modifiers.dross_band;
                             self.survival.health = result.physiology.health;
                             self.survival.hunger = result.physiology.hunger;
                             self.survival.nutrition = result.physiology.nutrition;
                             self.survival.bodily_dross = result.physiology.bodily_dross;
                             self.survival.preparation_modifiers = result.modifiers;
+                            if result.modifiers.dross_band > old_dross_band
+                                && result.modifiers.dross_band != 0
+                            {
+                                self.sfx(Sfx::DrossWarning(result.modifiers.dross_band));
+                                let (band, pattern) =
+                                    dross_warning_text(result.modifiers.dross_band);
+                                self.toast(format!("DROSS {band} — {pattern}"));
+                            }
                             for cue in result.cues {
                                 if let Some(session) = &self.multiplayer.host {
                                     session.broadcast_alchemy_cue(cue.clone());
@@ -237,7 +267,8 @@ impl Game {
             && self.survival.health < maxh
             && self.survival.since_damage > 4.0
         {
-            self.survival.exhaustion_regen += dt;
+            self.survival.exhaustion_regen +=
+                dt * f32::from(self.survival.preparation_modifiers.recovery_permille) / 1_000.0;
             if self.survival.exhaustion_regen >= 3.0 {
                 self.survival.exhaustion_regen = 0.0;
                 self.survival.health = (self.survival.health + 1.0).min(maxh);

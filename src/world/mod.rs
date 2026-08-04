@@ -27,6 +27,7 @@ mod calendar;
 mod chunks;
 mod discovery;
 pub(crate) use discovery::ObservationTarget;
+mod dross;
 mod ecology;
 pub use ecology::SettledMobDeath;
 mod entities;
@@ -925,6 +926,10 @@ pub struct World {
     /// conservative magical transfer. Ordinary untouched water derives its
     /// baseline temperature from weather and costs no per-voxel allocation.
     pub(crate) water_carriers: Option<crate::workings::WaterCarrierState>,
+    /// Last host tick at which each actor received environmental exposure.
+    /// Bodily burden is persisted with player profiles; this cadence cache is
+    /// deliberately transient and cannot mint or delete environmental dross.
+    dross_exposure_tick: HashMap<[u8; 16], u64>,
     /// Atlas-free unit fixtures can request a local condition explicitly.
     /// Production worlds never consult this: their weather is atlas state.
     weather_override: Option<crate::planet_atlas::LocalWeatherSample>,
@@ -1346,6 +1351,7 @@ impl World {
             workings_state,
             alchemy_state,
             water_carriers,
+            dross_exposure_tick: HashMap::new(),
             weather_override: None,
             remote_weather_side: 0,
             remote_weather: HashMap::new(),
@@ -1702,6 +1708,9 @@ impl World {
             ),
         )
         .map_err(std::io::Error::other)?;
+        let processed = report.processed;
+        let completed_days = report.completed_days;
+        let dross_harm = report.dross_harm;
         if let Some(weather) = &mut self.planetary_weather {
             for (pos, requested) in report.transpiration {
                 let moved = weather.transpire_ecology(pos, requested);
@@ -1712,10 +1721,29 @@ impl World {
                 }
             }
         }
-        if report.completed_days > previous_completed_day {
+        // Dross arithmetic is not Ire. Only population losses explicitly
+        // reported by succession count as habitat damage; source identity
+        // remains in the separate bounded dross evidence mixture.
+        for (pos, harmed) in dross_harm {
+            let center = pos.center(atlas.side());
+            let surface = crate::planet::SurfacePos::new(
+                center.face,
+                center
+                    .u
+                    .floor()
+                    .clamp(0.0, f64::from(crate::planet::FACE_BLOCKS - 1)) as u16,
+                center
+                    .v
+                    .floor()
+                    .clamp(0.0, f64::from(crate::planet::FACE_BLOCKS - 1)) as u16,
+            )
+            .expect("atlas ecology position has a canonical surface center");
+            self.add_ire_at_surface(surface, harmed.min(8) as f32 * 0.25);
+        }
+        if completed_days > previous_completed_day {
             self.refresh_loaded_arcane_ecology();
         }
-        Ok(report.processed)
+        Ok(processed)
     }
 
     pub fn arcane_ecology_observation_at(
@@ -1914,6 +1942,7 @@ impl World {
             return false;
         };
         let region = atlas.atlas_pos(at.surface());
+        let heat_dispersal = reason.contains("lava") || reason.contains("burned in fire");
         let disposition = self
             .reg
             .items
@@ -1937,19 +1966,18 @@ impl World {
             crate::registry::ArcaneDisposition::Ambient => {
                 crate::arcane::ArcaneOwner::Ambient(region)
             }
-            crate::registry::ArcaneDisposition::Dross => crate::arcane::ArcaneOwner::Dross {
+            // A destructive "scar" disposition means severe environmental
+            // dross, not permission to mint a bare Scar owner. Only the dross
+            // manifestation coordinator may create a Scar(id), after the
+            // persisted warning ladder and canonical-site checks.
+            crate::registry::ArcaneDisposition::Dross
+            | crate::registry::ArcaneDisposition::Scar => crate::arcane::ArcaneOwner::Dross {
                 region,
-                medium: crate::arcane::DrossMedium::Soil,
-            },
-            crate::registry::ArcaneDisposition::Scar => match ledger.allocate_scar_id() {
-                Ok(id) => crate::arcane::ArcaneOwner::Scar(id),
-                Err(error) => {
-                    eprintln!("arcane: could not allocate destruction scar: {error}");
-                    crate::arcane::ArcaneOwner::Dross {
-                        region,
-                        medium: crate::arcane::DrossMedium::Soil,
-                    }
-                }
+                medium: if heat_dispersal {
+                    crate::arcane::DrossMedium::Air
+                } else {
+                    crate::arcane::DrossMedium::Soil
+                },
             },
         };
         if let Err(error) = ledger.move_all_item(stack.arcane_id, destination, reason) {
@@ -2429,6 +2457,7 @@ impl World {
         let ecology_site_present = self.arcane_geography.as_ref().is_some_and(|geography| {
             crate::arcane_ecology::owns_materialized_block(geography, pos)
         });
+        let dross_scar_present = self.owns_dross_scar_block(pos);
         // A recovering plant or crystal is real persistent state, not an
         // ordinary loot block. In particular, a second host command must not
         // bypass its harvest cooldown merely because no new plan is ready.
@@ -2494,6 +2523,27 @@ impl World {
                 None
             }
         };
+        let mut dross_scar_handled = false;
+        if dross_scar_present {
+            let settled = if award_drop {
+                if let Some(stack) = drop.as_mut() {
+                    self.excavate_dross_scar(pos, stack)
+                } else {
+                    self.release_dross_scar(pos)
+                }
+            } else {
+                self.release_dross_scar(pos)
+            };
+            if let Err(error) = settled {
+                eprintln!("dross: scar break cancelled at {pos:?}: {error}");
+                cancel_unapplied_material_operation(
+                    self.material_ledger.as_ref(),
+                    &material_operation,
+                );
+                return None;
+            }
+            dross_scar_handled = true;
+        }
         if breaking_binding_frame
             && let Err(error) = self.settle_binding_frame_break_at(pos, controlled_frame_break)
         {
@@ -2501,7 +2551,8 @@ impl World {
             cancel_unapplied_material_operation(self.material_ledger.as_ref(), &material_operation);
             return None;
         }
-        let mut arcane_harvest_handled = ecology_site_present || is_finite_resonant_mineral;
+        let mut arcane_harvest_handled =
+            ecology_site_present || is_finite_resonant_mineral || dross_scar_handled;
         let mut leaves_bud = false;
         if award_drop {
             if let (Some(plan), Some(stack)) = (ecology_plan.as_ref(), drop.as_mut()) {
@@ -2528,6 +2579,7 @@ impl World {
                 let old_site = geography.dynamic.ecology.sites[site_index].clone();
                 let old_sequence = geography.dynamic.ecology.event_sequence;
                 let old_exported = geography.dynamic.ecology.exported;
+                let old_external_imported = geography.dynamic.dross_state.external_imported;
                 if let Err(error) = crate::arcane_ecology::apply_harvest(
                     geography,
                     &self.reg,
@@ -2550,6 +2602,7 @@ impl World {
                         geography.dynamic.ecology.sites[site_index] = old_site;
                         geography.dynamic.ecology.event_sequence = old_sequence;
                         geography.dynamic.ecology.exported = old_exported;
+                        geography.dynamic.dross_state.external_imported = old_external_imported;
                         eprintln!("arcane ecology: could not stage harvest at {pos:?}: {error}");
                         cancel_unapplied_material_operation(
                             self.material_ledger.as_ref(),
@@ -2562,6 +2615,7 @@ impl World {
                     geography.dynamic.ecology.sites[site_index] = old_site;
                     geography.dynamic.ecology.event_sequence = old_sequence;
                     geography.dynamic.ecology.exported = old_exported;
+                    geography.dynamic.dross_state.external_imported = old_external_imported;
                     eprintln!("arcane ecology: harvest cancelled without a ledger");
                     cancel_unapplied_material_operation(
                         self.material_ledger.as_ref(),
@@ -2597,6 +2651,7 @@ impl World {
                         geography.dynamic.ecology.sites[site_index] = old_site;
                         geography.dynamic.ecology.event_sequence = old_sequence;
                         geography.dynamic.ecology.exported = old_exported;
+                        geography.dynamic.dross_state.external_imported = old_external_imported;
                         eprintln!("arcane ecology: harvest cancelled at {pos:?}: {error}");
                         cancel_unapplied_material_operation(
                             self.material_ledger.as_ref(),
@@ -2629,6 +2684,7 @@ impl World {
                 let old_cell = geography.dynamic.cells[atlas_index];
                 let old_sequence = geography.dynamic.ecology.event_sequence;
                 let old_exported = geography.dynamic.ecology.exported;
+                let old_external_imported = geography.dynamic.dross_state.external_imported;
                 if let Err(error) = crate::arcane_ecology::apply_finite_mineral_harvest(
                     geography, atlas, pos, current,
                 ) {
@@ -2648,6 +2704,7 @@ impl World {
                             geography.dynamic.cells[atlas_index] = old_cell;
                             geography.dynamic.ecology.event_sequence = old_sequence;
                             geography.dynamic.ecology.exported = old_exported;
+                            geography.dynamic.dross_state.external_imported = old_external_imported;
                             eprintln!("arcane ecology: could not stage mineral harvest: {error}");
                             cancel_unapplied_material_operation(
                                 self.material_ledger.as_ref(),
@@ -2660,6 +2717,7 @@ impl World {
                     geography.dynamic.cells[atlas_index] = old_cell;
                     geography.dynamic.ecology.event_sequence = old_sequence;
                     geography.dynamic.ecology.exported = old_exported;
+                    geography.dynamic.dross_state.external_imported = old_external_imported;
                     cancel_unapplied_material_operation(
                         self.material_ledger.as_ref(),
                         &material_operation,
@@ -2682,6 +2740,7 @@ impl World {
                         geography.dynamic.cells[atlas_index] = old_cell;
                         geography.dynamic.ecology.event_sequence = old_sequence;
                         geography.dynamic.ecology.exported = old_exported;
+                        geography.dynamic.dross_state.external_imported = old_external_imported;
                         eprintln!("arcane ecology: mineral harvest cancelled at {pos:?}: {error}");
                         cancel_unapplied_material_operation(
                             self.material_ledger.as_ref(),

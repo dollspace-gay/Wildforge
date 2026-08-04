@@ -659,6 +659,34 @@ impl World {
             .as_ref()
             .map(|definition| definition.properties.as_slice())
             .unwrap_or(&[]);
+        let source_signature = self.arcane_geography.as_ref().and_then(|geography| {
+            let evidence = match target {
+                ObservationTarget::Item(stack, _) => geography
+                    .dynamic
+                    .dross_state
+                    .contained_provenance
+                    .get(&stack.arcane_id),
+                ObservationTarget::Block(pos) => geography
+                    .dynamic
+                    .dross_state
+                    .materialized
+                    .get(&pos)
+                    .and_then(|scar_id| geography.dynamic.dross_state.scars.get(scar_id))
+                    .map(|site| &site.provenance)
+                    .or_else(|| {
+                        item_instance.and_then(|id| {
+                            geography.dynamic.dross_state.contained_provenance.get(&id)
+                        })
+                    }),
+                ObservationTarget::Region(_) => {
+                    geography.dynamic.dross_state.provenance.get(&region)
+                }
+            };
+            evidence.and_then(crate::dross::DrossProvenance::qualitative_signature)
+        });
+        if let Some(signature) = source_signature {
+            properties.insert("source signature".into(), signature);
+        }
         if let Some(definition) = &arcane {
             if visible.iter().any(|property| property == "capacity") {
                 properties.insert(

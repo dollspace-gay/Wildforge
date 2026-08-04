@@ -424,12 +424,28 @@ impl Game {
             tier_color,
         );
 
+        let dross_text = match self.survival.preparation_modifiers.dross_band {
+            1 => "TRACE / GLASS HAZE",
+            2 => "STRAINED / TWO-PULSE",
+            3 => "SEEP / BRANCHING",
+            4 => "SCAR / BROKEN RING",
+            5 => "BREACH / SHEAR",
+            _ => "CLEAR / EVEN",
+        };
+        ui.text_shadow(
+            info_x,
+            rect.1 + 124.0,
+            1.1,
+            &format!("DROSS {dross_text}"),
+            [0.78, 0.86, 0.92, 1.0],
+        );
+
         let world = &self.server.world;
         let season = world.season_at_surface(self.player.pos.surface());
         let third = ["EARLY", "MID", "LATE"][((world.season_progress() * 3.0) as usize).min(2)];
         ui.text_shadow(
             info_x,
-            rect.1 + 139.0,
+            rect.1 + 146.0,
             1.4,
             &format!("DAY {} - {third} {}", world.day + 1, world::SEASONS[season]),
             [0.78, 0.86, 1.0, 1.0],
@@ -437,7 +453,7 @@ impl Game {
         let weather = world.weather_at_surface(self.player.pos.surface());
         ui.text_shadow(
             info_x,
-            rect.1 + 158.0,
+            rect.1 + 164.0,
             1.0,
             &format!(
                 "{}  {:+.0}C  WIND {:.1}",

@@ -1843,3 +1843,10 @@ texture = "glow_glass.png"
 max_stack = 1
 throw_speed = 12.0
 arcane = { capacity = 256, conductivity = 520, stability = 180, resonance = { echo = 1, root = 1, stone = 1, gale = 1, ember = 1, tide = 1 }, on_destroy = "dross" }
+
+[[item]]
+id = "scar_fragment"
+name = "Dross Scar Fragment"
+texture = "crystal_glass.png"
+max_stack = 1
+arcane = { capacity = 256, conductivity = 180, stability = 120, resonance = { echo = 2, stone = 1, gale = 1, ember = 1, tide = 1, root = 1 }, on_destroy = "dross" }

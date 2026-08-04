@@ -67,6 +67,8 @@ pub enum SimEvent {
     /// Bounded alchemy process/spoilage/leak cue; physical state is already
     /// committed by the host before presentation sees it.
     Alchemy(crate::alchemy::AlchemyCue),
+    /// Forecast or consequence of an authoritative regional dross breach.
+    Dross(crate::dross::DrossCue),
 }
 
 pub struct Server {
@@ -161,6 +163,13 @@ impl Server {
         }
         if let Err(error) = self.world.tick_arcane_geography(4_096) {
             eprintln!("planetary Current update failed: {error}");
+        }
+        match self
+            .world
+            .tick_dross(crate::dross::DROSS_SERVER_SLICE_CELLS)
+        {
+            Ok(report) => events.extend(report.cues.into_iter().map(SimEvent::Dross)),
+            Err(error) => eprintln!("planetary dross update failed: {error}"),
         }
         if let Err(error) = self.world.tick_arcane_ecology(512) {
             eprintln!("planetary magical ecology update failed: {error}");

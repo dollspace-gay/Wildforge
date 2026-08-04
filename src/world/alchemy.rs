@@ -531,6 +531,32 @@ impl World {
         credits: Vec<(ArcaneOwner, Current, Option<String>)>,
         staged_material: Option<(crate::materials::MaterialLedger, Vec<u8>)>,
     ) -> Result<(), String> {
+        self.commit_alchemy_current_with_material_and_links(
+            next_state,
+            operation_id,
+            content_id,
+            reason,
+            debits,
+            credits,
+            staged_material,
+            ArcaneAuthority::System,
+            Vec::new(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn commit_alchemy_current_with_material_and_links(
+        &mut self,
+        next_state: crate::alchemy::AlchemyState,
+        operation_id: u64,
+        content_id: &str,
+        reason: &str,
+        debits: Vec<(ArcaneOwner, Current)>,
+        credits: Vec<(ArcaneOwner, Current, Option<String>)>,
+        staged_material: Option<(crate::materials::MaterialLedger, Vec<u8>)>,
+        authority: ArcaneAuthority,
+        extra_replacements: Vec<LinkedFileReplacement>,
+    ) -> Result<(), String> {
         let ledger = self
             .arcane_ledger
             .as_mut()
@@ -572,7 +598,7 @@ impl World {
                 })
                 .collect(),
             transforms: Vec::new(),
-            authority: ArcaneAuthority::System,
+            authority,
             reason: reason.into(),
             content_id: content_id.into(),
             linked: Vec::new(),
@@ -584,6 +610,7 @@ impl World {
             after: Some(next_state.encode().map_err(|error| error.to_string())?),
         };
         let mut replacements = vec![replacement];
+        replacements.extend(extra_replacements);
         if let Some((_, bytes)) = &staged_material {
             replacements.push(LinkedFileReplacement {
                 subsystem: "materials".into(),
@@ -2968,6 +2995,13 @@ impl World {
         let mut root_update = None::<(BlockPos, u8, bool)>;
         let mut debits = Vec::new();
         let mut credits = Vec::new();
+        let mut dense_dross_rollback = None::<(
+            crate::planet_atlas::AtlasPos,
+            u64,
+            crate::dross::DenseDrossCaptureBefore,
+        )>;
+        let mut dense_dross_manifest = None;
+        let mut dense_dross_replacements = Vec::new();
         if !clean.is_empty() {
             debits.push((clean_owner, clean.clone()));
         }
@@ -3225,7 +3259,7 @@ impl World {
                 byproduct = Some(spent);
             }
             PreparationHandler::DrossWash => {
-                let (target_owner, target_pos) = match target {
+                let (target_owner, target_pos, dense_region) = match target {
                     AlchemyTarget::Surface(surface) => {
                         let atlas = self
                             .planet_atlas
@@ -3238,6 +3272,7 @@ impl World {
                                 medium: crate::arcane::DrossMedium::Soil,
                             },
                             surface,
+                            Some(region),
                         )
                     }
                     AlchemyTarget::Item(item_id)
@@ -3248,7 +3283,7 @@ impl World {
                                 .flatten()
                                 .any(|stack| stack.arcane_id == item_id && stack.count == 1) =>
                     {
-                        (ArcaneOwner::ItemDross(item_id), actor_pos)
+                        (ArcaneOwner::ItemDross(item_id), actor_pos, None)
                     }
                     AlchemyTarget::Item(_) => {
                         return Err(
@@ -3266,13 +3301,25 @@ impl World {
                     .and_then(|ledger| ledger.account(&target_owner))
                     .map_or_else(Current::default, |account| account.current.clone());
                 let mut available_work = available;
-                let captured = available_work
+                let capacity = u64::from(definition.effect.dross_capacity);
+                let sparse_captured = available_work
                     .take_units(
-                        u64::from(definition.effect.dross_capacity).min(available_work.total()),
+                        capacity.min(available_work.total()),
                         [definition.resonance.clone()],
                     )
                     .map_err(|error| error.to_string())?;
-                if captured.is_empty() && dose_dross.is_empty() {
+                let dense_requested = capacity.saturating_sub(sparse_captured.total());
+                let dense_available = dense_region
+                    .and_then(|region| {
+                        self.arcane_geography.as_ref().map(|geography| {
+                            geography
+                                .dense_dross_current_at(region, crate::dross::DrossCarrier::Soil)
+                        })
+                    })
+                    .unwrap_or_default()
+                    .total()
+                    .min(dense_requested);
+                if sparse_captured.is_empty() && dense_available == 0 && dose_dross.is_empty() {
                     return Err(
                         "The wash finds no mobile dross to bind; no empty sludge identity is created."
                             .into(),
@@ -3284,24 +3331,6 @@ impl World {
                     .ok_or("The finite Current ledger is unavailable.")?
                     .allocate_item_id()
                     .map_err(|error| error.to_string())?;
-                let mut sludge_current = dose_dross.clone();
-                sludge_current
-                    .checked_add(&captured)
-                    .map_err(|error| error.to_string())?;
-                if !captured.is_empty() {
-                    debits.push((target_owner, captured));
-                }
-                if !sludge_current.is_empty() {
-                    credits.push((
-                        ArcaneOwner::ItemDross(sludge_id),
-                        sludge_current,
-                        Some("base:dross_sludge".into()),
-                    ));
-                }
-                if !clean.is_empty() {
-                    let region = region.ok_or("Wash settlement needs the planet atlas.")?;
-                    credits.push((ArcaneOwner::Ambient(region), clean.clone(), None));
-                }
                 self.preflight_preparation_water_return(target_pos, &dose, true)?;
                 water_return = (target_pos, true);
                 let sludge = produced(&self.reg, "base:dross_sludge", 1, sludge_id)?;
@@ -3315,6 +3344,86 @@ impl World {
                 {
                     return Err("Make room for the recoverable dross sludge before washing.".into());
                 }
+                let dense_captured =
+                    if let Some(region) = dense_region.filter(|_| dense_available != 0) {
+                        let before = self
+                            .arcane_geography
+                            .as_ref()
+                            .ok_or("The finite magical geography is unavailable.")?
+                            .snapshot_dense_dross_capture(region, sludge_id);
+                        let (captured, provenance) = self
+                            .arcane_geography
+                            .as_mut()
+                            .expect("dense dross geography was checked")
+                            .export_environmental_dross(
+                                region,
+                                crate::dross::DrossCarrier::Soil,
+                                dense_available,
+                            )?;
+                        if let Err(error) = self
+                            .arcane_geography
+                            .as_mut()
+                            .expect("dense dross geography was checked")
+                            .record_contained_dross_provenance(sludge_id, provenance)
+                        {
+                            self.arcane_geography
+                                .as_mut()
+                                .expect("dense dross geography was checked")
+                                .restore_dense_dross_capture(region, sludge_id, before);
+                            return Err(error);
+                        }
+                        dense_dross_rollback = Some((region, sludge_id, before));
+                        captured
+                    } else {
+                        Current::default()
+                    };
+                let mut captured = sparse_captured.clone();
+                captured
+                    .checked_add(&dense_captured)
+                    .map_err(|error| error.to_string())?;
+                let mut sludge_current = dose_dross.clone();
+                sludge_current
+                    .checked_add(&captured)
+                    .map_err(|error| error.to_string())?;
+                if !sparse_captured.is_empty() {
+                    debits.push((target_owner, sparse_captured));
+                }
+                if !dense_captured.is_empty() {
+                    debits.push((ArcaneOwner::Geography, dense_captured));
+                }
+                if !sludge_current.is_empty() {
+                    credits.push((
+                        ArcaneOwner::ItemDross(sludge_id),
+                        sludge_current,
+                        Some("base:dross_sludge".into()),
+                    ));
+                }
+                if !clean.is_empty() {
+                    let region = region.ok_or("Wash settlement needs the planet atlas.")?;
+                    credits.push((ArcaneOwner::Ambient(region), clean.clone(), None));
+                }
+                if dense_dross_rollback.is_some() {
+                    match self
+                        .arcane_geography
+                        .as_ref()
+                        .expect("dense dross geography was changed")
+                        .linked_dross_replacements(&self.save_dir, operation_id)
+                    {
+                        Ok((manifest, replacements)) => {
+                            dense_dross_manifest = Some(manifest);
+                            dense_dross_replacements = replacements;
+                        }
+                        Err(error) => {
+                            let (region, item_id, before) =
+                                dense_dross_rollback.take().expect("rollback was present");
+                            self.arcane_geography
+                                .as_mut()
+                                .expect("dense dross geography was changed")
+                                .restore_dense_dross_capture(region, item_id, before);
+                            return Err(error.to_string());
+                        }
+                    }
+                }
                 byproduct = Some(sludge);
             }
         }
@@ -3324,14 +3433,27 @@ impl World {
         // untracked disappearance. Stage that debit beside the state/Current
         // replacement so an I/O refusal cannot consume only half the dose.
         // Reusable-vessel matter is not debited; it returns in `empty` below.
-        let staged_material = if dose.materials.is_empty() {
-            None
+        let staged_material_result = if dose.materials.is_empty() {
+            Ok(None)
         } else {
-            self.material_ledger
-                .as_ref()
-                .ok_or("The finite material ledger is unavailable.")?
-                .stage_linked_consumption(&dose.materials)
-                .map_err(|error| error.to_string())?
+            match self.material_ledger.as_ref() {
+                Some(ledger) => ledger
+                    .stage_linked_consumption(&dose.materials)
+                    .map_err(|error| error.to_string()),
+                None => Err("The finite material ledger is unavailable.".into()),
+            }
+        };
+        let staged_material = match staged_material_result {
+            Ok(staged) => staged,
+            Err(error) => {
+                if let Some((region, item_id, before)) = dense_dross_rollback.take() {
+                    self.arcane_geography
+                        .as_mut()
+                        .expect("dense dross geography was changed")
+                        .restore_dense_dross_capture(region, item_id, before);
+                }
+                return Err(error);
+            }
         };
         state.containers.remove(&dose.container_id);
         let event_installation = dose.source_installation;
@@ -3348,7 +3470,7 @@ impl World {
             tick: now,
             note: format!("{} by {}", definition.label, actor_label.trim()),
         });
-        self.commit_alchemy_current_with_material(
+        let committed = self.commit_alchemy_current_with_material_and_links(
             state.clone(),
             operation_id,
             &definition.id,
@@ -3356,7 +3478,24 @@ impl World {
             debits,
             credits,
             staged_material,
-        )?;
+            ArcaneAuthority::SystemForPlayer(actor),
+            dense_dross_replacements,
+        );
+        if let Err(error) = committed {
+            if let Some((region, item_id, before)) = dense_dross_rollback.take() {
+                self.arcane_geography
+                    .as_mut()
+                    .expect("dense dross geography was changed")
+                    .restore_dense_dross_capture(region, item_id, before);
+            }
+            return Err(error);
+        }
+        if let Some(manifest) = dense_dross_manifest {
+            self.arcane_geography
+                .as_mut()
+                .expect("dense dross geography survived wash")
+                .accept_linked_manifest(manifest);
+        }
         let (return_pos, runoff) = water_return;
         self.return_preparation_water(return_pos, &dose, runoff)?;
         if let Some((plot, nutrient, salted)) = root_update {
@@ -3587,6 +3726,7 @@ impl World {
             });
         }
         let now = self.alchemy_tick();
+        let environmental_dross = self.environmental_dross_band_at(actor_pos);
         // Validate every definition reference before touching the first
         // status. A corrupt later entry must not leave earlier physiology or
         // progress partially advanced on the direct (non-settlement) path.
@@ -3821,6 +3961,22 @@ impl World {
                     .map_err(|error| error.to_string())?,
             )
         };
+        self.apply_environmental_dross_exposure(
+            actor,
+            actor_pos,
+            now,
+            environmental_dross,
+            &mut physiology,
+            &mut modifiers,
+        );
+        // Trace evidence is earned through a lens/preparation; unaided
+        // players first receive a direct categorical warning at strained.
+        if modifiers.dross_band == crate::dross::DrossBand::Trace.ordinal()
+            && modifiers.trace_sight == 0
+        {
+            modifiers.dross_band = 0;
+            modifiers.dross_pattern = 0;
+        }
         let result = PreparationTickResult {
             physiology,
             modifiers,

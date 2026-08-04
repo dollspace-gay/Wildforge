@@ -225,19 +225,10 @@ impl World {
                 crate::registry::ArcaneDisposition::Ambient => {
                     crate::arcane::ArcaneOwner::Ambient(region)
                 }
-                crate::registry::ArcaneDisposition::Dross => crate::arcane::ArcaneOwner::Dross {
+                crate::registry::ArcaneDisposition::Dross
+                | crate::registry::ArcaneDisposition::Scar => crate::arcane::ArcaneOwner::Dross {
                     region,
                     medium: crate::arcane::DrossMedium::Soil,
-                },
-                crate::registry::ArcaneDisposition::Scar => match ledger.allocate_scar_id() {
-                    Ok(id) => crate::arcane::ArcaneOwner::Scar(id),
-                    Err(error) => {
-                        eprintln!("arcane: could not allocate scar for retired warden: {error}");
-                        crate::arcane::ArcaneOwner::Dross {
-                            region,
-                            medium: crate::arcane::DrossMedium::Soil,
-                        }
-                    }
                 },
             }
         };

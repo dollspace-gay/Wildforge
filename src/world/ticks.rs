@@ -159,7 +159,14 @@ impl World {
                         * temperature_mult
                         * light_mult
                         * moisture_mult
-                        * self.root_uptake_multiplier_at(at);
+                        * self.root_uptake_multiplier_at(at)
+                        * if self.environmental_dross_band_at(at) >= crate::dross::DrossBand::Scar {
+                            // Severe burden stalls a cultivated block. Its
+                            // identity and metadata remain byte-identical.
+                            0.0
+                        } else {
+                            1.0
+                        };
                     // Fertile loam runs half again over baseline;
                     // exhausted dust crawls (soil.rs).
                     let fmult = if d.crop_any_soil {

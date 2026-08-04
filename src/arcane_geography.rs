@@ -230,6 +230,26 @@ pub struct ArcaneDynamicState {
     /// a second balance which could drift on chunk unload.
     #[serde(default)]
     pub ecology: crate::arcane_ecology::ArcaneEcologyState,
+    /// Goal-8 carrier partitions, warning history, scars, and bounded
+    /// provenance. Soil/sediment units remain in `cells[*].dross`; airborne
+    /// and waterborne units live here and are all owned by Geography.
+    #[serde(default)]
+    pub dross_state: crate::dross::DrossPlanetState,
+}
+
+/// Goal-7 dynamic payload before environmental carrier partitions joined the
+/// same geography subledger. Postcard is sequence encoded, so this explicit
+/// shape is the safe conservation-preserving migration path.
+#[derive(Deserialize, Serialize)]
+struct ArcaneDynamicStateBeforeDross {
+    version: u32,
+    completed_steps: u64,
+    last_authoritative_time: u64,
+    cells: Vec<ArcaneDynamicCell>,
+    wakes: Vec<ArcaneWake>,
+    next_wake_id: u64,
+    observations: BTreeMap<[u8; 16], Vec<ArcaneObservation>>,
+    ecology: crate::arcane_ecology::ArcaneEcologyState,
 }
 
 /// Goal-2 dynamic payload before living sites joined the same compact
@@ -280,6 +300,7 @@ pub struct ArcaneGeography {
     #[allow(dead_code)]
     path: PathBuf,
     transport: Option<TransportPass>,
+    pub(crate) dross_transport: Option<crate::dross::DrossTransportPass>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -293,6 +314,7 @@ struct TransportPass {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArcaneGeographyAudit {
     pub genesis_total: u64,
+    pub external_imported_total: u64,
     pub accounted_total: u64,
     pub resonance_totals: [u64; 6],
     pub deep_total: u64,
@@ -308,7 +330,7 @@ pub struct ArcaneGeographyAudit {
 
 impl ArcaneGeographyAudit {
     pub fn is_balanced(&self) -> bool {
-        self.genesis_total == self.accounted_total
+        self.genesis_total.checked_add(self.external_imported_total) == Some(self.accounted_total)
     }
 
     pub fn as_current(&self) -> Current {
@@ -324,8 +346,9 @@ impl ArcaneGeographyAudit {
 
     pub fn render(&self) -> String {
         let mut out = format!(
-            "Arcane geography audit\nGenesis: {}\nAccounted: {}\nDeep: {}\nAmbient: {}\nDross: {}\nWakes: {}\nEcology: {} (dross {})\nExported: {}\nChecksum: {:016x}\nResonances:\n",
+            "Arcane geography audit\nGenesis: {}\nExternal imported: {}\nAccounted: {}\nDeep: {}\nAmbient: {}\nDross: {}\nWakes: {}\nEcology: {} (dross {})\nNet exported: {}\nChecksum: {:016x}\nResonances:\n",
             self.genesis_total,
+            self.external_imported_total,
             self.accounted_total,
             self.deep_total,
             self.ambient_total,
@@ -345,6 +368,40 @@ impl ArcaneGeographyAudit {
         }
         out
     }
+}
+
+/// Maintain a signed Geography boundary with two non-negative arrays. An
+/// outbound transfer first cancels prior net inbound Current of the same
+/// resonance; only the remainder becomes outstanding exported custody.
+pub(crate) fn record_geography_export(
+    exported: &mut [u64; 6],
+    imported: &mut [u64; 6],
+    slot: usize,
+    units: u64,
+) -> Result<(), ArcaneGeographyError> {
+    let cancelled = imported[slot].min(units);
+    imported[slot] -= cancelled;
+    exported[slot] = exported[slot]
+        .checked_add(units - cancelled)
+        .ok_or(ArcaneGeographyError::Overflow)?;
+    Ok(())
+}
+
+/// Inbound Current first closes outstanding Geography exports. Any remainder
+/// is a legitimate net import (for example Deep-origin waste) and extends the
+/// geography audit's expected total rather than masquerading as creation.
+pub(crate) fn record_geography_import(
+    exported: &mut [u64; 6],
+    imported: &mut [u64; 6],
+    slot: usize,
+    units: u64,
+) -> Result<(), ArcaneGeographyError> {
+    let cancelled = exported[slot].min(units);
+    exported[slot] -= cancelled;
+    imported[slot] = imported[slot]
+        .checked_add(units - cancelled)
+        .ok_or(ArcaneGeographyError::Overflow)?;
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -420,10 +477,12 @@ pub fn coarse_sensory_cue([current, dross]: [u8; 2], dominant: u8) -> String {
         3 => "Polarized shimmer recurs at the edge of sight",
         _ => "Slow lights gather in the air",
     };
-    let condition = match dross.min(4) {
-        0 => "the signs hold a steady rhythm",
-        1 | 2 => "the signs flutter and lose their rhythm",
-        _ => "the fog knots around a sour metallic haze",
+    let condition = match dross.min(crate::dross::DrossBand::BreachRisk.ordinal()) {
+        0 | 1 => "the signs hold a steady rhythm",
+        2 => "the signs flutter and lose their rhythm",
+        3 => "a dry double-pulse repeats under a sour metallic haze",
+        4 => "branching broken symmetry catches at surfaces and interrupts nearby sound",
+        _ => "a slow shear-pulse repeats through air and ground like an evacuation bell",
     };
     let resonance = dominant
         .checked_sub(1)
@@ -1613,6 +1672,7 @@ impl ArcaneGeography {
             next_wake_id: 1,
             observations: BTreeMap::new(),
             ecology: crate::arcane_ecology::ArcaneEcologyState::default(),
+            dross_state: crate::dross::DrossPlanetState::initialized(controls.len()),
         };
         let mut geography = Self {
             manifest: ArcaneGeographyManifest {
@@ -1643,6 +1703,7 @@ impl ArcaneGeography {
             catalog,
             path: PathBuf::new(),
             transport: None,
+            dross_transport: None,
         };
         crate::arcane_ecology::initialize_genesis(atlas, registry, &mut geography)
             .map_err(ArcaneGeographyError::Corrupt)?;
@@ -1788,10 +1849,17 @@ impl ArcaneGeography {
         let geography = Self {
             manifest,
             controls,
-            dynamic,
+            dynamic: {
+                let mut dynamic = dynamic;
+                dynamic
+                    .dross_state
+                    .ensure_cells(atlas.genesis.geometry.len());
+                dynamic
+            },
             catalog,
             path: planet_dir,
             transport: None,
+            dross_transport: None,
         };
         geography.validate(atlas)?;
         Ok(geography)
@@ -1859,6 +1927,35 @@ impl ArcaneGeography {
         ),
         ArcaneGeographyError,
     > {
+        self.linked_dynamic_replacements_for(world_dir, operation_id, "ecology")
+    }
+
+    pub(crate) fn linked_dross_replacements(
+        &self,
+        world_dir: &Path,
+        operation_id: u64,
+    ) -> Result<
+        (
+            ArcaneGeographyManifest,
+            Vec<crate::arcane::LinkedFileReplacement>,
+        ),
+        ArcaneGeographyError,
+    > {
+        self.linked_dynamic_replacements_for(world_dir, operation_id, "dross")
+    }
+
+    fn linked_dynamic_replacements_for(
+        &self,
+        world_dir: &Path,
+        operation_id: u64,
+        subsystem: &str,
+    ) -> Result<
+        (
+            ArcaneGeographyManifest,
+            Vec<crate::arcane::LinkedFileReplacement>,
+        ),
+        ArcaneGeographyError,
+    > {
         let dynamic = encode_container(DYNAMIC_MAGIC, &self.dynamic)?;
         check_size("dynamic geography", dynamic.len(), MAX_DYNAMIC_BYTES)?;
         let mut manifest = self.manifest.clone();
@@ -1879,19 +1976,19 @@ impl ArcaneGeography {
             manifest,
             vec![
                 crate::arcane::LinkedFileReplacement {
-                    subsystem: "ecology".into(),
+                    subsystem: subsystem.into(),
                     operation_id,
                     relative_path: "planet/arcane-geography.wad".into(),
                     after: Some(dynamic),
                 },
                 crate::arcane::LinkedFileReplacement {
-                    subsystem: "ecology".into(),
+                    subsystem: subsystem.into(),
                     operation_id,
                     relative_path: "planet/arcane-geography.toml".into(),
                     after: Some(manifest_text.into_bytes()),
                 },
                 crate::arcane::LinkedFileReplacement {
-                    subsystem: "ecology".into(),
+                    subsystem: subsystem.into(),
                     operation_id,
                     relative_path: "planet/manifest.toml".into(),
                     after: Some(planet_manifest),
@@ -1916,6 +2013,10 @@ impl ArcaneGeography {
                 "dimensions or seed do not match the qualified atlas".into(),
             ));
         }
+        self.dynamic
+            .dross_state
+            .validate(self.dynamic.cells.len(), self.manifest.side)
+            .map_err(ArcaneGeographyError::Corrupt)?;
         for (index, control) in self.controls.iter().enumerate() {
             if control.capacity == 0
                 || control.deep_capacity == 0
@@ -1937,10 +2038,14 @@ impl ArcaneGeography {
             }
         }
         let audit = self.audit()?;
-        let conserved_resonance = std::array::from_fn(|slot| {
+        let conserved_resonance: [u64; 6] = std::array::from_fn(|slot| {
             audit.resonance_totals[slot].saturating_add(self.dynamic.ecology.exported[slot])
         });
-        if !audit.is_balanced() || conserved_resonance != self.manifest.genesis_resonance {
+        let expected_resonance: [u64; 6] = std::array::from_fn(|slot| {
+            self.manifest.genesis_resonance[slot]
+                .saturating_add(self.dynamic.dross_state.external_imported[slot])
+        });
+        if !audit.is_balanced() || conserved_resonance != expected_resonance {
             return Err(ArcaneGeographyError::Corrupt(
                 "dynamic state does not reconcile with genesis".into(),
             ));
@@ -1954,11 +2059,19 @@ impl ArcaneGeography {
         let mut deep_total = 0u64;
         let mut ambient_total = 0u64;
         let mut dross_total = 0u64;
-        for cell in &self.dynamic.cells {
+        for (index, cell) in self.dynamic.cells.iter().enumerate() {
             for (slot, resonance_total) in resonance_totals.iter_mut().enumerate() {
                 let deep = u64::from(cell.deep[slot]);
                 let ambient = u64::from(cell.ambient[slot]);
-                let dross = u64::from(cell.dross[slot]);
+                let soil_dross = u64::from(cell.dross[slot]);
+                let airborne_dross =
+                    u64::from(self.dynamic.dross_state.cells[index].airborne[slot]);
+                let waterborne_dross =
+                    u64::from(self.dynamic.dross_state.cells[index].waterborne[slot]);
+                let dross = soil_dross
+                    .checked_add(airborne_dross)
+                    .and_then(|value| value.checked_add(waterborne_dross))
+                    .ok_or(ArcaneGeographyError::Overflow)?;
                 *resonance_total = resonance_total
                     .checked_add(deep)
                     .and_then(|value| value.checked_add(ambient))
@@ -2003,6 +2116,13 @@ impl ArcaneGeography {
             .iter()
             .try_fold(0u64, |sum, units| sum.checked_add(*units))
             .ok_or(ArcaneGeographyError::Overflow)?;
+        let external_imported_total = self
+            .dynamic
+            .dross_state
+            .external_imported
+            .iter()
+            .try_fold(0u64, |sum, units| sum.checked_add(*units))
+            .ok_or(ArcaneGeographyError::Overflow)?;
         let accounted_total = resonance_totals
             .iter()
             .try_fold(exported_total, |sum, units| sum.checked_add(*units))
@@ -2018,6 +2138,13 @@ impl ArcaneGeography {
             for units in cell.deep.into_iter().chain(cell.ambient).chain(cell.dross) {
                 value = mix64(value ^ u64::from(units));
             }
+            for units in self.dynamic.dross_state.cells[index]
+                .airborne
+                .into_iter()
+                .chain(self.dynamic.dross_state.cells[index].waterborne)
+            {
+                value = mix64(value ^ u64::from(units));
+            }
             value ^= (cell.transport_remainder as u32 as u64) << 17;
             value ^= u64::from(cell.wake_id) << 31;
             checksum = mix64(checksum ^ value);
@@ -2026,8 +2153,18 @@ impl ArcaneGeography {
             checksum = mix64(checksum ^ wake.id ^ wake.site_id);
         }
         checksum = mix64(checksum ^ ecology_checksum);
+        for (slot, units) in self
+            .dynamic
+            .dross_state
+            .external_imported
+            .iter()
+            .enumerate()
+        {
+            checksum = mix64(checksum ^ units.rotate_left((slot * 7) as u32));
+        }
         Ok(ArcaneGeographyAudit {
             genesis_total: self.manifest.genesis_current,
+            external_imported_total,
             accounted_total,
             resonance_totals,
             deep_total,
@@ -2085,9 +2222,12 @@ impl ArcaneGeography {
             cell.ambient[slot] = cell.ambient[slot]
                 .checked_sub(amount_u16)
                 .ok_or(ArcaneGeographyError::Overflow)?;
-            self.dynamic.ecology.exported[slot] = self.dynamic.ecology.exported[slot]
-                .checked_add(amount)
-                .ok_or(ArcaneGeographyError::Overflow)?;
+            record_geography_export(
+                &mut self.dynamic.ecology.exported,
+                &mut self.dynamic.dross_state.external_imported,
+                slot,
+                amount,
+            )?;
             exported
                 .checked_add(&Current::single(*resonance, amount))
                 .map_err(|_| ArcaneGeographyError::Overflow)?;
@@ -2123,10 +2263,10 @@ impl ArcaneGeography {
             3 | 4 => SurveyStrength::Strong,
             _ => SurveyStrength::Saturated,
         };
-        let dross = cell.dross_total();
-        let condition = if dross > ambient / 2 {
+        let dross_band = self.dynamic.dross_state.cells[index].band;
+        let condition = if dross_band >= crate::dross::DrossBand::Seep {
             SurveyCondition::Fouled
-        } else if control.stability < 350 {
+        } else if dross_band >= crate::dross::DrossBand::Strained || control.stability < 350 {
             SurveyCondition::Strained
         } else {
             SurveyCondition::Stable
@@ -2165,7 +2305,7 @@ impl ArcaneGeography {
         let capacity = u64::from(self.controls[index].capacity.max(1));
         [
             ((cell.ambient_total().saturating_mul(5) / capacity).min(4)) as u8,
-            ((cell.dross_total().saturating_mul(5) / capacity).min(4)) as u8,
+            self.dynamic.dross_state.cells[index].band.ordinal(),
         ]
     }
 
@@ -3185,22 +3325,42 @@ fn decode_dynamic_container(bytes: &[u8]) -> Result<ArcaneDynamicState, ArcaneGe
     match decode_container(DYNAMIC_MAGIC, bytes) {
         Ok(dynamic) => Ok(dynamic),
         Err(current_error) => {
-            let legacy: ArcaneDynamicStateBeforeEcology =
-                decode_container(DYNAMIC_MAGIC, bytes).map_err(|legacy_error| {
-                    ArcaneGeographyError::Corrupt(format!(
-                        "dynamic geography is neither current ({current_error}) nor pre-ecology ({legacy_error})"
-                    ))
-                })?;
-            Ok(ArcaneDynamicState {
-                version: legacy.version,
-                completed_steps: legacy.completed_steps,
-                last_authoritative_time: legacy.last_authoritative_time,
-                cells: legacy.cells,
-                wakes: legacy.wakes,
-                next_wake_id: legacy.next_wake_id,
-                observations: legacy.observations,
-                ecology: crate::arcane_ecology::ArcaneEcologyState::default(),
-            })
+            match decode_container::<ArcaneDynamicStateBeforeDross>(DYNAMIC_MAGIC, bytes) {
+                Ok(legacy) => {
+                    let cell_count = legacy.cells.len();
+                    Ok(ArcaneDynamicState {
+                        version: legacy.version,
+                        completed_steps: legacy.completed_steps,
+                        last_authoritative_time: legacy.last_authoritative_time,
+                        cells: legacy.cells,
+                        wakes: legacy.wakes,
+                        next_wake_id: legacy.next_wake_id,
+                        observations: legacy.observations,
+                        ecology: legacy.ecology,
+                        dross_state: crate::dross::DrossPlanetState::initialized(cell_count),
+                    })
+                }
+                Err(before_dross_error) => {
+                    let legacy: ArcaneDynamicStateBeforeEcology =
+                        decode_container(DYNAMIC_MAGIC, bytes).map_err(|legacy_error| {
+                            ArcaneGeographyError::Corrupt(format!(
+                                "dynamic geography is neither current ({current_error}), pre-dross ({before_dross_error}), nor pre-ecology ({legacy_error})"
+                            ))
+                        })?;
+                    let cell_count = legacy.cells.len();
+                    Ok(ArcaneDynamicState {
+                        version: legacy.version,
+                        completed_steps: legacy.completed_steps,
+                        last_authoritative_time: legacy.last_authoritative_time,
+                        cells: legacy.cells,
+                        wakes: legacy.wakes,
+                        next_wake_id: legacy.next_wake_id,
+                        observations: legacy.observations,
+                        ecology: crate::arcane_ecology::ArcaneEcologyState::default(),
+                        dross_state: crate::dross::DrossPlanetState::initialized(cell_count),
+                    })
+                }
+            }
         }
     }
 }
@@ -3368,6 +3528,7 @@ enum DiagnosticLayer {
     DeepReserve,
     Ambient,
     Dross,
+    DrossBand,
     Resonance(usize),
     Potential,
     Drift,
@@ -3385,6 +3546,7 @@ impl DiagnosticLayer {
             ("deep_reserve", Self::DeepReserve),
             ("ambient_current", Self::Ambient),
             ("dross", Self::Dross),
+            ("dross_band", Self::DrossBand),
             ("resonance_root", Self::Resonance(0)),
             ("resonance_tide", Self::Resonance(1)),
             ("resonance_ember", Self::Resonance(2)),
@@ -3410,7 +3572,12 @@ impl ArcaneGeography {
             DiagnosticLayer::Stability => f64::from(control.stability),
             DiagnosticLayer::DeepReserve => dynamic.deep_total() as f64,
             DiagnosticLayer::Ambient => dynamic.ambient_total() as f64,
-            DiagnosticLayer::Dross => dynamic.dross_total() as f64,
+            DiagnosticLayer::Dross => self.dense_dross_total_at(
+                AtlasPos::from_index(index, self.manifest.side).expect("diagnostic index"),
+            ) as f64,
+            DiagnosticLayer::DrossBand => {
+                f64::from(self.dynamic.dross_state.cells[index].band.ordinal())
+            }
             DiagnosticLayer::Resonance(slot) => f64::from(dynamic.ambient[slot]),
             DiagnosticLayer::Potential => potential(dynamic.ambient_total(), control.capacity),
             DiagnosticLayer::Drift => {
@@ -3519,6 +3686,28 @@ impl ArcaneGeography {
             false,
         )?;
         Ok(report)
+    }
+
+    pub fn export_dross_diagnostics(
+        &self,
+        atlas: &PlanetAtlas,
+        output: &Path,
+    ) -> Result<Vec<String>, ArcaneGeographyError> {
+        self.validate(atlas)?;
+        fs::create_dir_all(output)?;
+        let mut written = Vec::new();
+        for (name, layer) in [
+            ("dross", DiagnosticLayer::Dross),
+            ("dross_band", DiagnosticLayer::DrossBand),
+        ] {
+            let cube = output.join(format!("{name}.png"));
+            let equal_area = output.join(format!("{name}-equal-area.png"));
+            export_diagnostic_map(self, atlas, layer, &cube)?;
+            export_equal_area_map(self, atlas, layer, &equal_area)?;
+            written.push(cube.display().to_string());
+            written.push(equal_area.display().to_string());
+        }
+        Ok(written)
     }
 
     /// Explicit finite-world retrogen. Existing sites and balances remain;

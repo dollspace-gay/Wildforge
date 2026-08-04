@@ -1607,6 +1607,17 @@ impl HostSession {
         self.broadcast_ready(&S2C::AlchemyEvent(cue));
     }
 
+    pub fn broadcast_dross_cue(&self, world: &crate::world::World, cue: crate::dross::DrossCue) {
+        let Some(atlas) = world.planet_atlas() else {
+            return;
+        };
+        for (id, guest) in &self.guests {
+            if guest.entry_ready && atlas.atlas_pos(guest.pos.surface()) == cue.region {
+                self.net.send(*id, &S2C::DrossEvent(cue));
+            }
+        }
+    }
+
     /// Kick a guest and refuse them for the rest of the session.
     pub fn kick_guest(&mut self, id: u32) -> Option<String> {
         let g = self.guests.remove(&id)?;

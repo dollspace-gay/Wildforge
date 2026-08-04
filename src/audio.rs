@@ -80,6 +80,12 @@ pub enum Sfx {
     /// Working discord rises deterministically with the same visible 0..=3
     /// warning band used by particles and outlines.
     WorkingStrain(u8),
+    /// Environmental dross warning ladder. Repeated pulses distinguish
+    /// stages without relying on color.
+    DrossWarning(u8),
+    /// A breach consequence has a harsher broken cadence than its forecast;
+    /// the activity category also remains distinguishable without color.
+    DrossBreach(crate::dross::ScarActivityHandler),
     /// A trigger with no usable Current behind its structural spark.
     ImplementEmpty,
     /// A containment or implement fracture, deliberately unlike thunder.
@@ -251,6 +257,35 @@ fn synth(sfx: Sfx) -> Vec<f32> {
         Sfx::WorkingStrain(band) => {
             let pitch = 1.0 + f32::from(band.min(3)) * 0.18;
             burst(0.24, 720.0 * pitch, 85.0 * pitch, 0.28, 1.1, 181)
+        }
+        Sfx::DrossWarning(band) => {
+            let band = band.clamp(1, 5);
+            let pitch = 0.78 + f32::from(band) * 0.14;
+            let mut sound = Vec::new();
+            for pulse in 0..band.min(3) {
+                sound.extend(burst(
+                    0.10 + f32::from(band) * 0.025,
+                    430.0 * pitch,
+                    62.0 * pitch,
+                    0.22,
+                    1.35,
+                    191 + u32::from(pulse) * 13 + u32::from(band),
+                ));
+                sound.extend(std::iter::repeat_n(0.0, RATE as usize / 24));
+            }
+            sound
+        }
+        Sfx::DrossBreach(activity) => {
+            let (pitch, seed) = match activity {
+                crate::dross::ScarActivityHandler::Shear => (1.00, 281),
+                crate::dross::ScarActivityHandler::AnimatedCastoff => (1.18, 293),
+                crate::dross::ScarActivityHandler::DustWake => (0.82, 307),
+                crate::dross::ScarActivityHandler::ArcaneSquall => (1.34, 311),
+            };
+            let mut sound = burst(0.42, 310.0 * pitch, 46.0 * pitch, 0.62, 0.72, seed);
+            sound.extend(std::iter::repeat_n(0.0, RATE as usize / 30));
+            sound.extend(chirp(0.19, 760.0 * pitch, 190.0 * pitch));
+            sound
         }
         Sfx::ImplementEmpty => burst(0.10, 190.0, 0.0, 0.0, 2.4, 183),
         Sfx::ImplementFailure => burst(0.65, 1250.0, 42.0, 0.58, 0.75, 187),

@@ -236,6 +236,11 @@ pub struct EcologyAdvance {
     pub transpiration: BTreeMap<AtlasPos, u64>,
     pub growth_events: u32,
     pub collapse_events: u32,
+    /// Population lost specifically because environmental or internally
+    /// sequestered dross exceeded the organism's declared tolerance. The
+    /// world uses only these actual habitat injuries for Ire; a dross number
+    /// changing by itself is never a grievance.
+    pub dross_harm: BTreeMap<AtlasPos, u32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -315,7 +320,7 @@ pub fn observation_at(
         "In the distance"
     };
     let wake = geography.dynamic.cells[site.atlas_pos.index(geography.manifest.side)].wake_id != 0;
-    let text = match site.content_id.as_str() {
+    let mut text = match site.content_id.as_str() {
         "base:rainbell" if charge_band == "dormant" || charge_band == "faint" => {
             format!("{nearby}, rainbells fold shut; their dew has gone dull.")
         }
@@ -374,6 +379,22 @@ pub fn observation_at(
         }
         _ => format!("{nearby}, the local growth holds a {charge_band} harmonic tension."),
     };
+    let environmental_band =
+        geography.dynamic.dross_state.cells[site.atlas_pos.index(geography.manifest.side)].band;
+    if definition.source != EcologySource::Dross {
+        match environmental_band {
+            crate::dross::DrossBand::Strained => text.push_str(
+                " Its leaves and stems repeat a small closing motion before settling again.",
+            ),
+            crate::dross::DrossBand::Seep => text.push_str(
+                " Growth has stalled; the living edges lean away from a repeated dry pulse.",
+            ),
+            crate::dross::DrossBand::Scar | crate::dross::DrossBand::BreachRisk => text.push_str(
+                " The growth is visibly malformed and dormant around broken-symmetry traces.",
+            ),
+            crate::dross::DrossBand::Clear | crate::dross::DrossBand::Trace => {}
+        }
+    }
     Some(EcologyObservation {
         text,
         damped: definition.roles.contains(&EcologyRole::Stabilizer) && site.charge_total() != 0,
@@ -655,12 +676,6 @@ pub fn habitat_suitable(
     definition: &ArcaneEcologyDef,
 ) -> bool {
     let index = pos.index(atlas.side());
-    let climate = atlas.genesis.climate.values()[index];
-    let ground = atlas.genesis.ground.values()[index];
-    let biome = atlas.genesis.biomes.values()[index];
-    let terrain = atlas.genesis.terrain.values()[index];
-    let hydro = atlas.genesis.hydrology.values()[index];
-    let tectonic = atlas.genesis.tectonics.values()[index];
     let control = geography.controls[index];
     let cell = geography.dynamic.cells[index];
     let stored = geography
@@ -683,6 +698,28 @@ pub fn habitat_suitable(
     {
         return false;
     }
+    habitat_tags_suitable(atlas, geography, pos, definition, false)
+}
+
+/// Ordinary climate/geology/habitat compatibility. Existing natural sites
+/// remain valid records when a changeable prerequisite such as a dross margin
+/// disappears; succession can make them dormant or collapsed without turning
+/// a save into corruption.
+fn habitat_tags_suitable(
+    atlas: &PlanetAtlas,
+    geography: &ArcaneGeography,
+    pos: AtlasPos,
+    definition: &ArcaneEcologyDef,
+    allow_dynamic_loss: bool,
+) -> bool {
+    let index = pos.index(atlas.side());
+    let climate = atlas.genesis.climate.values()[index];
+    let ground = atlas.genesis.ground.values()[index];
+    let biome = atlas.genesis.biomes.values()[index];
+    let terrain = atlas.genesis.terrain.values()[index];
+    let hydro = atlas.genesis.hydrology.values()[index];
+    let tectonic = atlas.genesis.tectonics.values()[index];
+    let cell = geography.dynamic.cells[index];
     definition.habitat.iter().all(|tag| match tag.as_str() {
         "wetland" => biome.habitat_flags & HABITAT_WETLAND != 0,
         "freshwater_margin" => {
@@ -723,7 +760,8 @@ pub fn habitat_suitable(
                 || tectonic.fault_intensity >= 420
         }
         "dross_margin" => {
-            cell.dross_total() != 0
+            allow_dynamic_loss
+                || cell.dross_total() != 0
                 || geography.catalog.sites.iter().any(|site| {
                     site.center == pos
                         && matches!(
@@ -873,6 +911,12 @@ pub fn advance_toward(
             continue;
         };
         let index = site.atlas_pos.index(atlas.side());
+        let environmental_band = geography.dynamic.dross_state.cells[index].band;
+        let dross_stalled = definition.source != EcologySource::Dross
+            && environmental_band >= crate::dross::DrossBand::Seep;
+        let dross_wilting = definition.source != EcologySource::Dross
+            && definition.kind != ArcaneEcologyKind::FiniteMineral
+            && environmental_band >= crate::dross::DrossBand::Scar;
         let season = crate::planet_atlas::local_season(
             day as u32,
             f64::from(atlas.genesis.geometry.values()[index].latitude_radians),
@@ -907,6 +951,7 @@ pub fn advance_toward(
             && attachment_free
             && site.seed_bank != 0
             && (definition.source != EcologySource::Heart || heart_alive)
+            && !dross_stalled
         {
             if water_need != 0 {
                 *water -= water_need;
@@ -983,7 +1028,8 @@ pub fn advance_toward(
                         .min(site.carrying_capacity.saturating_mul(3));
                 }
             }
-        } else if day.is_multiple_of(u64::from(definition.regrowth_days.max(1)))
+        } else if !dross_stalled
+            && day.is_multiple_of(u64::from(definition.regrowth_days.max(1)))
             && site.population != 0
         {
             lose_population(site, definition);
@@ -992,11 +1038,28 @@ pub fn advance_toward(
                 report.collapse_events += 1;
             }
         }
-        if site.dross_total()
-            > u64::from(definition.dross_tolerance)
-                .saturating_mul(u64::from(site.population.max(1)))
+        if dross_wilting
+            && day.is_multiple_of(u64::from(definition.regrowth_days.max(1)))
+            && site.population != 0
         {
             lose_population(site, definition);
+            *report.dross_harm.entry(site.atlas_pos).or_default() += 1;
+            if site.population == 0 {
+                collapse(site, definition, &mut geography.dynamic.cells[index])?;
+                report.collapse_events += 1;
+            }
+        }
+        if site.population != 0
+            && site.dross_total()
+                > u64::from(definition.dross_tolerance)
+                    .saturating_mul(u64::from(site.population.max(1)))
+        {
+            lose_population(site, definition);
+            *report.dross_harm.entry(site.atlas_pos).or_default() += 1;
+            if site.population == 0 {
+                collapse(site, definition, &mut geography.dynamic.cells[index])?;
+                report.collapse_events += 1;
+            }
         }
     }
     report.processed = end - start;
@@ -1186,9 +1249,13 @@ pub fn apply_finite_mineral_harvest(
             .iter()
             .position(|candidate| *candidate == name)
             .expect("validated finite mineral resonance slot");
-        geography.dynamic.ecology.exported[slot] = geography.dynamic.ecology.exported[slot]
-            .checked_add(*units)
-            .ok_or_else(|| "finite mineral exported-current counter overflow".to_string())?;
+        crate::arcane_geography::record_geography_export(
+            &mut geography.dynamic.ecology.exported,
+            &mut geography.dynamic.dross_state.external_imported,
+            slot,
+            *units,
+        )
+        .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -1247,9 +1314,13 @@ pub fn apply_harvest(
         site.stage = EcologyStage::Recovering;
     }
     for (slot, (taken, dross)) in plan.charge.into_iter().zip(plan.dross).enumerate() {
-        geography.dynamic.ecology.exported[slot] = geography.dynamic.ecology.exported[slot]
-            .checked_add(u64::from(taken).saturating_add(u64::from(dross)))
-            .ok_or_else(|| "ecology exported-current counter overflow".to_string())?;
+        crate::arcane_geography::record_geography_export(
+            &mut geography.dynamic.ecology.exported,
+            &mut geography.dynamic.dross_state.external_imported,
+            slot,
+            u64::from(taken).saturating_add(u64::from(dross)),
+        )
+        .map_err(|error| error.to_string())?;
     }
     geography.dynamic.ecology.event_sequence = geography
         .dynamic
@@ -1498,7 +1569,7 @@ pub fn validate(
         }
         if let Some(definition) = registry.arcane_ecology.get(&site.content_id)
             && site.ownership != EcologyOwnership::Cultivated
-            && !habitat_suitable(atlas, geography, site.atlas_pos, definition)
+            && !habitat_tags_suitable(atlas, geography, site.atlas_pos, definition, true)
         {
             return Err(format!(
                 "ecology site {} ({}) violates its ordinary habitat",

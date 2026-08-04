@@ -11,6 +11,10 @@ impl Renderer {
         self.chunks.len()
     }
 
+    pub fn has_chunk(&self, position: ChunkPos) -> bool {
+        self.chunks.contains_key(&position)
+    }
+
     pub fn chunk_mesh_counts(&self) -> (usize, usize, usize) {
         self.chunks
             .values()

@@ -9,7 +9,7 @@ use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 38;
+pub const PROTOCOL: u32 = 40;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -686,6 +686,9 @@ pub enum S2C {
         modifiers: crate::alchemy::PreparationModifiers,
         bodily_dross: u64,
     },
+    /// Regional, qualitative forecast/consequence cue. Exact dross amount and
+    /// source attribution remain exclusively host-owned.
+    DrossEvent(crate::dross::DrossCue),
     /// Interest-managed public apparatus/application cue. It intentionally
     /// contains no exact private mixture, hidden status, or inventory data.
     AlchemyEvent(crate::alchemy::AlchemyCue),
