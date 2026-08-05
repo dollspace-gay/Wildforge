@@ -33,6 +33,7 @@ mod qualification;
 mod registry_tests;
 mod rendering;
 mod soil;
+mod template;
 mod water_cycle;
 mod workings;
 mod world;

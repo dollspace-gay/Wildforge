@@ -55,6 +55,7 @@ pub mod soil;
 mod spawn;
 pub(crate) use spawn::player_entry_chunks;
 pub(crate) use storage::{ChunkLoader, encode_stream_chunk};
+pub(crate) mod template;
 mod ticks;
 mod workings;
 
@@ -1013,6 +1014,13 @@ pub struct World {
     /// world can live on while a chunk is away).
     last_random: HashMap<ChunkPos, f64>,
     block_entities: HashMap<crate::planet::BlockPos, BlockEntity>,
+    /// Named, world-shared structural templates (spec Part 1.4). Structure
+    /// only — no `BlockEntity` contents — so the library is persistable and
+    /// duplication-safe with a single TOML sidecar.
+    templates: Vec<crate::world::template::Template>,
+    /// Active ghost overlays: the world cells a player still has to place,
+    /// keyed absolutely and mapped to the required block name.
+    pending_fills: Vec<crate::world::template::PendingFill>,
     /// Items spilled by removed block entities, for the game loop to spawn.
     pending_drops: Vec<(crate::planet::BlockPos, ItemStack)>,
     mobs: Vec<crate::mobs::Mob>,
@@ -1387,6 +1395,8 @@ impl World {
             clock: 0.0,
             last_random: HashMap::new(),
             block_entities: HashMap::new(),
+            templates: Vec::new(),
+            pending_fills: Vec::new(),
             pending_drops: Vec::new(),
             perish_accum: 0.0,
             station_work: HashMap::new(),
@@ -3433,6 +3443,11 @@ impl World {
         // being lit or ticked. Water and meta-only edits keep `old ==
         // block` and skip this; remote replicas let the host decide.
         if !self.remote && old != block {
+            // A ghost overlay (spec Part 1.4) is satisfied cell-by-cell by
+            // ordinary placement: this is the only hook, and it clears a
+            // pending cell exactly when the voxel holds the required block.
+            // Any other write is an ordinary edit and leaves the fill alone.
+            self.clear_pending_fill_at(pos, block);
             self.revalidate_multiblocks_around(pos);
         }
     }
@@ -3441,7 +3456,7 @@ impl World {
     /// could contain the edited position. The per-instance test is O(1)
     /// arithmetic ([`crate::world::multiblock::pos_within_extent`]); only
     /// instances actually in range re-run their shape match.
-    fn revalidate_multiblocks_around(&mut self, pos: BlockPos) {
+    pub(super) fn revalidate_multiblocks_around(&mut self, pos: BlockPos) {
         let keys: Vec<BlockPos> = self
             .block_entities
             .iter()

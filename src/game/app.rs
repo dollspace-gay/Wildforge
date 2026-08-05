@@ -164,13 +164,22 @@ impl ApplicationHandler for App {
                                 let me = game.config.display_name.clone();
                                 if let Some(r) = &game.multiplayer.remote {
                                     r.client.send(&net::C2S::Chat(msg.clone()));
+                                } else if msg.starts_with('!') {
+                                    // Capture & stamp commands (spec Part 1.4)
+                                    // run against the local/host world and
+                                    // answer with toasts instead of chat.
+                                    for reply in game.template_command(&msg) {
+                                        game.toast(reply);
+                                    }
                                 } else if let Some(h) = &game.multiplayer.host {
                                     h.net.broadcast(&net::S2C::Chat {
                                         from: me.clone(),
                                         msg: msg.clone(),
                                     });
+                                    game.toast(format!("{me}: {msg}"));
+                                } else {
+                                    game.toast(format!("{me}: {msg}"));
                                 }
-                                game.toast(format!("{me}: {msg}"));
                             }
                         }
                         PhysicalKey::Code(KeyCode::Backspace) => {
