@@ -1,9 +1,195 @@
 # Magical geography — the Current belongs to this planet
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and production-qualified (2026-08-02).**
 >
 > This is goal 2 of `docs/magic-sequence.md`. It requires goal 1 and the
 > complete qualified planetary atlas.
+
+## Implementation record — 2026-08-02
+
+Goal 2 is live in world creation, the authoritative simulation, persistence,
+dedicated hosting, multiplayer observation, agents, scripts, mods, operator
+tools, and the graphical client. It adds no player-cast working and no
+harvestable magical ecology. The implementation includes:
+
+- one compact control and dynamic record for every one of the qualified
+  planet's 393,216 atlas cells, with physical-area capacity, deep capacity,
+  four directed conductances in the local tangent frame, deep exchange,
+  dross mobility/retention, stability, recovery potential, baseline six-band
+  resonance, site reference, exact Current, exact dross, fixed-point
+  remainders, extrema, wakes, scars, and bounded observations;
+- deterministic four-stage genesis after ordinary planetary qualification,
+  with capacity-weighted deep/ambient allocation, exact six-resonance
+  allocation, a bounded equilibrium, stable causal sites, distribution
+  validation, and atomic publication;
+- one-minute coarse planetary transport over the entire closed sphere. Every
+  undirected edge is evaluated once; debit and credit share one signed delta;
+  deep exchange and dross use the same conservative pattern; work is sliced
+  without mutating the checkpoint until a complete pass commits;
+- stable named Confluences, Wells, Stills, Echoes, Heartshadows, Wakes, and
+  Scars. Confluence networks derive from actual conductive connectivity;
+  Wells debit finite deep storage; Heartshadows condition signs and recovery
+  without overwriting capacity; ruin Echoes use the same deterministic
+  surface roll as lazy structure generation before any chunk is visited;
+- player-safe qualitative surveys and sensory signs. Ordinary players and
+  agents receive no raw cell, balance, exact drift, hidden site id, or global
+  map. The tuning-lens precision and observation/map UI remain owned by goal
+  4, while this goal persists their bounded records and confidence contract;
+- declarative creation-time modifiers and explicit host-only retrogen.
+  Retrogen skips touched cells, applies bounded capacity/resonance changes,
+  preserves unknown removed-provider sites, and redistributes existing
+  Current without changing genesis;
+- `--arcane-geography-audit`, `--arcane-geography-export`, and
+  `--arcane-geography-retrogen` operator paths, plus the normal arcane audit's
+  geography-custody reconciliation.
+
+### Formats, identity, and recovery
+
+| Surface | Qualified version |
+|---|---:|
+| Geography schema / algorithm / dynamic journal | 1 / 2 / 1 |
+| Immutable / dynamic framing | `WAG1` / `WAD1` |
+| Planet atlas format / algorithm / dynamic | 6 / 7 / 3 |
+| World generator | 10 |
+| Multiplayer protocol | 27 |
+| Authoritative geography step | 60 seconds |
+
+The production manifest binds seed, content hash, genesis parameter, six
+resonance totals, all three layer checksums and byte lengths, last completed
+authoritative time, versions, retrogen history, and per-stage timings.
+Immutable controls are never regenerated when a saved planet is missing or
+corrupt: loading fails closed. Dynamic state and the site catalog use atomic
+primary/backup bundles plus a recoverable pending checkpoint; manifested
+corruption restores the last complete backup or refuses the world rather than
+minting a second genesis.
+
+For qualification seed `20260802`, immutable controls were 10,620,232 bytes,
+dynamic state 11,529,296 bytes, and the catalog 2,439,433 bytes. The measured
+loaded geography footprint was 31,457,280 bytes (30 MiB). Genesis geography
+stages themselves took 152.216 ms listening to stone, 20.017 ms finding the
+Current, 26.070 ms settling the deep, and 71.733 ms marking sites.
+
+### Production census
+
+The current release created and reopened a full 256-by-256-per-face planet
+from seed `20260802`. Its exact census was:
+
+| Measure | Qualified value |
+|---|---:|
+| Atlas cells / physical area | 393,216 / 341,782,637.711 block² |
+| Total cell capacity | 1,385,687,079 |
+| Geography genesis Current | 1,409,286,144 subunits |
+| Deep / ambient / dross | 1,006,140,738 / 403,145,406 / 0 |
+| Each of Root, Tide, Ember, Stone, Gale, Echo | 234,881,024 |
+| Confluences / independent networks | 117 / 20 |
+| Wells / Stills | 142 / 156 |
+| Echoes / Heartshadows | 5,556 / 500 |
+| Total stable sites | 6,471 |
+
+The census emitted 20,848 data rows across continent, climate, biome,
+country, watershed, and site dimensions: 50 continent keys, six climate
+regimes, 12 biomes, 501 country keys including unclaimed/ocean country zero,
+13,808 watersheds, and 6,471 sites. Every generated country had nonzero usable
+ambient Current. The capacity distribution ranged from 1,995 to 5,585 per
+cell, with median 3,690 and 99th percentile 4,670, preserving an exceptional
+rich tail without inert ordinary country. Four deterministic statistical
+seeds (`3`, `17`, `41`, `89`) additionally passed causal distribution,
+face-density, face-center, edge, corner, and interior comparisons.
+
+The parent arcane audit remained exact after geography took custody:
+1,610,612,736 total subunits, zero unexplained delta, six equal 268,435,456
+global resonance totals, and a geography account exactly matching the
+geography checksum and mixture.
+
+### Maps and operator evidence
+
+One export writes 34 PNG maps: a six-face atlas and Lambert cylindrical
+equal-area projection for capacity, conductivity, stability, deep Current,
+ambient Current, dross, all six resonances, potential, drift, place id, place
+type, and recovery potential. Extensive quantities are shown as density on
+the equal-area view so legitimate cubed-sphere cell-area differences do not
+masquerade as magic seams. Sparse projection bins are deterministically
+filled across the date line rather than appearing as black voids.
+
+The production visual review checked capacity, conductivity, stability,
+potential, Tide, and place-type maps in both representations. Causal
+continental, oceanic, fault, water, soil, and heart/ruin structure remained
+legible; place facts stayed sparse; no empty projection pixels or privileged
+face center/edge/corner pattern remained. The same export produced:
+
+- a 20,849-line physical-area census including its header;
+- 231 representative mountain, fault, river, coast, Well, Still, and
+  Confluence cross-section rows;
+- a 117-row Confluence connectivity graph plus header;
+- 126 physical-area-weighted percentile rows plus header;
+- a complete named site catalog, exact geography audit, and machine-readable
+  validation report.
+
+Reproduce the complete evidence set without committing generated binaries:
+
+```sh
+wildforge --arcane-geography-export <world> --output <directory>
+wildforge --arcane-geography-audit <world>
+wildforge --arcane-audit <world>
+```
+
+### Budgets and live qualification
+
+Fresh atomic creation of the production planet completed in 25.73 seconds at
+696,272 KiB peak RSS with no swap or OOM. Prepared-world entry and full
+water/salt/material reconciliation completed in 7.65 seconds at 830,948 KiB.
+The 34-map export completed in 13.08 seconds at 487,768 KiB.
+
+The explicit optimized transport probe measured 44.703 ms for a complete
+393,216-cell planet pass and 3.794 ms for the worst authoritative 4,096-cell
+server slice, with no chunks loaded by the transport itself. Exact totals and
+all six resonance identities were unchanged after the pass.
+
+A live WSLg release client entered the production save at view distance 4,
+moved under ordinary player physics, settled 63 resident and meshed chunks
+with zero dirty chunks, and captured a 1280-by-720 frame at 23 FPS, 2.23 ms
+simulation, and 38.90 ms drawing. Peak RSS was 958,856 KiB with no swap. The
+settled capture visibly qualified the ordinary-player sign—faint static,
+stable rhythm, and Stone resonance—and the generic toast wrapper kept the
+long message inside the viewport.
+
+A separate release dedicated server then admitted a real MCP agent through
+the normal protocol. The agent received a bounded 21-by-21 local map and
+coarse local Current/dross bands plus one categorical Stone sign, then
+pathfound from `neg_x 5631,67,6395` to `neg_x 5633,67,6395` while weather
+advanced. The categorical sign uses the same sensory vocabulary as solo play;
+no global geography, exact balance, resonance mixture, site identity, or
+drift crossed the wire. The live run also exposed and fixed a guest-side
+performance bug: a replicated weather/ecology block burst relit the connected
+view once per message. Both graphical guests and agents now apply a poll as
+one shared lighting batch while retaining exact block metadata and salt. The
+same two-block agent route that had consumed 344 CPU-seconds without returning
+then completed normally; agent peak RSS fell from 343,704 to 163,556 KiB in
+the qualified rerun. A forced shutdown left two transient warden accounts;
+normal reopen recovered them into Deep, and the final audit returned to zero
+dormant owners with both ledgers exact.
+
+### Verification and deliberate boundaries
+
+Targeted tests cover byte-identical genesis, causal relations, shared ruin
+rolls, all directed seams/corners, reciprocal physical edge factors, pulse
+crossing, fixed-point equilibrium, dross potential, 1,000 randomized steps,
+slice and catch-up identity, atomic backup recovery, missing-layer refusal,
+sites, wakes, scars, surveys, qualitative information, retrogen, exports,
+projection coverage, remote/solo resonance-sign parity, replicated block-burst
+settling, and the multi-seed distribution suite. Repository gates at
+qualification were formatting clean, all-target Clippy clean with warnings
+denied, optimized release build clean, advisory audit clean, and 579
+nonignored tests passed with zero failures; 21 explicit operator/measurement
+probes remained ignored by the ordinary suite, and the geography production
+probe was run separately and passed.
+
+Goal 8 still owns dross sources, air/water advection, manifestations, hazards,
+and remediation; goal 4 owns the tuning lens and record/map interface; goal 3
+owns magical organisms and harvestable resources. This goal supplies their
+finite storage, conservative transport, causal controls, stable place
+identity, qualitative signs, persistence, and audit hooks without pretending
+those later gameplay systems already exist.
 
 ## Purpose
 

@@ -1,10 +1,94 @@
 # Discovery — someone made the charms
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and production-qualified (2026-08-02).**
 >
 > This is goal 4 of `docs/magic-sequence.md`. It requires goals 1–3 and the
 > existing ruins, archaeology, survey, browser, multiplayer, and identity
 > systems.
+
+## Implementation record — 2026-08-02
+
+Goal 4 is live in world creation and retrogen, archaeology, host-owned
+knowledge persistence, ordinary and remote play, dedicated hosting, headless
+agents, declarative content/mod validation, audio, rendering, and the
+inventory-style record catalogue. It adds no recipe unlock, research points,
+class state, global scan, conjuration, or transmutation. The implementation
+includes:
+
+- three deterministic, separated observational outposts on the dry walkable
+  component of every accepted homeland. Their chests independently cover all
+  seven evidence classes. Existing worked homelands receive explicit
+  non-destructive remnants, untouched sites receive the structure, and
+  persisted site/recovery claims make both paths idempotent;
+- original, deterministic maker claims, warnings, boasts, measurements, and
+  contradictions on physical artifacts. Charged finds debit real Current,
+  sealed ampoules keep it in `ItemDross`, duplicate brushing resolves once on
+  the host, and ordinary breaking loses the fragile find;
+- a visible industrial route to a fitted tuning lens, including a retained
+  bronze/Echo Slate mount and replaceable Wellglass element. A reading requires
+  a stable 1.25-second aim, current reach and line of sight, a physical lens,
+  and a physical ledger; target outline, needle/progress motion, text, and
+  pitched lens sounds expose settling without relying on color alone;
+- host-authored qualitative readings for regions, blocks, held samples,
+  organisms, minerals, hearts, apparatus, wakes, scars, echoes, and active
+  workings. Calibration narrows uncertainty; ambiguity widens it. Exact atlas,
+  ore, inventory, operator-ledger, and hidden-player state never cross the
+  gameplay API;
+- signed, versioned observations with stable `PlayerId`, display attribution,
+  planetary or portable-sample provenance, time/season, calibration,
+  uncertainty, optional bounded labels, and optional location. Copies preserve
+  a signed lineage, reject forgery and repeated-lineage inflation, and can omit
+  every location field;
+- physical 32-record field ledgers and 128-record survey folios. Folios persist
+  as block entities and spill intact. The record catalogue sorts, pages,
+  groups phenomena, compares two readings, reports agreement/disagreement and
+  obsolete content, and copies ledger-to-ledger/folio only at a reachable real
+  writing surface with placed folios adjacent;
+- a persistent two-bay comparative apparatus. Capacity, conductivity,
+  stability, biological response, and dross response each require an installed
+  physical sample and their calibrated reference object, are repeatable and
+  non-consuming, and produce a signed qualitative record. Samples and
+  references survive save/load, remain installed across trials, and spill on
+  break;
+- one host validation path for solo, remote guests, and agents. Monotonic
+  settle tickets, current equipment, range, line of sight, fixture kind,
+  holder ownership, calibration, apparatus custody, writing adjacency, and
+  bounded text are rechecked at completion. Agent MCP actions use those same
+  packets and receive only the same earned reports;
+- declarative observation, discovery-item, fixture, reference, and station
+  schemas. Mods can add visible properties and experiment content but cannot
+  scan hidden state, forge records, mutate during observation, or award
+  profile/recipe progression. Removed content ids remain readable historical
+  evidence.
+
+### Formats and measured budgets
+
+| Surface | Qualified version/value |
+|---|---:|
+| Discovery state schema | 1 |
+| Block-entity schema | 6 |
+| Multiplayer protocol | 31 |
+| Field ledger / survey folio | 32 / 128 records |
+| World knowledge ceiling | 16,384 objects / 65,536 records |
+| Discovery save ceiling | 32 MiB |
+| Fresh seed `20260802` census | 3 sites / 29 objects / all 7 evidence classes |
+| Fresh discovery save | 10,931 bytes |
+| Native Windows GPU capture | RTX 3090/D3D12; 60 FPS; 530 resident / 514 GPU chunks; 6.58 ms sim / 9.12 ms draw |
+
+Production creation and reopen of seed `20260802` completed with a qualified
+discovery audit: zero invalid signatures and dangling references. The Arcane
+audit reconciled 1,610,612,736 units exactly and reported five charged item
+accounts, five durable references, and zero orphan, invalid, or duplicate
+references. The live graphical client entered the fresh planet and produced
+`screenshots/magic-discovery-live.png` with the fitted lens rendered in hand;
+a second clean-save capture reopened without recovery warnings. Final visual
+qualification ran through the native Windows D3D12 build on an RTX 3090; WSL
+software-renderer timings are deliberately excluded from performance evidence.
+
+The scope boundary is intentional: this goal supplies observation, evidence,
+experimentation, and shared physical knowledge. Craftable charm descendants,
+wands, shaped workings, preparations, and regional dross remediation remain
+goals 5–8 rather than being smuggled into discovery.
 
 ## Purpose
 

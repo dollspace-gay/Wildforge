@@ -1,9 +1,129 @@
 # Magical foundations — the Current has a ledger
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and production-qualified (2026-08-02).**
 >
 > This is goal 1 of `docs/magic-sequence.md`. It requires a completed and
 > qualified `docs/planetary-world-sequence.md`.
+
+## Implementation record — 2026-08-02
+
+Goal 1 is live in the authoritative world, dedicated host, loopback guest,
+agent, persistence, content, and operator paths. It deliberately adds no
+player-cast working. The shipped foundation includes:
+
+- exact integer Current in Deep, Ambient, Bound, Active, Dross, and Scar
+  accounts, with six conserved base resonances and a saved string registry;
+- stable atlas-cell, heart, block-generation, item, mob, player, working,
+  regional-loss, and scar owners;
+- read-versioned, idempotent, all-or-nothing transactions with checked
+  debits/credits, declared resonance transforms, bounded receipts/audit
+  history, authority checks, and exact persisted fixed-point remainders;
+- finite country-heart reserves allocated from Deep at genesis, charged
+  warden manifestation/dissolution/death/drop paths, finite ruins and
+  archaeology, and declared magical plants, minerals, locations, charms, and
+  exceptional drops;
+- regional destruction routing for despawn, lava, death, container overflow,
+  administrative deletion, and uncollected dedicated-host drops;
+- funded primary and chance harvests plus explicit charged-item transfers for
+  crafting, repair, furnace fuel/input, station ignition, offerings, and block
+  placement. Unsupported station inputs and every charged recipe/station
+  output fail content validation instead of silently creating or losing
+  Current;
+- bounded cross-ledger recovery for arcane/material/water/ecology changes and
+  ledger-first sparse-item recovery across player profiles, containers,
+  machines, loose items, and mob cargo. An account missing its durable object
+  rolls back exactly into Deep; a stale physical echo is removed; duplicate
+  physical references to one live account fail closed. Closed-save Mob and
+  Working accounts are separately reported as dormant transients and roll
+  back exactly on reopen;
+- host-only exact state, change-suppressed inspectable item charge, coarse
+  local environmental bands for players and agents, and no global-map or
+  heart-reserve disclosure;
+- declarative base/mod content validation, preserved placeholders for removed
+  content and resonances, bounded Rhai estimates and Working-to-Working moves,
+  and no script API that creates Current or charged objects;
+- `wildforge --arcane-audit <world>`, including scalar/resonance/reservoir
+  reconciliation, owner classes, external adjustments, checksums, and durable
+  item-reference diagnostics.
+
+### Persisted and wire formats
+
+| Surface | Qualified version |
+|---|---:|
+| Arcane snapshot schema / algorithm | 1 / 1 |
+| Current unit scale | 1,000 subunits per displayed unit |
+| Arcane delta framing | `WAC1`, checksummed length-delimited records |
+| Planet atlas manifest | 6, with arcane checkpoint fields and six reservoir totals |
+| World generator | 10 |
+| Multiplayer protocol | 27 |
+
+`arcane.wfc` is an atomically replaced, checksummed snapshot with an
+independent backup. `arcane.wfc.log` is a bounded replay journal with a synced
+pending record; cross-ledger work has its own durable coordinator. The atlas
+manifest binds the last clean snapshot and journal checksums. Recovery accepts
+the manifested primary, restores and replays the manifested backup, or
+refuses the world; it does not silently reinitialize a finite ledger.
+
+### Deliberate implementation choices
+
+- Charged content is currently always a one-item stack. This is stricter than
+  the general identical-state merge/split contract and avoids presenting a
+  misleading stack operation before later implements need it. Stable ids and
+  exact charge survive every existing inventory/container/entity/wire codec.
+- Genesis initially places surface-available Current in heart reserves while
+  the remainder stays Deep. Ambient, Active, Dross, and Scar begin at zero and
+  become populated only through explicit transactions. Goal 2 adds natural
+  circulation; goal 6 adds player workings.
+- Crash rollback for an item whose physical owner never became durable returns
+  its exact mixture to Deep. The original source country is not guessed.
+- A charged placeable discharges through its declared local environmental
+  disposition when its item instance becomes a block. Goal 1 therefore leaves
+  no orphan item owner and does not pretend that ordinary voxel persistence is
+  already a future block-enchantment store; the typed block-generation owner
+  remains reserved for later bound block state.
+- Warden manifestations and goal-1 Working owners are intentionally transient.
+  Finding either in a closed save is an interrupted lifetime, not a valid
+  durable object: the operator audit fails it and authoritative reopen returns
+  the exact mixture to Deep without guessing a country or effect result.
+
+### Qualification evidence
+
+The disposable default planet had 393,216 atlas cells and a genesis total of
+1,610,612,736 subunits. Final production creation completed in 20.29 seconds
+at 791,512 KiB peak RSS with no swap or OOM. A prepared-world recovery reopen
+completed in 2.31 seconds at 780,384 KiB peak RSS.
+
+The clean production ledger is 19,814 bytes with a four-byte empty journal.
+Its audit reports zero
+unexplained scalar delta, six equal 268,435,456-subunit resonance totals, zero
+external adjustment, and zero orphan, invalid, or duplicate durable item
+references and zero dormant transient owners. The standalone audit used 9,408
+KiB peak RSS. In-process release probes measured a 73.357 microsecond audit, a
+7.340 microsecond transaction, and a 2.948 millisecond no-magic idle world tick
+with 25 resident chunks. The
+transaction path stages only its declared touched set (hard limit 128), never
+the global account map.
+
+A live WSLg client entered the qualified planet at view distance 4, settled
+all 65 resident/meshed chunks with zero dirty chunks, and rendered a
+ledger-backed ember tooltip as `CURRENT 512 / 512`. The captured frame ran at
+16 FPS, measured 4.59 ms simulation and 54.86 ms drawing, and peaked at
+929,680 KiB RSS with no swap; the renderer, not the idle magic ledger, was the
+limiting side of that qualification run. A real dedicated server then admitted
+an MCP agent, whose bounded perception reported a 21-by-21 local map and coarse
+`Current 0/4, dross 0/4, ire 0/100` cue without exposing global accounts.
+
+The capture harness's forced process exit also supplied a real crash fixture:
+the audit correctly failed on one committed 512-subunit item account with no
+durable object and two dormant warden accounts carrying 1,024 subunits. Normal
+world opening rolled all three exact mixtures back, and the next audit passed
+with zero Active Current and all 1,610,612,736 subunits accounted for.
+
+Repository gates at qualification: formatting clean; all-target/all-feature
+Clippy clean with warnings denied; optimized release build clean; 560
+nonignored tests passed across the full suite and final recovery regression, 0
+failed, and 20 operator/measurement probes remained intentionally ignored. The
+two production performance probes were run explicitly and passed.
 
 ## Purpose
 

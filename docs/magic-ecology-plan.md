@@ -1,9 +1,96 @@
 # Magical ecology — living things participate in the Current
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and production-qualified (2026-08-02).**
 >
 > This is goal 3 of `docs/magic-sequence.md`. It requires goals 1–2 and the
 > qualified planetary biome, water-cycle, ecology, and finite-material systems.
+
+## Implementation record — 2026-08-02
+
+Goal 3 is live in planet genesis, persistent unloaded simulation, loaded voxel
+reconciliation, player actions, dedicated hosting, multiplayer observation,
+agents, scripts, mods, operator audits, audio, and the graphical client. It
+deliberately adds no player research, craftable implements, or cast working;
+those remain goals 4–6. The shipped ecology includes:
+
+- a versioned declarative ecology schema covering roles, ordinary habitat,
+  source, capacity, uptake/release, six-band resonance, dross tolerance,
+  physical water and nutrient costs, reproduction, season, carrying capacity,
+  harvest class, recovery, stability/richness limits, crystal stages, tool
+  preservation, and finite-mineral identity. Invalid free growth, duplicate
+  harvest paths, unreachable base roles, unfunded destruction, unseeded
+  crystals, and non-finite mineral declarations fail content validation;
+- all twelve base plants, regenerative Wellglass, and four geologically finite
+  resonant minerals. Gatherer, reservoir, conductor, transformer, indicator,
+  parasite, stabilizer, and catalyst roles each have redundant finite seed
+  access rather than one progression-critical unique specimen;
+- deterministic stable site ids and exact persistent state for population,
+  seed bank, carrying capacity, stage, crystal stage, charge, sequestered
+  dross, soil/biomass/detritus nutrients, water use, harvest, collapse, fire,
+  ownership, and materialization. Genesis and untouched content retrogen are
+  finite, load-order independent, seam-safe, bounded, and never overwrite
+  touched terrain;
+- tropical mangrove, temperate old-growth, glass-heath, volcanic ember-garden,
+  desert night-oasis, polar auroral-lichen, freshwater spring-marsh, marine
+  current-reef, and cave echo-garden expressions. Every selected species still
+  passes the real climate, hydrology, soil, geology, biome, season, stability,
+  and local-Current predicates beneath the magical overlay;
+- one sliced whole-planet lifecycle shared by loaded and unloaded sites.
+  Uptake debits real local Ambient Current or dross; transpiration debits real
+  soil water; growth moves a closed nutrient pool; release returns charge;
+  Stormvine reads authoritative storms; Pilgrim Root reads living hearts; and
+  obstruction or missing seed prevents Wellglass from charging invisibly;
+- exact linked harvest custody across geography, the arcane ledger, items,
+  physical material, and Rainbell water. Correct crystal extraction leaves a
+  discharged bud, careless extraction or explosion destroys it, repeat
+  commands cannot duplicate it, finite resonant ore reconciles both ledgers,
+  and fire, grazing, composting, item loss, and save/reload each have explicit
+  conservative dispositions;
+- cultivation, overharvest, collapse, matching common-seed restoration,
+  tending credit, Ire consequences, heart loss, warden feeding/foraging, fire,
+  soil, water, wildlife, machines, and dross sequestration integrated through
+  their authoritative systems rather than parallel ecology-only counters;
+- qualitative number-free observations, item tooltips, bounded and
+  stabilizer-distinct Current ambience, charge-driven Lantern Reed light, and
+  resonance-specific Wellglass structure. Remote players and agents receive
+  the same host-authored site/block/item results and only interest-managed,
+  qualitative environmental information;
+- fixture mods that run organisms, crystals, and finite minerals through the
+  engine lifecycle; scripts may observe ecology but cannot award growth,
+  harvest, charge, or charged objects directly; removed content remains
+  auditable and new content can only use deterministic untouched retrogen.
+
+### Formats and measured budgets
+
+| Surface | Qualified version/value |
+|---|---:|
+| Ecology state schema | 1 |
+| Arcane geography schema / algorithm / dynamic | 1 / 2 / 1 |
+| Planet atlas format / algorithm | 6 / 7 |
+| World generator | 10 |
+| Multiplayer protocol | 28 |
+| Production sites / serialized ecology | 666 / 40 KiB |
+| One production ecology day | 19.3 ms total; 0.40 ms worst slice |
+
+The production census contained all nine expressions: 22 mangrove, 15
+old-growth, 10 glass-heath, 56 ember-garden, 119 night-oasis, 9 auroral-lichen,
+32 spring-marsh, 358 current-reef, and 45 cave sites. Ecology held 12,843
+Current units and 3,012,844 nutrient units. The geography audit reconciled
+1,409,286,144 units exactly and matched ledger custody; the complete arcane
+audit reconciled 1,610,612,736 units with zero unexplained delta. Entry through
+the prepared 25-chunk homeland retained zero water and salt delta and a fully
+balanced, qualified material ledger.
+
+Repository qualification passed formatting, strict all-target/all-feature
+Clippy, release compilation, 611 tests with zero failures (22 explicitly
+ignored operator/dev probes), production entry, ecology/geography/arcane and
+material audits, the production ecology performance probe, and a live release
+capture of all twelve cultivated plants. The remaining limitations are
+intentional sequence boundaries: precise tuning-lens measurements and shared
+knowledge belong to goal 4, implements and workings to goals 5–6, dross scars
+to goal 8, and final linguistic/art review to goal 9. Coarse populations use a
+persistent site record with representative voxels, not one saved simulation
+object for every individual stem.
 
 ## Purpose
 

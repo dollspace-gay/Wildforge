@@ -110,7 +110,7 @@ pub fn match_recipe<'r>(
     let (bw, bh) = (max_x - min_x + 1, max_y - min_y + 1);
 
     'recipes: for r in &reg.recipes {
-        if r.w != bw || r.h != bh || r.w > size || r.h > size {
+        if r.station.is_some() || r.w != bw || r.h != bh || r.w > size || r.h > size {
             continue;
         }
         for mirror in [false, true] {

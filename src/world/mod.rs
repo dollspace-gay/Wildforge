@@ -11,19 +11,29 @@ use std::sync::Arc;
 use glam::Vec3;
 
 use crate::chunk::{CHUNK_X, CHUNK_Y, CHUNK_Z, Chunk, ChunkPos, SEA_LEVEL};
+use crate::entity::ItemEntity;
 use crate::inventory::ItemStack;
 use crate::mobs::{Mob, MobEvent, ProjHit, Projectile};
 use crate::planet::BlockPos;
 use crate::registry::{AIR, BlockId, ItemId, Registry};
 use crate::worldgen::Generator;
 
+/// Dropped-item ids occupy a high, signed-64-safe namespace so they cannot
+/// collide with ordinary projectile ids and still round-trip through TOML.
+const LOOSE_ITEM_ID_BASE: u64 = 1u64 << 62;
+
+mod alchemy;
 mod calendar;
 mod chunks;
+mod discovery;
+pub(crate) use discovery::ObservationTarget;
 mod ecology;
+pub use ecology::SettledMobDeath;
 mod entities;
 mod fire;
 mod fluids;
 mod hearts;
+mod implements;
 mod lighting;
 mod machine_tick;
 mod machines;
@@ -43,6 +53,7 @@ mod spawn;
 pub(crate) use spawn::player_entry_chunks;
 pub(crate) use storage::{ChunkLoader, encode_stream_chunk};
 mod ticks;
+mod workings;
 
 /// Materialized water conditions used by fish and later aquatic biomes. Depth
 /// and salinity come from the live voxel column; temperature comes from local
@@ -202,6 +213,55 @@ pub enum BlockEntity {
     Steam(SteamState),
     /// A rare-earth separator: powder in, neodymium and cerium out.
     Separator(SeparatorState),
+    /// A placed shared library. The records themselves remain signed in the
+    /// discovery state; this block owns the physical object that indexes them.
+    SurveyFolio(SurveyFolioState),
+    /// A controlled trial holds its sample and calibrated reference in world
+    /// custody. Experiments read these bays without consuming either.
+    DiscoveryApparatus(DiscoveryApparatusState),
+    /// Physical mounts and completed output of a binding frame. Components
+    /// remain ordinary item stacks while the frame holds them.
+    BindingFrame(BindingFrameState),
+    /// The placed shell owns exactly one stable vessel item identity.
+    ChargeVessel(ChargeVesselState),
+}
+
+#[derive(Default)]
+pub struct SurveyFolioState {
+    pub object_id: u64,
+}
+
+#[derive(Default)]
+pub struct DiscoveryApparatusState {
+    pub sample: Option<ItemStack>,
+    pub reference: Option<ItemStack>,
+}
+
+#[derive(Default)]
+pub struct BindingFrameState {
+    pub body: Option<ItemStack>,
+    pub reservoir: Option<ItemStack>,
+    pub focus: Option<ItemStack>,
+    pub binding: Option<ItemStack>,
+    pub output: Option<ItemStack>,
+    pub revision: u64,
+}
+
+impl BindingFrameState {
+    pub fn mounts(&self) -> [Option<ItemStack>; 4] {
+        [self.body, self.reservoir, self.focus, self.binding]
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.mounts().into_iter().all(|stack| stack.is_none()) && self.output.is_none()
+    }
+}
+
+#[derive(Default)]
+pub struct ChargeVesselState {
+    pub vessel: Option<ItemStack>,
+    pub damage: u16,
+    pub revision: u64,
 }
 
 #[derive(Default)]
@@ -249,6 +309,10 @@ pub struct SteamState {
     pub fuel: f32,
     /// Exact boiler reservoir; evaporation leaves dissolved salt here.
     pub water: crate::planet_atlas::ReservoirMass,
+    /// Physical draft latch operated by hand or a bounded Nudge. This belongs
+    /// to the embodied firebox, not generic voxel metadata, whose bits have
+    /// unrelated meanings for other blocks and must reset on visual swaps.
+    pub draft_closed: bool,
     /// Numerator remainder for HU consumption at 256 HU / 15 seconds.
     pub steam_numerator_remainder: u64,
 }
@@ -557,6 +621,7 @@ pub fn write_world_meta_full(
 /// without both its committed immutable atlas and qualified homeland.
 pub enum WorldCreationProgress {
     Atlas(crate::planet_atlas::AtlasProgress),
+    Arcane(crate::arcane_geography::ArcaneGeographyProgress),
     Homeland {
         stage: String,
         completed: usize,
@@ -680,6 +745,14 @@ fn publish_created_world(
         }
         write_world_meta(&temporary, seed, mode, 0.0)?;
         if let Some((reg, progress)) = &mut homeland {
+            let geography =
+                crate::arcane_geography::ArcaneGeography::generate(&atlas, reg, cancel, |arcane| {
+                    progress(WorldCreationProgress::Arcane(arcane))
+                })
+                .map_err(std::io::Error::other)?;
+            geography
+                .write_new(&temporary)
+                .map_err(std::io::Error::other)?;
             let mut world = World::load_or_create(temporary.clone(), Arc::clone(reg))?;
             world.prepare_common_spawn(|stage, completed, total| {
                 progress(WorldCreationProgress::Homeland {
@@ -830,11 +903,44 @@ pub struct World {
     /// Exact finite-material manifest and movement ledger. Guests do not own
     /// one; the authoritative host persists it beside the atlas.
     pub(crate) material_ledger: Option<crate::materials::MaterialLedger>,
+    /// Exact finite-Current accounts. Like materials, this exists only on the
+    /// authoritative simulation; guests receive bounded local observations.
+    pub(crate) arcane_ledger: Option<crate::arcane::ArcaneLedger>,
+    /// Compact exact planetary subledger and its causal immutable controls.
+    pub(crate) arcane_geography: Option<crate::arcane_geography::ArcaneGeography>,
+    /// Signed physical observation records and archaeological provenance.
+    /// Guests hold only bounded summaries; the host owns the signing key and
+    /// object census beside the world's other finite ledgers.
+    pub(crate) discovery_state: Option<crate::discovery::DiscoveryState>,
+    /// Physical construction, wear, and provenance for stable charge-bearing
+    /// implements. Exact Current remains in `arcane_ledger`.
+    pub(crate) implements_state: Option<crate::implements::ImplementsState>,
+    /// Host-owned multi-tick magical transactions. Each active id has exact
+    /// Current custody in `ArcaneOwner::Working` and survives unload/restart.
+    pub(crate) workings_state: Option<crate::workings::WorkingsState>,
+    /// Exact apparatus, batch, vessel, and timed preparation state. The host
+    /// owns this sidecar; guests receive only bounded station/status cues.
+    pub(crate) alchemy_state: Option<crate::alchemy::AlchemyState>,
+    /// Sparse exact temperature/dross carriers for detailed water touched by
+    /// conservative magical transfer. Ordinary untouched water derives its
+    /// baseline temperature from weather and costs no per-voxel allocation.
+    pub(crate) water_carriers: Option<crate::workings::WaterCarrierState>,
     /// Atlas-free unit fixtures can request a local condition explicitly.
     /// Production worlds never consult this: their weather is atlas state.
     weather_override: Option<crate::planet_atlas::LocalWeatherSample>,
     remote_weather_side: u16,
     remote_weather: HashMap<crate::planet_atlas::AtlasPos, crate::planet_atlas::LocalWeatherSample>,
+    remote_arcane_cue: [u8; 2],
+    /// Guest-safe categorical base resonance: 0 is unclear, 1..=6 follows
+    /// `arcane::BASE_RESONANCES`. The authoritative mixture never crosses the
+    /// wire.
+    remote_arcane_dominant: u8,
+    remote_arcane_ecology: Option<(String, bool)>,
+    /// Exact charge only for opaque item ids the host says this guest may
+    /// inspect. Replaced as a bounded snapshot; never populated from clients.
+    remote_arcane_items: HashMap<u64, u64>,
+    remote_implements: HashMap<u64, crate::implements::ImplementPublicState>,
+    remote_apparatus: HashMap<crate::planet::BlockPos, crate::implements::ApparatusCue>,
     pub reg: Arc<Registry>,
     #[allow(dead_code)]
     pub seed: u32,
@@ -900,6 +1006,12 @@ pub struct World {
     pending_drops: Vec<(crate::planet::BlockPos, ItemStack)>,
     mobs: Vec<crate::mobs::Mob>,
     projectiles: Vec<Projectile>,
+    next_projectile_id: u64,
+    /// Ordinary dropped items are host-owned entities, not renderer-local
+    /// decorations. This makes pickup, collision, persistence, replication,
+    /// and Nudge share one authority.
+    loose_items: Vec<ItemEntity>,
+    next_loose_item_id: u64,
     hostile_spawn_timer: f32,
     /// Chunks whose wildlife roll already happened (persisted).
     mob_seeded: HashSet<ChunkPos>,
@@ -928,6 +1040,8 @@ pub struct World {
     next_mob_id: u32,
     #[cfg(test)]
     save_fail_chunks: HashSet<ChunkPos>,
+    #[cfg(test)]
+    fail_loose_item_save: bool,
 }
 
 /// Ire tier names, index = tier.
@@ -995,6 +1109,18 @@ impl MoonPhase {
 pub struct BlockBreak {
     pub block: BlockId,
     pub drop: Option<ItemStack>,
+}
+
+fn cancel_unapplied_material_operation(
+    ledger: Option<&crate::materials::MaterialLedger>,
+    operation: &Option<crate::materials::MaterialOperation>,
+) {
+    if operation.is_some()
+        && let Some(ledger) = ledger
+        && let Err(error) = ledger.finish_operation()
+    {
+        eprintln!("materials: could not cancel unapplied block operation: {error}");
+    }
 }
 
 /// Small-λ Poisson draw (Knuth's product method) on the sim's LCG
@@ -1075,16 +1201,26 @@ impl World {
     }
 
     pub fn new(seed: u32, save_dir: PathBuf, reg: Arc<Registry>) -> World {
-        Self::new_with_optional_atlas(seed, save_dir, reg, None)
+        Self::new_with_optional_atlas(seed, save_dir, reg, None, true)
     }
 
+    #[cfg(test)]
     pub fn new_with_atlas(
         seed: u32,
         save_dir: PathBuf,
         reg: Arc<Registry>,
         atlas: Arc<crate::planet_atlas::PlanetAtlas>,
     ) -> World {
-        Self::new_with_optional_atlas(seed, save_dir, reg, Some(atlas))
+        Self::new_with_optional_atlas(seed, save_dir, reg, Some(atlas), true)
+    }
+
+    fn new_with_preloaded_atlas(
+        seed: u32,
+        save_dir: PathBuf,
+        reg: Arc<Registry>,
+        atlas: Arc<crate::planet_atlas::PlanetAtlas>,
+    ) -> World {
+        Self::new_with_optional_atlas(seed, save_dir, reg, Some(atlas), false)
     }
 
     fn new_with_optional_atlas(
@@ -1092,6 +1228,7 @@ impl World {
         save_dir: PathBuf,
         reg: Arc<Registry>,
         planet_atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
+        load_authority: bool,
     ) -> World {
         let planetary_weather = planet_atlas.as_ref().map(|atlas| {
             crate::planet_atlas::PlanetaryWeather::new(
@@ -1103,10 +1240,94 @@ impl World {
             || Generator::new(seed, &reg),
             |atlas| Generator::with_atlas(seed, &reg, atlas.clone()),
         );
-        let material_ledger = planet_atlas.as_ref().and_then(|atlas| {
+        let authority_atlas = if load_authority {
+            planet_atlas.as_ref()
+        } else {
+            None
+        };
+        let material_ledger = authority_atlas.and_then(|atlas| {
             crate::materials::MaterialLedger::load_or_initialize(&save_dir, atlas, &reg)
                 .map_err(|error| {
                     eprintln!("materials: could not open ledger: {error}");
+                    error
+                })
+                .ok()
+        });
+        let arcane_geography = authority_atlas.and_then(|atlas| {
+            #[cfg(test)]
+            let opened =
+                crate::arcane_geography::ArcaneGeography::load_or_generate(&save_dir, atlas, &reg);
+            #[cfg(not(test))]
+            let opened = crate::arcane_geography::ArcaneGeography::load(&save_dir, atlas);
+            let mut geography = opened
+                .map_err(|error| {
+                    eprintln!("arcane geography: could not open subledger: {error}");
+                    error
+                })
+                .ok()?;
+            if let Err(error) =
+                crate::arcane_ecology::reconcile_content(atlas, &reg, &mut geography)
+            {
+                eprintln!("arcane ecology: could not reconcile content: {error}");
+                return None;
+            }
+            Some(geography)
+        });
+        let geography_current = arcane_geography
+            .as_ref()
+            .and_then(|geography| geography.custody_current().ok());
+        let arcane_ledger = authority_atlas
+            .zip(geography_current)
+            .and_then(|(atlas, current)| {
+                crate::arcane::ArcaneLedger::load_or_initialize_with_geography(
+                    &save_dir, atlas, &reg, current,
+                )
+                .map_err(|error| {
+                    eprintln!("arcane: could not open ledger: {error}");
+                    error
+                })
+                .ok()
+            });
+        let discovery_state = authority_atlas.and_then(|_| {
+            crate::discovery::DiscoveryState::load_or_initialize(&save_dir, seed, reg.content_hash)
+                .map_err(|error| {
+                    eprintln!("discovery: could not open knowledge state: {error}");
+                    error
+                })
+                .ok()
+        });
+        let implements_state = authority_atlas.and_then(|_| {
+            crate::implements::ImplementsState::load_or_initialize(&save_dir, reg.content_hash)
+                .map_err(|error| {
+                    eprintln!("implements: could not open state: {error}");
+                    error
+                })
+                .ok()
+        });
+        let workings_state = authority_atlas.and_then(|_| {
+            crate::workings::WorkingsState::load_or_initialize(
+                &save_dir,
+                reg.content_hash,
+                &reg.workings,
+            )
+            .map_err(|error| {
+                eprintln!("workings: could not open transaction state: {error}");
+                error
+            })
+            .ok()
+        });
+        let alchemy_state = authority_atlas.and_then(|_| {
+            crate::alchemy::AlchemyState::load_or_initialize(&save_dir, reg.content_hash)
+                .map_err(|error| {
+                    eprintln!("alchemy: could not open state: {error}");
+                    error
+                })
+                .ok()
+        });
+        let water_carriers = authority_atlas.and_then(|_| {
+            crate::workings::WaterCarrierState::load_or_initialize(&save_dir)
+                .map_err(|error| {
+                    eprintln!("workings: could not open detailed water carriers: {error}");
                     error
                 })
                 .ok()
@@ -1118,9 +1339,22 @@ impl World {
             planetary_weather,
             common_spawn: None,
             material_ledger,
+            arcane_ledger,
+            arcane_geography,
+            discovery_state,
+            implements_state,
+            workings_state,
+            alchemy_state,
+            water_carriers,
             weather_override: None,
             remote_weather_side: 0,
             remote_weather: HashMap::new(),
+            remote_arcane_cue: [0; 2],
+            remote_arcane_dominant: 0,
+            remote_arcane_ecology: None,
+            remote_arcane_items: HashMap::new(),
+            remote_implements: HashMap::new(),
+            remote_apparatus: HashMap::new(),
             reg,
             seed,
             save_dir,
@@ -1155,6 +1389,9 @@ impl World {
             long_winter: false,
             mobs: Vec::new(),
             projectiles: Vec::new(),
+            next_projectile_id: 1,
+            loose_items: Vec::new(),
+            next_loose_item_id: LOOSE_ITEM_ID_BASE,
             hostile_spawn_timer: 0.0,
             mob_seeded: HashSet::new(),
             repop_timer: 0.0,
@@ -1171,6 +1408,8 @@ impl World {
             next_mob_id: 1,
             #[cfg(test)]
             save_fail_chunks: HashSet::new(),
+            #[cfg(test)]
+            fail_loose_item_save: false,
         }
     }
 
@@ -1193,6 +1432,393 @@ impl World {
         self.remote_weather_side = side;
         self.remote_weather.clear();
         self.remote_weather.extend(cells);
+    }
+
+    pub fn set_remote_arcane_cue(
+        &mut self,
+        bands: [u8; 2],
+        dominant: u8,
+        ecology: Option<(String, bool)>,
+    ) {
+        self.remote_arcane_cue = bands.map(|band| band.min(4));
+        self.remote_arcane_dominant = dominant.min(crate::arcane::BASE_RESONANCES.len() as u8);
+        self.remote_arcane_ecology = ecology.map(|(text, damped)| {
+            let mut text = text;
+            text.truncate(240);
+            (text, damped)
+        });
+    }
+
+    pub fn remote_arcane_cue(&self) -> [u8; 2] {
+        self.remote_arcane_cue
+    }
+
+    pub fn remote_arcane_dominant(&self) -> u8 {
+        self.remote_arcane_dominant
+    }
+
+    pub fn arcane_cue_at(&self, region: crate::planet_atlas::AtlasPos) -> [u8; 2] {
+        let geographic = self
+            .arcane_geography
+            .as_ref()
+            .map_or([0; 2], |geography| geography.local_bands(region));
+        let sparse = self
+            .arcane_ledger
+            .as_ref()
+            .map_or([0; 2], |ledger| ledger.local_bands(region));
+        [geographic[0].max(sparse[0]), geographic[1].max(sparse[1])]
+    }
+
+    /// Complete ordinary-player perception packet. Strength and dross remain
+    /// coarse bands, while dominant resonance is a category rather than an
+    /// exact mixture or amount.
+    pub fn arcane_sensory_cue_at(&self, region: crate::planet_atlas::AtlasPos) -> ([u8; 2], u8) {
+        let bands = self.arcane_cue_at(region);
+        let dominant = self
+            .arcane_geography
+            .as_ref()
+            .map_or(0, |geography| geography.local_dominant_resonance(region));
+        (bands, dominant)
+    }
+
+    pub fn arcane_survey_at(
+        &self,
+        region: crate::planet_atlas::AtlasPos,
+        tuning_lens: bool,
+    ) -> Option<crate::arcane_geography::ArcaneSurvey> {
+        self.arcane_geography
+            .as_ref()
+            .map(|geography| geography.survey(region, tuning_lens))
+    }
+
+    pub fn tick_arcane_geography(&mut self, budget: usize) -> std::io::Result<usize> {
+        let Some(geography) = &mut self.arcane_geography else {
+            return Ok(0);
+        };
+        let before = geography.dynamic.completed_steps;
+        let processed = geography
+            .advance_toward(self.clock.max(0.0) as u64, budget)
+            .map_err(std::io::Error::other)?;
+        let advanced = geography.dynamic.completed_steps != before;
+        if advanced {
+            self.pressure_wards_from_arcane_environment();
+        }
+        Ok(processed)
+    }
+
+    /// Once per authoritative Current transport step, translate actual local
+    /// wakes and dross custody into ward pressure. The ward consumes its own
+    /// supply; it neither deletes the environmental load nor edits Ire.
+    fn pressure_wards_from_arcane_environment(&mut self) {
+        let Some(atlas) = self.planet_atlas.as_ref() else {
+            return;
+        };
+        let controllers = self
+            .workings_state
+            .as_ref()
+            .into_iter()
+            .flat_map(|state| state.active.values())
+            .filter_map(|transaction| {
+                if transaction.phase != crate::workings::WorkingPhase::Active {
+                    return None;
+                }
+                match &transaction.effect {
+                    crate::workings::WorkingEffect::Ward { controller, .. } => Some(*controller),
+                    _ => None,
+                }
+            })
+            .collect::<Vec<_>>();
+        let pressures = controllers
+            .into_iter()
+            .filter_map(|controller| {
+                let region = atlas.atlas_pos(controller.surface());
+                let geography = self.arcane_geography.as_ref()?;
+                let cell = geography
+                    .dynamic
+                    .cells
+                    .get(region.index(geography.manifest.side))?;
+                let wake = if cell.wake_id != 0 {
+                    geography
+                        .dynamic
+                        .wakes
+                        .iter()
+                        .find(|wake| wake.id == u64::from(cell.wake_id))
+                        .map(|wake| {
+                            wake.charge
+                                .into_iter()
+                                .chain(wake.dross)
+                                .map(u64::from)
+                                .sum::<u64>()
+                        })
+                        .unwrap_or_default()
+                } else {
+                    0
+                };
+                let sparse_dross = self.arcane_ledger.as_ref().map_or(0, |ledger| {
+                    [
+                        crate::arcane::DrossMedium::Soil,
+                        crate::arcane::DrossMedium::Water,
+                        crate::arcane::DrossMedium::Air,
+                    ]
+                    .into_iter()
+                    .filter_map(|medium| {
+                        ledger.account(&crate::arcane::ArcaneOwner::Dross { region, medium })
+                    })
+                    .fold(0u64, |sum, account| {
+                        sum.saturating_add(account.current.total())
+                    })
+                });
+                Some((
+                    controller,
+                    wake,
+                    cell.dross_total().saturating_add(sparse_dross),
+                ))
+            })
+            .collect::<Vec<_>>();
+        let bounded = |units: u64| {
+            if units == 0 {
+                0
+            } else {
+                units.div_ceil(64).clamp(1, 32)
+            }
+        };
+        for (controller, wake, dross) in pressures {
+            let wake = bounded(wake);
+            if wake != 0 {
+                self.resist_supernatural_pressure_at(controller, "wake", wake);
+            }
+            let dross = bounded(dross);
+            if dross != 0 {
+                self.resist_supernatural_pressure_at(controller, "dross", dross);
+            }
+        }
+    }
+
+    /// Sliced whole-planet magical succession. Residency never enters the
+    /// decision: loaded blocks are a view of these persistent sites.
+    pub fn tick_arcane_ecology(&mut self, budget: usize) -> std::io::Result<usize> {
+        let Some(atlas) = self.planet_atlas.as_ref().cloned() else {
+            return Ok(0);
+        };
+        let Some(geography) = self.arcane_geography.as_ref() else {
+            return Ok(0);
+        };
+        let site_positions = geography
+            .dynamic
+            .ecology
+            .sites
+            .iter()
+            .filter_map(|site| site.surface().map(|surface| (site.atlas_pos, surface)))
+            .collect::<Vec<_>>();
+        let positions = site_positions
+            .iter()
+            .map(|(pos, _)| *pos)
+            .collect::<std::collections::BTreeSet<_>>();
+        let storming = site_positions
+            .iter()
+            .filter(|(_, surface)| {
+                self.weather_at_surface(*surface).kind == crate::planet_atlas::LocalWeather::Storm
+            })
+            .map(|(pos, _)| *pos)
+            .collect::<std::collections::BTreeSet<_>>();
+        let crystal_candidates = geography
+            .dynamic
+            .ecology
+            .sites
+            .iter()
+            .filter(|site| {
+                self.reg
+                    .arcane_ecology
+                    .get(&site.content_id)
+                    .is_some_and(|definition| {
+                        definition.kind == crate::registry::ArcaneEcologyKind::Crystal
+                    })
+            })
+            .filter_map(|site| {
+                Some((
+                    site.id,
+                    site.content_id.clone(),
+                    site.materialized_y,
+                    site.surface()?,
+                    site.block_pos(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        let blocked_crystal_sites = crystal_candidates
+            .into_iter()
+            .filter_map(|(id, content_id, materialized_y, surface, block_pos)| {
+                let chunk = crate::planet::ChunkPos::from_surface(surface);
+                let blocked = if materialized_y == 0 {
+                    self.player_touched.contains(&chunk)
+                } else if self.chunks.contains_key(&chunk) {
+                    block_pos.is_some_and(|at| {
+                        self.reg
+                            .block_id(&content_id)
+                            .is_none_or(|expected| self.get_block_at(at) != expected)
+                    })
+                } else {
+                    false
+                };
+                blocked.then_some(id)
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut water_available = positions
+            .into_iter()
+            .map(|pos| {
+                let available = self
+                    .planetary_weather
+                    .as_ref()
+                    .map_or(u64::MAX / 4, |weather| weather.ecology_soil_water_hu(pos));
+                (pos, available)
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let mut living_hearts = atlas
+            .biomes
+            .countries
+            .iter()
+            .map(|country| country.id)
+            .collect::<std::collections::BTreeSet<_>>();
+        for heart in self.hearts.values().filter(|heart| heart.stage == 0) {
+            if let Some(country) = atlas.country_at(heart.pos.surface()) {
+                living_hearts.remove(&country.id);
+            }
+        }
+        let geography = self
+            .arcane_geography
+            .as_mut()
+            .expect("ecology geography was checked above");
+        let previous_completed_day = geography.dynamic.ecology.completed_days;
+        let report = crate::arcane_ecology::advance_toward(
+            geography,
+            &atlas,
+            &self.reg,
+            u64::from(self.day),
+            budget,
+            crate::arcane_ecology::EcologyConditions::new(
+                &mut water_available,
+                &living_hearts,
+                &storming,
+                &blocked_crystal_sites,
+            ),
+        )
+        .map_err(std::io::Error::other)?;
+        if let Some(weather) = &mut self.planetary_weather {
+            for (pos, requested) in report.transpiration {
+                let moved = weather.transpire_ecology(pos, requested);
+                if moved != requested {
+                    return Err(std::io::Error::other(format!(
+                        "ecology water snapshot promised {requested} HU at {pos:?}, moved {moved}"
+                    )));
+                }
+            }
+        }
+        if report.completed_days > previous_completed_day {
+            self.refresh_loaded_arcane_ecology();
+        }
+        Ok(report.processed)
+    }
+
+    pub fn arcane_ecology_observation_at(
+        &self,
+        surface: crate::planet::SurfacePos,
+    ) -> Option<crate::arcane_ecology::EcologyObservation> {
+        self.arcane_geography.as_ref().and_then(|geography| {
+            crate::arcane_ecology::observation_at(geography, &self.reg, surface)
+        })
+    }
+
+    /// Persist a fire/explosion/wildlife loss before its representative voxel
+    /// is removed. If the process stops after this linked commit, chunk
+    /// reconciliation removes the stale block; if it stops before, neither
+    /// state changed durably. Crystal charge therefore cannot rematerialize.
+    pub(super) fn settle_arcane_ecology_destruction(
+        &mut self,
+        pos: crate::planet::BlockPos,
+    ) -> Result<bool, String> {
+        let Some(geography) = self.arcane_geography.as_mut() else {
+            return Ok(false);
+        };
+        let Some(site_index) = geography.dynamic.ecology.sites.iter().position(|site| {
+            site.block_pos() == Some(pos)
+                && site.stage != crate::arcane_ecology::EcologyStage::Harvested
+        }) else {
+            return Ok(false);
+        };
+        let atlas_index = geography.dynamic.ecology.sites[site_index]
+            .atlas_pos
+            .index(geography.manifest.side);
+        let old_site = geography.dynamic.ecology.sites[site_index].clone();
+        let old_cell = geography.dynamic.cells[atlas_index];
+        let old_sequence = geography.dynamic.ecology.event_sequence;
+        let changed = crate::arcane_ecology::apply_destructive_loss(geography, &self.reg, pos)?;
+        if !changed {
+            return Ok(false);
+        }
+        let operation_id = geography.dynamic.ecology.event_sequence.max(1);
+        let (manifest, files) =
+            match geography.linked_dynamic_replacements(&self.save_dir, operation_id) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    geography.dynamic.ecology.sites[site_index] = old_site;
+                    geography.dynamic.cells[atlas_index] = old_cell;
+                    geography.dynamic.ecology.event_sequence = old_sequence;
+                    return Err(error.to_string());
+                }
+            };
+        let Some(ledger) = self.arcane_ledger.as_mut() else {
+            geography.dynamic.ecology.sites[site_index] = old_site;
+            geography.dynamic.cells[atlas_index] = old_cell;
+            geography.dynamic.ecology.event_sequence = old_sequence;
+            return Err("arcane ecology destruction requires the parent ledger".into());
+        };
+        if let Err(error) =
+            ledger.commit_geography_state_linked("ecological biomass or crystal destroyed", files)
+        {
+            geography.dynamic.ecology.sites[site_index] = old_site;
+            geography.dynamic.cells[atlas_index] = old_cell;
+            geography.dynamic.ecology.event_sequence = old_sequence;
+            return Err(error.to_string());
+        }
+        geography.accept_linked_manifest(manifest);
+        Ok(true)
+    }
+
+    pub fn perceived_arcane_ecology_at(
+        &self,
+        surface: crate::planet::SurfacePos,
+    ) -> Option<crate::arcane_ecology::EcologyObservation> {
+        if self.remote {
+            return self.remote_arcane_ecology.as_ref().map(|(text, damped)| {
+                crate::arcane_ecology::EcologyObservation {
+                    text: text.clone(),
+                    damped: *damped,
+                }
+            });
+        }
+        self.arcane_ecology_observation_at(surface)
+    }
+
+    #[cfg(test)]
+    pub fn set_remote_arcane_items(&mut self, charges: Vec<(u64, u64)>) {
+        self.remote_arcane_items.clear();
+        self.remote_arcane_items
+            .extend(charges.into_iter().filter(|(id, _)| *id != 0));
+    }
+
+    pub fn set_remote_arcane_item(&mut self, id: u64, units: u64) {
+        if id != 0 {
+            self.remote_arcane_items.insert(id, units);
+        }
+    }
+
+    pub fn inspectable_item_current(&self, id: u64) -> Option<u64> {
+        if id == 0 {
+            return None;
+        }
+        self.arcane_ledger
+            .as_ref()
+            .and_then(|ledger| ledger.item_clean_total(id))
+            .or_else(|| self.remote_arcane_items.get(&id).copied())
     }
 
     /// Switch between authoritative storage and guest snapshot mode.
@@ -1231,7 +1857,10 @@ impl World {
     }
 
     pub fn clear_pending_drops(&mut self) {
-        self.pending_drops.clear();
+        let pending = std::mem::take(&mut self.pending_drops);
+        for (at, stack) in pending {
+            self.retire_arcane_stack_at(at, stack, "pending drop administratively cleared");
+        }
     }
 
     /// Every sign and waystone with its text (world rendering, join sync).
@@ -1244,6 +1873,174 @@ impl World {
 
     pub fn push_drop_at(&mut self, at: crate::planet::BlockPos, stack: ItemStack) {
         self.pending_drops.push((at, stack));
+    }
+
+    /// Every destructive item path converges here. Unknown/removed charged
+    /// content defaults to regional Dross, retaining both quantity and its
+    /// saved content identity instead of deleting an uninspectable account.
+    pub fn retire_arcane_stack_at(
+        &mut self,
+        at: crate::planet::BlockPos,
+        stack: ItemStack,
+        reason: &str,
+    ) -> bool {
+        if stack.arcane_id == 0 {
+            return false;
+        }
+        if self
+            .alchemy_state
+            .as_ref()
+            .is_some_and(|state| state.containers.contains_key(&stack.arcane_id))
+        {
+            if let Err(error) = self.destroy_preparation_container_at(at, stack, reason) {
+                eprintln!("alchemy: destructive container settlement failed: {error}");
+            }
+            // The exact dose sidecar owns both its ingredient and vessel
+            // vectors, even if settlement reported a recoverable error. Do
+            // not let the generic item-material path double-count either.
+            return true;
+        }
+        if self
+            .implements_state
+            .as_ref()
+            .is_some_and(|state| state.instance(stack.arcane_id).is_some())
+        {
+            if let Err(error) = self.retire_implement_at(at, stack, reason) {
+                eprintln!("implements: destructive item settlement failed: {error}");
+            }
+            return true;
+        }
+        let Some(atlas) = &self.planet_atlas else {
+            return false;
+        };
+        let region = atlas.atlas_pos(at.surface());
+        let disposition = self
+            .reg
+            .items
+            .get(stack.item.0 as usize)
+            .and_then(|definition| definition.arcane.as_ref())
+            .map_or(crate::registry::ArcaneDisposition::Dross, |arcane| {
+                arcane.on_destroy
+            });
+        let Some(ledger) = &mut self.arcane_ledger else {
+            return false;
+        };
+        if ledger.item_current_total(stack.arcane_id).is_none() {
+            eprintln!(
+                "arcane: discarded item {} names missing Current account {}",
+                self.reg.item(stack.item).name,
+                stack.arcane_id
+            );
+            return false;
+        }
+        let destination = match disposition {
+            crate::registry::ArcaneDisposition::Ambient => {
+                crate::arcane::ArcaneOwner::Ambient(region)
+            }
+            crate::registry::ArcaneDisposition::Dross => crate::arcane::ArcaneOwner::Dross {
+                region,
+                medium: crate::arcane::DrossMedium::Soil,
+            },
+            crate::registry::ArcaneDisposition::Scar => match ledger.allocate_scar_id() {
+                Ok(id) => crate::arcane::ArcaneOwner::Scar(id),
+                Err(error) => {
+                    eprintln!("arcane: could not allocate destruction scar: {error}");
+                    crate::arcane::ArcaneOwner::Dross {
+                        region,
+                        medium: crate::arcane::DrossMedium::Soil,
+                    }
+                }
+            },
+        };
+        if let Err(error) = ledger.move_all_item(stack.arcane_id, destination, reason) {
+            eprintln!("arcane: destructive item transfer failed: {error}");
+        }
+        false
+    }
+
+    /// Charge newly discovered/generated content from the finite reserve of
+    /// its country (or Deep where no country owns the site).
+    pub fn bind_arcane_stack_at(
+        &mut self,
+        at: crate::planet::BlockPos,
+        stack: &mut ItemStack,
+        reason: &str,
+    ) -> std::io::Result<()> {
+        if stack.arcane_id != 0 {
+            return Ok(());
+        }
+        let definition = self
+            .reg
+            .items
+            .get(stack.item.0 as usize)
+            .and_then(|item| item.arcane.clone());
+        let sealed_dross = self
+            .reg
+            .item(stack.item)
+            .discovery
+            .as_ref()
+            .and_then(|definition| definition.evidence_class.as_deref())
+            == Some("sealed_dross_ampoule");
+        let Some(definition) = definition else {
+            return Ok(());
+        };
+        if stack.count != 1 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "charged content must be instantiated as single-item stacks",
+            ));
+        }
+        let source = self
+            .planet_atlas
+            .as_ref()
+            .and_then(|atlas| atlas.country_at(at.surface()).map(|country| country.id))
+            .map(crate::arcane::ArcaneOwner::Heart)
+            .unwrap_or(crate::arcane::ArcaneOwner::Deep);
+        let content_id = self.reg.item(stack.item).name.clone();
+        let ledger = self
+            .arcane_ledger
+            .as_mut()
+            .ok_or_else(|| std::io::Error::other("charged content requires an arcane ledger"))?;
+        stack.arcane_id = ledger
+            .bind_new_item(source, &definition, &content_id, reason)
+            .map_err(std::io::Error::other)?;
+        if sealed_dross {
+            ledger
+                .move_all(
+                    crate::arcane::ArcaneOwner::Item(stack.arcane_id),
+                    crate::arcane::ArcaneOwner::ItemDross(stack.arcane_id),
+                    "sealed archaeological dross containment",
+                )
+                .map_err(std::io::Error::other)?;
+        }
+        if self.reg.item(stack.item).charm_def.is_some() {
+            self.ensure_charm_instance_at(at, stack, reason)
+                .map_err(std::io::Error::other)?;
+        }
+        Ok(())
+    }
+
+    /// Roll a block's chance drop on the authoritative simulation stream and
+    /// bind magical results before any local entity or network delivery can
+    /// observe them.
+    pub fn roll_bonus_drop_at(
+        &mut self,
+        at: crate::planet::BlockPos,
+        block: BlockId,
+        rng: &mut u32,
+    ) -> Option<ItemStack> {
+        let (item, chance) = self.reg.block(block).bonus_drop?;
+        *rng = rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let roll = (*rng >> 8) as f32 / (1 << 24) as f32;
+        if roll >= chance {
+            return None;
+        }
+        let mut stack = ItemStack::new(&self.reg, item, 1);
+        if let Err(error) = self.bind_arcane_stack_at(at, &mut stack, "magical bonus harvest") {
+            eprintln!("arcane: magical bonus drop cancelled: {error}");
+            return None;
+        }
+        Some(stack)
     }
 
     pub fn take_pending_drops(&mut self) -> Vec<(crate::planet::BlockPos, ItemStack)> {
@@ -1435,6 +2232,11 @@ impl World {
     }
 
     #[cfg(test)]
+    pub fn fail_loose_item_save_for_test(&mut self, fail: bool) {
+        self.fail_loose_item_save = fail;
+    }
+
+    #[cfg(test)]
     pub fn mark_structure_chunk_for_test(&mut self, pos: ChunkPos) {
         self.structure_chunks.insert(pos);
         if let Some(chunk) = self.chunks.get_mut(&pos) {
@@ -1540,6 +2342,21 @@ impl World {
     }
 
     #[cfg(test)]
+    pub fn live_water_audit(&self) -> Option<crate::planet_atlas::WaterAudit> {
+        self.planetary_weather
+            .as_ref()
+            .map(crate::planet_atlas::PlanetaryWeather::water_audit)
+    }
+
+    #[cfg(test)]
+    pub fn ecology_soil_water_hu_at(&self, surface: crate::planet::SurfacePos) -> Option<u64> {
+        let atlas = self.planet_atlas.as_ref()?;
+        self.planetary_weather
+            .as_ref()
+            .map(|weather| weather.ecology_soil_water_hu(atlas.atlas_pos(surface)))
+    }
+
+    #[cfg(test)]
     #[doc(hidden)]
     pub fn get_meta(&self, x: i32, y: i32, z: i32) -> u8 {
         crate::planet::BlockPos::of_world(x, y, z)
@@ -1558,7 +2375,101 @@ impl World {
         if block == AIR || self.reg.block(block).hardness.is_none() {
             return None;
         }
-        let drop = award_drop
+        let tool_tier = tool
+            .and_then(|item| self.reg.item(item).tool.map(|(_, _, tier)| tier))
+            .unwrap_or(0);
+        let block_definition = self.reg.block(block);
+        let held_tool_kind = tool.and_then(|item| self.reg.item(item).tool.map(|tool| tool.0));
+        let alchemy_apparatus = matches!(
+            block_definition.interaction.as_deref(),
+            Some("alchemy_mortar" | "alchemy_basin" | "alchemy_alembic" | "alchemy_filter")
+        );
+        let release_alchemy_installation = if alchemy_apparatus {
+            let installed = self
+                .alchemy_state
+                .as_ref()
+                .and_then(|state| state.apparatus.get(&pos));
+            if installed.is_some_and(|apparatus| {
+                apparatus.batch.is_some()
+                    || !apparatus.residue_materials.is_empty()
+                    || apparatus.filter_burden != 0
+                    || apparatus.filter_medium.is_some()
+            }) || self
+                .alchemy_state
+                .as_ref()
+                .is_some_and(|state| state.ordinary_jobs.contains_key(&pos))
+            {
+                // A pick swing cannot orphan conserved liquid, residue,
+                // filter, or a timed carrier job. The player must drain and
+                // clean it first.
+                return None;
+            }
+            installed.is_some()
+        } else {
+            false
+        };
+        let breaking_binding_frame =
+            block_definition.interaction.as_deref() == Some("binding_frame");
+        let controlled_frame_break = award_drop
+            && held_tool_kind == block_definition.tool
+            && (!block_definition.requires_tool || tool_tier >= block_definition.min_tier);
+        if block_definition.interaction.as_deref() == Some("charge_vessel")
+            && (held_tool_kind != block_definition.tool
+                || block_definition.requires_tool && tool_tier < block_definition.min_tier)
+        {
+            // A placed vessel is an embodied container, not a free inventory
+            // pickup. The correct dismantling tool returns its exact physical
+            // item/identity through the block-entity spill path; bare hands or
+            // an undersized tool leave it in place.
+            return None;
+        }
+        let ecology_plan = self.arcane_geography.as_ref().and_then(|geography| {
+            crate::arcane_ecology::plan_harvest(geography, &self.reg, pos, tool_tier)
+        });
+        let ecology_site_present = self.arcane_geography.as_ref().is_some_and(|geography| {
+            crate::arcane_ecology::owns_materialized_block(geography, pos)
+        });
+        // A recovering plant or crystal is real persistent state, not an
+        // ordinary loot block. In particular, a second host command must not
+        // bypass its harvest cooldown merely because no new plan is ready.
+        if award_drop && ecology_site_present && ecology_plan.is_none() {
+            return None;
+        }
+        if ecology_plan.as_ref().is_some_and(|plan| {
+            plan.water_hu != 0
+                && self.planetary_weather.as_ref().is_some_and(|weather| {
+                    let Some(atlas) = self.planet_atlas.as_ref() else {
+                        return true;
+                    };
+                    weather.ecology_soil_water_hu(atlas.atlas_pos(pos.surface())) < plan.water_hu
+                })
+        }) {
+            return None;
+        }
+        let is_finite_resonant_mineral =
+            self.reg
+                .block(block)
+                .arcane_ecology
+                .as_ref()
+                .is_some_and(|definition| {
+                    definition.kind == crate::registry::ArcaneEcologyKind::FiniteMineral
+                });
+        let mineral_plan = self
+            .reg
+            .block(block)
+            .arcane_ecology
+            .as_ref()
+            .filter(|_| is_finite_resonant_mineral)
+            .and_then(|definition| {
+                self.arcane_geography.as_ref().and_then(|geography| {
+                    self.planet_atlas.as_ref().and_then(|atlas| {
+                        crate::arcane_ecology::plan_finite_mineral_harvest(
+                            geography, atlas, pos, definition,
+                        )
+                    })
+                })
+            });
+        let mut drop = award_drop
             .then(|| self.reg.drops_for(block, tool))
             .flatten()
             .map(|(item, count)| {
@@ -1583,13 +2494,241 @@ impl World {
                 None
             }
         };
+        if breaking_binding_frame
+            && let Err(error) = self.settle_binding_frame_break_at(pos, controlled_frame_break)
+        {
+            eprintln!("implements: binding-frame break cancelled at {pos:?}: {error}");
+            cancel_unapplied_material_operation(self.material_ledger.as_ref(), &material_operation);
+            return None;
+        }
+        let mut arcane_harvest_handled = ecology_site_present || is_finite_resonant_mineral;
+        let mut leaves_bud = false;
+        if award_drop {
+            if let (Some(plan), Some(stack)) = (ecology_plan.as_ref(), drop.as_mut()) {
+                let Some(geography) = self.arcane_geography.as_mut() else {
+                    cancel_unapplied_material_operation(
+                        self.material_ledger.as_ref(),
+                        &material_operation,
+                    );
+                    return None;
+                };
+                let Some(site_index) = geography
+                    .dynamic
+                    .ecology
+                    .sites
+                    .iter()
+                    .position(|site| site.id == plan.site_id)
+                else {
+                    cancel_unapplied_material_operation(
+                        self.material_ledger.as_ref(),
+                        &material_operation,
+                    );
+                    return None;
+                };
+                let old_site = geography.dynamic.ecology.sites[site_index].clone();
+                let old_sequence = geography.dynamic.ecology.event_sequence;
+                let old_exported = geography.dynamic.ecology.exported;
+                if let Err(error) = crate::arcane_ecology::apply_harvest(
+                    geography,
+                    &self.reg,
+                    plan,
+                    u64::from(self.day),
+                ) {
+                    eprintln!("arcane ecology: site changed during harvest at {pos:?}: {error}");
+                    cancel_unapplied_material_operation(
+                        self.material_ledger.as_ref(),
+                        &material_operation,
+                    );
+                    return None;
+                }
+                let operation_id = geography.dynamic.ecology.event_sequence.max(1);
+                let (manifest, files) = match geography
+                    .linked_dynamic_replacements(&self.save_dir, operation_id)
+                {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        geography.dynamic.ecology.sites[site_index] = old_site;
+                        geography.dynamic.ecology.event_sequence = old_sequence;
+                        geography.dynamic.ecology.exported = old_exported;
+                        eprintln!("arcane ecology: could not stage harvest at {pos:?}: {error}");
+                        cancel_unapplied_material_operation(
+                            self.material_ledger.as_ref(),
+                            &material_operation,
+                        );
+                        return None;
+                    }
+                };
+                let Some(ledger) = self.arcane_ledger.as_mut() else {
+                    geography.dynamic.ecology.sites[site_index] = old_site;
+                    geography.dynamic.ecology.event_sequence = old_sequence;
+                    geography.dynamic.ecology.exported = old_exported;
+                    eprintln!("arcane ecology: harvest cancelled without a ledger");
+                    cancel_unapplied_material_operation(
+                        self.material_ledger.as_ref(),
+                        &material_operation,
+                    );
+                    return None;
+                };
+                let charged = !plan.current.is_empty() || !plan.dross_current.is_empty();
+                let committed = if charged {
+                    ledger
+                        .bind_new_item_exact_linked(
+                            crate::arcane::ArcaneOwner::Geography,
+                            plan.current.clone(),
+                            plan.dross_current.clone(),
+                            &plan.item_content,
+                            "ecological harvest",
+                            files,
+                        )
+                        .map(Some)
+                } else {
+                    ledger
+                        .commit_geography_state_linked("uncharged ecological harvest", files)
+                        .map(|()| None)
+                };
+                match committed {
+                    Ok(item_id) => {
+                        if let Some(item_id) = item_id {
+                            stack.arcane_id = item_id;
+                        }
+                        geography.accept_linked_manifest(manifest);
+                    }
+                    Err(error) => {
+                        geography.dynamic.ecology.sites[site_index] = old_site;
+                        geography.dynamic.ecology.event_sequence = old_sequence;
+                        geography.dynamic.ecology.exported = old_exported;
+                        eprintln!("arcane ecology: harvest cancelled at {pos:?}: {error}");
+                        cancel_unapplied_material_operation(
+                            self.material_ledger.as_ref(),
+                            &material_operation,
+                        );
+                        return None;
+                    }
+                }
+                leaves_bud = plan.leaves_bud;
+                if plan.water_hu != 0
+                    && let (Some(weather), Some(atlas)) =
+                        (self.planetary_weather.as_mut(), self.planet_atlas.as_ref())
+                {
+                    let moved = weather
+                        .harvest_ecology_water(atlas.atlas_pos(pos.surface()), plan.water_hu);
+                    debug_assert_eq!(moved, plan.water_hu, "prechecked dew water changed");
+                }
+            } else if let (Some(current), Some(stack)) = (mineral_plan.as_ref(), drop.as_mut()) {
+                let content_id = self.reg.item(stack.item).name.clone();
+                let (Some(geography), Some(atlas)) =
+                    (self.arcane_geography.as_mut(), self.planet_atlas.as_ref())
+                else {
+                    cancel_unapplied_material_operation(
+                        self.material_ledger.as_ref(),
+                        &material_operation,
+                    );
+                    return None;
+                };
+                let atlas_index = atlas.atlas_pos(pos.surface()).index(atlas.side());
+                let old_cell = geography.dynamic.cells[atlas_index];
+                let old_sequence = geography.dynamic.ecology.event_sequence;
+                let old_exported = geography.dynamic.ecology.exported;
+                if let Err(error) = crate::arcane_ecology::apply_finite_mineral_harvest(
+                    geography, atlas, pos, current,
+                ) {
+                    eprintln!("arcane ecology: mineral charge changed at {pos:?}: {error}");
+                    cancel_unapplied_material_operation(
+                        self.material_ledger.as_ref(),
+                        &material_operation,
+                    );
+                    return None;
+                }
+                geography.dynamic.ecology.event_sequence = old_sequence.saturating_add(1);
+                let operation_id = geography.dynamic.ecology.event_sequence.max(1);
+                let (manifest, files) =
+                    match geography.linked_dynamic_replacements(&self.save_dir, operation_id) {
+                        Ok(prepared) => prepared,
+                        Err(error) => {
+                            geography.dynamic.cells[atlas_index] = old_cell;
+                            geography.dynamic.ecology.event_sequence = old_sequence;
+                            geography.dynamic.ecology.exported = old_exported;
+                            eprintln!("arcane ecology: could not stage mineral harvest: {error}");
+                            cancel_unapplied_material_operation(
+                                self.material_ledger.as_ref(),
+                                &material_operation,
+                            );
+                            return None;
+                        }
+                    };
+                let Some(ledger) = self.arcane_ledger.as_mut() else {
+                    geography.dynamic.cells[atlas_index] = old_cell;
+                    geography.dynamic.ecology.event_sequence = old_sequence;
+                    geography.dynamic.ecology.exported = old_exported;
+                    cancel_unapplied_material_operation(
+                        self.material_ledger.as_ref(),
+                        &material_operation,
+                    );
+                    return None;
+                };
+                match ledger.bind_new_item_exact_linked(
+                    crate::arcane::ArcaneOwner::Geography,
+                    current.clone(),
+                    crate::arcane::Current::default(),
+                    &content_id,
+                    "finite resonant mineral harvest",
+                    files,
+                ) {
+                    Ok(id) => {
+                        stack.arcane_id = id;
+                        geography.accept_linked_manifest(manifest);
+                    }
+                    Err(error) => {
+                        geography.dynamic.cells[atlas_index] = old_cell;
+                        geography.dynamic.ecology.event_sequence = old_sequence;
+                        geography.dynamic.ecology.exported = old_exported;
+                        eprintln!("arcane ecology: mineral harvest cancelled at {pos:?}: {error}");
+                        cancel_unapplied_material_operation(
+                            self.material_ledger.as_ref(),
+                            &material_operation,
+                        );
+                        return None;
+                    }
+                }
+            }
+        }
+        if ecology_site_present && (!award_drop || drop.is_none()) {
+            if let Err(error) = self.settle_arcane_ecology_destruction(pos) {
+                eprintln!("arcane ecology: destructive loss cancelled at {pos:?}: {error}");
+                cancel_unapplied_material_operation(
+                    self.material_ledger.as_ref(),
+                    &material_operation,
+                );
+                return None;
+            }
+            arcane_harvest_handled = true;
+        }
         self.player_touched.insert(pos.chunk());
         if affect_ire {
-            let cost = self.ire_for_block(block);
+            let mut cost = self.ire_for_block(block);
+            if let Some(plan) = &ecology_plan {
+                cost += if plan.destructive { 2.0 } else { 0.35 };
+                if plan.protected {
+                    cost *= 0.5;
+                }
+            }
             self.add_ire_at_surface(pos.surface(), cost);
         }
         let was_heart = self.reg.block(block).name.starts_with("base:heart_");
-        self.set_block_at(pos, AIR);
+        if release_alchemy_installation && let Some(state) = &mut self.alchemy_state {
+            // A clean empty installation has no conserved contents. Its
+            // sidecar identity is released with the ordinary block edit.
+            state.apparatus.remove(&pos);
+        }
+        self.set_block_at(pos, if leaves_bud { block } else { AIR });
+        if let Some(stack) = &mut drop
+            && self.reg.item(stack.item).arcane.is_some()
+            && !arcane_harvest_handled
+            && let Err(error) = self.bind_arcane_stack_at(pos, stack, "magical harvest")
+        {
+            eprintln!("arcane: magical harvest drop cancelled: {error}");
+            drop = None;
+        }
         if let Some(operation) = material_operation {
             self.complete_material_operation(&operation);
             if !award_drop
@@ -1681,8 +2820,117 @@ impl World {
                     .entry(pos)
                     .or_insert_with(|| BlockEntity::Separator(Default::default()));
             }
+            Some("discovery_lab") => {
+                self.block_entities
+                    .entry(pos)
+                    .or_insert_with(|| BlockEntity::DiscoveryApparatus(Default::default()));
+            }
+            Some("binding_frame") => {
+                self.block_entities
+                    .entry(pos)
+                    .or_insert_with(|| BlockEntity::BindingFrame(Default::default()));
+            }
             _ => {}
         }
+        true
+    }
+
+    /// Place the block carried by one inventory instance. Charged placeables
+    /// discharge into their declared local environmental reservoir when the
+    /// physical item becomes a block; no item owner is left behind for a
+    /// later save-recovery pass to clean up.
+    pub fn place_item_block_at(&mut self, pos: BlockPos, stack: ItemStack) -> bool {
+        let returns_ecology_water = self.reg.item(stack.item).name == "base:rainbell_dew";
+        let Some(block) = self.reg.item(stack.item).places else {
+            return false;
+        };
+        if !self.place_block_at(pos, block) {
+            return false;
+        }
+        if self
+            .reg
+            .item(stack.item)
+            .implement
+            .as_ref()
+            .is_some_and(|definition| {
+                definition.kind == crate::implements::ImplementItemKind::ChargeVessel
+            })
+        {
+            if stack.count != 1 {
+                self.set_block_at(pos, AIR);
+                return false;
+            }
+            self.block_entities.insert(
+                pos,
+                BlockEntity::ChargeVessel(ChargeVesselState {
+                    vessel: Some(ItemStack { count: 1, ..stack }),
+                    damage: 0,
+                    revision: 0,
+                }),
+            );
+            return true;
+        }
+        if self
+            .reg
+            .item(stack.item)
+            .discovery
+            .as_ref()
+            .is_some_and(|definition| definition.kind == "survey_folio")
+        {
+            let mut physical = ItemStack { count: 1, ..stack };
+            if let Err(error) = self.bind_discovery_stack_at(pos, &mut physical) {
+                eprintln!("discovery: survey folio placement cancelled: {error}");
+                self.set_block_at(pos, AIR);
+                return false;
+            }
+            self.block_entities.insert(
+                pos,
+                BlockEntity::SurveyFolio(SurveyFolioState {
+                    object_id: physical.arcane_id,
+                }),
+            );
+            return true;
+        }
+        if let Some(definition) = self.reg.block(block).arcane_ecology.clone()
+            && definition.kind != crate::registry::ArcaneEcologyKind::FiniteMineral
+            && let (Some(atlas), Some(geography)) =
+                (self.planet_atlas.as_ref(), self.arcane_geography.as_mut())
+        {
+            let content_id = &self.reg.block(block).name;
+            let restored =
+                crate::arcane_ecology::restore_with_seed(geography, &self.reg, content_id, pos);
+            if !restored
+                && let Err(error) = crate::arcane_ecology::register_cultivated(
+                    geography,
+                    atlas,
+                    content_id,
+                    pos,
+                    &definition,
+                )
+            {
+                eprintln!("arcane ecology: cultivation cancelled at {pos:?}: {error}");
+                self.set_block_at(pos, AIR);
+                return false;
+            }
+            if restored {
+                self.plant_ire_at_surface(pos.surface(), 0.35);
+            }
+        }
+        self.refresh_loaded_arcane_ecology();
+        if returns_ecology_water
+            && let (Some(atlas), Some(weather)) =
+                (self.planet_atlas.as_ref(), self.planetary_weather.as_mut())
+        {
+            weather.return_ecology_water_to_soil(
+                atlas.atlas_pos(pos.surface()),
+                crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL,
+            );
+        }
+        self.retire_arcane_stack_at(
+            pos,
+            ItemStack { count: 1, ..stack },
+            "charged block placed into the environment",
+        );
         true
     }
 
@@ -1799,7 +3047,7 @@ impl World {
         ledger.record_admin_stack_deletion(&reg, stack)
     }
 
-    fn block_entity_stacks(entity: &BlockEntity) -> Vec<ItemStack> {
+    pub(crate) fn block_entity_stacks(entity: &BlockEntity) -> Vec<ItemStack> {
         let mut stacks = Vec::new();
         let mut add = |slots: &[Option<ItemStack>]| {
             stacks.extend(slots.iter().flatten().copied());
@@ -1826,10 +3074,17 @@ impl World {
                 add(&state.till);
             }
             BlockEntity::Smoker(state) => add(&state.meat),
+            BlockEntity::DiscoveryApparatus(state) => add(&[state.sample, state.reference]),
+            BlockEntity::BindingFrame(state) => {
+                add(&state.mounts());
+                add(&[state.output]);
+            }
+            BlockEntity::ChargeVessel(state) => add(&[state.vessel]),
             BlockEntity::Clamp(_)
             | BlockEntity::Sign(_)
             | BlockEntity::Steam(_)
-            | BlockEntity::Separator(_) => {}
+            | BlockEntity::Separator(_)
+            | BlockEntity::SurveyFolio(_) => {}
         }
         stacks
     }
@@ -1927,6 +3182,10 @@ impl World {
         let chunk_pos = pos.chunk();
         let (x, y, z) = pos.local();
         let old = self.get_block_at(pos);
+        let old_holds_water_carrier =
+            self.reg.is_water(old) || self.reg.block(old).name == "base:ice";
+        let new_holds_water_carrier =
+            self.reg.is_water(block) || self.reg.block(block).name == "base:ice";
         if let Some(chunk) = self.chunks.get_mut(&chunk_pos) {
             chunk.set(x, y, z, block);
             chunk.set_meta(x, y, z, meta);
@@ -1940,6 +3199,15 @@ impl World {
             }
         } else {
             return;
+        }
+        if old_holds_water_carrier
+            && !new_holds_water_carrier
+            && let Some(carriers) = self.water_carriers.as_mut()
+        {
+            // The regional arcane ledger remains authoritative for the dross;
+            // this only retires a no-longer-physical per-voxel allocation.
+            // Ice deliberately retains the allocation for exact thawing.
+            carriers.cells.remove(&pos);
         }
         if x == 0 {
             self.mark_chunk_dirty(chunk_pos.offset(-1, 0));
@@ -2006,9 +3274,13 @@ impl World {
             self.relight_and_cascade(chunk_pos);
         }
 
-        // A changed block invalidates any machine state living there and
-        // returns its inventory at that exact planetary address.
-        if let Some(entity) = self.block_entities.remove(&pos) {
+        // Changing material identity invalidates the machine living here.
+        // Metadata is ordinary state on the same physical block (crop stage,
+        // mechanism latch, water level) and must not silently delete its
+        // embodied block entity.
+        if old != block
+            && let Some(entity) = self.block_entities.remove(&pos)
+        {
             let spilled: Vec<ItemStack> = match entity {
                 BlockEntity::Furnace(f) => {
                     [f.input, f.fuel, f.output].into_iter().flatten().collect()
@@ -2058,6 +3330,28 @@ impl World {
                     push("base:cerium", separator.ce);
                     out
                 }
+                BlockEntity::SurveyFolio(folio) => self
+                    .reg
+                    .item_id("base:survey_folio")
+                    .map(|item| {
+                        let mut stack = ItemStack::new(&self.reg, item, 1);
+                        stack.arcane_id = folio.object_id;
+                        vec![stack]
+                    })
+                    .unwrap_or_default(),
+                BlockEntity::DiscoveryApparatus(apparatus) => {
+                    [apparatus.sample, apparatus.reference]
+                        .into_iter()
+                        .flatten()
+                        .collect()
+                }
+                BlockEntity::BindingFrame(frame) => frame
+                    .mounts()
+                    .into_iter()
+                    .chain([frame.output])
+                    .flatten()
+                    .collect(),
+                BlockEntity::ChargeVessel(vessel) => vessel.vessel.into_iter().collect(),
                 BlockEntity::Kiln(k) => k
                     .sand
                     .into_iter()
@@ -2098,6 +3392,25 @@ impl World {
         self.edit_relight_batch = false;
         let starts = std::mem::take(&mut self.pending_relight);
         self.relight_chunks_and_cascade(starts);
+    }
+
+    /// Apply one network poll's authoritative block states as a single light
+    /// transaction. Hosts often deliver many weather, fluid, or ecology edits
+    /// together; relighting the connected view after every individual message
+    /// can monopolize a guest for minutes even though the final voxel state is
+    /// identical. The ordinary typed mutation path still owns support checks,
+    /// metadata, salinity, dirty meshes, and fluid wakeups.
+    pub(crate) fn apply_remote_block_states(
+        &mut self,
+        updates: impl IntoIterator<Item = (BlockPos, BlockId, u8, u16, u8)>,
+    ) {
+        debug_assert!(self.remote, "only a guest may apply replicated states");
+        self.edit_batch(|world| {
+            for (pos, block, meta, salt_mass, soil_salinity) in updates {
+                world.set_block_state_at(pos, block, meta, salt_mass, soil_salinity);
+            }
+        });
+        self.clear_pending_drops();
     }
 
     #[cfg(test)]

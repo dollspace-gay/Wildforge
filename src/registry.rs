@@ -30,6 +30,154 @@ pub enum MaterialClass {
 
 pub type MaterialVector = BTreeMap<String, u64>;
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArcaneDisposition {
+    Ambient,
+    Dross,
+    Scar,
+}
+
+/// Declarative magic behavior shared by blocks, items, plants, minerals, and
+/// creatures. All ratios are integer permille; content cannot smuggle NaN or
+/// platform-dependent rounding into authoritative accounting.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ArcaneContentDef {
+    pub capacity: u64,
+    pub conductivity_permille: u16,
+    pub stability_permille: u16,
+    pub resonance: BTreeMap<String, u16>,
+    pub on_destroy: ArcaneDisposition,
+}
+
+/// Player-visible qualitative facets a tuning lens may report.  These names
+/// are data ABI: records retain them when a provider is removed, while the
+/// engine refuses definitions that ask to expose exact or private state.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ObservationDef {
+    pub categories: Vec<String>,
+    pub properties: Vec<String>,
+}
+
+/// Physical knowledge behavior for an item. `evidence_class` is intentionally
+/// string-addressed so a mod can add archaeology without an engine enum; the
+/// action-bearing `kind` remains a small, validated vocabulary.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DiscoveryItemDef {
+    pub kind: String,
+    pub evidence_class: Option<String>,
+    pub authored_text: Vec<String>,
+    pub calibration: Option<crate::discovery::CalibrationGrade>,
+    pub experiment: Option<crate::discovery::ExperimentKind>,
+}
+
+/// A placed discovery fixture. Experiments are explicit capabilities rather
+/// than callbacks, keeping host authority and conservation in engine code.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DiscoveryFixtureDef {
+    pub kind: String,
+    pub experiments: Vec<crate::discovery::ExperimentKind>,
+    pub record_capacity: u16,
+}
+
+/// The causal job an organism or formation performs in the Current cycle.
+/// These are data identities (and therefore pack/mod ABI), not flavor tags.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EcologyRole {
+    Gatherer,
+    Reservoir,
+    Conductor,
+    Transformer,
+    Indicator,
+    Parasite,
+    Stabilizer,
+    Catalyst,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArcaneEcologyKind {
+    Organism,
+    Crystal,
+    FiniteMineral,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EcologySource {
+    Ambient,
+    Dross,
+    Heart,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReproductionMode {
+    Seed,
+    Spore,
+    Runner,
+    Bud,
+    None,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EcologyHarvestClass {
+    Fruit,
+    Prune,
+    Coppice,
+    Spore,
+    SeedPreserving,
+    Destructive,
+}
+
+/// Validated, deterministic lifecycle parameters shared by base content and
+/// mods. Integer units keep the unloaded simulation bit-identical on every
+/// platform. Water uses hydrology units (HU), nutrients are a compact local
+/// ecological pool, and Current uses the arcane ledger's integer unit.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ArcaneEcologyDef {
+    pub roles: Vec<EcologyRole>,
+    pub kind: ArcaneEcologyKind,
+    pub habitat: Vec<String>,
+    pub charge_capacity: u64,
+    pub uptake_per_day: u32,
+    pub release_per_day: u32,
+    pub source: EcologySource,
+    pub resonance: BTreeMap<String, u16>,
+    pub dross_tolerance: u32,
+    pub water_per_day_hu: u32,
+    pub nutrient_per_day: u16,
+    pub reproduction: ReproductionMode,
+    /// Local astronomical seasons: spring, summer, autumn, winter.
+    pub seasons: [bool; 4],
+    pub carrying_capacity: u16,
+    pub harvest: EcologyHarvestClass,
+    pub regrowth_days: u16,
+    pub min_stability_permille: u16,
+    pub max_stability_permille: u16,
+    pub min_richness_permille: u16,
+    /// Crystal-only number of exact charge stages; zero for other kinds.
+    pub crystal_stages: u8,
+    /// Crystal-only tool tier that preserves the persistent bud.
+    pub preserving_tool_tier: u8,
+}
+
+/// Bounded creation-time predicate for atlas-backed magical geography.
+/// Mods describe causes; they never receive a mutable per-cell callback.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArcaneSiteRule {
+    pub id: String,
+    pub provider: String,
+    pub requires: Vec<String>,
+    pub capacity_factor_permille: u16,
+    pub base_resonance_bias: [u16; 6],
+    pub rarity_per_million: u32,
+    pub radius_cells: u16,
+    pub retrogen: RetrogenPolicy,
+}
+
 /// How much useful material a workshop can recover from an object. Values
 /// are integer permille so persistence and validation never depend on float
 /// rounding.
@@ -129,6 +277,10 @@ pub struct BlockDef {
     pub material_class: MaterialClass,
     pub materials: MaterialVector,
     pub dismantles_to: Option<ItemId>,
+    pub arcane: Option<ArcaneContentDef>,
+    pub arcane_ecology: Option<ArcaneEcologyDef>,
+    pub observation: Option<ObservationDef>,
+    pub discovery_fixture: Option<DiscoveryFixtureDef>,
 }
 
 /// Resolve a block's per-channel emission from its level and optional color.
@@ -208,6 +360,14 @@ pub struct ItemDef {
     pub shears: bool,
     /// Passive charm effect: "quiet" | "bark" | "hunger" (one charm slot).
     pub charm: Option<String>,
+    /// Bounded authoritative charm behavior. Legacy string declarations are
+    /// upgraded into this form during registry load.
+    pub charm_def: Option<crate::implements::CharmDef>,
+    /// One physical role in a component-built wand.
+    pub wand_component: Option<crate::implements::WandComponentDef>,
+    /// A finished implement shell whose per-instance state lives in the
+    /// world's implements sidecar.
+    pub implement: Option<crate::implements::ImplementItemDef>,
     /// Right-click reads a line from the lost takers.
     pub tablet: bool,
     /// Right-click to set light to something. The one place a fire
@@ -237,6 +397,10 @@ pub struct ItemDef {
     pub salvage: Option<SalvageDef>,
     /// A zero-durability finite item changes identity instead of vanishing.
     pub broken_into: Option<ItemId>,
+    pub arcane: Option<ArcaneContentDef>,
+    pub arcane_ecology: Option<ArcaneEcologyDef>,
+    pub observation: Option<ObservationDef>,
+    pub discovery: Option<DiscoveryItemDef>,
 }
 
 /// One box of an animal's model. Sizes/offsets in px (16 px = 1 block);
@@ -330,6 +494,7 @@ pub struct AnimalDef {
     /// Hunts players on sight, fed or not. The polar bear needs no
     /// reason. (Wildlife, not warden: persists, ignores daylight.)
     pub fierce: bool,
+    pub arcane: Option<ArcaneContentDef>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -374,6 +539,10 @@ pub struct RecipeDef {
     pub pattern: Vec<Option<Ingredient>>,
     pub output: ItemId,
     pub count: u32,
+    /// Visible specialist assembly recipe. It participates in the browser,
+    /// material graph, and survival census, but ordinary crafting cannot
+    /// match it.
+    pub station: Option<String>,
     /// Explicitly dispersed/consumed finite mass. The validator requires the
     /// input vector to equal output + byproducts + this vector.
     pub loss: MaterialVector,
@@ -535,6 +704,20 @@ pub struct Registry {
     /// registry lets the mods screen explain a bad pack and lets production
     /// world creation refuse it without panicking the content browser.
     pub material_errors: Vec<String>,
+    /// Versioned, string-addressed resonance identities. Removed providers
+    /// remain in each world's saved ledger even when absent here.
+    pub arcane_registry: crate::arcane::ResonanceRegistry,
+    /// Qualified, bounded magical-geography predicates in dependency order.
+    pub arcane_sites: Vec<ArcaneSiteRule>,
+    /// Qualified block/item lifecycle definitions, validated at pack load.
+    pub arcane_ecology: BTreeMap<String, ArcaneEcologyDef>,
+    /// Declarative shells around the closed set of native working handlers.
+    /// The definitions carry costs and bounds, never mutation callbacks.
+    pub workings: BTreeMap<String, crate::workings::WorkingDef>,
+    /// Declarative physical preparation/process contracts. Effects resolve to
+    /// the closed native alchemy handler set; no data pack gains raw mutation.
+    pub preparations: BTreeMap<String, crate::alchemy::PreparationDef>,
+    pub arcane_errors: Vec<String>,
 }
 
 // ---------------- TOML schema ----------------
@@ -645,6 +828,14 @@ struct BlockToml {
     material_class: Option<MaterialClass>,
     #[serde(default)]
     materials: MaterialVector,
+    #[serde(default)]
+    arcane: Option<ArcaneContentToml>,
+    #[serde(default)]
+    observation: Option<ObservationToml>,
+    #[serde(default)]
+    discovery_fixture: Option<DiscoveryFixtureToml>,
+    #[serde(default)]
+    arcane_ecology: Option<ArcaneEcologyToml>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -718,6 +909,429 @@ fn salvage_def(
     })
 }
 
+fn observation_def(
+    raw: Option<&ObservationToml>,
+    mod_id: &str,
+    content_id: &str,
+) -> Result<Option<ObservationDef>, String> {
+    const VISIBLE_PROPERTIES: &[&str] = &[
+        "strength",
+        "stability",
+        "resonance",
+        "dross",
+        "drift",
+        "capacity",
+        "conductivity",
+        "biological_response",
+        "dross_response",
+        "condition",
+    ];
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    if raw.categories.is_empty() || raw.categories.len() > 8 || raw.properties.len() > 12 {
+        return Err(format!(
+            "{content_id}: observation needs 1..=8 categories and at most 12 visible properties"
+        ));
+    }
+    let categories = raw
+        .categories
+        .iter()
+        .map(|category| {
+            let category = if category.contains(':')
+                || matches!(
+                    category.as_str(),
+                    "region"
+                        | "block"
+                        | "item"
+                        | "apparatus"
+                        | "heart"
+                        | "wake"
+                        | "sample"
+                        | "echo"
+                        | "scar"
+                        | "working"
+                        | "organism"
+                        | "mineral"
+                        | "archaeology"
+                ) {
+                category.clone()
+            } else {
+                qualify(mod_id, category)
+            };
+            if category.len() > 64
+                || !category.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'_' | b':' | b'-')
+                })
+            {
+                return Err(format!(
+                    "{content_id}: invalid observation category {category}"
+                ));
+            }
+            Ok(category)
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let mut properties = Vec::new();
+    for property in &raw.properties {
+        if !VISIBLE_PROPERTIES.contains(&property.as_str()) {
+            return Err(format!(
+                "{content_id}: observation property {property} is not a qualitative public facet"
+            ));
+        }
+        if !properties.contains(property) {
+            properties.push(property.clone());
+        }
+    }
+    Ok(Some(ObservationDef {
+        categories,
+        properties,
+    }))
+}
+
+fn discovery_item_def(
+    raw: Option<&DiscoveryItemToml>,
+    mod_id: &str,
+    content_id: &str,
+) -> Result<Option<DiscoveryItemDef>, String> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    const KINDS: &[&str] = &[
+        "tuning_lens",
+        "lens_frame",
+        "field_ledger",
+        "survey_folio",
+        "artifact",
+        "calibration_plate",
+        "reference_object",
+    ];
+    if !KINDS.contains(&raw.kind.as_str()) {
+        return Err(format!(
+            "{content_id}: unknown discovery item kind {}",
+            raw.kind
+        ));
+    }
+    if raw.kind == "artifact" && raw.evidence_class.is_none() {
+        return Err(format!("{content_id}: an artifact needs an evidence_class"));
+    }
+    if raw.authored_text.len() > 16
+        || raw
+            .authored_text
+            .iter()
+            .any(|line| line.is_empty() || line.len() > 240 || line.chars().any(char::is_control))
+    {
+        return Err(format!(
+            "{content_id}: artifact phrase tables allow at most 16 bounded printable lines"
+        ));
+    }
+    let evidence_class = raw.evidence_class.as_ref().map(|class| {
+        if class.contains(':') || crate::discovery::EVIDENCE_CLASSES.contains(&class.as_str()) {
+            class.clone()
+        } else {
+            qualify(mod_id, class)
+        }
+    });
+    if raw.kind == "calibration_plate" && raw.calibration.is_none() {
+        return Err(format!(
+            "{content_id}: a calibration plate needs a calibration grade"
+        ));
+    }
+    if raw.kind == "reference_object" && raw.experiment.is_none() {
+        return Err(format!(
+            "{content_id}: a reference object needs an experiment family"
+        ));
+    }
+    Ok(Some(DiscoveryItemDef {
+        kind: raw.kind.clone(),
+        evidence_class,
+        authored_text: raw.authored_text.clone(),
+        calibration: raw.calibration,
+        experiment: raw.experiment,
+    }))
+}
+
+fn discovery_fixture_def(
+    raw: Option<&DiscoveryFixtureToml>,
+    content_id: &str,
+) -> Result<Option<DiscoveryFixtureDef>, String> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    const KINDS: &[&str] = &[
+        "survey_folio",
+        "writing_surface",
+        "experiment_apparatus",
+        "lens_assembly",
+    ];
+    if !KINDS.contains(&raw.kind.as_str())
+        || raw.experiments.len() > crate::discovery::ExperimentKind::ALL.len()
+        || raw.record_capacity > crate::discovery::SURVEY_FOLIO_RECORDS as u16
+    {
+        return Err(format!(
+            "{content_id}: invalid or over-budget discovery fixture"
+        ));
+    }
+    if raw.kind == "experiment_apparatus" && raw.experiments.is_empty() {
+        return Err(format!(
+            "{content_id}: experiment apparatus has no experiments"
+        ));
+    }
+    Ok(Some(DiscoveryFixtureDef {
+        kind: raw.kind.clone(),
+        experiments: raw.experiments.clone(),
+        record_capacity: raw.record_capacity,
+    }))
+}
+
+fn arcane_def(
+    raw: Option<&ArcaneContentToml>,
+    mod_id: &str,
+    content_id: &str,
+    registry: &crate::arcane::ResonanceRegistry,
+) -> Result<Option<ArcaneContentDef>, String> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    if raw.capacity == 0 {
+        return Err(format!("{content_id}: arcane capacity must be positive"));
+    }
+    if raw.conductivity > 1_000 || raw.stability > 1_000 {
+        return Err(format!(
+            "{content_id}: arcane conductivity and stability must be integer permille in 0..=1000"
+        ));
+    }
+    if raw.resonance.is_empty() {
+        return Err(format!(
+            "{content_id}: arcane resonance mixture is required"
+        ));
+    }
+    let mut resonance = BTreeMap::<String, u16>::new();
+    let mut total = 0u32;
+    for (name, weight) in &raw.resonance {
+        if *weight == 0 {
+            return Err(format!("{content_id}: resonance {name} has zero weight"));
+        }
+        let name = qualify(mod_id, name);
+        if !registry.definitions.contains_key(&name) {
+            return Err(format!("{content_id}: unknown resonance {name}"));
+        }
+        total = total
+            .checked_add(u32::from(*weight))
+            .ok_or_else(|| format!("{content_id}: resonance weights overflow"))?;
+        resonance.insert(name, *weight);
+    }
+    if total == 0 || total > u32::from(u16::MAX) {
+        return Err(format!(
+            "{content_id}: resonance weight sum must fit a positive u16"
+        ));
+    }
+    Ok(Some(ArcaneContentDef {
+        capacity: raw.capacity,
+        conductivity_permille: raw.conductivity,
+        stability_permille: raw.stability,
+        resonance,
+        on_destroy: raw.on_destroy,
+    }))
+}
+
+fn arcane_ecology_def(
+    raw: Option<&ArcaneEcologyToml>,
+    mod_id: &str,
+    content_id: &str,
+    registry: &crate::arcane::ResonanceRegistry,
+) -> Result<Option<ArcaneEcologyDef>, String> {
+    const HABITAT_PREDICATES: &[&str] = &[
+        "arid_spring",
+        "cave",
+        "cool_night",
+        "cool_or_temperate",
+        "dross_margin",
+        "evaporite_host",
+        "exposed",
+        "fertile",
+        "fire_disturbed",
+        "freshwater_margin",
+        "heartshadow",
+        "host_rock",
+        "mafic_host",
+        "marine",
+        "metamorphic_host",
+        "moist_cave",
+        "nutrient_rich",
+        "old_forest",
+        "old_organic",
+        "permanent_cold",
+        "rocky_soil",
+        "sedimentary_host",
+        "storm_exposed",
+        "subsurface",
+        "swamp",
+        "temperate_ground",
+        "warm_wet",
+        "wetland",
+    ];
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    if raw.roles.is_empty() {
+        return Err(format!(
+            "{content_id}: arcane ecology needs at least one causal role"
+        ));
+    }
+    let unique = raw
+        .roles
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    if unique.len() != raw.roles.len() {
+        return Err(format!(
+            "{content_id}: arcane ecology roles contain duplicates"
+        ));
+    }
+    if raw.habitat.is_empty()
+        || raw.habitat.iter().any(|tag| {
+            tag.is_empty()
+                || tag.len() > 48
+                || !tag
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+        })
+    {
+        return Err(format!(
+            "{content_id}: arcane ecology requires lowercase ordinary habitat predicates"
+        ));
+    }
+    if let Some(unknown) = raw
+        .habitat
+        .iter()
+        .find(|tag| !HABITAT_PREDICATES.contains(&tag.as_str()))
+    {
+        return Err(format!(
+            "{content_id}: unknown or unreachable ecology habitat predicate {unknown}"
+        ));
+    }
+    if raw.charge_capacity == 0
+        || raw.carrying_capacity == 0
+        || raw.carrying_capacity > 4_096
+        || raw.min_stability > raw.max_stability
+        || raw.max_stability > 1_000
+        || raw.min_richness > 1_000
+    {
+        return Err(format!(
+            "{content_id}: ecology capacity/carrying/stability/richness bounds are invalid"
+        ));
+    }
+    if !raw.seasons.into_iter().any(|active| active) {
+        return Err(format!("{content_id}: ecology has no active growth season"));
+    }
+    if raw.resonance.is_empty() {
+        return Err(format!(
+            "{content_id}: ecology requires a resonance mixture"
+        ));
+    }
+    let mut resonance = BTreeMap::new();
+    let mut total = 0u32;
+    for (name, weight) in &raw.resonance {
+        let qualified = qualify(mod_id, name);
+        if *weight == 0 || !registry.definitions.contains_key(&qualified) {
+            return Err(format!(
+                "{content_id}: unknown or zero-weight ecology resonance {qualified}"
+            ));
+        }
+        if !crate::arcane::BASE_RESONANCES.contains(&qualified.as_str()) {
+            return Err(format!(
+                "{content_id}: ecology resonance {qualified} has no planetary geographic band"
+            ));
+        }
+        total = total
+            .checked_add(u32::from(*weight))
+            .ok_or_else(|| format!("{content_id}: ecology resonance weights overflow"))?;
+        resonance.insert(qualified, *weight);
+    }
+    if total == 0 || total > u32::from(u16::MAX) {
+        return Err(format!(
+            "{content_id}: ecology resonance mixture is invalid"
+        ));
+    }
+    match raw.kind {
+        ArcaneEcologyKind::Organism => {
+            if raw.reproduction == ReproductionMode::None
+                || raw.water_per_day_hu == 0
+                || raw.nutrient_per_day == 0
+            {
+                return Err(format!(
+                    "{content_id}: organism growth needs reproduction, nutrients, and a declared water demand"
+                ));
+            }
+            if raw.crystal_stages != 0 || raw.preserving_tool_tier != 0 {
+                return Err(format!(
+                    "{content_id}: only crystals may declare stages or a preserving tool tier"
+                ));
+            }
+        }
+        ArcaneEcologyKind::Crystal => {
+            if raw.reproduction != ReproductionMode::Bud
+                || !(2..=8).contains(&raw.crystal_stages)
+                || raw.preserving_tool_tier == 0
+                || raw.uptake_per_day == 0
+            {
+                return Err(format!(
+                    "{content_id}: crystals need bud reproduction, 2..=8 exact stages, uptake, and a preserving tool tier"
+                ));
+            }
+        }
+        ArcaneEcologyKind::FiniteMineral => {
+            if raw.reproduction != ReproductionMode::None
+                || raw.uptake_per_day != 0
+                || raw.release_per_day != 0
+                || raw.crystal_stages != 0
+            {
+                return Err(format!(
+                    "{content_id}: finite minerals cannot reproduce, grow, release, or declare crystal stages"
+                ));
+            }
+        }
+    }
+    if raw.uptake_per_day == 0
+        && unique.contains(&EcologyRole::Gatherer)
+        && raw.kind != ArcaneEcologyKind::FiniteMineral
+    {
+        return Err(format!(
+            "{content_id}: a gatherer cannot have free zero-uptake growth"
+        ));
+    }
+    if raw.source == EcologySource::Dross && !unique.contains(&EcologyRole::Transformer) {
+        return Err(format!(
+            "{content_id}: dross uptake requires the transformer role"
+        ));
+    }
+    Ok(Some(ArcaneEcologyDef {
+        roles: raw.roles.clone(),
+        kind: raw.kind,
+        habitat: raw.habitat.clone(),
+        charge_capacity: raw.charge_capacity,
+        uptake_per_day: raw.uptake_per_day,
+        release_per_day: raw.release_per_day,
+        source: raw.source,
+        resonance,
+        dross_tolerance: raw.dross_tolerance,
+        water_per_day_hu: raw.water_per_day_hu,
+        nutrient_per_day: raw.nutrient_per_day,
+        reproduction: raw.reproduction,
+        seasons: raw.seasons,
+        carrying_capacity: raw.carrying_capacity,
+        harvest: raw.harvest,
+        regrowth_days: raw.regrowth_days,
+        min_stability_permille: raw.min_stability,
+        max_stability_permille: raw.max_stability,
+        min_richness_permille: raw.min_richness,
+        crystal_stages: raw.crystal_stages,
+        preserving_tool_tier: raw.preserving_tool_tier,
+    }))
+}
+
 #[derive(Deserialize, Clone)]
 struct CropToml {
     stages: u8,
@@ -782,7 +1396,11 @@ struct ItemToml {
     #[serde(default)]
     shears: bool,
     #[serde(default)]
-    charm: Option<String>,
+    charm: Option<CharmToml>,
+    #[serde(default)]
+    wand_component: Option<crate::implements::WandComponentDef>,
+    #[serde(default)]
+    implement: Option<crate::implements::ImplementItemDef>,
     #[serde(default)]
     tablet: bool,
     #[serde(default)]
@@ -804,6 +1422,195 @@ struct ItemToml {
     materials: MaterialVector,
     #[serde(default)]
     salvage: Option<SalvageToml>,
+    #[serde(default)]
+    arcane: Option<ArcaneContentToml>,
+    #[serde(default)]
+    arcane_ecology: Option<ArcaneEcologyToml>,
+    #[serde(default)]
+    observation: Option<ObservationToml>,
+    #[serde(default)]
+    discovery: Option<DiscoveryItemToml>,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(untagged)]
+enum CharmToml {
+    Legacy(String),
+    Detailed(crate::implements::CharmDef),
+}
+
+impl CharmToml {
+    fn effect_id(&self) -> String {
+        match self {
+            Self::Legacy(effect) => effect.clone(),
+            Self::Detailed(definition) => definition.effect.id().into(),
+        }
+    }
+
+    fn definition(&self) -> Option<crate::implements::CharmDef> {
+        match self {
+            Self::Legacy(effect) => {
+                let effect = match effect.as_str() {
+                    "quiet" => crate::implements::CharmEffect::Quiet,
+                    "bark" => crate::implements::CharmEffect::Bark,
+                    "hunger" => crate::implements::CharmEffect::Hunger,
+                    _ => return None,
+                };
+                Some(crate::implements::CharmDef {
+                    effect,
+                    charge_per_trigger: match effect {
+                        crate::implements::CharmEffect::Quiet => 2,
+                        crate::implements::CharmEffect::Bark => 4,
+                        crate::implements::CharmEffect::Hunger => 1,
+                    },
+                    capacity: 4_096,
+                    stability: 800,
+                    dross_per_transfer: 25,
+                })
+            }
+            Self::Detailed(definition) => Some(definition.clone()),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct ObservationToml {
+    #[serde(default)]
+    categories: Vec<String>,
+    #[serde(default)]
+    properties: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct DiscoveryItemToml {
+    kind: String,
+    #[serde(default)]
+    evidence_class: Option<String>,
+    #[serde(default)]
+    authored_text: Vec<String>,
+    #[serde(default)]
+    calibration: Option<crate::discovery::CalibrationGrade>,
+    #[serde(default)]
+    experiment: Option<crate::discovery::ExperimentKind>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct DiscoveryFixtureToml {
+    kind: String,
+    #[serde(default)]
+    experiments: Vec<crate::discovery::ExperimentKind>,
+    #[serde(default)]
+    record_capacity: u16,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct ArcaneContentToml {
+    capacity: u64,
+    conductivity: u16,
+    stability: u16,
+    resonance: BTreeMap<String, u16>,
+    on_destroy: ArcaneDisposition,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct ArcaneEcologyToml {
+    roles: Vec<EcologyRole>,
+    #[serde(default = "default_ecology_kind")]
+    kind: ArcaneEcologyKind,
+    habitat: Vec<String>,
+    charge_capacity: u64,
+    uptake_per_day: u32,
+    #[serde(default)]
+    release_per_day: u32,
+    #[serde(default = "default_ecology_source")]
+    source: EcologySource,
+    resonance: BTreeMap<String, u16>,
+    dross_tolerance: u32,
+    #[serde(default)]
+    water_per_day_hu: u32,
+    #[serde(default)]
+    nutrient_per_day: u16,
+    #[serde(default = "default_reproduction")]
+    reproduction: ReproductionMode,
+    #[serde(default = "all_seasons")]
+    seasons: [bool; 4],
+    carrying_capacity: u16,
+    harvest: EcologyHarvestClass,
+    regrowth_days: u16,
+    #[serde(default)]
+    min_stability: u16,
+    #[serde(default = "permille")]
+    max_stability: u16,
+    #[serde(default)]
+    min_richness: u16,
+    #[serde(default)]
+    crystal_stages: u8,
+    #[serde(default)]
+    preserving_tool_tier: u8,
+}
+
+fn default_ecology_kind() -> ArcaneEcologyKind {
+    ArcaneEcologyKind::Organism
+}
+
+fn default_ecology_source() -> EcologySource {
+    EcologySource::Ambient
+}
+
+fn default_reproduction() -> ReproductionMode {
+    ReproductionMode::Seed
+}
+
+fn all_seasons() -> [bool; 4] {
+    [true; 4]
+}
+
+fn permille() -> u16 {
+    1_000
+}
+
+#[derive(Deserialize, Clone)]
+struct ResonanceToml {
+    id: String,
+    #[serde(default)]
+    label: Option<String>,
+}
+
+#[derive(Deserialize, Clone)]
+struct ArcaneSiteToml {
+    id: String,
+    #[serde(default)]
+    requires: Vec<String>,
+    #[serde(default = "default_capacity_factor")]
+    capacity_factor: f32,
+    #[serde(default)]
+    resonance: BTreeMap<String, u16>,
+    #[serde(default = "default_arcane_site_rarity")]
+    rarity: f32,
+    #[serde(default = "default_arcane_site_radius")]
+    radius_cells: u16,
+}
+
+fn default_capacity_factor() -> f32 {
+    1.0
+}
+
+fn default_arcane_site_rarity() -> f32 {
+    0.01
+}
+
+fn default_arcane_site_radius() -> u16 {
+    2
+}
+
+#[derive(Deserialize, Default)]
+struct ArcaneFile {
+    #[serde(default)]
+    schema_version: Option<u32>,
+    #[serde(default)]
+    resonance: Vec<ResonanceToml>,
+    #[serde(default, rename = "arcane_site")]
+    sites: Vec<ArcaneSiteToml>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -915,6 +1722,8 @@ struct AnimalToml {
     fierce: bool,
     #[serde(default)]
     vehicle: bool,
+    #[serde(default)]
+    arcane: Option<ArcaneContentToml>,
 }
 
 #[derive(Deserialize, Clone, Default)]
@@ -947,6 +1756,8 @@ struct RecipeToml {
     output: String,
     #[serde(default)]
     count: Option<u32>,
+    #[serde(default)]
+    station: Option<String>,
     #[serde(default)]
     loss: MaterialVector,
     #[serde(default)]
@@ -1173,6 +1984,10 @@ struct RawMod {
     animals: Vec<AnimalToml>,
     structures: Vec<StructureToml>,
     loots: Vec<LootToml>,
+    resonances: Vec<ResonanceToml>,
+    arcane_sites: Vec<ArcaneSiteToml>,
+    workings: Vec<crate::workings::RawWorkingDef>,
+    preparations: Vec<crate::alchemy::RawPreparationDef>,
 }
 
 // ---------------- loading ----------------
@@ -1185,6 +2000,8 @@ const BASE_FEATURES: &str = include_str!("../base/features.toml");
 const BASE_ALIASES: &str = include_str!("../base/aliases.toml");
 const BASE_ANIMALS: &str = include_str!("../base/animals.toml");
 const BASE_STRUCTURES: &str = include_str!("../base/structures.toml");
+const BASE_WORKINGS: &str = include_str!("../base/workings.toml");
+const BASE_PREPARATIONS: &str = include_str!("../base/preparations.toml");
 pub const WORLD_API_VERSION: u32 = 2;
 
 fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
@@ -1217,6 +2034,33 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         toml::from_str(&read("animals.toml")).map_err(|e| format!("animals.toml: {e}"))?;
     let structures: StructuresFile =
         toml::from_str(&read("structures.toml")).map_err(|e| format!("structures.toml: {e}"))?;
+    let arcane: ArcaneFile =
+        toml::from_str(&read("arcane.toml")).map_err(|e| format!("arcane.toml: {e}"))?;
+    if arcane.schema_version.is_some_and(|version| version != 1) {
+        return Err("arcane.toml: schema_version must be 1".into());
+    }
+    let workings: crate::workings::WorkingsFile =
+        toml::from_str(&read("workings.toml")).map_err(|e| format!("workings.toml: {e}"))?;
+    if workings
+        .schema_version
+        .is_some_and(|version| version != crate::workings::WORKINGS_SCHEMA_VERSION)
+    {
+        return Err(format!(
+            "workings.toml: schema_version must be {}",
+            crate::workings::WORKINGS_SCHEMA_VERSION
+        ));
+    }
+    let preparations: crate::alchemy::PreparationsFile = toml::from_str(&read("preparations.toml"))
+        .map_err(|e| format!("preparations.toml: {e}"))?;
+    if preparations
+        .schema_version
+        .is_some_and(|version| version != crate::alchemy::PREPARATIONS_SCHEMA_VERSION)
+    {
+        return Err(format!(
+            "preparations.toml: schema_version must be {}",
+            crate::alchemy::PREPARATIONS_SCHEMA_VERSION
+        ));
+    }
     if !features.feature.is_empty() && m.retrogen.is_none() {
         return Err(
             "mod.toml: a worldgen feature requires retrogen = \"untouched_host_only\", \
@@ -1251,6 +2095,10 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         animals: animals.animal,
         structures: structures.structure,
         loots: structures.loot,
+        resonances: arcane.resonance,
+        arcane_sites: arcane.sites,
+        workings: workings.working,
+        preparations: preparations.preparation,
     })
 }
 
@@ -1263,6 +2111,10 @@ fn base_mod() -> RawMod {
     let aliases: AliasesFile = toml::from_str(BASE_ALIASES).expect("base aliases.toml");
     let animals: AnimalsFile = toml::from_str(BASE_ANIMALS).expect("base animals.toml");
     let structures: StructuresFile = toml::from_str(BASE_STRUCTURES).expect("base structures.toml");
+    let workings: crate::workings::WorkingsFile =
+        toml::from_str(BASE_WORKINGS).expect("base workings.toml");
+    let preparations: crate::alchemy::PreparationsFile =
+        toml::from_str(BASE_PREPARATIONS).expect("base preparations.toml");
     RawMod {
         info: ModInfo {
             id: "base".into(),
@@ -1292,6 +2144,10 @@ fn base_mod() -> RawMod {
         animals: animals.animal,
         structures: structures.structure,
         loots: structures.loot,
+        resonances: Vec::new(),
+        arcane_sites: Vec::new(),
+        workings: workings.working,
+        preparations: preparations.preparation,
     }
 }
 
@@ -1397,6 +2253,10 @@ impl RemoveStable for Vec<RawMod> {
             features: vec![],
             tags: vec![],
             aliases: vec![],
+            resonances: vec![],
+            arcane_sites: vec![],
+            workings: vec![],
+            preparations: vec![],
         };
         std::mem::replace(&mut self[idx], dummy)
     }
@@ -1429,7 +2289,154 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         structures: Vec::new(),
         loots: HashMap::new(),
         material_errors: Vec::new(),
+        arcane_registry: crate::arcane::ResonanceRegistry::base(),
+        arcane_sites: Vec::new(),
+        arcane_ecology: BTreeMap::new(),
+        workings: BTreeMap::new(),
+        preparations: BTreeMap::new(),
+        arcane_errors: Vec::new(),
     };
+    for raw in &raws {
+        for resonance in &raw.resonances {
+            let id = qualify(&raw.info.id, &resonance.id);
+            if id.len() > 96
+                || !id.contains(':')
+                || !id.bytes().all(|byte| {
+                    byte.is_ascii_lowercase() || byte.is_ascii_digit() || b":_-".contains(&byte)
+                })
+            {
+                reg.arcane_errors.push(format!(
+                    "{id}: resonance id must be a lowercase qualified content id"
+                ));
+                continue;
+            }
+            if reg.arcane_registry.definitions.contains_key(&id) {
+                reg.arcane_errors
+                    .push(format!("{id}: duplicate resonance identity"));
+                continue;
+            }
+            reg.arcane_registry.definitions.insert(
+                id.clone(),
+                crate::arcane::ResonanceDefinition {
+                    id,
+                    label: resonance
+                        .label
+                        .clone()
+                        .unwrap_or_else(|| resonance.id.clone()),
+                    provider: raw.info.id.clone(),
+                    active: true,
+                },
+            );
+        }
+    }
+    // Working shells resolve only after every provider's resonance identities
+    // exist. A bad shell is never installed, and the shared content error gate
+    // prevents authoritative worlds from opening with only part of a pack.
+    for raw in &raws {
+        for working in &raw.workings {
+            match crate::workings::WorkingDef::from_raw(&raw.info.id, working.clone()) {
+                Ok(definition) => {
+                    if !reg
+                        .arcane_registry
+                        .definitions
+                        .contains_key(&definition.focus)
+                    {
+                        reg.arcane_errors.push(format!(
+                            "{}: unknown focus resonance {}",
+                            definition.id, definition.focus
+                        ));
+                    } else if reg.workings.contains_key(&definition.id) {
+                        reg.arcane_errors
+                            .push(format!("{}: duplicate working identity", definition.id));
+                    } else {
+                        reg.workings.insert(definition.id.clone(), definition);
+                    }
+                }
+                Err(error) => reg.arcane_errors.push(error.to_string()),
+            }
+        }
+    }
+    const SITE_REQUIREMENTS: [&str; 9] = [
+        "fault",
+        "carbonate_rock",
+        "groundwater",
+        "volcanic",
+        "river",
+        "coast",
+        "old_crust",
+        "heart",
+        "wetland",
+    ];
+    for raw in &raws {
+        for site in &raw.arcane_sites {
+            let id = qualify(&raw.info.id, &site.id);
+            let mut invalid = false;
+            if id.len() > 96
+                || !id.contains(':')
+                || !id.bytes().all(|byte| {
+                    byte.is_ascii_lowercase() || byte.is_ascii_digit() || b":_-".contains(&byte)
+                })
+            {
+                reg.arcane_errors.push(format!(
+                    "{id}: arcane site id must be a lowercase qualified content id"
+                ));
+                invalid = true;
+            }
+            if reg.arcane_sites.iter().any(|rule| rule.id == id) {
+                reg.arcane_errors
+                    .push(format!("{id}: duplicate arcane site identity"));
+                invalid = true;
+            }
+            for requirement in &site.requires {
+                if !SITE_REQUIREMENTS.contains(&requirement.as_str()) {
+                    reg.arcane_errors.push(format!(
+                        "{id}: unknown arcane site requirement {requirement}"
+                    ));
+                    invalid = true;
+                }
+            }
+            if !site.capacity_factor.is_finite()
+                || !(0.25..=4.0).contains(&site.capacity_factor)
+                || !site.rarity.is_finite()
+                || !(0.0..=1.0).contains(&site.rarity)
+                || site.radius_cells == 0
+                || site.radius_cells > 64
+            {
+                reg.arcane_errors.push(format!(
+                    "{id}: capacity_factor must be 0.25..=4, rarity 0..=1, and radius_cells 1..=64"
+                ));
+                invalid = true;
+            }
+            let mut resonance = [0u16; 6];
+            for (name, weight) in &site.resonance {
+                let qualified = qualify(&raw.info.id, name);
+                let Some(slot) = crate::arcane::BASE_RESONANCES
+                    .iter()
+                    .position(|candidate| *candidate == qualified)
+                else {
+                    reg.arcane_errors.push(format!(
+                        "{id}: geography genesis currently accepts only the six base resonances; found {qualified}"
+                    ));
+                    invalid = true;
+                    continue;
+                };
+                resonance[slot] = *weight;
+            }
+            if invalid {
+                continue;
+            }
+            reg.arcane_sites.push(ArcaneSiteRule {
+                id,
+                provider: raw.info.id.clone(),
+                requires: site.requires.clone(),
+                capacity_factor_permille: (site.capacity_factor * 1_000.0).round() as u16,
+                base_resonance_bias: resonance,
+                rarity_per_million: (site.rarity * 1_000_000.0).round() as u32,
+                radius_cells: site.radius_cells,
+                retrogen: raw.info.retrogen.unwrap_or(RetrogenPolicy::NoRetrogen),
+            });
+        }
+    }
     let mut tex_slots: HashMap<String, u16> = crate::atlas::builtin_slots();
     let mut next_slot: u16 = crate::atlas::FIRST_FREE_SLOT;
 
@@ -1470,6 +2477,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         material_class: MaterialClass::Renewable,
         materials: MaterialVector::new(),
         dismantles_to: None,
+        arcane: None,
+        arcane_ecology: None,
+        observation: None,
+        discovery_fixture: None,
     };
     reg.block_by_name.insert(air.name.clone(), BlockId(0));
     reg.blocks.push(air);
@@ -1592,6 +2603,56 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 }
                 ft
             });
+            let arcane =
+                match arcane_def(b.arcane.as_ref(), &raw.info.id, &full, &reg.arcane_registry) {
+                    Ok(definition) => definition,
+                    Err(error) => {
+                        errs.push(error.clone());
+                        reg.arcane_errors.push(error);
+                        None
+                    }
+                };
+            let arcane_ecology = match arcane_ecology_def(
+                b.arcane_ecology.as_ref(),
+                &raw.info.id,
+                &full,
+                &reg.arcane_registry,
+            ) {
+                Ok(definition) => definition,
+                Err(error) => {
+                    errs.push(error.clone());
+                    reg.arcane_errors.push(error);
+                    None
+                }
+            };
+            let mut observation = match observation_def(b.observation.as_ref(), &raw.info.id, &full)
+            {
+                Ok(definition) => definition,
+                Err(error) => {
+                    errs.push(error);
+                    None
+                }
+            };
+            if observation.is_none() && b.interaction.as_deref() == Some("heart") {
+                observation = Some(ObservationDef {
+                    categories: vec!["heart".into()],
+                    properties: vec![
+                        "strength".into(),
+                        "stability".into(),
+                        "resonance".into(),
+                        "dross".into(),
+                        "condition".into(),
+                    ],
+                });
+            }
+            let discovery_fixture = match discovery_fixture_def(b.discovery_fixture.as_ref(), &full)
+            {
+                Ok(definition) => definition,
+                Err(error) => {
+                    errs.push(error);
+                    None
+                }
+            };
             let id = BlockId(reg.blocks.len() as u16);
             let is_fluid = b.water.is_some() || b.lava.is_some();
             reg.blocks.push(BlockDef {
@@ -1651,7 +2712,14 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     .unwrap_or_else(|| inferred_material_class(&full)),
                 materials: b.materials.clone(),
                 dismantles_to: None,
+                arcane: arcane.clone(),
+                arcane_ecology: arcane_ecology.clone(),
+                observation: observation.clone(),
+                discovery_fixture: discovery_fixture.clone(),
             });
+            if let Some(ecology) = &arcane_ecology {
+                reg.arcane_ecology.insert(full.clone(), ecology.clone());
+            }
             reg.block_by_name.insert(full.clone(), id);
             if let Some(bd) = &b.bonus_drop {
                 pending_bonus.push((raw.info.id.clone(), id.0 as usize, bd.clone()));
@@ -1729,7 +2797,15 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     name: full.clone(),
                     label: reg.blocks[id.0 as usize].label.clone(),
                     icon: icon_slot,
-                    max_stack: 64,
+                    max_stack: if arcane.is_some()
+                        || discovery_fixture
+                            .as_ref()
+                            .is_some_and(|fixture| fixture.kind == "survey_folio")
+                    {
+                        1
+                    } else {
+                        64
+                    },
                     tool: None,
                     durability: 0,
                     places: Some(id),
@@ -1741,6 +2817,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     bedroll: false,
                     shears: false,
                     charm: None,
+                    charm_def: None,
+                    wand_component: None,
+                    implement: None,
                     tablet: false,
                     striker: false,
                     creative_only: false,
@@ -1755,6 +2834,18 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                         .unwrap_or_else(|| inferred_material_class(&full)),
                     salvage: None,
                     broken_into: None,
+                    arcane,
+                    arcane_ecology,
+                    observation,
+                    discovery: discovery_fixture.as_ref().and_then(|fixture| {
+                        (fixture.kind == "survey_folio").then(|| DiscoveryItemDef {
+                            kind: "survey_folio".into(),
+                            evidence_class: None,
+                            authored_text: Vec::new(),
+                            calibration: None,
+                            experiment: None,
+                        })
+                    }),
                 });
                 reg.item_by_name.insert(full, iid);
             }
@@ -1792,7 +2883,79 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 .armor
                 .as_ref()
                 .and_then(|a| ArmorSlot::parse(&a.slot).map(|s| (s, a.points)));
-            let one_only = tool.is_some() || it.bow.is_some() || armor.is_some();
+            let arcane = match arcane_def(
+                it.arcane.as_ref(),
+                &raw.info.id,
+                &full,
+                &reg.arcane_registry,
+            ) {
+                Ok(definition) => definition,
+                Err(error) => {
+                    errs.push(error.clone());
+                    reg.arcane_errors.push(error);
+                    None
+                }
+            };
+            let arcane_ecology = match arcane_ecology_def(
+                it.arcane_ecology.as_ref(),
+                &raw.info.id,
+                &full,
+                &reg.arcane_registry,
+            ) {
+                Ok(definition) => definition,
+                Err(error) => {
+                    errs.push(error.clone());
+                    reg.arcane_errors.push(error);
+                    None
+                }
+            };
+            let observation = match observation_def(it.observation.as_ref(), &raw.info.id, &full) {
+                Ok(definition) => definition,
+                Err(error) => {
+                    errs.push(error);
+                    None
+                }
+            };
+            let discovery = match discovery_item_def(it.discovery.as_ref(), &raw.info.id, &full) {
+                Ok(definition) => definition,
+                Err(error) => {
+                    errs.push(error);
+                    None
+                }
+            };
+            let charm_def = it.charm.as_ref().and_then(CharmToml::definition);
+            if let Some(raw_charm) = &it.charm {
+                match &charm_def {
+                    Some(definition) => {
+                        if let Err(error) = crate::implements::validate_charm(&full, definition) {
+                            let error = error.to_string();
+                            errs.push(error.clone());
+                            reg.arcane_errors.push(error);
+                        }
+                    }
+                    None => {
+                        let error =
+                            format!("{full}: unknown charm effect {}", raw_charm.effect_id());
+                        errs.push(error.clone());
+                        reg.arcane_errors.push(error);
+                    }
+                }
+            }
+            if let Some(component) = &it.wand_component
+                && let Err(error) = crate::implements::validate_component(&full, component)
+            {
+                let error = error.to_string();
+                errs.push(error.clone());
+                reg.arcane_errors.push(error);
+            }
+            let one_only = tool.is_some()
+                || it.bow.is_some()
+                || armor.is_some()
+                || arcane.is_some()
+                || discovery.is_some()
+                || charm_def.is_some()
+                || it.wand_component.is_some()
+                || it.implement.is_some();
             reg.items.push(ItemDef {
                 name: full.clone(),
                 label: it.name.clone().unwrap_or_else(|| it.id.clone()),
@@ -1815,7 +2978,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 armor,
                 bedroll: it.bedroll,
                 shears: it.shears,
-                charm: it.charm.clone(),
+                charm: it.charm.as_ref().map(CharmToml::effect_id),
+                charm_def,
+                wand_component: it.wand_component.clone(),
+                implement: it.implement.clone(),
                 tablet: it.tablet,
                 striker: it.striker,
                 creative_only: false,
@@ -1830,7 +2996,14 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     .unwrap_or_else(|| inferred_material_class(&full)),
                 salvage: salvage_def(&it.salvage, &mut errs, &full),
                 broken_into: None,
+                arcane,
+                arcane_ecology: arcane_ecology.clone(),
+                observation,
+                discovery,
             });
+            if let Some(ecology) = arcane_ecology {
+                reg.arcane_ecology.entry(full.clone()).or_insert(ecology);
+            }
             reg.item_by_name.insert(full, iid);
         }
         for r in &raw.recipes {
@@ -1948,6 +3121,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         material_class: MaterialClass::TransformativeFinite,
         materials: MaterialVector::new(),
         dismantles_to: None,
+        arcane: None,
+        arcane_ecology: None,
+        observation: None,
+        discovery_fixture: None,
     });
     reg.block_by_name.insert("base:unknown".into(), unk);
     reg.unknown_block = unk;
@@ -2197,6 +3374,14 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             }
             habitat
         });
+        let full = qualify(&modid, &a.id);
+        let arcane = match arcane_def(a.arcane.as_ref(), &modid, &full, &reg.arcane_registry) {
+            Ok(definition) => definition,
+            Err(error) => {
+                reg.arcane_errors.push(error);
+                None
+            }
+        };
         reg.animals.push(AnimalDef {
             name: full,
             label: a.name.clone().unwrap_or_else(|| a.id.clone()),
@@ -2238,6 +3423,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             grazes: a.grazes,
             prey: Vec::new(), // resolved after every species exists
             fierce: a.fierce,
+            arcane,
             projectile: a.projectile.as_ref().map(|pr| ProjectileDef {
                 tile: proj_tile.unwrap_or(crate::atlas::UNKNOWN_SLOT),
                 damage: pr.damage,
@@ -2284,7 +3470,16 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             reg.block_id(&qualify(modid, &it_toml.1))
                 .or_else(|| reg.block_id(&it_toml.1)),
         ) {
-            reg.items[item.0 as usize].places = Some(block);
+            let inherited_ecology = reg.block(block).arcane_ecology.clone();
+            let item_name = reg.item(item).name.clone();
+            let definition = &mut reg.items[item.0 as usize];
+            definition.places = Some(block);
+            if definition.arcane_ecology.is_none() {
+                definition.arcane_ecology = inherited_ecology.clone();
+            }
+            if let Some(ecology) = inherited_ecology {
+                reg.arcane_ecology.entry(item_name).or_insert(ecology);
+            }
         }
     }
     for (modid, r) in pending_recipes {
@@ -2336,6 +3531,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 pattern,
                 output: out,
                 count: r.count.unwrap_or(1),
+                station: r.station.clone(),
                 loss: r.loss.clone(),
                 byproducts: r
                     .byproducts
@@ -2427,7 +3623,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             name: format!("{name}/place"),
             label,
             icon,
-            max_stack: 64,
+            max_stack: if d.arcane.is_some() { 1 } else { 64 },
             tool: None,
             durability: 0,
             places: Some(BlockId(bid)),
@@ -2439,6 +3635,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             bedroll: false,
             shears: false,
             charm: None,
+            charm_def: None,
+            wand_component: None,
+            implement: None,
             tablet: false,
             striker: false,
             creative_only: true,
@@ -2451,8 +3650,41 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             material_class: d.material_class,
             salvage: None,
             broken_into: None,
+            arcane: d.arcane.clone(),
+            arcane_ecology: d.arcane_ecology.clone(),
+            observation: d.observation.clone(),
+            discovery: None,
         });
         reg.item_by_name.insert(format!("{name}/place"), iid);
+    }
+
+    // Preparations resolve after items so their physical solvent, ingredient,
+    // vessel, residue, and output identities can all be proven. Invalid data
+    // never installs a partial effect shell.
+    for raw in &raws {
+        for preparation in &raw.preparations {
+            if reg.preparations.len() >= crate::alchemy::MAX_PREPARATION_DEFINITIONS {
+                reg.arcane_errors.push(format!(
+                    "{}: preparation registry exceeds its {}-definition safety bound",
+                    raw.info.id,
+                    crate::alchemy::MAX_PREPARATION_DEFINITIONS
+                ));
+                continue;
+            }
+            match crate::alchemy::PreparationDef::from_raw(&raw.info.id, preparation.clone()) {
+                Ok(definition) => {
+                    if reg.preparations.contains_key(&definition.id) {
+                        reg.arcane_errors
+                            .push(format!("{}: duplicate preparation identity", definition.id));
+                    } else if let Err(error) = definition.validate_registry(&reg) {
+                        reg.arcane_errors.push(error.to_string());
+                    } else {
+                        reg.preparations.insert(definition.id.clone(), definition);
+                    }
+                }
+                Err(error) => reg.arcane_errors.push(error.to_string()),
+            }
+        }
     }
 
     reconcile_material_definitions(&mut reg);
@@ -2611,6 +3843,24 @@ fn reconcile_material_definitions(reg: &mut Registry) {
         }
     }
 
+    // The assembly bench changes three physical components into one composite
+    // without using the ordinary crafting graph (the Wellglass owner must
+    // survive). Give the completed lens exactly the frame + Echo Slate
+    // constituents so the finite-material audit sees a relabel, not a sink.
+    if let (Some(frame), Some(slate), Some(mount), Some(lens)) = (
+        reg.item_id("base:tuning_lens_frame"),
+        reg.item_id("base:echo_slate"),
+        reg.item_id("base:tuning_lens_mount"),
+        reg.item_id("base:tuning_lens"),
+    ) {
+        let mut materials = reg.item(frame).materials.clone();
+        add_materials(&mut materials, &reg.item(slate).materials, 1);
+        reg.items[mount.0 as usize].materials = materials.clone();
+        reg.items[mount.0 as usize].materials_declared = true;
+        reg.items[lens.0 as usize].materials = materials;
+        reg.items[lens.0 as usize].materials_declared = true;
+    }
+
     for item in &mut reg.items {
         if !item.materials.is_empty() && item.salvage.is_none() {
             // Food reuses the durability field as a freshness clock. It is a
@@ -2631,6 +3881,77 @@ fn reconcile_material_definitions(reg: &mut Registry) {
 
     register_salvage_content(reg);
     validate_material_graph(reg);
+    validate_arcane_graph(reg);
+    validate_arcane_ecology_graph(reg);
+}
+
+fn validate_arcane_ecology_graph(reg: &mut Registry) {
+    let mut errors = Vec::new();
+    let mut base_roles = BTreeMap::<EcologyRole, usize>::new();
+    for block in &reg.blocks {
+        let Some(ecology) = &block.arcane_ecology else {
+            continue;
+        };
+        if block.arcane.is_none() {
+            errors.push(format!(
+                "{}: magical ecology needs an arcane destruction disposition",
+                block.name
+            ));
+        }
+        if ecology.charge_capacity > block.arcane.as_ref().map_or(0, |arcane| arcane.capacity) {
+            errors.push(format!(
+                "{}: ecology capacity exceeds the block's conserved Current capacity",
+                block.name
+            ));
+        }
+        if block.name.starts_with("base:") && ecology.kind != ArcaneEcologyKind::FiniteMineral {
+            for role in &ecology.roles {
+                *base_roles.entry(*role).or_default() += 1;
+            }
+        }
+        if block.harvest.is_some() {
+            errors.push(format!(
+                "{}: ecology harvest cannot also use the ordinary repeatable block-harvest path",
+                block.name
+            ));
+        }
+        if ecology.kind == ArcaneEcologyKind::FiniteMineral
+            && (block.material_class != MaterialClass::GeologicallyFinite
+                || block.materials.is_empty()
+                || !reg
+                    .ores
+                    .iter()
+                    .any(|ore| ore.block == reg.block_by_name[&block.name]))
+        {
+            errors.push(format!(
+                "{}: finite resonant geology needs a finite material identity and deposit rule",
+                block.name
+            ));
+        }
+        if ecology.kind == ArcaneEcologyKind::Crystal && (block.drops.is_none() || block.cross) {
+            errors.push(format!(
+                "{}: a regenerative crystal needs a physical shard drop and cluster block",
+                block.name
+            ));
+        }
+    }
+    for required in [
+        EcologyRole::Gatherer,
+        EcologyRole::Reservoir,
+        EcologyRole::Conductor,
+        EcologyRole::Transformer,
+        EcologyRole::Indicator,
+        EcologyRole::Stabilizer,
+        EcologyRole::Catalyst,
+    ] {
+        if base_roles.get(&required).copied().unwrap_or(0) < 2 {
+            errors.push(format!(
+                "base magical ecology needs two reachable renewable {:?} lifecycles",
+                required
+            ));
+        }
+    }
+    reg.arcane_errors.extend(errors);
 }
 
 fn split_recovery(
@@ -2676,6 +3997,9 @@ fn push_salvage_item(
         bedroll: false,
         shears: false,
         charm: None,
+        charm_def: None,
+        wand_component: None,
+        implement: None,
         tablet: false,
         striker: false,
         creative_only: false,
@@ -2688,6 +4012,10 @@ fn push_salvage_item(
         material_class: MaterialClass::GeologicallyFinite,
         salvage: None,
         broken_into: None,
+        arcane: None,
+        arcane_ecology: None,
+        observation: None,
+        discovery: None,
     });
     reg.item_by_name.insert(name, item);
     item
@@ -2705,6 +4033,15 @@ fn register_salvage_content(reg: &mut Registry) {
         .map(|(index, item)| (ItemId(index as u16), item.clone()))
         .collect::<Vec<_>>();
     for (original_id, original) in durable {
+        if original.name == "base:tuning_lens"
+            && let Some(mount) = reg.item_id("base:tuning_lens_mount")
+        {
+            // The custom wear path consumes only the replaceable Wellglass
+            // owner. The fitted frame and Echo Slate plate are one conserved
+            // physical mount, not generic damaged salvage.
+            reg.items[original_id.0 as usize].broken_into = Some(mount);
+            continue;
+        }
         let damaged = push_salvage_item(
             reg,
             &original,
@@ -2740,6 +4077,7 @@ fn register_salvage_content(reg: &mut Registry) {
             pattern: vec![Some(Ingredient::One(damaged))],
             output: primitive_out,
             count: 1,
+            station: None,
             loss: MaterialVector::new(),
             byproducts: vec![(primitive_tail, 1)],
         });
@@ -2944,6 +4282,99 @@ fn validate_material_graph(reg: &mut Registry) {
     reg.material_errors = errors;
 }
 
+/// Transformation stations currently conserve or destroy an input item's
+/// Current, but they do not have authority to mint a newly charged owner.
+/// Reject content graphs that would therefore produce an unbacked magical
+/// item. Natural discoveries and creature drops are bound at their world
+/// source instead and are intentionally outside this graph.
+fn validate_arcane_graph(reg: &mut Registry) {
+    let mut errors = Vec::new();
+    {
+        let mut charged_output = |kind: &str, index: usize, item: ItemId| {
+            if reg.item(item).arcane.is_some() && reg.item(item).implement.is_none() {
+                errors.push(format!(
+                    "{kind} {index} has charged output {}; transformations cannot create Current",
+                    reg.item(item).name
+                ));
+            }
+        };
+        for (index, recipe) in reg.recipes.iter().enumerate() {
+            let output = reg.item(recipe.output);
+            let identity_preserving_lens_assembly = recipe.station.as_deref()
+                == Some("lens_assembly_bench")
+                && output
+                    .discovery
+                    .as_ref()
+                    .is_some_and(|definition| definition.kind == "tuning_lens")
+                && output.arcane.as_ref().is_some_and(|output_arcane| {
+                    recipe.pattern.iter().flatten().any(|ingredient| {
+                        let items: &[ItemId] = match ingredient {
+                            Ingredient::One(item) => std::slice::from_ref(item),
+                            Ingredient::Any(items) => items,
+                        };
+                        items
+                            .iter()
+                            .any(|item| reg.item(*item).arcane.as_ref() == Some(output_arcane))
+                    })
+                });
+            if !identity_preserving_lens_assembly {
+                charged_output("recipe", index, recipe.output);
+            }
+            for (item, _) in &recipe.byproducts {
+                charged_output("recipe byproduct", index, *item);
+            }
+        }
+        for (index, smelt) in reg.smelts.iter().enumerate() {
+            charged_output("smelt", index, smelt.output);
+            if let Some((item, _)) = smelt.spit {
+                charged_output("smelt byproduct", index, item);
+            }
+        }
+        for (index, worked) in reg.worked.iter().enumerate() {
+            charged_output("worked recipe", index, worked.output);
+        }
+        for (index, kiln) in reg.kiln.iter().enumerate() {
+            charged_output("kiln recipe", index, kiln.glass);
+        }
+        if let Some((_, _, output)) = reg.kiln_base {
+            charged_output("kiln base", 0, output);
+        }
+        for (index, bloomery) in reg.bloomery.iter().enumerate() {
+            charged_output("bloomery recipe", index, bloomery.bloom);
+        }
+        for (index, salvage) in reg.forge_salvage.iter().enumerate() {
+            charged_output("forge salvage", index, salvage.output);
+            charged_output("forge salvage byproduct", index, salvage.byproduct);
+        }
+    }
+    let mut unsupported_input = |kind: &str, index: usize, item: ItemId| {
+        if reg.item(item).arcane.is_some() {
+            errors.push(format!(
+                "{kind} {index} consumes charged input {}; that station has no Current transaction",
+                reg.item(item).name
+            ));
+        }
+    };
+    for (index, worked) in reg.worked.iter().enumerate() {
+        unsupported_input("worked recipe", index, worked.input);
+    }
+    for (index, kiln) in reg.kiln.iter().enumerate() {
+        unsupported_input("kiln recipe", index, kiln.powder);
+    }
+    if let Some((sand, fuel, _)) = reg.kiln_base {
+        unsupported_input("kiln base sand", 0, sand);
+        unsupported_input("kiln base fuel", 0, fuel);
+    }
+    for (index, bloomery) in reg.bloomery.iter().enumerate() {
+        unsupported_input("bloomery charge", index, bloomery.charge);
+        unsupported_input("bloomery fuel", index, bloomery.fuel);
+    }
+    for (index, salvage) in reg.forge_salvage.iter().enumerate() {
+        unsupported_input("forge salvage", index, salvage.input);
+    }
+    reg.arcane_errors.extend(errors);
+}
+
 fn qualify(modid: &str, name: &str) -> String {
     if name.contains(':') {
         name.to_string()
@@ -2953,6 +4384,75 @@ fn qualify(modid: &str, name: &str) -> String {
 }
 
 impl Registry {
+    pub fn install_saved_arcane_placeholders(
+        &mut self,
+        ledger: &crate::arcane::ArcaneLedger,
+    ) -> usize {
+        let mut added = 0;
+        for (name, saved) in &ledger.block_manifests {
+            if let Some(id) = self.block_id(name) {
+                self.blocks[id.0 as usize].arcane = Some(saved.arcane.clone());
+                continue;
+            }
+            let id = BlockId(self.blocks.len() as u16);
+            let mut placeholder = self.block(self.unknown_block).clone();
+            placeholder.name = name.clone();
+            placeholder.label = format!("Missing charged content: {name}");
+            placeholder.material_class = MaterialClass::Exceptional;
+            placeholder.arcane = Some(saved.arcane.clone());
+            self.blocks.push(placeholder);
+            self.block_by_name.insert(name.clone(), id);
+            added += 1;
+        }
+        for (name, saved) in &ledger.item_manifests {
+            if let Some(id) = self.item_id(name) {
+                self.items[id.0 as usize].arcane = Some(saved.arcane.clone());
+                self.items[id.0 as usize].max_stack = 1;
+                continue;
+            }
+            let id = ItemId(self.items.len() as u16);
+            self.items.push(ItemDef {
+                name: name.clone(),
+                label: format!("Missing charged content: {name}"),
+                icon: crate::atlas::UNKNOWN_SLOT,
+                max_stack: 1,
+                tool: None,
+                durability: saved.durability,
+                places: self.block_id(name),
+                food: None,
+                damage: 1.0,
+                bow: None,
+                ammo: None,
+                armor: None,
+                bedroll: false,
+                shears: false,
+                charm: None,
+                charm_def: None,
+                wand_component: None,
+                implement: None,
+                tablet: false,
+                striker: false,
+                creative_only: false,
+                brush_tool: false,
+                throw_speed: None,
+                hammer: false,
+                glow: None,
+                materials: MaterialVector::new(),
+                materials_declared: true,
+                material_class: MaterialClass::Exceptional,
+                salvage: None,
+                broken_into: None,
+                arcane: Some(saved.arcane.clone()),
+                arcane_ecology: None,
+                observation: None,
+                discovery: None,
+            });
+            self.item_by_name.insert(name.clone(), id);
+            added += 1;
+        }
+        added
+    }
+
     /// Recreate named save placeholders before palette remapping. Their
     /// qualified names remain the removed mod's names, so chunks never get
     /// rewritten as an anonymous `base:unknown`; reinstalling the mod maps
@@ -3019,6 +4519,9 @@ impl Registry {
                 bedroll: false,
                 shears: false,
                 charm: None,
+                charm_def: None,
+                wand_component: None,
+                implement: None,
                 tablet: false,
                 striker: false,
                 creative_only: false,
@@ -3031,10 +4534,151 @@ impl Registry {
                 material_class: saved.material_class,
                 salvage: None,
                 broken_into: None,
+                arcane: None,
+                arcane_ecology: None,
+                observation: None,
+                discovery: None,
             });
             self.item_by_name.insert(name.clone(), id);
             added += 1;
         }
         Ok(added)
+    }
+}
+
+#[cfg(test)]
+mod arcane_schema_tests {
+    use super::*;
+
+    #[test]
+    fn base_arcane_content_is_valid_and_single_instance() {
+        let registry = load(Path::new("__no_arcane_schema_mods__"));
+        assert!(
+            registry.arcane_errors.is_empty(),
+            "{}",
+            registry.arcane_errors.join("\n")
+        );
+        assert!(
+            registry
+                .items
+                .iter()
+                .filter(|item| item.arcane.is_some())
+                .all(|item| item.max_stack == 1)
+        );
+        for name in crate::arcane::BASE_RESONANCES {
+            assert!(registry.arcane_registry.definitions.contains_key(name));
+        }
+        for name in ["base:plant_fiber", "base:living_wood"] {
+            assert!(
+                registry
+                    .item(registry.item_id(name).unwrap())
+                    .arcane
+                    .is_none(),
+                "ordinary renewable material {name} must remain stackable and uncharged"
+            );
+        }
+        for name in [
+            "base:thorn_fiber",
+            "base:dryad_heartwood",
+            "base:lantern_fungus",
+        ] {
+            let item = registry.item(registry.item_id(name).unwrap());
+            assert!(item.arcane.is_some(), "{name} must be magical content");
+            assert_eq!(item.max_stack, 1, "{name} must identify one charged owner");
+        }
+        let fungus = registry.block(registry.block_id("base:lantern_fungus").unwrap());
+        assert!(fungus.arcane.is_some());
+        assert!(
+            registry
+                .block(registry.block_id("base:jungle_bush").unwrap())
+                .arcane
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn transformation_graph_rejects_unbacked_charged_outputs() {
+        let mut registry = load(Path::new("__no_arcane_output_mods__"));
+        assert!(registry.arcane_errors.is_empty());
+        registry.recipes.push(RecipeDef {
+            w: 1,
+            h: 1,
+            pattern: vec![Some(Ingredient::One(
+                registry.item_id("base:plant_fiber").unwrap(),
+            ))],
+            output: registry.item_id("base:ember").unwrap(),
+            count: 1,
+            station: None,
+            loss: MaterialVector::new(),
+            byproducts: Vec::new(),
+        });
+        validate_arcane_graph(&mut registry);
+        assert!(
+            registry
+                .arcane_errors
+                .iter()
+                .any(|error| error.contains("recipe") && error.contains("base:ember")),
+            "{:?}",
+            registry.arcane_errors
+        );
+    }
+
+    #[test]
+    fn schema_rejects_unknown_zero_and_overflowing_resonances() {
+        let registry = crate::arcane::ResonanceRegistry::base();
+        let unknown = ArcaneContentToml {
+            capacity: 1,
+            conductivity: 1,
+            stability: 1,
+            resonance: BTreeMap::from([("missing".into(), 1)]),
+            on_destroy: ArcaneDisposition::Ambient,
+        };
+        assert!(
+            arcane_def(Some(&unknown), "fixture", "fixture:item", &registry)
+                .unwrap_err()
+                .contains("unknown resonance")
+        );
+
+        let zero = ArcaneContentToml {
+            capacity: 1,
+            conductivity: 1,
+            stability: 1,
+            resonance: BTreeMap::from([("base:root".into(), 0)]),
+            on_destroy: ArcaneDisposition::Ambient,
+        };
+        assert!(
+            arcane_def(Some(&zero), "fixture", "fixture:item", &registry)
+                .unwrap_err()
+                .contains("zero weight")
+        );
+
+        let too_wide = ArcaneContentToml {
+            capacity: 1,
+            conductivity: 1_001,
+            stability: 1,
+            resonance: BTreeMap::from([("base:root".into(), 1)]),
+            on_destroy: ArcaneDisposition::Ambient,
+        };
+        assert!(
+            arcane_def(Some(&too_wide), "fixture", "fixture:item", &registry)
+                .unwrap_err()
+                .contains("0..=1000")
+        );
+    }
+
+    #[test]
+    fn destruction_policy_is_mandatory_and_integer_overflow_is_actionable() {
+        let missing = toml::from_str::<ArcaneContentToml>(
+            "capacity=1\nconductivity=1\nstability=1\nresonance={root=1}",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(missing.contains("on_destroy"));
+        let overflow = toml::from_str::<ArcaneContentToml>(
+            "capacity=18446744073709551616\nconductivity=1\nstability=1\nresonance={root=1}\non_destroy='ambient'",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(overflow.contains("number") || overflow.contains("u64"));
     }
 }

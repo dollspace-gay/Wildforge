@@ -3,6 +3,124 @@
 use super::*;
 
 impl World {
+    pub(super) fn encode_loose_items(&self) -> std::io::Result<Vec<u8>> {
+        use serde::Serialize;
+
+        #[derive(Serialize)]
+        struct StoredDrop {
+            stable_id: u64,
+            pos: crate::planet::EntityPos,
+            vel: [f32; 3],
+            item: String,
+            count: u32,
+            age: f32,
+            durability: u32,
+            arcane_id: u64,
+        }
+        #[derive(Serialize)]
+        struct File {
+            version: u32,
+            drop: Vec<StoredDrop>,
+        }
+        let drop = self
+            .loose_items
+            .iter()
+            .filter(|item| item.stable_id != 0 && item.count != 0)
+            .map(|item| StoredDrop {
+                stable_id: item.stable_id,
+                pos: item.pos,
+                vel: item.vel.to_array(),
+                item: self.reg.item(item.item).name.clone(),
+                count: item.count,
+                age: item.age,
+                durability: item.durability,
+                arcane_id: item.arcane_id,
+            })
+            .collect();
+        toml::to_string_pretty(&File { version: 3, drop })
+            .map(String::into_bytes)
+            .map_err(std::io::Error::other)
+    }
+
+    pub(super) fn save_loose_items(&self) -> std::io::Result<()> {
+        #[cfg(test)]
+        if self.fail_loose_item_save {
+            return Err(std::io::Error::other(
+                "injected loose-item sidecar save failure",
+            ));
+        }
+        crate::identity::atomic_write(
+            &self.save_dir.join("loose-items.toml"),
+            &self.encode_loose_items()?,
+            false,
+        )
+    }
+
+    pub(super) fn load_loose_items(&mut self) {
+        use serde::Deserialize;
+
+        #[derive(Deserialize)]
+        struct StoredDrop {
+            #[serde(default)]
+            stable_id: u64,
+            pos: crate::planet::EntityPos,
+            vel: [f32; 3],
+            item: String,
+            count: u32,
+            age: f32,
+            durability: u32,
+            #[serde(default)]
+            arcane_id: u64,
+        }
+        #[derive(Deserialize)]
+        struct File {
+            version: u32,
+            #[serde(default)]
+            drop: Vec<StoredDrop>,
+        }
+        let Ok(text) = fs::read_to_string(self.save_dir.join("loose-items.toml")) else {
+            return;
+        };
+        let Ok(file) = toml::from_str::<File>(&text) else {
+            eprintln!("items: could not parse loose-items.toml; file left untouched");
+            return;
+        };
+        if !(1..=3).contains(&file.version) {
+            eprintln!(
+                "items: unsupported loose item save version {}",
+                file.version
+            );
+            return;
+        }
+        let mut loaded = Vec::new();
+        for stored in file.drop {
+            let Some(item) = self.reg.item_id(&stored.item) else {
+                eprintln!("items: retained unknown loose item name {}", stored.item);
+                continue;
+            };
+            if stored.count == 0
+                || !stored.age.is_finite()
+                || stored.vel.iter().any(|value| !value.is_finite())
+            {
+                continue;
+            }
+            let mut entity = crate::entity::ItemEntity::new(
+                stored.pos,
+                glam::Vec3::from_array(stored.vel),
+                item,
+                stored.count,
+            );
+            entity.stable_id = stored.stable_id;
+            entity.age = stored.age.max(0.0);
+            entity.durability = stored.durability.min(self.reg.item(item).durability);
+            entity.arcane_id = stored.arcane_id;
+            loaded.push(entity);
+        }
+        for item in loaded {
+            self.spawn_loose_item(item);
+        }
+    }
+
     pub(super) fn mobs_path(&self) -> PathBuf {
         self.save_dir.join("animals.toml")
     }
@@ -43,10 +161,11 @@ impl World {
                     if let Some(st) = st {
                         let _ = writeln!(
                             out,
-                            "[[mob.pack]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                            "[[mob.pack]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                             self.reg.item(st.item).name,
                             st.count,
-                            st.durability
+                            st.durability,
+                            st.arcane_id
                         );
                     }
                 }
@@ -198,6 +317,8 @@ impl World {
             count: u32,
             #[serde(default)]
             durability: u32,
+            #[serde(default)]
+            arcane_id: u64,
         }
         #[derive(Deserialize)]
         struct MobT {
@@ -267,6 +388,7 @@ impl World {
                                 item,
                                 count: sl.count,
                                 durability: sl.durability,
+                                arcane_id: sl.arcane_id,
                             });
                         }
                     }
@@ -847,6 +969,23 @@ impl World {
                 ledger.save(),
             );
         }
+        if let Some(ledger) = &self.arcane_ledger {
+            report.record(
+                "finite-Current ledger",
+                self.save_dir.join("arcane.wfc"),
+                ledger.save().map_err(std::io::Error::other),
+            );
+        }
+        if let Some(geography) = &mut self.arcane_geography {
+            report.record(
+                "planetary arcane geography",
+                crate::planet_atlas::PlanetAtlas::planet_dir(&self.save_dir)
+                    .join("arcane-geography.wad"),
+                geography
+                    .save_dynamic(&self.save_dir)
+                    .map_err(std::io::Error::other),
+            );
+        }
         // Only when it would actually differ. The palette describes the
         // registry, not the world, so rewriting it on a timer was 4 KB
         // of churn every twenty seconds saying the same thing. It has
@@ -865,6 +1004,41 @@ impl World {
         };
         let path = self.entities_path();
         report.record("block entities", path, self.save_entities());
+        let path = self.save_dir.join("discovery.toml");
+        let discovery_result = self
+            .discovery_state
+            .as_mut()
+            .map_or(Ok(()), |state| state.save().map_err(std::io::Error::other));
+        report.record("discovery state", path, discovery_result);
+        let path = self.save_dir.join(crate::implements::IMPLEMENTS_FILE);
+        let implements_result = self
+            .implements_state
+            .as_ref()
+            .map_or(Ok(()), |state| state.save().map_err(std::io::Error::other));
+        report.record("implement state", path, implements_result);
+        let path = self.save_dir.join(crate::workings::WORKINGS_FILE);
+        let workings_result = self
+            .workings_state
+            .as_ref()
+            .map_or(Ok(()), |state| state.save().map_err(std::io::Error::other));
+        report.record("working transaction state", path, workings_result);
+        let path = self.save_dir.join(crate::alchemy::ALCHEMY_FILE);
+        let alchemy_result = self
+            .alchemy_state
+            .as_ref()
+            .map_or(Ok(()), |state| state.save().map_err(std::io::Error::other));
+        report.record("alchemy state", path, alchemy_result);
+        let path = self.save_dir.join(crate::workings::WATER_CARRIERS_FILE);
+        let carrier_result = self
+            .water_carriers
+            .as_ref()
+            .map_or(Ok(()), |state| state.save().map_err(std::io::Error::other));
+        report.record("detailed water carriers", path, carrier_result);
+        report.record(
+            "host-owned loose items",
+            self.save_dir.join("loose-items.toml"),
+            self.save_loose_items(),
+        );
         report.extend(self.save_mobs());
         let path = self.save_dir.join("stamps");
         report.record("random-tick stamps", path, self.save_stamps());

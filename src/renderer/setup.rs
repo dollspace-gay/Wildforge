@@ -2,6 +2,24 @@
 
 use super::*;
 
+fn adapter_priority(info: &wgpu::AdapterInfo) -> u8 {
+    let device = match info.device_type {
+        wgpu::DeviceType::DiscreteGpu => 4,
+        wgpu::DeviceType::IntegratedGpu => 3,
+        wgpu::DeviceType::VirtualGpu => 2,
+        wgpu::DeviceType::Other => 1,
+        wgpu::DeviceType::Cpu => 0,
+    };
+    let backend = match info.backend {
+        wgpu::Backend::Dx12 | wgpu::Backend::Metal => 4,
+        wgpu::Backend::Vulkan => 3,
+        wgpu::Backend::Gl => 2,
+        wgpu::Backend::BrowserWebGpu => 1,
+        wgpu::Backend::Noop => 0,
+    };
+    device * 8 + backend
+}
+
 impl Renderer {
     pub async fn new(
         window: Arc<Window>,
@@ -11,18 +29,36 @@ impl Renderer {
         atlas_px: u32,
     ) -> Renderer {
         let size = window.inner_size();
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance_descriptor = wgpu::InstanceDescriptor::from_env_or_default();
+        let enabled_backends = instance_descriptor.backends;
+        let instance = wgpu::Instance::new(&instance_descriptor);
         let surface = instance.create_surface(window).expect("create surface");
+        let mut available = Vec::new();
         let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .expect("no GPU adapter found");
+            .enumerate_adapters(enabled_backends)
+            .into_iter()
+            .filter(|adapter| adapter.is_surface_supported(&surface))
+            .inspect(|adapter| available.push(adapter.get_info()))
+            .filter(|adapter| adapter.get_info().device_type != wgpu::DeviceType::Cpu)
+            .max_by_key(|adapter| adapter_priority(&adapter.get_info()))
+            .unwrap_or_else(|| {
+                let listed = available
+                    .iter()
+                    .map(|info| {
+                        format!(
+                            "{} [{:?}, {:?}]",
+                            info.name, info.backend, info.device_type
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                panic!(
+                    "no surface-compatible GPU adapter found; refusing CPU software rendering (available: {listed})"
+                )
+            });
         let info = adapter.get_info();
-        let adapter_name = format!("{} [{:?}]", info.name, info.backend);
+        let adapter_name = format!("{} [{:?}, {:?}]", info.name, info.backend, info.device_type);
+        eprintln!("renderer: using {adapter_name}");
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: None,
@@ -43,7 +79,11 @@ impl Renderer {
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            // Some accelerated presentation paths (notably Mesa's D3D12
+            // driver under WSLg) expose swapchain images only as render
+            // targets. Screenshots use their own copyable render target, so
+            // presentation never needs COPY_SRC support.
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
             width: size.width.max(1),
             height: size.height.max(1),

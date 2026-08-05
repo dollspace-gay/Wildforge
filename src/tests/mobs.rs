@@ -31,6 +31,7 @@ fn mob_settles_on_ground_and_flees_from_damage() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 60.0,
             &mut rng,
@@ -60,6 +61,7 @@ fn mob_settles_on_ground_and_flees_from_damage() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 60.0,
             &mut rng,
@@ -79,6 +81,7 @@ fn mob_settles_on_ground_and_flees_from_damage() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 60.0,
             &mut rng,
@@ -110,6 +113,7 @@ fn skittish_flees_players_bold_does_not() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0 / 60.0,
         &mut rng,
@@ -124,6 +128,7 @@ fn skittish_flees_players_bold_does_not() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0 / 60.0,
         &mut rng,
@@ -289,6 +294,7 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0,
             1.0 / 60.0,
@@ -321,6 +327,7 @@ fn mobs_freeze_in_unloaded_chunks_and_unstick_when_buried() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0,
         1.0 / 60.0,
@@ -363,6 +370,7 @@ fn warden_hunts_strikes_and_caster_fires() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0 / 60.0,
         &mut rng,
@@ -381,6 +389,7 @@ fn warden_hunts_strikes_and_caster_fires() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 60.0,
             &mut rng,
@@ -406,6 +415,7 @@ fn warden_hunts_strikes_and_caster_fires() {
             spawn: ep(Vec3::ZERO),
             attackable: false,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0 / 60.0,
         &mut rng,
@@ -433,6 +443,7 @@ fn warden_hunts_strikes_and_caster_fires() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 60.0,
             &mut rng,
@@ -561,6 +572,7 @@ fn a_hostile_mob_pursues_across_every_planet_seam() {
             spawn: player,
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }];
         let mut mob = crate::mobs::Mob::new_at(species, start, 0.0);
         mob.health = def.health;
@@ -606,6 +618,7 @@ fn floaters_hover_and_projectiles_collide() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 60.0,
             &mut rng,
@@ -624,6 +637,7 @@ fn floaters_hover_and_projectiles_collide() {
     let stone = reg.block_id("base:stone").unwrap();
     w.set_block(10, 200, 10, stone);
     let mut p = crate::mobs::Projectile {
+        stable_id: 0,
         pos: ep(Vec3::new(10.5, 200.5, 7.0)),
         vel: Vec3::new(0.0, 0.0, 20.0),
         tile: 0,
@@ -631,6 +645,7 @@ fn floaters_hover_and_projectiles_collide() {
         age: 0.0,
         from_player: false,
         drop_item: None,
+        preparation_payload: None,
         owner: 0,
     };
     let mut outcome = crate::mobs::ProjHit::None;
@@ -643,6 +658,7 @@ fn floaters_hover_and_projectiles_collide() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0 / 30.0,
         );
@@ -655,6 +671,7 @@ fn floaters_hover_and_projectiles_collide() {
         "bolt stopped by the wall"
     );
     w.spawn_projectile(crate::mobs::Projectile {
+        stable_id: 0,
         pos: ep(Vec3::new(4.5, 120.9, 2.0)),
         vel: Vec3::new(0.0, 0.0, 12.0),
         tile: 0,
@@ -662,6 +679,7 @@ fn floaters_hover_and_projectiles_collide() {
         age: 0.0,
         from_player: false,
         drop_item: None,
+        preparation_payload: None,
         owner: 0,
     });
     let mut dmg = 0.0;
@@ -674,6 +692,7 @@ fn floaters_hover_and_projectiles_collide() {
                     spawn: ep(Vec3::ZERO),
                     attackable: true,
                     aggro_mod: 0.0,
+                    quiet_charm: None,
                 }],
                 1.0 / 30.0,
             )
@@ -776,6 +795,7 @@ fn wardens_dissolve_at_dawn_and_never_save() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0,
         1.0 / 60.0,
@@ -788,6 +808,126 @@ fn wardens_dissolve_at_dawn_and_never_save() {
     assert!(
         w.mobs().iter().any(|m| m.species == deer_i),
         "the deer does not dissolve"
+    );
+}
+
+#[test]
+fn warden_current_balances_manifestation_dissolution_death_drops_and_heart_death() {
+    let reg = base_reg();
+    let dir = tmp_dir("warden-current-lifecycle");
+    let atlas = std::sync::Arc::new(crate::planet_atlas::PlanetAtlas::fixture(8_799, 16).unwrap());
+    atlas.write_new(&dir).unwrap();
+    let country = atlas.biomes.countries.first().expect("fixture country");
+    let point = country.heart_site.center(atlas.side());
+    let surface =
+        crate::planet::SurfacePos::new(point.face, point.u.floor() as u16, point.v.floor() as u16)
+            .unwrap();
+    let mut world = World::new_with_atlas(8_799, dir, reg.clone(), atlas.clone());
+    world.ensure_chunk(ChunkPos::from_surface(surface));
+    let y = world.surface_height_at(surface) + 1;
+    let pos = crate::planet::EntityPos::new(
+        surface.face(),
+        f32::from(surface.u()) + 0.5,
+        y as f32,
+        f32::from(surface.v()) + 0.5,
+    )
+    .unwrap();
+    let species = reg.animal_id("base:thornling").unwrap();
+    let capacity = reg.animals[species].arcane.as_ref().unwrap().capacity;
+    let heart = crate::arcane::ArcaneOwner::Heart(country.id);
+    let heart_before = world
+        .arcane_ledger
+        .as_ref()
+        .unwrap()
+        .account(&heart)
+        .unwrap()
+        .current
+        .total();
+
+    let manifest = |world: &mut World| {
+        let before = world.mob_count();
+        let mut mob = crate::mobs::Mob::new_at(species, pos, 0.0);
+        mob.health = reg.animals[species].health;
+        world.spawn_mob(mob);
+        (world.mob_count() > before).then(|| world.mobs().last().unwrap().id)
+    };
+    let first = manifest(&mut world).expect("heart funded first manifestation");
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert_eq!(
+        ledger
+            .account(&crate::arcane::ArcaneOwner::Mob(u64::from(first)))
+            .unwrap()
+            .current
+            .total(),
+        capacity
+    );
+    assert_eq!(
+        ledger.account(&heart).unwrap().current.total(),
+        heart_before - capacity
+    );
+
+    // With no nearby player, the ordinary retirement path dissolves the
+    // temporary manifestation and returns its full loan.
+    let mut rng = 91u32;
+    world.tick_mobs(&[], 1.0, 1.0 / 60.0, &mut rng);
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert!(
+        ledger
+            .account(&crate::arcane::ArcaneOwner::Mob(u64::from(first)))
+            .is_none()
+    );
+    assert_eq!(
+        ledger.account(&heart).unwrap().current.total(),
+        heart_before
+    );
+
+    let second = manifest(&mut world).expect("heart funded second manifestation");
+    let mob = world.mob_by_id_mut(second).unwrap();
+    mob.health = 0.0;
+    mob.growth = 1.0;
+    let deaths = world.settle_dead_mobs(&mut rng);
+    assert_eq!(deaths.len(), 1);
+    let drops = world.take_pending_drops();
+    assert!(!drops.is_empty());
+    assert!(drops.iter().all(|(_, stack)| stack.arcane_id != 0));
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert!(
+        ledger
+            .account(&crate::arcane::ArcaneOwner::Mob(u64::from(second)))
+            .is_none()
+    );
+    for (_, stack) in &drops {
+        assert!(
+            ledger
+                .account(&crate::arcane::ArcaneOwner::Item(stack.arcane_id))
+                .is_some()
+        );
+    }
+    assert!(ledger.audit().unwrap().is_balanced());
+
+    // The generated heart's death freezes the remaining reserve. A new
+    // manifestation is rejected instead of silently borrowing from Deep.
+    let province = world.generator.province_at(surface).key;
+    assert!(world.heart_at_surface(surface).is_some());
+    world.set_heart_stage(province, 0);
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .heart_frozen(country.id)
+    );
+    let count = world.mob_count();
+    assert!(manifest(&mut world).is_none());
+    assert_eq!(world.mob_count(), count);
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .audit()
+            .unwrap()
+            .is_balanced()
     );
 }
 
@@ -812,6 +952,7 @@ fn breeding_makes_babies_that_grow() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0,
         1.0 / 60.0,
@@ -843,6 +984,7 @@ fn breeding_makes_babies_that_grow() {
                 spawn: ep(Vec3::ZERO),
                 attackable: true,
                 aggro_mod: 0.0,
+                quiet_charm: None,
             }],
             1.0,
             1.0 / 60.0,
@@ -864,6 +1006,7 @@ fn breeding_makes_babies_that_grow() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0,
         1.0 / 60.0,
@@ -931,6 +1074,7 @@ fn feeding_tames_and_tamed_animals_stand_their_ground() {
         spawn: ep(Vec3::ZERO),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     }];
     let mut rng = 3u32;
     let mut events = Vec::new();
@@ -971,6 +1115,7 @@ fn led_animals_follow_and_leads_snap_at_range() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }]
     };
     // Handler 7 blocks east: the deer walks after them.
@@ -1057,6 +1202,7 @@ fn boats_float_carry_cargo_and_wreck_into_salvage() {
         spawn: ep(Vec3::ZERO),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     }];
     let mut rng = 9u32;
     let mut events = Vec::new();
@@ -1100,6 +1246,7 @@ fn the_watcher_warns_stands_down_or_graduates() {
         spawn: ep(Vec3::ZERO),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     }];
     let mut rng = 7u32;
     let mut events = Vec::new();

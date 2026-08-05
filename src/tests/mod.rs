@@ -13,6 +13,7 @@ use crate::registry::{self, AIR, Registry};
 use crate::world::World;
 
 mod agent;
+mod alchemy;
 mod atlas;
 mod climate;
 mod ecology;
@@ -20,6 +21,7 @@ mod geology;
 mod hearts;
 mod hydrology;
 mod identity;
+mod implements;
 mod machines;
 mod mobs;
 mod multiplayer;
@@ -29,6 +31,7 @@ mod registry_tests;
 mod rendering;
 mod soil;
 mod water_cycle;
+mod workings;
 mod world;
 mod worldgen;
 

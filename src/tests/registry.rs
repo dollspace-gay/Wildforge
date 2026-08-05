@@ -127,6 +127,318 @@ fn data_mod_loads_blocks_items_recipes_features() {
 }
 
 #[test]
+fn fixture_mod_declares_qualified_arcane_content_and_resonance() {
+    let root = tmp_dir("arcane-valid-mod");
+    let dir = root.join("greenfire");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"greenfire\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("arcane.toml"),
+        "schema_version = 1\n[[resonance]]\nid = \"verdance\"\nlabel = \"Verdance\"\n\n[[arcane_site]]\nid = \"singing_fault\"\nrequires = [\"fault\", \"carbonate_rock\"]\ncapacity_factor = 1.15\nresonance = { \"base:echo\" = 2, \"base:stone\" = 1 }\nrarity = 0.02\nradius_cells = 3\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("items.toml"),
+        r#"
+[[item]]
+id = "seed"
+name = "Verdant Seed"
+texture = "@stick"
+arcane = { capacity = 33, conductivity = 625, stability = 875, resonance = { verdance = 3, "base:root" = 1 }, on_destroy = "dross" }
+"#,
+    )
+    .unwrap();
+    let registry = registry::load(&root);
+    assert!(
+        registry.arcane_errors.is_empty(),
+        "{:?}",
+        registry.arcane_errors
+    );
+    let seed = registry.item_id("greenfire:seed").unwrap();
+    let definition = registry.item(seed).arcane.as_ref().unwrap();
+    assert_eq!(registry.item(seed).max_stack, 1);
+    assert_eq!(definition.capacity, 33);
+    assert_eq!(definition.resonance["greenfire:verdance"], 3);
+    assert!(
+        registry
+            .arcane_registry
+            .definitions
+            .contains_key("greenfire:verdance")
+    );
+    let site = registry
+        .arcane_sites
+        .iter()
+        .find(|site| site.id == "greenfire:singing_fault")
+        .unwrap();
+    assert_eq!(site.capacity_factor_permille, 1_150);
+    assert_eq!(site.rarity_per_million, 20_000);
+    assert_eq!(site.base_resonance_bias[3], 1);
+    assert_eq!(site.base_resonance_bias[5], 2);
+    assert_eq!(
+        site.retrogen,
+        crate::registry::RetrogenPolicy::UntouchedHostOnly
+    );
+}
+
+fn write_ecology_fixture_mod(root: &Path, blocks: &str, features: Option<&str>) {
+    let dir = root.join("ecofix");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"ecofix\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("blocks.toml"), blocks).unwrap();
+    if let Some(features) = features {
+        std::fs::write(dir.join("features.toml"), features).unwrap();
+    }
+}
+
+#[test]
+fn valid_mod_ecology_organism_crystal_and_finite_mineral_use_engine_lifecycles() {
+    let root = tmp_dir("ecology-valid-fixtures");
+    write_ecology_fixture_mod(
+        &root,
+        r#"
+[[block]]
+id = "mire_chime"
+name = "Mire Chime"
+texture = "@mushroom"
+cross = true
+solid = false
+opaque = false
+hardness = 0.1
+drops = "self"
+arcane = { capacity = 120, conductivity = 600, stability = 600, resonance = { "base:tide" = 3, "base:root" = 1 }, on_destroy = "ambient" }
+arcane_ecology = { roles = ["gatherer", "indicator"], habitat = ["wetland"], charge_capacity = 96, uptake_per_day = 3, release_per_day = 1, source = "ambient", resonance = { "base:tide" = 3, "base:root" = 1 }, dross_tolerance = 12, water_per_day_hu = 12, nutrient_per_day = 2, reproduction = "spore", seasons = [true, true, true, true], carrying_capacity = 12, harvest = "spore", regrowth_days = 8, min_stability = 0, max_stability = 1000, min_richness = 0 }
+
+[[block]]
+id = "springglass"
+name = "Springglass"
+texture = "@amethyst_block"
+hardness = 5.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 2
+drops = "self"
+material_class = "exceptional"
+arcane = { capacity = 180, conductivity = 700, stability = 800, resonance = { "base:stone" = 3, "base:tide" = 1 }, on_destroy = "dross" }
+arcane_ecology = { roles = ["reservoir", "indicator"], kind = "crystal", habitat = ["subsurface", "host_rock"], charge_capacity = 160, uptake_per_day = 4, release_per_day = 0, source = "ambient", resonance = { "base:stone" = 3, "base:tide" = 1 }, dross_tolerance = 20, water_per_day_hu = 2, nutrient_per_day = 0, reproduction = "bud", seasons = [true, true, true, true], carrying_capacity = 4, harvest = "seed_preserving", regrowth_days = 12, min_stability = 0, max_stability = 1000, min_richness = 0, crystal_stages = 3, preserving_tool_tier = 2 }
+
+[[block]]
+id = "songstone"
+name = "Songstone"
+texture = "@stone"
+hardness = 5.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 2
+material_class = "geologically_finite"
+materials = { songstone = 1200 }
+arcane = { capacity = 70, conductivity = 900, stability = 500, resonance = { "base:stone" = 3, "base:echo" = 1 }, on_destroy = "ambient" }
+arcane_ecology = { roles = ["conductor", "indicator"], kind = "finite_mineral", habitat = ["sedimentary_host"], charge_capacity = 64, uptake_per_day = 0, release_per_day = 0, source = "ambient", resonance = { "base:stone" = 3, "base:echo" = 1 }, dross_tolerance = 8, water_per_day_hu = 0, nutrient_per_day = 0, reproduction = "none", seasons = [true, true, true, true], carrying_capacity = 1, harvest = "destructive", regrowth_days = 0, min_stability = 0, max_stability = 1000, min_richness = 0 }
+"#,
+        Some(
+            r#"
+[[feature]]
+type = "ore"
+block = "ecofix:songstone"
+replaces = "base:shale"
+shape = "seam"
+vein_size = 2
+per_chunk = 1
+chance = 0.1
+y_range = [24, 64]
+"#,
+        ),
+    );
+    let reg = registry::load(&root);
+    assert!(reg.arcane_errors.is_empty(), "{:?}", reg.arcane_errors);
+    for content in [
+        "ecofix:mire_chime",
+        "ecofix:springglass",
+        "ecofix:songstone",
+    ] {
+        assert!(
+            reg.arcane_ecology.contains_key(content),
+            "missing {content}"
+        );
+    }
+    assert!(
+        reg.ores
+            .iter()
+            .any(|ore| ore.block == reg.block_id("ecofix:songstone").unwrap())
+    );
+    let atlas = crate::planet_atlas::PlanetAtlas::fixture(9_911, 16).unwrap();
+    let mut geography = crate::arcane_geography::ArcaneGeography::generate(
+        &atlas,
+        &reg,
+        &crate::planet_atlas::CancellationToken::default(),
+        |_| {},
+    )
+    .unwrap();
+    for content in ["ecofix:mire_chime", "ecofix:springglass"] {
+        assert!(
+            geography
+                .dynamic
+                .ecology
+                .sites
+                .iter()
+                .any(|site| site.content_id == content),
+            "{content} never entered deterministic site genesis"
+        );
+    }
+    let before = geography.audit().unwrap().accounted_total;
+    let mut water = geography
+        .dynamic
+        .ecology
+        .sites
+        .iter()
+        .map(|site| (site.atlas_pos, 1_000_000))
+        .collect();
+    let living = atlas
+        .biomes
+        .countries
+        .iter()
+        .map(|country| country.id)
+        .collect();
+    crate::arcane_ecology::advance_toward(
+        &mut geography,
+        &atlas,
+        &reg,
+        1,
+        crate::arcane_ecology::ECOLOGY_MAX_SITES,
+        crate::arcane_ecology::EcologyConditions::new(
+            &mut water,
+            &living,
+            &std::collections::BTreeSet::new(),
+            &std::collections::BTreeSet::new(),
+        ),
+    )
+    .unwrap();
+
+    for (content, tool_tier, crystal_stage) in [
+        ("ecofix:mire_chime", 0, None),
+        ("ecofix:springglass", 2, Some(2)),
+    ] {
+        let index = geography
+            .dynamic
+            .ecology
+            .sites
+            .iter()
+            .position(|site| site.content_id == content)
+            .unwrap();
+        {
+            let site = &mut geography.dynamic.ecology.sites[index];
+            site.materialized_y = 50;
+            site.stage = crate::arcane_ecology::EcologyStage::Mature;
+            if let Some(stage) = crystal_stage {
+                site.crystal_stage = stage;
+            }
+        }
+        let pos = geography.dynamic.ecology.sites[index].block_pos().unwrap();
+        let plan = crate::arcane_ecology::plan_harvest(&geography, &reg, pos, tool_tier)
+            .unwrap_or_else(|| panic!("{content} did not enter the shared harvest path"));
+        crate::arcane_ecology::apply_harvest(&mut geography, &reg, &plan, 2).unwrap();
+    }
+
+    let mineral = reg.arcane_ecology["ecofix:songstone"].clone();
+    let surface = geography
+        .dynamic
+        .ecology
+        .sites
+        .iter()
+        .find_map(|site| site.surface())
+        .unwrap();
+    let pos = crate::planet::BlockPos::new(surface.face(), surface.u(), 30, surface.v()).unwrap();
+    let current =
+        crate::arcane_ecology::plan_finite_mineral_harvest(&geography, &atlas, pos, &mineral)
+            .expect("fixture finite mineral enters the shared dual-ledger plan");
+    crate::arcane_ecology::apply_finite_mineral_harvest(&mut geography, &atlas, pos, &current)
+        .unwrap();
+    assert_eq!(geography.audit().unwrap().accounted_total, before);
+}
+
+#[test]
+fn invalid_ecology_mods_reject_free_growth_missing_deposits_and_duplicate_harvest() {
+    let root = tmp_dir("ecology-invalid-fixtures");
+    write_ecology_fixture_mod(
+        &root,
+        r#"
+[[block]]
+id = "free_growth"
+name = "Free Growth"
+texture = "@mushroom"
+cross = true
+solid = false
+opaque = false
+hardness = 0.1
+drops = "self"
+arcane = { capacity = 80, conductivity = 500, stability = 500, resonance = { "base:root" = 1 }, on_destroy = "ambient" }
+arcane_ecology = { roles = ["gatherer"], habitat = ["wetland"], charge_capacity = 64, uptake_per_day = 2, release_per_day = 0, source = "ambient", resonance = { "base:root" = 1 }, dross_tolerance = 8, water_per_day_hu = 0, nutrient_per_day = 1, reproduction = "seed", seasons = [true, true, true, true], carrying_capacity = 4, harvest = "fruit", regrowth_days = 4, min_stability = 0, max_stability = 1000, min_richness = 0 }
+"#,
+        None,
+    );
+    let reg = registry::load(&root);
+    let error = reg
+        .mods
+        .iter()
+        .find(|entry| entry.id == "ecofix")
+        .and_then(|entry| entry.error.as_deref())
+        .unwrap_or("");
+    assert!(error.contains("water demand"), "{error}");
+
+    let root = tmp_dir("ecology-invalid-graph-fixtures");
+    write_ecology_fixture_mod(
+        &root,
+        r#"
+[[block]]
+id = "repeatable"
+name = "Repeatable"
+texture = "@mushroom"
+cross = true
+solid = false
+opaque = false
+hardness = 0.1
+drops = "self"
+harvest = { item = "base:stick", count = 1, becomes = "ecofix:repeatable" }
+arcane = { capacity = 80, conductivity = 500, stability = 500, resonance = { "base:root" = 1 }, on_destroy = "ambient" }
+arcane_ecology = { roles = ["indicator"], habitat = ["wetland"], charge_capacity = 64, uptake_per_day = 1, release_per_day = 0, source = "ambient", resonance = { "base:root" = 1 }, dross_tolerance = 8, water_per_day_hu = 1, nutrient_per_day = 1, reproduction = "seed", seasons = [true, true, true, true], carrying_capacity = 4, harvest = "fruit", regrowth_days = 4, min_stability = 0, max_stability = 1000, min_richness = 0 }
+
+[[block]]
+id = "unbacked_ore"
+name = "Unbacked Ore"
+texture = "@stone"
+hardness = 4.0
+material_class = "geologically_finite"
+materials = { unbacked = 1200 }
+arcane = { capacity = 70, conductivity = 700, stability = 700, resonance = { "base:stone" = 1 }, on_destroy = "ambient" }
+arcane_ecology = { roles = ["conductor"], kind = "finite_mineral", habitat = ["sedimentary_host"], charge_capacity = 64, uptake_per_day = 0, release_per_day = 0, source = "ambient", resonance = { "base:stone" = 1 }, dross_tolerance = 8, water_per_day_hu = 0, nutrient_per_day = 0, reproduction = "none", seasons = [true, true, true, true], carrying_capacity = 1, harvest = "destructive", regrowth_days = 0, min_stability = 0, max_stability = 1000, min_richness = 0 }
+"#,
+        None,
+    );
+    let reg = registry::load(&root);
+    assert!(
+        reg.arcane_errors
+            .iter()
+            .any(|error| error.contains("repeatable block-harvest")),
+        "{:?}",
+        reg.arcane_errors
+    );
+    assert!(
+        reg.arcane_errors
+            .iter()
+            .any(|error| error.contains("deposit rule")),
+        "{:?}",
+        reg.arcane_errors
+    );
+}
+
+#[test]
 fn broken_mod_is_skipped_with_error() {
     let root = tmp_dir("brokenmod");
     let dir = root.join("bad");
@@ -142,6 +454,25 @@ fn broken_mod_is_skipped_with_error() {
         .find(|m| m.id == "bad")
         .expect("bad mod listed");
     assert!(bad.error.is_some());
+}
+
+#[test]
+fn script_arcane_gate_exposes_no_raw_credit_or_charged_spawn() {
+    let root = tmp_dir("script-arcane-raw-gate");
+    let mods = write_script_mod(
+        &root,
+        r#"
+fn on_tick(dt) {
+    add_current(1000);
+    spawn_charged_item("base:ember", 1000);
+}
+"#,
+    );
+    let mut host = crate::script::ScriptHost::new();
+    host.load_mods(&mods);
+    let world = test_world("script-arcane-raw-gate-world");
+    host.dispatch(&world, "on_tick", (0.1f64,));
+    assert!(host.take_cmds().is_empty());
 }
 
 #[test]
@@ -814,6 +1145,7 @@ fn charms_and_tablets_work() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         }],
         1.0 / 60.0,
         &mut rng,
@@ -831,6 +1163,7 @@ fn charms_and_tablets_work() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: -2.0,
+            quiet_charm: None,
         }],
         1.0 / 60.0,
         &mut rng,
@@ -1301,6 +1634,121 @@ fn content_graph_is_complete_and_obtainable() {
                 grew |= ok.insert(salvage.byproduct.0);
             }
         }
+        // Implements are made and failed through the embodied binding-frame
+        // lifecycle rather than synthetic grid recipes. Model those runtime
+        // edges only when the complete apparatus and at least one obtainable
+        // component for every physical role are present.
+        let frame_ready = [
+            "base:binding_frame",
+            "base:focus_mount",
+            "base:arcane_conductor",
+            "base:charge_vessel",
+            "base:containment_post",
+        ]
+        .into_iter()
+        .all(|name| reg.item_id(name).is_some_and(|item| ok.contains(&item.0)));
+        let component_roster_ready =
+            crate::implements::ComponentRole::ALL
+                .into_iter()
+                .all(|role| {
+                    reg.items.iter().enumerate().any(|(index, item)| {
+                        ok.contains(&(index as u16))
+                            && item
+                                .wand_component
+                                .as_ref()
+                                .is_some_and(|component| component.role == role)
+                    })
+                });
+        if frame_ready
+            && component_roster_ready
+            && let Some(wand) = reg.item_id("base:bound_wand")
+        {
+            grew |= ok.insert(wand.0);
+        }
+        // Heat/strain failure conserves an implement as one stable fragment
+        // bundle. This is another runtime transformation, not a recipe.
+        let failable_implement = ["base:bound_wand", "base:charge_vessel"]
+            .into_iter()
+            .any(|name| reg.item_id(name).is_some_and(|item| ok.contains(&item.0)));
+        if failable_implement && let Some(fragments) = reg.item_id("base:implement_fragment") {
+            grew |= ok.insert(fragments.0);
+        }
+        // Apothecary carriers and preparations are embodied station
+        // lifecycles, not crafting-grid recipes. Close those runtime edges
+        // only when every ordinary input and the relevant laboratory blocks
+        // are already obtainable.
+        let has = |name: &str, ok: &HashSet<u16>| {
+            reg.item_id(name).is_some_and(|item| ok.contains(&item.0))
+        };
+        if [
+            "base:infusion_basin",
+            "base:bucket_water",
+            "base:wheat",
+            "base:berry",
+        ]
+        .into_iter()
+        .all(|name| has(name, &ok))
+            && let Some(output) = reg.item_id("base:fermented_alcohol")
+        {
+            grew |= ok.insert(output.0);
+        }
+        if ["base:alchemy_mortar", "base:wheat_seeds"]
+            .into_iter()
+            .all(|name| has(name, &ok))
+            && let Some(output) = reg.item_id("base:plant_oil")
+        {
+            grew |= ok.insert(output.0);
+        }
+        let laboratory_ready = [
+            "base:alchemy_mortar",
+            "base:infusion_basin",
+            "base:alembic",
+            "base:filter_stand",
+            "base:arcane_conductor",
+            "base:filter_cloth",
+        ]
+        .into_iter()
+        .all(|name| has(name, &ok));
+        if laboratory_ready {
+            for preparation in reg.preparations.values() {
+                let inputs_ready = has(&preparation.solvent_item, &ok)
+                    && has(&preparation.empty_vessel, &ok)
+                    && preparation
+                        .ingredients
+                        .iter()
+                        .all(|ingredient| has(&ingredient.item, &ok));
+                if !inputs_ready {
+                    continue;
+                }
+                for name in [&preparation.output_item, &preparation.residue_item] {
+                    if let Some(item) = reg.item_id(name) {
+                        grew |= ok.insert(item.0);
+                    }
+                }
+                for failure in crate::alchemy::BatchFailure::ALL {
+                    if let Some(item) = reg.item_id(failure.item_id()) {
+                        grew |= ok.insert(item.0);
+                    }
+                }
+                if preparation
+                    .steps
+                    .contains(&crate::alchemy::ProcessStep::Filter)
+                    && let Some(item) = reg.item_id("base:spent_filter")
+                {
+                    grew |= ok.insert(item.0);
+                }
+                if preparation.handler == crate::alchemy::PreparationHandler::DrossWash
+                    && let Some(item) = reg.item_id("base:dross_sludge")
+                {
+                    grew |= ok.insert(item.0);
+                }
+                if preparation.handler == crate::alchemy::PreparationHandler::PreserveSpecimen
+                    && let Some(item) = reg.item_id("base:spent_carrier")
+                {
+                    grew |= ok.insert(item.0);
+                }
+            }
+        }
         // The bucket: dip it in any fluid and it comes up full — a
         // code path, like shears. Water and lava alike.
         for full_name in [
@@ -1422,6 +1870,33 @@ fn content_graph_is_complete_and_obtainable() {
         if !grew {
             break;
         }
+    }
+    let lens = reg.item_id("base:tuning_lens").unwrap();
+    let lens_recipe = reg
+        .recipes
+        .iter()
+        .find(|recipe| recipe.output == lens)
+        .expect("the public content graph exposes the tuning lens route");
+    assert_eq!(lens_recipe.station.as_deref(), Some("lens_assembly_bench"));
+    for ingredient in lens_recipe.pattern.iter().flatten() {
+        assert!(
+            ing_ok(ingredient, &ok),
+            "a solo player cannot obtain a tuning-lens ingredient"
+        );
+        let candidates: Vec<_> = match ingredient {
+            Ingredient::One(item) => vec![*item],
+            Ingredient::Any(items) => items.clone(),
+        };
+        assert!(
+            candidates.iter().any(|item| {
+                reg.item(*item)
+                    .discovery
+                    .as_ref()
+                    .and_then(|definition| definition.evidence_class.as_ref())
+                    .is_none()
+            }),
+            "the industrial lens route must not depend on archaeological loot"
+        );
     }
     // World-only block items: the block deliberately drops a different
     // item or nothing (grass, ice, ores, ruin masonry, bedrock) - the

@@ -49,15 +49,17 @@ For quick feedback, CI runs non-agent tests separately:
 cargo test --locked --all-targets -- --skip tests::agent::
 ```
 
-The four end-to-end QUIC agent scenarios retain their own serial lane:
+The seven end-to-end QUIC agent scenarios retain their own serial lane:
 
 ```sh
 cargo test --locked tests::agent:: -- --test-threads=1
 ```
 
-They completed in 12.44 seconds on the 2026-07-30 review machine and have a
-five-minute CI timeout. The fast lane should also stay below five minutes;
-crossing either budget is treated as a performance regression.
+They completed in 22.01 seconds on the 2026-08-03 review machine and have a
+30-minute cold-run CI timeout so compilation cannot self-cancel the scenarios.
+The scenarios themselves should remain comfortably below five minutes; the
+fast lane has the same runtime budget, and crossing either is treated as a
+performance regression.
 
 ## Architecture
 
@@ -116,6 +118,10 @@ deny atomic save-file replacement. The base game and textures are embedded in
 the executable; copy `mods/` beside it to retain the repository's optional
 content. Saves then live in `C:\Games\Wildforge\saves` and remain reachable
 from WSL at `/mnt/c/Games/Wildforge/saves`.
+
+Graphical performance qualification likewise uses that native Windows build,
+not WSL's `llvmpipe` software renderer. Wildforge rejects CPU rendering
+adapters at startup rather than reporting their timings as game performance.
 
 Sensitivity can be scaled with `WILDFORGE_SENS` (default `1.0`).
 

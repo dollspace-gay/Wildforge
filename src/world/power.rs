@@ -55,6 +55,7 @@ impl World {
                 continue;
             };
             if let Some(BlockEntity::Steam(s)) = self.block_entities.get(&firebox_pos)
+                && !s.draft_closed
                 && s.fuel > 0.0
                 && s.water.water_hu > 0
             {

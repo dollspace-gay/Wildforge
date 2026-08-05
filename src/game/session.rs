@@ -163,14 +163,23 @@ impl Game {
             // Named items land first (hotbar slots), then the kit.
             for name in extra.split(',').filter(|s| s.contains(':')) {
                 if let Some(item) = reg.item_id(name.trim()) {
-                    let left = self.inventory.add(&reg, item, 1);
-                    if left == 0
-                        && let Some(ledger) = &mut self.server.world.material_ledger
-                        && let Err(error) = ledger.record_external_stack(
-                            &reg,
-                            ItemStack::new(&reg, item, 1),
+                    let mut stack = ItemStack::new(&reg, item, 1);
+                    if let Some(at) = self.player.pos.block()
+                        && let Err(error) = self.server.world.bind_arcane_stack_at(
+                            at,
+                            &mut stack,
                             "development kit",
                         )
+                    {
+                        eprintln!("arcane: development kit item rejected: {error}");
+                        continue;
+                    }
+                    let left = self.inventory.add_stack(&reg, stack);
+                    if left == 0
+                        && let Err(error) = self
+                            .server
+                            .world
+                            .record_external_stack(stack, "development kit")
                     {
                         eprintln!("materials: development kit accounting failed: {error}");
                     }
@@ -225,7 +234,7 @@ impl Game {
         }
         self.ui_state.held_stack = None;
         self.interaction.craft_grid = [None; 9];
-        self.interaction.items.clear();
+        self.server.world.clear_loose_items();
         self.interaction.breaking = None;
         self.survival.health = MAX_HEALTH;
         self.survival.killed_by_wild = false;
@@ -375,6 +384,11 @@ impl Game {
                         self.ui_state.creation_progress =
                             (progress.completed_stages, progress.total_stages);
                     }
+                    world::WorldCreationProgress::Arcane(progress) => {
+                        self.ui_state.creation_status = progress.stage.label().into();
+                        self.ui_state.creation_progress =
+                            (progress.completed_stages, progress.total_stages);
+                    }
                     world::WorldCreationProgress::Homeland {
                         stage,
                         completed,
@@ -502,10 +516,11 @@ impl Game {
             if let Some(s) = s {
                 let _ = writeln!(
                     out,
-                    "[[slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                    "[[slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                     self.content.reg.item(s.item).name,
                     s.count,
-                    s.durability
+                    s.durability,
+                    s.arcane_id
                 );
             }
         }
@@ -513,10 +528,11 @@ impl Game {
             if let Some(s) = s {
                 let _ = writeln!(
                     out,
-                    "[[armor]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}",
+                    "[[armor]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                     self.content.reg.item(s.item).name,
                     s.count,
-                    s.durability
+                    s.durability,
+                    s.arcane_id
                 );
             }
         }
@@ -564,12 +580,14 @@ impl Game {
 
         #[derive(Serialize)]
         struct StoredDrop {
+            stable_id: u64,
             pos: crate::planet::EntityPos,
             vel: [f32; 3],
             item: String,
             count: u32,
             age: f32,
             durability: u32,
+            arcane_id: u64,
         }
         #[derive(Serialize)]
         struct File {
@@ -577,34 +595,48 @@ impl Game {
             drop: Vec<StoredDrop>,
         }
         let drop = self
-            .interaction
-            .items
+            .server
+            .world
+            .loose_items()
             .iter()
             .map(|entity| StoredDrop {
+                stable_id: entity.stable_id,
                 pos: entity.pos,
                 vel: entity.vel.to_array(),
                 item: self.content.reg.item(entity.item).name.clone(),
                 count: entity.count,
                 age: entity.age,
                 durability: entity.durability,
+                arcane_id: entity.arcane_id,
             })
             .collect();
         let text =
-            toml::to_string_pretty(&File { version: 1, drop }).map_err(std::io::Error::other)?;
+            toml::to_string_pretty(&File { version: 3, drop }).map_err(std::io::Error::other)?;
         crate::identity::atomic_write(&world.join("loose-items.toml"), text.as_bytes(), false)
     }
 
     fn load_loose_items(&mut self, world: &std::path::Path) {
         use serde::Deserialize;
 
+        // World::load_or_create owns the v3 host-authoritative format. This
+        // reader remains only as a migration fallback for older session
+        // worlds that reached the game before world-side adoption.
+        if !self.server.world.loose_items().is_empty() {
+            return;
+        }
+
         #[derive(Deserialize)]
         struct StoredDrop {
+            #[serde(default)]
+            stable_id: u64,
             pos: crate::planet::EntityPos,
             vel: [f32; 3],
             item: String,
             count: u32,
             age: f32,
             durability: u32,
+            #[serde(default)]
+            arcane_id: u64,
         }
         #[derive(Deserialize)]
         struct File {
@@ -619,7 +651,7 @@ impl Game {
             eprintln!("items: could not parse loose-items.toml; file left untouched");
             return;
         };
-        if file.version != 1 {
+        if !(1..=3).contains(&file.version) {
             eprintln!(
                 "items: unsupported loose item save version {}",
                 file.version
@@ -639,11 +671,35 @@ impl Game {
             }
             let mut entity =
                 ItemEntity::new(stored.pos, Vec3::from_array(stored.vel), item, stored.count);
+            entity.stable_id = stored.stable_id;
             entity.age = stored.age.max(0.0);
             entity.durability = stored
                 .durability
                 .min(self.content.reg.item(item).durability);
-            self.interaction.items.push(entity);
+            entity.arcane_id = stored.arcane_id;
+            if let Some(at) = stored.pos.block()
+                && self.content.reg.item(item).charm_def.is_some()
+            {
+                let mut stack = ItemStack {
+                    item,
+                    count: stored.count,
+                    durability: entity.durability,
+                    arcane_id: stored.arcane_id,
+                };
+                if self
+                    .server
+                    .world
+                    .ensure_charm_instance_at(
+                        at,
+                        &mut stack,
+                        "explicit planetary loose-item charm migration",
+                    )
+                    .is_ok()
+                {
+                    entity.arcane_id = stack.arcane_id;
+                }
+            }
+            self.server.world.spawn_loose_item(entity);
         }
     }
 
@@ -655,6 +711,8 @@ impl Game {
             item: String,
             count: u32,
             durability: u32,
+            #[serde(default)]
+            arcane_id: u64,
         }
         #[derive(Deserialize)]
         struct P {
@@ -723,6 +781,7 @@ impl Game {
                     item,
                     count: s.count,
                     durability: s.durability,
+                    arcane_id: s.arcane_id,
                 });
             }
         }
@@ -734,7 +793,48 @@ impl Game {
                     item,
                     count: s.count,
                     durability: s.durability,
+                    arcane_id: s.arcane_id,
                 });
+            }
+        }
+        if let Some(at) = self.player.pos.block() {
+            let migrated = self.server.world.migrate_legacy_player_charms(
+                at,
+                &mut self.inventory,
+                &mut self.survival.armor,
+                &mut self.ui_state.held_stack,
+                "local player",
+            );
+            if migrated != 0
+                && let Err(error) = self.save_player()
+            {
+                eprintln!(
+                    "implements: migrated {migrated} local charms but profile save failed: {error}"
+                );
+            }
+        }
+        if let Ok(player_id) = identity::local_player_id(dir, self.identity.device_id()) {
+            match self
+                .server
+                .world
+                .resume_pending_inventory_workings(player_id.0, &mut self.inventory)
+            {
+                Ok(ids) if !ids.is_empty() => match self.save_player() {
+                    Ok(()) => {
+                        for id in ids {
+                            if let Err(error) = self.server.world.finish_inventory_working(id) {
+                                eprintln!("workings: resumed Fieldmend could not finish: {error}");
+                            }
+                        }
+                    }
+                    Err(error) => eprintln!(
+                        "workings: resumed Fieldmend remains pending because its profile checkpoint failed: {error}"
+                    ),
+                },
+                Ok(_) => {}
+                Err(error) => {
+                    eprintln!("workings: pending local Fieldmend is inconsistent: {error}")
+                }
             }
         }
         true
@@ -754,7 +854,7 @@ impl Game {
                 0.3,
                 1,
             );
-            self.interaction.items.clear();
+            self.server.world.clear_loose_items();
             self.in_world = false;
             self.refresh_worlds();
             self.set_screen(Screen::Title);
@@ -778,7 +878,7 @@ impl Game {
             0.3,
             1,
         );
-        self.interaction.items.clear();
+        self.server.world.clear_loose_items();
         self.in_world = false;
         self.refresh_worlds();
         self.set_screen(Screen::Title);

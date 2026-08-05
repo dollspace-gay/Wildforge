@@ -206,3 +206,45 @@ vein_size = 9
 per_chunk = 2
 shape = "seam"
 y_range = [70, 110]
+
+# Resonant geology is sparse, finite ordinary mass. Its exceptional charge is
+# resolved from the local Current when the deposit is first materialized.
+[[feature]]
+type = "ore"
+block = "base:choirstone"
+replaces = "base:marble"
+shape = "streak"
+vein_size = 5
+per_chunk = 1
+chance = 0.35
+y_range = [24, 96]
+
+[[feature]]
+type = "ore"
+block = "base:still_salt"
+replaces = "base:sandstone"
+shape = "seam"
+vein_size = 4
+per_chunk = 1
+chance = 0.22
+y_range = [56, 104]
+
+[[feature]]
+type = "ore"
+block = "base:wake_iron"
+replaces = "base:basalt"
+shape = "streak"
+vein_size = 3
+per_chunk = 1
+chance = 0.18
+y_range = [8, 72]
+
+[[feature]]
+type = "ore"
+block = "base:echo_slate"
+replaces = "base:shale"
+shape = "seam"
+vein_size = 5
+per_chunk = 1
+chance = 0.28
+y_range = [36, 72]

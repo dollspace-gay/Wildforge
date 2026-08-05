@@ -19,6 +19,15 @@ impl World {
                 ),
             ));
         }
+        if !reg.arcane_errors.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "content arcane accounting failed:\n{}",
+                    reg.arcane_errors.join("\n")
+                ),
+            ));
+        }
         let mut existing = load_world_meta(&save_dir)?;
         let seed = existing.as_ref().map(|meta| meta.seed).unwrap_or_else(|| {
             std::env::var("WILDFORGE_SEED")
@@ -42,6 +51,9 @@ impl World {
                 &crate::planet_atlas::CancellationToken::default(),
                 |progress| match progress {
                     WorldCreationProgress::Atlas(progress) => {
+                        eprintln!("world creation: {}", progress.stage.label())
+                    }
+                    WorldCreationProgress::Arcane(progress) => {
                         eprintln!("world creation: {}", progress.stage.label())
                     }
                     WorldCreationProgress::Homeland {
@@ -94,24 +106,138 @@ impl World {
                 );
             }
         }
+        if let Ok(ledger) = crate::arcane::ArcaneLedger::load(&save_dir) {
+            let added = Arc::make_mut(&mut reg).install_saved_arcane_placeholders(&ledger);
+            if added != 0 {
+                eprintln!("arcane: restored {added} named charged placeholders for removed mods");
+            }
+        }
         // A finite world must never continue with accounting silently
         // disabled. This also leaves the independently written backup intact
         // for an operator-led recovery instead of inventing replacement mass.
         let material_ledger =
             crate::materials::MaterialLedger::load_or_initialize(&save_dir, &atlas, &reg)?;
+        #[cfg(test)]
+        let mut arcane_geography =
+            crate::arcane_geography::ArcaneGeography::load_or_generate(&save_dir, &atlas, &reg)
+                .map_err(std::io::Error::other)?;
+        #[cfg(not(test))]
+        let mut arcane_geography =
+            crate::arcane_geography::ArcaneGeography::load(&save_dir, &atlas)
+                .map_err(std::io::Error::other)?;
+        let ecology_added =
+            crate::arcane_ecology::reconcile_content(&atlas, &reg, &mut arcane_geography)
+                .map_err(std::io::Error::other)?;
+        if ecology_added != 0 {
+            arcane_geography
+                .save_dynamic(&save_dir)
+                .map_err(std::io::Error::other)?;
+            eprintln!(
+                "arcane ecology: reserved {ecology_added} deterministic existing-world sites"
+            );
+        }
+        let geography_current = arcane_geography
+            .custody_current()
+            .map_err(std::io::Error::other)?;
+        let arcane_ledger = crate::arcane::ArcaneLedger::load_or_initialize_with_geography(
+            &save_dir,
+            &atlas,
+            &reg,
+            geography_current,
+        )
+        .map_err(std::io::Error::other)?;
+        let discovery_state =
+            crate::discovery::DiscoveryState::load_or_initialize(&save_dir, seed, reg.content_hash)
+                .map_err(std::io::Error::other)?;
+        let implements_state =
+            crate::implements::ImplementsState::load_or_initialize(&save_dir, reg.content_hash)
+                .map_err(std::io::Error::other)?;
+        let workings_state = crate::workings::WorkingsState::load_or_initialize(
+            &save_dir,
+            reg.content_hash,
+            &reg.workings,
+        )
+        .map_err(std::io::Error::other)?;
+        let alchemy_state =
+            crate::alchemy::AlchemyState::load_or_initialize(&save_dir, reg.content_hash)
+                .map_err(std::io::Error::other)?;
         write_world_meta_full(&save_dir, seed, &mode, ire, day)?;
-        let mut w = World::new_with_atlas(seed, save_dir, reg, Arc::new(atlas));
+        let mut w = World::new_with_preloaded_atlas(seed, save_dir, reg, Arc::new(atlas));
         w.material_ledger = Some(material_ledger);
+        w.arcane_ledger = Some(arcane_ledger);
+        w.arcane_geography = Some(arcane_geography);
+        w.discovery_state = Some(discovery_state);
+        w.implements_state = Some(implements_state);
+        w.workings_state = Some(workings_state);
+        w.alchemy_state = Some(alchemy_state);
         w.mode = mode;
         w.ire = ire;
         w.day = day;
         w.clock = day as f64 * crate::server::DAY_LENGTH as f64;
         w.load_remap = w.read_palette_remap();
         w.palette_stale = !w.palette_matches_registry();
+        // The arcane journal commits before sparse item-owner files. If a
+        // process stopped between those two durable writes, roll an
+        // unmaterialized account back or remove a stale pre-commit stack
+        // before any player, container, drop, or mob can observe it.
+        if let Some(ledger) = &mut w.arcane_ledger {
+            let active_workings = w
+                .workings_state
+                .as_ref()
+                .map_or_else(std::collections::BTreeSet::new, |state| state.active_ids());
+            let workings_max = w
+                .workings_state
+                .as_ref()
+                .map_or(0, crate::workings::WorkingsState::max_working_id);
+            ledger.reconcile_working_id_floor(workings_max);
+            ledger
+                .reconcile_transient_owners(&active_workings)
+                .map_err(std::io::Error::other)?;
+            let active_alchemy = w
+                .alchemy_state
+                .as_ref()
+                .map_or_else(std::collections::BTreeSet::new, |state| {
+                    state.active_arcane_ids()
+                });
+            ledger
+                .reconcile_alchemy_owners(&active_alchemy)
+                .map_err(std::io::Error::other)?;
+            ledger
+                .reconcile_durable_item_owners(&w.save_dir)
+                .map_err(std::io::Error::other)?;
+        }
+        if let (Some(ledger), Some(implements)) =
+            (w.arcane_ledger.as_ref(), w.implements_state.as_mut())
+        {
+            let recovered = implements
+                .reconcile_ledger(ledger)
+                .map_err(std::io::Error::other)?;
+            if recovered != 0 {
+                implements.save().map_err(std::io::Error::other)?;
+                eprintln!(
+                    "implements: removed {recovered} construction records rolled back after an interrupted physical-owner save"
+                );
+            }
+        }
         w.load_entities();
+        w.migrate_loaded_entity_charms();
         w.load_mobs();
+        w.migrate_loaded_mob_charms();
+        w.load_loose_items();
         w.load_stamps();
+        let interrupted = w
+            .interrupt_loaded_wand_workings()
+            .map_err(std::io::Error::other)?;
+        if interrupted != 0 {
+            eprintln!(
+                "workings: interrupted {interrupted} held wand channel(s) whose session ended at restart"
+            );
+        }
         w.replay_pending_material_operation()?;
+        let replayed = w.replay_pending_workings().map_err(std::io::Error::other)?;
+        if replayed != 0 {
+            eprintln!("workings: completed {replayed} crash-safe pending effect(s)");
+        }
         Ok(w)
     }
 

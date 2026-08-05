@@ -51,6 +51,7 @@ impl Game {
                     item: *remote.item_map.get(stack.item as usize)?.as_ref()?,
                     count: stack.count,
                     durability: stack.durability,
+                    arcane_id: stack.arcane_id,
                 })
             });
         }
@@ -64,6 +65,7 @@ impl Game {
                     item: *remote.item_map.get(stack.item as usize)?.as_ref()?,
                     count: stack.count,
                     durability: stack.durability,
+                    arcane_id: stack.arcane_id,
                 })
             });
         }
@@ -72,6 +74,7 @@ impl Game {
                 item: *remote.item_map.get(stack.item as usize)?.as_ref()?,
                 count: stack.count,
                 durability: stack.durability,
+                arcane_id: stack.arcane_id,
             })
         });
         self.survival.health = state.health;
@@ -135,6 +138,7 @@ impl Game {
                     players: Default::default(),
                     player_positions: Default::default(),
                     player_held: Default::default(),
+                    player_implement: Default::default(),
                     player_style: Default::default(),
                     names: Default::default(),
                     sleeping: false,
@@ -147,6 +151,7 @@ impl Game {
                     players_rx: Default::default(),
                     mobs_rx: Default::default(),
                     bolts_rx: Default::default(),
+                    loose_items_rx: Default::default(),
                     falling_rx: Default::default(),
                     // Until the host answers, assume the old fixed ring.
                     granted_view_dist: 5,
@@ -233,6 +238,7 @@ impl Game {
             self.multiplayer.remote = None;
             return;
         }
+        let mut block_updates = Vec::new();
         for msg in msgs {
             match msg {
                 net::S2C::Challenge { .. } => {}
@@ -420,14 +426,7 @@ impl Game {
                         .copied()
                         .unwrap_or(self.content.reg.unknown_block);
                     let old = self.server.world.get_block_at(pos);
-                    self.server.world.set_block_state_at(
-                        pos,
-                        local,
-                        meta,
-                        salt_mass,
-                        soil_salinity,
-                    );
-                    self.server.world.clear_pending_drops();
+                    block_updates.push((pos, local, meta, salt_mass, soil_salinity));
                     // Someone broke something: the world crumbles for
                     // everyone watching.
                     if local == crate::registry::AIR
@@ -456,15 +455,21 @@ impl Game {
                     r.player_positions.retain(|id, _| present.contains(id));
                     r.player_lerp.retain(|id, _| present.contains(id));
                     r.player_held.retain(|id, _| present.contains(id));
+                    r.player_implement.retain(|id, _| present.contains(id));
                     r.player_style.retain(|id, _| present.contains(id));
                     // New span: from wherever each player currently
                     // renders, toward the fresh snapshot.
                     let t = (r.player_age / r.player_interval.max(0.001)).clamp(0.0, 1.0);
-                    for (id, pos, yaw, held, pstyle) in list {
+                    for (id, pos, yaw, held, pstyle, implement) in list {
                         if id == r.my_id {
                             continue;
                         }
                         r.player_held.insert(id, held);
+                        if let Some(visual) = implement {
+                            r.player_implement.insert(id, visual);
+                        } else {
+                            r.player_implement.remove(&id);
+                        }
                         r.player_style.insert(id, pstyle);
                         r.player_positions.insert(id, pos);
                         let render_pos = pos.render_pos();
@@ -560,6 +565,7 @@ impl Game {
                     let projectiles = snaps
                         .into_iter()
                         .map(|s| mobs::Projectile {
+                            stable_id: s.id,
                             pos: s.pos,
                             // Dead-reckoned between snapshots below.
                             vel: s.vel,
@@ -568,10 +574,30 @@ impl Game {
                             age: s.age,
                             from_player: false,
                             drop_item: None,
+                            preparation_payload: None,
                             owner: 0,
                         })
                         .collect();
                     self.server.world.replace_projectiles(projectiles);
+                }
+                net::S2C::LooseItems(part) => {
+                    let Some(snaps) = r.loose_items_rx.accept(part) else {
+                        continue;
+                    };
+                    let items = snaps
+                        .into_iter()
+                        .filter_map(|snap| {
+                            let item = (*r.item_map.get(snap.item as usize)?)?;
+                            let mut entity = ItemEntity::new(snap.pos, snap.vel, item, snap.count);
+                            entity.stable_id = snap.id;
+                            entity.age = snap.age;
+                            entity.durability =
+                                snap.durability.min(self.content.reg.item(item).durability);
+                            entity.arcane_id = snap.arcane_id;
+                            Some(entity)
+                        })
+                        .collect();
+                    self.server.world.replace_loose_items(items);
                 }
                 net::S2C::TimeIre { time, ire, day } => {
                     self.server.time_of_day = time;
@@ -581,11 +607,118 @@ impl Game {
                 net::S2C::WeatherCells { side, cells } => {
                     self.server.world.set_remote_weather(side, cells);
                 }
+                net::S2C::ArcaneCue {
+                    bands,
+                    dominant,
+                    ecology,
+                } => {
+                    self.server
+                        .world
+                        .set_remote_arcane_cue(bands, dominant, ecology);
+                }
+                net::S2C::ArcaneItems {
+                    reset,
+                    charges,
+                    implements,
+                    apparatus,
+                } => {
+                    if reset {
+                        self.server.world.clear_remote_implement_snapshot();
+                    }
+                    self.server.world.extend_remote_arcane_items(charges);
+                    self.server.world.extend_remote_implements(implements);
+                    self.server.world.extend_remote_apparatus(apparatus);
+                }
+                net::S2C::DiscoveryReport(record) => {
+                    self.present_discovery_record(&record);
+                }
+                net::S2C::DiscoveryRecords {
+                    holder,
+                    records,
+                    capacity,
+                } => self.receive_discovery_catalogue(holder, records, capacity),
+                net::S2C::KnowledgeText {
+                    instance_id: _,
+                    text,
+                } => self.toast(text),
+                net::S2C::BindingFrameResult { pos, result } => {
+                    self.interaction
+                        .binding_revisions
+                        .insert(pos, result.revision);
+                    let cue = result.cue;
+                    self.presentation.swing = 1.0;
+                    self.toast(result.message);
+                    for line in result.lines.into_iter().take(3) {
+                        self.toast(line);
+                    }
+                    self.sfx(match cue {
+                        crate::implements::ImplementCue::Use => Sfx::ImplementUse,
+                        crate::implements::ImplementCue::Transfer => Sfx::ImplementTransfer,
+                        crate::implements::ImplementCue::Strain => Sfx::ImplementStrain,
+                        crate::implements::ImplementCue::Empty => Sfx::ImplementEmpty,
+                        crate::implements::ImplementCue::Failure => Sfx::ImplementFailure,
+                    });
+                }
+                net::S2C::AlchemyResult { pos, result } => {
+                    self.interaction
+                        .alchemy_revisions
+                        .insert(pos, result.revision);
+                    self.present_alchemy_cue(result.cue);
+                }
+                net::S2C::PreparationResult(result) => {
+                    self.present_alchemy_cue(result.cue);
+                }
+                net::S2C::PreparationState {
+                    modifiers,
+                    bodily_dross,
+                } => {
+                    self.survival.preparation_modifiers = modifiers;
+                    self.survival.bodily_dross = bodily_dross;
+                }
+                net::S2C::AlchemyEvent(cue) => self.present_alchemy_cue(cue),
+                net::S2C::ImplementActivation {
+                    actor,
+                    pos,
+                    cue,
+                    visual,
+                } => {
+                    let item_map = r.item_map.clone();
+                    self.present_implement_activation(pos, cue, visual, Some(&item_map));
+                    // The next player snapshot remains authoritative for the
+                    // held model; this short-lived event only drives the
+                    // visible settling gesture and local envelope.
+                    if actor != r.my_id {
+                        r.player_age = r.player_age.min(r.player_interval * 0.5);
+                    }
+                }
+                net::S2C::WorkingResult(result) => {
+                    if result.success {
+                        if let Some(channel) = self.interaction.working.as_mut()
+                            && result.phase.is_some()
+                        {
+                            channel.stable_id = result.stable_id;
+                        }
+                        if result.phase.is_none() {
+                            self.interaction.working = None;
+                        }
+                    } else {
+                        self.interaction.working = None;
+                    }
+                    self.toast(result.message);
+                    self.sfx(if result.success {
+                        Sfx::ImplementUse
+                    } else {
+                        Sfx::ImplementFailure
+                    });
+                }
+                net::S2C::WorkingEvent(cue) => self.present_working_cue(cue),
                 net::S2C::Hit { dmg, from } => self.hurt_player_from_wild(dmg, from),
                 net::S2C::Give {
                     item,
                     count,
                     durability,
+                    arcane_id,
+                    current_units,
                 } => {
                     if let Some(Some(local)) = r.item_map.get(item as usize) {
                         let reg = self.content.reg.clone();
@@ -593,6 +726,10 @@ impl Game {
                         if durability > 0 {
                             stack.durability = durability;
                         }
+                        stack.arcane_id = arcane_id;
+                        self.server
+                            .world
+                            .set_remote_arcane_item(arcane_id, current_units);
                         let left = self.inventory.add_stack(&reg, stack);
                         if left == 0 {
                             // Guests harvest over the wire; the ramp
@@ -627,6 +764,7 @@ impl Game {
                             item: crate::registry::ItemId(sn.item),
                             count: sn.count,
                             durability: sn.durability,
+                            arcane_id: sn.arcane_id,
                         });
                     }
                     if let Some(m) = self.server.world.mob_by_id_mut(id) {
@@ -650,6 +788,7 @@ impl Game {
                             item: local,
                             count: s.count,
                             durability: s.durability,
+                            arcane_id: s.arcane_id,
                         })
                     };
                     let entity = match kind {
@@ -761,6 +900,7 @@ impl Game {
                             item: local,
                             count: s.count,
                             durability: s.durability,
+                            arcane_id: s.arcane_id,
                         })
                     });
                 }
@@ -812,6 +952,9 @@ impl Game {
                     .map(|(position, rle)| (*position, rle.as_slice())),
                 &r.block_map,
             );
+        }
+        if !block_updates.is_empty() {
+            self.server.world.apply_remote_block_states(block_updates);
         }
         if r.entry_manifest_received
             && r.entry_required.is_empty()

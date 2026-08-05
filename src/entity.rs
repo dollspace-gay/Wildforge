@@ -9,7 +9,11 @@ use crate::planet::{BlockPos, EntityPos, SurfacePoint, block_to_render, local_fr
 use crate::registry::{ItemId, Registry};
 use crate::world::World;
 
+#[derive(Clone, Debug)]
 pub struct ItemEntity {
+    /// Host-assigned identity. Local creation uses zero and World assigns a
+    /// durable session identity before the drop can be targeted or synced.
+    pub stable_id: u64,
     pub pos: EntityPos, // center of the mini-cube
     pub vel: Vec3,
     pub item: ItemId,
@@ -17,6 +21,7 @@ pub struct ItemEntity {
     pub age: f32,
     /// Non-zero: this drop carries specific durability (worn ruin tools).
     pub durability: u32,
+    pub arcane_id: u64,
 }
 
 const SIZE: f32 = 0.25;
@@ -27,12 +32,14 @@ pub const PICKUP_DELAY: f32 = 0.6;
 impl ItemEntity {
     pub fn new(pos: EntityPos, vel: Vec3, item: ItemId, count: u32) -> ItemEntity {
         ItemEntity {
+            stable_id: 0,
             pos,
             vel,
             item,
             count,
             age: 0.0,
             durability: 0,
+            arcane_id: 0,
         }
     }
 

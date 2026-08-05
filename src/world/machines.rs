@@ -682,9 +682,41 @@ impl World {
     pub fn brush_block_at(&mut self, pos: BlockPos, rng: &mut u32) -> Option<ItemStack> {
         let b = self.get_block_at(pos);
         let (table, becomes) = self.reg.block(b).brush.clone()?;
-        let mut items = self.roll_loot(&table, 1, rng);
+        if !self.claim_discovery_recovery(pos) {
+            return None;
+        }
+        let mut items = if table.ends_with(":ruin_artifacts") {
+            let item_names = [
+                "base:etched_tablet",
+                "base:maker_calibration_plate",
+                "base:spent_charm_fitting",
+                "base:broken_focus",
+                "base:sealed_dross_ampoule",
+                "base:site_survey_marks",
+                "base:failed_containment_fragment",
+            ];
+            let index = self.mob_hash_at(pos.surface(), 0xd15c_0a11) as usize % item_names.len();
+            self.reg
+                .item_id(item_names[index])
+                .map(|item| vec![ItemStack::new(&self.reg, item, 1)])
+                .unwrap_or_default()
+        } else {
+            self.roll_loot(&table, 1, rng)
+        };
         self.set_block_at(pos, becomes);
-        let found = items.pop();
+        let mut found = items.pop();
+        if let Some(stack) = &mut found
+            && let Err(error) = self.bind_arcane_stack_at(pos, stack, "archaeological recovery")
+        {
+            eprintln!("arcane: archaeological find could not bind: {error}");
+            found = None;
+        }
+        if let Some(stack) = &mut found
+            && let Err(error) = self.bind_discovery_stack_at(pos, stack)
+        {
+            eprintln!("discovery: archaeological find could not bind: {error}");
+            found = None;
+        }
         if let (Some(stack), Some(ledger)) = (found, &mut self.material_ledger)
             && let Err(error) =
                 ledger.record_external_stack(&self.reg, stack, "pre-genesis archaeology")
