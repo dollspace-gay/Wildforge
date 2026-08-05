@@ -2558,6 +2558,24 @@ impl Game {
 
         self.advance_session_authority(dt, paused);
 
+        // Native qualification runs may warm for hundreds of authoritative
+        // ticks while a view-12 horizon fills. The one-shot setup override in
+        // `run_demos` is not enough: live planetary weather can advance to a
+        // different category before the accepted frame. Reapply only for an
+        // automated capture, after simulation and immediately before lighting
+        // samples the world. Ordinary play keeps the normal gradual weather.
+        if self.auto_shot.is_some()
+            && let Ok(requested) = std::env::var("WILDFORGE_WEATHER")
+        {
+            self.server.world.force_local_weather(&requested);
+            self.presentation.weather_vis = match requested.as_str() {
+                "overcast" => 0.4,
+                "precip" | "rain" | "snow" => 0.55,
+                "storm" => 0.7,
+                _ => 0.0,
+            };
+        }
+
         self.refresh_content_and_toasts(dt);
 
         self.advance_player(dt, paused);
