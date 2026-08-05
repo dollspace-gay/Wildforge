@@ -42,7 +42,7 @@ impl Game {
         let line = line.trim_start_matches(['!', '/']);
         let mut tokens = line.split_whitespace();
         let Some(cmd) = tokens.next().map(str::to_ascii_lowercase) else {
-            return vec!["templates: capture | ghost | cost | list | drop | cancel | stamp".into()];
+            return vec!["templates: capture | ghost | cost | list | drop | cancel | stamp | spawn | despawn".into()];
         };
         if cmd != "stamp" {
             return self.server.world.template_command(line);

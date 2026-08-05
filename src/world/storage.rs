@@ -1047,6 +1047,11 @@ impl World {
             self.save_dir.join("templates.toml"),
             self.save_templates(),
         );
+        report.record(
+            "local structures",
+            self.save_dir.join("local_structures.toml"),
+            self.save_local_structures(),
+        );
         let dirty: Vec<ChunkPos> = self
             .chunks
             .iter()

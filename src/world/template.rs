@@ -460,12 +460,16 @@ impl World {
     ///
     /// Commands: `capture <name> <face> <u> <y> <v> <face2> <u2> <y2> <v2>`,
     /// `ghost <name> <face> <u> <y> <v> [rot]`, `cost <name>`,
-    /// `list`, `drop <name>`, `cancel <face> <u> <y> <v>`. `rot` is one of
-    /// `r0|r90|r180|r270`.
+    /// `list`, `drop <name>`, `cancel <face> <u> <y> <v>`,
+    /// `spawn <template_name> <face> <u> <y> <v> [rot]`,
+    /// `despawn <id>`. `rot` is one of `r0|r90|r180|r270`.
     pub fn template_command(&mut self, line: &str) -> Vec<String> {
         let mut tokens = line.split_whitespace();
         let Some(cmd) = tokens.next().map(str::to_ascii_lowercase) else {
-            return vec!["templates: capture | ghost | cost | list | drop | cancel | stamp".into()];
+            return vec![
+                "templates: capture | ghost | cost | list | drop | cancel | stamp | spawn | despawn"
+                    .into(),
+            ];
         };
         let reply = |msg: String| vec![msg];
         match cmd.as_str() {
@@ -509,6 +513,20 @@ impl World {
                     reply(format!("no template named {name}"))
                 }
             }
+            "despawn" => {
+                let Some(token) = tokens.next() else {
+                    return reply("usage: despawn <id>".into());
+                };
+                let Ok(id) = token.parse::<u64>() else {
+                    return reply(format!("bad structure id {token}"));
+                };
+                let id = crate::world::local_structure::LocalStructureId(id);
+                if self.remove_structure(id) {
+                    reply(format!("despawned structure #{}", id.0))
+                } else {
+                    reply(format!("no structure with id {}", id.0))
+                }
+            }
             "cancel" => {
                 let Some(pos) = parse_block_pos(&mut tokens) else {
                     return reply("usage: cancel <face> <u> <y> <v>".into());
@@ -550,6 +568,22 @@ impl World {
                 match self.stamp_ghost(&t, pos, rot) {
                     Ok(msg) => reply(msg),
                     Err(e) => reply(format!("ghost {name}: {e}")),
+                }
+            }
+            "spawn" => {
+                let Some(name) = tokens.next() else {
+                    return reply("usage: spawn <template_name> <face> <u> <y> <v> [rot]".into());
+                };
+                let Some(pos) = parse_block_pos(&mut tokens) else {
+                    return reply("spawn: bad anchor — <face> <u> <y> <v> [rot]".into());
+                };
+                let rot = parse_rot(tokens.next()).unwrap_or(Rotation::R0);
+                let Some(t) = self.template(name).cloned() else {
+                    return reply(format!("no template named {name}"));
+                };
+                match self.spawn_structure(&t, pos, rot) {
+                    Ok(id) => reply(format!("spawned {name} as structure #{} at {pos:?}", id.0)),
+                    Err(e) => reply(format!("spawn {name}: {e}")),
                 }
             }
             _ => reply(format!("templates: unknown command {cmd}")),

@@ -23,6 +23,7 @@ mod hearts;
 mod hydrology;
 mod identity;
 mod implements;
+mod local_structure;
 mod machines;
 mod mobs;
 mod multiblock;

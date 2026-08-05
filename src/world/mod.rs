@@ -55,6 +55,7 @@ pub mod soil;
 mod spawn;
 pub(crate) use spawn::player_entry_chunks;
 pub(crate) use storage::{ChunkLoader, encode_stream_chunk};
+pub(crate) mod local_structure;
 pub(crate) mod template;
 mod ticks;
 mod workings;
@@ -1021,6 +1022,13 @@ pub struct World {
     /// Active ghost overlays: the world cells a player still has to place,
     /// keyed absolutely and mapped to the required block name.
     pending_fills: Vec<crate::world::template::PendingFill>,
+    /// Spawned local structures (spec Part 1.1, scoped): self-contained
+    /// block stores that exist off the chunk grid, each with its own static
+    /// world transform. Persisted to `local_structures.toml`.
+    local_structures: Vec<crate::world::local_structure::LocalStructure>,
+    /// Allocator for [`World::local_structures`] ids, advanced on every
+    /// spawn so ids stay unique across a session.
+    next_local_structure_id: u64,
     /// Items spilled by removed block entities, for the game loop to spawn.
     pending_drops: Vec<(crate::planet::BlockPos, ItemStack)>,
     mobs: Vec<crate::mobs::Mob>,
@@ -1397,6 +1405,8 @@ impl World {
             block_entities: HashMap::new(),
             templates: Vec::new(),
             pending_fills: Vec::new(),
+            local_structures: Vec::new(),
+            next_local_structure_id: 0,
             pending_drops: Vec::new(),
             perish_accum: 0.0,
             station_work: HashMap::new(),

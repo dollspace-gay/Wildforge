@@ -18,7 +18,7 @@ use crate::world::World;
 
 /// A whole-rotation of a shape around the vertical axis, applied to each
 /// cell offset before the world is probed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Rotation {
     R0,
     R90,
