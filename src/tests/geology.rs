@@ -1,13 +1,16 @@
 //! Qualification tests for the causal spherical geology model.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use glam::{DQuat, DVec3};
 
 use super::*;
-use crate::planet::{Direction4, FACE_BLOCKS, Face, SurfacePos};
-use crate::planet_atlas::{AtlasPos, DetailedBoundary, MineralKind, PlanetAtlas, VolcanoSource};
+use crate::planet::{BlockPos, Direction4, FACE_BLOCKS, Face, SurfacePos, step4};
+use crate::planet_atlas::{
+    AtlasPos, BedrockFamily, DetailedBoundary, MineralKind, PlanetAtlas, VolcanoSource,
+};
 use crate::worldgen::Generator;
 
 fn geology(seed: u32) -> PlanetAtlas {
@@ -749,5 +752,471 @@ fn strata_cross_face_seams_and_fold_across_boundary_strike() {
     assert!(
         across_change > along_change,
         "fold bands changed {along_change} along strike and {across_change} across it"
+    );
+}
+
+#[derive(Clone, Copy, Debug)]
+struct StrataCliffCandidate {
+    atlas: AtlasPos,
+    open_toward: Direction4,
+    score: f32,
+}
+
+struct StrataExposures {
+    natural: [Vec<BlockPos>; 4],
+    sky: [Vec<BlockPos>; 4],
+}
+
+fn file_snapshot(root: &Path) -> BTreeMap<PathBuf, (u64, u128)> {
+    fn walk(root: &Path, at: &Path, out: &mut BTreeMap<PathBuf, (u64, u128)>) {
+        let mut entries = std::fs::read_dir(at)
+            .unwrap_or_else(|error| panic!("read probe directory {}: {error}", at.display()))
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        entries.sort();
+        for path in entries {
+            let metadata = std::fs::metadata(&path).unwrap();
+            if metadata.is_dir() {
+                walk(root, &path, out);
+            } else if metadata.is_file() {
+                let modified = metadata
+                    .modified()
+                    .ok()
+                    .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |value| value.as_nanos());
+                out.insert(
+                    path.strip_prefix(root).unwrap().to_owned(),
+                    (metadata.len(), modified),
+                );
+            }
+        }
+    }
+
+    let mut result = BTreeMap::new();
+    walk(root, root, &mut result);
+    result
+}
+
+fn direction_name(direction: Direction4) -> &'static str {
+    match direction {
+        Direction4::East => "east",
+        Direction4::North => "north",
+        Direction4::West => "west",
+        Direction4::South => "south",
+    }
+}
+
+fn generated_block(
+    chunks: &HashMap<crate::chunk::ChunkPos, crate::chunk::Chunk>,
+    at: BlockPos,
+) -> crate::registry::BlockId {
+    let chunk = at.chunk();
+    let (x, y, z) = at.local();
+    chunks.get(&chunk).map_or(AIR, |value| value.get(x, y, z))
+}
+
+fn exposed_strata(
+    generator: &Generator,
+    reg: &Registry,
+    center: SurfacePos,
+    target: crate::registry::BlockId,
+) -> StrataExposures {
+    let center_chunk = crate::chunk::ChunkPos::from_surface(center);
+    let mut chunks = HashMap::new();
+    for du in -2..=2 {
+        for dv in -2..=2 {
+            let pos = center_chunk.offset(du, dv);
+            chunks.insert(pos, generator.generate(pos, reg));
+        }
+    }
+
+    let mut natural: [Vec<BlockPos>; 4] = std::array::from_fn(|_| Vec::new());
+    let mut sky: [Vec<BlockPos>; 4] = std::array::from_fn(|_| Vec::new());
+    for du in -1..=1 {
+        for dv in -1..=1 {
+            let pos = center_chunk.offset(du, dv);
+            let chunk = chunks.get(&pos).unwrap();
+            let origin = pos.block_origin();
+            for x in 0..crate::chunk::CHUNK_X {
+                for z in 0..crate::chunk::CHUNK_Z {
+                    let surface = SurfacePos::canonicalized(
+                        origin.face(),
+                        i32::from(origin.u()) + x as i32,
+                        i32::from(origin.v()) + z as i32,
+                    )
+                    .unwrap();
+                    for y in 1..crate::chunk::CHUNK_Y - 1 {
+                        if chunk.get(x, y, z) != target {
+                            continue;
+                        }
+                        for direction in Direction4::ALL {
+                            let neighbor = step4(surface, direction).pos;
+                            let air =
+                                BlockPos::new(neighbor.face(), neighbor.u(), y as u8, neighbor.v())
+                                    .unwrap();
+                            if generated_block(&chunks, air) != AIR {
+                                continue;
+                            }
+                            let exposed =
+                                BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
+                                    .unwrap();
+                            natural[direction as usize].push(exposed);
+                            let open_to_sky = (y + 1..crate::chunk::CHUNK_Y).all(|above| {
+                                let at = BlockPos::new(
+                                    neighbor.face(),
+                                    neighbor.u(),
+                                    above as u8,
+                                    neighbor.v(),
+                                )
+                                .unwrap();
+                                !reg.is_solid(generated_block(&chunks, at))
+                            });
+                            if open_to_sky {
+                                sky[direction as usize].push(exposed);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for groups in [&mut natural, &mut sky] {
+        for positions in groups {
+            positions.sort();
+            positions.dedup();
+        }
+    }
+    StrataExposures { natural, sky }
+}
+
+fn camera_surface(target: SurfacePos, direction: Direction4, distance: i32) -> SurfacePos {
+    let (du, dv) = match direction {
+        Direction4::East => (distance, 0),
+        Direction4::North => (0, distance),
+        Direction4::West => (-distance, 0),
+        Direction4::South => (0, -distance),
+    };
+    SurfacePos::canonicalized(
+        target.face(),
+        i32::from(target.u()) + du,
+        i32::from(target.v()) + dv,
+    )
+    .unwrap()
+}
+
+fn yaw_toward_target(open_toward: Direction4) -> f32 {
+    match open_toward {
+        Direction4::East => std::f32::consts::PI,
+        Direction4::North => -std::f32::consts::FRAC_PI_2,
+        Direction4::West => 0.0,
+        Direction4::South => std::f32::consts::FRAC_PI_2,
+    }
+}
+
+/// Read-only operator locator for Goal 2 visual evidence. It loads immutable
+/// production atlas inputs, regenerates candidate chunks in memory, and emits
+/// stable TOML to stdout. No `World` is opened and no save method is called.
+#[test]
+#[ignore = "operator probe for WILDFORGE_PROBE_WORLD production save"]
+fn production_strata_site_search_is_read_only() {
+    let root = std::env::var_os("WILDFORGE_PROBE_WORLD")
+        .map(PathBuf::from)
+        .expect("set WILDFORGE_PROBE_WORLD to a qualified production save");
+    let before = file_snapshot(&root);
+    let atlas = Arc::new(PlanetAtlas::load(&root).unwrap());
+    let reg = base_reg();
+    let generator = Generator::with_atlas(atlas.manifest.seed, &reg, atlas.clone());
+    let families = [
+        BedrockFamily::Sandstone,
+        BedrockFamily::Limestone,
+        BedrockFamily::Shale,
+        BedrockFamily::Granite,
+        BedrockFamily::Marble,
+        BedrockFamily::Slate,
+        BedrockFamily::Quartzite,
+        BedrockFamily::Basalt,
+    ];
+    let mut ranked = BTreeMap::<BedrockFamily, Vec<StrataCliffCandidate>>::new();
+    for (pos, tectonics) in atlas.genesis.tectonics.iter() {
+        let terrain = atlas.genesis.terrain.get(pos).unwrap();
+        if terrain.eroded_elevation <= SEA_LEVEL as f32 + 4.0 {
+            continue;
+        }
+        let center = pos.center(atlas.side());
+        const CAMERA_MARGIN: f64 = 224.0;
+        if center.u < CAMERA_MARGIN
+            || center.v < CAMERA_MARGIN
+            || center.u > f64::from(FACE_BLOCKS) - CAMERA_MARGIN
+            || center.v > f64::from(FACE_BLOCKS) - CAMERA_MARGIN
+        {
+            continue;
+        }
+        let center_surface = SurfacePos::new(
+            center.face,
+            center.u.floor() as u16,
+            center.v.floor() as u16,
+        )
+        .unwrap();
+        let center_height = generator.surface_estimate_at(center_surface) as f32;
+        let bands = generator.strata_bands_probe(center_surface);
+        let pluton = generator.pluton_at_surface(center_surface);
+        let cell_family = BedrockFamily::from_id(tectonics.bedrock_family);
+        for family in families {
+            let eligible = match family {
+                // These are the shipping stratigraphic stack above basement;
+                // their outcrops are controlled by band height and relief,
+                // not by the coarse cell's deep-bedrock label.
+                BedrockFamily::Sandstone | BedrockFamily::Limestone | BedrockFamily::Shale => true,
+                BedrockFamily::Granite => {
+                    pluton
+                        || cell_family == BedrockFamily::Granite
+                        || tectonics.metamorphic_grade > 0
+                }
+                BedrockFamily::Marble | BedrockFamily::Slate | BedrockFamily::Quartzite => {
+                    tectonics.metamorphic_grade >= 2 || cell_family == family
+                }
+                BedrockFamily::Basalt => {
+                    cell_family == BedrockFamily::Basalt || tectonics.volcanic_history != 0
+                }
+                _ => false,
+            };
+            if !eligible {
+                continue;
+            }
+            let interval = match family {
+                BedrockFamily::Sandstone | BedrockFamily::Quartzite => {
+                    Some((bands[3] as f32, bands[4] as f32))
+                }
+                BedrockFamily::Limestone | BedrockFamily::Marble => {
+                    Some((bands[2] as f32, bands[3] as f32))
+                }
+                BedrockFamily::Shale | BedrockFamily::Slate => {
+                    Some((bands[1] as f32, bands[2] as f32))
+                }
+                BedrockFamily::Basalt => Some((1.0, bands[0] as f32)),
+                _ => None,
+            };
+            let mut best_direction = Direction4::East;
+            let mut best_signal = f32::NEG_INFINITY;
+            let mut best_relief = f32::NEG_INFINITY;
+            for direction in Direction4::ALL {
+                let neighbor = pos.step(direction, atlas.side()).pos.center(atlas.side());
+                let neighbor = SurfacePos::new(
+                    neighbor.face,
+                    neighbor.u.floor() as u16,
+                    neighbor.v.floor() as u16,
+                )
+                .unwrap();
+                let neighbor_height = generator.surface_estimate_at(neighbor) as f32;
+                let relief = center_height - neighbor_height;
+                if relief <= 0.0 {
+                    continue;
+                }
+                let overlap = interval.map_or(relief, |(bottom, top)| {
+                    center_height.min(top) - neighbor_height.max(bottom)
+                });
+                let signal = overlap.max(0.0) * 1_000.0 + relief * 100.0;
+                if signal > best_signal {
+                    best_signal = signal;
+                    best_relief = relief;
+                    best_direction = direction;
+                }
+            }
+            if best_signal <= 0.0 {
+                continue;
+            }
+            let geological_fit = match family {
+                BedrockFamily::Granite => {
+                    f32::from(u8::from(pluton)) * 10_000.0
+                        + f32::from(u8::from(cell_family == BedrockFamily::Granite)) * 24.0
+                }
+                BedrockFamily::Marble | BedrockFamily::Slate | BedrockFamily::Quartzite => {
+                    f32::from(tectonics.metamorphic_grade) * 4.0
+                }
+                BedrockFamily::Basalt => {
+                    f32::from(tectonics.volcanic_history) * 4.0
+                        + f32::from(u8::from(cell_family == BedrockFamily::Basalt)) * 16.0
+                }
+                _ => 0.0,
+            };
+            let score = best_signal
+                + best_relief * 100.0
+                + terrain.eroded_elevation
+                + f32::from(tectonics.fault_intensity) / 65_535.0
+                + geological_fit;
+            ranked
+                .entry(family)
+                .or_default()
+                .push(StrataCliffCandidate {
+                    atlas: pos,
+                    open_toward: best_direction,
+                    score,
+                });
+        }
+    }
+    for candidates in ranked.values_mut() {
+        candidates.sort_by(|left, right| {
+            right.score.total_cmp(&left.score).then_with(|| {
+                left.atlas
+                    .index(atlas.side())
+                    .cmp(&right.atlas.index(atlas.side()))
+            })
+        });
+        candidates.truncate(24);
+    }
+
+    println!("strata_site_search_schema = 1");
+    println!("seed = {}", atlas.manifest.seed);
+    println!(
+        "generator_version = {}",
+        crate::world::WORLD_GENERATOR_VERSION
+    );
+    println!("atlas_format_version = {}", atlas.manifest.format_version);
+    println!(
+        "atlas_algorithm_version = {}",
+        atlas.manifest.atlas_algorithm_version
+    );
+    println!(
+        "atlas_content_hash = \"{:016x}\"",
+        atlas.manifest.content_hash
+    );
+    println!(
+        "atlas_genesis_checksum = \"{:016x}\"",
+        atlas.manifest.genesis_checksum
+    );
+
+    for family in families {
+        let block_name = format!("base:{}", family.label().replace(' ', "_"));
+        let target_id = reg
+            .block_id(&block_name)
+            .unwrap_or_else(|| panic!("missing strata block {block_name}"));
+        let mut selected = None;
+        // Prefer an outdoor cut anywhere in the stable shortlist before
+        // accepting a cave wall from a higher-scoring coarse atlas cell.
+        for sky_exposed in [true, false] {
+            for candidate in ranked.get(&family).into_iter().flatten() {
+                let center = candidate.atlas.center(atlas.side());
+                let center = SurfacePos::new(
+                    center.face,
+                    center.u.floor() as u16,
+                    center.v.floor() as u16,
+                )
+                .unwrap();
+                let exposures = exposed_strata(&generator, &reg, center, target_id);
+                let groups = if sky_exposed {
+                    &exposures.sky
+                } else {
+                    &exposures.natural
+                };
+                let preferred = &groups[candidate.open_toward as usize];
+                let best = (!preferred.is_empty())
+                    .then_some((candidate.open_toward, preferred))
+                    .or_else(|| {
+                        Direction4::ALL
+                            .into_iter()
+                            .map(|direction| (direction, &groups[direction as usize]))
+                            .max_by_key(|(direction, positions)| {
+                                (positions.len(), std::cmp::Reverse(*direction as u8))
+                            })
+                            .filter(|(_, positions)| !positions.is_empty())
+                    });
+                if let Some((direction, positions)) = best
+                    && positions.len() >= 8
+                {
+                    selected = Some((*candidate, direction, positions.clone(), sky_exposed));
+                    break;
+                }
+            }
+            if selected.is_some() {
+                break;
+            }
+        }
+        let (candidate, direction, positions, sky_exposed) = selected.unwrap_or_else(|| {
+            panic!("no production naturally exposed {block_name} cut among stable candidates")
+        });
+        let target = positions[positions.len() / 2];
+        println!();
+        println!("[[site]]");
+        println!("id = \"production-{}\"", family.label());
+        println!("family = \"{block_name}\"");
+        println!("face = \"{}\"", target.face().name());
+        println!("atlas_u = {}", candidate.atlas.u);
+        println!("atlas_v = {}", candidate.atlas.v);
+        println!("target = [{}, {}, {}]", target.u(), target.y(), target.v());
+        println!("exposed_blocks = {}", positions.len());
+        println!("open_toward = \"{}\"", direction_name(direction));
+        println!(
+            "exposure = \"{}\"",
+            if sky_exposed {
+                "sky-facing"
+            } else {
+                "natural-cave"
+            }
+        );
+        println!("distance_sweep = {sky_exposed}");
+        println!("generator_placed = true");
+        if !sky_exposed {
+            let air = step4(target.surface(), direction).pos;
+            let y = (f32::from(target.y()) - 1.05).max(0.0);
+            println!("[[site.camera]]");
+            println!("band = \"near\"");
+            println!("view_distance_chunks = 12");
+            println!("face = \"{}\"", air.face().name());
+            println!(
+                "surface_position = [{:.1}, {y:.2}, {:.1}]",
+                air.u() as f32 + 0.5,
+                air.v() as f32 + 0.5
+            );
+            println!(
+                "position = [{:.1}, {y:.2}, {:.1}]",
+                air.centered_u() as f32 + 0.5,
+                air.centered_v() as f32 + 0.5
+            );
+            println!("yaw = {:.6}", yaw_toward_target(direction));
+            println!("pitch = 0.000000");
+            println!("sample_distance_blocks = 1");
+            println!("normalized_distance = 0.005435");
+            continue;
+        }
+        for &(view, label, distance) in &[
+            (12, "near", 48),
+            (12, "middle", 120),
+            (12, "pre-fog", 160),
+            (12, "fog", 175),
+            (4, "near", 18),
+            (4, "middle", 36),
+            (4, "pre-fog", 48),
+            (4, "fog", 53),
+        ] {
+            let surface = camera_surface(target.surface(), direction, distance);
+            let y = generator.surface_estimate_at(surface) as f32 + 1.05;
+            let eye = y + 1.62;
+            let pitch = ((f32::from(target.y()) + 0.5 - eye) / distance as f32).atan();
+            let fog_end = (view as f32 - 0.5) * crate::chunk::CHUNK_X as f32;
+            println!("[[site.camera]]");
+            println!("band = \"{label}\"");
+            println!("view_distance_chunks = {view}");
+            println!("face = \"{}\"", surface.face().name());
+            println!(
+                "surface_position = [{:.1}, {y:.2}, {:.1}]",
+                surface.u() as f32 + 0.5,
+                surface.v() as f32 + 0.5
+            );
+            println!(
+                "position = [{:.1}, {y:.2}, {:.1}]",
+                surface.centered_u() as f32 + 0.5,
+                surface.centered_v() as f32 + 0.5
+            );
+            println!("yaw = {:.6}", yaw_toward_target(direction));
+            println!("pitch = {pitch:.6}");
+            println!("sample_distance_blocks = {distance}");
+            println!("normalized_distance = {:.6}", distance as f32 / fog_end);
+        }
+    }
+
+    let after = file_snapshot(&root);
+    assert_eq!(
+        before, after,
+        "production strata locator modified the probed save"
     );
 }

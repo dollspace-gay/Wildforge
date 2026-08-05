@@ -19,11 +19,11 @@ import struct
 import sys
 import tomllib
 import zlib
-from collections import defaultdict
+from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any
 
-REPORT_SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 2
 COMPARISON_SCHEMA_VERSION = 1
 CAPTURE_SCHEMA_VERSION = 1
 WFD_MAGIC = b"WFD1LE\0\0"
@@ -41,6 +41,23 @@ MAX_DEPTH_RMSE = 0.010
 MAX_LUMINANCE_MEAN_DELTA = 0.015
 MAX_LOCAL_CONTRAST_DELTA = 0.015
 MAX_SKY_FRACTION_DELTA = 0.005
+
+STRATA_NAMES = (
+    "sandstone",
+    "limestone",
+    "shale",
+    "granite",
+    "marble",
+    "slate",
+    "quartzite",
+    "basalt",
+)
+DISTANCE_BANDS = (
+    ("near", 0.0, 0.35),
+    ("middle", 0.55, 0.75),
+    ("pre-fog", 0.80, 0.90),
+    ("fog", 0.90, 1.000001),
+)
 
 
 class EvidenceError(RuntimeError):
@@ -73,11 +90,16 @@ def toml_value(value: Any) -> str:
 
 def render_report(report: dict[str, Any]) -> str:
     families = report.pop("family")
+    strata = report.pop("stratum", [])
     lines = [f"{key} = {toml_value(value)}" for key, value in report.items()]
     for family in families:
         lines.append("")
         lines.append("[[family]]")
         lines.extend(f"{key} = {toml_value(value)}" for key, value in family.items())
+    for stratum in strata:
+        lines.append("")
+        lines.append("[[stratum]]")
+        lines.extend(f"{key} = {toml_value(value)}" for key, value in stratum.items())
     return "\n".join(lines) + "\n"
 
 
@@ -223,13 +245,199 @@ def linear_luminance_table() -> list[float]:
     return table
 
 
+def percentile(values: list[float], fraction: float) -> float:
+    if not values:
+        return 0.0
+    values.sort()
+    position = fraction * (len(values) - 1)
+    lower = int(position)
+    upper = min(lower + 1, len(values) - 1)
+    mix = position - lower
+    return values[lower] * (1.0 - mix) + values[upper] * mix
+
+
+def smooth_fog(normalized_depth: float) -> float:
+    value = min(1.0, max(0.0, (normalized_depth - 0.90) / 0.10))
+    return value * value * (3.0 - 2.0 * value)
+
+
+def distance_band(normalized_depth: float) -> str | None:
+    for name, lower, upper in DISTANCE_BANDS:
+        if lower <= normalized_depth < upper:
+            return name
+    return None
+
+
+def rms_at_scale(
+    width: int,
+    height: int,
+    mask: bytearray,
+    pixel_luma: list[float],
+    pixels: list[int],
+    scale: int,
+) -> tuple[float, int]:
+    total = 0.0
+    pairs = 0
+    for pixel in pixels:
+        x = pixel % width
+        y = pixel // width
+        if x + scale < width and mask[pixel + scale]:
+            delta = pixel_luma[pixel] - pixel_luma[pixel + scale]
+            total += delta * delta
+            pairs += 1
+        if y + scale < height and mask[pixel + scale * width]:
+            delta = pixel_luma[pixel] - pixel_luma[pixel + scale * width]
+            total += delta * delta
+            pairs += 1
+    return math.sqrt(total / max(1, pairs)), pairs
+
+
+def topology_metrics(width: int, height: int, mask: bytearray, pixels: list[int]) -> tuple[int, int]:
+    fringe = 0
+    unseen = set(pixels)
+    for pixel in pixels:
+        x = pixel % width
+        y = pixel // width
+        neighbors = 0
+        for other in (
+            pixel - 1 if x else -1,
+            pixel + 1 if x + 1 < width else -1,
+            pixel - width if y else -1,
+            pixel + width if y + 1 < height else -1,
+        ):
+            neighbors += int(other >= 0 and mask[other])
+        fringe += int(neighbors <= 1)
+
+    components = 0
+    while unseen:
+        components += 1
+        queue = deque([unseen.pop()])
+        while queue:
+            pixel = queue.popleft()
+            x = pixel % width
+            y = pixel // width
+            for other in (
+                pixel - 1 if x else -1,
+                pixel + 1 if x + 1 < width else -1,
+                pixel - width if y else -1,
+                pixel + width if y + 1 < height else -1,
+            ):
+                if other in unseen:
+                    unseen.remove(other)
+                    queue.append(other)
+    return components, fringe
+
+
+def measure_strata(
+    width: int,
+    height: int,
+    color: bytes,
+    diagnostic: array.array[int],
+    family_names: dict[int, tuple[int, list[str]]],
+    pixel_luma: list[float],
+    linear: list[float],
+) -> list[dict[str, Any]]:
+    family_rocks: dict[int, str] = {}
+    for diagnostic_id, (_slot, names) in family_names.items():
+        matched = [rock for rock in STRATA_NAMES if f"base:{rock}" in names]
+        if len(matched) > 1:
+            raise EvidenceError(f"diagnostic family {diagnostic_id} aliases multiple strata rocks")
+        if matched:
+            family_rocks[diagnostic_id] = matched[0]
+
+    groups: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for pixel in range(width * height):
+        diagnostic_id = diagnostic[pixel * 4]
+        rock = family_rocks.get(diagnostic_id)
+        if rock is None:
+            continue
+        band = distance_band(diagnostic[pixel * 4 + 1] / 65535.0)
+        if band is not None:
+            groups[(rock, band)].append(pixel)
+
+    result = []
+    for rock, band in sorted(groups, key=lambda value: (STRATA_NAMES.index(value[0]), value[1])):
+        pixels = groups[(rock, band)]
+        mask = bytearray(width * height)
+        for pixel in pixels:
+            mask[pixel] = 1
+        luminance = [pixel_luma[pixel] for pixel in pixels]
+        median = percentile(luminance.copy(), 0.50)
+        p10 = percentile(luminance.copy(), 0.10)
+        p90 = percentile(luminance.copy(), 0.90)
+        contrast = {}
+        pairs = {}
+        for scale in (1, 4, 16):
+            contrast[scale], pairs[scale] = rms_at_scale(
+                width, height, mask, pixel_luma, pixels, scale
+            )
+
+        adjacent_rock = []
+        adjacent_sky = []
+        for pixel in pixels:
+            x = pixel % width
+            y = pixel // width
+            for other in (
+                pixel - 1 if x else -1,
+                pixel + 1 if x + 1 < width else -1,
+                pixel - width if y else -1,
+                pixel + width if y + 1 < height else -1,
+            ):
+                if other >= 0 and diagnostic[other * 4] == SKY_ID:
+                    adjacent_rock.append(pixel_luma[pixel])
+                    adjacent_sky.append(pixel_luma[other])
+        rock_edge = sum(adjacent_rock) / max(1, len(adjacent_rock))
+        sky_edge = sum(adjacent_sky) / max(1, len(adjacent_sky))
+        weber = (rock_edge - sky_edge) / max(sky_edge, 1.0e-6) if adjacent_sky else 0.0
+
+        chroma = []
+        black = 0
+        fog = []
+        for pixel in pixels:
+            rgb = color[pixel * 3 : pixel * 3 + 3]
+            channels = [linear[value] for value in rgb]
+            chroma.append(max(channels) - min(channels))
+            black += int(max(rgb) <= 2)
+            fog.append(smooth_fog(diagnostic[pixel * 4 + 1] / 65535.0))
+        components, fringe = topology_metrics(width, height, mask, pixels)
+        result.append(
+            {
+                "rock": rock,
+                "distance_band": band,
+                "pixels": len(pixels),
+                "coverage": len(pixels) / (width * height),
+                "connected_components": components,
+                "one_pixel_fringe": fringe,
+                "one_pixel_fringe_fraction": fringe / len(pixels),
+                "median_luminance": median,
+                "p10_luminance": p10,
+                "p90_luminance": p90,
+                "luminance_span": p90 - p10,
+                "rms_contrast_1px": contrast[1],
+                "rms_contrast_4px": contrast[4],
+                "rms_contrast_16px": contrast[16],
+                "contrast_pairs_1px": pairs[1],
+                "contrast_pairs_4px": pairs[4],
+                "contrast_pairs_16px": pairs[16],
+                "adjacent_sky_pairs": len(adjacent_sky),
+                "silhouette_weber": weber,
+                "silhouette_weber_magnitude": abs(weber),
+                "median_chroma": percentile(chroma, 0.50),
+                "greyscale_structure_score": contrast[16] / max(median, 1.0e-6),
+                "expected_fog_blend": percentile(fog, 0.50),
+                "display_black_fraction": black / len(pixels),
+            }
+        )
+    return result
+
+
 def validate_and_measure(
     width: int,
     height: int,
     color: bytes,
     diagnostic: array.array[int],
     family_defs: list[dict[str, Any]],
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     family_names: dict[int, tuple[int, list[str]]] = {}
     for entry in family_defs:
         try:
@@ -256,6 +464,9 @@ def validate_and_measure(
 
     for pixel in range(width * height):
         family, depth, fragment_class, schema = diagnostic[pixel * 4 : pixel * 4 + 4]
+        rgb = color[pixel * 3 : pixel * 3 + 3]
+        value = 0.2126 * luma[rgb[0]] + 0.7152 * luma[rgb[1]] + 0.0722 * luma[rgb[2]]
+        pixel_luma[pixel] = value
         if family == SKY_ID:
             if (depth, fragment_class, schema) != (0, 0, 0):
                 raise EvidenceError("sky diagnostic pixel carries nonzero data")
@@ -273,9 +484,6 @@ def validate_and_measure(
         material += 1
         counts[family] += 1
         depth_sums[family] += depth
-        rgb = color[pixel * 3 : pixel * 3 + 3]
-        value = 0.2126 * luma[rgb[0]] + 0.7152 * luma[rgb[1]] + 0.0722 * luma[rgb[2]]
-        pixel_luma[pixel] = value
         material_mask[pixel] = 1
         luma_sum += value
         luma_sq_sum += value * value
@@ -323,7 +531,8 @@ def validate_and_measure(
                 "mean_normalized_depth": depth_sums[diagnostic_id] / pixels / 65535.0,
             }
         )
-    return metrics, families
+    strata = measure_strata(width, height, color, diagnostic, family_names, pixel_luma, luma)
+    return metrics, families, strata
 
 
 def identity_hash(sidecar: dict[str, Any]) -> str:
@@ -357,7 +566,9 @@ def build_report(sidecar_path: Path, color_png_path: Path, diagnostic_png_path: 
     render = sidecar.get("render", {})
     if (width, height) != (render.get("width"), render.get("height")):
         raise EvidenceError("artifact dimensions differ from capture identity")
-    metrics, families = validate_and_measure(width, height, color, diagnostic, sidecar.get("family", []))
+    metrics, families, strata = validate_and_measure(
+        width, height, color, diagnostic, sidecar.get("family", [])
+    )
     color_png = rgb_png(width, height, color)
     diagnostic_png = rgb_png(width, height, diagnostic_rgb(diagnostic))
     tool_path = Path(__file__).resolve()
@@ -384,6 +595,7 @@ def build_report(sidecar_path: Path, color_png_path: Path, diagnostic_png_path: 
         "zlib": zlib.ZLIB_VERSION,
         **metrics,
         "family": families,
+        "stratum": strata,
     }
     return report, color_png, diagnostic_png
 
@@ -556,7 +768,7 @@ def self_test_command(_args: argparse.Namespace) -> None:
         struct.pack("<HHHH", *pixel) for pixel in tuples
     )
     diag_width, diag_height, diagnostic = read_wfd(wfd)
-    metrics, families = validate_and_measure(
+    metrics, families, strata = validate_and_measure(
         width,
         height,
         parsed_color,
@@ -569,6 +781,7 @@ def self_test_command(_args: argparse.Namespace) -> None:
         (diag_width, diag_height) != (2, 2)
         or metrics["material_pixels"] != 2
         or families[0]["pixels"] != 2
+        or strata
         or first_png != second_png
         or not first_png.startswith(b"\x89PNG\r\n\x1a\n")
     ):
