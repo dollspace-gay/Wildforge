@@ -1,0 +1,72 @@
+report_schema_version = 2
+capture_schema_version = 1
+capture_id = "strata-after-performance-d"
+scene_id = "strata-performance-20260802"
+identity_sha256 = "180ac9d811957003fdcee2005a0754df480965fc733604ed545c9e1e05fa2fc5"
+sidecar = "screenshots/strata-after-performance-d.capture.toml"
+sidecar_sha256 = "6d504ca8b08e5e416626453c01d8af42d3319a0bff77109ebf21fd87746c6404"
+width = 1280
+height = 720
+color_ppm_sha256 = "c0f089b58d7424cb31811e104b9a9dc78640f21f96dc10b7bab323a742d79e06"
+diagnostic_sha256 = "9dcbda0d1a0e8f09e018c0f9571ff3d20e9c8b34890cb9397e51e6487e6ed858"
+color_png = "screenshots/strata-after-performance-d.png"
+color_png_sha256 = "dcec7496849a654d095352fe6ad4ec8c481e96602d5742a614b33e38d2469442"
+diagnostic_png = "screenshots/strata-after-performance-d.diagnostic.png"
+diagnostic_png_sha256 = "40ae51de43147c3c1bca6fbd538101b5b528d12ae2b64c924302421ac956f914"
+conversion = "python-stdlib-p6-rgb8-filter0-zlib9-v1"
+conversion_tool = "tools/verify_visual_polish.py"
+conversion_tool_sha256 = "4b6959e03067fad7173560d3f53d5057367c06b469580ad620a8a21732342c73"
+python = "3.13.13"
+zlib = "1.3.1.zlib-ng"
+pixel_count = 921600
+sky_pixels = 0
+overlay_pixels = 39227
+material_pixels = 882373
+sky_fraction = 0.000000000
+overlay_fraction = 0.042564019
+material_fraction = 0.957435981
+luminance_mean = 0.020700040
+luminance_stddev = 0.054236265
+local_contrast_rms = 0.006025751
+
+[[family]]
+diagnostic_id = 244
+atlas_slot = 243
+names = ["base:sandstone", "item:base:sandstone", "texture:base/sandstone"]
+pixels = 289241
+pixel_fraction = 0.313846571
+mean_normalized_depth = 0.009753762
+
+[[family]]
+diagnostic_id = 282
+atlas_slot = 281
+names = ["base:mud", "item:base:mud", "texture:base/mud"]
+pixels = 593132
+pixel_fraction = 0.643589410
+mean_normalized_depth = 0.004993032
+
+[[stratum]]
+rock = "sandstone"
+distance_band = "near"
+pixels = 289241
+coverage = 0.313846571
+connected_components = 1
+one_pixel_fringe = 0
+one_pixel_fringe_fraction = 0.000000000
+median_luminance = 0.031362253
+p10_luminance = 0.022298023
+p90_luminance = 0.043819477
+luminance_span = 0.021521454
+rms_contrast_1px = 0.010238896
+rms_contrast_4px = 0.021438063
+rms_contrast_16px = 0.045768079
+contrast_pairs_1px = 577115
+contrast_pairs_4px = 573016
+contrast_pairs_16px = 556666
+adjacent_sky_pairs = 0
+silhouette_weber = 0.000000000
+silhouette_weber_magnitude = 0.000000000
+median_chroma = 0.019577397
+greyscale_structure_score = 1.459336434
+expected_fog_blend = 0.000000000
+display_black_fraction = 0.000000000

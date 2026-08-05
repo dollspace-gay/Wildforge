@@ -1,14 +1,14 @@
 schema_version = 1
-capture_id = "strata-baseline-performance-a"
-scene_id = "strata-performance-20260802"
+capture_id = "strata-after-marble-v12-prefog-noon-base"
+scene_id = "strata-production-20260802"
 
 [build]
-commit = "60486636fcfacd36de75e970a79ff6f806a0e9ac"
+commit = "32e9af5c975929537c7b446a247f6137655134a5"
 dirty = false
 marker = "BIOME-R4"
 
 [world]
-name = "visual-polish-strata-perf"
+name = "visual-polish-strata-baseline"
 seed = 20260802
 generator_version = 10
 atlas_format_version = 6
@@ -17,36 +17,36 @@ atlas_content_hash = "010c5397ca037176"
 atlas_genesis_checksum = "b053756eee79d7e7"
 
 [camera]
-face = "NegZ"
-u = 5674.5
-y = 70.05
-v = 2224.5
-yaw = 3.141593
-pitch = -0.006999
+face = "PosX"
+u = 5938.5
+y = 65.05
+v = 5501.5
+yaw = -1.570796
+pitch = 0.055132
 fov_degrees = 75.0
 
 [environment]
 day = 0
-time_of_day = 0.610053
-season = "autumn"
+time_of_day = 0.5518606
+season = "spring"
 weather = "clear"
 precipitation = "none"
-temperature_c = 26.657852
-pressure_anomaly = 743
-vapor = 1745858
+temperature_c = 26.897583
+pressure_anomaly = 1050
+vapor = 1310848
 cloud_water = 0
 storm_energy = 0
 precipitation_units = 0
 wind = [
-    -0.93798035,
-    0.33930972,
+    -0.94866335,
+    -0.30683717,
 ]
 gloom = 0.0
 
 [render]
 width = 1280
 height = 720
-pack = "gemini"
+pack = ""
 view_distance_chunks = 12
 fog_distance_blocks = 184.0
 adapter = "NVIDIA GeForce RTX 3090 [Dx12, DiscreteGpu]"
@@ -58,19 +58,19 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 1412
-eligible_frame = 998
+frame = 1890
+eligible_frame = 1484
 settled = true
 settled_frames = 10
-fps = 62
-simulation_ms = 9.895837
-draw_ms = 6.7585664
-resident_chunks = 534
+fps = 59
+simulation_ms = 9.355932
+draw_ms = 2.8698568
+resident_chunks = 532
 gpu_chunks = 517
 opaque_chunks = 517
-water_chunks = 287
+water_chunks = 423
 empty_chunks = 0
-dirty_chunks = 20
+dirty_chunks = 15
 
 [[family]]
 diagnostic_id = 1
@@ -3950,8 +3950,8 @@ atlas_slot = 4011
 names = ["base:forge_lit"]
 
 [artifacts]
-color_ppm = "screenshots/strata-baseline-performance-a.ppm"
-color_ppm_sha256 = "0fc13e9023c59c8765ea82c3ad7d196139b2c5e6e4c0eb62b4f047ac04f0679a"
-diagnostic = "screenshots/strata-baseline-performance-a.wfd"
-diagnostic_sha256 = "a489fea8ab0e1c64cc4e3598ccad33819891fb6f2f52b04b8bed0cbe401a5bf7"
+color_ppm = "screenshots/strata-after-marble-v12-prefog-noon-base.ppm"
+color_ppm_sha256 = "f1445709c60ec58dc8dc7f5a622c06c56c8bdf9b2a6cb3dbb1156c321bf4b8f4"
+diagnostic = "screenshots/strata-after-marble-v12-prefog-noon-base.wfd"
+diagnostic_sha256 = "dafdb68bf8921ff98e77119ed5cf9e2751c506dd15d9736e5478b622ce510139"
 diagnostic_format = "wfd-rgba16uint-v1"

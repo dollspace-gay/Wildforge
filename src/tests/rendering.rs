@@ -103,7 +103,7 @@ fn generated_strata_tiles_are_reproducible_and_seamless() {
     let expected = [
         (
             "sandstone",
-            "14811c7d08c5323ea1e157a20ccf684297218b192b11789072aa6c4881477107",
+            "3bf20c8a284fd1d7501924f62f7474516e037195605f2d06f84625b1a968da60",
         ),
         (
             "limestone",
@@ -127,11 +127,11 @@ fn generated_strata_tiles_are_reproducible_and_seamless() {
         ),
         (
             "quartzite",
-            "a98ec4a08a66463d30dbfc66c95bd3238c20ab748eb5ad3e455fb2da4b4891d2",
+            "a899a4175c80e7649ab705d89faa839c621536f1b188f6bd27a1aa6a71895348",
         ),
         (
             "basalt",
-            "b93c366046389f969aac1e5c72b683ae12b9a69aabb94f1c252543ccf96b35f6",
+            "c25f65a5c4279e26061d4f47950b7c8b4ef05d02568779c32602f2a9debaa5aa",
         ),
     ];
     for (name, digest) in expected {

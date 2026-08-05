@@ -1,9 +1,9 @@
 schema_version = 1
-capture_id = "strata-baseline-performance-a"
+capture_id = "strata-after-performance-c"
 scene_id = "strata-performance-20260802"
 
 [build]
-commit = "60486636fcfacd36de75e970a79ff6f806a0e9ac"
+commit = "32e9af5c975929537c7b446a247f6137655134a5"
 dirty = false
 marker = "BIOME-R4"
 
@@ -58,19 +58,19 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 1412
-eligible_frame = 998
+frame = 1410
+eligible_frame = 1003
 settled = true
 settled_frames = 10
-fps = 62
-simulation_ms = 9.895837
-draw_ms = 6.7585664
+fps = 61
+simulation_ms = 9.060742
+draw_ms = 6.914574
 resident_chunks = 534
 gpu_chunks = 517
 opaque_chunks = 517
 water_chunks = 287
 empty_chunks = 0
-dirty_chunks = 20
+dirty_chunks = 17
 
 [[family]]
 diagnostic_id = 1
@@ -3950,8 +3950,8 @@ atlas_slot = 4011
 names = ["base:forge_lit"]
 
 [artifacts]
-color_ppm = "screenshots/strata-baseline-performance-a.ppm"
-color_ppm_sha256 = "0fc13e9023c59c8765ea82c3ad7d196139b2c5e6e4c0eb62b4f047ac04f0679a"
-diagnostic = "screenshots/strata-baseline-performance-a.wfd"
-diagnostic_sha256 = "a489fea8ab0e1c64cc4e3598ccad33819891fb6f2f52b04b8bed0cbe401a5bf7"
+color_ppm = "screenshots/strata-after-performance-c.ppm"
+color_ppm_sha256 = "9cdd502d8f9b0e706fb044e2cebc6bd4c0f1f9b6cebe4c80331ce1fae55e8420"
+diagnostic = "screenshots/strata-after-performance-c.wfd"
+diagnostic_sha256 = "c51282aee1479645b83d0cb800eff9a446dcc6c22e27217efd08ca5d2e09ea48"
 diagnostic_format = "wfd-rgba16uint-v1"

@@ -1,9 +1,9 @@
 schema_version = 1
-capture_id = "strata-baseline-performance-a"
+capture_id = "strata-after-performance-d"
 scene_id = "strata-performance-20260802"
 
 [build]
-commit = "60486636fcfacd36de75e970a79ff6f806a0e9ac"
+commit = "32e9af5c975929537c7b446a247f6137655134a5"
 dirty = false
 marker = "BIOME-R4"
 
@@ -18,9 +18,9 @@ atlas_genesis_checksum = "b053756eee79d7e7"
 
 [camera]
 face = "NegZ"
-u = 5674.5
+u = 5516.3
 y = 70.05
-v = 2224.5
+v = 2219.8838
 yaw = 3.141593
 pitch = -0.006999
 fov_degrees = 75.0
@@ -31,15 +31,15 @@ time_of_day = 0.610053
 season = "autumn"
 weather = "clear"
 precipitation = "none"
-temperature_c = 26.657852
-pressure_anomaly = 743
-vapor = 1745858
+temperature_c = 26.096922
+pressure_anomaly = 526
+vapor = 1266229
 cloud_water = 0
 storm_energy = 0
 precipitation_units = 0
 wind = [
-    -0.93798035,
-    0.33930972,
+    -0.941036,
+    0.33086997,
 ]
 gloom = 0.0
 
@@ -58,19 +58,19 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 1412
-eligible_frame = 998
+frame = 1554
+eligible_frame = 1142
 settled = true
 settled_frames = 10
-fps = 62
-simulation_ms = 9.895837
-draw_ms = 6.7585664
-resident_chunks = 534
-gpu_chunks = 517
-opaque_chunks = 517
-water_chunks = 287
+fps = 59
+simulation_ms = 7.8515925
+draw_ms = 6.220099
+resident_chunks = 606
+gpu_chunks = 597
+opaque_chunks = 597
+water_chunks = 182
 empty_chunks = 0
-dirty_chunks = 20
+dirty_chunks = 11
 
 [[family]]
 diagnostic_id = 1
@@ -3950,8 +3950,8 @@ atlas_slot = 4011
 names = ["base:forge_lit"]
 
 [artifacts]
-color_ppm = "screenshots/strata-baseline-performance-a.ppm"
-color_ppm_sha256 = "0fc13e9023c59c8765ea82c3ad7d196139b2c5e6e4c0eb62b4f047ac04f0679a"
-diagnostic = "screenshots/strata-baseline-performance-a.wfd"
-diagnostic_sha256 = "a489fea8ab0e1c64cc4e3598ccad33819891fb6f2f52b04b8bed0cbe401a5bf7"
+color_ppm = "screenshots/strata-after-performance-d.ppm"
+color_ppm_sha256 = "c0f089b58d7424cb31811e104b9a9dc78640f21f96dc10b7bab323a742d79e06"
+diagnostic = "screenshots/strata-after-performance-d.wfd"
+diagnostic_sha256 = "9dcbda0d1a0e8f09e018c0f9571ff3d20e9c8b34890cb9397e51e6487e6ed858"
 diagnostic_format = "wfd-rgba16uint-v1"

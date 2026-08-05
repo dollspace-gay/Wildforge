@@ -8,7 +8,7 @@ dirty = false
 marker = "BIOME-R4"
 
 [world]
-name = "visual-polish-strata-baseline"
+name = "visual-polish-strata-perf"
 seed = 20260802
 generator_version = 10
 atlas_format_version = 6
@@ -58,13 +58,13 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 1379
-eligible_frame = 975
+frame = 1424
+eligible_frame = 1014
 settled = true
 settled_frames = 10
-fps = 10
-simulation_ms = 18.147198
-draw_ms = 6.920692
+fps = 63
+simulation_ms = 7.5758
+draw_ms = 7.1419926
 resident_chunks = 534
 gpu_chunks = 517
 opaque_chunks = 517
@@ -3951,7 +3951,7 @@ names = ["base:forge_lit"]
 
 [artifacts]
 color_ppm = "screenshots/strata-baseline-performance-c.ppm"
-color_ppm_sha256 = "59b898bd37aa6910ac8b485993e43617e8e10691980dd0adeeb12f15aeb6c332"
+color_ppm_sha256 = "9134f6636ea28de4f644da3acc1cbb8838e1d440c6fc4881b0fbabbbc453e3ee"
 diagnostic = "screenshots/strata-baseline-performance-c.wfd"
-diagnostic_sha256 = "af2ebbc0197647c236aa9f30ef0f54dc7f709d3e2d5c4cfa82c296283511d956"
+diagnostic_sha256 = "4ca3a4b1b39363c716138d7578efd1baa6824bf41ac8d2157163a5839c53fea0"
 diagnostic_format = "wfd-rgba16uint-v1"

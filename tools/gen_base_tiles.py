@@ -121,7 +121,7 @@ def strata_rock(name):
         "marble": ((229, 226, 216), (123, 137, 151)),
         "slate": ((100, 111, 126), (42, 50, 65)),
         "quartzite": ((225, 214, 190), (119, 128, 139)),
-        "basalt": ((96, 100, 107), (31, 34, 41)),
+        "basalt": ((105, 109, 117), (27, 30, 37)),
     }
     light, dark = palettes[name]
     img = Image.new("RGB", (PX, PX))
@@ -139,12 +139,12 @@ def strata_rock(name):
             specks = spot_value(u, v, spots)
 
             if name == "sandstone":
-                warp = 0.13 * math.sin(math.tau * (u + 0.05 * broad_n))
-                packet = math.sin(math.tau * (3.0 * v + warp))
-                lamina = abs(math.sin(math.tau * (7.0 * v + warp * 0.55)))
-                signal = 0.30 * broad_n + 0.43 * packet + 0.10 * fine_n
-                if lamina > 0.93:
-                    signal -= 0.48 * (lamina - 0.93) / 0.07
+                warp = 0.10 * math.sin(math.tau * (u + 0.05 * broad_n))
+                packet = math.sin(math.tau * (v + warp))
+                lamina = abs(math.sin(math.tau * (3.0 * v + warp * 0.55)))
+                signal = 0.26 * broad_n + 0.64 * packet + 0.03 * fine_n
+                if lamina > 0.90:
+                    signal -= 0.28 * (lamina - 0.90) / 0.10
             elif name == "limestone":
                 warp = 0.20 * wave_value(u, v, broad)
                 beds = math.sin(math.tau * (2.0 * v + warp))
@@ -175,12 +175,12 @@ def strata_rock(name):
                 secondary = math.sin(math.tau * (u + 4.0 * v))
                 signal = 0.42 * cleavage + 0.18 * secondary + 0.10 * fine_n
             elif name == "quartzite":
-                remnant = math.sin(math.tau * (3.0 * v + 0.14 * broad_n))
+                remnant = math.sin(math.tau * (v + 0.12 * broad_n))
                 sparkle = spot_value(u, v, grains)
-                signal = 0.22 * remnant + 0.20 * broad_n + 0.40 * sparkle + 0.12 * fine_n
+                signal = 0.55 * remnant + 0.18 * broad_n + 0.18 * sparkle + 0.04 * fine_n
             else:  # basalt
                 minerals = spot_value(u, v, spots)
-                signal = 0.12 * broad_n + 0.30 * fine_n + 0.46 * minerals
+                signal = 0.18 * broad_n + 0.55 * fine_n + 0.75 * minerals
 
             # Preserve family palette headroom; no generated geology pixel may
             # clip to display black or white before lighting is applied.

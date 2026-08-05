@@ -1,14 +1,14 @@
 schema_version = 1
-capture_id = "strata-baseline-performance-a"
-scene_id = "strata-performance-20260802"
+capture_id = "strata-after-limestone-v12-prefog-overcast-dusk"
+scene_id = "strata-production-20260802"
 
 [build]
-commit = "60486636fcfacd36de75e970a79ff6f806a0e9ac"
+commit = "32e9af5c975929537c7b446a247f6137655134a5"
 dirty = false
 marker = "BIOME-R4"
 
 [world]
-name = "visual-polish-strata-perf"
+name = "visual-polish-strata-baseline"
 seed = 20260802
 generator_version = 10
 atlas_format_version = 6
@@ -17,38 +17,38 @@ atlas_content_hash = "010c5397ca037176"
 atlas_genesis_checksum = "b053756eee79d7e7"
 
 [camera]
-face = "NegZ"
-u = 5674.5
+face = "PosX"
+u = 6309.5
 y = 70.05
-v = 2224.5
-yaw = 3.141593
-pitch = -0.006999
+v = 5351.5
+yaw = -1.570796
+pitch = -0.07355
 fov_degrees = 75.0
 
 [environment]
 day = 0
-time_of_day = 0.610053
-season = "autumn"
-weather = "clear"
+time_of_day = 0.5627022
+season = "spring"
+weather = "overcast"
 precipitation = "none"
-temperature_c = 26.657852
-pressure_anomaly = 743
-vapor = 1745858
-cloud_water = 0
-storm_energy = 0
+temperature_c = 28.064419
+pressure_anomaly = 1023
+vapor = 719842
+cloud_water = 359921
+storm_energy = 8000
 precipitation_units = 0
 wind = [
-    -0.93798035,
-    0.33930972,
+    -0.9494146,
+    -0.30556503,
 ]
-gloom = 0.0
+gloom = 0.4
 
 [render]
 width = 1280
 height = 720
-pack = "gemini"
+pack = "dusk"
 view_distance_chunks = 12
-fog_distance_blocks = 184.0
+fog_distance_blocks = 158.24
 adapter = "NVIDIA GeForce RTX 3090 [Dx12, DiscreteGpu]"
 backend = "Dx12"
 hardware = true
@@ -58,19 +58,19 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 1412
-eligible_frame = 998
+frame = 1350
+eligible_frame = 948
 settled = true
 settled_frames = 10
-fps = 62
-simulation_ms = 9.895837
-draw_ms = 6.7585664
-resident_chunks = 534
-gpu_chunks = 517
-opaque_chunks = 517
-water_chunks = 287
+fps = 60
+simulation_ms = 9.182443
+draw_ms = 3.5201087
+resident_chunks = 528
+gpu_chunks = 511
+opaque_chunks = 511
+water_chunks = 383
 empty_chunks = 0
-dirty_chunks = 20
+dirty_chunks = 17
 
 [[family]]
 diagnostic_id = 1
@@ -3950,8 +3950,8 @@ atlas_slot = 4011
 names = ["base:forge_lit"]
 
 [artifacts]
-color_ppm = "screenshots/strata-baseline-performance-a.ppm"
-color_ppm_sha256 = "0fc13e9023c59c8765ea82c3ad7d196139b2c5e6e4c0eb62b4f047ac04f0679a"
-diagnostic = "screenshots/strata-baseline-performance-a.wfd"
-diagnostic_sha256 = "a489fea8ab0e1c64cc4e3598ccad33819891fb6f2f52b04b8bed0cbe401a5bf7"
+color_ppm = "screenshots/strata-after-limestone-v12-prefog-overcast-dusk.ppm"
+color_ppm_sha256 = "bc762d028a37efae98d9a93b0bf5a7d4941df7ae12f28257d12906c93e17dc73"
+diagnostic = "screenshots/strata-after-limestone-v12-prefog-overcast-dusk.wfd"
+diagnostic_sha256 = "84ee34fd136ed642bff248205de88a09fd43229944b316668ede4b5c8217125a"
 diagnostic_format = "wfd-rgba16uint-v1"

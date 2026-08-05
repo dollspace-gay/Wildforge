@@ -1,14 +1,14 @@
 schema_version = 1
-capture_id = "strata-baseline-performance-a"
-scene_id = "strata-performance-20260802"
+capture_id = "strata-after-sandstone-v4-near-noon-hewn"
+scene_id = "strata-production-20260802"
 
 [build]
-commit = "60486636fcfacd36de75e970a79ff6f806a0e9ac"
+commit = "32e9af5c975929537c7b446a247f6137655134a5"
 dirty = false
 marker = "BIOME-R4"
 
 [world]
-name = "visual-polish-strata-perf"
+name = "visual-polish-strata-baseline"
 seed = 20260802
 generator_version = 10
 atlas_format_version = 6
@@ -18,37 +18,37 @@ atlas_genesis_checksum = "b053756eee79d7e7"
 
 [camera]
 face = "NegZ"
-u = 5674.5
-y = 70.05
+u = 5532.5
+y = 68.05
 v = 2224.5
 yaw = 3.141593
-pitch = -0.006999
+pitch = 0.046079
 fov_degrees = 75.0
 
 [environment]
 day = 0
-time_of_day = 0.610053
+time_of_day = 0.790053
 season = "autumn"
 weather = "clear"
 precipitation = "none"
-temperature_c = 26.657852
-pressure_anomaly = 743
-vapor = 1745858
+temperature_c = 26.152227
+pressure_anomaly = 0
+vapor = 1101999
 cloud_water = 0
 storm_energy = 0
 precipitation_units = 0
 wind = [
-    -0.93798035,
-    0.33930972,
+    -0.9415612,
+    0.3309153,
 ]
 gloom = 0.0
 
 [render]
 width = 1280
 height = 720
-pack = "gemini"
-view_distance_chunks = 12
-fog_distance_blocks = 184.0
+pack = "hewn"
+view_distance_chunks = 4
+fog_distance_blocks = 56.0
 adapter = "NVIDIA GeForce RTX 3090 [Dx12, DiscreteGpu]"
 backend = "Dx12"
 hardware = true
@@ -58,19 +58,19 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 1412
-eligible_frame = 998
+frame = 582
+eligible_frame = 180
 settled = true
-settled_frames = 10
-fps = 62
-simulation_ms = 9.895837
-draw_ms = 6.7585664
-resident_chunks = 534
-gpu_chunks = 517
-opaque_chunks = 517
-water_chunks = 287
+settled_frames = 37
+fps = 49
+simulation_ms = 8.367152
+draw_ms = 7.2522216
+resident_chunks = 63
+gpu_chunks = 63
+opaque_chunks = 63
+water_chunks = 46
 empty_chunks = 0
-dirty_chunks = 20
+dirty_chunks = 0
 
 [[family]]
 diagnostic_id = 1
@@ -3950,8 +3950,8 @@ atlas_slot = 4011
 names = ["base:forge_lit"]
 
 [artifacts]
-color_ppm = "screenshots/strata-baseline-performance-a.ppm"
-color_ppm_sha256 = "0fc13e9023c59c8765ea82c3ad7d196139b2c5e6e4c0eb62b4f047ac04f0679a"
-diagnostic = "screenshots/strata-baseline-performance-a.wfd"
-diagnostic_sha256 = "a489fea8ab0e1c64cc4e3598ccad33819891fb6f2f52b04b8bed0cbe401a5bf7"
+color_ppm = "screenshots/strata-after-sandstone-v4-near-noon-hewn.ppm"
+color_ppm_sha256 = "ef79aab4868462395d0d5c6f3ff636f7384fd8e50c238aee7f2ab6ac211178b6"
+diagnostic = "screenshots/strata-after-sandstone-v4-near-noon-hewn.wfd"
+diagnostic_sha256 = "f7e4f112aace757e41a89491cfd6eaae62c70d29985ec8b2cc6de286531d300a"
 diagnostic_format = "wfd-rgba16uint-v1"
