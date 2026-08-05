@@ -1,0 +1,19 @@
+schema_version = 1
+status = "accepted"
+evidence_commit = "3a61ace1e785e99d7f22dfe7202e44ddc6166aa1"
+scene_id = "foundation-unchanged-shipping-scene"
+qualification_source_sha256 = "bc1d7a27fd7439d6a3cfc0388cd96045f6faddc35358e80fa9f45211ed9ee8df"
+conversion = "python-stdlib-p6-rgb8-filter0-zlib9-v1"
+conversion_tool = "tools/verify_visual_polish.py"
+conversion_tool_sha256 = "1282d2c2dd5f127e7a336dfd7f7b83ba3381880fd20b82b03cf10504166e500d"
+comparison = "screenshots/visual-polish/foundation-repeat.comparison.toml"
+
+[[capture]]
+id = "foundation-repeat-a"
+sidecar = "screenshots/visual-polish-foundation-a.capture.toml"
+report = "screenshots/visual-polish/foundation-a.report.toml"
+
+[[capture]]
+id = "foundation-repeat-b"
+sidecar = "screenshots/visual-polish-foundation-b.capture.toml"
+report = "screenshots/visual-polish/foundation-b.report.toml"
