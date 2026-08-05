@@ -47,6 +47,24 @@ pub struct LocalTransform {
     pub rotation: Rotation,
 }
 
+/// Optional rail-following motion (spec Part 2.2, scoped). A structure with
+/// `None` here is fully static, exactly as Phase 5 left it; with `Some(_)`
+/// the per-tick rail step advances it along connected rail cells. Motion
+/// state is transient runtime data — it is not persisted with the structure
+/// (a reloaded structure is static until re-railed).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RailState {
+    /// The rail cell the structure is currently departing.
+    pub current_cell: BlockPos,
+    /// The rail cell it is traveling toward.
+    pub next_cell: BlockPos,
+    /// 0.0 at `current_cell`, 1.0 at `next_cell`.
+    pub progress: f32,
+    /// Cells per second. The deferred mass-driven power-draw phase must
+    /// agree with this unit.
+    pub speed: f32,
+}
+
 /// A self-contained, non-chunk-grid block store, born from a [`Template`].
 #[derive(Clone, Debug)]
 pub struct LocalStructure {
@@ -61,6 +79,8 @@ pub struct LocalStructure {
     /// `Template`/`rotated_cells`.
     pub blocks: HashMap<(i32, i32, i32), BlockId>,
     pub transform: LocalTransform,
+    /// Where this structure is going, if it is riding rails. `None` = static.
+    pub rail: Option<RailState>,
 }
 
 /// Build a [`LocalStructure`] from a saved template, resolving block names
@@ -83,6 +103,7 @@ pub fn from_template(template: &Template, reg: &Registry) -> LocalStructure {
                 .expect("the world origin is a valid block position"),
             rotation: Rotation::R0,
         },
+        rail: None,
     }
 }
 
@@ -253,6 +274,7 @@ impl World {
                     anchor,
                     rotation: saved.rotation,
                 },
+                rail: None,
             });
         }
         self.local_structures = loaded;
@@ -281,6 +303,18 @@ impl World {
             let _ = self.save_local_structures();
         }
         removed
+    }
+
+    /// Set (or clear) a structure's rail-following state. Returns whether a
+    /// structure with that id exists. Used by tests and by the future
+    /// player-triggered "set onto track" path; the step itself is transient.
+    #[allow(dead_code)]
+    pub fn set_rail(&mut self, id: LocalStructureId, rail: Option<RailState>) -> bool {
+        let Some(structure) = self.local_structures.iter_mut().find(|s| s.id == id) else {
+            return false;
+        };
+        structure.rail = rail;
+        true
     }
 
     /// Spawn a [`LocalStructure`] from a saved template at `anchor`,

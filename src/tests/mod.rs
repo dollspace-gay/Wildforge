@@ -30,6 +30,7 @@ mod multiblock;
 mod multiplayer;
 mod player;
 mod qualification;
+mod rail;
 #[path = "registry.rs"]
 mod registry_tests;
 mod rendering;

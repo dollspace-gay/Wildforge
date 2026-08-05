@@ -422,7 +422,8 @@ impl World {
                 BlockEntity::Clamp(_)
                 | BlockEntity::Sign(_)
                 | BlockEntity::Steam(_)
-                | BlockEntity::SurveyFolio(_) => {}
+                | BlockEntity::SurveyFolio(_)
+                | BlockEntity::Switch(_) => {}
             }
             self.block_entities.insert(pos, entity);
         }

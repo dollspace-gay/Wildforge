@@ -2568,3 +2568,54 @@ drops = "base:scar_fragment"
 item = false
 observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
 dross_scar = { kind = "broken_symmetry", handler = "filament_growth", carriers = ["air", "water", "soil"], min_band = "seep", status = "stamina_drag", activity = "shear", max_sites_per_region = 1 }
+
+# ---- rails (spec Part 2.2, scoped) ----
+# Ordinary placeable rail pieces. BlockDef has no per-block orientation
+# field, so curve/incline orientation is encoded as distinct block ids
+# rather than a runtime-facing property (answering Phase 6 Open Question 2).
+
+[[block]]
+id = "rail"
+name = "Rail (Straight)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "rail_curve_ne"
+name = "Rail Curve (North-East)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "rail_curve_nw"
+name = "Rail Curve (North-West)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "rail_incline_n"
+name = "Rail Incline (North)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "rail_switch"
+name = "Rail Switch"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+interaction = "rail_switch"

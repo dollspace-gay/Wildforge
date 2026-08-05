@@ -56,6 +56,7 @@ mod spawn;
 pub(crate) use spawn::player_entry_chunks;
 pub(crate) use storage::{ChunkLoader, encode_stream_chunk};
 pub(crate) mod local_structure;
+pub(crate) mod rail;
 pub(crate) mod template;
 mod ticks;
 mod workings;
@@ -228,6 +229,24 @@ pub enum BlockEntity {
     BindingFrame(BindingFrameState),
     /// The placed shell owns exactly one stable vessel item identity.
     ChargeVessel(ChargeVesselState),
+    /// A rail switch: which exit is currently selected. The rest of the rail
+    /// piece is ordinary block data (spec Part 2.2, scoped).
+    Switch(SwitchState),
+}
+
+/// One mutable rail-switch block: the currently-selected exit. `None` on a
+/// switch block (no entity) reads as the straight default.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SwitchState {
+    pub selected: crate::planet::Direction4,
+}
+
+impl Default for SwitchState {
+    fn default() -> Self {
+        Self {
+            selected: crate::planet::Direction4::North,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -3175,7 +3194,8 @@ impl World {
             BlockEntity::Clamp(_)
             | BlockEntity::Sign(_)
             | BlockEntity::Steam(_)
-            | BlockEntity::SurveyFolio(_) => {}
+            | BlockEntity::SurveyFolio(_)
+            | BlockEntity::Switch(_) => {}
         }
         stacks
     }
@@ -3440,6 +3460,7 @@ impl World {
                     .flatten()
                     .collect(),
                 BlockEntity::ChargeVessel(vessel) => vessel.vessel.into_iter().collect(),
+                BlockEntity::Switch(_) => Vec::new(),
             };
             for stack in spilled {
                 self.push_drop_at(pos, stack);

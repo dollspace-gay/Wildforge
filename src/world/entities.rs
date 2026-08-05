@@ -281,6 +281,13 @@ impl World {
                     }
                     let _ = writeln!(out);
                 }
+                BlockEntity::Switch(sw) => {
+                    let _ = writeln!(
+                        out,
+                        "[[switch]]\n{pos_line}\nselected = \"{:?}\"",
+                        sw.selected
+                    );
+                }
             }
         }
         super::persistence::replace_or_remove(
@@ -455,6 +462,12 @@ impl World {
             revision: u64,
         }
         #[derive(Deserialize)]
+        struct SwitchT {
+            pos: crate::planet::BlockPos,
+            #[serde(default)]
+            selected: String,
+        }
+        #[derive(Deserialize)]
         struct FileT {
             version: u32,
             #[serde(default)]
@@ -485,6 +498,8 @@ impl World {
             binding_frame: Vec<BindingFrameT>,
             #[serde(default)]
             charge_vessel: Vec<ChargeVesselT>,
+            #[serde(default)]
+            switch: Vec<SwitchT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else {
             return;
@@ -732,6 +747,16 @@ impl World {
                     revision: vessel.revision,
                 }),
             );
+        }
+        for sw in parsed.switch {
+            let selected = match sw.selected.to_ascii_lowercase().as_str() {
+                "east" => crate::planet::Direction4::East,
+                "west" => crate::planet::Direction4::West,
+                "south" => crate::planet::Direction4::South,
+                _ => crate::planet::Direction4::North,
+            };
+            self.block_entities
+                .insert(sw.pos, BlockEntity::Switch(SwitchState { selected }));
         }
     }
 

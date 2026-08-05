@@ -1124,6 +1124,7 @@ impl World {
         for (pos, stack) in spat {
             self.push_drop_at(pos, stack);
         }
+        self.tick_rail_motion(dt);
     }
 
     // ---- block entity persistence (by item name, mod-change safe) ----

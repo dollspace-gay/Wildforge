@@ -1634,6 +1634,13 @@ impl Game {
                     self.set_screen(Screen::Furnace(h.block));
                     return;
                 }
+                Some("rail_switch") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.25;
+                    self.input.right_held = false;
+                    self.server.world.toggle_switch(h.block);
+                    self.toast("The switch points differently now.".to_string());
+                    return;
+                }
                 Some("chest") if self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.3;
                     if let Some(rc) = &self.multiplayer.remote {

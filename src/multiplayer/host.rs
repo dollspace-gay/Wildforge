@@ -4098,7 +4098,8 @@ impl HostSession {
             | BlockEntity::SurveyFolio(_)
             | BlockEntity::DiscoveryApparatus(_)
             | BlockEntity::BindingFrame(_)
-            | BlockEntity::ChargeVessel(_) => {}
+            | BlockEntity::ChargeVessel(_)
+            | BlockEntity::Switch(_) => {}
             BlockEntity::Chest(c) => {
                 if slot < c.slots.len() {
                     let (ns, nh) = click_stack(&reg, c.slots[slot], held, right);
@@ -4273,7 +4274,8 @@ impl HostSession {
             | BlockEntity::SurveyFolio(_)
             | BlockEntity::DiscoveryApparatus(_)
             | BlockEntity::BindingFrame(_)
-            | BlockEntity::ChargeVessel(_) => return,
+            | BlockEntity::ChargeVessel(_)
+            | BlockEntity::Switch(_) => return,
         };
         self.net.send(
             id,
