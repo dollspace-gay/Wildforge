@@ -48,6 +48,29 @@ fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// CPU mirror of the scalar atmosphere transfer in `shader.wgsl`.
+///
+/// Keeping this tiny function next to the sky model lets qualification pin the
+/// fade laws without pretending a software screenshot is GPU evidence.
+#[cfg(test)]
+pub(crate) fn atmospheric_fog_factor(distance: f32, effective_range: f32) -> f32 {
+    smoothstep(effective_range * 0.90, effective_range, distance)
+}
+
+/// CPU mirror of the shader's geodesic-plus-radial distance.  It depends only
+/// on radii and central angle, so changing cube-map charts cannot change fog.
+#[cfg(test)]
+pub(crate) fn planetary_fog_distance(camera: Vec3, world: Vec3) -> f32 {
+    let camera_radius = camera.length();
+    let world_radius = world.length();
+    let angle = (camera / camera_radius.max(1e-3))
+        .dot(world / world_radius.max(1e-3))
+        .clamp(-1.0, 1.0)
+        .acos();
+    let surface_distance = angle * crate::planet::PLANET_RADIUS as f32;
+    Vec3::new(surface_distance, world_radius - camera_radius, 0.0).length()
+}
+
 /// Low-frequency sky radiance along `dir` (normalized). Mirrors `shader.wgsl`.
 pub(crate) fn radiance(dir: Vec3, p: &SkyParams) -> Vec3 {
     let up_axis = p.up.normalize_or_zero();
