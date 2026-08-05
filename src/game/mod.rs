@@ -26,6 +26,14 @@ const GEN_BUDGET: usize = 4; // chunk generations per frame (256-tall gen is pri
 const SHOT_SETTLE_FRAMES: u64 = 10;
 const SHOT_FIXED_DT: f32 = 1.0 / 60.0;
 const SHOT_MAX_FRAMES: u64 = 3000;
+
+fn advance_capture_clock(current: u64, awaiting_direct_entry: bool) -> u64 {
+    if awaiting_direct_entry {
+        0
+    } else {
+        current.saturating_add(1)
+    }
+}
 const BUILD_MARKER: &str = "BIOME-R4";
 const REACH: f32 = 5.0;
 const MAX_HEALTH: f32 = 14.0; // base half-hearts (7 hearts)
@@ -603,6 +611,9 @@ struct Game {
     time_abs: f32,
 
     total_frames: u64,
+    /// Frames eligible for an automated capture. Direct-entry loading and
+    /// creation screens do not consume the world's settle/timeout budget.
+    capture_frames: u64,
     settled_frames: u64,
     shot_at: Option<u64>,
     /// A chunk within the DDA occupancy grid's reach remeshed (a block edit),
@@ -846,6 +857,7 @@ impl Game {
             last_space: -9.0,
             time_abs: 0.0,
             total_frames: 0,
+            capture_frames: 0,
             occ_dirty: false,
             block_albedo,
             room_light: bounce::RoomLight::new(),
@@ -998,7 +1010,14 @@ pub(super) fn run_windowed() {
 
 #[cfg(test)]
 mod state_characterization {
-    use super::PresentationState;
+    use super::{PresentationState, advance_capture_clock};
+
+    #[test]
+    fn direct_entry_loading_does_not_consume_capture_budget() {
+        assert_eq!(advance_capture_clock(2_999, true), 0);
+        assert_eq!(advance_capture_clock(0, false), 1);
+        assert_eq!(advance_capture_clock(u64::MAX, false), u64::MAX);
+    }
 
     #[test]
     fn presentation_randomness_cannot_advance_the_sim_stream() {

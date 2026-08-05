@@ -1,10 +1,88 @@
 # Dross and scarring — power leaves a mess
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and production-qualified (2026-08-04).**
 >
 > This is goal 8 of `docs/magic-sequence.md`. It requires goals 1–7 and the
 > qualified atmosphere, water, soil, ecology, heart, Ire, fire, persistence,
 > multiplayer, and moderation systems.
+
+## Implementation record — 2026-08-04
+
+Goal 8 is live as a finite, conserved subledger of the existing Current. It
+does not add a corruption morality score, a self-replicating biome replacement,
+free matter, or an administrative guilt overlay. The implementation includes:
+
+- seven explicit carriers—air, water, soil/sediment, organisms, containers,
+  apparatus, and manifested scars—with exact resonance mixtures, fixed-point
+  partition remainders, bounded provenance, deterministic hourly transport,
+  seam-safe atlas routes, sparse import, and sliced global catch-up;
+- source accounting on charms, implements, wand workings, constructed rites,
+  alchemy, failure/disposal/fire paths, environmental instability, overdraw,
+  and containment failure. Matched stable practice produces measurably less
+  waste, while heat sends released residue airborne rather than deleting it;
+- clear, trace, strained, seep, scar, and breach-risk bands with hysteresis.
+  Forecasts precede damage, breach activities redistribute accounted state,
+  and public cues contain qualitative place/activity language rather than
+  hidden source or player ids;
+- seven climate/habitat-specific scar definitions. Closed native handlers
+  place water-margin films, organic filaments, mineral crusts, or surface
+  overlays only in bounded valid cells. Canonical persisted sites survive
+  load/unload without duplication, never overwrite authored construction, and
+  decline to materialize when their selected chunk becomes player-touched;
+- real exposure, crop refusal/stall, ecological harm, and working-instability
+  effects. Moving Dross never changes Ire by arithmetic; only an actual
+  provenance-aware population loss invokes the existing Ire rules;
+- finite vessels, filters, excavation residue, Ashlace washing, settling, and
+  heart/ecology reordering. Every cleanup operation transfers custody, obeys
+  capacity/rate limits, and leaves all five required catastrophe scenarios
+  recoverable after their sources stop;
+- bounded likely/consistent/inconclusive source signatures that degrade with
+  mixing, transport, and time. Exact actor and installation identities remain
+  operator evidence and never leak through ordinary observations or network
+  cues;
+- host-authoritative local, guest, and agent presentation; interest-managed
+  protocol events; distinct audio plus textual/accessibility equivalents;
+  declarative scar/status/activity schemas with safe removed-mod fallback; and
+  script rejection of raw scar/ecology placement;
+- `--arcane-audit` Dross reconciliation and four-view `--arcane-atlas ...
+  --layer dross` export, including carriers, resonance, bands, population
+  exposure, process/install attribution, geography, and projected recovery.
+
+### Formats and measured budgets
+
+| Surface | Qualified version/value |
+|---|---:|
+| Dross state schema | 1 |
+| Multiplayer protocol | 40 |
+| Base carriers / burden bands / scar kinds | 7 / 6 / 7 |
+| Bounded event history | 4,096 events |
+| Bounded process/install counters | 256 each |
+| Projected maximal Dross save | 81 MiB (96 MiB gate) |
+| Dense state + transport routes | 39 MiB (64 MiB gate) |
+| Sample client cue | 21 bytes (256-byte gate) |
+| Measured sample server slice | 94.062 us |
+| Focused Dross tests | 40 passing |
+| Native Windows GPU capture | RTX 3090/DX12; settled in 131 eligible frames; 55 resident / 51 GPU chunks; 10.41 ms sim / 7.03 ms draw |
+
+A fresh production planet reconciled all 1,610,612,736 Current units with
+zero unexplained delta. Its ordinary archaeological samples began with 576
+units of contained Dross in three owners, all retained by the Dross audit; the
+four atlas diagnostics exported successfully. The reviewed live frame is
+retained locally at `screenshots/magic-dross-live.png` (qualification images
+remain ignored artifacts). The capture exposed and fixed two harness defects:
+world-creation frames no longer consume the settle timeout, and already-visible
+chunks undergoing normal simulation remeshes no longer prevent capture.
+
+Persistence qualification also reopened the discovery-era production fixture.
+That exposed a Goal 7 positional-enum regression: `Alchemy` owners had been
+inserted before already-persisted Dross owners. An exact pre-Alchemy owner and
+receipt migrator now preserves those accounts, including sealed Dross custody;
+future persistent enum additions must be appended or explicitly migrated.
+
+Final repository qualification passed formatting, strict all-target Clippy,
+762 non-agent tests (22 explicit operator probes ignored), all nine serial
+dedicated-agent scenarios, the documented `cargo deny` advisory policy, and
+optimized Linux and Windows release builds.
 
 ## Purpose
 

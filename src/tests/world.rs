@@ -739,6 +739,68 @@ fn arcane_ire_and_dross_four_states_persist_independently() {
 }
 
 #[test]
+fn dross_changes_ire_only_when_it_causes_real_ecology_population_loss() {
+    let mut world = ecology_world("dross-habitat-harm-ire", 10_108);
+    let (site_index, tolerance) = {
+        let geography = world.arcane_geography.as_ref().unwrap();
+        geography
+            .dynamic
+            .ecology
+            .sites
+            .iter()
+            .enumerate()
+            .find_map(|(index, site)| {
+                let definition = world.reg.arcane_ecology.get(&site.content_id)?;
+                (site.charge_total() > u64::from(definition.dross_tolerance))
+                    .then_some((index, definition.dross_tolerance))
+            })
+            .expect("fixture needs one charged ecology site")
+    };
+    let needed = u64::from(tolerance).saturating_add(1);
+    let (population_before, completed_before) = {
+        let geography = world.arcane_geography.as_mut().unwrap();
+        let site = &mut geography.dynamic.ecology.sites[site_index];
+        site.population = 1;
+        site.stage = crate::arcane_ecology::EcologyStage::Mature;
+        let mut remaining = needed;
+        for slot in 0..6 {
+            let moved = u64::from(site.charge[slot]).min(remaining);
+            site.charge[slot] -= moved as u32;
+            site.dross[slot] = site.dross[slot].checked_add(moved as u32).unwrap();
+            remaining -= moved;
+        }
+        assert_eq!(remaining, 0);
+        (site.population, geography.dynamic.ecology.completed_days)
+    };
+    let ire_before = world.ire;
+    assert_eq!(
+        world.ire, ire_before,
+        "moving Current into Dross changed Ire"
+    );
+    world.day = u32::try_from(completed_before.saturating_add(1)).unwrap();
+
+    world.tick_arcane_ecology(usize::MAX).unwrap();
+
+    let geography = world.arcane_geography.as_ref().unwrap();
+    let site = &geography.dynamic.ecology.sites[site_index];
+    assert!(site.population < population_before);
+    assert!(
+        world.ire > ire_before,
+        "accounted Dross killed habitat population without invoking Ire"
+    );
+    assert!(geography.audit().unwrap().is_balanced());
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .audit()
+            .unwrap()
+            .is_balanced()
+    );
+}
+
+#[test]
 fn magical_harvests_and_bonus_drops_are_funded_before_delivery() {
     use crate::arcane::ArcaneOwner;
 

@@ -223,12 +223,21 @@ impl World {
         let Some(atlas) = self.planet_atlas.clone() else {
             return Ok(None);
         };
+        let dross_completed = self
+            .arcane_geography
+            .as_ref()
+            .map(|geography| geography.dynamic.dross_state.completed_steps);
         let Some(weather) = self.planetary_weather.as_mut() else {
             return Ok(None);
         };
         let day = self.clock / f64::from(crate::server::DAY_LENGTH);
         let target_hour = (day * 24.0).floor().max(0.0) as u64;
-        if !weather.is_updating() && weather.completed_hours <= target_hour {
+        let dross_needs_previous_routes = dross_completed
+            .is_some_and(|completed| weather.completed_hours > completed.saturating_add(1));
+        if !weather.is_updating()
+            && !dross_needs_previous_routes
+            && weather.completed_hours <= target_hour
+        {
             weather.begin_hour(weather.completed_hours);
         }
         let global_ire = self.ire;

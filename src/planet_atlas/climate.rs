@@ -807,6 +807,17 @@ pub struct WeatherStepReport {
     pub unexplained_water_drift: i128,
 }
 
+/// Exact coarse runoff movement accepted by one weather hour. Environmental
+/// solutes use the same source fraction and seam-aware receiver; evaporation
+/// is absent because nonvolatile dross remains behind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct RunoffTransport {
+    pub from: AtlasPos,
+    pub to: AtlasPos,
+    pub water_hu: u64,
+    pub source_water_before_hu: u64,
+}
+
 #[derive(Clone, Debug)]
 struct WeatherCheckpoint {
     aquifers: Vec<SparseAquiferState>,
@@ -839,6 +850,8 @@ pub struct PlanetaryWeather {
     active_water_cycle_outflow: u64,
     pub completed_hours: u64,
     pub last_report: WeatherStepReport,
+    active_runoff_routes: Vec<RunoffTransport>,
+    last_runoff_routes: Vec<RunoffTransport>,
     checkpoint: Option<WeatherCheckpoint>,
     cells_swapped: bool,
     failed_hour: Option<u64>,
@@ -867,6 +880,8 @@ impl PlanetaryWeather {
             active_water_cycle_outflow: 0,
             completed_hours,
             last_report: WeatherStepReport::default(),
+            active_runoff_routes: Vec::new(),
+            last_runoff_routes: Vec::new(),
             checkpoint: None,
             cells_swapped: false,
             failed_hour: None,
@@ -968,6 +983,10 @@ impl PlanetaryWeather {
         self.active_hour.is_some()
     }
 
+    pub fn last_runoff_routes(&self) -> &[RunoffTransport] {
+        &self.last_runoff_routes
+    }
+
     pub fn begin_hour(&mut self, climate_hour: u64) {
         if self.active_hour.is_some() || self.failed_hour.is_some() {
             return;
@@ -987,6 +1006,7 @@ impl PlanetaryWeather {
             .clone_from_slice(self.water.cells.values());
         self.water_inbound.fill(ReservoirMass::default());
         self.surface_fluxes.clear();
+        self.active_runoff_routes.clear();
         self.cursor = 0;
         self.active_hour = Some(climate_hour);
         self.start_total = self
@@ -1022,6 +1042,7 @@ impl PlanetaryWeather {
         }
         self.cursor = 0;
         self.surface_fluxes.clear();
+        self.active_runoff_routes.clear();
         self.water_inbound.fill(ReservoirMass::default());
         self.pending_water_cycle_outflow = 0;
         self.active_water_cycle_outflow = 0;
@@ -1859,6 +1880,7 @@ impl PlanetaryWeather {
             // Route a bounded parcel of standing runoff through the immutable
             // seam-aware drainage graph. Incoming parcels are applied after
             // the complete old-state pass.
+            let runoff_before = water.runoff.water_hu;
             let routed = water.runoff.take((water.runoff.water_hu / 4).max(u64::from(
                 water.runoff.water_hu >= HYDRO_UNITS_PER_VISIBLE_LEVEL,
             )));
@@ -1869,6 +1891,12 @@ impl PlanetaryWeather {
                     let receiver = hydro.drainage_receiver as usize;
                     let receiver_pos = AtlasPos::from_index(receiver, side)
                         .expect("drainage receiver is validated");
+                    self.active_runoff_routes.push(RunoffTransport {
+                        from: pos,
+                        to: receiver_pos,
+                        water_hu: routed.water_hu,
+                        source_water_before_hu: runoff_before,
+                    });
                     let materialized = self.water.commitments.iter().any(|commitment| {
                         AtlasPos::from_surface(commitment.chunk.block_origin(), side)
                             == receiver_pos
@@ -2055,6 +2083,7 @@ impl PlanetaryWeather {
         self.active_water_cycle_outflow = 0;
         self.completed_hours = self.completed_hours.saturating_add(1);
         self.cells.completed_climate_hours = self.completed_hours;
+        self.last_runoff_routes = std::mem::take(&mut self.active_runoff_routes);
         self.last_report = report;
         Ok(Some(report))
     }

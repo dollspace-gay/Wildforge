@@ -409,7 +409,14 @@ pub enum ArcaneAuthority {
     System,
     Player([u8; 16]),
     Mod(String),
-    Operator { actor: String, development: bool },
+    Operator {
+        actor: String,
+        development: bool,
+    },
+    /// The authoritative host validated an embodied player action and owns
+    /// the actual item/apparatus mutation. It has system custody permission
+    /// while retaining the stable player id for audit/provenance.
+    SystemForPlayer([u8; 16]),
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -488,6 +495,20 @@ pub struct ArcaneAuditEvent {
     pub content_id: String,
     pub authority: String,
     pub units: u64,
+    /// Net Current newly classified into explicit dross custody by this
+    /// transaction. Carrier-to-carrier transfers are zero.
+    #[serde(default)]
+    pub dross_generated: u64,
+    #[serde(default)]
+    pub dross_installation_id: Option<u64>,
+}
+
+const MAX_PENDING_DROSS_ATTRIBUTION: usize = 4_096;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PendingDrossAttribution {
+    owner: ArcaneOwner,
+    contribution: crate::dross::DrossContribution,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -520,6 +541,14 @@ pub struct ArcaneLedger {
     pub recent_receipts: BTreeMap<TransactionId, TransactionReceipt>,
     pub receipt_order: VecDeque<TransactionId>,
     pub audit_history: VecDeque<ArcaneAuditEvent>,
+    /// Bounded cumulative operator accounting for every explicit dross
+    /// source, including waste that remains sealed in an item or apparatus.
+    #[serde(default)]
+    pub dross_generated_total: u64,
+    #[serde(default)]
+    pub dross_generated_by_process: BTreeMap<String, u64>,
+    #[serde(default)]
+    pub dross_generated_by_installation: BTreeMap<u64, u64>,
     pub rounding: BTreeMap<String, FixedRemainder>,
     pub frozen_hearts: BTreeSet<u16>,
     pub item_manifests: BTreeMap<String, SavedArcaneDefinition>,
@@ -527,8 +556,244 @@ pub struct ArcaneLedger {
     /// Only explicit development/operator adjustments can make this nonzero.
     pub external_adjustment: i128,
     pub last_clean_total: u64,
+    /// Recent source evidence awaiting adoption by the dense planetary dross
+    /// subledger. The Current itself is durable in `accounts`; losing this
+    /// bounded cache merely turns that fraction into honestly unknown
+    /// provenance on the next import.
+    #[serde(skip)]
+    pending_dross_attribution: VecDeque<PendingDrossAttribution>,
     #[serde(skip)]
     path: PathBuf,
+}
+
+/// Exact schema-1 snapshot layout before Goal 8 added global dross source
+/// counters. Postcard encodes structs positionally, so serde field defaults
+/// alone cannot safely read the shorter historical sequence.
+#[derive(Deserialize, Serialize)]
+struct ArcaneAuditEventBeforeDrossAccounting {
+    transaction: TransactionId,
+    reason: String,
+    content_id: String,
+    authority: String,
+    units: u64,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ArcaneLedgerBeforeDrossAccounting {
+    schema_version: u32,
+    algorithm_version: u32,
+    unit_scale: u32,
+    genesis_total: u64,
+    content_hash: u64,
+    registry: ResonanceRegistry,
+    accounts: BTreeMap<ArcaneOwner, ArcaneAccount>,
+    next_item_id: u64,
+    next_working_id: u64,
+    next_scar_id: u64,
+    next_system_transaction: u64,
+    last_delta_seq: u64,
+    origin_high_water: BTreeMap<[u8; 16], u64>,
+    recent_receipts: BTreeMap<TransactionId, TransactionReceipt>,
+    receipt_order: VecDeque<TransactionId>,
+    audit_history: VecDeque<ArcaneAuditEventBeforeDrossAccounting>,
+    rounding: BTreeMap<String, FixedRemainder>,
+    frozen_hearts: BTreeSet<u16>,
+    item_manifests: BTreeMap<String, SavedArcaneDefinition>,
+    block_manifests: BTreeMap<String, SavedArcaneDefinition>,
+    external_adjustment: i128,
+    last_clean_total: u64,
+}
+
+/// Goal 7 originally inserted `Alchemy` before the persisted Dross variants.
+/// Postcard stores enum discriminants positionally, so discovery-era worlds
+/// need their exact owner and receipt layouts rather than being decoded with
+/// today's enum. New persistent owner variants must be appended from here on.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+enum ArcaneOwnerBeforeAlchemy {
+    Deep,
+    Ambient(AtlasPos),
+    Heart(u16),
+    Block {
+        pos: BlockPos,
+        generation: u32,
+    },
+    Item(u64),
+    Mob(u64),
+    Player([u8; 16]),
+    Working(u64),
+    Dross {
+        region: AtlasPos,
+        medium: DrossMedium,
+    },
+    Scar(u64),
+    Geography,
+    ItemDross(u64),
+}
+
+impl ArcaneOwnerBeforeAlchemy {
+    fn migrate(self) -> ArcaneOwner {
+        match self {
+            Self::Deep => ArcaneOwner::Deep,
+            Self::Ambient(region) => ArcaneOwner::Ambient(region),
+            Self::Heart(country) => ArcaneOwner::Heart(country),
+            Self::Block { pos, generation } => ArcaneOwner::Block { pos, generation },
+            Self::Item(id) => ArcaneOwner::Item(id),
+            Self::Mob(id) => ArcaneOwner::Mob(id),
+            Self::Player(id) => ArcaneOwner::Player(id),
+            Self::Working(id) => ArcaneOwner::Working(id),
+            Self::Dross { region, medium } => ArcaneOwner::Dross { region, medium },
+            Self::Scar(id) => ArcaneOwner::Scar(id),
+            Self::Geography => ArcaneOwner::Geography,
+            Self::ItemDross(id) => ArcaneOwner::ItemDross(id),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+struct TransactionReceiptBeforeAlchemy {
+    id: TransactionId,
+    delta_sequence: u64,
+    touched_versions: BTreeMap<ArcaneOwnerBeforeAlchemy, u64>,
+}
+
+impl TransactionReceiptBeforeAlchemy {
+    fn migrate(self) -> TransactionReceipt {
+        TransactionReceipt {
+            id: self.id,
+            delta_sequence: self.delta_sequence,
+            touched_versions: self
+                .touched_versions
+                .into_iter()
+                .map(|(owner, version)| (owner.migrate(), version))
+                .collect(),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+struct ArcaneLedgerBeforeAlchemy {
+    schema_version: u32,
+    algorithm_version: u32,
+    unit_scale: u32,
+    genesis_total: u64,
+    content_hash: u64,
+    registry: ResonanceRegistry,
+    accounts: BTreeMap<ArcaneOwnerBeforeAlchemy, ArcaneAccount>,
+    next_item_id: u64,
+    next_working_id: u64,
+    next_scar_id: u64,
+    next_system_transaction: u64,
+    last_delta_seq: u64,
+    origin_high_water: BTreeMap<[u8; 16], u64>,
+    recent_receipts: BTreeMap<TransactionId, TransactionReceiptBeforeAlchemy>,
+    receipt_order: VecDeque<TransactionId>,
+    audit_history: VecDeque<ArcaneAuditEventBeforeDrossAccounting>,
+    rounding: BTreeMap<String, FixedRemainder>,
+    frozen_hearts: BTreeSet<u16>,
+    item_manifests: BTreeMap<String, SavedArcaneDefinition>,
+    block_manifests: BTreeMap<String, SavedArcaneDefinition>,
+    external_adjustment: i128,
+    last_clean_total: u64,
+}
+
+impl ArcaneLedgerBeforeAlchemy {
+    fn migrate(self) -> ArcaneLedger {
+        ArcaneLedger {
+            schema_version: self.schema_version,
+            algorithm_version: self.algorithm_version,
+            unit_scale: self.unit_scale,
+            genesis_total: self.genesis_total,
+            content_hash: self.content_hash,
+            registry: self.registry,
+            accounts: self
+                .accounts
+                .into_iter()
+                .map(|(owner, account)| (owner.migrate(), account))
+                .collect(),
+            next_item_id: self.next_item_id,
+            next_working_id: self.next_working_id,
+            next_scar_id: self.next_scar_id,
+            next_system_transaction: self.next_system_transaction,
+            last_delta_seq: self.last_delta_seq,
+            origin_high_water: self.origin_high_water,
+            recent_receipts: self
+                .recent_receipts
+                .into_iter()
+                .map(|(id, receipt)| (id, receipt.migrate()))
+                .collect(),
+            receipt_order: self.receipt_order,
+            audit_history: self
+                .audit_history
+                .into_iter()
+                .map(|event| ArcaneAuditEvent {
+                    transaction: event.transaction,
+                    reason: event.reason,
+                    content_id: event.content_id,
+                    authority: event.authority,
+                    units: event.units,
+                    dross_generated: 0,
+                    dross_installation_id: None,
+                })
+                .collect(),
+            dross_generated_total: 0,
+            dross_generated_by_process: BTreeMap::new(),
+            dross_generated_by_installation: BTreeMap::new(),
+            rounding: self.rounding,
+            frozen_hearts: self.frozen_hearts,
+            item_manifests: self.item_manifests,
+            block_manifests: self.block_manifests,
+            external_adjustment: self.external_adjustment,
+            last_clean_total: self.last_clean_total,
+            pending_dross_attribution: VecDeque::new(),
+            path: PathBuf::new(),
+        }
+    }
+}
+
+impl ArcaneLedgerBeforeDrossAccounting {
+    fn migrate(self) -> ArcaneLedger {
+        ArcaneLedger {
+            schema_version: self.schema_version,
+            algorithm_version: self.algorithm_version,
+            unit_scale: self.unit_scale,
+            genesis_total: self.genesis_total,
+            content_hash: self.content_hash,
+            registry: self.registry,
+            accounts: self.accounts,
+            next_item_id: self.next_item_id,
+            next_working_id: self.next_working_id,
+            next_scar_id: self.next_scar_id,
+            next_system_transaction: self.next_system_transaction,
+            last_delta_seq: self.last_delta_seq,
+            origin_high_water: self.origin_high_water,
+            recent_receipts: self.recent_receipts,
+            receipt_order: self.receipt_order,
+            audit_history: self
+                .audit_history
+                .into_iter()
+                .map(|event| ArcaneAuditEvent {
+                    transaction: event.transaction,
+                    reason: event.reason,
+                    content_id: event.content_id,
+                    authority: event.authority,
+                    units: event.units,
+                    dross_generated: 0,
+                    dross_installation_id: None,
+                })
+                .collect(),
+            dross_generated_total: 0,
+            dross_generated_by_process: BTreeMap::new(),
+            dross_generated_by_installation: BTreeMap::new(),
+            rounding: self.rounding,
+            frozen_hearts: self.frozen_hearts,
+            item_manifests: self.item_manifests,
+            block_manifests: self.block_manifests,
+            external_adjustment: self.external_adjustment,
+            last_clean_total: self.last_clean_total,
+            pending_dross_attribution: VecDeque::new(),
+            path: PathBuf::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -647,6 +912,9 @@ impl ArcaneLedger {
             recent_receipts: BTreeMap::new(),
             receipt_order: VecDeque::new(),
             audit_history: VecDeque::new(),
+            dross_generated_total: 0,
+            dross_generated_by_process: BTreeMap::new(),
+            dross_generated_by_installation: BTreeMap::new(),
             rounding: BTreeMap::new(),
             frozen_hearts: BTreeSet::new(),
             item_manifests: content
@@ -683,6 +951,7 @@ impl ArcaneLedger {
                 .collect(),
             external_adjustment: 0,
             last_clean_total: genesis_total,
+            pending_dross_attribution: VecDeque::new(),
             path,
         };
         ledger.allocate_heart_reserves(atlas)?;
@@ -925,8 +1194,23 @@ impl ArcaneLedger {
                 "arcane ledger exceeds safety bound".into(),
             ));
         }
-        let mut ledger: Self =
-            postcard::from_bytes(bytes).map_err(|error| ArcaneError::Corrupt(error.to_string()))?;
+        let mut ledger: Self = match postcard::from_bytes(bytes) {
+            Ok(ledger) => ledger,
+            Err(current_error) => {
+                match postcard::from_bytes::<ArcaneLedgerBeforeDrossAccounting>(bytes) {
+                    Ok(legacy) => legacy.migrate(),
+                    Err(pre_dross_error) => {
+                        postcard::from_bytes::<ArcaneLedgerBeforeAlchemy>(bytes)
+                            .map(ArcaneLedgerBeforeAlchemy::migrate)
+                            .map_err(|pre_alchemy_error| {
+                                ArcaneError::Corrupt(format!(
+                                    "{current_error}; pre-Dross decode failed: {pre_dross_error}; pre-Alchemy decode failed: {pre_alchemy_error}"
+                                ))
+                            })?
+                    }
+                }
+            }
+        };
         if ledger.schema_version != ARCANE_SCHEMA_VERSION
             || ledger.algorithm_version != ARCANE_ALGORITHM_VERSION
             || ledger.unit_scale != CURRENT_UNIT_SCALE
@@ -1034,6 +1318,41 @@ impl ArcaneLedger {
                 "arcane owner count exceeds safety bound".into(),
             ));
         }
+        if self.dross_generated_by_process.len() > crate::dross::MAX_DROSS_PROCESS_COUNTERS
+            || self.dross_generated_by_installation.len() > crate::dross::MAX_DROSS_PROCESS_COUNTERS
+            || self
+                .dross_generated_by_process
+                .keys()
+                .any(|label| label.is_empty() || label.len() > crate::dross::MAX_SOURCE_LABEL_BYTES)
+        {
+            return Err(ArcaneError::Corrupt(
+                "arcane dross-generation counters exceed their bounded schema".into(),
+            ));
+        }
+        let process_total = self
+            .dross_generated_by_process
+            .values()
+            .try_fold(0u64, |sum, units| {
+                sum.checked_add(*units).ok_or(ArcaneError::Overflow)
+            })?;
+        let installation_total = self
+            .dross_generated_by_installation
+            .values()
+            .try_fold(0u64, |sum, units| {
+                sum.checked_add(*units).ok_or(ArcaneError::Overflow)
+            })?;
+        if process_total != self.dross_generated_total
+            || installation_total > self.dross_generated_total
+            || self.audit_history.len() > MAX_AUDIT_HISTORY
+            || self
+                .audit_history
+                .iter()
+                .any(|event| event.dross_generated > event.units)
+        {
+            return Err(ArcaneError::Corrupt(
+                "arcane dross-generation totals or event history do not reconcile".into(),
+            ));
+        }
         for (owner, account) in &self.accounts {
             account.current.total_checked()?;
             if account.current.is_empty() {
@@ -1113,6 +1432,31 @@ impl ArcaneLedger {
         Ok(id)
     }
 
+    pub(crate) fn environmental_dross_attribution(
+        &self,
+        owner: &ArcaneOwner,
+        requested: u64,
+    ) -> Vec<crate::dross::DrossContribution> {
+        let mut remaining = requested;
+        let mut out = Vec::new();
+        for pending in self
+            .pending_dross_attribution
+            .iter()
+            .filter(|pending| &pending.owner == owner)
+        {
+            if remaining == 0 {
+                break;
+            }
+            let mut contribution = pending.contribution.clone();
+            contribution.units = contribution.units.min(remaining);
+            remaining -= contribution.units;
+            if contribution.units != 0 {
+                out.push(contribution);
+            }
+        }
+        out
+    }
+
     pub(crate) fn system_transaction_id(&mut self) -> Result<TransactionId, ArcaneError> {
         let sequence = self.next_system_transaction;
         self.next_system_transaction = self
@@ -1155,6 +1499,28 @@ impl ArcaneLedger {
         reason: &str,
         files: Vec<LinkedFileReplacement>,
     ) -> Result<u64, ArcaneError> {
+        let item_id = self.allocate_item_id()?;
+        self.bind_preallocated_item_exact_linked(
+            item_id, source, current, dross, content_id, reason, files,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn bind_preallocated_item_exact_linked(
+        &mut self,
+        item_id: u64,
+        source: ArcaneOwner,
+        current: Current,
+        dross: Current,
+        content_id: &str,
+        reason: &str,
+        files: Vec<LinkedFileReplacement>,
+    ) -> Result<u64, ArcaneError> {
+        if item_id == 0 || item_id >= self.next_item_id {
+            return Err(ArcaneError::InvalidTransaction(
+                "linked harvest requires one freshly allocated item id".into(),
+            ));
+        }
         if current.is_empty() && dross.is_empty() {
             return Err(ArcaneError::InvalidTransaction(
                 "a charged linked harvest cannot bind an empty owner".into(),
@@ -1176,9 +1542,13 @@ impl ArcaneLedger {
                 });
             }
         }
-        let item_id = self.allocate_item_id()?;
         let target = ArcaneOwner::Item(item_id);
         let dross_target = ArcaneOwner::ItemDross(item_id);
+        if self.accounts.contains_key(&target) || self.accounts.contains_key(&dross_target) {
+            return Err(ArcaneError::InvalidTransaction(
+                "linked harvest item id is already in use".into(),
+            ));
+        }
         let mut reads = vec![AccountRead {
             owner: source.clone(),
             expected_version: source_account.version,
@@ -1918,7 +2288,7 @@ impl ArcaneLedger {
         credit_only: bool,
     ) -> Result<(), ArcaneError> {
         let permitted = match authority {
-            ArcaneAuthority::System => true,
+            ArcaneAuthority::System | ArcaneAuthority::SystemForPlayer(_) => true,
             ArcaneAuthority::Player(player) => {
                 credit_only || matches!(owner, ArcaneOwner::Player(id) if id == player)
             }
@@ -2037,18 +2407,130 @@ impl ArcaneLedger {
             sum.checked_add(movement.current.total_checked()?)
                 .ok_or(ArcaneError::Overflow)
         })?;
+        let (dross_generated, dross_installation_id) = transaction_dross_generation(transaction)?;
+        if dross_generated != 0 {
+            self.dross_generated_total = self.dross_generated_total.saturating_add(dross_generated);
+            let process = if transaction.content_id == "base:transfer" {
+                transaction.reason.clone()
+            } else {
+                transaction.content_id.clone()
+            };
+            crate::dross::add_bounded_process_units(
+                &mut self.dross_generated_by_process,
+                &process,
+                dross_generated,
+            );
+            if let Some(installation_id) = dross_installation_id
+                && (self
+                    .dross_generated_by_installation
+                    .contains_key(&installation_id)
+                    || self.dross_generated_by_installation.len()
+                        < crate::dross::MAX_DROSS_PROCESS_COUNTERS)
+            {
+                let previous = self
+                    .dross_generated_by_installation
+                    .get(&installation_id)
+                    .copied()
+                    .unwrap_or_default();
+                *self
+                    .dross_generated_by_installation
+                    .entry(installation_id)
+                    .or_default() = previous.saturating_add(dross_generated);
+            }
+        }
         self.audit_history.push_back(ArcaneAuditEvent {
             transaction: transaction.id,
             reason: transaction.reason.clone(),
             content_id: transaction.content_id.clone(),
             authority: authority_label(&transaction.authority),
             units: moved_units,
+            dross_generated,
+            dross_installation_id,
         });
         while self.audit_history.len() > MAX_AUDIT_HISTORY {
             self.audit_history.pop_front();
         }
+        self.update_pending_dross_attribution(transaction);
         self.last_clean_total = self.total_checked()?;
         Ok(receipt)
+    }
+
+    fn update_pending_dross_attribution(&mut self, transaction: &ArcaneTransaction) {
+        for movement in &transaction.debits {
+            let ArcaneOwner::Dross { .. } = movement.owner else {
+                continue;
+            };
+            let mut remaining = movement.current.total();
+            let mut index = 0;
+            while remaining != 0 && index < self.pending_dross_attribution.len() {
+                if self.pending_dross_attribution[index].owner != movement.owner {
+                    index += 1;
+                    continue;
+                }
+                let pending = &mut self.pending_dross_attribution[index].contribution;
+                let consumed = pending.units.min(remaining);
+                pending.units -= consumed;
+                remaining -= consumed;
+                if pending.units == 0 {
+                    self.pending_dross_attribution.remove(index);
+                } else {
+                    index += 1;
+                }
+            }
+        }
+
+        let actor = match transaction.authority {
+            ArcaneAuthority::Player(actor) | ArcaneAuthority::SystemForPlayer(actor) => Some(actor),
+            _ => None,
+        };
+        let installation_id = transaction
+            .debits
+            .iter()
+            .find_map(|movement| match movement.owner {
+                ArcaneOwner::Working(id)
+                | ArcaneOwner::Alchemy(id)
+                | ArcaneOwner::Item(id)
+                | ArcaneOwner::ItemDross(id)
+                | ArcaneOwner::AlchemyDross(id)
+                | ArcaneOwner::Mob(id)
+                | ArcaneOwner::Scar(id) => Some(id),
+                ArcaneOwner::Block { pos, generation } => Some(
+                    u64::from(pos.surface().u())
+                        | (u64::from(pos.surface().v()) << 16)
+                        | (u64::from(pos.y() as u32) << 32)
+                        | (u64::from(generation) << 48),
+                ),
+                _ => None,
+            });
+        let source_class = format!("{}: {}", transaction.content_id, transaction.reason)
+            .chars()
+            .take(crate::dross::MAX_SOURCE_LABEL_BYTES)
+            .collect::<String>();
+        for movement in &transaction.credits {
+            if !matches!(movement.owner, ArcaneOwner::Dross { .. }) {
+                continue;
+            }
+            let units = movement.current.total();
+            if units == 0 {
+                continue;
+            }
+            self.pending_dross_attribution
+                .push_back(PendingDrossAttribution {
+                    owner: movement.owner.clone(),
+                    contribution: crate::dross::DrossContribution {
+                        actor,
+                        installation_id,
+                        source_class: source_class.clone(),
+                        units,
+                        first_step: transaction.id.sequence,
+                        last_step: transaction.id.sequence,
+                        confidence_permille: 1_000,
+                    },
+                });
+            while self.pending_dross_attribution.len() > MAX_PENDING_DROSS_ATTRIBUTION {
+                self.pending_dross_attribution.pop_front();
+            }
+        }
     }
 
     /// Route an item/entity/container loss to a bounded regional account.
@@ -2155,6 +2637,8 @@ impl ArcaneLedger {
             content_id: "base:external_adjustment".into(),
             authority: format!("operator:{actor}:development=true"),
             units: delta.unsigned_abs(),
+            dross_generated: 0,
+            dross_installation_id: None,
         });
         self.last_clean_total = self.total_checked()?;
         self.save()
@@ -2441,7 +2925,7 @@ fn validate_linked_path(file: &LinkedFileReplacement) -> Result<(), ArcaneError>
             file.relative_path.as_str(),
             "planet/dynamic.wfd" | "planet/water.wfw"
         ),
-        "ecology" => matches!(
+        "ecology" | "dross" => matches!(
             file.relative_path.as_str(),
             "hearts"
                 | "rire"
@@ -2512,6 +2996,7 @@ fn authority_label(authority: &ArcaneAuthority) -> String {
         ArcaneAuthority::Operator { actor, development } => {
             format!("operator:{actor}:development={development}")
         }
+        ArcaneAuthority::SystemForPlayer(id) => format!("system-for-player:{:02x?}", id),
     }
 }
 
@@ -2523,6 +3008,78 @@ fn reading_band(units: u64) -> u8 {
         513..=4_096 => 3,
         _ => 4,
     }
+}
+
+fn explicit_dross_owner(owner: &ArcaneOwner) -> bool {
+    matches!(
+        owner,
+        ArcaneOwner::Dross { .. }
+            | ArcaneOwner::ItemDross(_)
+            | ArcaneOwner::AlchemyDross(_)
+            | ArcaneOwner::Scar(_)
+    )
+}
+
+/// Count only a net transition from ordinary explicit custody into explicit
+/// dross custody. Geography is a mixed subledger and its dross boundary is
+/// audited separately, so linked Geography adoption/manifestation never
+/// masquerades as generation here.
+fn transaction_dross_generation(
+    transaction: &ArcaneTransaction,
+) -> Result<(u64, Option<u64>), ArcaneError> {
+    if transaction
+        .debits
+        .iter()
+        .chain(&transaction.credits)
+        .any(|movement| movement.owner == ArcaneOwner::Geography)
+    {
+        return Ok((0, None));
+    }
+    let debited = transaction
+        .debits
+        .iter()
+        .filter(|movement| explicit_dross_owner(&movement.owner))
+        .try_fold(0u64, |sum, movement| {
+            sum.checked_add(movement.current.total_checked()?)
+                .ok_or(ArcaneError::Overflow)
+        })?;
+    let credited = transaction
+        .credits
+        .iter()
+        .filter(|movement| explicit_dross_owner(&movement.owner))
+        .try_fold(0u64, |sum, movement| {
+            sum.checked_add(movement.current.total_checked()?)
+                .ok_or(ArcaneError::Overflow)
+        })?;
+    let generated = credited.saturating_sub(debited);
+    if generated == 0 {
+        return Ok((0, None));
+    }
+    let installation = transaction
+        .debits
+        .iter()
+        .find_map(|movement| match movement.owner {
+            ArcaneOwner::Working(id)
+            | ArcaneOwner::Alchemy(id)
+            | ArcaneOwner::AlchemyDross(id)
+            | ArcaneOwner::Item(id)
+            | ArcaneOwner::ItemDross(id)
+            | ArcaneOwner::Mob(id)
+            | ArcaneOwner::Scar(id) => Some(id),
+            ArcaneOwner::Block { pos, generation } => Some(
+                u64::from(pos.surface().u())
+                    | (u64::from(pos.surface().v()) << 16)
+                    | (u64::from(pos.y() as u32) << 32)
+                    | (u64::from(generation) << 48),
+            ),
+            ArcaneOwner::Deep
+            | ArcaneOwner::Ambient(_)
+            | ArcaneOwner::Heart(_)
+            | ArcaneOwner::Player(_)
+            | ArcaneOwner::Geography
+            | ArcaneOwner::Dross { .. } => None,
+        });
+    Ok((generated, installation))
 }
 
 fn checksum(bytes: &[u8]) -> u64 {
@@ -3098,6 +3655,30 @@ mod tests {
             .unwrap()
     }
 
+    fn before_alchemy_owner(owner: ArcaneOwner) -> ArcaneOwnerBeforeAlchemy {
+        match owner {
+            ArcaneOwner::Deep => ArcaneOwnerBeforeAlchemy::Deep,
+            ArcaneOwner::Ambient(region) => ArcaneOwnerBeforeAlchemy::Ambient(region),
+            ArcaneOwner::Heart(country) => ArcaneOwnerBeforeAlchemy::Heart(country),
+            ArcaneOwner::Block { pos, generation } => {
+                ArcaneOwnerBeforeAlchemy::Block { pos, generation }
+            }
+            ArcaneOwner::Item(id) => ArcaneOwnerBeforeAlchemy::Item(id),
+            ArcaneOwner::Mob(id) => ArcaneOwnerBeforeAlchemy::Mob(id),
+            ArcaneOwner::Player(id) => ArcaneOwnerBeforeAlchemy::Player(id),
+            ArcaneOwner::Working(id) => ArcaneOwnerBeforeAlchemy::Working(id),
+            ArcaneOwner::Dross { region, medium } => {
+                ArcaneOwnerBeforeAlchemy::Dross { region, medium }
+            }
+            ArcaneOwner::Scar(id) => ArcaneOwnerBeforeAlchemy::Scar(id),
+            ArcaneOwner::Geography => ArcaneOwnerBeforeAlchemy::Geography,
+            ArcaneOwner::ItemDross(id) => ArcaneOwnerBeforeAlchemy::ItemDross(id),
+            ArcaneOwner::Alchemy(_) | ArcaneOwner::AlchemyDross(_) => {
+                panic!("a pre-Alchemy fixture cannot contain an Alchemy owner")
+            }
+        }
+    }
+
     #[test]
     fn one_item_id_keeps_sequestered_dross_in_its_own_reservoir() {
         let (_root, atlas, _reg, mut ledger) = fixture("item-dross", false);
@@ -3314,6 +3895,244 @@ mod tests {
         assert_eq!(before.total, after.total);
         assert_eq!(before.resonance, after.resonance);
         assert_eq!(after.unexplained_delta, 0);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dross_generation_counts_once_before_carrier_transfer_and_names_installation() {
+        let (root, atlas, _, mut ledger) = fixture("dross-generation-accounting", false);
+        let item = ArcaneOwner::Item(77);
+        let contained = ArcaneOwner::ItemDross(77);
+        let environmental = ArcaneOwner::Dross {
+            region: region(&atlas),
+            medium: DrossMedium::Water,
+        };
+        let funded = source_slice(&ledger, 40);
+        ledger
+            .apply(&transfer(
+                &ledger,
+                [0x31; 16],
+                1,
+                ArcaneOwner::Deep,
+                item.clone(),
+                funded,
+            ))
+            .unwrap();
+        let mut available = ledger.account(&item).unwrap().current.clone();
+        let waste = available.take_units(11, std::iter::empty()).unwrap();
+        let mut generated = ArcaneTransaction::transfer(
+            TransactionId {
+                origin: [0x31; 16],
+                sequence: 2,
+            },
+            item.clone(),
+            ledger.version_of(&item),
+            contained.clone(),
+            ledger.version_of(&contained),
+            waste.clone(),
+            ArcaneAuthority::SystemForPlayer([0x44; 16]),
+            "matched apparatus waste fixture",
+        );
+        generated.content_id = "base:test_apparatus_waste".into();
+        ledger.apply(&generated).unwrap();
+        assert_eq!(ledger.dross_generated_total, 11);
+        assert_eq!(
+            ledger.dross_generated_by_process["base:test_apparatus_waste"],
+            11
+        );
+        assert_eq!(ledger.dross_generated_by_installation[&77], 11);
+        assert_eq!(ledger.audit_history.back().unwrap().dross_generated, 11);
+        assert_eq!(
+            ledger.audit_history.back().unwrap().dross_installation_id,
+            Some(77)
+        );
+
+        let mut moved = ArcaneTransaction::transfer(
+            TransactionId {
+                origin: [0x31; 16],
+                sequence: 3,
+            },
+            contained.clone(),
+            ledger.version_of(&contained),
+            environmental.clone(),
+            ledger.version_of(&environmental),
+            waste,
+            ArcaneAuthority::SystemForPlayer([0x44; 16]),
+            "released contained fixture waste",
+        );
+        moved.content_id = "base:test_dross_release".into();
+        ledger.apply(&moved).unwrap();
+        assert_eq!(ledger.dross_generated_total, 11);
+        assert!(
+            !ledger
+                .dross_generated_by_process
+                .contains_key("base:test_dross_release")
+        );
+        assert_eq!(ledger.audit_history.back().unwrap().dross_generated, 0);
+        assert_eq!(ledger.account(&environmental).unwrap().current.total(), 11);
+        assert!(ledger.audit().unwrap().is_balanced());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn pre_dross_accounting_snapshot_migrates_without_losing_custody_or_history() {
+        let (root, _, _, ledger) = fixture("pre-dross-accounting-migration", false);
+        let legacy = ArcaneLedgerBeforeDrossAccounting {
+            schema_version: ledger.schema_version,
+            algorithm_version: ledger.algorithm_version,
+            unit_scale: ledger.unit_scale,
+            genesis_total: ledger.genesis_total,
+            content_hash: ledger.content_hash,
+            registry: ledger.registry.clone(),
+            accounts: ledger.accounts.clone(),
+            next_item_id: ledger.next_item_id,
+            next_working_id: ledger.next_working_id,
+            next_scar_id: ledger.next_scar_id,
+            next_system_transaction: ledger.next_system_transaction,
+            last_delta_seq: ledger.last_delta_seq,
+            origin_high_water: ledger.origin_high_water.clone(),
+            recent_receipts: ledger.recent_receipts.clone(),
+            receipt_order: ledger.receipt_order.clone(),
+            audit_history: ledger
+                .audit_history
+                .iter()
+                .map(|event| ArcaneAuditEventBeforeDrossAccounting {
+                    transaction: event.transaction,
+                    reason: event.reason.clone(),
+                    content_id: event.content_id.clone(),
+                    authority: event.authority.clone(),
+                    units: event.units,
+                })
+                .collect(),
+            rounding: ledger.rounding.clone(),
+            frozen_hearts: ledger.frozen_hearts.clone(),
+            item_manifests: ledger.item_manifests.clone(),
+            block_manifests: ledger.block_manifests.clone(),
+            external_adjustment: ledger.external_adjustment,
+            last_clean_total: ledger.last_clean_total,
+        };
+        let bytes = postcard::to_allocvec(&legacy).unwrap();
+        let migrated = ArcaneLedger::decode_snapshot(root.join("legacy-arcane.wfc"), &bytes)
+            .expect("the exact pre-Goal-8 positional layout remains readable");
+        assert_eq!(migrated.accounts, ledger.accounts);
+        assert_eq!(migrated.audit_history.len(), ledger.audit_history.len());
+        assert!(
+            migrated
+                .audit_history
+                .iter()
+                .all(|event| event.dross_generated == 0 && event.dross_installation_id.is_none())
+        );
+        assert_eq!(migrated.dross_generated_total, 0);
+        assert!(migrated.dross_generated_by_process.is_empty());
+        assert!(migrated.dross_generated_by_installation.is_empty());
+        assert!(migrated.audit().unwrap().is_balanced());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn pre_alchemy_owner_discriminants_migrate_without_losing_dross_custody() {
+        let (root, _, _, mut ledger) = fixture("pre-alchemy-owner-layout", false);
+        let item_id = ledger.allocate_item_id().unwrap();
+        let dross = source_slice(&ledger, 13);
+        let deep = ledger.account(&ArcaneOwner::Deep).unwrap().clone();
+        let transaction_id = ledger.system_transaction_id().unwrap();
+        ledger
+            .commit(ArcaneTransaction {
+                id: transaction_id,
+                reads: vec![
+                    AccountRead {
+                        owner: ArcaneOwner::Deep,
+                        expected_version: deep.version,
+                    },
+                    AccountRead {
+                        owner: ArcaneOwner::ItemDross(item_id),
+                        expected_version: 0,
+                    },
+                ],
+                debits: vec![ArcaneMove {
+                    owner: ArcaneOwner::Deep,
+                    current: dross.clone(),
+                    content_id: None,
+                }],
+                credits: vec![ArcaneMove {
+                    owner: ArcaneOwner::ItemDross(item_id),
+                    current: dross,
+                    content_id: Some("base:sealed_dross_ampoule".into()),
+                }],
+                transforms: Vec::new(),
+                authority: ArcaneAuthority::System,
+                reason: "historical sealed sample".into(),
+                content_id: "base:sealed_dross_ampoule".into(),
+                linked: Vec::new(),
+            })
+            .unwrap();
+        let legacy = ArcaneLedgerBeforeAlchemy {
+            schema_version: ledger.schema_version,
+            algorithm_version: ledger.algorithm_version,
+            unit_scale: ledger.unit_scale,
+            genesis_total: ledger.genesis_total,
+            content_hash: ledger.content_hash,
+            registry: ledger.registry.clone(),
+            accounts: ledger
+                .accounts
+                .clone()
+                .into_iter()
+                .map(|(owner, account)| (before_alchemy_owner(owner), account))
+                .collect(),
+            next_item_id: ledger.next_item_id,
+            next_working_id: ledger.next_working_id,
+            next_scar_id: ledger.next_scar_id,
+            next_system_transaction: ledger.next_system_transaction,
+            last_delta_seq: ledger.last_delta_seq,
+            origin_high_water: ledger.origin_high_water.clone(),
+            recent_receipts: ledger
+                .recent_receipts
+                .clone()
+                .into_iter()
+                .map(|(id, receipt)| {
+                    (
+                        id,
+                        TransactionReceiptBeforeAlchemy {
+                            id: receipt.id,
+                            delta_sequence: receipt.delta_sequence,
+                            touched_versions: receipt
+                                .touched_versions
+                                .into_iter()
+                                .map(|(owner, version)| (before_alchemy_owner(owner), version))
+                                .collect(),
+                        },
+                    )
+                })
+                .collect(),
+            receipt_order: ledger.receipt_order.clone(),
+            audit_history: ledger
+                .audit_history
+                .iter()
+                .map(|event| ArcaneAuditEventBeforeDrossAccounting {
+                    transaction: event.transaction,
+                    reason: event.reason.clone(),
+                    content_id: event.content_id.clone(),
+                    authority: event.authority.clone(),
+                    units: event.units,
+                })
+                .collect(),
+            rounding: ledger.rounding.clone(),
+            frozen_hearts: ledger.frozen_hearts.clone(),
+            item_manifests: ledger.item_manifests.clone(),
+            block_manifests: ledger.block_manifests.clone(),
+            external_adjustment: ledger.external_adjustment,
+            last_clean_total: ledger.last_clean_total,
+        };
+        let bytes = postcard::to_allocvec(&legacy).unwrap();
+        let migrated = ArcaneLedger::decode_snapshot(root.join("pre-alchemy.wfc"), &bytes)
+            .expect("discovery-era positional owner ids remain readable");
+        assert_eq!(migrated.item_dross_total(item_id), 13);
+        assert_eq!(migrated.audit().unwrap().unexplained_delta, 0);
+        assert!(migrated.recent_receipts.values().any(|receipt| {
+            receipt
+                .touched_versions
+                .contains_key(&ArcaneOwner::ItemDross(item_id))
+        }));
         let _ = std::fs::remove_dir_all(root);
     }
 

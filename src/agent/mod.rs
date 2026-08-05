@@ -582,12 +582,23 @@ impl Agent {
                 modifiers,
                 bodily_dross,
             } => {
-                if modifiers.storm_warning || modifiers.trace_sight != 0 || bodily_dross != 0 {
+                if modifiers.storm_warning
+                    || modifiers.trace_sight != 0
+                    || modifiers.dross_band != 0
+                    || bodily_dross != 0
+                {
                     self.event(format!(
-                        "preparation state: trace {}, throughput {}/1000, bodily dross {bodily_dross}",
-                        modifiers.trace_sight, modifiers.throughput_permille
+                        "preparation state: trace {}, throughput {}/1000, environmental dross band {}, pattern {}, recovery {}/1000, bodily dross {bodily_dross}",
+                        modifiers.trace_sight,
+                        modifiers.throughput_permille,
+                        modifiers.dross_band,
+                        modifiers.dross_pattern,
+                        modifiers.recovery_permille,
                     ));
                 }
+            }
+            net::S2C::DrossEvent(cue) => {
+                self.event(format!("dross event: {}", cue.accessible_text()));
             }
             net::S2C::AlchemyEvent(cue) => {
                 self.event(format!("alchemy cue {:?}: {}", cue.kind, cue.message));

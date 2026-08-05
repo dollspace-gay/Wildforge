@@ -917,6 +917,19 @@ impl Game {
                             }
                             self.present_alchemy_cue(cue);
                         }
+                        server::SimEvent::Dross(cue) => {
+                            if let Some(session) = &self.multiplayer.host {
+                                session.broadcast_dross_cue(&self.server.world, cue);
+                            }
+                            let local_region = self
+                                .server
+                                .world
+                                .planet_atlas()
+                                .map(|atlas| atlas.atlas_pos(self.player.pos.surface()));
+                            if local_region == Some(cue.region) {
+                                self.present_dross_cue(cue);
+                            }
+                        }
                     }
                 }
                 for (pos, s) in self.server.world.take_pending_drops() {
@@ -1059,7 +1072,9 @@ impl Game {
                 forward,
                 strafe,
                 jump: self.input.keys.space,
-                sprint: self.input.keys.sprint && self.survival.hunger >= 6.0,
+                sprint: self.input.keys.sprint
+                    && self.survival.hunger >= 6.0
+                    && self.survival.preparation_modifiers.stamina_permille >= 900,
             };
             if self.input.keys.space && self.player.on_ground {
                 self.survival.hunger = (self.survival.hunger - 0.005).max(0.0);
@@ -2308,8 +2323,10 @@ impl Game {
         // dominant-category packet they receive without the preparation; no
         // ore, entity, inventory, exact mixture, or server-hidden state enters
         // the frame.
-        let trace_strength =
-            f32::from(self.survival.preparation_modifiers.trace_sight).min(250.0) / 250.0;
+        let trace_strength = f32::from(self.survival.preparation_modifiers.trace_sight).min(250.0)
+            / 250.0
+            * f32::from(self.survival.preparation_modifiers.perception_permille)
+            / 1_000.0;
         let darkness = (1.0 - daylight).clamp(0.0, 1.0);
         let trace_adaptation = trace_strength * 0.055 * darkness;
         ambient_floor = (ambient_floor + trace_adaptation).min(0.18);
@@ -2423,6 +2440,7 @@ impl Game {
             let awaiting_direct_entry = !self.in_world
                 && (std::env::var_os("WILDFORGE_WORLD").is_some()
                     || std::env::var_os("WILDFORGE_JOIN").is_some());
+            self.capture_frames = advance_capture_clock(self.capture_frames, awaiting_direct_entry);
             if !awaiting_direct_entry && self.chunk_work_pending() == 0 {
                 self.settled_frames += 1;
             } else {
@@ -2432,12 +2450,12 @@ impl Game {
             // It is useful when the visual under test needs simulation warmup;
             // unlike SHOT_FRAME, it never captures half-meshed terrain.
             let ready = !awaiting_direct_entry
-                && self.total_frames >= minimum
+                && self.capture_frames >= minimum
                 && match forced {
-                    Some(frame) => self.total_frames >= frame,
+                    Some(frame) => self.capture_frames >= frame,
                     None => {
                         self.settled_frames >= SHOT_SETTLE_FRAMES
-                            || self.total_frames >= SHOT_MAX_FRAMES
+                            || self.capture_frames >= SHOT_MAX_FRAMES
                     }
                 };
             match self.shot_at {
@@ -2454,8 +2472,9 @@ impl Game {
                     let (opaque_chunks, water_chunks, empty_chunks) =
                         self.renderer.chunk_mesh_counts();
                     eprintln!(
-                        "capture at frame {} ({}), fps {}, sim {:.2}ms draw {:.2}ms; player {:?} {:.1},{:.1},{:.1}, column top {}; chunks resident {}, gpu {}, opaque {}, water {}, empty {}, dirty {}",
+                        "capture at frame {} (eligible {}, {}), fps {}, sim {:.2}ms draw {:.2}ms; player {:?} {:.1},{:.1},{:.1}, column top {}; chunks resident {}, gpu {}, opaque {}, water {}, empty {}, dirty {}",
                         self.total_frames,
+                        self.capture_frames,
                         if forced.is_some() {
                             "forced frame".to_string()
                         } else if self.settled_frames >= SHOT_SETTLE_FRAMES {

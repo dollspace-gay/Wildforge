@@ -2436,3 +2436,98 @@ light = 12
 light_color = [1.0, 0.58, 0.22]
 drops = "none"
 item = false
+
+# Climate-specific dross scars share one mechanic but not one palette. They
+# are removable, nonstructural overlays and carry no duplicated Current; the
+# exact charge remains in ArcaneOwner::Scar until excavation.
+[[block]]
+id = "scar_wet_film"
+name = "Refracting Dross Film"
+texture = "cattail.png"
+hardness = 0.15
+solid = false
+opaque = false
+height = 0.06
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "wet_film", handler = "water_margin_film", carriers = ["air", "water", "soil"], min_band = "seep", status = "perception_warp", activity = "arcane_squall", max_sites_per_region = 1 }
+
+[[block]]
+id = "scar_dry_needles"
+name = "Branching Dross Needles"
+texture = "halite.png"
+hardness = 0.25
+solid = false
+opaque = false
+height = 0.12
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "dry_needles", handler = "mineral_crust", carriers = ["air", "water", "soil"], min_band = "seep", status = "stamina_drag", activity = "dust_wake", max_sites_per_region = 1 }
+
+[[block]]
+id = "scar_forest_threads"
+name = "Bleached Dross Threads"
+texture = "leaf_litter.png"
+hardness = 0.12
+solid = false
+opaque = false
+height = 0.08
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "forest_threads", handler = "filament_growth", carriers = ["air", "water", "soil"], min_band = "seep", status = "recovery_drag", activity = "animated_castoff", max_sites_per_region = 1 }
+
+[[block]]
+id = "scar_frost_craze"
+name = "Singing Dross Craze"
+texture = "arctic_seed.png"
+hardness = 0.3
+solid = false
+opaque = false
+height = 0.08
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "frost_craze", handler = "surface_overlay", carriers = ["air", "water", "soil"], min_band = "seep", status = "perception_warp", activity = "shear", max_sites_per_region = 1 }
+
+[[block]]
+id = "scar_cave_echo"
+name = "False-Shadow Dross Crust"
+texture = "shale.png"
+hardness = 0.3
+solid = false
+opaque = false
+height = 0.08
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "cave_echo", handler = "mineral_crust", carriers = ["air", "water", "soil"], min_band = "seep", status = "working_instability", activity = "animated_castoff", max_sites_per_region = 1 }
+
+[[block]]
+id = "scar_industrial_scale"
+name = "Discordant Dross Scale"
+texture = "boiler.png"
+hardness = 0.4
+tool = "pickaxe"
+solid = false
+opaque = false
+height = 0.1
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "industrial_scale", handler = "mineral_crust", carriers = ["air", "water", "soil"], min_band = "seep", status = "working_instability", activity = "arcane_squall", max_sites_per_region = 1 }
+
+[[block]]
+id = "scar_broken_symmetry"
+name = "Broken-Symmetry Dross"
+texture = "crystal_glass.png"
+hardness = 0.2
+solid = false
+opaque = false
+height = 0.1
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "broken_symmetry", handler = "filament_growth", carriers = ["air", "water", "soil"], min_band = "seep", status = "stamina_drag", activity = "shear", max_sites_per_region = 1 }

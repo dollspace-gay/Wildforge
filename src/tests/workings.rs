@@ -15,6 +15,56 @@ fn workings_world(tag: &str) -> (World, crate::planet::BlockPos, ItemStack) {
 }
 
 #[test]
+fn strained_ground_measurably_increases_real_wand_working_waste() {
+    use crate::dross::DrossBand;
+
+    let reserve = |tag: &str, band: DrossBand| {
+        let (mut world, source, wand) = workings_world(tag);
+        let region = world.planet_atlas().unwrap().atlas_pos(source.surface());
+        let side = world.planet_atlas().unwrap().side();
+        world
+            .arcane_geography
+            .as_mut()
+            .unwrap()
+            .dynamic
+            .dross_state
+            .cells[region.index(side)]
+        .band = band;
+        let started = world
+            .begin_gleam_working(
+                [0x31; 16],
+                "environmental strain qualification",
+                source,
+                wand.arcane_id,
+                source,
+                2,
+                20,
+                false,
+            )
+            .unwrap();
+        let transaction = &world.workings_state.as_ref().unwrap().active[&started.stable_id];
+        (
+            transaction.reserved_current.total(),
+            transaction.dross_current.total(),
+            transaction.strain.strain,
+        )
+    };
+
+    let clear = reserve("workings-clear-ground-strain", DrossBand::Clear);
+    let strained = reserve("workings-strained-ground-strain", DrossBand::Strained);
+    assert_eq!(
+        clear.0, strained.0,
+        "the compared workings priced different charge"
+    );
+    assert!(
+        strained.1 > clear.1 && strained.2 > clear.2,
+        "strained ground reserved dross {:?} versus {:?} on clear ground",
+        strained,
+        clear
+    );
+}
+
+#[test]
 fn storm_cordial_prices_real_wand_current_and_keeps_its_warning_visible() {
     use crate::alchemy::ActivePreparationStatus;
 

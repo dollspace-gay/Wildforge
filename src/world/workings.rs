@@ -2948,6 +2948,9 @@ impl World {
             .map(|atlas| atlas.atlas_pos(controller.surface()))
             .ok_or("The finite Current atlas is unavailable.")?;
         let local_capacity_permille = self.local_capacity_permille(region);
+        let environmental_instability = self.arcane_geography.as_ref().map_or(0, |geography| {
+            geography.dross_band_at(region).stability_penalty_permille()
+        });
         let tick = self.working_tick();
         let ledger = self
             .arcane_ledger
@@ -2975,6 +2978,7 @@ impl World {
             safe_throughput: definition.safe_throughput.max(1),
             local_capacity_permille,
             apparatus_damage_permille: apparatus_damage.min(1_000),
+            contamination_permille: environmental_instability,
             personal_strain_permille: preparation_modifiers.strain_permille,
             ..StrainInputs::default()
         })
@@ -2982,9 +2986,14 @@ impl World {
         if strain.refuses {
             return Err("The visibly damaged ritual apparatus refuses this load.".into());
         }
+        let environmental_dross = cost
+            .total()
+            .saturating_mul(u64::from(environmental_instability))
+            .div_ceil(1_000);
         let dross_units = quote
             .base_dross
             .saturating_add(strain.extra_dross)
+            .saturating_add(environmental_dross)
             .min(cost.total());
         let mut clean_cost = cost;
         let dross_current = clean_cost
@@ -3176,6 +3185,9 @@ impl World {
             )?;
         }
         let local_capacity_permille = self.local_capacity_permille(region);
+        let environmental_instability = self.arcane_geography.as_ref().map_or(0, |geography| {
+            geography.dross_band_at(region).stability_penalty_permille()
+        });
         let tick = self.working_tick();
         let ledger = self
             .arcane_ledger
@@ -3269,7 +3281,9 @@ impl World {
             apparatus_damage_permille: ((u64::from(instance.wear) * 1_000)
                 / u64::from(crate::implements::MAX_WAND_WEAR))
                 as u16,
-            contamination_permille: (instance.strain / 10).min(1_000) as u16,
+            contamination_permille: ((instance.strain / 10).min(1_000) as u16)
+                .saturating_add(environmental_instability)
+                .min(1_000),
             interruption: false,
             forced_overdraw_units: u64::from(forced)
                 .saturating_mul(over_safe.max(below_floor))
@@ -3284,10 +3298,14 @@ impl World {
         let apparatus_dross = charge_required
             .saturating_mul(u64::from(resolved.dross_per_thousand))
             .div_ceil(1_000);
+        let environmental_dross = charge_required
+            .saturating_mul(u64::from(environmental_instability))
+            .div_ceil(1_000);
         let dross_units = quote
             .base_dross
             .saturating_add(apparatus_dross)
             .saturating_add(strain.extra_dross)
+            .saturating_add(environmental_dross)
             .min(reserved.total());
         let mut return_current = reserved.clone();
         let dross_current = return_current
@@ -4239,6 +4257,12 @@ impl World {
         &self,
         plant: BlockPos,
     ) -> Result<(PlantAdvance, Vec<WorkingTargetSnapshot>), String> {
+        if self.environmental_dross_band_at(plant) >= crate::dross::DrossBand::Scar {
+            return Err(
+                "Scar pressure has stalled this living bed; isolate and remediate it before forcing growth."
+                    .into(),
+            );
+        }
         let before = self.get_block_at(plant);
         let definition = self.reg.block(before);
         if definition.sapling.is_some() {

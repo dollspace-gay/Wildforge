@@ -717,6 +717,9 @@ pub struct Registry {
     /// Declarative physical preparation/process contracts. Effects resolve to
     /// the closed native alchemy handler set; no data pack gains raw mutation.
     pub preparations: BTreeMap<String, crate::alchemy::PreparationDef>,
+    /// Qualified scar content shells around the closed native placement,
+    /// status, and activity handlers. Runtime sites persist these identities.
+    pub dross_scars: BTreeMap<String, crate::dross::DrossScarDef>,
     pub arcane_errors: Vec<String>,
 }
 
@@ -836,6 +839,27 @@ struct BlockToml {
     discovery_fixture: Option<DiscoveryFixtureToml>,
     #[serde(default)]
     arcane_ecology: Option<ArcaneEcologyToml>,
+    #[serde(default)]
+    dross_scar: Option<DrossScarToml>,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+struct DrossScarToml {
+    kind: crate::dross::ScarKind,
+    handler: crate::dross::ScarHandler,
+    carriers: Vec<crate::dross::DrossCarrier>,
+    min_band: crate::dross::DrossBand,
+    #[serde(default)]
+    status: Option<crate::dross::ScarStatusHandler>,
+    #[serde(default)]
+    activity: Option<crate::dross::ScarActivityHandler>,
+    #[serde(default = "one_u8")]
+    max_sites_per_region: u8,
+}
+
+const fn one_u8() -> u8 {
+    1
 }
 
 #[derive(Deserialize, Clone)]
@@ -2294,6 +2318,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         arcane_ecology: BTreeMap::new(),
         workings: BTreeMap::new(),
         preparations: BTreeMap::new(),
+        dross_scars: BTreeMap::new(),
         arcane_errors: Vec::new(),
     };
     for raw in &raws {
@@ -2717,6 +2742,57 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 observation: observation.clone(),
                 discovery_fixture: discovery_fixture.clone(),
             });
+            if let Some(scar) = &b.dross_scar {
+                let valid_carriers = !scar.carriers.is_empty()
+                    && scar.carriers.len() <= 3
+                    && scar.carriers.iter().all(|carrier| {
+                        matches!(
+                            carrier,
+                            crate::dross::DrossCarrier::Air
+                                | crate::dross::DrossCarrier::Water
+                                | crate::dross::DrossCarrier::Soil
+                        )
+                    })
+                    && scar
+                        .carriers
+                        .iter()
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .len()
+                        == scar.carriers.len();
+                let valid_band = matches!(
+                    scar.min_band,
+                    crate::dross::DrossBand::Seep
+                        | crate::dross::DrossBand::Scar
+                        | crate::dross::DrossBand::BreachRisk
+                );
+                if !valid_carriers || !valid_band || !(1..=8).contains(&scar.max_sites_per_region) {
+                    let error = format!(
+                        "{full}: dross scar needs 1..=3 unique environmental carriers, a seep-or-higher band, and 1..=8 sites per region"
+                    );
+                    errs.push(error.clone());
+                    reg.arcane_errors.push(error);
+                } else if reg.dross_scars.contains_key(&full) {
+                    let error = format!("{full}: duplicate dross scar identity");
+                    errs.push(error.clone());
+                    reg.arcane_errors.push(error);
+                } else {
+                    reg.dross_scars.insert(
+                        full.clone(),
+                        crate::dross::DrossScarDef {
+                            content_id: full.clone(),
+                            provider: raw.info.id.clone(),
+                            block: id,
+                            kind: scar.kind,
+                            handler: scar.handler,
+                            carriers: scar.carriers.clone(),
+                            min_band: scar.min_band,
+                            status: scar.status,
+                            activity: scar.activity,
+                            max_sites_per_region: scar.max_sites_per_region,
+                        },
+                    );
+                }
+            }
             if let Some(ecology) = &arcane_ecology {
                 reg.arcane_ecology.insert(full.clone(), ecology.clone());
             }
@@ -3883,6 +3959,98 @@ fn reconcile_material_definitions(reg: &mut Registry) {
     validate_material_graph(reg);
     validate_arcane_graph(reg);
     validate_arcane_ecology_graph(reg);
+    validate_dross_scar_graph(reg);
+}
+
+fn validate_dross_scar_graph(reg: &mut Registry) {
+    const MAX_DROSS_SCAR_DEFINITIONS: usize = 4_096;
+    let mut errors = Vec::new();
+    if reg.dross_scars.len() > MAX_DROSS_SCAR_DEFINITIONS {
+        errors.push(format!(
+            "dross scar registry exceeds its {MAX_DROSS_SCAR_DEFINITIONS}-definition safety bound"
+        ));
+    }
+    for definition in reg.dross_scars.values() {
+        let block = reg.block(definition.block);
+        let has_scar_observation = block.observation.as_ref().is_some_and(|observation| {
+            observation
+                .categories
+                .iter()
+                .any(|category| category == "scar")
+                && observation
+                    .properties
+                    .iter()
+                    .any(|property| property == "dross")
+        });
+        if block.solid
+            || block.opaque
+            || block.interaction.is_some()
+            || block.water_level.is_some()
+            || block.hardness.is_none()
+            || block.height.is_some_and(|height| height > 0.25)
+            || !has_scar_observation
+        {
+            errors.push(format!(
+                "{}: a scar must be removable, nonstructural, non-fluid, inventory-free, at most quarter-height, and visibly categorized as scar/dross",
+                definition.content_id
+            ));
+        }
+        let Some((drop, count)) = block.drops else {
+            errors.push(format!(
+                "{}: a scar lifecycle needs one recoverable contained drop",
+                definition.content_id
+            ));
+            continue;
+        };
+        let drop = reg.item(drop);
+        if count != 1
+            || drop.max_stack != 1
+            || drop.arcane.as_ref().is_none_or(|arcane| {
+                arcane.capacity == 0
+                    || !matches!(
+                        arcane.on_destroy,
+                        ArcaneDisposition::Dross | ArcaneDisposition::Scar
+                    )
+            })
+        {
+            errors.push(format!(
+                "{}: scar recovery must yield exactly one finite-capacity, non-erasing arcane item",
+                definition.content_id
+            ));
+        }
+        if definition.handler == crate::dross::ScarHandler::WaterMarginFilm
+            && !definition
+                .carriers
+                .contains(&crate::dross::DrossCarrier::Water)
+        {
+            errors.push(format!(
+                "{}: a water-margin film must accept waterborne dross",
+                definition.content_id
+            ));
+        }
+        if definition.handler == crate::dross::ScarHandler::MineralCrust
+            && !definition
+                .carriers
+                .contains(&crate::dross::DrossCarrier::Soil)
+        {
+            errors.push(format!(
+                "{}: a mineral crust must accept soil/sediment dross",
+                definition.content_id
+            ));
+        }
+    }
+    for kind in crate::dross::ScarKind::ALL {
+        if !reg
+            .dross_scars
+            .values()
+            .any(|definition| definition.provider == "base" && definition.kind == kind)
+        {
+            errors.push(format!(
+                "base content needs a safe fallback dross scar for {kind:?}"
+            ));
+        }
+    }
+    reg.arcane_errors.extend(errors);
 }
 
 fn validate_arcane_ecology_graph(reg: &mut Registry) {
@@ -4384,6 +4552,62 @@ fn qualify(modid: &str, name: &str) -> String {
 }
 
 impl Registry {
+    /// Select one eligible declarative scar shell with a stable key. Existing
+    /// sites persist the returned content id, so later pack reordering cannot
+    /// repaint them. Per-definition regional caps prevent a mod from
+    /// declaring an unbounded self-replicator.
+    pub fn select_dross_scar(
+        &self,
+        kind: crate::dross::ScarKind,
+        carrier: crate::dross::DrossCarrier,
+        band: crate::dross::DrossBand,
+        existing_in_region: &BTreeMap<String, usize>,
+        stable_key: u64,
+    ) -> Option<&crate::dross::DrossScarDef> {
+        let eligible = self
+            .dross_scars
+            .values()
+            .filter(|definition| {
+                definition.kind == kind
+                    && definition.carriers.contains(&carrier)
+                    && band >= definition.min_band
+                    && existing_in_region
+                        .get(&definition.content_id)
+                        .copied()
+                        .unwrap_or_default()
+                        < usize::from(definition.max_sites_per_region)
+            })
+            .collect::<Vec<_>>();
+        if eligible.is_empty() {
+            return self.dross_scars.values().find(|definition| {
+                definition.provider == "base"
+                    && definition.kind == kind
+                    && band >= definition.min_band
+                    && existing_in_region
+                        .get(&definition.content_id)
+                        .copied()
+                        .unwrap_or_default()
+                        < usize::from(definition.max_sites_per_region)
+            });
+        }
+        Some(eligible[stable_key as usize % eligible.len()])
+    }
+
+    /// Resolve a persisted site. A removed provider leaves its stable identity
+    /// in the save, but materialization uses the safe base shell for the same
+    /// climate kind until that provider returns.
+    pub fn resolve_dross_scar(
+        &self,
+        content_id: &str,
+        kind: crate::dross::ScarKind,
+    ) -> Option<&crate::dross::DrossScarDef> {
+        self.dross_scars.get(content_id).or_else(|| {
+            self.dross_scars
+                .values()
+                .find(|definition| definition.provider == "base" && definition.kind == kind)
+        })
+    }
+
     pub fn install_saved_arcane_placeholders(
         &mut self,
         ledger: &crate::arcane::ArcaneLedger,
@@ -4594,6 +4818,121 @@ mod arcane_schema_tests {
                 .arcane
                 .is_none()
         );
+    }
+
+    #[test]
+    fn base_scars_cover_the_closed_lifecycle_and_removed_content_falls_back() {
+        let registry = load(Path::new("__no_dross_scar_mods__"));
+        assert!(registry.arcane_errors.is_empty());
+        assert_eq!(
+            registry
+                .dross_scars
+                .values()
+                .filter(|definition| definition.provider == "base")
+                .count(),
+            crate::dross::ScarKind::ALL.len()
+        );
+        for kind in crate::dross::ScarKind::ALL {
+            let fallback = registry
+                .resolve_dross_scar("removed_provider:old_scar", kind)
+                .expect("every climate kind has a safe base fallback");
+            assert_eq!(fallback.kind, kind);
+            assert_eq!(fallback.provider, "base");
+        }
+        let kind = crate::dross::ScarKind::WetFilm;
+        let first = registry
+            .select_dross_scar(
+                kind,
+                crate::dross::DrossCarrier::Water,
+                crate::dross::DrossBand::Seep,
+                &BTreeMap::new(),
+                7,
+            )
+            .unwrap();
+        let full = BTreeMap::from([(first.content_id.clone(), 1usize)]);
+        assert!(
+            registry
+                .select_dross_scar(
+                    kind,
+                    crate::dross::DrossCarrier::Water,
+                    crate::dross::DrossBand::Seep,
+                    &full,
+                    7,
+                )
+                .is_none(),
+            "a definition's regional cap must not be bypassed by fallback selection"
+        );
+    }
+
+    #[test]
+    fn mod_scar_shell_loads_and_unsafe_lifecycles_fail_closed() {
+        let root =
+            std::env::temp_dir().join(format!("wildforge-dross-scar-mod-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let provider = root.join("safe_scar");
+        std::fs::create_dir_all(provider.join("textures")).unwrap();
+        std::fs::write(
+            provider.join("mod.toml"),
+            "id = \"safe_scar\"\nworld_api = 2\n",
+        )
+        .unwrap();
+        std::fs::copy(
+            Path::new("base/textures/cattail.png"),
+            provider.join("textures/thread.png"),
+        )
+        .unwrap();
+        let safe = r#"
+[[block]]
+id = "river_threads"
+texture = "thread.png"
+hardness = 0.2
+solid = false
+opaque = false
+height = 0.08
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "wet_film", handler = "filament_growth", carriers = ["water"], min_band = "seep", status = "recovery_drag", activity = "animated_castoff", max_sites_per_region = 2 }
+"#;
+        std::fs::write(provider.join("blocks.toml"), safe).unwrap();
+        let registry = load(&root);
+        assert!(
+            registry.arcane_errors.is_empty(),
+            "{}",
+            registry.arcane_errors.join("\n")
+        );
+        let definition = registry.dross_scars.get("safe_scar:river_threads").unwrap();
+        assert_eq!(definition.max_sites_per_region, 2);
+        assert_eq!(
+            definition.handler,
+            crate::dross::ScarHandler::FilamentGrowth
+        );
+
+        let unsafe_provider = root.join("unsafe_scar");
+        std::fs::create_dir_all(unsafe_provider.join("textures")).unwrap();
+        std::fs::write(
+            unsafe_provider.join("mod.toml"),
+            "id = \"unsafe_scar\"\nworld_api = 2\n",
+        )
+        .unwrap();
+        std::fs::copy(
+            Path::new("base/textures/cattail.png"),
+            unsafe_provider.join("textures/thread.png"),
+        )
+        .unwrap();
+        std::fs::write(
+            unsafe_provider.join("blocks.toml"),
+            safe.replace("id = \"river_threads\"", "id = \"bad_threads\"")
+                .replace("solid = false", "solid = true")
+                .replace("max_sites_per_region = 2", "max_sites_per_region = 255"),
+        )
+        .unwrap();
+        let rejected = load(&root);
+        assert!(rejected.arcane_errors.iter().any(|error| {
+            error.contains("unsafe_scar:bad_threads")
+                && (error.contains("sites per region") || error.contains("nonstructural"))
+        }));
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

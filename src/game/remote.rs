@@ -672,9 +672,17 @@ impl Game {
                     modifiers,
                     bodily_dross,
                 } => {
+                    let old_dross_band = self.survival.preparation_modifiers.dross_band;
                     self.survival.preparation_modifiers = modifiers;
                     self.survival.bodily_dross = bodily_dross;
+                    if modifiers.dross_band > old_dross_band && modifiers.dross_band != 0 {
+                        self.sfx(Sfx::DrossWarning(modifiers.dross_band));
+                        let (band, pattern) =
+                            super::status::dross_warning_text(modifiers.dross_band);
+                        self.toast(format!("DROSS {band} — {pattern}"));
+                    }
                 }
+                net::S2C::DrossEvent(cue) => self.present_dross_cue(cue),
                 net::S2C::AlchemyEvent(cue) => self.present_alchemy_cue(cue),
                 net::S2C::ImplementActivation {
                     actor,

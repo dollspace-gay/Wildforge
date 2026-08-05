@@ -2672,6 +2672,23 @@ impl Game {
                             );
                             continue;
                         }
+                        if reg.block(b).name.starts_with("base:scar_")
+                            || reg
+                                .block(b)
+                                .observation
+                                .as_ref()
+                                .is_some_and(|observation| {
+                                    observation
+                                        .categories
+                                        .iter()
+                                        .any(|category| category == "scar")
+                                })
+                        {
+                            eprintln!(
+                                "dross: script placement of {name} rejected; scar manifestations are ledger-owned"
+                            );
+                            continue;
+                        }
                         self.server
                             .world
                             .set_block_authored_at(pos, b, "mod script world event");

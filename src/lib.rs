@@ -19,6 +19,7 @@ mod config;
 mod crafting;
 mod dedicated;
 mod discovery;
+mod dross;
 mod edifice;
 mod entity;
 mod game;
@@ -169,9 +170,63 @@ pub fn run() {
                 if !audit.is_balanced() {
                     std::process::exit(1);
                 }
+                match dross::audit_world(&world) {
+                    Ok(dross) => {
+                        print!("{}", dross.render());
+                        if !dross.is_balanced() {
+                            std::process::exit(1);
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("dross audit failed: {error}");
+                        std::process::exit(1);
+                    }
+                }
             }
             Err(error) => {
                 eprintln!("arcane audit failed: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    if let Some(i) = args.iter().position(|arg| arg == "--arcane-atlas") {
+        let Some(world) = args.get(i + 1).map(PathBuf::from) else {
+            eprintln!(
+                "usage: wildforge --arcane-atlas <world> --layer dross [--output <directory>]"
+            );
+            std::process::exit(2);
+        };
+        let layer = args
+            .iter()
+            .position(|arg| arg == "--layer")
+            .and_then(|index| args.get(index + 1));
+        if layer.is_none_or(|layer| layer != "dross") {
+            eprintln!("arcane atlas currently requires --layer dross");
+            std::process::exit(2);
+        }
+        let output = args
+            .iter()
+            .position(|arg| arg == "--output")
+            .and_then(|index| args.get(index + 1))
+            .map_or_else(|| world.join("diagnostics/arcane-atlas"), PathBuf::from);
+        let result = (|| -> Result<Vec<String>, String> {
+            let atlas =
+                planet_atlas::PlanetAtlas::load(&world).map_err(|error| error.to_string())?;
+            let geography = arcane_geography::ArcaneGeography::load(&world, &atlas)
+                .map_err(|error| error.to_string())?;
+            geography
+                .export_dross_diagnostics(&atlas, &output)
+                .map_err(|error| error.to_string())
+        })();
+        match result {
+            Ok(files) => println!(
+                "exported {} dross atlas views to {}",
+                files.len(),
+                output.display()
+            ),
+            Err(error) => {
+                eprintln!("dross atlas export failed: {error}");
                 std::process::exit(1);
             }
         }

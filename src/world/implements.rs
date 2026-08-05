@@ -37,7 +37,7 @@ impl World {
             return Ok(());
         }
         let missing = requested.saturating_sub(present);
-        let (index, old_cell, old_sequence, old_exported) = {
+        let (index, old_cell, old_sequence, old_exported, old_external_imported) = {
             let geography = self
                 .arcane_geography
                 .as_ref()
@@ -48,6 +48,7 @@ impl World {
                 geography.dynamic.cells[index],
                 geography.dynamic.ecology.event_sequence,
                 geography.dynamic.ecology.exported,
+                geography.dynamic.dross_state.external_imported,
             )
         };
         let moved = self
@@ -69,6 +70,7 @@ impl World {
                 geography.dynamic.cells[index] = old_cell;
                 geography.dynamic.ecology.event_sequence = old_sequence;
                 geography.dynamic.ecology.exported = old_exported;
+                geography.dynamic.dross_state.external_imported = old_external_imported;
             }
         };
         let (manifest, files) = match self
@@ -1987,6 +1989,11 @@ impl World {
         }
         let (_, target_rate, target_dross_rate) =
             implement_transfer_properties(&target_instance.kind);
+        let environmental_instability = self.arcane_geography.as_ref().map_or(0, |geography| {
+            geography
+                .dross_band_at(source_region)
+                .stability_penalty_permille()
+        });
         let requested = target_free
             .min(target_rate)
             .min(u64::from(layout.network_size.max(1)) * 32);
@@ -1994,7 +2001,7 @@ impl World {
             return Err("The local conductor has no safe transfer budget.".into());
         }
 
-        let (atlas_index, old_cell, old_sequence, old_exported) = {
+        let (atlas_index, old_cell, old_sequence, old_exported, old_external_imported) = {
             let geography = self
                 .arcane_geography
                 .as_ref()
@@ -2004,6 +2011,7 @@ impl World {
                 geography.dynamic.cells[source_region.index(geography.manifest.side)],
                 geography.dynamic.ecology.event_sequence,
                 geography.dynamic.ecology.exported,
+                geography.dynamic.dross_state.external_imported,
             )
         };
         let selected = self
@@ -2017,12 +2025,16 @@ impl World {
                 geography.dynamic.cells[atlas_index] = old_cell;
                 geography.dynamic.ecology.event_sequence = old_sequence;
                 geography.dynamic.ecology.exported = old_exported;
+                geography.dynamic.dross_state.external_imported = old_external_imported;
             }
         };
 
         let amount = selected.total();
         let network_loss = u16::from(layout.network_size.saturating_sub(1)).saturating_mul(2);
-        let dross_permille = target_dross_rate.saturating_add(network_loss).clamp(1, 500);
+        let dross_permille = target_dross_rate
+            .saturating_add(network_loss)
+            .saturating_add(environmental_instability)
+            .clamp(1, 900);
         let dross_units = amount
             .saturating_mul(u64::from(dross_permille))
             .div_ceil(1_000)
@@ -2491,6 +2503,16 @@ impl World {
             .instance(vessel_stack.arcane_id)
             .cloned()
             .ok_or("The vessel has no stable construction record.")?;
+        let environmental_instability = self
+            .planet_atlas
+            .as_ref()
+            .map(|atlas| atlas.atlas_pos(pos.surface()))
+            .and_then(|region| {
+                self.arcane_geography
+                    .as_ref()
+                    .map(|geography| geography.dross_band_at(region))
+            })
+            .map_or(0, crate::dross::DrossBand::stability_penalty_permille);
         let ledger = self
             .arcane_ledger
             .as_mut()
@@ -2562,7 +2584,8 @@ impl World {
         let network_dross = u64::from(layout.network_size.saturating_sub(1)) * 2;
         let dross_permille = u64::from(target_dross_rate)
             .saturating_add(network_dross)
-            .clamp(1, 500);
+            .saturating_add(u64::from(environmental_instability))
+            .clamp(1, 900);
         let dross_units = amount
             .saturating_mul(dross_permille)
             .div_ceil(1_000)
@@ -4323,19 +4346,23 @@ impl World {
         }
         let clean_destination = match disposition {
             crate::registry::ArcaneDisposition::Ambient => ArcaneOwner::Ambient(region),
-            crate::registry::ArcaneDisposition::Dross => ArcaneOwner::Dross {
+            crate::registry::ArcaneDisposition::Dross
+            | crate::registry::ArcaneDisposition::Scar => ArcaneOwner::Dross {
                 region,
-                medium: DrossMedium::Soil,
+                medium: if heat_fracture {
+                    DrossMedium::Air
+                } else {
+                    DrossMedium::Soil
+                },
             },
-            crate::registry::ArcaneDisposition::Scar => ArcaneOwner::Scar(
-                ledger
-                    .allocate_scar_id()
-                    .map_err(|error| error.to_string())?,
-            ),
         };
         let dross_destination = ArcaneOwner::Dross {
             region,
-            medium: DrossMedium::Soil,
+            medium: if heat_fracture {
+                DrossMedium::Air
+            } else {
+                DrossMedium::Soil
+            },
         };
         let mut debits = BTreeMap::new();
         let mut credits = BTreeMap::new();
