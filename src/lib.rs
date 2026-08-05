@@ -48,6 +48,7 @@ mod style;
 #[cfg(test)]
 mod tests;
 mod ui;
+mod visual_capture;
 mod workings;
 mod world;
 mod worldgen;
@@ -61,7 +62,7 @@ use std::time::Instant;
 
 use glam::Vec3;
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
+use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{
     DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent,
 };

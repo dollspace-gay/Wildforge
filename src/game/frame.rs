@@ -2497,6 +2497,12 @@ impl Game {
                         empty_chunks,
                         self.server.world.dirty_chunks().len(),
                     );
+                    if visual_capture::evidence_enabled() {
+                        let metadata = self
+                            .visual_capture_metadata(fog)
+                            .unwrap_or_else(|error| panic!("visual evidence refused: {error}"));
+                        self.renderer.pending_capture_metadata = Some(metadata);
+                    }
                     self.renderer.pending_screenshot = Some(path);
                     self.shot_at = Some(self.total_frames);
                 }

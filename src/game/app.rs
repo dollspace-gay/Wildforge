@@ -2,6 +2,49 @@
 
 use super::*;
 
+const SHOT_MIN_WIDTH: u32 = 320;
+const SHOT_MIN_HEIGHT: u32 = 200;
+const SHOT_MAX_DIMENSION: u32 = 4096;
+const SHOT_MAX_PIXELS: u64 = 16_777_216;
+
+fn parse_shot_size(value: &str) -> Result<PhysicalSize<u32>, String> {
+    let Some((width, height)) = value.trim().split_once(['x', 'X']) else {
+        return Err("expected <width>x<height>".into());
+    };
+    let width = width
+        .trim()
+        .parse::<u32>()
+        .map_err(|_| "width is not an unsigned integer")?;
+    let height = height
+        .trim()
+        .parse::<u32>()
+        .map_err(|_| "height is not an unsigned integer")?;
+    if !(SHOT_MIN_WIDTH..=SHOT_MAX_DIMENSION).contains(&width)
+        || !(SHOT_MIN_HEIGHT..=SHOT_MAX_DIMENSION).contains(&height)
+    {
+        return Err(format!(
+            "dimensions must be within {SHOT_MIN_WIDTH}x{SHOT_MIN_HEIGHT} and \
+             {SHOT_MAX_DIMENSION}x{SHOT_MAX_DIMENSION}"
+        ));
+    }
+    if u64::from(width) * u64::from(height) > SHOT_MAX_PIXELS {
+        return Err(format!("capture exceeds the {SHOT_MAX_PIXELS}-pixel limit"));
+    }
+    Ok(PhysicalSize::new(width, height))
+}
+
+/// An exact physical-pixel override for automated screenshots. The variable is
+/// deliberately ignored without WILDFORGE_SHOT, so it can neither resize
+/// ordinary play nor enter persistent Config.
+fn requested_shot_size() -> Option<PhysicalSize<u32>> {
+    std::env::var_os("WILDFORGE_SHOT")?;
+    let value = std::env::var("WILDFORGE_SHOT_SIZE").ok()?;
+    Some(
+        parse_shot_size(&value)
+            .unwrap_or_else(|error| panic!("invalid WILDFORGE_SHOT_SIZE={value:?}: {error}")),
+    )
+}
+
 #[derive(Default)]
 pub(super) struct App {
     game: Option<Game>,
@@ -12,15 +55,14 @@ impl ApplicationHandler for App {
         if self.game.is_some() {
             return;
         }
-        let window = Arc::new(
-            event_loop
-                .create_window(
-                    Window::default_attributes()
-                        .with_title(format!("Wildforge {BUILD_MARKER} — loading world…"))
-                        .with_inner_size(LogicalSize::new(1280, 720)),
-                )
-                .expect("create window"),
-        );
+        let attributes = Window::default_attributes()
+            .with_title(format!("Wildforge {BUILD_MARKER} — loading world…"));
+        let attributes = if let Some(size) = requested_shot_size() {
+            attributes.with_inner_size(size)
+        } else {
+            attributes.with_inner_size(LogicalSize::new(1280, 720))
+        };
+        let window = Arc::new(event_loop.create_window(attributes).expect("create window"));
         let mut game = Game::new(window);
         // Headless/dev: WILDFORGE_WORLD=name skips the title screen.
         if let Ok(name) = std::env::var("WILDFORGE_WORLD") {
@@ -437,6 +479,34 @@ impl ApplicationHandler for App {
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
         if let Some(game) = self.game.as_ref() {
             game.window.request_redraw();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_shot_size;
+
+    #[test]
+    fn capture_size_parser_is_exact_and_bounded() {
+        let full_hd = parse_shot_size("1920x1080").unwrap();
+        assert_eq!((full_hd.width, full_hd.height), (1920, 1080));
+        let upper = parse_shot_size("4096X4096").unwrap();
+        assert_eq!((upper.width, upper.height), (4096, 4096));
+
+        for invalid in [
+            "1920",
+            "x1080",
+            "319x1080",
+            "1920x199",
+            "4097x1080",
+            "4096x4097",
+            "4096x4096x1",
+        ] {
+            assert!(
+                parse_shot_size(invalid).is_err(),
+                "invalid capture size accepted: {invalid}"
+            );
         }
     }
 }

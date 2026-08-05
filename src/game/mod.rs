@@ -3,6 +3,7 @@
 mod actions;
 mod app;
 mod browser;
+mod capture;
 mod containers;
 mod content;
 mod demos;
@@ -23,7 +24,7 @@ mod ui;
 
 use crate::*;
 const GEN_BUDGET: usize = 4; // chunk generations per frame (256-tall gen is pricey)
-const SHOT_SETTLE_FRAMES: u64 = 10;
+pub(crate) const SHOT_SETTLE_FRAMES: u64 = 10;
 const SHOT_FIXED_DT: f32 = 1.0 / 60.0;
 const SHOT_MAX_FRAMES: u64 = 3000;
 
@@ -210,6 +211,9 @@ struct ContentRuntime {
     pack_override: Option<String>,
     /// Alternate tiles the active pack chain supplies, consulted by the mesher.
     tile_variants: atlas::TileVariants,
+    /// Capture-only stable names for the atlas slots above. Constructed from
+    /// already-loaded content; ordinary frames never consult this table.
+    diagnostic_families: Option<Vec<visual_capture::DiagnosticFamily>>,
 }
 
 /// Screen navigation, focus, browser history, and cursor-held inventory state.
@@ -756,6 +760,8 @@ impl Game {
         );
         let pack_warnings = atlas.warnings;
         let tile_variants = atlas.variants;
+        let diagnostic_families = visual_capture::evidence_enabled()
+            .then(|| visual_capture::diagnostic_families(&reg, &tile_variants));
         // Read the albedos off the finished atlas, before it is handed to the
         // renderer — this is the last point at which the packed image and the
         // slot assignments are both in hand.
@@ -839,6 +845,7 @@ impl Game {
                 pack_warnings,
                 pack_override,
                 tile_variants,
+                diagnostic_families,
             },
             multiplayer: MultiplayerState::default(),
             identity,

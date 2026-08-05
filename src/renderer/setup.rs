@@ -58,6 +58,8 @@ impl Renderer {
             });
         let info = adapter.get_info();
         let adapter_name = format!("{} [{:?}, {:?}]", info.name, info.backend, info.device_type);
+        let adapter_backend = format!("{:?}", info.backend);
+        let adapter_hardware = info.device_type != wgpu::DeviceType::Cpu;
         eprintln!("renderer: using {adapter_name}");
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -782,6 +784,113 @@ fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
             config.format,
         );
 
+        let diagnostic_pipelines = crate::visual_capture::evidence_enabled().then(|| {
+            let make = |label: &str,
+                        vs: &str,
+                        fs: &str,
+                        vlayout: &wgpu::VertexBufferLayout,
+                        cull: Option<wgpu::Face>,
+                        topology: wgpu::PrimitiveTopology,
+                        depth_stencil: Option<wgpu::DepthStencilState>| {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(label),
+                    layout: Some(&chunk_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: Some(vs),
+                        compilation_options: Default::default(),
+                        buffers: std::slice::from_ref(vlayout),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: Some(fs),
+                        compilation_options: Default::default(),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: wgpu::TextureFormat::Rgba16Uint,
+                            blend: None,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: cull,
+                        polygon_mode: wgpu::PolygonMode::Fill,
+                        unclipped_depth: false,
+                        conservative: false,
+                    },
+                    depth_stencil,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                    cache: None,
+                })
+            };
+            let screen_depth = || wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            };
+            DiagnosticPipelines {
+                chunk: make(
+                    "diagnostic-chunk",
+                    "vs_chunk",
+                    "fs_diagnostic_chunk",
+                    &vertex_layout,
+                    Some(wgpu::Face::Back),
+                    wgpu::PrimitiveTopology::TriangleList,
+                    Some(depth_state(true)),
+                ),
+                chunk_overlay: make(
+                    "diagnostic-chunk-overlay",
+                    "vs_chunk",
+                    "fs_diagnostic_chunk_overlay",
+                    &vertex_layout,
+                    None,
+                    wgpu::PrimitiveTopology::TriangleList,
+                    Some(depth_state(true)),
+                ),
+                water: make(
+                    "diagnostic-water",
+                    "vs_chunk",
+                    "fs_diagnostic_water",
+                    &vertex_layout,
+                    None,
+                    wgpu::PrimitiveTopology::TriangleList,
+                    Some(depth_state(true)),
+                ),
+                line_world: make(
+                    "diagnostic-line-world",
+                    "vs_line_world",
+                    "fs_diagnostic_line",
+                    &line_layout,
+                    None,
+                    wgpu::PrimitiveTopology::LineList,
+                    Some(depth_state(false)),
+                ),
+                line_screen: make(
+                    "diagnostic-line-screen",
+                    "vs_line_screen",
+                    "fs_diagnostic_line",
+                    &line_layout,
+                    None,
+                    wgpu::PrimitiveTopology::LineList,
+                    Some(screen_depth()),
+                ),
+                ui: make(
+                    "diagnostic-ui",
+                    "vs_ui",
+                    "fs_diagnostic_ui",
+                    &ui_layout,
+                    None,
+                    wgpu::PrimitiveTopology::TriangleList,
+                    Some(screen_depth()),
+                ),
+            }
+        });
+
         // Depth-only sun pass: reads only position from the chunk vertex buffer,
         // writes the shadow depth texture. Constant + slope depth bias pushes
         // occluders back to keep shadow acne off lit faces.
@@ -1101,6 +1210,8 @@ fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
             atlas_interior_base: 0,
             atlas_layer_params: [[0.0; 4]; crate::atlas::MAX_LAYERS as usize * 2],
             adapter_name,
+            adapter_backend,
+            adapter_hardware,
             surface,
             device,
             queue,
@@ -1117,6 +1228,7 @@ fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
             line_world_pipeline,
             line_screen_pipeline,
             ui_pipeline,
+            diagnostic_pipelines,
             shadow_pipeline,
             shadow_layer_views,
             shadow_casc_buf,
@@ -1154,6 +1266,7 @@ fn vs_shadow(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
             chunks: HashMap::new(),
             sky_color: [0.55, 0.75, 0.95],
             pending_screenshot: None,
+            pending_capture_metadata: None,
         };
         r.update_crosshair();
         r

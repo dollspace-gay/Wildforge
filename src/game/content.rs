@@ -42,6 +42,12 @@ impl Game {
         // never filled. Compare before storing, then remesh the world.
         let changed = self.content.tile_variants.signature() != atlas.variants.signature();
         self.content.tile_variants = atlas.variants;
+        if self.content.diagnostic_families.is_some() {
+            self.content.diagnostic_families = Some(visual_capture::diagnostic_families(
+                &self.content.reg,
+                &self.content.tile_variants,
+            ));
+        }
         if changed && self.in_world {
             self.server.world.mark_all_chunks_dirty();
         }
@@ -146,6 +152,12 @@ impl Game {
         self.interaction.breaking = None;
 
         self.content.reg = new_reg.clone();
+        if self.content.diagnostic_families.is_some() {
+            self.content.diagnostic_families = Some(visual_capture::diagnostic_families(
+                &new_reg,
+                &self.content.tile_variants,
+            ));
+        }
         self.server.world.reg = new_reg.clone();
         self.server.world.remap_from(&old);
         self.server.world.generator = self.server.world.planet_atlas().map_or_else(

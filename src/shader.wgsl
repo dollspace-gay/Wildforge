@@ -604,7 +604,7 @@ fn sky_radiance(rd_in: vec3<f32>) -> vec3<f32> {
     return col;
 }
 
-fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
+fn fog_distance(world: vec3<f32>) -> f32 {
     let camera_radius = length(u.cam.xyz);
     let world_radius = length(world);
     let angle = acos(clamp(dot(
@@ -612,7 +612,11 @@ fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
         world / max(world_radius, 1e-3)
     ), -1.0, 1.0));
     let surface_dist = angle * 5215.189;
-    let dist = length(vec2<f32>(surface_dist, world_radius - camera_radius));
+    return length(vec2<f32>(surface_dist, world_radius - camera_radius));
+}
+
+fn apply_fog(color: vec3<f32>, world: vec3<f32>) -> vec3<f32> {
+    let dist = fog_distance(world);
     // Only the last tenth dissolves. This band used to start at 0.72,
     // which turned the far QUARTER of the view into sky — the thing you
     // were straining to see was always in it. Fog cannot go entirely:
@@ -934,6 +938,70 @@ fn fs_water(in: VsOut) -> @location(0) vec4<f32> {
     return vec4<f32>(rgb, tex.a);
 }
 
+// ---- capture-only visible-fragment evidence ----
+//
+// Rgba16Uint: R = atlas-family id (slot + 1; 0 is sky), G = the same
+// geodesic-plus-radial depth used by fog normalized to its effective range,
+// B = fragment class (1 solid/cutout, 2 water, 3 overlay), A = schema 1.
+// These entry points only have pipelines when WILDFORGE_VISUAL_EVIDENCE=1.
+
+fn diagnostic_slot(uv: vec2<f32>) -> u32 {
+    let tile = vec2<u32>(clamp(floor(uv * ATLAS_TILES), vec2<f32>(0.0), vec2<f32>(ATLAS_TILES - 1.0)));
+    return tile.y * u32(ATLAS_TILES) + tile.x;
+}
+
+fn diagnostic_fragment(uv: vec2<f32>, world: vec3<f32>, fragment_class: u32) -> vec4<u32> {
+    let depth = u32(round(clamp(fog_distance(world) / max(u.cam.w, 1e-3), 0.0, 1.0) * 65535.0));
+    return vec4<u32>(diagnostic_slot(uv) + 1u, depth, fragment_class, 1u);
+}
+
+@fragment
+fn fs_diagnostic_chunk(in: VsOut) -> @location(0) vec4<u32> {
+    let s = parallax_surface(in.uv, in.world, in.normal);
+    let tex = textureSample(atlas_tex, atlas_smp, s.uv);
+    if (s.layer_id == 0u && tex.a < 0.5) {
+        discard;
+    }
+    if (s.layer_id != 0u) {
+        let p0 = u.layer[(s.layer_id - 1u) * 2u];
+        let p1 = u.layer[(s.layer_id - 1u) * 2u + 1u];
+        let below = textureSampleLevel(atlas_tex, atlas_smp, s.interior_uv, 0.0);
+        let src = select(tex.a, dot(tex.rgb, vec3<f32>(0.299, 0.587, 0.114)), p1.x > 0.5);
+        let opacity = clamp(src, p0.y, p0.z);
+        let coverage = opacity + below.a * (1.0 - opacity);
+        if (coverage < p1.y) {
+            discard;
+        }
+    }
+    return diagnostic_fragment(s.uv, in.world, 1u);
+}
+
+@fragment
+fn fs_diagnostic_chunk_overlay(in: VsOut) -> @location(0) vec4<u32> {
+    let s = parallax_surface(in.uv, in.world, in.normal);
+    let tex = textureSample(atlas_tex, atlas_smp, s.uv);
+    if (s.layer_id == 0u && tex.a < 0.5) {
+        discard;
+    }
+    if (s.layer_id != 0u) {
+        let p0 = u.layer[(s.layer_id - 1u) * 2u];
+        let p1 = u.layer[(s.layer_id - 1u) * 2u + 1u];
+        let below = textureSampleLevel(atlas_tex, atlas_smp, s.interior_uv, 0.0);
+        let src = select(tex.a, dot(tex.rgb, vec3<f32>(0.299, 0.587, 0.114)), p1.x > 0.5);
+        let opacity = clamp(src, p0.y, p0.z);
+        let coverage = opacity + below.a * (1.0 - opacity);
+        if (coverage < p1.y) {
+            discard;
+        }
+    }
+    return vec4<u32>(65535u, 0u, 3u, 1u);
+}
+
+@fragment
+fn fs_diagnostic_water(in: VsOut) -> @location(0) vec4<u32> {
+    return diagnostic_fragment(in.uv, in.world, 2u);
+}
+
 // ---- solid-color lines (block outline in world space, crosshair in clip space) ----
 
 struct LineIn {
@@ -965,6 +1033,11 @@ fn vs_line_screen(in: LineIn) -> LineOut {
 @fragment
 fn fs_line(in: LineOut) -> @location(0) vec4<f32> {
     return vec4<f32>(in.color, 1.0);
+}
+
+@fragment
+fn fs_diagnostic_line(_in: LineOut) -> @location(0) vec4<u32> {
+    return vec4<u32>(65535u, 0u, 3u, 1u);
 }
 
 // ---- 2D UI: colored or atlas-textured quads in pixel coordinates ----
@@ -1002,4 +1075,17 @@ fn fs_ui(in: UiOut) -> @location(0) vec4<f32> {
         c = tex * in.color;
     }
     return c;
+}
+
+@fragment
+fn fs_diagnostic_ui(in: UiOut) -> @location(0) vec4<u32> {
+    let tex = textureSample(atlas_tex, atlas_smp, max(in.uv, vec2<f32>(0.0)));
+    var alpha = in.color.a;
+    if (in.uv.x >= 0.0) {
+        alpha = alpha * tex.a;
+    }
+    if (alpha <= 0.01) {
+        discard;
+    }
+    return vec4<u32>(65535u, 0u, 3u, 1u);
 }
