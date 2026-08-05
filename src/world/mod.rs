@@ -785,6 +785,35 @@ fn publish_created_world(
     result
 }
 
+/// Publish a complete development qualification world from an already
+/// committed production atlas. This is deliberately narrower than ordinary
+/// world creation: it exists so read-only visual locators can select one
+/// immutable atlas and the capture harness can materialize that exact world
+/// without regenerating or silently substituting a different planet.
+pub(crate) fn create_qualification_world_from_atlas(
+    destination: &std::path::Path,
+    atlas: crate::planet_atlas::PlanetAtlas,
+    reg: Arc<Registry>,
+    cancel: &crate::planet_atlas::CancellationToken,
+    mut progress: impl FnMut(WorldCreationProgress),
+) -> std::io::Result<()> {
+    if destination.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            format!("world path already exists: {}", destination.display()),
+        ));
+    }
+    let seed = atlas.manifest.seed;
+    publish_created_world(
+        destination,
+        seed,
+        "survival",
+        atlas,
+        cancel,
+        Some((reg, &mut progress)),
+    )
+}
+
 /// List compatible planetary worlds under `dir`: (name, seed), sorted.
 pub fn list_worlds(dir: &std::path::Path) -> Vec<(String, u32)> {
     let mut out = Vec::new();

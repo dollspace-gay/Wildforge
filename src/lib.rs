@@ -23,6 +23,7 @@ mod dross;
 mod edifice;
 mod entity;
 mod game;
+mod geode_capture;
 mod identity;
 mod implements;
 mod inventory;
@@ -85,6 +86,13 @@ use world::World;
 /// Run Wildforge using process arguments and the platform event loop.
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(result) = geode_capture::run_cli(&args) {
+        if let Err(error) = result {
+            eprintln!("cracked-geode qualification failed: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if let Some(i) = args.iter().position(|arg| arg == "--magic-qualification") {
         let Some(world) = args.get(i + 1).map(PathBuf::from) else {
             eprintln!(

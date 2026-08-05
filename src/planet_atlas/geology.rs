@@ -219,6 +219,7 @@ impl MineralKind {
         } else if name.contains("coal") {
             Self::Coal
         } else if name.contains("quartz_vein")
+            || name.contains("quartz_block")
             || name.contains("sulfur_crystal")
             || name.contains("amethyst")
         {

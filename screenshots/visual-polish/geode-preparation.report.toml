@@ -1,0 +1,510 @@
+schema_version = 1
+site_id = "cracked-geode"
+source_world = "visual-polish-geode-sealed"
+opened_world = "visual-polish-geode-opened"
+source_manifest_sha256 = "9d8041dfbacbe5661de39b0c041141daa600e213eea0d268fdd686c2ad56b6ec"
+source_material_audit_sha256 = "e67af4e0d343acf51384fd1727cb05f0e6467a8b1182872ea356480f8b1e7f33"
+source_neighborhood_sha256 = "9b399826e385e6dd0390968f233797ceb721d58bf9c12cadbfb0cba2da748a43"
+source_unchanged = true
+before_material_audit_sha256 = "e67af4e0d343acf51384fd1727cb05f0e6467a8b1182872ea356480f8b1e7f33"
+after_material_audit_sha256 = "8a8a8cd30e41c466d9eb13dfc9ec6fe3aa21bd572b648a5224f22aeabbd31ca3"
+reload_material_audit_sha256 = "8a8a8cd30e41c466d9eb13dfc9ec6fe3aa21bd572b648a5224f22aeabbd31ca3"
+before_balanced = true
+after_balanced = true
+reload_balanced = true
+deposit_id = 48
+reservation_deposit_ids = [48]
+quartz_reserved_blocks = 130
+amethyst_reserved_blocks = 36
+quartz_extracted_units = 6000
+amethyst_extracted_units = 3600
+planned_breaks = 39
+applied_breaks = 39
+torch_placed = true
+unexpected_edits = 0
+remaining_shell_blocks = 113
+remaining_lining_blocks = 45
+remaining_heart_air_blocks = 32
+loose_drop_stacks = 40
+save_succeeded = true
+reload_succeeded = true
+
+[[operation]]
+sequence = 1
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 449
+[operation.target]
+face = "neg_y"
+u = 5408
+y = 67
+v = 1722
+block = "base:dirt"
+
+[[operation]]
+sequence = 2
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 448
+[operation.target]
+face = "neg_y"
+u = 5408
+y = 66
+v = 1722
+block = "base:dirt"
+
+[[operation]]
+sequence = 3
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 447
+[operation.target]
+face = "neg_y"
+u = 5408
+y = 65
+v = 1722
+block = "base:dirt"
+
+[[operation]]
+sequence = 4
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 446
+[operation.target]
+face = "neg_y"
+u = 5408
+y = 64
+v = 1722
+block = "base:dirt"
+
+[[operation]]
+sequence = 5
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 445
+[operation.target]
+face = "neg_y"
+u = 5408
+y = 63
+v = 1722
+block = "base:limestone"
+
+[[operation]]
+sequence = 6
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 444
+[operation.target]
+face = "neg_y"
+u = 5408
+y = 62
+v = 1722
+block = "base:limestone"
+
+[[operation]]
+sequence = 7
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 443
+[operation.target]
+face = "neg_y"
+u = 5408
+y = 67
+v = 1723
+block = "base:dirt"
+
+[[operation]]
+sequence = 8
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 442
+[operation.target]
+face = "neg_y"
+u = 5408
+y = 66
+v = 1723
+block = "base:dirt"
+
+[[operation]]
+sequence = 9
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 441
+[operation.target]
+face = "neg_y"
+u = 5408
+y = 65
+v = 1723
+block = "base:dirt"
+
+[[operation]]
+sequence = 10
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 440
+[operation.target]
+face = "neg_y"
+u = 5408
+y = 64
+v = 1723
+block = "base:dirt"
+
+[[operation]]
+sequence = 11
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 439
+[operation.target]
+face = "neg_y"
+u = 5408
+y = 63
+v = 1723
+block = "base:limestone"
+
+[[operation]]
+sequence = 12
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 438
+[operation.target]
+face = "neg_y"
+u = 5408
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[operation]]
+sequence = 13
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 437
+[operation.target]
+face = "neg_y"
+u = 5407
+y = 62
+v = 1722
+block = "base:limestone"
+
+[[operation]]
+sequence = 14
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 436
+[operation.target]
+face = "neg_y"
+u = 5407
+y = 63
+v = 1722
+block = "base:limestone"
+
+[[operation]]
+sequence = 15
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 435
+[operation.target]
+face = "neg_y"
+u = 5407
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[operation]]
+sequence = 16
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 434
+[operation.target]
+face = "neg_y"
+u = 5407
+y = 63
+v = 1723
+block = "base:limestone"
+
+[[operation]]
+sequence = 17
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 433
+[operation.target]
+face = "neg_y"
+u = 5406
+y = 62
+v = 1722
+block = "base:limestone"
+
+[[operation]]
+sequence = 18
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 432
+[operation.target]
+face = "neg_y"
+u = 5406
+y = 63
+v = 1722
+block = "base:limestone"
+
+[[operation]]
+sequence = 19
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 431
+[operation.target]
+face = "neg_y"
+u = 5406
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[operation]]
+sequence = 20
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 430
+[operation.target]
+face = "neg_y"
+u = 5406
+y = 63
+v = 1723
+block = "base:limestone"
+
+[[operation]]
+sequence = 21
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 429
+[operation.target]
+face = "neg_y"
+u = 5405
+y = 62
+v = 1722
+block = "base:limestone"
+
+[[operation]]
+sequence = 22
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 428
+[operation.target]
+face = "neg_y"
+u = 5405
+y = 63
+v = 1722
+block = "base:limestone"
+
+[[operation]]
+sequence = 23
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 427
+[operation.target]
+face = "neg_y"
+u = 5405
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[operation]]
+sequence = 24
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 426
+[operation.target]
+face = "neg_y"
+u = 5405
+y = 63
+v = 1723
+block = "base:limestone"
+
+[[operation]]
+sequence = 25
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 425
+[operation.target]
+face = "neg_y"
+u = 5404
+y = 62
+v = 1722
+block = "base:limestone"
+
+[[operation]]
+sequence = 26
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 424
+[operation.target]
+face = "neg_y"
+u = 5404
+y = 63
+v = 1722
+block = "base:limestone"
+
+[[operation]]
+sequence = 27
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 423
+[operation.target]
+face = "neg_y"
+u = 5404
+y = 62
+v = 1723
+block = "base:limestone"
+
+[[operation]]
+sequence = 28
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 422
+[operation.target]
+face = "neg_y"
+u = 5404
+y = 63
+v = 1723
+block = "base:limestone"
+
+[[operation]]
+sequence = 29
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 421
+[operation.target]
+face = "neg_y"
+u = 5403
+y = 62
+v = 1722
+block = "base:limestone"
+
+[[operation]]
+sequence = 30
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 420
+[operation.target]
+face = "neg_y"
+u = 5403
+y = 63
+v = 1722
+block = "base:limestone"
+
+[[operation]]
+sequence = 31
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 419
+[operation.target]
+face = "neg_y"
+u = 5403
+y = 62
+v = 1723
+block = "base:quartz_block"
+
+[[operation]]
+sequence = 32
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 418
+[operation.target]
+face = "neg_y"
+u = 5403
+y = 63
+v = 1723
+block = "base:limestone"
+
+[[operation]]
+sequence = 33
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 417
+[operation.target]
+face = "neg_y"
+u = 5402
+y = 62
+v = 1722
+block = "base:quartz_block"
+
+[[operation]]
+sequence = 34
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 416
+[operation.target]
+face = "neg_y"
+u = 5402
+y = 63
+v = 1722
+block = "base:quartz_block"
+
+[[operation]]
+sequence = 35
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 415
+[operation.target]
+face = "neg_y"
+u = 5402
+y = 62
+v = 1723
+block = "base:quartz_block"
+
+[[operation]]
+sequence = 36
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 414
+[operation.target]
+face = "neg_y"
+u = 5402
+y = 63
+v = 1723
+block = "base:quartz_block"
+
+[[operation]]
+sequence = 37
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 413
+[operation.target]
+face = "neg_y"
+u = 5401
+y = 62
+v = 1722
+block = "base:amethyst_block"
+
+[[operation]]
+sequence = 38
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 412
+[operation.target]
+face = "neg_y"
+u = 5401
+y = 63
+v = 1722
+block = "base:amethyst_block"
+
+[[operation]]
+sequence = 39
+kind = "authoritative-break"
+result = "air-plus-retained-drop"
+tool_durability_after = 411
+[operation.target]
+face = "neg_y"
+u = 5401
+y = 63
+v = 1723
+block = "base:amethyst_block"
+
+[[operation]]
+sequence = 40
+kind = "authoritative-place"
+result = "placed-and-inventory-spent"
+tool_durability_after = 411
+[operation.target]
+face = "neg_y"
+u = 5404
+y = 62
+v = 1722
+block = "base:torch"
