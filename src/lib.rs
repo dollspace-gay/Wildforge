@@ -27,6 +27,7 @@ mod identity;
 mod implements;
 mod inventory;
 mod lights;
+mod magic_qualification;
 mod materials;
 mod mesher;
 mod mobs;
@@ -83,6 +84,62 @@ use world::World;
 /// Run Wildforge using process arguments and the platform event loop.
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|arg| arg == "--magic-qualification") {
+        let Some(world) = args.get(i + 1).map(PathBuf::from) else {
+            eprintln!(
+                "usage: wildforge --magic-qualification <world> [--mods <directory>] [--output <report.txt>]"
+            );
+            std::process::exit(2);
+        };
+        let mods = args
+            .iter()
+            .position(|arg| arg == "--mods")
+            .and_then(|index| args.get(index + 1))
+            .map_or_else(|| PathBuf::from("mods"), PathBuf::from);
+        match magic_qualification::audit_world(&world, &mods) {
+            Ok(report) => {
+                print!("{}", report.render());
+                if let Some(output) = args
+                    .iter()
+                    .position(|arg| arg == "--output")
+                    .and_then(|index| args.get(index + 1))
+                    .map(PathBuf::from)
+                    && let Err(error) =
+                        identity::atomic_write(&output, report.render().as_bytes(), false)
+                {
+                    eprintln!("magic qualification report write failed: {error}");
+                    std::process::exit(1);
+                }
+                if !report.qualified {
+                    std::process::exit(1);
+                }
+            }
+            Err(error) => {
+                eprintln!("magic qualification failed: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    if let Some(i) = args.iter().position(|arg| arg == "--alchemy-audit") {
+        let Some(world) = args.get(i + 1).map(PathBuf::from) else {
+            eprintln!("usage: wildforge --alchemy-audit <world>");
+            std::process::exit(2);
+        };
+        match alchemy::audit_world(&world) {
+            Ok(audit) => {
+                print!("{}", audit.render());
+                if !audit.is_qualified() {
+                    std::process::exit(1);
+                }
+            }
+            Err(error) => {
+                eprintln!("alchemy audit failed: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if let Some(i) = args.iter().position(|arg| arg == "--workings-audit") {
         let Some(world) = args.get(i + 1).map(PathBuf::from) else {
             eprintln!("usage: wildforge --workings-audit <world>");

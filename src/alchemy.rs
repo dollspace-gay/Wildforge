@@ -1257,6 +1257,96 @@ pub struct AlchemyState {
     path: PathBuf,
 }
 
+/// Closed-world operator evidence for embodied preparations and every parent
+/// ledger they touch.  The sidecar is descriptive custody: the Arcane,
+/// planetary-water, and material ledgers remain authoritative, so a saved
+/// preparation is qualified only when both views agree.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AlchemyAudit {
+    pub schema_version: u32,
+    pub content_hash: u64,
+    pub file_bytes: u64,
+    pub apparatus: usize,
+    pub batches: usize,
+    pub containers: usize,
+    pub statuses: usize,
+    pub root_treatments: usize,
+    pub coatings: usize,
+    pub pollution_sites: usize,
+    pub ordinary_jobs: usize,
+    pub history: usize,
+    pub water_hu: u64,
+    pub salt_mass: u64,
+    pub clean_current: u64,
+    pub dross_current: u64,
+    pub tracked_material_units: u64,
+    pub missing_arcane_accounts: usize,
+    pub mismatched_arcane_accounts: usize,
+    pub water_custody_overdrawn: bool,
+    pub arcane_balanced: bool,
+    pub water_balanced: bool,
+    pub material_balanced: bool,
+}
+
+impl AlchemyAudit {
+    pub fn is_qualified(&self) -> bool {
+        self.schema_version == ALCHEMY_STATE_SCHEMA_VERSION
+            && self.file_bytes <= MAX_ALCHEMY_FILE_BYTES
+            && self.apparatus <= MAX_ALCHEMY_APPARATUS
+            && self.containers <= MAX_ALCHEMY_CONTAINERS
+            && self.statuses <= MAX_ALCHEMY_STATUSES
+            && self.history <= MAX_ALCHEMY_HISTORY
+            && self.missing_arcane_accounts == 0
+            && self.mismatched_arcane_accounts == 0
+            && !self.water_custody_overdrawn
+            && self.arcane_balanced
+            && self.water_balanced
+            && self.material_balanced
+    }
+
+    pub fn render(&self) -> String {
+        format!(
+            concat!(
+                "Alchemy audit schema {}\n",
+                "Content hash: {:016x}\n",
+                "Sidecar: {} / {} bytes\n",
+                "Embodied state: {} apparatus, {} batches, {} filled containers, {} statuses, {} root treatments, {} coatings, {} pollution sites, {} ordinary jobs\n",
+                "History: {} / {}\n",
+                "Custody: {} water HU, {} salt, {} clean Current, {} dross Current, {} tracked material units\n",
+                "Integrity: {} missing arcane accounts, {} mismatched arcane accounts, industrial water overdrawn={}\n",
+                "Parent ledgers: Current={}, water/salt={}, material={}\n",
+                "Qualified: {}\n"
+            ),
+            self.schema_version,
+            self.content_hash,
+            self.file_bytes,
+            MAX_ALCHEMY_FILE_BYTES,
+            self.apparatus,
+            self.batches,
+            self.containers,
+            self.statuses,
+            self.root_treatments,
+            self.coatings,
+            self.pollution_sites,
+            self.ordinary_jobs,
+            self.history,
+            MAX_ALCHEMY_HISTORY,
+            self.water_hu,
+            self.salt_mass,
+            self.clean_current,
+            self.dross_current,
+            self.tracked_material_units,
+            self.missing_arcane_accounts,
+            self.mismatched_arcane_accounts,
+            self.water_custody_overdrawn,
+            self.arcane_balanced,
+            self.water_balanced,
+            self.material_balanced,
+            self.is_qualified(),
+        )
+    }
+}
+
 impl AlchemyState {
     pub fn load_existing(world: &Path) -> Result<Option<Self>, AlchemyError> {
         let path = world.join(ALCHEMY_FILE);
@@ -1678,6 +1768,212 @@ impl AlchemyState {
             }))
             .collect()
     }
+}
+
+pub fn audit_world(world: &Path) -> Result<AlchemyAudit, AlchemyError> {
+    let state = AlchemyState::load_existing(world)?
+        .ok_or_else(|| AlchemyError::Corrupt("world has no alchemy sidecar".into()))?;
+    state.validate()?;
+    let file_bytes = std::fs::metadata(world.join(ALCHEMY_FILE))?.len();
+    let ledger = crate::arcane::ArcaneLedger::load(world)
+        .map_err(|error| AlchemyError::Corrupt(error.to_string()))?;
+    #[cfg(not(test))]
+    let arcane_balanced = crate::arcane::audit_world(world)
+        .map_err(|error| AlchemyError::Corrupt(error.to_string()))?
+        .is_balanced();
+    #[cfg(test)]
+    let arcane_balanced = ledger
+        .audit()
+        .map_err(|error| AlchemyError::Corrupt(error.to_string()))?
+        .unexplained_delta
+        == 0;
+    let material_audit = crate::materials::audit_world(world)?;
+    #[cfg(not(test))]
+    let atlas = crate::planet_atlas::PlanetAtlas::load(world)
+        .map_err(|error| AlchemyError::Corrupt(error.to_string()))?;
+    #[cfg(test)]
+    let atlas = crate::planet_atlas::PlanetAtlas::load_fixture(world)
+        .map_err(|error| AlchemyError::Corrupt(error.to_string()))?;
+    let water_audit = atlas.water_audit();
+
+    let mut clean_current = 0u64;
+    let mut dross_current = 0u64;
+    let mut missing_arcane_accounts = 0usize;
+    let mut mismatched_arcane_accounts = 0usize;
+    let mut inspect_total = |owner: crate::arcane::ArcaneOwner, expected: u64, dross: bool| {
+        let actual = ledger
+            .account(&owner)
+            .map(|account| account.current.total());
+        if expected == 0 {
+            mismatched_arcane_accounts += usize::from(actual.is_some_and(|units| units != 0));
+        } else if let Some(actual) = actual {
+            mismatched_arcane_accounts += usize::from(actual != expected);
+            if dross {
+                dross_current = dross_current.saturating_add(actual);
+            } else {
+                clean_current = clean_current.saturating_add(actual);
+            }
+        } else {
+            missing_arcane_accounts += 1;
+        }
+    };
+
+    for apparatus in state.apparatus.values() {
+        if let Some(batch) = &apparatus.batch {
+            let owner_id = batch_owner_id(batch.id);
+            inspect_total(
+                crate::arcane::ArcaneOwner::Alchemy(owner_id),
+                batch.current_units,
+                false,
+            );
+            inspect_total(
+                crate::arcane::ArcaneOwner::AlchemyDross(owner_id),
+                batch.dross_units,
+                true,
+            );
+        }
+        if apparatus.filter_owner_id != 0 {
+            inspect_total(
+                crate::arcane::ArcaneOwner::AlchemyDross(apparatus.filter_owner_id),
+                apparatus.filter_burden,
+                true,
+            );
+        }
+    }
+    for dose in state.containers.values() {
+        inspect_total(
+            crate::arcane::ArcaneOwner::Item(dose.container_id),
+            dose.current_units,
+            false,
+        );
+        inspect_total(
+            crate::arcane::ArcaneOwner::ItemDross(dose.container_id),
+            dose.dross_units,
+            true,
+        );
+    }
+    for status in state.statuses.values().flatten() {
+        let owner_id = status_owner_id(status.status_id);
+        let clean = ledger.account(&crate::arcane::ArcaneOwner::Alchemy(owner_id));
+        let dross = ledger.account(&crate::arcane::ArcaneOwner::AlchemyDross(owner_id));
+        missing_arcane_accounts +=
+            usize::from(!status.active_current.is_empty() && clean.is_none());
+        missing_arcane_accounts += usize::from(!status.dross_current.is_empty() && dross.is_none());
+        mismatched_arcane_accounts += usize::from(
+            clean.map(|account| &account.current) != Some(&status.active_current)
+                && (!status.active_current.is_empty() || clean.is_some()),
+        );
+        mismatched_arcane_accounts += usize::from(
+            dross.map(|account| &account.current) != Some(&status.dross_current)
+                && (!status.dross_current.is_empty() || dross.is_some()),
+        );
+        clean_current =
+            clean_current.saturating_add(clean.map_or(0, |account| account.current.total()));
+        dross_current =
+            dross_current.saturating_add(dross.map_or(0, |account| account.current.total()));
+    }
+    // Coatings predate exact mixtures in their presentation record.  The
+    // ledger remains the sole source of truth, but both owner classes must be
+    // bounded and at least one must exist for every live coating.
+    for coating in state.coatings.values() {
+        let owner_id = status_owner_id(coating.status_id);
+        let clean = ledger.account(&crate::arcane::ArcaneOwner::Alchemy(owner_id));
+        let dross = ledger.account(&crate::arcane::ArcaneOwner::AlchemyDross(owner_id));
+        missing_arcane_accounts += usize::from(clean.is_none() && dross.is_none());
+        mismatched_arcane_accounts += usize::from(
+            clean
+                .into_iter()
+                .chain(dross)
+                .any(|account| account.current.total() > MAX_PREPARATION_CHARGE),
+        );
+        clean_current =
+            clean_current.saturating_add(clean.map_or(0, |account| account.current.total()));
+        dross_current =
+            dross_current.saturating_add(dross.map_or(0, |account| account.current.total()));
+    }
+    dross_current = dross_current.saturating_add(
+        state
+            .pollution
+            .values()
+            .map(|pollution| pollution.dross.total())
+            .sum::<u64>(),
+    );
+
+    let tracked_material_units = state
+        .apparatus
+        .values()
+        .flat_map(|apparatus| {
+            apparatus
+                .residue_materials
+                .values()
+                .chain(apparatus.filter_medium_materials.values())
+                .chain(
+                    apparatus
+                        .batch
+                        .iter()
+                        .flat_map(|batch| batch.ingredients.iter())
+                        .flat_map(|ingredient| {
+                            ingredient
+                                .retained_materials
+                                .values()
+                                .chain(ingredient.residue_materials.values())
+                        }),
+                )
+        })
+        .chain(state.containers.values().flat_map(|dose| {
+            dose.vessel_materials
+                .values()
+                .chain(dose.materials.values())
+        }))
+        .chain(
+            state
+                .pollution
+                .values()
+                .flat_map(|pollution| pollution.materials.values()),
+        )
+        .chain(
+            state
+                .ordinary_jobs
+                .values()
+                .flat_map(|job| job.input_materials.values()),
+        )
+        .copied()
+        .fold(0u64, u64::saturating_add);
+    let water = state.total_water_custody();
+    let statuses = state.statuses.values().map(Vec::len).sum();
+    let batches = state
+        .apparatus
+        .values()
+        .filter(|apparatus| apparatus.batch.is_some())
+        .count();
+
+    Ok(AlchemyAudit {
+        schema_version: state.schema_version,
+        content_hash: state.content_hash,
+        file_bytes,
+        apparatus: state.apparatus.len(),
+        batches,
+        containers: state.containers.len(),
+        statuses,
+        root_treatments: state.root_treatments.len(),
+        coatings: state.coatings.len(),
+        pollution_sites: state.pollution.len(),
+        ordinary_jobs: state.ordinary_jobs.len(),
+        history: state.history.len(),
+        water_hu: water.water_hu,
+        salt_mass: water.salt_mass,
+        clean_current,
+        dross_current,
+        tracked_material_units,
+        missing_arcane_accounts,
+        mismatched_arcane_accounts,
+        water_custody_overdrawn: water.water_hu > water_audit.industrial.water_hu
+            || water.salt_mass > water_audit.industrial.salt_mass,
+        arcane_balanced,
+        water_balanced: water_audit.unexplained_water_delta_hu == 0
+            && water_audit.unexplained_salt_delta == 0,
+        material_balanced: material_audit.is_balanced(),
+    })
 }
 
 pub const fn batch_owner_id(batch_id: u64) -> u64 {

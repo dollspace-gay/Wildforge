@@ -1,12 +1,16 @@
 # The Current — master magic design and `/goal` execution sequence
 
-> **Status: goals 1–7 implemented and production-qualified; goals 8–9 remain.**
+> **Status: goals 1–9 implemented and production-qualified (2026-08-04).**
 >
 > This document is the index, dependency contract, vocabulary, and final
 > definition of done for player magic in Wildforge. Run it only after
 > `docs/planetary-world-sequence.md` is implemented and qualified. Do not
 > implement the arc as one undifferentiated change. Run the nine goal
 > documents below, in order.
+>
+> The goal documents remain as historical implementation contracts. Current
+> cross-goal evidence is in `docs/magic-qualification-implementation.md` and
+> the generated `docs/magic-qualification-matrix.csv`.
 
 ## North star
 
