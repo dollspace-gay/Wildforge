@@ -58,13 +58,13 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 1424
-eligible_frame = 1014
+frame = 1386
+eligible_frame = 984
 settled = true
 settled_frames = 10
-fps = 63
-simulation_ms = 7.5758
-draw_ms = 7.1419926
+fps = 11
+simulation_ms = 13.641195
+draw_ms = 6.649679
 resident_chunks = 534
 gpu_chunks = 517
 opaque_chunks = 517
@@ -3951,7 +3951,7 @@ names = ["base:forge_lit"]
 
 [artifacts]
 color_ppm = "screenshots/strata-baseline-performance-c.ppm"
-color_ppm_sha256 = "9134f6636ea28de4f644da3acc1cbb8838e1d440c6fc4881b0fbabbbc453e3ee"
+color_ppm_sha256 = "d98e4da78fd301bf8aa86d02bd4017651ab922de4493267b0c895a6c666c72be"
 diagnostic = "screenshots/strata-baseline-performance-c.wfd"
-diagnostic_sha256 = "4ca3a4b1b39363c716138d7578efd1baa6824bf41ac8d2157163a5839c53fea0"
+diagnostic_sha256 = "7c952390c5d75bc8acea6c4cf42dc7160f0d04e649ff590da78875041815d865"
 diagnostic_format = "wfd-rgba16uint-v1"

@@ -3,7 +3,7 @@ capture_id = "strata-after-marble-v12-prefog-dawn-gemini"
 scene_id = "strata-production-20260802"
 
 [build]
-commit = "32e9af5c975929537c7b446a247f6137655134a5"
+commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
 dirty = false
 marker = "BIOME-R4"
 
@@ -58,13 +58,13 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 1936
-eligible_frame = 1535
+frame = 1878
+eligible_frame = 1476
 settled = true
 settled_frames = 10
-fps = 60
-simulation_ms = 9.592445
-draw_ms = 3.117211
+fps = 61
+simulation_ms = 9.172556
+draw_ms = 3.1594994
 resident_chunks = 532
 gpu_chunks = 517
 opaque_chunks = 517
@@ -3951,7 +3951,7 @@ names = ["base:forge_lit"]
 
 [artifacts]
 color_ppm = "screenshots/strata-after-marble-v12-prefog-dawn-gemini.ppm"
-color_ppm_sha256 = "538906da3d6626e18257e8ab2a17f7eccbcca2787aaf8f33b54c7a6827142300"
+color_ppm_sha256 = "edc0bc4cd1801c2f9ca0a33f836af3e9565cf2d0369a6cb188d929ef70a221ce"
 diagnostic = "screenshots/strata-after-marble-v12-prefog-dawn-gemini.wfd"
-diagnostic_sha256 = "f192d83acfdd39f97546e724f6756a4ef004cc447348d98136a97fbcc805791c"
+diagnostic_sha256 = "5823067be0edf1ca338b4cd850cb178704b4e11ab60910ea106a83ed12306800"
 diagnostic_format = "wfd-rgba16uint-v1"

@@ -117,6 +117,13 @@ voxel connectivity, bed, bank, volume, or seam checks, but these captures are
 not suitable promotional screenshots. Fixing the renderer/terrain
 presentation remains honest follow-up work rather than a hydrology result.
 
+**Presentation closure (2026-08-05).** The white-fog and pale-terrain part of
+that historical finding is now resolved by the native-DX12-qualified strata
+pass. It did not change drainage, beds, banks, water volume, cave geometry, or
+streaming distance. Broad-water presentation remains a separate concern; the
+strata evidence makes no claim to have redesigned water surfaces. See
+`docs/strata-fog-readability-plan.md`.
+
 Notes versus the design: static genesis stores four inherited climate seasons,
 not a continuously solved hydrograph. This goal establishes finite baselines
 and exact coarse-to-voxel handoff; Goal 6 has since added rainfall recharge,

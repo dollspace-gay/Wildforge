@@ -3,7 +3,7 @@ capture_id = "strata-after-sandstone-v4-near-noon-base"
 scene_id = "strata-production-20260802"
 
 [build]
-commit = "32e9af5c975929537c7b446a247f6137655134a5"
+commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
 dirty = false
 marker = "BIOME-R4"
 
@@ -58,13 +58,13 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 585
+frame = 583
 eligible_frame = 180
 settled = true
 settled_frames = 37
-fps = 54
-simulation_ms = 8.528156
-draw_ms = 7.1242614
+fps = 56
+simulation_ms = 8.448391
+draw_ms = 6.9537435
 resident_chunks = 63
 gpu_chunks = 63
 opaque_chunks = 63
@@ -3951,7 +3951,7 @@ names = ["base:forge_lit"]
 
 [artifacts]
 color_ppm = "screenshots/strata-after-sandstone-v4-near-noon-base.ppm"
-color_ppm_sha256 = "f98a03941db3633d2e68ebde90c3e50050928d8a4739d9731043ae67e16a9c63"
+color_ppm_sha256 = "89e0f1d5fd61f4d20406ff7168ccc2b02a8d8bbf9681f480c92a78a97454130f"
 diagnostic = "screenshots/strata-after-sandstone-v4-near-noon-base.wfd"
 diagnostic_sha256 = "f7e4f112aace757e41a89491cfd6eaae62c70d29985ec8b2cc6de286531d300a"
 diagnostic_format = "wfd-rgba16uint-v1"

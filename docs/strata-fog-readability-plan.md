@@ -1,6 +1,48 @@
 # Strata and atmospheric readability
 
-Drafted 2026-08-04. **DESIGN COMPLETE; IMPLEMENTATION PENDING.**
+Drafted 2026-08-04. **IMPLEMENTED AND QUALIFIED 2026-08-05.**
+
+## Implementation and qualification record
+
+The accepted pass changed the eight deterministic base rock albedos and left
+the atmosphere shader and fog range unchanged: native evidence proved the
+existing directional-sky fade was already monotonic and exact at its endpoint.
+The generator now uses stable SHA-256-derived seeds, produces byte-identical
+periodic tiles, and gives sedimentary, igneous, and metamorphic families
+different large-scale signals. Pack inheritance remains per material layer;
+Hewn's sandstone and limestone overrides still win while its other rocks fall
+back to base content.
+
+The version-2 visual manifest records eight production-world sites, fourteen
+baseline and fourteen after cases, and five matched performance captures per
+phase. All frames were rendered at 1280×720 on an NVIDIA GeForce RTX 3090
+through native Windows DX12 from clean executables. Raw frames remain ignored;
+their hashes, capture identities, per-stratum measurements, and aggregate
+results are tracked in `screenshots/visual-polish.toml` and
+`screenshots/visual-polish/*.report.toml`.
+
+All acceptance gates passed. Four-pixel/16-pixel pre-fog retention was
+98.9%/61.7% for sandstone, 542.6%/274.7% for limestone, 106.7%/112.8% for
+marble, and 103.4%/123.6% for quartzite. Clear-noon, clear-dawn, and
+overcast-dawn silhouette magnitudes were 0.802, 0.721, and 0.732 against
+minimums of 0.08/0.06/0.06. Basalt retained 91.36% of baseline 16-pixel shadow
+detail with no additional display-black clipping. Fog-band contrast declined
+to the directional-sky endpoint without a halo or exposed streaming wall.
+
+The matched five-capture medians were 6.998 ms draw / 10.723 ms simulation for
+the baseline and 6.805 ms / 10.467 ms after the change. This is a 0.193 ms draw
+improvement and 0.256 ms simulation improvement; the largest after draw was
+7.015 ms against a 14.212 ms single-frame ceiling. The aggregate reports and
+Rust validator fail closed if their source, tool, commit, matrix, sidecar, or
+metrics become stale.
+
+The final motion check used the same native executable on a disposable copy of
+the production save. Under both clear and overcast weather, injected ordinary
+W/S key events moved the live player about nine blocks toward the sandstone
+overhang and back to within roughly one block of the start. F2 renderer frames
+showed the changed weather, readable rock, and stable streaming in motion; the
+client remained responsive. The temporary save was deleted afterward and the
+operator's original Gemini runtime configuration was restored.
 
 This plan closes the visual defect recorded by the planetary biome pass:
 pale strata can disappear into distance haze even when the generated column is

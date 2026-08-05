@@ -3,7 +3,7 @@ capture_id = "strata-after-marble-v14-prefog-dawn-overcast-gemini"
 scene_id = "strata-production-20260802"
 
 [build]
-commit = "32e9af5c975929537c7b446a247f6137655134a5"
+commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
 dirty = false
 marker = "BIOME-R4"
 
@@ -31,15 +31,15 @@ time_of_day = 0.37186056
 season = "spring"
 weather = "overcast"
 precipitation = "none"
-temperature_c = 26.866165
-pressure_anomaly = 1050
-vapor = 847966
-cloud_water = 423982
+temperature_c = 27.046165
+pressure_anomaly = 972
+vapor = 834110
+cloud_water = 417054
 storm_energy = 8000
 precipitation_units = 0
 wind = [
-    -0.9484465,
-    -0.3075024,
+    -0.94850755,
+    -0.30756342,
 ]
 gloom = 0.4
 
@@ -58,19 +58,19 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 1754
-eligible_frame = 1352
+frame = 1718
+eligible_frame = 1317
 settled = true
 settled_frames = 10
-fps = 12
-simulation_ms = 32.013706
-draw_ms = 1.9963223
+fps = 60
+simulation_ms = 10.869763
+draw_ms = 1.8628476
 resident_chunks = 723
 gpu_chunks = 697
 opaque_chunks = 697
-water_chunks = 531
+water_chunks = 529
 empty_chunks = 0
-dirty_chunks = 33
+dirty_chunks = 26
 
 [[family]]
 diagnostic_id = 1
@@ -3951,7 +3951,7 @@ names = ["base:forge_lit"]
 
 [artifacts]
 color_ppm = "screenshots/strata-after-marble-v14-prefog-dawn-overcast-gemini.ppm"
-color_ppm_sha256 = "a641369a87ea3d81bc379584f28a2bf9af2299abf3e17ff41aab4cb0ebe719ab"
+color_ppm_sha256 = "38e5171cc52a2ca5f56509c9a84750d2ed4949eab83ffc4a049b1d501b4d624d"
 diagnostic = "screenshots/strata-after-marble-v14-prefog-dawn-overcast-gemini.wfd"
-diagnostic_sha256 = "fd0533c22b6eb3e2b92d66ba7592c23785bd98dcd6b29512c1024668c0b12af2"
+diagnostic_sha256 = "31b53250655a8e388ce5c03af6965331e3742aa33dfc1c1264476f1bcf420489"
 diagnostic_format = "wfd-rgba16uint-v1"

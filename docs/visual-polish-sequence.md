@@ -1,6 +1,6 @@
 # Visual polish sequence
 
-Drafted 2026-08-04. **DESIGN COMPLETE; IMPLEMENTATION PENDING.**
+Drafted 2026-08-04. **IMPLEMENTATION IN PROGRESS; GOALS 1–2 COMPLETE.**
 
 This is the small post-planetary polish arc left by two explicit qualification
 findings. It does not reopen planetary world design:
@@ -74,6 +74,10 @@ Suggested goal command:
 ```
 
 ## Goal 2 — Strata and atmospheric readability
+
+**Completed and qualified 2026-08-05.** The accepted implementation and
+native-GPU measurements are recorded in the linked plan and version-2 visual
+manifest. Goal 3 is now the next unfinished document in this arc.
 
 Execute [the strata plan](strata-fog-readability-plan.md) in its stated order:
 fresh baseline, material signal, re-measurement, shader work only if still

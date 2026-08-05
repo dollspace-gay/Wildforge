@@ -3,7 +3,7 @@ capture_id = "strata-after-basalt-v4-near-noon-gemini"
 scene_id = "strata-production-20260802"
 
 [build]
-commit = "32e9af5c975929537c7b446a247f6137655134a5"
+commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
 dirty = false
 marker = "BIOME-R4"
 
@@ -58,13 +58,13 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 586
+frame = 584
 eligible_frame = 180
 settled = true
-settled_frames = 96
-fps = 51
-simulation_ms = 8.017127
-draw_ms = 8.005509
+settled_frames = 110
+fps = 49
+simulation_ms = 7.8466525
+draw_ms = 7.852003
 resident_chunks = 55
 gpu_chunks = 52
 opaque_chunks = 52
@@ -3951,7 +3951,7 @@ names = ["base:forge_lit"]
 
 [artifacts]
 color_ppm = "screenshots/strata-after-basalt-v4-near-noon-gemini.ppm"
-color_ppm_sha256 = "40d025e26b3ab4602ce31e3f1a994093de2fcf21d15110471493fdd33ad7dfd7"
+color_ppm_sha256 = "a27f523c49d299cde4068cc4157d5cdf5e8237fa5f9a8fb6c688b7a40b3252af"
 diagnostic = "screenshots/strata-after-basalt-v4-near-noon-gemini.wfd"
 diagnostic_sha256 = "f97446ea96c4ddc4298b4b3bc74929c79b3f64cc87d8ff922629c5e0d51eee8b"
 diagnostic_format = "wfd-rgba16uint-v1"

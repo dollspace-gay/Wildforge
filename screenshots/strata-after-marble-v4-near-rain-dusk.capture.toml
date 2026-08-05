@@ -3,7 +3,7 @@ capture_id = "strata-after-marble-v4-near-rain-dusk"
 scene_id = "strata-production-20260802"
 
 [build]
-commit = "32e9af5c975929537c7b446a247f6137655134a5"
+commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
 dirty = false
 marker = "BIOME-R4"
 
@@ -58,13 +58,13 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 700
-eligible_frame = 298
+frame = 701
+eligible_frame = 297
 settled = true
 settled_frames = 10
-fps = 51
-simulation_ms = 9.110584
-draw_ms = 7.5825605
+fps = 50
+simulation_ms = 9.637861
+draw_ms = 7.7048774
 resident_chunks = 64
 gpu_chunks = 64
 opaque_chunks = 64
@@ -3951,7 +3951,7 @@ names = ["base:forge_lit"]
 
 [artifacts]
 color_ppm = "screenshots/strata-after-marble-v4-near-rain-dusk.ppm"
-color_ppm_sha256 = "e62d6c4b78ec66f3ad6acd7d97e849c156890e5074555c59926aeadbf6e05a6e"
+color_ppm_sha256 = "b0aef814311de05cad65b62bc77b1fb053aa14736e53ee2b717e32619e4757c8"
 diagnostic = "screenshots/strata-after-marble-v4-near-rain-dusk.wfd"
-diagnostic_sha256 = "8aebafc25f3335e11cbcd3a9d63fffa9f12a2e4a9fe2e74ca1994ba81e3784cd"
+diagnostic_sha256 = "8eab9793b8e968302a3189310394eb78382b61f035265281e9de19135c72e123"
 diagnostic_format = "wfd-rgba16uint-v1"

@@ -1,0 +1,191 @@
+qualification_schema_version = 1
+kind = "strata-readability"
+baseline_commit = "60486636fcfacd36de75e970a79ff6f806a0e9ac"
+after_commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
+source_reports = ["screenshots/visual-polish/strata-after-basalt-v4-near-noon-gemini.report.toml", "screenshots/visual-polish/strata-after-limestone-v12-prefog-overcast-dusk.report.toml", "screenshots/visual-polish/strata-after-limestone-v4-near-dawn-gemini.report.toml", "screenshots/visual-polish/strata-after-marble-v12-prefog-dawn-gemini.report.toml", "screenshots/visual-polish/strata-after-marble-v12-prefog-noon-base.report.toml", "screenshots/visual-polish/strata-after-marble-v14-prefog-dawn-overcast-gemini.report.toml", "screenshots/visual-polish/strata-after-marble-v4-near-rain-dusk.report.toml", "screenshots/visual-polish/strata-after-quartzite-v4-near-overcast-base.report.toml", "screenshots/visual-polish/strata-after-sandstone-v12-prefog-overcast-gemini.report.toml", "screenshots/visual-polish/strata-after-sandstone-v4-near-noon-base.report.toml", "screenshots/visual-polish/strata-baseline-basalt-v4-near-noon-gemini.report.toml"]
+fog_endpoint_contract = "src/shader.wgsl sky_radiance(rd); mirrored by above_water_fog_is_monotonic_and_reaches_directional_sky"
+passed = true
+
+[[retention]]
+rock = "sandstone"
+near_report = "screenshots/visual-polish/strata-after-sandstone-v4-near-noon-base.report.toml"
+pre_fog_report = "screenshots/visual-polish/strata-after-sandstone-v12-prefog-overcast-gemini.report.toml"
+near_rms_4px = 0.009658739
+pre_fog_rms_4px = 0.009549109
+retention_4px = 0.988649657
+minimum_retention_4px = 0.700000000
+near_rms_16px = 0.020332318
+pre_fog_rms_16px = 0.012543157
+retention_16px = 0.616907379
+minimum_retention_16px = 0.500000000
+passed = true
+
+[[retention]]
+rock = "limestone"
+near_report = "screenshots/visual-polish/strata-after-limestone-v4-near-dawn-gemini.report.toml"
+pre_fog_report = "screenshots/visual-polish/strata-after-limestone-v12-prefog-overcast-dusk.report.toml"
+near_rms_4px = 0.008307540
+pre_fog_rms_4px = 0.045073597
+retention_4px = 5.425625035
+minimum_retention_4px = 0.700000000
+near_rms_16px = 0.009351966
+pre_fog_rms_16px = 0.025690788
+retention_16px = 2.747100235
+minimum_retention_16px = 0.500000000
+passed = true
+
+[[retention]]
+rock = "marble"
+near_report = "screenshots/visual-polish/strata-after-marble-v4-near-rain-dusk.report.toml"
+pre_fog_report = "screenshots/visual-polish/strata-after-marble-v4-near-rain-dusk.report.toml"
+near_rms_4px = 0.007364384
+pre_fog_rms_4px = 0.007856772
+retention_4px = 1.066860718
+minimum_retention_4px = 0.700000000
+near_rms_16px = 0.007129310
+pre_fog_rms_16px = 0.008042428
+retention_16px = 1.128079435
+minimum_retention_16px = 0.500000000
+passed = true
+
+[[retention]]
+rock = "quartzite"
+near_report = "screenshots/visual-polish/strata-after-quartzite-v4-near-overcast-base.report.toml"
+pre_fog_report = "screenshots/visual-polish/strata-after-quartzite-v4-near-overcast-base.report.toml"
+near_rms_4px = 0.157290241
+pre_fog_rms_4px = 0.162713042
+retention_4px = 1.034476398
+minimum_retention_4px = 0.700000000
+near_rms_16px = 0.297880072
+pre_fog_rms_16px = 0.368144364
+retention_16px = 1.235881143
+minimum_retention_16px = 0.500000000
+passed = true
+
+[[silhouette]]
+condition = "clear-noon"
+rock = "marble"
+report = "screenshots/visual-polish/strata-after-marble-v12-prefog-noon-base.report.toml"
+weber_magnitude = 0.802014120
+minimum_weber_magnitude = 0.080000000
+passed = true
+
+[[silhouette]]
+condition = "clear-dawn"
+rock = "marble"
+report = "screenshots/visual-polish/strata-after-marble-v12-prefog-dawn-gemini.report.toml"
+weber_magnitude = 0.720763724
+minimum_weber_magnitude = 0.060000000
+passed = true
+
+[[silhouette]]
+condition = "overcast-dawn"
+rock = "quartzite"
+report = "screenshots/visual-polish/strata-after-marble-v14-prefog-dawn-overcast-gemini.report.toml"
+weber_magnitude = 0.731587012
+minimum_weber_magnitude = 0.060000000
+passed = true
+
+[[fog]]
+condition = "clear-noon"
+report = "screenshots/visual-polish/strata-after-marble-v12-prefog-noon-base.report.toml"
+pre_fog_blend = 0.000000000
+fog_end_blend = 1.000000000
+pre_fog_rms_4px = 0.023649771
+fog_rms_4px = 0.016114885
+pre_fog_rms_16px = 0.029086281
+fog_rms_16px = 0.024097292
+endpoint_is_directional_sky = true
+passed = true
+
+[[fog]]
+condition = "clear-dawn"
+report = "screenshots/visual-polish/strata-after-marble-v12-prefog-dawn-gemini.report.toml"
+pre_fog_blend = 0.000000000
+fog_end_blend = 1.000000000
+pre_fog_rms_4px = 0.067865040
+fog_rms_4px = 0.002567348
+pre_fog_rms_16px = 0.125788373
+fog_rms_16px = 0.007750530
+endpoint_is_directional_sky = true
+passed = true
+
+[[fog]]
+condition = "overcast-dawn"
+report = "screenshots/visual-polish/strata-after-marble-v14-prefog-dawn-overcast-gemini.report.toml"
+pre_fog_blend = 0.000000000
+fog_end_blend = 1.000000000
+pre_fog_rms_4px = 0.041208743
+fog_rms_4px = 0.003536109
+pre_fog_rms_16px = 0.057656960
+fog_rms_16px = 0.008383750
+endpoint_is_directional_sky = true
+passed = true
+
+[[family_distinction]]
+rock = "sandstone"
+distance_band = "near"
+distinguishable_from = ["limestone", "marble", "quartzite"]
+minimum_distinct_families = 2
+passed = true
+
+[[family_distinction]]
+rock = "sandstone"
+distance_band = "middle"
+distinguishable_from = ["limestone", "marble", "quartzite"]
+minimum_distinct_families = 2
+passed = true
+
+[[family_distinction]]
+rock = "limestone"
+distance_band = "near"
+distinguishable_from = ["sandstone", "quartzite"]
+minimum_distinct_families = 2
+passed = true
+
+[[family_distinction]]
+rock = "limestone"
+distance_band = "middle"
+distinguishable_from = ["sandstone", "marble", "quartzite"]
+minimum_distinct_families = 2
+passed = true
+
+[[family_distinction]]
+rock = "marble"
+distance_band = "near"
+distinguishable_from = ["sandstone", "quartzite"]
+minimum_distinct_families = 2
+passed = true
+
+[[family_distinction]]
+rock = "marble"
+distance_band = "middle"
+distinguishable_from = ["sandstone", "limestone", "quartzite"]
+minimum_distinct_families = 2
+passed = true
+
+[[family_distinction]]
+rock = "quartzite"
+distance_band = "near"
+distinguishable_from = ["sandstone", "limestone", "marble"]
+minimum_distinct_families = 2
+passed = true
+
+[[family_distinction]]
+rock = "quartzite"
+distance_band = "middle"
+distinguishable_from = ["sandstone", "limestone", "marble"]
+minimum_distinct_families = 2
+passed = true
+
+[[dark_control]]
+rock = "basalt"
+baseline_report = "screenshots/visual-polish/strata-baseline-basalt-v4-near-noon-gemini.report.toml"
+after_report = "screenshots/visual-polish/strata-after-basalt-v4-near-noon-gemini.report.toml"
+baseline_rms_16px = 0.003085307
+after_rms_16px = 0.002818735
+detail_retention = 0.913599522
+minimum_detail_retention = 0.900000000
+display_black_fraction_delta = 0.000000000
+maximum_display_black_fraction_delta = 0.010000000
+passed = true

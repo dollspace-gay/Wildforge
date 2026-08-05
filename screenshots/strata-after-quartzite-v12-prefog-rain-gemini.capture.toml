@@ -3,7 +3,7 @@ capture_id = "strata-after-quartzite-v12-prefog-rain-gemini"
 scene_id = "strata-production-20260802"
 
 [build]
-commit = "32e9af5c975929537c7b446a247f6137655134a5"
+commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
 dirty = false
 marker = "BIOME-R4"
 
@@ -58,13 +58,13 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 1237
-eligible_frame = 834
+frame = 1256
+eligible_frame = 852
 settled = true
 settled_frames = 10
-fps = 59
-simulation_ms = 7.0519886
-draw_ms = 5.7462344
+fps = 60
+simulation_ms = 6.772302
+draw_ms = 5.8732047
 resident_chunks = 535
 gpu_chunks = 513
 opaque_chunks = 513
@@ -3951,7 +3951,7 @@ names = ["base:forge_lit"]
 
 [artifacts]
 color_ppm = "screenshots/strata-after-quartzite-v12-prefog-rain-gemini.ppm"
-color_ppm_sha256 = "714a06ee0b9652f2362da6ad292bfb13e07ec59115b420a9f05a9b1b1bb0e7d9"
+color_ppm_sha256 = "840770aa35ea17f41e6f7f6eb661c375d8bf11d608f1dc780771816a6c0fd330"
 diagnostic = "screenshots/strata-after-quartzite-v12-prefog-rain-gemini.wfd"
-diagnostic_sha256 = "e306eac1337bf30a5f0eafb91b53895344fb0f145605a8c81948272923da7e92"
+diagnostic_sha256 = "ce673984f98fb184045e62147fd66a772c092dfb051f43c1ef62c69eb348fc71"
 diagnostic_format = "wfd-rgba16uint-v1"

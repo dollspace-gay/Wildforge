@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic visual-evidence conversion, metrics, and repeat comparison.
+"""Deterministic visual-evidence conversion, metrics, and qualification.
 
 The game writes native P6 PPM color plus a WFD RGBA16Uint attachment. This
 stdlib-only tool validates both before producing ignored PNG views and small,
@@ -32,6 +32,7 @@ WFD_FORMAT = "wfd-rgba16uint-v1"
 SKY_ID = 0
 OVERLAY_ID = 65535
 CONVERSION_ID = "python-stdlib-p6-rgb8-filter0-zlib9-v1"
+QUALIFICATION_SCHEMA_VERSION = 1
 
 # Repeatability gates. They permit subpixel/platform rasterization noise while
 # rejecting a changed site, camera, material layout, depth field, or exposure.
@@ -105,6 +106,17 @@ def render_report(report: dict[str, Any]) -> str:
 
 def render_comparison(report: dict[str, Any]) -> str:
     return "\n".join(f"{key} = {toml_value(value)}" for key, value in report.items()) + "\n"
+
+
+def render_tables(report: dict[str, Any], tables: tuple[str, ...]) -> str:
+    values = dict(report)
+    rows = {name: values.pop(name, []) for name in tables}
+    lines = [f"{key} = {toml_value(value)}" for key, value in values.items()]
+    for name in tables:
+        for row in rows[name]:
+            lines.extend(("", f"[[{name}]]"))
+            lines.extend(f"{key} = {toml_value(value)}" for key, value in row.items())
+    return "\n".join(lines) + "\n"
 
 
 def read_toml(path: Path) -> tuple[bytes, dict[str, Any]]:
@@ -754,6 +766,265 @@ def check_comparison_command(args: argparse.Namespace) -> None:
     print(f"visual evidence: {path} is deterministic and current")
 
 
+def named_report(phase: str, case: str) -> tuple[Path, dict[str, Any]]:
+    path = Path("screenshots/visual-polish") / f"strata-{phase}-{case}.report.toml"
+    _bytes, report = read_toml(path)
+    if report.get("report_schema_version") != REPORT_SCHEMA_VERSION:
+        raise EvidenceError(f"{path} has an unsupported report schema")
+    return path, report
+
+
+def named_stratum(report: dict[str, Any], rock: str, band: str) -> dict[str, Any]:
+    matches = [
+        row
+        for row in report.get("stratum", [])
+        if row.get("rock") == rock and row.get("distance_band") == band
+    ]
+    if len(matches) != 1:
+        raise EvidenceError(f"{report.get('capture_id')} lacks one {rock} {band} stratum")
+    if int(matches[0].get("pixels", 0)) < 64:
+        raise EvidenceError(f"{report.get('capture_id')} has too few {rock} {band} pixels")
+    return matches[0]
+
+
+def build_readability_qualification() -> dict[str, Any]:
+    cases = {
+        "sandstone": ("sandstone-v4-near-noon-base", "sandstone-v12-prefog-overcast-gemini"),
+        "limestone": ("limestone-v4-near-dawn-gemini", "limestone-v12-prefog-overcast-dusk"),
+        "marble": ("marble-v4-near-rain-dusk", "marble-v4-near-rain-dusk"),
+        "quartzite": ("quartzite-v4-near-overcast-base", "quartzite-v4-near-overcast-base"),
+    }
+    retention = []
+    representatives: dict[tuple[str, str], dict[str, Any]] = {}
+    source_reports: set[str] = set()
+    for rock, (near_case, far_case) in cases.items():
+        near_path, near_report = named_report("after", near_case)
+        far_path, far_report = named_report("after", far_case)
+        source_reports.update((near_path.as_posix(), far_path.as_posix()))
+        near = named_stratum(near_report, rock, "near")
+        pre = named_stratum(far_report, rock, "pre-fog")
+        ratio4 = float(pre["rms_contrast_4px"]) / max(float(near["rms_contrast_4px"]), 1.0e-12)
+        ratio16 = float(pre["rms_contrast_16px"]) / max(float(near["rms_contrast_16px"]), 1.0e-12)
+        retention.append(
+            {
+                "rock": rock,
+                "near_report": near_path.as_posix(),
+                "pre_fog_report": far_path.as_posix(),
+                "near_rms_4px": float(near["rms_contrast_4px"]),
+                "pre_fog_rms_4px": float(pre["rms_contrast_4px"]),
+                "retention_4px": ratio4,
+                "minimum_retention_4px": 0.70,
+                "near_rms_16px": float(near["rms_contrast_16px"]),
+                "pre_fog_rms_16px": float(pre["rms_contrast_16px"]),
+                "retention_16px": ratio16,
+                "minimum_retention_16px": 0.50,
+                "passed": ratio4 >= 0.70 and ratio16 >= 0.50,
+            }
+        )
+        representatives[(rock, "near")] = near
+        middle = next(
+            (row for row in near_report.get("stratum", []) if row.get("rock") == rock and row.get("distance_band") == "middle"),
+            None,
+        )
+        if middle is None:
+            raise EvidenceError(f"{near_report.get('capture_id')} lacks {rock} middle evidence")
+        representatives[(rock, "middle")] = middle
+
+    silhouette_cases = (
+        ("clear-noon", "marble", "marble-v12-prefog-noon-base", 0.08),
+        ("clear-dawn", "marble", "marble-v12-prefog-dawn-gemini", 0.06),
+        ("overcast-dawn", "quartzite", "marble-v14-prefog-dawn-overcast-gemini", 0.06),
+    )
+    silhouette = []
+    for condition, rock, case, minimum in silhouette_cases:
+        path, report = named_report("after", case)
+        source_reports.add(path.as_posix())
+        row = named_stratum(report, rock, "pre-fog")
+        value = float(row["silhouette_weber_magnitude"])
+        silhouette.append(
+            {
+                "condition": condition,
+                "rock": rock,
+                "report": path.as_posix(),
+                "weber_magnitude": value,
+                "minimum_weber_magnitude": minimum,
+                "passed": value >= minimum,
+            }
+        )
+
+    fog = []
+    for condition, case in (
+        ("clear-noon", "marble-v12-prefog-noon-base"),
+        ("clear-dawn", "marble-v12-prefog-dawn-gemini"),
+        ("overcast-dawn", "marble-v14-prefog-dawn-overcast-gemini"),
+    ):
+        path, report = named_report("after", case)
+        source_reports.add(path.as_posix())
+        pre = named_stratum(report, "marble", "pre-fog")
+        end = named_stratum(report, "marble", "fog")
+        passed = (
+            float(pre["expected_fog_blend"]) <= float(end["expected_fog_blend"])
+            and float(end["expected_fog_blend"]) >= 0.999
+            and float(end["rms_contrast_4px"]) <= float(pre["rms_contrast_4px"]) + 2.0 / 255.0
+            and float(end["rms_contrast_16px"]) <= float(pre["rms_contrast_16px"]) + 2.0 / 255.0
+            and float(end["silhouette_weber_magnitude"]) <= float(pre["silhouette_weber_magnitude"]) + 2.0 / 255.0
+        )
+        fog.append(
+            {
+                "condition": condition,
+                "report": path.as_posix(),
+                "pre_fog_blend": float(pre["expected_fog_blend"]),
+                "fog_end_blend": float(end["expected_fog_blend"]),
+                "pre_fog_rms_4px": float(pre["rms_contrast_4px"]),
+                "fog_rms_4px": float(end["rms_contrast_4px"]),
+                "pre_fog_rms_16px": float(pre["rms_contrast_16px"]),
+                "fog_rms_16px": float(end["rms_contrast_16px"]),
+                "endpoint_is_directional_sky": True,
+                "passed": passed,
+            }
+        )
+
+    family_distinction = []
+    pale = tuple(cases)
+    for rock in pale:
+        for band in ("near", "middle"):
+            row = representatives[(rock, band)]
+            distinct = []
+            for other in pale:
+                if other == rock:
+                    continue
+                candidate = representatives[(other, band)]
+                structure_delta = abs(float(row["rms_contrast_16px"]) - float(candidate["rms_contrast_16px"]))
+                chroma_delta = abs(float(row["median_chroma"]) - float(candidate["median_chroma"]))
+                if structure_delta >= 0.005 or chroma_delta >= 0.005:
+                    distinct.append(other)
+            family_distinction.append(
+                {
+                    "rock": rock,
+                    "distance_band": band,
+                    "distinguishable_from": distinct,
+                    "minimum_distinct_families": 2,
+                    "passed": len(distinct) >= 2,
+                }
+            )
+
+    baseline_path, baseline_dark_report = named_report("baseline", "basalt-v4-near-noon-gemini")
+    after_path, after_dark_report = named_report("after", "basalt-v4-near-noon-gemini")
+    source_reports.update((baseline_path.as_posix(), after_path.as_posix()))
+    baseline_dark = named_stratum(baseline_dark_report, "basalt", "near")
+    after_dark = named_stratum(after_dark_report, "basalt", "near")
+    detail_retention = float(after_dark["rms_contrast_16px"]) / max(float(baseline_dark["rms_contrast_16px"]), 1.0e-12)
+    black_delta = float(after_dark["display_black_fraction"]) - float(baseline_dark["display_black_fraction"])
+    dark_control = [{
+        "rock": "basalt",
+        "baseline_report": baseline_path.as_posix(),
+        "after_report": after_path.as_posix(),
+        "baseline_rms_16px": float(baseline_dark["rms_contrast_16px"]),
+        "after_rms_16px": float(after_dark["rms_contrast_16px"]),
+        "detail_retention": detail_retention,
+        "minimum_detail_retention": 0.90,
+        "display_black_fraction_delta": black_delta,
+        "maximum_display_black_fraction_delta": 0.01,
+        "passed": detail_retention >= 0.90 and black_delta <= 0.01,
+    }]
+    passed = all(row["passed"] for rows in (retention, silhouette, fog, family_distinction, dark_control) for row in rows)
+    return {
+        "qualification_schema_version": QUALIFICATION_SCHEMA_VERSION,
+        "kind": "strata-readability",
+        "baseline_commit": "60486636fcfacd36de75e970a79ff6f806a0e9ac",
+        "after_commit": "b7a4498e059ce3a5a43997f2b7f3c207a55e9505",
+        "source_reports": sorted(source_reports),
+        "fog_endpoint_contract": "src/shader.wgsl sky_radiance(rd); mirrored by above_water_fog_is_monotonic_and_reaches_directional_sky",
+        "passed": passed,
+        "retention": retention,
+        "silhouette": silhouette,
+        "fog": fog,
+        "family_distinction": family_distinction,
+        "dark_control": dark_control,
+    }
+
+
+def build_performance_qualification() -> dict[str, Any]:
+    samples: dict[str, list[float]] = {"baseline_draw": [], "baseline_sim": [], "after_draw": [], "after_sim": []}
+    source_reports = []
+    for phase in ("baseline", "after"):
+        for repeat in "abcde":
+            path, report = named_report(phase, f"performance-{repeat}")
+            source_reports.append(path.as_posix())
+            _sidecar_bytes, sidecar = read_toml(safe_repo_path(report["sidecar"], "performance sidecar"))
+            telemetry = sidecar.get("telemetry", {})
+            if not telemetry.get("settled"):
+                raise EvidenceError(f"{path} was not captured after settlement")
+            samples[f"{phase}_draw"].append(float(telemetry["draw_ms"]))
+            samples[f"{phase}_sim"].append(float(telemetry["simulation_ms"]))
+    medians = {name: percentile(values.copy(), 0.5) for name, values in samples.items()}
+    draw_budget = max(0.30, medians["baseline_draw"] * 0.05)
+    draw_delta = medians["after_draw"] - medians["baseline_draw"]
+    sim_delta = round(medians["after_sim"], 2) - round(medians["baseline_sim"], 2)
+    passed = (
+        draw_delta <= draw_budget
+        and sim_delta <= 0.10 + 1.0e-9
+        and max(samples["after_draw"]) <= 2.0 * max(samples["baseline_draw"])
+    )
+    return {
+        "qualification_schema_version": QUALIFICATION_SCHEMA_VERSION,
+        "kind": "strata-performance",
+        "baseline_commit": "60486636fcfacd36de75e970a79ff6f806a0e9ac",
+        "after_commit": "b7a4498e059ce3a5a43997f2b7f3c207a55e9505",
+        "source_reports": source_reports,
+        "baseline_draw_ms": samples["baseline_draw"],
+        "after_draw_ms": samples["after_draw"],
+        "baseline_simulation_ms": samples["baseline_sim"],
+        "after_simulation_ms": samples["after_sim"],
+        "baseline_median_draw_ms": medians["baseline_draw"],
+        "after_median_draw_ms": medians["after_draw"],
+        "median_draw_delta_ms": draw_delta,
+        "maximum_median_draw_regression_ms": draw_budget,
+        "baseline_median_simulation_ms": medians["baseline_sim"],
+        "after_median_simulation_ms": medians["after_sim"],
+        "median_simulation_delta_ms_at_0_01ms_precision": sim_delta,
+        "maximum_median_simulation_regression_ms": 0.10,
+        "maximum_after_draw_ms": max(samples["after_draw"]),
+        "maximum_allowed_single_draw_ms": 2.0 * max(samples["baseline_draw"]),
+        "passed": passed,
+    }
+
+
+def qualification_text(readability: dict[str, Any], performance: dict[str, Any]) -> tuple[bytes, bytes]:
+    return (
+        render_tables(readability, ("retention", "silhouette", "fog", "family_distinction", "dark_control")).encode(),
+        render_tables(performance, ()).encode(),
+    )
+
+
+def qualify_command(args: argparse.Namespace) -> None:
+    readability_path = safe_repo_path(args.readability_report, "readability qualification")
+    performance_path = safe_repo_path(args.performance_report, "performance qualification")
+    readability = build_readability_qualification()
+    performance = build_performance_qualification()
+    readability_bytes, performance_bytes = qualification_text(readability, performance)
+    write_atomic(readability_path, readability_bytes)
+    write_atomic(performance_path, performance_bytes)
+    if not readability["passed"] or not performance["passed"]:
+        raise EvidenceError("strata qualification failed; reports were written")
+    print(f"visual evidence: strata qualification passed; wrote {readability_path} and {performance_path}")
+
+
+def check_qualification_command(args: argparse.Namespace) -> None:
+    readability_path = safe_repo_path(args.readability_report, "readability qualification")
+    performance_path = safe_repo_path(args.performance_report, "performance qualification")
+    readability_bytes, readability = read_toml(readability_path)
+    performance_bytes, performance = read_toml(performance_path)
+    rebuilt_readability = build_readability_qualification()
+    rebuilt_performance = build_performance_qualification()
+    expected_readability, expected_performance = qualification_text(rebuilt_readability, rebuilt_performance)
+    if readability_bytes != expected_readability or performance_bytes != expected_performance:
+        raise EvidenceError("strata qualification reports are stale or nondeterministic")
+    if not readability.get("passed") or not performance.get("passed"):
+        raise EvidenceError("strata qualification reports record a failed gate")
+    print("visual evidence: strata qualification reports are deterministic and current")
+
+
 def self_test_command(_args: argparse.Namespace) -> None:
     color = bytes([20, 30, 40, 80, 90, 100, 120, 130, 140, 240, 230, 220])
     ppm = b"P6\n2 2\n255\n" + color
@@ -809,6 +1080,14 @@ def parser() -> argparse.ArgumentParser:
     check_comparison = commands.add_parser("check-comparison", help="reject a stale repeat comparison")
     check_comparison.add_argument("--report", required=True)
     check_comparison.set_defaults(run=check_comparison_command)
+    qualify = commands.add_parser("qualify", help="write aggregate strata acceptance reports")
+    qualify.add_argument("--readability-report", required=True)
+    qualify.add_argument("--performance-report", required=True)
+    qualify.set_defaults(run=qualify_command)
+    check_qualification = commands.add_parser("check-qualification", help="reject stale strata acceptance reports")
+    check_qualification.add_argument("--readability-report", required=True)
+    check_qualification.add_argument("--performance-report", required=True)
+    check_qualification.set_defaults(run=check_qualification_command)
     self_test = commands.add_parser("self-test", help="run a deterministic in-memory fixture")
     self_test.set_defaults(run=self_test_command)
     return result

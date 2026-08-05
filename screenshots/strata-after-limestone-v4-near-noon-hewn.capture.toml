@@ -3,7 +3,7 @@ capture_id = "strata-after-limestone-v4-near-noon-hewn"
 scene_id = "strata-production-20260802"
 
 [build]
-commit = "32e9af5c975929537c7b446a247f6137655134a5"
+commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
 dirty = false
 marker = "BIOME-R4"
 
@@ -58,13 +58,13 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 724
-eligible_frame = 322
+frame = 725
+eligible_frame = 323
 settled = true
 settled_frames = 10
-fps = 42
-simulation_ms = 9.637076
-draw_ms = 8.006392
+fps = 50
+simulation_ms = 9.406643
+draw_ms = 7.5408087
 resident_chunks = 65
 gpu_chunks = 65
 opaque_chunks = 65
@@ -3951,7 +3951,7 @@ names = ["base:forge_lit"]
 
 [artifacts]
 color_ppm = "screenshots/strata-after-limestone-v4-near-noon-hewn.ppm"
-color_ppm_sha256 = "79b63ddc295c5928c17e0fcc188f58927f40bbc6e6c20bf9bdb612964fe2a0d4"
+color_ppm_sha256 = "d75eb806c3042e1a4a4f2907676e0b74d456e54bca6791e1899ced9af8ea25dc"
 diagnostic = "screenshots/strata-after-limestone-v4-near-noon-hewn.wfd"
-diagnostic_sha256 = "fc3851c30a26b7d7a0dece9d9aaa1c30bb9ea99f73a31dde452f5a82f7c084bb"
+diagnostic_sha256 = "8bf43e105ab9f0e4a0fa68a7825bb3f39e3fb81ceea3059cfc7a82d2a3275a56"
 diagnostic_format = "wfd-rgba16uint-v1"

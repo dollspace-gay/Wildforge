@@ -50,9 +50,12 @@ view distance 4 after the world settled. Generator 8 also keeps a coherent
 24-block density mantle and 12-block cave roof beneath atlas terrain; a
 multi-face regression grid verifies at least eight contiguous solid blocks
 under sampled highland surfaces while retaining caves and deliberate
-overhangs. The captures expose a remaining art/readability issue: pale strata
-can blend into the software-rendered fog even where production-column probes
-confirm a continuous solid shell.
+overhangs. Those historical software-rendered captures exposed an
+art/readability issue: pale strata blended into fog even where
+production-column probes confirmed a continuous solid shell. The 2026-08-05
+strata pass has now resolved and native-DX12-qualified that presentation
+defect without changing biome placement, geology, terrain, or streaming; see
+`docs/strata-fog-readability-plan.md` and the version-2 visual manifest.
 
 ## Purpose
 

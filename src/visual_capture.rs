@@ -19,13 +19,21 @@ pub const WFD_HEADER_BYTES: usize = 24;
 pub const DIAGNOSTIC_SKY_ID: u16 = 0;
 pub const DIAGNOSTIC_OVERLAY_ID: u16 = u16::MAX;
 #[cfg(test)]
-const REPORT_SCHEMA_VERSION: u32 = 1;
+const REPORT_SCHEMA_VERSION: u32 = 2;
 #[cfg(test)]
 const COMPARISON_SCHEMA_VERSION: u32 = 1;
 #[cfg(test)]
 const CONVERSION_ID: &str = "python-stdlib-p6-rgb8-filter0-zlib9-v1";
 #[cfg(test)]
 const QUALIFICATION_SOURCES: &[&str] = &[
+    "base/textures/basalt.png",
+    "base/textures/granite.png",
+    "base/textures/limestone.png",
+    "base/textures/marble.png",
+    "base/textures/quartzite.png",
+    "base/textures/sandstone.png",
+    "base/textures/shale.png",
+    "base/textures/slate.png",
     "build.rs",
     "src/game/app.rs",
     "src/game/capture.rs",
@@ -37,7 +45,11 @@ const QUALIFICATION_SOURCES: &[&str] = &[
     "src/renderer/mod.rs",
     "src/renderer/setup.rs",
     "src/shader.wgsl",
+    "src/sky.rs",
+    "src/tests/rendering.rs",
     "src/visual_capture.rs",
+    "tools/audit_tiles.py",
+    "tools/gen_base_tiles.py",
     "tools/verify_visual_polish.py",
 ];
 
@@ -310,13 +322,20 @@ struct VisualManifest {
     schema_version: u32,
     status: String,
     evidence_commit: String,
+    baseline_commit: String,
+    after_commit: String,
     scene_id: String,
     qualification_source_sha256: String,
     conversion: String,
     conversion_tool: String,
     conversion_tool_sha256: String,
     comparison: String,
+    readability_report: String,
+    performance_report: String,
     capture: Vec<ManifestCapture>,
+    site: Vec<ManifestSite>,
+    case: Vec<ManifestCase>,
+    performance: Vec<ManifestPerformance>,
 }
 
 #[cfg(test)]
@@ -324,6 +343,44 @@ struct VisualManifest {
 #[serde(deny_unknown_fields)]
 struct ManifestCapture {
     id: String,
+    sidecar: String,
+    report: String,
+}
+
+#[cfg(test)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManifestSite {
+    rock: String,
+    face: String,
+    u: i32,
+    y: i32,
+    v: i32,
+    exposure: String,
+}
+
+#[cfg(test)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManifestCase {
+    id: String,
+    phase: String,
+    rock: String,
+    role: String,
+    light: String,
+    weather: String,
+    pack: String,
+    view_distance_chunks: i32,
+    sidecar: String,
+    report: String,
+}
+
+#[cfg(test)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManifestPerformance {
+    id: String,
+    phase: String,
     sidecar: String,
     report: String,
 }
@@ -363,6 +420,8 @@ struct VisualReport {
     luminance_stddev: f64,
     local_contrast_rms: f64,
     family: Vec<ReportFamily>,
+    #[serde(default)]
+    stratum: Vec<ReportStratum>,
 }
 
 #[cfg(test)]
@@ -375,6 +434,46 @@ struct ReportFamily {
     pixels: u64,
     pixel_fraction: f64,
     mean_normalized_depth: f64,
+}
+
+#[cfg(test)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReportStratum {
+    rock: String,
+    distance_band: String,
+    pixels: u64,
+    coverage: f64,
+    connected_components: u64,
+    one_pixel_fringe: u64,
+    one_pixel_fringe_fraction: f64,
+    median_luminance: f64,
+    p10_luminance: f64,
+    p90_luminance: f64,
+    luminance_span: f64,
+    rms_contrast_1px: f64,
+    rms_contrast_4px: f64,
+    rms_contrast_16px: f64,
+    contrast_pairs_1px: u64,
+    contrast_pairs_4px: u64,
+    contrast_pairs_16px: u64,
+    adjacent_sky_pairs: u64,
+    silhouette_weber: f64,
+    silhouette_weber_magnitude: f64,
+    median_chroma: f64,
+    greyscale_structure_score: f64,
+    expected_fog_blend: f64,
+    display_black_fraction: f64,
+}
+
+#[cfg(test)]
+#[derive(Debug, Deserialize)]
+struct QualificationReport {
+    qualification_schema_version: u32,
+    kind: String,
+    baseline_commit: String,
+    after_commit: String,
+    passed: bool,
 }
 
 #[cfg(test)]
@@ -463,13 +562,137 @@ pub(crate) fn qualification_source_sha256(root: &Path) -> Result<String, String>
 }
 
 #[cfg(test)]
+fn validate_strata_metrics(report: &VisualReport, label: &str) -> Result<(), String> {
+    const ROCKS: &[&str] = &[
+        "sandstone",
+        "limestone",
+        "shale",
+        "granite",
+        "marble",
+        "slate",
+        "quartzite",
+        "basalt",
+    ];
+    const BANDS: &[&str] = &["near", "middle", "pre-fog", "fog"];
+    let mut keys = BTreeSet::new();
+    for row in &report.stratum {
+        let finite_nonnegative = [
+            row.median_luminance,
+            row.p10_luminance,
+            row.p90_luminance,
+            row.luminance_span,
+            row.rms_contrast_1px,
+            row.rms_contrast_4px,
+            row.rms_contrast_16px,
+            row.silhouette_weber_magnitude,
+            row.median_chroma,
+            row.greyscale_structure_score,
+        ]
+        .into_iter()
+        .all(|value| value.is_finite() && value >= 0.0);
+        if !ROCKS.contains(&row.rock.as_str())
+            || !BANDS.contains(&row.distance_band.as_str())
+            || !keys.insert((&row.rock, &row.distance_band))
+            || row.pixels == 0
+            || row.connected_components == 0
+            || row.one_pixel_fringe > row.pixels
+            || row.contrast_pairs_1px == 0
+            || row.adjacent_sky_pairs > row.pixels.saturating_mul(4)
+            || !finite_fraction(row.coverage)
+            || !finite_fraction(row.one_pixel_fringe_fraction)
+            || !finite_fraction(row.expected_fog_blend)
+            || !finite_fraction(row.display_black_fraction)
+            || !row.silhouette_weber.is_finite()
+            || row.contrast_pairs_4px > row.contrast_pairs_1px.saturating_mul(2)
+            || row.contrast_pairs_16px > row.contrast_pairs_1px.saturating_mul(2)
+            || !finite_nonnegative
+        {
+            return Err(format!("{label} has invalid per-stratum metrics"));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_declared_evidence(
+    root: &Path,
+    declaration_id: &str,
+    sidecar_value: &str,
+    report_value: &str,
+    expected_scene: &str,
+    expected_commit: &str,
+) -> Result<(CaptureMetadata, VisualReport), String> {
+    let sidecar_relative = safe_relative(sidecar_value, "toml")?;
+    let report_relative = safe_relative(report_value, "toml")?;
+    if !sidecar_value.starts_with("screenshots/")
+        || !sidecar_value.ends_with(".capture.toml")
+        || !report_value.starts_with("screenshots/visual-polish/")
+        || !report_value.ends_with(".report.toml")
+    {
+        return Err(format!(
+            "{declaration_id} uses the wrong evidence path role"
+        ));
+    }
+    let (sidecar_bytes, sidecar): (Vec<u8>, CaptureSidecar) =
+        read_toml(&root.join(sidecar_relative), "capture sidecar")?;
+    let (_report_bytes, report): (Vec<u8>, VisualReport) =
+        read_toml(&root.join(report_relative), "visual report")?;
+    let metadata = &sidecar.metadata;
+    if metadata.schema_version != CAPTURE_SCHEMA_VERSION
+        || metadata.capture_id != declaration_id
+        || metadata.scene_id != expected_scene
+        || metadata.build.commit != expected_commit
+        || metadata.build.dirty
+        || metadata.world.seed != 20_260_802
+        || metadata.world.generator_version != crate::world::WORLD_GENERATOR_VERSION
+        || metadata.world.atlas_format_version != crate::planet_atlas::ATLAS_FORMAT_VERSION
+        || metadata.world.atlas_algorithm_version != crate::planet_atlas::ATLAS_ALGORITHM_VERSION
+        || metadata.world.atlas_content_hash != "010c5397ca037176"
+        || metadata.world.atlas_genesis_checksum != "b053756eee79d7e7"
+        || metadata.render.width != 1280
+        || metadata.render.height != 720
+        || metadata.render.adapter != "NVIDIA GeForce RTX 3090 [Dx12, DiscreteGpu]"
+        || metadata.render.backend != "Dx12"
+        || !metadata.render.hardware
+        || !metadata.telemetry.settled
+        || metadata.telemetry.settled_frames < crate::game::SHOT_SETTLE_FRAMES
+        || metadata.family.is_empty()
+    {
+        return Err(format!(
+            "{declaration_id} has incomplete or stale native-GPU identity"
+        ));
+    }
+    if report.report_schema_version != REPORT_SCHEMA_VERSION
+        || report.capture_schema_version != CAPTURE_SCHEMA_VERSION
+        || report.capture_id != declaration_id
+        || report.scene_id != expected_scene
+        || report.sidecar != sidecar_value
+        || report.sidecar_sha256 != sha256_hex(&sidecar_bytes)
+        || report.width != metadata.render.width
+        || report.height != metadata.render.height
+        || report.color_ppm_sha256 != sidecar.artifacts.color_ppm_sha256
+        || report.diagnostic_sha256 != sidecar.artifacts.diagnostic_sha256
+        || report.material_pixels == 0
+    {
+        return Err(format!(
+            "{declaration_id} has an incomplete or stale report"
+        ));
+    }
+    validate_strata_metrics(&report, declaration_id)?;
+    Ok((sidecar.metadata, report))
+}
+
+#[cfg(test)]
 fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Result<(), String> {
     let (_manifest_bytes, manifest): (Vec<u8>, VisualManifest) =
         read_toml(manifest_path, "visual-polish manifest")?;
-    if manifest.schema_version != CAPTURE_SCHEMA_VERSION || manifest.status != "accepted" {
-        return Err("visual-polish manifest is not accepted schema 1 evidence".into());
+    if manifest.schema_version != 2 || manifest.status != "accepted" {
+        return Err("visual-polish manifest is not accepted schema 2 evidence".into());
     }
     if !valid_hex(&manifest.evidence_commit, 40)
+        || !valid_hex(&manifest.baseline_commit, 40)
+        || !valid_hex(&manifest.after_commit, 40)
+        || manifest.baseline_commit == manifest.after_commit
         || !valid_hex(&manifest.qualification_source_sha256, 64)
         || manifest.scene_id.is_empty()
     {
@@ -477,7 +700,10 @@ fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Resu
     }
     let current_source = qualification_source_sha256(root)?;
     if current_source != manifest.qualification_source_sha256 {
-        return Err("visual-polish evidence is stale relative to qualification source".into());
+        return Err(format!(
+            "visual-polish evidence is stale relative to qualification source: manifest {}, current {current_source}",
+            manifest.qualification_source_sha256
+        ));
     }
     if manifest.conversion != CONVERSION_ID
         || manifest.conversion_tool != "tools/verify_visual_polish.py"
@@ -704,6 +930,174 @@ fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Resu
     {
         return Err("repeat comparison is incomplete, stale, or outside tolerance".into());
     }
+
+    let expected_rocks: BTreeSet<&str> = [
+        "sandstone",
+        "limestone",
+        "shale",
+        "granite",
+        "marble",
+        "slate",
+        "quartzite",
+        "basalt",
+    ]
+    .into_iter()
+    .collect();
+    if manifest.site.len() != expected_rocks.len() {
+        return Err("strata manifest must record one production site per rock".into());
+    }
+    let mut site_rocks = BTreeSet::new();
+    for site in &manifest.site {
+        if !site_rocks.insert(site.rock.as_str())
+            || !matches!(site.face.as_str(), "NegZ" | "PosX" | "NegX")
+            || !(0..i32::from(crate::planet::FACE_BLOCKS)).contains(&site.u)
+            || !(0..i32::from(crate::planet::FACE_BLOCKS)).contains(&site.v)
+            || !(0..512).contains(&site.y)
+            || !matches!(site.exposure.as_str(), "outdoor" | "cave")
+        {
+            return Err("strata manifest contains an invalid production site".into());
+        }
+    }
+    if site_rocks != expected_rocks {
+        return Err("strata manifest production sites do not cover all eight rocks".into());
+    }
+
+    if manifest.case.len() != 28 {
+        return Err("strata manifest requires fourteen baseline and fourteen after cases".into());
+    }
+    let mut case_ids = BTreeSet::new();
+    let mut phases = BTreeMap::<&str, usize>::new();
+    let mut rocks = BTreeSet::new();
+    let mut roles = BTreeSet::new();
+    let mut lights = BTreeSet::new();
+    let mut weather = BTreeSet::new();
+    let mut packs = BTreeSet::new();
+    let mut views = BTreeSet::new();
+    for case in &manifest.case {
+        if !case_ids.insert(case.id.as_str())
+            || !matches!(case.phase.as_str(), "baseline" | "after")
+            || !matches!(case.role.as_str(), "near" | "pre-fog" | "supplement")
+        {
+            return Err("strata manifest contains a duplicate or invalid case".into());
+        }
+        let expected_commit = if case.phase == "baseline" {
+            &manifest.baseline_commit
+        } else {
+            &manifest.after_commit
+        };
+        let (metadata, report) = validate_declared_evidence(
+            root,
+            &case.id,
+            &case.sidecar,
+            &case.report,
+            "strata-production-20260802",
+            expected_commit,
+        )?;
+        let expected_pack = if case.pack == "base" { "" } else { &case.pack };
+        if metadata.world.name != "visual-polish-strata-baseline"
+            || metadata.environment.weather != case.weather
+            || metadata.render.pack != expected_pack
+            || metadata.render.view_distance_chunks != case.view_distance_chunks
+            || !report.stratum.iter().any(|row| row.rock == case.rock)
+        {
+            return Err(format!(
+                "{} does not match its declared matrix axes",
+                case.id
+            ));
+        }
+        *phases.entry(&case.phase).or_default() += 1;
+        rocks.insert(case.rock.as_str());
+        roles.insert(case.role.as_str());
+        lights.insert(case.light.as_str());
+        weather.insert(case.weather.as_str());
+        packs.insert(case.pack.as_str());
+        views.insert(case.view_distance_chunks);
+    }
+    if phases.get("baseline") != Some(&14)
+        || phases.get("after") != Some(&14)
+        || !["sandstone", "limestone", "marble", "quartzite", "basalt"]
+            .into_iter()
+            .all(|value| rocks.contains(value))
+        || !["near", "pre-fog", "supplement"]
+            .into_iter()
+            .all(|value| roles.contains(value))
+        || !["noon", "dawn"]
+            .into_iter()
+            .all(|value| lights.contains(value))
+        || !["clear", "overcast", "precipitation"]
+            .into_iter()
+            .all(|value| weather.contains(value))
+        || !["base", "gemini", "dusk", "hewn"]
+            .into_iter()
+            .all(|value| packs.contains(value))
+        || !views.contains(&4)
+        || !views.contains(&12)
+    {
+        return Err("strata manifest does not cover the required capture matrix".into());
+    }
+
+    if manifest.performance.len() != 10 {
+        return Err("strata performance evidence requires five matched captures per phase".into());
+    }
+    let mut performance_ids = BTreeSet::new();
+    let mut performance_phases = BTreeMap::<&str, usize>::new();
+    for declaration in &manifest.performance {
+        if !performance_ids.insert(declaration.id.as_str())
+            || !matches!(declaration.phase.as_str(), "baseline" | "after")
+        {
+            return Err("strata manifest contains duplicate performance evidence".into());
+        }
+        let expected_commit = if declaration.phase == "baseline" {
+            &manifest.baseline_commit
+        } else {
+            &manifest.after_commit
+        };
+        let (metadata, _report) = validate_declared_evidence(
+            root,
+            &declaration.id,
+            &declaration.sidecar,
+            &declaration.report,
+            "strata-performance-20260802",
+            expected_commit,
+        )?;
+        if metadata.world.name != "visual-polish-strata-perf"
+            || metadata.environment.weather != "clear"
+            || metadata.render.pack != "gemini"
+            || metadata.render.view_distance_chunks != 12
+        {
+            return Err(format!(
+                "{} is not the matched performance scene",
+                declaration.id
+            ));
+        }
+        *performance_phases.entry(&declaration.phase).or_default() += 1;
+    }
+    if performance_phases.get("baseline") != Some(&5) || performance_phases.get("after") != Some(&5)
+    {
+        return Err("strata performance phases are incomplete".into());
+    }
+
+    for (path_value, kind) in [
+        (&manifest.readability_report, "strata-readability"),
+        (&manifest.performance_report, "strata-performance"),
+    ] {
+        let path = safe_relative(path_value, "toml")?;
+        if !path_value.starts_with("screenshots/visual-polish/")
+            || !path_value.ends_with(".report.toml")
+        {
+            return Err("strata qualification report path has the wrong role".into());
+        }
+        let (_bytes, qualification): (Vec<u8>, QualificationReport) =
+            read_toml(&root.join(path), "strata qualification")?;
+        if qualification.qualification_schema_version != 1
+            || qualification.kind != kind
+            || qualification.baseline_commit != manifest.baseline_commit
+            || qualification.after_commit != manifest.after_commit
+            || !qualification.passed
+        {
+            return Err(format!("{kind} qualification is incomplete or failed"));
+        }
+    }
     Ok(())
 }
 
@@ -751,9 +1145,23 @@ mod tests {
     }
 
     #[test]
-    fn repository_visual_polish_evidence_is_complete() {
+    fn visual_polish_manifest_is_complete() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         validate_visual_polish_manifest(root).unwrap();
+    }
+
+    #[test]
+    fn strata_capture_metrics_meet_readability_budget() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        validate_visual_polish_manifest(root).unwrap();
+        for path in [
+            "screenshots/visual-polish/strata-readability.report.toml",
+            "screenshots/visual-polish/strata-performance.report.toml",
+        ] {
+            let (_bytes, report): (Vec<u8>, QualificationReport) =
+                read_toml(&root.join(path), "strata qualification").unwrap();
+            assert!(report.passed, "{path} records a failed acceptance gate");
+        }
     }
 
     #[test]

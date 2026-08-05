@@ -3,7 +3,7 @@ capture_id = "strata-after-performance-d"
 scene_id = "strata-performance-20260802"
 
 [build]
-commit = "32e9af5c975929537c7b446a247f6137655134a5"
+commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
 dirty = false
 marker = "BIOME-R4"
 
@@ -18,9 +18,9 @@ atlas_genesis_checksum = "b053756eee79d7e7"
 
 [camera]
 face = "NegZ"
-u = 5516.3
+u = 5674.5
 y = 70.05
-v = 2219.8838
+v = 2224.5
 yaw = 3.141593
 pitch = -0.006999
 fov_degrees = 75.0
@@ -31,15 +31,15 @@ time_of_day = 0.610053
 season = "autumn"
 weather = "clear"
 precipitation = "none"
-temperature_c = 26.096922
-pressure_anomaly = 526
-vapor = 1266229
+temperature_c = 26.657852
+pressure_anomaly = 743
+vapor = 1745858
 cloud_water = 0
 storm_energy = 0
 precipitation_units = 0
 wind = [
-    -0.941036,
-    0.33086997,
+    -0.93798035,
+    0.33930972,
 ]
 gloom = 0.0
 
@@ -58,19 +58,19 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 1554
-eligible_frame = 1142
+frame = 1398
+eligible_frame = 996
 settled = true
 settled_frames = 10
-fps = 59
-simulation_ms = 7.8515925
-draw_ms = 6.220099
-resident_chunks = 606
-gpu_chunks = 597
-opaque_chunks = 597
-water_chunks = 182
+fps = 61
+simulation_ms = 10.020654
+draw_ms = 7.0148563
+resident_chunks = 534
+gpu_chunks = 517
+opaque_chunks = 517
+water_chunks = 287
 empty_chunks = 0
-dirty_chunks = 11
+dirty_chunks = 17
 
 [[family]]
 diagnostic_id = 1
@@ -3951,7 +3951,7 @@ names = ["base:forge_lit"]
 
 [artifacts]
 color_ppm = "screenshots/strata-after-performance-d.ppm"
-color_ppm_sha256 = "c0f089b58d7424cb31811e104b9a9dc78640f21f96dc10b7bab323a742d79e06"
+color_ppm_sha256 = "418e0df4bf9682760c10f9d9732519884a7ae33c86084828c3523b1f576e9d7c"
 diagnostic = "screenshots/strata-after-performance-d.wfd"
-diagnostic_sha256 = "9dcbda0d1a0e8f09e018c0f9571ff3d20e9c8b34890cb9397e51e6487e6ed858"
+diagnostic_sha256 = "e74b7d9f3abe3649d9cce8d66484da885e20381dbbcc3db3a96fa96e1602d46e"
 diagnostic_format = "wfd-rgba16uint-v1"

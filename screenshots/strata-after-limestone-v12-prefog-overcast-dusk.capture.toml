@@ -3,7 +3,7 @@ capture_id = "strata-after-limestone-v12-prefog-overcast-dusk"
 scene_id = "strata-production-20260802"
 
 [build]
-commit = "32e9af5c975929537c7b446a247f6137655134a5"
+commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
 dirty = false
 marker = "BIOME-R4"
 
@@ -31,14 +31,14 @@ time_of_day = 0.5627022
 season = "spring"
 weather = "overcast"
 precipitation = "none"
-temperature_c = 28.064419
-pressure_anomaly = 1023
-vapor = 719842
-cloud_water = 359921
+temperature_c = 27.804419
+pressure_anomaly = 1149
+vapor = 705864
+cloud_water = 352932
 storm_energy = 8000
 precipitation_units = 0
 wind = [
-    -0.9494146,
+    -0.9493536,
     -0.30556503,
 ]
 gloom = 0.4
@@ -58,19 +58,19 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 1350
-eligible_frame = 948
+frame = 1392
+eligible_frame = 988
 settled = true
 settled_frames = 10
-fps = 60
-simulation_ms = 9.182443
-draw_ms = 3.5201087
+fps = 10
+simulation_ms = 17.108368
+draw_ms = 3.4578886
 resident_chunks = 528
 gpu_chunks = 511
 opaque_chunks = 511
 water_chunks = 383
 empty_chunks = 0
-dirty_chunks = 17
+dirty_chunks = 20
 
 [[family]]
 diagnostic_id = 1
@@ -3951,7 +3951,7 @@ names = ["base:forge_lit"]
 
 [artifacts]
 color_ppm = "screenshots/strata-after-limestone-v12-prefog-overcast-dusk.ppm"
-color_ppm_sha256 = "bc762d028a37efae98d9a93b0bf5a7d4941df7ae12f28257d12906c93e17dc73"
+color_ppm_sha256 = "e9e8c08c1e498dbf3d3e3940f8267bc71fc4020b22a47ebc1ae48014de62612e"
 diagnostic = "screenshots/strata-after-limestone-v12-prefog-overcast-dusk.wfd"
-diagnostic_sha256 = "84ee34fd136ed642bff248205de88a09fd43229944b316668ede4b5c8217125a"
+diagnostic_sha256 = "4d09aaae3d7ca1c91c377daabbc3f282396a4dd1f5c6432b7b030d7238208b6e"
 diagnostic_format = "wfd-rgba16uint-v1"

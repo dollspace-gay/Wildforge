@@ -3,7 +3,7 @@ capture_id = "strata-after-sandstone-v4-near-noon-hewn"
 scene_id = "strata-production-20260802"
 
 [build]
-commit = "32e9af5c975929537c7b446a247f6137655134a5"
+commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
 dirty = false
 marker = "BIOME-R4"
 
@@ -18,9 +18,9 @@ atlas_genesis_checksum = "b053756eee79d7e7"
 
 [camera]
 face = "NegZ"
-u = 5532.5
+u = 5533.6997
 y = 68.05
-v = 2224.5
+v = 2210.3003
 yaw = 3.141593
 pitch = 0.046079
 fov_degrees = 75.0
@@ -58,17 +58,17 @@ stark = true
 bloom = true
 
 [telemetry]
-frame = 582
+frame = 583
 eligible_frame = 180
 settled = true
-settled_frames = 37
-fps = 49
-simulation_ms = 8.367152
-draw_ms = 7.2522216
+settled_frames = 26
+fps = 53
+simulation_ms = 7.825913
+draw_ms = 7.6573057
 resident_chunks = 63
 gpu_chunks = 63
 opaque_chunks = 63
-water_chunks = 46
+water_chunks = 43
 empty_chunks = 0
 dirty_chunks = 0
 
@@ -3951,7 +3951,7 @@ names = ["base:forge_lit"]
 
 [artifacts]
 color_ppm = "screenshots/strata-after-sandstone-v4-near-noon-hewn.ppm"
-color_ppm_sha256 = "ef79aab4868462395d0d5c6f3ff636f7384fd8e50c238aee7f2ab6ac211178b6"
+color_ppm_sha256 = "931a43119435b61af579744af8db3b1f26fdb63858d427c9315e5ab8cbbbfb53"
 diagnostic = "screenshots/strata-after-sandstone-v4-near-noon-hewn.wfd"
-diagnostic_sha256 = "f7e4f112aace757e41a89491cfd6eaae62c70d29985ec8b2cc6de286531d300a"
+diagnostic_sha256 = "42ab193e1a536d05e8a05ab72fb56dbf53d23fd0dd5b4a32203c6e100118acaf"
 diagnostic_format = "wfd-rgba16uint-v1"

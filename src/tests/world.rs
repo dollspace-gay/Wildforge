@@ -177,7 +177,8 @@ fn experiment_apparatus_holds_repeatable_samples_through_save_and_spill() {
         .unwrap()
     });
     world.ensure_chunk(ChunkPos::from_surface(surface));
-    let pos = crate::planet::BlockPos::new(surface.face(), surface.u(), 102, surface.v()).unwrap();
+    let y = (world.surface_height_at(surface) + 1) as u8;
+    let pos = crate::planet::BlockPos::new(surface.face(), surface.u(), y, surface.v()).unwrap();
     assert!(world.place_block_at(pos, reg.block_id("base:experiment_apparatus").unwrap()));
     let mut inventory = crate::inventory::Inventory::new();
     inventory.slots[0] = Some(ItemStack::new(&reg, reg.item_id("base:dirt").unwrap(), 3));

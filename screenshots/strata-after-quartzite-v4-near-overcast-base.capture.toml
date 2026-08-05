@@ -3,7 +3,7 @@ capture_id = "strata-after-quartzite-v4-near-overcast-base"
 scene_id = "strata-production-20260802"
 
 [build]
-commit = "32e9af5c975929537c7b446a247f6137655134a5"
+commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
 dirty = false
 marker = "BIOME-R4"
 
@@ -61,16 +61,16 @@ bloom = true
 frame = 583
 eligible_frame = 180
 settled = true
-settled_frames = 16
-fps = 50
-simulation_ms = 9.892313
-draw_ms = 8.026454
+settled_frames = 14
+fps = 47
+simulation_ms = 10.040841
+draw_ms = 8.456448
 resident_chunks = 65
 gpu_chunks = 65
 opaque_chunks = 65
 water_chunks = 38
 empty_chunks = 0
-dirty_chunks = 5
+dirty_chunks = 3
 
 [[family]]
 diagnostic_id = 1
@@ -3951,7 +3951,7 @@ names = ["base:forge_lit"]
 
 [artifacts]
 color_ppm = "screenshots/strata-after-quartzite-v4-near-overcast-base.ppm"
-color_ppm_sha256 = "578cd21738a58d12bccfca61e9f4711eba6e9eeb6a4f6cf8a469874e96c4aaae"
+color_ppm_sha256 = "d66c0e62848d31cd91ed3c3fe4a9883946e676c7914e80ea0426b20b6a33c1cf"
 diagnostic = "screenshots/strata-after-quartzite-v4-near-overcast-base.wfd"
 diagnostic_sha256 = "bbfd6202eead06b48ac4bb2e6b20d8485cba7dfaac3331b89c1570c14e0755f8"
 diagnostic_format = "wfd-rgba16uint-v1"
