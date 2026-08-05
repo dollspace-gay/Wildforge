@@ -13,23 +13,28 @@ use crate::registry::{self, AIR, Registry};
 use crate::world::World;
 
 mod agent;
+mod alchemy;
 mod atlas;
 mod climate;
+mod dross;
 mod ecology;
 mod geology;
 mod hearts;
 mod hydrology;
 mod identity;
+mod implements;
 mod machines;
 mod mobs;
 mod multiblock;
 mod multiplayer;
 mod player;
+mod qualification;
 #[path = "registry.rs"]
 mod registry_tests;
 mod rendering;
 mod soil;
 mod water_cycle;
+mod workings;
 mod world;
 mod worldgen;
 

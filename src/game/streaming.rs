@@ -161,19 +161,29 @@ impl Game {
                 }
             }
         }
-        let mesh_in_flight = self
-            .mesh_pool
-            .as_ref()
-            .map_or(0, |pool| pool.in_flight.len());
+        // A capture needs every requested chunk to have reached the GPU once.
+        // Live water, weather, ecology, and footsteps can immediately dirty an
+        // already-visible chunk again; waiting for that churn to reach a
+        // simultaneous zero made otherwise-ready captures hit the 3,000-frame
+        // timeout on healthy worlds.
+        let initial_mesh_in_flight = self.mesh_pool.as_ref().map_or(0, |pool| {
+            pool.in_flight
+                .iter()
+                .filter(|position| !self.renderer.has_chunk(**position))
+                .count()
+        });
         pending
             + self
                 .server
                 .world
                 .dirty_chunks()
                 .into_iter()
-                .filter(|position| self.chunk_mesh_ready(*position, center, vd))
+                .filter(|position| {
+                    self.chunk_mesh_ready(*position, center, vd)
+                        && !self.renderer.has_chunk(*position)
+                })
                 .count()
-            + mesh_in_flight
+            + initial_mesh_in_flight
     }
 
     pub(super) fn stream_chunks(&mut self) {

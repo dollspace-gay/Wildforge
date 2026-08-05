@@ -405,17 +405,30 @@ impl World {
         );
     }
 
-    pub(super) fn move_water_units(&mut self, from: BlockPos, to: BlockPos, units: u8) -> bool {
-        let Some(mut source) = self.water_mass_at(from) else {
+    pub(crate) fn move_water_units(&mut self, from: BlockPos, to: BlockPos, units: u8) -> bool {
+        let Some(source_before) = self.water_mass_at(from) else {
             return false;
         };
-        let destination = self.water_mass_at(to).unwrap_or_default();
+        let destination_before = self.water_mass_at(to).unwrap_or_default();
+        let mut source = source_before;
         let parcel =
             source.take(u64::from(units) * crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL);
-        let Some(combined) = destination.checked_add(parcel) else {
+        let Some(combined) = destination_before.checked_add(parcel) else {
             return false;
         };
         if combined.water_hu > crate::planet_atlas::HYDRO_UNITS_PER_BLOCK {
+            return false;
+        }
+        if self
+            .move_tracked_water_carrier(
+                from,
+                to,
+                source_before,
+                destination_before,
+                parcel.water_hu,
+            )
+            .is_err()
+        {
             return false;
         }
         self.write_water_mass_at(to, combined);

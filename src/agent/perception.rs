@@ -82,6 +82,31 @@ impl Agent {
                 .map_or_else(|| "bedrock".into(), |at| self.block_name_at(at)),
             self.block_name_at(feet),
         ));
+        let local_arcane = self.world.planet_atlas().and_then(|atlas| {
+            self.world
+                .arcane_survey_at(atlas.atlas_pos(feet.surface()), false)
+        });
+        if let Some(survey) = local_arcane {
+            let cue = survey.sensory_cue();
+            out.push_str(&format!(
+                "arcane signs: {}; wild ire {:.0}/100\n",
+                cue.trim_end_matches('.'),
+                self.world.ire
+            ));
+        } else {
+            let cue = crate::arcane_geography::coarse_sensory_cue(
+                self.world.remote_arcane_cue(),
+                self.world.remote_arcane_dominant(),
+            );
+            out.push_str(&format!(
+                "arcane signs: {}; wild ire {:.0}/100\n",
+                cue.trim_end_matches('.'),
+                self.world.ire
+            ));
+        }
+        if let Some(observation) = self.world.perceived_arcane_ecology_at(feet.surface()) {
+            out.push_str(&format!("ecology: {}\n", observation.text));
+        }
         // Minimap: 2-block cells, north up. Legend in the footer.
         out.push_str("map (21x21, 2 blocks/cell, north up):\n");
         for row in -10i32..=10 {
@@ -142,6 +167,36 @@ impl Agent {
         }
         for (species, (n, d)) in counts {
             out.push_str(&format!("{n}x {species} nearby (closest {d:.0})\n"));
+        }
+        for item in self
+            .world
+            .loose_items()
+            .iter()
+            .filter(|item| item.pos.distance_to(p) < 32.0)
+        {
+            let delta = p.local_delta_to(item.pos);
+            out.push_str(&format!(
+                "dropped {}x {} (entity id {}) {:.0} blocks {}\n",
+                item.count,
+                self.reg.item(item.item).name,
+                item.stable_id,
+                item.pos.distance_to(p),
+                octant(delta.x as i32, delta.z as i32),
+            ));
+        }
+        for projectile in self
+            .world
+            .projectiles()
+            .iter()
+            .filter(|projectile| projectile.pos.distance_to(p) < 32.0)
+        {
+            let delta = p.local_delta_to(projectile.pos);
+            out.push_str(&format!(
+                "projectile (entity id {}) {:.0} blocks {}\n",
+                projectile.stable_id,
+                projectile.pos.distance_to(p),
+                octant(delta.x as i32, delta.z as i32),
+            ));
         }
         out
     }
@@ -284,8 +339,24 @@ impl Agent {
                 } else {
                     String::new()
                 };
+                let charge = self
+                    .world
+                    .inspectable_item_current(s.arcane_id)
+                    .map_or_else(String::new, |units| {
+                        let capacity = d
+                            .arcane
+                            .as_ref()
+                            .map_or(units.max(1), |arcane| arcane.capacity);
+                        format!(
+                            " [Current {}]",
+                            crate::arcane::qualitative_current(units, capacity)
+                        )
+                    });
                 let bar = if i < HOTBAR_SLOTS { " [hotbar]" } else { "" };
-                out.push_str(&format!("slot {i}: {}x {}{wear}{bar}\n", s.count, d.name));
+                out.push_str(&format!(
+                    "slot {i}: {}x {}{wear}{charge}{bar}\n",
+                    s.count, d.name
+                ));
             }
         }
         if out.is_empty() {

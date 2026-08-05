@@ -7,6 +7,7 @@ name = "Grass"
 texture = { top = "@grass_top", side = "@grass_side", bottom = "@dirt" }
 hardness = 0.75
 tool = "shovel"
+observation = { categories = ["sample", "biological_response"], properties = ["biological_response", "dross_response", "condition"] }
 drops = "base:dirt"
 burns = 6
 
@@ -89,6 +90,7 @@ name = "Water"
 texture = "@water"
 water = 0
 item = false
+observation = { categories = ["sample", "region"], properties = ["strength", "drift", "dross", "condition"] }
 
 [[block]]
 id = "crafting_table"
@@ -937,7 +939,9 @@ texture = "quartz_block.png"
 hardness = 2.4
 tool = "pickaxe"
 drops = "base:quartz_shard"
-drop_count = 2
+drop_count = 1
+arcane = { capacity = 768, conductivity = 900, stability = 850, resonance = { echo = 3, stone = 1 }, on_destroy = "ambient" }
+observation = { categories = ["mineral"], properties = ["strength", "stability", "resonance", "conductivity", "capacity"] }
 
 [[block]]
 id = "amethyst_block"
@@ -946,7 +950,9 @@ texture = "amethyst_block.png"
 hardness = 2.4
 tool = "pickaxe"
 drops = "base:amethyst_shard"
-drop_count = 2
+drop_count = 1
+arcane = { capacity = 1536, conductivity = 850, stability = 900, resonance = { echo = 4, root = 1 }, on_destroy = "ambient" }
+observation = { categories = ["mineral"], properties = ["strength", "stability", "resonance", "conductivity", "capacity"] }
 
 # ---- minerals & geology: the ore roster ----
 
@@ -967,6 +973,8 @@ hardness = 5.0
 tool = "pickaxe"
 requires_tool = true
 drops = "base:quartz_shard"
+arcane = { capacity = 192, conductivity = 700, stability = 950, resonance = { stone = 3, echo = 1 }, on_destroy = "ambient" }
+observation = { categories = ["mineral"], properties = ["strength", "stability", "resonance", "conductivity", "capacity"] }
 
 [[block]]
 id = "gold_quartz"
@@ -1629,6 +1637,8 @@ opaque = false
 light = 6
 light_color = [0.45, 1.0, 0.78]
 drops = "self"
+arcane = { capacity = 192, conductivity = 500, stability = 350, resonance = { root = 2, echo = 1 }, on_destroy = "ambient" }
+observation = { categories = ["organism"], properties = ["strength", "stability", "resonance", "biological_response", "dross_response"] }
 
 [[block]]
 id = "charred_soil"
@@ -1658,7 +1668,283 @@ texture = "ember_poppy.png"
 hardness = 0.05
 solid = false
 opaque = false
-drops = "self"
+drops = "base:ember_petal"
+burns = 6
+arcane = { capacity = 144, conductivity = 820, stability = 260, resonance = { ember = 5, root = 1 }, on_destroy = "dross" }
+observation = { categories = ["organism"], properties = ["strength", "stability", "resonance", "biological_response", "dross_response"] }
+arcane_ecology = { roles = ["transformer", "catalyst", "indicator"], habitat = ["fire_disturbed", "fertile"], charge_capacity = 120, uptake_per_day = 4, release_per_day = 1, source = "ambient", resonance = { ember = 5, root = 1 }, dross_tolerance = 38, water_per_day_hu = 8, nutrient_per_day = 3, reproduction = "seed", seasons = [true, true, true, false], carrying_capacity = 18, harvest = "seed_preserving", regrowth_days = 9, min_stability = 80, max_stability = 760, min_richness = 120 }
+
+# ---- living Current: climate-correct confluence ecologies ----
+
+[[block]]
+id = "rainbell"
+name = "Rainbell"
+cross = true
+texture = "cattail.png"
+hardness = 0.08
+solid = false
+opaque = false
+drops = "base:rainbell_dew"
+arcane = { capacity = 128, conductivity = 610, stability = 520, resonance = { tide = 4, root = 1 }, on_destroy = "ambient" }
+observation = { categories = ["organism"], properties = ["strength", "stability", "resonance", "biological_response", "dross_response"] }
+arcane_ecology = { roles = ["gatherer", "indicator"], habitat = ["wetland", "freshwater_margin"], charge_capacity = 96, uptake_per_day = 3, release_per_day = 1, source = "ambient", resonance = { tide = 4, root = 1 }, dross_tolerance = 14, water_per_day_hu = 24, nutrient_per_day = 2, reproduction = "seed", seasons = [true, true, true, false], carrying_capacity = 28, harvest = "fruit", regrowth_days = 6, min_stability = 220, max_stability = 1000, min_richness = 110 }
+
+[[block]]
+id = "hushwood"
+name = "Hushwood"
+texture = { top = "@spruce_log_top", side = "heart_tree.png" }
+hardness = 2.8
+tool = "axe"
+drops = "base:hushwood_switch"
+burns = 2
+arcane = { capacity = 384, conductivity = 260, stability = 920, resonance = { root = 4, echo = 2, stone = 1 }, on_destroy = "ambient" }
+observation = { categories = ["organism"], properties = ["strength", "stability", "resonance", "biological_response", "dross_response"] }
+arcane_ecology = { roles = ["stabilizer", "reservoir"], habitat = ["old_forest", "cool_or_temperate"], charge_capacity = 320, uptake_per_day = 2, release_per_day = 1, source = "ambient", resonance = { root = 4, echo = 2, stone = 1 }, dross_tolerance = 18, water_per_day_hu = 20, nutrient_per_day = 4, reproduction = "seed", seasons = [true, true, true, false], carrying_capacity = 9, harvest = "coppice", regrowth_days = 24, min_stability = 360, max_stability = 1000, min_richness = 180 }
+
+[[block]]
+id = "stormvine"
+name = "Stormvine"
+cross = true
+texture = "heart_tree_top.png"
+hardness = 0.12
+solid = false
+opaque = false
+drops = "base:stormvine_tendril"
+burns = 5
+arcane = { capacity = 448, conductivity = 930, stability = 220, resonance = { gale = 5, tide = 2, ember = 1 }, on_destroy = "dross" }
+observation = { categories = ["organism"], properties = ["strength", "stability", "resonance", "biological_response", "dross_response"] }
+arcane_ecology = { roles = ["reservoir", "catalyst", "indicator"], habitat = ["warm_wet", "storm_exposed"], charge_capacity = 400, uptake_per_day = 7, release_per_day = 1, source = "ambient", resonance = { gale = 5, tide = 2, ember = 1 }, dross_tolerance = 20, water_per_day_hu = 26, nutrient_per_day = 4, reproduction = "runner", seasons = [true, true, true, false], carrying_capacity = 14, harvest = "prune", regrowth_days = 12, min_stability = 80, max_stability = 720, min_richness = 240 }
+
+[[block]]
+id = "cairnbloom"
+name = "Cairnbloom"
+cross = true
+texture = "meadow_bloom.png"
+hardness = 0.06
+solid = false
+opaque = false
+drops = "base:cairnbloom_flower"
+arcane = { capacity = 96, conductivity = 760, stability = 560, resonance = { gale = 3, stone = 3 }, on_destroy = "ambient" }
+observation = { categories = ["organism"], properties = ["strength", "stability", "resonance", "biological_response", "dross_response"] }
+arcane_ecology = { roles = ["indicator", "conductor"], habitat = ["exposed", "rocky_soil"], charge_capacity = 72, uptake_per_day = 2, release_per_day = 1, source = "ambient", resonance = { gale = 3, stone = 3 }, dross_tolerance = 22, water_per_day_hu = 7, nutrient_per_day = 1, reproduction = "seed", seasons = [true, true, true, false], carrying_capacity = 24, harvest = "seed_preserving", regrowth_days = 7, min_stability = 140, max_stability = 1000, min_richness = 90 }
+
+[[block]]
+id = "ashlace"
+name = "Ashlace"
+cross = true
+texture = "lantern_fungus.png"
+hardness = 0.08
+solid = false
+opaque = false
+drops = "base:ashlace_tissue"
+arcane = { capacity = 224, conductivity = 410, stability = 700, resonance = { echo = 3, stone = 2, root = 1 }, on_destroy = "dross" }
+observation = { categories = ["organism"], properties = ["strength", "stability", "resonance", "biological_response", "dross_response"] }
+arcane_ecology = { roles = ["transformer", "stabilizer", "indicator"], habitat = ["cave", "dross_margin"], charge_capacity = 176, uptake_per_day = 4, release_per_day = 0, source = "dross", resonance = { echo = 3, stone = 2, root = 1 }, dross_tolerance = 180, water_per_day_hu = 4, nutrient_per_day = 2, reproduction = "spore", seasons = [true, true, true, true], carrying_capacity = 20, harvest = "spore", regrowth_days = 14, min_stability = 0, max_stability = 1000, min_richness = 70 }
+
+[[block]]
+id = "pilgrim_root"
+name = "Pilgrim Root"
+cross = true
+texture = "leaf_litter.png"
+hardness = 0.1
+solid = false
+opaque = false
+drops = "base:pilgrim_root_cutting"
+arcane = { capacity = 192, conductivity = 940, stability = 540, resonance = { root = 5, echo = 1 }, on_destroy = "ambient" }
+observation = { categories = ["organism"], properties = ["strength", "stability", "resonance", "biological_response", "dross_response"] }
+arcane_ecology = { roles = ["indicator", "conductor"], habitat = ["heartshadow", "temperate_ground"], charge_capacity = 144, uptake_per_day = 3, release_per_day = 1, source = "heart", resonance = { root = 5, echo = 1 }, dross_tolerance = 16, water_per_day_hu = 12, nutrient_per_day = 2, reproduction = "runner", seasons = [true, true, true, false], carrying_capacity = 22, harvest = "prune", regrowth_days = 10, min_stability = 180, max_stability = 1000, min_richness = 120 }
+
+[[block]]
+id = "lantern_reed"
+name = "Lantern Reed"
+cross = true
+texture = "cattail.png"
+hardness = 0.08
+solid = false
+opaque = false
+drops = "base:lantern_reed_pith"
+light = 4
+light_color = [0.58, 0.92, 0.72]
+arcane = { capacity = 288, conductivity = 520, stability = 620, resonance = { tide = 3, echo = 2, root = 1 }, on_destroy = "ambient" }
+observation = { categories = ["organism"], properties = ["strength", "stability", "resonance", "biological_response", "dross_response"] }
+arcane_ecology = { roles = ["reservoir", "indicator"], habitat = ["freshwater_margin", "swamp"], charge_capacity = 240, uptake_per_day = 4, release_per_day = 2, source = "ambient", resonance = { tide = 3, echo = 2, root = 1 }, dross_tolerance = 18, water_per_day_hu = 28, nutrient_per_day = 3, reproduction = "runner", seasons = [true, true, true, false], carrying_capacity = 26, harvest = "prune", regrowth_days = 8, min_stability = 240, max_stability = 1000, min_richness = 150 }
+
+[[block]]
+id = "lantern_reed_dim"
+name = "Dim Lantern Reed"
+cross = true
+texture = "cattail.png"
+hardness = 0.08
+solid = false
+opaque = false
+drops = "base:lantern_reed_pith"
+item = false
+
+[[block]]
+id = "nightglass"
+name = "Nightglass"
+cross = true
+texture = "arctic_seed.png"
+hardness = 0.12
+solid = false
+opaque = false
+drops = "base:nightglass_pod"
+arcane = { capacity = 256, conductivity = 430, stability = 780, resonance = { stone = 3, tide = 2, echo = 1 }, on_destroy = "ambient" }
+observation = { categories = ["organism"], properties = ["strength", "stability", "resonance", "biological_response", "dross_response"] }
+arcane_ecology = { roles = ["reservoir", "indicator"], habitat = ["arid_spring", "cool_night"], charge_capacity = 208, uptake_per_day = 3, release_per_day = 1, source = "ambient", resonance = { stone = 3, tide = 2, echo = 1 }, dross_tolerance = 28, water_per_day_hu = 6, nutrient_per_day = 2, reproduction = "seed", seasons = [true, true, true, true], carrying_capacity = 14, harvest = "fruit", regrowth_days = 16, min_stability = 320, max_stability = 1000, min_richness = 170 }
+
+[[block]]
+id = "frostlace"
+name = "Frostlace"
+cross = true
+texture = "tundra_seed.png"
+hardness = 0.1
+solid = false
+opaque = false
+drops = "base:frostlace_frond"
+arcane = { capacity = 320, conductivity = 240, stability = 950, resonance = { stone = 4, gale = 2 }, on_destroy = "ambient" }
+observation = { categories = ["organism"], properties = ["strength", "stability", "resonance", "biological_response", "dross_response"] }
+arcane_ecology = { roles = ["stabilizer", "reservoir", "indicator"], habitat = ["permanent_cold", "rocky_soil"], charge_capacity = 280, uptake_per_day = 2, release_per_day = 0, source = "ambient", resonance = { stone = 4, gale = 2 }, dross_tolerance = 24, water_per_day_hu = 5, nutrient_per_day = 1, reproduction = "runner", seasons = [false, true, true, true], carrying_capacity = 24, harvest = "prune", regrowth_days = 18, min_stability = 400, max_stability = 1000, min_richness = 130 }
+
+[[block]]
+id = "tidekelp"
+name = "Tidekelp"
+cross = true
+texture = "kelp.png"
+hardness = 0.08
+solid = false
+opaque = false
+floats = true
+drops = "base:tidekelp_blade"
+arcane = { capacity = 176, conductivity = 980, stability = 460, resonance = { tide = 5, gale = 1 }, on_destroy = "ambient" }
+observation = { categories = ["organism"], properties = ["strength", "stability", "resonance", "biological_response", "dross_response"] }
+arcane_ecology = { roles = ["gatherer", "conductor", "indicator"], habitat = ["marine", "nutrient_rich"], charge_capacity = 128, uptake_per_day = 5, release_per_day = 1, source = "ambient", resonance = { tide = 5, gale = 1 }, dross_tolerance = 20, water_per_day_hu = 32, nutrient_per_day = 3, reproduction = "spore", seasons = [true, true, true, true], carrying_capacity = 36, harvest = "prune", regrowth_days = 7, min_stability = 120, max_stability = 1000, min_richness = 120 }
+
+[[block]]
+id = "echo_cap"
+name = "Echo Cap"
+cross = true
+texture = "@mushroom"
+hardness = 0.06
+solid = false
+opaque = false
+drops = "base:echo_cap_ring"
+arcane = { capacity = 240, conductivity = 570, stability = 680, resonance = { echo = 5, root = 1 }, on_destroy = "ambient" }
+observation = { categories = ["organism"], properties = ["strength", "stability", "resonance", "biological_response", "dross_response"] }
+arcane_ecology = { roles = ["indicator", "reservoir"], habitat = ["moist_cave", "old_organic"], charge_capacity = 192, uptake_per_day = 3, release_per_day = 1, source = "ambient", resonance = { echo = 5, root = 1 }, dross_tolerance = 42, water_per_day_hu = 4, nutrient_per_day = 3, reproduction = "spore", seasons = [true, true, true, true], carrying_capacity = 18, harvest = "spore", regrowth_days = 12, min_stability = 180, max_stability = 1000, min_richness = 100 }
+
+[[block]]
+id = "wellglass_bud"
+name = "Wellglass Bud"
+texture = "amethyst_block.png"
+hardness = 7.5
+tool = "pickaxe"
+requires_tool = true
+min_tier = 3
+drops = "base:wellglass_shard"
+material_class = "exceptional"
+arcane = { capacity = 384, conductivity = 740, stability = 840, resonance = { stone = 3, tide = 1, echo = 1 }, on_destroy = "dross" }
+observation = { categories = ["mineral"], properties = ["strength", "stability", "resonance", "conductivity", "capacity"] }
+arcane_ecology = { roles = ["reservoir", "indicator", "stabilizer"], kind = "crystal", habitat = ["subsurface", "host_rock"], charge_capacity = 320, uptake_per_day = 8, release_per_day = 0, source = "ambient", resonance = { stone = 3, tide = 1, echo = 1 }, dross_tolerance = 24, water_per_day_hu = 2, nutrient_per_day = 0, reproduction = "bud", seasons = [true, true, true, true], carrying_capacity = 6, harvest = "seed_preserving", regrowth_days = 20, min_stability = 420, max_stability = 920, min_richness = 280, crystal_stages = 4, preserving_tool_tier = 3 }
+
+# Finite resonant geology remains ordinary finite mass even when charged.
+[[block]]
+id = "choirstone"
+name = "Choirstone"
+texture = "quartzite.png"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 3
+material_class = "geologically_finite"
+materials = { choirstone = 1200 }
+arcane = { capacity = 72, conductivity = 980, stability = 520, resonance = { stone = 3, echo = 2, gale = 1 }, on_destroy = "ambient" }
+observation = { categories = ["mineral"], properties = ["strength", "stability", "resonance", "conductivity", "capacity"] }
+arcane_ecology = { roles = ["conductor", "indicator"], kind = "finite_mineral", habitat = ["metamorphic_host"], charge_capacity = 64, uptake_per_day = 0, release_per_day = 0, source = "ambient", resonance = { stone = 3, echo = 2, gale = 1 }, dross_tolerance = 12, water_per_day_hu = 0, nutrient_per_day = 0, reproduction = "none", seasons = [true, true, true, true], carrying_capacity = 1, harvest = "destructive", regrowth_days = 0, min_stability = 0, max_stability = 1000, min_richness = 0 }
+item = false
+
+[[block]]
+id = "still_salt"
+name = "Still Salt"
+texture = "halite.png"
+hardness = 3.5
+tool = "pickaxe"
+requires_tool = true
+min_tier = 2
+material_class = "geologically_finite"
+materials = { still_salt = 1200 }
+arcane = { capacity = 96, conductivity = 110, stability = 980, resonance = { stone = 4, tide = 1 }, on_destroy = "dross" }
+observation = { categories = ["mineral"], properties = ["strength", "stability", "resonance", "conductivity", "capacity"] }
+arcane_ecology = { roles = ["stabilizer", "transformer"], kind = "finite_mineral", habitat = ["evaporite_host"], charge_capacity = 80, uptake_per_day = 0, release_per_day = 0, source = "ambient", resonance = { stone = 4, tide = 1 }, dross_tolerance = 96, water_per_day_hu = 0, nutrient_per_day = 0, reproduction = "none", seasons = [true, true, true, true], carrying_capacity = 1, harvest = "destructive", regrowth_days = 0, min_stability = 0, max_stability = 1000, min_richness = 0 }
+item = false
+
+[[block]]
+id = "wake_iron"
+name = "Wake Iron"
+texture = "@iron_ore"
+hardness = 7.5
+tool = "pickaxe"
+requires_tool = true
+min_tier = 3
+material_class = "geologically_finite"
+materials = { wake_iron = 1200 }
+arcane = { capacity = 128, conductivity = 1000, stability = 180, resonance = { ember = 3, gale = 3, stone = 1 }, on_destroy = "dross" }
+observation = { categories = ["mineral"], properties = ["strength", "stability", "resonance", "conductivity", "capacity"] }
+arcane_ecology = { roles = ["reservoir", "catalyst"], kind = "finite_mineral", habitat = ["mafic_host"], charge_capacity = 112, uptake_per_day = 0, release_per_day = 0, source = "ambient", resonance = { ember = 3, gale = 3, stone = 1 }, dross_tolerance = 14, water_per_day_hu = 0, nutrient_per_day = 0, reproduction = "none", seasons = [true, true, true, true], carrying_capacity = 1, harvest = "destructive", regrowth_days = 0, min_stability = 0, max_stability = 1000, min_richness = 0 }
+item = false
+
+# ---- embodied alchemy laboratory ----
+
+[[block]]
+id = "alchemy_mortar"
+name = "Mortar and Grinding Slab"
+texture = "millstone.png"
+hardness = 2.5
+tool = "pickaxe"
+interaction = "alchemy_mortar"
+observation = { categories = ["apparatus"], properties = ["condition", "stability", "dross"] }
+
+[[block]]
+id = "infusion_basin"
+name = "Infusion Basin"
+texture = "polished_glass.png"
+hardness = 2.0
+tool = "pickaxe"
+interaction = "alchemy_basin"
+observation = { categories = ["apparatus", "sample"], properties = ["condition", "strength", "stability", "resonance", "dross"] }
+
+[[block]]
+id = "alembic"
+name = "Alembic"
+texture = "boiler.png"
+hardness = 3.0
+tool = "pickaxe"
+interaction = "alchemy_alembic"
+observation = { categories = ["apparatus", "sample"], properties = ["condition", "strength", "stability", "resonance", "dross"] }
+
+[[block]]
+id = "filter_stand"
+name = "Filter Stand"
+texture = "crystal_glass.png"
+hardness = 2.0
+tool = "axe"
+interaction = "alchemy_filter"
+observation = { categories = ["apparatus", "sample"], properties = ["condition", "strength", "stability", "dross"] }
+
+[[block]]
+id = "echo_slate"
+name = "Echo Slate"
+texture = "shale.png"
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 2
+material_class = "geologically_finite"
+materials = { echo_slate = 1200 }
+arcane = { capacity = 88, conductivity = 460, stability = 820, resonance = { echo = 5, stone = 2 }, on_destroy = "ambient" }
+observation = { categories = ["mineral"], properties = ["strength", "stability", "resonance", "conductivity", "capacity"] }
+arcane_ecology = { roles = ["indicator", "reservoir"], kind = "finite_mineral", habitat = ["sedimentary_host"], charge_capacity = 72, uptake_per_day = 0, release_per_day = 0, source = "ambient", resonance = { echo = 5, stone = 2 }, dross_tolerance = 20, water_per_day_hu = 0, nutrient_per_day = 0, reproduction = "none", seasons = [true, true, true, true], carrying_capacity = 1, harvest = "destructive", regrowth_days = 0, min_stability = 0, max_stability = 1000, min_richness = 0 }
+item = false
 
 # ---- the hearts of the land ----
 # One per province, in the form its country wears. Each has a sick
@@ -2073,6 +2359,108 @@ item = false
 # is left in it, so a flame knows on sight whether it is the wild's
 # work or somebody's. See docs/fire-plan.md.
 [[block]]
+id = "survey_folio"
+name = "Survey Folio"
+texture = { top = "@table_top", side = "@table_side", bottom = "@planks" }
+hardness = 1.5
+tool = "axe"
+interaction = "discovery_folio"
+drops = "none"
+discovery_fixture = { kind = "survey_folio", record_capacity = 128 }
+observation = { categories = ["apparatus"], properties = ["condition"] }
+
+[[block]]
+id = "writing_surface"
+name = "Writing Surface"
+texture = { top = "@table_top", side = "@table_side", bottom = "@planks" }
+hardness = 1.5
+tool = "axe"
+interaction = "discovery_writing"
+discovery_fixture = { kind = "writing_surface" }
+observation = { categories = ["apparatus"], properties = ["condition"] }
+
+[[block]]
+id = "experiment_apparatus"
+name = "Comparative Apparatus"
+texture = "@bronze_block"
+hardness = 5.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 2
+interaction = "discovery_lab"
+discovery_fixture = { kind = "experiment_apparatus", experiments = ["capacity", "conductivity", "stability", "biological_response", "dross_response"] }
+observation = { categories = ["apparatus"], properties = ["condition", "stability"] }
+
+[[block]]
+id = "lens_assembly_bench"
+name = "Lens Assembly Bench"
+texture = { top = "@table_top", side = "@bronze_block", bottom = "@planks" }
+hardness = 3.0
+tool = "pickaxe"
+interaction = "lens_assembly"
+discovery_fixture = { kind = "lens_assembly" }
+observation = { categories = ["apparatus"], properties = ["condition"] }
+
+[[block]]
+id = "binding_frame"
+name = "Binding Frame"
+texture = { top = "@table_top", side = "@bronze_block", bottom = "@planks" }
+hardness = 4.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 2
+interaction = "binding_frame"
+observation = { categories = ["apparatus"], properties = ["condition", "stability", "dross"] }
+
+[[block]]
+id = "focus_mount"
+name = "Focus Mount"
+texture = "@bronze_block"
+hardness = 3.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 2
+interaction = "focus_mount"
+observation = { categories = ["apparatus"], properties = ["condition"] }
+
+[[block]]
+id = "arcane_conductor"
+name = "Choirstone Conductor"
+texture = "quartzite.png"
+hardness = 6.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 3
+interaction = "arcane_conductor"
+material_class = "geologically_finite"
+materials = { choirstone = 1200, copper = 1200 }
+observation = { categories = ["apparatus"], properties = ["condition", "conductivity", "drift"] }
+
+[[block]]
+id = "charge_vessel"
+name = "Charge Vessel"
+texture = { top = "@glass", side = "amethyst_block.png", bottom = "@bronze_block" }
+hardness = 4.0
+tool = "pickaxe"
+requires_tool = true
+min_tier = 2
+interaction = "charge_vessel"
+item = false
+drops = "none"
+# Authoritative charge-band presentation supplies the light. A dormant or
+# uncalibrated vessel must not glow merely because its block exists.
+observation = { categories = ["apparatus"], properties = ["strength", "condition", "stability", "dross", "resonance"] }
+
+[[block]]
+id = "containment_post"
+name = "Containment Post"
+texture = { top = "@spruce_log_top", side = "heart_tree.png", bottom = "@spruce_log_top" }
+hardness = 2.5
+tool = "axe"
+interaction = "containment"
+observation = { categories = ["apparatus"], properties = ["condition", "stability"] }
+
+[[block]]
 id = "fire"
 name = "Fire"
 texture = "fire.png"
@@ -2085,3 +2473,98 @@ light = 12
 light_color = [1.0, 0.58, 0.22]
 drops = "none"
 item = false
+
+# Climate-specific dross scars share one mechanic but not one palette. They
+# are removable, nonstructural overlays and carry no duplicated Current; the
+# exact charge remains in ArcaneOwner::Scar until excavation.
+[[block]]
+id = "scar_wet_film"
+name = "Refracting Dross Film"
+texture = "cattail.png"
+hardness = 0.15
+solid = false
+opaque = false
+height = 0.06
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "wet_film", handler = "water_margin_film", carriers = ["air", "water", "soil"], min_band = "seep", status = "perception_warp", activity = "arcane_squall", max_sites_per_region = 1 }
+
+[[block]]
+id = "scar_dry_needles"
+name = "Branching Dross Needles"
+texture = "halite.png"
+hardness = 0.25
+solid = false
+opaque = false
+height = 0.12
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "dry_needles", handler = "mineral_crust", carriers = ["air", "water", "soil"], min_band = "seep", status = "stamina_drag", activity = "dust_wake", max_sites_per_region = 1 }
+
+[[block]]
+id = "scar_forest_threads"
+name = "Bleached Dross Threads"
+texture = "leaf_litter.png"
+hardness = 0.12
+solid = false
+opaque = false
+height = 0.08
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "forest_threads", handler = "filament_growth", carriers = ["air", "water", "soil"], min_band = "seep", status = "recovery_drag", activity = "animated_castoff", max_sites_per_region = 1 }
+
+[[block]]
+id = "scar_frost_craze"
+name = "Singing Dross Craze"
+texture = "arctic_seed.png"
+hardness = 0.3
+solid = false
+opaque = false
+height = 0.08
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "frost_craze", handler = "surface_overlay", carriers = ["air", "water", "soil"], min_band = "seep", status = "perception_warp", activity = "shear", max_sites_per_region = 1 }
+
+[[block]]
+id = "scar_cave_echo"
+name = "False-Shadow Dross Crust"
+texture = "shale.png"
+hardness = 0.3
+solid = false
+opaque = false
+height = 0.08
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "cave_echo", handler = "mineral_crust", carriers = ["air", "water", "soil"], min_band = "seep", status = "working_instability", activity = "animated_castoff", max_sites_per_region = 1 }
+
+[[block]]
+id = "scar_industrial_scale"
+name = "Discordant Dross Scale"
+texture = "boiler.png"
+hardness = 0.4
+tool = "pickaxe"
+solid = false
+opaque = false
+height = 0.1
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "industrial_scale", handler = "mineral_crust", carriers = ["air", "water", "soil"], min_band = "seep", status = "working_instability", activity = "arcane_squall", max_sites_per_region = 1 }
+
+[[block]]
+id = "scar_broken_symmetry"
+name = "Broken-Symmetry Dross"
+texture = "crystal_glass.png"
+hardness = 0.2
+solid = false
+opaque = false
+height = 0.1
+drops = "base:scar_fragment"
+item = false
+observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
+dross_scar = { kind = "broken_symmetry", handler = "filament_growth", carriers = ["air", "water", "soil"], min_band = "seep", status = "stamina_drag", activity = "shear", max_sites_per_region = 1 }

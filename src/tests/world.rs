@@ -3,6 +3,976 @@
 use super::*;
 use std::collections::HashMap;
 
+fn ecology_world(tag: &str, seed: u32) -> World {
+    let dir = tmp_dir(tag);
+    let atlas = std::sync::Arc::new(crate::planet_atlas::PlanetAtlas::fixture(seed, 16).unwrap());
+    atlas.write_new(&dir).unwrap();
+    World::new_with_atlas(seed, dir, base_reg(), atlas)
+}
+
+#[test]
+fn mounted_survey_folio_preserves_signed_records_through_save_and_spill() {
+    let reg = base_reg();
+    let root = tmp_dir("discovery-folio-persistence").join("world");
+    let mut world = World::load_or_create(root.clone(), reg.clone()).unwrap();
+    let surface = world.qualified_spawn_surface().unwrap_or_else(|| {
+        crate::planet::SurfacePos::new(
+            crate::planet::Face::PosZ,
+            crate::planet::FACE_BLOCKS / 2,
+            crate::planet::FACE_BLOCKS / 2,
+        )
+        .unwrap()
+    });
+    world.ensure_chunk(ChunkPos::from_surface(surface));
+    let y = (world.surface_height_at(surface) + 1) as u8;
+    let pos = crate::planet::BlockPos::new(surface.face(), surface.u(), y, surface.v()).unwrap();
+
+    let mut ledger = ItemStack::new(&reg, reg.item_id("base:field_ledger").unwrap(), 1);
+    world.bind_discovery_stack_at(pos, &mut ledger).unwrap();
+    let record = world
+        .record_observation(
+            ledger.arcane_id,
+            (crate::identity::PlayerId([3; 16]), "FERN"),
+            crate::world::ObservationTarget::Region(pos),
+            crate::discovery::CalibrationGrade::Field,
+            Some("spring well".into()),
+            None,
+        )
+        .unwrap();
+    let mut folio = ItemStack::new(&reg, reg.item_id("base:survey_folio").unwrap(), 1);
+    world.bind_discovery_stack_at(pos, &mut folio).unwrap();
+    world
+        .copy_discovery_record(ledger.arcane_id, record.record_id, folio.arcane_id, false)
+        .unwrap();
+    assert!(world.place_item_block_at(pos, folio));
+    save_world(&mut world);
+
+    let mut loaded = World::load_or_create(root, reg.clone()).unwrap();
+    loaded.ensure_chunk(ChunkPos::from_surface(surface));
+    assert!(matches!(
+        loaded.block_entity_at(&pos),
+        Some(crate::world::BlockEntity::SurveyFolio(state)) if state.object_id == folio.arcane_id
+    ));
+    let records = loaded.discovery_summaries(folio.arcane_id, true).unwrap();
+    assert_eq!(records.len(), 1);
+    assert!(records[0].location.is_none());
+    assert_eq!(records[0].label.as_deref(), Some("spring well"));
+
+    loaded.set_block_at(pos, AIR);
+    assert!(
+        loaded
+            .pending_drops()
+            .iter()
+            .any(|(_, stack)| { stack.item == folio.item && stack.arcane_id == folio.arcane_id })
+    );
+    assert_eq!(
+        loaded.discovery_summaries(folio.arcane_id, true).unwrap(),
+        records
+    );
+}
+
+#[test]
+fn worn_lens_keeps_its_fitted_plate_and_accepts_a_replacement_element() {
+    let reg = base_reg();
+    let root = tmp_dir("discovery-lens-refit").join("world");
+    let mut world = World::load_or_create(root, reg.clone()).unwrap();
+    let surface = world.qualified_spawn_surface().unwrap_or_else(|| {
+        crate::planet::SurfacePos::new(
+            crate::planet::Face::PosZ,
+            crate::planet::FACE_BLOCKS / 2,
+            crate::planet::FACE_BLOCKS / 2,
+        )
+        .unwrap()
+    });
+    world.ensure_chunk(ChunkPos::from_surface(surface));
+    let pos = crate::planet::BlockPos::new(surface.face(), surface.u(), 100, surface.v()).unwrap();
+    for kind in crate::discovery::ExperimentKind::ALL {
+        let mut reference = ItemStack::new(&reg, reg.item_id(kind.reference_item()).unwrap(), 1);
+        world.bind_discovery_stack_at(pos, &mut reference).unwrap();
+        assert_ne!(reference.arcane_id, 0);
+        assert!(matches!(
+            &world
+                .discovery_state
+                .as_ref()
+                .unwrap()
+                .object(reference.arcane_id)
+                .unwrap()
+                .kind,
+            crate::discovery::KnowledgeKind::ReferenceObject { experiment }
+                if *experiment == kind
+        ));
+    }
+    let mut inventory = crate::inventory::Inventory::new();
+    inventory.slots[0] = Some(ItemStack::new(
+        &reg,
+        reg.item_id("base:tuning_lens_frame").unwrap(),
+        1,
+    ));
+    inventory.slots[1] = Some(ItemStack::new(
+        &reg,
+        reg.item_id("base:echo_slate").unwrap(),
+        1,
+    ));
+    inventory.slots[2] = Some(ItemStack::new(
+        &reg,
+        reg.item_id("base:wellglass_shard").unwrap(),
+        1,
+    ));
+    let lens = world.assemble_tuning_lens_at(pos, &mut inventory).unwrap();
+    assert_ne!(lens.arcane_id, 0);
+    inventory.slots[0].as_mut().unwrap().durability = 1;
+    assert!(world.wear_tuning_lens_at(pos, &mut inventory, 0));
+    let mount = inventory.slots[0].unwrap();
+    assert_eq!(reg.item(mount.item).name, "base:tuning_lens_mount");
+    assert_eq!(
+        reg.item(mount.item).materials,
+        reg.item(lens.item).materials,
+        "the fitted plate remains physical when the element wears out"
+    );
+    assert_eq!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .item_current_total(lens.arcane_id),
+        None
+    );
+
+    inventory.slots[2] = Some(ItemStack::new(
+        &reg,
+        reg.item_id("base:wellglass_shard").unwrap(),
+        1,
+    ));
+    let replacement = world.assemble_tuning_lens_at(pos, &mut inventory).unwrap();
+    assert_eq!(replacement.item, lens.item);
+    assert!(
+        inventory
+            .slots
+            .iter()
+            .flatten()
+            .all(|stack| stack.item != reg.item_id("base:echo_slate").unwrap())
+    );
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .audit()
+            .unwrap()
+            .is_balanced()
+    );
+}
+
+#[test]
+fn experiment_apparatus_holds_repeatable_samples_through_save_and_spill() {
+    let reg = base_reg();
+    let root = tmp_dir("discovery-apparatus-persistence").join("world");
+    let mut world = World::load_or_create(root.clone(), reg.clone()).unwrap();
+    let surface = world.qualified_spawn_surface().unwrap_or_else(|| {
+        crate::planet::SurfacePos::new(
+            crate::planet::Face::PosZ,
+            crate::planet::FACE_BLOCKS / 2,
+            crate::planet::FACE_BLOCKS / 2,
+        )
+        .unwrap()
+    });
+    world.ensure_chunk(ChunkPos::from_surface(surface));
+    let pos = crate::planet::BlockPos::new(surface.face(), surface.u(), 102, surface.v()).unwrap();
+    assert!(world.place_block_at(pos, reg.block_id("base:experiment_apparatus").unwrap()));
+    let mut inventory = crate::inventory::Inventory::new();
+    inventory.slots[0] = Some(ItemStack::new(&reg, reg.item_id("base:dirt").unwrap(), 3));
+    inventory.slots[1] = Some(ItemStack::new(
+        &reg,
+        reg.item_id("base:capacity_reference").unwrap(),
+        1,
+    ));
+    world
+        .exchange_experiment_item_at(pos, &mut inventory, 0)
+        .unwrap();
+    world
+        .exchange_experiment_item_at(pos, &mut inventory, 1)
+        .unwrap();
+    assert_eq!(inventory.slots[0].unwrap().count, 2);
+    assert!(inventory.slots[1].is_none());
+
+    let first = world
+        .experiment_sample_at(pos, crate::discovery::ExperimentKind::Capacity)
+        .unwrap();
+    let second = world
+        .experiment_sample_at(pos, crate::discovery::ExperimentKind::Capacity)
+        .unwrap();
+    assert_eq!(first, second);
+    assert_eq!(first.item, reg.item_id("base:dirt").unwrap());
+    save_world(&mut world);
+
+    let mut loaded = World::load_or_create(root, reg.clone()).unwrap();
+    loaded.ensure_chunk(ChunkPos::from_surface(surface));
+    assert_eq!(
+        loaded
+            .experiment_sample_at(pos, crate::discovery::ExperimentKind::Capacity)
+            .unwrap(),
+        first
+    );
+    loaded.set_block_at(pos, AIR);
+    let spills = loaded
+        .pending_drops()
+        .iter()
+        .filter(|(_, stack)| {
+            matches!(
+                reg.item(stack.item).name.as_str(),
+                "base:dirt" | "base:capacity_reference"
+            )
+        })
+        .count();
+    assert_eq!(spills, 2);
+}
+
+fn materialize_ecology_site(world: &mut World, content: &str) -> crate::planet::BlockPos {
+    let surface = world
+        .arcane_geography
+        .as_ref()
+        .unwrap()
+        .dynamic
+        .ecology
+        .sites
+        .iter()
+        .find(|site| site.content_id == content)
+        .and_then(|site| site.surface())
+        .unwrap_or_else(|| panic!("fixture has no {content} site"));
+    world.ensure_chunk(ChunkPos::from_surface(surface));
+    let geography = world.arcane_geography.as_mut().unwrap();
+    let site = geography
+        .dynamic
+        .ecology
+        .sites
+        .iter_mut()
+        .find(|site| site.content_id == content && site.surface() == Some(surface))
+        .unwrap();
+    site.stage = crate::arcane_ecology::EcologyStage::Mature;
+    if site.materialized_y == 0 {
+        site.materialized_y = 80;
+    }
+    let pos = site.block_pos().unwrap();
+    let block = world.reg.block_id(content).unwrap();
+    world.set_block_at(pos, block);
+    pos
+}
+
+#[test]
+fn lantern_reed_light_is_driven_by_its_stored_current() {
+    let mut world = ecology_world("lantern-current-state", 10_099);
+    let pos = materialize_ecology_site(&mut world, "base:lantern_reed");
+    let lit = world.reg.block_id("base:lantern_reed").unwrap();
+    let dim = world.reg.block_id("base:lantern_reed_dim").unwrap();
+
+    let original_charge = {
+        let site = world
+            .arcane_geography
+            .as_mut()
+            .unwrap()
+            .dynamic
+            .ecology
+            .sites
+            .iter_mut()
+            .find(|site| site.block_pos() == Some(pos))
+            .unwrap();
+        let charge = site.charge;
+        assert!(
+            site.charge_total() > 0,
+            "genesis lantern has stored Current"
+        );
+        site.charge = [0; 6];
+        charge
+    };
+    world.refresh_arcane_ecology_for_test();
+    assert_eq!(world.get_block_at(pos), dim);
+    assert_eq!(world.reg.block(dim).light_emit, 0);
+    assert_eq!(world.light_at_pos(pos).0, 0);
+
+    world
+        .arcane_geography
+        .as_mut()
+        .unwrap()
+        .dynamic
+        .ecology
+        .sites
+        .iter_mut()
+        .find(|site| site.block_pos() == Some(pos))
+        .unwrap()
+        .charge = original_charge;
+    world.refresh_arcane_ecology_for_test();
+    assert_eq!(world.get_block_at(pos), lit);
+    assert_eq!(world.reg.block(lit).light_emit, 4);
+    assert_eq!(world.light_at_pos(pos).0, 4);
+}
+
+#[test]
+fn simultaneous_wellglass_harvest_resolves_once_and_both_custodies_balance() {
+    // Seed 76 has qualified glass-heath habitat in the deliberately tiny
+    // fixture; not every finite test planet should be forced to have one.
+    let mut world = ecology_world("wellglass-host-once", 76);
+    let pos = materialize_ecology_site(&mut world, "base:wellglass_bud");
+    let site_id = {
+        let geography = world.arcane_geography.as_mut().unwrap();
+        let site = geography
+            .dynamic
+            .ecology
+            .sites
+            .iter_mut()
+            .find(|site| site.block_pos() == Some(pos))
+            .unwrap();
+        site.crystal_stage = 3;
+        site.id
+    };
+    let before = world
+        .arcane_geography
+        .as_ref()
+        .unwrap()
+        .dynamic
+        .ecology
+        .sites
+        .iter()
+        .find(|site| site.id == site_id)
+        .unwrap()
+        .charge_total();
+    assert!(before > 0);
+    let pick = it(&world.reg, "base:iron_pickaxe");
+    let ire_before = world.ire;
+    let first = world
+        .break_block_at(pos, Some(pick), true, true)
+        .expect("host accepts first mature harvest");
+    assert!(
+        world.ire > ire_before,
+        "taking, not Current arithmetic, raises Ire"
+    );
+    let shard = first.drop.expect("wellglass shard");
+    assert_ne!(shard.arcane_id, 0);
+    assert_eq!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .item_current_total(shard.arcane_id),
+        Some(before)
+    );
+    assert_eq!(world.get_block_at(pos), b(&world.reg, "base:wellglass_bud"));
+    assert!(
+        world.break_block_at(pos, Some(pick), true, true).is_none(),
+        "second same-state host command must not fall through to generic loot"
+    );
+    let geography = world.arcane_geography.as_ref().unwrap();
+    assert_eq!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .account(&crate::arcane::ArcaneOwner::Geography)
+            .unwrap()
+            .current,
+        geography.custody_current().unwrap()
+    );
+    assert!(geography.audit().unwrap().is_balanced());
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .audit()
+            .unwrap()
+            .is_balanced()
+    );
+}
+
+#[test]
+fn replanting_a_collapsed_site_restores_it_and_credits_tending() {
+    let mut world = ecology_world("ecology-common-seed-restoration", 10_105);
+    let pos = materialize_ecology_site(&mut world, "base:rainbell");
+    {
+        let geography = world.arcane_geography.as_mut().unwrap();
+        let site = geography
+            .dynamic
+            .ecology
+            .sites
+            .iter_mut()
+            .find(|site| site.block_pos() == Some(pos))
+            .unwrap();
+        site.population = 0;
+        site.seed_bank = 0;
+        site.stage = crate::arcane_ecology::EcologyStage::Collapsed;
+    }
+    world.set_block_at(pos, AIR);
+    world.ire = 10.0;
+    let seed = ItemStack::new(&world.reg, it(&world.reg, "base:rainbell_dew"), 1);
+    assert!(world.place_item_block_at(pos, seed));
+    let site = world
+        .arcane_geography
+        .as_ref()
+        .unwrap()
+        .dynamic
+        .ecology
+        .sites
+        .iter()
+        .find(|site| site.block_pos() == Some(pos))
+        .unwrap();
+    assert_eq!(
+        site.ownership,
+        crate::arcane_ecology::EcologyOwnership::Genesis
+    );
+    assert_eq!(site.stage, crate::arcane_ecology::EcologyStage::Recovering);
+    assert_eq!(site.population, 1);
+    assert!(site.seed_bank > 0);
+    assert!(
+        world.ire < 10.0,
+        "successful establishment uses the tending hook"
+    );
+}
+
+#[test]
+fn ashlace_harvest_keeps_sequestered_dross_on_the_item_and_composting_returns_it() {
+    let mut world = ecology_world("ashlace-item-dross", 10_102);
+    let pos = materialize_ecology_site(&mut world, "base:ashlace");
+    {
+        let geography = world.arcane_geography.as_mut().unwrap();
+        let site_index = geography
+            .dynamic
+            .ecology
+            .sites
+            .iter()
+            .position(|site| site.block_pos() == Some(pos))
+            .unwrap();
+        let cell_index = geography.dynamic.ecology.sites[site_index]
+            .atlas_pos
+            .index(geography.manifest.side);
+        let slot = geography.dynamic.cells[cell_index]
+            .ambient
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, units)| **units)
+            .map(|(slot, _)| slot)
+            .unwrap();
+        let moved = geography.dynamic.cells[cell_index].ambient[slot].min(90);
+        geography.dynamic.cells[cell_index].ambient[slot] -= moved;
+        geography.dynamic.ecology.sites[site_index].dross[slot] += u32::from(moved);
+        geography.dynamic.ecology.sites[site_index].charge = [0; 6];
+    }
+    let drop = world
+        .break_block_at(pos, None, true, false)
+        .unwrap()
+        .drop
+        .unwrap();
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    let dross = ledger.item_dross_total(drop.arcane_id);
+    assert!(dross > 0);
+    assert!(
+        ledger
+            .account(&crate::arcane::ArcaneOwner::Item(drop.arcane_id))
+            .is_none(),
+        "sequestered dross must not be relabeled as clean bound Current"
+    );
+    assert_eq!(crate::world::soil::compost_value("base:ashlace_tissue"), 1);
+    let total_before = ledger.audit().unwrap().total;
+    world.retire_arcane_stack_at(pos, drop, "ashlace tissue composted");
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert_eq!(ledger.item_current_total(drop.arcane_id), None);
+    assert_eq!(ledger.audit().unwrap().total, total_before);
+    assert!(ledger.audit().unwrap().is_balanced());
+}
+
+#[test]
+fn rainbell_dew_moves_real_soil_water_into_circulating_custody() {
+    let mut world = ecology_world("rainbell-real-water", 10_103);
+    let pos = materialize_ecology_site(&mut world, "base:rainbell");
+    let before = world.live_water_audit().unwrap();
+    let soil_before = world.ecology_soil_water_hu_at(pos.surface()).unwrap();
+    assert!(
+        soil_before >= crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL,
+        "wetland fixture needs one dew measure of live soil water"
+    );
+    let drop = world
+        .break_block_at(pos, None, true, false)
+        .expect("water-backed rainbell harvest")
+        .drop
+        .unwrap();
+    assert_eq!(drop.item, it(&world.reg, "base:rainbell_dew"));
+    let after = world.live_water_audit().unwrap();
+    assert_eq!(after.current_water_hu, before.current_water_hu);
+    assert_eq!(
+        after.unexplained_water_delta_hu, before.unexplained_water_delta_hu,
+        "dew harvest must introduce no new water-audit delta"
+    );
+    assert_eq!(
+        after.industrial.water_hu - before.industrial.water_hu,
+        crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL
+    );
+    assert_eq!(
+        soil_before - world.ecology_soil_water_hu_at(pos.surface()).unwrap(),
+        crate::planet_atlas::HYDRO_UNITS_PER_VISIBLE_LEVEL
+    );
+
+    let planted = pos.offset(1, 0, 0).unwrap();
+    world.set_block_at(planted, AIR);
+    assert!(world.place_item_block_at(planted, drop));
+    let returned = world.live_water_audit().unwrap();
+    assert_eq!(returned.current_water_hu, before.current_water_hu);
+    assert_eq!(
+        returned.unexplained_water_delta_hu,
+        before.unexplained_water_delta_hu
+    );
+    assert_eq!(returned.industrial.water_hu, before.industrial.water_hu);
+    assert_eq!(
+        world.ecology_soil_water_hu_at(pos.surface()).unwrap(),
+        soil_before,
+        "planting the dew closes its local real-water loop"
+    );
+}
+
+#[test]
+fn resonant_mineral_break_reconciles_physical_and_arcane_ledgers_together() {
+    let mut world = ecology_world("resonant-mineral-dual-ledger", 10_104);
+    let surface = world
+        .arcane_geography
+        .as_ref()
+        .unwrap()
+        .dynamic
+        .ecology
+        .sites
+        .first()
+        .and_then(|site| site.surface())
+        .unwrap();
+    world.ensure_chunk(ChunkPos::from_surface(surface));
+    let pos = crate::planet::BlockPos::new(surface.face(), surface.u(), 220, surface.v()).unwrap();
+    let mineral = b(&world.reg, "base:choirstone");
+    world.set_block_authored_at(pos, mineral, "dual-ledger fixture");
+    let before = world.material_ledger.as_ref().unwrap().audit();
+    assert_eq!(before.placed.get("choirstone"), Some(&1_200));
+    let pick = it(&world.reg, "base:iron_pickaxe");
+    let drop = world
+        .break_block_at(pos, Some(pick), true, false)
+        .expect("resonant mineral extraction")
+        .drop
+        .unwrap();
+    assert_ne!(drop.arcane_id, 0);
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .item_current_total(drop.arcane_id)
+            .is_some_and(|units| units > 0)
+    );
+    let materials = world.material_ledger.as_ref().unwrap().audit();
+    assert_eq!(materials.placed.get("choirstone").copied().unwrap_or(0), 0);
+    assert_eq!(materials.circulating.get("choirstone"), Some(&1_200));
+    assert!(materials.is_balanced());
+    let geography = world.arcane_geography.as_ref().unwrap();
+    assert_eq!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .account(&crate::arcane::ArcaneOwner::Geography)
+            .unwrap()
+            .current,
+        geography.custody_current().unwrap()
+    );
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .audit()
+            .unwrap()
+            .is_balanced()
+    );
+}
+
+#[test]
+fn plausible_grazer_bite_collapses_magical_forage_without_rematerializing_charge() {
+    let mut world = ecology_world("magical-forage-bite", 10_106);
+    let pos = materialize_ecology_site(&mut world, "base:rainbell");
+    let total_before = world
+        .arcane_geography
+        .as_ref()
+        .unwrap()
+        .audit()
+        .unwrap()
+        .accounted_total;
+    world.apply_bite_at(pos);
+    assert_eq!(world.get_block_at(pos), AIR);
+    let geography = world.arcane_geography.as_ref().unwrap();
+    let site = geography
+        .dynamic
+        .ecology
+        .sites
+        .iter()
+        .find(|site| site.block_pos() == Some(pos))
+        .unwrap();
+    assert!(matches!(
+        site.stage,
+        crate::arcane_ecology::EcologyStage::Collapsed
+            | crate::arcane_ecology::EcologyStage::Harvested
+    ));
+    assert_eq!(geography.audit().unwrap().accounted_total, total_before);
+    assert_eq!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .account(&crate::arcane::ArcaneOwner::Geography)
+            .unwrap()
+            .current,
+        geography.custody_current().unwrap()
+    );
+    let dir = world.save_dir_for_test().to_path_buf();
+    let reg = world.reg.clone();
+    save_world(&mut world);
+    drop(world);
+    let mut loaded = World::load_or_create(dir, reg).unwrap();
+    loaded.ensure_chunk(pos.chunk());
+    assert_eq!(loaded.get_block_at(pos), AIR);
+}
+
+#[test]
+fn explosive_wellglass_loss_destroys_the_bud_and_cannot_rematerialize_charge() {
+    let mut world = ecology_world("wellglass-explosion-persistence", 10_107);
+    let pos = materialize_ecology_site(&mut world, "base:wellglass_bud");
+    let site_id = world
+        .arcane_geography
+        .as_ref()
+        .unwrap()
+        .dynamic
+        .ecology
+        .sites
+        .iter()
+        .find(|site| site.block_pos() == Some(pos))
+        .unwrap()
+        .id;
+    let total_before = world
+        .arcane_geography
+        .as_ref()
+        .unwrap()
+        .audit()
+        .unwrap()
+        .accounted_total;
+    world
+        .break_block_at(pos, None, false, false)
+        .expect("explosion-style loss settles the persistent site");
+    assert_ne!(world.get_block_at(pos), b(&world.reg, "base:wellglass_bud"));
+    let geography = world.arcane_geography.as_ref().unwrap();
+    let site = geography
+        .dynamic
+        .ecology
+        .sites
+        .iter()
+        .find(|site| site.id == site_id)
+        .unwrap();
+    assert_eq!(site.stage, crate::arcane_ecology::EcologyStage::Harvested);
+    assert_eq!(site.seed_bank, 0);
+    assert_eq!(site.charge_total(), 0);
+    assert_eq!(geography.audit().unwrap().accounted_total, total_before);
+    let dir = world.save_dir_for_test().to_path_buf();
+    let reg = world.reg.clone();
+    save_world(&mut world);
+    drop(world);
+    let mut loaded = World::load_or_create(dir, reg).unwrap();
+    loaded.ensure_chunk(pos.chunk());
+    assert_ne!(
+        loaded.get_block_at(pos),
+        b(&loaded.reg, "base:wellglass_bud")
+    );
+    let geography = loaded.arcane_geography.as_ref().unwrap();
+    let site = geography
+        .dynamic
+        .ecology
+        .sites
+        .iter()
+        .find(|site| site.id == site_id)
+        .unwrap();
+    assert_eq!(site.stage, crate::arcane_ecology::EcologyStage::Harvested);
+    assert_eq!(site.charge_total(), 0);
+    assert_eq!(geography.audit().unwrap().accounted_total, total_before);
+}
+
+#[test]
+fn arcane_ire_and_dross_four_states_persist_independently() {
+    let reg = base_reg();
+    let mut readings = std::collections::BTreeSet::new();
+    for (angry, polluted) in [(false, false), (false, true), (true, false), (true, true)] {
+        let dir = tmp_dir(&format!("arcane-separation-{angry}-{polluted}"));
+        let atlas = std::sync::Arc::new(
+            crate::planet_atlas::PlanetAtlas::fixture(8_811 + angry as u32, 8).unwrap(),
+        );
+        atlas.write_new(&dir).unwrap();
+        let site = atlas.biomes.countries[0].heart_site.center(atlas.side());
+        let surface =
+            crate::planet::SurfacePos::new(site.face, site.u.floor() as u16, site.v.floor() as u16)
+                .unwrap();
+        let at = crate::planet::BlockPos::new(surface.face(), surface.u(), 1, surface.v()).unwrap();
+        let region = atlas.atlas_pos(surface);
+        let mut world =
+            World::new_with_atlas(8_811 + angry as u32, dir.clone(), reg.clone(), atlas);
+        world.ire = if angry { 80.0 } else { 0.0 };
+        if polluted {
+            let mut ember = ItemStack::new(&reg, it(&reg, "base:ember"), 1);
+            world
+                .bind_arcane_stack_at(at, &mut ember, "separation fixture")
+                .unwrap();
+            world.retire_arcane_stack_at(at, ember, "separation pollution");
+        }
+        save_world(&mut world);
+        let loaded = World::load_or_create(dir, reg.clone()).unwrap();
+        let bands = loaded.arcane_ledger.as_ref().unwrap().local_bands(region);
+        assert_eq!(loaded.ire, if angry { 80.0 } else { 0.0 });
+        assert_eq!(bands[1] > 0, polluted);
+        assert!(
+            loaded
+                .arcane_ledger
+                .as_ref()
+                .unwrap()
+                .audit()
+                .unwrap()
+                .is_balanced()
+        );
+        readings.insert((loaded.ire as u8, bands[1]));
+    }
+    assert_eq!(readings.len(), 4);
+}
+
+#[test]
+fn dross_changes_ire_only_when_it_causes_real_ecology_population_loss() {
+    let mut world = ecology_world("dross-habitat-harm-ire", 10_108);
+    let (site_index, tolerance) = {
+        let geography = world.arcane_geography.as_ref().unwrap();
+        geography
+            .dynamic
+            .ecology
+            .sites
+            .iter()
+            .enumerate()
+            .find_map(|(index, site)| {
+                let definition = world.reg.arcane_ecology.get(&site.content_id)?;
+                (site.charge_total() > u64::from(definition.dross_tolerance))
+                    .then_some((index, definition.dross_tolerance))
+            })
+            .expect("fixture needs one charged ecology site")
+    };
+    let needed = u64::from(tolerance).saturating_add(1);
+    let (population_before, completed_before) = {
+        let geography = world.arcane_geography.as_mut().unwrap();
+        let site = &mut geography.dynamic.ecology.sites[site_index];
+        site.population = 1;
+        site.stage = crate::arcane_ecology::EcologyStage::Mature;
+        let mut remaining = needed;
+        for slot in 0..6 {
+            let moved = u64::from(site.charge[slot]).min(remaining);
+            site.charge[slot] -= moved as u32;
+            site.dross[slot] = site.dross[slot].checked_add(moved as u32).unwrap();
+            remaining -= moved;
+        }
+        assert_eq!(remaining, 0);
+        (site.population, geography.dynamic.ecology.completed_days)
+    };
+    let ire_before = world.ire;
+    assert_eq!(
+        world.ire, ire_before,
+        "moving Current into Dross changed Ire"
+    );
+    world.day = u32::try_from(completed_before.saturating_add(1)).unwrap();
+
+    world.tick_arcane_ecology(usize::MAX).unwrap();
+
+    let geography = world.arcane_geography.as_ref().unwrap();
+    let site = &geography.dynamic.ecology.sites[site_index];
+    assert!(site.population < population_before);
+    assert!(
+        world.ire > ire_before,
+        "accounted Dross killed habitat population without invoking Ire"
+    );
+    assert!(geography.audit().unwrap().is_balanced());
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .audit()
+            .unwrap()
+            .is_balanced()
+    );
+}
+
+#[test]
+fn magical_harvests_and_bonus_drops_are_funded_before_delivery() {
+    use crate::arcane::ArcaneOwner;
+
+    let reg = base_reg();
+    let mut world = World::load_or_create(
+        tmp_dir("funded-magical-harvests").join("world"),
+        reg.clone(),
+    )
+    .unwrap();
+    world.ensure_chunk(tchunk(0, 0));
+    let at = crate::planet::BlockPos::of_world(3, 150, 3).unwrap();
+    world.set_block_at(at, b(&reg, "base:lantern_fungus"));
+    let drop = world
+        .break_block_at(at, None, true, false)
+        .unwrap()
+        .drop
+        .unwrap();
+    assert_eq!(drop.item, it(&reg, "base:lantern_fungus"));
+    assert_ne!(drop.arcane_id, 0);
+    assert_eq!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .account(&ArcaneOwner::Item(drop.arcane_id))
+            .unwrap()
+            .current
+            .total(),
+        192
+    );
+    let placed_at = crate::planet::BlockPos::of_world(4, 200, 3).unwrap();
+    let ambient_before = world
+        .arcane_ledger
+        .as_ref()
+        .unwrap()
+        .audit()
+        .unwrap()
+        .reservoirs[&crate::arcane::Reservoir::Ambient];
+    assert!(world.place_item_block_at(placed_at, drop));
+    assert_eq!(
+        world.get_block_at(placed_at),
+        b(&reg, "base:lantern_fungus")
+    );
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .account(&ArcaneOwner::Item(drop.arcane_id))
+            .is_none()
+    );
+    assert_eq!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .audit()
+            .unwrap()
+            .reservoirs[&crate::arcane::Reservoir::Ambient],
+        ambient_before + 192
+    );
+
+    let gold_quartz = b(&reg, "base:gold_quartz");
+    assert!(
+        reg.block(gold_quartz).arcane.is_none(),
+        "this fixture proves the output item, not the source block, controls binding"
+    );
+    let mut rng = 0;
+    let bonus = world
+        .roll_bonus_drop_at(at, gold_quartz, &mut rng)
+        .expect("seed zero rolls below the declared half chance");
+    assert_eq!(bonus.item, it(&reg, "base:quartz_shard"));
+    assert_ne!(bonus.arcane_id, 0);
+    assert_eq!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .account(&ArcaneOwner::Item(bonus.arcane_id))
+            .unwrap()
+            .current
+            .total(),
+        384
+    );
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .audit()
+            .unwrap()
+            .is_balanced()
+    );
+}
+
+#[test]
+fn charged_offering_returns_exact_current_to_its_country_heart() {
+    use crate::arcane::ArcaneOwner;
+    use crate::world::{BlockEntity, OfferingState};
+
+    let reg = base_reg();
+    let mut world = World::load_or_create(
+        tmp_dir("charged-country-offering").join("world"),
+        reg.clone(),
+    )
+    .unwrap();
+    let atlas = world.planet_atlas().unwrap();
+    let site = atlas.biomes.countries[0].heart_site.center(atlas.side());
+    let surface =
+        crate::planet::SurfacePos::new(site.face, site.u.floor() as u16, site.v.floor() as u16)
+            .unwrap();
+    let country = atlas.country_at(surface).unwrap().id;
+    let at = crate::planet::BlockPos::new(surface.face(), surface.u(), 100, surface.v()).unwrap();
+    let heart = ArcaneOwner::Heart(country);
+    let heart_before = world
+        .arcane_ledger
+        .as_ref()
+        .unwrap()
+        .account(&heart)
+        .unwrap()
+        .current
+        .total();
+    let mut gift = ItemStack::new(&reg, it(&reg, "base:thorn_fiber"), 1);
+    world
+        .bind_arcane_stack_at(at, &mut gift, "charged offering fixture")
+        .unwrap();
+    let gift_owner = ArcaneOwner::Item(gift.arcane_id);
+    assert_eq!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .account(&heart)
+            .unwrap()
+            .current
+            .total(),
+        heart_before - 256
+    );
+    let mut offering = OfferingState::default();
+    offering.slots[0] = Some(gift);
+    world.insert_block_entity_at(at, BlockEntity::Offering(offering));
+    assert!(world.accept_offerings() > 0.0);
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert!(ledger.account(&gift_owner).is_none());
+    assert_eq!(
+        ledger.account(&heart).unwrap().current.total(),
+        heart_before
+    );
+    assert!(ledger.audit().unwrap().is_balanced());
+}
+
+#[test]
+#[ignore = "operator probe for WILDFORGE_PROBE_WORLD production save"]
+fn production_idle_tick_performance_probe() {
+    let root = std::env::var("WILDFORGE_PROBE_WORLD")
+        .map(std::path::PathBuf::from)
+        .expect("set WILDFORGE_PROBE_WORLD to a qualified production save");
+    let mut world = World::load_or_create(root, base_reg()).unwrap();
+    world.prepare_common_spawn(|_, _, _| {}).unwrap();
+    let resident = world.chunk_count();
+    let mut server = crate::server::Server::new(world, 0.3, 0x1d1e);
+    let mut events = Vec::new();
+    let start = std::time::Instant::now();
+    for _ in 0..1_200 {
+        server.advance(1.0 / 60.0, &[], &mut events);
+        std::hint::black_box(&events);
+        events.clear();
+    }
+    let each = start.elapsed().as_nanos() / 1_200;
+    println!("idle profile: resident_chunks={resident} tick={each} ns");
+}
+
 #[test]
 fn block_edit_fans_out_through_one_authoritative_boundary() {
     use crate::world::{BlockEntity, ChestState};
@@ -117,6 +1087,47 @@ fn remote_world_neither_generates_nor_saves_authoritative_state() {
 
     assert!(!dir.join("world.toml").exists());
     assert!(!dir.join("chunks").exists());
+}
+
+#[test]
+fn replicated_block_burst_preserves_state_and_settles_shared_lighting() {
+    let reg = base_reg();
+    let mut world = test_world_with("remote-block-batch", reg.clone());
+    let torch = b(&reg, "base:torch");
+    let water = b(&reg, "base:water");
+    let torch_pos = bp(8, 90, 8);
+    let water_pos = bp(9, 90, 8);
+    world.set_remote(true);
+    world.set_remote_arcane_cue([u8::MAX; 2], u8::MAX, None);
+    assert_eq!(world.remote_arcane_cue(), [4; 2]);
+    assert_eq!(world.remote_arcane_dominant(), 6);
+
+    world.set_remote_arcane_cue(
+        [2, 1],
+        4,
+        Some(("Rainbells fold shut beside the marsh.".into(), true)),
+    );
+    let ecology = world
+        .perceived_arcane_ecology_at(torch_pos.surface())
+        .expect("remote ecology observation");
+    assert_eq!(ecology.text, "Rainbells fold shut beside the marsh.");
+    assert!(ecology.damped);
+    world.set_remote_arcane_items(vec![(41, 73)]);
+    assert_eq!(world.inspectable_item_current(41), Some(73));
+
+    world.apply_remote_block_states([(torch_pos, torch, 0, 0, 0), (water_pos, water, 3, 41, 0)]);
+
+    assert_eq!(world.get_block_at(torch_pos), torch);
+    assert_eq!(world.get_block_at(water_pos), water);
+    assert_eq!(world.get_meta_at(water_pos), 3);
+    assert_eq!(world.get_water_salt_at(water_pos), 41);
+    assert!(
+        world.light_rgb_at_pos(torch_pos).0[0] > 0,
+        "the shared batch must finish its derived lighting before returning"
+    );
+
+    world.apply_remote_block_states([(torch_pos, AIR, 0, 0, 0)]);
+    assert_eq!(world.light_rgb_at_pos(torch_pos).0, [0; 3]);
 }
 
 #[test]
@@ -1288,7 +2299,7 @@ fn offering_stone_values_and_dawn() {
     // Dawn: items taken, refund capped at 10.
     w.ire = 60.0;
     let mut st = crate::world::OfferingState::default();
-    st.slots[0] = Some(ItemStack::new(&reg, it(&reg, "base:heartwood"), 4)); // 8.0
+    st.slots[0] = Some(ItemStack::new(&reg, it(&reg, "base:raw_venison"), 6)); // 6.0
     st.slots[1] = Some(ItemStack::new(&reg, it(&reg, "base:raw_rabbit"), 5)); // 5.0
     w.insert_block_entity((3, 90, 3), crate::world::BlockEntity::Offering(st));
     let r = w.accept_offerings();
@@ -1315,6 +2326,7 @@ fn server_ticks_at_fixed_rate_and_runs_the_world() {
         spawn: ep(Vec3::new(-500.0, 70.0, -500.0)),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     };
     let t0 = sv.time_of_day;
     let mut evs = Vec::new();
@@ -1552,6 +2564,7 @@ fn snow_settles_melts_and_snowballs_fly() {
     m.health = 10.0;
     w.spawn_mob(m);
     w.spawn_projectile(crate::mobs::Projectile {
+        stable_id: 0,
         pos: ep(Vec3::new(4.5, sy + 0.4, 3.0)),
         vel: Vec3::new(0.0, 0.0, 12.0),
         tile: 0,
@@ -1559,6 +2572,7 @@ fn snow_settles_melts_and_snowballs_fly() {
         age: 0.0,
         from_player: true,
         drop_item: None,
+        preparation_payload: None,
         owner: 0,
     });
     for _ in 0..60 {

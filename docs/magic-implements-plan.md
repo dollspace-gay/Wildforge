@@ -1,10 +1,76 @@
 # Implements — charms, wands, charge, and embodied apparatus
 
-> **Status: implementation design complete, not implemented.**
+> **Status: implemented and production-qualified (2026-08-03).**
 >
 > This is goal 5 of `docs/magic-sequence.md`. It requires goals 1–4 and the
 > existing crafting, stations, durability, salvage, container, rendering, and
 > multiplayer systems.
+
+## Implementation record — 2026-08-03
+
+Goal 5 is live in ordinary play, local and dedicated hosting, remote
+presentation, agent actions, persistence, and the arcane and material audits.
+The implementation includes:
+
+- declarative base/mod component and charm definitions with one versioned,
+  role-aware, order-independent, bounded resolver. Every base combination is
+  enumerated in qualification, exposes its costs in the frame preview, and no
+  combination simultaneously wins capacity, throughput, stability,
+  containment, and dross;
+- four-part stable-identity wands assembled in a physical binding frame. The
+  same host action path mounts parts, inspects, calibrates, assembles, swaps a
+  focus, transfers or safely discharges charge, repairs, disassembles, and
+  binds charms. Actual adjacent mounts, vessel, conductor network,
+  containment, tools, revisions, and inventory custody are validated before
+  commitment;
+- finite charge vessels, Current sources, local conductor networks, and
+  containment. Transfer rate, loss, retained dross, saturation, damage,
+  leakage, unloaded boundaries, network size, confluence/well extraction,
+  overfill, breakage, and failure are bounded server simulation and ledger
+  transactions. Conductors cannot name or scan an arbitrary nearby item
+  account;
+- charged craft lifecycles for Quiet, Bark, and Slow Hunger charms. A real
+  reagent and blank become a stable instance at the frame; each shipped effect
+  remains at its old cap, receives no benefit without a successful debit,
+  becomes dormant exactly at depletion, and recharges only by debiting a
+  vessel or another declared finite source;
+- exact construction bills and linked material deltas for assembly, focus
+  replacement, repair, safe recovery, and destruction. Frame breaks route
+  charge to an adjacent vessel, Ambient Current, or environmental dross;
+  catastrophic heat/strain failure leaves one same-identity recoverable
+  fragment bundle rather than deleting matter or Current;
+- custody reconciliation through inventories, transactional cursors, chests,
+  cargo, loose items, hosted death, save/load, crash recovery, fire, lava,
+  despawn, and content-pack removal. Legacy charms migrate once against the
+  planetary reserve, partial funding stays partial, and every migration is
+  idempotent and audited;
+- component-derived first-person and remote-held models, focus silhouettes,
+  restrained charge emitters, qualitative tooltips, exact tuning-lens
+  readings, apparatus light/strain cues, and distinct use, transfer, strain,
+  empty, and failure sound envelopes. Authored descendant art ships with
+  procedural/missing-content fallbacks;
+- reliable optimistic-revision host requests, interest-managed public state,
+  concurrent serialization, hostile-request rejection, explicit
+  creative/admin marking, and the same frame actions and inspection text for
+  headless agents. Clients never submit parts, charge, dross, resolved stats,
+  or finished outputs.
+
+The base game has no separate generic item-frame or formal land-claim system.
+Its physical item mount is the binding-frame cradle, whose save, break, spill,
+and reconstruction lifecycle is qualified. This goal does not invent either
+excluded subsystem: place conductors source only real local geography, while
+item transfers require the actor's selected authoritative custody.
+
+Qualification covers twenty focused Implements integration tests plus the
+shared arcane, material, survival, multiplayer, registry, rendering, and agent
+suites. On 2026-08-03 the repository gates passed with 660 tests and 22
+intentional operator probes ignored, strict Clippy, optimized release builds,
+and a clean dependency-advisory audit. A native Windows DX12 capture on an
+RTX 3090 held 60 FPS with 138/138 resident chunks uploaded, no dirty chunks,
+2.59 ms simulation time, and 11.02 ms draw time. The captured save's schema-2
+Implements audit found three instances, zero missing accounts, zero content
+mismatches, zero over-capacity instances, balanced parent arcane and material
+audits, and bounded save/wire metadata.
 
 ## Purpose
 

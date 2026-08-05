@@ -340,6 +340,7 @@ impl World {
                                 item: smoked,
                                 count: st.count,
                                 durability: reg.item(smoked).durability,
+                                arcane_id: st.arcane_id,
                             });
                         }
                     }
@@ -364,6 +365,18 @@ impl World {
         let reg = self.reg.clone();
         let mush = reg.item_id("base:spoiled_mush");
         let mut consumed = Vec::new();
+        let alchemy_container_ids = self
+            .alchemy_state
+            .as_ref()
+            .map(|state| {
+                state
+                    .containers
+                    .keys()
+                    .copied()
+                    .collect::<std::collections::BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+        let mut preparation_assessments = Vec::<(ItemStack, i32, u64)>::new();
         let cellar_at: Vec<(BlockPos, bool)> = self
             .block_entities
             .iter()
@@ -381,6 +394,13 @@ impl World {
         for (pos, cellar) in cellar_at {
             let rate = PERISH_SWEEP_SECS * FRESHNESS_PER_SEC;
             let step = if cellar { rate / 4.0 } else { rate } as u32;
+            let storage_ticks = ((PERISH_SWEEP_SECS * 20.0) as u64)
+                .checked_div(if cellar { 4 } else { 1 })
+                .unwrap_or_default();
+            let storage_temperature_millic =
+                (self.weather_at_surface(pos.surface()).temperature_c * 1_000.0)
+                    .round()
+                    .clamp(i32::MIN as f32, i32::MAX as f32) as i32;
             let Some(e) = self.block_entities.get_mut(&pos) else {
                 continue;
             };
@@ -391,6 +411,10 @@ impl World {
             };
             for s in slots.iter_mut() {
                 let Some(st) = s else { continue };
+                if st.arcane_id != 0 && alchemy_container_ids.contains(&st.arcane_id) {
+                    preparation_assessments.push((*st, storage_temperature_millic, storage_ticks));
+                    continue;
+                }
                 let full = reg.item(st.item).durability;
                 if reg.item(st.item).food.is_none() || full == 0 {
                     continue;
@@ -407,6 +431,79 @@ impl World {
                 } else {
                     st.durability -= step;
                 }
+            }
+        }
+        for (stack, temperature_millic, ordinary_age_ticks) in preparation_assessments {
+            if let Err(error) =
+                self.age_preparation_storage(stack, temperature_millic, ordinary_age_ticks)
+            {
+                eprintln!("alchemy: stored preparation aging failed: {error}");
+            }
+        }
+
+        // Samples mounted in the discovery apparatus are neither inventory
+        // nor a cellar. They still live on the same ordinary aging clock; an
+        // active Holdfast may only reduce this real decrement. Collect first
+        // so the workings ledger can be updated without aliasing block state.
+        let mounted: Vec<(BlockPos, u8, ItemStack)> = self
+            .block_entities
+            .iter()
+            .filter_map(|(&pos, entity)| match entity {
+                BlockEntity::DiscoveryApparatus(apparatus) => Some(
+                    [apparatus.sample, apparatus.reference]
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(move |(bay, stack)| stack.map(|stack| (pos, bay as u8, stack)))
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let ordinary_step = (PERISH_SWEEP_SECS * FRESHNESS_PER_SEC) as u32;
+        for (pos, bay, expected) in mounted {
+            let definition = reg.item(expected.item);
+            let is_food = definition.food.is_some();
+            let is_seed = definition.name.ends_with("_seed");
+            if (!is_food && !is_seed) || definition.durability == 0 {
+                continue;
+            }
+            let step = self.holdfast_mounted_age_step(
+                pos,
+                bay,
+                expected,
+                ordinary_step,
+                PERISH_SWEEP_SECS as u32,
+            );
+            let Some(BlockEntity::DiscoveryApparatus(apparatus)) =
+                self.block_entities.get_mut(&pos)
+            else {
+                continue;
+            };
+            let slot = match bay {
+                0 => &mut apparatus.sample,
+                1 => &mut apparatus.reference,
+                _ => continue,
+            };
+            let Some(stack) = slot.as_mut() else {
+                continue;
+            };
+            if *stack != expected {
+                continue;
+            }
+            if stack.durability == 0 {
+                stack.durability = definition.durability;
+            } else if stack.durability > step {
+                stack.durability -= step;
+            } else if is_food {
+                consumed.push(*stack);
+                *slot = mush.map(|item| {
+                    let mut spoiled = ItemStack::new(&reg, item, 1);
+                    spoiled.count = stack.count;
+                    spoiled
+                });
+            } else {
+                stack.durability = 0;
             }
         }
         if let Err(error) = self.record_consumed_stacks(consumed) {
@@ -776,7 +873,7 @@ impl World {
             let Some(BlockEntity::Steam(s)) = self.block_entities.get(&pos) else {
                 continue;
             };
-            let running = boiler_here && s.fuel > 0.0 && s.water.water_hu > 0;
+            let running = !s.draft_closed && boiler_here && s.fuel > 0.0 && s.water.water_hu > 0;
             if running {
                 let micros = (f64::from(dt) * 1_000_000.0).round().max(0.0) as u64;
                 let numerator = self
@@ -796,7 +893,15 @@ impl World {
                 let exhausted = if let (Some(atlas), Some(weather)) =
                     (&self.planet_atlas, &mut self.planetary_weather)
                 {
-                    weather.exhaust_industrial_vapor(atlas.atlas_pos(pos.surface()), requested)
+                    let alchemy_reserved = self
+                        .alchemy_state
+                        .as_ref()
+                        .map_or(0, |state| state.total_water_custody().water_hu);
+                    weather.exhaust_industrial_vapor_excluding(
+                        atlas.atlas_pos(pos.surface()),
+                        requested,
+                        alchemy_reserved,
+                    )
                 } else {
                     requested
                 };
@@ -903,6 +1008,7 @@ impl World {
     }
 
     pub fn tick_entities(&mut self, dt: f32) {
+        self.tick_loose_items(dt);
         self.tick_steam(dt);
         self.tick_separators(dt);
         self.tick_bloomeries(dt);
@@ -916,7 +1022,8 @@ impl World {
         // Byproducts pour out the furnace mouth (cupellation lead);
         // collected here because the entity map is borrowed.
         let mut spat: Vec<(BlockPos, ItemStack)> = Vec::new();
-        let mut material_fuels = Vec::<ItemStack>::new();
+        let mut material_fuels = Vec::<(BlockPos, ItemStack)>::new();
+        let mut arcane_inputs = Vec::<(BlockPos, ItemStack)>::new();
         let mut material_losses = Vec::<crate::registry::MaterialVector>::new();
         let mut secondary_recoveries = Vec::<crate::registry::MaterialVector>::new();
         for (&fpos, e) in self.block_entities.iter_mut() {
@@ -936,7 +1043,7 @@ impl World {
                     f.burn_left = burn;
                     f.burn_total = burn;
                     f.burn_speed = speed;
-                    material_fuels.push(ItemStack { count: 1, ..fs });
+                    material_fuels.push((fpos, ItemStack { count: 1, ..fs }));
                     let left = fs.count - 1;
                     f.fuel = if left > 0 {
                         Some(ItemStack { count: left, ..fs })
@@ -955,6 +1062,9 @@ impl World {
                         f.progress = 0.0;
                         // Consume one input, emit output.
                         if let Some(inp) = f.input {
+                            if inp.arcane_id != 0 {
+                                arcane_inputs.push((fpos, ItemStack { count: 1, ..inp }));
+                            }
                             if crate::materials::is_secondary_item(&reg, inp.item) {
                                 secondary_recoveries.push(crate::materials::stack_materials(
                                     &reg,
@@ -988,8 +1098,8 @@ impl World {
             }
         }
         if let Some(ledger) = &mut self.material_ledger {
-            for stack in material_fuels {
-                let materials = crate::materials::stack_materials(&reg, stack);
+            for (_, stack) in &material_fuels {
+                let materials = crate::materials::stack_materials(&reg, *stack);
                 if let Err(error) = ledger.record_consumption(&materials) {
                     eprintln!("materials: furnace fuel accounting failed: {error}");
                 }
@@ -1004,6 +1114,12 @@ impl World {
                     eprintln!("materials: furnace secondary recovery failed: {error}");
                 }
             }
+        }
+        for (pos, stack) in material_fuels {
+            self.retire_arcane_stack_at(pos, stack, "furnace fuel consumed");
+        }
+        for (pos, stack) in arcane_inputs {
+            self.retire_arcane_stack_at(pos, stack, "furnace input transformed");
         }
         for (pos, stack) in spat {
             self.push_drop_at(pos, stack);

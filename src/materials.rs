@@ -780,6 +780,96 @@ impl MaterialLedger {
         Ok(())
     }
 
+    /// Stage one material mutation as a replacement of the bounded append
+    /// log. The caller can place that replacement in the arcane linked-file
+    /// coordinator, making implement metadata, Current custody, and tracked
+    /// matter one crash-recoverable commit instead of three best-effort saves.
+    fn stage_linked_delta(&self, action: MaterialDeltaAction) -> std::io::Result<(Self, Vec<u8>)> {
+        self.validate_delta_action(&action)?;
+        self.checkpoint_reservations()?;
+        if self.pending_delta_path().exists() {
+            return Err(std::io::Error::other(
+                "material delta recovery must finish before a linked implement mutation",
+            ));
+        }
+        let record = MaterialDelta {
+            seq: self
+                .last_delta_seq
+                .checked_add(1)
+                .ok_or_else(|| std::io::Error::other("material delta sequence overflow"))?,
+            action,
+        };
+        let mut bytes = match std::fs::read(self.delta_path()) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => DELTA_MAGIC.to_vec(),
+            Err(error) => return Err(error),
+        };
+        if !bytes.starts_with(DELTA_MAGIC) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "material delta log has an invalid header",
+            ));
+        }
+        bytes.extend_from_slice(&encode_delta_frame(&record)?);
+        if bytes.len() as u64 > MAX_DELTA_BYTES {
+            return Err(std::io::Error::other(
+                "material delta log requires a checkpoint before the linked mutation",
+            ));
+        }
+        let mut next = self.clone();
+        next.apply_delta_action(&record.action)?;
+        next.last_delta_seq = record.seq;
+        Ok((next, bytes))
+    }
+
+    pub(crate) fn stage_linked_recipe_loss(
+        &self,
+        materials: &MaterialVector,
+    ) -> std::io::Result<Option<(Self, Vec<u8>)>> {
+        if materials.is_empty() {
+            return Ok(None);
+        }
+        self.stage_linked_delta(MaterialDeltaAction::RecipeLoss(materials.clone()))
+            .map(Some)
+    }
+
+    /// Stage matter metabolized or otherwise consumed by a linked magical
+    /// operation. Keeping this distinct from recipe loss preserves the
+    /// material audit's explanation while allowing the Current owner and the
+    /// embodied preparation to commit in the same recovery journal.
+    pub(crate) fn stage_linked_consumption(
+        &self,
+        materials: &MaterialVector,
+    ) -> std::io::Result<Option<(Self, Vec<u8>)>> {
+        if materials.is_empty() {
+            return Ok(None);
+        }
+        self.stage_linked_delta(MaterialDeltaAction::Consumption(materials.clone()))
+            .map(Some)
+    }
+
+    pub(crate) fn stage_linked_bury_materials(
+        &self,
+        pos: BlockPos,
+        materials: &MaterialVector,
+        reason: &str,
+    ) -> std::io::Result<Option<(Self, Vec<u8>)>> {
+        if materials.is_empty() {
+            return Ok(None);
+        }
+        self.stage_linked_delta(MaterialDeltaAction::Bury {
+            region: SalvageRegion::at(pos),
+            materials: materials.clone(),
+            from_secondary: false,
+            reason: reason.into(),
+        })
+        .map(Some)
+    }
+
+    pub(crate) const fn linked_delta_path() -> &'static str {
+        DELTA_FILE
+    }
+
     fn validate_delta_action(&self, action: &MaterialDeltaAction) -> std::io::Result<()> {
         match action {
             MaterialDeltaAction::Operation(operation)
@@ -2635,6 +2725,7 @@ mod tests {
             item: tool,
             count: 1,
             durability: 1,
+            arcane_id: 0,
         };
         assert!(
             crate::crafting::match_repair(
@@ -2670,6 +2761,7 @@ mod tests {
             item: tool,
             count: 1,
             durability: 1,
+            arcane_id: 0,
         };
         let part_stack = ItemStack::new(&reg, part, 1);
         ledger

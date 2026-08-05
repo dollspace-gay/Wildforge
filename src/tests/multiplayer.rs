@@ -85,6 +85,68 @@ fn net_protocol_round_trips() {
         C2S::AttackMob { id: 3 },
         C2S::FeedMob { id: 12 },
         C2S::BrushBlock { pos: bp(4, 30, -2) },
+        C2S::BeginObserve {
+            target: crate::net::DiscoveryTargetSnap::Block(bp(4, 30, -2)),
+        },
+        C2S::Observe {
+            target: crate::net::DiscoveryTargetSnap::Block(bp(4, 30, -2)),
+            ledger_slot: 3,
+            calibration_slot: Some(4),
+            label: Some("north spring".into()),
+        },
+        C2S::CopyObservation {
+            writing_pos: bp(4, 30, -1),
+            source: crate::net::RecordHolderSnap::Inventory { slot: 3 },
+            record_id: 17,
+            destination: crate::net::RecordHolderSnap::Folio { pos: bp(5, 30, -1) },
+            include_location: false,
+        },
+        C2S::BeginExperiment {
+            pos: bp(5, 30, -2),
+            kind: crate::discovery::ExperimentKind::Conductivity,
+        },
+        C2S::SetExperimentItem {
+            pos: bp(5, 30, -2),
+            slot: 5,
+        },
+        C2S::RunExperiment {
+            pos: bp(5, 30, -2),
+            kind: crate::discovery::ExperimentKind::Conductivity,
+            ledger_slot: 3,
+            calibration_slot: Some(4),
+        },
+        C2S::OperateWorking {
+            working_id: "base:nudge".into(),
+            held_instance: 0x1234_5678_9abc_def0,
+            target: crate::workings::WorkingTargetIntent::Entity {
+                stable_id: (1u64 << 62) + 17,
+            },
+            intent: crate::workings::WorkingIntent::StartForced,
+        },
+        C2S::OperateWorking {
+            working_id: "base:nudge".into(),
+            held_instance: 0x1234_5678_9abc_def0,
+            target: crate::workings::WorkingTargetIntent::Entity {
+                stable_id: (1u64 << 62) + 17,
+            },
+            intent: crate::workings::WorkingIntent::Hold,
+        },
+        C2S::OperateWorking {
+            working_id: "base:nudge".into(),
+            held_instance: 0x1234_5678_9abc_def0,
+            target: crate::workings::WorkingTargetIntent::Entity {
+                stable_id: (1u64 << 62) + 17,
+            },
+            intent: crate::workings::WorkingIntent::Release,
+        },
+        C2S::OperateWorking {
+            working_id: "base:nudge".into(),
+            held_instance: 0x1234_5678_9abc_def0,
+            target: crate::workings::WorkingTargetIntent::Entity {
+                stable_id: (1u64 << 62) + 17,
+            },
+            intent: crate::workings::WorkingIntent::Cancel,
+        },
         C2S::ContainerClick {
             pos: bp(1, 2, 3),
             slot: 4,
@@ -136,6 +198,11 @@ fn net_protocol_round_trips() {
                 crate::planet_atlas::LocalWeatherSample::default(),
             )],
         },
+        S2C::ArcaneCue {
+            bands: [2, 1],
+            dominant: 4,
+            ecology: Some(("Rainbells fold shut.".into(), false)),
+        },
         S2C::Chat {
             from: "a".into(),
             msg: "b".into(),
@@ -163,7 +230,27 @@ fn net_protocol_round_trips() {
             item: 2,
             count: 1,
             durability: 40,
+            arcane_id: 0,
+            current_units: 0,
         })),
+        S2C::WorkingResult(crate::workings::WorkingResult {
+            success: true,
+            stable_id: 91,
+            phase: Some(crate::workings::WorkingPhase::Active),
+            cue: crate::workings::WorkingCueKind::Active,
+            warning_band: 2,
+            message: "Nudge settles under visible strain.".into(),
+        }),
+        S2C::WorkingEvent(crate::workings::WorkingCue {
+            stable_id: 91,
+            working_id: "base:nudge".into(),
+            handler: crate::workings::WorkingHandler::Nudge,
+            source: bp(1, 70, 1),
+            path: vec![bp(1, 70, 1), bp(3, 70, 1)],
+            kind: crate::workings::WorkingCueKind::Active,
+            warning_band: 2,
+            completion_permille: 350,
+        }),
         S2C::Mobs(crate::net::Snapshot::whole(
             1,
             vec![crate::net::MobSnap {
@@ -182,6 +269,68 @@ fn net_protocol_round_trips() {
         let back: S2C = decode(&encode(m)).expect("s2c decodes");
         assert_eq!(format!("{m:?}"), format!("{back:?}"));
     }
+}
+
+#[test]
+fn arcane_interest_updates_stay_within_the_network_budget() {
+    use crate::inventory::TOTAL_SLOTS;
+    use crate::net::{DATAGRAM_FLOOR, S2C, encode};
+
+    let cue = encode(&S2C::ArcaneCue {
+        bands: [4, 4],
+        dominant: 6,
+        ecology: Some((
+            "Lantern reeds bend over the spring margin; their amber light is steady, while the Current beneath them carries a muted tidal cadence. Ashlace farther upslope has caught a trace of dross in its grey-green threads without making it vanish."
+                .into(),
+            true,
+        )),
+    });
+    assert!(
+        cue.len() <= DATAGRAM_FLOOR,
+        "the longest normal qualitative ecology cue is {} bytes",
+        cue.len()
+    );
+
+    // A player can inspect only inventory, armor, and cursor custody. Use a
+    // deliberately conservative armor allowance so a future slot expansion
+    // fails this budget test before it silently bloats every host update.
+    let inspectable_slots = TOTAL_SLOTS + 8 + 1;
+    let items = encode(&S2C::ArcaneItems {
+        reset: true,
+        charges: (1..=inspectable_slots as u64)
+            .map(|id| (id, u64::MAX - id))
+            .collect(),
+        implements: Vec::new(),
+        apparatus: Vec::new(),
+    });
+    assert!(
+        items.len() <= DATAGRAM_FLOOR,
+        "{inspectable_slots} inspectable charge accounts encode to {} bytes",
+        items.len()
+    );
+
+    // ArcaneItems uses the reliable channel and the host chunks public
+    // implement metadata at sixteen records. Prove the worst declared
+    // per-record budget plus a deliberately generous visible-owner and
+    // apparatus census remains below the transport's 64 KiB frame ceiling.
+    let apparatus = (0..128)
+        .map(|index| crate::implements::ApparatusCue {
+            pos: bp(index % 32, 100, index / 32),
+            charge_band: 3,
+            strain_band: 3,
+        })
+        .collect();
+    let fixed = encode(&S2C::ArcaneItems {
+        reset: true,
+        charges: (1..=128).map(|id| (id, u64::MAX - id)).collect(),
+        implements: Vec::new(),
+        apparatus,
+    })
+    .len();
+    assert!(
+        fixed + 16 * crate::implements::MAX_IMPLEMENT_PUBLIC_BYTES < 64 * 1024,
+        "chunked implement snapshot can exceed its reliable frame budget"
+    );
 }
 
 #[test]
@@ -670,6 +819,7 @@ fn loopback_join_stream_and_edit() {
         item: sword,
         count: 1,
         durability: 7,
+        arcane_id: 0,
     });
     client.send(&C2S::ContainerClick {
         pos: chest_pos,
@@ -1441,6 +1591,45 @@ fn a_split_snapshot_is_applied_only_once_it_is_whole() {
 }
 
 #[test]
+fn host_owned_loose_item_ids_survive_batched_guest_and_agent_snapshots() {
+    use crate::net::{DATAGRAM_FLOOR, S2C, SnapshotAssembler, batch_snapshot, decode};
+
+    let sent = (0..200)
+        .map(|index| crate::net::LooseItemSnap {
+            id: (1u64 << 62) + index,
+            pos: ep(Vec3::new(index as f32 * 0.25, 80.0, 0.5)),
+            vel: Vec3::new(0.1, 0.0, -0.1),
+            item: (index % 16) as u16,
+            count: (index % 64 + 1) as u32,
+            age: index as f32 * 0.1,
+            durability: index as u32,
+            arcane_id: 0,
+        })
+        .collect::<Vec<_>>();
+    let parts = batch_snapshot(11, sent.clone(), DATAGRAM_FLOOR, S2C::LooseItems);
+    assert!(parts.len() > 1);
+    assert!(parts.iter().all(|part| part.len() <= DATAGRAM_FLOOR));
+
+    let mut receiver: SnapshotAssembler<crate::net::LooseItemSnap> = Default::default();
+    let mut delivered = None;
+    for bytes in parts {
+        let Some(S2C::LooseItems(part)) = decode::<S2C>(&bytes) else {
+            panic!("loose-item snapshot did not decode")
+        };
+        if let Some(items) = receiver.accept(part) {
+            delivered = Some(items);
+        }
+    }
+    let delivered = delivered.expect("the whole loose-item generation arrives");
+    assert_eq!(delivered.len(), sent.len());
+    assert_eq!(
+        delivered.iter().map(|item| item.id).collect::<Vec<_>>(),
+        sent.iter().map(|item| item.id).collect::<Vec<_>>()
+    );
+    assert!(delivered.iter().all(|item| item.id < (1u64 << 63)));
+}
+
+#[test]
 fn a_lost_part_costs_its_generation_and_nothing_after_it() {
     use crate::net::{DATAGRAM_FLOOR, S2C, SnapshotAssembler, batch_snapshot, decode};
 
@@ -1702,12 +1891,21 @@ fn a_crowded_world_still_reaches_the_guest() {
 
 #[test]
 fn a_guest_that_dropped_a_chunk_can_ask_for_it_again() {
-    let (mut sess, mut sim, mut client, id) = loopback_pair("mp-rechunk");
+    let (mut sess, mut sim, mut client, id, drained) = loopback_pair_drained("mp-rechunk");
     let gpos = Vec3::new(8.5, sim.world.surface_height(8, 8) as f32 + 1.0, 8.5);
     sess.guests.get_mut(&id).unwrap().pos = ep(gpos);
 
-    // Let the ring stream normally.
-    let mut first: Option<ChunkPos> = None;
+    // The host starts the ordinary ring as soon as admission completes, so
+    // the first chunk is allowed to share the poll that carried
+    // EntryAccepted. Ignoring the handshake drain made this test depend on
+    // thread scheduling even though the host had correctly recorded and sent
+    // the ground.
+    let mut first = drained.into_iter().find_map(|message| {
+        let S2C::Chunk { face, u, v, .. } = message else {
+            return None;
+        };
+        crate::planet::Face::from_u8(face).and_then(|face| ChunkPos::new(face, u, v).ok())
+    });
     for _ in 0..400 {
         sess.pump(&mut sim, Some((ep(gpos), 0.0, false, u16::MAX, 0)), 0.06);
         for msg in client.poll() {
@@ -1906,6 +2104,7 @@ fn the_wild_hurts_the_guest_it_actually_struck() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         },
         PlayerCtx {
             id: 77,
@@ -1913,6 +2112,7 @@ fn the_wild_hurts_the_guest_it_actually_struck() {
             spawn: ep(Vec3::ZERO),
             attackable: true,
             aggro_mod: 0.0,
+            quiet_charm: None,
         },
     ];
     // The event the sim emits for the SECOND entry names 77, not 1.
@@ -1955,6 +2155,7 @@ fn wildlife_returns_to_every_country_someone_lives_in() {
         spawn: ep(p),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     };
     let home = Vec3::new(8.0, w.surface_height(8, 8) as f32 + 1.0, 8.0);
     let away = Vec3::new(far as f32, w.surface_height(far, 8) as f32 + 1.0, 8.0);

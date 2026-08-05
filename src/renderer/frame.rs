@@ -73,8 +73,62 @@ fn shadow_debug() -> u32 {
 }
 
 impl Renderer {
+    fn composite_and_ui(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        f: &FrameInput<'_>,
+    ) {
+        {
+            let mut pass = post_pass(encoder, "composite", target);
+            pass.set_pipeline(&self.composite_pipeline);
+            pass.set_bind_group(0, &self.post.composite_scene_bg, &[]);
+            pass.set_bind_group(1, &self.post.composite_bloom_bg, &[]);
+            pass.set_bind_group(2, &self.post_params_bg, &[]);
+            pass.draw(0..3, 0..1);
+        }
+
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("ui"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        pass.set_bind_group(0, &self.uniform_bg, &[]);
+        pass.set_bind_group(1, &self.atlas_bg, &[]);
+        pass.set_bind_group(2, &self.shadow_bg, &[]);
+
+        if f.crosshair {
+            pass.set_pipeline(&self.line_screen_pipeline);
+            pass.set_vertex_buffer(0, self.crosshair_buf.slice(..));
+            pass.draw(0..4, 0..1);
+        }
+        if !f.ui_verts.is_empty() {
+            pass.set_pipeline(&self.ui_pipeline);
+            pass.set_vertex_buffer(0, self.ui_vbuf.buf.slice(..));
+            pass.draw(0..f.ui_verts.len() as u32, 0..1);
+        }
+    }
+
     pub fn render(&mut self, f: FrameInput) -> Result<(), wgpu::SurfaceError> {
         let outline = f.outline;
+        let outline_color = f.outline_color;
 
         // Sun light-space matrix: an orthographic box centered near the camera,
         // looking from the sun toward that center. Covers the near field; beyond
@@ -274,7 +328,7 @@ impl Renderer {
 
         if let Some(block) = outline {
             let e = 0.003f32;
-            let c = [0.05, 0.05, 0.05];
+            let c = outline_color;
             let p = |du: f64, dy: f64, dv: f64| {
                 let surface = crate::planet::SurfacePoint {
                     face: block.face(),
@@ -686,58 +740,27 @@ impl Renderer {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        {
-            let mut pass = post_pass(&mut encoder, "composite", &view);
-            pass.set_pipeline(&self.composite_pipeline);
-            pass.set_bind_group(0, &self.post.composite_scene_bg, &[]);
-            pass.set_bind_group(1, &self.post.composite_bloom_bg, &[]);
-            pass.set_bind_group(2, &self.post_params_bg, &[]);
-            pass.draw(0..3, 0..1);
-        }
-
-        // Flat UI over the tonemapped image: crosshair, then the 2D batch.
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("ui"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_bind_group(0, &self.uniform_bg, &[]);
-            pass.set_bind_group(1, &self.atlas_bg, &[]);
-            pass.set_bind_group(2, &self.shadow_bg, &[]);
-
-            if f.crosshair {
-                pass.set_pipeline(&self.line_screen_pipeline);
-                pass.set_vertex_buffer(0, self.crosshair_buf.slice(..));
-                pass.draw(0..4, 0..1);
-            }
-            if !f.ui_verts.is_empty() {
-                pass.set_pipeline(&self.ui_pipeline);
-                pass.set_vertex_buffer(0, self.ui_vbuf.buf.slice(..));
-                pass.draw(0..f.ui_verts.len() as u32, 0..1);
-            }
-        }
+        self.composite_and_ui(&mut encoder, &view, &f);
 
         let shot = self.pending_screenshot.take().map(|path| {
             let w = self.config.width;
             let h = self.config.height;
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("screenshot-target"),
+                size: wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: self.config.format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
+            });
+            let capture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            self.composite_and_ui(&mut encoder, &capture_view, &f);
             let bpr = (w * 4).div_ceil(256) * 256; // COPY_BYTES_PER_ROW_ALIGNMENT
             let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("screenshot"),
@@ -747,7 +770,7 @@ impl Renderer {
             });
             encoder.copy_texture_to_buffer(
                 wgpu::TexelCopyTextureInfo {
-                    texture: &frame.texture,
+                    texture: &texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
@@ -766,13 +789,13 @@ impl Renderer {
                     depth_or_array_layers: 1,
                 },
             );
-            (path, buf, w, h, bpr)
+            (path, buf, texture, w, h, bpr)
         });
 
         self.queue.submit(std::iter::once(encoder.finish()));
         frame.present();
 
-        if let Some((path, buf, w, h, bpr)) = shot {
+        if let Some((path, buf, _texture, w, h, bpr)) = shot {
             let bgra = matches!(
                 self.config.format,
                 wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb

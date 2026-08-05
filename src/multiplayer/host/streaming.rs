@@ -369,7 +369,13 @@ impl HostSession {
     pub(super) fn stream_snapshots(
         &mut self,
         server: &Server,
-        host: Option<(EntityPos, f32, u16, u32)>,
+        host: Option<(
+            EntityPos,
+            f32,
+            u16,
+            u32,
+            Option<crate::implements::ImplementVisual>,
+        )>,
         dt: f32,
     ) {
         self.snapshot_timer += dt;
@@ -380,11 +386,13 @@ impl HostSession {
         self.snapshot_seq = self.snapshot_seq.wrapping_add(1);
         let seq = self.snapshot_seq;
         let mut everyone = Vec::new();
-        if let Some((pos, yaw, held, style)) = host {
-            everyone.push((0u32, pos, yaw, held, style));
+        if let Some((pos, yaw, held, style, implement)) = host {
+            everyone.push((0u32, pos, yaw, held, style, implement));
         }
         for (id, g) in self.guests.iter().filter(|(_, guest)| guest.entry_ready) {
-            everyone.push((*id, g.pos, g.yaw, g.held, g.style));
+            let implement =
+                g.inventory.slots[g.hotbar].and_then(|stack| server.world.implement_visual(stack));
+            everyone.push((*id, g.pos, g.yaw, g.held, g.style, implement));
         }
         let ids: Vec<u32> = self
             .guests
@@ -432,6 +440,7 @@ impl HostSession {
                 .iter()
                 .filter(|p| near_entity(p.pos))
                 .map(|p| net::BoltSnap {
+                    id: p.stable_id,
                     pos: p.pos,
                     vel: p.vel,
                     tile: p.tile,
@@ -439,6 +448,27 @@ impl HostSession {
                 })
                 .collect();
             self.send_snapshot(id, batch_snapshot(seq, bolts, budget, S2C::Bolts));
+
+            let loose_items: Vec<net::LooseItemSnap> = server
+                .world
+                .loose_items()
+                .iter()
+                .filter(|item| near_entity(item.pos))
+                .map(|item| net::LooseItemSnap {
+                    id: item.stable_id,
+                    pos: item.pos,
+                    vel: item.vel,
+                    item: item.item.0,
+                    count: item.count,
+                    age: item.age,
+                    durability: item.durability,
+                    arcane_id: item.arcane_id,
+                })
+                .collect();
+            self.send_snapshot(
+                id,
+                batch_snapshot(seq, loose_items, budget, S2C::LooseItems),
+            );
 
             // Sent even when empty so guests clear their last tumble.
             let falls: Vec<net::FallSnap> = server

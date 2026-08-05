@@ -218,6 +218,33 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
+                if game.ui_state.screen == Screen::Inventory
+                    && game.ui_state.inventory_discovery_open
+                    && game.ui_state.discovery_label_focus
+                    && event.state.is_pressed()
+                {
+                    match event.physical_key {
+                        PhysicalKey::Code(KeyCode::Backspace) => {
+                            game.ui_state.discovery_label.pop();
+                        }
+                        PhysicalKey::Code(KeyCode::Escape) | PhysicalKey::Code(KeyCode::Enter) => {
+                            game.ui_state.discovery_label_focus = false;
+                        }
+                        _ => {
+                            if let Some(text) = &event.text {
+                                for ch in text.chars() {
+                                    let allowed = !ch.is_control()
+                                        && (ch.is_alphanumeric() || " _-':,.()/#".contains(ch));
+                                    if allowed && game.ui_state.discovery_label.chars().count() < 48
+                                    {
+                                        game.ui_state.discovery_label.push(ch);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
                 let searchable = matches!(
                     game.ui_state.screen,
                     Screen::Inventory

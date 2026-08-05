@@ -26,6 +26,14 @@ const GEN_BUDGET: usize = 4; // chunk generations per frame (256-tall gen is pri
 const SHOT_SETTLE_FRAMES: u64 = 10;
 const SHOT_FIXED_DT: f32 = 1.0 / 60.0;
 const SHOT_MAX_FRAMES: u64 = 3000;
+
+fn advance_capture_clock(current: u64, awaiting_direct_entry: bool) -> u64 {
+    if awaiting_direct_entry {
+        0
+    } else {
+        current.saturating_add(1)
+    }
+}
 const BUILD_MARKER: &str = "BIOME-R4";
 const REACH: f32 = 5.0;
 const MAX_HEALTH: f32 = 14.0; // base half-hearts (7 hearts)
@@ -123,6 +131,15 @@ struct SurvivalState {
     exhaustion_regen: f32,
     /// Accumulator for the pack's food-freshness sweep.
     perish_accum: f32,
+    /// Host-authoritative preparation effects advance at one-second cadence.
+    alchemy_accum: f32,
+    /// Personal exposure burden available to bounded antidote handlers. The
+    /// regional dross ledger remains separate and is never cleared by this.
+    bodily_dross: u64,
+    preparation_modifiers: crate::alchemy::PreparationModifiers,
+    /// Seconds of slow-hunger benefit already paid for by one authoritative
+    /// fixed-interval charm debit.
+    hunger_charm_credit: f32,
     starve_timer: f32,
     air: f32,
     since_damage: f32,
@@ -144,6 +161,10 @@ impl SurvivalState {
             eating: 0.0,
             exhaustion_regen: 0.0,
             perish_accum: 0.0,
+            alchemy_accum: 0.0,
+            bodily_dross: 0,
+            preparation_modifiers: crate::alchemy::PreparationModifiers::default(),
+            hunger_charm_credit: 0.0,
             starve_timer: 0.0,
             air: MAX_AIR,
             since_damage: 100.0,
@@ -208,6 +229,18 @@ struct UiState {
     browse_back: Vec<(ItemId, bool)>,
     inventory_status_open: bool,
     inventory_browser_open: bool,
+    inventory_discovery_open: bool,
+    discovery_holder: Option<net::RecordHolderSnap>,
+    discovery_copy_target: Option<net::RecordHolderSnap>,
+    discovery_writing_pos: Option<crate::planet::BlockPos>,
+    discovery_records: Vec<crate::discovery::ObservationSummary>,
+    discovery_capacity: u16,
+    discovery_page: usize,
+    discovery_sort: u8,
+    discovery_selected: [Option<u64>; 2],
+    discovery_include_location: bool,
+    discovery_label: String,
+    discovery_label_focus: bool,
     appearance_from_pause: bool,
     account_name: String,
     account_handle: String,
@@ -280,6 +313,18 @@ impl Default for UiState {
             browse_back: Vec::new(),
             inventory_status_open: false,
             inventory_browser_open: false,
+            inventory_discovery_open: false,
+            discovery_holder: None,
+            discovery_copy_target: None,
+            discovery_writing_pos: None,
+            discovery_records: Vec::new(),
+            discovery_capacity: 0,
+            discovery_page: 0,
+            discovery_sort: 0,
+            discovery_selected: [None; 2],
+            discovery_include_location: false,
+            discovery_label: String::new(),
+            discovery_label_focus: false,
             appearance_from_pause: false,
             account_name: String::new(),
             account_handle: String::new(),
@@ -303,11 +348,13 @@ struct InteractionState {
     bow_draw: f32,
     brushing: f32,
     brush_target: Option<crate::planet::BlockPos>,
+    lens_settle: f32,
+    lens_target: Option<DiscoveryAim>,
+    experiment_kind: usize,
     anvil_work: f32,
     anvil_pos: Option<crate::planet::BlockPos>,
     craft_grid: [Option<ItemStack>; 9],
     craft_size: usize,
-    items: Vec<ItemEntity>,
     breaking: Option<(crate::planet::BlockPos, f32)>,
     /// Waystones this player has touched: (name, x, z). Loaded from a
     /// per-world sidecar; purely local knowledge, never synced.
@@ -317,6 +364,24 @@ struct InteractionState {
     /// A cast line: (bobber cell center, seconds to the bite, bite
     /// window remaining). The water decides when.
     fishing: Option<(crate::planet::EntityPos, f32, f32)>,
+    /// Last authoritative revision observed for each binding frame. Reliable
+    /// mutations echo a new value and stale concurrent requests are refused.
+    binding_revisions: std::collections::HashMap<crate::planet::BlockPos, u64>,
+    /// Last authoritative revision observed for each alchemy installation.
+    alchemy_revisions: std::collections::HashMap<crate::planet::BlockPos, u64>,
+    /// Recipe highlighted by empty-hand mortar interaction.
+    alchemy_recipe: usize,
+    alchemy_recipe_initialized: bool,
+    working: Option<LocalWorkingChannel>,
+}
+
+struct LocalWorkingChannel {
+    stable_id: u64,
+    working_id: String,
+    wand_id: u64,
+    target: crate::workings::WorkingTargetIntent,
+    held_secs: f32,
+    hold_sent: bool,
 }
 
 impl Default for InteractionState {
@@ -325,17 +390,30 @@ impl Default for InteractionState {
             bow_draw: 0.0,
             brushing: 0.0,
             brush_target: None,
+            lens_settle: 0.0,
+            lens_target: None,
+            experiment_kind: 0,
             anvil_work: 0.0,
             anvil_pos: None,
             craft_grid: [None; 9],
             craft_size: 2,
-            items: Vec::new(),
             breaking: None,
             attuned: Vec::new(),
             riding: None,
             fishing: None,
+            binding_revisions: std::collections::HashMap::new(),
+            alchemy_revisions: std::collections::HashMap::new(),
+            alchemy_recipe: 0,
+            alchemy_recipe_initialized: false,
+            working: None,
         }
     }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum DiscoveryAim {
+    Region(crate::planet::BlockPos),
+    Block(crate::planet::BlockPos),
 }
 
 /// Cosmetic animation, particles, transient feedback, and light selection.
@@ -348,6 +426,9 @@ struct PresentationState {
     /// already whispered this session.
     last_ire_cell: Option<world::RegionCell>,
     whispered_cells: std::collections::HashSet<world::RegionCell>,
+    /// Qualitative magical signatures already presented this session. The
+    /// same ordinary condition does not toast on every atlas-cell crossing.
+    arcane_signs: std::collections::HashSet<String>,
     swing: f32,
     hand_bob: f32,
     weather_vis: f32,
@@ -377,6 +458,10 @@ struct PresentationState {
     lights: lights::Director,
     player_gait: std::collections::HashMap<u32, (Vec3, f32)>,
     demo_lights: Vec<lights::DynLight>,
+    /// Last host-authored active cue by stable working id. Dedicated guests
+    /// refresh this bounded presentation cache once per second; local play
+    /// reads the authoritative state directly.
+    working_cues: std::collections::HashMap<u64, (crate::workings::WorkingCue, f32)>,
 }
 
 impl PresentationState {
@@ -385,6 +470,7 @@ impl PresentationState {
             max_view_dist: config::max_view_dist_for_memory(),
             last_ire_cell: None,
             whispered_cells: std::collections::HashSet::new(),
+            arcane_signs: std::collections::HashSet::new(),
             swing: 0.0,
             hand_bob: 0.0,
             weather_vis: 0.0,
@@ -415,6 +501,7 @@ impl PresentationState {
             lights: lights::Director::new(),
             player_gait: Default::default(),
             demo_lights: Vec::new(),
+            working_cues: Default::default(),
         }
     }
 
@@ -441,6 +528,7 @@ struct Remote {
     player_positions: std::collections::HashMap<u32, crate::planet::EntityPos>,
     /// Wire item id each player holds (from Players snapshots).
     player_held: std::collections::HashMap<u32, u16>,
+    player_implement: std::collections::HashMap<u32, crate::implements::ImplementVisual>,
     /// Packed Style per player (from Players snapshots).
     player_style: std::collections::HashMap<u32, u32>,
     names: std::collections::HashMap<u32, String>,
@@ -455,9 +543,10 @@ struct Remote {
     mob_interval: f32,
     /// Snapshots arrive split when they are too big for one datagram; these
     /// hold the parts until a generation is whole.
-    players_rx: net::SnapshotAssembler<(u32, crate::planet::EntityPos, f32, u16, u32)>,
+    players_rx: net::SnapshotAssembler<net::PlayerSnap>,
     mobs_rx: net::SnapshotAssembler<net::MobSnap>,
     bolts_rx: net::SnapshotAssembler<net::BoltSnap>,
+    loose_items_rx: net::SnapshotAssembler<net::LooseItemSnap>,
     falling_rx: net::SnapshotAssembler<net::FallSnap>,
     /// View distance the host granted, in chunks. Terrain past it is not
     /// coming, so the fog and the eviction radius both respect it.
@@ -522,6 +611,9 @@ struct Game {
     time_abs: f32,
 
     total_frames: u64,
+    /// Frames eligible for an automated capture. Direct-entry loading and
+    /// creation screens do not consume the world's settle/timeout budget.
+    capture_frames: u64,
     settled_frames: u64,
     shot_at: Option<u64>,
     /// A chunk within the DDA occupancy grid's reach remeshed (a block edit),
@@ -638,7 +730,15 @@ impl Game {
             }
         }
         std::fs::create_dir_all("packs").ok();
-        let config = Config::load();
+        let mut config = Config::load();
+        // Dev/capture override, intentionally never persisted. Production
+        // planets can otherwise spend the entire bounded screenshot run
+        // filling a player's large everyday horizon before frame one.
+        if let Ok(distance) = std::env::var("WILDFORGE_VIEW_DIST")
+            && let Ok(distance) = distance.parse::<i32>()
+        {
+            config.view_dist = distance.clamp(config::MIN_VIEW_DIST, config::MAX_VIEW_DIST);
+        }
         let identity = identity::LocalIdentity::load_or_create(&identity::identity_dir())
             .expect("load or create local identity");
         let atproto_account = identity::atproto::AtprotoAccount::load(&identity::identity_dir())
@@ -757,6 +857,7 @@ impl Game {
             last_space: -9.0,
             time_abs: 0.0,
             total_frames: 0,
+            capture_frames: 0,
             occ_dirty: false,
             block_albedo,
             room_light: bounce::RoomLight::new(),
@@ -909,7 +1010,14 @@ pub(super) fn run_windowed() {
 
 #[cfg(test)]
 mod state_characterization {
-    use super::PresentationState;
+    use super::{PresentationState, advance_capture_clock};
+
+    #[test]
+    fn direct_entry_loading_does_not_consume_capture_budget() {
+        assert_eq!(advance_capture_clock(2_999, true), 0);
+        assert_eq!(advance_capture_clock(0, false), 1);
+        assert_eq!(advance_capture_clock(u64::MAX, false), u64::MAX);
+    }
 
     #[test]
     fn presentation_randomness_cannot_advance_the_sim_stream() {

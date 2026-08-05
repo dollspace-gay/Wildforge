@@ -260,15 +260,27 @@ impl Game {
                     {
                         eprintln!("materials: held-item override deletion failed: {error}");
                     }
-                    let stack = ItemStack::new(&reg, item, 1);
-                    if let Err(error) = self
-                        .server
-                        .world
-                        .record_external_stack(stack, "development held-item override")
-                    {
-                        eprintln!("materials: held-item override source failed: {error}");
+                    let mut stack = ItemStack::new(&reg, item, 1);
+                    let accepted = self.player.pos.block().is_none_or(|at| {
+                        self.server
+                            .world
+                            .bind_arcane_stack_at(at, &mut stack, "development held-item override")
+                            .map_err(|error| {
+                                eprintln!("arcane: held-item override rejected: {error}");
+                                error
+                            })
+                            .is_ok()
+                    });
+                    if accepted {
+                        if let Err(error) = self
+                            .server
+                            .world
+                            .record_external_stack(stack, "development held-item override")
+                        {
+                            eprintln!("materials: held-item override source failed: {error}");
+                        }
+                        self.inventory.slots[self.input.hotbar_sel] = Some(stack);
                     }
-                    self.inventory.slots[self.input.hotbar_sel] = Some(stack);
                 }
                 None => eprintln!("WILDFORGE_HELD: no item named {name:?}"),
             }
@@ -300,6 +312,51 @@ impl Game {
         // layout screenshots (menu screens are handled at startup).
         if std::env::var("WILDFORGE_SCREEN").as_deref() == Ok("inventory") {
             self.set_screen(Screen::Inventory);
+        }
+        // Dev: plant the base magical ecology through the real cultivation
+        // path around the prepared doorstep. This is deliberately not a row
+        // of authored decorative blocks: each placement registers a distinct
+        // player-owned persistent site, begins empty, and must establish from
+        // the local water, nutrients, climate, and Current if the capture is
+        // allowed to run on.
+        if std::env::var("WILDFORGE_DEMO_MAGIC_ECOLOGY").is_ok() {
+            let bx = spawn.x as i32;
+            let bz = spawn.z as i32;
+            let mut planted = 0usize;
+            for (index, item_name) in [
+                "base:rainbell_dew",
+                "base:hushwood_switch",
+                "base:stormvine_tendril",
+                "base:cairnbloom_flower",
+                "base:ashlace_tissue",
+                "base:pilgrim_root_cutting",
+                "base:lantern_reed_pith",
+                "base:nightglass_pod",
+                "base:frostlace_frond",
+                "base:tidekelp_blade",
+                "base:echo_cap_ring",
+                "base:ember_petal",
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let x = bx - 6 + (index % 4) as i32 * 4;
+                let z = bz + 5 + (index / 4) as i32 * 4;
+                let y = demo_height!(self.server.world, chart, x, z);
+                let pos = chart.block(x, y + 1, z);
+                self.server.world.set_block_at(pos, AIR);
+                let Some(item) = self.content.reg.item_id(item_name) else {
+                    continue;
+                };
+                if self
+                    .server
+                    .world
+                    .place_item_block_at(pos, ItemStack::new(&self.content.reg, item, 1))
+                {
+                    planted += 1;
+                }
+            }
+            eprintln!("magical ecology demo registered {planted} cultivated sites");
         }
         // Dev: a ring of torches near spawn (lighting verification).
         if std::env::var("WILDFORGE_DEMO_TORCH").is_ok()
@@ -695,6 +752,7 @@ impl Game {
                             spawn,
                             attackable: false,
                             aggro_mod: 0.0,
+                            quiet_charm: None,
                         }],
                         1.0,
                         0.01,
@@ -1314,6 +1372,7 @@ impl Game {
                             water: crate::planet_atlas::ReservoirMass::fresh(
                                 60 * crate::planet_atlas::HYDRO_UNITS_PER_BLOCK,
                             ),
+                            draft_closed: false,
                             steam_numerator_remainder: 0,
                         }),
                     );
@@ -2342,9 +2401,349 @@ impl Game {
                 self.set_screen(Screen::Furnace(chart.block_tuple(p)));
             }
         }
+        if (std::env::var("WILDFORGE_DEMO_IMPLEMENTS").is_ok()
+            || std::env::var("WILDFORGE_DEMO_WORKINGS").is_ok())
+            && let Err(error) = self.stage_implements_demo(spawn)
+        {
+            eprintln!("implements demo could not be staged: {error}");
+        }
+        if std::env::var("WILDFORGE_DEMO_ALCHEMY").is_ok()
+            && let Err(error) = self.stage_alchemy_demo(spawn)
+        {
+            eprintln!("alchemy demo could not be staged: {error}");
+        }
         if let Ok(scene) = std::env::var("WILDFORGE_PLANET_SHOT") {
             self.stage_planet_qualification(&scene);
         }
+    }
+
+    /// A compact physical apothecary used by the GPU capture gate. Every
+    /// station is a real authored block with an authoritative installation
+    /// record, adjacent conductor, heat source, cooling stock, and reusable
+    /// vessels/inputs in the ordinary player inventory.
+    fn stage_alchemy_demo(&mut self, spawn: EntityPos) -> Result<(), String> {
+        let chart = DemoChart::new(spawn.face());
+        let reg = self.content.reg.clone();
+        let bx = spawn.x.round() as i32;
+        let bz = spawn.z.round() as i32 - 8;
+        let y = (-3..=3)
+            .map(|dx| demo_height!(self.server.world, chart, bx + dx, bz))
+            .max()
+            .unwrap_or_else(|| demo_height!(self.server.world, chart, bx, bz))
+            + 1;
+        let stone = reg
+            .block_id("base:stone")
+            .ok_or("capture registry lacks stone")?;
+        for dx in -6..=6 {
+            for dz in -2..=6 {
+                if dz <= 2 {
+                    demo_set!(self.server.world, chart, bx + dx, y - 1, bz + dz, stone);
+                }
+                for dy in 0..=6 {
+                    demo_set!(self.server.world, chart, bx + dx, y + dy, bz + dz, AIR);
+                }
+            }
+        }
+        let mut stations = Vec::new();
+        for (dx, name) in [
+            (-3, "base:alchemy_mortar"),
+            (-1, "base:infusion_basin"),
+            (1, "base:alembic"),
+            (3, "base:filter_stand"),
+        ] {
+            let pos = chart.block(bx + dx, y, bz);
+            let block = reg
+                .block_id(name)
+                .ok_or_else(|| format!("capture registry lacks {name}"))?;
+            self.server.world.set_block_authored_at(
+                pos,
+                block,
+                "development alchemy qualification scene",
+            );
+            let conductor = reg
+                .block_id("base:arcane_conductor")
+                .ok_or("capture registry lacks arcane conductor")?;
+            self.server.world.set_block_authored_at(
+                chart.block(bx + dx, y, bz - 1),
+                conductor,
+                "development alchemy qualification scene",
+            );
+            stations.push(pos);
+        }
+        let fire = reg
+            .block_id("base:fire")
+            .ok_or("capture registry lacks fire")?;
+        let ice = reg
+            .block_id("base:ice")
+            .ok_or("capture registry lacks ice")?;
+        self.server.world.set_block_authored_at(
+            chart.block(bx, y, bz + 1),
+            fire,
+            "development alchemy heat source",
+        );
+        self.server.world.set_block_authored_at(
+            chart.block(bx + 2, y, bz + 1),
+            ice,
+            "development alchemy cooling stock",
+        );
+
+        let actor = identity::local_player_id(
+            &self.server.world.save_dir_for_saving(),
+            self.identity.device_id(),
+        )
+        .map_err(|error| error.to_string())?;
+        let mut work = Inventory::new();
+        let mut last = None;
+        for pos in stations {
+            last = Some(self.server.world.operate_alchemy(
+                pos,
+                &mut work,
+                crate::alchemy::AlchemyRequest {
+                    actor: actor.0,
+                    actor_label: "development visual qualification".into(),
+                    expected_revision: None,
+                    action: crate::alchemy::ApparatusAction::Inspect,
+                },
+            )?);
+        }
+        for (name, count) in [
+            ("base:glass_bottle", 4),
+            ("base:glass_jar", 2),
+            ("base:filter_cloth", 2),
+            ("base:bucket_water", 1),
+            ("base:pilgrim_root_cutting", 1),
+        ] {
+            let item = reg
+                .item_id(name)
+                .ok_or_else(|| format!("capture registry lacks {name}"))?;
+            self.give_dev_item(&reg, item, count);
+        }
+        if let Some(result) = last {
+            self.present_alchemy_cue(result.cue);
+        }
+        if std::env::var("WILDFORGE_POS").is_err() {
+            self.player.pos = self
+                .player
+                .pos
+                .relocated_local(Vec3::new(bx as f32, y as f32 + 3.2, bz as f32 + 5.5))
+                .map_err(|error| format!("alchemy capture position failed: {error}"))?;
+        }
+        self.player.vel = Vec3::ZERO;
+        self.flying = true;
+        self.camera.follow_planet(self.player.eye());
+        self.camera.yaw = -std::f32::consts::FRAC_PI_2;
+        self.camera.pitch = -0.28;
+        Ok(())
+    }
+
+    /// A visual qualification scene assembled through the real frame verbs.
+    /// No decorative duplicate is spawned: the glowing vessel, mounted
+    /// apparatus, component-derived held wand, charge, dross, and stable item
+    /// id are the same authority state an ordinary player would create.
+    fn stage_implements_demo(&mut self, spawn: EntityPos) -> Result<(), String> {
+        use crate::implements::FrameAction;
+
+        let chart = DemoChart::new(spawn.face());
+        let reg = self.content.reg.clone();
+        let bx = spawn.x.round() as i32;
+        let bz = spawn.z.round() as i32 - 6;
+        let y = demo_height!(self.server.world, chart, bx, bz) + 1;
+        let frame = chart.block(bx, y, bz);
+        let focus = chart.block(bx + 1, y, bz);
+        let vessel_pos = chart.block(bx - 1, y, bz);
+        let conductor = chart.block(bx, y, bz - 1);
+        let containment = chart.block(bx + 2, y, bz);
+        for pos in [frame, focus, vessel_pos, conductor, containment] {
+            for du in -1..=1 {
+                for dv in -1..=1 {
+                    if let Some(near) = pos.offset(du, 0, dv) {
+                        self.server.world.ensure_chunk(near.chunk());
+                    }
+                }
+            }
+            self.server.world.set_block_at(pos, AIR);
+        }
+        for (pos, name) in [
+            (frame, "base:binding_frame"),
+            (focus, "base:focus_mount"),
+            (conductor, "base:arcane_conductor"),
+            (containment, "base:containment_post"),
+        ] {
+            let block = reg
+                .block_id(name)
+                .ok_or_else(|| format!("capture registry lacks {name}"))?;
+            self.server.world.set_block_authored_at(
+                pos,
+                block,
+                "development implements qualification scene",
+            );
+        }
+        let vessel_item = reg
+            .item_id("base:charge_vessel")
+            .ok_or("capture registry lacks the charge vessel item")?;
+        let vessel = ItemStack::new(&reg, vessel_item, 1);
+        self.server
+            .world
+            .record_external_stack(vessel, "development implements qualification scene")
+            .map_err(|error| error.to_string())?;
+        if !self.server.world.place_item_block_at(vessel_pos, vessel) {
+            return Err("the physical charge vessel could not be placed".into());
+        }
+        let layout = self.server.world.binding_frame_layout(frame);
+        if !layout.valid {
+            return Err(layout.problems.join(" "));
+        }
+
+        let mut work = Inventory::new();
+        let mut revision = self
+            .server
+            .world
+            .operate_binding_frame(
+                frame,
+                &mut work,
+                0,
+                FrameAction::Calibrate,
+                None,
+                "development visual qualification",
+            )?
+            .revision;
+        for name in [
+            "base:seasoned_wand_body",
+            "base:wellglass_shard",
+            "base:echo_slate",
+            "base:bronze_wand_binding",
+        ] {
+            let item = reg
+                .item_id(name)
+                .ok_or_else(|| format!("capture registry lacks {name}"))?;
+            let stack = ItemStack::new(&reg, item, 1);
+            self.server
+                .world
+                .record_external_stack(stack, "development implements qualification scene")
+                .map_err(|error| error.to_string())?;
+            work.slots[0] = Some(stack);
+            revision = self
+                .server
+                .world
+                .operate_binding_frame(
+                    frame,
+                    &mut work,
+                    0,
+                    FrameAction::ExchangeSelected,
+                    Some(revision),
+                    "development visual qualification",
+                )?
+                .revision;
+        }
+        revision = self
+            .server
+            .world
+            .operate_binding_frame(
+                frame,
+                &mut work,
+                0,
+                FrameAction::Assemble,
+                Some(revision),
+                "development visual qualification",
+            )?
+            .revision;
+        revision = self
+            .server
+            .world
+            .operate_binding_frame(
+                frame,
+                &mut work,
+                0,
+                FrameAction::Transfer,
+                Some(revision),
+                "development visual qualification",
+            )?
+            .revision;
+        self.server.world.operate_binding_frame(
+            frame,
+            &mut work,
+            0,
+            FrameAction::ExchangeSelected,
+            Some(revision),
+            "development visual qualification",
+        )?;
+        let wand = work.slots[0].ok_or("the assembled wand did not leave the frame")?;
+        let selected = self.input.hotbar_sel;
+        if let Some(previous) = self.inventory.slots[selected] {
+            self.server
+                .world
+                .record_admin_stack_deletion(previous)
+                .map_err(|error| error.to_string())?;
+        }
+        self.inventory.slots[selected] = Some(wand);
+        if std::env::var("WILDFORGE_POS").is_err() {
+            self.player.pos = self
+                .player
+                .pos
+                .relocated_local(Vec3::new(spawn.x, y as f32 + 1.2, spawn.z + 0.5))
+                .map_err(|error| {
+                    format!("the capture player could not stand beside the apparatus: {error}")
+                })?;
+        }
+        self.player.vel = Vec3::ZERO;
+        self.camera.follow_planet(self.player.eye());
+        self.camera.yaw = -std::f32::consts::FRAC_PI_2;
+        self.camera.pitch = -0.16;
+        if std::env::var("WILDFORGE_DEMO_WORKINGS").is_ok() {
+            let source = self
+                .player
+                .pos
+                .block()
+                .ok_or("the workings capture player has no physical source cell")?;
+            let actor = identity::local_player_id(
+                &self.server.world.save_dir_for_saving(),
+                self.identity.device_id(),
+            )
+            .unwrap_or(identity::PlayerId([0; 16]));
+            let result = self.server.world.begin_wand_working(
+                actor.0,
+                &self.config.display_name,
+                source,
+                wand.arcane_id,
+                "base:gleam",
+                crate::workings::WorkingTargetIntent::None,
+                Some(&self.inventory),
+                false,
+            )?;
+            self.server.world.clock += f64::from(crate::workings::MIN_WAND_SETTLE_SECONDS) + 0.01;
+            self.server.world.activate_working(result.stable_id)?;
+            if let Some(cue) = self
+                .server
+                .world
+                .working_cues()
+                .into_iter()
+                .find(|cue| cue.stable_id == result.stable_id)
+            {
+                self.present_working_cue(cue);
+            }
+            eprintln!(
+                "workings demo: active Gleam {} from wand {}",
+                result.stable_id, wand.arcane_id
+            );
+        }
+        eprintln!(
+            "implements demo: frame {frame:?}, wand id {}, charge {}, layout containment {}",
+            wand.arcane_id,
+            self.server
+                .world
+                .arcane_ledger
+                .as_ref()
+                .and_then(|ledger| ledger.item_current_total(wand.arcane_id))
+                .unwrap_or_default(),
+            layout.containment
+        );
+        // The automated capture exits the process immediately after its
+        // readback frame. Persist the world and player together now so the
+        // wand cannot be left in the ledger after its frame custody was
+        // debited but before its hotbar custody reaches the profile.
+        self.save_session()
+            .map_err(|error| format!("the qualification scene could not be saved: {error}"))?;
+        Ok(())
     }
 
     /// Deterministic scenes used by the finite-planet visual gate.

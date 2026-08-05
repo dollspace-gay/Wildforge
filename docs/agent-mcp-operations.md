@@ -3,7 +3,7 @@
 Companion to docs/agent-mcp-plan.md, for whoever runs the server an
 agent joins.
 
-As of protocol 24, connection success is not world entry. The agent reports
+As of game protocol 40, connection success is not world entry. The agent reports
 homeland progress, decodes the host's exact 3x3 entry manifest, acknowledges
 it, and only becomes an actor after host acceptance. Its wider radius-10 view
 then expands nearest-first. While pending it cannot move, drown, consume,
@@ -70,6 +70,22 @@ chest), `deposit` (chest via the transactional click protocol),
 `station_put` / `station_take` (anvil, quern, and every hand-loaded
 machine — they were built without screens, so agents use them all),
 `eat`, `chat`, `respawn`.
+
+Magic uses the same perceived, physical, host-authoritative actions as a
+player. `observe_magic`, `read_knowledge`, `read_folio`,
+`copy_observation`, `run_magic_experiment`, and `assemble_tuning_lens` cover
+local discovery and durable signed records. `binding_frame` operates an
+embodied frame; `working` aims, starts, holds, releases, or cancels a wand
+working or constructed ritual; and `alchemy` operates the actual laboratory
+or applies one carried preparation. These tools consume the same ingredients,
+charge, water, material, wear, time, and residue and use the same reach,
+line-of-sight, stable-item, and transaction checks as player interaction.
+
+There is deliberately no tool for a global Current total, exact hidden dross,
+private provenance, undiscovered recipes, raw ledger credit, arbitrary effect
+selection, teleportation, transmutation, or privileged targeting. An agent can
+learn more only by carrying records and instruments, building apparatus, and
+doing the work in the world.
 
 The fetch quest, end to end: you say "get me some wood" in chat; the
 agent's `events` deliver it; `chop_nearest_tree` fells and collects;

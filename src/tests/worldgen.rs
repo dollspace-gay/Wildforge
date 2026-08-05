@@ -736,7 +736,7 @@ fn iron_ore_generates_in_band() {
 #[test]
 fn structures_parse_and_place() {
     let reg = base_reg();
-    assert_eq!(reg.structures.len(), 6, "six base ruins");
+    assert_eq!(reg.structures.len(), 7, "seven base ruins");
     assert!(reg.loots.contains_key("base:ruin_artifacts"));
     assert!(reg.loots.contains_key("base:ruin_chest"));
     let cellar = reg
@@ -1342,6 +1342,7 @@ fn bench_sim_tick() {
         spawn: ep(glam::Vec3::new(8.0, 80.0, 8.0)),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     }];
     let mut evs = Vec::new();
     // Warm up, then time 300 fixed ticks.
@@ -1387,6 +1388,7 @@ fn bench_tick_parts() {
         spawn: ep(glam::Vec3::new(8.0, 80.0, 8.0)),
         attackable: true,
         aggro_mod: 0.0,
+        quiet_charm: None,
     }];
     let mut evs = Vec::new();
     for _ in 0..30 {

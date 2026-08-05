@@ -78,6 +78,8 @@ impl World {
         if fresh {
             self.seed_structures(pos);
         }
+        self.reconcile_arcane_ecology_chunk(pos);
+        self.reconcile_dross_scars_chunk(pos);
         // Reserve the final physical voxels. In particular, ruins can replace
         // host rock: reserving before their stamp left phantom ore underground.
         if let (Some(atlas), Some(ledger), Some(chunk)) = (
@@ -166,6 +168,368 @@ impl World {
                 self.last_random.insert(pos, self.clock);
             }
         }
+    }
+
+    /// Materialize the one sparse representative block for each persistent
+    /// ecology site in this chunk. A saved site wins over generation order;
+    /// player-touched terrain wins over retrogen/materialization.
+    fn reconcile_arcane_ecology_chunk(&mut self, chunk: ChunkPos) {
+        let Some(geography) = self.arcane_geography.as_ref() else {
+            return;
+        };
+        let candidates = geography
+            .dynamic
+            .ecology
+            .sites
+            .iter()
+            .filter_map(|site| {
+                let surface = site.surface()?;
+                (ChunkPos::from_surface(surface) == chunk).then(|| {
+                    (
+                        site.id,
+                        site.content_id.clone(),
+                        surface,
+                        site.materialized_y,
+                        site.stage,
+                        site.ownership,
+                        site.charge_total(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        for (site_id, content_id, surface, saved_y, stage, ownership, charge) in candidates {
+            let Some(block) = self.reg.block_id(&content_id) else {
+                continue;
+            };
+            let state_variant = (content_id == "base:lantern_reed")
+                .then(|| self.reg.block_id("base:lantern_reed_dim"))
+                .flatten();
+            let display_block = if charge == 0 {
+                state_variant.unwrap_or(block)
+            } else {
+                block
+            };
+            let y = if saved_y != 0 {
+                i32::from(saved_y)
+            } else {
+                if ownership != crate::arcane_ecology::EcologyOwnership::Cultivated
+                    && self.player_touched.contains(&chunk)
+                {
+                    continue;
+                }
+                let definition = self.reg.block(block).arcane_ecology.as_ref();
+                let cave = definition.is_some_and(|definition| {
+                    definition
+                        .habitat
+                        .iter()
+                        .any(|tag| matches!(tag.as_str(), "cave" | "moist_cave" | "subsurface"))
+                });
+                let top = self.surface_height_at(surface).clamp(2, CHUNK_Y as i32 - 2);
+                if cave {
+                    (2..top)
+                        .rev()
+                        .find(|height| {
+                            let at = crate::planet::BlockPos::new(
+                                surface.face(),
+                                surface.u(),
+                                *height as u8,
+                                surface.v(),
+                            )
+                            .expect("ecology cave candidate is inside shell");
+                            at.offset(0, -1, 0).is_some_and(|below| {
+                                self.get_block_at(at) == crate::registry::AIR
+                                    && self.reg.is_solid(self.get_block_at(below))
+                            })
+                        })
+                        .unwrap_or(top + 1)
+                } else {
+                    top + 1
+                }
+            };
+            if !(1..CHUNK_Y as i32 - 1).contains(&y) {
+                continue;
+            }
+            let at =
+                crate::planet::BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
+                    .expect("ecology materialization position is canonical");
+            let present = self.get_block_at(at);
+            let absent = matches!(
+                stage,
+                crate::arcane_ecology::EcologyStage::Collapsed
+                    | crate::arcane_ecology::EcologyStage::Harvested
+                    | crate::arcane_ecology::EcologyStage::Dormant
+            );
+            if absent {
+                if present == block || state_variant == Some(present) {
+                    self.set_block_at(at, crate::registry::AIR);
+                }
+                continue;
+            }
+            if present != display_block {
+                // Ecological representatives never overwrite water, ordinary
+                // plants, ruins, or player blocks. A skipped natural site can
+                // recover after habitat repair; it does not reroll elsewhere.
+                if present != crate::registry::AIR
+                    && present != block
+                    && state_variant != Some(present)
+                {
+                    continue;
+                }
+                self.set_block_at(at, display_block);
+            }
+            if let Some(site) = self.arcane_geography.as_mut().and_then(|geography| {
+                geography
+                    .dynamic
+                    .ecology
+                    .sites
+                    .iter_mut()
+                    .find(|site| site.id == site_id)
+            }) {
+                site.materialized_y = y as u8;
+            }
+        }
+    }
+
+    pub(super) fn refresh_loaded_arcane_ecology(&mut self) {
+        let chunks = self.chunks.keys().copied().collect::<Vec<_>>();
+        for chunk in chunks {
+            self.reconcile_arcane_ecology_chunk(chunk);
+        }
+    }
+
+    fn reconcile_dross_scars_chunk(&mut self, chunk: ChunkPos) {
+        let Some(atlas) = self.planet_atlas.as_ref() else {
+            return;
+        };
+        let Some(geography) = self.arcane_geography.as_ref() else {
+            return;
+        };
+        let candidates = geography
+            .dynamic
+            .dross_state
+            .scars
+            .values()
+            .filter(|site| site.resolved_step.is_none())
+            .filter_map(|site| {
+                let center = site.region.center(atlas.side());
+                let surface = crate::planet::SurfacePos::new(
+                    center.face,
+                    center
+                        .u
+                        .floor()
+                        .clamp(0.0, f64::from(crate::planet::FACE_BLOCKS - 1))
+                        as u16,
+                    center
+                        .v
+                        .floor()
+                        .clamp(0.0, f64::from(crate::planet::FACE_BLOCKS - 1))
+                        as u16,
+                )
+                .ok()?;
+                const SLOT_OFFSETS: [(u16, u16); crate::dross::MAX_ACTIVE_SCARS_PER_REGION] = [
+                    (0, 0),
+                    (4, 0),
+                    (12, 0),
+                    (0, 4),
+                    (0, 12),
+                    (4, 4),
+                    (12, 12),
+                    (4, 12),
+                ];
+                let origin = ChunkPos::from_surface(surface).block_origin();
+                let (offset_u, offset_v) = SLOT_OFFSETS[usize::from(site.site_slot)];
+                let local_u = (surface.u() % CHUNK_X as u16 + offset_u) % CHUNK_X as u16;
+                let local_v = (surface.v() % CHUNK_Z as u16 + offset_v) % CHUNK_Z as u16;
+                let surface = crate::planet::SurfacePos::new(
+                    origin.face(),
+                    origin.u().saturating_add(local_u),
+                    origin.v().saturating_add(local_v),
+                )
+                .ok()?;
+                let owned_chunk = site
+                    .materialized_at
+                    .map_or_else(|| ChunkPos::from_surface(surface), BlockPos::chunk);
+                (owned_chunk == chunk).then_some((
+                    site.id,
+                    site.kind,
+                    site.content_id.clone(),
+                    surface,
+                    site.materialized_at,
+                ))
+            })
+            .collect::<Vec<_>>();
+        for (scar_id, kind, content_id, surface, saved) in candidates {
+            if saved.is_none() && self.player_touched.contains(&chunk) {
+                // A persisted scar selected before the chunk was authored may
+                // still be waiting to materialize. The later construction
+                // record wins; loading the chunk must not bypass that history.
+                continue;
+            }
+            let Some((block, handler)) = self
+                .reg
+                .resolve_dross_scar(&content_id, kind)
+                .map(|definition| (definition.block, definition.handler))
+            else {
+                continue;
+            };
+            let at = if let Some(saved) = saved {
+                saved
+            } else {
+                const LOCAL_OFFSETS: [(i32, i32); 13] = [
+                    (0, 0),
+                    (1, 0),
+                    (0, 1),
+                    (-1, 0),
+                    (0, -1),
+                    (1, 1),
+                    (-1, 1),
+                    (-1, -1),
+                    (1, -1),
+                    (2, 0),
+                    (0, 2),
+                    (-2, 0),
+                    (0, -2),
+                ];
+                let mut selected = None;
+                for (du, dv) in LOCAL_OFFSETS {
+                    let u = i32::from(surface.u()) + du;
+                    let v = i32::from(surface.v()) + dv;
+                    if !(0..i32::from(crate::planet::FACE_BLOCKS)).contains(&u)
+                        || !(0..i32::from(crate::planet::FACE_BLOCKS)).contains(&v)
+                    {
+                        continue;
+                    }
+                    let candidate =
+                        crate::planet::SurfacePos::new(surface.face(), u as u16, v as u16)
+                            .expect("bounded scar candidate is canonical");
+                    if ChunkPos::from_surface(candidate) != chunk {
+                        continue;
+                    }
+                    let surface_y = self.surface_height_at(candidate).saturating_add(1);
+                    let y = if handler == crate::dross::ScarHandler::WaterMarginFilm {
+                        (1..CHUNK_Y as i32 - 1)
+                            .rev()
+                            .find(|height| {
+                                let at = BlockPos::new(
+                                    candidate.face(),
+                                    candidate.u(),
+                                    *height as u8,
+                                    candidate.v(),
+                                )
+                                .expect("bounded water-margin candidate is canonical");
+                                at.offset(0, -1, 0).is_some_and(|below| {
+                                    self.reg.is_water(self.get_block_at(below))
+                                        && matches!(self.get_block_at(at), crate::registry::AIR)
+                                })
+                            })
+                            .unwrap_or(surface_y)
+                    } else {
+                        surface_y
+                    };
+                    if !(1..CHUNK_Y as i32 - 1).contains(&y) {
+                        continue;
+                    }
+                    let candidate =
+                        BlockPos::new(candidate.face(), candidate.u(), y as u8, candidate.v())
+                            .expect("scar surface candidate is canonical");
+                    let present = self.get_block_at(candidate);
+                    if (present != crate::registry::AIR && present != block)
+                        || self.arcane_geography.as_ref().is_some_and(|geography| {
+                            geography
+                                .dynamic
+                                .dross_state
+                                .materialized
+                                .get(&candidate)
+                                .is_some_and(|owner| *owner != scar_id)
+                        })
+                    {
+                        continue;
+                    }
+                    let Some(below) = candidate.offset(0, -1, 0) else {
+                        continue;
+                    };
+                    let support = self.get_block_at(below);
+                    let support_definition = self.reg.block(support);
+                    if !self.reg.is_solid(support)
+                        && !self.reg.is_water(support)
+                        && !support_definition.cross
+                    {
+                        continue;
+                    }
+                    let water_margin = self.reg.is_water(support)
+                        || [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                            .into_iter()
+                            .filter_map(|(du, dv)| below.offset(du, 0, dv))
+                            .any(|neighbor| self.reg.is_water(self.get_block_at(neighbor)));
+                    let organic = support_definition.cross
+                        || support_definition.burns != 0
+                        || ["grass", "dirt", "leaves", "log", "moss"]
+                            .iter()
+                            .any(|part| support_definition.name.contains(part));
+                    let mineral = self.reg.is_solid(support)
+                        && !support_definition.cross
+                        && support_definition.burns == 0;
+                    let score = match handler {
+                        crate::dross::ScarHandler::WaterMarginFilm => u8::from(water_margin) * 3,
+                        crate::dross::ScarHandler::FilamentGrowth => u8::from(organic) * 3,
+                        crate::dross::ScarHandler::MineralCrust => u8::from(mineral) * 3,
+                        crate::dross::ScarHandler::SurfaceOverlay => 1,
+                    };
+                    if selected
+                        .as_ref()
+                        .is_none_or(|(_, best_score)| score > *best_score)
+                    {
+                        selected = Some((candidate, score));
+                    }
+                }
+                let Some((selected, _)) = selected else {
+                    continue;
+                };
+                selected
+            };
+            let present = self.get_block_at(at);
+            if present != crate::registry::AIR && present != block {
+                // A structural, inventory, fluid, plant, or other authored
+                // block always wins. Scars occupy space; they never replace it.
+                continue;
+            }
+            if present != block {
+                self.set_block_at(at, block);
+            }
+            if let Some(geography) = self.arcane_geography.as_mut()
+                && let Some(site) = geography.dynamic.dross_state.scars.get_mut(&scar_id)
+            {
+                if let Some(previous) = site.materialized_at
+                    && previous != at
+                {
+                    geography.dynamic.dross_state.materialized.remove(&previous);
+                }
+                site.materialized_at = Some(at);
+                site.last_changed_step = geography.dynamic.dross_state.completed_steps;
+                geography
+                    .dynamic
+                    .dross_state
+                    .materialized
+                    .insert(at, scar_id);
+            }
+        }
+    }
+
+    pub(super) fn refresh_loaded_dross_scars(&mut self) {
+        let chunks = self.chunks.keys().copied().collect::<Vec<_>>();
+        for chunk in chunks {
+            self.reconcile_dross_scars_chunk(chunk);
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn refresh_arcane_ecology_for_test(&mut self) {
+        self.refresh_loaded_arcane_ecology();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn refresh_dross_scars_for_test(&mut self) {
+        self.refresh_loaded_dross_scars();
     }
 
     fn apply_loaded_material_retrogen(&mut self, pos: ChunkPos) {
@@ -576,14 +940,52 @@ impl World {
                                 };
                                 if let Some(table) = &st.loot {
                                     let n = 3 + (rng % 3) as usize;
-                                    for (i, stck) in self
-                                        .roll_loot(table, n as u32, &mut rng)
-                                        .into_iter()
-                                        .enumerate()
-                                    {
+                                    let mut loot = self.roll_loot(table, n as u32, &mut rng);
+                                    if st.name == "base:observational_outpost" {
+                                        for name in [
+                                            "base:etched_tablet",
+                                            "base:maker_calibration_plate",
+                                            "base:spent_charm_fitting",
+                                            "base:broken_focus",
+                                            "base:sealed_dross_ampoule",
+                                            "base:site_survey_marks",
+                                            "base:failed_containment_fragment",
+                                        ] {
+                                            if let Some(item) = reg.item_id(name) {
+                                                loot.push(ItemStack::new(&reg, item, 1));
+                                            }
+                                        }
+                                    }
+                                    for (i, mut stck) in loot.into_iter().enumerate() {
                                         if i < CHEST_SLOTS {
+                                            if self.arcane_ledger.is_some()
+                                                && let Err(error) = self.bind_arcane_stack_at(
+                                                    pos,
+                                                    &mut stck,
+                                                    "ruin inheritance",
+                                                )
+                                            {
+                                                eprintln!(
+                                                    "arcane: ruin loot could not bind: {error}"
+                                                );
+                                                continue;
+                                            }
+                                            if self.discovery_state.is_some()
+                                                && let Err(error) =
+                                                    self.bind_discovery_stack_at(pos, &mut stck)
+                                            {
+                                                eprintln!(
+                                                    "discovery: ruin artifact could not bind: {error}"
+                                                );
+                                                continue;
+                                            }
                                             // Scatter through the chest.
-                                            let slot = (i * 7 + (rng % 5) as usize) % CHEST_SLOTS;
+                                            let preferred =
+                                                (i * 7 + (rng % 5) as usize) % CHEST_SLOTS;
+                                            let slot = (0..CHEST_SLOTS)
+                                                .map(|offset| (preferred + offset) % CHEST_SLOTS)
+                                                .find(|slot| state.slots[*slot].is_none())
+                                                .unwrap_or(preferred);
                                             inherited_stacks.push(stck);
                                             state.slots[slot] = Some(stck);
                                         }
@@ -631,7 +1033,6 @@ impl World {
     }
 
     #[cfg(test)]
-    #[cfg(test)]
     pub fn place_structure(&mut self, si: usize, x: i32, y: i32, z: i32, seed: u32) {
         if let Some(origin) = BlockPos::of_world(x, y, z) {
             self.place_structure_at(si, origin, seed);
@@ -656,14 +1057,24 @@ impl World {
                     *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
                     let span = e.count.1.saturating_sub(e.count.0) + 1;
                     let n = e.count.0 + (*rng >> 8) % span;
-                    let mut stack = ItemStack::new(&self.reg, e.item, n.max(1));
-                    if let Some(frac) = e.durability_frac {
-                        let max = self.reg.item(e.item).durability;
-                        if max > 0 {
-                            stack.durability = ((max as f32 * frac) as u32).max(1);
+                    let instances = if self.reg.item(e.item).arcane.is_some()
+                        || self.reg.item(e.item).discovery.is_some()
+                    {
+                        n.max(1)
+                    } else {
+                        1
+                    };
+                    for _ in 0..instances {
+                        let count = if instances == 1 { n.max(1) } else { 1 };
+                        let mut stack = ItemStack::new(&self.reg, e.item, count);
+                        if let Some(frac) = e.durability_frac {
+                            let max = self.reg.item(e.item).durability;
+                            if max > 0 {
+                                stack.durability = ((max as f32 * frac) as u32).max(1);
+                            }
                         }
+                        out.push(stack);
                     }
-                    out.push(stack);
                     break;
                 }
                 pick -= e.weight;

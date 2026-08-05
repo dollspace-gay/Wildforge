@@ -141,6 +141,15 @@ impl Game {
                 (reg.recipes_for(item), reg.smelts_for(item))
             };
             for r in recipes.iter().take(3) {
+                if let Some(station) = &r.station {
+                    ui.text_shadow(
+                        px,
+                        y - 15.0,
+                        1.25,
+                        &format!("AT {}", station.replace('_', " ").to_uppercase()),
+                        [0.8, 0.72, 1.0, 1.0],
+                    );
+                }
                 for cy in 0..r.h {
                     for cx in 0..r.w {
                         let cell = (px + cx as f32 * 38.0, y + cy as f32 * 38.0, 36.0, 36.0);

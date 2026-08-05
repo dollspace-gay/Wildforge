@@ -70,15 +70,23 @@ pub(super) fn run_headless_server(world_name: &str) {
                 mp::HostFx::Left(n) => eprintln!("server: {n} left"),
                 mp::HostFx::Chat { from, msg } => eprintln!("<{from}> {msg}"),
                 mp::HostFx::AllSlept => eprintln!("server: the camp sleeps to dawn"),
+                mp::HostFx::ImplementActivation { .. }
+                | mp::HostFx::WorkingEvent(_)
+                | mp::HostFx::AlchemyEvent(_) => {}
             }
         }
-        let players = sess.player_ctxs(None);
+        let players = sess.authoritative_player_ctxs(&sim.world, None);
         let mut evs = Vec::new();
         sim.advance(dt, &players, &mut evs);
         for ev in evs {
-            if let server::SimEvent::PlayerHit { who, dmg, from } = ev {
-                // `who` is the guest's own net id; no positional lookup.
-                sess.hurt_guest(&mut sim, who, dmg, from);
+            match ev {
+                server::SimEvent::PlayerHit { who, dmg, from } => {
+                    // `who` is the guest's own net id; no positional lookup.
+                    sess.hurt_guest(&mut sim, who, dmg, from);
+                }
+                server::SimEvent::Working(_, cue) => sess.broadcast_working_cue(cue),
+                server::SimEvent::Alchemy(cue) => sess.broadcast_alchemy_cue(cue),
+                _ => {}
             }
         }
         // Chunk residency. Nothing here ever released a chunk before: the

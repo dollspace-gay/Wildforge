@@ -45,6 +45,8 @@ struct StoredStack {
     item: String,
     count: u32,
     durability: u32,
+    #[serde(default)]
+    arcane_id: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -62,6 +64,8 @@ struct StoredProfile {
     health: f32,
     hunger: f32,
     nutrition: [f32; 5],
+    #[serde(default)]
+    bodily_dross: u64,
     hotbar: usize,
     style: u32,
     held: u16,
@@ -91,6 +95,7 @@ pub(super) struct PlayerRuntime {
     pub health: f32,
     pub hunger: f32,
     pub nutrition: [f32; 5],
+    pub bodily_dross: u64,
     pub hotbar: usize,
     pub style: u32,
     pub held: u16,
@@ -114,6 +119,7 @@ impl PlayerRuntime {
             health: guest.health,
             hunger: guest.hunger,
             nutrition: guest.nutrition,
+            bodily_dross: guest.bodily_dross,
             hotbar: guest.hotbar,
             style: guest.style,
             held: guest.held,
@@ -231,6 +237,7 @@ impl ProfileStore {
                 health: 14.0,
                 hunger: 20.0,
                 nutrition: [0.0; 5],
+                bodily_dross: 0,
                 hotbar: 0,
                 style,
                 held: u16::MAX,
@@ -400,6 +407,7 @@ fn runtime_to_stored(player: &PlayerRuntime, reg: &Registry) -> StoredProfile {
         health: player.health,
         hunger: player.hunger,
         nutrition: player.nutrition,
+        bodily_dross: player.bodily_dross,
         hotbar: player.hotbar,
         style: player.style,
         held: player.held,
@@ -443,6 +451,7 @@ fn stored_to_runtime(profile: StoredProfile, reg: &Registry) -> io::Result<Playe
         health: profile.health.clamp(0.0, 14.0),
         hunger: profile.hunger.clamp(0.0, 20.0),
         nutrition: profile.nutrition.map(|value| value.max(0.0)),
+        bodily_dross: profile.bodily_dross,
         hotbar: profile.hotbar.min(HOTBAR_SLOTS - 1),
         style: profile.style,
         held: profile.held,
@@ -463,6 +472,7 @@ fn stored_stack(index: usize, stack: Option<ItemStack>, reg: &Registry) -> Optio
         item: reg.item(stack.item).name.clone(),
         count: stack.count,
         durability: stack.durability,
+        arcane_id: stack.arcane_id,
     })
 }
 
@@ -475,6 +485,7 @@ fn restore_stack(stack: &StoredStack, reg: &Registry) -> Option<ItemStack> {
         item,
         count: stack.count.min(reg.item(item).max_stack),
         durability: stack.durability.min(reg.item(item).durability),
+        arcane_id: stack.arcane_id,
     })
 }
 
@@ -483,6 +494,8 @@ fn stack_snap(stack: &Option<ItemStack>) -> Option<StackSnap> {
         item: stack.item.0,
         count: stack.count,
         durability: stack.durability,
+        arcane_id: stack.arcane_id,
+        current_units: 0,
     })
 }
 
@@ -551,7 +564,10 @@ mod tests {
                 .unwrap();
             profile.pos = planet_spawn(Vec3::new(8.0, 70.0, 9.0));
             let item = reg.item_id("base:torch").unwrap();
-            profile.inventory.slots[0] = Some(ItemStack::new(&reg, item, 3));
+            profile.inventory.slots[0] = Some(ItemStack {
+                arcane_id: 0xfeed_beef,
+                ..ItemStack::new(&reg, item, 1)
+            });
             store.save(&profile, &reg).unwrap();
             let stored: StoredProfile = toml::from_str(
                 &std::fs::read_to_string(
@@ -577,7 +593,8 @@ mod tests {
             .unwrap();
         assert_eq!(profile.player_id, first_id);
         assert_eq!(profile.pos.local(), Vec3::new(8.0, 70.0, 9.0));
-        assert_eq!(profile.inventory.slots[0].unwrap().count, 3);
+        assert_eq!(profile.inventory.slots[0].unwrap().count, 1);
+        assert_eq!(profile.inventory.slots[0].unwrap().arcane_id, 0xfeed_beef);
         assert_eq!(profile.display_name, "FERN");
         assert!(profile.previous_names.contains(&"MOSS".to_string()));
     }

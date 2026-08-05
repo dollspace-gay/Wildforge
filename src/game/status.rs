@@ -2,7 +2,28 @@
 
 use super::*;
 
+pub(super) fn dross_warning_text(band: u8) -> (&'static str, &'static str) {
+    match band {
+        1 => ("TRACE", "GLASS HAZE"),
+        2 => ("STRAINED", "TWO-PULSE HUM"),
+        3 => ("SEEP", "BRANCHING SIGN"),
+        4 => ("SCAR", "BROKEN RING"),
+        5 => ("BREACH RISK", "REPEATING SHEAR"),
+        _ => ("CLEAR", "EVEN FIELD"),
+    }
+}
+
 impl Game {
+    pub(super) fn present_dross_cue(&mut self, cue: crate::dross::DrossCue) {
+        match cue.kind {
+            crate::dross::DrossCueKind::BreachForecast => self.sfx(Sfx::DrossWarning(5)),
+            crate::dross::DrossCueKind::Breach { activity } => self.sfx(Sfx::DrossBreach(
+                activity.unwrap_or(crate::dross::ScarActivityHandler::Shear),
+            )),
+        }
+        self.toast(cue.accessible_text().to_string());
+    }
+
     pub(super) fn toast(&mut self, msg: String) {
         self.presentation.toasts.push((msg, 4.0));
         if self.presentation.toasts.len() > 5 {
@@ -25,8 +46,29 @@ impl Game {
         if self.creative {
             return;
         }
-        // Activity-based hunger drain (the hunger charm slows it).
-        let charm_mult = if self.charm("hunger") { 0.85 } else { 1.0 };
+        // The hunger charm prepays one fixed five-second interval. If the
+        // debit fails or the charm depletes, no fraction of the benefit is
+        // applied and ordinary starvation resumes immediately.
+        if self.survival.hunger_charm_credit <= 0.0
+            && let Some(mut charm) = self.survival.armor[4]
+            && self.content.reg.item(charm.item).charm.as_deref() == Some("hunger")
+            && let Some(pos) = self.player.pos.block()
+            && self.server.world.debit_charm_at(
+                pos,
+                &mut charm,
+                "hunger",
+                "slow-hunger charm prepaid an active interval",
+            )
+        {
+            self.survival.armor[4] = Some(charm);
+            self.survival.hunger_charm_credit = crate::implements::HUNGER_CHARM_INTERVAL_SECS;
+        }
+        let charm_mult = if self.survival.hunger_charm_credit > 0.0 {
+            self.survival.hunger_charm_credit = (self.survival.hunger_charm_credit - dt).max(0.0);
+            crate::implements::HUNGER_CHARM_MULTIPLIER
+        } else {
+            1.0
+        };
         let mut drain = 0.01 * charm_mult;
         if input.sprint && (input.forward != 0.0 || input.strafe != 0.0) {
             drain += 0.02;
@@ -41,36 +83,119 @@ impl Game {
         self.survival.perish_accum += dt;
         if self.survival.perish_accum >= SWEEP {
             self.survival.perish_accum -= SWEEP;
-            let reg = self.content.reg.clone();
-            let mush = reg.item_id("base:spoiled_mush");
-            let mut consumed = Vec::new();
-            let mut age = |s: &mut Option<ItemStack>| {
-                let Some(st) = s else { return };
-                let full = reg.item(st.item).durability;
-                if reg.item(st.item).food.is_none() || full == 0 {
-                    return;
+            if self.multiplayer.remote.is_none() {
+                let reg = self.content.reg.clone();
+                let mush = reg.item_id("base:spoiled_mush");
+                let mut consumed = Vec::new();
+                let actor = crate::identity::local_player_id(
+                    &self.server.world.save_dir_for_saving(),
+                    self.identity.device_id(),
+                )
+                .unwrap_or(crate::identity::PlayerId([0; 16]))
+                .0;
+                let pack_temperature_millic = (self
+                    .server
+                    .world
+                    .weather_at_surface(self.player.pos.surface())
+                    .temperature_c
+                    * 1_000.0)
+                    .round()
+                    .clamp(i32::MIN as f32, i32::MAX as f32)
+                    as i32;
+                let sweep_ticks = (SWEEP * 20.0).round() as u64;
+                let mut age = |slot: Option<usize>, s: &mut Option<ItemStack>| {
+                    let Some(st) = s else { return };
+                    if st.arcane_id != 0 {
+                        let holdfast_step = slot.map_or(step, |slot| {
+                            self.server.world.holdfast_age_step(
+                                actor,
+                                slot,
+                                *st,
+                                step,
+                                SWEEP as u32,
+                            )
+                        });
+                        let ordinary_age_ticks = sweep_ticks
+                            .saturating_mul(u64::from(holdfast_step))
+                            .div_ceil(u64::from(step.max(1)));
+                        match self.server.world.age_preparation_storage(
+                            *st,
+                            pack_temperature_millic,
+                            ordinary_age_ticks,
+                        ) {
+                            Ok(Some(_)) => return,
+                            Ok(None) => {}
+                            Err(error) => {
+                                eprintln!("alchemy: carried storage aging failed: {error}");
+                                return;
+                            }
+                        }
+                    }
+                    let full = reg.item(st.item).durability;
+                    let food = reg.item(st.item).food.is_some();
+                    let viable_seed = reg.item(st.item).name.ends_with("_seed");
+                    if (!food && !viable_seed) || full == 0 {
+                        return;
+                    }
+                    if st.durability == 0 {
+                        st.durability = full;
+                    } else {
+                        let holdfast_step = slot.map_or(step, |slot| {
+                            self.server.world.holdfast_age_step(
+                                actor,
+                                slot,
+                                *st,
+                                step,
+                                SWEEP as u32,
+                            )
+                        });
+                        let actual_step = if st.arcane_id == 0 {
+                            holdfast_step
+                        } else {
+                            self.server.world.coated_specimen_age_advance(
+                                st.arcane_id,
+                                u64::from(holdfast_step),
+                                pack_temperature_millic,
+                            ) as u32
+                        };
+                        if st.durability > actual_step {
+                            st.durability -= actual_step;
+                            return;
+                        }
+                        if food {
+                            consumed.push(*st);
+                            *s = mush.map(|m| {
+                                let mut sp = ItemStack::new(&reg, m, 1);
+                                sp.count = st.count;
+                                sp
+                            });
+                        } else {
+                            st.durability = 0;
+                        }
+                    }
+                };
+                for (slot, s) in self.inventory.slots.iter_mut().enumerate() {
+                    age(Some(slot), s);
                 }
-                if st.durability == 0 {
-                    st.durability = full;
-                } else if st.durability <= step {
-                    consumed.push(*st);
-                    *s = mush.map(|m| {
-                        let mut sp = ItemStack::new(&reg, m, 1);
-                        sp.count = st.count;
-                        sp
-                    });
-                } else {
-                    st.durability -= step;
+                age(None, &mut self.ui_state.held_stack);
+                if let Some(at) = self.player.pos.block() {
+                    for slot in 0..self.inventory.slots.len() {
+                        if let Some(stack) = self.inventory.slots[slot]
+                            && let Err(error) = self.server.world.leak_fragile_item_charge(
+                                actor,
+                                slot,
+                                stack,
+                                at,
+                                SWEEP as u32,
+                            )
+                        {
+                            eprintln!("arcane specimen leakage failed: {error}");
+                        }
+                    }
                 }
-            };
-            for s in self.inventory.slots.iter_mut() {
-                age(s);
-            }
-            age(&mut self.ui_state.held_stack);
-            if self.multiplayer.remote.is_none()
-                && let Err(error) = self.server.world.record_consumed_stacks(consumed)
-            {
-                eprintln!("materials: spoiled carried food accounting failed: {error}");
+                if let Err(error) = self.server.world.record_consumed_stacks(consumed) {
+                    eprintln!("materials: spoiled carried food accounting failed: {error}");
+                }
             }
         }
         // Nutrition decays slowly (~full to empty over long play).
@@ -79,6 +204,56 @@ impl Game {
         }
         let maxh = self.max_health();
         self.survival.health = self.survival.health.min(maxh);
+        if self.multiplayer.remote.is_none() {
+            self.survival.alchemy_accum += dt;
+            if self.survival.alchemy_accum >= 1.0 {
+                self.survival.alchemy_accum %= 1.0;
+                if let Some(actor_pos) = self.player.pos.block() {
+                    let actor = crate::identity::local_player_id(
+                        &self.server.world.save_dir_for_saving(),
+                        self.identity.device_id(),
+                    )
+                    .unwrap_or(crate::identity::PlayerId([0; 16]));
+                    let physiology = crate::alchemy::PreparationPhysiology {
+                        health: self.survival.health,
+                        max_health: maxh,
+                        hunger: self.survival.hunger,
+                        nutrition: self.survival.nutrition,
+                        strain: 0.0,
+                        bodily_dross: self.survival.bodily_dross,
+                    };
+                    match self
+                        .server
+                        .world
+                        .tick_preparation_statuses(actor.0, actor_pos, physiology)
+                    {
+                        Ok(result) => {
+                            let old_dross_band = self.survival.preparation_modifiers.dross_band;
+                            self.survival.health = result.physiology.health;
+                            self.survival.hunger = result.physiology.hunger;
+                            self.survival.nutrition = result.physiology.nutrition;
+                            self.survival.bodily_dross = result.physiology.bodily_dross;
+                            self.survival.preparation_modifiers = result.modifiers;
+                            if result.modifiers.dross_band > old_dross_band
+                                && result.modifiers.dross_band != 0
+                            {
+                                self.sfx(Sfx::DrossWarning(result.modifiers.dross_band));
+                                let (band, pattern) =
+                                    dross_warning_text(result.modifiers.dross_band);
+                                self.toast(format!("DROSS {band} — {pattern}"));
+                            }
+                            for cue in result.cues {
+                                if let Some(session) = &self.multiplayer.host {
+                                    session.broadcast_alchemy_cue(cue.clone());
+                                }
+                                self.present_alchemy_cue(cue);
+                            }
+                        }
+                        Err(error) => eprintln!("alchemy status update failed: {error}"),
+                    }
+                }
+            }
+        }
         // Food-gated regen (replaces free idle regen). Raw pitchblende
         // in your pack quietly pauses it — a whisper, not a mechanic;
         // ground powder and fired glass are safe.
@@ -92,7 +267,8 @@ impl Game {
             && self.survival.health < maxh
             && self.survival.since_damage > 4.0
         {
-            self.survival.exhaustion_regen += dt;
+            self.survival.exhaustion_regen +=
+                dt * f32::from(self.survival.preparation_modifiers.recovery_permille) / 1_000.0;
             if self.survival.exhaustion_regen >= 3.0 {
                 self.survival.exhaustion_regen = 0.0;
                 self.survival.health = (self.survival.health + 1.0).min(maxh);
@@ -230,35 +406,14 @@ impl Game {
         self.survival.damage_flash = (self.survival.damage_flash - dt).max(0.0);
     }
 
-    pub(super) fn update_items(&mut self, dt: f32) {
-        let mut kept = Vec::with_capacity(self.interaction.items.len());
-        let mut lost = Vec::new();
-        for mut item in self.interaction.items.drain(..) {
-            if item.update(&self.server.world, dt) {
-                kept.push(item);
-            } else {
-                lost.push(item);
-            }
-        }
-        self.interaction.items = kept;
-        let reg = self.content.reg.clone();
-        for item in lost {
-            let reason = item.loss_reason(&self.server.world);
-            if let (Some(pos), Some(ledger)) =
-                (item.pos.block(), &mut self.server.world.material_ledger)
-            {
-                let mut stack = ItemStack::new(&reg, item.item, item.count);
-                if item.durability != 0 {
-                    stack.durability = item.durability;
-                }
-                if let Err(error) = ledger.bury_stack(&reg, pos, stack, reason) {
-                    eprintln!("materials: dropped-item salvage failed: {error}");
-                }
-            }
-        }
-        if self.ui_state.screen == Screen::Dead {
+    pub(super) fn update_items(&mut self, _dt: f32) {
+        // Physics, lifetime, collision, and loss accounting are host-owned.
+        // A guest only renders snapshots and receives authoritative Give
+        // messages; it never predicts an inventory pickup.
+        if self.multiplayer.remote.is_some() || self.ui_state.screen == Screen::Dead {
             return;
         }
+        let mut items = self.server.world.take_loose_items();
         // Pickup: magnetize into the inventory.
         let target = self
             .player
@@ -267,16 +422,12 @@ impl Game {
             .expect("pickup target stays beside the player")
             .pos;
         let mut i = 0;
-        while i < self.interaction.items.len() {
-            let it = &self.interaction.items[i];
+        while i < items.len() {
+            let it = &items[i];
             let d = it.pos.distance_to(target);
             if it.age > entity::PICKUP_DELAY && d < 1.4 {
                 let it_pos = it.pos;
-                let (item, count, dur) = (
-                    self.interaction.items[i].item,
-                    self.interaction.items[i].count,
-                    self.interaction.items[i].durability,
-                );
+                let (item, count, dur) = (items[i].item, items[i].count, items[i].durability);
                 let reg = self.content.reg.clone();
                 let left = if dur > 0 {
                     let mut stack = ItemStack::new(&reg, item, count);
@@ -319,13 +470,14 @@ impl Game {
                     }
                 }
                 if left == 0 {
-                    self.interaction.items.swap_remove(i);
+                    items.swap_remove(i);
                     continue;
                 } else {
-                    self.interaction.items[i].count = left;
+                    items[i].count = left;
                 }
             }
             i += 1;
         }
+        self.server.world.replace_loose_items(items);
     }
 }

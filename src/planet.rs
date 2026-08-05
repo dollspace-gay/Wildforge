@@ -211,6 +211,21 @@ impl SurfacePos {
     }
 }
 
+/// Stable seed/position roll shared by systems that must agree before and
+/// after a surface chunk is materialized. Keeping this in the topology layer
+/// prevents atlas genesis and lazy world generation from silently developing
+/// different ideas of where deterministic features belong.
+pub(crate) fn seeded_surface_roll(seed: u32, pos: SurfacePos, salt: u32) -> u32 {
+    let mut hash = u32::from(pos.u()).wrapping_mul(0x85eb_ca6b)
+        ^ u32::from(pos.v()).wrapping_mul(0xc2b2_ae35)
+        ^ (pos.face() as u32).wrapping_mul(0x27d4_eb2d)
+        ^ seed.wrapping_mul(0x9e37_79b9)
+        ^ salt.wrapping_mul(0x2708_92cd);
+    hash ^= hash >> 15;
+    hash = hash.wrapping_mul(0x2c1b_3c6d);
+    hash ^ (hash >> 12)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SurfacePoint {
     pub face: Face,

@@ -597,6 +597,42 @@ pub struct AtlasManifest {
     pub geology_checksum: u64,
     pub hydrology_checksum: u64,
     pub biome_checksum: u64,
+    #[serde(default)]
+    pub arcane_schema_version: u32,
+    #[serde(default)]
+    pub arcane_algorithm_version: u32,
+    #[serde(default)]
+    pub arcane_unit_scale: u32,
+    #[serde(default)]
+    pub arcane_genesis_total: u64,
+    #[serde(default)]
+    pub arcane_last_clean_total: u64,
+    /// Deep, Ambient, Bound, Active, Dross, Scar at the last ledger
+    /// checkpoint. Fixed order keeps the qualified manifest compact.
+    #[serde(default)]
+    pub arcane_reservoir_totals: [u64; 6],
+    #[serde(default)]
+    pub arcane_registry_hash: u64,
+    #[serde(default)]
+    pub arcane_ledger_checksum: u64,
+    #[serde(default)]
+    pub arcane_delta_checksum: u64,
+    #[serde(default)]
+    pub arcane_geography_schema_version: u32,
+    #[serde(default)]
+    pub arcane_geography_algorithm_version: u32,
+    #[serde(default)]
+    pub arcane_geography_dynamic_version: u32,
+    #[serde(default)]
+    pub arcane_geography_genesis_total: u64,
+    #[serde(default)]
+    pub arcane_geography_immutable_checksum: u64,
+    #[serde(default)]
+    pub arcane_geography_dynamic_checksum: u64,
+    #[serde(default)]
+    pub arcane_geography_site_catalog_checksum: u64,
+    #[serde(default)]
+    pub arcane_geography_last_authoritative_time: u64,
     pub genesis_bytes: u64,
     pub dynamic_bytes: u64,
     pub water_cycle_bytes: u64,
@@ -829,6 +865,8 @@ pub fn genesis_content_hash(mods_dir: &Path) -> u64 {
         include_bytes!("../base/aliases.toml").as_slice(),
         include_bytes!("../base/animals.toml").as_slice(),
         include_bytes!("../base/structures.toml").as_slice(),
+        include_bytes!("../base/workings.toml").as_slice(),
+        include_bytes!("../base/preparations.toml").as_slice(),
     ] {
         extend(content);
     }
@@ -947,11 +985,22 @@ fn layer_versions() -> BTreeMap<String, u32> {
         "dynamic",
         "water_cycle",
         "history",
+        "arcane_current_capacity",
+        "arcane_deep_reserve_capacity",
+        "arcane_surface_deep_exchange",
+        "arcane_horizontal_conductivity",
+        "arcane_dross_mobility_retention",
+        "arcane_baseline_resonance",
+        "arcane_stability",
+        "arcane_recovery_potential",
+        "arcane_site_references",
+        "arcane_dynamic_state",
     ]
     .into_iter()
     .map(|name| (name.to_string(), 1))
     .collect::<BTreeMap<_, _>>();
     versions.insert("climate".to_string(), 2);
+    versions.insert("arcane_horizontal_conductivity".to_string(), 2);
     versions.insert("hydrology".to_string(), 2);
     versions.insert("dynamic".to_string(), 3);
     versions.insert("water_cycle".to_string(), WATER_CYCLE_SCHEMA_VERSION);
@@ -1216,6 +1265,23 @@ impl PlanetAtlas {
             geology_checksum,
             hydrology_checksum,
             biome_checksum,
+            arcane_schema_version: 0,
+            arcane_algorithm_version: 0,
+            arcane_unit_scale: 0,
+            arcane_genesis_total: 0,
+            arcane_last_clean_total: 0,
+            arcane_reservoir_totals: [0; 6],
+            arcane_registry_hash: 0,
+            arcane_ledger_checksum: 0,
+            arcane_delta_checksum: 0,
+            arcane_geography_schema_version: 0,
+            arcane_geography_algorithm_version: 0,
+            arcane_geography_dynamic_version: 0,
+            arcane_geography_genesis_total: 0,
+            arcane_geography_immutable_checksum: 0,
+            arcane_geography_dynamic_checksum: 0,
+            arcane_geography_site_catalog_checksum: 0,
+            arcane_geography_last_authoritative_time: 0,
             genesis_bytes,
             dynamic_bytes,
             water_cycle_bytes,
@@ -2137,6 +2203,152 @@ fn write_manifest(planet_dir: &Path, manifest: &AtlasManifest) -> Result<(), Atl
         ));
     }
     crate::persist::atomic_write(&planet_dir.join(MANIFEST_FILE), payload.as_bytes(), false)?;
+    Ok(())
+}
+
+pub(crate) struct ArcaneManifestCheckpoint {
+    pub schema_version: u32,
+    pub algorithm_version: u32,
+    pub unit_scale: u32,
+    pub genesis_total: u64,
+    pub last_clean_total: u64,
+    pub reservoir_totals: [u64; 6],
+    pub registry_hash: u64,
+    pub ledger_checksum: u64,
+    pub delta_checksum: u64,
+}
+
+pub(crate) fn update_arcane_manifest(
+    world_dir: &Path,
+    checkpoint: &ArcaneManifestCheckpoint,
+) -> Result<(), AtlasError> {
+    let planet_dir = PlanetAtlas::planet_dir(world_dir);
+    let bytes = read_bounded(&planet_dir.join(MANIFEST_FILE), MAX_MANIFEST_BYTES)?;
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|error| AtlasError::Corrupt(format!("manifest is not UTF-8: {error}")))?;
+    let mut manifest: AtlasManifest = toml::from_str(text)
+        .map_err(|error| AtlasError::Corrupt(format!("manifest decode failed: {error}")))?;
+    manifest.arcane_schema_version = checkpoint.schema_version;
+    manifest.arcane_algorithm_version = checkpoint.algorithm_version;
+    manifest.arcane_unit_scale = checkpoint.unit_scale;
+    manifest.arcane_genesis_total = checkpoint.genesis_total;
+    manifest.arcane_last_clean_total = checkpoint.last_clean_total;
+    manifest.arcane_reservoir_totals = checkpoint.reservoir_totals;
+    manifest.arcane_registry_hash = checkpoint.registry_hash;
+    manifest.arcane_ledger_checksum = checkpoint.ledger_checksum;
+    manifest.arcane_delta_checksum = checkpoint.delta_checksum;
+    write_manifest(&planet_dir, &manifest)
+}
+
+pub(crate) fn verify_arcane_manifest_checkpoint(
+    world_dir: &Path,
+    checkpoint: &ArcaneManifestCheckpoint,
+) -> Result<(), AtlasError> {
+    let planet_dir = PlanetAtlas::planet_dir(world_dir);
+    let bytes = read_bounded(&planet_dir.join(MANIFEST_FILE), MAX_MANIFEST_BYTES)?;
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|error| AtlasError::Corrupt(format!("manifest is not UTF-8: {error}")))?;
+    let manifest: AtlasManifest = toml::from_str(text)
+        .map_err(|error| AtlasError::Corrupt(format!("manifest decode failed: {error}")))?;
+    let valid = manifest.arcane_schema_version == checkpoint.schema_version
+        && manifest.arcane_algorithm_version == checkpoint.algorithm_version
+        && manifest.arcane_unit_scale == checkpoint.unit_scale
+        && manifest.arcane_genesis_total == checkpoint.genesis_total
+        && manifest.arcane_last_clean_total == checkpoint.last_clean_total
+        && manifest.arcane_reservoir_totals == checkpoint.reservoir_totals
+        && manifest.arcane_registry_hash == checkpoint.registry_hash
+        && manifest.arcane_ledger_checksum == checkpoint.ledger_checksum;
+    if !valid {
+        return Err(AtlasError::Corrupt(
+            "arcane checkpoint does not match the qualified planet manifest".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) struct ArcaneGeographyManifestCheckpoint {
+    pub schema_version: u32,
+    pub algorithm_version: u32,
+    pub dynamic_version: u32,
+    pub genesis_total: u64,
+    pub immutable_checksum: u64,
+    pub dynamic_checksum: u64,
+    pub site_catalog_checksum: u64,
+    pub last_authoritative_time: u64,
+}
+
+pub(crate) fn update_arcane_geography_manifest(
+    world_dir: &Path,
+    checkpoint: &ArcaneGeographyManifestCheckpoint,
+) -> Result<(), AtlasError> {
+    let planet_dir = PlanetAtlas::planet_dir(world_dir);
+    let bytes = read_bounded(&planet_dir.join(MANIFEST_FILE), MAX_MANIFEST_BYTES)?;
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|error| AtlasError::Corrupt(format!("manifest is not UTF-8: {error}")))?;
+    let mut manifest: AtlasManifest = toml::from_str(text)
+        .map_err(|error| AtlasError::Corrupt(format!("manifest decode failed: {error}")))?;
+    manifest.arcane_geography_schema_version = checkpoint.schema_version;
+    manifest.arcane_geography_algorithm_version = checkpoint.algorithm_version;
+    manifest.arcane_geography_dynamic_version = checkpoint.dynamic_version;
+    manifest.arcane_geography_genesis_total = checkpoint.genesis_total;
+    manifest.arcane_geography_immutable_checksum = checkpoint.immutable_checksum;
+    manifest.arcane_geography_dynamic_checksum = checkpoint.dynamic_checksum;
+    manifest.arcane_geography_site_catalog_checksum = checkpoint.site_catalog_checksum;
+    manifest.arcane_geography_last_authoritative_time = checkpoint.last_authoritative_time;
+    write_manifest(&planet_dir, &manifest)
+}
+
+pub(crate) fn arcane_geography_manifest_payload(
+    world_dir: &Path,
+    checkpoint: &ArcaneGeographyManifestCheckpoint,
+) -> Result<Vec<u8>, AtlasError> {
+    let planet_dir = PlanetAtlas::planet_dir(world_dir);
+    let bytes = read_bounded(&planet_dir.join(MANIFEST_FILE), MAX_MANIFEST_BYTES)?;
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|error| AtlasError::Corrupt(format!("manifest is not UTF-8: {error}")))?;
+    let mut manifest: AtlasManifest = toml::from_str(text)
+        .map_err(|error| AtlasError::Corrupt(format!("manifest decode failed: {error}")))?;
+    manifest.arcane_geography_schema_version = checkpoint.schema_version;
+    manifest.arcane_geography_algorithm_version = checkpoint.algorithm_version;
+    manifest.arcane_geography_dynamic_version = checkpoint.dynamic_version;
+    manifest.arcane_geography_genesis_total = checkpoint.genesis_total;
+    manifest.arcane_geography_immutable_checksum = checkpoint.immutable_checksum;
+    manifest.arcane_geography_dynamic_checksum = checkpoint.dynamic_checksum;
+    manifest.arcane_geography_site_catalog_checksum = checkpoint.site_catalog_checksum;
+    manifest.arcane_geography_last_authoritative_time = checkpoint.last_authoritative_time;
+    let payload = toml::to_string_pretty(&manifest)
+        .map_err(|error| AtlasError::Corrupt(format!("manifest encoding failed: {error}")))?;
+    if payload.len() as u64 > MAX_MANIFEST_BYTES {
+        return Err(AtlasError::Corrupt(
+            "manifest exceeds its size limit".into(),
+        ));
+    }
+    Ok(payload.into_bytes())
+}
+
+pub(crate) fn verify_arcane_geography_manifest(
+    world_dir: &Path,
+    checkpoint: &ArcaneGeographyManifestCheckpoint,
+) -> Result<(), AtlasError> {
+    let planet_dir = PlanetAtlas::planet_dir(world_dir);
+    let bytes = read_bounded(&planet_dir.join(MANIFEST_FILE), MAX_MANIFEST_BYTES)?;
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|error| AtlasError::Corrupt(format!("manifest is not UTF-8: {error}")))?;
+    let manifest: AtlasManifest = toml::from_str(text)
+        .map_err(|error| AtlasError::Corrupt(format!("manifest decode failed: {error}")))?;
+    let valid = manifest.arcane_geography_schema_version == checkpoint.schema_version
+        && manifest.arcane_geography_algorithm_version == checkpoint.algorithm_version
+        && manifest.arcane_geography_dynamic_version == checkpoint.dynamic_version
+        && manifest.arcane_geography_genesis_total == checkpoint.genesis_total
+        && manifest.arcane_geography_immutable_checksum == checkpoint.immutable_checksum
+        && manifest.arcane_geography_dynamic_checksum == checkpoint.dynamic_checksum
+        && manifest.arcane_geography_site_catalog_checksum == checkpoint.site_catalog_checksum
+        && manifest.arcane_geography_last_authoritative_time == checkpoint.last_authoritative_time;
+    if !valid {
+        return Err(AtlasError::Corrupt(
+            "arcane geography checkpoint does not match the planet manifest".into(),
+        ));
+    }
     Ok(())
 }
 

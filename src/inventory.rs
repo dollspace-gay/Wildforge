@@ -13,6 +13,9 @@ pub struct ItemStack {
     pub count: u32,
     /// Remaining uses for tools; 0 for everything else.
     pub durability: u32,
+    /// Stable server-assigned identity of the corresponding Current account;
+    /// zero means this instance carries no bound Current.
+    pub arcane_id: u64,
 }
 
 impl ItemStack {
@@ -21,12 +24,18 @@ impl ItemStack {
             item,
             count,
             durability: reg.item(item).durability,
+            arcane_id: 0,
         }
     }
 
-    /// Stacks merge only if same item and neither is a tool.
+    /// Stacks merge only if same item, neither is a tool, and neither carries
+    /// stable instance state.  An identity names one physical object and may
+    /// never be copied into a larger count by an inventory convenience path.
     pub fn can_merge(&self, reg: &Registry, other: &ItemStack) -> bool {
-        self.item == other.item && reg.item(self.item).tool.is_none()
+        self.item == other.item
+            && reg.item(self.item).tool.is_none()
+            && self.arcane_id == 0
+            && other.arcane_id == 0
     }
 }
 
@@ -94,6 +103,7 @@ pub fn click_stack(
     }
 }
 
+#[derive(Clone)]
 pub struct Inventory {
     pub slots: [Option<ItemStack>; TOTAL_SLOTS],
 }
@@ -115,8 +125,7 @@ impl Inventory {
                     break;
                 }
                 if let Some(s) = slot
-                    && s.item == stack.item
-                    && reg.item(s.item).tool.is_none()
+                    && s.can_merge(reg, &stack)
                     && s.count < max
                 {
                     let take = count.min(max - s.count);
@@ -146,13 +155,20 @@ impl Inventory {
     }
 
     pub fn take_one(&mut self, slot: usize) -> Option<ItemId> {
+        self.take_one_stack(slot).map(|stack| stack.item)
+    }
+
+    /// Remove one physical item without discarding its durable identity.
+    /// Charged stacks are singular, but keeping this general makes every
+    /// consuming caller safe if another identity-bearing item type appears.
+    pub fn take_one_stack(&mut self, slot: usize) -> Option<ItemStack> {
         let s = self.slots[slot].as_mut()?;
+        let taken = ItemStack { count: 1, ..*s };
         s.count -= 1;
-        let item = s.item;
         if s.count == 0 {
             self.slots[slot] = None;
         }
-        Some(item)
+        Some(taken)
     }
 
     /// Wear the tool in `slot` by one use. Finite tools become a full-mass
@@ -168,6 +184,7 @@ impl Inventory {
                         item: broken,
                         count: 1,
                         durability: 0,
+                        arcane_id: s.arcane_id,
                     });
                 }
             }

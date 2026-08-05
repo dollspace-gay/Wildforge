@@ -21,6 +21,16 @@ impl Agent {
         }
     }
 
+    pub fn aim_working_at(&mut self, pos: crate::planet::BlockPos) -> Result<String, String> {
+        if self.dist_to(pos) > REACH {
+            return Err("working target is out of reach".into());
+        }
+        self.face_block(pos);
+        self.anchor_stance();
+        self.pump_for(0.1);
+        Ok(format!("aiming at {pos:?}"))
+    }
+
     /// State the stance RELIABLY before an edit: position and held
     /// slot normally ride lossy datagrams, and a dropped hotbar
     /// update makes the host refuse a Place it should love.
@@ -279,6 +289,534 @@ impl Agent {
 
     fn slot_of(&self, item: ItemId) -> Option<usize> {
         (0..TOTAL_SLOTS).find(|&i| self.inventory.slots[i].is_some_and(|s| s.item == item))
+    }
+
+    pub(crate) fn named_slot(&self, name: &str) -> Result<usize, String> {
+        let item = self
+            .reg
+            .item_id(name)
+            .ok_or_else(|| format!("unknown item {name}"))?;
+        self.slot_of(item)
+            .ok_or_else(|| format!("no {name} in the pack"))
+    }
+
+    pub fn discovery_holder_for_item(
+        &self,
+        name: &str,
+    ) -> Result<crate::net::RecordHolderSnap, String> {
+        Ok(crate::net::RecordHolderSnap::Inventory {
+            slot: self.named_slot(name)? as u8,
+        })
+    }
+
+    fn discovery_summary(record: &crate::discovery::ObservationSummary) -> String {
+        let mut out = format!(
+            "record {} | {} | {} | {}\nobserver: {} | day {} {}",
+            record.record_id,
+            record.phenomenon_id,
+            record.category,
+            record.reading,
+            record.observer_name,
+            record.day,
+            record.season
+        );
+        for (property, value) in &record.properties {
+            out.push_str(&format!("\n{property}: {value}"));
+        }
+        if let Some(label) = &record.label {
+            out.push_str(&format!("\nlabel: {label}"));
+        }
+        if let Some(position) = record.location {
+            out.push_str(&format!(
+                "\nlocation: {} {} {} {}",
+                position.face(),
+                position.u(),
+                position.y(),
+                position.v()
+            ));
+        } else {
+            out.push_str("\nlocation: omitted");
+        }
+        if record.obsolete_content {
+            out.push_str("\ncontent version: obsolete");
+        }
+        out
+    }
+
+    pub fn observe_discovery(
+        &mut self,
+        target: Option<crate::planet::BlockPos>,
+        ledger: &str,
+        calibration: Option<&str>,
+        label: Option<String>,
+    ) -> Result<String, String> {
+        self.select("base:tuning_lens")?;
+        let ledger_slot = self.named_slot(ledger)?;
+        let calibration_slot = calibration.map(|name| self.named_slot(name)).transpose()?;
+        if let Some(pos) = target {
+            if self.dist_to(pos) > REACH {
+                return Err("target is out of reach".into());
+            }
+            self.face_block(pos);
+        }
+        self.anchor_stance();
+        self.last_discovery = None;
+        self.send(&C2S::BeginObserve {
+            target: target.map_or(crate::net::DiscoveryTargetSnap::Region, |pos| {
+                crate::net::DiscoveryTargetSnap::Block(pos)
+            }),
+        });
+        self.pump_for(1.25);
+        self.send(&C2S::Observe {
+            target: target.map_or(crate::net::DiscoveryTargetSnap::Region, |pos| {
+                crate::net::DiscoveryTargetSnap::Block(pos)
+            }),
+            ledger_slot: ledger_slot as u8,
+            calibration_slot: calibration_slot.map(|slot| slot as u8),
+            label,
+        });
+        for _ in 0..80 {
+            self.pump_for(0.05);
+            if let Some(record) = self.last_discovery.take() {
+                return Ok(Self::discovery_summary(&record));
+            }
+        }
+        Err("the host did not produce an observation".into())
+    }
+
+    pub fn read_knowledge(&mut self, item: &str) -> Result<String, String> {
+        let slot = self.named_slot(item)?;
+        self.last_knowledge_text = None;
+        self.last_discovery_records = None;
+        self.send(&C2S::ReadKnowledge { slot: slot as u8 });
+        for _ in 0..40 {
+            self.pump_for(0.05);
+            if let Some(text) = self.last_knowledge_text.take() {
+                return Ok(text);
+            }
+            if let Some((records, capacity)) = self.last_discovery_records.take() {
+                let mut out = format!("records {}/{}", records.len(), capacity);
+                for record in records {
+                    out.push_str("\n\n");
+                    out.push_str(&Self::discovery_summary(&record));
+                }
+                return Ok(out);
+            }
+        }
+        Err("the host did not return readable knowledge".into())
+    }
+
+    pub fn read_folio(&mut self, pos: crate::planet::BlockPos) -> Result<String, String> {
+        if self.dist_to(pos) > REACH {
+            return Err("folio is out of reach".into());
+        }
+        self.face_block(pos);
+        self.anchor_stance();
+        self.last_discovery_records = None;
+        self.send(&C2S::OpenDiscovery {
+            holder: crate::net::RecordHolderSnap::Folio { pos },
+        });
+        for _ in 0..40 {
+            self.pump_for(0.05);
+            if let Some((records, capacity)) = self.last_discovery_records.take() {
+                let mut out = format!("records {}/{}", records.len(), capacity);
+                for record in records {
+                    out.push_str("\n\n");
+                    out.push_str(&Self::discovery_summary(&record));
+                }
+                return Ok(out);
+            }
+        }
+        Err("the host did not return the folio".into())
+    }
+
+    pub fn copy_observation(
+        &mut self,
+        writing_pos: crate::planet::BlockPos,
+        source: crate::net::RecordHolderSnap,
+        record_id: u64,
+        destination: crate::net::RecordHolderSnap,
+        include_location: bool,
+    ) -> Result<String, String> {
+        self.last_discovery_records = None;
+        self.send(&C2S::CopyObservation {
+            writing_pos,
+            source,
+            record_id,
+            destination,
+            include_location,
+        });
+        for _ in 0..40 {
+            self.pump_for(0.05);
+            if self.last_discovery_records.take().is_some() {
+                return Ok("observation copied by the host".into());
+            }
+        }
+        Err("the host did not confirm the copy".into())
+    }
+
+    pub fn run_discovery_experiment(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        kind: crate::discovery::ExperimentKind,
+        sample: &str,
+        ledger: &str,
+        calibration: Option<&str>,
+    ) -> Result<String, String> {
+        if self.dist_to(pos) > REACH {
+            return Err("apparatus is out of reach".into());
+        }
+        let sample_slot = self.named_slot(sample)?;
+        let ledger_slot = self.named_slot(ledger)?;
+        let reference_slot = self.named_slot(kind.reference_item())?;
+        let calibration_slot = calibration.map(|name| self.named_slot(name)).transpose()?;
+        self.face_block(pos);
+        self.anchor_stance();
+        self.send(&C2S::SetExperimentItem {
+            pos,
+            slot: sample_slot as u8,
+        });
+        self.pump_for(0.35);
+        self.send(&C2S::SetExperimentItem {
+            pos,
+            slot: reference_slot as u8,
+        });
+        self.pump_for(0.35);
+        self.select("base:tuning_lens")?;
+        self.anchor_stance();
+        self.last_discovery = None;
+        self.send(&C2S::BeginExperiment { pos, kind });
+        self.pump_for(1.25);
+        self.send(&C2S::RunExperiment {
+            pos,
+            kind,
+            ledger_slot: ledger_slot as u8,
+            calibration_slot: calibration_slot.map(|slot| slot as u8),
+        });
+        for _ in 0..80 {
+            self.pump_for(0.05);
+            if let Some(record) = self.last_discovery.take() {
+                return Ok(Self::discovery_summary(&record));
+            }
+        }
+        Err("the host did not complete the experiment".into())
+    }
+
+    pub fn assemble_discovery_lens(
+        &mut self,
+        pos: crate::planet::BlockPos,
+    ) -> Result<String, String> {
+        if self.dist_to(pos) > REACH {
+            return Err("assembly bench is out of reach".into());
+        }
+        self.face_block(pos);
+        self.anchor_stance();
+        self.send(&C2S::AssembleTuningLens { pos });
+        self.pump_for(0.4);
+        self.named_slot("base:tuning_lens")?;
+        Ok("tuning lens assembled".into())
+    }
+
+    pub fn operate_binding_frame(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        action: crate::implements::FrameAction,
+        held_item: Option<&str>,
+    ) -> Result<String, String> {
+        if self.dist_to(pos) > REACH {
+            return Err("binding frame is out of reach".into());
+        }
+        // Frame verbs share the player's host-owned action cooldown. The
+        // previous helper returned as soon as the result arrived, so a
+        // bounded multi-step assembly immediately sent its next verb while
+        // the host was still cooling down and then waited forever for a
+        // response the host had correctly refused. Pace before every verb;
+        // this is transport choreography, not client authority.
+        self.pump_for(0.3);
+        if let Some(item) = held_item {
+            self.select(item)?;
+        }
+        self.face_block(pos);
+        self.anchor_stance();
+        if action != crate::implements::FrameAction::Inspect
+            && !self.binding_revisions.contains_key(&pos)
+        {
+            self.last_binding_frame = None;
+            self.send(&C2S::OperateBindingFrame {
+                pos,
+                slot: self.hotbar as u8,
+                action: crate::implements::FrameAction::Inspect,
+                expected_revision: None,
+            });
+            for _ in 0..50 {
+                self.pump_for(0.05);
+                if self.binding_revisions.contains_key(&pos) {
+                    break;
+                }
+            }
+            if !self.binding_revisions.contains_key(&pos) {
+                return Err("the host did not return the binding-frame revision".into());
+            }
+            // Inspect is itself a successful frame action and starts the same
+            // host cooldown. Wait before issuing the requested mutation.
+            self.pump_for(0.3);
+        }
+        self.last_binding_frame = None;
+        self.send(&C2S::OperateBindingFrame {
+            pos,
+            slot: self.hotbar as u8,
+            action,
+            expected_revision: self.binding_revisions.get(&pos).copied(),
+        });
+        for _ in 0..50 {
+            self.pump_for(0.05);
+            if let Some((at, result)) = self.last_binding_frame.take()
+                && at == pos
+            {
+                let mut text = result.message;
+                for line in result.lines {
+                    text.push('\n');
+                    text.push_str(&line);
+                }
+                return if result.success { Ok(text) } else { Err(text) };
+            }
+        }
+        Err("the host did not complete the binding-frame operation".into())
+    }
+
+    /// Perform one ordinary host-authoritative laboratory action and wait for
+    /// its reliable revision/result echo. Agents use precisely the same
+    /// station request as windowed guests.
+    pub fn operate_alchemy(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        action: crate::alchemy::ApparatusAction,
+        held_item: Option<&str>,
+    ) -> Result<String, String> {
+        if self.dist_to(pos) > REACH {
+            return Err("alchemy apparatus is out of reach".into());
+        }
+        self.pump_for(0.2);
+        if let Some(item) = held_item {
+            self.select(item)?;
+        }
+        let action = match action {
+            crate::alchemy::ApparatusAction::Grind { .. } => {
+                crate::alchemy::ApparatusAction::Grind {
+                    inventory_slot: self.hotbar as u8,
+                }
+            }
+            crate::alchemy::ApparatusAction::LoadCarrier { .. } => {
+                crate::alchemy::ApparatusAction::LoadCarrier {
+                    inventory_slot: self.hotbar as u8,
+                }
+            }
+            crate::alchemy::ApparatusAction::LoadFilter { .. } => {
+                crate::alchemy::ApparatusAction::LoadFilter {
+                    inventory_slot: self.hotbar as u8,
+                }
+            }
+            crate::alchemy::ApparatusAction::Charge {
+                inventory_slot: Some(_),
+                units,
+            } => crate::alchemy::ApparatusAction::Charge {
+                inventory_slot: Some(self.hotbar as u8),
+                units,
+            },
+            crate::alchemy::ApparatusAction::Decant { .. } => {
+                crate::alchemy::ApparatusAction::Decant {
+                    vessel_slot: self.hotbar as u8,
+                }
+            }
+            crate::alchemy::ApparatusAction::Clean { filter_slot, .. } => {
+                crate::alchemy::ApparatusAction::Clean {
+                    water_slot: self.hotbar as u8,
+                    filter_slot,
+                }
+            }
+            crate::alchemy::ApparatusAction::Repair { .. } => {
+                crate::alchemy::ApparatusAction::Repair {
+                    material_slot: self.hotbar as u8,
+                }
+            }
+            crate::alchemy::ApparatusAction::PressOil { .. } => {
+                crate::alchemy::ApparatusAction::PressOil {
+                    seed_slot: self.hotbar as u8,
+                }
+            }
+            action => action,
+        };
+        self.face_block(pos);
+        self.anchor_stance();
+        if !matches!(action, crate::alchemy::ApparatusAction::Inspect)
+            && !self.alchemy_revisions.contains_key(&pos)
+        {
+            self.last_alchemy_result = None;
+            self.send(&C2S::OperateAlchemy {
+                pos,
+                expected_revision: None,
+                action: crate::alchemy::ApparatusAction::Inspect,
+            });
+            for _ in 0..50 {
+                self.pump_for(0.05);
+                if self.alchemy_revisions.contains_key(&pos) {
+                    break;
+                }
+            }
+            if !self.alchemy_revisions.contains_key(&pos) {
+                return Err("the host did not return the apparatus revision".into());
+            }
+            self.pump_for(0.2);
+        }
+        self.last_alchemy_result = None;
+        self.send(&C2S::OperateAlchemy {
+            pos,
+            expected_revision: self.alchemy_revisions.get(&pos).copied(),
+            action,
+        });
+        for _ in 0..60 {
+            self.pump_for(0.05);
+            if let Some((at, result)) = self.last_alchemy_result.take()
+                && at == pos
+            {
+                return Ok(format!(
+                    "{}; revision {}; batch {}; volume {}; next {:?}",
+                    result.cue.message,
+                    result.revision,
+                    result.batch_id,
+                    result.volume_units,
+                    result.next_step
+                ));
+            }
+        }
+        Err("the host did not complete the alchemy operation".into())
+    }
+
+    pub fn apply_preparation(
+        &mut self,
+        item: &str,
+        target: crate::alchemy::AlchemyTarget,
+    ) -> Result<String, String> {
+        let slot = self.named_slot(item)?;
+        self.hotbar = slot.min(crate::inventory::HOTBAR_SLOTS - 1);
+        self.anchor_stance();
+        self.last_preparation_result = None;
+        self.send(&C2S::UsePreparation {
+            slot: slot as u8,
+            target,
+        });
+        for _ in 0..60 {
+            self.pump_for(0.05);
+            if let Some(result) = self.last_preparation_result.take() {
+                return Ok(result.message);
+            }
+        }
+        Err("the host did not complete the preparation application".into())
+    }
+
+    /// Aim and begin one host-authoritative wand working or constructed
+    /// ritual. The agent sends the same intent packet as a windowed guest and
+    /// waits for the ordinary result/cues; no privileged world mutation path
+    /// exists here.
+    pub fn start_working(
+        &mut self,
+        working_id: &str,
+        target: crate::workings::WorkingTargetIntent,
+        held_item: Option<&str>,
+        forced: bool,
+    ) -> Result<String, String> {
+        use crate::workings::WorkingTargetIntent;
+        if self.active_working_request.is_some() {
+            return Err("finish or cancel the active working first".into());
+        }
+        let held_instance = if matches!(target, WorkingTargetIntent::Ritual { .. }) {
+            0
+        } else {
+            if let Some(item) = held_item {
+                self.select(item)?;
+            }
+            self.inventory.slots[self.hotbar]
+                .filter(|stack| stack.arcane_id != 0)
+                .map(|stack| stack.arcane_id)
+                .ok_or("select a physical charged wand before starting the working")?
+        };
+        let aim = match target {
+            WorkingTargetIntent::Block { pos, .. } => Some(pos),
+            WorkingTargetIntent::Water { from, .. } => Some(from),
+            WorkingTargetIntent::Ritual { controller } => Some(controller),
+            WorkingTargetIntent::None
+            | WorkingTargetIntent::Entity { .. }
+            | WorkingTargetIntent::Inventory { .. } => None,
+        };
+        if let Some(pos) = aim {
+            if self.dist_to(pos) > REACH {
+                return Err("working target is out of reach".into());
+            }
+            self.face_block(pos);
+        }
+        self.anchor_stance();
+        self.last_working_result = None;
+        self.send(&C2S::OperateWorking {
+            working_id: working_id.into(),
+            held_instance,
+            target,
+            intent: if forced {
+                crate::workings::WorkingIntent::StartForced
+            } else {
+                crate::workings::WorkingIntent::Start
+            },
+        });
+        for _ in 0..80 {
+            self.pump_for(0.05);
+            if let Some(result) = self.last_working_result.take() {
+                if result.success && result.phase.is_some() {
+                    self.active_working_request = Some((working_id.into(), held_instance, target));
+                }
+                return if result.success {
+                    Ok(result.message)
+                } else {
+                    Err(result.message)
+                };
+            }
+        }
+        Err("the host did not answer the working start request".into())
+    }
+
+    pub fn continue_working(
+        &mut self,
+        intent: crate::workings::WorkingIntent,
+    ) -> Result<String, String> {
+        if matches!(
+            intent,
+            crate::workings::WorkingIntent::Start | crate::workings::WorkingIntent::StartForced
+        ) {
+            return Err("use start_working for a new working".into());
+        }
+        let (working_id, held_instance, target) = self
+            .active_working_request
+            .clone()
+            .ok_or("there is no active working to hold, release, or cancel")?;
+        self.last_working_result = None;
+        self.send(&C2S::OperateWorking {
+            working_id,
+            held_instance,
+            target,
+            intent,
+        });
+        for _ in 0..80 {
+            self.pump_for(0.05);
+            if let Some(result) = self.last_working_result.take() {
+                if result.success && result.phase.is_none() {
+                    self.active_working_request = None;
+                }
+                return if result.success {
+                    Ok(result.message)
+                } else {
+                    Err(result.message)
+                };
+            }
+        }
+        Err("the host did not answer the working intent".into())
     }
 
     /// Craft one of the recipes the agent knows the shape of. The

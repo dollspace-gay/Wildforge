@@ -3,7 +3,109 @@
 use super::*;
 use crate::planet::{BlockPos, EntityPos, SurfacePos};
 
+#[derive(Clone, Debug)]
+pub struct SettledMobDeath {
+    pub species: usize,
+    pub pos: EntityPos,
+}
+
 impl World {
+    pub fn loose_items(&self) -> &[crate::entity::ItemEntity] {
+        &self.loose_items
+    }
+
+    pub fn loose_items_mut(&mut self) -> &mut Vec<crate::entity::ItemEntity> {
+        &mut self.loose_items
+    }
+
+    pub fn spawn_loose_item(&mut self, mut item: crate::entity::ItemEntity) -> u64 {
+        if item.stable_id == 0 {
+            item.stable_id = self.next_loose_item_id.max(LOOSE_ITEM_ID_BASE);
+        }
+        self.next_loose_item_id = self
+            .next_loose_item_id
+            .max(item.stable_id.saturating_add(1))
+            .max(LOOSE_ITEM_ID_BASE);
+        let id = item.stable_id;
+        self.loose_items.push(item);
+        id
+    }
+
+    pub fn replace_loose_items(&mut self, items: Vec<crate::entity::ItemEntity>) {
+        self.next_loose_item_id = items
+            .iter()
+            .map(|item| item.stable_id)
+            .max()
+            .unwrap_or(LOOSE_ITEM_ID_BASE - 1)
+            .saturating_add(1)
+            .max(LOOSE_ITEM_ID_BASE);
+        self.loose_items = items;
+    }
+
+    pub fn take_loose_items(&mut self) -> Vec<crate::entity::ItemEntity> {
+        std::mem::take(&mut self.loose_items)
+    }
+
+    pub fn clear_loose_items(&mut self) {
+        self.loose_items.clear();
+    }
+
+    pub fn for_each_loose_item_mut(
+        &mut self,
+        mut update: impl FnMut(&mut crate::entity::ItemEntity),
+    ) {
+        for item in &mut self.loose_items {
+            update(item);
+        }
+    }
+
+    /// Advance ordinary dropped-item physics and settle material/arcane loss
+    /// at the same host authority that owns Nudge and pickup.
+    pub(super) fn tick_loose_items(&mut self, dt: f32) {
+        let pending = std::mem::take(&mut self.pending_drops);
+        for (pos, stack) in pending {
+            let id = self.next_loose_item_id.max(LOOSE_ITEM_ID_BASE);
+            let angle = ((id ^ (id >> 31)) as u32) as f32 / u32::MAX as f32 * std::f32::consts::TAU;
+            let mut item = crate::entity::ItemEntity::new(
+                pos.entity_center(),
+                glam::Vec3::new(angle.cos() * 1.5, 2.5, angle.sin() * 1.5),
+                stack.item,
+                stack.count,
+            );
+            item.durability = stack.durability;
+            item.arcane_id = stack.arcane_id;
+            self.spawn_loose_item(item);
+        }
+
+        let mut kept = Vec::with_capacity(self.loose_items.len());
+        let mut lost = Vec::new();
+        for mut item in std::mem::take(&mut self.loose_items) {
+            if item.update(self, dt) {
+                kept.push(item);
+            } else {
+                lost.push(item);
+            }
+        }
+        self.loose_items = kept;
+        let reg = self.reg.clone();
+        for item in lost {
+            let reason = item.loss_reason(self);
+            let Some(pos) = item.pos.block() else {
+                continue;
+            };
+            let mut stack = ItemStack::new(&reg, item.item, item.count);
+            stack.durability = item.durability;
+            stack.arcane_id = item.arcane_id;
+            let implement_materials_handled = self.retire_arcane_stack_at(pos, stack, reason);
+            if !implement_materials_handled
+                && let Some(ledger) = &mut self.material_ledger
+                && let Err(error) = ledger.bury_stack(&reg, pos, stack, reason)
+            {
+                eprintln!("materials: dropped-item salvage failed: {error}");
+            }
+        }
+    }
+
     pub fn mobs(&self) -> &[Mob] {
         &self.mobs
     }
@@ -33,15 +135,217 @@ impl World {
     }
 
     pub fn spawn_mob(&mut self, mob: Mob) {
+        let mut mob = mob;
+        if mob.id == 0 {
+            if self.next_mob_id == u32::MAX {
+                eprintln!("mobs: stable id space exhausted; refusing further spawns");
+                return;
+            }
+            mob.id = self.next_mob_id;
+            self.next_mob_id += 1;
+        }
+        let Some(definition) = self.reg.animals.get(mob.species).cloned() else {
+            return;
+        };
+        if definition.hostile
+            && let Some(arcane) = definition.arcane.as_ref()
+            && self.arcane_ledger.is_some()
+        {
+            let source = self
+                .planet_atlas
+                .as_ref()
+                .and_then(|atlas| {
+                    atlas
+                        .country_at(mob.pos.surface())
+                        .map(|country| country.id)
+                })
+                .map(crate::arcane::ArcaneOwner::Heart)
+                .unwrap_or(crate::arcane::ArcaneOwner::Deep);
+            let result = self
+                .arcane_ledger
+                .as_mut()
+                .expect("checked above")
+                .bind_new_owner(
+                    source,
+                    crate::arcane::ArcaneOwner::Mob(u64::from(mob.id)),
+                    arcane.capacity,
+                    arcane.resonance.keys().cloned().collect(),
+                    &definition.name,
+                    "warden manifestation",
+                );
+            if let Err(error) = result {
+                eprintln!(
+                    "arcane: warden {} could not manifest: {error}",
+                    definition.name
+                );
+                return;
+            }
+        }
         self.mobs.push(mob);
-    }
-
-    pub fn remove_mob(&mut self, index: usize) -> Mob {
-        self.mobs.swap_remove(index)
     }
 
     pub fn replace_mobs(&mut self, mobs: Vec<Mob>) {
         self.mobs = mobs;
+    }
+
+    fn arcane_region_at(&self, pos: EntityPos) -> Option<crate::planet_atlas::AtlasPos> {
+        self.planet_atlas
+            .as_ref()
+            .map(|atlas| atlas.atlas_pos(pos.surface()))
+    }
+
+    fn retire_warden_current(
+        &mut self,
+        mob_id: u32,
+        pos: EntityPos,
+        disposition: crate::registry::ArcaneDisposition,
+        reason: &str,
+    ) {
+        let Some(region) = self.arcane_region_at(pos) else {
+            return;
+        };
+        let country = self
+            .planet_atlas
+            .as_ref()
+            .and_then(|atlas| atlas.country_at(pos.surface()))
+            .map(|country| country.id);
+        let Some(ledger) = &mut self.arcane_ledger else {
+            return;
+        };
+        let owner = crate::arcane::ArcaneOwner::Mob(u64::from(mob_id));
+        if ledger.account(&owner).is_none() {
+            return;
+        }
+        let recover_to_heart = (reason.contains("dissolved") || reason.contains("stood down"))
+            && country.is_some_and(|country| !ledger.heart_frozen(country));
+        let destination = if recover_to_heart {
+            crate::arcane::ArcaneOwner::Heart(country.expect("checked above"))
+        } else {
+            match disposition {
+                crate::registry::ArcaneDisposition::Ambient => {
+                    crate::arcane::ArcaneOwner::Ambient(region)
+                }
+                crate::registry::ArcaneDisposition::Dross
+                | crate::registry::ArcaneDisposition::Scar => crate::arcane::ArcaneOwner::Dross {
+                    region,
+                    medium: crate::arcane::DrossMedium::Soil,
+                },
+            }
+        };
+        if let Err(error) = ledger.move_all(owner, destination, reason) {
+            eprintln!("arcane: could not retire warden Current: {error}");
+        }
+    }
+
+    /// Authoritative death settlement shared by windowed, dedicated, and
+    /// loopback hosts. Presentation consumes the returned records; loot and
+    /// accounting have already landed exactly once here.
+    pub fn settle_dead_mobs(&mut self, rng: &mut u32) -> Vec<SettledMobDeath> {
+        let reg = self.reg.clone();
+        let mut settled = Vec::new();
+        let mut index = 0;
+        while index < self.mobs.len() {
+            if self.mobs[index].health > 0.0 {
+                index += 1;
+                continue;
+            }
+            let mob = self.mobs.swap_remove(index);
+            let Some(definition) = reg.animals.get(mob.species).cloned() else {
+                continue;
+            };
+            let at = mob.pos.block();
+            if definition.hostile {
+                if let Some(at) = at {
+                    self.wild_falls_at(&definition.name, at);
+                }
+            } else if !definition.vehicle && !definition.name.ends_with(":carcass") {
+                self.add_ire_at_surface(mob.pos.surface(), if mob.tamed { 1.0 } else { 2.0 });
+            }
+            if let (Some(at), Some(cargo)) = (at, mob.cargo) {
+                for stack in cargo.into_iter().flatten() {
+                    self.push_drop_at(at, stack);
+                }
+            }
+
+            let mut drops = Vec::<ItemStack>::new();
+            if mob.growth >= 1.0 {
+                for (item, min, max) in &definition.drops {
+                    *rng = rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    let span = max.saturating_sub(*min).saturating_add(1);
+                    let count = min.saturating_add((*rng >> 8) % span.max(1)).min(*max);
+                    let item_definition = reg.item(*item);
+                    if item_definition.arcane.is_some() {
+                        drops.extend((0..count).map(|_| ItemStack::new(&reg, *item, 1)));
+                    } else if count != 0 {
+                        drops.push(ItemStack::new(&reg, *item, count));
+                    }
+                }
+            }
+
+            if definition.hostile {
+                let charged_count = drops
+                    .iter()
+                    .filter(|stack| reg.item(stack.item).arcane.is_some())
+                    .count();
+                let mut remaining_charged = charged_count;
+                for stack in &mut drops {
+                    let Some(mut arcane_definition) = reg.item(stack.item).arcane.clone() else {
+                        continue;
+                    };
+                    let source = crate::arcane::ArcaneOwner::Mob(u64::from(mob.id));
+                    let available = self
+                        .arcane_ledger
+                        .as_ref()
+                        .and_then(|ledger| ledger.account(&source))
+                        .map_or(0, |account| account.current.total());
+                    if available == 0 || remaining_charged == 0 {
+                        continue;
+                    }
+                    arcane_definition.capacity = arcane_definition
+                        .capacity
+                        .min(available.div_ceil(remaining_charged as u64));
+                    if let Some(ledger) = &mut self.arcane_ledger {
+                        match ledger.bind_new_item(
+                            source,
+                            &arcane_definition,
+                            &reg.item(stack.item).name,
+                            "warden drop",
+                        ) {
+                            Ok(item_id) => stack.arcane_id = item_id,
+                            Err(error) => eprintln!("arcane: warden drop could not bind: {error}"),
+                        }
+                    }
+                    remaining_charged -= 1;
+                }
+                if let Some(arcane) = definition.arcane.as_ref() {
+                    self.retire_warden_current(
+                        mob.id,
+                        mob.pos,
+                        arcane.on_destroy,
+                        "warden death remainder",
+                    );
+                }
+            }
+
+            for stack in drops {
+                if let Some(ledger) = &mut self.material_ledger
+                    && let Err(error) =
+                        ledger.record_external_stack(&reg, stack, "wild creature drop")
+                {
+                    eprintln!("materials: creature drop accounting failed: {error}");
+                }
+                if mob.last_hit_by != 0 {
+                    self.queue_give(mob.last_hit_by, stack);
+                } else if let Some(at) = at {
+                    self.push_drop_at(at, stack);
+                }
+            }
+            settled.push(SettledMobDeath {
+                species: mob.species,
+                pos: mob.pos,
+            });
+        }
+        settled
     }
 
     pub fn for_each_mob_mut(&mut self, mut update: impl FnMut(&mut Mob)) {
@@ -55,10 +359,26 @@ impl World {
     }
 
     pub fn spawn_projectile(&mut self, projectile: Projectile) {
+        let mut projectile = projectile;
+        if projectile.stable_id == 0 {
+            projectile.stable_id = self.next_projectile_id.max(1);
+            self.next_projectile_id = projectile.stable_id.saturating_add(1).max(1);
+        } else {
+            self.next_projectile_id = self
+                .next_projectile_id
+                .max(projectile.stable_id.saturating_add(1));
+        }
         self.projectiles.push(projectile);
     }
 
     pub fn replace_projectiles(&mut self, projectiles: Vec<Projectile>) {
+        self.next_projectile_id = projectiles
+            .iter()
+            .map(|projectile| projectile.stable_id)
+            .max()
+            .unwrap_or_default()
+            .saturating_add(1)
+            .max(1);
         self.projectiles = projectiles;
     }
 
@@ -69,15 +389,7 @@ impl World {
     }
 
     pub(super) fn mob_hash_at(&self, pos: SurfacePos, salt: u32) -> u32 {
-        let mut h = u32::from(pos.u()).wrapping_mul(0x85eb_ca6b)
-            ^ u32::from(pos.v()).wrapping_mul(0xc2b2_ae35)
-            ^ (pos.face() as u32).wrapping_mul(0x27d4_eb2d)
-            ^ self.seed.wrapping_mul(0x9e37_79b9)
-            ^ salt.wrapping_mul(0x2708_92cd);
-        h ^= h >> 15;
-        h = h.wrapping_mul(0x2c1b_3c6d);
-        h ^= h >> 12;
-        h
+        crate::planet::seeded_surface_roll(self.seed, pos, salt)
     }
 
     fn animal_environment_suitable(
@@ -701,7 +1013,24 @@ impl World {
                     .then(|| m.pos.translated(sum / count).ok().map(|moved| moved.pos))
                     .flatten();
                 m.unstick(self, def);
+                let before = m.pos;
                 m.tick(self, def, players, dt, rng, &mut events);
+                if def.name.contains(":warden")
+                    && let Some(cell) = m.pos.block()
+                    && self.resist_supernatural_pressure_at(
+                        cell,
+                        "warden",
+                        def.attack.max(1.0).ceil() as u64,
+                    )
+                {
+                    // A supplied ward resists rather than destroys the Wild's
+                    // creature. Overload returns false and lets the crossing
+                    // stand; successful resistance restores the exact ordinary
+                    // pre-step position and leaves collision/AI authoritative.
+                    m.pos = before;
+                    m.vel = glam::Vec3::ZERO;
+                    m.state_timer = m.state_timer.max(0.2);
+                }
             }
         }
         // The kill lands: the prey leaves a carcass where it fell
@@ -776,6 +1105,7 @@ impl World {
         // Wardens are expressions of the wild, not creatures: they dissolve
         // in daylight (sky-lit cells only — torchlight never banishes them)
         // and when the player leaves them far behind.
+        let mut retired_current = Vec::new();
         mobs.retain_mut(|m| {
             let Some(def) = reg.animals.get(m.species) else {
                 if let Some(cargo) = m.cargo.take() {
@@ -833,16 +1163,26 @@ impl World {
                     false
                 }
             };
-            if !keep && let Some(cargo) = m.cargo.take() {
-                let at = m.pos.block().unwrap_or_else(|| {
-                    let surface = m.pos.surface();
-                    BlockPos::new(surface.face(), surface.u(), 1, surface.v())
-                        .expect("canonical mob surface has a shell floor")
-                });
-                retired_cargo.extend(cargo.into_iter().flatten().map(|stack| (at, stack)));
+            if !keep {
+                if def.hostile
+                    && let Some(arcane) = def.arcane.as_ref()
+                {
+                    retired_current.push((m.id, m.pos, arcane.on_destroy));
+                }
+                if let Some(cargo) = m.cargo.take() {
+                    let at = m.pos.block().unwrap_or_else(|| {
+                        let surface = m.pos.surface();
+                        BlockPos::new(surface.face(), surface.u(), 1, surface.v())
+                            .expect("canonical mob surface has a shell floor")
+                    });
+                    retired_cargo.extend(cargo.into_iter().flatten().map(|stack| (at, stack)));
+                }
             }
             keep
         });
+        for (id, pos, disposition) in retired_current {
+            self.retire_warden_current(id, pos, disposition, "warden dissolved");
+        }
         for (at, stack) in retired_cargo {
             self.push_drop_at(at, stack);
         }
@@ -1017,6 +1357,17 @@ impl World {
     pub fn apply_bite_at(&mut self, pos: crate::planet::BlockPos) {
         let b = self.get_block_at(pos);
         let d = self.reg.block(b);
+        if matches!(
+            d.name.as_str(),
+            "base:rainbell" | "base:lantern_reed" | "base:lantern_reed_dim" | "base:tidekelp"
+        ) {
+            if let Err(error) = self.settle_arcane_ecology_destruction(pos) {
+                eprintln!("arcane ecology: wildlife bite cancelled at {pos:?}: {error}");
+                return;
+            }
+            self.set_block_at(pos, crate::registry::AIR);
+            return;
+        }
         if d.crop_family != 0 && d.name.contains("/stage") {
             let base = d.name.split("/stage").next().unwrap_or("").to_string();
             if let Some(base_id) = self.reg.block_id(&base) {
@@ -1042,41 +1393,74 @@ impl World {
         let mut dmg: Vec<(usize, f32)> = Vec::new();
         let mut mob_hits: Vec<(usize, f32, crate::planet::EntityPos)> = Vec::new();
         let mut drops: Vec<(crate::planet::BlockPos, crate::registry::ItemId)> = Vec::new();
+        let mut preparation_spills: Vec<(crate::planet::BlockPos, ItemStack)> = Vec::new();
         let mut projectiles = std::mem::take(&mut self.projectiles);
-        projectiles.retain_mut(|p| match p.tick(self, players, dt) {
-            ProjHit::None => true,
-            ProjHit::Expired => false,
-            ProjHit::Player(i) => {
-                dmg.push((i, p.damage));
-                false
+        projectiles.retain_mut(|p| {
+            if self.projectile_reserved_by_working(p.stable_id) {
+                return true;
             }
-            ProjHit::Mob(i) => {
-                let from = p
-                    .pos
-                    .translated(-p.vel * dt)
-                    .map(|moved| moved.pos)
-                    .unwrap_or(p.pos);
-                mob_hits.push((i, p.damage, from));
-                false
+            let prior_cell = p.pos.block();
+            let hit = p.tick(self, players, dt);
+            // Resistance is checked before dispatching the hit. Otherwise a
+            // bolt that reaches a player in this very tick bypasses the ward
+            // while a slower bolt one cell away is stopped.
+            if !p.from_player
+                && p.pos.block().is_some_and(|cell| {
+                    self.resist_supernatural_pressure_at(
+                        cell,
+                        "projectile",
+                        p.damage.max(1.0).ceil() as u64,
+                    )
+                })
+            {
+                if let (Some(at), Some(stack)) =
+                    (p.pos.block().or(prior_cell), p.preparation_payload.take())
+                {
+                    preparation_spills.push((at, stack));
+                }
+                return false;
             }
-            ProjHit::Block => {
-                if let Some(it) = p.drop_item {
-                    if p.owner != 0 {
-                        // A guest's arrow: hand it back over the wire.
-                        let stack = ItemStack::new(&self.reg, it, 1);
-                        self.pending_gives.push((p.owner, stack));
-                    } else {
-                        let back = p
-                            .pos
-                            .translated(-p.vel * dt * 2.0)
-                            .map(|moved| moved.pos)
-                            .unwrap_or(p.pos);
-                        if let Some(back) = back.block() {
-                            drops.push((back, it));
+            if !matches!(hit, ProjHit::None)
+                && let (Some(at), Some(stack)) =
+                    (p.pos.block().or(prior_cell), p.preparation_payload.take())
+            {
+                preparation_spills.push((at, stack));
+            }
+            match hit {
+                ProjHit::None => true,
+                ProjHit::Expired => false,
+                ProjHit::Player(i) => {
+                    dmg.push((i, p.damage));
+                    false
+                }
+                ProjHit::Mob(i) => {
+                    let from = p
+                        .pos
+                        .translated(-p.vel * dt)
+                        .map(|moved| moved.pos)
+                        .unwrap_or(p.pos);
+                    mob_hits.push((i, p.damage, from));
+                    false
+                }
+                ProjHit::Block => {
+                    if let Some(it) = p.drop_item {
+                        if p.owner != 0 {
+                            // A guest's arrow: hand it back over the wire.
+                            let stack = ItemStack::new(&self.reg, it, 1);
+                            self.pending_gives.push((p.owner, stack));
+                        } else {
+                            let back = p
+                                .pos
+                                .translated(-p.vel * dt * 2.0)
+                                .map(|moved| moved.pos)
+                                .unwrap_or(p.pos);
+                            if let Some(back) = back.block() {
+                                drops.push((back, it));
+                            }
                         }
                     }
+                    false
                 }
-                false
             }
         });
         self.projectiles = projectiles;
@@ -1090,6 +1474,23 @@ impl World {
         }
         for (pos, it) in drops {
             self.push_drop_at(pos, ItemStack::new(&reg, it, 1));
+        }
+        for (pos, stack) in preparation_spills {
+            match self.destroy_preparation_container_at(pos, stack, "thrown vessel impact") {
+                Ok(true) => {}
+                Ok(false) => {
+                    // An unexpected non-preparation stable payload remains
+                    // recoverable rather than being silently erased.
+                    self.push_drop_at(pos, stack);
+                }
+                Err(error) => {
+                    eprintln!(
+                        "alchemy: failed to settle thrown vessel {} at {:?}: {error}",
+                        stack.arcane_id, pos
+                    );
+                    self.push_drop_at(pos, stack);
+                }
+            }
         }
         dmg
     }
@@ -1108,7 +1509,21 @@ impl World {
                 continue;
             }
             let Some(surface) = m.pos.block().map(BlockPos::surface) else {
-                self.mobs.swap_remove(i);
+                let retired = self.mobs.swap_remove(i);
+                let disposition = self
+                    .reg
+                    .animals
+                    .get(retired.species)
+                    .and_then(|definition| definition.arcane.as_ref())
+                    .map(|arcane| arcane.on_destroy);
+                if let Some(disposition) = disposition {
+                    self.retire_warden_current(
+                        retired.id,
+                        retired.pos,
+                        disposition,
+                        "watcher left valid terrain",
+                    );
+                }
                 continue;
             };
             let cell = self.regional_ire_at_surface(surface);
@@ -1116,7 +1531,21 @@ impl World {
                 // The land was answered while it watched.
                 self.whispers
                     .push("The watcher melts back into the trees.".to_string());
-                self.mobs.swap_remove(i);
+                let retired = self.mobs.swap_remove(i);
+                let disposition = self
+                    .reg
+                    .animals
+                    .get(retired.species)
+                    .and_then(|definition| definition.arcane.as_ref())
+                    .map(|arcane| arcane.on_destroy);
+                if let Some(disposition) = disposition {
+                    self.retire_warden_current(
+                        retired.id,
+                        retired.pos,
+                        disposition,
+                        "watcher stood down",
+                    );
+                }
                 continue;
             }
             if m.watch_timer > 45.0 {
@@ -1293,7 +1722,7 @@ impl World {
                 self.whispers
                     .push("Something watches from the treeline.".to_string());
             }
-            self.mobs.push(m);
+            self.spawn_mob(m);
             return; // one spawn per cycle
         }
     }

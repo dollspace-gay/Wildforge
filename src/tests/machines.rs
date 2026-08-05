@@ -2,6 +2,42 @@
 
 use super::*;
 
+fn clear_machine_outputs(world: &mut World) {
+    world.clear_pending_drops();
+    world.clear_loose_items();
+}
+
+fn take_machine_outputs(world: &mut World) -> Vec<ItemStack> {
+    let mut outputs = world
+        .take_pending_drops()
+        .into_iter()
+        .map(|(_, stack)| stack)
+        .collect::<Vec<_>>();
+    outputs.extend(world.take_loose_items().into_iter().map(|item| ItemStack {
+        item: item.item,
+        count: item.count,
+        durability: item.durability,
+        arcane_id: item.arcane_id,
+    }));
+    outputs
+}
+
+fn machine_output_count(world: &World, item: crate::registry::ItemId) -> u32 {
+    world
+        .pending_drops()
+        .iter()
+        .filter(|(_, stack)| stack.item == item)
+        .map(|(_, stack)| stack.count)
+        .chain(
+            world
+                .loose_items()
+                .iter()
+                .filter(|entity| entity.item == item)
+                .map(|entity| entity.count),
+        )
+        .sum()
+}
+
 #[test]
 fn furnace_smelts_with_fuel_over_time() {
     use crate::world::{BlockEntity, FurnaceState};
@@ -166,14 +202,104 @@ fn ember_fuel_speeds_the_furnace() {
 }
 
 #[test]
+fn charged_furnace_fuel_and_inputs_leave_no_orphan_current() {
+    use crate::arcane::{ArcaneOwner, Reservoir};
+    use crate::world::{BlockEntity, FurnaceState};
+
+    let reg = base_reg();
+    let mut world = World::load_or_create(
+        tmp_dir("charged-furnace-lifecycle").join("world"),
+        reg.clone(),
+    )
+    .unwrap();
+    let at = crate::planet::BlockPos::of_world(0, 90, 0).unwrap();
+
+    let mut ember = ItemStack::new(&reg, it(&reg, "base:ember"), 1);
+    world
+        .bind_arcane_stack_at(at, &mut ember, "charged furnace test fuel")
+        .unwrap();
+    let ember_owner = ArcaneOwner::Item(ember.arcane_id);
+    let dross_before = world
+        .arcane_ledger
+        .as_ref()
+        .unwrap()
+        .audit()
+        .unwrap()
+        .reservoirs[&Reservoir::Dross];
+    world.insert_block_entity_at(
+        at,
+        BlockEntity::Furnace(FurnaceState {
+            input: Some(ItemStack::new(&reg, it(&reg, "base:raw_iron"), 1)),
+            fuel: Some(ember),
+            ..Default::default()
+        }),
+    );
+    world.tick_entities(0.1);
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert!(ledger.account(&ember_owner).is_none());
+    assert_eq!(
+        ledger.audit().unwrap().reservoirs[&Reservoir::Dross],
+        dross_before + 512,
+        "ember fuel disorders its exact charge"
+    );
+
+    let quartz_at = crate::planet::BlockPos::of_world(1, 90, 0).unwrap();
+    let mut quartz = ItemStack::new(&reg, it(&reg, "base:quartz_shard"), 1);
+    world
+        .bind_arcane_stack_at(quartz_at, &mut quartz, "charged furnace test input")
+        .unwrap();
+    let quartz_owner = ArcaneOwner::Item(quartz.arcane_id);
+    let ambient_before = world
+        .arcane_ledger
+        .as_ref()
+        .unwrap()
+        .audit()
+        .unwrap()
+        .reservoirs[&Reservoir::Ambient];
+    world.insert_block_entity_at(
+        quartz_at,
+        BlockEntity::Furnace(FurnaceState {
+            input: Some(quartz),
+            fuel: Some(ItemStack::new(&reg, it(&reg, "base:log"), 1)),
+            ..Default::default()
+        }),
+    );
+    for _ in 0..120 {
+        world.tick_entities(0.1);
+    }
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert!(ledger.account(&quartz_owner).is_none());
+    assert_eq!(
+        ledger.audit().unwrap().reservoirs[&Reservoir::Ambient],
+        ambient_before + 384,
+        "transformed quartz returns its exact charge to the environment"
+    );
+    assert!(ledger.audit().unwrap().is_balanced());
+}
+
+#[test]
 fn brushing_yields_once_and_transmutes() {
     let reg = base_reg();
-    let mut w = test_world("brushing");
+    // Archaeological finds may carry finite Current, so this fixture needs
+    // the same qualified atlas + ledger a production world always owns.
+    let mut w = World::load_or_create(tmp_dir("brushing").join("world"), reg.clone()).unwrap();
+    w.ensure_chunk(tchunk(0, 0));
     let masonry = reg.block_id("base:cracked_masonry").unwrap();
     w.set_block(3, 150, 3, masonry);
     let mut rng = 7u32;
     let found = w.brush_block(3, 150, 3, &mut rng).expect("artifact found");
     assert!(found.count >= 1);
+    if reg.item(found.item).arcane.is_some() {
+        assert_ne!(found.arcane_id, 0);
+        assert!(
+            w.arcane_ledger
+                .as_ref()
+                .unwrap()
+                .item_current_total(found.arcane_id)
+                .is_some(),
+            "a charged find remains in clean or explicitly sequestered item custody"
+        );
+    }
     assert_eq!(
         w.get_block(3, 150, 3),
         reg.block_id("base:cobblestone").unwrap(),
@@ -186,6 +312,51 @@ fn brushing_yields_once_and_transmutes() {
     // Breaking a remnant instead just drops cobble (greed loses the find).
     let d = reg.drops_for(masonry, None).unwrap();
     assert_eq!(reg.item(d.0).name, "base:cobblestone");
+}
+
+#[test]
+fn sealed_archaeological_dross_is_funded_and_materializes_once() {
+    use crate::arcane::ArcaneOwner;
+
+    let reg = base_reg();
+    let mut world =
+        World::load_or_create(tmp_dir("sealed-dross-brush").join("world"), reg.clone()).unwrap();
+    world.ensure_chunk(tchunk(0, 0));
+    let masonry = reg.block_id("base:cracked_masonry").unwrap();
+    let sealed = reg.item_id("base:sealed_dross_ampoule").unwrap();
+    let mut rng = 17u32;
+    let mut recovered = None;
+    for x in 1..15 {
+        for z in 1..15 {
+            world.set_block(x, 150, z, masonry);
+            let stack = world.brush_block(x, 150, z, &mut rng).unwrap();
+            if stack.item == sealed {
+                recovered = Some((x, z, stack));
+                break;
+            }
+        }
+        if recovered.is_some() {
+            break;
+        }
+    }
+    let (x, z, stack) = recovered.expect("the deterministic site set includes sealed dross");
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert!(
+        ledger
+            .account(&ArcaneOwner::Item(stack.arcane_id))
+            .is_none()
+    );
+    let contained = ledger.item_dross_total(stack.arcane_id);
+    assert!(
+        contained > 0,
+        "the ampoule owns an actual contained reservoir"
+    );
+    assert!(ledger.audit().unwrap().is_balanced());
+
+    assert!(world.brush_block(x, 150, z, &mut rng).is_none());
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert_eq!(ledger.item_dross_total(stack.arcane_id), contained);
+    assert!(ledger.audit().unwrap().is_balanced());
 }
 
 #[test]
@@ -785,13 +956,10 @@ fn cupellation_splits_silver_from_lead() {
     );
     assert!(f.input.is_none(), "the cupel is spent");
     let lead = it(&reg, "base:lead_ingot");
-    let spat: u32 = w
-        .take_pending_drops()
+    let spat: u32 = take_machine_outputs(&mut w)
         .into_iter()
-        .filter(|(p, s)| {
-            *p == crate::planet::BlockPos::of_world(pos.0, pos.1, pos.2).unwrap() && s.item == lead
-        })
-        .map(|(_, s)| s.count)
+        .filter(|stack| stack.item == lead)
+        .map(|stack| stack.count)
         .sum();
     assert_eq!(spat, 2, "the lead pours out the mouth");
 }
@@ -872,12 +1040,7 @@ fn forge_batch_smelts_with_thrifty_fuel_in_any_weather() {
     );
     let fuel_left: u32 = f.fuel.iter().flatten().map(|s| s.count).sum();
     assert_eq!(fuel_left, 4, "8 items burned 4 fuel (2 per fuel)");
-    let minted: u32 = w
-        .pending_drops()
-        .iter()
-        .filter(|(_, s)| s.item == ingot)
-        .map(|(_, s)| s.count)
-        .sum();
+    let minted = machine_output_count(&w, ingot);
     assert_eq!(minted, 8, "eight ingots spat at the mouth");
 }
 
@@ -959,6 +1122,7 @@ fn legacy_food_stacks_initialize_instead_of_rotting() {
         item: berry,
         count: 5,
         durability: 0,
+        arcane_id: 0,
     });
     w.insert_block_entity((4, sy + 1, 4), BlockEntity::Chest(c));
     w.tick_entities(20.0);
@@ -1383,15 +1547,14 @@ fn the_millstone_grinds_a_load_unattended() {
             "the millstone piles a batch"
         );
     }
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..12 {
         w.tick_entities(0.5);
     }
-    let ground: u32 = w
-        .take_pending_drops()
+    let ground: u32 = take_machine_outputs(&mut w)
         .into_iter()
-        .filter(|(_, s)| s.item == it(&reg, "base:verdigris_powder"))
-        .map(|(_, s)| s.count)
+        .filter(|stack| stack.item == it(&reg, "base:verdigris_powder"))
+        .map(|stack| stack.count)
         .sum();
     assert_eq!(ground, 8, "four ores grind to eight powder in one firing");
 }
@@ -1410,15 +1573,14 @@ fn the_sawmill_rips_logs_and_the_helve_works_the_anvil() {
     for _ in 0..3 {
         assert!(w.anvil_put(saw, ItemStack::new(&reg, log, 1)));
     }
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..12 {
         w.tick_entities(0.5);
     }
-    let planks: u32 = w
-        .take_pending_drops()
+    let planks: u32 = take_machine_outputs(&mut w)
         .into_iter()
-        .filter(|(_, s)| s.item == it(&reg, "base:planks"))
-        .map(|(_, s)| s.count)
+        .filter(|stack| stack.item == it(&reg, "base:planks"))
+        .map(|stack| stack.count)
         .sum();
     assert_eq!(planks, 18, "the sawmill cuts six a log, hands cut four");
     // The helve hammer hangs off a gear (nothing comes off a shaft's
@@ -1429,14 +1591,14 @@ fn the_sawmill_rips_logs_and_the_helve_works_the_anvil() {
     w.set_block(anvil.0, anvil.1, anvil.2, b(&reg, "base:stone_anvil"));
     let bloom = it(&reg, "base:steel_bloom");
     assert!(w.anvil_put(anvil, ItemStack::new(&reg, bloom, 1)));
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..30 {
         w.tick_entities(0.5);
     }
     assert!(
-        w.take_pending_drops()
+        take_machine_outputs(&mut w)
             .iter()
-            .any(|(_, s)| s.item == it(&reg, "base:steel_ingot")),
+            .any(|stack| stack.item == it(&reg, "base:steel_ingot")),
         "three helve strikes finish the bar with nobody watching"
     );
     assert_eq!(
@@ -1466,27 +1628,26 @@ fn the_lathes_hold_their_tolerances() {
     );
     let copper = it(&reg, "base:copper_ingot");
     assert!(w.anvil_put(crude, ItemStack::new(&reg, copper, 1)));
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..16 {
         w.tick_entities(0.5);
     }
-    let screws: u32 = w
-        .take_pending_drops()
+    let screws: u32 = take_machine_outputs(&mut w)
         .into_iter()
-        .filter(|(_, s)| s.item == it(&reg, "base:screw"))
-        .map(|(_, s)| s.count)
+        .filter(|stack| stack.item == it(&reg, "base:screw"))
+        .map(|stack| stack.count)
         .sum();
     assert_eq!(screws, 2, "one soft ingot turns two screws");
     // The iron lathe: true tolerance, but only with workholding.
     let precise = (wx - 1, wy, wz + 1);
     w.set_block(precise.0, precise.1, precise.2, b(&reg, "base:iron_lathe"));
     assert!(w.anvil_put(precise, ItemStack::new(&reg, iron, 1)));
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..16 {
         w.tick_entities(0.5);
     }
     assert!(
-        w.take_pending_drops().is_empty(),
+        take_machine_outputs(&mut w).is_empty(),
         "no vice, no cut: the work only spins"
     );
     w.set_block(
@@ -1499,9 +1660,9 @@ fn the_lathes_hold_their_tolerances() {
         w.tick_entities(0.5);
     }
     assert!(
-        w.take_pending_drops()
+        take_machine_outputs(&mut w)
             .iter()
-            .any(|(_, s)| s.item == it(&reg, "base:iron_shaft")),
+            .any(|stack| stack.item == it(&reg, "base:iron_shaft")),
         "vice held, shaft turned true"
     );
 }
@@ -1547,14 +1708,14 @@ fn the_boring_mill_bores_and_the_pump_drains_the_mine() {
         "a gear is no station"
     );
     assert!(w.anvil_put(bore, ItemStack::new(&reg, plate, 1)));
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..40 {
         w.tick_entities(0.5);
     }
     assert!(
-        w.take_pending_drops()
+        take_machine_outputs(&mut w)
             .iter()
-            .any(|(_, s)| s.item == it(&reg, "base:cylinder")),
+            .any(|stack| stack.item == it(&reg, "base:cylinder")),
         "eight true turns bore the cylinder"
     );
     // The pump: a flooded shaft under it, an open cell beside it.
@@ -1671,7 +1832,7 @@ fn the_separator_splits_the_rare_earth_and_the_generator_lights_the_lamp() {
     w.set_block(mill.0, mill.1, mill.2, b(&reg, "base:millstone"));
     let copper = it(&reg, "base:raw_copper");
     assert!(w.anvil_put(mill, ItemStack::new(&reg, copper, 1)));
-    w.clear_pending_drops();
+    clear_machine_outputs(&mut w);
     for _ in 0..14 {
         w.tick_entities(0.5);
     }
@@ -1686,9 +1847,9 @@ fn the_separator_splits_the_rare_earth_and_the_generator_lights_the_lamp() {
         "light without torches"
     );
     assert!(
-        w.take_pending_drops()
+        take_machine_outputs(&mut w)
             .iter()
-            .any(|(_, s)| s.item == it(&reg, "base:verdigris_powder")),
+            .any(|stack| stack.item == it(&reg, "base:verdigris_powder")),
         "the electric quern grinds in the field, no shaft to it"
     );
     // Cut the line: the generator stops and the lamp dies with it.

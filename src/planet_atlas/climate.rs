@@ -807,6 +807,17 @@ pub struct WeatherStepReport {
     pub unexplained_water_drift: i128,
 }
 
+/// Exact coarse runoff movement accepted by one weather hour. Environmental
+/// solutes use the same source fraction and seam-aware receiver; evaporation
+/// is absent because nonvolatile dross remains behind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct RunoffTransport {
+    pub from: AtlasPos,
+    pub to: AtlasPos,
+    pub water_hu: u64,
+    pub source_water_before_hu: u64,
+}
+
 #[derive(Clone, Debug)]
 struct WeatherCheckpoint {
     aquifers: Vec<SparseAquiferState>,
@@ -839,6 +850,8 @@ pub struct PlanetaryWeather {
     active_water_cycle_outflow: u64,
     pub completed_hours: u64,
     pub last_report: WeatherStepReport,
+    active_runoff_routes: Vec<RunoffTransport>,
+    last_runoff_routes: Vec<RunoffTransport>,
     checkpoint: Option<WeatherCheckpoint>,
     cells_swapped: bool,
     failed_hour: Option<u64>,
@@ -867,14 +880,111 @@ impl PlanetaryWeather {
             active_water_cycle_outflow: 0,
             completed_hours,
             last_report: WeatherStepReport::default(),
+            active_runoff_routes: Vec::new(),
+            last_runoff_routes: Vec::new(),
             checkpoint: None,
             cells_swapped: false,
             failed_hour: None,
         }
     }
 
+    pub fn water_audit(&self) -> crate::planet_atlas::WaterAudit {
+        let atmospheric = self.cells.cells.values().iter().fold(0u64, |sum, cell| {
+            sum.saturating_add(u64::from(cell.atmospheric_vapor))
+        });
+        self.water
+            .audit(crate::planet_atlas::ReservoirMass::fresh(atmospheric))
+    }
+
+    /// Soil water visible to an ecology update even while a sliced climate
+    /// hour is in flight. Cells already visited by the weather pass live in
+    /// scratch; later cells still live in the committed arrays.
+    pub fn ecology_soil_water_hu(&self, pos: AtlasPos) -> u64 {
+        let index = pos.index(self.water.cells.side());
+        if self.active_hour.is_some() && index < self.cursor {
+            self.water_scratch[index].soil.water_hu
+        } else {
+            self.water.cells.values()[index].soil.water_hu
+        }
+    }
+
+    /// Move real fresh soil water into atmospheric vapor for magical plant
+    /// growth. This is transpiration, not deletion. The same in-flight rule
+    /// as `ecology_soil_water_hu` prevents a later sliced-weather commit from
+    /// overwriting the ecological withdrawal.
+    pub fn transpire_ecology(&mut self, pos: AtlasPos, requested_hu: u64) -> u64 {
+        let index = pos.index(self.water.cells.side());
+        let in_scratch = self.active_hour.is_some() && index < self.cursor;
+        let (water, atmosphere) = if in_scratch {
+            (&mut self.water_scratch[index], &mut self.scratch[index])
+        } else {
+            (
+                &mut self.water.cells.values_mut()[index],
+                &mut self.cells.cells.values_mut()[index],
+            )
+        };
+        let room = u64::from(u32::MAX - atmosphere.atmospheric_vapor);
+        let moved = water.soil.take_fresh_water(requested_hu.min(room));
+        atmosphere.atmospheric_vapor += moved.water_hu as u32;
+        self.evaporation_units = self.evaporation_units.saturating_add(moved.water_hu);
+        moved.water_hu
+    }
+
+    /// Move liquid embodied in a harvested ecological product (currently
+    /// rainbell dew) from real soil water into the detailed industrial/
+    /// circulating reservoir. It remains inside the finite water audit until
+    /// a later use returns it to soil, vapor, or another declared reservoir.
+    pub fn harvest_ecology_water(&mut self, pos: AtlasPos, requested_hu: u64) -> u64 {
+        let index = pos.index(self.water.cells.side());
+        let in_scratch = self.active_hour.is_some() && index < self.cursor;
+        let water = if in_scratch {
+            &mut self.water_scratch[index]
+        } else {
+            &mut self.water.cells.values_mut()[index]
+        };
+        let moved = water.soil.take_fresh_water(requested_hu);
+        if self.water.ledger.industrial.add_assign(moved).is_err() {
+            water
+                .soil
+                .add_assign(moved)
+                .expect("rolling back ecological water harvest fits");
+            return 0;
+        }
+        moved.water_hu
+    }
+
+    /// Return water embodied in a planted ecological item to local soil.
+    /// The item identity is handled by the arcane ledger; this moves only the
+    /// physical fresh-water parcel previously held in circulating custody.
+    pub fn return_ecology_water_to_soil(&mut self, pos: AtlasPos, requested_hu: u64) -> u64 {
+        let moved = self.water.ledger.industrial.take_fresh_water(requested_hu);
+        if moved.water_hu == 0 {
+            return 0;
+        }
+        let index = pos.index(self.water.cells.side());
+        let in_scratch = self.active_hour.is_some() && index < self.cursor;
+        let water = if in_scratch {
+            &mut self.water_scratch[index]
+        } else {
+            &mut self.water.cells.values_mut()[index]
+        };
+        if water.soil.add_assign(moved).is_err() {
+            self.water
+                .ledger
+                .industrial
+                .add_assign(moved)
+                .expect("rolling back planted ecological water fits");
+            return 0;
+        }
+        moved.water_hu
+    }
+
     pub fn is_updating(&self) -> bool {
         self.active_hour.is_some()
+    }
+
+    pub fn last_runoff_routes(&self) -> &[RunoffTransport] {
+        &self.last_runoff_routes
     }
 
     pub fn begin_hour(&mut self, climate_hour: u64) {
@@ -896,6 +1006,7 @@ impl PlanetaryWeather {
             .clone_from_slice(self.water.cells.values());
         self.water_inbound.fill(ReservoirMass::default());
         self.surface_fluxes.clear();
+        self.active_runoff_routes.clear();
         self.cursor = 0;
         self.active_hour = Some(climate_hour);
         self.start_total = self
@@ -931,6 +1042,7 @@ impl PlanetaryWeather {
         }
         self.cursor = 0;
         self.surface_fluxes.clear();
+        self.active_runoff_routes.clear();
         self.water_inbound.fill(ReservoirMass::default());
         self.pending_water_cycle_outflow = 0;
         self.active_water_cycle_outflow = 0;
@@ -1166,6 +1278,172 @@ impl PlanetaryWeather {
         Some(parcel)
     }
 
+    /// Move one exact portable vessel into a host-owned industrial
+    /// subdivision such as an alchemy batch. The returned mass is the
+    /// subdivision's custody record; the planetary aggregate remains in the
+    /// industrial ledger until use, spill, or disposal returns it.
+    pub fn move_portable_to_industrial(
+        &mut self,
+        class: WaterClass,
+        requested_hu: u64,
+    ) -> Option<ReservoirMass> {
+        let expected = self.preview_move_portable_to_industrial(class, requested_hu)?;
+        let parcel = self.water.ledger.portable[class as usize].take(requested_hu);
+        debug_assert_eq!(parcel, expected);
+        if self.water.ledger.industrial.add_assign(parcel).is_err() {
+            self.water.ledger.portable[class as usize]
+                .add_assign(parcel)
+                .expect("portable alchemy rollback fits");
+            return None;
+        }
+        Some(parcel)
+    }
+
+    pub fn preview_move_portable_to_industrial(
+        &self,
+        class: WaterClass,
+        requested_hu: u64,
+    ) -> Option<ReservoirMass> {
+        if requested_hu == 0 {
+            return None;
+        }
+        let mut portable = self.water.ledger.portable[class as usize];
+        let parcel = portable.take(requested_hu);
+        (parcel.water_hu == requested_hu
+            && self.water.ledger.industrial.checked_add(parcel).is_some())
+        .then_some(parcel)
+    }
+
+    /// Preflight and perform the common cleaning exchange without cloning
+    /// whole-planet weather: one portable vessel enters industrial custody,
+    /// then that cleaning water plus an existing exact residue parcel enter
+    /// the local runoff cell together.
+    pub fn preview_portable_exchange_to_runoff(
+        &self,
+        pos: AtlasPos,
+        class: WaterClass,
+        requested_hu: u64,
+        existing_industrial: ReservoirMass,
+    ) -> Option<ReservoirMass> {
+        let parcel = self.preview_move_portable_to_industrial(class, requested_hu)?;
+        let industrial_after = self.water.ledger.industrial.checked_add(parcel)?;
+        let runoff_parcel = parcel.checked_add(existing_industrial)?;
+        if industrial_after.water_hu < runoff_parcel.water_hu
+            || industrial_after.salt_mass < runoff_parcel.salt_mass
+        {
+            return None;
+        }
+        self.water
+            .cells
+            .values()
+            .get(pos.index(self.water.cells.side()))?
+            .runoff
+            .checked_add(runoff_parcel)?;
+        Some(parcel)
+    }
+
+    pub fn portable_exchange_to_runoff(
+        &mut self,
+        pos: AtlasPos,
+        class: WaterClass,
+        requested_hu: u64,
+        existing_industrial: ReservoirMass,
+    ) -> Option<ReservoirMass> {
+        let expected = self.preview_portable_exchange_to_runoff(
+            pos,
+            class,
+            requested_hu,
+            existing_industrial,
+        )?;
+        let parcel = self.move_portable_to_industrial(class, requested_hu)?;
+        debug_assert_eq!(parcel, expected);
+        let runoff_parcel = parcel.checked_add(existing_industrial)?;
+        let returned = self.return_industrial_exact_to_runoff(pos, runoff_parcel);
+        debug_assert!(returned, "preflighted cleaning-water exchange failed");
+        returned.then_some(parcel)
+    }
+
+    /// Settle an exact industrial subdivision back into local soil. This is
+    /// used for drinking, plot application, and responsible liquid disposal;
+    /// salt travels with the same parcel instead of being relabelled fresh.
+    pub fn can_return_industrial_exact_to_soil(&self, pos: AtlasPos, mass: ReservoirMass) -> bool {
+        if self.water.ledger.industrial.water_hu < mass.water_hu
+            || self.water.ledger.industrial.salt_mass < mass.salt_mass
+        {
+            return false;
+        }
+        let index = pos.index(self.water.cells.side());
+        let in_scratch = self.active_hour.is_some() && index < self.cursor;
+        let soil = if in_scratch {
+            self.water_scratch.get(index).map(|cell| cell.soil)
+        } else {
+            self.water.cells.values().get(index).map(|cell| cell.soil)
+        };
+        soil.and_then(|soil| soil.checked_add(mass)).is_some()
+    }
+
+    pub fn return_industrial_exact_to_soil(&mut self, pos: AtlasPos, mass: ReservoirMass) -> bool {
+        if self.water.ledger.industrial.take_exact(mass).is_none() {
+            return false;
+        }
+        let index = pos.index(self.water.cells.side());
+        let in_scratch = self.active_hour.is_some() && index < self.cursor;
+        let water = if in_scratch {
+            &mut self.water_scratch[index]
+        } else {
+            &mut self.water.cells.values_mut()[index]
+        };
+        if water.soil.add_assign(mass).is_err() {
+            self.water
+                .ledger
+                .industrial
+                .add_assign(mass)
+                .expect("industrial soil rollback fits");
+            return false;
+        }
+        true
+    }
+
+    pub fn return_industrial_exact_to_runoff(
+        &mut self,
+        pos: AtlasPos,
+        mass: ReservoirMass,
+    ) -> bool {
+        if self.water.ledger.industrial.take_exact(mass).is_none() {
+            return false;
+        }
+        let index = pos.index(self.water.cells.side());
+        if self.water.cells.values_mut()[index]
+            .runoff
+            .add_assign(mass)
+            .is_err()
+        {
+            self.water
+                .ledger
+                .industrial
+                .add_assign(mass)
+                .expect("industrial runoff rollback fits");
+            return false;
+        }
+        true
+    }
+
+    pub fn can_return_industrial_exact_to_runoff(
+        &self,
+        pos: AtlasPos,
+        mass: ReservoirMass,
+    ) -> bool {
+        self.water.ledger.industrial.water_hu >= mass.water_hu
+            && self.water.ledger.industrial.salt_mass >= mass.salt_mass
+            && self
+                .water
+                .cells
+                .values()
+                .get(pos.index(self.water.cells.side()))
+                .and_then(|cell| cell.runoff.checked_add(mass))
+                .is_some()
+    }
+
     pub fn materialize_surface_water(
         &mut self,
         reservoir_id: u64,
@@ -1325,8 +1603,27 @@ impl PlanetaryWeather {
         parcel
     }
 
+    /// Move process water into local atmospheric vapor. Existing ordinary
+    /// machines use this unrestricted form; subsystems with water already in
+    /// flight use `exhaust_industrial_vapor_excluding` so another machine
+    /// cannot spend their custody.
     pub fn exhaust_industrial_vapor(&mut self, pos: AtlasPos, requested_hu: u64) -> u64 {
-        let water_hu = requested_hu.min(self.water.ledger.industrial.water_hu);
+        self.exhaust_industrial_vapor_excluding(pos, requested_hu, 0)
+    }
+
+    pub fn exhaust_industrial_vapor_excluding(
+        &mut self,
+        pos: AtlasPos,
+        requested_hu: u64,
+        reserved_hu: u64,
+    ) -> u64 {
+        let available = self
+            .water
+            .ledger
+            .industrial
+            .water_hu
+            .saturating_sub(reserved_hu);
+        let water_hu = requested_hu.min(available);
         if water_hu == 0 || water_hu > u64::from(u32::MAX) {
             return 0;
         }
@@ -1583,6 +1880,7 @@ impl PlanetaryWeather {
             // Route a bounded parcel of standing runoff through the immutable
             // seam-aware drainage graph. Incoming parcels are applied after
             // the complete old-state pass.
+            let runoff_before = water.runoff.water_hu;
             let routed = water.runoff.take((water.runoff.water_hu / 4).max(u64::from(
                 water.runoff.water_hu >= HYDRO_UNITS_PER_VISIBLE_LEVEL,
             )));
@@ -1593,6 +1891,12 @@ impl PlanetaryWeather {
                     let receiver = hydro.drainage_receiver as usize;
                     let receiver_pos = AtlasPos::from_index(receiver, side)
                         .expect("drainage receiver is validated");
+                    self.active_runoff_routes.push(RunoffTransport {
+                        from: pos,
+                        to: receiver_pos,
+                        water_hu: routed.water_hu,
+                        source_water_before_hu: runoff_before,
+                    });
                     let materialized = self.water.commitments.iter().any(|commitment| {
                         AtlasPos::from_surface(commitment.chunk.block_origin(), side)
                             == receiver_pos
@@ -1779,6 +2083,7 @@ impl PlanetaryWeather {
         self.active_water_cycle_outflow = 0;
         self.completed_hours = self.completed_hours.saturating_add(1);
         self.cells.completed_climate_hours = self.completed_hours;
+        self.last_runoff_routes = std::mem::take(&mut self.active_runoff_routes);
         self.last_report = report;
         Ok(Some(report))
     }

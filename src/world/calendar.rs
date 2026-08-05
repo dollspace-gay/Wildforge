@@ -223,12 +223,21 @@ impl World {
         let Some(atlas) = self.planet_atlas.clone() else {
             return Ok(None);
         };
+        let dross_completed = self
+            .arcane_geography
+            .as_ref()
+            .map(|geography| geography.dynamic.dross_state.completed_steps);
         let Some(weather) = self.planetary_weather.as_mut() else {
             return Ok(None);
         };
         let day = self.clock / f64::from(crate::server::DAY_LENGTH);
         let target_hour = (day * 24.0).floor().max(0.0) as u64;
-        if !weather.is_updating() && weather.completed_hours <= target_hour {
+        let dross_needs_previous_routes = dross_completed
+            .is_some_and(|completed| weather.completed_hours > completed.saturating_add(1));
+        if !weather.is_updating()
+            && !dross_needs_previous_routes
+            && weather.completed_hours <= target_hour
+        {
             weather.begin_hour(weather.completed_hours);
         }
         let global_ire = self.ire;
@@ -896,6 +905,8 @@ impl World {
         } else if [
             "base:heartwood",
             "base:living_wood",
+            "base:thorn_fiber",
+            "base:dryad_heartwood",
             "base:ember",
             "base:frost_shard",
         ]
@@ -925,7 +936,7 @@ impl World {
             .filter(|h| h.stage == 0)
             .map(|h| RegionCell::from_surface(h.pos.surface()))
             .collect();
-        let mut taken: Vec<(RegionCell, usize, ItemStack)> = Vec::new();
+        let mut taken: Vec<(crate::planet::BlockPos, RegionCell, usize, ItemStack)> = Vec::new();
         for (&pos, e) in self.block_entities.iter_mut() {
             let BlockEntity::Offering(o) = e else {
                 continue;
@@ -948,17 +959,58 @@ impl World {
             let (want, _) = Self::want_for_season(season);
             for slot in o.slots.iter_mut() {
                 if let Some(s) = slot.take() {
-                    taken.push((cell, want, s));
+                    taken.push((pos, cell, want, s));
                 }
             }
         }
         if taken.is_empty() {
             return 0.0;
         }
+        // Charged gifts remain part of the finite world: the listening
+        // country's heart takes their exact mixture. If ledger state is not
+        // available or rejects the transfer, give the physical item back as
+        // a drop instead of allowing the offering path to destroy Current.
+        let mut accepted = Vec::with_capacity(taken.len());
+        for (pos, cell, want, stack) in taken {
+            if stack.arcane_id != 0 {
+                let destination = self.planet_atlas.as_ref().map(|atlas| {
+                    atlas
+                        .country_at(pos.surface())
+                        .map(|country| crate::arcane::ArcaneOwner::Heart(country.id))
+                        .unwrap_or_else(|| {
+                            crate::arcane::ArcaneOwner::Ambient(atlas.atlas_pos(pos.surface()))
+                        })
+                });
+                let transfer = destination
+                    .and_then(|destination| {
+                        self.arcane_ledger.as_mut().map(|ledger| {
+                            ledger.move_all_item(
+                                stack.arcane_id,
+                                destination,
+                                "charged offering accepted",
+                            )
+                        })
+                    })
+                    .transpose();
+                if !matches!(transfer, Ok(Some(_))) {
+                    if let Err(error) = transfer {
+                        eprintln!("arcane: charged offering rejected: {error}");
+                    } else {
+                        eprintln!("arcane: charged offering rejected: ledger unavailable");
+                    }
+                    self.push_drop_at(pos, stack);
+                    continue;
+                }
+            }
+            accepted.push((pos, cell, want, stack));
+        }
+        if accepted.is_empty() {
+            return 0.0;
+        }
         // The season's want counts double — a bonus for listening,
         // never a penalty — and every stone credits its own valley.
         let mut value = 0.0f32;
-        for (cell, want, s) in &taken {
+        for (_, cell, want, s) in &accepted {
             let mut v = self.offering_value(s);
             if self.satisfies_want(*want, s) {
                 v *= 2.0;
@@ -966,7 +1018,9 @@ impl World {
             value += v;
             self.charge_cell(*cell, -v.min(6.0));
         }
-        if let Err(error) = self.record_consumed_stacks(taken.iter().map(|(_, _, stack)| *stack)) {
+        if let Err(error) =
+            self.record_consumed_stacks(accepted.iter().map(|(_, _, _, stack)| *stack))
+        {
             eprintln!("materials: offering consumption accounting failed: {error}");
         }
         let refund = value.min(10.0);

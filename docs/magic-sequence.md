@@ -1,12 +1,16 @@
 # The Current — master magic design and `/goal` execution sequence
 
-> **Status: design sequence complete; implementation has not begun.**
+> **Status: goals 1–9 implemented and production-qualified (2026-08-04).**
 >
 > This document is the index, dependency contract, vocabulary, and final
 > definition of done for player magic in Wildforge. Run it only after
 > `docs/planetary-world-sequence.md` is implemented and qualified. Do not
 > implement the arc as one undifferentiated change. Run the nine goal
 > documents below, in order.
+>
+> The goal documents remain as historical implementation contracts. Current
+> cross-goal evidence is in `docs/magic-qualification-implementation.md` and
+> the generated `docs/magic-qualification-matrix.csv`.
 
 ## North star
 
@@ -262,7 +266,7 @@ Produces:
 - renewable habitat cycles and finite geological magical resources,
 - warden, heart, water, soil, fire, and biome integration.
 
-### Goal 4
+### Goal 4 — implemented and production-qualified 2026-08-02
 
 ```text
 /goal complete all features in the design document docs/magic-discovery-plan.md
@@ -276,7 +280,7 @@ Produces:
 - copyable physical records and settlement libraries,
 - shared multiplayer knowledge with no permanent class locks.
 
-### Goal 5
+### Goal 5 — implemented and production-qualified 2026-08-03
 
 ```text
 /goal complete all features in the design document docs/magic-implements-plan.md
@@ -290,7 +294,7 @@ Produces:
 - one charm slot and no linear best-item ladder,
 - complete durability, salvage, wire, and mod behavior.
 
-### Goal 6
+### Goal 6 — implemented and production-qualified 2026-08-03
 
 ```text
 /goal complete all features in the design document docs/magic-workings-plan.md
@@ -306,7 +310,7 @@ Produces:
 - hard guards against conjuration, transmutation, teleportation, and
   logistics bypass.
 
-### Goal 7
+### Goal 7 — implemented and production-qualified 2026-08-03
 
 ```text
 /goal complete all features in the design document docs/magic-alchemy-plan.md

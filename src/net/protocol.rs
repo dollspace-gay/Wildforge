@@ -9,7 +9,7 @@ use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 24;
+pub const PROTOCOL: u32 = 40;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -35,6 +35,11 @@ pub struct StackSnap {
     pub item: u16,
     pub count: u32,
     pub durability: u32,
+    /// Opaque host-assigned instance id. Guests can present it but cannot
+    /// mint or select one in a mutation request.
+    pub arcane_id: u64,
+    /// Bounded inspectable quantity; the authoritative mixture stays host-side.
+    pub current_units: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -50,6 +55,28 @@ pub struct PlayerStateSnap {
     pub inventory: Vec<Option<StackSnap>>,
     pub armor: Vec<Option<StackSnap>>,
     pub cursor: Option<StackSnap>,
+}
+
+pub type PlayerSnap = (
+    u32,
+    EntityPos,
+    f32,
+    u16,
+    u32,
+    Option<crate::implements::ImplementVisual>,
+);
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiscoveryTargetSnap {
+    Region,
+    Block(BlockPos),
+    Held { slot: u8 },
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecordHolderSnap {
+    Inventory { slot: u8 },
+    Folio { pos: BlockPos },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -73,11 +100,24 @@ pub struct FallSnap {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BoltSnap {
+    pub id: u64,
     pub pos: EntityPos,
     /// Guests dead-reckon between snapshots.
     pub vel: Vec3,
     pub tile: u16,
     pub age: f32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LooseItemSnap {
+    pub id: u64,
+    pub pos: EntityPos,
+    pub vel: Vec3,
+    pub item: u16,
+    pub count: u32,
+    pub age: f32,
+    pub durability: u32,
+    pub arcane_id: u64,
 }
 
 /// One part of a 20 Hz world snapshot.
@@ -404,6 +444,82 @@ pub enum C2S {
     BrushBlock {
         pos: BlockPos,
     },
+    /// Begin the physical settling interval. A later matching `Observe` is
+    /// refused unless this host-owned interval has elapsed.
+    BeginObserve {
+        target: DiscoveryTargetSnap,
+    },
+    /// Settle a held tuning lens on something physically measurable, then
+    /// write the host-authored result into a carried field ledger.
+    Observe {
+        target: DiscoveryTargetSnap,
+        ledger_slot: u8,
+        calibration_slot: Option<u8>,
+        label: Option<String>,
+    },
+    ReadKnowledge {
+        slot: u8,
+    },
+    OpenDiscovery {
+        holder: RecordHolderSnap,
+    },
+    CopyObservation {
+        writing_pos: BlockPos,
+        source: RecordHolderSnap,
+        record_id: u64,
+        destination: RecordHolderSnap,
+        include_location: bool,
+    },
+    /// Begin a controlled trial's physical settling interval.
+    BeginExperiment {
+        pos: BlockPos,
+        kind: crate::discovery::ExperimentKind,
+    },
+    /// Insert the selected physical sample/reference into an apparatus, or
+    /// retrieve one into an empty selected slot.
+    SetExperimentItem {
+        pos: BlockPos,
+        slot: u8,
+    },
+    RunExperiment {
+        pos: BlockPos,
+        kind: crate::discovery::ExperimentKind,
+        ledger_slot: u8,
+        calibration_slot: Option<u8>,
+    },
+    AssembleTuningLens {
+        pos: BlockPos,
+    },
+    /// One reliable host-authoritative binding-frame operation. The revision
+    /// serializes concurrent users without trusting client-supplied mounts.
+    OperateBindingFrame {
+        pos: BlockPos,
+        slot: u8,
+        action: crate::implements::FrameAction,
+        expected_revision: Option<u64>,
+    },
+    /// One reliable, revision-guarded apparatus intent. The host supplies the
+    /// stable actor identity and reconstructs inventory, liquid, time, and
+    /// ledger consequences; none of those quantities are trusted here.
+    OperateAlchemy {
+        pos: BlockPos,
+        expected_revision: Option<u64>,
+        action: crate::alchemy::ApparatusAction,
+    },
+    /// Apply one stable preparation container from authoritative inventory.
+    /// The target is intent only; the host resolves the saved dose/effect.
+    UsePreparation {
+        slot: u8,
+        target: crate::alchemy::AlchemyTarget,
+    },
+    /// A wand/ritual request contains no trusted cost or mutation state. The
+    /// host reconstructs raycasts, held identity, targets, ledgers, and phase.
+    OperateWorking {
+        working_id: String,
+        held_instance: u64,
+        target: crate::workings::WorkingTargetIntent,
+        intent: crate::workings::WorkingIntent,
+    },
     /// Steelworks: ask the host to light a charged bloomery or covered log pile.
     LightBloomery {
         pos: BlockPos,
@@ -501,9 +617,10 @@ pub enum S2C {
     },
     /// (id, pos, yaw, held wire item id, packed style) for every player in
     /// this guest's reach, host included (u16::MAX = empty hand). Datagram.
-    Players(Snapshot<(u32, EntityPos, f32, u16, u32)>),
+    Players(Snapshot<PlayerSnap>),
     Mobs(Snapshot<MobSnap>),
     Bolts(Snapshot<BoltSnap>),
+    LooseItems(Snapshot<LooseItemSnap>),
     /// Airborne gravity blocks (sand mid-tumble). Datagram.
     Falling(Snapshot<FallSnap>),
     /// The view distance the host actually granted, in chunks. The guest
@@ -526,6 +643,68 @@ pub enum S2C {
             crate::planet_atlas::LocalWeatherSample,
         )>,
     },
+    /// Coarse local perception only: `[ambient Current, dross]`, each 0..=4,
+    /// plus 0 for an unclear resonance or 1..=6 for one base-resonance sign.
+    ArcaneCue {
+        bands: [u8; 2],
+        dominant: u8,
+        /// Host-authored unaided observation and whether a nearby
+        /// stabilizer damps the Current's harmonic bed.
+        ecology: Option<(String, bool)>,
+    },
+    /// Complete, interest-managed charge view for item instances this player
+    /// can currently inspect. The host suppresses unchanged snapshots.
+    ArcaneItems {
+        /// First reliable frame of a complete replacement snapshot.
+        reset: bool,
+        charges: Vec<(u64, u64)>,
+        implements: Vec<crate::implements::ImplementPublicState>,
+        apparatus: Vec<crate::implements::ApparatusCue>,
+    },
+    DiscoveryReport(crate::discovery::ObservationSummary),
+    DiscoveryRecords {
+        holder: RecordHolderSnap,
+        records: Vec<crate::discovery::ObservationSummary>,
+        capacity: u16,
+    },
+    KnowledgeText {
+        instance_id: u64,
+        text: String,
+    },
+    BindingFrameResult {
+        pos: BlockPos,
+        result: crate::implements::FrameResult,
+    },
+    AlchemyResult {
+        pos: BlockPos,
+        result: crate::alchemy::AlchemyResult,
+    },
+    PreparationResult(crate::alchemy::PreparationUseResult),
+    /// The receiving player's own approved, qualitative active modifiers.
+    /// Exact charge mixtures and other actors' statuses never cross the wire.
+    PreparationState {
+        modifiers: crate::alchemy::PreparationModifiers,
+        bodily_dross: u64,
+    },
+    /// Regional, qualitative forecast/consequence cue. Exact dross amount and
+    /// source attribution remain exclusively host-owned.
+    DrossEvent(crate::dross::DrossCue),
+    /// Interest-managed public apparatus/application cue. It intentionally
+    /// contains no exact private mixture, hidden status, or inventory data.
+    AlchemyEvent(crate::alchemy::AlchemyCue),
+    /// Interest-managed presentation of another actor's authoritative
+    /// implement operation. It contains no private charge mixture or
+    /// provenance; the normal player snapshot remains the held-model source.
+    ImplementActivation {
+        actor: u32,
+        pos: EntityPos,
+        cue: crate::implements::ImplementCue,
+        visual: Option<crate::implements::ImplementVisual>,
+    },
+    WorkingResult(crate::workings::WorkingResult),
+    /// Interest-managed type/source/path/completion cue. No exact private
+    /// Current mixture or hidden target state crosses the wire.
+    WorkingEvent(crate::workings::WorkingCue),
     Hit {
         dmg: f32,
         from: EntityPos,
@@ -534,6 +713,8 @@ pub enum S2C {
         item: u16,
         count: u32,
         durability: u32,
+        arcane_id: u64,
+        current_units: u64,
     },
     Container {
         pos: BlockPos,
@@ -637,5 +818,55 @@ mod tests {
             }),
         });
         assert!(largest_stock_auth.len() < PREAUTH_FRAME_MAX);
+    }
+
+    #[test]
+    fn a_full_survey_folio_fits_the_reliable_gameplay_budget() {
+        let position = BlockPos::of_world(1, 72, 2).unwrap();
+        let record = crate::discovery::ObservationSummary {
+            record_id: 1,
+            phenomenon_id: "base:representative_magical_phenomenon".into(),
+            category: "biological_response".into(),
+            reading: "strong / strained / root + echo / dross trace / drift northwest ± broad"
+                .into(),
+            properties: vec![
+                ("conductivity".into(), "conductive".into()),
+                (
+                    "biological response".into(),
+                    "reservoir / stabilizer".into(),
+                ),
+            ],
+            observer: crate::identity::PlayerId([7; 16]),
+            observer_name: "REPRESENTATIVE SURVEYOR".into(),
+            label: Some("bounded field label near the old spring".into()),
+            day: 999,
+            season: "late winter".into(),
+            location: Some(position),
+            provenance: crate::discovery::PlanetaryProvenance {
+                face: "pos_z".into(),
+                atlas_u: Some(12),
+                atlas_v: Some(14),
+                biome: "temperate rainforest".into(),
+                place: Some("The Long Watershed of Morrow Vale".into()),
+            },
+            obsolete_content: false,
+        };
+        let records = (0..crate::discovery::SURVEY_FOLIO_RECORDS)
+            .map(|index| crate::discovery::ObservationSummary {
+                record_id: index as u64 + 1,
+                ..record.clone()
+            })
+            .collect();
+        let frame = encode(&S2C::DiscoveryRecords {
+            holder: RecordHolderSnap::Folio { pos: position },
+            records,
+            capacity: crate::discovery::SURVEY_FOLIO_RECORDS as u16,
+        });
+        assert!(
+            frame.len() < CLIENT_FRAME_MAX,
+            "full survey folio uses {} of {} reliable bytes",
+            frame.len(),
+            CLIENT_FRAME_MAX
+        );
     }
 }

@@ -20,7 +20,12 @@ fn project_world_label(
     Some(((ndc.x * 0.5 + 0.5) * width, (0.5 - ndc.y * 0.5) * height))
 }
 
-fn wrap_ui_status(text: &str, max_width: f32, scale: f32, max_lines: usize) -> Vec<String> {
+pub(super) fn wrap_ui_status(
+    text: &str,
+    max_width: f32,
+    scale: f32,
+    max_lines: usize,
+) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = String::new();
     for word in text.split_whitespace() {
@@ -104,11 +109,8 @@ impl Game {
     /// Header controls use one source of geometry for drawing and hit-testing.
     pub(super) fn inventory_tab_rect(&self, tab: usize) -> (f32, f32, f32, f32) {
         let (x, y, width, _) = self.inventory_panel_rect();
-        let (button_width, right_pad) = match tab {
-            0 => (74.0, 228.0),
-            1 => (98.0, 124.0),
-            _ => (112.0, 8.0),
-        };
+        let button_width = 94.0;
+        let right_pad = 8.0 + (3usize.saturating_sub(tab)) as f32 * 98.0;
         (
             x + width - right_pad - button_width,
             y + 9.0,
@@ -1290,25 +1292,30 @@ impl Game {
             }
         }
 
-        // Mod/system toasts, top center (hidden during screenshot
-        // sessions — they'd sit over every captured frame).
-        for (i, (msg, ttl)) in self
+        // Mod/system toasts, top center. Ordinary screenshot sessions hide
+        // them so transient UI does not contaminate visual baselines; a
+        // focused presentation qualification may opt in explicitly.
+        let show_capture_toasts = std::env::var_os("WILDFORGE_SHOT_TOASTS").is_some();
+        let mut toast_row = 0usize;
+        for (msg, ttl) in self
             .presentation
             .toasts
             .iter()
-            .filter(|_| self.auto_shot.is_none())
-            .enumerate()
+            .filter(|_| self.auto_shot.is_none() || show_capture_toasts)
         {
             let a = ttl.min(1.0);
             let m = msg.to_uppercase();
-            let tw = UiBatch::text_width(2.0, &m);
-            ui.text_shadow(
-                (w - tw) / 2.0,
-                16.0 + i as f32 * 22.0,
-                2.0,
-                &m,
-                [1.0, 1.0, 0.6, a],
-            );
+            for line in wrap_ui_status(&m, (w - 32.0).max(120.0), 2.0, 3) {
+                let tw = UiBatch::text_width(2.0, &line);
+                ui.text_shadow(
+                    (w - tw) / 2.0,
+                    16.0 + toast_row as f32 * 22.0,
+                    2.0,
+                    &line,
+                    [1.0, 1.0, 0.6, a],
+                );
+                toast_row += 1;
+            }
         }
 
         // Keep gameplay instrumentation in gameplay. Inventory and container
@@ -1550,6 +1557,47 @@ impl Game {
                     60.0 * t,
                     6.0,
                     [0.75, 0.7, 0.5, 0.95],
+                );
+            }
+            if self.interaction.lens_settle > 0.0 {
+                let t = (self.interaction.lens_settle / 1.25).min(1.0);
+                let label = if t < 0.34 {
+                    "LENS: FINDING REFERENCE"
+                } else if t < 0.75 {
+                    "LENS: NEEDLE SETTLING"
+                } else {
+                    "LENS: READING STABLE"
+                };
+                let text_width = UiBatch::text_width(1.25, label);
+                ui.text_shadow(
+                    w / 2.0 - text_width / 2.0,
+                    h / 2.0 + 34.0,
+                    1.25,
+                    label,
+                    [0.9, 0.88, 1.0, 0.98],
+                );
+                ui.rect(
+                    w / 2.0 - 38.0,
+                    h / 2.0 + 24.0,
+                    76.0,
+                    6.0,
+                    [0.1, 0.1, 0.12, 0.85],
+                );
+                ui.rect(
+                    w / 2.0 - 38.0,
+                    h / 2.0 + 24.0,
+                    76.0 * t,
+                    6.0,
+                    [0.65, 0.52, 0.9, 0.98],
+                );
+                // A moving white needle and explicit text carry the same
+                // state as color, including for color-vision deficiencies.
+                ui.rect(
+                    w / 2.0 - 38.0 + 76.0 * t,
+                    h / 2.0 + 21.0,
+                    2.0,
+                    12.0,
+                    [1.0, 1.0, 1.0, 1.0],
                 );
             }
             // Eat progress near the crosshair.
@@ -2155,7 +2203,8 @@ impl Game {
 
 #[cfg(test)]
 mod characterization {
-    use super::project_world_label;
+    use super::{project_world_label, wrap_ui_status};
+    use crate::ui::UiBatch;
     use glam::{Mat4, Vec3};
 
     #[test]
@@ -2167,6 +2216,22 @@ mod characterization {
         assert_eq!(
             project_world_label(Mat4::IDENTITY, Vec3::new(2.0, 0.0, 0.0), 800.0, 600.0),
             None
+        );
+    }
+
+    #[test]
+    fn long_system_toasts_wrap_inside_the_viewport() {
+        let lines = wrap_ui_status(
+            "A FAINT STATIC CATCHES ON STONE; THE SIGNS HOLD A STEADY RHYTHM; LOOSE MINERAL GRAINS RING WHEN DISTURBED.",
+            600.0,
+            2.0,
+            3,
+        );
+        assert_eq!(lines.len(), 3);
+        assert!(
+            lines
+                .iter()
+                .all(|line| UiBatch::text_width(2.0, line) <= 600.0)
         );
     }
 }

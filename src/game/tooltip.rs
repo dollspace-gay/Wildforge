@@ -60,7 +60,16 @@ fn num(v: f32) -> String {
 
 /// Every line of an item's tooltip, top to bottom, with its color.
 /// Pure so the wording can be tested without a window.
+#[cfg(test)]
 pub fn item_tooltip_lines(reg: &Registry, stack: ItemStack) -> Vec<(String, [f32; 4])> {
+    item_tooltip_lines_with_current(reg, stack, None)
+}
+
+fn item_tooltip_lines_with_current(
+    reg: &Registry,
+    stack: ItemStack,
+    current_units: Option<u64>,
+) -> Vec<(String, [f32; 4])> {
     let d = reg.item(stack.item);
     let mut lines = vec![(d.label.to_uppercase(), TITLE)];
 
@@ -118,6 +127,36 @@ pub fn item_tooltip_lines(reg: &Registry, stack: ItemStack) -> Vec<(String, [f32
     if let Some(effect) = d.charm.as_deref().and_then(charm_line) {
         lines.push((effect.to_string(), EFFECT));
     }
+    if d.implement
+        .as_ref()
+        .is_some_and(|implement| implement.kind == crate::implements::ImplementItemKind::Wand)
+    {
+        lines.push(("WAND WORKINGS (TARGET + HOLD USE)".into(), EFFECT));
+        let labels = reg
+            .workings
+            .values()
+            .filter(|working| working.mode == crate::workings::DeliveryMode::Wand)
+            .map(|working| working.label.to_uppercase())
+            .collect::<Vec<_>>();
+        for group in labels.chunks(4) {
+            lines.push((group.join(" / "), BODY));
+        }
+        lines.push(("RELEASE COMMITS / CTRL + USE FORCES OVERDRAW".into(), WEAR));
+    }
+    if d.places
+        .is_some_and(|block| reg.block(block).interaction.as_deref() == Some("binding_frame"))
+    {
+        lines.push(("CONSTRUCTED RITUALS".into(), EFFECT));
+        let labels = reg
+            .workings
+            .values()
+            .filter(|working| working.mode == crate::workings::DeliveryMode::Ritual)
+            .map(|working| working.label.to_uppercase())
+            .collect::<Vec<_>>();
+        for group in labels.chunks(3) {
+            lines.push((group.join(" / "), BODY));
+        }
+    }
     if d.bedroll {
         lines.push(("USE: SLEEP TO DAWN, SET SPAWN".into(), EFFECT));
     }
@@ -138,6 +177,85 @@ pub fn item_tooltip_lines(reg: &Registry, stack: ItemStack) -> Vec<(String, [f32
     }
     if d.glow.is_some() {
         lines.push(("GIVES LIGHT IN HAND".into(), EFFECT));
+    }
+    if d.name == "base:ashlace_tissue" {
+        lines.push(("BINDS DROSS. DOES NOT CLEAN IT".into(), BODY));
+    }
+    if let Some(preparation) = reg
+        .preparations
+        .values()
+        .find(|preparation| preparation.output_item == d.name)
+    {
+        let verb = match preparation.application {
+            crate::alchemy::ApplicationKind::Drink => "DRINK ONE EXACT DOSE",
+            crate::alchemy::ApplicationKind::Plot => "APPLY TO ONE VIABLE PLOT",
+            crate::alchemy::ApplicationKind::Wash => "WASH ONE SMALL TARGET",
+            crate::alchemy::ApplicationKind::Coat => "COAT ONE STABLE SPECIMEN",
+        };
+        lines.push((format!("USE: {verb}"), EFFECT));
+        let effect = match preparation.handler {
+            crate::alchemy::PreparationHandler::TraceSight => "BOUNDED LOW-LIGHT TRACE SIGHT",
+            crate::alchemy::PreparationHandler::NaturalRecovery => {
+                "RECOVERY PAID BY HUNGER + NUTRITION"
+            }
+            crate::alchemy::PreparationHandler::RootUptake => {
+                "SUPPLIES WATER + NUTRIENTS. DOES NOT CREATE GROWTH"
+            }
+            crate::alchemy::PreparationHandler::StrainRelief => {
+                "LESS PERSONAL STRAIN. LOWER THROUGHPUT"
+            }
+            crate::alchemy::PreparationHandler::DrossWash => {
+                "MOVES BOUNDED DROSS INTO PHYSICAL WASTE"
+            }
+            crate::alchemy::PreparationHandler::PreserveSpecimen => {
+                "SLOWS AGE + LEAKAGE. NEVER RESETS AGE"
+            }
+            crate::alchemy::PreparationHandler::ThroughputSurge => {
+                "MORE THROUGHPUT + DRAIN + OVERDRAW"
+            }
+            crate::alchemy::PreparationHandler::DrossAntidote => {
+                "REDUCES BODILY HARM. DOES NOT CLEAN THE REGION"
+            }
+        };
+        lines.push((effect.into(), BODY));
+    }
+    if let Some(discovery) = &d.discovery {
+        let line = match discovery.kind.as_str() {
+            "tuning_lens" => Some("HOLD USE: SETTLE A QUALITATIVE READING"),
+            "lens_frame" => Some("FIT AT A LENS ASSEMBLY BENCH"),
+            "field_ledger" => Some("USE: OPEN SIGNED FIELD RECORDS"),
+            "survey_folio" => Some("MOUNT: INDEX A SETTLEMENT LIBRARY"),
+            "calibration_plate" => Some("CARRIED: NARROWS READING UNCERTAINTY"),
+            "artifact" => Some("USE: READ THIS MAKER'S SURVIVING CLAIM"),
+            "reference_object" => Some("PHYSICAL REFERENCE FOR CONTROLLED TRIALS"),
+            _ => None,
+        };
+        if let Some(line) = line {
+            lines.push((line.into(), EFFECT));
+        }
+        if let Some(class) = discovery.evidence_class.as_deref() {
+            lines.push((
+                format!("EVIDENCE: {}", class.replace('_', " ").to_uppercase()),
+                BODY,
+            ));
+        }
+    }
+    if let (Some(arcane), Some(units)) = (&d.arcane, current_units) {
+        lines.push((
+            format!(
+                "CURRENT: {}",
+                crate::arcane::qualitative_current(units, arcane.capacity).to_uppercase()
+            ),
+            EFFECT,
+        ));
+        let behavior = if arcane.stability_permille >= 750 {
+            "HOLDS CHARGE STEADILY"
+        } else if arcane.conductivity_permille >= 700 {
+            "CONDUCTS CHARGE READILY"
+        } else {
+            "CHARGE FEELS RESTLESS"
+        };
+        lines.push((behavior.into(), BODY));
     }
     if d.durability > 0 {
         // The same field means two different things. On a tool it is
@@ -189,6 +307,9 @@ impl Game {
         };
         match self.ui_state.screen {
             Screen::Inventory => {
+                if self.ui_state.inventory_discovery_open {
+                    return None;
+                }
                 if self.ui_state.inventory_browser_open || self.ui_state.inventory_status_open {
                     return inv();
                 }
@@ -262,7 +383,46 @@ impl Game {
         let Some(stack) = self.hovered_item() else {
             return;
         };
-        let lines = item_tooltip_lines(&self.content.reg, stack);
+        let current = self.server.world.inspectable_item_current(stack.arcane_id);
+        let mut lines = item_tooltip_lines_with_current(&self.content.reg, stack, current);
+        let has_lens = self
+            .inventory
+            .slots
+            .iter()
+            .chain(self.survival.armor.iter())
+            .flatten()
+            .any(|held| {
+                self.content
+                    .reg
+                    .item(held.item)
+                    .discovery
+                    .as_ref()
+                    .is_some_and(|definition| definition.kind == "tuning_lens")
+            });
+        lines.extend(
+            self.server
+                .world
+                .preparation_tooltip(stack, has_lens)
+                .into_iter()
+                .map(|line| (line, EFFECT)),
+        );
+        let implement = self.server.world.implement_tooltip(stack, has_lens);
+        if !implement.is_empty() {
+            // The implement resolver knows its actual component-derived
+            // capacity; remove the generic content-manifest reading so the
+            // card never shows two contradictory charge bands.
+            lines.retain(|(line, _)| {
+                !line.starts_with("CURRENT:")
+                    && line != "HOLDS CHARGE STEADILY"
+                    && line != "CONDUCTS CHARGE READILY"
+                    && line != "CHARGE FEELS RESTLESS"
+            });
+            lines.extend(
+                implement
+                    .into_iter()
+                    .map(|line| (line.to_uppercase(), EFFECT)),
+            );
+        }
         const S: f32 = 1.3;
         const PAD: f32 = 8.0;
         const LINE: f32 = 15.0;
@@ -381,6 +541,86 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn ecology_tooltips_are_qualitative_and_explain_sequestered_dross() {
+        let reg = reg();
+        let ashlace = reg.item_id("base:ashlace_tissue").unwrap();
+        let lines =
+            item_tooltip_lines_with_current(&reg, ItemStack::new(&reg, ashlace, 1), Some(137))
+                .into_iter()
+                .map(|(text, _)| text)
+                .collect::<Vec<_>>();
+        assert!(lines.iter().any(|line| line.contains("BINDS DROSS")));
+        assert!(lines.iter().any(|line| line.starts_with("CURRENT: ")));
+        assert!(
+            lines
+                .iter()
+                .filter(|line| line.starts_with("CURRENT: "))
+                .all(|line| !line.chars().any(|character| character.is_ascii_digit()))
+        );
+    }
+
+    #[test]
+    fn every_preparation_explains_its_target_cost_or_limit() {
+        let reg = reg();
+        for preparation in reg.preparations.values() {
+            let lines = lines_for(&reg, &preparation.output_item);
+            assert!(
+                lines.iter().any(|line| line.starts_with("USE: ")),
+                "{} has no application instruction: {lines:?}",
+                preparation.id
+            );
+            assert!(
+                lines.iter().any(|line| {
+                    line.contains("DOES NOT")
+                        || line.contains("BOUNDED")
+                        || line.contains("PAID")
+                        || line.contains("MOVES")
+                        || line.contains("NEVER")
+                        || line.contains("DRAIN")
+                        || line.contains("THROUGHPUT")
+                }),
+                "{} hides its principal cost or limit: {lines:?}",
+                preparation.id
+            );
+        }
+    }
+
+    #[test]
+    fn wand_and_frame_tooltips_publish_the_installed_working_catalogue() {
+        let reg = reg();
+        let wand = lines_for(&reg, "base:bound_wand");
+        for label in [
+            "TRACE",
+            "GLEAM",
+            "KINDLE",
+            "NUDGE",
+            "ROOTWAKE",
+            "DRAW",
+            "FIELDMEND",
+            "HOLDFAST",
+        ] {
+            assert!(
+                wand.iter().any(|line| line.contains(label)),
+                "wand tooltip omitted {label}: {wand:?}"
+            );
+        }
+        assert!(wand.iter().any(|line| line.contains("CTRL + USE")));
+
+        let frame = lines_for(&reg, "base:binding_frame");
+        for label in [
+            "SETTLING RITE",
+            "ROOTING BED",
+            "WARD BOUNDARY",
+            "TRANSFER CIRCLE",
+        ] {
+            assert!(
+                frame.iter().any(|line| line.contains(label)),
+                "binding-frame tooltip omitted {label}: {frame:?}"
+            );
         }
     }
 }
