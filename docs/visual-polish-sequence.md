@@ -1,6 +1,6 @@
 # Visual polish sequence
 
-Drafted 2026-08-04. **IMPLEMENTATION IN PROGRESS; GOALS 1–2 COMPLETE.**
+Drafted 2026-08-04. **IMPLEMENTATION IN PROGRESS; GOALS 1–3 COMPLETE.**
 
 This is the small post-planetary polish arc left by two explicit qualification
 findings. It does not reopen planetary world design:
@@ -94,6 +94,13 @@ Suggested goal command:
 ```
 
 ## Goal 3 — Cracked geode reveal and capture
+
+**Completed and qualified 2026-08-05.** A deterministic finite production
+geode was selected, opened through authoritative operations in a copied save,
+balanced across reload, and captured in four settled native-GPU frames. The
+linked plan records the site, operation ledger, composition metrics, matched
+performance run, implementation defects fixed, and evidence commit. Goal 4 is
+now the only unfinished work in this arc.
 
 Execute [the geode plan](cracked-geode-capture-plan.md) against the accepted
 visual foundation. Locate a finite production geode, prove it sealed, open a

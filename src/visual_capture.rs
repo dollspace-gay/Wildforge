@@ -52,6 +52,18 @@ const QUALIFICATION_SOURCES: &[&str] = &[
     "tools/gen_base_tiles.py",
     "tools/verify_visual_polish.py",
 ];
+#[cfg(test)]
+const GEODE_QUALIFICATION_SOURCES: &[&str] = &[
+    "docs/cracked-geode-capture-plan.md",
+    "src/geode_capture.rs",
+    "src/lib.rs",
+    "src/planet_atlas/geology.rs",
+    "src/visual_capture.rs",
+    "src/world/mod.rs",
+    "src/worldgen.rs",
+    "tools/verify_cracked_geode.py",
+    "tools/verify_visual_polish.py",
+];
 
 pub fn evidence_enabled() -> bool {
     std::env::var("WILDFORGE_VISUAL_EVIDENCE").as_deref() == Ok("1")
@@ -332,10 +344,20 @@ struct VisualManifest {
     comparison: String,
     readability_report: String,
     performance_report: String,
+    geode_evidence_commit: String,
+    geode_qualification_source_sha256: String,
+    geode_verifier: String,
+    geode_verifier_sha256: String,
+    geode_site_record: String,
+    geode_preparation_report: String,
+    geode_composition_report: String,
+    geode_performance_report: String,
     capture: Vec<ManifestCapture>,
     site: Vec<ManifestSite>,
     case: Vec<ManifestCase>,
     performance: Vec<ManifestPerformance>,
+    geode_capture: Vec<ManifestGeodeCapture>,
+    geode_performance_capture: Vec<ManifestPerformance>,
 }
 
 #[cfg(test)]
@@ -381,6 +403,16 @@ struct ManifestCase {
 struct ManifestPerformance {
     id: String,
     phase: String,
+    sidecar: String,
+    report: String,
+}
+
+#[cfg(test)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManifestGeodeCapture {
+    id: String,
+    purpose: String,
     sidecar: String,
     report: String,
 }
@@ -479,6 +511,70 @@ struct QualificationReport {
 #[cfg(test)]
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct GeodeCompositionReport {
+    qualification_schema_version: u32,
+    kind: String,
+    evidence_commit: String,
+    hero_capture_id: String,
+    hero_report: String,
+    hero_report_sha256: String,
+    proof_capture_id: String,
+    proof_report: String,
+    proof_report_sha256: String,
+    width: u32,
+    height: u32,
+    host_pixels: u64,
+    host_fraction: f64,
+    minimum_host_fraction: f64,
+    quartz_pixels: u64,
+    amethyst_pixels: u64,
+    minimum_lining_pixels: u64,
+    heart_dark_deep_pixels: u64,
+    minimum_heart_dark_deep_pixels: u64,
+    lip_left_pixels: u64,
+    lip_right_pixels: u64,
+    lip_top_pixels: u64,
+    lip_bottom_pixels: u64,
+    lip_sides: Vec<String>,
+    minimum_lip_sides: usize,
+    sky_pixels: u64,
+    overlay_fraction: f64,
+    maximum_overlay_fraction: f64,
+    proof_host_fraction: f64,
+    proof_quartz_pixels: u64,
+    proof_amethyst_pixels: u64,
+    sealed_reload_camera_match: bool,
+    sealed_reload_environment_match: bool,
+    sealed_reload_render_match: bool,
+    passed: bool,
+}
+
+#[cfg(test)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GeodePerformanceReport {
+    qualification_schema_version: u32,
+    kind: String,
+    evidence_commit: String,
+    sample_count_per_phase: usize,
+    sealed_draw_ms: Vec<f64>,
+    opened_draw_ms: Vec<f64>,
+    sealed_simulation_ms: Vec<f64>,
+    opened_simulation_ms: Vec<f64>,
+    sealed_median_draw_ms: f64,
+    opened_median_draw_ms: f64,
+    median_draw_regression_ms: f64,
+    maximum_median_draw_regression_ms: f64,
+    sealed_median_simulation_ms: f64,
+    opened_median_simulation_ms: f64,
+    median_simulation_regression_ms: f64,
+    maximum_median_simulation_regression_ms: f64,
+    passed: bool,
+}
+
+#[cfg(test)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct VisualComparison {
     comparison_schema_version: u32,
     scene_id: String,
@@ -549,8 +645,18 @@ fn finite_fraction(value: f64) -> bool {
 
 #[cfg(test)]
 pub(crate) fn qualification_source_sha256(root: &Path) -> Result<String, String> {
+    source_set_sha256(root, QUALIFICATION_SOURCES)
+}
+
+#[cfg(test)]
+fn geode_qualification_source_sha256(root: &Path) -> Result<String, String> {
+    source_set_sha256(root, GEODE_QUALIFICATION_SOURCES)
+}
+
+#[cfg(test)]
+fn source_set_sha256(root: &Path, sources: &[&str]) -> Result<String, String> {
     let mut source = Vec::new();
-    for relative in QUALIFICATION_SOURCES {
+    for relative in sources {
         let bytes = fs::read(root.join(relative))
             .map_err(|error| format!("read qualification source {relative}: {error}"))?;
         source.extend_from_slice(relative.as_bytes());
@@ -621,6 +727,7 @@ fn validate_declared_evidence(
     report_value: &str,
     expected_scene: &str,
     expected_commit: &str,
+    expected_size: (u32, u32),
 ) -> Result<(CaptureMetadata, VisualReport), String> {
     let sidecar_relative = safe_relative(sidecar_value, "toml")?;
     let report_relative = safe_relative(report_value, "toml")?;
@@ -649,8 +756,7 @@ fn validate_declared_evidence(
         || metadata.world.atlas_algorithm_version != crate::planet_atlas::ATLAS_ALGORITHM_VERSION
         || metadata.world.atlas_content_hash != "010c5397ca037176"
         || metadata.world.atlas_genesis_checksum != "b053756eee79d7e7"
-        || metadata.render.width != 1280
-        || metadata.render.height != 720
+        || (metadata.render.width, metadata.render.height) != expected_size
         || metadata.render.adapter != "NVIDIA GeForce RTX 3090 [Dx12, DiscreteGpu]"
         || metadata.render.backend != "Dx12"
         || !metadata.render.hardware
@@ -992,6 +1098,7 @@ fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Resu
             &case.report,
             "strata-production-20260802",
             expected_commit,
+            (1280, 720),
         )?;
         let expected_pack = if case.pack == "base" { "" } else { &case.pack };
         if metadata.world.name != "visual-polish-strata-baseline"
@@ -1059,6 +1166,7 @@ fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Resu
             &declaration.report,
             "strata-performance-20260802",
             expected_commit,
+            (1280, 720),
         )?;
         if metadata.world.name != "visual-polish-strata-perf"
             || metadata.environment.weather != "clear"
@@ -1097,6 +1205,393 @@ fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Resu
         {
             return Err(format!("{kind} qualification is incomplete or failed"));
         }
+    }
+    validate_cracked_geode_manifest(root, &manifest)?;
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Result<(), String> {
+    const COMMIT: &str = "cc3d085a27b530942509ba01e0514a94ab0a7066";
+    const MAIN_SCENE: &str = "cracked-geode-20260805";
+    const PERFORMANCE_SCENE: &str = "cracked-geode-performance-20260805";
+    if manifest.geode_evidence_commit != COMMIT
+        || !valid_hex(&manifest.geode_qualification_source_sha256, 64)
+        || manifest.geode_verifier != "tools/verify_cracked_geode.py"
+        || !valid_hex(&manifest.geode_verifier_sha256, 64)
+        || manifest.geode_site_record != "screenshots/visual-polish/cracked-geode-site.toml"
+        || manifest.geode_preparation_report
+            != "screenshots/visual-polish/geode-preparation.report.toml"
+        || manifest.geode_composition_report
+            != "screenshots/visual-polish/geode-composition.report.toml"
+        || manifest.geode_performance_report
+            != "screenshots/visual-polish/geode-performance.report.toml"
+    {
+        return Err("cracked-geode manifest provenance is incomplete".into());
+    }
+    let current_source = geode_qualification_source_sha256(root)?;
+    if current_source != manifest.geode_qualification_source_sha256 {
+        return Err(format!(
+            "cracked-geode evidence is stale relative to qualification source: manifest {}, current {current_source}",
+            manifest.geode_qualification_source_sha256
+        ));
+    }
+    let verifier = root.join(safe_relative(&manifest.geode_verifier, "py")?);
+    let verifier_hash = sha256_hex(
+        &fs::read(&verifier)
+            .map_err(|error| format!("read geode verifier {}: {error}", verifier.display()))?,
+    );
+    if verifier_hash != manifest.geode_verifier_sha256 {
+        return Err("cracked-geode verifier hash is stale".into());
+    }
+
+    let (_site_bytes, site): (Vec<u8>, toml::Value) = read_toml(
+        &root.join(safe_relative(&manifest.geode_site_record, "toml")?),
+        "cracked-geode site",
+    )?;
+    let (_preparation_bytes, preparation): (Vec<u8>, toml::Value) = read_toml(
+        &root.join(safe_relative(&manifest.geode_preparation_report, "toml")?),
+        "cracked-geode preparation",
+    )?;
+    if site.get("site_id").and_then(toml::Value::as_str) != Some("cracked-geode")
+        || site.get("deposit_id").and_then(toml::Value::as_integer) != Some(48)
+        || site.get("host_geology").and_then(toml::Value::as_str) != Some("limestone")
+        || site
+            .get("shell_six_connected")
+            .and_then(toml::Value::as_bool)
+            != Some(true)
+        || site.get("heart_sealed").and_then(toml::Value::as_bool) != Some(true)
+        || site
+            .get("peak_rss_bytes")
+            .and_then(toml::Value::as_integer)
+            .unwrap_or(i64::MAX)
+            > 512 * 1024 * 1024
+        || preparation.get("site_id").and_then(toml::Value::as_str) != Some("cracked-geode")
+        || preparation
+            .get("deposit_id")
+            .and_then(toml::Value::as_integer)
+            != Some(48)
+        || preparation
+            .get("source_unchanged")
+            .and_then(toml::Value::as_bool)
+            != Some(true)
+        || preparation
+            .get("before_balanced")
+            .and_then(toml::Value::as_bool)
+            != Some(true)
+        || preparation
+            .get("after_balanced")
+            .and_then(toml::Value::as_bool)
+            != Some(true)
+        || preparation
+            .get("reload_balanced")
+            .and_then(toml::Value::as_bool)
+            != Some(true)
+        || preparation
+            .get("unexpected_edits")
+            .and_then(toml::Value::as_integer)
+            != Some(0)
+        || preparation
+            .get("save_succeeded")
+            .and_then(toml::Value::as_bool)
+            != Some(true)
+        || preparation
+            .get("reload_succeeded")
+            .and_then(toml::Value::as_bool)
+            != Some(true)
+    {
+        return Err("cracked-geode site or preparation proof is incomplete".into());
+    }
+
+    let purposes: BTreeMap<&str, &str> = [
+        ("geode-sealed-context", "sealed-context"),
+        ("geode-aperture-proof", "aperture-proof"),
+        ("geode-cracked-hero", "hero"),
+        ("geode-reload-proof", "reload-proof"),
+    ]
+    .into_iter()
+    .collect();
+    if manifest.geode_capture.len() != purposes.len() {
+        return Err("cracked-geode evidence requires exactly four primary captures".into());
+    }
+    let mut captures = BTreeMap::<String, CaptureMetadata>::new();
+    let mut reports = BTreeMap::<String, (VisualReport, Vec<u8>)>::new();
+    for declaration in &manifest.geode_capture {
+        let Some(expected_purpose) = purposes.get(declaration.id.as_str()) else {
+            return Err("cracked-geode manifest names an unexpected primary capture".into());
+        };
+        if declaration.purpose != *expected_purpose || captures.contains_key(&declaration.id) {
+            return Err("cracked-geode primary capture purpose or identity is invalid".into());
+        }
+        let (metadata, report) = validate_declared_evidence(
+            root,
+            &declaration.id,
+            &declaration.sidecar,
+            &declaration.report,
+            MAIN_SCENE,
+            COMMIT,
+            (1920, 1080),
+        )?;
+        let expected_world = if declaration.id == "geode-sealed-context" {
+            "visual-polish-geode-sealed"
+        } else {
+            "visual-polish-geode-opened"
+        };
+        if metadata.world.name != expected_world
+            || metadata.render.pack != "gemini"
+            || metadata.render.view_distance_chunks != 12
+            || metadata.render.lights != 2
+            || !metadata.render.point_grid
+            || !metadata.render.stark
+            || !metadata.render.bloom
+            || metadata.camera.fov_degrees != 75.0
+            || metadata.environment.weather != "clear"
+            || report.conversion != CONVERSION_ID
+            || report.conversion_tool != "tools/verify_visual_polish.py"
+            || report.conversion_tool_sha256 != manifest.conversion_tool_sha256
+        {
+            return Err(format!(
+                "{} does not match the declared geode scene",
+                declaration.id
+            ));
+        }
+        let (report_bytes, _): (Vec<u8>, VisualReport) = read_toml(
+            &root.join(safe_relative(&declaration.report, "toml")?),
+            "cracked-geode report",
+        )?;
+        captures.insert(declaration.id.clone(), metadata);
+        reports.insert(declaration.id.clone(), (report, report_bytes));
+    }
+    let sealed = &captures["geode-sealed-context"];
+    let reloaded = &captures["geode-reload-proof"];
+    if sealed.camera != reloaded.camera
+        || sealed.environment != reloaded.environment
+        || sealed.render != reloaded.render
+        || sealed.camera.u != 5408.5
+        || sealed.camera.y != 68.02
+        || sealed.camera.v != 1723.5
+        || sealed.camera.yaw != std::f32::consts::PI
+        || sealed.camera.pitch != -1.35
+    {
+        return Err(
+            "sealed and reload proof do not use the exact matched camera and render identity"
+                .into(),
+        );
+    }
+    let hero = &captures["geode-cracked-hero"];
+    if hero.camera.u != 5406.5
+        || hero.camera.y != 62.000_008
+        || hero.camera.v != 1723.5
+        || hero.camera.yaw != std::f32::consts::PI
+        || hero.camera.pitch != -0.08
+        || hero.environment.time_of_day != 0.75
+    {
+        return Err("cracked-geode hero camera or lighting identity is stale".into());
+    }
+
+    if manifest.geode_performance_capture.len() != 10 {
+        return Err("cracked-geode performance requires five matched captures per phase".into());
+    }
+    let mut performance_ids = BTreeSet::new();
+    let mut phase_counts = BTreeMap::<&str, usize>::new();
+    let mut samples = BTreeMap::<&str, Vec<f64>>::new();
+    let mut reference_camera: Option<CameraIdentity> = None;
+    let mut reference_environment: Option<EnvironmentIdentity> = None;
+    let mut reference_render: Option<RenderIdentity> = None;
+    for declaration in &manifest.geode_performance_capture {
+        if !performance_ids.insert(declaration.id.as_str())
+            || !matches!(declaration.phase.as_str(), "sealed" | "opened")
+            || !declaration
+                .id
+                .starts_with(&format!("geode-performance-{}-", declaration.phase))
+        {
+            return Err("cracked-geode performance declaration is duplicate or malformed".into());
+        }
+        let (metadata, report) = validate_declared_evidence(
+            root,
+            &declaration.id,
+            &declaration.sidecar,
+            &declaration.report,
+            PERFORMANCE_SCENE,
+            COMMIT,
+            (1280, 720),
+        )?;
+        if metadata.world.name != format!("visual-polish-geode-{}", declaration.phase)
+            || metadata.render.pack != "gemini"
+            || metadata.render.view_distance_chunks != 12
+            || metadata.environment.weather != "clear"
+            || report.conversion_tool_sha256 != manifest.conversion_tool_sha256
+        {
+            return Err(format!(
+                "{} is not the matched geode performance scene",
+                declaration.id
+            ));
+        }
+        if let Some(camera) = &reference_camera {
+            if camera != &metadata.camera
+                || reference_environment.as_ref() != Some(&metadata.environment)
+                || reference_render.as_ref() != Some(&metadata.render)
+            {
+                return Err(
+                    "cracked-geode performance captures are not exact matched pairs".into(),
+                );
+            }
+        } else {
+            reference_camera = Some(metadata.camera.clone());
+            reference_environment = Some(metadata.environment.clone());
+            reference_render = Some(metadata.render.clone());
+        }
+        *phase_counts.entry(&declaration.phase).or_default() += 1;
+        samples
+            .entry(if declaration.phase == "sealed" {
+                "sealed_draw"
+            } else {
+                "opened_draw"
+            })
+            .or_default()
+            .push(f64::from(metadata.telemetry.draw_ms));
+        samples
+            .entry(if declaration.phase == "sealed" {
+                "sealed_simulation"
+            } else {
+                "opened_simulation"
+            })
+            .or_default()
+            .push(f64::from(metadata.telemetry.simulation_ms));
+    }
+    if phase_counts.get("sealed") != Some(&5) || phase_counts.get("opened") != Some(&5) {
+        return Err("cracked-geode performance phase coverage is incomplete".into());
+    }
+
+    let composition_path = root.join(safe_relative(&manifest.geode_composition_report, "toml")?);
+    let (_composition_bytes, composition): (Vec<u8>, GeodeCompositionReport) =
+        read_toml(&composition_path, "cracked-geode composition")?;
+    let hero_report = &reports["geode-cracked-hero"];
+    let proof_report = &reports["geode-aperture-proof"];
+    let lip_counts = [
+        composition.lip_left_pixels,
+        composition.lip_right_pixels,
+        composition.lip_top_pixels,
+        composition.lip_bottom_pixels,
+    ];
+    if composition.qualification_schema_version != 1
+        || composition.kind != "cracked-geode-composition"
+        || composition.evidence_commit != COMMIT
+        || composition.hero_capture_id != "geode-cracked-hero"
+        || composition.hero_report
+            != manifest
+                .geode_capture
+                .iter()
+                .find(|item| item.id == composition.hero_capture_id)
+                .unwrap()
+                .report
+        || composition.hero_report_sha256 != sha256_hex(&hero_report.1)
+        || composition.proof_capture_id != "geode-aperture-proof"
+        || composition.proof_report
+            != manifest
+                .geode_capture
+                .iter()
+                .find(|item| item.id == composition.proof_capture_id)
+                .unwrap()
+                .report
+        || composition.proof_report_sha256 != sha256_hex(&proof_report.1)
+        || (composition.width, composition.height) != (1920, 1080)
+        || composition.host_pixels == 0
+        || composition.host_fraction < composition.minimum_host_fraction
+        || composition.minimum_host_fraction != 0.15
+        || composition.quartz_pixels < composition.minimum_lining_pixels
+        || composition.amethyst_pixels < composition.minimum_lining_pixels
+        || composition.minimum_lining_pixels != 256
+        || composition.heart_dark_deep_pixels < composition.minimum_heart_dark_deep_pixels
+        || composition.minimum_heart_dark_deep_pixels != 256
+        || composition.minimum_lip_sides != 3
+        || composition.lip_sides.len() < composition.minimum_lip_sides
+        || lip_counts
+            .into_iter()
+            .filter(|pixels| *pixels >= 256)
+            .count()
+            < 3
+        || composition.sky_pixels != 0
+        || composition.overlay_fraction > composition.maximum_overlay_fraction
+        || composition.maximum_overlay_fraction != 0.04
+        || composition.proof_host_fraction < 0.15
+        || composition.proof_quartz_pixels < 256
+        || composition.proof_amethyst_pixels < 256
+        || !composition.sealed_reload_camera_match
+        || !composition.sealed_reload_environment_match
+        || !composition.sealed_reload_render_match
+        || !composition.passed
+    {
+        return Err("cracked-geode composition qualification is incomplete or failed".into());
+    }
+
+    let performance_path = root.join(safe_relative(&manifest.geode_performance_report, "toml")?);
+    let (_performance_bytes, performance): (Vec<u8>, GeodePerformanceReport) =
+        read_toml(&performance_path, "cracked-geode performance")?;
+    let median = |values: &[f64]| {
+        let mut sorted = values.to_vec();
+        sorted.sort_by(f64::total_cmp);
+        sorted[sorted.len() / 2]
+    };
+    let sealed_draw = &samples["sealed_draw"];
+    let opened_draw = &samples["opened_draw"];
+    let sealed_simulation = &samples["sealed_simulation"];
+    let opened_simulation = &samples["opened_simulation"];
+    let close = |left: f64, right: f64| (left - right).abs() <= 0.000_002;
+    if performance.qualification_schema_version != 1
+        || performance.kind != "cracked-geode-performance"
+        || performance.evidence_commit != COMMIT
+        || performance.sample_count_per_phase != 5
+        || performance.sealed_draw_ms.len() != 5
+        || performance.opened_draw_ms.len() != 5
+        || performance.sealed_simulation_ms.len() != 5
+        || performance.opened_simulation_ms.len() != 5
+        || !performance
+            .sealed_draw_ms
+            .iter()
+            .zip(sealed_draw)
+            .all(|(a, b)| close(*a, *b))
+        || !performance
+            .opened_draw_ms
+            .iter()
+            .zip(opened_draw)
+            .all(|(a, b)| close(*a, *b))
+        || !performance
+            .sealed_simulation_ms
+            .iter()
+            .zip(sealed_simulation)
+            .all(|(a, b)| close(*a, *b))
+        || !performance
+            .opened_simulation_ms
+            .iter()
+            .zip(opened_simulation)
+            .all(|(a, b)| close(*a, *b))
+        || !close(performance.sealed_median_draw_ms, median(sealed_draw))
+        || !close(performance.opened_median_draw_ms, median(opened_draw))
+        || !close(
+            performance.median_draw_regression_ms,
+            median(opened_draw) - median(sealed_draw),
+        )
+        || performance.maximum_median_draw_regression_ms != 0.20
+        || performance.median_draw_regression_ms > performance.maximum_median_draw_regression_ms
+        || !close(
+            performance.sealed_median_simulation_ms,
+            median(sealed_simulation),
+        )
+        || !close(
+            performance.opened_median_simulation_ms,
+            median(opened_simulation),
+        )
+        || !close(
+            performance.median_simulation_regression_ms,
+            median(opened_simulation) - median(sealed_simulation),
+        )
+        || performance.maximum_median_simulation_regression_ms != 0.10
+        || performance.median_simulation_regression_ms
+            > performance.maximum_median_simulation_regression_ms
+        || !performance.passed
+    {
+        return Err("cracked-geode performance qualification is incomplete or failed".into());
     }
     Ok(())
 }
@@ -1148,6 +1643,29 @@ mod tests {
     fn visual_polish_manifest_is_complete() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         validate_visual_polish_manifest(root).unwrap();
+    }
+
+    #[test]
+    fn cracked_geode_capture_manifest_is_complete() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        validate_visual_polish_manifest(root).unwrap();
+    }
+
+    #[test]
+    fn cracked_geode_capture_contains_host_shell_lining_and_heart() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        validate_visual_polish_manifest(root).unwrap();
+        let (_bytes, report): (Vec<u8>, GeodeCompositionReport) = read_toml(
+            &root.join("screenshots/visual-polish/geode-composition.report.toml"),
+            "cracked-geode composition",
+        )
+        .unwrap();
+        assert!(report.passed);
+        assert!(report.host_fraction >= report.minimum_host_fraction);
+        assert!(report.quartz_pixels >= report.minimum_lining_pixels);
+        assert!(report.amethyst_pixels >= report.minimum_lining_pixels);
+        assert!(report.heart_dark_deep_pixels >= report.minimum_heart_dark_deep_pixels);
+        assert!(report.lip_sides.len() >= report.minimum_lip_sides);
     }
 
     #[test]

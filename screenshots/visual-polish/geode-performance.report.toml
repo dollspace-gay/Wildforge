@@ -1,0 +1,17 @@
+qualification_schema_version = 1
+kind = "cracked-geode-performance"
+evidence_commit = "cc3d085a27b530942509ba01e0514a94ab0a7066"
+sample_count_per_phase = 5
+sealed_draw_ms = [4.870011300, 4.870538000, 5.005988600, 4.759226300, 4.907750600]
+opened_draw_ms = [5.126203500, 4.807500400, 5.013862600, 4.967988500, 5.090391000]
+sealed_simulation_ms = [8.152410000, 8.138891000, 8.156624000, 8.199502000, 8.124590000]
+opened_simulation_ms = [8.132666000, 8.252653000, 8.116105000, 8.258795000, 8.171181000]
+sealed_median_draw_ms = 4.870538000
+opened_median_draw_ms = 5.013862600
+median_draw_regression_ms = 0.143324600
+maximum_median_draw_regression_ms = 0.200000000
+sealed_median_simulation_ms = 8.152410000
+opened_median_simulation_ms = 8.171181000
+median_simulation_regression_ms = 0.018771000
+maximum_median_simulation_regression_ms = 0.100000000
+passed = true

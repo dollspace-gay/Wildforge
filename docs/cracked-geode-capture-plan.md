@@ -1,6 +1,6 @@
 # Cracked geode reveal and capture
 
-Drafted 2026-08-04. **DESIGN COMPLETE; IMPLEMENTATION PENDING.**
+Drafted 2026-08-04. **IMPLEMENTED AND QUALIFIED 2026-08-05.**
 
 The minerals and geology arc shipped real finite geodes but deferred its final
 aspirational image: a geode cracked open in situ. This plan closes that promise
@@ -291,3 +291,63 @@ This plan is complete when:
 Only then may the cracked-geode image be considered shipped. Finding a geode,
 opening it, and discovering that the view is ugly is a useful failure: fix the
 real material, light, or generator and take the picture again.
+
+## Implementation record — 2026-08-05
+
+The selected production structure is atlas deposit 48: a radius-four geode in
+limestone on `NegY`, centered at `(5399, 62, 1723)`. Its deterministic record
+is `screenshots/visual-polish/cracked-geode-site.toml`. The locator examined
+two deposits and 27 bounded chunks in 1.937 seconds, peaking at 494,424,064
+bytes RSS—under both the 60-second and 512-MiB budgets. The source structure
+has a six-connected 118-block quartz shell, 48 lining blocks (12 quartz and 36
+amethyst), a sealed 32-air-block heart, and no accidental air exposure.
+
+The preparation helper cloned `visual-polish-geode-sealed` to
+`visual-polish-geode-opened`, performed 39 authoritative block breaks and one
+authoritative torch placement, retained 40 loose drop stacks, consumed normal
+pick durability, and recorded zero unexpected edits. Quartz and amethyst
+accounts balance before, after, and after save/reload; the source save's
+manifest, material audit, and neighborhood remain unchanged. The complete
+operation ledger is `screenshots/visual-polish/geode-preparation.report.toml`.
+
+Qualification found and fixed five production defects instead of staging
+around them:
+
+- quartz blocks were not classified into the finite geode mineral account;
+- strict lattice boundaries could disconnect radius-four geode shells;
+- fixed geode elevation ignored the local groundwater head, making every
+  plausible access tunnel flood;
+- a sandy candidate roof collapsed during an honest reveal, so site selection
+  now rejects unsupported falling-block roofs;
+- reload comparison regenerated a nominal world rather than comparing the
+  exact sealed source snapshot, which mislabeled pre-existing persisted cells
+  as reveal edits.
+
+Four clean native-Windows captures were made from commit
+`cc3d085a27b530942509ba01e0514a94ab0a7066` on an NVIDIA GeForce RTX 3090 via
+DX12. All were settled for ten frames and use Gemini, view distance 12, exact
+point-grid shadows, stark ambient, and bloom. The tracked evidence names are
+`geode-sealed-context`, `geode-aperture-proof`, `geode-cracked-hero`, and
+`geode-reload-proof`; raw PPM/WFD and converted PNG files remain ignored.
+
+The hero's identity/depth segmentation records 64.112% natural limestone,
+98,102 quartz pixels, 77,067 amethyst pixels, 58,741 dark recessed heart
+pixels, and quartz lip coverage on the left, right, and bottom. The neutral
+proof independently records 58.412% host, 208,808 quartz pixels, and 121,594
+amethyst pixels. The sealed/reload proof pair has an identical camera,
+environment, and render identity. The deterministic acceptance report is
+`screenshots/visual-polish/geode-composition.report.toml`.
+
+Five matched settled captures per phase measured median draw time from
+4.870538 ms sealed to 5.013863 ms opened, a 0.143325-ms regression under the
+0.20-ms budget. Median simulation time moved from 8.152410 ms to 8.171181 ms,
+a 0.018771-ms regression under the 0.10-ms budget. The raw samples and result
+are recorded in `screenshots/visual-polish/geode-performance.report.toml`.
+
+`tools/verify_cracked_geode.py` rebuilds both reports from block-family/depth
+attachments, refuses stale sidecars, and checks report determinism. Rust-side
+manifest tests independently bind the four primary captures, ten performance
+captures, selected site, preparation ledger, verifier hash, GPU identity,
+camera matrix, composition thresholds, and performance budgets. This closes
+the implementation defined by this document; cross-scene visual-arc closeout
+remains Goal 4 of `docs/visual-polish-sequence.md`.
