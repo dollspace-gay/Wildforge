@@ -1832,6 +1832,30 @@ impl Game {
                 }
                 _ => {}
             }
+            // Slot-module swap (spec Part 1.3): right-click an installed
+            // module while holding a replacement from its category. The
+            // host applies the swap (the world's 2c hook re-folds the
+            // frame); guests see it through the host's echo.
+            if self.multiplayer.remote.is_none()
+                && let Some(category) = self.server.world.slot_category_at(h.block)
+                && let Some(replacement) = held.and_then(|i| reg.item(i).places)
+                && self.server.world.get_block_at(h.block) != replacement
+                && crate::world::multiblock::modules_in_category(&reg, category)
+                    .contains(&replacement)
+            {
+                if let Ok(()) =
+                    self.server
+                        .world
+                        .swap_slot_module_at(h.block, category, replacement)
+                {
+                    if !self.creative {
+                        self.inventory.take_one(self.input.hotbar_sel);
+                    }
+                    self.sfx(Sfx::Place);
+                }
+                self.input.action_cooldown = 0.3;
+                return;
+            }
             let pos = h.adjacent;
             let place =
                 self.inventory.slots[self.input.hotbar_sel].and_then(|s| reg.item(s.item).places);

@@ -191,3 +191,45 @@ fn rotation_order_is_deterministic_but_direction_agnostic() {
     let result = match_shape(&w, bp(6, 100, 7), &stick_shape()).expect("stick matches +X");
     assert_eq!(result.core, bp(7, 100, 7));
 }
+
+/// A shape whose single cell is a `Module` slot (spec Part 1.3).
+fn module_slot_shape() -> MultiblockShape {
+    MultiblockShape {
+        cells: vec![ShapeCell {
+            offset: (0, 0, 0),
+            constraint: BlockConstraint::Module("casing"),
+        }],
+        core: (0, 0, 0),
+        rotations: &[Rotation::R0],
+    }
+}
+
+#[test]
+fn match_shape_accepts_and_rejects_a_module_cell() {
+    let reg = base_reg();
+    let mut w = test_world_with("mb-module", reg.clone());
+    let anchor = bp(10, 100, 10);
+    // The catalog's baseline module holds the slot, and the match
+    // reports the cell as a "casing" slot (what capability folding reads).
+    w.set_block(10, 100, 10, b(&reg, "base:firebrick"));
+    let result =
+        match_shape(&w, anchor, &module_slot_shape()).expect("a catalog member holds the slot");
+    assert_eq!(result.slots.get(&anchor).copied(), Some("casing"));
+    // Another catalog member works too.
+    w.set_block(10, 100, 10, b(&reg, "base:casing_porcelain"));
+    let result =
+        match_shape(&w, anchor, &module_slot_shape()).expect("porcelain is a catalog module");
+    assert_eq!(result.slots.get(&anchor).copied(), Some("casing"));
+    // A block outside the category's catalog breaks the slot.
+    w.set_block(10, 100, 10, b(&reg, "base:stone"));
+    assert!(
+        match_shape(&w, anchor, &module_slot_shape()).is_none(),
+        "a non-catalog block fails the module cell"
+    );
+    // Air is not a module either.
+    w.set_block(10, 100, 10, AIR);
+    assert!(
+        match_shape(&w, anchor, &module_slot_shape()).is_none(),
+        "an empty slot cell fails the match"
+    );
+}

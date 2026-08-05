@@ -232,11 +232,11 @@ pub struct MachineInstance {
     /// Folded Pattern A stats of the validated shell (spec Part 2.1).
     /// Recomputed on revalidation, never per tick.
     pub stats: crate::world::multiblock::EffectiveStats,
-    /// Reserved space so slot-based module state (spec Part 1.3) can be
-    /// added without a second rewrite of this representation. The slot
-    /// schema is deliberately NOT designed in this task.
-    #[allow(dead_code)]
-    pub slots_placeholder: (),
+    /// Qualitative capabilities the installed slot modules grant their
+    /// frame (spec Part 1.3). Folded on revalidation alongside stats;
+    /// distinct from stats because these change what a structure can do,
+    /// not how well it does it.
+    pub capabilities: crate::world::multiblock::Capabilities,
 }
 
 /// The world's year stops when this many countries are dead AND they are
@@ -2139,6 +2139,11 @@ impl World {
         }
         if stats != m.stats {
             m.stats = stats;
+        }
+        let capabilities =
+            crate::world::multiblock::fold_capabilities(self, &matched.matched, &matched.slots);
+        if capabilities != m.capabilities {
+            m.capabilities = capabilities;
         }
         self.block_entities
             .insert(anchor, BlockEntity::Multiblock(m));

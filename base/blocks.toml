@@ -600,6 +600,29 @@ requires_tool = true
 heat_retention = 2
 
 [[block]]
+id = "casing_porcelain"
+name = "Porcelain Casing"
+# Slot-module test block (spec Part 1.3): a casing tile whose qualitative
+# capability (ceramic) is set by the module catalog, not by the numeric
+# heat_retention that fold_stats reads.
+texture = "@firebrick"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+heat_retention = 1
+
+[[block]]
+id = "casing_soapstone"
+name = "Soapstone Casing"
+# Slot-module test block (spec Part 1.3): the other casing module, granting
+# a distinct qualitative capability (refractory) from porcelain.
+texture = "@firebrick"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+heat_retention = 1
+
+[[block]]
 id = "bloomery"
 name = "Bloomery"
 texture = { top = "@firebrick", side = "@bloomery" }

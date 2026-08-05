@@ -1,8 +1,9 @@
 //! Falling blocks, multiblock machines, clamps, anvils, and archaeology.
 
 use super::multiblock::{
-    BlockConstraint, MachineKind, MatchResult, MultiblockShape, Rotation, ShapeCell, fold_stats,
-    match_shape, shape_extent,
+    BlockConstraint, MachineKind, MatchResult, MultiblockShape, Rotation, ShapeCell,
+    fold_capabilities, fold_stats, match_shape, modules_in_category, pos_within_extent,
+    shape_extent,
 };
 use super::*;
 
@@ -207,6 +208,7 @@ impl World {
         if kind == MachineKind::Kiln {
             stats.chimney = self.has_chimney_at(matched.core);
         }
+        let capabilities = fold_capabilities(self, &matched.matched, &matched.slots);
         let lit_block = match kind {
             MachineKind::Bloomery => "base:bloomery_lit",
             MachineKind::Forge => "base:forge_lit",
@@ -233,6 +235,7 @@ impl World {
         m.progress = 0.0;
         m.core = Some(matched.core);
         m.stats = stats;
+        m.capabilities = capabilities;
         self.swap_block_keep_entity_at(pos, lit_block);
         Ok(())
     }
@@ -405,6 +408,59 @@ impl World {
         if let Some(e) = e {
             self.block_entities.insert(pos, e);
         }
+    }
+
+    /// Find the `(anchor, category)` of the instance whose matched shell
+    /// has `pos` as a module-slot cell. The O(1) `edit_region` test gates
+    /// every candidate before its (more expensive) shape re-match.
+    fn slot_of_instance_at(&self, pos: BlockPos) -> Option<(BlockPos, &'static str)> {
+        for (anchor, entity) in &self.block_entities {
+            let BlockEntity::Multiblock(m) = entity else {
+                continue;
+            };
+            let extent = m.kind.edit_region(self, *anchor);
+            if !pos_within_extent(pos, *anchor, extent) {
+                continue;
+            }
+            if let Some(matched) = m.kind.validate(self, *anchor)
+                && let Some(category) = matched.slots.get(&pos)
+            {
+                return Some((*anchor, *category));
+            }
+        }
+        None
+    }
+
+    /// The module category installed at `pos`, if `pos` is a slot cell of
+    /// a registered machine's shell. The game reads this to offer a swap.
+    pub fn slot_category_at(&self, pos: BlockPos) -> Option<&'static str> {
+        self.slot_of_instance_at(pos).map(|(_, category)| category)
+    }
+
+    /// Swap the module installed in a slot cell in place (spec Part 1.3).
+    /// Only a real slot cell of a registered frame may be swapped, the
+    /// replacement must belong to the slot's catalog, and the swap is a
+    /// plain block edit: the machine's `BlockEntity` at the anchor is
+    /// untouched, and the 2c edit hook re-folds the frame's stats and
+    /// capabilities immediately.
+    pub fn swap_slot_module_at(
+        &mut self,
+        pos: BlockPos,
+        category: &'static str,
+        replacement: BlockId,
+    ) -> Result<(), &'static str> {
+        let (_, found) = self.slot_of_instance_at(pos).ok_or("no module slot here")?;
+        if found != category {
+            return Err("this slot takes a different module category");
+        }
+        if !modules_in_category(&self.reg, category).contains(&replacement) {
+            return Err("that is not a module of this slot's category");
+        }
+        if self.get_block_at(pos) == replacement {
+            return Ok(());
+        }
+        self.set_block_at(pos, replacement);
+        Ok(())
     }
 
     /// Flood-fill a covered log pile from the clicked log and light it.
@@ -786,7 +842,14 @@ fn stack_shape(mouth: &[Option<BlockId>; 2]) -> MultiblockShape {
                 }
                 let offset = (1 + rx, ly, rz);
                 let constraint = if offset == (0, 0, 0) {
+                    // The mouth block selects WHICH machine this is.
                     BlockConstraint::OneOf(mouth.iter().flatten().copied().collect())
+                } else if offset == (1, 0, -1) {
+                    // One base-course ring cell is a swappable casing
+                    // module slot (spec Part 1.3): any catalog member
+                    // holds the stack, and the installed module's
+                    // capabilities fold into the frame.
+                    BlockConstraint::Module("casing")
                 } else {
                     // Any firebrick tier holds a stack together.
                     BlockConstraint::Tag("base:firebrick")

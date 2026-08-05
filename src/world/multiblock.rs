@@ -57,6 +57,11 @@ pub enum BlockConstraint {
     Air,
     /// Solid, or a glazing (glass) block — the stall's awning.
     SolidOrGlass,
+    /// The cell is a swappable module slot: the block must belong to the
+    /// named category's module catalog (spec Part 1.3). The match also
+    /// records *which* cell matched and its category, so revalidation can
+    /// fold each installed module's qualitative capabilities.
+    Module(&'static str),
 }
 
 /// One cell of a shape: an offset from the anchor plus what must sit there.
@@ -89,6 +94,10 @@ pub struct MatchResult {
     /// Every matched cell position mapped to the block actually there.
     /// Read by Pattern A stat folding (spec Part 2.1) on revalidation.
     pub matched: HashMap<BlockPos, BlockId>,
+    /// Every module-slot cell mapped to its category id. Read when the
+    /// frame's qualitative capabilities are folded from the installed
+    /// modules (spec Part 1.3).
+    pub slots: HashMap<BlockPos, &'static str>,
 }
 
 /// Return the first rotation of `shape` that the world satisfies at `anchor`,
@@ -115,6 +124,7 @@ fn match_rotation(
     rotation: Rotation,
 ) -> Option<MatchResult> {
     let mut matched = HashMap::with_capacity(shape.cells.len());
+    let mut slots = HashMap::new();
     for cell in &shape.cells {
         let (dx, dy, dz) = rotation.apply(cell.offset);
         let at = anchor.offset(dx, dy, dz)?;
@@ -123,10 +133,17 @@ fn match_rotation(
             return None;
         }
         matched.insert(at, block);
+        if let BlockConstraint::Module(category) = cell.constraint {
+            slots.insert(at, category);
+        }
     }
     let (cdx, cdy, cdz) = rotation.apply(shape.core);
     let core = anchor.offset(cdx, cdy, cdz)?;
-    Some(MatchResult { core, matched })
+    Some(MatchResult {
+        core,
+        matched,
+        slots,
+    })
 }
 
 fn constraint_ok(world: &World, constraint: &BlockConstraint, block: BlockId) -> bool {
@@ -136,6 +153,9 @@ fn constraint_ok(world: &World, constraint: &BlockConstraint, block: BlockId) ->
         BlockConstraint::Tag(tag) => block_in_tag(&world.reg, tag, block),
         BlockConstraint::Air => block == AIR,
         BlockConstraint::SolidOrGlass => world.reg.is_solid(block) || world.reg.block(block).glass,
+        BlockConstraint::Module(category) => {
+            modules_in_category(&world.reg, category).contains(&block)
+        }
     }
 }
 
@@ -219,6 +239,118 @@ pub fn fold_stats(world: &World, matched: &HashMap<BlockPos, BlockId>) -> Effect
         }
     }
     stats
+}
+
+/// Qualitative capabilities a slot module can grant its frame (spec
+/// Part 1.3). Distinct from Pattern A numeric stats on purpose: these
+/// change what a structure *can do*, not how well it does it, so they
+/// are folded into a separate set rather than into [`EffectiveStats`].
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub struct Capabilities {
+    /// A vitrified tile face: keeps glaze from crawling off the wares.
+    pub ceramic: bool,
+    /// A soapstone face: holds an even, gentle heat for slow work.
+    pub refractory: bool,
+}
+
+impl Capabilities {
+    /// Union another module's capabilities into this set — a frame is
+    /// capable of anything any installed module enables.
+    pub fn merge(&mut self, other: Capabilities) {
+        self.ceramic |= other.ceramic;
+        self.refractory |= other.refractory;
+    }
+}
+
+/// One row of the module catalog: a block and the qualitative
+/// capabilities it grants when installed in a slot of its category.
+pub struct ModuleDef {
+    /// The block, by registered id (resolved like `Tag`/`OneOf` at match
+    /// time).
+    pub block: &'static str,
+    /// What this module lets the frame do. Numeric contributions are not
+    /// fields here — the block itself already carries `heat_retention`,
+    /// which `fold_stats` reads.
+    pub capabilities: Capabilities,
+}
+
+/// The module catalog, keyed by category id (spec Part 1.3). Static data
+/// mirroring how `MachineKind::mouth()` lists ids; a category shared by
+/// every stack machine because they all use the same `stack_shape`.
+pub fn module_catalog(category: &'static str) -> &'static [ModuleDef] {
+    match category {
+        "casing" => &CASING_CATALOG,
+        _ => &[],
+    }
+}
+
+/// The `"casing"` category: the shared stack shell's swappable tier
+/// blocks. The baseline tier (plain firebrick) is what every player
+/// build drops in by default; the advanced tier is numeric-only; the
+/// porcelain and soapstone tiles grant distinct qualitative capabilities.
+static CASING_CATALOG: [ModuleDef; 4] = [
+    ModuleDef {
+        block: "base:firebrick",
+        capabilities: Capabilities {
+            ceramic: false,
+            refractory: false,
+        },
+    },
+    ModuleDef {
+        block: "base:firebrick_advanced",
+        capabilities: Capabilities {
+            ceramic: false,
+            refractory: false,
+        },
+    },
+    ModuleDef {
+        block: "base:casing_porcelain",
+        capabilities: Capabilities {
+            ceramic: true,
+            refractory: false,
+        },
+    },
+    ModuleDef {
+        block: "base:casing_soapstone",
+        capabilities: Capabilities {
+            ceramic: false,
+            refractory: true,
+        },
+    },
+];
+
+/// Every block id qualifying as a module for `category` (the resolution
+/// `BlockConstraint::Module` uses).
+pub fn modules_in_category(reg: &Registry, category: &'static str) -> Vec<BlockId> {
+    module_catalog(category)
+        .iter()
+        .filter_map(|m| reg.block_id(m.block))
+        .collect()
+}
+
+/// The capabilities `block` grants when installed in `category`.
+pub fn module_capabilities(reg: &Registry, category: &'static str, block: BlockId) -> Capabilities {
+    module_catalog(category)
+        .iter()
+        .find(|m| reg.block_id(m.block) == Some(block))
+        .map_or_else(Capabilities::default, |m| m.capabilities)
+}
+
+/// Fold the qualitative capabilities granted by every installed slot
+/// module. Unlike stats (numeric sums), capabilities union across the
+/// frame; a module's *identity* at its slot decides what it grants.
+pub fn fold_capabilities(
+    world: &World,
+    matched: &HashMap<BlockPos, BlockId>,
+    slots: &HashMap<BlockPos, &'static str>,
+) -> Capabilities {
+    let mut caps = Capabilities::default();
+    for (pos, category) in slots {
+        if let Some(&module) = matched.get(pos) {
+            caps.merge(module_capabilities(&world.reg, category, module));
+        }
+    }
+    caps
 }
 
 /// The axis-aligned cell-offset ranges a shape's cells occupy over every
