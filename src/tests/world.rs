@@ -897,33 +897,62 @@ fn magical_harvests_and_bonus_drops_are_funded_before_delivery() {
     );
 }
 
+/// A deterministic offering-fixture planet: worlds created through a bare
+/// `load_or_create` seed from the wall clock, which made these tests roll a
+/// different planet every CI run.
+fn charged_offering_world(name: &str, seed: u32) -> (Arc<Registry>, World) {
+    let reg = base_reg();
+    let root = tmp_dir(name).join("world");
+    crate::world::create_world_fixture_atomic(
+        &root,
+        seed,
+        "survival",
+        8,
+        &crate::planet_atlas::CancellationToken::default(),
+        |_| {},
+    )
+    .unwrap();
+    let world = World::load_or_create(root, reg.clone()).unwrap();
+    (reg, world)
+}
+
+/// The first country heart whose reserve satisfies `keep`, as the surface of
+/// its heart site, its country id, and its current total.
+fn country_heart_holding(
+    world: &World,
+    keep: impl Fn(u64) -> bool,
+) -> Option<(crate::planet::SurfacePos, u16, u64)> {
+    let atlas = world.planet_atlas().unwrap();
+    atlas.biomes.countries.iter().find_map(|candidate| {
+        let site = candidate.heart_site.center(atlas.side());
+        let surface =
+            crate::planet::SurfacePos::new(site.face, site.u.floor() as u16, site.v.floor() as u16)
+                .ok()?;
+        let country = atlas.country_at(surface)?.id;
+        let total = world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .account(&crate::arcane::ArcaneOwner::Heart(country))?
+            .current
+            .total();
+        keep(total).then_some((surface, country, total))
+    })
+}
+
 #[test]
 fn charged_offering_returns_exact_current_to_its_country_heart() {
     use crate::arcane::ArcaneOwner;
     use crate::world::{BlockEntity, OfferingState};
 
-    let reg = base_reg();
-    let mut world = World::load_or_create(
-        tmp_dir("charged-country-offering").join("world"),
-        reg.clone(),
-    )
-    .unwrap();
-    let atlas = world.planet_atlas().unwrap();
-    let site = atlas.biomes.countries[0].heart_site.center(atlas.side());
-    let surface =
-        crate::planet::SurfacePos::new(site.face, site.u.floor() as u16, site.v.floor() as u16)
-            .unwrap();
-    let country = atlas.country_at(surface).unwrap().id;
+    let (reg, mut world) = charged_offering_world("charged-country-offering", 42);
+    // A heart holding at least two bindings stays open while the gift is out
+    // on loan, so the mid-loan balance below is observable. The drained case
+    // is covered by offering_revives_a_country_heart_drained_by_its_own_gift.
+    let (surface, country, heart_before) = country_heart_holding(&world, |total| total >= 512)
+        .expect("fixture seed 42 offers a country heart holding at least two bindings");
     let at = crate::planet::BlockPos::new(surface.face(), surface.u(), 100, surface.v()).unwrap();
     let heart = ArcaneOwner::Heart(country);
-    let heart_before = world
-        .arcane_ledger
-        .as_ref()
-        .unwrap()
-        .account(&heart)
-        .unwrap()
-        .current
-        .total();
     let mut gift = ItemStack::new(&reg, it(&reg, "base:thorn_fiber"), 1);
     world
         .bind_arcane_stack_at(at, &mut gift, "charged offering fixture")
@@ -939,6 +968,47 @@ fn charged_offering_returns_exact_current_to_its_country_heart() {
             .current
             .total(),
         heart_before - 256
+    );
+    let mut offering = OfferingState::default();
+    offering.slots[0] = Some(gift);
+    world.insert_block_entity_at(at, BlockEntity::Offering(offering));
+    assert!(world.accept_offerings() > 0.0);
+    let ledger = world.arcane_ledger.as_ref().unwrap();
+    assert!(ledger.account(&gift_owner).is_none());
+    assert_eq!(
+        ledger.account(&heart).unwrap().current.total(),
+        heart_before
+    );
+    assert!(ledger.audit().unwrap().is_balanced());
+}
+
+#[test]
+fn offering_revives_a_country_heart_drained_by_its_own_gift() {
+    use crate::arcane::ArcaneOwner;
+    use crate::world::{BlockEntity, OfferingState};
+
+    // Seed 24's first country is a single atlas cell, so its heart holds
+    // exactly one binding (256 units): lending the gift drains it to zero
+    // and the ledger prunes the empty account. Accepting the offering must
+    // still return the exact current and revive the heart.
+    let (reg, mut world) = charged_offering_world("charged-offering-drained-heart", 24);
+    let (surface, country, heart_before) = country_heart_holding(&world, |total| total == 256)
+        .expect("fixture seed 24 offers a one-cell country heart");
+    let at = crate::planet::BlockPos::new(surface.face(), surface.u(), 100, surface.v()).unwrap();
+    let heart = ArcaneOwner::Heart(country);
+    let mut gift = ItemStack::new(&reg, it(&reg, "base:thorn_fiber"), 1);
+    world
+        .bind_arcane_stack_at(at, &mut gift, "drained offering fixture")
+        .unwrap();
+    let gift_owner = ArcaneOwner::Item(gift.arcane_id);
+    assert!(
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .account(&heart)
+            .is_none(),
+        "a heart drained to zero is pruned while its gift is out on loan"
     );
     let mut offering = OfferingState::default();
     offering.slots[0] = Some(gift);
