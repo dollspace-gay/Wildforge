@@ -903,27 +903,46 @@ fn charged_offering_returns_exact_current_to_its_country_heart() {
     use crate::world::{BlockEntity, OfferingState};
 
     let reg = base_reg();
-    let mut world = World::load_or_create(
-        tmp_dir("charged-country-offering").join("world"),
-        reg.clone(),
+    let root = tmp_dir("charged-country-offering").join("world");
+    crate::world::create_world_fixture_atomic(
+        &root,
+        42,
+        "survival",
+        8,
+        &crate::planet_atlas::CancellationToken::default(),
+        |_| {},
     )
     .unwrap();
+    let mut world = World::load_or_create(root, reg.clone()).unwrap();
     let atlas = world.planet_atlas().unwrap();
-    let site = atlas.biomes.countries[0].heart_site.center(atlas.side());
-    let surface =
-        crate::planet::SurfacePos::new(site.face, site.u.floor() as u16, site.v.floor() as u16)
-            .unwrap();
-    let country = atlas.country_at(surface).unwrap().id;
+    // A one-cell country's heart holds exactly one binding (256 units), and
+    // the ledger prunes accounts drained to zero. Offer to a heart wealthy
+    // enough to stay open while the gift is out on loan.
+    let (surface, country, heart_before) = atlas
+        .biomes
+        .countries
+        .iter()
+        .find_map(|candidate| {
+            let site = candidate.heart_site.center(atlas.side());
+            let surface = crate::planet::SurfacePos::new(
+                site.face,
+                site.u.floor() as u16,
+                site.v.floor() as u16,
+            )
+            .ok()?;
+            let country = atlas.country_at(surface)?.id;
+            let heart_before = world
+                .arcane_ledger
+                .as_ref()
+                .unwrap()
+                .account(&ArcaneOwner::Heart(country))?
+                .current
+                .total();
+            (heart_before >= 512).then_some((surface, country, heart_before))
+        })
+        .expect("fixture planet offers a country heart holding at least two bindings");
     let at = crate::planet::BlockPos::new(surface.face(), surface.u(), 100, surface.v()).unwrap();
     let heart = ArcaneOwner::Heart(country);
-    let heart_before = world
-        .arcane_ledger
-        .as_ref()
-        .unwrap()
-        .account(&heart)
-        .unwrap()
-        .current
-        .total();
     let mut gift = ItemStack::new(&reg, it(&reg, "base:thorn_fiber"), 1);
     world
         .bind_arcane_stack_at(at, &mut gift, "charged offering fixture")
