@@ -1002,7 +1002,12 @@ fn offering_revives_a_country_heart_drained_by_its_own_gift() {
         .unwrap();
     let gift_owner = ArcaneOwner::Item(gift.arcane_id);
     assert!(
-        world.arcane_ledger.as_ref().unwrap().account(&heart).is_none(),
+        world
+            .arcane_ledger
+            .as_ref()
+            .unwrap()
+            .account(&heart)
+            .is_none(),
         "a heart drained to zero is pruned while its gift is out on loan"
     );
     let mut offering = OfferingState::default();
