@@ -344,6 +344,11 @@ Five matched settled captures per phase measured median draw time from
 a 0.018771-ms regression under the 0.10-ms budget. The raw samples and result
 are recorded in `screenshots/visual-polish/geode-performance.report.toml`.
 
+The 2026-08-06 arc closeout re-captured all four frames and both performance
+phases from one commit against a freshly re-prepared opened save, proving the
+preparation exactly reproducible (the 2026-08-05 save was preserved aside and
+renders identically); see `docs/visual-polish-closeout-report.md`.
+
 `tools/verify_cracked_geode.py` rebuilds both reports from block-family/depth
 attachments, refuses stale sidecars, and checks report determinism. Rust-side
 manifest tests independently bind the four primary captures, ten performance

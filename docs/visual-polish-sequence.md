@@ -1,6 +1,7 @@
 # Visual polish sequence
 
-Drafted 2026-08-04. **IMPLEMENTATION IN PROGRESS; GOALS 1–3 COMPLETE.**
+Drafted 2026-08-04. **COMPLETE: ALL FOUR GOALS QUALIFIED (Goal 4 closeout
+2026-08-06).**
 
 This is the small post-planetary polish arc left by two explicit qualification
 findings. It does not reopen planetary world design:
@@ -119,6 +120,16 @@ Suggested goal command:
 ```
 
 ## Goal 4 — Arc qualification and closeout
+
+**Completed and qualified 2026-08-06.** Both plans' matrices were re-captured
+from one clean commit on the original hardware, the strata and geode scenes
+were walked interactively with recorded frame analysis, and the schema-3
+manifest now carries a fail-closed closeout section rebuilt by
+`tools/verify_visual_closeout.py` and validated in CI. The full record —
+including the findings the closeout surfaced (committed lake water never
+evaporates; the qualification sites are live places; the goal-3 geode
+preparation is exactly reproducible) — is
+[the closeout report](visual-polish-closeout-report.md).
 
 Run both plans' matrices on the same native hardware and accepted commit.
 Walk the strata site and geode approach interactively, because still frames do

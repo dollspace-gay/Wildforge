@@ -36,6 +36,10 @@ improvement and 0.256 ms simulation improvement; the largest after draw was
 Rust validator fail closed if their source, tool, commit, matrix, sidecar, or
 metrics become stale.
 
+The 2026-08-06 arc closeout re-ran this plan's after-matrix and performance
+captures from one commit alongside the geode set and re-verified every gate on
+the sites as they now exist; see `docs/visual-polish-closeout-report.md`.
+
 The final motion check used the same native executable on a disposable copy of
 the production save. Under both clear and overcast weather, injected ordinary
 W/S key events moved the live player about nine blocks toward the sandstone
