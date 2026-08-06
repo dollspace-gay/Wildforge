@@ -1,0 +1,40 @@
+qualification_schema_version = 1
+kind = "closeout-motion"
+evidence_commit = "8d3385f0d19007d17dda7fa9ff3b42ae3da946f1"
+reviewed_by = "Claude (Fable 5), closeout operator"
+review_method = "scripted ordinary key-event walks on disposable save copies; deterministic frame luminance analysis plus frame-by-frame review"
+passed = true
+
+[[walk]]
+id = "strata-site"
+world = "closeout-motion-strata"
+weather = "clear"
+frame_count = 28
+frame_files = ["screenshot-1785999788.ppm", "screenshot-1785999789.ppm", "screenshot-1785999791.ppm", "screenshot-1785999792.ppm", "screenshot-1785999794.ppm", "screenshot-1785999795.ppm", "screenshot-1785999797.ppm", "screenshot-1785999800.ppm", "screenshot-1785999802.ppm", "screenshot-1785999804.ppm", "screenshot-1785999806.ppm", "screenshot-1785999808.ppm", "screenshot-1785999809.ppm", "screenshot-1785999810.ppm", "screenshot-1785999812.ppm", "screenshot-1785999813.ppm", "screenshot-1785999815.ppm", "screenshot-1785999817.ppm", "screenshot-1785999819.ppm", "screenshot-1785999821.ppm", "screenshot-1785999824.ppm", "screenshot-1785999826.ppm", "screenshot-1785999827.ppm", "screenshot-1785999829.ppm", "screenshot-1785999830.ppm", "screenshot-1785999831.ppm", "screenshot-1785999833.ppm", "screenshot-1785999834.ppm"]
+frame_sha256 = ["3694d206d34ee4e32151dbc2b06e5d6449265724761814a8790fa49df51805b1", "e2ee00b6e354fe46981ef345c4dbc8d20b17422f53fb0b8372f0e609e039d2b7", "d9fdec766c1e24383787e582fcbda9df114d85c14545a9be699cc7a39f86f9d9", "a99fd66ec0811f6504d7819d0a8ffadc8cbd5ef0bcae5be60413c8950294252e", "c6d54118ebe402fd2b74a4eed2ee94a091f579c2838bc12cf10cf78c9c30f8a0", "5257c51202263ed259a72e688325b15bcccae65978a1a428b17f0279fedad5b4", "6c0d127beeddbd3321b0e1a587f246b374d8071c9e30198deb00da3c56a3bd67", "a1428875904b99e8a5bf5da900246b83d39b646993639fee3aad30b69587e9d0", "77e5fe1ea59c078fad0e09e0b3ee7c69c9b733a5958aaed91faf77d88711b02c", "2c0daf867b27763a4ffe971eed824ada8e77e49e187ca80f519c02246bb07a32", "ca9800ff3de779a14ebe4a5fdba178fb0755579205b3ee7313c55e3b2225dd10", "8cec8b4ac373209fe46783802da994f8c0dbb9a90cd05c4b23f943616051b637", "8e15c0af26706012bf25220563bf96b1d74e485cfe016004dd5e4446fff3950a", "fa7df9bfd1620f66036e250206a167a52e748107b983463c004db7c93c6c51f4", "4abb552ec96cf84b63194a29d10180acd4ddb21089a532fed16265d97ff874e7", "81a67611e049b478d8b42267bf962928ae0a1b27ae443833ba4ac5fb0a66adb4", "bfec617cf7ae953db8969f12ec1833cf15f5a852d463a8e1cec7e60623da7222", "b772b74db898ab3eead702c71239ba18f9f03ce01b222d40182353ececa0dddf", "f4f3f5615d96053436c6bb6b9f07756db55f671a6295f646eb565b829f26ebec", "e9de3b89f239647d24becef40e27af1a50bfb51a27b68635148cd0eedc0df380", "45a06303a03abbb8c91f514384820ac5056482493d6987fbf60808e445f422fa", "0078f96e60dc84c00d7fbae7ed694726e04f476f624a45ba23b207612d8f622f", "1eadb31d134fd3537f9c95f097c012841d3410924a0cfdf8a896085c76a2e405", "971837e5fffb7dd9bdf7a4523f140c1b3f6ef32dce25c6a6d8af6f87d8ee9e4d", "9c16a208084a9d433757029d90b77d52435de7c1097c9fc1b5574165dea355f4", "0606886172c0db9c3893a7607c726dd7b98de41512ea3f39a351878284cc36ce", "072b0df1f5bbf8b183e628579c13136368c8cf108339ae902a3fd01af415d4f4", "ad70990a3eb9a546060ca36219980fc6560805086e8ca657386597db447616d2"]
+frame_mean_luminance = [0.564158301, 0.565863389, 0.567449563, 0.568867434, 0.570224797, 0.571468584, 0.609715752, 0.646926592, 0.595098214, 0.645891033, 0.666183113, 0.668267256, 0.670087063, 0.671954329, 0.674055587, 0.675855102, 0.678032010, 0.682566499, 0.676664126, 0.664069793, 0.651034241, 0.637390678, 0.632005443, 0.627310401, 0.622826809, 0.618673262, 0.614896823, 0.611093725]
+static_segments = [[0, 6], [12, 17], [23, 27]]
+max_static_luminance_delta = 0.038247168
+maximum_static_luminance_delta = 0.050000000
+exposure_pumping_detected = false
+shimmer_observed = false
+chunk_wall_observed = false
+awkward_reveal_observed = false
+notes = "View pinned by cursor grab; static deltas are animated water and sky only. The walk wades the pool that has risen over the former bank (see the committed-water finding). No unloaded chunk face or fog wall in any frame."
+
+[[walk]]
+id = "geode-approach"
+world = "closeout-motion-geode"
+weather = "clear"
+frame_count = 28
+frame_files = ["screenshot-1786001187.ppm", "screenshot-1786001188.ppm", "screenshot-1786001190.ppm", "screenshot-1786001191.ppm", "screenshot-1786001193.ppm", "screenshot-1786001194.ppm", "screenshot-1786001196.ppm", "screenshot-1786001198.ppm", "screenshot-1786001201.ppm", "screenshot-1786001203.ppm", "screenshot-1786001205.ppm", "screenshot-1786001206.ppm", "screenshot-1786001208.ppm", "screenshot-1786001209.ppm", "screenshot-1786001210.ppm", "screenshot-1786001212.ppm", "screenshot-1786001213.ppm", "screenshot-1786001215.ppm", "screenshot-1786001218.ppm", "screenshot-1786001220.ppm", "screenshot-1786001222.ppm", "screenshot-1786001224.ppm", "screenshot-1786001226.ppm", "screenshot-1786001227.ppm", "screenshot-1786001228.ppm", "screenshot-1786001230.ppm", "screenshot-1786001231.ppm", "screenshot-1786001232.ppm"]
+frame_sha256 = ["4e6cc4ce144df96ffada267c8d0ffc340dde1019630f76881fad5b2f8817614c", "a2e0e4e2942f64d05e562a8a0e351719637cf4f2e1f2fa8cc178c525a4f85945", "05e5b1fb8f41256c63a3194ecff047c35436b8aa44cb34709be7271bc2197491", "d14ffbd6f7968f0525f8fb6ca9112e77549b619b394c3873692a0aa76bf19c20", "9f9aa341baadf4e1b601f58c3fce8044d34ec0b6e2bd2c894f687596ee30278b", "cb462224a96fb45a1ec5f40df86a1ea11f8a0a3422966fcd66a5daf92d745835", "795d2b668545f07715c869300f33f50904449d32f166ee70f179c0714787bc7c", "7dcfce167c332faede81424c7a0f0e27d44ab7058468b60cc992b3d929b82414", "95db94b7acb29800fa50a954ff1f78bfd901ad14c81eec349f44c26b1cd939fc", "85edcaefba2ee44ab4551812971b36a2e5020e4fcb206ef2f4174cbb9d96d3fd", "2d1dd2612f6db1607584d081f9dd75e165fbfc0decfd0f895624e0cc2bba8e1e", "495c587ea03982b1fcc8c388ab3ca900ad5543f4c87bbf3983d7528871b9abba", "5929d8e5da1b9be6a42421a9dc9fc26b8c7ce29f8d3c31b049e05f310d5fd3fc", "e8c141da841c4a08f003541d7247ea03d503f98deffc40eb65d4d78dca197c6b", "2743cec2366ab960d9639e228d58ed41eb41eb07a7e6cf28d32afacc985cf126", "76fd5f44ebf4074b5e98af6af6adde8af72b368cd9d6c9350d249aa7f7c9b0bb", "b78c9f416393384fe1667ec6250f3271c75ca1f7eed6dd79ea38eabaabae7a1a", "812a6b1f9b49086af8bdcf4183a638410c5705208764d93b311f1b71fea17518", "e7928bba8597f3c1f0b45e82d7f66f6b22358932ad9f161b6fcb2b81e9606abf", "fb934f87218949cfb682b65c91b83d5d10e49d48ea74eceed0802eee56ba6bad", "86926b9c0fb65ec568c03879a677b62286e78480712087faa0d8bc5cbd46ab25", "c90881161c0ff35fdcc10a8f32b304c61b85cec120a3ca74352b6e119a8a34f3", "908a6b04e92d80a88befa5349790910b7a93de6f6f7461e360c34e982313495a", "b8b07a6c14ae16c9db58f206b40675cd3b7ea915c7896f2720cb82e8ab9b8ee1", "847c9275d25ceb7b6fe614d0f4311fe36a1a6247f5300a28f02d54d977ca331f", "1b8d8179beb8665846f9d202fd9cffeee2918fc78ca030cbb42e662718b99c5a", "c9d93be66c3b52b93a593f697daa0a88541d9eeda94aa906b405aed420a2390b", "c819ff08edab34b9225ec713ea2eb0a4f82fd6e5faf833312b9dfe62502eb863"]
+frame_mean_luminance = [0.324578739, 0.317108774, 0.320749369, 0.321807523, 0.316290917, 0.325007290, 0.339171608, 0.343780434, 0.340054502, 0.338693237, 0.337627707, 0.332668520, 0.339734635, 0.332033381, 0.339020053, 0.335358554, 0.336299776, 0.327274641, 0.239287847, 0.368465706, 0.351324206, 0.358804928, 0.358515769, 0.353522620, 0.365733787, 0.352804298, 0.366327559, 0.358984773]
+static_segments = [[0, 6], [12, 17], [23, 27]]
+max_static_luminance_delta = 0.014164318
+maximum_static_luminance_delta = 0.050000000
+exposure_pumping_detected = false
+shimmer_observed = false
+chunk_wall_observed = false
+awkward_reveal_observed = false
+notes = "Underground frames are pixel-stable between static holds. The torch-lit aperture grows smoothly through the approach with no pop or lighting snap; the scripted walk overshoots through the aperture into the lining at the end, which is a driver artifact rather than a presentation defect."

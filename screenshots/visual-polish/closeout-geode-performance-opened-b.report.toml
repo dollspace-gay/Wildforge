@@ -1,0 +1,72 @@
+report_schema_version = 2
+capture_schema_version = 1
+capture_id = "closeout-geode-performance-opened-b"
+scene_id = "closeout-geode-performance-20260806"
+identity_sha256 = "f0301a1e2c76c0355082f50cf2de37a31b62a4e640016043046c3890b39d8f09"
+sidecar = "screenshots/closeout-geode-performance-opened-b.capture.toml"
+sidecar_sha256 = "b2648fa771907a3d3341bc1b346bb670addc00bf1d1cfc6c19334847c4ebbcac"
+width = 1280
+height = 720
+color_ppm_sha256 = "37b664b934bc73f15199db7622fbff7ffbedc0dade71b7f30197cfe33d49100e"
+diagnostic_sha256 = "43c2dc58c789a3c39164d32869c449253fe899bf647fdda3d8ac0e26b4cff5ee"
+color_png = "screenshots/closeout-geode-performance-opened-b.capture.png"
+color_png_sha256 = "fae15e32810f36b79ec30ee9cb5bcfc13ebb112b8cd3ac19fa758bd2f7cc86ef"
+diagnostic_png = "screenshots/closeout-geode-performance-opened-b.capture.diagnostic.png"
+diagnostic_png_sha256 = "1bccbe79bd49bb26f8e2bfa29c8626b67cb9faa209dcf39f5bcf8784874defda"
+conversion = "python-stdlib-p6-rgb8-filter0-zlib9-v1"
+conversion_tool = "tools/verify_visual_polish.py"
+conversion_tool_sha256 = "00042bf2d7c60e74ba8c044c355a0ee2645746f0b313f4d931f63cc92c2e6f38"
+python = "3.13.13"
+zlib = "1.3.1.zlib-ng"
+pixel_count = 921600
+sky_pixels = 0
+overlay_pixels = 39928
+material_pixels = 881672
+sky_fraction = 0.000000000
+overlay_fraction = 0.043324653
+material_fraction = 0.956675347
+luminance_mean = 0.032103687
+luminance_stddev = 0.020898243
+local_contrast_rms = 0.007875534
+
+[[family]]
+diagnostic_id = 3
+atlas_slot = 2
+names = ["base:dirt", "base:farmland", "base:grass", "item:base:dirt", "item:base:farmland"]
+pixels = 868870
+pixel_fraction = 0.942784288
+mean_normalized_depth = 0.011864114
+
+[[family]]
+diagnostic_id = 245
+atlas_slot = 244
+names = ["base:limestone", "item:base:limestone", "texture:base/limestone"]
+pixels = 12802
+pixel_fraction = 0.013891059
+mean_normalized_depth = 0.039904185
+
+[[stratum]]
+rock = "limestone"
+distance_band = "near"
+pixels = 12802
+coverage = 0.013891059
+connected_components = 1
+one_pixel_fringe = 0
+one_pixel_fringe_fraction = 0.000000000
+median_luminance = 0.046773869
+p10_luminance = 0.025534250
+p90_luminance = 0.075284081
+luminance_span = 0.049749831
+rms_contrast_1px = 0.011572985
+rms_contrast_4px = 0.024172190
+rms_contrast_16px = 0.029383917
+contrast_pairs_1px = 25347
+contrast_pairs_4px = 24578
+contrast_pairs_16px = 21520
+adjacent_sky_pairs = 0
+silhouette_weber = 0.000000000
+silhouette_weber_magnitude = 0.000000000
+median_chroma = 0.005530658
+greyscale_structure_score = 0.628212251
+expected_fog_blend = 0.000000000
+display_black_fraction = 0.000000000

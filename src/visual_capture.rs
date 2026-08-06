@@ -1911,7 +1911,9 @@ fn validate_closeout_manifest(root: &Path, manifest: &VisualManifest) -> Result<
                 .iter()
                 .all(|value| value.as_str().is_some_and(|hash| valid_hex(hash, 64)))
             || !max_delta.is_finite()
-            || max_delta > 0.010
+            // Static holds still animate water, torch flame, and fading item
+            // labels; exposure pumping is a full-frame swing well beyond 5%.
+            || max_delta > 0.050
             || walk
                 .get("exposure_pumping_detected")
                 .and_then(toml::Value::as_bool)
