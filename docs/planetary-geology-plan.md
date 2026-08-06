@@ -83,6 +83,15 @@ Goal 5 now supplies final drainage, lakes, ocean basins, erosion/deposition,
 and conservative placer routing. Goal 6 now supplies groundwater dynamics and
 the complete conserved water cycle; ecological biomes remain owned by Goal 7.
 
+**Presentation closure (2026-08-05).** That paragraph describes the original
+qualification renderer and remains part of the historical record. Current
+native-DX12 captures at four-, twelve-, and fourteen-chunk views now retain
+measured sandstone, limestone, marble, and quartzite structure through the
+pre-fog field, preserve basalt shadow detail, and dissolve exactly into
+directional sky at the endpoint. The fix changed deterministic rock albedos,
+not atlas geology, strata placement, caves, relief, or the finite ledger; see
+`docs/strata-fog-readability-plan.md`.
+
 ## Purpose
 
 Before Goal 3, the generator had a good vocabulary—oceanic and continental

@@ -30,8 +30,14 @@ impl Game {
             // movement is client-stated, so the host accepts it.
             if let Ok(s) = std::env::var("WILDFORGE_POS") {
                 let p: Vec<f32> = s.split(',').filter_map(|v| v.trim().parse().ok()).collect();
+                let face = std::env::var("WILDFORGE_FACE")
+                    .ok()
+                    .as_deref()
+                    .and_then(crate::planet::Face::from_name)
+                    .unwrap_or(state.pos.face());
                 if p.len() == 3
-                    && let Ok(pos) = state.pos.relocated_local(Vec3::new(p[0], p[1], p[2]))
+                    && let Ok(pos) =
+                        crate::planet::EntityPos::from_local(face, Vec3::new(p[0], p[1], p[2]))
                 {
                     self.player = Player::new_at(pos);
                 }

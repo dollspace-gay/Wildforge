@@ -1,0 +1,182 @@
+report_schema_version = 2
+capture_schema_version = 1
+capture_id = "foundation-repeat-b"
+scene_id = "foundation-unchanged-shipping-scene"
+identity_sha256 = "f960501c5f57feeedc633f98e994b47574b4df5049e84b9a8300f7d216d16f4c"
+sidecar = "screenshots/visual-polish-foundation-b.capture.toml"
+sidecar_sha256 = "ac1cdbdf08427566e4131277b1da4b294383a4a60d63624bde1853abbb3e8ada"
+width = 1280
+height = 720
+color_ppm_sha256 = "6a815aaee97657b0596da1307678ea4f01d420aa68566c7d714ffe12b1cd6dd2"
+diagnostic_sha256 = "3e97e0e680f4b6cf896fc88c27566ecc889eb4d160c93e983d095ff8dbdbe89a"
+color_png = "screenshots/visual-polish-foundation-b.capture.png"
+color_png_sha256 = "d93ea3a3fd86cd59545ec4d66bbb9e81cc522b5941405c36b8a99fc2365eb1d5"
+diagnostic_png = "screenshots/visual-polish-foundation-b.capture.diagnostic.png"
+diagnostic_png_sha256 = "67781fc378ddcf33b5a3dcc4f05848255badf79a752dfd3b46fe8ec7e1813f86"
+conversion = "python-stdlib-p6-rgb8-filter0-zlib9-v1"
+conversion_tool = "tools/verify_visual_polish.py"
+conversion_tool_sha256 = "00042bf2d7c60e74ba8c044c355a0ee2645746f0b313f4d931f63cc92c2e6f38"
+python = "3.13.13"
+zlib = "1.3.1.zlib-ng"
+pixel_count = 921600
+sky_pixels = 382949
+overlay_pixels = 39313
+material_pixels = 499338
+sky_fraction = 0.415526259
+overlay_fraction = 0.042657335
+material_fraction = 0.541816406
+luminance_mean = 0.075526961
+luminance_stddev = 0.080290207
+local_contrast_rms = 0.051951667
+
+[[family]]
+diagnostic_id = 1
+atlas_slot = 0
+names = ["base:air", "base:grass"]
+pixels = 338779
+pixel_fraction = 0.367598741
+mean_normalized_depth = 0.488389363
+
+[[family]]
+diagnostic_id = 2
+atlas_slot = 1
+names = ["base:grass", "item:base:grass"]
+pixels = 62356
+pixel_fraction = 0.067660590
+mean_normalized_depth = 0.639249172
+
+[[family]]
+diagnostic_id = 3
+atlas_slot = 2
+names = ["base:dirt", "base:farmland", "base:grass", "item:base:dirt", "item:base:farmland"]
+pixels = 271
+pixel_fraction = 0.000294054
+mean_normalized_depth = 0.825273220
+
+[[family]]
+diagnostic_id = 4
+atlas_slot = 3
+names = ["base:quern", "base:stone", "base:stone_anvil", "item:base:quern", "item:base:stone", "item:base:stone_anvil"]
+pixels = 6715
+pixel_fraction = 0.007286241
+mean_normalized_depth = 0.232647099
+
+[[family]]
+diagnostic_id = 13
+atlas_slot = 12
+names = ["base:water", "base:water/flow1", "base:water/flow2", "base:water/flow3", "base:water/flow4", "base:water/flow5", "base:water/flow6", "base:water/flow7", "item:base:water/flow1/place", "item:base:water/flow2/place", "item:base:water/flow3/place", "item:base:water/flow4/place", "item:base:water/flow5/place", "item:base:water/flow6/place", "item:base:water/flow7/place", "item:base:water/place"]
+pixels = 4352
+pixel_fraction = 0.004722222
+mean_normalized_depth = 0.378717220
+
+[[family]]
+diagnostic_id = 16
+atlas_slot = 15
+names = ["base:unknown"]
+pixels = 2528
+pixel_fraction = 0.002743056
+mean_normalized_depth = 0.202760217
+
+[[family]]
+diagnostic_id = 50
+atlas_slot = 49
+names = ["base:jungle_log", "item:base:jungle_log"]
+pixels = 21378
+pixel_fraction = 0.023196615
+mean_normalized_depth = 0.456953148
+
+[[family]]
+diagnostic_id = 52
+atlas_slot = 51
+names = ["base:jungle_leaves", "item:base:jungle_leaves"]
+pixels = 50809
+pixel_fraction = 0.055131293
+mean_normalized_depth = 0.391892779
+
+[[family]]
+diagnostic_id = 53
+atlas_slot = 52
+names = ["base:acacia_log", "item:base:acacia_log"]
+pixels = 1824
+pixel_fraction = 0.001979167
+mean_normalized_depth = 0.853373959
+
+[[family]]
+diagnostic_id = 55
+atlas_slot = 54
+names = ["base:acacia_leaves", "item:base:acacia_leaves"]
+pixels = 8881
+pixel_fraction = 0.009636502
+mean_normalized_depth = 0.807003175
+
+[[family]]
+diagnostic_id = 80
+atlas_slot = 79
+names = ["base:wheat_seeds/stage2", "item:base:wheat", "item:base:wheat_seeds/stage2/place"]
+pixels = 34
+pixel_fraction = 0.000036892
+mean_normalized_depth = 1.000000000
+
+[[family]]
+diagnostic_id = 330
+atlas_slot = 329
+names = ["base:cairnbloom", "base:meadow_bloom", "item:base:cairnbloom", "item:base:cairnbloom_flower", "item:base:meadow_bloom", "texture:base/meadow_bloom"]
+pixels = 298
+pixel_fraction = 0.000323351
+mean_normalized_depth = 0.690200226
+
+[[family]]
+diagnostic_id = 340
+atlas_slot = 339
+names = ["base:heart_forest_dead", "item:base:heart_forest_dead/place", "texture:base/heart_forest_dead_top"]
+pixels = 448
+pixel_fraction = 0.000486111
+mean_normalized_depth = 0.188286623
+
+[[family]]
+diagnostic_id = 341
+atlas_slot = 340
+names = ["base:heart_forest_dead", "texture:base/heart_forest_dead"]
+pixels = 8
+pixel_fraction = 0.000008681
+mean_normalized_depth = 0.188351644
+
+[[family]]
+diagnostic_id = 342
+atlas_slot = 341
+names = ["base:heart_taiga", "texture:base/heart_taiga_top"]
+pixels = 356
+pixel_fraction = 0.000386285
+mean_normalized_depth = 0.186705363
+
+[[family]]
+diagnostic_id = 344
+atlas_slot = 343
+names = ["base:heart_taiga_sick", "item:base:heart_taiga_sick/place", "texture:base/heart_taiga_sick_top"]
+pixels = 220
+pixel_fraction = 0.000238715
+mean_normalized_depth = 0.191193325
+
+[[family]]
+diagnostic_id = 345
+atlas_slot = 344
+names = ["base:heart_taiga_sick", "texture:base/heart_taiga_sick"]
+pixels = 2
+pixel_fraction = 0.000002170
+mean_normalized_depth = 0.188792248
+
+[[family]]
+diagnostic_id = 346
+atlas_slot = 345
+names = ["base:heart_taiga_dead", "item:base:heart_taiga_dead/place", "texture:base/heart_taiga_dead_top"]
+pixels = 78
+pixel_fraction = 0.000084635
+mean_normalized_depth = 0.199767006
+
+[[family]]
+diagnostic_id = 347
+atlas_slot = 346
+names = ["base:heart_taiga_dead", "texture:base/heart_taiga_dead"]
+pixels = 1
+pixel_fraction = 0.000001085
+mean_normalized_depth = 0.195376516

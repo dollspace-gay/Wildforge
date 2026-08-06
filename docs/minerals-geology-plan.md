@@ -28,9 +28,11 @@ Notes vs. this spec, where the implementation knew better:
 - Geode/pipe/volcano locators (`pipe_at`, `geode_at`,
   `volcano_near`) are pub so tests find structures without
   generating hundreds of chunks.
-- The remaining aspirational screenshot (a cracked geode in situ)
-  is deferred to reveal material; strata terraces, the volcano
-  cone with its glowing crater, and the glowglass chamber shipped.
+- The cracked-geode reveal shipped and qualified on 2026-08-05. Atlas deposit
+  48 was opened through authoritative mining in a copied save, conserved and
+  reloaded, then captured on native DX12 hardware. The selected site, complete
+  operation ledger, and block/depth composition evidence are linked from
+  `docs/cracked-geode-capture-plan.md`; no quartz or amethyst was staged.
 
 Drafted 2026-07-23. Decisions settled with dollspace: **full strata**
 (real rock families replace uniform stone), **finite lava this pass**

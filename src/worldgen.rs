@@ -338,6 +338,25 @@ pub struct Generator {
     lakenoise: Perlin,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum GeodeBand {
+    Shell,
+    Lining,
+    Heart,
+}
+
+pub(crate) fn geode_band_at(distance_squared: i32, radius: i32) -> Option<GeodeBand> {
+    if distance_squared > radius * radius {
+        None
+    } else if distance_squared >= (radius - 1) * (radius - 1) {
+        Some(GeodeBand::Shell)
+    } else if distance_squared > (radius - 2) * (radius - 2) {
+        Some(GeodeBand::Lining)
+    } else {
+        Some(GeodeBand::Heart)
+    }
+}
+
 fn hash2(seed: u32, x: i32, z: i32) -> u32 {
     let mut h = seed ^ 0x9e37_79b9;
     h = h.wrapping_add(x as u32).wrapping_mul(0x85eb_ca6b);
@@ -2512,10 +2531,27 @@ impl Generator {
             let site =
                 atlas.deposit_center_in_chunk(pos, crate::planet_atlas::MineralKind::Geode)?;
             let hash = self.chunk_hash(0x6e0d ^ site.id, pos);
+            let raw_y = 46 + ((hash >> 24) % 26) as i32;
+            let ground = atlas
+                .genesis
+                .ground
+                .get(site.pos)
+                .expect("a validated geode deposit has a ground cell");
+            // The mining path materializes finite groundwater whenever a
+            // player opens permeable rock below the head. Keep the same
+            // deterministic depth roll, but lift a geode's discovery band
+            // just above that immutable head when the host is an active
+            // aquifer. If the dry band would breach the terrain, plant_geode
+            // naturally rejects it because its heart is no longer host rock.
+            let dry_y = if ground.aquifer_permeability >= 8_192 {
+                ground.baseline_groundwater_head.ceil() as i32 + 1
+            } else {
+                raw_y
+            };
             return Some((
                 5 + ((hash >> 8) % 7) as usize,
                 5 + ((hash >> 16) % 7) as usize,
-                46 + ((hash >> 24) % 26) as i32,
+                raw_y.max(dry_y),
                 3 + ((hash >> 5) % 3) as i32,
             ));
         }
@@ -2562,16 +2598,24 @@ impl Generator {
                     if !self.is_rock(c.get(lx as usize, y as usize, lz as usize)) {
                         continue;
                     }
-                    let b = if d2 > (r - 1) * (r - 1) {
-                        self.quartz_block
-                    } else if d2 > (r - 2) * (r - 2) {
-                        if hash2(h, dx * 31 + dy, dz * 17 + dy).is_multiple_of(3) {
-                            self.quartz_block
-                        } else {
-                            self.amethyst_block
+                    // Include the exact inner-radius lattice. With a strict
+                    // inequality, the nominal one-cell shell breaks into
+                    // disconnected islands for valid integer radii (most
+                    // dramatically at r=4). The inclusive boundary is the
+                    // smallest correction that makes every production
+                    // radius 3..=5 quartz shell six-connected.
+                    let b = match geode_band_at(d2, r)
+                        .expect("the geode loop already clipped the outer radius")
+                    {
+                        GeodeBand::Shell => self.quartz_block,
+                        GeodeBand::Lining => {
+                            if hash2(h, dx * 31 + dy, dz * 17 + dy).is_multiple_of(3) {
+                                self.quartz_block
+                            } else {
+                                self.amethyst_block
+                            }
                         }
-                    } else {
-                        AIR
+                        GeodeBand::Heart => AIR,
                     };
                     c.set(lx as usize, y as usize, lz as usize, b);
                 }

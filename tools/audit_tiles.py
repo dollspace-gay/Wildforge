@@ -23,6 +23,16 @@ from gen_texture_pack import TILES  # noqa: E402  (category source of truth)
 
 PACK_DIR = "packs/gemini/tiles"
 BASE_DIR = "base/textures"
+ROCK_FAMILY = (
+    "sandstone",
+    "limestone",
+    "shale",
+    "granite",
+    "marble",
+    "slate",
+    "quartzite",
+    "basalt",
+)
 
 # Families whose members should agree on scale and anchor. The key is
 # the name suffix; members are prefixed by material.
@@ -113,6 +123,107 @@ def seam_score(img):
     interior = (col_diff(w // 2, w // 2 + 1) + row_diff(h // 2, h // 2 + 1)) / 2
     seam = (col_diff(0, w - 1) + row_diff(0, h - 1)) / 2
     return seam / max(interior, 1.0)
+
+
+def linear_luminance(rgb):
+    def linear(channel):
+        value = channel / 255.0
+        return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
+
+
+def pixels(img):
+    flattened = getattr(img, "get_flattened_data", None)
+    return flattened() if flattened is not None else img.getdata()
+
+
+def rock_signature(img, side=8):
+    """Mean-free large-scale luminance used only for family similarity."""
+    reduced = img.convert("RGB").resize((side, side), Image.Resampling.BOX)
+    values = [linear_luminance(pixel) for pixel in pixels(reduced)]
+    mean = sum(values) / len(values)
+    centered = [value - mean for value in values]
+    norm = math.sqrt(sum(value * value for value in centered))
+    return [value / max(norm, 1e-9) for value in centered]
+
+
+def opaque_rock_audit():
+    findings = []
+    rocks = {}
+    signatures = {}
+    for name in ROCK_FAMILY:
+        path = os.path.join(BASE_DIR, f"{name}.png")
+        if not os.path.exists(path):
+            findings.append((10.0, name, "missing", path))
+            continue
+        source = Image.open(path)
+        if source.size != (32, 32) or source.format != "PNG" or source.mode != "RGB":
+            findings.append(
+                (
+                    10.0,
+                    name,
+                    "format",
+                    f"{source.format} {source.mode} {source.width}x{source.height}",
+                )
+            )
+        img = source.convert("RGB")
+        rocks[name] = img
+        px = img.load()
+        horizontal = max(
+            abs(px[0, y][channel] - px[img.width - 1, y][channel])
+            for y in range(img.height)
+            for channel in range(3)
+        )
+        vertical = max(
+            abs(px[x, 0][channel] - px[x, img.height - 1][channel])
+            for x in range(img.width)
+            for channel in range(3)
+        )
+        if horizontal or vertical:
+            findings.append(
+                (
+                    10.0,
+                    name,
+                    "seam",
+                    f"opposite-edge delta h={horizontal} v={vertical}",
+                )
+            )
+        luma = sorted(linear_luminance(pixel) for pixel in pixels(img))
+        p10 = luma[len(luma) // 10]
+        p90 = luma[len(luma) * 9 // 10]
+        minimum_span = 0.010 if name == "basalt" else 0.018
+        if p90 - p10 < minimum_span:
+            findings.append(
+                (2.0, name, "flat-rock", f"linear p10-p90 span {p90 - p10:.4f}")
+            )
+        clipped = sum(
+            1
+            for pixel in pixels(img)
+            if min(pixel) <= 3 or max(pixel) >= 252
+        )
+        if clipped:
+            findings.append(
+                (2.0, name, "clipping", f"{clipped}/{img.width * img.height} pixels")
+            )
+        signatures[name] = rock_signature(img)
+
+    names = sorted(signatures)
+    for i, left in enumerate(names):
+        for right in names[i + 1 :]:
+            correlation = sum(
+                a * b for a, b in zip(signatures[left], signatures[right])
+            )
+            if correlation > 0.92:
+                findings.append(
+                    (
+                        correlation / 0.92,
+                        f"{left}/{right}",
+                        "same-rock",
+                        f"8px structure correlation {correlation:.3f}",
+                    )
+                )
+    return findings, rocks
 
 
 def tool_family(name):
@@ -209,8 +320,29 @@ def sheets(sprites, outdir):
         sheet.save(os.path.join(outdir, f"{fam}s.png"))
 
 
+def rock_sheets(rocks, outdir):
+    if not rocks:
+        return
+    os.makedirs(outdir, exist_ok=True)
+    scale = 5
+    tile = 32 * scale
+    label_height = 20
+    for filename, greyscale in (("strata-color.png", False), ("strata-greyscale.png", True)):
+        sheet = Image.new("RGB", (tile * len(ROCK_FAMILY), tile + label_height), (36, 38, 44))
+        draw = ImageDraw.Draw(sheet)
+        for index, name in enumerate(ROCK_FAMILY):
+            if name not in rocks:
+                continue
+            image = rocks[name].convert("L").convert("RGB") if greyscale else rocks[name]
+            sheet.paste(image.resize((tile, tile), Image.Resampling.NEAREST), (index * tile, 0))
+            draw.text((index * tile + 4, tile + 4), name, fill=(232, 232, 236))
+        sheet.save(os.path.join(outdir, filename))
+
+
 def main():
     findings, sprites = audit()
+    rock_findings, rocks = opaque_rock_audit()
+    findings.extend(rock_findings)
     findings.sort(key=lambda f: -f[0])
     for sev, name, check, detail in findings:
         print(f"{sev:5.2f}  {check:12} {name:28} {detail}")
@@ -218,6 +350,7 @@ def main():
     if "--sheets" in sys.argv:
         outdir = sys.argv[sys.argv.index("--sheets") + 1]
         sheets(sprites, outdir)
+        rock_sheets(rocks, outdir)
         print(f"sheets -> {outdir}")
 
 

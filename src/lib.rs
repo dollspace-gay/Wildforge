@@ -23,6 +23,7 @@ mod dross;
 mod edifice;
 mod entity;
 mod game;
+mod geode_capture;
 mod identity;
 mod implements;
 mod inventory;
@@ -48,6 +49,7 @@ mod style;
 #[cfg(test)]
 mod tests;
 mod ui;
+mod visual_capture;
 mod workings;
 mod world;
 mod worldgen;
@@ -61,7 +63,7 @@ use std::time::Instant;
 
 use glam::Vec3;
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
+use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{
     DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent,
 };
@@ -84,6 +86,13 @@ use world::World;
 /// Run Wildforge using process arguments and the platform event loop.
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(result) = geode_capture::run_cli(&args) {
+        if let Err(error) = result {
+            eprintln!("cracked-geode qualification failed: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if let Some(i) = args.iter().position(|arg| arg == "--magic-qualification") {
         let Some(world) = args.get(i + 1).map(PathBuf::from) else {
             eprintln!(

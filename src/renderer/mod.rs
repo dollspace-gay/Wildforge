@@ -137,6 +137,18 @@ struct GpuMesh {
     count: u32,
 }
 
+/// Capture-only pipelines writing atlas-family/depth evidence. They do not
+/// exist in ordinary play, so dormant qualification plumbing has no pipeline
+/// compilation, allocation, or frame cost.
+struct DiagnosticPipelines {
+    chunk: wgpu::RenderPipeline,
+    chunk_overlay: wgpu::RenderPipeline,
+    water: wgpu::RenderPipeline,
+    line_world: wgpu::RenderPipeline,
+    line_screen: wgpu::RenderPipeline,
+    ui: wgpu::RenderPipeline,
+}
+
 /// A growable GPU buffer re-uploaded every frame.
 struct DynBuf {
     buf: wgpu::Buffer,
@@ -364,6 +376,8 @@ fn mesh_bounds(pos: ChunkPos, mesh: &ChunkMesh) -> Option<MeshBounds> {
 pub struct Renderer {
     /// The adapter the GPU work actually landed on (diagnostics).
     pub adapter_name: String,
+    pub adapter_backend: String,
+    pub adapter_hardware: bool,
     /// First atlas slot of the interior-layer run, from the active atlas.
     pub atlas_interior_base: u16,
     /// Per-layer settings, two vec4 each: (depth, op_min, op_max, dim) then
@@ -387,6 +401,7 @@ pub struct Renderer {
     line_world_pipeline: wgpu::RenderPipeline,
     line_screen_pipeline: wgpu::RenderPipeline,
     ui_pipeline: wgpu::RenderPipeline,
+    diagnostic_pipelines: Option<DiagnosticPipelines>,
     shadow_pipeline: wgpu::RenderPipeline,
     shadow_layer_views: Vec<wgpu::TextureView>, // one per cascade, render targets
     shadow_casc_buf: wgpu::Buffer,              // per-cascade light_vp, dynamic-offset addressed
@@ -435,4 +450,5 @@ pub struct Renderer {
     chunks: HashMap<ChunkPos, GpuChunk>,
     pub sky_color: [f32; 3],
     pub pending_screenshot: Option<String>,
+    pub pending_capture_metadata: Option<crate::visual_capture::CaptureMetadata>,
 }

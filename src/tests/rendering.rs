@@ -2,6 +2,312 @@
 
 use super::*;
 
+const STRATA_NAMES: [&str; 8] = [
+    "sandstone",
+    "limestone",
+    "shale",
+    "granite",
+    "marble",
+    "slate",
+    "quartzite",
+    "basalt",
+];
+
+fn read_strata_png(name: &str) -> (u32, u32, Vec<[u8; 3]>) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("base/textures")
+        .join(format!("{name}.png"));
+    let file = std::fs::File::open(path).unwrap();
+    let mut decoder = png::Decoder::new(std::io::BufReader::new(file));
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let mut reader = decoder.read_info().unwrap();
+    let mut buffer = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut buffer).unwrap();
+    assert_eq!(info.color_type, png::ColorType::Rgb, "{name} must be RGB8");
+    let pixels = buffer[..info.buffer_size()]
+        .chunks_exact(3)
+        .map(|pixel| [pixel[0], pixel[1], pixel[2]])
+        .collect();
+    (info.width, info.height, pixels)
+}
+
+fn atlas_slot_bytes(image: &[u8], px: u32, slot: u16) -> Vec<u8> {
+    let tile_px = px / crate::atlas::ATLAS_TILES;
+    let origin_x = slot as u32 % crate::atlas::ATLAS_TILES * tile_px;
+    let origin_y = slot as u32 / crate::atlas::ATLAS_TILES * tile_px;
+    let mut tile = Vec::with_capacity((tile_px * tile_px * 4) as usize);
+    for y in 0..tile_px {
+        let start = (((origin_y + y) * px + origin_x) * 4) as usize;
+        tile.extend_from_slice(&image[start..start + (tile_px * 4) as usize]);
+    }
+    tile
+}
+
+fn linear_luminance(pixel: [u8; 3]) -> f32 {
+    let linear = |channel: u8| {
+        let value = f32::from(channel) / 255.0;
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * linear(pixel[0]) + 0.7152 * linear(pixel[1]) + 0.0722 * linear(pixel[2])
+}
+
+fn large_scale_signature(pixels: &[[u8; 3]], width: usize) -> (Vec<f32>, f32) {
+    const SIDE: usize = 8;
+    let cell = width / SIDE;
+    let mut reduced = Vec::with_capacity(SIDE * SIDE);
+    for tile_y in 0..SIDE {
+        for tile_x in 0..SIDE {
+            let mut total = 0.0;
+            for y in tile_y * cell..(tile_y + 1) * cell {
+                for x in tile_x * cell..(tile_x + 1) * cell {
+                    total += linear_luminance(pixels[y * width + x]);
+                }
+            }
+            reduced.push(total / (cell * cell) as f32);
+        }
+    }
+    let mean = reduced.iter().sum::<f32>() / reduced.len() as f32;
+    for value in &mut reduced {
+        *value -= mean;
+    }
+    let rms =
+        (reduced.iter().map(|value| value * value).sum::<f32>() / reduced.len() as f32).sqrt();
+    let norm = reduced
+        .iter()
+        .map(|value| value * value)
+        .sum::<f32>()
+        .sqrt()
+        .max(1e-9);
+    for value in &mut reduced {
+        *value /= norm;
+    }
+    (reduced, rms)
+}
+
+#[test]
+fn generated_strata_tiles_are_reproducible_and_seamless() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let generator = std::fs::read_to_string(root.join("tools/gen_base_tiles.py")).unwrap();
+    assert!(
+        generator.contains("hashlib.sha256"),
+        "shipped pixels need a process-independent digest seed"
+    );
+    assert!(
+        !generator.contains("random.Random(hash("),
+        "Python's randomized hash must never seed shipped pixels"
+    );
+    let expected = [
+        (
+            "sandstone",
+            "3bf20c8a284fd1d7501924f62f7474516e037195605f2d06f84625b1a968da60",
+        ),
+        (
+            "limestone",
+            "24de0cdcf40d35eca5336dbd7242ecdbe50cbb7a83e405d5f8d70487bfb49159",
+        ),
+        (
+            "shale",
+            "e902974fffc2a996b453cbaf0e6a674c51d2d4935c976f74ed39368012069442",
+        ),
+        (
+            "granite",
+            "687ef6708c00592c48a0d935242f9892771051d6f6dade5baeeb5bb6c56e74f3",
+        ),
+        (
+            "marble",
+            "14c15c46992a1c035b8964bfc13b5048f0343d493afb95638ce20df767395dd6",
+        ),
+        (
+            "slate",
+            "57e27f5d902c5123eaa223c98487b5979baefb3ee26db7e7930ade253bd804b5",
+        ),
+        (
+            "quartzite",
+            "a899a4175c80e7649ab705d89faa839c621536f1b188f6bd27a1aa6a71895348",
+        ),
+        (
+            "basalt",
+            "c25f65a5c4279e26061d4f47950b7c8b4ef05d02568779c32602f2a9debaa5aa",
+        ),
+    ];
+    for (name, digest) in expected {
+        let bytes = std::fs::read(root.join(format!("base/textures/{name}.png"))).unwrap();
+        assert_eq!(crate::visual_capture::sha256_hex(&bytes), digest, "{name}");
+        let (width, height, pixels) = read_strata_png(name);
+        assert_eq!((width, height), (32, 32), "{name}");
+        for y in 0..height as usize {
+            assert_eq!(
+                pixels[y * width as usize],
+                pixels[y * width as usize + width as usize - 1],
+                "{name} horizontal seam at row {y}"
+            );
+        }
+        for x in 0..width as usize {
+            assert_eq!(
+                pixels[x],
+                pixels[(height as usize - 1) * width as usize + x],
+                "{name} vertical seam at column {x}"
+            );
+        }
+    }
+}
+
+#[test]
+fn pale_strata_keep_distinct_large_scale_signals() {
+    let names = ["sandstone", "limestone", "marble", "quartzite"];
+    let signatures: Vec<_> = names
+        .iter()
+        .map(|name| {
+            let (width, _, pixels) = read_strata_png(name);
+            let (signature, rms) = large_scale_signature(&pixels, width as usize);
+            assert!(rms >= 0.020, "{name} large-scale linear-light RMS {rms:.4}");
+            (name, signature)
+        })
+        .collect();
+    for (index, (name, signature)) in signatures.iter().enumerate() {
+        let distinct = signatures
+            .iter()
+            .enumerate()
+            .filter(|(other, _)| *other != index)
+            .filter(|(_, (_, candidate))| {
+                signature
+                    .iter()
+                    .zip(candidate)
+                    .map(|(left, right)| left * right)
+                    .sum::<f32>()
+                    < 0.80
+            })
+            .count();
+        assert!(
+            distinct >= 2,
+            "{name} needs two mechanically distinct pale peers"
+        );
+    }
+}
+
+#[test]
+fn strata_companion_maps_survive_pack_inheritance() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let reg = base_reg();
+    let base = crate::atlas::build_atlas(&reg.tex_files, &[], &reg.tex_names);
+    assert!(
+        base.warnings.is_empty(),
+        "base warnings: {:?}",
+        base.warnings
+    );
+    for pack in ["gemini", "dusk", "hewn"] {
+        let chain = crate::atlas::pack_chain_in(&root.join("packs"), pack);
+        let atlas = crate::atlas::build_atlas(&reg.tex_files, &chain, &reg.tex_names);
+        assert!(
+            atlas.warnings.is_empty(),
+            "{pack} warnings: {:?}",
+            atlas.warnings
+        );
+        for name in STRATA_NAMES {
+            let block = reg.block_id(&format!("base:{name}")).unwrap();
+            let slot = reg.block(block).tiles[0];
+            let base_color = atlas_slot_bytes(&base.color, base.px, slot);
+            let color = atlas_slot_bytes(&atlas.color, atlas.px, slot);
+            let material = atlas_slot_bytes(&atlas.material, atlas.px, slot);
+            let normal = atlas_slot_bytes(&atlas.normal, atlas.px, slot);
+            let hewn_override = pack == "hewn" && matches!(name, "sandstone" | "limestone");
+            if hewn_override {
+                assert_ne!(color, base_color, "Hewn {name} albedo must win");
+                assert_ne!(
+                    material,
+                    atlas_slot_bytes(&base.material, base.px, slot),
+                    "Hewn {name} height must win"
+                );
+                assert_ne!(
+                    normal,
+                    atlas_slot_bytes(&base.normal, base.px, slot),
+                    "Hewn {name} normal must win"
+                );
+            } else {
+                assert_eq!(color, base_color, "{pack} must inherit base {name} albedo");
+                assert_eq!(
+                    material,
+                    atlas_slot_bytes(&base.material, base.px, slot),
+                    "{pack} must inherit base {name} material"
+                );
+                assert_eq!(
+                    normal,
+                    atlas_slot_bytes(&base.normal, base.px, slot),
+                    "{pack} must inherit base {name} normal"
+                );
+            }
+            assert!(
+                material.chunks_exact(4).all(|pixel| pixel[3] == 0),
+                "{pack} {name} cannot acquire an interior-layer id"
+            );
+        }
+    }
+}
+
+#[test]
+fn above_water_fog_is_monotonic_and_reaches_directional_sky() {
+    let range = 184.0;
+    let mut previous = 0.0;
+    for step in 0..=200 {
+        let distance = range * step as f32 / 200.0;
+        let factor = crate::sky::atmospheric_fog_factor(distance, range);
+        assert!(
+            factor + f32::EPSILON >= previous,
+            "fog retreated at {distance}"
+        );
+        previous = factor;
+    }
+    assert_eq!(crate::sky::atmospheric_fog_factor(range * 0.89, range), 0.0);
+    assert_eq!(crate::sky::atmospheric_fog_factor(range, range), 1.0);
+
+    let params = crate::sky::SkyParams {
+        sun_dir: glam::Vec3::new(0.7, 0.5, 0.2).normalize(),
+        up: glam::Vec3::Y,
+        gloom: 0.0,
+        overcast: glam::Vec3::splat(0.6),
+        moon_fill: glam::Vec3::ZERO,
+    };
+    let toward_sun = crate::sky::radiance(params.sun_dir, &params);
+    let away = crate::sky::radiance(-params.sun_dir, &params);
+    assert_ne!(
+        toward_sun, away,
+        "above-water far color must remain directional"
+    );
+    let terrain = glam::Vec3::new(0.2, 0.3, 0.4);
+    assert_eq!(
+        terrain.lerp(toward_sun, crate::sky::atmospheric_fog_factor(range, range)),
+        toward_sun
+    );
+
+    let shader = include_str!("../shader.wgsl");
+    assert!(shader.contains("smoothstep(u.cam.w * 0.90, u.cam.w * 1.0, dist)"));
+    assert!(shader.contains("select(sky_radiance(rd), u.sky.rgb, u.misc.x > 0.5)"));
+}
+
+#[test]
+fn fog_distance_is_cube_face_invariant() {
+    use glam::{Quat, Vec3};
+    let radius = crate::planet::PLANET_RADIUS as f32;
+    let camera = Vec3::new(radius + 72.0, 17.0, -9.0);
+    let world = Vec3::new(radius + 68.0, 133.0, 21.0);
+    let expected = crate::sky::planetary_fog_distance(camera, world);
+    for rotation in [
+        Quat::from_rotation_x(std::f32::consts::FRAC_PI_2),
+        Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+        Quat::from_rotation_z(std::f32::consts::PI),
+    ] {
+        let actual = crate::sky::planetary_fog_distance(rotation * camera, rotation * world);
+        assert!(
+            (actual - expected).abs() < 0.10,
+            "cube-face rotation changed fog: {expected} -> {actual}"
+        );
+    }
+}
+
 #[test]
 fn wood_leaf_tiles_are_opaque_in_atlas() {
     // Regression: a tile painted past the row boundary once left spruce

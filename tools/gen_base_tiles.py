@@ -6,7 +6,9 @@ without any image-model API. Deterministic per tile name. The gemini
 pack can override any of these later through the normal pack flow.
 """
 
+import hashlib
 import math
+import os
 import random
 import sys
 from pathlib import Path
@@ -16,7 +18,12 @@ from PIL import Image, ImageDraw
 import heart_table
 
 PX = 32
-OUT = Path(__file__).resolve().parent.parent / "base" / "textures"
+OUT = Path(
+    os.environ.get(
+        "WILDFORGE_TILE_OUT",
+        Path(__file__).resolve().parent.parent / "base" / "textures",
+    )
+)
 
 # With names on the command line, only those tiles are (re)written —
 # adding new art never has to churn every shipped byte.
@@ -29,7 +36,157 @@ def save_tile(img, name):
 
 
 def rng_for(name: str) -> random.Random:
-    return random.Random(hash(name) & 0xFFFFFFFF)
+    """A process-independent seed for shipped procedural art.
+
+    Python deliberately salts ``hash(str)`` for each process.  Using it here
+    made a clean invocation capable of repainting every generated tile.  Keep
+    the namespace/version in the digest so a future generator migration is an
+    explicit byte change rather than an interpreter accident.
+    """
+    digest = hashlib.sha256(f"wildforge-base-tile-v1:{name}".encode()).digest()
+    return random.Random(int.from_bytes(digest[:8], "big"))
+
+
+STRATA_NAMES = (
+    "sandstone",
+    "limestone",
+    "shale",
+    "granite",
+    "marble",
+    "slate",
+    "quartzite",
+    "basalt",
+)
+
+
+def torus_delta(a, b):
+    d = abs(a - b)
+    return min(d, 1.0 - d)
+
+
+def periodic_waves(rng, count, max_frequency, *, min_frequency=1):
+    waves = []
+    for _ in range(count):
+        fx = rng.randint(min_frequency, max_frequency)
+        fy = rng.randint(min_frequency, max_frequency)
+        phase = rng.random() * math.tau
+        amplitude = rng.uniform(0.45, 1.0)
+        waves.append((fx, fy, phase, amplitude))
+    return waves
+
+
+def wave_value(u, v, waves):
+    value = 0.0
+    weight = 0.0
+    for fx, fy, phase, amplitude in waves:
+        value += math.sin(math.tau * (fx * u + fy * v) + phase) * amplitude
+        weight += amplitude
+    return value / max(weight, 1e-6)
+
+
+def spot_value(u, v, spots):
+    """Soft periodic grains/fossils; u/v=0 and 1 are byte-identical."""
+    value = 0.0
+    for sx, sy, radius, strength in spots:
+        distance = math.hypot(torus_delta(u, sx), torus_delta(v, sy))
+        if distance < radius:
+            value += (1.0 - distance / radius) * strength
+    return max(-1.0, min(1.0, value))
+
+
+def strata_rock(name):
+    """Eight seamless geological signals, each legible without relief maps.
+
+    The edge coordinates use PX-1 as their period, so opposite rows/columns
+    are exact matches.  All apparent randomness is sampled once from the
+    stable digest seed and then evaluated as periodic waves or toroidal spots.
+    """
+    rng = rng_for(f"strata:{name}")
+    broad = periodic_waves(rng, 4, 3)
+    fine = periodic_waves(rng, 6, 9, min_frequency=3)
+    spots = [
+        (rng.random(), rng.random(), rng.uniform(0.025, 0.070), rng.choice((-1.0, 1.0)))
+        for _ in range(22)
+    ]
+    grains = [
+        (rng.random(), rng.random(), rng.uniform(0.055, 0.115), rng.uniform(-1.0, 1.0))
+        for _ in range(28)
+    ]
+
+    palettes = {
+        "sandstone": ((222, 194, 137), (145, 104, 62)),
+        "limestone": ((207, 207, 187), (130, 139, 132)),
+        "shale": ((112, 112, 119), (53, 55, 65)),
+        "granite": ((197, 174, 161), (91, 85, 91)),
+        "marble": ((229, 226, 216), (123, 137, 151)),
+        "slate": ((100, 111, 126), (42, 50, 65)),
+        "quartzite": ((225, 214, 190), (119, 128, 139)),
+        "basalt": ((105, 109, 117), (27, 30, 37)),
+    }
+    light, dark = palettes[name]
+    img = Image.new("RGB", (PX, PX))
+
+    # Granite's cells need stable per-grain tones rather than a per-pixel RNG.
+    granite_cells = [
+        (rng.random(), rng.random(), rng.uniform(-1.0, 1.0)) for _ in range(34)
+    ]
+    for y in range(PX):
+        v = y / (PX - 1)
+        for x in range(PX):
+            u = x / (PX - 1)
+            broad_n = wave_value(u, v, broad)
+            fine_n = wave_value(u, v, fine)
+            specks = spot_value(u, v, spots)
+
+            if name == "sandstone":
+                warp = 0.10 * math.sin(math.tau * (u + 0.05 * broad_n))
+                packet = math.sin(math.tau * (v + warp))
+                lamina = abs(math.sin(math.tau * (3.0 * v + warp * 0.55)))
+                signal = 0.26 * broad_n + 0.64 * packet + 0.03 * fine_n
+                if lamina > 0.90:
+                    signal -= 0.28 * (lamina - 0.90) / 0.10
+            elif name == "limestone":
+                warp = 0.20 * wave_value(u, v, broad)
+                beds = math.sin(math.tau * (2.0 * v + warp))
+                fossils = abs(specks)
+                signal = 0.36 * beds + 0.22 * broad_n + 0.18 * fine_n - 0.22 * fossils
+            elif name == "shale":
+                cleavage = math.sin(math.tau * (9.0 * v + 0.08 * math.sin(math.tau * u)))
+                signal = 0.50 * cleavage + 0.15 * broad_n + 0.12 * fine_n
+            elif name == "granite":
+                nearest = min(
+                    granite_cells,
+                    key=lambda cell: torus_delta(u, cell[0]) ** 2
+                    + torus_delta(v, cell[1]) ** 2,
+                )
+                boundary = sorted(
+                    torus_delta(u, cell[0]) ** 2 + torus_delta(v, cell[1]) ** 2
+                    for cell in granite_cells
+                )[:2]
+                edge = min(1.0, max(0.0, (boundary[1] - boundary[0]) * 75.0))
+                signal = 0.60 * nearest[2] + 0.18 * fine_n + 0.10 * edge
+            elif name == "marble":
+                flow = 2.0 * u + v + 0.34 * broad_n
+                vein = abs(math.sin(math.tau * flow))
+                vein = max(0.0, (vein - 0.80) / 0.20)
+                signal = 0.11 * broad_n + 0.08 * fine_n - 0.75 * vein
+            elif name == "slate":
+                cleavage = math.sin(math.tau * (3.0 * u + 10.0 * v + 0.10 * broad_n))
+                secondary = math.sin(math.tau * (u + 4.0 * v))
+                signal = 0.42 * cleavage + 0.18 * secondary + 0.10 * fine_n
+            elif name == "quartzite":
+                remnant = math.sin(math.tau * (v + 0.12 * broad_n))
+                sparkle = spot_value(u, v, grains)
+                signal = 0.55 * remnant + 0.18 * broad_n + 0.18 * sparkle + 0.04 * fine_n
+            else:  # basalt
+                minerals = spot_value(u, v, spots)
+                signal = 0.18 * broad_n + 0.55 * fine_n + 0.75 * minerals
+
+            # Preserve family palette headroom; no generated geology pixel may
+            # clip to display black or white before lighting is applied.
+            t = max(0.04, min(0.96, 0.52 + 0.46 * signal))
+            img.putpixel((x, y), clamp(mix(dark, light, t)))
+    return img
 
 
 def noise(rng, scale, octaves=3):
@@ -481,7 +638,7 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     made = {}
     for name, kw in ROCKS.items():
-        made[name] = rock(name, **kw)
+        made[name] = strata_rock(name) if name in STRATA_NAMES else rock(name, **kw)
         save_tile(made[name], name)
     for name, kw in BLOCKS_EXTRA.items():
         save_tile(rock(name, **kw), name)

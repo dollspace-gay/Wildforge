@@ -286,22 +286,28 @@ impl Game {
             }
         }
         self.load_attunements();
-        // Dev: WILDFORGE_POS="x,y,z" teleports to an exact spot (reproducing
-        // reported coordinates). Runs after load so it wins.
+        // Dev: WILDFORGE_POS="x,y,z" teleports to an exact chart-local spot
+        // (reproducing reported coordinates). WILDFORGE_FACE selects another
+        // cube chart for qualification sites away from the saved spawn.
+        // Runs after load so it wins.
         if let Ok(s) = std::env::var("WILDFORGE_POS") {
             let p: Vec<f32> = s.split(',').filter_map(|v| v.trim().parse().ok()).collect();
             if p.len() == 3 {
-                let cp = chart.chunk(p[0] as i32, p[2] as i32);
+                let face = std::env::var("WILDFORGE_FACE")
+                    .ok()
+                    .as_deref()
+                    .and_then(Face::from_name)
+                    .unwrap_or(self.player.pos.face());
+                let target_chart = DemoChart::new(face);
+                let cp = target_chart.chunk(p[0] as i32, p[2] as i32);
                 for dx in -2..=2 {
                     for dz in -2..=2 {
                         self.server.world.ensure_chunk(cp.offset(dx, dz));
                     }
                 }
-                self.player.pos = self
-                    .player
-                    .pos
-                    .relocated_local(Vec3::new(p[0], p[1], p[2]))
-                    .unwrap();
+                self.player.pos =
+                    crate::planet::EntityPos::from_local(face, Vec3::new(p[0], p[1], p[2]))
+                        .unwrap();
                 self.player.vel = Vec3::ZERO;
                 self.camera.follow_planet(self.player.eye());
             }

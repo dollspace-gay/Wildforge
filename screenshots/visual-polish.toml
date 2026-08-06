@@ -1,0 +1,575 @@
+schema_version = 2
+status = "accepted"
+evidence_commit = "3a61ace1e785e99d7f22dfe7202e44ddc6166aa1"
+baseline_commit = "60486636fcfacd36de75e970a79ff6f806a0e9ac"
+after_commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
+scene_id = "foundation-unchanged-shipping-scene"
+qualification_source_sha256 = "de3263a649c46afddee467800083839d8f7a24e845d6b6a31a9b1d980cf61311"
+conversion = "python-stdlib-p6-rgb8-filter0-zlib9-v1"
+conversion_tool = "tools/verify_visual_polish.py"
+conversion_tool_sha256 = "00042bf2d7c60e74ba8c044c355a0ee2645746f0b313f4d931f63cc92c2e6f38"
+comparison = "screenshots/visual-polish/foundation-repeat.comparison.toml"
+readability_report = "screenshots/visual-polish/strata-readability.report.toml"
+performance_report = "screenshots/visual-polish/strata-performance.report.toml"
+geode_evidence_commit = "cc3d085a27b530942509ba01e0514a94ab0a7066"
+geode_qualification_source_sha256 = "cb5371deae9beaa234be424ac2e4b89c2d66bff4e54322bedfcb82464815ba21"
+geode_verifier = "tools/verify_cracked_geode.py"
+geode_verifier_sha256 = "ceaeda55fd0476604fb06a408dbbbf9f70397546c9624808c81ba4a22be2666f"
+geode_site_record = "screenshots/visual-polish/cracked-geode-site.toml"
+geode_preparation_report = "screenshots/visual-polish/geode-preparation.report.toml"
+geode_composition_report = "screenshots/visual-polish/geode-composition.report.toml"
+geode_performance_report = "screenshots/visual-polish/geode-performance.report.toml"
+
+[[capture]]
+id = "foundation-repeat-a"
+sidecar = "screenshots/visual-polish-foundation-a.capture.toml"
+report = "screenshots/visual-polish/foundation-a.report.toml"
+
+[[capture]]
+id = "foundation-repeat-b"
+sidecar = "screenshots/visual-polish-foundation-b.capture.toml"
+report = "screenshots/visual-polish/foundation-b.report.toml"
+
+[[site]]
+rock = "sandstone"
+face = "NegZ"
+u = 5514
+y = 70
+v = 2224
+exposure = "outdoor"
+
+[[site]]
+rock = "limestone"
+face = "PosX"
+u = 6309
+y = 61
+v = 5213
+exposure = "outdoor"
+
+[[site]]
+rock = "shale"
+face = "NegX"
+u = 7935
+y = 29
+v = 6222
+exposure = "outdoor"
+
+[[site]]
+rock = "granite"
+face = "NegX"
+u = 3566
+y = 28
+v = 6018
+exposure = "cave"
+
+[[site]]
+rock = "marble"
+face = "PosX"
+u = 5938
+y = 75
+v = 5341
+exposure = "outdoor"
+
+[[site]]
+rock = "slate"
+face = "NegX"
+u = 3874
+y = 63
+v = 6305
+exposure = "outdoor"
+
+[[site]]
+rock = "quartzite"
+face = "NegZ"
+u = 5468
+y = 80
+v = 2825
+exposure = "outdoor"
+
+[[site]]
+rock = "basalt"
+face = "NegX"
+u = 7890
+y = 104
+v = 6448
+exposure = "outdoor"
+
+[[case]]
+id = "strata-baseline-sandstone-v4-near-noon-base"
+phase = "baseline"
+rock = "sandstone"
+role = "near"
+light = "noon"
+weather = "clear"
+pack = "base"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-baseline-sandstone-v4-near-noon-base.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-sandstone-v4-near-noon-base.report.toml"
+
+[[case]]
+id = "strata-baseline-sandstone-v12-prefog-overcast-gemini"
+phase = "baseline"
+rock = "sandstone"
+role = "pre-fog"
+light = "noon"
+weather = "overcast"
+pack = "gemini"
+view_distance_chunks = 12
+sidecar = "screenshots/strata-baseline-sandstone-v12-prefog-overcast-gemini.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-sandstone-v12-prefog-overcast-gemini.report.toml"
+
+[[case]]
+id = "strata-baseline-limestone-v4-near-dawn-gemini"
+phase = "baseline"
+rock = "limestone"
+role = "near"
+light = "dawn"
+weather = "clear"
+pack = "gemini"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-baseline-limestone-v4-near-dawn-gemini.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-limestone-v4-near-dawn-gemini.report.toml"
+
+[[case]]
+id = "strata-baseline-limestone-v12-prefog-overcast-dusk"
+phase = "baseline"
+rock = "limestone"
+role = "pre-fog"
+light = "noon"
+weather = "overcast"
+pack = "dusk"
+view_distance_chunks = 12
+sidecar = "screenshots/strata-baseline-limestone-v12-prefog-overcast-dusk.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-limestone-v12-prefog-overcast-dusk.report.toml"
+
+[[case]]
+id = "strata-baseline-marble-v4-near-rain-dusk"
+phase = "baseline"
+rock = "marble"
+role = "near"
+light = "noon"
+weather = "precipitation"
+pack = "dusk"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-baseline-marble-v4-near-rain-dusk.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-marble-v4-near-rain-dusk.report.toml"
+
+[[case]]
+id = "strata-baseline-marble-v12-prefog-noon-base"
+phase = "baseline"
+rock = "marble"
+role = "pre-fog"
+light = "noon"
+weather = "clear"
+pack = "base"
+view_distance_chunks = 12
+sidecar = "screenshots/strata-baseline-marble-v12-prefog-noon-base.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-marble-v12-prefog-noon-base.report.toml"
+
+[[case]]
+id = "strata-baseline-quartzite-v4-near-overcast-base"
+phase = "baseline"
+rock = "quartzite"
+role = "near"
+light = "noon"
+weather = "overcast"
+pack = "base"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-baseline-quartzite-v4-near-overcast-base.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-quartzite-v4-near-overcast-base.report.toml"
+
+[[case]]
+id = "strata-baseline-quartzite-v12-prefog-rain-gemini"
+phase = "baseline"
+rock = "quartzite"
+role = "pre-fog"
+light = "noon"
+weather = "precipitation"
+pack = "gemini"
+view_distance_chunks = 12
+sidecar = "screenshots/strata-baseline-quartzite-v12-prefog-rain-gemini.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-quartzite-v12-prefog-rain-gemini.report.toml"
+
+[[case]]
+id = "strata-baseline-basalt-v4-near-noon-gemini"
+phase = "baseline"
+rock = "basalt"
+role = "near"
+light = "noon"
+weather = "clear"
+pack = "gemini"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-baseline-basalt-v4-near-noon-gemini.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-basalt-v4-near-noon-gemini.report.toml"
+
+[[case]]
+id = "strata-baseline-basalt-v12-prefog-overcast-dusk"
+phase = "baseline"
+rock = "basalt"
+role = "pre-fog"
+light = "noon"
+weather = "overcast"
+pack = "dusk"
+view_distance_chunks = 12
+sidecar = "screenshots/strata-baseline-basalt-v12-prefog-overcast-dusk.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-basalt-v12-prefog-overcast-dusk.report.toml"
+
+[[case]]
+id = "strata-baseline-sandstone-v4-near-noon-hewn"
+phase = "baseline"
+rock = "sandstone"
+role = "supplement"
+light = "noon"
+weather = "clear"
+pack = "hewn"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-baseline-sandstone-v4-near-noon-hewn.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-sandstone-v4-near-noon-hewn.report.toml"
+
+[[case]]
+id = "strata-baseline-limestone-v4-near-noon-hewn"
+phase = "baseline"
+rock = "limestone"
+role = "supplement"
+light = "noon"
+weather = "clear"
+pack = "hewn"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-baseline-limestone-v4-near-noon-hewn.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-limestone-v4-near-noon-hewn.report.toml"
+
+[[case]]
+id = "strata-baseline-marble-v12-prefog-dawn-gemini"
+phase = "baseline"
+rock = "marble"
+role = "supplement"
+light = "dawn"
+weather = "clear"
+pack = "gemini"
+view_distance_chunks = 12
+sidecar = "screenshots/strata-baseline-marble-v12-prefog-dawn-gemini.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-marble-v12-prefog-dawn-gemini.report.toml"
+
+[[case]]
+id = "strata-baseline-marble-v14-prefog-dawn-overcast-gemini"
+phase = "baseline"
+rock = "marble"
+role = "supplement"
+light = "dawn"
+weather = "overcast"
+pack = "gemini"
+view_distance_chunks = 14
+sidecar = "screenshots/strata-baseline-marble-v14-prefog-dawn-overcast-gemini.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-marble-v14-prefog-dawn-overcast-gemini.report.toml"
+
+[[case]]
+id = "strata-after-sandstone-v4-near-noon-base"
+phase = "after"
+rock = "sandstone"
+role = "near"
+light = "noon"
+weather = "clear"
+pack = "base"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-after-sandstone-v4-near-noon-base.capture.toml"
+report = "screenshots/visual-polish/strata-after-sandstone-v4-near-noon-base.report.toml"
+
+[[case]]
+id = "strata-after-sandstone-v12-prefog-overcast-gemini"
+phase = "after"
+rock = "sandstone"
+role = "pre-fog"
+light = "noon"
+weather = "overcast"
+pack = "gemini"
+view_distance_chunks = 12
+sidecar = "screenshots/strata-after-sandstone-v12-prefog-overcast-gemini.capture.toml"
+report = "screenshots/visual-polish/strata-after-sandstone-v12-prefog-overcast-gemini.report.toml"
+
+[[case]]
+id = "strata-after-limestone-v4-near-dawn-gemini"
+phase = "after"
+rock = "limestone"
+role = "near"
+light = "dawn"
+weather = "clear"
+pack = "gemini"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-after-limestone-v4-near-dawn-gemini.capture.toml"
+report = "screenshots/visual-polish/strata-after-limestone-v4-near-dawn-gemini.report.toml"
+
+[[case]]
+id = "strata-after-limestone-v12-prefog-overcast-dusk"
+phase = "after"
+rock = "limestone"
+role = "pre-fog"
+light = "noon"
+weather = "overcast"
+pack = "dusk"
+view_distance_chunks = 12
+sidecar = "screenshots/strata-after-limestone-v12-prefog-overcast-dusk.capture.toml"
+report = "screenshots/visual-polish/strata-after-limestone-v12-prefog-overcast-dusk.report.toml"
+
+[[case]]
+id = "strata-after-marble-v4-near-rain-dusk"
+phase = "after"
+rock = "marble"
+role = "near"
+light = "noon"
+weather = "precipitation"
+pack = "dusk"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-after-marble-v4-near-rain-dusk.capture.toml"
+report = "screenshots/visual-polish/strata-after-marble-v4-near-rain-dusk.report.toml"
+
+[[case]]
+id = "strata-after-marble-v12-prefog-noon-base"
+phase = "after"
+rock = "marble"
+role = "pre-fog"
+light = "noon"
+weather = "clear"
+pack = "base"
+view_distance_chunks = 12
+sidecar = "screenshots/strata-after-marble-v12-prefog-noon-base.capture.toml"
+report = "screenshots/visual-polish/strata-after-marble-v12-prefog-noon-base.report.toml"
+
+[[case]]
+id = "strata-after-quartzite-v4-near-overcast-base"
+phase = "after"
+rock = "quartzite"
+role = "near"
+light = "noon"
+weather = "overcast"
+pack = "base"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-after-quartzite-v4-near-overcast-base.capture.toml"
+report = "screenshots/visual-polish/strata-after-quartzite-v4-near-overcast-base.report.toml"
+
+[[case]]
+id = "strata-after-quartzite-v12-prefog-rain-gemini"
+phase = "after"
+rock = "quartzite"
+role = "pre-fog"
+light = "noon"
+weather = "precipitation"
+pack = "gemini"
+view_distance_chunks = 12
+sidecar = "screenshots/strata-after-quartzite-v12-prefog-rain-gemini.capture.toml"
+report = "screenshots/visual-polish/strata-after-quartzite-v12-prefog-rain-gemini.report.toml"
+
+[[case]]
+id = "strata-after-basalt-v4-near-noon-gemini"
+phase = "after"
+rock = "basalt"
+role = "near"
+light = "noon"
+weather = "clear"
+pack = "gemini"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-after-basalt-v4-near-noon-gemini.capture.toml"
+report = "screenshots/visual-polish/strata-after-basalt-v4-near-noon-gemini.report.toml"
+
+[[case]]
+id = "strata-after-basalt-v12-prefog-overcast-dusk"
+phase = "after"
+rock = "basalt"
+role = "pre-fog"
+light = "noon"
+weather = "overcast"
+pack = "dusk"
+view_distance_chunks = 12
+sidecar = "screenshots/strata-after-basalt-v12-prefog-overcast-dusk.capture.toml"
+report = "screenshots/visual-polish/strata-after-basalt-v12-prefog-overcast-dusk.report.toml"
+
+[[case]]
+id = "strata-after-sandstone-v4-near-noon-hewn"
+phase = "after"
+rock = "sandstone"
+role = "supplement"
+light = "noon"
+weather = "clear"
+pack = "hewn"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-after-sandstone-v4-near-noon-hewn.capture.toml"
+report = "screenshots/visual-polish/strata-after-sandstone-v4-near-noon-hewn.report.toml"
+
+[[case]]
+id = "strata-after-limestone-v4-near-noon-hewn"
+phase = "after"
+rock = "limestone"
+role = "supplement"
+light = "noon"
+weather = "clear"
+pack = "hewn"
+view_distance_chunks = 4
+sidecar = "screenshots/strata-after-limestone-v4-near-noon-hewn.capture.toml"
+report = "screenshots/visual-polish/strata-after-limestone-v4-near-noon-hewn.report.toml"
+
+[[case]]
+id = "strata-after-marble-v12-prefog-dawn-gemini"
+phase = "after"
+rock = "marble"
+role = "supplement"
+light = "dawn"
+weather = "clear"
+pack = "gemini"
+view_distance_chunks = 12
+sidecar = "screenshots/strata-after-marble-v12-prefog-dawn-gemini.capture.toml"
+report = "screenshots/visual-polish/strata-after-marble-v12-prefog-dawn-gemini.report.toml"
+
+[[case]]
+id = "strata-after-marble-v14-prefog-dawn-overcast-gemini"
+phase = "after"
+rock = "marble"
+role = "supplement"
+light = "dawn"
+weather = "overcast"
+pack = "gemini"
+view_distance_chunks = 14
+sidecar = "screenshots/strata-after-marble-v14-prefog-dawn-overcast-gemini.capture.toml"
+report = "screenshots/visual-polish/strata-after-marble-v14-prefog-dawn-overcast-gemini.report.toml"
+
+[[performance]]
+id = "strata-baseline-performance-a"
+phase = "baseline"
+sidecar = "screenshots/strata-baseline-performance-a.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-performance-a.report.toml"
+
+[[performance]]
+id = "strata-baseline-performance-b"
+phase = "baseline"
+sidecar = "screenshots/strata-baseline-performance-b.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-performance-b.report.toml"
+
+[[performance]]
+id = "strata-baseline-performance-c"
+phase = "baseline"
+sidecar = "screenshots/strata-baseline-performance-c.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-performance-c.report.toml"
+
+[[performance]]
+id = "strata-baseline-performance-d"
+phase = "baseline"
+sidecar = "screenshots/strata-baseline-performance-d.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-performance-d.report.toml"
+
+[[performance]]
+id = "strata-baseline-performance-e"
+phase = "baseline"
+sidecar = "screenshots/strata-baseline-performance-e.capture.toml"
+report = "screenshots/visual-polish/strata-baseline-performance-e.report.toml"
+
+[[performance]]
+id = "strata-after-performance-a"
+phase = "after"
+sidecar = "screenshots/strata-after-performance-a.capture.toml"
+report = "screenshots/visual-polish/strata-after-performance-a.report.toml"
+
+[[performance]]
+id = "strata-after-performance-b"
+phase = "after"
+sidecar = "screenshots/strata-after-performance-b.capture.toml"
+report = "screenshots/visual-polish/strata-after-performance-b.report.toml"
+
+[[performance]]
+id = "strata-after-performance-c"
+phase = "after"
+sidecar = "screenshots/strata-after-performance-c.capture.toml"
+report = "screenshots/visual-polish/strata-after-performance-c.report.toml"
+
+[[performance]]
+id = "strata-after-performance-d"
+phase = "after"
+sidecar = "screenshots/strata-after-performance-d.capture.toml"
+report = "screenshots/visual-polish/strata-after-performance-d.report.toml"
+
+[[performance]]
+id = "strata-after-performance-e"
+phase = "after"
+sidecar = "screenshots/strata-after-performance-e.capture.toml"
+report = "screenshots/visual-polish/strata-after-performance-e.report.toml"
+
+[[geode_capture]]
+id = "geode-sealed-context"
+purpose = "sealed-context"
+sidecar = "screenshots/geode-sealed-context.capture.toml"
+report = "screenshots/visual-polish/geode-sealed-context.report.toml"
+
+[[geode_capture]]
+id = "geode-aperture-proof"
+purpose = "aperture-proof"
+sidecar = "screenshots/geode-aperture-proof.capture.toml"
+report = "screenshots/visual-polish/geode-aperture-proof.report.toml"
+
+[[geode_capture]]
+id = "geode-cracked-hero"
+purpose = "hero"
+sidecar = "screenshots/geode-cracked-hero.capture.toml"
+report = "screenshots/visual-polish/geode-cracked-hero.report.toml"
+
+[[geode_capture]]
+id = "geode-reload-proof"
+purpose = "reload-proof"
+sidecar = "screenshots/geode-reload-proof.capture.toml"
+report = "screenshots/visual-polish/geode-reload-proof.report.toml"
+
+[[geode_performance_capture]]
+id = "geode-performance-sealed-a"
+phase = "sealed"
+sidecar = "screenshots/geode-performance-sealed-a.capture.toml"
+report = "screenshots/visual-polish/geode-performance-sealed-a.report.toml"
+
+[[geode_performance_capture]]
+id = "geode-performance-sealed-b"
+phase = "sealed"
+sidecar = "screenshots/geode-performance-sealed-b.capture.toml"
+report = "screenshots/visual-polish/geode-performance-sealed-b.report.toml"
+
+[[geode_performance_capture]]
+id = "geode-performance-sealed-c"
+phase = "sealed"
+sidecar = "screenshots/geode-performance-sealed-c.capture.toml"
+report = "screenshots/visual-polish/geode-performance-sealed-c.report.toml"
+
+[[geode_performance_capture]]
+id = "geode-performance-sealed-d"
+phase = "sealed"
+sidecar = "screenshots/geode-performance-sealed-d.capture.toml"
+report = "screenshots/visual-polish/geode-performance-sealed-d.report.toml"
+
+[[geode_performance_capture]]
+id = "geode-performance-sealed-e"
+phase = "sealed"
+sidecar = "screenshots/geode-performance-sealed-e.capture.toml"
+report = "screenshots/visual-polish/geode-performance-sealed-e.report.toml"
+
+[[geode_performance_capture]]
+id = "geode-performance-opened-a"
+phase = "opened"
+sidecar = "screenshots/geode-performance-opened-a.capture.toml"
+report = "screenshots/visual-polish/geode-performance-opened-a.report.toml"
+
+[[geode_performance_capture]]
+id = "geode-performance-opened-b"
+phase = "opened"
+sidecar = "screenshots/geode-performance-opened-b.capture.toml"
+report = "screenshots/visual-polish/geode-performance-opened-b.report.toml"
+
+[[geode_performance_capture]]
+id = "geode-performance-opened-c"
+phase = "opened"
+sidecar = "screenshots/geode-performance-opened-c.capture.toml"
+report = "screenshots/visual-polish/geode-performance-opened-c.report.toml"
+
+[[geode_performance_capture]]
+id = "geode-performance-opened-d"
+phase = "opened"
+sidecar = "screenshots/geode-performance-opened-d.capture.toml"
+report = "screenshots/visual-polish/geode-performance-opened-d.report.toml"
+
+[[geode_performance_capture]]
+id = "geode-performance-opened-e"
+phase = "opened"
+sidecar = "screenshots/geode-performance-opened-e.capture.toml"
+report = "screenshots/visual-polish/geode-performance-opened-e.report.toml"

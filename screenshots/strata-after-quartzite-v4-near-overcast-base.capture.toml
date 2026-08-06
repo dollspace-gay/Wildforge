@@ -1,0 +1,3957 @@
+schema_version = 1
+capture_id = "strata-after-quartzite-v4-near-overcast-base"
+scene_id = "strata-production-20260802"
+
+[build]
+commit = "b7a4498e059ce3a5a43997f2b7f3c207a55e9505"
+dirty = false
+marker = "BIOME-R4"
+
+[world]
+name = "visual-polish-strata-baseline"
+seed = 20260802
+generator_version = 10
+atlas_format_version = 6
+atlas_algorithm_version = 7
+atlas_content_hash = "010c5397ca037176"
+atlas_genesis_checksum = "b053756eee79d7e7"
+
+[camera]
+face = "NegZ"
+u = 5484.5
+y = 90.05
+v = 2825.5
+yaw = 3.141593
+pitch = -0.607
+fov_degrees = 75.0
+
+[environment]
+day = 0
+time_of_day = 0.78836083
+season = "autumn"
+weather = "overcast"
+precipitation = "none"
+temperature_c = 28.603752
+pressure_anomaly = 0
+vapor = 409308
+cloud_water = 204653
+storm_energy = 8000
+precipitation_units = 0
+wind = [
+    -0.9569117,
+    0.28178385,
+]
+gloom = 0.4
+
+[render]
+width = 1280
+height = 720
+pack = ""
+view_distance_chunks = 4
+fog_distance_blocks = 48.16
+adapter = "NVIDIA GeForce RTX 3090 [Dx12, DiscreteGpu]"
+backend = "Dx12"
+hardware = true
+lights = 2
+point_grid = true
+stark = true
+bloom = true
+
+[telemetry]
+frame = 583
+eligible_frame = 180
+settled = true
+settled_frames = 14
+fps = 47
+simulation_ms = 10.040841
+draw_ms = 8.456448
+resident_chunks = 65
+gpu_chunks = 65
+opaque_chunks = 65
+water_chunks = 38
+empty_chunks = 0
+dirty_chunks = 3
+
+[[family]]
+diagnostic_id = 1
+atlas_slot = 0
+names = [
+    "base:air",
+    "base:grass",
+]
+
+[[family]]
+diagnostic_id = 2
+atlas_slot = 1
+names = [
+    "base:grass",
+    "item:base:grass",
+]
+
+[[family]]
+diagnostic_id = 3
+atlas_slot = 2
+names = [
+    "base:dirt",
+    "base:farmland",
+    "base:grass",
+    "item:base:dirt",
+    "item:base:farmland",
+]
+
+[[family]]
+diagnostic_id = 4
+atlas_slot = 3
+names = [
+    "base:quern",
+    "base:stone",
+    "base:stone_anvil",
+    "item:base:quern",
+    "item:base:stone",
+    "item:base:stone_anvil",
+]
+
+[[family]]
+diagnostic_id = 5
+atlas_slot = 4
+names = [
+    "base:cobblestone",
+    "base:furnace",
+    "base:red_lamp",
+    "item:base:cobblestone",
+    "item:base:red_lamp",
+]
+
+[[family]]
+diagnostic_id = 6
+atlas_slot = 5
+names = [
+    "base:sand",
+    "item:base:sand",
+]
+
+[[family]]
+diagnostic_id = 7
+atlas_slot = 6
+names = [
+    "base:gravel",
+    "item:base:gravel",
+]
+
+[[family]]
+diagnostic_id = 8
+atlas_slot = 7
+names = [
+    "base:log",
+    "item:base:log",
+]
+
+[[family]]
+diagnostic_id = 9
+atlas_slot = 8
+names = ["base:log"]
+
+[[family]]
+diagnostic_id = 10
+atlas_slot = 9
+names = [
+    "base:leaves",
+    "item:base:leaves",
+]
+
+[[family]]
+diagnostic_id = 11
+atlas_slot = 10
+names = [
+    "base:binding_frame",
+    "base:chest",
+    "base:crafting_table",
+    "base:lens_assembly_bench",
+    "base:planks",
+    "base:survey_folio",
+    "base:writing_surface",
+    "item:base:planks",
+]
+
+[[family]]
+diagnostic_id = 12
+atlas_slot = 11
+names = [
+    "base:bedrock",
+    "item:base:bedrock",
+]
+
+[[family]]
+diagnostic_id = 13
+atlas_slot = 12
+names = [
+    "base:water",
+    "base:water/flow1",
+    "base:water/flow2",
+    "base:water/flow3",
+    "base:water/flow4",
+    "base:water/flow5",
+    "base:water/flow6",
+    "base:water/flow7",
+    "item:base:water/flow1/place",
+    "item:base:water/flow2/place",
+    "item:base:water/flow3/place",
+    "item:base:water/flow4/place",
+    "item:base:water/flow5/place",
+    "item:base:water/flow6/place",
+    "item:base:water/flow7/place",
+    "item:base:water/place",
+]
+
+[[family]]
+diagnostic_id = 14
+atlas_slot = 13
+names = [
+    "base:binding_frame",
+    "base:crafting_table",
+    "base:lens_assembly_bench",
+    "base:survey_folio",
+    "base:writing_surface",
+]
+
+[[family]]
+diagnostic_id = 15
+atlas_slot = 14
+names = [
+    "base:crafting_table",
+    "base:survey_folio",
+    "base:writing_surface",
+    "item:base:crafting_table",
+    "item:base:survey_folio",
+    "item:base:writing_surface",
+]
+
+[[family]]
+diagnostic_id = 16
+atlas_slot = 15
+names = ["base:unknown"]
+
+[[family]]
+diagnostic_id = 21
+atlas_slot = 20
+names = [
+    "base:red_plaster",
+    "item:base:red_plaster",
+]
+
+[[family]]
+diagnostic_id = 22
+atlas_slot = 21
+names = [
+    "base:blue_plaster",
+    "item:base:blue_plaster",
+]
+
+[[family]]
+diagnostic_id = 23
+atlas_slot = 22
+names = [
+    "base:white_plaster",
+    "item:base:white_plaster",
+]
+
+[[family]]
+diagnostic_id = 33
+atlas_slot = 32
+names = [
+    "item:base:seasoned_wand_body",
+    "item:base:stick",
+]
+
+[[family]]
+diagnostic_id = 34
+atlas_slot = 33
+names = ["item:base:wood_pickaxe"]
+
+[[family]]
+diagnostic_id = 35
+atlas_slot = 34
+names = ["item:base:stone_pickaxe"]
+
+[[family]]
+diagnostic_id = 36
+atlas_slot = 35
+names = ["item:base:wood_axe"]
+
+[[family]]
+diagnostic_id = 37
+atlas_slot = 36
+names = ["item:base:stone_axe"]
+
+[[family]]
+diagnostic_id = 38
+atlas_slot = 37
+names = ["item:base:wood_shovel"]
+
+[[family]]
+diagnostic_id = 39
+atlas_slot = 38
+names = ["item:base:stone_shovel"]
+
+[[family]]
+diagnostic_id = 40
+atlas_slot = 39
+names = [
+    "base:snow",
+    "base:snow_layer",
+    "item:base:snow",
+    "item:base:snow_layer",
+]
+
+[[family]]
+diagnostic_id = 41
+atlas_slot = 40
+names = [
+    "base:blue_lamp",
+    "base:ice",
+    "item:base:blue_lamp",
+    "item:base:ice",
+]
+
+[[family]]
+diagnostic_id = 42
+atlas_slot = 41
+names = [
+    "base:cactus",
+    "item:base:cactus",
+]
+
+[[family]]
+diagnostic_id = 43
+atlas_slot = 42
+names = ["base:cactus"]
+
+[[family]]
+diagnostic_id = 44
+atlas_slot = 43
+names = [
+    "base:birch_log",
+    "item:base:birch_log",
+]
+
+[[family]]
+diagnostic_id = 45
+atlas_slot = 44
+names = ["base:birch_log"]
+
+[[family]]
+diagnostic_id = 46
+atlas_slot = 45
+names = [
+    "base:birch_leaves",
+    "item:base:birch_leaves",
+]
+
+[[family]]
+diagnostic_id = 47
+atlas_slot = 46
+names = [
+    "base:spruce_log",
+    "item:base:spruce_log",
+]
+
+[[family]]
+diagnostic_id = 48
+atlas_slot = 47
+names = [
+    "base:containment_post",
+    "base:hushwood",
+    "base:spruce_log",
+]
+
+[[family]]
+diagnostic_id = 49
+atlas_slot = 48
+names = [
+    "base:spruce_leaves",
+    "item:base:spruce_leaves",
+]
+
+[[family]]
+diagnostic_id = 50
+atlas_slot = 49
+names = [
+    "base:jungle_log",
+    "item:base:jungle_log",
+]
+
+[[family]]
+diagnostic_id = 51
+atlas_slot = 50
+names = ["base:jungle_log"]
+
+[[family]]
+diagnostic_id = 52
+atlas_slot = 51
+names = [
+    "base:jungle_leaves",
+    "item:base:jungle_leaves",
+]
+
+[[family]]
+diagnostic_id = 53
+atlas_slot = 52
+names = [
+    "base:acacia_log",
+    "item:base:acacia_log",
+]
+
+[[family]]
+diagnostic_id = 54
+atlas_slot = 53
+names = ["base:acacia_log"]
+
+[[family]]
+diagnostic_id = 55
+atlas_slot = 54
+names = [
+    "base:acacia_leaves",
+    "item:base:acacia_leaves",
+]
+
+[[family]]
+diagnostic_id = 56
+atlas_slot = 55
+names = [
+    "base:birch_planks",
+    "item:base:birch_planks",
+]
+
+[[family]]
+diagnostic_id = 57
+atlas_slot = 56
+names = [
+    "base:spruce_planks",
+    "item:base:spruce_planks",
+]
+
+[[family]]
+diagnostic_id = 58
+atlas_slot = 57
+names = [
+    "base:jungle_planks",
+    "item:base:jungle_planks",
+]
+
+[[family]]
+diagnostic_id = 59
+atlas_slot = 58
+names = [
+    "base:acacia_planks",
+    "item:base:acacia_planks",
+]
+
+[[family]]
+diagnostic_id = 60
+atlas_slot = 59
+names = [
+    "base:copper_ore",
+    "item:base:copper_ore",
+]
+
+[[family]]
+diagnostic_id = 61
+atlas_slot = 60
+names = [
+    "base:tin_ore",
+    "item:base:tin_ore",
+]
+
+[[family]]
+diagnostic_id = 62
+atlas_slot = 61
+names = [
+    "base:copper_block",
+    "item:base:copper_block",
+]
+
+[[family]]
+diagnostic_id = 63
+atlas_slot = 62
+names = [
+    "base:binding_frame",
+    "base:bronze_block",
+    "base:charge_vessel",
+    "base:experiment_apparatus",
+    "base:focus_mount",
+    "base:lens_assembly_bench",
+    "item:base:binding_frame",
+    "item:base:bronze_block",
+    "item:base:experiment_apparatus",
+    "item:base:focus_mount",
+    "item:base:lens_assembly_bench",
+]
+
+[[family]]
+diagnostic_id = 64
+atlas_slot = 63
+names = [
+    "base:furnace",
+    "item:base:furnace",
+]
+
+[[family]]
+diagnostic_id = 65
+atlas_slot = 64
+names = ["item:base:raw_copper"]
+
+[[family]]
+diagnostic_id = 66
+atlas_slot = 65
+names = ["item:base:raw_tin"]
+
+[[family]]
+diagnostic_id = 67
+atlas_slot = 66
+names = [
+    "item:base:conductivity_reference",
+    "item:base:copper_ingot",
+]
+
+[[family]]
+diagnostic_id = 68
+atlas_slot = 67
+names = ["item:base:tin_ingot"]
+
+[[family]]
+diagnostic_id = 69
+atlas_slot = 68
+names = [
+    "item:base:bronze_ingot",
+    "item:base:bronze_wand_binding",
+    "item:base:ritual_rod_socket",
+    "item:base:spent_charm_fitting",
+]
+
+[[family]]
+diagnostic_id = 70
+atlas_slot = 69
+names = ["item:base:bronze_blend"]
+
+[[family]]
+diagnostic_id = 71
+atlas_slot = 70
+names = [
+    "item:base:charcoal",
+    "item:base:dross_reference",
+    "item:base:spent_filter",
+]
+
+[[family]]
+diagnostic_id = 72
+atlas_slot = 71
+names = [
+    "item:base:copper_pickaxe",
+    "item:base:copper_pickaxe/damaged",
+    "item:base:copper_pickaxe/forge_scale",
+    "item:base:copper_pickaxe/forge_scrap",
+    "item:base:copper_pickaxe/primitive_scale",
+    "item:base:copper_pickaxe/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 73
+atlas_slot = 72
+names = [
+    "item:base:copper_axe",
+    "item:base:copper_axe/damaged",
+    "item:base:copper_axe/forge_scale",
+    "item:base:copper_axe/forge_scrap",
+    "item:base:copper_axe/primitive_scale",
+    "item:base:copper_axe/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 74
+atlas_slot = 73
+names = [
+    "item:base:copper_shovel",
+    "item:base:copper_shovel/damaged",
+    "item:base:copper_shovel/forge_scale",
+    "item:base:copper_shovel/forge_scrap",
+    "item:base:copper_shovel/primitive_scale",
+    "item:base:copper_shovel/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 75
+atlas_slot = 74
+names = [
+    "item:base:bronze_pickaxe",
+    "item:base:bronze_pickaxe/damaged",
+    "item:base:bronze_pickaxe/forge_scale",
+    "item:base:bronze_pickaxe/forge_scrap",
+    "item:base:bronze_pickaxe/primitive_scale",
+    "item:base:bronze_pickaxe/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 76
+atlas_slot = 75
+names = [
+    "item:base:bronze_axe",
+    "item:base:bronze_axe/damaged",
+    "item:base:bronze_axe/forge_scale",
+    "item:base:bronze_axe/forge_scrap",
+    "item:base:bronze_axe/primitive_scale",
+    "item:base:bronze_axe/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 77
+atlas_slot = 76
+names = [
+    "item:base:bronze_shovel",
+    "item:base:bronze_shovel/damaged",
+    "item:base:bronze_shovel/forge_scale",
+    "item:base:bronze_shovel/forge_scrap",
+    "item:base:bronze_shovel/primitive_scale",
+    "item:base:bronze_shovel/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 78
+atlas_slot = 77
+names = ["base:farmland"]
+
+[[family]]
+diagnostic_id = 79
+atlas_slot = 78
+names = [
+    "base:wheat_seeds",
+    "base:wheat_seeds/stage1",
+    "item:base:wheat_seeds/stage1/place",
+]
+
+[[family]]
+diagnostic_id = 80
+atlas_slot = 79
+names = [
+    "base:wheat_seeds/stage2",
+    "item:base:wheat",
+    "item:base:wheat_seeds/stage2/place",
+]
+
+[[family]]
+diagnostic_id = 81
+atlas_slot = 80
+names = [
+    "base:carrot_crop",
+    "base:carrot_crop/stage1",
+    "item:base:carrot_crop/stage1/place",
+]
+
+[[family]]
+diagnostic_id = 82
+atlas_slot = 81
+names = [
+    "base:potato_crop",
+    "base:potato_crop/stage1",
+    "item:base:potato_crop/stage1/place",
+]
+
+[[family]]
+diagnostic_id = 83
+atlas_slot = 82
+names = [
+    "base:berry_bush/stage1",
+    "base:jungle_bush/stage1",
+    "item:base:berry_bush/stage1/place",
+    "item:base:jungle_bush/stage1/place",
+]
+
+[[family]]
+diagnostic_id = 84
+atlas_slot = 83
+names = [
+    "base:berry_bush",
+    "base:jungle_bush",
+    "item:base:berry_bush",
+    "item:base:jungle_bush",
+]
+
+[[family]]
+diagnostic_id = 85
+atlas_slot = 84
+names = [
+    "base:echo_cap",
+    "base:wild_mushroom",
+    "item:base:echo_cap",
+    "item:base:echo_cap_ring",
+    "item:base:mushroom",
+    "item:base:wild_mushroom/place",
+]
+
+[[family]]
+diagnostic_id = 86
+atlas_slot = 85
+names = ["item:base:bread"]
+
+[[family]]
+diagnostic_id = 87
+atlas_slot = 86
+names = ["item:base:berry"]
+
+[[family]]
+diagnostic_id = 88
+atlas_slot = 87
+names = ["item:base:carrot"]
+
+[[family]]
+diagnostic_id = 89
+atlas_slot = 88
+names = ["item:base:potato"]
+
+[[family]]
+diagnostic_id = 90
+atlas_slot = 89
+names = ["item:base:baked_potato"]
+
+[[family]]
+diagnostic_id = 91
+atlas_slot = 90
+names = ["item:base:roasted_mushroom"]
+
+[[family]]
+diagnostic_id = 92
+atlas_slot = 91
+names = ["item:base:cactus_fruit"]
+
+[[family]]
+diagnostic_id = 93
+atlas_slot = 92
+names = ["item:base:jungle_fruit"]
+
+[[family]]
+diagnostic_id = 94
+atlas_slot = 93
+names = ["item:base:forest_stew"]
+
+[[family]]
+diagnostic_id = 95
+atlas_slot = 94
+names = ["item:base:wheat_seeds"]
+
+[[family]]
+diagnostic_id = 97
+atlas_slot = 96
+names = ["item:base:wood_hoe"]
+
+[[family]]
+diagnostic_id = 98
+atlas_slot = 97
+names = ["item:base:stone_hoe"]
+
+[[family]]
+diagnostic_id = 99
+atlas_slot = 98
+names = [
+    "item:base:copper_hoe",
+    "item:base:copper_hoe/damaged",
+    "item:base:copper_hoe/forge_scale",
+    "item:base:copper_hoe/forge_scrap",
+    "item:base:copper_hoe/primitive_scale",
+    "item:base:copper_hoe/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 100
+atlas_slot = 99
+names = [
+    "item:base:bronze_hoe",
+    "item:base:bronze_hoe/damaged",
+    "item:base:bronze_hoe/forge_scale",
+    "item:base:bronze_hoe/forge_scrap",
+    "item:base:bronze_hoe/primitive_scale",
+    "item:base:bronze_hoe/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 113
+atlas_slot = 112
+names = ["item:base:raw_venison"]
+
+[[family]]
+diagnostic_id = 114
+atlas_slot = 113
+names = ["item:base:cooked_venison"]
+
+[[family]]
+diagnostic_id = 115
+atlas_slot = 114
+names = ["item:base:raw_boar"]
+
+[[family]]
+diagnostic_id = 116
+atlas_slot = 115
+names = ["item:base:cooked_boar"]
+
+[[family]]
+diagnostic_id = 117
+atlas_slot = 116
+names = ["item:base:raw_chevon"]
+
+[[family]]
+diagnostic_id = 118
+atlas_slot = 117
+names = ["item:base:cooked_chevon"]
+
+[[family]]
+diagnostic_id = 119
+atlas_slot = 118
+names = ["item:base:raw_fowl"]
+
+[[family]]
+diagnostic_id = 120
+atlas_slot = 119
+names = ["item:base:cooked_fowl"]
+
+[[family]]
+diagnostic_id = 121
+atlas_slot = 120
+names = ["item:base:raw_rabbit"]
+
+[[family]]
+diagnostic_id = 122
+atlas_slot = 121
+names = ["item:base:cooked_rabbit"]
+
+[[family]]
+diagnostic_id = 123
+atlas_slot = 122
+names = ["item:base:hide"]
+
+[[family]]
+diagnostic_id = 124
+atlas_slot = 123
+names = ["item:base:leather"]
+
+[[family]]
+diagnostic_id = 125
+atlas_slot = 124
+names = ["item:base:feather"]
+
+[[family]]
+diagnostic_id = 126
+atlas_slot = 125
+names = ["item:base:hearty_stew"]
+
+[[family]]
+diagnostic_id = 127
+atlas_slot = 126
+names = ["item:base:wood_sword"]
+
+[[family]]
+diagnostic_id = 128
+atlas_slot = 127
+names = ["item:base:stone_sword"]
+
+[[family]]
+diagnostic_id = 129
+atlas_slot = 128
+names = [
+    "item:base:copper_sword",
+    "item:base:copper_sword/damaged",
+    "item:base:copper_sword/forge_scale",
+    "item:base:copper_sword/forge_scrap",
+    "item:base:copper_sword/primitive_scale",
+    "item:base:copper_sword/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 130
+atlas_slot = 129
+names = [
+    "item:base:bronze_sword",
+    "item:base:bronze_sword/damaged",
+    "item:base:bronze_sword/forge_scale",
+    "item:base:bronze_sword/forge_scrap",
+    "item:base:bronze_sword/primitive_scale",
+    "item:base:bronze_sword/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 132
+atlas_slot = 131
+names = [
+    "base:torch",
+    "item:base:torch",
+]
+
+[[family]]
+diagnostic_id = 133
+atlas_slot = 132
+names = [
+    "base:chest",
+    "item:base:chest",
+]
+
+[[family]]
+diagnostic_id = 134
+atlas_slot = 133
+names = ["base:chest"]
+
+[[family]]
+diagnostic_id = 146
+atlas_slot = 145
+names = [
+    "item:base:biological_reference",
+    "item:base:filter_cloth",
+    "item:base:plant_fiber",
+    "item:base:thorn_fiber",
+]
+
+[[family]]
+diagnostic_id = 147
+atlas_slot = 146
+names = [
+    "item:base:dryad_heartwood",
+    "item:base:living_wood",
+]
+
+[[family]]
+diagnostic_id = 148
+atlas_slot = 147
+names = ["item:base:ember"]
+
+[[family]]
+diagnostic_id = 149
+atlas_slot = 148
+names = ["item:base:frost_shard"]
+
+[[family]]
+diagnostic_id = 150
+atlas_slot = 149
+names = ["item:base:heartwood"]
+
+[[family]]
+diagnostic_id = 151
+atlas_slot = 150
+names = ["item:base:hunting_bow"]
+
+[[family]]
+diagnostic_id = 152
+atlas_slot = 151
+names = ["item:base:warbow"]
+
+[[family]]
+diagnostic_id = 153
+atlas_slot = 152
+names = ["item:base:arrow"]
+
+[[family]]
+diagnostic_id = 154
+atlas_slot = 153
+names = ["item:base:leather_helmet"]
+
+[[family]]
+diagnostic_id = 155
+atlas_slot = 154
+names = ["item:base:leather_chestplate"]
+
+[[family]]
+diagnostic_id = 156
+atlas_slot = 155
+names = ["item:base:leather_leggings"]
+
+[[family]]
+diagnostic_id = 157
+atlas_slot = 156
+names = ["item:base:leather_boots"]
+
+[[family]]
+diagnostic_id = 158
+atlas_slot = 157
+names = [
+    "item:base:bronze_helmet",
+    "item:base:bronze_helmet/damaged",
+    "item:base:bronze_helmet/forge_scale",
+    "item:base:bronze_helmet/forge_scrap",
+    "item:base:bronze_helmet/primitive_scale",
+    "item:base:bronze_helmet/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 159
+atlas_slot = 158
+names = [
+    "item:base:bronze_chestplate",
+    "item:base:bronze_chestplate/damaged",
+    "item:base:bronze_chestplate/forge_scale",
+    "item:base:bronze_chestplate/forge_scrap",
+    "item:base:bronze_chestplate/primitive_scale",
+    "item:base:bronze_chestplate/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 160
+atlas_slot = 159
+names = [
+    "item:base:bronze_leggings",
+    "item:base:bronze_leggings/damaged",
+    "item:base:bronze_leggings/forge_scale",
+    "item:base:bronze_leggings/forge_scrap",
+    "item:base:bronze_leggings/primitive_scale",
+    "item:base:bronze_leggings/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 161
+atlas_slot = 160
+names = [
+    "item:base:bronze_boots",
+    "item:base:bronze_boots/damaged",
+    "item:base:bronze_boots/forge_scale",
+    "item:base:bronze_boots/forge_scrap",
+    "item:base:bronze_boots/primitive_scale",
+    "item:base:bronze_boots/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 162
+atlas_slot = 161
+names = [
+    "base:oak_sapling",
+    "item:base:oak_sapling",
+]
+
+[[family]]
+diagnostic_id = 163
+atlas_slot = 162
+names = [
+    "base:birch_sapling",
+    "item:base:birch_sapling",
+]
+
+[[family]]
+diagnostic_id = 164
+atlas_slot = 163
+names = [
+    "base:spruce_sapling",
+    "item:base:spruce_sapling",
+]
+
+[[family]]
+diagnostic_id = 165
+atlas_slot = 164
+names = [
+    "base:jungle_sapling",
+    "item:base:jungle_sapling",
+]
+
+[[family]]
+diagnostic_id = 166
+atlas_slot = 165
+names = [
+    "base:acacia_sapling",
+    "item:base:acacia_sapling",
+]
+
+[[family]]
+diagnostic_id = 167
+atlas_slot = 166
+names = [
+    "base:offering_stone",
+    "item:base:offering_stone",
+]
+
+[[family]]
+diagnostic_id = 168
+atlas_slot = 167
+names = ["item:base:bedroll"]
+
+[[family]]
+diagnostic_id = 169
+atlas_slot = 168
+names = [
+    "base:iron_ore",
+    "base:wake_iron",
+    "item:base:iron_ore",
+    "item:base:wake_iron",
+]
+
+[[family]]
+diagnostic_id = 170
+atlas_slot = 169
+names = [
+    "base:iron_block",
+    "item:base:iron_block",
+]
+
+[[family]]
+diagnostic_id = 171
+atlas_slot = 170
+names = [
+    "base:steel_block",
+    "item:base:steel_block",
+]
+
+[[family]]
+diagnostic_id = 172
+atlas_slot = 171
+names = [
+    "item:base:iron_slag",
+    "item:base:raw_iron",
+]
+
+[[family]]
+diagnostic_id = 173
+atlas_slot = 172
+names = ["item:base:iron_ingot"]
+
+[[family]]
+diagnostic_id = 175
+atlas_slot = 174
+names = [
+    "item:base:steel_ingot",
+    "item:base:steel_wand_binding",
+]
+
+[[family]]
+diagnostic_id = 176
+atlas_slot = 175
+names = [
+    "item:base:iron_pickaxe",
+    "item:base:iron_pickaxe/damaged",
+    "item:base:iron_pickaxe/forge_scale",
+    "item:base:iron_pickaxe/forge_scrap",
+    "item:base:iron_pickaxe/primitive_scale",
+    "item:base:iron_pickaxe/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 177
+atlas_slot = 176
+names = [
+    "item:base:iron_axe",
+    "item:base:iron_axe/damaged",
+    "item:base:iron_axe/forge_scale",
+    "item:base:iron_axe/forge_scrap",
+    "item:base:iron_axe/primitive_scale",
+    "item:base:iron_axe/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 178
+atlas_slot = 177
+names = [
+    "item:base:iron_shovel",
+    "item:base:iron_shovel/damaged",
+    "item:base:iron_shovel/forge_scale",
+    "item:base:iron_shovel/forge_scrap",
+    "item:base:iron_shovel/primitive_scale",
+    "item:base:iron_shovel/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 179
+atlas_slot = 178
+names = [
+    "item:base:iron_hoe",
+    "item:base:iron_hoe/damaged",
+    "item:base:iron_hoe/forge_scale",
+    "item:base:iron_hoe/forge_scrap",
+    "item:base:iron_hoe/primitive_scale",
+    "item:base:iron_hoe/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 180
+atlas_slot = 179
+names = [
+    "item:base:iron_sword",
+    "item:base:iron_sword/damaged",
+    "item:base:iron_sword/forge_scale",
+    "item:base:iron_sword/forge_scrap",
+    "item:base:iron_sword/primitive_scale",
+    "item:base:iron_sword/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 181
+atlas_slot = 180
+names = [
+    "item:base:steel_pickaxe",
+    "item:base:steel_pickaxe/damaged",
+    "item:base:steel_pickaxe/forge_scale",
+    "item:base:steel_pickaxe/forge_scrap",
+    "item:base:steel_pickaxe/primitive_scale",
+    "item:base:steel_pickaxe/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 182
+atlas_slot = 181
+names = [
+    "item:base:steel_axe",
+    "item:base:steel_axe/damaged",
+    "item:base:steel_axe/forge_scale",
+    "item:base:steel_axe/forge_scrap",
+    "item:base:steel_axe/primitive_scale",
+    "item:base:steel_axe/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 183
+atlas_slot = 182
+names = [
+    "item:base:steel_shovel",
+    "item:base:steel_shovel/damaged",
+    "item:base:steel_shovel/forge_scale",
+    "item:base:steel_shovel/forge_scrap",
+    "item:base:steel_shovel/primitive_scale",
+    "item:base:steel_shovel/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 184
+atlas_slot = 183
+names = [
+    "item:base:steel_hoe",
+    "item:base:steel_hoe/damaged",
+    "item:base:steel_hoe/forge_scale",
+    "item:base:steel_hoe/forge_scrap",
+    "item:base:steel_hoe/primitive_scale",
+    "item:base:steel_hoe/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 185
+atlas_slot = 184
+names = [
+    "item:base:steel_sword",
+    "item:base:steel_sword/damaged",
+    "item:base:steel_sword/forge_scale",
+    "item:base:steel_sword/forge_scrap",
+    "item:base:steel_sword/primitive_scale",
+    "item:base:steel_sword/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 186
+atlas_slot = 185
+names = [
+    "item:base:iron_helmet",
+    "item:base:iron_helmet/damaged",
+    "item:base:iron_helmet/forge_scale",
+    "item:base:iron_helmet/forge_scrap",
+    "item:base:iron_helmet/primitive_scale",
+    "item:base:iron_helmet/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 187
+atlas_slot = 186
+names = [
+    "item:base:iron_chestplate",
+    "item:base:iron_chestplate/damaged",
+    "item:base:iron_chestplate/forge_scale",
+    "item:base:iron_chestplate/forge_scrap",
+    "item:base:iron_chestplate/primitive_scale",
+    "item:base:iron_chestplate/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 188
+atlas_slot = 187
+names = [
+    "item:base:iron_leggings",
+    "item:base:iron_leggings/damaged",
+    "item:base:iron_leggings/forge_scale",
+    "item:base:iron_leggings/forge_scrap",
+    "item:base:iron_leggings/primitive_scale",
+    "item:base:iron_leggings/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 189
+atlas_slot = 188
+names = [
+    "item:base:iron_boots",
+    "item:base:iron_boots/damaged",
+    "item:base:iron_boots/forge_scale",
+    "item:base:iron_boots/forge_scrap",
+    "item:base:iron_boots/primitive_scale",
+    "item:base:iron_boots/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 190
+atlas_slot = 189
+names = [
+    "item:base:steel_helmet",
+    "item:base:steel_helmet/damaged",
+    "item:base:steel_helmet/forge_scale",
+    "item:base:steel_helmet/forge_scrap",
+    "item:base:steel_helmet/primitive_scale",
+    "item:base:steel_helmet/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 191
+atlas_slot = 190
+names = [
+    "item:base:steel_chestplate",
+    "item:base:steel_chestplate/damaged",
+    "item:base:steel_chestplate/forge_scale",
+    "item:base:steel_chestplate/forge_scrap",
+    "item:base:steel_chestplate/primitive_scale",
+    "item:base:steel_chestplate/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 192
+atlas_slot = 191
+names = [
+    "item:base:steel_leggings",
+    "item:base:steel_leggings/damaged",
+    "item:base:steel_leggings/forge_scale",
+    "item:base:steel_leggings/forge_scrap",
+    "item:base:steel_leggings/primitive_scale",
+    "item:base:steel_leggings/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 193
+atlas_slot = 192
+names = [
+    "item:base:steel_boots",
+    "item:base:steel_boots/damaged",
+    "item:base:steel_boots/forge_scale",
+    "item:base:steel_boots/forge_scrap",
+    "item:base:steel_boots/primitive_scale",
+    "item:base:steel_boots/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 194
+atlas_slot = 193
+names = [
+    "item:base:shears",
+    "item:base:shears/damaged",
+    "item:base:shears/forge_scale",
+    "item:base:shears/forge_scrap",
+    "item:base:shears/primitive_scale",
+    "item:base:shears/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 195
+atlas_slot = 194
+names = [
+    "item:base:excavation_brush",
+    "item:base:excavation_brush/damaged",
+    "item:base:excavation_brush/forge_scale",
+    "item:base:excavation_brush/forge_scrap",
+    "item:base:excavation_brush/primitive_scale",
+    "item:base:excavation_brush/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 196
+atlas_slot = 195
+names = [
+    "base:mossy_cobblestone",
+    "item:base:mossy_cobblestone",
+]
+
+[[family]]
+diagnostic_id = 197
+atlas_slot = 196
+names = [
+    "base:cracked_masonry",
+    "item:base:cracked_masonry",
+]
+
+[[family]]
+diagnostic_id = 198
+atlas_slot = 197
+names = [
+    "base:packed_earth",
+    "item:base:packed_earth",
+]
+
+[[family]]
+diagnostic_id = 199
+atlas_slot = 198
+names = ["item:base:old_coin"]
+
+[[family]]
+diagnostic_id = 200
+atlas_slot = 199
+names = [
+    "item:base:etched_tablet",
+    "item:base:site_survey_marks",
+]
+
+[[family]]
+diagnostic_id = 201
+atlas_slot = 200
+names = ["item:base:quiet_charm_blank"]
+
+[[family]]
+diagnostic_id = 202
+atlas_slot = 201
+names = ["item:base:bark_charm_blank"]
+
+[[family]]
+diagnostic_id = 203
+atlas_slot = 202
+names = ["item:base:hunger_charm_blank"]
+
+[[family]]
+diagnostic_id = 206
+atlas_slot = 205
+names = ["item:base:snowball"]
+
+[[family]]
+diagnostic_id = 209
+atlas_slot = 208
+names = [
+    "base:bloomery",
+    "base:bloomery_lit",
+    "base:firebrick",
+    "base:forge",
+    "base:forge_lit",
+    "base:kiln",
+    "base:kiln_lit",
+    "item:base:bloomery_lit/place",
+    "item:base:firebrick",
+    "item:base:forge_lit/place",
+    "item:base:kiln_lit/place",
+]
+
+[[family]]
+diagnostic_id = 210
+atlas_slot = 209
+names = [
+    "base:bloomery",
+    "item:base:bloomery",
+]
+
+[[family]]
+diagnostic_id = 211
+atlas_slot = 210
+names = ["base:bloomery_lit"]
+
+[[family]]
+diagnostic_id = 212
+atlas_slot = 211
+names = [
+    "base:charcoal_block",
+    "item:base:charcoal_block",
+]
+
+[[family]]
+diagnostic_id = 213
+atlas_slot = 212
+names = ["base:stone_anvil"]
+
+[[family]]
+diagnostic_id = 214
+atlas_slot = 213
+names = ["item:base:steel_bloom"]
+
+[[family]]
+diagnostic_id = 215
+atlas_slot = 214
+names = [
+    "item:base:smith_hammer",
+    "item:base:smith_hammer/damaged",
+    "item:base:smith_hammer/forge_scale",
+    "item:base:smith_hammer/forge_scrap",
+    "item:base:smith_hammer/primitive_scale",
+    "item:base:smith_hammer/primitive_scrap",
+]
+
+[[family]]
+diagnostic_id = 217
+atlas_slot = 216
+names = [
+    "base:charge_vessel",
+    "base:glass",
+    "item:base:capacity_reference",
+    "item:base:glass",
+]
+
+[[family]]
+diagnostic_id = 218
+atlas_slot = 217
+names = [
+    "base:cobalt_ore",
+    "item:base:cobalt_ore",
+    "item:base:raw_cobalt",
+]
+
+[[family]]
+diagnostic_id = 219
+atlas_slot = 218
+names = [
+    "base:cinnabar_ore",
+    "item:base:cinnabar_ore",
+    "item:base:raw_cinnabar",
+]
+
+[[family]]
+diagnostic_id = 220
+atlas_slot = 219
+names = [
+    "base:manganese_ore",
+    "item:base:manganese_ore",
+    "item:base:raw_manganese",
+]
+
+[[family]]
+diagnostic_id = 221
+atlas_slot = 220
+names = ["item:base:verdigris_powder"]
+
+[[family]]
+diagnostic_id = 222
+atlas_slot = 221
+names = ["item:base:ochre_powder"]
+
+[[family]]
+diagnostic_id = 223
+atlas_slot = 222
+names = [
+    "item:base:cobalt_powder",
+    "item:base:dross_sludge",
+    "item:base:fouled_batch",
+    "item:base:scouring_antidote",
+]
+
+[[family]]
+diagnostic_id = 224
+atlas_slot = 223
+names = ["item:base:cinnabar_powder"]
+
+[[family]]
+diagnostic_id = 225
+atlas_slot = 224
+names = ["item:base:manganese_powder"]
+
+[[family]]
+diagnostic_id = 226
+atlas_slot = 225
+names = [
+    "base:teal_glass",
+    "item:base:teal_glass",
+]
+
+[[family]]
+diagnostic_id = 227
+atlas_slot = 226
+names = [
+    "base:amber_glass",
+    "item:base:amber_glass",
+]
+
+[[family]]
+diagnostic_id = 228
+atlas_slot = 227
+names = [
+    "base:blue_glass",
+    "item:base:blue_glass",
+]
+
+[[family]]
+diagnostic_id = 229
+atlas_slot = 228
+names = [
+    "base:red_glass",
+    "item:base:red_glass",
+]
+
+[[family]]
+diagnostic_id = 230
+atlas_slot = 229
+names = [
+    "base:violet_glass",
+    "item:base:violet_glass",
+]
+
+[[family]]
+diagnostic_id = 231
+atlas_slot = 230
+names = [
+    "base:kiln",
+    "item:base:kiln",
+    "item:base:kiln/dismantled_stock",
+    "item:base:kiln/dismantling_bundle",
+    "item:base:kiln/dismantling_scale",
+]
+
+[[family]]
+diagnostic_id = 232
+atlas_slot = 231
+names = ["base:kiln_lit"]
+
+[[family]]
+diagnostic_id = 233
+atlas_slot = 232
+names = ["base:quern"]
+
+[[family]]
+diagnostic_id = 234
+atlas_slot = 233
+names = [
+    "base:snow_layer_trod",
+    "item:base:snow_layer_trod",
+]
+
+[[family]]
+diagnostic_id = 240
+atlas_slot = 239
+names = ["item:base:bucket"]
+
+[[family]]
+diagnostic_id = 241
+atlas_slot = 240
+names = [
+    "base:farmland",
+    "texture:base/farmland_dust",
+]
+
+[[family]]
+diagnostic_id = 242
+atlas_slot = 241
+names = [
+    "base:farmland",
+    "texture:base/farmland_poor",
+]
+
+[[family]]
+diagnostic_id = 243
+atlas_slot = 242
+names = [
+    "base:farmland",
+    "texture:base/farmland_rich",
+]
+
+[[family]]
+diagnostic_id = 244
+atlas_slot = 243
+names = [
+    "base:sandstone",
+    "item:base:sandstone",
+    "texture:base/sandstone",
+]
+
+[[family]]
+diagnostic_id = 245
+atlas_slot = 244
+names = [
+    "base:limestone",
+    "item:base:limestone",
+    "texture:base/limestone",
+]
+
+[[family]]
+diagnostic_id = 246
+atlas_slot = 245
+names = [
+    "base:echo_slate",
+    "base:scar_cave_echo",
+    "base:shale",
+    "item:base:echo_slate",
+    "item:base:failed_containment_fragment",
+    "item:base:implement_fragment",
+    "item:base:maker_calibration_plate",
+    "item:base:scar_cave_echo/place",
+    "item:base:shale",
+    "texture:base/shale",
+]
+
+[[family]]
+diagnostic_id = 247
+atlas_slot = 246
+names = [
+    "base:granite",
+    "item:base:granite",
+    "texture:base/granite",
+]
+
+[[family]]
+diagnostic_id = 248
+atlas_slot = 247
+names = [
+    "base:marble",
+    "item:base:marble",
+    "texture:base/marble",
+]
+
+[[family]]
+diagnostic_id = 249
+atlas_slot = 248
+names = [
+    "base:slate",
+    "item:base:slate",
+    "texture:base/slate",
+]
+
+[[family]]
+diagnostic_id = 250
+atlas_slot = 249
+names = [
+    "base:arcane_conductor",
+    "base:choirstone",
+    "base:quartzite",
+    "item:base:arcane_conductor",
+    "item:base:choirstone",
+    "item:base:quartzite",
+    "texture:base/quartzite",
+]
+
+[[family]]
+diagnostic_id = 251
+atlas_slot = 250
+names = [
+    "base:basalt",
+    "item:base:basalt",
+    "texture:base/basalt",
+]
+
+[[family]]
+diagnostic_id = 252
+atlas_slot = 251
+names = [
+    "base:obsidian",
+    "item:base:obsidian",
+    "texture:base/obsidian",
+]
+
+[[family]]
+diagnostic_id = 253
+atlas_slot = 252
+names = [
+    "base:kimberlite",
+    "item:base:kimberlite",
+    "texture:base/kimberlite",
+]
+
+[[family]]
+diagnostic_id = 254
+atlas_slot = 253
+names = [
+    "base:carbonatite",
+    "item:base:carbonatite",
+    "texture:base/carbonatite",
+]
+
+[[family]]
+diagnostic_id = 255
+atlas_slot = 254
+names = [
+    "base:sandstone_bricks",
+    "item:base:sandstone_bricks",
+    "texture:base/sandstone_bricks",
+]
+
+[[family]]
+diagnostic_id = 256
+atlas_slot = 255
+names = [
+    "base:limestone_bricks",
+    "item:base:limestone_bricks",
+    "texture:base/limestone_bricks",
+]
+
+[[family]]
+diagnostic_id = 257
+atlas_slot = 256
+names = [
+    "base:granite_bricks",
+    "item:base:granite_bricks",
+    "texture:base/granite_bricks",
+]
+
+[[family]]
+diagnostic_id = 258
+atlas_slot = 257
+names = [
+    "base:marble_bricks",
+    "item:base:marble_bricks",
+    "texture:base/marble_bricks",
+]
+
+[[family]]
+diagnostic_id = 259
+atlas_slot = 258
+names = [
+    "base:slate_bricks",
+    "item:base:slate_bricks",
+    "texture:base/slate_bricks",
+]
+
+[[family]]
+diagnostic_id = 260
+atlas_slot = 259
+names = [
+    "base:basalt_bricks",
+    "item:base:basalt_bricks",
+    "texture:base/basalt_bricks",
+]
+
+[[family]]
+diagnostic_id = 261
+atlas_slot = 260
+names = [
+    "base:lava",
+    "base:lava/flow1",
+    "base:lava/flow2",
+    "base:lava/flow3",
+    "base:lava/flow4",
+    "base:lava/flow5",
+    "base:lava/flow6",
+    "base:lava/flow7",
+    "item:base:lava/flow1/place",
+    "item:base:lava/flow2/place",
+    "item:base:lava/flow3/place",
+    "item:base:lava/flow4/place",
+    "item:base:lava/flow5/place",
+    "item:base:lava/flow6/place",
+    "item:base:lava/flow7/place",
+    "item:base:lava/place",
+    "texture:base/lava",
+]
+
+[[family]]
+diagnostic_id = 262
+atlas_slot = 261
+names = [
+    "base:magma_vent",
+    "item:base:magma_vent",
+    "texture:base/magma_vent",
+]
+
+[[family]]
+diagnostic_id = 263
+atlas_slot = 262
+names = [
+    "base:sulfur_ore",
+    "item:base:sulfur_ore",
+    "texture:base/sulfur_ore",
+]
+
+[[family]]
+diagnostic_id = 264
+atlas_slot = 263
+names = [
+    "base:quartz_block",
+    "item:base:quartz_block",
+    "texture:base/quartz_block",
+]
+
+[[family]]
+diagnostic_id = 265
+atlas_slot = 264
+names = [
+    "base:amethyst_block",
+    "base:charge_vessel",
+    "base:wellglass_bud",
+    "item:base:amethyst_block",
+    "item:base:wellglass_bud",
+    "texture:base/amethyst_block",
+]
+
+[[family]]
+diagnostic_id = 266
+atlas_slot = 265
+names = [
+    "base:coal_ore",
+    "item:base:coal_ore",
+    "texture:base/coal_ore",
+]
+
+[[family]]
+diagnostic_id = 267
+atlas_slot = 266
+names = [
+    "base:quartz_vein",
+    "item:base:quartz_vein",
+    "texture:base/quartz_vein",
+]
+
+[[family]]
+diagnostic_id = 268
+atlas_slot = 267
+names = [
+    "base:gold_quartz",
+    "item:base:gold_quartz",
+    "texture:base/gold_quartz",
+]
+
+[[family]]
+diagnostic_id = 269
+atlas_slot = 268
+names = [
+    "base:galena_ore",
+    "item:base:galena_ore",
+    "texture:base/galena_ore",
+]
+
+[[family]]
+diagnostic_id = 270
+atlas_slot = 269
+names = [
+    "base:chromite_ore",
+    "item:base:chromite_ore",
+    "texture:base/chromite_ore",
+]
+
+[[family]]
+diagnostic_id = 271
+atlas_slot = 270
+names = [
+    "base:diamond_ore",
+    "item:base:diamond_ore",
+    "texture:base/diamond_ore",
+]
+
+[[family]]
+diagnostic_id = 272
+atlas_slot = 271
+names = [
+    "base:pitchblende_ore",
+    "item:base:pitchblende_ore",
+    "texture:base/pitchblende_ore",
+]
+
+[[family]]
+diagnostic_id = 273
+atlas_slot = 272
+names = [
+    "base:monazite_sand",
+    "item:base:monazite_sand",
+    "texture:base/monazite_sand",
+]
+
+[[family]]
+diagnostic_id = 274
+atlas_slot = 273
+names = [
+    "base:bastnasite_ore",
+    "item:base:bastnasite_ore",
+    "texture:base/bastnasite_ore",
+]
+
+[[family]]
+diagnostic_id = 275
+atlas_slot = 274
+names = [
+    "base:green_glass",
+    "item:base:green_glass",
+    "item:base:root_wash",
+    "texture:base/green_glass",
+]
+
+[[family]]
+diagnostic_id = 276
+atlas_slot = 275
+names = [
+    "base:cranberry_glass",
+    "item:base:cranberry_glass",
+    "item:base:fermented_alcohol",
+    "item:base:spent_liquor",
+    "texture:base/cranberry_glass",
+]
+
+[[family]]
+diagnostic_id = 277
+atlas_slot = 276
+names = [
+    "base:yellow_glass",
+    "item:base:plant_oil",
+    "item:base:storm_cordial",
+    "item:base:yellow_glass",
+    "texture:base/yellow_glass",
+]
+
+[[family]]
+diagnostic_id = 278
+atlas_slot = 277
+names = [
+    "base:milk_glass",
+    "item:base:broken_emulsion",
+    "item:base:milk_glass",
+    "item:base:settling_draught",
+    "texture:base/milk_glass",
+]
+
+[[family]]
+diagnostic_id = 279
+atlas_slot = 278
+names = [
+    "base:rose_glass",
+    "item:base:hearth_tonic",
+    "item:base:rose_glass",
+    "texture:base/rose_glass",
+]
+
+[[family]]
+diagnostic_id = 280
+atlas_slot = 279
+names = [
+    "base:glow_glass",
+    "item:base:frostlace_suspension",
+    "item:base:glow_glass",
+    "item:base:overcharged_batch",
+    "texture:base/glow_glass",
+]
+
+[[family]]
+diagnostic_id = 281
+atlas_slot = 280
+names = [
+    "base:crystal_glass",
+    "base:filter_stand",
+    "base:scar_broken_symmetry",
+    "item:base:clear_eye_tincture",
+    "item:base:crystal_glass",
+    "item:base:filter_stand",
+    "item:base:glass_jar",
+    "item:base:scar_broken_symmetry/place",
+    "item:base:scar_fragment",
+    "texture:base/crystal_glass",
+]
+
+[[family]]
+diagnostic_id = 282
+atlas_slot = 281
+names = [
+    "base:mud",
+    "item:base:mud",
+    "texture:base/mud",
+]
+
+[[family]]
+diagnostic_id = 283
+atlas_slot = 282
+names = [
+    "base:halite",
+    "base:scar_dry_needles",
+    "base:still_salt",
+    "item:base:halite/place",
+    "item:base:scar_dry_needles/place",
+    "item:base:still_salt",
+    "texture:base/halite",
+]
+
+[[family]]
+diagnostic_id = 284
+atlas_slot = 283
+names = [
+    "base:survey_cairn",
+    "item:base:survey_cairn",
+    "texture:base/survey_cairn",
+]
+
+[[family]]
+diagnostic_id = 285
+atlas_slot = 284
+names = [
+    "base:sign",
+    "item:base:sign",
+    "texture:base/sign",
+]
+
+[[family]]
+diagnostic_id = 286
+atlas_slot = 285
+names = [
+    "base:waystone",
+    "item:base:waystone",
+    "texture:base/waystone",
+]
+
+[[family]]
+diagnostic_id = 287
+atlas_slot = 286
+names = [
+    "base:stall_counter",
+    "item:base:stall_counter",
+    "texture:base/stall_counter",
+]
+
+[[family]]
+diagnostic_id = 288
+atlas_slot = 287
+names = [
+    "base:clay_block",
+    "item:base:clay_block/place",
+    "texture:base/clay_block",
+]
+
+[[family]]
+diagnostic_id = 289
+atlas_slot = 288
+names = [
+    "base:smoking_rack",
+    "item:base:smoking_rack",
+    "texture:base/smoking_rack",
+]
+
+[[family]]
+diagnostic_id = 290
+atlas_slot = 289
+names = [
+    "base:water_wheel",
+    "item:base:water_wheel",
+    "texture:base/water_wheel",
+]
+
+[[family]]
+diagnostic_id = 291
+atlas_slot = 290
+names = [
+    "base:water_wheel_run",
+    "item:base:water_wheel_run/place",
+    "texture:base/water_wheel_run",
+]
+
+[[family]]
+diagnostic_id = 292
+atlas_slot = 291
+names = [
+    "base:windmill_sail",
+    "item:base:windmill_sail",
+    "texture:base/windmill_sail",
+]
+
+[[family]]
+diagnostic_id = 293
+atlas_slot = 292
+names = [
+    "base:windmill_sail_run",
+    "item:base:windmill_sail_run/place",
+    "texture:base/windmill_sail_run",
+]
+
+[[family]]
+diagnostic_id = 294
+atlas_slot = 293
+names = [
+    "base:shaft",
+    "item:base:shaft",
+    "texture:base/shaft",
+]
+
+[[family]]
+diagnostic_id = 295
+atlas_slot = 294
+names = [
+    "base:gear",
+    "item:base:gear",
+    "texture:base/gear",
+]
+
+[[family]]
+diagnostic_id = 296
+atlas_slot = 295
+names = [
+    "base:alchemy_mortar",
+    "base:millstone",
+    "item:base:alchemy_mortar",
+    "item:base:millstone",
+    "texture:base/millstone",
+]
+
+[[family]]
+diagnostic_id = 297
+atlas_slot = 296
+names = [
+    "base:sawmill",
+    "item:base:sawmill",
+    "item:base:sawmill/dismantled_stock",
+    "item:base:sawmill/dismantling_bundle",
+    "item:base:sawmill/dismantling_scale",
+    "texture:base/sawmill",
+]
+
+[[family]]
+diagnostic_id = 298
+atlas_slot = 297
+names = [
+    "base:helve_hammer",
+    "base:helve_hammer_run",
+    "item:base:helve_hammer",
+    "item:base:helve_hammer_run/place",
+    "texture:base/helve_hammer",
+]
+
+[[family]]
+diagnostic_id = 299
+atlas_slot = 298
+names = [
+    "base:lathe",
+    "item:base:lathe",
+    "item:base:lathe/dismantled_stock",
+    "item:base:lathe/dismantling_bundle",
+    "item:base:lathe/dismantling_scale",
+    "texture:base/lathe",
+]
+
+[[family]]
+diagnostic_id = 300
+atlas_slot = 299
+names = [
+    "base:iron_lathe",
+    "item:base:iron_lathe",
+    "item:base:iron_lathe/dismantled_stock",
+    "item:base:iron_lathe/dismantling_bundle",
+    "item:base:iron_lathe/dismantling_scale",
+    "texture:base/iron_lathe",
+]
+
+[[family]]
+diagnostic_id = 301
+atlas_slot = 300
+names = [
+    "base:vice",
+    "item:base:vice",
+    "texture:base/vice",
+]
+
+[[family]]
+diagnostic_id = 302
+atlas_slot = 301
+names = [
+    "base:fitted_shaft",
+    "item:base:fitted_shaft",
+    "texture:base/fitted_shaft",
+]
+
+[[family]]
+diagnostic_id = 303
+atlas_slot = 302
+names = [
+    "base:boring_mill",
+    "item:base:boring_mill",
+    "item:base:boring_mill/dismantled_stock",
+    "item:base:boring_mill/dismantling_bundle",
+    "item:base:boring_mill/dismantling_scale",
+    "texture:base/boring_mill",
+]
+
+[[family]]
+diagnostic_id = 304
+atlas_slot = 303
+names = [
+    "base:pump",
+    "item:base:pump",
+    "item:base:pump/dismantled_stock",
+    "item:base:pump/dismantling_bundle",
+    "item:base:pump/dismantling_scale",
+    "texture:base/pump",
+]
+
+[[family]]
+diagnostic_id = 305
+atlas_slot = 304
+names = [
+    "base:firebox",
+    "item:base:firebox",
+    "item:base:firebox/dismantled_stock",
+    "item:base:firebox/dismantling_bundle",
+    "item:base:firebox/dismantling_scale",
+    "texture:base/firebox",
+]
+
+[[family]]
+diagnostic_id = 306
+atlas_slot = 305
+names = [
+    "base:firebox_lit",
+    "item:base:firebox_lit/place",
+    "texture:base/firebox_lit",
+]
+
+[[family]]
+diagnostic_id = 307
+atlas_slot = 306
+names = [
+    "base:alembic",
+    "base:boiler",
+    "base:scar_industrial_scale",
+    "item:base:alembic",
+    "item:base:boiler",
+    "item:base:scar_industrial_scale/place",
+    "texture:base/boiler",
+]
+
+[[family]]
+diagnostic_id = 308
+atlas_slot = 307
+names = [
+    "base:steam_engine",
+    "item:base:steam_engine",
+    "texture:base/steam_engine",
+]
+
+[[family]]
+diagnostic_id = 309
+atlas_slot = 308
+names = [
+    "base:steam_engine_run",
+    "item:base:steam_engine_run/place",
+    "texture:base/steam_engine_run",
+]
+
+[[family]]
+diagnostic_id = 310
+atlas_slot = 309
+names = [
+    "base:separator",
+    "item:base:separator",
+    "item:base:separator/dismantled_stock",
+    "item:base:separator/dismantling_bundle",
+    "item:base:separator/dismantling_scale",
+    "texture:base/separator",
+]
+
+[[family]]
+diagnostic_id = 311
+atlas_slot = 310
+names = [
+    "base:separator_lit",
+    "item:base:separator_lit/place",
+    "texture:base/separator_lit",
+]
+
+[[family]]
+diagnostic_id = 312
+atlas_slot = 311
+names = [
+    "base:generator",
+    "item:base:generator",
+    "item:base:generator/dismantled_stock",
+    "item:base:generator/dismantling_bundle",
+    "item:base:generator/dismantling_scale",
+    "texture:base/generator",
+]
+
+[[family]]
+diagnostic_id = 313
+atlas_slot = 312
+names = [
+    "base:generator_run",
+    "item:base:generator_run/place",
+    "texture:base/generator_run",
+]
+
+[[family]]
+diagnostic_id = 314
+atlas_slot = 313
+names = [
+    "base:arc_lamp",
+    "item:base:arc_lamp",
+    "texture:base/arc_lamp",
+]
+
+[[family]]
+diagnostic_id = 315
+atlas_slot = 314
+names = [
+    "base:arc_lamp_lit",
+    "item:base:arc_lamp_lit/place",
+    "texture:base/arc_lamp_lit",
+]
+
+[[family]]
+diagnostic_id = 316
+atlas_slot = 315
+names = [
+    "base:blue_arc_lamp",
+    "item:base:blue_arc_lamp",
+    "texture:base/blue_arc_lamp",
+]
+
+[[family]]
+diagnostic_id = 317
+atlas_slot = 316
+names = [
+    "base:blue_arc_lamp_lit",
+    "item:base:blue_arc_lamp_lit/place",
+    "texture:base/blue_arc_lamp_lit",
+]
+
+[[family]]
+diagnostic_id = 318
+atlas_slot = 317
+names = [
+    "base:red_arc_lamp",
+    "item:base:red_arc_lamp",
+    "texture:base/red_arc_lamp",
+]
+
+[[family]]
+diagnostic_id = 319
+atlas_slot = 318
+names = [
+    "base:red_arc_lamp_lit",
+    "item:base:red_arc_lamp_lit/place",
+    "texture:base/red_arc_lamp_lit",
+]
+
+[[family]]
+diagnostic_id = 320
+atlas_slot = 319
+names = [
+    "base:infusion_basin",
+    "base:polished_glass",
+    "item:base:ashlace_wash",
+    "item:base:glass_bottle",
+    "item:base:infusion_basin",
+    "item:base:polished_glass",
+    "item:base:stability_reference",
+    "item:base:weak_extraction",
+    "texture:base/polished_glass",
+]
+
+[[family]]
+diagnostic_id = 321
+atlas_slot = 320
+names = [
+    "base:compost_heap",
+    "texture:base/compost_heap_top",
+]
+
+[[family]]
+diagnostic_id = 322
+atlas_slot = 321
+names = [
+    "base:compost_heap",
+    "base:compost_heap_ready",
+    "item:base:compost_heap",
+    "texture:base/compost_heap_side",
+]
+
+[[family]]
+diagnostic_id = 323
+atlas_slot = 322
+names = [
+    "base:compost_heap_ready",
+    "item:base:compost_heap_ready/place",
+    "texture:base/compost_ready_top",
+]
+
+[[family]]
+diagnostic_id = 324
+atlas_slot = 323
+names = [
+    "base:cattail",
+    "base:lantern_reed",
+    "base:lantern_reed_dim",
+    "base:rainbell",
+    "base:scar_wet_film",
+    "item:base:cattail",
+    "item:base:lantern_reed",
+    "item:base:lantern_reed_dim/place",
+    "item:base:lantern_reed_pith",
+    "item:base:rainbell",
+    "item:base:rainbell_dew",
+    "item:base:scar_wet_film/place",
+    "texture:base/cattail",
+]
+
+[[family]]
+diagnostic_id = 325
+atlas_slot = 324
+names = [
+    "base:kelp_frond",
+    "base:tidekelp",
+    "item:base:kelp_frond/place",
+    "item:base:tidekelp",
+    "texture:base/kelp",
+]
+
+[[family]]
+diagnostic_id = 326
+atlas_slot = 325
+names = [
+    "base:water_lily",
+    "item:base:water_lily",
+    "texture:base/lily_pad",
+]
+
+[[family]]
+diagnostic_id = 327
+atlas_slot = 326
+names = [
+    "base:leaf_litter",
+    "base:pilgrim_root",
+    "base:scar_forest_threads",
+    "item:base:leaf_litter",
+    "item:base:pilgrim_root",
+    "item:base:pilgrim_root_cutting",
+    "item:base:scar_forest_threads/place",
+    "texture:base/leaf_litter",
+]
+
+[[family]]
+diagnostic_id = 328
+atlas_slot = 327
+names = [
+    "base:ashlace",
+    "base:lantern_fungus",
+    "item:base:ashlace",
+    "item:base:ashlace_tissue",
+    "item:base:lantern_fungus",
+    "texture:base/lantern_fungus",
+]
+
+[[family]]
+diagnostic_id = 329
+atlas_slot = 328
+names = [
+    "base:charred_soil",
+    "item:base:charred_soil",
+    "texture:base/charred_soil",
+]
+
+[[family]]
+diagnostic_id = 330
+atlas_slot = 329
+names = [
+    "base:cairnbloom",
+    "base:meadow_bloom",
+    "item:base:cairnbloom",
+    "item:base:cairnbloom_flower",
+    "item:base:meadow_bloom",
+    "texture:base/meadow_bloom",
+]
+
+[[family]]
+diagnostic_id = 331
+atlas_slot = 330
+names = [
+    "base:ember_poppy",
+    "item:base:ember_petal",
+    "item:base:ember_poppy",
+    "item:base:volatile_mash",
+    "texture:base/ember_poppy",
+]
+
+[[family]]
+diagnostic_id = 332
+atlas_slot = 331
+names = [
+    "base:containment_post",
+    "base:hushwood",
+    "item:base:containment_post",
+    "item:base:hushwood",
+    "item:base:hushwood_switch",
+    "texture:base/heart_tree",
+]
+
+[[family]]
+diagnostic_id = 333
+atlas_slot = 332
+names = [
+    "base:stormvine",
+    "item:base:stormvine",
+    "item:base:stormvine_tendril",
+    "texture:base/heart_tree_top",
+]
+
+[[family]]
+diagnostic_id = 334
+atlas_slot = 333
+names = [
+    "base:nightglass",
+    "base:scar_frost_craze",
+    "item:base:arctic_seed",
+    "item:base:nightglass",
+    "item:base:nightglass_pod",
+    "item:base:scar_frost_craze/place",
+    "texture:base/arctic_seed",
+]
+
+[[family]]
+diagnostic_id = 335
+atlas_slot = 334
+names = [
+    "base:frostlace",
+    "item:base:frostlace",
+    "item:base:frostlace_frond",
+    "item:base:tundra_seed",
+    "texture:base/tundra_seed",
+]
+
+[[family]]
+diagnostic_id = 336
+atlas_slot = 335
+names = [
+    "base:heart_forest",
+    "texture:base/heart_forest_top",
+]
+
+[[family]]
+diagnostic_id = 337
+atlas_slot = 336
+names = [
+    "base:heart_forest",
+    "item:base:heart_forest",
+    "texture:base/heart_forest",
+]
+
+[[family]]
+diagnostic_id = 338
+atlas_slot = 337
+names = [
+    "base:heart_forest_sick",
+    "item:base:heart_forest_sick/place",
+    "texture:base/heart_forest_sick_top",
+]
+
+[[family]]
+diagnostic_id = 339
+atlas_slot = 338
+names = [
+    "base:heart_forest_sick",
+    "texture:base/heart_forest_sick",
+]
+
+[[family]]
+diagnostic_id = 340
+atlas_slot = 339
+names = [
+    "base:heart_forest_dead",
+    "item:base:heart_forest_dead/place",
+    "texture:base/heart_forest_dead_top",
+]
+
+[[family]]
+diagnostic_id = 341
+atlas_slot = 340
+names = [
+    "base:heart_forest_dead",
+    "texture:base/heart_forest_dead",
+]
+
+[[family]]
+diagnostic_id = 342
+atlas_slot = 341
+names = [
+    "base:heart_taiga",
+    "texture:base/heart_taiga_top",
+]
+
+[[family]]
+diagnostic_id = 343
+atlas_slot = 342
+names = [
+    "base:heart_taiga",
+    "item:base:heart_taiga",
+    "texture:base/heart_taiga",
+]
+
+[[family]]
+diagnostic_id = 344
+atlas_slot = 343
+names = [
+    "base:heart_taiga_sick",
+    "item:base:heart_taiga_sick/place",
+    "texture:base/heart_taiga_sick_top",
+]
+
+[[family]]
+diagnostic_id = 345
+atlas_slot = 344
+names = [
+    "base:heart_taiga_sick",
+    "texture:base/heart_taiga_sick",
+]
+
+[[family]]
+diagnostic_id = 346
+atlas_slot = 345
+names = [
+    "base:heart_taiga_dead",
+    "item:base:heart_taiga_dead/place",
+    "texture:base/heart_taiga_dead_top",
+]
+
+[[family]]
+diagnostic_id = 347
+atlas_slot = 346
+names = [
+    "base:heart_taiga_dead",
+    "texture:base/heart_taiga_dead",
+]
+
+[[family]]
+diagnostic_id = 348
+atlas_slot = 347
+names = [
+    "base:heart_jungle",
+    "texture:base/heart_jungle_top",
+]
+
+[[family]]
+diagnostic_id = 349
+atlas_slot = 348
+names = [
+    "base:heart_jungle",
+    "item:base:heart_jungle",
+    "texture:base/heart_jungle",
+]
+
+[[family]]
+diagnostic_id = 350
+atlas_slot = 349
+names = [
+    "base:heart_jungle_sick",
+    "item:base:heart_jungle_sick/place",
+    "texture:base/heart_jungle_sick_top",
+]
+
+[[family]]
+diagnostic_id = 351
+atlas_slot = 350
+names = [
+    "base:heart_jungle_sick",
+    "texture:base/heart_jungle_sick",
+]
+
+[[family]]
+diagnostic_id = 352
+atlas_slot = 351
+names = [
+    "base:heart_jungle_dead",
+    "item:base:heart_jungle_dead/place",
+    "texture:base/heart_jungle_dead_top",
+]
+
+[[family]]
+diagnostic_id = 353
+atlas_slot = 352
+names = [
+    "base:heart_jungle_dead",
+    "texture:base/heart_jungle_dead",
+]
+
+[[family]]
+diagnostic_id = 354
+atlas_slot = 353
+names = [
+    "base:heart_swamp",
+    "texture:base/heart_swamp_top",
+]
+
+[[family]]
+diagnostic_id = 355
+atlas_slot = 354
+names = [
+    "base:heart_swamp",
+    "item:base:heart_swamp",
+    "texture:base/heart_swamp",
+]
+
+[[family]]
+diagnostic_id = 356
+atlas_slot = 355
+names = [
+    "base:heart_swamp_sick",
+    "item:base:heart_swamp_sick/place",
+    "texture:base/heart_swamp_sick_top",
+]
+
+[[family]]
+diagnostic_id = 357
+atlas_slot = 356
+names = [
+    "base:heart_swamp_sick",
+    "texture:base/heart_swamp_sick",
+]
+
+[[family]]
+diagnostic_id = 358
+atlas_slot = 357
+names = [
+    "base:heart_swamp_dead",
+    "item:base:heart_swamp_dead/place",
+    "texture:base/heart_swamp_dead_top",
+]
+
+[[family]]
+diagnostic_id = 359
+atlas_slot = 358
+names = [
+    "base:heart_swamp_dead",
+    "texture:base/heart_swamp_dead",
+]
+
+[[family]]
+diagnostic_id = 360
+atlas_slot = 359
+names = [
+    "base:heart_desert",
+    "item:base:heart_desert",
+    "texture:base/heart_desert",
+]
+
+[[family]]
+diagnostic_id = 361
+atlas_slot = 360
+names = [
+    "base:heart_desert_sick",
+    "item:base:heart_desert_sick/place",
+    "texture:base/heart_desert_sick",
+]
+
+[[family]]
+diagnostic_id = 362
+atlas_slot = 361
+names = [
+    "base:heart_desert_dead",
+    "item:base:heart_desert_dead/place",
+    "texture:base/heart_desert_dead",
+]
+
+[[family]]
+diagnostic_id = 363
+atlas_slot = 362
+names = [
+    "base:heart_badlands",
+    "item:base:heart_badlands",
+    "texture:base/heart_badlands",
+]
+
+[[family]]
+diagnostic_id = 364
+atlas_slot = 363
+names = [
+    "base:heart_badlands_sick",
+    "item:base:heart_badlands_sick/place",
+    "texture:base/heart_badlands_sick",
+]
+
+[[family]]
+diagnostic_id = 365
+atlas_slot = 364
+names = [
+    "base:heart_badlands_dead",
+    "item:base:heart_badlands_dead/place",
+    "texture:base/heart_badlands_dead",
+]
+
+[[family]]
+diagnostic_id = 366
+atlas_slot = 365
+names = [
+    "base:heart_savanna",
+    "item:base:heart_savanna",
+    "texture:base/heart_savanna",
+]
+
+[[family]]
+diagnostic_id = 367
+atlas_slot = 366
+names = [
+    "base:heart_savanna_sick",
+    "item:base:heart_savanna_sick/place",
+    "texture:base/heart_savanna_sick",
+]
+
+[[family]]
+diagnostic_id = 368
+atlas_slot = 367
+names = [
+    "base:heart_savanna_dead",
+    "item:base:heart_savanna_dead/place",
+    "texture:base/heart_savanna_dead",
+]
+
+[[family]]
+diagnostic_id = 369
+atlas_slot = 368
+names = [
+    "base:heart_scrubland",
+    "item:base:heart_scrubland",
+    "texture:base/heart_scrubland",
+]
+
+[[family]]
+diagnostic_id = 370
+atlas_slot = 369
+names = [
+    "base:heart_scrubland_sick",
+    "item:base:heart_scrubland_sick/place",
+    "texture:base/heart_scrubland_sick",
+]
+
+[[family]]
+diagnostic_id = 371
+atlas_slot = 370
+names = [
+    "base:heart_scrubland_dead",
+    "item:base:heart_scrubland_dead/place",
+    "texture:base/heart_scrubland_dead",
+]
+
+[[family]]
+diagnostic_id = 372
+atlas_slot = 371
+names = [
+    "base:heart_plains",
+    "item:base:heart_plains",
+    "texture:base/heart_plains",
+]
+
+[[family]]
+diagnostic_id = 373
+atlas_slot = 372
+names = [
+    "base:heart_plains_sick",
+    "item:base:heart_plains_sick/place",
+    "texture:base/heart_plains_sick",
+]
+
+[[family]]
+diagnostic_id = 374
+atlas_slot = 373
+names = [
+    "base:heart_plains_dead",
+    "item:base:heart_plains_dead/place",
+    "texture:base/heart_plains_dead",
+]
+
+[[family]]
+diagnostic_id = 375
+atlas_slot = 374
+names = [
+    "base:heart_tundra",
+    "item:base:heart_tundra",
+    "texture:base/heart_tundra",
+]
+
+[[family]]
+diagnostic_id = 376
+atlas_slot = 375
+names = [
+    "base:heart_tundra_sick",
+    "item:base:heart_tundra_sick/place",
+    "texture:base/heart_tundra_sick",
+]
+
+[[family]]
+diagnostic_id = 377
+atlas_slot = 376
+names = [
+    "base:heart_tundra_dead",
+    "item:base:heart_tundra_dead/place",
+    "texture:base/heart_tundra_dead",
+]
+
+[[family]]
+diagnostic_id = 378
+atlas_slot = 377
+names = [
+    "base:heart_arctic",
+    "item:base:heart_arctic",
+    "texture:base/heart_arctic",
+]
+
+[[family]]
+diagnostic_id = 379
+atlas_slot = 378
+names = [
+    "base:heart_arctic_sick",
+    "item:base:heart_arctic_sick/place",
+    "texture:base/heart_arctic_sick",
+]
+
+[[family]]
+diagnostic_id = 380
+atlas_slot = 379
+names = [
+    "base:heart_arctic_dead",
+    "item:base:heart_arctic_dead/place",
+    "texture:base/heart_arctic_dead",
+]
+
+[[family]]
+diagnostic_id = 381
+atlas_slot = 380
+names = [
+    "base:heart_mountains",
+    "item:base:heart_mountains",
+    "texture:base/heart_mountains",
+]
+
+[[family]]
+diagnostic_id = 382
+atlas_slot = 381
+names = [
+    "base:heart_mountains_sick",
+    "item:base:heart_mountains_sick/place",
+    "texture:base/heart_mountains_sick",
+]
+
+[[family]]
+diagnostic_id = 383
+atlas_slot = 382
+names = [
+    "base:heart_mountains_dead",
+    "item:base:heart_mountains_dead/place",
+    "texture:base/heart_mountains_dead",
+]
+
+[[family]]
+diagnostic_id = 384
+atlas_slot = 383
+names = [
+    "base:fire",
+    "item:base:fire/place",
+    "texture:base/fire",
+]
+
+[[family]]
+diagnostic_id = 385
+atlas_slot = 384
+names = [
+    "item:base:kelp",
+    "item:base:tidekelp_blade",
+    "texture:base/kelp_item",
+]
+
+[[family]]
+diagnostic_id = 386
+atlas_slot = 385
+names = [
+    "item:base:amethyst_shard",
+    "item:base:wellglass_shard",
+    "texture:base/amethyst_shard",
+]
+
+[[family]]
+diagnostic_id = 387
+atlas_slot = 386
+names = [
+    "item:base:broken_focus",
+    "item:base:charge_vessel",
+    "item:base:charge_vessel/damaged",
+    "item:base:charge_vessel/forge_scale",
+    "item:base:charge_vessel/forge_scrap",
+    "item:base:charge_vessel/primitive_scale",
+    "item:base:charge_vessel/primitive_scrap",
+    "item:base:crystal_lens",
+    "item:base:sealed_dross_ampoule",
+    "item:base:small_vessel_reservoir",
+    "item:base:tuning_lens",
+    "item:base:tuning_lens_frame",
+    "item:base:tuning_lens_mount",
+    "texture:base/crystal_lens",
+]
+
+[[family]]
+diagnostic_id = 388
+atlas_slot = 387
+names = [
+    "item:base:silver_ingot",
+    "item:base:silver_wand_binding",
+    "texture:base/silver_ingot",
+]
+
+[[family]]
+diagnostic_id = 389
+atlas_slot = 388
+names = [
+    "item:base:lead_ingot",
+    "item:base:lead_wand_binding",
+    "texture:base/lead_ingot",
+]
+
+[[family]]
+diagnostic_id = 390
+atlas_slot = 389
+names = [
+    "item:base:bound_wand",
+    "texture:base/bound_wand",
+]
+
+[[family]]
+diagnostic_id = 391
+atlas_slot = 390
+names = [
+    "item:base:field_ledger",
+    "item:base:leather_strip",
+    "texture:base/leather_strip",
+]
+
+[[family]]
+diagnostic_id = 392
+atlas_slot = 391
+names = [
+    "item:base:charm_quiet",
+    "texture:base/crafted_charm_quiet",
+]
+
+[[family]]
+diagnostic_id = 393
+atlas_slot = 392
+names = [
+    "item:base:charm_bark",
+    "texture:base/crafted_charm_bark",
+]
+
+[[family]]
+diagnostic_id = 394
+atlas_slot = 393
+names = [
+    "item:base:charm_hunger",
+    "texture:base/crafted_charm_hunger",
+]
+
+[[family]]
+diagnostic_id = 395
+atlas_slot = 394
+names = [
+    "item:base:bucket_lava",
+    "texture:base/bucket_lava",
+]
+
+[[family]]
+diagnostic_id = 396
+atlas_slot = 395
+names = [
+    "item:base:sulfur",
+    "texture:base/sulfur",
+]
+
+[[family]]
+diagnostic_id = 397
+atlas_slot = 396
+names = [
+    "item:base:quartz_shard",
+    "texture:base/quartz_shard",
+]
+
+[[family]]
+diagnostic_id = 398
+atlas_slot = 397
+names = [
+    "item:base:coal",
+    "texture:base/coal",
+]
+
+[[family]]
+diagnostic_id = 399
+atlas_slot = 398
+names = [
+    "item:base:raw_gold",
+    "texture:base/raw_gold",
+]
+
+[[family]]
+diagnostic_id = 400
+atlas_slot = 399
+names = [
+    "item:base:raw_galena",
+    "texture:base/raw_galena",
+]
+
+[[family]]
+diagnostic_id = 401
+atlas_slot = 400
+names = [
+    "item:base:raw_chromite",
+    "texture:base/raw_chromite",
+]
+
+[[family]]
+diagnostic_id = 402
+atlas_slot = 401
+names = [
+    "item:base:diamond",
+    "texture:base/diamond",
+]
+
+[[family]]
+diagnostic_id = 403
+atlas_slot = 402
+names = [
+    "item:base:raw_pitchblende",
+    "texture:base/raw_pitchblende",
+]
+
+[[family]]
+diagnostic_id = 404
+atlas_slot = 403
+names = [
+    "item:base:monazite_grit",
+    "texture:base/monazite_grit",
+]
+
+[[family]]
+diagnostic_id = 405
+atlas_slot = 404
+names = [
+    "item:base:bastnasite",
+    "texture:base/bastnasite",
+]
+
+[[family]]
+diagnostic_id = 406
+atlas_slot = 405
+names = [
+    "item:base:gold_ingot",
+    "texture:base/gold_ingot",
+]
+
+[[family]]
+diagnostic_id = 407
+atlas_slot = 406
+names = [
+    "item:base:quartz_crucible",
+    "texture:base/quartz_crucible",
+]
+
+[[family]]
+diagnostic_id = 408
+atlas_slot = 407
+names = [
+    "item:base:charged_crucible",
+    "texture:base/charged_crucible",
+]
+
+[[family]]
+diagnostic_id = 409
+atlas_slot = 408
+names = [
+    "item:base:chrome_powder",
+    "texture:base/chrome_powder",
+]
+
+[[family]]
+diagnostic_id = 410
+atlas_slot = 409
+names = [
+    "item:base:tin_powder",
+    "texture:base/tin_powder",
+]
+
+[[family]]
+diagnostic_id = 411
+atlas_slot = 410
+names = [
+    "item:base:uranium_powder",
+    "texture:base/uranium_powder",
+]
+
+[[family]]
+diagnostic_id = 412
+atlas_slot = 411
+names = [
+    "item:base:rare_earth_powder",
+    "texture:base/rare_earth_powder",
+]
+
+[[family]]
+diagnostic_id = 413
+atlas_slot = 412
+names = [
+    "item:base:crystal_prism",
+    "texture:base/crystal_prism",
+]
+
+[[family]]
+diagnostic_id = 414
+atlas_slot = 413
+names = [
+    "item:base:diamond_tipped_pick",
+    "item:base:diamond_tipped_pick/damaged",
+    "item:base:diamond_tipped_pick/forge_scale",
+    "item:base:diamond_tipped_pick/forge_scrap",
+    "item:base:diamond_tipped_pick/primitive_scale",
+    "item:base:diamond_tipped_pick/primitive_scrap",
+    "texture:base/diamond_tipped_pick",
+]
+
+[[family]]
+diagnostic_id = 415
+atlas_slot = 414
+names = [
+    "item:base:prospect_pick",
+    "item:base:prospect_pick/damaged",
+    "item:base:prospect_pick/forge_scale",
+    "item:base:prospect_pick/forge_scrap",
+    "item:base:prospect_pick/primitive_scale",
+    "item:base:prospect_pick/primitive_scrap",
+    "texture:base/prospect_pick",
+]
+
+[[family]]
+diagnostic_id = 416
+atlas_slot = 415
+names = [
+    "item:base:mineral_nutrient",
+    "item:base:salt_crystal",
+    "texture:base/salt_crystal",
+]
+
+[[family]]
+diagnostic_id = 417
+atlas_slot = 416
+names = [
+    "item:base:salted_meat",
+    "texture:base/salted_meat",
+]
+
+[[family]]
+diagnostic_id = 418
+atlas_slot = 417
+names = [
+    "item:base:scorched_mash",
+    "item:base:spent_mash",
+    "item:base:spoiled_mush",
+    "texture:base/spoiled_mush",
+]
+
+[[family]]
+diagnostic_id = 419
+atlas_slot = 418
+names = [
+    "item:base:lead",
+    "texture:base/lead",
+]
+
+[[family]]
+diagnostic_id = 420
+atlas_slot = 419
+names = [
+    "item:base:saddlebags",
+    "texture:base/saddlebags",
+]
+
+[[family]]
+diagnostic_id = 421
+atlas_slot = 420
+names = [
+    "item:base:boat",
+    "texture:base/boat",
+]
+
+[[family]]
+diagnostic_id = 422
+atlas_slot = 421
+names = [
+    "item:base:clay_ball",
+    "item:base:mineral_sludge",
+    "item:base:spent_carrier",
+    "texture:base/clay_ball",
+]
+
+[[family]]
+diagnostic_id = 423
+atlas_slot = 422
+names = [
+    "item:base:crock",
+    "texture:base/crock",
+]
+
+[[family]]
+diagnostic_id = 424
+atlas_slot = 423
+names = [
+    "item:base:pickles",
+    "texture:base/pickles",
+]
+
+[[family]]
+diagnostic_id = 425
+atlas_slot = 424
+names = [
+    "item:base:smoked_meat",
+    "texture:base/smoked_meat",
+]
+
+[[family]]
+diagnostic_id = 426
+atlas_slot = 425
+names = [
+    "item:base:beam",
+    "texture:base/beam",
+]
+
+[[family]]
+diagnostic_id = 427
+atlas_slot = 426
+names = [
+    "item:base:screw",
+    "texture:base/screw",
+]
+
+[[family]]
+diagnostic_id = 428
+atlas_slot = 427
+names = [
+    "item:base:leadscrew",
+    "texture:base/leadscrew",
+]
+
+[[family]]
+diagnostic_id = 429
+atlas_slot = 428
+names = [
+    "item:base:iron_shaft",
+    "texture:base/iron_shaft",
+]
+
+[[family]]
+diagnostic_id = 430
+atlas_slot = 429
+names = [
+    "item:base:bearing",
+    "texture:base/bearing",
+]
+
+[[family]]
+diagnostic_id = 431
+atlas_slot = 430
+names = [
+    "item:base:iron_gear",
+    "texture:base/iron_gear",
+]
+
+[[family]]
+diagnostic_id = 432
+atlas_slot = 431
+names = [
+    "item:base:plate",
+    "texture:base/plate",
+]
+
+[[family]]
+diagnostic_id = 433
+atlas_slot = 432
+names = [
+    "item:base:cylinder",
+    "texture:base/cylinder",
+]
+
+[[family]]
+diagnostic_id = 434
+atlas_slot = 433
+names = [
+    "item:base:neodymium",
+    "texture:base/neodymium",
+]
+
+[[family]]
+diagnostic_id = 435
+atlas_slot = 434
+names = [
+    "item:base:cerium",
+    "texture:base/cerium",
+]
+
+[[family]]
+diagnostic_id = 436
+atlas_slot = 435
+names = [
+    "item:base:magnet",
+    "texture:base/magnet",
+]
+
+[[family]]
+diagnostic_id = 437
+atlas_slot = 436
+names = [
+    "item:base:dung",
+    "texture:base/dung",
+]
+
+[[family]]
+diagnostic_id = 438
+atlas_slot = 437
+names = [
+    "item:base:compost",
+    "texture:base/compost",
+]
+
+[[family]]
+diagnostic_id = 439
+atlas_slot = 438
+names = [
+    "item:base:raw_bear",
+    "texture:base/raw_bear",
+]
+
+[[family]]
+diagnostic_id = 440
+atlas_slot = 439
+names = [
+    "item:base:cooked_bear",
+    "texture:base/cooked_bear",
+]
+
+[[family]]
+diagnostic_id = 441
+atlas_slot = 440
+names = [
+    "item:base:raw_fish",
+    "texture:base/raw_fish",
+]
+
+[[family]]
+diagnostic_id = 442
+atlas_slot = 441
+names = [
+    "item:base:cooked_fish",
+    "texture:base/cooked_fish",
+]
+
+[[family]]
+diagnostic_id = 443
+atlas_slot = 442
+names = [
+    "item:base:fishing_rod",
+    "texture:base/fishing_rod",
+]
+
+[[family]]
+diagnostic_id = 444
+atlas_slot = 443
+names = [
+    "item:base:guano",
+    "texture:base/guano",
+]
+
+[[family]]
+diagnostic_id = 445
+atlas_slot = 444
+names = [
+    "item:base:forest_seed",
+    "texture:base/forest_seed",
+]
+
+[[family]]
+diagnostic_id = 446
+atlas_slot = 445
+names = [
+    "item:base:taiga_seed",
+    "texture:base/taiga_seed",
+]
+
+[[family]]
+diagnostic_id = 447
+atlas_slot = 446
+names = [
+    "item:base:jungle_seed",
+    "texture:base/jungle_seed",
+]
+
+[[family]]
+diagnostic_id = 448
+atlas_slot = 447
+names = [
+    "item:base:swamp_seed",
+    "texture:base/swamp_seed",
+]
+
+[[family]]
+diagnostic_id = 449
+atlas_slot = 448
+names = [
+    "item:base:desert_seed",
+    "texture:base/desert_seed",
+]
+
+[[family]]
+diagnostic_id = 450
+atlas_slot = 449
+names = [
+    "item:base:badlands_seed",
+    "texture:base/badlands_seed",
+]
+
+[[family]]
+diagnostic_id = 451
+atlas_slot = 450
+names = [
+    "item:base:savanna_seed",
+    "texture:base/savanna_seed",
+]
+
+[[family]]
+diagnostic_id = 452
+atlas_slot = 451
+names = [
+    "item:base:scrubland_seed",
+    "texture:base/scrubland_seed",
+]
+
+[[family]]
+diagnostic_id = 453
+atlas_slot = 452
+names = [
+    "item:base:plains_seed",
+    "texture:base/plains_seed",
+]
+
+[[family]]
+diagnostic_id = 454
+atlas_slot = 453
+names = [
+    "item:base:mountains_seed",
+    "texture:base/mountains_seed",
+]
+
+[[family]]
+diagnostic_id = 455
+atlas_slot = 454
+names = [
+    "item:base:fire_striker",
+    "item:base:fire_striker/damaged",
+    "item:base:fire_striker/forge_scale",
+    "item:base:fire_striker/forge_scrap",
+    "item:base:fire_striker/primitive_scale",
+    "item:base:fire_striker/primitive_scrap",
+    "texture:base/fire_striker",
+]
+
+[[family]]
+diagnostic_id = 456
+atlas_slot = 455
+names = ["texture:base/boat_hull"]
+
+[[family]]
+diagnostic_id = 457
+atlas_slot = 456
+names = ["texture:base/fox"]
+
+[[family]]
+diagnostic_id = 458
+atlas_slot = 457
+names = ["texture:base/fox_face"]
+
+[[family]]
+diagnostic_id = 459
+atlas_slot = 458
+names = ["texture:base/wolf"]
+
+[[family]]
+diagnostic_id = 460
+atlas_slot = 459
+names = ["texture:base/wolf_face"]
+
+[[family]]
+diagnostic_id = 461
+atlas_slot = 460
+names = ["texture:base/lynx"]
+
+[[family]]
+diagnostic_id = 462
+atlas_slot = 461
+names = ["texture:base/lynx_face"]
+
+[[family]]
+diagnostic_id = 463
+atlas_slot = 462
+names = ["texture:base/jackal"]
+
+[[family]]
+diagnostic_id = 464
+atlas_slot = 463
+names = ["texture:base/jackal_face"]
+
+[[family]]
+diagnostic_id = 465
+atlas_slot = 464
+names = ["texture:base/eagle"]
+
+[[family]]
+diagnostic_id = 466
+atlas_slot = 465
+names = ["texture:base/eagle_face"]
+
+[[family]]
+diagnostic_id = 467
+atlas_slot = 466
+names = ["texture:base/vulture"]
+
+[[family]]
+diagnostic_id = 468
+atlas_slot = 467
+names = ["texture:base/vulture_face"]
+
+[[family]]
+diagnostic_id = 469
+atlas_slot = 468
+names = ["texture:base/rattlesnake"]
+
+[[family]]
+diagnostic_id = 470
+atlas_slot = 469
+names = ["texture:base/rattlesnake_face"]
+
+[[family]]
+diagnostic_id = 471
+atlas_slot = 470
+names = ["texture:base/polar_bear"]
+
+[[family]]
+diagnostic_id = 472
+atlas_slot = 471
+names = ["texture:base/polar_bear_face"]
+
+[[family]]
+diagnostic_id = 473
+atlas_slot = 472
+names = ["texture:base/carcass"]
+
+[[family]]
+diagnostic_id = 474
+atlas_slot = 473
+names = ["texture:base/trout"]
+
+[[family]]
+diagnostic_id = 475
+atlas_slot = 474
+names = ["texture:base/carp"]
+
+[[family]]
+diagnostic_id = 476
+atlas_slot = 475
+names = ["texture:base/catfish"]
+
+[[family]]
+diagnostic_id = 477
+atlas_slot = 476
+names = ["texture:base/cod"]
+
+[[family]]
+diagnostic_id = 478
+atlas_slot = 477
+names = ["texture:base/mackerel"]
+
+[[family]]
+diagnostic_id = 479
+atlas_slot = 478
+names = ["texture:base/gull"]
+
+[[family]]
+diagnostic_id = 480
+atlas_slot = 479
+names = ["texture:base/gull_face"]
+
+[[family]]
+diagnostic_id = 481
+atlas_slot = 480
+names = ["texture:base/frog"]
+
+[[family]]
+diagnostic_id = 482
+atlas_slot = 481
+names = ["texture:base/frog_face"]
+
+[[family]]
+diagnostic_id = 483
+atlas_slot = 482
+names = ["texture:base/heron"]
+
+[[family]]
+diagnostic_id = 484
+atlas_slot = 483
+names = ["texture:base/heron_face"]
+
+[[family]]
+diagnostic_id = 485
+atlas_slot = 484
+names = ["texture:base/seal"]
+
+[[family]]
+diagnostic_id = 486
+atlas_slot = 485
+names = ["texture:base/seal_face"]
+
+[[family]]
+diagnostic_id = 487
+atlas_slot = 486
+names = ["texture:base/crab"]
+
+[[family]]
+diagnostic_id = 488
+atlas_slot = 487
+names = ["texture:base/crocodile"]
+
+[[family]]
+diagnostic_id = 489
+atlas_slot = 488
+names = ["texture:base/crocodile_face"]
+
+[[family]]
+diagnostic_id = 490
+atlas_slot = 489
+names = ["texture:base/bison"]
+
+[[family]]
+diagnostic_id = 491
+atlas_slot = 490
+names = ["texture:base/bison_face"]
+
+[[family]]
+diagnostic_id = 492
+atlas_slot = 491
+names = ["texture:base/antelope"]
+
+[[family]]
+diagnostic_id = 493
+atlas_slot = 492
+names = ["texture:base/antelope_face"]
+
+[[family]]
+diagnostic_id = 494
+atlas_slot = 493
+names = ["texture:base/musk_ox"]
+
+[[family]]
+diagnostic_id = 495
+atlas_slot = 494
+names = ["texture:base/musk_ox_face"]
+
+[[family]]
+diagnostic_id = 496
+atlas_slot = 495
+names = ["texture:base/mouflon"]
+
+[[family]]
+diagnostic_id = 497
+atlas_slot = 496
+names = ["texture:base/mouflon_face"]
+
+[[family]]
+diagnostic_id = 498
+atlas_slot = 497
+names = ["texture:base/camel"]
+
+[[family]]
+diagnostic_id = 499
+atlas_slot = 498
+names = ["texture:base/camel_face"]
+
+[[family]]
+diagnostic_id = 500
+atlas_slot = 499
+names = ["texture:base/pheasant"]
+
+[[family]]
+diagnostic_id = 501
+atlas_slot = 500
+names = ["texture:base/pheasant_face"]
+
+[[family]]
+diagnostic_id = 502
+atlas_slot = 501
+names = ["texture:base/guineafowl"]
+
+[[family]]
+diagnostic_id = 503
+atlas_slot = 502
+names = ["texture:base/guineafowl_face"]
+
+[[family]]
+diagnostic_id = 504
+atlas_slot = 503
+names = ["texture:base/ptarmigan"]
+
+[[family]]
+diagnostic_id = 505
+atlas_slot = 504
+names = ["texture:base/ptarmigan_face"]
+
+[[family]]
+diagnostic_id = 506
+atlas_slot = 505
+names = ["texture:base/duck"]
+
+[[family]]
+diagnostic_id = 507
+atlas_slot = 506
+names = ["texture:base/duck_face"]
+
+[[family]]
+diagnostic_id = 508
+atlas_slot = 507
+names = ["texture:base/marmot"]
+
+[[family]]
+diagnostic_id = 509
+atlas_slot = 508
+names = ["texture:base/marmot_face"]
+
+[[family]]
+diagnostic_id = 510
+atlas_slot = 509
+names = ["texture:base/bat"]
+
+[[family]]
+diagnostic_id = 511
+atlas_slot = 510
+names = ["texture:base/bat_face"]
+
+[[family]]
+diagnostic_id = 512
+atlas_slot = 511
+names = [
+    "gems:ruby_ore",
+    "item:gems:ruby_ore",
+    "texture:gems/ruby_ore",
+]
+
+[[family]]
+diagnostic_id = 513
+atlas_slot = 512
+names = [
+    "gems:ruby_block",
+    "item:gems:ruby_block",
+    "texture:gems/ruby_block",
+]
+
+[[family]]
+diagnostic_id = 514
+atlas_slot = 513
+names = [
+    "item:gems:ruby",
+    "texture:gems/ruby",
+]
+
+[[family]]
+diagnostic_id = 4010
+atlas_slot = 4009
+names = [
+    "item:base:bucket_brackish",
+    "item:base:bucket_salt",
+    "item:base:bucket_water",
+]
+
+[[family]]
+diagnostic_id = 4011
+atlas_slot = 4010
+names = [
+    "base:forge",
+    "item:base:forge",
+    "item:base:forge/dismantled_stock",
+    "item:base:forge/dismantling_bundle",
+    "item:base:forge/dismantling_scale",
+]
+
+[[family]]
+diagnostic_id = 4012
+atlas_slot = 4011
+names = ["base:forge_lit"]
+
+[artifacts]
+color_ppm = "screenshots/strata-after-quartzite-v4-near-overcast-base.ppm"
+color_ppm_sha256 = "d66c0e62848d31cd91ed3c3fe4a9883946e676c7914e80ea0426b20b6a33c1cf"
+diagnostic = "screenshots/strata-after-quartzite-v4-near-overcast-base.wfd"
+diagnostic_sha256 = "bbfd6202eead06b48ac4bb2e6b20d8485cba7dfaac3331b89c1570c14e0755f8"
+diagnostic_format = "wfd-rgba16uint-v1"

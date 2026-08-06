@@ -131,6 +131,13 @@ player basins are stable per-chunk ownership markers rather than a global
 arbitrary-dam connectivity solver. These limits do not relax conservation,
 but they should not be mistaken for finished water presentation.
 
+**Presentation closure (2026-08-05).** The short white-fog and pale-rock
+readability finding in those historical captures has been resolved and
+qualified on native Windows DX12 without changing the water cycle, reservoirs,
+shorelines, caves, or view distance. The separate observation that bright,
+broad water can resemble sky is not closed by the strata pass and remains
+honest follow-up work. See `docs/strata-fog-readability-plan.md`.
+
 ## Purpose
 
 Before Goal 6, visible voxel water was finite, but the old “cycle” removed
