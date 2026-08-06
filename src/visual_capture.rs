@@ -50,6 +50,7 @@ const QUALIFICATION_SOURCES: &[&str] = &[
     "src/visual_capture.rs",
     "tools/audit_tiles.py",
     "tools/gen_base_tiles.py",
+    "tools/verify_visual_closeout.py",
     "tools/verify_visual_polish.py",
 ];
 #[cfg(test)]
@@ -354,6 +355,26 @@ struct VisualManifest {
     geode_performance_report: String,
     capture: Vec<ManifestCapture>,
     site: Vec<ManifestSite>,
+    case: Vec<ManifestCase>,
+    performance: Vec<ManifestPerformance>,
+    geode_capture: Vec<ManifestGeodeCapture>,
+    geode_performance_capture: Vec<ManifestPerformance>,
+    closeout: ManifestCloseout,
+}
+
+#[cfg(test)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManifestCloseout {
+    commit: String,
+    date: String,
+    verifier: String,
+    verifier_sha256: String,
+    readability_report: String,
+    strata_performance_report: String,
+    geode_composition_report: String,
+    geode_performance_report: String,
+    motion_report: String,
     case: Vec<ManifestCase>,
     performance: Vec<ManifestPerformance>,
     geode_capture: Vec<ManifestGeodeCapture>,
@@ -792,8 +813,8 @@ fn validate_declared_evidence(
 fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Result<(), String> {
     let (_manifest_bytes, manifest): (Vec<u8>, VisualManifest) =
         read_toml(manifest_path, "visual-polish manifest")?;
-    if manifest.schema_version != 2 || manifest.status != "accepted" {
-        return Err("visual-polish manifest is not accepted schema 2 evidence".into());
+    if manifest.schema_version != 3 || manifest.status != "accepted" {
+        return Err("visual-polish manifest is not accepted schema 3 evidence".into());
     }
     if !valid_hex(&manifest.evidence_commit, 40)
         || !valid_hex(&manifest.baseline_commit, 40)
@@ -1207,6 +1228,7 @@ fn validate_visual_polish_manifest_at(root: &Path, manifest_path: &Path) -> Resu
         }
     }
     validate_cracked_geode_manifest(root, &manifest)?;
+    validate_closeout_manifest(root, &manifest)?;
     Ok(())
 }
 
@@ -1303,20 +1325,62 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
         return Err("cracked-geode site or preparation proof is incomplete".into());
     }
 
+    validate_geode_capture_group(
+        root,
+        manifest,
+        &manifest.geode_capture,
+        &manifest.geode_performance_capture,
+        &GeodeGroupExpectation {
+            id_prefix: "geode",
+            scene: MAIN_SCENE,
+            performance_scene: PERFORMANCE_SCENE,
+            commit: COMMIT,
+            composition_report: &manifest.geode_composition_report,
+            performance_report: &manifest.geode_performance_report,
+            composition_kind: "cracked-geode-composition",
+            performance_kind: "cracked-geode-performance",
+        },
+    )
+}
+
+#[cfg(test)]
+struct GeodeGroupExpectation<'a> {
+    id_prefix: &'a str,
+    scene: &'a str,
+    performance_scene: &'a str,
+    commit: &'a str,
+    composition_report: &'a str,
+    performance_report: &'a str,
+    composition_kind: &'a str,
+    performance_kind: &'a str,
+}
+
+#[cfg(test)]
+fn validate_geode_capture_group(
+    root: &Path,
+    manifest: &VisualManifest,
+    declarations: &[ManifestGeodeCapture],
+    performance_declarations: &[ManifestPerformance],
+    expected: &GeodeGroupExpectation<'_>,
+) -> Result<(), String> {
+    let sealed_id = format!("{}-sealed-context", expected.id_prefix);
+    let proof_id = format!("{}-aperture-proof", expected.id_prefix);
+    let hero_id = format!("{}-cracked-hero", expected.id_prefix);
+    let reload_id = format!("{}-reload-proof", expected.id_prefix);
     let purposes: BTreeMap<&str, &str> = [
-        ("geode-sealed-context", "sealed-context"),
-        ("geode-aperture-proof", "aperture-proof"),
-        ("geode-cracked-hero", "hero"),
-        ("geode-reload-proof", "reload-proof"),
+        (sealed_id.as_str(), "sealed-context"),
+        (proof_id.as_str(), "aperture-proof"),
+        (hero_id.as_str(), "hero"),
+        (reload_id.as_str(), "reload-proof"),
     ]
     .into_iter()
     .collect();
-    if manifest.geode_capture.len() != purposes.len() {
+    if declarations.len() != purposes.len() {
         return Err("cracked-geode evidence requires exactly four primary captures".into());
     }
     let mut captures = BTreeMap::<String, CaptureMetadata>::new();
     let mut reports = BTreeMap::<String, (VisualReport, Vec<u8>)>::new();
-    for declaration in &manifest.geode_capture {
+    for declaration in declarations {
         let Some(expected_purpose) = purposes.get(declaration.id.as_str()) else {
             return Err("cracked-geode manifest names an unexpected primary capture".into());
         };
@@ -1328,11 +1392,11 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
             &declaration.id,
             &declaration.sidecar,
             &declaration.report,
-            MAIN_SCENE,
-            COMMIT,
+            expected.scene,
+            expected.commit,
             (1920, 1080),
         )?;
-        let expected_world = if declaration.id == "geode-sealed-context" {
+        let expected_world = if declaration.id == sealed_id {
             "visual-polish-geode-sealed"
         } else {
             "visual-polish-geode-opened"
@@ -1362,8 +1426,8 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
         captures.insert(declaration.id.clone(), metadata);
         reports.insert(declaration.id.clone(), (report, report_bytes));
     }
-    let sealed = &captures["geode-sealed-context"];
-    let reloaded = &captures["geode-reload-proof"];
+    let sealed = &captures[sealed_id.as_str()];
+    let reloaded = &captures[reload_id.as_str()];
     if sealed.camera != reloaded.camera
         || sealed.environment != reloaded.environment
         || sealed.render != reloaded.render
@@ -1378,7 +1442,7 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
                 .into(),
         );
     }
-    let hero = &captures["geode-cracked-hero"];
+    let hero = &captures[hero_id.as_str()];
     if hero.camera.u != 5406.5
         || hero.camera.y != 62.000_008
         || hero.camera.v != 1723.5
@@ -1389,7 +1453,7 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
         return Err("cracked-geode hero camera or lighting identity is stale".into());
     }
 
-    if manifest.geode_performance_capture.len() != 10 {
+    if performance_declarations.len() != 10 {
         return Err("cracked-geode performance requires five matched captures per phase".into());
     }
     let mut performance_ids = BTreeSet::new();
@@ -1398,12 +1462,13 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
     let mut reference_camera: Option<CameraIdentity> = None;
     let mut reference_environment: Option<EnvironmentIdentity> = None;
     let mut reference_render: Option<RenderIdentity> = None;
-    for declaration in &manifest.geode_performance_capture {
+    for declaration in performance_declarations {
         if !performance_ids.insert(declaration.id.as_str())
             || !matches!(declaration.phase.as_str(), "sealed" | "opened")
-            || !declaration
-                .id
-                .starts_with(&format!("geode-performance-{}-", declaration.phase))
+            || !declaration.id.starts_with(&format!(
+                "{}-performance-{}-",
+                expected.id_prefix, declaration.phase
+            ))
         {
             return Err("cracked-geode performance declaration is duplicate or malformed".into());
         }
@@ -1412,8 +1477,8 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
             &declaration.id,
             &declaration.sidecar,
             &declaration.report,
-            PERFORMANCE_SCENE,
-            COMMIT,
+            expected.performance_scene,
+            expected.commit,
             (1280, 720),
         )?;
         if metadata.world.name != format!("visual-polish-geode-{}", declaration.phase)
@@ -1463,11 +1528,11 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
         return Err("cracked-geode performance phase coverage is incomplete".into());
     }
 
-    let composition_path = root.join(safe_relative(&manifest.geode_composition_report, "toml")?);
+    let composition_path = root.join(safe_relative(expected.composition_report, "toml")?);
     let (_composition_bytes, composition): (Vec<u8>, GeodeCompositionReport) =
         read_toml(&composition_path, "cracked-geode composition")?;
-    let hero_report = &reports["geode-cracked-hero"];
-    let proof_report = &reports["geode-aperture-proof"];
+    let hero_report = &reports[hero_id.as_str()];
+    let proof_report = &reports[proof_id.as_str()];
     let lip_counts = [
         composition.lip_left_pixels,
         composition.lip_right_pixels,
@@ -1475,21 +1540,19 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
         composition.lip_bottom_pixels,
     ];
     if composition.qualification_schema_version != 1
-        || composition.kind != "cracked-geode-composition"
-        || composition.evidence_commit != COMMIT
-        || composition.hero_capture_id != "geode-cracked-hero"
+        || composition.kind != expected.composition_kind
+        || composition.evidence_commit != expected.commit
+        || composition.hero_capture_id != hero_id
         || composition.hero_report
-            != manifest
-                .geode_capture
+            != declarations
                 .iter()
                 .find(|item| item.id == composition.hero_capture_id)
                 .unwrap()
                 .report
         || composition.hero_report_sha256 != sha256_hex(&hero_report.1)
-        || composition.proof_capture_id != "geode-aperture-proof"
+        || composition.proof_capture_id != proof_id
         || composition.proof_report
-            != manifest
-                .geode_capture
+            != declarations
                 .iter()
                 .find(|item| item.id == composition.proof_capture_id)
                 .unwrap()
@@ -1525,7 +1588,7 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
         return Err("cracked-geode composition qualification is incomplete or failed".into());
     }
 
-    let performance_path = root.join(safe_relative(&manifest.geode_performance_report, "toml")?);
+    let performance_path = root.join(safe_relative(expected.performance_report, "toml")?);
     let (_performance_bytes, performance): (Vec<u8>, GeodePerformanceReport) =
         read_toml(&performance_path, "cracked-geode performance")?;
     let median = |values: &[f64]| {
@@ -1539,8 +1602,8 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
     let opened_simulation = &samples["opened_simulation"];
     let close = |left: f64, right: f64| (left - right).abs() <= 0.000_002;
     if performance.qualification_schema_version != 1
-        || performance.kind != "cracked-geode-performance"
-        || performance.evidence_commit != COMMIT
+        || performance.kind != expected.performance_kind
+        || performance.evidence_commit != expected.commit
         || performance.sample_count_per_phase != 5
         || performance.sealed_draw_ms.len() != 5
         || performance.opened_draw_ms.len() != 5
@@ -1592,6 +1655,282 @@ fn validate_cracked_geode_manifest(root: &Path, manifest: &VisualManifest) -> Re
         || !performance.passed
     {
         return Err("cracked-geode performance qualification is incomplete or failed".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_closeout_manifest(root: &Path, manifest: &VisualManifest) -> Result<(), String> {
+    const STRATA_SCENE: &str = "closeout-strata-20260806";
+    const STRATA_PERFORMANCE_SCENE: &str = "closeout-strata-performance-20260806";
+    const GEODE_SCENE: &str = "closeout-geode-20260806";
+    const GEODE_PERFORMANCE_SCENE: &str = "closeout-geode-performance-20260806";
+    let closeout = &manifest.closeout;
+    if !valid_hex(&closeout.commit, 40)
+        || closeout.commit == manifest.baseline_commit
+        || closeout.date != "2026-08-06"
+        || closeout.verifier != "tools/verify_visual_closeout.py"
+        || !valid_hex(&closeout.verifier_sha256, 64)
+    {
+        return Err("closeout identity is incomplete".into());
+    }
+    let verifier = root.join(safe_relative(&closeout.verifier, "py")?);
+    let verifier_hash = sha256_hex(
+        &fs::read(&verifier)
+            .map_err(|error| format!("read closeout verifier {}: {error}", verifier.display()))?,
+    );
+    if verifier_hash != closeout.verifier_sha256 {
+        return Err("closeout verifier hash is stale".into());
+    }
+
+    // The closeout matrix re-runs every goal-2 "after" case from one commit.
+    let mut after_axes = BTreeMap::new();
+    for case in &manifest.case {
+        if case.phase == "after" {
+            let suffix = case
+                .id
+                .strip_prefix("strata-after-")
+                .ok_or_else(|| format!("{} does not use the after id prefix", case.id))?;
+            after_axes.insert(
+                suffix.to_string(),
+                (
+                    case.rock.clone(),
+                    case.role.clone(),
+                    case.light.clone(),
+                    case.weather.clone(),
+                    case.pack.clone(),
+                    case.view_distance_chunks,
+                ),
+            );
+        }
+    }
+    if closeout.case.len() != after_axes.len() {
+        return Err("closeout must re-run every goal-2 after case".into());
+    }
+    let mut seen = BTreeSet::new();
+    for case in &closeout.case {
+        let suffix = case
+            .id
+            .strip_prefix("strata-closeout-")
+            .ok_or_else(|| format!("{} does not use the closeout id prefix", case.id))?;
+        let Some(axes) = after_axes.get(suffix) else {
+            return Err(format!("{} does not mirror a goal-2 after case", case.id));
+        };
+        if !seen.insert(suffix.to_string())
+            || case.phase != "closeout"
+            || (
+                case.rock.clone(),
+                case.role.clone(),
+                case.light.clone(),
+                case.weather.clone(),
+                case.pack.clone(),
+                case.view_distance_chunks,
+            ) != *axes
+        {
+            return Err(format!(
+                "{} does not mirror its goal-2 matrix axes",
+                case.id
+            ));
+        }
+        let (metadata, report) = validate_declared_evidence(
+            root,
+            &case.id,
+            &case.sidecar,
+            &case.report,
+            STRATA_SCENE,
+            &closeout.commit,
+            (1280, 720),
+        )?;
+        let expected_pack = if case.pack == "base" { "" } else { &case.pack };
+        if metadata.world.name != "visual-polish-strata-baseline"
+            || metadata.environment.weather != case.weather
+            || metadata.render.pack != expected_pack
+            || metadata.render.view_distance_chunks != case.view_distance_chunks
+            || !report.stratum.iter().any(|row| row.rock == case.rock)
+        {
+            return Err(format!(
+                "{} does not match its declared matrix axes",
+                case.id
+            ));
+        }
+    }
+
+    if closeout.performance.len() != 10 {
+        return Err("closeout strata performance requires five matched captures per phase".into());
+    }
+    let mut performance_ids = BTreeSet::new();
+    let mut performance_phases = BTreeMap::<&str, usize>::new();
+    for declaration in &closeout.performance {
+        if !performance_ids.insert(declaration.id.as_str())
+            || !matches!(declaration.phase.as_str(), "baseline" | "closeout")
+            || !declaration.id.starts_with(&format!(
+                "strata-closeout-performance-{}-",
+                declaration.phase
+            ))
+        {
+            return Err("closeout strata performance declaration is duplicate or malformed".into());
+        }
+        let expected_commit = if declaration.phase == "baseline" {
+            &manifest.baseline_commit
+        } else {
+            &closeout.commit
+        };
+        let (metadata, _report) = validate_declared_evidence(
+            root,
+            &declaration.id,
+            &declaration.sidecar,
+            &declaration.report,
+            STRATA_PERFORMANCE_SCENE,
+            expected_commit,
+            (1280, 720),
+        )?;
+        if metadata.world.name != "visual-polish-strata-perf"
+            || metadata.environment.weather != "clear"
+            || metadata.render.pack != "gemini"
+            || metadata.render.view_distance_chunks != 12
+        {
+            return Err(format!(
+                "{} is not the matched performance scene",
+                declaration.id
+            ));
+        }
+        *performance_phases.entry(&declaration.phase).or_default() += 1;
+    }
+    if performance_phases.get("baseline") != Some(&5)
+        || performance_phases.get("closeout") != Some(&5)
+    {
+        return Err("closeout strata performance phases are incomplete".into());
+    }
+
+    for (path_value, kind) in [
+        (&closeout.readability_report, "closeout-readability"),
+        (
+            &closeout.strata_performance_report,
+            "closeout-strata-performance",
+        ),
+    ] {
+        let path = safe_relative(path_value, "toml")?;
+        if !path_value.starts_with("screenshots/visual-polish/")
+            || !path_value.ends_with(".report.toml")
+        {
+            return Err("closeout qualification report path has the wrong role".into());
+        }
+        let (_bytes, qualification): (Vec<u8>, QualificationReport) =
+            read_toml(&root.join(path), "closeout qualification")?;
+        if qualification.qualification_schema_version != 1
+            || qualification.kind != kind
+            || qualification.baseline_commit != manifest.baseline_commit
+            || qualification.after_commit != closeout.commit
+            || !qualification.passed
+        {
+            return Err(format!("{kind} qualification is incomplete or failed"));
+        }
+    }
+
+    validate_geode_capture_group(
+        root,
+        manifest,
+        &closeout.geode_capture,
+        &closeout.geode_performance_capture,
+        &GeodeGroupExpectation {
+            id_prefix: "closeout-geode",
+            scene: GEODE_SCENE,
+            performance_scene: GEODE_PERFORMANCE_SCENE,
+            commit: &closeout.commit,
+            composition_report: &closeout.geode_composition_report,
+            performance_report: &closeout.geode_performance_report,
+            composition_kind: "closeout-geode-composition",
+            performance_kind: "closeout-geode-performance",
+        },
+    )?;
+
+    // Motion evidence: still frames cannot judge shimmer, chunk walls, or
+    // exposure pumping, so the closeout walks both scenes and records it.
+    let motion_path = safe_relative(&closeout.motion_report, "toml")?;
+    if !closeout
+        .motion_report
+        .starts_with("screenshots/visual-polish/")
+        || !closeout.motion_report.ends_with(".report.toml")
+    {
+        return Err("closeout motion report path has the wrong role".into());
+    }
+    let (_motion_bytes, motion): (Vec<u8>, toml::Value) =
+        read_toml(&root.join(motion_path), "closeout motion")?;
+    if motion
+        .get("qualification_schema_version")
+        .and_then(toml::Value::as_integer)
+        != Some(1)
+        || motion.get("kind").and_then(toml::Value::as_str) != Some("closeout-motion")
+        || motion.get("evidence_commit").and_then(toml::Value::as_str)
+            != Some(closeout.commit.as_str())
+        || motion
+            .get("reviewed_by")
+            .and_then(toml::Value::as_str)
+            .is_none_or(str::is_empty)
+        || motion
+            .get("review_method")
+            .and_then(toml::Value::as_str)
+            .is_none_or(str::is_empty)
+        || motion.get("passed").and_then(toml::Value::as_bool) != Some(true)
+    {
+        return Err("closeout motion identity is incomplete or failed".into());
+    }
+    let Some(walks) = motion.get("walk").and_then(toml::Value::as_array) else {
+        return Err("closeout motion report has no walks".into());
+    };
+    let mut walk_ids = BTreeSet::new();
+    for walk in walks {
+        let id = walk.get("id").and_then(toml::Value::as_str).unwrap_or("");
+        let world = walk
+            .get("world")
+            .and_then(toml::Value::as_str)
+            .unwrap_or("");
+        let frame_count = walk
+            .get("frame_count")
+            .and_then(toml::Value::as_integer)
+            .unwrap_or(0);
+        let hashes = walk
+            .get("frame_sha256")
+            .and_then(toml::Value::as_array)
+            .map(|values| values.as_slice())
+            .unwrap_or_default();
+        let max_delta = walk
+            .get("max_static_luminance_delta")
+            .and_then(toml::Value::as_float)
+            .unwrap_or(f64::INFINITY);
+        let expected_world = match id {
+            "strata-site" => "closeout-motion-strata",
+            "geode-approach" => "closeout-motion-geode",
+            _ => return Err("closeout motion names an unexpected walk".into()),
+        };
+        if !walk_ids.insert(id.to_string())
+            || world != expected_world
+            || frame_count < 12
+            || hashes.len() != frame_count as usize
+            || !hashes
+                .iter()
+                .all(|value| value.as_str().is_some_and(|hash| valid_hex(hash, 64)))
+            || !max_delta.is_finite()
+            || max_delta > 0.010
+            || walk
+                .get("exposure_pumping_detected")
+                .and_then(toml::Value::as_bool)
+                != Some(false)
+            || walk.get("shimmer_observed").and_then(toml::Value::as_bool) != Some(false)
+            || walk
+                .get("chunk_wall_observed")
+                .and_then(toml::Value::as_bool)
+                != Some(false)
+            || walk
+                .get("awkward_reveal_observed")
+                .and_then(toml::Value::as_bool)
+                != Some(false)
+        {
+            return Err(format!("closeout motion walk {id} is incomplete or failed"));
+        }
+    }
+    if walk_ids.len() != 2 {
+        return Err("closeout motion requires the strata and geode walks".into());
     }
     Ok(())
 }
@@ -1680,6 +2019,34 @@ mod tests {
                 read_toml(&root.join(path), "strata qualification").unwrap();
             assert!(report.passed, "{path} records a failed acceptance gate");
         }
+    }
+
+    #[test]
+    fn visual_polish_closeout_is_qualified() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        validate_visual_polish_manifest(root).unwrap();
+        let (_bytes, manifest): (Vec<u8>, VisualManifest) = read_toml(
+            &root.join("screenshots/visual-polish.toml"),
+            "visual-polish manifest",
+        )
+        .unwrap();
+        for path in [
+            &manifest.closeout.readability_report,
+            &manifest.closeout.strata_performance_report,
+        ] {
+            let (_bytes, report): (Vec<u8>, QualificationReport) =
+                read_toml(&root.join(path), "closeout qualification").unwrap();
+            assert!(report.passed, "{path} records a failed closeout gate");
+        }
+        let (_bytes, motion): (Vec<u8>, toml::Value) = read_toml(
+            &root.join(&manifest.closeout.motion_report),
+            "closeout motion",
+        )
+        .unwrap();
+        assert_eq!(
+            motion.get("passed").and_then(toml::Value::as_bool),
+            Some(true)
+        );
     }
 
     #[test]

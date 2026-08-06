@@ -163,11 +163,15 @@ def display_luminance(color: bytes, pixel: int) -> float:
     return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255.0
 
 
-def composition_report() -> dict[str, Any]:
-    hero = require_capture("geode-cracked-hero")
-    proof = require_capture("geode-aperture-proof")
-    sealed = require_capture("geode-sealed-context")
-    reloaded = require_capture("geode-reload-proof")
+def composition_report(
+    stem_prefix: str = "geode",
+    scene_id: str = SCENE_ID,
+    kind: str = COMPOSITION_KIND,
+) -> dict[str, Any]:
+    hero = require_capture(f"{stem_prefix}-cracked-hero")
+    proof = require_capture(f"{stem_prefix}-aperture-proof")
+    sealed = require_capture(f"{stem_prefix}-sealed-context")
+    reloaded = require_capture(f"{stem_prefix}-reload-proof")
     hero_sidecar_path, _hero_sidecar_bytes, hero_sidecar, hero_report_path, hero_report_bytes, hero_report = hero
     proof_sidecar_path, _proof_sidecar_bytes, proof_sidecar, proof_report_path, proof_report_bytes, proof_report = proof
 
@@ -176,7 +180,7 @@ def composition_report() -> dict[str, Any]:
         raise GeodeEvidenceError("hero capture does not name a clean evidence commit")
     for item in (proof, sealed, reloaded):
         sidecar = item[2]
-        if sidecar.get("build") != build or sidecar.get("scene_id") != SCENE_ID:
+        if sidecar.get("build") != build or sidecar.get("scene_id") != scene_id:
             raise GeodeEvidenceError("the four geode captures do not share one clean build and scene")
 
     sealed_camera = sealed[2].get("camera")
@@ -250,12 +254,12 @@ def composition_report() -> dict[str, Any]:
     )
     return {
         "qualification_schema_version": QUALIFICATION_SCHEMA_VERSION,
-        "kind": COMPOSITION_KIND,
+        "kind": kind,
         "evidence_commit": str(build["commit"]),
-        "hero_capture_id": "geode-cracked-hero",
+        "hero_capture_id": f"{stem_prefix}-cracked-hero",
         "hero_report": (Path("screenshots/visual-polish") / hero_report_path.name).as_posix(),
         "hero_report_sha256": sha256(hero_report_bytes),
-        "proof_capture_id": "geode-aperture-proof",
+        "proof_capture_id": f"{stem_prefix}-aperture-proof",
         "proof_report": (Path("screenshots/visual-polish") / proof_report_path.name).as_posix(),
         "proof_report_sha256": sha256(proof_report_bytes),
         "width": width,
@@ -287,7 +291,11 @@ def composition_report() -> dict[str, Any]:
     }
 
 
-def performance_report() -> dict[str, Any]:
+def performance_report(
+    stem_prefix: str = "geode-performance",
+    scene_id: str = PERFORMANCE_SCENE_ID,
+    kind: str = PERFORMANCE_KIND,
+) -> dict[str, Any]:
     samples: dict[str, list[float]] = {
         "sealed_draw": [],
         "opened_draw": [],
@@ -297,9 +305,9 @@ def performance_report() -> dict[str, Any]:
     commits: set[str] = set()
     for phase in ("sealed", "opened"):
         for run in "abcde":
-            stem = f"geode-performance-{phase}-{run}"
+            stem = f"{stem_prefix}-{phase}-{run}"
             _sidecar_path, _sidecar_bytes, sidecar, _report_path, _report_bytes, _report = require_capture(stem)
-            if sidecar.get("scene_id") != PERFORMANCE_SCENE_ID:
+            if sidecar.get("scene_id") != scene_id:
                 raise GeodeEvidenceError(f"{stem} uses the wrong performance scene")
             if sidecar.get("build", {}).get("dirty"):
                 raise GeodeEvidenceError(f"{stem} came from a dirty build")
@@ -319,7 +327,7 @@ def performance_report() -> dict[str, Any]:
     passed = draw_delta <= MAX_DRAW_REGRESSION_MS and simulation_delta <= MAX_SIMULATION_REGRESSION_MS
     return {
         "qualification_schema_version": QUALIFICATION_SCHEMA_VERSION,
-        "kind": PERFORMANCE_KIND,
+        "kind": kind,
         "evidence_commit": next(iter(commits)),
         "sample_count_per_phase": 5,
         "sealed_draw_ms": samples["sealed_draw"],
