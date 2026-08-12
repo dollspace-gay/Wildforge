@@ -28,12 +28,15 @@
 //! flagged in the task brief for the phase that takes it on.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use super::multiblock::Rotation;
+use super::multiblock::{BlockStore, MachineKind, Rotation};
 use super::template::Template;
 use super::*;
+use crate::inventory::ItemStack;
 use crate::planet::{BlockPos, Face};
-use crate::registry::{BlockId, Registry};
+use crate::planet_atlas::LocalWeatherSample;
+use crate::registry::{AIR, BlockId, Registry};
 
 /// Uniquely identifies a spawned [`LocalStructure`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -66,7 +69,6 @@ pub struct RailState {
 }
 
 /// A self-contained, non-chunk-grid block store, born from a [`Template`].
-#[derive(Clone, Debug)]
 pub struct LocalStructure {
     pub id: LocalStructureId,
     /// Which template this was spawned from (save/debug label).
@@ -78,6 +80,19 @@ pub struct LocalStructure {
     /// [`LocalStructure::world_position`]). Mirrors
     /// `Template`/`rotated_cells`.
     pub blocks: HashMap<(i32, i32, i32), BlockId>,
+    /// The registry this structure's block names resolve against, shared
+    /// with the host world. The multiblock layer needs it: shape matching
+    /// resolves `Tag`/`Module` constraints through the registry.
+    pub reg: Arc<Registry>,
+    /// Block-entity state hosted inside the structure, keyed by local
+    /// offset (7b-1) — the machine-state counterpart to `blocks`. Without
+    /// it a full forge shape inside a structure would stay inert raw
+    /// blocks with nowhere to hold its `MachineInstance`.
+    pub block_entities: HashMap<(i32, i32, i32), BlockEntity>,
+    /// Produced outputs from structure-hosted machines collect here: a
+    /// structure has no loose-item world of its own, so completion stays
+    /// observable (and testable) without inventing a drop system.
+    pub outbox: Vec<ItemStack>,
     pub transform: LocalTransform,
     /// Where this structure is going, if it is riding rails. `None` = static.
     pub rail: Option<RailState>,
@@ -87,7 +102,7 @@ pub struct LocalStructure {
 /// to ids exactly the way `rotated_cells` does for stamps. The result is
 /// oriented to the template (`Rotation::R0`) and parked at the world origin;
 /// [`World::spawn_structure`] assigns the real id, anchor, and rotation.
-pub fn from_template(template: &Template, reg: &Registry) -> LocalStructure {
+pub fn from_template(template: &Template, reg: &Arc<Registry>) -> LocalStructure {
     let mut blocks = HashMap::with_capacity(template.cells.len());
     for cell in &template.cells {
         if let Some(block) = reg.block_id(&cell.block) {
@@ -98,6 +113,9 @@ pub fn from_template(template: &Template, reg: &Registry) -> LocalStructure {
         id: LocalStructureId(0),
         name: template.name.clone(),
         blocks,
+        reg: reg.clone(),
+        block_entities: HashMap::new(),
+        outbox: Vec::new(),
         transform: LocalTransform {
             anchor: BlockPos::new(Face::PosZ, 0, 0, 0)
                 .expect("the world origin is a valid block position"),
@@ -121,13 +139,17 @@ impl LocalStructure {
         self.blocks.get(&offset).copied().unwrap_or(AIR)
     }
 
-    /// Set (or clear, with `AIR`) the block at a local offset.
+    /// Set (or clear, with `AIR`) the block at a local offset. A plain
+    /// edit inside any registered machine's shell revalidates the
+    /// structure-hosted instances the same way the world's 2c edit hook
+    /// does — scoped to this structure only, never the main world.
     pub fn set_block(&mut self, offset: (i32, i32, i32), block: BlockId) {
         if block == AIR {
             self.blocks.remove(&offset);
         } else {
             self.blocks.insert(offset, block);
         }
+        crate::world::machines::revalidate_machines_around(self, offset);
     }
 
     /// Rotate the structure: the transform records the composed orientation
@@ -168,6 +190,79 @@ fn compose_rotation(a: Rotation, b: Rotation) -> Rotation {
     }
 }
 
+impl BlockStore for LocalStructure {
+    type Pos = (i32, i32, i32);
+
+    fn get_block(&self, pos: Self::Pos) -> BlockId {
+        self.blocks.get(&pos).copied().unwrap_or(AIR)
+    }
+
+    /// Plain tuple addition: a local store has no shell, so an offset can
+    /// never leave the world and never fails (unlike `BlockPos::offset`).
+    fn offset(&self, pos: Self::Pos, d: (i32, i32, i32)) -> Option<Self::Pos> {
+        Some((pos.0 + d.0, pos.1 + d.1, pos.2 + d.2))
+    }
+
+    fn cell_delta(&self, from: Self::Pos, to: Self::Pos) -> Option<(i32, i32, i32)> {
+        Some((to.0 - from.0, to.1 - from.1, to.2 - from.2))
+    }
+
+    fn block_entities(&self) -> &HashMap<Self::Pos, BlockEntity> {
+        &self.block_entities
+    }
+
+    fn block_entities_mut(&mut self) -> &mut HashMap<Self::Pos, BlockEntity> {
+        &mut self.block_entities
+    }
+
+    fn reg(&self) -> &Arc<Registry> {
+        &self.reg
+    }
+
+    fn to_world(&self, pos: Self::Pos) -> Option<BlockPos> {
+        self.world_position(pos)
+    }
+
+    /// A chunkless structure has no light model, so its machines read as
+    /// permanently unroofed — the same `(0, 15)` open-sky sample a
+    /// structure-local `light_at_pos` would return for any cell. (Rain
+    /// never douses an in-structure fire anyway: `weather_at` reports
+    /// fair weather.) Consistent by design with the structure being
+    /// enclosed, not weather-exposed.
+    fn open_sky_above(&self, _core: BlockPos) -> bool {
+        true
+    }
+
+    /// Structures report fair weather: a structure-hosted machine is
+    /// exempt from the world's storm dousing.
+    fn weather_at(&self, _at: BlockPos) -> LocalWeatherSample {
+        LocalWeatherSample::default()
+    }
+
+    fn swap_block_keep_entity(&mut self, pos: Self::Pos, block_name: &str) {
+        let Some(to) = self.reg.block_id(block_name) else {
+            return;
+        };
+        let e = self.block_entities.remove(&pos);
+        self.blocks.insert(pos, to);
+        if let Some(e) = e {
+            self.block_entities.insert(pos, e);
+        }
+    }
+
+    /// Structure-hosted machines are exempt from the main world's economy
+    /// accounting by design: there is no structure-local ledger.
+    fn material_ledger(&mut self) -> Option<&mut crate::materials::MaterialLedger> {
+        None
+    }
+
+    /// A structure has no loose-item world; produced outputs collect in
+    /// its `outbox`, keeping completion observable without a drop system.
+    fn push_drop_at(&mut self, _at: BlockPos, stack: ItemStack) {
+        self.outbox.push(stack);
+    }
+}
+
 /// Versioned on-disk shape of the local-structure collection, mirroring
 /// `TemplateFile` in `template.rs` exactly.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -180,7 +275,9 @@ const STRUCTURE_FILE_VERSION: u32 = 1;
 
 /// One persisted structure. Cells are stored as named offsets (like
 /// [`TemplateCell`]) so the library survives registry remaps; the in-memory
-/// `BlockId` store is rebuilt on load.
+/// `BlockId` store is rebuilt on load. `machines` carries the structure's
+/// block-entity state (7b-1) — a machine's charge/fuel/progress survives a
+/// save/reload round-trip, exactly as it does for world-hosted machines.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct SavedStructure {
     id: u64,
@@ -188,6 +285,99 @@ struct SavedStructure {
     cells: Vec<super::template::TemplateCell>,
     anchor: (Face, u16, u8, u16),
     rotation: Rotation,
+    #[serde(default)]
+    machines: Vec<SavedMachine>,
+}
+
+/// One persisted structure-hosted machine, mirroring `entities.toml`'s
+/// `[[machine]]` record but keyed by local offset instead of `BlockPos`.
+/// The `core` is stored in world coordinates, the same value the live
+/// entity holds (structures are static in this phase, so it stays valid).
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct SavedMachine {
+    offset: (i32, i32, i32),
+    kind: String,
+    lit: bool,
+    #[serde(default)]
+    progress: f32,
+    #[serde(default)]
+    core: Option<crate::planet::BlockPos>,
+    #[serde(default)]
+    powder: u32,
+    #[serde(default)]
+    separator_fuel: u32,
+    #[serde(default)]
+    neodymium: u32,
+    #[serde(default)]
+    cerium: u32,
+    #[serde(default)]
+    slot: Vec<SavedMachineSlot>,
+    #[serde(default)]
+    reclaim: Vec<SavedReclaim>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct SavedMachineSlot {
+    index: usize,
+    item: String,
+    count: u32,
+    durability: u32,
+    #[serde(default)]
+    arcane_id: u64,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct SavedReclaim {
+    material: String,
+    units: u64,
+}
+
+/// Build the persisted form of one structure-hosted machine entity.
+fn save_machine(reg: &Registry, offset: (i32, i32, i32), m: &MachineInstance) -> SavedMachine {
+    let slot = |index: usize, s: &Option<ItemStack>| {
+        s.as_ref().map(|s| SavedMachineSlot {
+            index,
+            item: reg.item(s.item).name.clone(),
+            count: s.count,
+            durability: s.durability,
+            arcane_id: s.arcane_id,
+        })
+    };
+    let mut slots = Vec::new();
+    for (i, s) in m.charge.iter().enumerate() {
+        if let Some(s) = slot(i, s) {
+            slots.push(s);
+        }
+    }
+    if let Some(s) = slot(4, &m.reagent) {
+        slots.push(s);
+    }
+    for (i, s) in m.fuel.iter().enumerate() {
+        if let Some(s) = slot(i + 5, s) {
+            slots.push(s);
+        }
+    }
+    slots.sort_by_key(|s| s.index);
+    SavedMachine {
+        offset,
+        kind: m.kind.name().to_string(),
+        lit: m.lit,
+        progress: m.progress,
+        core: m.core,
+        powder: m.powder,
+        separator_fuel: m.separator_fuel,
+        neodymium: m.neodymium,
+        cerium: m.cerium,
+        slot: slots,
+        reclaim: m
+            .reclaim
+            .iter()
+            .map(|(material, units)| SavedReclaim {
+                material: material.clone(),
+                units: *units,
+            })
+            .collect(),
+    }
 }
 
 impl World {
@@ -208,6 +398,15 @@ impl World {
                     })
                     .collect();
                 cells.sort_by_key(|cell| (cell.du, cell.dy, cell.dv));
+                let mut machines: Vec<SavedMachine> = structure
+                    .block_entities
+                    .iter()
+                    .filter_map(|(&offset, entity)| match entity {
+                        BlockEntity::Multiblock(m) => Some(save_machine(&self.reg, offset, m)),
+                        _ => None,
+                    })
+                    .collect();
+                machines.sort_by_key(|m| m.offset);
                 SavedStructure {
                     id: structure.id.0,
                     name: structure.name.clone(),
@@ -219,6 +418,7 @@ impl World {
                         structure.transform.anchor.v(),
                     ),
                     rotation: structure.transform.rotation,
+                    machines,
                 }
             })
             .collect();
@@ -265,17 +465,66 @@ impl World {
                     blocks.insert((cell.du, cell.dy, cell.dv), block);
                 }
             }
+            let mut machines = HashMap::new();
+            for sm in saved.machines {
+                let Some(kind) = MachineKind::from_name(&sm.kind) else {
+                    continue;
+                };
+                let mut state = MachineInstance {
+                    kind,
+                    lit: sm.lit,
+                    progress: sm.progress,
+                    core: sm.core,
+                    powder: sm.powder,
+                    separator_fuel: sm.separator_fuel,
+                    neodymium: sm.neodymium,
+                    cerium: sm.cerium,
+                    ..Default::default()
+                };
+                for material in sm.reclaim {
+                    if material.units != 0 {
+                        *state.reclaim.entry(material.material).or_default() += material.units;
+                    }
+                }
+                for sl in sm.slot {
+                    if let Some(item) = self.reg.item_id(&sl.item) {
+                        let st = Some(ItemStack {
+                            item,
+                            count: sl.count,
+                            durability: sl.durability,
+                            arcane_id: sl.arcane_id,
+                        });
+                        match sl.index {
+                            0..=3 => state.charge[sl.index] = st,
+                            4 => state.reagent = st,
+                            5..=8 => state.fuel[sl.index - 5] = st,
+                            _ => {}
+                        }
+                    }
+                }
+                machines.insert(sm.offset, BlockEntity::Multiblock(state));
+            }
             next = next.max(saved.id + 1);
-            loaded.push(LocalStructure {
+            let mut structure = LocalStructure {
                 id: LocalStructureId(saved.id),
                 name: saved.name,
                 blocks,
+                reg: self.reg.clone(),
+                block_entities: machines,
+                outbox: Vec::new(),
                 transform: LocalTransform {
                     anchor,
                     rotation: saved.rotation,
                 },
                 rail: None,
-            });
+            };
+            // Revalidate on load: fold stats and douse any machine whose
+            // shell broke while it was saved (mirrors `entities.toml` load).
+            let offsets: Vec<(i32, i32, i32)> = structure.block_entities.keys().copied().collect();
+            for offset in offsets {
+                crate::world::machines::revalidate_machine_at(&mut structure, offset);
+            }
+            loaded.push(structure);
         }
         self.local_structures = loaded;
         self.next_local_structure_id = self.next_local_structure_id.max(next);
@@ -290,6 +539,13 @@ impl World {
     pub fn local_structure(&self, id: LocalStructureId) -> Option<&LocalStructure> {
         self.local_structures
             .iter()
+            .find(|structure| structure.id == id)
+    }
+
+    #[allow(dead_code)]
+    pub fn local_structure_mut(&mut self, id: LocalStructureId) -> Option<&mut LocalStructure> {
+        self.local_structures
+            .iter_mut()
             .find(|structure| structure.id == id)
     }
 

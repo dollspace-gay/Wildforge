@@ -17,7 +17,6 @@ use crate::mobs::{Mob, MobEvent, ProjHit, Projectile};
 use crate::planet::BlockPos;
 use crate::registry::{AIR, BlockId, ItemId, Registry};
 use crate::worldgen::Generator;
-use multiblock::pos_within_extent;
 
 /// Dropped-item ids occupy a high, signed-64-safe namespace so they cannot
 /// collide with ordinary projectile ids and still round-trip through TOML.
@@ -38,7 +37,7 @@ mod hearts;
 mod implements;
 mod lighting;
 mod machine_tick;
-mod machines;
+pub(crate) mod machines;
 pub(crate) mod multiblock;
 mod persistence;
 mod power;
@@ -3486,69 +3485,16 @@ impl World {
     /// Revalidate every registered multiblock instance whose shell region
     /// could contain the edited position. The per-instance test is O(1)
     /// arithmetic ([`crate::world::multiblock::pos_within_extent`]); only
-    /// instances actually in range re-run their shape match.
+    /// instances actually in range re-run their shape match. Delegates to
+    /// the store-generic hook shared with structure-hosted machines.
     pub(super) fn revalidate_multiblocks_around(&mut self, pos: BlockPos) {
-        let keys: Vec<BlockPos> = self
-            .block_entities
-            .iter()
-            .filter(|(anchor, entity)| {
-                let BlockEntity::Multiblock(m) = entity else {
-                    return false;
-                };
-                let extent = m.kind.edit_region(self, **anchor);
-                pos_within_extent(pos, **anchor, extent)
-            })
-            .map(|(anchor, _)| *anchor)
-            .collect();
+        let revalidated = machines::revalidate_machines_around(self, pos);
+        #[cfg(not(test))]
+        let _ = revalidated;
         #[cfg(test)]
         {
-            self.multiblock_revalidations += keys.len();
+            self.multiblock_revalidations += revalidated;
         }
-        for anchor in keys {
-            self.revalidate_machine_at(anchor);
-        }
-    }
-
-    /// Re-match one instance. On success the shell's folded stats are
-    /// refreshed (a tier swap changes the effective heat). On failure a
-    /// lit machine is doused right here, reaching the same end state
-    /// `tick_kilns` used to reach by polling.
-    fn revalidate_machine_at(&mut self, anchor: BlockPos) {
-        let Some(BlockEntity::Multiblock(mut m)) = self.block_entities.remove(&anchor) else {
-            return;
-        };
-        let kind = m.kind;
-        let was_lit = m.lit;
-        let Some(matched) = kind.validate(self, anchor) else {
-            if was_lit && kind != crate::world::multiblock::MachineKind::Separator {
-                m.lit = false;
-                m.progress = 0.0;
-                let unlit = match kind {
-                    crate::world::multiblock::MachineKind::Bloomery => "base:bloomery",
-                    crate::world::multiblock::MachineKind::Forge => "base:forge",
-                    crate::world::multiblock::MachineKind::Kiln => "base:kiln",
-                    crate::world::multiblock::MachineKind::Separator => "base:separator",
-                };
-                self.swap_block_keep_entity_at(anchor, unlit);
-            }
-            self.block_entities
-                .insert(anchor, BlockEntity::Multiblock(m));
-            return;
-        };
-        let mut stats = crate::world::multiblock::fold_stats(self, &matched.matched);
-        if kind == crate::world::multiblock::MachineKind::Kiln {
-            stats.chimney = self.has_chimney_at(matched.core);
-        }
-        if stats != m.stats {
-            m.stats = stats;
-        }
-        let capabilities =
-            crate::world::multiblock::fold_capabilities(self, &matched.matched, &matched.slots);
-        if capabilities != m.capabilities {
-            m.capabilities = capabilities;
-        }
-        self.block_entities
-            .insert(anchor, BlockEntity::Multiblock(m));
     }
 
     pub fn set_soil_salinity_at(&mut self, pos: BlockPos, salinity: u8) {

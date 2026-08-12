@@ -176,13 +176,21 @@ impl World {
             return;
         }
         for i in 0..self.local_structures.len() {
-            let Some(rail) = self.local_structures[i].rail.clone() else {
+            // Take the structure out of the world while stepping it: the
+            // step reads the world's rails (`self.get_block_at`/`self.reg`)
+            // with no borrow conflicts, then the stepped structure is put
+            // back in place. A `LocalStructure` is not `Clone` (its hosted
+            // `BlockEntity`s are not cheap to copy), so this is move-not-
+            // clone.
+            let mut structure = self.local_structures.remove(i);
+            let Some(rail) = structure.rail.clone() else {
+                self.local_structures.insert(i, structure);
                 continue;
             };
             if rail.speed <= 0.0 {
+                self.local_structures.insert(i, structure);
                 continue;
             }
-            let mut structure = self.local_structures[i].clone();
             let rail = structure.rail.as_mut().expect("checked above");
             rail.progress += rail.speed * dt;
             while rail.progress >= 1.0 {
@@ -218,7 +226,7 @@ impl World {
                 rail.current_cell = arrived;
                 rail.next_cell = next;
             }
-            self.local_structures[i] = structure;
+            self.local_structures.insert(i, structure);
         }
     }
 }

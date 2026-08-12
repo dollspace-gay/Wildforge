@@ -11,10 +11,15 @@
 //! block-built trains can all build on.
 
 use std::collections::HashMap;
+use std::hash::Hash;
+use std::sync::Arc;
 
+use crate::inventory::ItemStack;
 use crate::planet::BlockPos;
+use crate::planet_atlas::LocalWeatherSample;
 use crate::registry::{AIR, BlockId, Registry};
-use crate::world::World;
+
+use super::BlockEntity;
 
 /// A whole-rotation of a shape around the vertical axis, applied to each
 /// cell offset before the world is probed.
@@ -86,29 +91,100 @@ pub struct MultiblockShape {
     pub rotations: &'static [Rotation],
 }
 
-/// The outcome of a successful shape match.
+/// The outcome of a successful shape match, in store-local coordinates.
 #[derive(Debug)]
-pub struct MatchResult {
-    /// The matched core, in world coordinates.
-    pub core: BlockPos,
+pub struct MatchResult<P> {
+    /// The matched core, in store coordinates.
+    pub core: P,
     /// Every matched cell position mapped to the block actually there.
     /// Read by Pattern A stat folding (spec Part 2.1) on revalidation.
-    pub matched: HashMap<BlockPos, BlockId>,
+    pub matched: HashMap<P, BlockId>,
     /// Every module-slot cell mapped to its category id. Read when the
     /// frame's qualitative capabilities are folded from the installed
     /// modules (spec Part 1.3).
-    pub slots: HashMap<BlockPos, &'static str>,
+    pub slots: HashMap<P, &'static str>,
 }
 
-/// Return the first rotation of `shape` that the world satisfies at `anchor`,
+/// Any store of blocks that can host a multiblock machine: the main
+/// [`crate::world::World`] (its [`crate::planet::BlockPos`]es on the chunk
+/// grid) or a
+/// [`crate::world::local_structure::LocalStructure`] (canonical local-offset
+/// tuples). `match_shape`, the per-kind `validate`/`edit_region`
+/// recognizers, and the machine tick functions are all generic over this
+/// trait, so a structure-built forge and a world-built forge run the *same*
+/// recognition and firing logic (spec Part 2.1 groundwork).
+///
+/// ## Structure chronology
+///
+/// Prior to Part 2.1 groundwork, block behavior lived in `World`, addressed
+/// by [`BlockPos`], full stop. This trait is the seam that lets the same
+/// shape system and the same per-kind tick logic operate against a
+/// `LocalStructure`'s own store without forking a copy.
+pub trait BlockStore {
+    /// A position within this store.
+    type Pos: Copy + Eq + Hash;
+
+    /// The block at `pos`, or `AIR` when the cell is empty or out of reach.
+    fn get_block(&self, pos: Self::Pos) -> BlockId;
+
+    /// The position reached by offsetting `pos` by `d`, or `None` when the
+    /// offset leaves the store (the world's finite shell).
+    fn offset(&self, pos: Self::Pos, d: (i32, i32, i32)) -> Option<Self::Pos>;
+
+    /// Cell-space displacement from `from` to `to`. `None` when the two
+    /// positions are not comparable (different world faces).
+    fn cell_delta(&self, from: Self::Pos, to: Self::Pos) -> Option<(i32, i32, i32)>;
+
+    /// The block-entity map, keyed by store position.
+    fn block_entities(&self) -> &HashMap<Self::Pos, BlockEntity>;
+    fn block_entities_mut(&mut self) -> &mut HashMap<Self::Pos, BlockEntity>;
+
+    /// The registry blocks and items in this store resolve against (shared
+    /// with the host world, so stores borrow its registry without a copy).
+    fn reg(&self) -> &Arc<Registry>;
+
+    /// The main-world [`BlockPos`] corresponding to a store position. The
+    /// world maps a position to itself; a structure resolves the local offset
+    /// through its transform.
+    fn to_world(&self, pos: Self::Pos) -> Option<BlockPos>;
+
+    /// Whether the cell three above `core` (a world position) is open sky.
+    /// The world reads its light map; a chunkless structure has no light
+    /// model, so it reports open sky (its machines are always unroofed).
+    fn open_sky_above(&self, core: BlockPos) -> bool;
+
+    /// The local weather at `at` (a world position). Structures always
+    /// report fair weather: a structure-hosted machine is exempt from the
+    /// world's storm dousing.
+    fn weather_at(&self, at: BlockPos) -> LocalWeatherSample;
+
+    /// Swap the block at `pos` for `block_name`'s id, preserving any block
+    /// entity living there.
+    fn swap_block_keep_entity(&mut self, pos: Self::Pos, block_name: &str);
+
+    /// The material ledger a store participates in, or `None` for stores
+    /// without one. Structure-hosted machines are exempt from the main
+    /// world's economy accounting by design (the brief's open ire/ledger
+    /// question, answered as "exempt" — there is no structure-local
+    /// economy to record against).
+    fn material_ledger(&mut self) -> Option<&mut crate::materials::MaterialLedger>;
+
+    /// Deliver a produced output item at a world position. The world spawns
+    /// a loose drop there; a structure collects it into its own outbox (it
+    /// has no loose-item world of its own, so completion stays observable
+    /// via `LocalStructure.outbox`).
+    fn push_drop_at(&mut self, at: crate::planet::BlockPos, stack: ItemStack);
+}
+
+/// Return the first rotation of `shape` that the store satisfies at `anchor`,
 /// or `None` if no rotation matches.
-pub fn match_shape(
-    world: &World,
-    anchor: BlockPos,
+pub fn match_shape<B: BlockStore>(
+    store: &B,
+    anchor: B::Pos,
     shape: &MultiblockShape,
-) -> Option<MatchResult> {
+) -> Option<MatchResult<B::Pos>> {
     for &rotation in shape.rotations {
-        if let Some(result) = match_rotation(world, anchor, shape, rotation) {
+        if let Some(result) = match_rotation(store, anchor, shape, rotation) {
             return Some(result);
         }
     }
@@ -116,20 +192,20 @@ pub fn match_shape(
 }
 
 /// Test every cell of `shape` at `anchor`, rotated by `rotation`. Returns
-/// `None` if any cell is out of the world or fails its constraint.
-fn match_rotation(
-    world: &World,
-    anchor: BlockPos,
+/// `None` if any cell is out of the store or fails its constraint.
+fn match_rotation<B: BlockStore>(
+    store: &B,
+    anchor: B::Pos,
     shape: &MultiblockShape,
     rotation: Rotation,
-) -> Option<MatchResult> {
+) -> Option<MatchResult<B::Pos>> {
     let mut matched = HashMap::with_capacity(shape.cells.len());
     let mut slots = HashMap::new();
     for cell in &shape.cells {
         let (dx, dy, dz) = rotation.apply(cell.offset);
-        let at = anchor.offset(dx, dy, dz)?;
-        let block = world.get_block_at(at);
-        if !constraint_ok(world, &cell.constraint, block) {
+        let at = store.offset(anchor, (dx, dy, dz))?;
+        let block = store.get_block(at);
+        if !constraint_ok(store, &cell.constraint, block) {
             return None;
         }
         matched.insert(at, block);
@@ -138,7 +214,7 @@ fn match_rotation(
         }
     }
     let (cdx, cdy, cdz) = rotation.apply(shape.core);
-    let core = anchor.offset(cdx, cdy, cdz)?;
+    let core = store.offset(anchor, (cdx, cdy, cdz))?;
     Some(MatchResult {
         core,
         matched,
@@ -146,15 +222,17 @@ fn match_rotation(
     })
 }
 
-fn constraint_ok(world: &World, constraint: &BlockConstraint, block: BlockId) -> bool {
+fn constraint_ok<B: BlockStore>(store: &B, constraint: &BlockConstraint, block: BlockId) -> bool {
     match constraint {
         BlockConstraint::OneOf(ids) => ids.contains(&block),
         BlockConstraint::Exact(id) => *id == block,
-        BlockConstraint::Tag(tag) => block_in_tag(&world.reg, tag, block),
+        BlockConstraint::Tag(tag) => block_in_tag(store.reg(), tag, block),
         BlockConstraint::Air => block == AIR,
-        BlockConstraint::SolidOrGlass => world.reg.is_solid(block) || world.reg.block(block).glass,
+        BlockConstraint::SolidOrGlass => {
+            store.reg().is_solid(block) || store.reg().block(block).glass
+        }
         BlockConstraint::Module(category) => {
-            modules_in_category(&world.reg, category).contains(&block)
+            modules_in_category(store.reg(), category).contains(&block)
         }
     }
 }
@@ -229,10 +307,10 @@ impl EffectiveStats {
 /// Combine every matched cell's block-property contribution into the
 /// instance's effective stats (Pattern A, spec Part 2.1). The combination
 /// rule is fixed per stat (heat sums) and lives here, not per machine.
-pub fn fold_stats(world: &World, matched: &HashMap<BlockPos, BlockId>) -> EffectiveStats {
+pub fn fold_stats<B: BlockStore>(store: &B, matched: &HashMap<B::Pos, BlockId>) -> EffectiveStats {
     let mut stats = EffectiveStats::default();
     for &block in matched.values() {
-        let heat = world.reg.block(block).heat_retention;
+        let heat = store.reg().block(block).heat_retention;
         if heat > 0 {
             stats.heat += heat;
             stats.heat_cells += 1;
@@ -339,15 +417,15 @@ pub fn module_capabilities(reg: &Registry, category: &'static str, block: BlockI
 /// Fold the qualitative capabilities granted by every installed slot
 /// module. Unlike stats (numeric sums), capabilities union across the
 /// frame; a module's *identity* at its slot decides what it grants.
-pub fn fold_capabilities(
-    world: &World,
-    matched: &HashMap<BlockPos, BlockId>,
-    slots: &HashMap<BlockPos, &'static str>,
+pub fn fold_capabilities<B: BlockStore>(
+    store: &B,
+    matched: &HashMap<B::Pos, BlockId>,
+    slots: &HashMap<B::Pos, &'static str>,
 ) -> Capabilities {
     let mut caps = Capabilities::default();
     for (pos, category) in slots {
         if let Some(&module) = matched.get(pos) {
-            caps.merge(module_capabilities(&world.reg, category, module));
+            caps.merge(module_capabilities(store.reg(), category, module));
         }
     }
     caps
@@ -381,19 +459,17 @@ pub fn shape_extent(shape: &MultiblockShape) -> ((i32, i32, i32), (i32, i32, i32
     (min, max)
 }
 
-/// True if `pos` (same face as `anchor`) lies within `(min, max)` cell
-/// offsets of `anchor`. Pure arithmetic: the edit hook pays nothing per
-/// instance it does not actually revalidate.
-pub fn pos_within_extent(
-    pos: BlockPos,
-    anchor: BlockPos,
+/// True if `pos` lies within `(min, max)` cell offsets of `anchor`, in the
+/// same store-local coordinate space. Pure arithmetic: the edit hook pays
+/// nothing per instance it does not actually revalidate.
+pub fn pos_within_extent<B: BlockStore>(
+    store: &B,
+    pos: B::Pos,
+    anchor: B::Pos,
     (min, max): ((i32, i32, i32), (i32, i32, i32)),
 ) -> bool {
-    if pos.face() != anchor.face() {
+    let Some((dx, dy, dz)) = store.cell_delta(anchor, pos) else {
         return false;
-    }
-    let dx = i32::from(pos.u()) - i32::from(anchor.u());
-    let dy = i32::from(pos.y()) - i32::from(anchor.y());
-    let dz = i32::from(pos.v()) - i32::from(anchor.v());
+    };
     dx >= min.0 && dx <= max.0 && dy >= min.1 && dy <= max.1 && dz >= min.2 && dz <= max.2
 }

@@ -611,7 +611,7 @@ impl World {
                 .insert(m.pos, BlockEntity::Multiblock(state));
             // Revalidate on load: fold stats and douse any machine whose
             // shell broke while it was saved.
-            self.revalidate_machine_at(m.pos);
+            crate::world::machines::revalidate_machine_at(self, m.pos);
         }
         for sg in parsed.sign {
             let mut state = SignState::default();
