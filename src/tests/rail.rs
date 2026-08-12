@@ -6,6 +6,7 @@ use super::*;
 use crate::planet::Direction4;
 use crate::world::local_structure::{LocalStructureId, RailState};
 use crate::world::multiblock::Rotation;
+use crate::world::rail::interpolated_pose;
 use crate::world::rail::{CurveOrientation, RailKind};
 
 const MY: i32 = 120;
@@ -328,5 +329,119 @@ fn switch_state_survives_save_and_reload() {
         reloaded.switch_selected(bp(0, MY, 1)),
         None,
         "untouched switch still has no entity"
+    );
+}
+
+// ---------------- phase 7a: rendering & interpolation ----------------
+
+#[test]
+fn static_structure_pose_resolves_directly_from_the_transform() {
+    let rc = base_reg();
+    let mut w = test_world_with("rail-pose-static", rc.clone());
+    let tpl = rail_car(&mut w, &rc);
+    for (i, rot) in Rotation::CARDINAL.iter().copied().enumerate() {
+        let anchor = bp(5 + i as i32 * 3, MY, 5);
+        let id = w.spawn_structure(&tpl, anchor, rot).expect("spawns");
+        let structure = w.local_structure(id).unwrap();
+        let pose = interpolated_pose(structure, &w);
+        assert_eq!(pose.position, anchor.entity_center().render_pos());
+        assert_eq!(pose.facing, rot);
+        assert!(structure.rail.is_none(), "static");
+    }
+}
+
+#[test]
+fn rail_pose_lerps_between_cell_centers_and_snaps_facing() {
+    let rc = base_reg();
+    let mut w = test_world_with("rail-pose-lerp", rc.clone());
+    lay(
+        &mut w,
+        &rc,
+        "base:rail",
+        &[(0, MY, 0), (0, MY, 1), (0, MY, 2)],
+    );
+    let tpl = rail_car(&mut w, &rc);
+    let id = w
+        .spawn_structure(&tpl, bp(0, MY, 0), Rotation::R0)
+        .expect("spawns");
+    let from = bp(0, MY, 0).entity_center().render_pos();
+    let to = bp(0, MY, 1).entity_center().render_pos();
+
+    let set = |w: &mut World, progress: f32| {
+        assert!(w.set_rail(
+            id,
+            Some(RailState {
+                current_cell: bp(0, MY, 0),
+                next_cell: bp(0, MY, 1),
+                progress,
+                speed: 1.0,
+            })
+        ));
+    };
+
+    set(&mut w, 0.0);
+    let pose = interpolated_pose(w.local_structure(id).unwrap(), &w);
+    assert_eq!(
+        pose.position, from,
+        "progress 0.0 is exactly the current cell"
+    );
+
+    set(&mut w, 1.0);
+    let pose = interpolated_pose(w.local_structure(id).unwrap(), &w);
+    assert_eq!(pose.position, to, "progress 1.0 is exactly the next cell");
+
+    set(&mut w, 0.5);
+    let pose = interpolated_pose(w.local_structure(id).unwrap(), &w);
+    assert_eq!(
+        pose.position,
+        from.lerp(to, 0.5),
+        "midpoint lies on the render-space line between the two centers"
+    );
+
+    // Facing never lerps: it is the structure's discrete rotation the whole
+    // way, snapping only at cell-boundary crossings in the tick.
+    assert_eq!(pose.facing, Rotation::R0);
+
+    // Out-of-range progress clamps to the segment endpoints rather than
+    // extending beyond the two known cells.
+    set(&mut w, 2.0);
+    let pose = interpolated_pose(w.local_structure(id).unwrap(), &w);
+    assert_eq!(pose.position, to, "over-shoot clamps to the next cell");
+    set(&mut w, -0.5);
+    let pose = interpolated_pose(w.local_structure(id).unwrap(), &w);
+    assert_eq!(
+        pose.position, from,
+        "under-shoot clamps to the current cell"
+    );
+}
+
+#[test]
+fn cross_face_segment_snaps_instead_of_lerping_raw_ints() {
+    let rc = base_reg();
+    let mut w = test_world_with("rail-pose-cross-face", rc.clone());
+    let tpl = rail_car(&mut w, &rc);
+    let id = w
+        .spawn_structure(&tpl, bp(0, MY, 0), Rotation::R0)
+        .expect("spawns");
+    let current = bp(0, MY, 0);
+    let across = crate::planet::BlockPos::new(crate::planet::Face::PosX, 10u16, MY as u8, 10u16)
+        .expect("valid PosX cell");
+    assert_ne!(current.face(), across.face());
+
+    assert!(w.set_rail(
+        id,
+        Some(RailState {
+            current_cell: current,
+            next_cell: across,
+            progress: 0.5,
+            speed: 1.0,
+        })
+    ));
+
+    let pose = interpolated_pose(w.local_structure(id).unwrap(), &w);
+    assert_eq!(
+        pose.position,
+        current.entity_center().render_pos(),
+        "a seam-straddling segment snaps to the current cell instead of lerping"
     );
 }

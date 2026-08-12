@@ -28,6 +28,8 @@
 //! renderer), collision, power draw, player throttle, car interiors, and
 //! cargo are all explicitly out of scope for this phase.
 
+use super::local_structure::LocalStructure;
+use super::multiblock::Rotation;
 use super::*;
 use crate::planet::{BlockPos, Direction4};
 use crate::registry::BlockId;
@@ -271,4 +273,59 @@ fn rotation_for_direction(direction: Direction4) -> super::multiblock::Rotation 
         Direction4::West => Rotation::R180,
         Direction4::North => Rotation::R270,
     }
+}
+
+/// A renderable world-space pose for a [`LocalStructure`]: where to draw it
+/// and which way it faces. `position` is the same `glam::Vec3` render space
+/// the rest of the renderer draws in (`EntityPos::render_pos`); `facing` is
+/// the structure's discrete cardinal orientation.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[allow(dead_code)]
+pub struct RenderPose {
+    pub position: glam::Vec3,
+    pub facing: Rotation,
+}
+
+/// Compute the continuous world-space pose a structure should be drawn at.
+///
+/// A static structure (`rail: None`) resolves directly from its transform,
+/// exactly as Phase 5's API already reported. A structure riding rails is
+/// positioned by converting *both* the current and next rail cells into
+/// render space first (`BlockPos::entity_center().render_pos()`) and then
+/// linearly interpolating with `rail.progress` — the same convert-then-lerp
+/// shape the renderer uses for guests and mobs. It never lerps the raw
+/// `(u, y, v)` block integers, which remap discontinuously across planet
+/// face seams.
+///
+/// `facing` always equals `transform.rotation`, which Phase 6 sets at
+/// cell-boundary crossings; it snaps at boundaries and never turns,
+/// matching the discrete four-way orientation model.
+///
+/// Cross-face segments are deliberately not interpolated: when the two
+/// cells sit on different planet faces the pose snaps to the current cell
+/// instead of producing a wrong lerp across the seam. `world` is accepted
+/// for API symmetry with future topology-aware queries (light, labels); it
+/// is not needed to compute the pose itself.
+///
+/// Forward-looking renderer API, wired into the scene graph in a later
+/// phase; exercised by unit tests only for now.
+#[allow(dead_code)]
+pub fn interpolated_pose(structure: &LocalStructure, _world: &World) -> RenderPose {
+    let facing = structure.transform.rotation;
+    let Some(rail) = &structure.rail else {
+        return RenderPose {
+            position: structure.transform.anchor.entity_center().render_pos(),
+            facing,
+        };
+    };
+    let from = rail.current_cell.entity_center().render_pos();
+    if rail.next_cell.face() != rail.current_cell.face() {
+        return RenderPose {
+            position: from,
+            facing,
+        };
+    }
+    let to = rail.next_cell.entity_center().render_pos();
+    let position = from.lerp(to, rail.progress.clamp(0.0, 1.0));
+    RenderPose { position, facing }
 }
