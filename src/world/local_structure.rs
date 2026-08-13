@@ -36,7 +36,7 @@ use super::*;
 use crate::inventory::ItemStack;
 use crate::planet::{BlockPos, Face};
 use crate::planet_atlas::LocalWeatherSample;
-use crate::registry::{AIR, BlockId, Registry};
+use crate::registry::{AIR, BlockId, ItemId, Registry};
 
 /// Uniquely identifies a spawned [`LocalStructure`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -168,6 +168,50 @@ impl LocalStructure {
         self.transform
             .anchor
             .offset(rotated.0, rotated.1, rotated.2)
+    }
+
+    /// Break the block at `offset`.  Returns the drop that should be given
+    /// to the breaking player (hardness/unbreakable-gated), or `None` if
+    /// the cell was already air or cannot be broken.
+    ///
+    /// The underlying cell is set to AIR and any `BlockEntity` at this
+    /// exact offset is removed; the edit revalidates nearby machines via
+    /// the same `set_block` hook the world's edit cascade uses.
+    pub fn break_block(
+        &mut self,
+        offset: (i32, i32, i32),
+        tool: Option<ItemId>,
+    ) -> Option<ItemStack> {
+        let block = self.get_block(offset);
+        if block == AIR || self.reg.block(block).hardness.is_none() {
+            return None;
+        }
+        let drop = self.reg.drops_for(block, tool).map(|(item, count)| {
+            let item = if tool.is_some() {
+                self.reg.block(block).dismantles_to.unwrap_or(item)
+            } else {
+                item
+            };
+            ItemStack::new(&self.reg, item, count)
+        });
+        self.block_entities.remove(&offset);
+        self.set_block(offset, AIR);
+        drop
+    }
+
+    /// Place `block` at `offset`.  Returns whether the placement was
+    /// accepted (the cell was replaceable).  The edit revalidates nearby
+    /// machines exactly as `set_block` already does.
+    pub fn place_block(&mut self, offset: (i32, i32, i32), block: BlockId) -> bool {
+        if self.reg.block(block).hardness.is_none() {
+            return false;
+        }
+        let current = self.get_block(offset);
+        if !self.reg.is_replaceable(current) {
+            return false;
+        }
+        self.set_block(offset, block);
+        true
     }
 }
 

@@ -1967,7 +1967,17 @@ impl Game {
         let mut overlay_verts = Vec::new();
         let mut overlay_idx = Vec::new();
         if let Some((target, progress)) = self.interaction.breaking {
-            entity::emit_crack(target, progress, &mut overlay_verts, &mut overlay_idx);
+            let world_pos = match target {
+                super::BreakTarget::World(p) => Some(p),
+                super::BreakTarget::Structure(id, offset) => self
+                    .server
+                    .world
+                    .local_structure(id)
+                    .and_then(|s| s.world_position(offset)),
+            };
+            if let Some(p) = world_pos {
+                entity::emit_crack(p, progress, &mut overlay_verts, &mut overlay_idx);
+            }
         }
         // The quern's top face turns while you grind (bare-hand station
         // channels only; hammer stations flash sparks instead).

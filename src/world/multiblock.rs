@@ -46,6 +46,29 @@ impl Rotation {
             Rotation::R270 => (-dz, dy, dx),
         }
     }
+
+    /// The inverse rotation (undoes one quarter-turn around Y).
+    pub fn inverse(self) -> Rotation {
+        use Rotation::{R0, R90, R180, R270};
+        match self {
+            R0 => R0,
+            R90 => R270,
+            R180 => R180,
+            R270 => R90,
+        }
+    }
+
+    /// Rotate a f32 `(dx, dy, dz)` offset clockwise around the Y axis,
+    /// matching the pattern of the integer `apply`. Linear, so the same
+    /// permutation works directly on floats.
+    pub fn apply_vec(self, (dx, dy, dz): (f32, f32, f32)) -> (f32, f32, f32) {
+        match self {
+            Rotation::R0 => (dx, dy, dz),
+            Rotation::R90 => (dz, dy, -dx),
+            Rotation::R180 => (-dx, dy, -dz),
+            Rotation::R270 => (-dz, dy, dx),
+        }
+    }
 }
 
 /// What a single cell of a shape may be.

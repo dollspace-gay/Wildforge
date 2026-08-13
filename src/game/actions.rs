@@ -508,6 +508,12 @@ impl Game {
             self.camera.local_forward(),
             REACH,
         );
+        let aim = raycast::raycast_target_at(
+            &self.server.world,
+            self.player.eye(),
+            self.camera.local_forward(),
+            REACH,
+        );
         let held = self.inventory.slots[self.input.hotbar_sel].map(|s| s.item);
         if self.interact_wand(dt, hit.as_ref()) {
             return;
@@ -1011,6 +1017,7 @@ impl Game {
         // block behind it. Held tools/swords set the damage.
         if self.input.left_held
             && let Some(mi) = self.mob_in_crosshair(&hit)
+            && !matches!(aim, Some(raycast::TargetHit::Structure { .. }))
         {
             self.interaction.breaking = None;
             if self.input.attack_cooldown <= 0.0 {
@@ -1068,7 +1075,84 @@ impl Game {
 
         // Hold-to-mine; tools speed up matching blocks and wear down.
         if self.input.left_held {
-            if let Some(h) = &hit {
+            // Structure mining (takes priority over world mining).
+            if let Some(raycast::TargetHit::Structure {
+                id,
+                block,
+                adjacent: _adj,
+            }) = &aim
+            {
+                let (sid, soff) = (*id, *block);
+                let s_block_id = self
+                    .server
+                    .world
+                    .local_structure(sid)
+                    .map(|s| s.get_block(soff))
+                    .unwrap_or(AIR);
+                let hardness = if self.creative {
+                    reg.block(s_block_id).hardness.map(|_| 0.0001)
+                } else {
+                    reg.effective_hardness(s_block_id, held)
+                };
+                if let Some(hardness) = hardness {
+                    let target_break = super::BreakTarget::Structure(sid, soff);
+                    let progress = match self.interaction.breaking {
+                        Some((t, p)) if t == target_break => p + dt / hardness.max(0.0001),
+                        _ => dt / hardness.max(0.0001),
+                    };
+                    if progress >= 1.0 {
+                        // No `on_block_break` script hook for structure
+                        // blocks (they have no world BlockPos).
+                        self.interaction.breaking = None;
+                        let drop = self
+                            .server
+                            .world
+                            .local_structure_mut(sid)
+                            .and_then(|s| s.break_block(soff, held));
+                        // 8c: drop to player inventory directly.
+                        if !self.creative {
+                            if let Some(stack) = drop {
+                                let item = stack.item;
+                                let remaining = self.inventory.add_stack(&reg, stack);
+                                if remaining > 0
+                                    && let Some(wp) = self
+                                        .server
+                                        .world
+                                        .local_structure(sid)
+                                        .and_then(|s| s.world_position(soff))
+                                {
+                                    self.server.world.spawn_loose_item(ItemEntity::new(
+                                        wp.entity_at_height(0.3),
+                                        Vec3::new(0.0, 2.2, 0.0),
+                                        item,
+                                        remaining,
+                                    ));
+                                }
+                            }
+                            self.inventory.wear_tool(&reg, self.input.hotbar_sel);
+                        }
+                        self.survival.hunger = (self.survival.hunger - 0.008).max(0.0);
+                        self.sfx(Sfx::Break(self.break_mat(s_block_id)));
+                        if let Some(wp) = self
+                            .server
+                            .world
+                            .local_structure(sid)
+                            .and_then(|s| s.world_position(soff))
+                        {
+                            self.juice_burst(
+                                wp.entity_center().render_pos(),
+                                self.content.reg.block(s_block_id).tiles[0],
+                                10,
+                                2.2,
+                            );
+                        }
+                    } else {
+                        self.interaction.breaking = Some((target_break, progress));
+                    }
+                } else {
+                    self.interaction.breaking = None;
+                }
+            } else if let Some(h) = &hit {
                 let target = h.block;
                 let b = self.server.world.get_block_at(target);
                 let hardness = if self.creative {
@@ -1080,7 +1164,9 @@ impl Game {
                 };
                 if let Some(hardness) = hardness {
                     let progress = match self.interaction.breaking {
-                        Some((t, p)) if t == target => p + dt / hardness.max(0.0001),
+                        Some((t, p)) if t == super::BreakTarget::World(target) => {
+                            p + dt / hardness.max(0.0001)
+                        }
                         _ => dt / hardness.max(0.0001),
                     };
                     if progress >= 1.0 {
@@ -1187,7 +1273,8 @@ impl Game {
                     } else {
                         let stage_before =
                             (self.interaction.breaking.map(|(_, p)| p).unwrap_or(0.0) * 4.0) as i32;
-                        self.interaction.breaking = Some((target, progress));
+                        self.interaction.breaking =
+                            Some((super::BreakTarget::World(target), progress));
                         // Chips fly as each crack stage lands.
                         if (progress * 4.0) as i32 > stage_before {
                             self.juice_burst(
@@ -1216,6 +1303,33 @@ impl Game {
         // otherwise place the selected block.
         // Feeding wildlife: right-click an adult with its favorite food.
         if self.input.right_held && self.input.action_cooldown <= 0.0 {
+            // Structure hit: place the held block at the adjacent cell.
+            // In-structure interaction (machines, containers) is deferred
+            // this phase — right-clicking a structure always places.
+            if let Some(raycast::TargetHit::Structure { id, adjacent, .. }) = &aim {
+                let sid = *id;
+                let off = *adjacent;
+                let place = self.inventory.slots[self.input.hotbar_sel]
+                    .and_then(|s| reg.item(s.item).places);
+                if let Some(block) = place
+                    && (self.creative || self.inventory.slots[self.input.hotbar_sel].is_some())
+                {
+                    let placed = self
+                        .server
+                        .world
+                        .local_structure_mut(sid)
+                        .map(|s| s.place_block(off, block))
+                        .unwrap_or(false);
+                    if placed {
+                        if !self.creative {
+                            self.inventory.take_one(self.input.hotbar_sel);
+                        }
+                        self.input.action_cooldown = 0.22;
+                        self.sfx(Sfx::Place);
+                    }
+                }
+                return;
+            }
             if let Some(mi) = self.mob_in_crosshair(&hit) {
                 let Some(mob) = self.server.world.mob(mi) else {
                     return;
