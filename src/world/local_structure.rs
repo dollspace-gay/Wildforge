@@ -152,6 +152,18 @@ impl LocalStructure {
         crate::world::machines::revalidate_machines_around(self, offset);
     }
 
+    /// Total mass of the structure's placed blocks (spec §2.2 power draw).
+    /// Folded from actual content each call: an empty car is Empty-tier,
+    /// a full freight train climbs the load tiers. `AIR` cells are never
+    /// stored, so the empty offset naturally weighs nothing.
+    pub fn mass(&self) -> f32 {
+        let mut mass = 0.0;
+        for block in self.blocks.values() {
+            mass += crate::world::power_draw::block_mass(&self.reg, *block);
+        }
+        mass
+    }
+
     /// Rotate the structure: the transform records the composed orientation
     /// (O(1), no cell remapping). Blocks stay canonical — the rotation is
     /// applied only at resolution time, exactly like

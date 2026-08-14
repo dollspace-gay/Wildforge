@@ -171,6 +171,13 @@ impl World {
     /// next segment. A dead end parks the structure (`speed = 0`) rather
     /// than panicking or teleporting; progress carries over segment
     /// boundaries so speed stays consistent at any tick rate.
+    ///
+    /// Each tick the structure's mass is quantized into a load tier (spec
+    /// §2.2), its draw `incline × tier_rate` is compared against the shaft
+    /// line's delivered rate at the structure's cell, and the effective
+    /// speed is stepped accordingly. A shortfall steps the load one tier
+    /// heavier (slower); an Overloaded load stalls outright — the same
+    /// parked state a dead end produces, so behavior stays consistent.
     pub(super) fn tick_rail_motion(&mut self, dt: f32) {
         if dt <= 0.0 {
             return;
@@ -191,8 +198,35 @@ impl World {
                 self.local_structures.insert(i, structure);
                 continue;
             }
+            // Mass-driven power draw (spec §2.2): the rail piece the
+            // structure is crossing sets the incline multiplier, the
+            // structure's own mass sets the load tier, and the delivered
+            // rate decides how fast it may actually roll. `rail.speed` is
+            // the requested nominal; the effective speed is computed fresh
+            // every tick and only ever stored back into the copy we step.
+            // A shortfall (or an Overloaded jam) leaves the nominal intact
+            // so the car resumes the instant power or load shifts.
+            let base = crate::world::power_draw::load_tier_for_mass(structure.mass());
+            let climbing = self.rail_climbing(rail.current_cell, rail.next_cell);
+            let draw = crate::world::power_draw::incline_multiplier(
+                RailKind::from_block(&self.reg, self.get_block_at(rail.current_cell)),
+                climbing,
+            ) * crate::world::power_draw::load_tier_rate(base);
+            let delivered = self.power_at_pos(structure.transform.anchor);
+            let nominal = rail.speed;
+            let effective =
+                crate::world::power_draw::effective_speed(base, delivered, draw, nominal);
+            if effective <= 0.0 {
+                // Overloaded, or the line delivers less than the draw: hold
+                // at this cell rather than crawling. The nominal is kept so
+                // the very next tick can roll again if power or load shifts.
+                let rail = structure.rail.as_mut().expect("checked above");
+                rail.progress = 0.0;
+                self.local_structures.insert(i, structure);
+                continue;
+            }
             let rail = structure.rail.as_mut().expect("checked above");
-            rail.progress += rail.speed * dt;
+            rail.progress += effective * dt;
             while rail.progress >= 1.0 {
                 rail.progress -= 1.0;
                 let arrived = rail.next_cell;
@@ -228,6 +262,14 @@ impl World {
             }
             self.local_structures.insert(i, structure);
         }
+    }
+
+    /// Whether crossing from `current` to `next` climbs a ramp. The incline
+    /// piece is the low end; leaving it North rises one block, so only a
+    /// North-bound crossing of an incline piece pays the climb multiplier.
+    fn rail_climbing(&self, current: BlockPos, next: BlockPos) -> bool {
+        RailKind::from_block(&self.reg, self.get_block_at(current)) == Some(RailKind::Incline)
+            && direction_from(current, next) == Direction4::North
     }
 }
 

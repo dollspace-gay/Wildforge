@@ -30,6 +30,7 @@ pub(crate) use discovery::ObservationTarget;
 mod dross;
 mod ecology;
 pub use ecology::SettledMobDeath;
+pub(crate) mod belt;
 mod entities;
 mod fire;
 mod fluids;
@@ -41,6 +42,7 @@ pub(crate) mod machines;
 pub(crate) mod multiblock;
 mod persistence;
 mod power;
+pub(crate) mod power_draw;
 #[cfg_attr(test, allow(unused))]
 pub(crate) mod region;
 mod storage;
@@ -1001,6 +1003,9 @@ pub struct World {
     /// Seconds of work banked per powered station (transient: a
     /// partial strike is honest to lose across a save).
     station_work: HashMap<BlockPos, f32>,
+    /// Belt cells carrying cargo (spec §2.2): transient runtime state,
+    /// exactly like `RailState` — a reloaded belt is empty until fed again.
+    belt_state: HashMap<crate::planet::BlockPos, crate::world::belt::BeltState>,
     /// The land's memory: per-256-block-cell standing (±20), charged
     /// by taking, credited by tending, fading over days.
     pub(crate) regional_ire: HashMap<RegionCell, f32>,
@@ -1428,6 +1433,7 @@ impl World {
             pending_drops: Vec::new(),
             perish_accum: 0.0,
             station_work: HashMap::new(),
+            belt_state: HashMap::new(),
             regional_ire: HashMap::new(),
             whispers: Vec::new(),
             blessed_streak: HashMap::new(),

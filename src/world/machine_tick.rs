@@ -811,6 +811,7 @@ impl World {
             self.push_drop_at(pos, stack);
         }
         self.tick_rail_motion(dt);
+        self.tick_belts(dt);
         self.tick_local_structure_machines(dt);
     }
 

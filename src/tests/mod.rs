@@ -15,6 +15,7 @@ use crate::world::World;
 mod agent;
 mod alchemy;
 mod atlas;
+mod belt;
 mod climate;
 mod dross;
 mod ecology;
@@ -30,6 +31,7 @@ mod mobs;
 mod multiblock;
 mod multiplayer;
 mod player;
+mod power_draw;
 mod qualification;
 mod rail;
 #[path = "registry.rs"]

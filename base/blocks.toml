@@ -2619,3 +2619,16 @@ tool = "pickaxe"
 solid = true
 opaque = false
 interaction = "rail_switch"
+
+# ---- belts (spec Part 2.2, scoped) ----
+# A minimal straight belt segment. Travel direction is fixed at North (+v);
+# geometry variants (curves, inclines, switches) are a later belt phase.
+
+[[block]]
+id = "belt"
+name = "Belt"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
