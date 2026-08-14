@@ -1,5 +1,6 @@
 //! Persistent block-entity serialization and world save-directory access.
 
+use super::multiblock::MachineKind;
 use super::*;
 
 impl World {
@@ -9,7 +10,7 @@ impl World {
 
     pub(super) fn save_entities(&self) -> std::io::Result<()> {
         use std::fmt::Write as _;
-        let mut out = String::from("version = 8\n");
+        let mut out = String::from("version = 9\n");
         let pos_value = |pos: BlockPos| {
             format!(
                 "{{ face = \"{:?}\", u = {}, y = {}, v = {} }}",
@@ -80,21 +81,33 @@ impl World {
                     }
                     let _ = writeln!(out);
                 }
-                BlockEntity::Bloomery(b) => {
-                    let core = b
+                BlockEntity::Multiblock(m) => {
+                    let core = m
                         .core
                         .map(|core| format!("\ncore = {}", pos_value(core)))
                         .unwrap_or_default();
                     let _ = writeln!(
                         out,
-                        "[[bloomery]]\n{pos_line}\nlit = {}\nprogress = {}{core}",
-                        b.lit, b.progress
+                        "[[machine]]\n{pos_line}\nkind = \"{}\"\nlit = {}\nprogress = {}{core}\npowder = {}\nseparator_fuel = {}\nneodymium = {}\ncerium = {}",
+                        m.kind.name(),
+                        m.lit,
+                        m.progress,
+                        m.powder,
+                        m.separator_fuel,
+                        m.neodymium,
+                        m.cerium
                     );
-                    for (i, st) in b.charge.iter().chain(b.fuel.iter()).enumerate() {
+                    let all: Vec<&Option<ItemStack>> = m
+                        .charge
+                        .iter()
+                        .chain([&m.reagent])
+                        .chain(m.fuel.iter())
+                        .collect();
+                    for (i, st) in all.into_iter().enumerate() {
                         if let Some(st) = st {
                             let _ = writeln!(
                                 out,
-                                "[[bloomery.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
+                                "[[machine.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
                                 self.reg.item(st.item).name,
                                 st.count,
                                 st.durability,
@@ -102,35 +115,11 @@ impl World {
                             );
                         }
                     }
-                    let _ = writeln!(out);
-                }
-                BlockEntity::Forge(f) => {
-                    let core = f
-                        .core
-                        .map(|core| format!("\ncore = {}", pos_value(core)))
-                        .unwrap_or_default();
-                    let _ = writeln!(
-                        out,
-                        "[[forge]]\n{pos_line}\nlit = {}\nprogress = {}{core}",
-                        f.lit, f.progress
-                    );
-                    for (i, st) in f.charge.iter().chain(f.fuel.iter()).enumerate() {
-                        if let Some(st) = st {
-                            let _ = writeln!(
-                                out,
-                                "[[forge.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
-                                self.reg.item(st.item).name,
-                                st.count,
-                                st.durability,
-                                st.arcane_id
-                            );
-                        }
-                    }
-                    for (material, units) in &f.reclaim {
+                    for (material, units) in &m.reclaim {
                         let material = material.replace(['\\', '"'], "");
                         let _ = writeln!(
                             out,
-                            "[[forge.reclaim]]\nmaterial = \"{material}\"\nunits = {units}"
+                            "[[machine.reclaim]]\nmaterial = \"{material}\"\nunits = {units}"
                         );
                     }
                     let _ = writeln!(out);
@@ -197,36 +186,6 @@ impl World {
                         logs.join(", ")
                     );
                 }
-                BlockEntity::Kiln(k) => {
-                    let core = k
-                        .core
-                        .map(|core| format!("\ncore = {}", pos_value(core)))
-                        .unwrap_or_default();
-                    let _ = writeln!(
-                        out,
-                        "[[kiln]]\n{pos_line}\nlit = {}\nprogress = {}{core}",
-                        k.lit, k.progress
-                    );
-                    let all: Vec<&Option<ItemStack>> = k
-                        .sand
-                        .iter()
-                        .chain([&k.powder])
-                        .chain(k.fuel.iter())
-                        .collect();
-                    for (i, st) in all.into_iter().enumerate() {
-                        if let Some(st) = st {
-                            let _ = writeln!(
-                                out,
-                                "[[kiln.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
-                                self.reg.item(st.item).name,
-                                st.count,
-                                st.durability,
-                                st.arcane_id
-                            );
-                        }
-                    }
-                    let _ = writeln!(out);
-                }
                 BlockEntity::Steam(s) => {
                     let _ = writeln!(
                         out,
@@ -236,13 +195,6 @@ impl World {
                         s.water.salt_mass,
                         s.draft_closed,
                         s.steam_numerator_remainder,
-                    );
-                }
-                BlockEntity::Separator(sp) => {
-                    let _ = writeln!(
-                        out,
-                        "[[separator]]\n{pos_line}\npowder = {}\nfuel = {}\nnd = {}\nce = {}\nprogress = {:?}\n",
-                        sp.powder, sp.fuel, sp.nd, sp.ce, sp.progress
                     );
                 }
                 BlockEntity::Anvil(a) => {
@@ -329,6 +281,13 @@ impl World {
                     }
                     let _ = writeln!(out);
                 }
+                BlockEntity::Switch(sw) => {
+                    let _ = writeln!(
+                        out,
+                        "[[switch]]\n{pos_line}\nselected = \"{:?}\"",
+                        sw.selected
+                    );
+                }
             }
         }
         super::persistence::replace_or_remove(
@@ -380,8 +339,10 @@ impl World {
             slot: Vec<ChestSlotT>,
         }
         #[derive(Deserialize)]
-        struct BloomeryT {
+        struct MachineT {
             pos: crate::planet::BlockPos,
+            #[serde(default)]
+            kind: String,
             #[serde(default)]
             lit: bool,
             #[serde(default)]
@@ -392,6 +353,14 @@ impl World {
             slot: Vec<ChestSlotT>,
             #[serde(default)]
             reclaim: Vec<MaterialT>,
+            #[serde(default)]
+            powder: u32,
+            #[serde(default)]
+            separator_fuel: u32,
+            #[serde(default)]
+            neodymium: u32,
+            #[serde(default)]
+            cerium: u32,
         }
         #[derive(Deserialize)]
         struct MaterialT {
@@ -454,20 +423,6 @@ impl World {
             steam_numerator_remainder: u64,
         }
         #[derive(Deserialize)]
-        struct SeparatorT {
-            pos: crate::planet::BlockPos,
-            #[serde(default)]
-            powder: u32,
-            #[serde(default)]
-            fuel: u32,
-            #[serde(default)]
-            nd: u32,
-            #[serde(default)]
-            ce: u32,
-            #[serde(default)]
-            progress: f32,
-        }
-        #[derive(Deserialize)]
         struct SurveyFolioT {
             pos: crate::planet::BlockPos,
             object_id: u64,
@@ -507,6 +462,12 @@ impl World {
             revision: u64,
         }
         #[derive(Deserialize)]
+        struct SwitchT {
+            pos: crate::planet::BlockPos,
+            #[serde(default)]
+            selected: String,
+        }
+        #[derive(Deserialize)]
         struct FileT {
             version: u32,
             #[serde(default)]
@@ -516,15 +477,9 @@ impl World {
             #[serde(default)]
             offering: Vec<ChestT>,
             #[serde(default)]
-            bloomery: Vec<BloomeryT>,
-            #[serde(default)]
             clamp: Vec<ClampT>,
             #[serde(default)]
             anvil: Vec<AnvilT>,
-            #[serde(default)]
-            kiln: Vec<BloomeryT>,
-            #[serde(default)]
-            forge: Vec<BloomeryT>,
             #[serde(default)]
             sign: Vec<SignT>,
             #[serde(default)]
@@ -534,7 +489,7 @@ impl World {
             #[serde(default)]
             steam: Vec<SteamT>,
             #[serde(default)]
-            separator: Vec<SeparatorT>,
+            machine: Vec<MachineT>,
             #[serde(default)]
             survey_folio: Vec<SurveyFolioT>,
             #[serde(default)]
@@ -543,6 +498,8 @@ impl World {
             binding_frame: Vec<BindingFrameT>,
             #[serde(default)]
             charge_vessel: Vec<ChargeVesselT>,
+            #[serde(default)]
+            switch: Vec<SwitchT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else {
             return;
@@ -550,12 +507,12 @@ impl World {
         let Ok(parsed) = toml::from_str::<FileT>(&text) else {
             return;
         };
-        if !(3..=8).contains(&parsed.version) {
+        if parsed.version != 9 {
             return;
         }
-        let conv = |s: Option<SlotT>| -> Option<ItemStack> {
+        let conv = |reg: &Registry, s: Option<SlotT>| -> Option<ItemStack> {
             let s = s?;
-            let item = self.reg.item_id(&s.item)?;
+            let item = reg.item_id(&s.item)?;
             Some(ItemStack {
                 item,
                 count: s.count,
@@ -567,9 +524,9 @@ impl World {
             self.block_entities.insert(
                 fu.pos,
                 BlockEntity::Furnace(FurnaceState {
-                    input: conv(fu.input),
-                    fuel: conv(fu.fuel),
-                    output: conv(fu.output),
+                    input: conv(&self.reg, fu.input),
+                    fuel: conv(&self.reg, fu.fuel),
+                    output: conv(&self.reg, fu.output),
                     progress: fu.progress,
                     burn_left: fu.burn_left,
                     burn_total: fu.burn_total,
@@ -614,64 +571,47 @@ impl World {
             self.block_entities
                 .insert(of.pos, BlockEntity::Offering(state));
         }
-        for bl in parsed.bloomery {
-            let mut state = BloomeryState {
-                lit: bl.lit,
-                progress: bl.progress,
-                core: bl.core,
+        for m in parsed.machine {
+            let Some(kind) = MachineKind::from_name(&m.kind) else {
+                continue;
+            };
+            let mut state = MachineInstance {
+                kind,
+                lit: m.lit,
+                progress: m.progress,
+                core: m.core,
+                powder: m.powder,
+                separator_fuel: m.separator_fuel,
+                neodymium: m.neodymium,
+                cerium: m.cerium,
                 ..Default::default()
             };
-            for sl in bl.slot {
-                if sl.index < 8
-                    && let Some(item) = self.reg.item_id(&sl.item)
-                {
-                    let st = Some(ItemStack {
-                        item,
-                        count: sl.count,
-                        durability: sl.durability,
-                        arcane_id: sl.arcane_id,
-                    });
-                    if sl.index < 4 {
-                        state.charge[sl.index] = st;
-                    } else {
-                        state.fuel[sl.index - 4] = st;
-                    }
-                }
-            }
-            self.block_entities
-                .insert(bl.pos, BlockEntity::Bloomery(state));
-        }
-        for fo in parsed.forge {
-            let mut state = BloomeryState {
-                lit: fo.lit,
-                progress: fo.progress,
-                core: fo.core,
-                ..Default::default()
-            };
-            for material in fo.reclaim {
+            for material in m.reclaim {
                 if material.units != 0 {
                     *state.reclaim.entry(material.material).or_default() += material.units;
                 }
             }
-            for sl in fo.slot {
-                if sl.index < 8
-                    && let Some(item) = self.reg.item_id(&sl.item)
-                {
+            for sl in m.slot {
+                if let Some(item) = self.reg.item_id(&sl.item) {
                     let st = Some(ItemStack {
                         item,
                         count: sl.count,
                         durability: sl.durability,
                         arcane_id: sl.arcane_id,
                     });
-                    if sl.index < 4 {
-                        state.charge[sl.index] = st;
-                    } else {
-                        state.fuel[sl.index - 4] = st;
+                    match sl.index {
+                        0..=3 => state.charge[sl.index] = st,
+                        4 => state.reagent = st,
+                        5..=8 => state.fuel[sl.index - 5] = st,
+                        _ => {}
                     }
                 }
             }
             self.block_entities
-                .insert(fo.pos, BlockEntity::Forge(state));
+                .insert(m.pos, BlockEntity::Multiblock(state));
+            // Revalidate on load: fold stats and douse any machine whose
+            // shell broke while it was saved.
+            crate::world::machines::revalidate_machine_at(self, m.pos);
         }
         for sg in parsed.sign {
             let mut state = SignState::default();
@@ -748,18 +688,6 @@ impl World {
                 }),
             );
         }
-        for sp in parsed.separator {
-            self.block_entities.insert(
-                sp.pos,
-                BlockEntity::Separator(SeparatorState {
-                    powder: sp.powder,
-                    fuel: sp.fuel,
-                    nd: sp.nd,
-                    ce: sp.ce,
-                    progress: sp.progress,
-                }),
-            );
-        }
         for cl in parsed.clamp {
             self.block_entities.insert(
                 cl.pos,
@@ -769,37 +697,11 @@ impl World {
                 }),
             );
         }
-        for kl in parsed.kiln {
-            let mut state = KilnState {
-                lit: kl.lit,
-                progress: kl.progress,
-                core: kl.core,
-                ..Default::default()
-            };
-            for sl in kl.slot {
-                if sl.index < 9
-                    && let Some(item) = self.reg.item_id(&sl.item)
-                {
-                    let st = Some(ItemStack {
-                        item,
-                        count: sl.count,
-                        durability: sl.durability,
-                        arcane_id: sl.arcane_id,
-                    });
-                    match sl.index {
-                        0..=3 => state.sand[sl.index] = st,
-                        4 => state.powder = st,
-                        _ => state.fuel[sl.index - 5] = st,
-                    }
-                }
-            }
-            self.block_entities.insert(kl.pos, BlockEntity::Kiln(state));
-        }
         for an in parsed.anvil {
             self.block_entities.insert(
                 an.pos,
                 BlockEntity::Anvil(AnvilState {
-                    bloom: conv(an.bloom),
+                    bloom: conv(&self.reg, an.bloom),
                     strikes: an.strikes,
                 }),
             );
@@ -818,8 +720,8 @@ impl World {
             self.block_entities.insert(
                 apparatus.pos,
                 BlockEntity::DiscoveryApparatus(DiscoveryApparatusState {
-                    sample: conv(apparatus.sample),
-                    reference: conv(apparatus.reference),
+                    sample: conv(&self.reg, apparatus.sample),
+                    reference: conv(&self.reg, apparatus.reference),
                 }),
             );
         }
@@ -827,11 +729,11 @@ impl World {
             self.block_entities.insert(
                 frame.pos,
                 BlockEntity::BindingFrame(BindingFrameState {
-                    body: conv(frame.body),
-                    reservoir: conv(frame.reservoir),
-                    focus: conv(frame.focus),
-                    binding: conv(frame.binding),
-                    output: conv(frame.output),
+                    body: conv(&self.reg, frame.body),
+                    reservoir: conv(&self.reg, frame.reservoir),
+                    focus: conv(&self.reg, frame.focus),
+                    binding: conv(&self.reg, frame.binding),
+                    output: conv(&self.reg, frame.output),
                     revision: frame.revision,
                 }),
             );
@@ -840,11 +742,21 @@ impl World {
             self.block_entities.insert(
                 vessel.pos,
                 BlockEntity::ChargeVessel(ChargeVesselState {
-                    vessel: conv(vessel.vessel),
+                    vessel: conv(&self.reg, vessel.vessel),
                     damage: vessel.damage.min(1_000),
                     revision: vessel.revision,
                 }),
             );
+        }
+        for sw in parsed.switch {
+            let selected = match sw.selected.to_ascii_lowercase().as_str() {
+                "east" => crate::planet::Direction4::East,
+                "west" => crate::planet::Direction4::West,
+                "south" => crate::planet::Direction4::South,
+                _ => crate::planet::Direction4::North,
+            };
+            self.block_entities
+                .insert(sw.pos, BlockEntity::Switch(SwitchState { selected }));
         }
     }
 

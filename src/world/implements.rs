@@ -391,16 +391,12 @@ impl World {
                 }
                 BlockEntity::Chest(state) => state.slots.iter_mut().for_each(&mut migrate),
                 BlockEntity::Offering(state) => state.slots.iter_mut().for_each(&mut migrate),
-                BlockEntity::Bloomery(state) | BlockEntity::Forge(state) => {
+                BlockEntity::Multiblock(state) => {
                     state.charge.iter_mut().for_each(&mut migrate);
+                    migrate(&mut state.reagent);
                     state.fuel.iter_mut().for_each(&mut migrate);
                 }
                 BlockEntity::Anvil(state) => migrate(&mut state.bloom),
-                BlockEntity::Kiln(state) => {
-                    state.sand.iter_mut().for_each(&mut migrate);
-                    migrate(&mut state.powder);
-                    state.fuel.iter_mut().for_each(&mut migrate);
-                }
                 BlockEntity::Stall(state) => {
                     state.goods.iter_mut().for_each(&mut migrate);
                     migrate(&mut state.price);
@@ -426,8 +422,8 @@ impl World {
                 BlockEntity::Clamp(_)
                 | BlockEntity::Sign(_)
                 | BlockEntity::Steam(_)
-                | BlockEntity::Separator(_)
-                | BlockEntity::SurveyFolio(_) => {}
+                | BlockEntity::SurveyFolio(_)
+                | BlockEntity::Switch(_) => {}
             }
             self.block_entities.insert(pos, entity);
         }

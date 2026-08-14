@@ -963,7 +963,7 @@ fn loopback_join_stream_and_edit() {
     assert!(got_kind3, "bloomery streams as container kind 3");
     let iron = reg.item_id("base:iron_ingot").unwrap();
     let coal = reg.item_id("base:charcoal").unwrap();
-    if let Some(crate::world::BlockEntity::Bloomery(state)) =
+    if let Some(crate::world::BlockEntity::Multiblock(state)) =
         sim.world.block_entity_mut(&(12, by, 8))
     {
         state.charge[0] = Some(ItemStack::new(&reg, iron, 2));

@@ -1,2 +1,14 @@
+# Compile with every core available; the machine has 16. Cargo defaults to
+# this, but pinning it documents the intent and guards against any CPU-count
+# misdetection on the Windows side.
+[build]
+jobs = 16
+
+[target.x86_64-pc-windows-msvc]
+# link.exe is single-threaded by default. /THREADS lets it use all cores for
+# the (large, debug-info-heavy) final link of the test binary, which is the
+# slowest single step of `cargo test`.
+rustflags = ["-C", "link-arg=/THREADS:16"]
+
 [target.x86_64-pc-windows-gnu]
 linker = "x86_64-w64-mingw32-gcc"

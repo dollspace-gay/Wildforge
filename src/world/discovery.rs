@@ -751,16 +751,11 @@ impl World {
                             Some(BlockEntity::Furnace(state)) if state.burn_left > 0.0 => {
                                 "active transfer"
                             }
-                            Some(BlockEntity::Bloomery(state) | BlockEntity::Forge(state))
-                                if state.lit =>
-                            {
-                                "active transfer"
-                            }
-                            Some(BlockEntity::Kiln(state)) if state.lit => "active transfer",
+                            Some(BlockEntity::Multiblock(state)) if state.lit => "active transfer",
                             Some(BlockEntity::Steam(state)) if state.fuel > 0.0 => {
                                 "active transfer"
                             }
-                            Some(BlockEntity::Separator(state)) if state.progress > 0.0 => {
+                            Some(BlockEntity::Multiblock(state)) if state.progress > 0.0 => {
                                 "active transfer"
                             }
                             Some(_) => "assembled and idle",

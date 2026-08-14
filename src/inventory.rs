@@ -200,4 +200,57 @@ impl Inventory {
         }
         out
     }
+
+    /// Total count of `item` spread across the whole inventory, regardless
+    /// of stack fragmentation. Summation only — explicitly not a mutation.
+    ///
+    /// This is the "has enough of many items at once" primitive the template
+    /// instant-stamp (spec Part 1.4) needs; nothing in the crafting/recipe
+    /// system already does a whole-inventory, multi-item check, so it lives
+    /// beside the rest of the inventory's bulk operations.
+    pub fn count_of(&self, item: ItemId) -> u32 {
+        self.slots
+            .iter()
+            .flatten()
+            .filter(|stack| stack.item == item)
+            .map(|stack| stack.count)
+            .sum()
+    }
+
+    /// Can the whole `cost` (a list of `(item, count)` pairs) be paid at
+    /// once? All-or-nothing, like the multi-material checks that gate the
+    /// template stamp.
+    pub fn can_afford(&self, cost: &[(ItemId, u32)]) -> bool {
+        cost.iter()
+            .all(|&(item, count)| self.count_of(item) >= count)
+    }
+
+    /// Deduct `cost` from the inventory. Returns `false` (making no change)
+    /// when any item is short, so a caller can check-and-consume atomically
+    /// without a separate afford pass.
+    pub fn try_consume(&mut self, cost: &[(ItemId, u32)]) -> bool {
+        if !self.can_afford(cost) {
+            return false;
+        }
+        for &(item, count) in cost {
+            let mut remaining = count;
+            for slot in self.slots.iter_mut() {
+                if remaining == 0 {
+                    break;
+                }
+                if let Some(stack) = slot {
+                    if stack.item != item {
+                        continue;
+                    }
+                    let take = stack.count.min(remaining);
+                    remaining -= take;
+                    stack.count -= take;
+                    if stack.count == 0 {
+                        *slot = None;
+                    }
+                }
+            }
+        }
+        true
+    }
 }

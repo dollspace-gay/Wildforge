@@ -1,312 +1,24 @@
 //! Runtime ticking for bloomeries, clamps, furnaces, and related machines.
 
+use super::multiblock::{BlockStore, MachineKind};
 use super::*;
 
 impl World {
     /// Advance machines. Returns true if any visible state changed.
-    /// Fire every lit bloomery: validate the shell, let the weather
-    /// slow or douse an unroofed stack, and cash the batch when done.
+    /// Fire every lit bloomery: the weather can slow or douse an
+    /// unroofed stack, and the batch is cashed when the fire's done.
+    /// The shell itself is revalidated by the edit hook, not here.
     pub(super) fn tick_bloomeries(&mut self, dt: f32) {
-        let keys: Vec<BlockPos> = self
-            .block_entities
-            .iter()
-            .filter(|(_, e)| matches!(e, BlockEntity::Bloomery(b) if b.lit))
-            .map(|(k, _)| *k)
-            .collect();
-        for pos in keys {
-            let Some(BlockEntity::Bloomery(mut b)) = self.block_entities.remove(&pos) else {
-                continue;
-            };
-            if self.check_bloomery_at(pos).is_none() {
-                // Breached mid-fire: the heat escapes, the charge survives.
-                b.lit = false;
-                b.progress = 0.0;
-                self.swap_block_keep_entity_at(pos, "base:bloomery");
-                self.block_entities.insert(pos, BlockEntity::Bloomery(b));
-                continue;
-            }
-            // An unroofed stack fights the rain and loses to a storm.
-            let unroofed = b
-                .core
-                .and_then(|core| core.offset(0, 3, 0))
-                .is_some_and(|above| self.light_at_pos(above).1 == 15);
-            let local_weather = self.weather_at_surface(pos.surface());
-            let wet = local_weather.precipitation == crate::planet_atlas::PrecipitationForm::Rain
-                && unroofed;
-            if wet && local_weather.kind == crate::planet_atlas::LocalWeather::Storm {
-                b.lit = false;
-                b.progress = 0.0;
-                self.swap_block_keep_entity_at(pos, "base:bloomery");
-                self.block_entities.insert(pos, BlockEntity::Bloomery(b));
-                continue;
-            }
-            b.progress += dt * if wet { 0.5 } else { 1.0 };
-            if b.progress >= BLOOMERY_FIRE_SECS {
-                // Cash the batch: 2 charge + 2 fuel per bloom, +2 bonus
-                // blooms on a full 8+8 firing.
-                let chain = self.reg.bloomery.first().cloned();
-                if let Some(chain) = chain {
-                    let n_charge: u32 = b.charge.iter().flatten().map(|s| s.count).sum();
-                    let n_fuel: u32 = b.fuel.iter().flatten().map(|s| s.count).sum();
-                    let units = n_charge.min(n_fuel) / 2;
-                    let blooms = units + if units >= 4 { 2 } else { 0 };
-                    let charge_used = units * 2;
-                    let fuel_used = units * 2;
-                    let input_materials = crate::materials::stack_materials(
-                        &self.reg,
-                        ItemStack::new(&self.reg, chain.charge, charge_used),
-                    );
-                    let output_materials = crate::materials::stack_materials(
-                        &self.reg,
-                        ItemStack::new(&self.reg, chain.bloom, blooms),
-                    );
-                    let mut process_loss = crate::registry::MaterialVector::new();
-                    for (material, input) in &input_materials {
-                        let output = output_materials.get(material).copied().unwrap_or_default();
-                        if *input > output {
-                            process_loss.insert(material.clone(), input - output);
-                        }
-                    }
-                    let mut fuel_materials = crate::registry::MaterialVector::new();
-                    let mut remaining = fuel_used;
-                    for stack in b.fuel.iter().flatten() {
-                        let take = stack.count.min(remaining);
-                        remaining -= take;
-                        let materials = crate::materials::stack_materials(
-                            &self.reg,
-                            ItemStack {
-                                count: take,
-                                ..*stack
-                            },
-                        );
-                        for (material, amount) in materials {
-                            *fuel_materials.entry(material).or_default() += amount;
-                        }
-                        if remaining == 0 {
-                            break;
-                        }
-                    }
-                    let eat = |slots: &mut [Option<ItemStack>; 4], mut n: u32| {
-                        for s in slots.iter_mut() {
-                            if n == 0 {
-                                break;
-                            }
-                            if let Some(st) = s {
-                                let take = st.count.min(n);
-                                n -= take;
-                                st.count -= take;
-                                if st.count == 0 {
-                                    *s = None;
-                                }
-                            }
-                        }
-                    };
-                    eat(&mut b.charge, charge_used);
-                    eat(&mut b.fuel, fuel_used);
-                    if let Some(ledger) = &mut self.material_ledger {
-                        if let Err(error) = ledger.record_consumption(&fuel_materials) {
-                            eprintln!("materials: bloomery fuel accounting failed: {error}");
-                        }
-                        if let Err(error) = ledger.record_secondary_output(&process_loss) {
-                            eprintln!("materials: bloomery slag accounting failed: {error}");
-                        }
-                    }
-                    let reg = self.reg.clone();
-                    if blooms != 0 {
-                        let out = ItemStack::new(&reg, chain.bloom, blooms);
-                        // Blooms land in the first empty charge slot.
-                        for s in b.charge.iter_mut() {
-                            if s.is_none() {
-                                *s = Some(out);
-                                break;
-                            }
-                        }
-                    }
-                    if let Some(slag) = reg.item_id("base:iron_slag") {
-                        let per_slag = reg.item(slag).materials.get("iron").copied().unwrap_or(1);
-                        let slag_count =
-                            process_loss.get("iron").copied().unwrap_or_default() / per_slag;
-                        if slag_count != 0
-                            && let Some(above) = pos.offset(0, 1, 0)
-                        {
-                            self.push_drop_at(above, ItemStack::new(&reg, slag, slag_count as u32));
-                        }
-                    }
-                }
-                b.lit = false;
-                b.progress = 0.0;
-                self.swap_block_keep_entity_at(pos, "base:bloomery");
-            }
-            self.block_entities.insert(pos, BlockEntity::Bloomery(b));
-        }
+        tick_bloomery_machines(self, dt);
     }
 
     /// Fire every lit forge: chimney and all, so rain never touches
     /// it — the workshop's edge over the open stack. A firing smelts
     /// any furnace recipe in batch at FORGE_ITEMS_PER_FUEL per fuel,
     /// spitting outputs (and cupellation byproducts) at the mouth.
+    /// The shell is revalidated by the edit hook, not here.
     pub(super) fn tick_forges(&mut self, dt: f32) {
-        let keys: Vec<BlockPos> = self
-            .block_entities
-            .iter()
-            .filter(|(_, e)| matches!(e, BlockEntity::Forge(f) if f.lit))
-            .map(|(k, _)| *k)
-            .collect();
-        for pos in keys {
-            let Some(BlockEntity::Forge(mut f)) = self.block_entities.remove(&pos) else {
-                continue;
-            };
-            if self.check_forge_at(pos).is_none() {
-                f.lit = false;
-                f.progress = 0.0;
-                self.swap_block_keep_entity_at(pos, "base:forge");
-                self.block_entities.insert(pos, BlockEntity::Forge(f));
-                continue;
-            }
-            f.progress += dt;
-            if f.progress >= FORGE_FIRE_SECS {
-                let reg = self.reg.clone();
-                let n_fuel: u32 = f.fuel.iter().flatten().map(|s| s.count).sum();
-                let mut budget = n_fuel * FORGE_ITEMS_PER_FUEL;
-                let mut burned = 0u32;
-                let mut outputs: Vec<ItemStack> = Vec::new();
-                for s in f.charge.iter_mut() {
-                    let Some(st) = s else { continue };
-                    let input_item = st.item;
-                    let salvage = reg
-                        .forge_salvage
-                        .iter()
-                        .find(|salvage| salvage.input == st.item)
-                        .cloned();
-                    let smelt = reg
-                        .smelts
-                        .iter()
-                        .find(|sm| sm.input.matches(st.item))
-                        .cloned();
-                    let reclaim = crate::materials::is_reclaimable_stock(&reg, st.item);
-                    if salvage.is_none() && smelt.is_none() && !reclaim {
-                        continue; // not smeltable/salvageable: survives
-                    }
-                    let n = st.count.min(budget);
-                    if n == 0 {
-                        continue;
-                    }
-                    budget -= n;
-                    burned += n;
-                    st.count -= n;
-                    if st.count == 0 {
-                        *s = None;
-                    }
-                    if reclaim {
-                        let materials = crate::materials::stack_materials(
-                            &reg,
-                            ItemStack::new(&reg, input_item, n),
-                        );
-                        for (material, units) in materials {
-                            *f.reclaim.entry(material).or_default() += units;
-                        }
-                        continue;
-                    }
-                    let output = salvage
-                        .as_ref()
-                        .map_or_else(|| smelt.as_ref().unwrap().output, |recipe| recipe.output);
-                    let mut out = ItemStack::new(&reg, output, 1);
-                    out.count = n;
-                    outputs.push(out);
-                    if let Some(recipe) = salvage {
-                        debug_assert!(matches!(recipe.recovery_permille, 900 | 950));
-                        let mut scale = ItemStack::new(&reg, recipe.byproduct, 1);
-                        scale.count = n;
-                        outputs.push(scale);
-                        if let Some(ledger) = &mut self.material_ledger {
-                            let materials = crate::materials::stack_materials(
-                                &reg,
-                                ItemStack::new(&reg, recipe.byproduct, n),
-                            );
-                            if let Err(error) = ledger.record_secondary_output(&materials) {
-                                eprintln!("materials: forge scale accounting failed: {error}");
-                            }
-                        }
-                    } else if let Some((spit, sn)) = smelt.as_ref().and_then(|smelt| smelt.spit) {
-                        let mut sp = ItemStack::new(&reg, spit, 1);
-                        sp.count = sn * n;
-                        outputs.push(sp);
-                    }
-                    if let Some(smelt) = smelt
-                        && let Some(ledger) = &mut self.material_ledger
-                        && let Err(error) = ledger.record_recipe_loss_scaled(&smelt.loss, n)
-                    {
-                        eprintln!("materials: forge loss accounting failed: {error}");
-                    }
-                    if crate::materials::is_secondary_item(&reg, input_item)
-                        && let Some(ledger) = &mut self.material_ledger
-                    {
-                        let materials = crate::materials::stack_materials(
-                            &reg,
-                            ItemStack::new(&reg, input_item, n),
-                        );
-                        if let Err(error) = ledger.record_secondary_recovery(&materials) {
-                            eprintln!("materials: forge slag recovery accounting failed: {error}");
-                        }
-                    }
-                }
-                outputs.extend(crate::materials::consolidate_reclaimed_stock(
-                    &reg,
-                    &mut f.reclaim,
-                ));
-                // Fuel burns only for work done (round up).
-                let eat = |slots: &mut [Option<ItemStack>; 4], mut n: u32| {
-                    for s in slots.iter_mut() {
-                        if n == 0 {
-                            break;
-                        }
-                        if let Some(st) = s {
-                            let take = st.count.min(n);
-                            n -= take;
-                            st.count -= take;
-                            if st.count == 0 {
-                                *s = None;
-                            }
-                        }
-                    }
-                };
-                let fuel_used = burned.div_ceil(FORGE_ITEMS_PER_FUEL);
-                let mut fuel_materials = crate::registry::MaterialVector::new();
-                let mut remaining_fuel = fuel_used;
-                for stack in f.fuel.iter().flatten() {
-                    let take = stack.count.min(remaining_fuel);
-                    remaining_fuel -= take;
-                    let used = crate::materials::stack_materials(
-                        &reg,
-                        ItemStack {
-                            count: take,
-                            ..*stack
-                        },
-                    );
-                    for (material, units) in used {
-                        *fuel_materials.entry(material).or_default() += units;
-                    }
-                    if remaining_fuel == 0 {
-                        break;
-                    }
-                }
-                eat(&mut f.fuel, fuel_used);
-                if let Some(ledger) = &mut self.material_ledger
-                    && let Err(error) = ledger.record_consumption(&fuel_materials)
-                {
-                    eprintln!("materials: forge fuel accounting failed: {error}");
-                }
-                for out in outputs {
-                    if let Some(above) = pos.offset(0, 1, 0) {
-                        self.push_drop_at(above, out);
-                    }
-                }
-                f.lit = false;
-                f.progress = 0.0;
-                self.swap_block_keep_entity_at(pos, "base:forge");
-            }
-            self.block_entities.insert(pos, BlockEntity::Forge(f));
-        }
+        tick_forge_machines(self, dt);
     }
 
     /// Smoke rises: any rack with raw cuts and a live torch directly
@@ -959,42 +671,10 @@ impl World {
 
     /// Fire every charged separator on a valid firebrick stack: one
     /// powder and one fuel a batch, neodymium and cerium out — the
-    /// rare-earth thread, finally honest (mechanization stage 6).
+    /// rare-earth thread, finally honest (mechanization stage 6). The
+    /// shell is revalidated by the edit hook, not here.
     pub(super) fn tick_separators(&mut self, dt: f32) {
-        let reg = self.reg.clone();
-        let keys: Vec<BlockPos> = self
-            .block_entities
-            .iter()
-            .filter(|(_, e)| matches!(e, BlockEntity::Separator(_)))
-            .map(|(k, _)| *k)
-            .collect();
-        for pos in keys {
-            let valid = self.check_separator_at(pos).is_some();
-            let Some(BlockEntity::Separator(sp)) = self.block_entities.get_mut(&pos) else {
-                continue;
-            };
-            let working = valid && sp.powder >= 1 && sp.fuel >= 1;
-            if !working {
-                sp.progress = 0.0;
-            } else {
-                sp.progress += dt;
-                if sp.progress >= SEPARATE_SECS {
-                    sp.progress = 0.0;
-                    sp.powder -= 1;
-                    sp.fuel -= 1;
-                    sp.nd += 1;
-                    sp.ce += 2;
-                }
-            }
-            let want = if working {
-                "base:separator_lit"
-            } else {
-                "base:separator"
-            };
-            if Some(self.get_block_at(pos)) != reg.block_id(want) {
-                self.swap_block_keep_entity_at(pos, want);
-            }
-        }
+        tick_separator_machines(self, dt);
     }
 
     /// A running generator within reach: the field that lights lamps
@@ -1130,7 +810,513 @@ impl World {
         for (pos, stack) in spat {
             self.push_drop_at(pos, stack);
         }
+        self.tick_rail_motion(dt);
+        self.tick_belts(dt);
+        self.tick_local_structure_machines(dt);
     }
 
     // ---- block entity persistence (by item name, mod-change safe) ----
+}
+
+impl World {
+    /// Fire every lit kiln: shared shell/weather rules, glass out. The
+    /// shell is revalidated by the edit hook, not here; a chimneyed
+    /// kiln reads its glassworks bonus from the folded stats.
+    pub(super) fn tick_kilns(&mut self, dt: f32) {
+        tick_kiln_machines(self, dt);
+    }
+}
+
+impl World {
+    /// Tick machines hosted inside spawned structures, with the same
+    /// per-kind logic and progress as world-hosted machines, but
+    /// structure-local state only. Structure machines are exempt from
+    /// the main world's ire and material ledger by design; their
+    /// outputs collect in `LocalStructure.outbox`.
+    pub(super) fn tick_local_structure_machines(&mut self, dt: f32) {
+        for structure in self.local_structures.iter_mut() {
+            tick_bloomery_machines(structure, dt);
+            tick_kiln_machines(structure, dt);
+            tick_forge_machines(structure, dt);
+            tick_separator_machines(structure, dt);
+        }
+    }
+}
+
+pub(super) fn tick_bloomery_machines<B: BlockStore>(store: &mut B, dt: f32) {
+    let keys: Vec<B::Pos> = store
+            .block_entities()
+            .iter()
+            .filter(|(_, e)| {
+                matches!(e, BlockEntity::Multiblock(m) if m.kind == MachineKind::Bloomery && m.lit)
+            })
+            .map(|(k, _)| *k)
+            .collect();
+    for pos in keys {
+        let Some(BlockEntity::Multiblock(mut b)) = store.block_entities_mut().remove(&pos) else {
+            continue;
+        };
+        // An unroofed stack fights the rain and loses to a storm.
+        let unroofed = b.core.is_some_and(|core| store.open_sky_above(core));
+        let local_weather = store
+            .to_world(pos)
+            .map(|w| store.weather_at(w))
+            .unwrap_or_default();
+        let wet =
+            local_weather.precipitation == crate::planet_atlas::PrecipitationForm::Rain && unroofed;
+        if wet && local_weather.kind == crate::planet_atlas::LocalWeather::Storm {
+            b.lit = false;
+            b.progress = 0.0;
+            store.swap_block_keep_entity(pos, "base:bloomery");
+            store
+                .block_entities_mut()
+                .insert(pos, BlockEntity::Multiblock(b));
+            continue;
+        }
+        let heat = b.stats.heat_multiplier();
+        b.progress += dt * if wet { 0.5 } else { 1.0 } * heat;
+        if b.progress >= BLOOMERY_FIRE_SECS {
+            // Cash the batch: 2 charge + 2 fuel per bloom, +2 bonus
+            // blooms on a full 8+8 firing.
+            let chain = store.reg().bloomery.first().cloned();
+            if let Some(chain) = chain {
+                let n_charge: u32 = b.charge.iter().flatten().map(|s| s.count).sum();
+                let n_fuel: u32 = b.fuel.iter().flatten().map(|s| s.count).sum();
+                let units = n_charge.min(n_fuel) / 2;
+                let blooms = units + if units >= 4 { 2 } else { 0 };
+                let charge_used = units * 2;
+                let fuel_used = units * 2;
+                let input_materials = crate::materials::stack_materials(
+                    store.reg(),
+                    ItemStack::new(store.reg(), chain.charge, charge_used),
+                );
+                let output_materials = crate::materials::stack_materials(
+                    store.reg(),
+                    ItemStack::new(store.reg(), chain.bloom, blooms),
+                );
+                let mut process_loss = crate::registry::MaterialVector::new();
+                for (material, input) in &input_materials {
+                    let output = output_materials.get(material).copied().unwrap_or_default();
+                    if *input > output {
+                        process_loss.insert(material.clone(), input - output);
+                    }
+                }
+                let mut fuel_materials = crate::registry::MaterialVector::new();
+                let mut remaining = fuel_used;
+                for stack in b.fuel.iter().flatten() {
+                    let take = stack.count.min(remaining);
+                    remaining -= take;
+                    let materials = crate::materials::stack_materials(
+                        store.reg(),
+                        ItemStack {
+                            count: take,
+                            ..*stack
+                        },
+                    );
+                    for (material, amount) in materials {
+                        *fuel_materials.entry(material).or_default() += amount;
+                    }
+                    if remaining == 0 {
+                        break;
+                    }
+                }
+                let eat = |slots: &mut [Option<ItemStack>; 4], mut n: u32| {
+                    for s in slots.iter_mut() {
+                        if n == 0 {
+                            break;
+                        }
+                        if let Some(st) = s {
+                            let take = st.count.min(n);
+                            n -= take;
+                            st.count -= take;
+                            if st.count == 0 {
+                                *s = None;
+                            }
+                        }
+                    }
+                };
+                eat(&mut b.charge, charge_used);
+                eat(&mut b.fuel, fuel_used);
+                if let Some(ledger) = store.material_ledger() {
+                    if let Err(error) = ledger.record_consumption(&fuel_materials) {
+                        eprintln!("materials: bloomery fuel accounting failed: {error}");
+                    }
+                    if let Err(error) = ledger.record_secondary_output(&process_loss) {
+                        eprintln!("materials: bloomery slag accounting failed: {error}");
+                    }
+                }
+                let reg = store.reg().clone();
+                if blooms != 0 {
+                    let out = ItemStack::new(&reg, chain.bloom, blooms);
+                    // Blooms land in the first empty charge slot.
+                    for s in b.charge.iter_mut() {
+                        if s.is_none() {
+                            *s = Some(out);
+                            break;
+                        }
+                    }
+                }
+                if let Some(slag) = reg.item_id("base:iron_slag") {
+                    let per_slag = reg.item(slag).materials.get("iron").copied().unwrap_or(1);
+                    let slag_count =
+                        process_loss.get("iron").copied().unwrap_or_default() / per_slag;
+                    if slag_count != 0
+                        && let Some(above) = store.to_world(pos).and_then(|w| w.offset(0, 1, 0))
+                    {
+                        store.push_drop_at(above, ItemStack::new(&reg, slag, slag_count as u32));
+                    }
+                }
+            }
+            b.lit = false;
+            b.progress = 0.0;
+            store.swap_block_keep_entity(pos, "base:bloomery");
+        }
+        store
+            .block_entities_mut()
+            .insert(pos, BlockEntity::Multiblock(b));
+    }
+}
+
+pub(super) fn tick_forge_machines<B: BlockStore>(store: &mut B, dt: f32) {
+    let keys: Vec<B::Pos> = store
+            .block_entities()
+            .iter()
+            .filter(|(_, e)| {
+                matches!(e, BlockEntity::Multiblock(m) if m.kind == MachineKind::Forge && m.lit)
+            })
+            .map(|(k, _)| *k)
+            .collect();
+    for pos in keys {
+        let Some(BlockEntity::Multiblock(mut f)) = store.block_entities_mut().remove(&pos) else {
+            continue;
+        };
+        f.progress += dt * f.stats.heat_multiplier();
+        if f.progress >= FORGE_FIRE_SECS {
+            let reg = store.reg().clone();
+            let n_fuel: u32 = f.fuel.iter().flatten().map(|s| s.count).sum();
+            let mut budget = n_fuel * FORGE_ITEMS_PER_FUEL;
+            let mut burned = 0u32;
+            let mut outputs: Vec<ItemStack> = Vec::new();
+            for s in f.charge.iter_mut() {
+                let Some(st) = s else { continue };
+                let input_item = st.item;
+                let salvage = reg
+                    .forge_salvage
+                    .iter()
+                    .find(|salvage| salvage.input == st.item)
+                    .cloned();
+                let smelt = reg
+                    .smelts
+                    .iter()
+                    .find(|sm| sm.input.matches(st.item))
+                    .cloned();
+                let reclaim = crate::materials::is_reclaimable_stock(&reg, st.item);
+                if salvage.is_none() && smelt.is_none() && !reclaim {
+                    continue; // not smeltable/salvageable: survives
+                }
+                let n = st.count.min(budget);
+                if n == 0 {
+                    continue;
+                }
+                budget -= n;
+                burned += n;
+                st.count -= n;
+                if st.count == 0 {
+                    *s = None;
+                }
+                if reclaim {
+                    let materials = crate::materials::stack_materials(
+                        &reg,
+                        ItemStack::new(&reg, input_item, n),
+                    );
+                    for (material, units) in materials {
+                        *f.reclaim.entry(material).or_default() += units;
+                    }
+                    continue;
+                }
+                let output = salvage
+                    .as_ref()
+                    .map_or_else(|| smelt.as_ref().unwrap().output, |recipe| recipe.output);
+                let mut out = ItemStack::new(&reg, output, 1);
+                out.count = n;
+                outputs.push(out);
+                if let Some(recipe) = salvage {
+                    debug_assert!(matches!(recipe.recovery_permille, 900 | 950));
+                    let mut scale = ItemStack::new(&reg, recipe.byproduct, 1);
+                    scale.count = n;
+                    outputs.push(scale);
+                    if let Some(ledger) = store.material_ledger() {
+                        let materials = crate::materials::stack_materials(
+                            &reg,
+                            ItemStack::new(&reg, recipe.byproduct, n),
+                        );
+                        if let Err(error) = ledger.record_secondary_output(&materials) {
+                            eprintln!("materials: forge scale accounting failed: {error}");
+                        }
+                    }
+                } else if let Some((spit, sn)) = smelt.as_ref().and_then(|smelt| smelt.spit) {
+                    let mut sp = ItemStack::new(&reg, spit, 1);
+                    sp.count = sn * n;
+                    outputs.push(sp);
+                }
+                if let Some(smelt) = smelt
+                    && let Some(ledger) = store.material_ledger()
+                    && let Err(error) = ledger.record_recipe_loss_scaled(&smelt.loss, n)
+                {
+                    eprintln!("materials: forge loss accounting failed: {error}");
+                }
+                if crate::materials::is_secondary_item(&reg, input_item)
+                    && let Some(ledger) = store.material_ledger()
+                {
+                    let materials = crate::materials::stack_materials(
+                        &reg,
+                        ItemStack::new(&reg, input_item, n),
+                    );
+                    if let Err(error) = ledger.record_secondary_recovery(&materials) {
+                        eprintln!("materials: forge slag recovery accounting failed: {error}");
+                    }
+                }
+            }
+            outputs.extend(crate::materials::consolidate_reclaimed_stock(
+                &reg,
+                &mut f.reclaim,
+            ));
+            // Fuel burns only for work done (round up).
+            let eat = |slots: &mut [Option<ItemStack>; 4], mut n: u32| {
+                for s in slots.iter_mut() {
+                    if n == 0 {
+                        break;
+                    }
+                    if let Some(st) = s {
+                        let take = st.count.min(n);
+                        n -= take;
+                        st.count -= take;
+                        if st.count == 0 {
+                            *s = None;
+                        }
+                    }
+                }
+            };
+            let fuel_used = burned.div_ceil(FORGE_ITEMS_PER_FUEL);
+            let mut fuel_materials = crate::registry::MaterialVector::new();
+            let mut remaining_fuel = fuel_used;
+            for stack in f.fuel.iter().flatten() {
+                let take = stack.count.min(remaining_fuel);
+                remaining_fuel -= take;
+                let used = crate::materials::stack_materials(
+                    &reg,
+                    ItemStack {
+                        count: take,
+                        ..*stack
+                    },
+                );
+                for (material, units) in used {
+                    *fuel_materials.entry(material).or_default() += units;
+                }
+                if remaining_fuel == 0 {
+                    break;
+                }
+            }
+            eat(&mut f.fuel, fuel_used);
+            if let Some(ledger) = store.material_ledger()
+                && let Err(error) = ledger.record_consumption(&fuel_materials)
+            {
+                eprintln!("materials: forge fuel accounting failed: {error}");
+            }
+            let mouth = store.to_world(pos).and_then(|w| w.offset(0, 1, 0));
+            for out in outputs {
+                if let Some(above) = mouth {
+                    store.push_drop_at(above, out);
+                }
+            }
+            f.lit = false;
+            f.progress = 0.0;
+            store.swap_block_keep_entity(pos, "base:forge");
+        }
+        store
+            .block_entities_mut()
+            .insert(pos, BlockEntity::Multiblock(f));
+    }
+}
+
+pub(super) fn tick_separator_machines<B: BlockStore>(store: &mut B, dt: f32) {
+    let reg = store.reg().clone();
+    let keys: Vec<B::Pos> = store
+        .block_entities()
+        .iter()
+        .filter(
+            |(_, e)| matches!(e, BlockEntity::Multiblock(m) if m.kind == MachineKind::Separator),
+        )
+        .map(|(k, _)| *k)
+        .collect();
+    for pos in keys {
+        let Some(BlockEntity::Multiblock(mut sp)) = store.block_entities_mut().remove(&pos) else {
+            continue;
+        };
+        let working = sp.powder >= 1 && sp.separator_fuel >= 1;
+        if !working {
+            sp.progress = 0.0;
+        } else {
+            sp.progress += dt;
+            if sp.progress >= SEPARATE_SECS {
+                sp.progress = 0.0;
+                sp.powder -= 1;
+                sp.separator_fuel -= 1;
+                sp.neodymium += 1;
+                sp.cerium += 2;
+            }
+        }
+        let want = if working {
+            "base:separator_lit"
+        } else {
+            "base:separator"
+        };
+        if Some(store.get_block(pos)) != reg.block_id(want) {
+            store.swap_block_keep_entity(pos, want);
+        }
+        store
+            .block_entities_mut()
+            .insert(pos, BlockEntity::Multiblock(sp));
+    }
+}
+
+pub(super) fn tick_kiln_machines<B: BlockStore>(store: &mut B, dt: f32) {
+    let keys: Vec<B::Pos> = store
+            .block_entities()
+            .iter()
+            .filter(|(_, e)| {
+                matches!(e, BlockEntity::Multiblock(m) if m.kind == MachineKind::Kiln && m.lit)
+            })
+            .map(|(k, _)| *k)
+            .collect();
+    for pos in keys {
+        let Some(BlockEntity::Multiblock(mut k)) = store.block_entities_mut().remove(&pos) else {
+            continue;
+        };
+        // A chimneyed kiln is a glassworks: rain can't reach the
+        // fire, and the draft doubles what each fuel fires.
+        let glassworks = k.stats.chimney;
+        let unroofed = k.core.is_some_and(|core| store.open_sky_above(core));
+        let local_weather = store
+            .to_world(pos)
+            .map(|w| store.weather_at(w))
+            .unwrap_or_default();
+        let wet = !glassworks
+            && local_weather.precipitation == crate::planet_atlas::PrecipitationForm::Rain
+            && unroofed;
+        if wet && local_weather.kind == crate::planet_atlas::LocalWeather::Storm {
+            k.lit = false;
+            k.progress = 0.0;
+            store.swap_block_keep_entity(pos, "base:kiln");
+            store
+                .block_entities_mut()
+                .insert(pos, BlockEntity::Multiblock(k));
+            continue;
+        }
+        let heat = k.stats.heat_multiplier();
+        k.progress += dt * if wet { 0.5 } else { 1.0 } * heat;
+        if k.progress >= KILN_FIRE_SECS {
+            if let Some((_, fuel_item, clear)) = store.reg().kiln_base {
+                let n_sand: u32 = k.charge.iter().flatten().map(|s| s.count).sum();
+                let n_fuel: u32 = k.fuel.iter().flatten().map(|s| s.count).sum();
+                let fuel_reach = if glassworks { n_fuel * 2 } else { n_fuel };
+                let pairs = n_sand.min(fuel_reach) / 2;
+                let out_n = pairs * 2;
+                // One powder colors the whole batch.
+                let colored = k.reagent.as_ref().and_then(|p| {
+                    store
+                        .reg()
+                        .kiln
+                        .iter()
+                        .find(|recipe| recipe.powder == p.item)
+                        .map(|recipe| recipe.glass)
+                });
+                let out_item = colored.unwrap_or(clear);
+                let powder_materials = colored
+                    .and(k.reagent)
+                    .map(|stack| {
+                        crate::materials::stack_materials(
+                            store.reg(),
+                            ItemStack { count: 1, ..stack },
+                        )
+                    })
+                    .unwrap_or_default();
+                if colored.is_some()
+                    && let Some(p) = &mut k.reagent
+                {
+                    p.count -= 1;
+                    if p.count == 0 {
+                        k.reagent = None;
+                    }
+                }
+                let eat = |slots: &mut [Option<ItemStack>; 4], mut n: u32| {
+                    for s in slots.iter_mut() {
+                        if n == 0 {
+                            break;
+                        }
+                        if let Some(st) = s {
+                            let take = st.count.min(n);
+                            n -= take;
+                            st.count -= take;
+                            if st.count == 0 {
+                                *s = None;
+                            }
+                        }
+                    }
+                };
+                eat(&mut k.charge, pairs * 2);
+                let fuel_used = if glassworks {
+                    (pairs * 2).div_ceil(2)
+                } else {
+                    pairs * 2
+                };
+                let mut fuel_materials = crate::registry::MaterialVector::new();
+                let mut remaining = fuel_used;
+                for stack in k.fuel.iter().flatten() {
+                    let take = stack.count.min(remaining);
+                    remaining -= take;
+                    let materials = crate::materials::stack_materials(
+                        store.reg(),
+                        ItemStack {
+                            count: take,
+                            ..*stack
+                        },
+                    );
+                    for (material, amount) in materials {
+                        *fuel_materials.entry(material).or_default() += amount;
+                    }
+                    if remaining == 0 {
+                        break;
+                    }
+                }
+                eat(&mut k.fuel, fuel_used);
+                if let Some(ledger) = store.material_ledger() {
+                    if let Err(error) = ledger.record_consumption(&powder_materials) {
+                        eprintln!("materials: kiln pigment accounting failed: {error}");
+                    }
+                    if let Err(error) = ledger.record_consumption(&fuel_materials) {
+                        eprintln!("materials: kiln fuel accounting failed: {error}");
+                    }
+                }
+                let _ = fuel_item;
+                if out_n > 0 {
+                    let reg = store.reg().clone();
+                    let mut out = ItemStack::new(&reg, out_item, 1);
+                    out.count = out_n;
+                    for s in k.charge.iter_mut() {
+                        if s.is_none() {
+                            *s = Some(out);
+                            break;
+                        }
+                    }
+                }
+            }
+            k.lit = false;
+            k.progress = 0.0;
+            store.swap_block_keep_entity(pos, "base:kiln");
+        }
+        store
+            .block_entities_mut()
+            .insert(pos, BlockEntity::Multiblock(k));
+    }
 }

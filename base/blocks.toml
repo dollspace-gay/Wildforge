@@ -581,11 +581,48 @@ tool = "pickaxe"
 id = "firebrick"
 name = "Firebrick"
 # Stone baked around a warden's ember: the only shell that holds a
-# bloomery's heat.
+# bloomery's heat. Its Pattern A heat retention (1) is the baseline a
+# whole shell measures itself against.
 texture = "@firebrick"
 hardness = 7.0
 tool = "pickaxe"
 requires_tool = true
+heat_retention = 1
+
+[[block]]
+id = "firebrick_advanced"
+name = "Advanced Firebrick"
+# Dev/test ring block: hotter than plain firebrick so stat folding has
+# something to fold. Proves firebrick-tier substitution changes a
+# machine's effective output without a distinct mouth special-case.
+texture = "@firebrick"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+heat_retention = 2
+
+[[block]]
+id = "casing_porcelain"
+name = "Porcelain Casing"
+# Slot-module test block (spec Part 1.3): a casing tile whose qualitative
+# capability (ceramic) is set by the module catalog, not by the numeric
+# heat_retention that fold_stats reads.
+texture = "@firebrick"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+heat_retention = 1
+
+[[block]]
+id = "casing_soapstone"
+name = "Soapstone Casing"
+# Slot-module test block (spec Part 1.3): the other casing module, granting
+# a distinct qualitative capability (refractory) from porcelain.
+texture = "@firebrick"
+hardness = 7.0
+tool = "pickaxe"
+requires_tool = true
+heat_retention = 1
 
 [[block]]
 id = "bloomery"
@@ -2531,3 +2568,67 @@ drops = "base:scar_fragment"
 item = false
 observation = { categories = ["scar"], properties = ["dross", "resonance", "condition"] }
 dross_scar = { kind = "broken_symmetry", handler = "filament_growth", carriers = ["air", "water", "soil"], min_band = "seep", status = "stamina_drag", activity = "shear", max_sites_per_region = 1 }
+
+# ---- rails (spec Part 2.2, scoped) ----
+# Ordinary placeable rail pieces. BlockDef has no per-block orientation
+# field, so curve/incline orientation is encoded as distinct block ids
+# rather than a runtime-facing property (answering Phase 6 Open Question 2).
+
+[[block]]
+id = "rail"
+name = "Rail (Straight)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "rail_curve_ne"
+name = "Rail Curve (North-East)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "rail_curve_nw"
+name = "Rail Curve (North-West)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "rail_incline_n"
+name = "Rail Incline (North)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "rail_switch"
+name = "Rail Switch"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+interaction = "rail_switch"
+
+# ---- belts (spec Part 2.2, scoped) ----
+# A minimal straight belt segment. Travel direction is fixed at North (+v);
+# geometry variants (curves, inclines, switches) are a later belt phase.
+
+[[block]]
+id = "belt"
+name = "Belt"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false

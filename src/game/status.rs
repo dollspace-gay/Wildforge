@@ -31,6 +31,42 @@ impl Game {
         }
     }
 
+    /// Minimal capture/stamp interaction (spec Part 1.4): a `!` chat line is
+    /// a world command instead of chat. Everything except `stamp` runs on
+    /// the world directly; `stamp` additionally draws on the player's own
+    /// inventory and creative flag.
+    pub(super) fn template_command(&mut self, line: &str) -> Vec<String> {
+        use crate::world::multiblock::Rotation;
+        use crate::world::template::{parse_block_pos, parse_rot};
+
+        let line = line.trim_start_matches(['!', '/']);
+        let mut tokens = line.split_whitespace();
+        let Some(cmd) = tokens.next().map(str::to_ascii_lowercase) else {
+            return vec!["templates: capture | ghost | cost | list | drop | cancel | stamp | spawn | despawn".into()];
+        };
+        if cmd != "stamp" {
+            return self.server.world.template_command(line);
+        }
+        let Some(name) = tokens.next() else {
+            return vec!["usage: stamp <name> <face> <u> <y> <v> [rot]".into()];
+        };
+        let Some(pos) = parse_block_pos(&mut tokens) else {
+            return vec!["stamp: bad anchor — <face> <u> <y> <v> [rot]".into()];
+        };
+        let rot = parse_rot(tokens.next()).unwrap_or(Rotation::R0);
+        let Some(t) = self.server.world.template(name).cloned() else {
+            return vec![format!("no template named {name}")];
+        };
+        match self
+            .server
+            .world
+            .stamp_instant(&t, pos, rot, &mut self.inventory, self.creative)
+        {
+            Ok(msg) => vec![msg],
+            Err(error) => vec![format!("stamp {name}: {error}")],
+        }
+    }
+
     pub(super) fn max_health(&self) -> f32 {
         MAX_HEALTH
             + self

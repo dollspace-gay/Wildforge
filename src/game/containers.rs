@@ -403,13 +403,17 @@ impl Game {
         // smeltable and any fuel.
         let held = self.ui_state.held_stack;
         let (b, ok) = match self.server.world.block_entity_mut_at(&pos) {
-            Some(world::BlockEntity::Bloomery(b)) => {
+            Some(world::BlockEntity::Multiblock(b))
+                if b.kind == world::multiblock::MachineKind::Bloomery =>
+            {
                 let chain = reg.bloomery.first().cloned();
                 let want = chain.map(|c| if slot < 4 { c.charge } else { c.fuel });
                 let ok = held.is_none() || held.map(|h| Some(h.item)) == Some(want);
                 (b, ok)
             }
-            Some(world::BlockEntity::Forge(f)) => {
+            Some(world::BlockEntity::Multiblock(b))
+                if b.kind == world::multiblock::MachineKind::Forge =>
+            {
                 let ok = match held {
                     None => true,
                     Some(h) if slot < 4 => {
@@ -422,7 +426,7 @@ impl Game {
                     }
                     Some(h) => reg.fuel_value(h.item).is_some(),
                 };
-                (f, ok)
+                (b, ok)
             }
             _ => return,
         };
@@ -517,7 +521,8 @@ impl Game {
     pub(super) fn kiln_click(&mut self, pos: crate::planet::BlockPos, slot: usize, right: bool) {
         self.remote_container_notify(pos, slot, right);
         let reg = self.content.reg.clone();
-        let Some(world::BlockEntity::Kiln(k)) = self.server.world.block_entity_mut_at(&pos) else {
+        let Some(world::BlockEntity::Multiblock(k)) = self.server.world.block_entity_mut_at(&pos)
+        else {
             return;
         };
         if k.lit || slot >= 9 {
@@ -531,8 +536,8 @@ impl Game {
             _ => base.map(|(_, fu, _)| fu) == Some(it),
         };
         let s = match slot {
-            0..=3 => &mut k.sand[slot],
-            4 => &mut k.powder,
+            0..=3 => &mut k.charge[slot],
+            4 => &mut k.reagent,
             _ => &mut k.fuel[slot - 5],
         };
         if self.ui_state.held_stack.is_none()

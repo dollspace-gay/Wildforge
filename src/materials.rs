@@ -2954,17 +2954,21 @@ mod tests {
 
     #[test]
     fn authored_machine_buffers_are_external_and_replacement_is_an_explicit_sink() {
-        use crate::world::{BlockEntity, BloomeryState, SeparatorState, SignState};
+        use crate::world::multiblock::MachineKind;
+        use crate::world::{BlockEntity, MachineInstance, SignState};
 
         let (root, reg, mut world) = accounted_world("authored-machine-buffers", 127);
         let forge_pos = BlockPos::of_world(10, 120, 10).unwrap();
         let iron = reg.item_id("base:iron_ingot").unwrap();
-        let mut forge = BloomeryState::default();
+        let mut forge = MachineInstance {
+            kind: MachineKind::Forge,
+            ..Default::default()
+        };
         forge.charge[0] = Some(ItemStack::new(&reg, iron, 2));
         forge.reclaim.insert("iron".into(), 300);
         world.insert_block_entity_authored_at(
             forge_pos,
-            BlockEntity::Forge(forge),
+            BlockEntity::Multiblock(forge),
             "development fixture",
         );
 
@@ -2988,12 +2992,13 @@ mod tests {
         let separator_pos = BlockPos::of_world(11, 120, 10).unwrap();
         world.insert_block_entity_authored_at(
             separator_pos,
-            BlockEntity::Separator(SeparatorState {
+            BlockEntity::Multiblock(MachineInstance {
+                kind: MachineKind::Separator,
                 powder: 2,
-                fuel: 3,
-                nd: 1,
-                ce: 2,
-                progress: 0.0,
+                separator_fuel: 3,
+                neodymium: 1,
+                cerium: 2,
+                ..Default::default()
             }),
             "development fixture",
         );
@@ -3223,7 +3228,8 @@ mod tests {
 
     #[test]
     fn bloomery_never_mints_a_free_bloom_and_reports_physical_slag() {
-        use crate::world::{BLOOMERY_FIRE_SECS, BlockEntity, BloomeryState};
+        use crate::world::multiblock::MachineKind;
+        use crate::world::{BLOOMERY_FIRE_SECS, BlockEntity, MachineInstance};
 
         let (root, reg, mut world) = accounted_world("bloomery-runtime", 103);
         build_accounted_bloomery(&mut world, &reg);
@@ -3238,7 +3244,8 @@ mod tests {
             .unwrap()
             .record_external_stack(&reg, ItemStack::new(&reg, iron, 1), "test charge")
             .unwrap();
-        let mut short = BloomeryState {
+        let mut short = MachineInstance {
+            kind: MachineKind::Bloomery,
             lit: true,
             progress: BLOOMERY_FIRE_SECS,
             core: Some(core),
@@ -3246,9 +3253,9 @@ mod tests {
         };
         short.charge[0] = Some(ItemStack::new(&reg, iron, 1));
         short.fuel[0] = Some(ItemStack::new(&reg, charcoal, 1));
-        world.insert_block_entity((10, 120, 10), BlockEntity::Bloomery(short));
+        world.insert_block_entity((10, 120, 10), BlockEntity::Multiblock(short));
         world.tick_entities(0.1);
-        let Some(BlockEntity::Bloomery(short)) = world.block_entity(&(10, 120, 10)) else {
+        let Some(BlockEntity::Multiblock(short)) = world.block_entity(&(10, 120, 10)) else {
             panic!("bloomery state")
         };
         assert!(
@@ -3276,7 +3283,8 @@ mod tests {
             .unwrap()
             .record_external_stack(&reg, ItemStack::new(&reg, iron, 8), "test charge")
             .unwrap();
-        let mut full = BloomeryState {
+        let mut full = MachineInstance {
+            kind: MachineKind::Bloomery,
             lit: true,
             progress: BLOOMERY_FIRE_SECS,
             core: Some(core),
@@ -3286,7 +3294,7 @@ mod tests {
             full.charge[slot] = Some(ItemStack::new(&reg, iron, 2));
             full.fuel[slot] = Some(ItemStack::new(&reg, charcoal, 2));
         }
-        world.insert_block_entity((10, 120, 10), BlockEntity::Bloomery(full));
+        world.insert_block_entity((10, 120, 10), BlockEntity::Multiblock(full));
         world.tick_entities(0.1);
         let audit = world.material_ledger.as_ref().unwrap().audit();
         // One untouched test ingot plus six blooms remain primary; the two
@@ -3315,7 +3323,8 @@ mod tests {
 
     #[test]
     fn forge_runtime_enforces_ninety_and_ninety_five_percent_recovery() {
-        use crate::world::{BlockEntity, BloomeryState, FORGE_FIRE_SECS};
+        use crate::world::multiblock::MachineKind;
+        use crate::world::{BlockEntity, FORGE_FIRE_SECS, MachineInstance};
 
         let (root, reg, mut world) = accounted_world("forge-salvage-runtime", 109);
         build_accounted_forge(&mut world, &reg);
@@ -3347,7 +3356,8 @@ mod tests {
             );
         }
         let charcoal = reg.item_id("base:charcoal").unwrap();
-        let mut state = BloomeryState {
+        let mut state = MachineInstance {
+            kind: MachineKind::Forge,
             lit: true,
             progress: FORGE_FIRE_SECS,
             core: Some(BlockPos::of_world(11, 120, 10).unwrap()),
@@ -3356,7 +3366,7 @@ mod tests {
         state.charge[0] = Some(ItemStack::new(&reg, damaged, 1));
         state.charge[1] = Some(ItemStack::new(&reg, bundle, 1));
         state.fuel[0] = Some(ItemStack::new(&reg, charcoal, 1));
-        world.insert_block_entity((10, 120, 10), BlockEntity::Forge(state));
+        world.insert_block_entity((10, 120, 10), BlockEntity::Multiblock(state));
         world.tick_entities(0.1);
 
         let audit = world.material_ledger.as_ref().unwrap().audit();
@@ -3378,7 +3388,8 @@ mod tests {
             .filter(|stack| is_reclaimable_stock(&reg, stack.item))
             .collect::<Vec<_>>();
         assert_eq!(stock.len(), 2);
-        let mut second = BloomeryState {
+        let mut second = MachineInstance {
+            kind: MachineKind::Forge,
             lit: true,
             progress: FORGE_FIRE_SECS,
             core: Some(BlockPos::of_world(11, 120, 10).unwrap()),
@@ -3388,7 +3399,7 @@ mod tests {
             second.charge[slot] = Some(stack);
         }
         second.fuel[0] = Some(ItemStack::new(&reg, charcoal, 1));
-        world.insert_block_entity((10, 120, 10), BlockEntity::Forge(second));
+        world.insert_block_entity((10, 120, 10), BlockEntity::Multiblock(second));
         world.tick_entities(0.1);
         let products = world
             .take_pending_drops()
@@ -3401,7 +3412,7 @@ mod tests {
                 .all(|stack| !reg.item(stack.item).name.contains('/')),
             "fractional salvage consolidates into ordinary recipe stock"
         );
-        let Some(BlockEntity::Forge(forge)) = world.block_entity(&(10, 120, 10)) else {
+        let Some(BlockEntity::Multiblock(forge)) = world.block_entity(&(10, 120, 10)) else {
             panic!("forge state")
         };
         let mut material_after_consolidation = forge.reclaim.clone();
@@ -3427,7 +3438,7 @@ mod tests {
         assert!(report.is_ok(), "{}", report.summary());
         drop(world);
         let reloaded = crate::world::World::load_or_create(root.clone(), reg.clone()).unwrap();
-        let Some(BlockEntity::Forge(forge)) = reloaded.block_entity(&(10, 120, 10)) else {
+        let Some(BlockEntity::Multiblock(forge)) = reloaded.block_entity(&(10, 120, 10)) else {
             panic!("persisted forge state")
         };
         assert_eq!(forge.reclaim, bank_before_save);
@@ -3436,7 +3447,8 @@ mod tests {
 
     #[test]
     fn worked_and_kiln_runtime_paths_declare_every_finite_loss() {
-        use crate::world::{BlockEntity, KILN_FIRE_SECS, KilnState};
+        use crate::world::multiblock::MachineKind;
+        use crate::world::{BlockEntity, KILN_FIRE_SECS, MachineInstance};
 
         let (root, reg, mut world) = accounted_world("worked-kiln-runtime", 113);
         let monazite = reg.item_id("base:monazite_grit").unwrap();
@@ -3470,16 +3482,17 @@ mod tests {
             .unwrap()
             .record_external_stack(&reg, ItemStack::new(&reg, gold, 1), "test pigment")
             .unwrap();
-        let mut kiln = KilnState {
+        let mut kiln = MachineInstance {
+            kind: MachineKind::Kiln,
             lit: true,
             progress: KILN_FIRE_SECS,
             core: Some(BlockPos::of_world(11, 120, 10).unwrap()),
             ..Default::default()
         };
-        kiln.sand[0] = Some(ItemStack::new(&reg, sand, 2));
+        kiln.charge[0] = Some(ItemStack::new(&reg, sand, 2));
         kiln.fuel[0] = Some(ItemStack::new(&reg, charcoal, 2));
-        kiln.powder = Some(ItemStack::new(&reg, gold, 1));
-        world.insert_block_entity((10, 120, 10), BlockEntity::Kiln(kiln));
+        kiln.reagent = Some(ItemStack::new(&reg, gold, 1));
+        world.insert_block_entity((10, 120, 10), BlockEntity::Multiblock(kiln));
         world.force_local_weather("clear");
         world.tick_entities(0.1);
         let audit = world.material_ledger.as_ref().unwrap().audit();

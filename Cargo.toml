@@ -51,6 +51,7 @@ windows-sys = { version = "0.61", features = [
 
 [profile.dev]
 opt-level = 1
+codegen-units = 1
 
 [profile.dev.package."*"]
 opt-level = 3

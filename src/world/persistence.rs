@@ -225,6 +225,8 @@ impl World {
         w.migrate_loaded_mob_charms();
         w.load_loose_items();
         w.load_stamps();
+        w.load_templates();
+        w.load_local_structures();
         let interrupted = w
             .interrupt_loaded_wand_workings()
             .map_err(std::io::Error::other)?;

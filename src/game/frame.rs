@@ -1827,7 +1827,9 @@ impl Game {
                             work.push((icon, at, 0.32, 1.0));
                         }
                     }
-                    world::BlockEntity::Bloomery(b) if b.lit => {
+                    world::BlockEntity::Multiblock(b)
+                        if b.lit && b.kind != world::multiblock::MachineKind::Separator =>
+                    {
                         for k in 0..3 {
                             let rise = (t * 0.7 + k as f32 * 0.65) % 2.0;
                             let drift = (t * 0.9 + k as f32 * 2.1).sin() * 0.2;
@@ -1837,7 +1839,7 @@ impl Game {
                                 f32::from(pos.y()) + 3.2 + rise,
                                 f32::from(pos.v()) + 0.5,
                             )
-                            .expect("bloomery smoke remains near its source");
+                            .expect("machine smoke remains near its source");
                             work.push((smoke_slot, at, 0.5 + rise * 0.3, 0.12));
                         }
                     }
@@ -1965,7 +1967,17 @@ impl Game {
         let mut overlay_verts = Vec::new();
         let mut overlay_idx = Vec::new();
         if let Some((target, progress)) = self.interaction.breaking {
-            entity::emit_crack(target, progress, &mut overlay_verts, &mut overlay_idx);
+            let world_pos = match target {
+                super::BreakTarget::World(p) => Some(p),
+                super::BreakTarget::Structure(id, offset) => self
+                    .server
+                    .world
+                    .local_structure(id)
+                    .and_then(|s| s.world_position(offset)),
+            };
+            if let Some(p) = world_pos {
+                entity::emit_crack(p, progress, &mut overlay_verts, &mut overlay_idx);
+            }
         }
         // The quern's top face turns while you grind (bare-hand station
         // channels only; hammer stations flash sparks instead).

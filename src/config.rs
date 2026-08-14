@@ -49,9 +49,10 @@ fn available_memory() -> Option<u64> {
         let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
         status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
         if unsafe { GlobalMemoryStatusEx(&mut status) } != 0 {
-            return Some(status.ullAvailPhys);
+            Some(status.ullAvailPhys)
+        } else {
+            None
         }
-        return None;
     }
     #[cfg(not(any(target_os = "linux", windows)))]
     None

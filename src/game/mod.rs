@@ -347,6 +347,17 @@ impl Default for UiState {
     }
 }
 
+/// What the player is currently mining: a world block or a structure
+/// block.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BreakTarget {
+    World(crate::planet::BlockPos),
+    Structure(
+        crate::world::local_structure::LocalStructureId,
+        (i32, i32, i32),
+    ),
+}
+
 /// In-progress use actions, crafting inputs, and local item entities.
 struct InteractionState {
     bow_draw: f32,
@@ -359,7 +370,7 @@ struct InteractionState {
     anvil_pos: Option<crate::planet::BlockPos>,
     craft_grid: [Option<ItemStack>; 9],
     craft_size: usize,
-    breaking: Option<(crate::planet::BlockPos, f32)>,
+    breaking: Option<(BreakTarget, f32)>,
     /// Waystones this player has touched: (name, x, z). Loaded from a
     /// per-world sidecar; purely local knowledge, never synced.
     attuned: Vec<(String, crate::planet::SurfacePos)>,

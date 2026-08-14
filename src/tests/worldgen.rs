@@ -2123,3 +2123,175 @@ fn dev_biome_map() {
     let path = std::env::var("WILDFORGE_MAP_OUT").unwrap_or_else(|_| "/tmp/biomes.ppm".into());
     std::fs::write(path, out).unwrap();
 }
+
+// ---------------- piece assemblies (spec Part 2.3) ----------------
+
+fn piece_assembly() -> crate::registry::AssemblyDef {
+    crate::registry::AssemblyDef {
+        name: "test:walk".into(),
+        biomes: vec![
+            "plains".into(),
+            "forest".into(),
+            "desert".into(),
+            "jungle".into(),
+            "scrubland".into(),
+            "taiga".into(),
+            "arctic".into(),
+            "mountains".into(),
+            "swamp".into(),
+            "savanna".into(),
+            "tundra".into(),
+            "badlands".into(),
+        ],
+        rarity: 1,
+        entry_piece: "base:watch_platform".into(),
+        pools: [("path".to_string(), "path".to_string())]
+            .into_iter()
+            .collect(),
+        max_depth: 3,
+        max_pieces: 12,
+        terrain: crate::registry::TerrainAdaptation::None,
+    }
+}
+
+#[test]
+fn pieces_pools_assemblies_parse() {
+    let reg = base_reg();
+    assert!(reg.pieces.iter().any(|p| p.name == "base:watch_platform"));
+    assert!(reg.pieces.iter().any(|p| p.name == "base:near_path"));
+    assert!(reg.pieces.iter().any(|p| p.name == "base:far_path"));
+    assert!(reg.pieces.iter().any(|p| p.name == "base:cabin"));
+    assert_eq!(reg.pools.iter().filter(|p| &p.id == "base:path").count(), 1);
+    let asm = reg
+        .assemblies
+        .iter()
+        .find(|a| a.name == "base:road_side_camp")
+        .expect("road_side_camp parsed");
+    assert_eq!(asm.entry_piece, "base:watch_platform");
+    assert_eq!(asm.rarity, 120);
+    assert_eq!(asm.max_depth, 4);
+    assert_eq!(asm.max_pieces, 12);
+}
+
+#[test]
+fn assembly_walk_places_entry_and_marker() {
+    let reg = base_reg();
+    let mut w = test_world_with("assembly1", reg.clone());
+    let cob = reg.block_id("base:mossy_cobblestone").unwrap();
+    let asm = piece_assembly();
+    let (markers, count) = w.place_assembly(asm, tchunk(0, 0), 0x1234);
+    assert!(count >= 1, "entry piece placed");
+    assert!(
+        markers.iter().any(|m| m.kind == "spawn:guard"),
+        "entry marker resolved"
+    );
+    assert!(
+        markers.iter().any(|m| m.at.y() as i32 > 0),
+        "marker has a world y"
+    );
+    // Some floor must exist above sea level near the origin chunk.
+    let found = w
+        .chunks()
+        .iter()
+        .any(|(cp, c)| cp.face() == tchunk(0, 0).face() && c.raw().contains(&cob.0));
+    assert!(found, "entry floor blocks exist somewhere");
+}
+
+#[test]
+fn assembly_walk_is_deterministic() {
+    let reg = base_reg();
+    let asm = piece_assembly();
+    let mut a = test_world_with("asmdet-a", reg.clone());
+    let mut b2 = test_world_with("asmdet-b", reg.clone());
+    let (ma, ca) = a.place_assembly(asm.clone(), tchunk(0, 0), 77);
+    let (mb, cb) = b2.place_assembly(asm.clone(), tchunk(0, 0), 77);
+    assert_eq!((ma, ca), (mb, cb), "same seed walks identically");
+}
+
+#[test]
+fn assembly_walk_respects_budgets() {
+    let reg = base_reg();
+    let asm = piece_assembly();
+    // A wide-open walk may grow; a capped one must not exceed max_pieces.
+    let mut w = test_world_with("asmcap", reg.clone());
+    let mut capped = asm.clone();
+    capped.max_pieces = 2;
+    capped.max_depth = 1;
+    let (_, count) = w.place_assembly(capped, tchunk(0, 0), 42);
+    assert!(count <= 2, "max_pieces honored, got {count}");
+}
+
+#[test]
+fn assembly_walk_can_span_chunks_and_reserves_them() {
+    let reg = base_reg();
+    let asm = piece_assembly();
+    let mut w = test_world_with("asmmulti", reg.clone());
+    let origin = tchunk(0, 0);
+    let (markers, count) = w.place_assembly(asm, origin, 0xABCD);
+    assert!(count >= 1, "assembly placed something");
+    // The origin chunk plus every chunk any piece's cells touched must be
+    // reserved so re-generation never rolls a competing structure.
+    assert!(
+        w.is_structure_chunk_for_test(origin),
+        "origin chunk reserved"
+    );
+    for m in &markers {
+        let c = m.at.chunk();
+        if c.face() == origin.face()
+            && (i32::from(c.u()) - i32::from(origin.u())).abs()
+                + (i32::from(c.v()) - i32::from(origin.v())).abs()
+                <= 2
+        {
+            assert!(
+                w.is_structure_chunk_for_test(c),
+                "chunk {}:{} reserved for markers",
+                c.u(),
+                c.v()
+            );
+        }
+    }
+}
+
+#[test]
+fn assembly_walk_survives_a_full_world_save_reload() {
+    let reg = base_reg();
+    let asm = piece_assembly();
+    let name = "asmreload";
+    let dir = std::env::temp_dir().join(format!("wildforge-test-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut w = World::new(42, dir.clone(), reg.clone());
+    for x in -2..=2 {
+        for z in -2..=2 {
+            w.ensure_chunk(tchunk(x, z));
+        }
+    }
+    let (_, count) = w.place_assembly(asm, tchunk(0, 0), 0x1234_9876);
+    assert!(count >= 1, "assembly placed");
+    // Every chunk the walk touched must be flagged reserved so a future
+    // regeneration is blocked from rolling competing structures there.
+    assert!(
+        w.is_structure_chunk_for_test(tchunk(0, 0)),
+        "assembly reserved the origin chunk"
+    );
+    save_world(&mut w);
+    drop(w);
+    let mut w2 = crate::World::load_or_create(dir, reg.clone()).unwrap();
+    for x in -2..=2 {
+        for z in -2..=2 {
+            w2.ensure_chunk(tchunk(x, z));
+        }
+    }
+    // The stamped cells must survive the disk round-trip: modified chunks
+    // save, and reloading never regenerates them from scratch.
+    assert!(
+        w2.is_structure_chunk_for_test(tchunk(0, 0)),
+        "origin stays reserved across reload"
+    );
+    let cob = reg.block_id("base:mossy_cobblestone").unwrap();
+    let persisted = w2
+        .chunks()
+        .iter()
+        .any(|(cp, c)| cp.face() == tchunk(0, 0).face() && c.raw().contains(&cob.0));
+    assert!(persisted, "assembly cells persist across save/reload");
+}
