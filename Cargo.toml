@@ -51,7 +51,10 @@ windows-sys = { version = "0.61", features = [
 
 [profile.dev]
 opt-level = 1
-codegen-units = 1
+# Parallelize codegen across the crate (16 cores). This is the dev/test
+# profile only — the shipped binary uses release, so the per-CGU optimization
+# cost is not paid by players.
+codegen-units = 16
 
 [profile.dev.package."*"]
 opt-level = 3

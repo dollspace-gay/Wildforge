@@ -3,6 +3,10 @@
 # misdetection on the Windows side.
 [build]
 jobs = 16
+# sccache is installed on the Windows side (WinGet). Wrapping rustc caches
+# codegen across runs, so repeat builds skip the slow per-crate compile and
+# only redo the (already /THREADS-parallel) link.
+rustc-wrapper = "sccache"
 
 [target.x86_64-pc-windows-msvc]
 # link.exe is single-threaded by default. /THREADS lets it use all cores for

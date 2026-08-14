@@ -44,6 +44,23 @@ impl Registry {
         self.animals.iter().position(|a| a.name == name)
     }
 
+    pub fn npc_id(&self, name: &str) -> Option<usize> {
+        self.npcs.iter().position(|n| n.name == name)
+    }
+
+    pub fn dialogue_id(&self, name: &str) -> Option<usize> {
+        self.dialogues.iter().position(|d| d.id == name)
+    }
+
+    pub fn quest_id(&self, name: &str) -> Option<usize> {
+        self.quests.iter().position(|q| q.id == name)
+    }
+
+    /// `true` when a mob species is a friendly NPC (spec 3.1).
+    pub fn is_npc_species(&self, species: usize) -> bool {
+        self.animals.get(species).is_some_and(|a| a.npc.is_some())
+    }
+
     pub fn item_id(&self, name: &str) -> Option<ItemId> {
         self.item_by_name.get(name).copied()
     }

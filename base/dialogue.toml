@@ -1,0 +1,39 @@
+# Dialogue trees (spec Part 3.2). Trees are data authored beside NPCs; nodes
+# gate on script hooks ('' mod = any mod) and choices may run callbacks.
+
+[[dialogue]]
+id = "elder"
+root = "welcome"
+
+[[dialogue.nodes]]
+id = "welcome"
+text = "Welcome to the mountains, stranger. The old ores wake when the forge grows hot. Go east to the survey cairn and I will tell you more."
+condition = ""
+[[dialogue.nodes.choices]]
+label = "Ask about the ores"
+next = "ores"
+
+[[dialogue.nodes.choices]]
+label = "Goodbye"
+next = ""
+
+[[dialogue.nodes]]
+id = "ores"
+text = "We pan for rare earths in the spring melt. Bring me six shards of cerium and I shall share what the elder books say."
+condition = ""
+[[dialogue.nodes.choices]]
+label = "I will bring the shards."
+callback = "base:accept_cerium_quest"
+next = "thanks"
+
+[[dialogue.nodes.choices]]
+label = "Goodbye"
+next = ""
+
+[[dialogue.nodes]]
+id = "thanks"
+text = "Good. The cairn knows the way."
+condition = ""
+[[dialogue.nodes.choices]]
+label = "Goodbye"
+next = ""

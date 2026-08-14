@@ -1,0 +1,25 @@
+# Friendly NPCs (spec Part 3.1): non-hostile scripted characters, authored
+# apart from wildlife. A companion AnimalDef is synthesized at load so the
+# normal mob pipeline (render/persist/network/raycast) treats them as an
+# ordinary species; the fields here are the social ones — dialogue, patrol,
+# talk radius.
+
+[[npc]]
+id = "elder"
+name = "Elder Rowan"
+tex = "elder.png"
+head_tex = "elder_face.png"
+dialogue = "elder"
+talk_radius = 3.0
+sound_pitch = 0.85
+patrol = [
+  [0.0, 0.0, 0.0],
+  [2.0, 0.0, 0.0],
+  [2.0, 0.0, 2.0],
+  [0.0, 0.0, 2.0],
+]
+pause = 3.0
+[npc.model]
+head = { size = [6.0, 6.0, 6.0], at = [0.0, 22.0, 0.0] }
+body = { size = [8.0, 10.0, 4.0], at = [0.0, 12.0, 0.0] }
+leg = { size = [3.0, 10.0, 3.0], at = [1.5, 2.0, 0.0] }

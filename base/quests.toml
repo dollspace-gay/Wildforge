@@ -1,0 +1,17 @@
+# Quest definitions (spec Part 3.3). Definitions are data; progress state
+# lives in the per-mod KV store. `item` and `set_flag` rewards are additive
+# and may both appear.
+
+[[quest]]
+id = "elder_cerium"
+title = "A Handful of Shards"
+description = "Bring the elder six shards of cerium and hear the elder books."
+giver = "elder"
+prereq = ""
+objectives = [
+  { key = "cerium_shards", description = "Mine six cerium shards", count = 6 },
+]
+rewards = [
+  { item = "amethyst_shard", count = 2 },
+  { set_flag = "elder_told_tales", flag_value = "true" },
+]

@@ -1017,10 +1017,14 @@ fn base_animals_and_weapons_register() {
     assert_eq!(
         reg.animals
             .iter()
-            .filter(|a| !a.hostile && !a.vehicle)
+            .filter(|a| !a.hostile && !a.vehicle && a.npc.is_none())
             .count(),
         38,
         "the full roster: wildlife, hunters, water, herds, the carcass"
+    );
+    assert!(
+        reg.animals.iter().any(|a| a.npc.is_some()),
+        "the NPC companion species is registered alongside wildlife"
     );
     assert_eq!(
         reg.animals.iter().filter(|a| a.hostile).count(),
@@ -1621,7 +1625,7 @@ fn content_graph_is_complete_and_obtainable() {
     for a in &reg.animals {
         assert!(!a.model.is_empty(), "animal {} has no model", a.name);
         assert!(a.health > 0.0, "animal {} has no health", a.name);
-        if !a.hostile && !a.vehicle && a.rarity != u32::MAX {
+        if !a.hostile && !a.vehicle && a.npc.is_none() && a.rarity != u32::MAX {
             assert!(
                 !a.biomes.is_empty() && a.biomes.iter().all(|b| biomes.contains(&b.as_str())),
                 "animal {} has invalid biomes {:?}",

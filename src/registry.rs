@@ -501,6 +501,117 @@ pub struct AnimalDef {
     /// reason. (Wildlife, not warden: persists, ignores daylight.)
     pub fierce: bool,
     pub arcane: Option<ArcaneContentDef>,
+    /// Some(npc index) marks a synthesized companion species backed by an
+    /// `NpcDef` (friendly characters, spec 3.1). Wildlife is None.
+    pub npc: Option<usize>,
+}
+
+/// A friendly scripted character, authored apart from wildlife (spec 3.1).
+/// Carries no hostile/fauna fields; fixed position or patrol waypoints, a
+/// talk radius, and a dialogue tree id.
+#[derive(Clone, Debug)]
+pub struct NpcDef {
+    pub name: String, // "base:elder"
+    pub label: String,
+    /// Dialogue tree id this NPC enters when talked to (3.2).
+    pub dialogue: Option<String>,
+    /// Companion `AnimalDef` index (renders/persists this NPC as a Mob).
+    /// The companion species is synthesized at load from the NPC model/tex.
+    pub species: usize,
+    /// Talk interaction range in blocks.
+    pub talk_radius: f32,
+    /// Patrol waypoints as `(du, dy, dv)` offsets from the spawn anchor;
+    /// empty = stands fixed. The walk loops.
+    pub patrol: Vec<[f32; 3]>,
+    /// Seconds paused at each waypoint before setting off again.
+    pub pause: f32,
+    pub sound_pitch: f32,
+}
+
+/// One branching dialogue node (spec 3.2). `condition` gates the node's
+/// availability; `choices` lead to further nodes or close the dialogue.
+#[derive(Clone, Debug)]
+pub struct DialogueDef {
+    pub id: String,
+    /// Optional npc the tree belongs to (info only; NPC defs reference trees
+    /// by id, not the other way).
+    pub npc: Option<String>,
+    pub root: String,
+    pub nodes: Vec<DialogueNode>,
+}
+
+/// A named hook into a mod script, evaluated through the existing dispatch
+/// machinery (`ScriptHost::dispatch`). `""` mod = any defining mod.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScriptHook {
+    pub mod_id: String,
+    pub fn_name: String,
+}
+
+impl ScriptHook {
+    /// Parse `"mod:fn"` or bare `"fn"` (any mod).
+    pub(crate) fn parse(raw: &str) -> ScriptHook {
+        match raw.split_once(':') {
+            Some((mod_id, fn_name)) if !mod_id.is_empty() && !fn_name.is_empty() => {
+                ScriptHook {
+                    mod_id: mod_id.into(),
+                    fn_name: fn_name.into(),
+                }
+            }
+            _ => ScriptHook {
+                mod_id: String::new(),
+                fn_name: raw.into(),
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DialogueNode {
+    pub id: String,
+    pub text: String,
+    /// Script hook previously evaluated; `false` hides the node.
+    pub condition: Option<ScriptHook>,
+    pub choices: Vec<DialogueChoice>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DialogueChoice {
+    pub label: String,
+    /// Hook previously evaluated; `false` hides the choice.
+    pub condition: Option<ScriptHook>,
+    /// Hook run when the choice is selected (rewards, quest flags).
+    pub callback: Option<ScriptHook>,
+    /// Next node id; `None` closes the dialogue.
+    pub next: Option<String>,
+}
+
+/// A tracked quest (spec 3.3). Definitions are data; objective/completion
+/// state lives in the per-mod KV store (already save- and hot-reload-safe).
+#[derive(Clone, Debug)]
+pub struct QuestDef {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    /// Giving npc id (optional).
+    pub giver: Option<String>,
+    /// Quest that must be done first (optional).
+    pub prereq: Option<String>,
+    pub objectives: Vec<QuestObjective>,
+    pub rewards: Vec<QuestReward>,
+}
+
+#[derive(Clone, Debug)]
+pub struct QuestObjective {
+    pub key: String,
+    pub description: String,
+    pub count: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum QuestReward {
+    Give(ItemId, u32),
+    SetFlag(String, String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -792,6 +903,9 @@ pub struct Registry {
     /// Pack-addressable names for mod textures: ("<mod_id>/<file stem>", slot).
     pub tex_names: Vec<(String, u16)>,
     pub animals: Vec<AnimalDef>,
+    pub npcs: Vec<NpcDef>,
+    pub dialogues: Vec<DialogueDef>,
+    pub quests: Vec<QuestDef>,
     pub structures: Vec<StructureDef>,
     pub pieces: Vec<PieceDef>,
     pub pools: Vec<PoolDef>,
@@ -2188,6 +2302,112 @@ struct AnimalsFile {
     animal: Vec<AnimalToml>,
 }
 
+#[derive(Deserialize, Default)]
+struct NpcsFile {
+    #[serde(default)]
+    npc: Vec<NpcToml>,
+}
+
+#[derive(Deserialize, Default)]
+struct DialogueFile {
+    #[serde(default)]
+    dialogue: Vec<DialogueToml>,
+}
+
+#[derive(Deserialize, Default)]
+struct QuestsFile {
+    #[serde(default)]
+    quest: Vec<QuestToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct NpcToml {
+    id: String,
+    #[serde(default)]
+    name: Option<String>,
+    tex: String,
+    #[serde(default)]
+    head_tex: Option<String>,
+    #[serde(default)]
+    dialogue: Option<String>,
+    #[serde(default)]
+    talk_radius: Option<f32>,
+    #[serde(default)]
+    patrol: Vec<[f32; 3]>,
+    #[serde(default)]
+    pause: Option<f32>,
+    #[serde(default)]
+    sound_pitch: Option<f32>,
+    #[serde(default)]
+    model: HashMap<String, BoxToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct DialogueToml {
+    id: String,
+    #[serde(default)]
+    npc: Option<String>,
+    root: String,
+    #[serde(default)]
+    nodes: Vec<DialogueNodeToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct DialogueNodeToml {
+    id: String,
+    text: String,
+    #[serde(default)]
+    condition: Option<String>,
+    #[serde(default)]
+    choices: Vec<DialogueChoiceToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct DialogueChoiceToml {
+    label: String,
+    #[serde(default)]
+    condition: Option<String>,
+    #[serde(default)]
+    callback: Option<String>,
+    #[serde(default)]
+    next: Option<String>,
+}
+
+#[derive(Deserialize, Clone)]
+struct QuestToml {
+    id: String,
+    title: String,
+    description: String,
+    #[serde(default)]
+    giver: Option<String>,
+    #[serde(default)]
+    prereq: Option<String>,
+    #[serde(default)]
+    objectives: Vec<QuestObjectiveToml>,
+    #[serde(default)]
+    rewards: Vec<QuestRewardToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct QuestObjectiveToml {
+    key: String,
+    description: String,
+    #[serde(default)]
+    count: u32,
+}
+
+#[derive(Deserialize, Clone)]
+struct QuestRewardToml {
+    #[serde(default)]
+    item: Option<String>,
+    #[serde(default)]
+    count: u32,
+    #[serde(default)]
+    set_flag: Option<String>,
+    #[serde(default)]
+    flag_value: Option<String>,
+}
+
 struct RawMod {
     info: ModInfo,
     depends: Vec<String>,
@@ -2204,6 +2424,9 @@ struct RawMod {
     tags: Vec<TagToml>,
     aliases: Vec<AliasToml>,
     animals: Vec<AnimalToml>,
+    npcs: Vec<NpcToml>,
+    dialogues: Vec<DialogueToml>,
+    quests: Vec<QuestToml>,
     structures: Vec<StructureToml>,
     loots: Vec<LootToml>,
     pieces: Vec<PieceToml>,
@@ -2224,6 +2447,9 @@ const BASE_TAGS: &str = include_str!("../base/tags.toml");
 const BASE_FEATURES: &str = include_str!("../base/features.toml");
 const BASE_ALIASES: &str = include_str!("../base/aliases.toml");
 const BASE_ANIMALS: &str = include_str!("../base/animals.toml");
+const BASE_NPCS: &str = include_str!("../base/npcs.toml");
+const BASE_DIALOGUE: &str = include_str!("../base/dialogue.toml");
+const BASE_QUESTS: &str = include_str!("../base/quests.toml");
 const BASE_STRUCTURES: &str = include_str!("../base/structures.toml");
 const BASE_PIECES: &str = include_str!("../base/pieces.toml");
 const BASE_WORKINGS: &str = include_str!("../base/workings.toml");
@@ -2258,6 +2484,12 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         toml::from_str(&read("aliases.toml")).map_err(|e| format!("aliases.toml: {e}"))?;
     let animals: AnimalsFile =
         toml::from_str(&read("animals.toml")).map_err(|e| format!("animals.toml: {e}"))?;
+    let npcs: NpcsFile =
+        toml::from_str(&read("npcs.toml")).map_err(|e| format!("npcs.toml: {e}"))?;
+    let dialogue: DialogueFile =
+        toml::from_str(&read("dialogue.toml")).map_err(|e| format!("dialogue.toml: {e}"))?;
+    let quests: QuestsFile =
+        toml::from_str(&read("quests.toml")).map_err(|e| format!("quests.toml: {e}"))?;
     let structures: StructuresFile =
         toml::from_str(&read("structures.toml")).map_err(|e| format!("structures.toml: {e}"))?;
     let pieces: PiecesFile =
@@ -2321,6 +2553,9 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         tags: tags.tag,
         aliases: aliases.alias,
         animals: animals.animal,
+        npcs: npcs.npc,
+        dialogues: dialogue.dialogue,
+        quests: quests.quest,
         structures: structures.structure,
         loots: structures.loot,
         pieces: pieces.piece,
@@ -2341,6 +2576,9 @@ fn base_mod() -> RawMod {
     let features: FeaturesFile = toml::from_str(BASE_FEATURES).expect("base features.toml");
     let aliases: AliasesFile = toml::from_str(BASE_ALIASES).expect("base aliases.toml");
     let animals: AnimalsFile = toml::from_str(BASE_ANIMALS).expect("base animals.toml");
+    let npcs: NpcsFile = toml::from_str(BASE_NPCS).expect("base npcs.toml");
+    let dialogue: DialogueFile = toml::from_str(BASE_DIALOGUE).expect("base dialogue.toml");
+    let quests: QuestsFile = toml::from_str(BASE_QUESTS).expect("base quests.toml");
     let structures: StructuresFile = toml::from_str(BASE_STRUCTURES).expect("base structures.toml");
     let pieces: PiecesFile = toml::from_str(BASE_PIECES).expect("base pieces.toml");
     let workings: crate::workings::WorkingsFile =
@@ -2374,6 +2612,9 @@ fn base_mod() -> RawMod {
         tags: tags.tag,
         aliases: aliases.alias,
         animals: animals.animal,
+        npcs: npcs.npc,
+        dialogues: dialogue.dialogue,
+        quests: quests.quest,
         structures: structures.structure,
         loots: structures.loot,
         pieces: pieces.piece,
@@ -2476,6 +2717,9 @@ impl RemoveStable for Vec<RawMod> {
             blocks: vec![],
             items: vec![],
             animals: vec![],
+            npcs: vec![],
+            dialogues: vec![],
+            quests: vec![],
             structures: vec![],
             loots: vec![],
             pieces: vec![],
@@ -2524,6 +2768,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         tex_files: Vec::new(),
         tex_names: Vec::new(),
         animals: Vec::new(),
+        npcs: Vec::new(),
+        dialogues: Vec::new(),
+        quests: Vec::new(),
         structures: Vec::new(),
         pieces: Vec::new(),
         pools: Vec::new(),
@@ -2815,6 +3062,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         HashMap<String, u16>,
         Option<u16>,
     )> = Vec::new();
+    let mut pending_npcs: Vec<(String, NpcToml, u16, u16, HashMap<String, u16>)> = Vec::new();
+    let mut pending_dialogues: Vec<(String, DialogueToml)> = Vec::new();
+    let mut pending_quests: Vec<(String, QuestToml)> = Vec::new();
 
     for raw in &raws {
         if raw.info.id.is_empty() {
@@ -3377,6 +3627,30 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 proj_tile,
             ));
         }
+        for n in &raw.npcs {
+            let tile = resolve_tex(&n.tex, &raw.info.path, &mut errs);
+            let head = n
+                .head_tex
+                .as_ref()
+                .map(|t| resolve_tex(t, &raw.info.path, &mut errs))
+                .unwrap_or(tile);
+            let box_tiles: HashMap<String, u16> = n
+                .model
+                .iter()
+                .filter_map(|(name, b)| {
+                    b.tex
+                        .as_ref()
+                        .map(|t| (name.clone(), resolve_tex(t, &raw.info.path, &mut errs)))
+                })
+                .collect();
+            pending_npcs.push((raw.info.id.clone(), n.clone(), tile, head, box_tiles));
+        }
+        for d in &raw.dialogues {
+            pending_dialogues.push((raw.info.id.clone(), d.clone()));
+        }
+        for q in &raw.quests {
+            pending_quests.push((raw.info.id.clone(), q.clone()));
+        }
         for f in &raw.fuels {
             pending_fuels.push((raw.info.id.clone(), f.clone()));
         }
@@ -3855,6 +4129,199 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 speed: pr.speed.unwrap_or(14.0),
                 cooldown: pr.cooldown.unwrap_or(2.0),
             }),
+            npc: None,
+        });
+    }
+    // Friendly NPCs (spec 3.1): each synthesizes a companion AnimalDef so
+    // the whole mob pipeline (render, persist, network, raycast) treats it
+    // as an ordinary species. The companion is non-hostile, never flees,
+    // never tames, has no drops/belly/prey, and is never wildlife-spawned
+    // (empty biomes). `AnimalDef.npc` points back to the NpcDef.
+    for (modid, n, tile, head, box_tiles) in pending_npcs {
+        let full = qualify(&modid, &n.id);
+        if reg.npcs.iter().any(|x| x.name == full) {
+            continue; // duplicate id — first wins, like blocks/items
+        }
+        let species = reg.animals.len();
+        let model: Vec<ModelBox> = n
+            .model
+            .iter()
+            .map(|(name, b)| ModelBox {
+                name: name.clone(),
+                size: b.size,
+                at: b.at,
+                tile: box_tiles.get(name).copied(),
+            })
+            .collect();
+        let (model, half_w, height) = if model.is_empty() {
+            // Default humanoid silhouette: a head, torso, and legs.
+            let m = vec![
+                ModelBox {
+                    name: "head".into(),
+                    size: [6.0, 6.0, 6.0],
+                    at: [0.0, 22.0, 0.0],
+                    tile: None,
+                },
+                ModelBox {
+                    name: "body".into(),
+                    size: [8.0, 10.0, 4.0],
+                    at: [0.0, 12.0, 0.0],
+                    tile: None,
+                },
+                ModelBox {
+                    name: "leg".into(),
+                    size: [3.0, 10.0, 3.0],
+                    at: [1.5, 2.0, 0.0],
+                    tile: None,
+                },
+            ];
+            let mut half_w = 0.2f32;
+            let mut height = 0.4f32;
+            for b in &m {
+                half_w = half_w
+                    .max((b.at[0].abs() + b.size[0] / 2.0) / 16.0)
+                    .max((b.at[2].abs() + b.size[2] / 2.0) / 16.0);
+                height = height.max((b.at[1] + b.size[1]) / 16.0);
+            }
+            (m, half_w.min(0.45), height)
+        } else {
+            let mut half_w = 0.2f32;
+            let mut height = 0.4f32;
+            for b in &model {
+                half_w = half_w
+                    .max((b.at[0].abs() + b.size[0] / 2.0) / 16.0)
+                    .max((b.at[2].abs() + b.size[2] / 2.0) / 16.0);
+                height = height.max((b.at[1] + b.size[1]) / 16.0);
+            }
+            (model, half_w.min(0.45), height)
+        };
+        reg.animals.push(AnimalDef {
+            name: format!("{full}#npc"),
+            label: n.name.clone().unwrap_or_else(|| n.id.clone()),
+            biomes: Vec::new(),
+            habitats: Vec::new(),
+            temperature_c: None,
+            vegetation: None,
+            elevation: None,
+            health: 1000.0, // effectively unkillable this phase
+            speed: 1.6,
+            flee_range: 0.0,
+            group: [1, 1],
+            rarity: 1_000_000,
+            tile,
+            head_tile: head,
+            sound_pitch: n.sound_pitch.unwrap_or(1.0),
+            drops: Vec::new(),
+            model,
+            half_w,
+            height,
+            hostile: false,
+            attack: 0.0,
+            aggro_range: 0.0,
+            ire_min: 0.0,
+            movement_float: false,
+            movement_swim: false,
+            aquatic: None,
+            winged: false,
+            emissive: false,
+            glow: None,
+            spawn_light_max: 0,
+            breed_food: None,
+            carrier: false,
+            vehicle: false,
+            belly_secs: 0.0,
+            grazes: false,
+            prey: Vec::new(),
+            fierce: false,
+            arcane: None,
+            projectile: None,
+            npc: Some(reg.npcs.len()),
+        });
+        reg.npcs.push(NpcDef {
+            name: full.clone(),
+            label: n.name.clone().unwrap_or_else(|| n.id.clone()),
+            dialogue: n
+                .dialogue
+                .as_ref()
+                .map(|d| qualify(&modid, d))
+                .or_else(|| n.dialogue.as_ref().cloned()),
+            species,
+            talk_radius: n.talk_radius.unwrap_or(3.0),
+            patrol: n.patrol.clone(),
+            pause: n.pause.unwrap_or(2.0),
+            sound_pitch: n.sound_pitch.unwrap_or(1.0),
+        });
+    }
+    // Dialogue and quest definitions resolve by name after every npc/item
+    // exists; a bad reference drops the def and reports, never panics.
+    for (modid, d) in pending_dialogues {
+        let id = qualify(&modid, &d.id);
+        if reg.dialogues.iter().any(|x| x.id == id) {
+            continue;
+        }
+        reg.dialogues.push(DialogueDef {
+            id,
+            npc: d.npc.as_ref().map(|n| qualify(&modid, n)),
+            root: d.root.clone(),
+            nodes: d
+                .nodes
+                .iter()
+                .map(|node| DialogueNode {
+                    id: node.id.clone(),
+                    text: node.text.clone(),
+                    condition: node.condition.as_deref().map(ScriptHook::parse),
+                    choices: node
+                        .choices
+                        .iter()
+                        .map(|choice| DialogueChoice {
+                            label: choice.label.clone(),
+                            condition: choice.condition.as_deref().map(ScriptHook::parse),
+                            callback: choice.callback.as_deref().map(ScriptHook::parse),
+                            next: choice.next.clone(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        });
+    }
+    for (modid, q) in pending_quests {
+        let id = qualify(&modid, &q.id);
+        if reg.quests.iter().any(|x| x.id == id) {
+            continue;
+        }
+        reg.quests.push(QuestDef {
+            id,
+            title: q.title.clone(),
+            description: q.description.clone(),
+            giver: q.giver.as_ref().map(|g| qualify(&modid, g)),
+            prereq: q.prereq.as_ref().map(|p| qualify(&modid, p)),
+            objectives: q
+                .objectives
+                .iter()
+                .map(|objective| QuestObjective {
+                    key: objective.key.clone(),
+                    description: objective.description.clone(),
+                    count: objective.count.max(1),
+                })
+                .collect(),
+            rewards: q
+                .rewards
+                .iter()
+                .filter_map(|reward| {
+                    if let Some(item) = &reward.item
+                        && let Some(iid) = lookup_item(&reg, &modid, item)
+                    {
+                        Some(QuestReward::Give(iid, reward.count.max(1)))
+                    } else if let Some(flag) = &reward.set_flag {
+                        Some(QuestReward::SetFlag(
+                            flag.clone(),
+                            reward.flag_value.clone().unwrap_or_else(|| "1".into()),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
         });
     }
     // Prey lists resolve after the whole roster exists (a fox may be
@@ -5389,3 +5856,99 @@ dross_scar = { kind = "wet_film", handler = "filament_growth", carriers = ["wate
         assert!(overflow.contains("number") || overflow.contains("u64"));
     }
 }
+
+#[cfg(test)]
+mod npc_spec_tests {
+    use super::*;
+
+    #[test]
+    fn base_npc_synthesizes_a_companion_species() {
+        let registry = load(Path::new("__no_npc_mods__"));
+        assert!(registry.arcane_errors.is_empty());
+        let npc_id = registry
+            .npc_id("base:elder")
+            .expect("base elder npc must load");
+        let npc = &registry.npcs[npc_id];
+        assert_eq!(npc.name, "base:elder");
+        assert_eq!(npc.label, "Elder Rowan");
+        assert_eq!(npc.talk_radius, 3.0);
+        assert!(npc.dialogue.as_deref() == Some("base:elder"));
+        // Companion species exists, is not wildlife, and points back.
+        assert!(registry.is_npc_species(npc.species));
+        let companion = &registry.animals[npc.species];
+        assert_eq!(companion.npc, Some(npc_id));
+        assert!(!companion.hostile);
+        assert!(companion.biomes.is_empty(), "NPCs never spawn as wildlife");
+        assert!(companion.drops.is_empty());
+    }
+
+    #[test]
+    fn base_dialogue_tree_parses_and_links_choices() {
+        let registry = load(Path::new("__no_npc_mods__"));
+        let d = registry
+            .dialogues
+            .iter()
+            .find(|d| d.id == "base:elder")
+            .expect("base elder dialogue must load");
+        assert_eq!(d.root, "welcome");
+        let root = d
+            .nodes
+            .iter()
+            .find(|n| n.id == "welcome")
+            .expect("root node exists");
+        assert!(!root.text.is_empty());
+        assert_eq!(root.choices.len(), 2);
+        let ores = root
+            .choices
+            .iter()
+            .find(|c| c.next.as_deref() == Some("ores"))
+            .expect("ores choice links forward");
+        assert_eq!(ores.label, "Ask about the ores");
+        let ores_node = d
+            .nodes
+            .iter()
+            .find(|n| n.id == "ores")
+            .expect("ores node exists");
+        let accept = ores_node
+            .choices
+            .iter()
+            .find(|c| c.callback.is_some())
+            .expect("accept choice runs a callback");
+        assert_eq!(
+            accept.callback.as_ref().unwrap(),
+            &ScriptHook {
+                mod_id: "base".into(),
+                fn_name: "accept_cerium_quest".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn base_quest_definitions_resolve_rewards() {
+        let registry = load(Path::new("__no_npc_mods__"));
+        let quest = registry
+            .quests
+            .iter()
+            .find(|q| q.id == "base:elder_cerium")
+            .expect("base elder_cerium quest must load");
+        assert_eq!(quest.giver.as_deref(), Some("base:elder"));
+        assert_eq!(quest.objectives.len(), 1);
+        assert_eq!(quest.objectives[0].key, "cerium_shards");
+        assert_eq!(quest.objectives[0].count, 6);
+        assert_eq!(quest.rewards.len(), 2);
+        let give = quest
+            .rewards
+            .iter()
+            .find(|r| matches!(r, QuestReward::Give(..)))
+            .expect("item reward present");
+        if let QuestReward::Give(item, count) = give {
+            assert_eq!(registry.item(*item).name, "base:amethyst_shard");
+            assert_eq!(*count, 2);
+        }
+        assert!(quest
+            .rewards
+            .iter()
+            .any(|r| matches!(r, QuestReward::SetFlag(flag, v) if flag == "elder_told_tales" && v == "true")));
+    }
+}
+
