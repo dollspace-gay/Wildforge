@@ -1,0 +1,151 @@
+# Piece-based procedural structures (spec Part 2.3).
+# Pieces reuse the Phase 4 template cell format (offset + block name), so a
+# captured region is already a valid piece body; this file author's the base
+# content directly.
+#
+# Connector kinds pair only with the same kind. Pools are weighted lists of
+# interchangeable pieces per connector kind. Assemblies are biome/rarity-gated
+# walks: the entry piece is placed, then connectors are followed outward.
+
+# A small watch-platform the walk can start from.
+[[piece]]
+id = "watch_platform"
+connectors = [
+  { du = 5, dy = 0, dv = 2, kind = "path", facing = "east" },
+  { du = 0, dy = 0, dv = 2, kind = "path", facing = "west" },
+]
+markers = [
+  { du = 2, dy = 1, dv = 2, kind = "spawn:guard" },
+]
+cells = [
+  # floor ring
+  { du = 0, dy = 0, dv = 0, block = "base:mossy_cobblestone" },
+  { du = 1, dy = 0, dv = 0, block = "base:mossy_cobblestone" },
+  { du = 2, dy = 0, dv = 0, block = "base:mossy_cobblestone" },
+  { du = 3, dy = 0, dv = 0, block = "base:mossy_cobblestone" },
+  { du = 4, dy = 0, dv = 0, block = "base:mossy_cobblestone" },
+  { du = 5, dy = 0, dv = 0, block = "base:mossy_cobblestone" },
+  { du = 0, dy = 0, dv = 1, block = "base:cobblestone" },
+  { du = 5, dy = 0, dv = 1, block = "base:cobblestone" },
+  { du = 0, dy = 0, dv = 2, block = "base:cobblestone" },
+  { du = 5, dy = 0, dv = 2, block = "base:cobblestone" },
+  { du = 0, dy = 0, dv = 3, block = "base:cobblestone" },
+  { du = 5, dy = 0, dv = 3, block = "base:cobblestone" },
+  { du = 0, dy = 0, dv = 4, block = "base:mossy_cobblestone" },
+  { du = 1, dy = 0, dv = 4, block = "base:mossy_cobblestone" },
+  { du = 2, dy = 0, dv = 4, block = "base:mossy_cobblestone" },
+  { du = 3, dy = 0, dv = 4, block = "base:mossy_cobblestone" },
+  { du = 4, dy = 0, dv = 4, block = "base:mossy_cobblestone" },
+  { du = 5, dy = 0, dv = 4, block = "base:mossy_cobblestone" },
+  # posts
+  { du = 1, dy = 1, dv = 1, block = "base:cobblestone" },
+  { du = 4, dy = 1, dv = 1, block = "base:cobblestone" },
+  { du = 1, dy = 2, dv = 1, block = "base:cracked_masonry" },
+  { du = 4, dy = 2, dv = 1, block = "base:cracked_masonry" },
+  { du = 1, dy = 1, dv = 3, block = "base:cobblestone" },
+  { du = 4, dy = 1, dv = 3, block = "base:cobblestone" },
+  { du = 1, dy = 2, dv = 3, block = "base:cracked_masonry" },
+  { du = 4, dy = 2, dv = 3, block = "base:cracked_masonry" },
+  # top cap
+  { du = 1, dy = 3, dv = 1, block = "base:cracked_masonry" },
+  { du = 2, dy = 3, dv = 1, block = "base:cracked_masonry" },
+  { du = 3, dy = 3, dv = 1, block = "base:cracked_masonry" },
+  { du = 4, dy = 3, dv = 1, block = "base:cracked_masonry" },
+  { du = 1, dy = 3, dv = 2, block = "base:cracked_masonry" },
+  { du = 4, dy = 3, dv = 2, block = "base:cracked_masonry" },
+  { du = 1, dy = 3, dv = 3, block = "base:cracked_masonry" },
+  { du = 2, dy = 3, dv = 3, block = "base:cracked_masonry" },
+  { du = 3, dy = 3, dv = 3, block = "base:cracked_masonry" },
+  { du = 4, dy = 3, dv = 3, block = "base:cracked_masonry" },
+]
+
+# A short "path" connector piece, interchangeable with far_path.
+[[piece]]
+id = "near_path"
+connectors = [
+  { du = 0, dy = 0, dv = 0, kind = "path", facing = "west" },
+  { du = 3, dy = 0, dv = 0, kind = "path", facing = "east" },
+]
+cells = [
+  { du = 0, dy = 0, dv = 0, block = "base:cobblestone" },
+  { du = 1, dy = 0, dv = 0, block = "base:cobblestone" },
+  { du = 2, dy = 0, dv = 0, block = "base:cobblestone" },
+  { du = 3, dy = 0, dv = 0, block = "base:cobblestone" },
+]
+
+[[piece]]
+id = "far_path"
+connectors = [
+  { du = 0, dy = 0, dv = 0, kind = "path", facing = "west" },
+  { du = 6, dy = 0, dv = 0, kind = "path", facing = "east" },
+]
+cells = [
+  { du = 0, dy = 0, dv = 0, block = "base:packed_earth" },
+  { du = 1, dy = 0, dv = 0, block = "base:packed_earth" },
+  { du = 2, dy = 0, dv = 0, block = "base:packed_earth" },
+  { du = 3, dy = 0, dv = 0, block = "base:packed_earth" },
+  { du = 4, dy = 0, dv = 0, block = "base:packed_earth" },
+  { du = 5, dy = 0, dv = 0, block = "base:packed_earth" },
+  { du = 6, dy = 0, dv = 0, block = "base:packed_earth" },
+]
+
+[[piece]]
+id = "cabin"
+connectors = [
+  { du = 2, dy = 0, dv = 0, kind = "path", facing = "south" },
+]
+chests = [
+  { du = 1, dy = 1, dv = 1, loot = "base:ruin_chest" },
+]
+cells = [
+  # walls (ring at floor and knee height)
+  { du = 0, dy = 0, dv = 0, block = "base:planks" },
+  { du = 1, dy = 0, dv = 0, block = "base:planks" },
+  { du = 2, dy = 0, dv = 0, block = "base:planks" },
+  { du = 3, dy = 0, dv = 0, block = "base:planks" },
+  { du = 4, dy = 0, dv = 0, block = "base:planks" },
+  { du = 0, dy = 0, dv = 1, block = "base:planks" },
+  { du = 4, dy = 0, dv = 1, block = "base:planks" },
+  { du = 0, dy = 0, dv = 2, block = "base:planks" },
+  { du = 4, dy = 0, dv = 2, block = "base:planks" },
+  { du = 0, dy = 0, dv = 3, block = "base:planks" },
+  { du = 4, dy = 0, dv = 3, block = "base:planks" },
+  { du = 0, dy = 0, dv = 4, block = "base:planks" },
+  { du = 1, dy = 0, dv = 4, block = "base:planks" },
+  { du = 2, dy = 0, dv = 4, block = "base:planks" },
+  { du = 3, dy = 0, dv = 4, block = "base:planks" },
+  { du = 4, dy = 0, dv = 4, block = "base:planks" },
+  { du = 0, dy = 1, dv = 0, block = "base:planks" },
+  { du = 1, dy = 1, dv = 0, block = "base:planks" },
+  { du = 2, dy = 1, dv = 0, block = "base:planks" },
+  { du = 3, dy = 1, dv = 0, block = "base:planks" },
+  { du = 4, dy = 1, dv = 0, block = "base:planks" },
+  { du = 0, dy = 1, dv = 4, block = "base:planks" },
+  { du = 1, dy = 1, dv = 4, block = "base:planks" },
+  { du = 2, dy = 1, dv = 4, block = "base:planks" },
+  { du = 3, dy = 1, dv = 4, block = "base:planks" },
+  { du = 4, dy = 1, dv = 4, block = "base:planks" },
+  { du = 0, dy = 1, dv = 1, block = "base:planks" },
+  { du = 4, dy = 1, dv = 1, block = "base:planks" },
+  { du = 0, dy = 1, dv = 2, block = "base:planks" },
+  { du = 4, dy = 1, dv = 2, block = "base:planks" },
+  { du = 0, dy = 1, dv = 3, block = "base:planks" },
+  { du = 4, dy = 1, dv = 3, block = "base:planks" },
+]
+
+[[pool]]
+id = "path"
+entries = [
+  { piece = "near_path", weight = 3 },
+  { piece = "far_path", weight = 1 },
+]
+
+[[assembly]]
+id = "road_side_camp"
+biomes = ["plains", "forest", "scrubland", "taiga"]
+rarity = 120
+entry = "watch_platform"
+pools = { path = "path" }
+max_depth = 4
+max_pieces = 12
+terrain = "none"

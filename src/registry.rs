@@ -659,6 +659,94 @@ pub struct StructureDef {
     pub loot: Option<String>,
 }
 
+/// One connector point on a piece: a local cell offset, a typed connector
+/// (`kind` pairs only with the same kind), and the cardinal direction the
+/// connector points *out of* the piece. Children attach across a matching
+/// connector of the same kind, facing opposite.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PieceConnector {
+    pub du: i32,
+    pub dy: i32,
+    pub dv: i32,
+    pub kind: String,
+    pub facing: crate::planet::Direction4,
+}
+
+/// A typed marker resolved to a world position when a piece is placed
+/// (spec 2.4 spawn markers, 2.5 feature anchors). Carried and resolved
+/// here; consumed by later phases.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PieceMarker {
+    pub du: i32,
+    pub dy: i32,
+    pub dv: i32,
+    pub kind: String,
+}
+
+/// A cell that becomes a wild-owned loot chest when the piece is stamped.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PieceChest {
+    pub du: i32,
+    pub dy: i32,
+    pub dv: i32,
+    /// Qualified loot table id.
+    pub loot: String,
+}
+
+/// A gen-walk piece: cells reuse the Phase 4 template cell format (offset +
+/// block name), so a captured region is already a valid piece body.
+#[derive(Clone, Debug)]
+pub struct PieceDef {
+    pub name: String,
+    /// `(du, dy, dv, block-name)` cells — exactly `TemplateCell`, reused.
+    pub cells: Vec<crate::world::template::TemplateCell>,
+    pub connectors: Vec<PieceConnector>,
+    pub markers: Vec<PieceMarker>,
+    pub chests: Vec<PieceChest>,
+}
+
+/// One weighted entry in a per-kind pool.
+#[derive(Clone, Debug)]
+pub struct PoolEntry {
+    pub piece: String,
+    pub weight: u32,
+}
+
+/// A weighted list of interchangeable pieces, keyed by connector kind.
+#[derive(Clone, Debug)]
+pub struct PoolDef {
+    pub id: String,
+    pub entries: Vec<PoolEntry>,
+}
+
+/// How a piece assembly meets the voxel terrain.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TerrainAdaptation {
+    /// Place as authored at the surface anchor.
+    None,
+    /// Sink the piece so its floor sits at/below the surface line.
+    Bury,
+    /// Place inside solid terrain; terrain stays as the outer shell.
+    Encapsulate,
+}
+
+/// A biome/rarity-gated piece assembly: an entry piece plus per-kind pools.
+#[derive(Clone, Debug)]
+pub struct AssemblyDef {
+    pub name: String,
+    pub biomes: Vec<String>,
+    /// 1-in-N chunks (per matching biome).
+    pub rarity: u32,
+    pub entry_piece: String,
+    /// connector kind -> pool id.
+    pub pools: HashMap<String, String>,
+    /// Steps from the entry piece before connectors stop being followed.
+    pub max_depth: u32,
+    /// Total pieces placed before the walk stops.
+    pub max_pieces: u32,
+    pub terrain: TerrainAdaptation,
+}
+
 #[derive(Clone, Debug)]
 pub struct ModInfo {
     pub id: String,
@@ -705,6 +793,9 @@ pub struct Registry {
     pub tex_names: Vec<(String, u16)>,
     pub animals: Vec<AnimalDef>,
     pub structures: Vec<StructureDef>,
+    pub pieces: Vec<PieceDef>,
+    pub pools: Vec<PoolDef>,
+    pub assemblies: Vec<AssemblyDef>,
     pub loots: HashMap<String, Vec<LootEntry>>,
     /// Load-time conservation/schema failures. Keeping these attached to the
     /// registry lets the mods screen explain a bad pack and lets production
@@ -1993,6 +2084,104 @@ struct StructuresFile {
     loot: Vec<LootToml>,
 }
 
+#[derive(Deserialize, Clone)]
+struct PieceToml {
+    id: String,
+    #[serde(default)]
+    cells: Vec<PieceCellToml>,
+    #[serde(default)]
+    connectors: Vec<ConnectorToml>,
+    #[serde(default)]
+    markers: Vec<MarkerToml>,
+    #[serde(default)]
+    chests: Vec<ChestToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct PieceCellToml {
+    #[serde(default)]
+    du: i32,
+    #[serde(default)]
+    dy: i32,
+    #[serde(default)]
+    dv: i32,
+    block: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct ConnectorToml {
+    #[serde(default)]
+    du: i32,
+    #[serde(default)]
+    dy: i32,
+    #[serde(default)]
+    dv: i32,
+    kind: String,
+    facing: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct MarkerToml {
+    #[serde(default)]
+    du: i32,
+    #[serde(default)]
+    dy: i32,
+    #[serde(default)]
+    dv: i32,
+    kind: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct ChestToml {
+    #[serde(default)]
+    du: i32,
+    #[serde(default)]
+    dy: i32,
+    #[serde(default)]
+    dv: i32,
+    #[serde(default)]
+    loot: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct PoolToml {
+    id: String,
+    entries: Vec<PoolEntryToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct PoolEntryToml {
+    piece: String,
+    #[serde(default)]
+    weight: u32,
+}
+
+#[derive(Deserialize, Clone)]
+struct AssemblyToml {
+    id: String,
+    biomes: Vec<String>,
+    rarity: u32,
+    entry: String,
+    #[serde(default)]
+    pools: HashMap<String, String>,
+    #[serde(default)]
+    max_depth: u32,
+    #[serde(default)]
+    max_pieces: u32,
+    #[serde(default)]
+    terrain: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct PiecesFile {
+    #[serde(default)]
+    piece: Vec<PieceToml>,
+    #[serde(default)]
+    pool: Vec<PoolToml>,
+    #[serde(default)]
+    assembly: Vec<AssemblyToml>,
+}
+
 #[derive(Deserialize, Default)]
 struct AnimalsFile {
     #[serde(default)]
@@ -2017,6 +2206,9 @@ struct RawMod {
     animals: Vec<AnimalToml>,
     structures: Vec<StructureToml>,
     loots: Vec<LootToml>,
+    pieces: Vec<PieceToml>,
+    pools: Vec<PoolToml>,
+    assemblies: Vec<AssemblyToml>,
     resonances: Vec<ResonanceToml>,
     arcane_sites: Vec<ArcaneSiteToml>,
     workings: Vec<crate::workings::RawWorkingDef>,
@@ -2033,6 +2225,7 @@ const BASE_FEATURES: &str = include_str!("../base/features.toml");
 const BASE_ALIASES: &str = include_str!("../base/aliases.toml");
 const BASE_ANIMALS: &str = include_str!("../base/animals.toml");
 const BASE_STRUCTURES: &str = include_str!("../base/structures.toml");
+const BASE_PIECES: &str = include_str!("../base/pieces.toml");
 const BASE_WORKINGS: &str = include_str!("../base/workings.toml");
 const BASE_PREPARATIONS: &str = include_str!("../base/preparations.toml");
 pub const WORLD_API_VERSION: u32 = 2;
@@ -2067,6 +2260,8 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         toml::from_str(&read("animals.toml")).map_err(|e| format!("animals.toml: {e}"))?;
     let structures: StructuresFile =
         toml::from_str(&read("structures.toml")).map_err(|e| format!("structures.toml: {e}"))?;
+    let pieces: PiecesFile =
+        toml::from_str(&read("pieces.toml")).map_err(|e| format!("pieces.toml: {e}"))?;
     let arcane: ArcaneFile =
         toml::from_str(&read("arcane.toml")).map_err(|e| format!("arcane.toml: {e}"))?;
     if arcane.schema_version.is_some_and(|version| version != 1) {
@@ -2128,6 +2323,9 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         animals: animals.animal,
         structures: structures.structure,
         loots: structures.loot,
+        pieces: pieces.piece,
+        pools: pieces.pool,
+        assemblies: pieces.assembly,
         resonances: arcane.resonance,
         arcane_sites: arcane.sites,
         workings: workings.working,
@@ -2144,6 +2342,7 @@ fn base_mod() -> RawMod {
     let aliases: AliasesFile = toml::from_str(BASE_ALIASES).expect("base aliases.toml");
     let animals: AnimalsFile = toml::from_str(BASE_ANIMALS).expect("base animals.toml");
     let structures: StructuresFile = toml::from_str(BASE_STRUCTURES).expect("base structures.toml");
+    let pieces: PiecesFile = toml::from_str(BASE_PIECES).expect("base pieces.toml");
     let workings: crate::workings::WorkingsFile =
         toml::from_str(BASE_WORKINGS).expect("base workings.toml");
     let preparations: crate::alchemy::PreparationsFile =
@@ -2177,6 +2376,9 @@ fn base_mod() -> RawMod {
         animals: animals.animal,
         structures: structures.structure,
         loots: structures.loot,
+        pieces: pieces.piece,
+        pools: pieces.pool,
+        assemblies: pieces.assembly,
         resonances: Vec::new(),
         arcane_sites: Vec::new(),
         workings: workings.working,
@@ -2276,6 +2478,9 @@ impl RemoveStable for Vec<RawMod> {
             animals: vec![],
             structures: vec![],
             loots: vec![],
+            pieces: vec![],
+            pools: vec![],
+            assemblies: vec![],
             recipes: vec![],
             smelts: vec![],
             fuels: vec![],
@@ -2320,6 +2525,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         tex_names: Vec::new(),
         animals: Vec::new(),
         structures: Vec::new(),
+        pieces: Vec::new(),
+        pools: Vec::new(),
+        assemblies: Vec::new(),
         loots: HashMap::new(),
         material_errors: Vec::new(),
         arcane_registry: crate::arcane::ResonanceRegistry::base(),
@@ -2593,6 +2801,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let mut pending_brush: Vec<(String, usize, BrushToml)> = Vec::new();
     let mut pending_structs: Vec<(String, StructureToml)> = Vec::new();
     let mut pending_loots: Vec<(String, LootToml)> = Vec::new();
+    let mut pending_pieces: Vec<(String, PieceToml)> = Vec::new();
+    let mut pending_pools: Vec<(String, PoolToml)> = Vec::new();
+    let mut pending_assemblies: Vec<(String, AssemblyToml)> = Vec::new();
     let mut pending_places: Vec<(String, (String, String))> = Vec::new();
     // (mod id, toml, body tile, head tile, per-box tiles) — resolve in pass 1.
     #[allow(clippy::type_complexity)]
@@ -3125,6 +3336,15 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         for st in &raw.structures {
             pending_structs.push((raw.info.id.clone(), st.clone()));
         }
+        for p in &raw.pieces {
+            pending_pieces.push((raw.info.id.clone(), p.clone()));
+        }
+        for p in &raw.pools {
+            pending_pools.push((raw.info.id.clone(), p.clone()));
+        }
+        for a in &raw.assemblies {
+            pending_assemblies.push((raw.info.id.clone(), a.clone()));
+        }
         for lt in &raw.loots {
             pending_loots.push((raw.info.id.clone(), lt.clone()));
         }
@@ -3293,6 +3513,123 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             palette,
             layers: st.layers,
             loot: st.loot.as_ref().map(|l| qualify(&modid, l)),
+        });
+    }
+    let lookup_piece = |reg: &Registry, modid: &str, name: &str| -> Option<String> {
+        qualified_piece_id(reg, modid, name)
+    };
+    // Pieces reference only block *names* (resolved at stamp time), so cells
+    // pass through verbatim. Connector facings are validated against the four
+    // cardinal directions at load, keeping the walk free of parse errors.
+    for (modid, p) in pending_pieces {
+        let mut connectors = Vec::new();
+        let mut ok = true;
+        for c in p.connectors {
+            let Some(facing) = parse_direction4(&c.facing) else {
+                ok = false;
+                break;
+            };
+            connectors.push(PieceConnector {
+                du: c.du,
+                dy: c.dy,
+                dv: c.dv,
+                kind: qualify(&modid, &c.kind),
+                facing,
+            });
+        }
+        if !ok {
+            continue;
+        }
+        let cells = p
+            .cells
+            .into_iter()
+            .map(|c| crate::world::template::TemplateCell {
+                du: c.du,
+                dy: c.dy,
+                dv: c.dv,
+                block: c.block,
+            })
+            .collect();
+        let markers = p
+            .markers
+            .into_iter()
+            .map(|m| PieceMarker {
+                du: m.du,
+                dy: m.dy,
+                dv: m.dv,
+                kind: qualify(&modid, &m.kind),
+            })
+            .collect();
+        let chests = p
+            .chests
+            .into_iter()
+            .filter_map(|c| {
+                reg.loots
+                    .contains_key(&qualify(&modid, &c.loot))
+                    .then(|| PieceChest {
+                        du: c.du,
+                        dy: c.dy,
+                        dv: c.dv,
+                        loot: qualify(&modid, &c.loot),
+                    })
+            })
+            .collect();
+        reg.pieces.push(PieceDef {
+            name: qualify(&modid, &p.id),
+            cells,
+            connectors,
+            markers,
+            chests,
+        });
+    }
+    for (modid, pool) in pending_pools {
+        let entries: Vec<PoolEntry> = pool
+            .entries
+            .into_iter()
+            .filter_map(|e| {
+                lookup_piece(&reg, &modid, &e.piece).map(|_| PoolEntry {
+                    piece: qualify(&modid, &e.piece),
+                    weight: e.weight.max(1),
+                })
+            })
+            .collect();
+        if !entries.is_empty() {
+            reg.pools.push(PoolDef {
+                id: qualify(&modid, &pool.id),
+                entries,
+            });
+        }
+    }
+    for (modid, a) in pending_assemblies {
+        let Some(entry_piece) = lookup_piece(&reg, &modid, &a.entry) else {
+            continue;
+        };
+        let terrain = match a.terrain.as_deref() {
+            Some("bury") => TerrainAdaptation::Bury,
+            Some("encapsulate") => TerrainAdaptation::Encapsulate,
+            _ => TerrainAdaptation::None,
+        };
+        let pools = a
+            .pools
+            .into_iter()
+            .filter_map(|(kind, pool)| {
+                let kind = qualify(&modid, &kind);
+                let pool = qualify(&modid, &pool);
+                reg.pools
+                    .iter()
+                    .any(|p| p.id == pool)
+                    .then_some((kind, pool))
+            })
+            .collect();
+        reg.assemblies.push(AssemblyDef {
+            name: qualify(&modid, &a.id),
+            biomes: a.biomes.iter().map(|b| b.to_lowercase()).collect(),
+            rarity: a.rarity.max(1),
+            entry_piece,
+            pools,
+            max_depth: a.max_depth.max(1),
+            max_pieces: a.max_pieces.max(1),
+            terrain,
         });
     }
     for pd in pending_drops {
@@ -4560,6 +4897,25 @@ fn qualify(modid: &str, name: &str) -> String {
         name.to_string()
     } else {
         format!("{modid}:{name}")
+    }
+}
+
+/// Resolve a (possibly bare) piece reference to its qualified name if the
+/// piece is registered. Used only by the pool/assembly resolver after all
+/// pieces are loaded.
+fn qualified_piece_id(reg: &Registry, modid: &str, name: &str) -> Option<String> {
+    let id = qualify(modid, name);
+    reg.pieces.iter().any(|p| p.name == id).then_some(id)
+}
+
+fn parse_direction4(name: &str) -> Option<crate::planet::Direction4> {
+    use crate::planet::Direction4;
+    match name {
+        "east" => Some(Direction4::East),
+        "north" => Some(Direction4::North),
+        "west" => Some(Direction4::West),
+        "south" => Some(Direction4::South),
+        _ => None,
     }
 }
 

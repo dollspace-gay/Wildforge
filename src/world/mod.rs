@@ -41,6 +41,7 @@ mod machine_tick;
 pub(crate) mod machines;
 pub(crate) mod multiblock;
 mod persistence;
+mod pieces;
 mod power;
 pub(crate) mod power_draw;
 #[cfg_attr(test, allow(unused))]
@@ -2328,6 +2329,12 @@ impl World {
         if let Some(chunk) = self.chunks.get_mut(&pos) {
             chunk.modified = true;
         }
+    }
+
+    #[cfg(test)]
+    /// Whether this chunk is claimed by a structure or piece assembly.
+    pub fn is_structure_chunk_for_test(&self, pos: ChunkPos) -> bool {
+        self.structure_chunks.contains(&pos)
     }
 
     #[cfg(test)]

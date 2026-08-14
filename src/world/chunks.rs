@@ -835,6 +835,13 @@ impl World {
 
     /// Deterministic per-chunk structure roll (at most one per chunk).
     pub(super) fn seed_structures(&mut self, pos: ChunkPos) {
+        // A chunk already claimed by a structure or piece assembly never
+        // rolls its own: multi-chunk assemblies reserve every touched chunk
+        // in `structure_chunks` *before* `ensure_chunk`, so a neighbor that
+        // arrives mid-walk (and any re-generation) early-returns here.
+        if self.structure_chunks.contains(&pos) {
+            return;
+        }
         let reg = self.reg.clone();
         let center = crate::planet::SurfacePos::new(
             pos.face(),
@@ -906,6 +913,21 @@ impl World {
             )
             .expect("structure base is inside the world");
             self.place_structure_at(si, origin, h);
+            // A fixed-template ruin won this chunk; skip assemblies.
+            return;
+        }
+        // Piece assemblies (spec Part 2.3). At most one structure roll wins
+        // per chunk; the ruin loop already returned if one landed, so the
+        // origin chunk is unreserved here.
+        for (ai, asm) in reg.assemblies.iter().enumerate() {
+            if !asm.biomes.contains(&biome) {
+                continue;
+            }
+            let h = self.mob_hash_at(center, 9000 + 0x10000 + ai as u32);
+            if !h.is_multiple_of(asm.rarity) {
+                continue;
+            }
+            self.place_assembly(asm.clone(), pos, h);
             break;
         }
     }
