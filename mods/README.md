@@ -474,9 +474,34 @@ per_chunk = 3
 y_range = [10, 40]
 ```
 
-The only `type` today is `"ore"`: random-walk veins of `block`
-replacing `replaces` (default `base:stone`). Defaults: `vein_size` 5
-(1–32), `per_chunk` 6 (0–64), `y_range` [4, 60].
+The `"ore"` type is random-walk veins of `block` replacing `replaces`
+(default `base:stone`). Defaults: `vein_size` 5 (1–32), `per_chunk` 6
+(0–64), `y_range` [4, 60].
+
+```toml
+# A flag-gated feature (spec 2.5). `feature:<id>` assembly markers place
+# `block` sealed; the player cannot mine or right-click it until their KV
+# flag `flag` reads `value`, then it opens (swap to `unlocked_block`, or
+# just becomes breakable when `unlocked_block` is omitted).
+[[feature]]
+type = "gate"
+id = "sealed_vault"
+block = "base:cracked_masonry"
+flag = "vault_key"
+value = "true"
+unlocked_block = "base:air"
+message = "The vault is sealed shut."
+# Set false to let the block stay mineable while still flagged.
+unbreakable_when_locked = true
+```
+
+Gate fields: `id` (referenced by `feature:<id>` markers), `block` (the
+sealed block placed at the marker), `flag` + `value` (the per-player KV
+flag that unlocks it — quest `set_flag` rewards write the same store),
+`unlocked_block` (replaces the seal when opened; omit to just make it
+breakable), `message` (toast when locked), `unbreakable_when_locked`
+(default true). The gate id and block are `mod:gate`/`mod:block`
+qualified.
 
 An ore feature's block/drop vector is its exact finite deposit unit. At planet
 creation it receives bounded manifest sites and materializing a chunk reserves

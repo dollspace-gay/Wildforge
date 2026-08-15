@@ -140,7 +140,7 @@ impl Game {
             .insert(key.to_string(), value);
     }
 
-    fn read_player_kv(&self, key: &str) -> Option<String> {
+    pub(super) fn read_player_kv(&self, key: &str) -> Option<String> {
         let ns = self.player_namespace();
         self.content
             .scripts

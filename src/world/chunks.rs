@@ -948,6 +948,16 @@ impl World {
                         self.spawn_npc_at(ni, pos);
                     }
                 }
+                // Spec 2.5: `feature:<id>` markers place a sealed block at
+                // the resolved position, locked until the player's KV flag
+                // reads the gate's `value`. The gate id is `mod:gate`
+                // qualified; an unknown id is silently skipped so a missing
+                // def cannot leave a permanent unbreakable wall.
+                if let Some(gate_name) = marker.kind.strip_prefix("feature:")
+                    && let Some(gate) = reg.gate_id(gate_name)
+                {
+                    self.place_gate_at(gate, marker.at);
+                }
             }
             break;
         }

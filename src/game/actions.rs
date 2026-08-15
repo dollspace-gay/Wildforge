@@ -1170,6 +1170,36 @@ impl Game {
                         _ => dt / hardness.max(0.0001),
                     };
                     if progress >= 1.0 {
+                        // Flag-gated features (spec 2.5): a sealed gate cannot
+                        // be mined open. The world refuses anyway (backstop);
+                        // here we surface the reason as a toast instead of
+                        // letting the swing hit the None path.
+                        let gate_blocked = if let Some(gate) =
+                            self.server.world.gate_at(target)
+                            && self
+                                .content
+                                .reg
+                                .gates
+                                .get(gate)
+                                .is_some_and(|g| g.unbreakable_when_locked)
+                        {
+                            let definition = self.content.reg.gates[gate].clone();
+                            let unlocked = self
+                                .read_player_kv(&definition.flag)
+                                .is_some_and(|v| v == definition.value);
+                            if !unlocked {
+                                self.toast(definition.message.clone());
+                            } else {
+                                self.toast("Right-click to open the sealed gate.".to_string());
+                            }
+                            true
+                        } else {
+                            false
+                        };
+                        self.interaction.breaking = None;
+                        if gate_blocked {
+                            return;
+                        }
                         // Cancellable mod event.
                         let allow = if self.content.scripts.wants("on_block_break") {
                             let name = reg.block(b).name.clone();
@@ -1751,6 +1781,33 @@ impl Game {
                     self.input.action_cooldown = 0.22;
                     return;
                 }
+            }
+            // Flag-gated features (spec 2.5): right-clicking a sealed block
+            // either opens it (player's KV flag met) or is refused with the
+            // gate's message. Only the interact path opens a gate — mining
+            // a sealed block is refused at the world level regardless.
+            if let Some(gate) = self.server.world.gate_at(h.block) {
+                let definition = self.content.reg.gates[gate].clone();
+                let unlocked = self
+                    .read_player_kv(&definition.flag)
+                    .is_some_and(|v| v == definition.value);
+                if !unlocked {
+                    self.toast(definition.message.clone());
+                    self.input.right_held = false;
+                    self.input.action_cooldown = 0.35;
+                    return;
+                }
+                if let Some(unlocked_block) = definition.unlocked_block {
+                    self.server.world.set_block_at(h.block, unlocked_block);
+                    self.server.world.ungate_at(h.block);
+                    self.sfx(Sfx::Place);
+                    self.toast("The gate opens.".to_string());
+                    self.input.right_held = false;
+                    self.input.action_cooldown = 0.35;
+                    return;
+                }
+                // No unlocked_block: the gate stays but is now breakable.
+                // Pass through to normal behavior below.
             }
             match reg.block(tb).interaction.as_deref() {
                 Some("crafting") => {

@@ -686,6 +686,135 @@ fn on_tick(dt) {
 }
 
 #[test]
+fn base_gate_definitions_resolve_and_map_by_block() {
+    let reg = base_reg();
+    let idx = reg
+        .gate_id("base:sealed_elder_door")
+        .expect("base sealed door registers");
+    let gate = &reg.gates[idx];
+    assert_eq!(gate.flag, "elder_told_tales");
+    assert_eq!(gate.value, "true");
+    assert_eq!(
+        gate.unlocked_block,
+        reg.block_id("base:air"),
+        "the sealed door opens to air"
+    );
+    assert!(gate.unbreakable_when_locked, "default stays sealed");
+    assert_eq!(
+        gate.message, "The elder's door is sealed shut.",
+        "authored message preserved"
+    );
+    // The reverse map lets the runtime find the gate from its placed block.
+    assert_eq!(
+        reg.gate_for_block(gate.block),
+        Some(idx),
+        "sealed block maps back to its gate"
+    );
+    // A `type = "gate"` entry must never be treated as an ore.
+    assert!(
+        reg.ores.iter().all(|ore| ore.block != gate.block),
+        "gate sealed block is not also an ore"
+    );
+}
+
+#[test]
+fn gate_feature_errors_fail_the_mod_and_never_gate() {
+    let root = tmp_dir("gate-bad-mod");
+    let dir = root.join("gatecrash");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"gatecrash\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("features.toml"),
+        r#"
+[[feature]]
+type = "gate"
+id = "ghost_door"
+block = "base:no_such_block"
+flag = "ghost_key"
+value = "true"
+"#,
+    )
+    .unwrap();
+    let invalid = registry::load(&root);
+    assert!(
+        invalid
+            .material_errors
+            .iter()
+            .any(|e| e.contains("gatecrash:ghost_door") && e.contains("unknown block")),
+        "unknown sealed block fails the pack: {:?}",
+        invalid.material_errors
+    );
+    assert!(
+        invalid.gates.iter().all(|g| g.id != "gatecrash:ghost_door"),
+        "the broken gate never installs"
+    );
+
+    // A gate missing its flag key would softlock forever — also refused.
+    let root2 = tmp_dir("gate-noflag-mod");
+    let dir2 = root2.join("gatecrash2");
+    std::fs::create_dir_all(&dir2).unwrap();
+    std::fs::write(
+        dir2.join("mod.toml"),
+        "id = \"gatecrash2\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir2.join("features.toml"),
+        r#"
+[[feature]]
+type = "gate"
+id = "no_flag"
+block = "base:cracked_masonry"
+"#,
+    )
+    .unwrap();
+    let invalid2 = registry::load(&root2);
+    assert!(
+        invalid2
+            .material_errors
+            .iter()
+            .any(|e| e.contains("missing `flag`")),
+        "missing flag key fails the pack: {:?}",
+        invalid2.material_errors
+    );
+}
+
+#[test]
+fn gate_feature_in_an_external_mod_resolves_qualified() {
+    let root = tmp_dir("gate-good-mod");
+    let dir = root.join("gateworks");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"gateworks\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("features.toml"),
+        r#"
+[[feature]]
+type = "gate"
+id = "iron_vault"
+block = "base:cracked_masonry"
+flag = "vault_key"
+value = "true"
+unlocked_block = "base:air"
+"#,
+    )
+    .unwrap();
+    let reg = registry::load(&root);
+    let idx = reg
+        .gate_id("gateworks:iron_vault")
+        .expect("external mod gate registers with its mod prefix");
+    assert_eq!(reg.gates[idx].flag, "vault_key");
+    assert_eq!(reg.gates[idx].unlocked_block, reg.block_id("base:air"));
+}
+
+#[test]
 fn script_reads_world_state() {
     let root = tmp_dir("scriptread");
     let mods = write_script_mod(

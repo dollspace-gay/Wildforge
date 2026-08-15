@@ -248,3 +248,19 @@ vein_size = 5
 per_chunk = 1
 chance = 0.28
 y_range = [36, 72]
+
+# -- spec 2.5: flag-gated features --
+
+# The elder's sealed study door: `feature:base:sealed_elder_door` markers
+# place a `cracked_masonry` seal that cannot be mined and refuses right-click
+# until the player's KV flag `elder_told_tales` reads `true` (the cerium
+# quest's SetFlag reward), then opens (replaced by air). The sealed block is
+# the same wall material the platform already wears.
+[[feature]]
+type = "gate"
+id = "sealed_elder_door"
+block = "base:cracked_masonry"
+flag = "elder_told_tales"
+value = "true"
+unlocked_block = "base:air"
+message = "The elder's door is sealed shut."

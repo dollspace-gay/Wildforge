@@ -2249,8 +2249,100 @@ fn npc_marker_spawns_elder_and_never_via_wildlife() {
 }
 
 #[test]
-fn assembly_walk_is_deterministic() {
+fn feature_marker_places_sealed_gate_and_breaks_are_refused() {
     let reg = base_reg();
+    let mut w = test_world_with("gateplace", reg.clone());
+    let asm = piece_assembly();
+    let (markers, count) = w.place_assembly(asm, tchunk(0, 0), 0x9A51);
+    assert!(count >= 1, "entry piece placed");
+    assert!(
+        markers
+            .iter()
+            .any(|m| m.kind == "feature:base:sealed_elder_door"),
+        "assembly carries the feature marker"
+    );
+    // Consume feature markers exactly as the chunkgen seam does: place the
+    // sealed block and record the gated position.
+    let gate_idx = reg
+        .gate_id("base:sealed_elder_door")
+        .expect("base gate registers");
+    let mut consumed = 0;
+    for marker in &markers {
+        if let Some(gate_name) = marker.kind.strip_prefix("feature:")
+            && let Some(gate) = reg.gate_id(gate_name)
+        {
+            w.place_gate_at(gate, marker.at);
+            consumed += 1;
+        }
+    }
+    assert!(consumed >= 1, "feature marker consumed");
+    let sealed = markers
+        .iter()
+        .find(|m| m.kind == "feature:base:sealed_elder_door")
+        .expect("marker present")
+        .at;
+    let gate_def = &reg.gates[gate_idx];
+    assert!(
+        w.is_gated_for_test(sealed),
+        "sealed position recorded as gated"
+    );
+    assert_eq!(
+        w.get_block_at(sealed),
+        gate_def.block,
+        "sealed block placed at the marker"
+    );
+    // The world-level backstop: a gated, unbreakable-when-locked block
+    // cannot be mined regardless of tool or mode.
+    assert!(
+        w.break_block_at(sealed, None, true, false).is_none(),
+        "sealed gate refuses breaking"
+    );
+    // Once the gate is opened (interact path calls ungate_at), it breaks.
+    w.ungate_at(sealed);
+    assert!(
+        w.break_block_at(sealed, None, true, false).is_some(),
+        "ungated seal breaks normally"
+    );
+}
+
+#[test]
+fn feature_marker_unknown_gate_places_nothing() {
+    let reg = base_reg();
+    let mut w = test_world_with("gateunknown", reg.clone());
+    // Build the marker from a resolved assembly marker, but rename its kind
+    // to an unknown gate id — mirroring what the chunkgen seam skips.
+    let asm = piece_assembly();
+    let (markers, _) = w.place_assembly(asm, tchunk(0, 0), 0x9A52);
+    let unknown = markers
+        .iter()
+        .find(|m| m.kind == "feature:base:sealed_elder_door")
+        .cloned()
+        .map(|mut m| {
+            m.kind = "feature:base:no_such_gate".into();
+            m
+        })
+        .expect("a resolved feature marker to mutate");
+    // Unknown gate ids are silently skipped: no block, no gated record.
+    for marker in [unknown.clone()] {
+        if let Some(gate_name) = marker.kind.strip_prefix("feature:")
+            && let Some(gate) = reg.gate_id(gate_name)
+        {
+            w.place_gate_at(gate, marker.at);
+        }
+    }
+    assert_eq!(
+        w.get_block_at(unknown.at),
+        reg.block_id("base:air").unwrap_or(AIR),
+        "unknown gate leaves the position empty"
+    );
+    assert!(
+        !w.is_gated_for_test(unknown.at),
+        "unknown gate records nothing"
+    );
+}
+
+#[test]
+fn assembly_walk_is_deterministic() {    let reg = base_reg();
     let asm = piece_assembly();
     let mut a = test_world_with("asmdet-a", reg.clone());
     let mut b2 = test_world_with("asmdet-b", reg.clone());
@@ -2345,4 +2437,42 @@ fn assembly_walk_survives_a_full_world_save_reload() {
         .iter()
         .any(|(cp, c)| cp.face() == tchunk(0, 0).face() && c.raw().contains(&cob.0));
     assert!(persisted, "assembly cells persist across save/reload");
+}
+
+#[test]
+fn gate_positions_persist_across_save_reload() {
+    let reg = base_reg();
+    let name = "gatereload";
+    let dir = std::env::temp_dir().join(format!("wildforge-test-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut w = World::new(42, dir.clone(), reg.clone());
+    for x in -2..=2 {
+        for z in -2..=2 {
+            w.ensure_chunk(tchunk(x, z));
+        }
+    }
+    let gate_idx = reg
+        .gate_id("base:sealed_elder_door")
+        .expect("base gate registers");
+    let sealed = bp(64, 80, 64);
+    w.place_gate_at(gate_idx, sealed);
+    assert!(w.is_gated_for_test(sealed), "gate recorded before save");
+    save_world(&mut w);
+    drop(w);
+    let mut w2 = crate::World::load_or_create(dir, reg.clone()).unwrap();
+    for x in -2..=2 {
+        for z in -2..=2 {
+            w2.ensure_chunk(tchunk(x, z));
+        }
+    }
+    assert!(
+        w2.is_gated_for_test(sealed),
+        "gated position survives save/reload"
+    );
+    // The sealed block still refuses breaking after reload.
+    assert!(
+        w2.break_block_at(sealed, None, true, false).is_none(),
+        "sealed block stays sealed across reload"
+    );
 }

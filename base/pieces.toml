@@ -17,6 +17,8 @@ connectors = [
 markers = [
   # spec 2.4/2.5 seam: a `spawn:npc:<id>` marker places that NPC here.
   { du = 2, dy = 1, dv = 2, kind = "spawn:npc:base:elder" },
+  # ...and a `feature:<id>` marker places a flag-gated sealed block.
+  { du = 2, dy = 1, dv = 1, kind = "feature:base:sealed_elder_door" },
 ]
 cells = [
   # floor ring

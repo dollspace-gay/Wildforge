@@ -1051,6 +1051,11 @@ pub struct World {
     /// the chunk's save-dirty bit so palette remaps never make retrogen
     /// mistake a structure for untouched host rock (or vice versa).
     structure_chunks: HashSet<ChunkPos>,
+    /// Flag-gated feature positions (spec 2.5): world position -> gate index
+    /// into the registry. Sealed blocks placed by `feature:<id>` markers;
+    /// locked until the player's KV flag reads the gate's `value`. Persisted
+    /// so a save never depends on regeneration to know what is sealed.
+    gated: HashMap<BlockPos, usize>,
     /// Bloom ledger: days of post-wrath eruption left per 256-cell.
     pub(crate) bloom: HashMap<RegionCell, f32>,
     /// The spirits of the land, keyed by province.
@@ -1477,6 +1482,7 @@ impl World {
             blessed_streak: HashMap::new(),
             player_touched: HashSet::new(),
             structure_chunks: HashSet::new(),
+            gated: HashMap::new(),
             bloom: HashMap::new(),
             hearts: HashMap::new(),
             bloom_spent: HashMap::new(),
@@ -2369,6 +2375,37 @@ impl World {
         }
     }
 
+    /// Index of the gate sealing `pos`, if any (spec 2.5).
+    pub fn gate_at(&self, pos: BlockPos) -> Option<usize> {
+        self.gated.get(&pos).copied()
+    }
+
+    /// Place a gate's sealed block at `pos` and record it as gated. Used by
+    /// the `feature:<id>` marker consumer; unknown gate ids never reach here.
+    pub(crate) fn place_gate_at(&mut self, gate: usize, pos: BlockPos) {
+        let reg = self.reg.clone();
+        let Some(definition) = reg.gates.get(gate) else {
+            return;
+        };
+        self.ensure_chunk(pos.chunk());
+        self.set_block_at(pos, definition.block);
+        self.gated.insert(pos, gate);
+        if let Some(chunk) = self.chunks.get_mut(&pos.chunk()) {
+            chunk.modified = true;
+        }
+    }
+    /// Remove a position from the gated registry after it has been unlocked
+    /// and replaced (so it never counts again).
+    pub(crate) fn ungate_at(&mut self, pos: BlockPos) {
+        self.gated.remove(&pos);
+    }
+
+    #[cfg(test)]
+    /// Whether a position is sealed by a gate (for gate tests).
+    pub fn is_gated_for_test(&self, pos: BlockPos) -> bool {
+        self.gated.contains_key(&pos)
+    }
+
     #[cfg(test)]
     /// Whether this chunk is claimed by a structure or piece assembly.
     pub fn is_structure_chunk_for_test(&self, pos: ChunkPos) -> bool {
@@ -2502,6 +2539,19 @@ impl World {
         award_drop: bool,
         affect_ire: bool,
     ) -> Option<BlockBreak> {
+        // Spec 2.5: a sealed gate is unbreakable while its position is gated
+        // and the gate def requires it. This is the world-level backstop —
+        // scripts, commands, and remote hosts cannot bypass the seal even if
+        // the UI layer is bypassed. (The interact path opens gates.)
+        if let Some(gate) = self.gated.get(&pos).copied()
+            && self
+                .reg
+                .gates
+                .get(gate)
+                .is_some_and(|g| g.unbreakable_when_locked)
+        {
+            return None;
+        }
         let block = self.get_block_at(pos);
         if block == AIR || self.reg.block(block).hardness.is_none() {
             return None;

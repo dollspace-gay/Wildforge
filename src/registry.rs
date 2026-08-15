@@ -614,6 +614,30 @@ pub enum QuestReward {
     SetFlag(String, String),
 }
 
+/// A flag-gated feature (spec 2.5): a sealed block placed by a
+/// `feature:<id>` assembly marker that stays locked until the player's KV
+/// flag `flag` reads `value`, then breaks normally or is replaced by
+/// `unlocked_block`. Definitions are data; the locked state is derived live
+/// from the per-player KV each time the block is touched.
+#[derive(Clone, Debug)]
+pub struct GateDef {
+    /// Qualified id referenced by `feature:<id>` markers.
+    pub id: String,
+    /// The sealed block placed at the marker.
+    pub block: BlockId,
+    /// Per-player KV key consulted to unlock (e.g. `elder_told_tales`).
+    pub flag: String,
+    /// KV value that unlocks the gate (default `"true"`).
+    pub value: String,
+    /// If set, the sealed block is replaced by this once unlocked (e.g. air
+    /// to "open" a door). If `None`, the sealed block just becomes breakable.
+    pub unlocked_block: Option<BlockId>,
+    /// Locked-interaction toast.
+    pub message: String,
+    /// Whether the sealed block is unbreakable while locked (default true).
+    pub unbreakable_when_locked: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AquaticHabitatDef {
     pub temperature_c: [f32; 2],
@@ -910,6 +934,13 @@ pub struct Registry {
     pub pieces: Vec<PieceDef>,
     pub pools: Vec<PoolDef>,
     pub assemblies: Vec<AssemblyDef>,
+    /// Flag-gated features (spec 2.5): sealed blocks placed by
+    /// `feature:<id>` markers, locked until a per-player KV flag reads a
+    /// value. Indexed by `gate_for_block` at load.
+    pub gates: Vec<GateDef>,
+    /// Sealed block -> gate index, for looking up a gate by its placed block
+    /// without marker provenance.
+    pub gate_for_block: HashMap<BlockId, usize>,
     pub loots: HashMap<String, Vec<LootEntry>>,
     /// Load-time conservation/schema failures. Keeping these attached to the
     /// registry lets the mods screen explain a bad pack and lets production
@@ -2104,6 +2135,19 @@ struct FeatureToml {
     shape: Option<String>,
     #[serde(default)]
     chance: Option<f32>,
+    // -- spec 2.5 gate features (`type = "gate"`) --
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    flag: Option<String>,
+    #[serde(default)]
+    value: Option<String>,
+    #[serde(default)]
+    unlocked_block: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    unbreakable_when_locked: Option<bool>,
 }
 
 #[derive(Deserialize, Default)]
@@ -2775,6 +2819,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         pieces: Vec::new(),
         pools: Vec::new(),
         assemblies: Vec::new(),
+        gates: Vec::new(),
+        gate_for_block: HashMap::new(),
         loots: HashMap::new(),
         material_errors: Vec::new(),
         arcane_registry: crate::arcane::ResonanceRegistry::base(),
@@ -4450,43 +4496,115 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             }
         }
     }
+    // Gate errors are collected locally: `validate_material_graph` rebuilds
+    // `material_errors` from scratch at the end of build, so pushing straight
+    // to it here would be wiped.
+    let mut gate_errors = Vec::new();
     for (modid, f) in pending_features {
-        if f.r#type != "ore" {
-            continue;
+        if f.r#type == "ore" {
+            let lookup_block = |name: &str| {
+                reg.block_id(&qualify(&modid, name))
+                    .or_else(|| reg.block_id(name))
+            };
+            let (Some(block), Some(replaces)) = (
+                lookup_block(&f.block),
+                lookup_block(f.replaces.as_deref().unwrap_or("base:stone")),
+            ) else {
+                continue;
+            };
+            let [y0, y1] = f.y_range.unwrap_or([4, 60]);
+            reg.ores.push(OreFeature {
+                block,
+                replaces,
+                vein_size: f.vein_size.unwrap_or(5).clamp(1, 32),
+                per_chunk: f.per_chunk.unwrap_or(6).clamp(0, 64),
+                y_min: y0,
+                y_max: y1,
+                shape: match f.shape.as_deref() {
+                    Some("seam") => VeinShape::Seam,
+                    Some("streak") => VeinShape::Streak,
+                    _ => VeinShape::Walk,
+                },
+                chance: f.chance.unwrap_or(1.0).clamp(0.0, 1.0),
+                resource_key: reg.block(block).name.clone(),
+                mod_id: modid.clone(),
+                retrogen: reg
+                    .mods
+                    .iter()
+                    .find(|info| info.id == modid)
+                    .and_then(|info| info.retrogen)
+                    .unwrap_or(RetrogenPolicy::NoRetrogen),
+            });
+        } else if f.r#type == "gate" {
+            // Spec 2.5: a sealed block placed by `feature:<id>` markers,
+            // locked until the player's KV flag reads `value`. An unknown
+            // block fails the pack load (a sealed wall you can never open is
+            // a silent softlock, unlike an unknown ore that just never grows).
+            let Some(gate_id) = f.id.as_deref() else {
+                gate_errors
+                    .push(format!("{modid}: gate feature missing `id`"));
+                continue;
+            };
+            let id = qualify(&modid, gate_id);
+            if reg.gates.iter().any(|g| g.id == id) {
+                gate_errors
+                    .push(format!("{id}: duplicate gate feature id"));
+                continue;
+            }
+            let Some(flag) = f.flag.clone() else {
+                gate_errors.push(format!(
+                    "{id}: gate feature missing `flag` (the KV key it unlocks on)"
+                ));
+                continue;
+            };
+            let lookup_block = |name: &str| {
+                reg.block_id(&qualify(&modid, name))
+                    .or_else(|| reg.block_id(name))
+            };
+            let Some(block) = lookup_block(&f.block) else {
+                gate_errors.push(format!(
+                    "{id}: gate feature references unknown block {:?}",
+                    f.block
+                ));
+                continue;
+            };
+            let unlocked_block = f
+                .unlocked_block
+                .as_deref()
+                .and_then(lookup_block)
+                .or_else(|| {
+                    if f.unlocked_block.as_deref() == Some("base:air") {
+                        Some(AIR)
+                    } else {
+                        None
+                    }
+                });
+            if f.unlocked_block.is_some() && unlocked_block.is_none() {
+                gate_errors.push(format!(
+                    "{id}: gate feature references unknown unlocked_block {:?}",
+                    f.unlocked_block.as_deref().unwrap_or_default()
+                ));
+                continue;
+            }
+            reg.gates.push(GateDef {
+                id,
+                block,
+                flag,
+                value: f.value.clone().unwrap_or_else(|| "true".into()),
+                unlocked_block,
+                message: f
+                    .message
+                    .clone()
+                    .unwrap_or_else(|| "It's locked tight.".into()),
+                unbreakable_when_locked: f.unbreakable_when_locked.unwrap_or(true),
+            });
         }
-        let lookup_block = |name: &str| {
-            reg.block_id(&qualify(&modid, name))
-                .or_else(|| reg.block_id(name))
-        };
-        let (Some(block), Some(replaces)) = (
-            lookup_block(&f.block),
-            lookup_block(f.replaces.as_deref().unwrap_or("base:stone")),
-        ) else {
-            continue;
-        };
-        let [y0, y1] = f.y_range.unwrap_or([4, 60]);
-        reg.ores.push(OreFeature {
-            block,
-            replaces,
-            vein_size: f.vein_size.unwrap_or(5).clamp(1, 32),
-            per_chunk: f.per_chunk.unwrap_or(6).clamp(0, 64),
-            y_min: y0,
-            y_max: y1,
-            shape: match f.shape.as_deref() {
-                Some("seam") => VeinShape::Seam,
-                Some("streak") => VeinShape::Streak,
-                _ => VeinShape::Walk,
-            },
-            chance: f.chance.unwrap_or(1.0).clamp(0.0, 1.0),
-            resource_key: reg.block(block).name.clone(),
-            mod_id: modid.clone(),
-            retrogen: reg
-                .mods
-                .iter()
-                .find(|info| info.id == modid)
-                .and_then(|info| info.retrogen)
-                .unwrap_or(RetrogenPolicy::NoRetrogen),
-        });
+    }
+    // Reverse block -> gate map, built after every gate resolves so a shared
+    // sealed block can back multiple gates (last wins; authors should use one
+    // block per gate unless they deliberately share).
+    for (index, gate) in reg.gates.iter().enumerate() {
+        reg.gate_for_block.insert(gate.block, index);
     }
 
     // Every block a builder cannot otherwise hold gets a creative-only
@@ -4580,6 +4698,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     }
 
     reconcile_material_definitions(&mut reg);
+    // Gate feature errors survive past `validate_material_graph`, which
+    // rebuilds `material_errors` from scratch.
+    reg.material_errors.extend(gate_errors);
     reg.mods.append(&mut failed);
     reg
 }

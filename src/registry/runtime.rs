@@ -56,6 +56,19 @@ impl Registry {
         self.quests.iter().position(|q| q.id == name)
     }
 
+    /// Index of a flag-gated feature by its qualified id (`feature:<id>`
+    /// markers reference this).
+    pub fn gate_id(&self, name: &str) -> Option<usize> {
+        self.gates.iter().position(|g| g.id == name)
+    }
+
+    /// The gate backing a sealed block, if any (reverse of `gate_id`; lets
+    /// the runtime find a gate from a placed block without marker
+    /// provenance). The map is `block -> gate index`.
+    pub fn gate_for_block(&self, block: BlockId) -> Option<usize> {
+        self.gate_for_block.get(&block).copied()
+    }
+
     /// `true` when a mob species is a friendly NPC (spec 3.1).
     pub fn is_npc_species(&self, species: usize) -> bool {
         self.animals.get(species).is_some_and(|a| a.npc.is_some())

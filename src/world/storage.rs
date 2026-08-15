@@ -302,6 +302,23 @@ impl World {
             path.clone(),
             super::persistence::atomic_replace(&path, &structures),
         );
+        // Flag-gated feature positions (spec 2.5): each record is the 6-byte
+        // block position (face/u/y/v) followed by the 2-byte gate index.
+        let mut gates = Vec::with_capacity(4 + self.gated.len() * 8);
+        gates.extend_from_slice(b"WFG1");
+        for (pos, gate) in &self.gated {
+            gates.push(pos.face() as u8);
+            gates.extend_from_slice(&pos.u().to_le_bytes());
+            gates.push(pos.y());
+            gates.extend_from_slice(&pos.v().to_le_bytes());
+            gates.extend_from_slice(&(*gate as u16).to_le_bytes());
+        }
+        let path = self.save_dir.join("gated");
+        report.record(
+            "flag-gated feature marks",
+            path.clone(),
+            super::persistence::atomic_replace(&path, &gates),
+        );
         report.failures
     }
 
@@ -556,6 +573,29 @@ impl World {
                     )
                 {
                     self.structure_chunks.insert(pos);
+                }
+            }
+        }
+        if let Ok(data) = fs::read(self.save_dir.join("gated")) {
+            for p in data
+                .strip_prefix(b"WFG1")
+                .unwrap_or_default()
+                .chunks_exact(8)
+            {
+                let u = u16::from_le_bytes([p[1], p[2]]);
+                let v = u16::from_le_bytes([p[4], p[5]]);
+                let Some(face) = crate::planet::Face::from_u8(p[0]) else {
+                    continue;
+                };
+                let Ok(pos) = crate::planet::BlockPos::new(face, u, p[3], v) else {
+                    continue;
+                };
+                let gate = u16::from_le_bytes([p[6], p[7]]) as usize;
+                // Only keep gates that still resolve (a mod that removed a
+                // gate def leaves the sealed block breakable-by-registry —
+                // an unbreakable wall with no unlock is a softlock).
+                if gate < self.reg.gates.len() {
+                    self.gated.insert(pos, gate);
                 }
             }
         }
@@ -1125,6 +1165,17 @@ impl World {
             chunk.dirty = true;
         }
         self.load_remap = self.read_palette_remap();
+        // Re-resolve gated positions (spec 2.5) against the new registry's
+        // gate list by their sealed block; a gate whose def was removed (or
+        // whose sealed block changed) stops gating rather than softlocking
+        // the world with a permanent unbreakable wall.
+        let mut gates: HashMap<_, _> = HashMap::with_capacity(self.gated.len());
+        for pos in std::mem::take(&mut self.gated).into_keys() {
+            if let Some(gate) = self.reg.gate_for_block(self.get_block_at(pos)) {
+                gates.insert(pos, gate);
+            }
+        }
+        self.gated = gates;
     }
 
     // ---------------- lighting ----------------
