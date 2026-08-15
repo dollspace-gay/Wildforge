@@ -3062,6 +3062,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         HashMap<String, u16>,
         Option<u16>,
     )> = Vec::new();
+    #[allow(clippy::type_complexity)]
     let mut pending_npcs: Vec<(String, NpcToml, u16, u16, HashMap<String, u16>)> = Vec::new();
     let mut pending_dialogues: Vec<(String, DialogueToml)> = Vec::new();
     let mut pending_quests: Vec<(String, QuestToml)> = Vec::new();
@@ -4308,17 +4309,16 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 .rewards
                 .iter()
                 .filter_map(|reward| {
-                    if let Some(item) = &reward.item
-                        && let Some(iid) = lookup_item(&reg, &modid, item)
-                    {
+                    if let Some(item) = &reward.item {
+                        let iid = lookup_item(&reg, &modid, item)?;
                         Some(QuestReward::Give(iid, reward.count.max(1)))
-                    } else if let Some(flag) = &reward.set_flag {
-                        Some(QuestReward::SetFlag(
-                            flag.clone(),
-                            reward.flag_value.clone().unwrap_or_else(|| "1".into()),
-                        ))
                     } else {
-                        None
+                        reward.set_flag.as_ref().map(|flag| {
+                            QuestReward::SetFlag(
+                                flag.clone(),
+                                reward.flag_value.clone().unwrap_or_else(|| "1".into()),
+                            )
+                        })
                     }
                 })
                 .collect(),

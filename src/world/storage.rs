@@ -395,6 +395,26 @@ impl World {
                     m.cargo = Some(cargo);
                 }
                 self.mobs.push(m);
+                // NPC companion species keep a runtime NpcInstance so their
+                // patrol/dialogue survive a reload (spec 3.1 persistence).
+                if let Some(species_idx) = self.reg.animal_id(&t.species)
+                    && let Some((def_idx, npc)) = self
+                        .reg
+                        .npcs
+                        .iter()
+                        .enumerate()
+                        .find(|(_, d)| d.species == species_idx)
+                {
+                    // The instance's mob_id must equal the companion Mob's
+                    // stable id. Stamp it now instead of waiting for the lazy
+                    // id pass in tick_mobs, so the two match immediately.
+                    let mob = self.mobs.last_mut().expect("mob just pushed");
+                    mob.id = self.next_mob_id;
+                    self.next_mob_id = self.next_mob_id.saturating_add(1);
+                    self.npcs.push(
+                        crate::npc::NpcInstance::new(&npc.clone(), pos, mob.id).with_def(def_idx),
+                    );
+                }
             }
         }
         if let Ok(data) = fs::read(self.save_dir.join("rire"))

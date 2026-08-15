@@ -223,6 +223,33 @@ fn mob_persistence_round_trips_and_skips_unknown() {
 }
 
 #[test]
+fn npc_companion_persistence_round_trips() {
+    let reg = base_reg();
+    let dir = tmp_dir("npcsave");
+    let mut w = World::new(13, dir.clone(), reg.clone());
+    // Spawn the elder via the normal seam; save and reload.
+    let def_idx = reg.npc_id("base:elder").expect("base elder registers");
+    let at = ep(Vec3::new(3.5, 90.0, -2.5));
+    let mob_id = w.spawn_npc_at(def_idx, at).expect("npc fits caps");
+    assert!(w.npc_by_mob(mob_id).is_some(), "instance exists after spawn");
+    save_world(&mut w);
+
+    let w2 = World::load_or_create(dir, reg.clone()).unwrap();
+    assert_eq!(w2.npc_count(), 1, "npc instance restored on load");
+    let npc = w2.npcs().first().expect("restored instance");
+    assert_eq!(npc.mob_id, mob_id, "instance links to the same companion mob");
+    assert_eq!(npc.def, def_idx);
+    assert_eq!(npc.dialogue.as_deref(), Some("base:elder"));
+    let companion = w2
+        .mobs()
+        .iter()
+        .find(|m| m.id == npc.mob_id)
+        .expect("companion mob restored");
+    assert_eq!(companion.species, reg.npcs[def_idx].species);
+    assert!((companion.pos - Vec3::new(3.5, 90.0, -2.5)).length() < 0.01);
+}
+
+#[test]
 fn wildlife_seed_marks_persist() {
     let reg = base_reg();
     let dir = tmp_dir("mobmark");

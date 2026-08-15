@@ -1116,6 +1116,9 @@ pub struct World {
     /// (guest id, stack) owed over the wire: mining drops, kill loot,
     /// recovered arrows, brush finds — full stacks so durability rides.
     pending_gives: Vec<(u32, ItemStack)>,
+    /// Live NPCs (spec Part 3.1). Each links a companion Mob (by stable id)
+    /// to its authoring def + patrol walker. Persisted via the mob save path.
+    npcs: Vec<crate::npc::NpcInstance>,
     /// Next stable mob id (host side; ids exist for the wire).
     next_mob_id: u32,
     #[cfg(test)]
@@ -1236,6 +1239,11 @@ pub const SEASONS: [&str; 4] = ["SPRING", "SUMMER", "AUTUMN", "WINTER"];
 
 /// Hard cap on living mobs — memory/perf backstop, far above natural density.
 pub const MOB_CAP: usize = 320;
+
+/// Cap on live NPCs. Authored NPCs are rare and placed deliberately (a
+/// `spawn:npc:<id>` marker or a mod's `on_world_start`), so a small budget
+/// is the right shape — it stops a bad script from flooding the world.
+pub const NPC_CAP: usize = 24;
 
 impl World {
     /// Move material carried by physically consumed stacks into the explicit
@@ -1491,6 +1499,7 @@ impl World {
             edit_log: Vec::new(),
             falling: Vec::new(),
             pending_gives: Vec::new(),
+            npcs: Vec::new(),
             next_mob_id: 1,
             #[cfg(test)]
             multiblock_revalidations: 0,

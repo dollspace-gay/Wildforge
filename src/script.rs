@@ -26,6 +26,13 @@ pub enum Cmd {
     Hud(String),
     Sound(String),
     SpawnAnimal(String, EntityPos),
+    SpawnNpc(String, EntityPos),
+    QuestProgress {
+        quest_id: String,
+        objective: String,
+        n: u32,
+    },
+    QuestAccept(String),
     ArcaneMoveWorking {
         mod_id: String,
         from: u64,
@@ -287,6 +294,39 @@ impl ScriptHost {
                 q.borrow_mut().push(Cmd::SpawnAnimal(species.into(), pos));
             },
         );
+        let q = queue.clone();
+        engine.register_fn(
+            "spawn_npc",
+            move |npc: &str, face: &str, u: i64, y: i64, v: i64| {
+                let Some(block) = block_pos(face, u, y, v) else {
+                    return;
+                };
+                let Ok(pos) = EntityPos::new(
+                    block.face(),
+                    f32::from(block.u()) + 0.5,
+                    f32::from(block.y()),
+                    f32::from(block.v()) + 0.5,
+                ) else {
+                    return;
+                };
+                q.borrow_mut().push(Cmd::SpawnNpc(npc.into(), pos));
+            },
+        );
+        // Quest progression (spec 3.3): queue an increment; the game loop
+        // applies it (never write KV from inside the script).
+        let q = queue.clone();
+        engine.register_fn("quest_progress", move |quest_id: &str, objective: &str, n: i64| {
+            q.borrow_mut().push(Cmd::QuestProgress {
+                quest_id: quest_id.into(),
+                objective: objective.into(),
+                n: n.max(1) as u32,
+            });
+        });
+        // Accept a quest by id (gated on prereq by the apply side).
+        let q = queue.clone();
+        engine.register_fn("quest_accept", move |quest_id: &str| {
+            q.borrow_mut().push(Cmd::QuestAccept(quest_id.into()));
+        });
         let cur = current.clone();
         engine.register_fn("log", move |msg: &str| {
             eprintln!("[mod:{}] {msg}", cur.borrow());
@@ -382,6 +422,43 @@ impl ScriptHost {
                 .as_ref()
                 .is_some_and(|a| a.iter_functions().any(|f| f.name == event))
         })
+    }
+
+    /// Run one named hook function (`"mod:fn"` or bare `"fn"` = any mod that
+    /// defines it) over string args, returning its raw return value. Used by
+    /// dialogue `condition`/`callback` and node-text hooks so scripts can
+    /// gate node availability, mutate flags, and return interpolated text.
+    pub fn run_fn(
+        &mut self,
+        world: &World,
+        hook: &crate::registry::ScriptHook,
+        args: Vec<String>,
+    ) -> Dynamic {
+        let _guard = WorldGuard::new(world);
+        let hook_mod = &hook.mod_id;
+        for m in &self.mods {
+            let Some(ast) = &m.ast else { continue };
+            if !hook_mod.is_empty() && &m.id != hook_mod {
+                continue;
+            }
+            if !ast.iter_functions().any(|f| f.name == hook.fn_name) {
+                continue;
+            }
+            *self.current.borrow_mut() = m.id.clone();
+            let mut scope = Scope::new();
+            let dyn_args: Vec<Dynamic> = args
+                .iter()
+                .map(|s| Dynamic::from(s.clone()))
+                .collect();
+            match self
+                .engine
+                .call_fn::<Dynamic>(&mut scope, ast, &hook.fn_name, dyn_args)
+            {
+                Ok(ret) => return ret,
+                Err(e) => eprintln!("[mod:{}] {}: {e}", m.id, hook.fn_name),
+            }
+        }
+        Dynamic::UNIT
     }
 
     pub fn take_cmds(&self) -> Vec<Cmd> {

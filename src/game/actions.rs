@@ -1340,6 +1340,26 @@ impl Game {
                 let def = &reg.animals[sp];
                 let def_carrier = def.carrier;
                 let def_label = def.label.clone();
+                // Talking: right-clicking a friendly NPC opens its dialogue
+                // tree (spec 3.2) instead of the animal interactions below.
+                // NPCs never feed/tame/cargo/ride.
+                if reg.is_npc_species(sp) {
+                    let root = self
+                        .server
+                        .world
+                        .npc_by_mob(mob_id)
+                        .and_then(|npc| npc.dialogue.clone())
+                        .and_then(|d| reg.dialogues.iter().find(|dd| dd.id == d).cloned())
+                        .map(|dd| dd.root)
+                        .unwrap_or_default();
+                    self.input.action_cooldown = 0.3;
+                    self.set_screen(Screen::Dialog {
+                        npc: mob_id,
+                        node_id: root,
+                        choice_sel: 0,
+                    });
+                    return;
+                }
                 // Feeding: breeds as ever, and repeated meals TAME —
                 // a tamed animal never flees people and takes a lead.
                 if let (Some(bf), Some(h)) = (def.breed_food, held)
@@ -2901,6 +2921,28 @@ impl Game {
                         let mut m = mobs::Mob::new_at(si, pos, 0.0);
                         m.health = reg.animals[si].health;
                         self.server.world.spawn_mob(m);
+                    }
+                }
+                script::Cmd::SpawnNpc(name, pos) => {
+                    if let Some(ni) = reg.npc_id(&name)
+                        && self.server.world.mob_count() < world::MOB_CAP
+                        && self.server.world.npc_count() < world::NPC_CAP
+                    {
+                        self.server.world.spawn_npc_at(ni, pos);
+                    }
+                }
+                script::Cmd::QuestProgress {
+                    quest_id,
+                    objective,
+                    n,
+                } => {
+                    if !objective.is_empty() {
+                        self.quest_progress_apply(&quest_id, &objective, n);
+                    }
+                }
+                script::Cmd::QuestAccept(quest_id) => {
+                    if let Err(error) = self.quest_accept(&quest_id) {
+                        self.toast(error);
                     }
                 }
                 script::Cmd::ArcaneMoveWorking {

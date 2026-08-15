@@ -134,6 +134,45 @@ impl World {
         self.mobs.len()
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn npcs(&self) -> &[crate::npc::NpcInstance] {
+        &self.npcs
+    }
+
+    pub fn npc_count(&self) -> usize {
+        self.npcs.len()
+    }
+
+    /// The NPC instance driving the given mob, if that mob is an NPC.
+    pub fn npc_by_mob(&self, mob_id: u32) -> Option<&crate::npc::NpcInstance> {
+        self.npcs.iter().find(|n| n.mob_id == mob_id)
+    }
+
+    /// Spawn a def's companion mob plus its NPC instance in one call,
+    /// returning the mob's stable id. Used by the script `spawn_npc` host fn
+    /// and the assembly-marker consumer, which have only a def name/pos.
+    pub fn spawn_npc_at(&mut self, def: usize, pos: crate::planet::EntityPos) -> Option<u32> {
+        let npc = self.reg.npcs.get(def)?.clone();
+        if self.mobs.len() >= MOB_CAP || self.npcs.len() >= NPC_CAP {
+            return None;
+        }
+        let species = npc.species;
+        let mob_id = if self.next_mob_id == u32::MAX {
+            return None;
+        } else {
+            self.next_mob_id
+        };
+        self.next_mob_id += 1;
+        let mut m = crate::mobs::Mob::new_at(species, pos, 0.0);
+        m.health = self.reg.animals[species].health;
+        m.id = mob_id;
+        self.mobs.push(m);
+        let mut instance = crate::npc::NpcInstance::new(&npc, pos, mob_id).with_def(def);
+        instance.species = species;
+        self.npcs.push(instance);
+        Some(mob_id)
+    }
+
     pub fn spawn_mob(&mut self, mob: Mob) {
         let mut mob = mob;
         if mob.id == 0 {
@@ -988,6 +1027,19 @@ impl World {
             }
         }
         let mut mobs = std::mem::take(&mut self.mobs);
+        // NPC walkers drive their companion mobs before the ordinary AI
+        // pass: fixed NPCs idle, patrol NPCs walk their loop (spec 3.1).
+        let mut npcs = std::mem::take(&mut self.npcs);
+        for npc in &mut npcs {
+            let Some(m) = mobs.iter_mut().find(|m| m.id == npc.mob_id) else {
+                continue;
+            };
+            if let Some(cp) = m.pos.chunk()
+                && self.chunks.contains_key(&cp)
+            {
+                npc.tick(m, dt);
+            }
+        }
         for m in &mut mobs {
             // Frozen until its chunk streams in: an unloaded chunk reads as
             // air, and ticking against it drops the mob through the world.
@@ -1231,6 +1283,7 @@ impl World {
             }
         }
         self.mobs = mobs;
+        self.npcs = npcs;
 
         // Repopulation: overhunted wildlife slowly recovers, away from the
         // player and only under the local cap.

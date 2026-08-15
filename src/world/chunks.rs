@@ -927,7 +927,28 @@ impl World {
             if !h.is_multiple_of(asm.rarity) {
                 continue;
             }
-            self.place_assembly(asm.clone(), pos, h);
+            let (markers, _) = self.place_assembly(asm.clone(), pos, h);
+            // Spec 2.4/2.5 seam — first consumer: `spawn:npc:<id>` markers
+            // place their NPC at the resolved world position. The NPC id is
+            // `mod:npc` qualified; an unknown id is silently skipped (the
+            // piece stays, its occupant just isn't there).
+            for marker in markers {
+                if let Some(npc_name) = marker.kind.strip_prefix("spawn:npc:")
+                    && let Some(ni) = reg.npc_id(npc_name)
+                {
+                    let at = marker.at;
+                    let surface = at.surface();
+                    let y = self.surface_height_at(surface) as u8;
+                    if let Ok(pos) = crate::planet::EntityPos::new(
+                        surface.face(),
+                        f32::from(surface.u()) + 0.5,
+                        f32::from(y) + 1.05,
+                        f32::from(surface.v()) + 0.5,
+                    ) {
+                        self.spawn_npc_at(ni, pos);
+                    }
+                }
+            }
             break;
         }
     }

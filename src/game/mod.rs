@@ -7,6 +7,7 @@ mod capture;
 mod containers;
 mod content;
 mod demos;
+mod dialogue;
 mod frame;
 mod input;
 mod interaction;
@@ -40,7 +41,7 @@ const REACH: f32 = 5.0;
 const MAX_HEALTH: f32 = 14.0; // base half-hearts (7 hearts)
 const MAX_AIR: f32 = 15.0; // seconds of breath
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 enum Screen {
     Title,
     NewWorld,
@@ -65,6 +66,16 @@ enum Screen {
     SignEdit(crate::planet::BlockPos),
     /// A market stall: the owner manages, everyone else shops.
     Stall(crate::planet::BlockPos),
+    /// Talking to a friendly NPC (spec 3.2): the dialogue tree in
+    /// `reg.dialogues` selected by the NPC's def. Holds the NPC mob id,
+    /// the current node id, and the highlighted choice row.
+    Dialog {
+        npc: u32,
+        node_id: String,
+        choice_sel: usize,
+    },
+    /// The quest journal (spec 3.3): accepted quests and their progress.
+    Journal,
     Join,
     Paused,
     Dead,

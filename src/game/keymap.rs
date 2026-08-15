@@ -39,7 +39,9 @@ impl Game {
                 | Screen::Bloomery(_)
                 | Screen::Kiln(_)
                 | Screen::MobCargo(_)
-                | Screen::Stall(_) => self.set_screen(Screen::Playing),
+                | Screen::Stall(_)
+                | Screen::Dialog { .. }
+                | Screen::Journal => self.set_screen(Screen::Playing),
                 Screen::SignEdit(pos) => self.commit_sign(pos),
                 Screen::Paused => self.set_screen(Screen::Playing),
                 Screen::Settings => {
@@ -87,7 +89,15 @@ impl Game {
                 | Screen::Bloomery(_)
                 | Screen::Kiln(_)
                 | Screen::MobCargo(_)
-                | Screen::Stall(_) => self.set_screen(Screen::Playing),
+                | Screen::Stall(_)
+                | Screen::Dialog { .. }
+                | Screen::Journal => self.set_screen(Screen::Playing),
+                _ => {}
+            },
+            // Quest journal (spec 3.3): read-only progress overview.
+            KeyCode::KeyJ if pressed && self.in_world => match self.ui_state.screen {
+                Screen::Playing => self.set_screen(Screen::Journal),
+                Screen::Journal => self.set_screen(Screen::Playing),
                 _ => {}
             },
             KeyCode::KeyT

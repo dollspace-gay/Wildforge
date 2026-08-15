@@ -117,8 +117,8 @@ impl Game {
             self.ui_state.search_focus = false;
             self.ui_state.browse_view = None;
         }
-        self.ui_state.screen = screen;
         let playing = screen == Screen::Playing;
+        self.ui_state.screen = screen;
         if playing {
             self.capture_mouse(true);
         } else {

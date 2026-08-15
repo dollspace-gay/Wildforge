@@ -33,6 +33,7 @@ mod materials;
 mod mesher;
 mod mobs;
 mod mp;
+mod npc;
 mod net;
 mod particles;
 mod persist;

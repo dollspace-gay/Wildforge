@@ -751,6 +751,19 @@ impl Game {
                     self.set_screen(Screen::Title);
                 }
             }
+            Screen::Dialog { .. } => {
+                // Clicking a choice row runs its callback and advances.
+                let Some(sel) = self.dialog_choice_at_click() else {
+                    return;
+                };
+                self.sfx(Sfx::Click);
+                let (npc, node_id) = match self.ui_state.screen.clone() {
+                    Screen::Dialog { npc, node_id, .. } => (npc, node_id),
+                    _ => (0, String::new()),
+                };
+                self.dialog_select(npc, &node_id, sel);
+            }
+            Screen::Journal => {}
             Screen::Playing => {}
         }
     }

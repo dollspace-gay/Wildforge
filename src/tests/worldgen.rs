@@ -2182,7 +2182,7 @@ fn assembly_walk_places_entry_and_marker() {
     let (markers, count) = w.place_assembly(asm, tchunk(0, 0), 0x1234);
     assert!(count >= 1, "entry piece placed");
     assert!(
-        markers.iter().any(|m| m.kind == "spawn:guard"),
+        markers.iter().any(|m| m.kind == "spawn:npc:base:elder"),
         "entry marker resolved"
     );
     assert!(
@@ -2195,6 +2195,57 @@ fn assembly_walk_places_entry_and_marker() {
         .iter()
         .any(|(cp, c)| cp.face() == tchunk(0, 0).face() && c.raw().contains(&cob.0));
     assert!(found, "entry floor blocks exist somewhere");
+}
+
+#[test]
+fn npc_marker_spawns_elder_and_never_via_wildlife() {
+    let reg = base_reg();
+    let mut w = test_world_with("npcmarker", reg.clone());
+    let asm = piece_assembly();
+    let (markers, count) = w.place_assembly(asm, tchunk(0, 0), 0x1234);
+    assert!(count >= 1, "entry piece placed");
+    assert!(
+        markers.iter().any(|m| m.kind == "spawn:npc:base:elder"),
+        "assembly carries the spawn:npc marker"
+    );
+    // The marker consumer runs on assembly placement within chunkgen; call
+    // the same seam the consumer uses and check the elder spawns.
+    let def_idx = reg.npc_id("base:elder").expect("base elder registers");
+    let elder_species = reg.npcs[def_idx].species;
+    for marker in markers {
+        if let Some(npc_name) = marker.kind.strip_prefix("spawn:npc:")
+            && let Some(ni) = reg.npc_id(npc_name)
+        {
+            let surface = marker.at.surface();
+            let y = w.surface_height_at(surface) as u8;
+            if let Ok(pos) = crate::planet::EntityPos::new(
+                surface.face(),
+                f32::from(surface.u()) + 0.5,
+                f32::from(y) + 1.05,
+                f32::from(surface.v()) + 0.5,
+            ) {
+                w.spawn_npc_at(ni, pos);
+            }
+        }
+    }
+    assert!(
+        w.mobs()
+            .iter()
+            .any(|m| m.species == elder_species),
+        "elder companion mob spawned"
+    );
+    // Companion species is not wildlife: it must never come from the
+    // wildlife seed (empty biomes keep it out).
+    let mut w2 = test_world_with("npcmarker2", reg.clone());
+    w2.ensure_chunk(tchunk(0, 0));
+    w2.ensure_chunk(tchunk(1, 0));
+    w2.ensure_chunk(tchunk(0, 1));
+    assert!(
+        w2.mobs()
+            .iter()
+            .all(|m| reg.animals[m.species].npc.is_none()),
+        "no NPC species seeded by the wildlife pass"
+    );
 }
 
 #[test]

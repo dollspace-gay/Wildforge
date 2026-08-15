@@ -667,6 +667,12 @@ API callable from any handler:
 - `play_sound(name)` — `"click"`, `"place"`, `"pickup"`, `"hurt"`,
   `"craft"`, `"splash"`
 - `spawn_animal(species, face, u, y, v)`
+- `spawn_npc(npc, face, u, y, v)` — spawn a friendly NPC (spec 3.1) at a
+  block position; `npc` is the `mod:npc` id from `npcs.toml`
+- `quest_accept(quest_id)` — accept a quest (its prereq must be done);
+  state lives in the per-player KV, so it survives reloads
+- `quest_progress(quest_id, objective, n)` — increment an objective;
+  completion pays the quest rewards
 - `storage_get(key) -> string` / `storage_set(key, value)` — per-mod
   key-value store, saved with the world
 - `log(text)` — to the terminal, prefixed with your mod id

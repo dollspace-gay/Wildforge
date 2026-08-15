@@ -649,6 +649,43 @@ fn on_block_break(face, u, y, v, block) {
 }
 
 #[test]
+fn script_quest_host_fns_queue_progress_and_accept() {
+    let root = tmp_dir("scriptquest");
+    let mods = write_script_mod(
+        &root,
+        r#"
+fn on_tick(dt) {
+    quest_accept("base:elder_cerium");
+    quest_progress("base:elder_cerium", "gather", 2);
+}
+"#,
+    );
+    let mut host = crate::script::ScriptHost::new();
+    host.load_mods(&mods);
+    assert!(host.wants("on_tick"));
+    let w = test_world("script-quest-world");
+    host.dispatch(&w, "on_tick", (0.1f64,));
+    let cmds = host.take_cmds();
+    assert!(
+        cmds.iter().any(|c| matches!(
+            c,
+            crate::script::Cmd::QuestAccept(id) if id == "base:elder_cerium"
+        )),
+        "quest_accept queues Cmd::QuestAccept"
+    );
+    assert!(
+        cmds.iter().any(|c| matches!(
+            c,
+            crate::script::Cmd::QuestProgress { quest_id, objective, n }
+                if quest_id == "base:elder_cerium" && objective == "gather" && *n == 2
+        )),
+        "quest_progress queues Cmd::QuestProgress"
+    );
+    // Scripts never write KV directly from quest host fns.
+    assert!(host.kv.borrow().is_empty());
+}
+
+#[test]
 fn script_reads_world_state() {
     let root = tmp_dir("scriptread");
     let mods = write_script_mod(

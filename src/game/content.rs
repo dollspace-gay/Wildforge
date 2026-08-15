@@ -99,6 +99,34 @@ impl Game {
             }
             return;
         }
+        // Quest defs (spec 3.3): an accepted quest may never be removed from
+        // a live world, or its progress is orphaned. State lives in the KV
+        // by quest id; check every `quest_<id>` marker against the new defs.
+        if self.in_world {
+            let accepted: Vec<String> = self
+                .content
+                .scripts
+                .kv
+                .borrow()
+                .values()
+                .flat_map(|m| m.keys())
+                .filter_map(|k| k.strip_prefix("quest_").map(str::to_string))
+                .collect();
+            for id in accepted {
+                if !new_reg.quests.iter().any(|q| q.id == id) {
+                    migration_errors.push(format!(
+                        "{id} is accepted in this world and its quest def cannot be removed"
+                    ));
+                }
+            }
+        }
+        if !migration_errors.is_empty() {
+            for error in migration_errors.iter().take(3) {
+                eprintln!("mods: reload refused: {error}");
+                self.toast(format!("reload refused: {error}"));
+            }
+            return;
+        }
         let mut atlas = atlas::build_atlas(
             &new_reg.tex_files,
             &atlas::pack_chain(&self.active_pack_id()),

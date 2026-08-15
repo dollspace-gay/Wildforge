@@ -76,6 +76,11 @@ struct OpenConnector {
 
 /// A resolved spawn/feature marker (spec 2.4/2.5 seam): a typed tag plus the
 /// world position it lands on once its piece is placed.
+///
+/// Marker `kind` convention: `"spawn:npc:<npc_id>"` places that NPC
+/// (`mod:npc` qualified) at the resolved position when chunkgen consumes the
+/// marker — see `chunks.rs`. The NPC is clamped to the surface if `at` is
+/// not walkable, and an unknown id is silently skipped (the piece stays).
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssemblyMarker {

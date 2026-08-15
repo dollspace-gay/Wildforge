@@ -15,7 +15,8 @@ connectors = [
   { du = 0, dy = 0, dv = 2, kind = "path", facing = "west" },
 ]
 markers = [
-  { du = 2, dy = 1, dv = 2, kind = "spawn:guard" },
+  # spec 2.4/2.5 seam: a `spawn:npc:<id>` marker places that NPC here.
+  { du = 2, dy = 1, dv = 2, kind = "spawn:npc:base:elder" },
 ]
 cells = [
   # floor ring
