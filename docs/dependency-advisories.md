@@ -149,3 +149,45 @@ serialization path.
 
 Re-check with `cargo tree --target all -i atomic-polyfill` when upgrading
 Jacquard or Postcard.
+
+---
+
+## RUSTSEC-2026-0249 — `smartstring` is unmaintained
+
+**Status: accepted maintenance risk; removal is upstream-blocked. Assessed
+2026-08-14.**
+
+The `smartstring` repository was archived by its owner on 2026-05-03. The
+advisory reports no memory-safety defect or exploitable behavior; it records
+that the crate no longer receives maintenance.
+
+### Why it is still here
+
+The dependency path is `wildforge` -> `rhai 1.25.1` -> `smartstring 1.0.1`.
+Rhai uses `smartstring::SmartString` throughout its tokenizer, parser, scopes,
+modules, and public `ImmutableString` representation, so it is not an optional
+feature Wildforge can disable. Rhai 1.25.1 is the latest published release,
+and the upstream 1.26.0 development manifest still declares `smartstring`.
+
+Replacing the crate locally would amount to maintaining a fork of the
+scripting engine's central string type. That would add substantially more
+security and compatibility risk than carrying this explicit maintenance-only
+exception while Rhai remains maintained.
+
+### Why there is no vulnerable operation to fence
+
+Unlike a vulnerability advisory, RUSTSEC-2026-0249 identifies no unsafe or
+attacker-controlled operation. Wildforge already bounds Rhai script operations,
+call depth, expression depth, and data sizes; those controls remain unchanged.
+The residual risk is that a future defect in `smartstring` will not be fixed
+upstream, not a known exploit in the current code.
+
+### What would change this
+
+- A Rhai release that replaces `smartstring` with a maintained string type —
+  adopt it immediately and remove this exception.
+- Rhai becoming unmaintained, or a concrete `smartstring` vulnerability being
+  published — replace or fork the scripting dependency rather than extending
+  this exception.
+
+Re-check with `cargo tree -i smartstring` whenever Rhai is upgraded.
