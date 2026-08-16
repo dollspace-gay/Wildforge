@@ -12,4 +12,8 @@ ignore = [
         id = "RUSTSEC-2023-0089",
         reason = "Jacquard enables Postcard's heapless feature, but Wildforge and the used Jacquard path serialize allocated byte buffers; see docs/dependency-advisories.md",
     },
+    {
+        id = "RUSTSEC-2026-0249",
+        reason = "Rhai's required string representation still depends on the now-unmaintained smartstring crate; this is maintenance risk without vulnerable behavior, documented with upstream closure conditions in docs/dependency-advisories.md",
+    },
 ]
