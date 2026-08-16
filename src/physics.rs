@@ -233,6 +233,14 @@ impl Player {
                     if !world.reg.is_solid(b) {
                         continue;
                     }
+                    if world.is_hidden(crate::planet::BlockPos::new(
+                        surface.face(),
+                        surface.u(),
+                        y as u8,
+                        surface.v(),
+                    ).expect("collision cell is validated")) {
+                        continue;
+                    }
                     // Partial-height solids (steps, low work blocks) occupy
                     // only the bottom of their voxel.  Treating them as a
                     // full cube made the auto-step path impossible even

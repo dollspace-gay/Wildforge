@@ -729,3 +729,53 @@ entire mods folder (data + textures) and the guest plays with it —
 nothing to install. **Scripts are the exception: `.rhai` files never
 leave the host** and run host-side only, so data defines what exists
 and scripts stay private to the world that runs them.
+
+## Settlements (spec 3.4)
+
+Settlements let a mod author a place that visibly *grows* as a player
+invests in it. Every growth tier is placed at worldgen; the higher
+tiers stay hidden — non-colliding, unrendered, unbreakable — until the
+player's reputation crosses the tier threshold, then the world reveals
+them once and for all. No geometry is generated at runtime.
+
+A settlement is authored in `pieces.toml`:
+
+```toml
+# The settlement: reputation key and growth tiers. Tiers must be
+# ascending with strictly increasing thresholds.
+[[settlement]]
+id = "elder_haven"
+tiers = [
+  { tier = 2, threshold = 2 },   # revealed when rep >= 2
+  { tier = 3, threshold = 5 },   # revealed when rep >= 5
+]
+
+# A growth piece: placed at worldgen but hidden until its tier reveals.
+[[piece]]
+id = "haven_hall"
+settlement_tier = 2        # tier 1 (default) is always visible
+connectors = [ ... ]
+cells = [ ... ]
+
+# The assembly that places the settlement. `settlement` names the
+# `[[settlement]]` id and marks the whole walk as a settlement, so any
+# tier>1 piece reachable from its pools is hidden at worldgen.
+[[assembly]]
+id = "elder_haven"
+settlement = "elder_haven"
+entry = "watch_platform"
+pools = { path = "haven" }
+```
+
+- A `[[piece]]` with `settlement_tier > 1` must be reachable from a
+  settlement assembly, and its tier must be declared in that
+  settlement's `tiers`; otherwise registry validation rejects the mod.
+- `rep_key` defaults to `rep_<settlement id>`; the player's reputation
+  for a settlement lives in their per-player KV under that key.
+- Reputation is currently granted by quest rewards:
+  `{ add_reputation = "elder_haven", rep_amount = 3 }` (in
+  `quests.toml`). Crossing a threshold reveals that tier's cells.
+- Reveal is one-way and persisted; removing the mod's settlement leaves
+  the placed blocks as ordinary solid terrain.
+- The reveal is per-world, not per-player: one player's reputation
+  reveals the tier for everyone on the save.

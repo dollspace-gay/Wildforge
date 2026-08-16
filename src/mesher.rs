@@ -67,9 +67,24 @@ struct MeshBorderCell {
 
 impl ChunkMeshInput {
     pub fn capture(world: &World, pos: ChunkPos) -> Option<Self> {
-        let center = world.chunk(pos)?.mesh_snapshot();
-        let mut border = vec![MeshBorderCell::default(); 68 * CHUNK_Y].into_boxed_slice();
+        let mut center = world.chunk(pos)?.mesh_snapshot();
         let origin = pos.block_origin();
+        // Settlement growth cells (spec 3.4): placed at worldgen but hidden
+        // until their tier is revealed, so they render as air until then.
+        for hidden in world.hidden_in_chunk(pos) {
+            let (lx, y, lz) = (
+                i32::from(hidden.u()) - i32::from(origin.u()),
+                i32::from(hidden.y()),
+                i32::from(hidden.v()) - i32::from(origin.v()),
+            );
+            if (0..CHUNK_X as i32).contains(&lx)
+                && (0..CHUNK_Y as i32).contains(&y)
+                && (0..CHUNK_Z as i32).contains(&lz)
+            {
+                center.blank(lx as usize, y as usize, lz as usize);
+            }
+        }
+        let mut border = vec![MeshBorderCell::default(); 68 * CHUNK_Y].into_boxed_slice();
         let mut capture_column = |lx: i32, lz: i32| {
             let Some(column) = Self::border_column(lx, lz) else {
                 return;

@@ -815,6 +815,268 @@ unlocked_block = "base:air"
 }
 
 #[test]
+fn base_settlement_definitions_resolve_with_rep_key_and_tiers() {
+    let reg = base_reg();
+    let idx = reg
+        .settlement_id("base:elder_haven")
+        .expect("base settlement registers");
+    let def = &reg.settlements[idx];
+    assert_eq!(
+        def.rep_key, "rep_base:elder_haven",
+        "default rep key derives from the qualified id"
+    );
+    assert_eq!(
+        def.tiers.iter().map(|t| t.tier).collect::<Vec<_>>(),
+        vec![2, 3],
+        "tiers resolve in declared order"
+    );
+    assert_eq!(
+        def.tiers.iter().map(|t| t.threshold).collect::<Vec<_>>(),
+        vec![2, 5],
+        "thresholds preserved"
+    );
+    // The tier-2 piece must resolve and be tagged.
+    let hall = reg
+        .pieces
+        .iter()
+        .find(|p| p.name == "base:haven_hall")
+        .expect("haven_hall registers");
+    assert_eq!(hall.settlement_tier, 2, "growth piece is tier 2");
+    // The settlement assembly resolves to the settlement.
+    let asm = reg
+        .assemblies
+        .iter()
+        .find(|a| a.name == "base:elder_haven")
+        .expect("settlement assembly registers");
+    assert_eq!(
+        asm.settlement.as_deref(),
+        Some("base:elder_haven"),
+        "assembly names its settlement"
+    );
+}
+
+#[test]
+fn settlement_errors_fail_the_mod_and_never_install() {
+    // A tier>1 piece under a non-settlement assembly is refused.
+    let root = tmp_dir("settle-tier-bad");
+    let dir = root.join("settlecrash");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"settlecrash\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("pieces.toml"),
+        r#"
+[[piece]]
+id = "ghost_tower"
+settlement_tier = 2
+connectors = [{ du = 0, dy = 0, dv = 0, kind = "path", facing = "west" }]
+cells = [{ du = 0, dy = 0, dv = 0, block = "base:cobblestone" }]
+
+[[pool]]
+id = "orphan"
+entries = [{ piece = "ghost_tower", weight = 1 }]
+
+[[assembly]]
+id = "wander_camp"
+biomes = ["plains"]
+rarity = 100
+entry = "ghost_tower"
+pools = { path = "orphan" }
+max_depth = 1
+max_pieces = 1
+terrain = "none"
+"#,
+    )
+    .unwrap();
+    let invalid = registry::load(&root);
+    assert!(
+        invalid
+            .material_errors
+            .iter()
+            .any(|e| e.contains("settlecrash:ghost_tower")
+                && e.contains("no settlement assembly reaches it")),
+        "tier>1 piece with no settlement assembly fails: {:?}",
+        invalid.material_errors
+    );
+
+    // An assembly naming a settlement with no matching [[settlement]] fails.
+    let root2 = tmp_dir("settle-ref-bad");
+    let dir2 = root2.join("settleref");
+    std::fs::create_dir_all(&dir2).unwrap();
+    std::fs::write(
+        dir2.join("mod.toml"),
+        "id = \"settleref\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir2.join("pieces.toml"),
+        r#"
+[[assembly]]
+id = "ghost_village"
+biomes = ["plains"]
+rarity = 100
+entry = "base:watch_platform"
+pools = {}
+max_depth = 1
+max_pieces = 1
+terrain = "none"
+settlement = "nowhere"
+"#,
+    )
+    .unwrap();
+    let invalid2 = registry::load(&root2);
+    assert!(
+        invalid2
+            .material_errors
+            .iter()
+            .any(|e| e.contains("settleref:ghost_village") && e.contains("unknown settlement")),
+        "assembly naming an unknown settlement fails: {:?}",
+        invalid2.material_errors
+    );
+
+    // A tier that no [[settlement]] declares is refused.
+    let root3 = tmp_dir("settle-tier-undef");
+    let dir3 = root3.join("settletier");
+    std::fs::create_dir_all(&dir3).unwrap();
+    std::fs::write(
+        dir3.join("mod.toml"),
+        "id = \"settletier\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir3.join("pieces.toml"),
+        r#"
+[[settlement]]
+id = "hollow"
+tiers = [{ tier = 2, threshold = 2 }]
+
+[[piece]]
+id = "tier_four_spire"
+settlement_tier = 4
+connectors = [{ du = 0, dy = 0, dv = 0, kind = "path", facing = "west" }]
+cells = [{ du = 0, dy = 0, dv = 0, block = "base:cobblestone" }]
+
+[[pool]]
+id = "spire"
+entries = [{ piece = "tier_four_spire", weight = 1 }]
+
+[[assembly]]
+id = "hollow_hold"
+biomes = ["plains"]
+rarity = 100
+entry = "tier_four_spire"
+pools = { path = "spire" }
+max_depth = 1
+max_pieces = 1
+terrain = "none"
+settlement = "hollow"
+"#,
+    )
+    .unwrap();
+    let invalid3 = registry::load(&root3);
+    assert!(
+        invalid3
+            .material_errors
+            .iter()
+            .any(|e| e.contains("settletier:tier_four_spire") && e.contains("tier 4 not declared")),
+        "undeclared tier fails: {:?}",
+        invalid3.material_errors
+    );
+}
+
+#[test]
+fn duplicate_settlement_id_fails() {
+    let root = tmp_dir("settle-dup");
+    let dir = root.join("settledup");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"settledup\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("pieces.toml"),
+        r#"
+[[settlement]]
+id = "twin"
+tiers = [{ tier = 2, threshold = 2 }]
+
+[[settlement]]
+id = "twin"
+tiers = [{ tier = 2, threshold = 2 }]
+"#,
+    )
+    .unwrap();
+    let invalid = registry::load(&root);
+    assert!(
+        invalid
+            .material_errors
+            .iter()
+            .any(|e| e.contains("duplicate") && e.contains("settledup:twin")),
+        "duplicate settlement id fails: {:?}",
+        invalid.material_errors
+    );
+}
+
+#[test]
+fn rep_quest_reward_resolves_settlement_and_missing_target_fails() {
+    // A valid rep reward resolves.
+    let reg = base_reg();
+    let quest = reg
+        .quests
+        .iter()
+        .find(|q| q.id == "base:elder_honor")
+        .expect("base rep quest registers");
+    assert!(
+        quest
+            .rewards
+            .iter()
+            .any(|r| matches!(
+                r,
+                crate::registry::QuestReward::Reputation(settlement, 3)
+                    if settlement == "base:elder_haven"
+            )),
+        "elder_honor grants 3 reputation to elder_haven"
+    );
+
+    // A quest rewarding a settlement that does not exist is refused.
+    let root = tmp_dir("settle-quest-bad");
+    let dir = root.join("settlequest");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"settlequest\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("quests.toml"),
+        r#"
+[[quest]]
+id = "wandering_favor"
+title = "Favor"
+description = "Help."
+giver = "elder"
+objectives = [{ key = "help", description = "Help", count = 1 }]
+rewards = [{ add_reputation = "no_such_place", rep_amount = 1 }]
+"#,
+    )
+    .unwrap();
+    let invalid = registry::load(&root);
+    assert!(
+        invalid
+            .material_errors
+            .iter()
+            .any(|e| e.contains("settlequest:wandering_favor")
+                && e.contains("unknown settlement")),
+        "rep reward for unknown settlement fails: {:?}",
+        invalid.material_errors
+    );
+}
+
+#[test]
 fn script_reads_world_state() {
     let root = tmp_dir("scriptread");
     let mods = write_script_mod(

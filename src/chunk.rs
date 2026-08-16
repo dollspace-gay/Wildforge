@@ -194,6 +194,15 @@ impl ChunkMeshSnapshot {
         BlockId(self.blocks.get(Chunk::idx(x, y, z)))
     }
 
+    /// Blank one cell to air (used by the mesher to hide settlement growth
+    /// cells at capture time; spec 3.4).
+    #[inline]
+    pub(crate) fn blank(&mut self, x: usize, y: usize, z: usize) {
+        let i = Chunk::idx(x, y, z);
+        self.blocks.set(i, 0);
+        self.meta.set(i, 0);
+    }
+
     #[inline]
     pub(crate) fn meta(&self, x: usize, y: usize, z: usize) -> u8 {
         self.meta.get(Chunk::idx(x, y, z))

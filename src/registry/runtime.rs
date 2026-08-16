@@ -69,6 +69,11 @@ impl Registry {
         self.gate_for_block.get(&block).copied()
     }
 
+    /// Index of a settlement by its qualified id (spec 3.4).
+    pub fn settlement_id(&self, name: &str) -> Option<usize> {
+        self.settlements.iter().position(|s| s.id == name)
+    }
+
     /// `true` when a mob species is a friendly NPC (spec 3.1).
     pub fn is_npc_species(&self, species: usize) -> bool {
         self.animals.get(species).is_some_and(|a| a.npc.is_some())

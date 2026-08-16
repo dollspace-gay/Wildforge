@@ -947,9 +947,19 @@ impl RegionCell {
     }
 }
 
+/// A settlement hidden cell's reveal key (spec 3.4): which settlement and
+/// which tier of that settlement reveals this position. The world stores
+/// positions -> key so `reveal_settlement` can find every cell of a tier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct RevealKey {
+    /// Index into `Registry::settlements`.
+    pub settlement: usize,
+    /// The settlement tier (>= 2) that reveals the cell.
+    pub tier: u32,
+}
+
 pub struct World {
-    chunks: HashMap<ChunkPos, Chunk>,
-    pub generator: Generator,
+    chunks: HashMap<ChunkPos, Chunk>,    pub generator: Generator,
     planet_atlas: Option<Arc<crate::planet_atlas::PlanetAtlas>>,
     planetary_weather: Option<crate::planet_atlas::PlanetaryWeather>,
     /// Persisted qualified doorstep, populated only after preparation or
@@ -1056,6 +1066,12 @@ pub struct World {
     /// locked until the player's KV flag reads the gate's `value`. Persisted
     /// so a save never depends on regeneration to know what is sealed.
     gated: HashMap<BlockPos, usize>,
+    /// Settlement hidden cells (spec 3.4): world position -> the settlement
+    /// tier that reveals it. Tier-2+ pieces are placed at worldgen but behave
+    /// as air until the player's reputation crosses the tier threshold.
+    /// Persisted so a save never depends on regeneration to know what is
+    /// hidden.
+    hidden: HashMap<BlockPos, RevealKey>,
     /// Bloom ledger: days of post-wrath eruption left per 256-cell.
     pub(crate) bloom: HashMap<RegionCell, f32>,
     /// The spirits of the land, keyed by province.
@@ -1483,6 +1499,7 @@ impl World {
             player_touched: HashSet::new(),
             structure_chunks: HashSet::new(),
             gated: HashMap::new(),
+            hidden: HashMap::new(),
             bloom: HashMap::new(),
             hearts: HashMap::new(),
             bloom_spent: HashMap::new(),
@@ -2406,6 +2423,90 @@ impl World {
         self.gated.contains_key(&pos)
     }
 
+    // ---- Settlement hidden cells (spec 3.4) ----
+
+    /// Whether `pos` is a settlement hidden cell (placed at worldgen but
+    /// behaving as air until its tier is revealed).
+    pub fn is_hidden(&self, pos: BlockPos) -> bool {
+        self.hidden.contains_key(&pos)
+    }
+
+    /// The hidden positions inside one chunk (for mesher capture; the mesh
+    /// runs off a snapshot, so the world's hidden registry must be consulted
+    /// on the main thread at capture time).
+    pub(crate) fn hidden_in_chunk(&self, chunk: crate::planet::ChunkPos) -> Vec<BlockPos> {
+        self.hidden
+            .keys()
+            .filter(|pos| pos.chunk() == chunk)
+            .copied()
+            .collect()
+    }
+
+    /// Record a settlement hidden cell. The block is expected to already be
+    /// stamped at `pos`; this marks it inert until the tier is revealed.
+    pub(crate) fn hide_at(&mut self, pos: BlockPos, key: RevealKey) {
+        self.hidden.insert(pos, key);
+    }
+
+    /// Reveal every hidden cell of `settlement` whose tier threshold
+    /// `reputation` meets, dropping them from the registry so the already-
+    /// placed blocks become solid/visible. Marks affected chunks modified for
+    /// re-mesh. Returns the number of tiers revealed.
+    pub fn reveal_settlement(&mut self, settlement: usize, reputation: u32) -> u32 {
+        let mut revealed_tiers: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+        self.hidden.retain(|pos, key| {
+            if key.settlement != settlement {
+                return true;
+            }
+            let revealed = self
+                .reg
+                .settlements
+                .get(settlement)
+                .and_then(|def| {
+                    def.tiers
+                        .iter()
+                        .find(|t| t.tier == key.tier)
+                        .map(|t| t.threshold <= reputation)
+                })
+                .unwrap_or(true);
+            if revealed {
+                revealed_tiers.insert(key.tier);
+                if let Some(chunk) = self.chunks.get_mut(&pos.chunk()) {
+                    chunk.modified = true;
+                }
+            }
+            !revealed
+        });
+        revealed_tiers.len() as u32
+    }
+
+    #[cfg(test)]
+    /// Number of hidden cells of one settlement (for settlement tests).
+    pub fn hidden_count_for(&self, settlement: usize) -> usize {
+        self.hidden
+            .values()
+            .filter(|key| key.settlement == settlement)
+            .count()
+    }
+
+    #[cfg(test)]
+    /// Whether `pos` is a hidden cell of the given settlement tier.
+    pub fn is_hidden_tier_for_test(&self, pos: BlockPos, settlement: usize, tier: u32) -> bool {
+        self.hidden
+            .get(&pos)
+            .is_some_and(|key| key.settlement == settlement && key.tier == tier)
+    }
+
+    #[cfg(test)]
+    /// The hidden positions of one settlement (for settlement tests).
+    pub fn hidden_positions_for_test(&self, settlement: usize) -> Vec<BlockPos> {
+        self.hidden
+            .iter()
+            .filter(|(_, key)| key.settlement == settlement)
+            .map(|(pos, _)| *pos)
+            .collect()
+    }
+
     #[cfg(test)]
     /// Whether this chunk is claimed by a structure or piece assembly.
     pub fn is_structure_chunk_for_test(&self, pos: ChunkPos) -> bool {
@@ -2550,6 +2651,11 @@ impl World {
                 .get(gate)
                 .is_some_and(|g| g.unbreakable_when_locked)
         {
+            return None;
+        }
+        // Spec 3.4: a hidden settlement growth cell is unbreakable — it does
+        // not exist to the player until its tier is revealed.
+        if self.is_hidden(pos) {
             return None;
         }
         let block = self.get_block_at(pos);
@@ -3710,7 +3816,7 @@ impl World {
             let pos =
                 crate::planet::BlockPos::new(surface.face(), surface.u(), y as u8, surface.v())
                     .expect("surface column and height are validated");
-            if self.reg.is_solid(self.get_block_at(pos)) {
+            if self.reg.is_solid(self.get_block_at(pos)) && !self.is_hidden(pos) {
                 return y;
             }
         }
@@ -3737,16 +3843,20 @@ impl World {
             crate::planet::BlockPos::new(surface.face(), surface.u(), height as u8, surface.v())
                 .expect("air column height is inside the shell")
         };
+        let solid = |height: i32| {
+            let pos = at(height);
+            self.reg.is_solid(self.get_block_at(pos)) && !self.is_hidden(pos)
+        };
         let floor = (y - 64).max(0)..=y;
         let floor = floor
             .rev()
-            .find(|&fy| self.reg.is_solid(self.get_block_at(at(fy))))
+            .find(|&fy| solid(fy))
             // An ungenerated/open column has no trustworthy ground. A
             // floater should hold station until terrain is resident, not
             // interpret missing data as a sixty-block abyss.
             .unwrap_or((y - 2).max(0));
         let ceil = ((y + 1)..=(y + 40).min(CHUNK_Y as i32 - 1))
-            .find(|&cy| self.reg.is_solid(self.get_block_at(at(cy))))
+            .find(|&cy| solid(cy))
             .unwrap_or(CHUNK_Y as i32);
         (floor, ceil)
     }
@@ -3762,9 +3872,11 @@ impl World {
             crate::planet::BlockPos::new(surface.face(), surface.u(), height as u8, surface.v())
                 .expect("standable height is inside the vertical shell")
         };
-        self.reg.is_solid(self.get_block_at(at(y - 1)))
-            && clear(self.get_block_at(at(y)))
-            && clear(self.get_block_at(at(y + 1)))
+        let stands = |height: i32| {
+            let pos = at(height);
+            self.reg.is_solid(self.get_block_at(pos)) && !self.is_hidden(pos)
+        };
+        stands(y - 1) && clear(self.get_block_at(at(y))) && clear(self.get_block_at(at(y + 1)))
     }
 
     /// Somewhere a player can be put down: dry, solid-footed, and

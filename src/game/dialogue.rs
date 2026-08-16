@@ -2,6 +2,9 @@
 
 use super::*;
 use crate::registry::{DialogueChoice, ScriptHook};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 impl Game {
     /// Look up the dialogue def a mob-id NPC opens.
@@ -224,6 +227,19 @@ impl Game {
                     crate::registry::QuestReward::SetFlag(flag, value) => {
                         self.write_player_kv(flag, value.clone());
                     }
+                    crate::registry::QuestReward::Reputation(settlement, amount) => {
+                        // Spec 3.4: reputation is a numeric per-player KV under
+                        // the settlement's `rep_key`. Crossing a tier threshold
+                        // reveals that tier's world cells one-way.
+                        apply_reputation_reward(
+                            &self.content.scripts.kv,
+                            &self.player_namespace(),
+                            &self.content.reg,
+                            &mut self.server.world,
+                            settlement,
+                            *amount,
+                        );
+                    }
                 }
             }
         }
@@ -232,4 +248,37 @@ impl Game {
 
 fn hex(bytes: [u8; 16]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Apply an `add_reputation` quest reward (spec 3.4): increment the per-player
+/// `rep_key` KV and reveal any settlement tiers crossed. Standalone so the
+/// KV-write + reveal linkage is testable without a live `Game`.
+pub(crate) fn apply_reputation_reward(
+    kv: &Rc<RefCell<HashMap<String, HashMap<String, String>>>>,
+    namespace: &str,
+    reg: &crate::registry::Registry,
+    world: &mut crate::world::World,
+    settlement: &str,
+    amount: u32,
+) {
+    let rep_key = reg
+        .settlements
+        .iter()
+        .find(|s| s.id == settlement)
+        .map(|s| s.rep_key.clone())
+        .unwrap_or_else(|| format!("rep_{settlement}"));
+    let at = kv
+        .borrow()
+        .get(namespace)
+        .and_then(|m| m.get(&rep_key))
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(0)
+        .saturating_add(amount);
+    kv.borrow_mut()
+        .entry(namespace.to_string())
+        .or_default()
+        .insert(rep_key, at.to_string());
+    if let Some(idx) = reg.settlement_id(settlement) {
+        world.reveal_settlement(idx, at);
+    }
 }

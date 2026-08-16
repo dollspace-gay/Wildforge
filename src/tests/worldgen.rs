@@ -2151,7 +2151,34 @@ fn piece_assembly() -> crate::registry::AssemblyDef {
         max_depth: 3,
         max_pieces: 12,
         terrain: crate::registry::TerrainAdaptation::None,
+        settlement: None,
     }
+}
+
+/// The base `elder_haven` settlement assembly, with its biome gate widened to
+/// every biome so tests can place it in a deterministic test chunk.
+fn settlement_assembly(reg: &Registry) -> crate::registry::AssemblyDef {
+    let mut asm = reg
+        .assemblies
+        .iter()
+        .find(|a| a.name == "base:elder_haven")
+        .cloned()
+        .expect("base settlement assembly registers");
+    asm.biomes = vec![
+        "plains".into(),
+        "forest".into(),
+        "desert".into(),
+        "jungle".into(),
+        "scrubland".into(),
+        "taiga".into(),
+        "arctic".into(),
+        "mountains".into(),
+        "swamp".into(),
+        "savanna".into(),
+        "tundra".into(),
+        "badlands".into(),
+    ];
+    asm
 }
 
 #[test]
@@ -2476,3 +2503,354 @@ fn gate_positions_persist_across_save_reload() {
         "sealed block stays sealed across reload"
     );
 }
+
+#[test]
+fn settlement_assembly_records_hidden_cells_and_breaks_are_refused() {
+    let reg = base_reg();
+    let mut w = test_world_with("settleplace", reg.clone());
+    let asm = settlement_assembly(&reg);
+    let (markers, count) = w.place_assembly(asm, tchunk(0, 0), 0x3A7F);
+    assert!(count >= 1, "settlement entry placed");
+    // Only the tier-1 entry (watch_platform) and any tier-1 connectors are
+    // visible; tier-2 haven_hall cells are hidden.
+    let settlement_idx = reg
+        .settlement_id("base:elder_haven")
+        .expect("base settlement registers");
+    assert!(
+        w.hidden_count_for(settlement_idx) >= 1,
+        "tier-2 cells recorded as hidden"
+    );
+    // Find one hidden cell and verify its world block is actually stamped
+    // (so reveal makes it solid) but it refuses breaking while hidden.
+    let hidden_pos = w
+        .hidden_positions_for_test(settlement_idx)
+        .first()
+        .cloned()
+        .expect("hidden cells exist");
+    assert_ne!(
+        w.get_block_at(hidden_pos),
+        AIR,
+        "hidden cell still has its block stamped"
+    );
+    assert!(
+        w.break_block_at(hidden_pos, None, true, false).is_none(),
+        "hidden growth cell refuses breaking"
+    );
+    assert!(
+        w.is_hidden_tier_for_test(hidden_pos, settlement_idx, 2),
+        "hidden cell records tier 2"
+    );
+    // Non-hidden (tier-1) cells around the settlement break normally.
+    assert!(
+        !w.is_hidden(markers[0].at),
+        "marker positions of the entry are visible"
+    );
+}
+
+#[test]
+fn settlement_hidden_cells_render_and_mesh_as_air() {
+    let reg = base_reg();
+    let mut w = test_world_with("settlemesh", reg.clone());
+    let asm = settlement_assembly(&reg);
+    w.place_assembly(asm, tchunk(0, 0), 0x3A80);
+    let settlement_idx = reg
+        .settlement_id("base:elder_haven")
+        .expect("base settlement registers");
+    let hidden_pos = w
+        .hidden_positions_for_test(settlement_idx)
+        .first()
+        .cloned()
+        .expect("hidden cells exist");
+    // The captured mesh for the hidden cell's chunk must not contain an
+    // opaque quad at that cell (it renders as air).
+    let mesh = crate::mesher::mesh_chunk(&w, hidden_pos.chunk(), &Default::default());
+    let has_quad = |pos: crate::planet::BlockPos| {
+        let surface = crate::planet::SurfacePoint {
+            face: pos.face(),
+            u: (pos.u() + crate::planet::FACE_BLOCKS / 2).into(),
+            v: (pos.v() + crate::planet::FACE_BLOCKS / 2).into(),
+        };
+        let expected = crate::planet::block_to_render(surface, pos.y().into()).as_vec3();
+        mesh.opaque_verts
+            .iter()
+            .any(|v| (Vec3::from_array(v.pos) - expected).length() < 1e-2)
+    };
+    assert!(
+        !has_quad(hidden_pos),
+        "hidden cell emits no opaque mesh geometry"
+    );
+}
+
+#[test]
+fn settlement_hidden_cells_are_non_colliding_and_aimable_through() {
+    let reg = base_reg();
+    let mut w = test_world_with("settlephys", reg.clone());
+    let asm = settlement_assembly(&reg);
+    w.place_assembly(asm, tchunk(0, 0), 0x3A81);
+    let settlement_idx = reg
+        .settlement_id("base:elder_haven")
+        .expect("base settlement registers");
+    let hidden_pos = w
+        .hidden_positions_for_test(settlement_idx)
+        .first()
+        .cloned()
+        .expect("hidden cells exist");
+    assert!(
+        w.is_hidden(hidden_pos),
+        "settlement tier-2 cell is hidden after placement"
+    );
+    // A hidden cell keeps its stamped (solid) block in the world; a body
+    // passing through it must not collide. The piece is embedded in solid
+    // structure though, so a full body parked inside would still bump the
+    // surrounding walls. Isolate the property on a single solid cell stamped
+    // out in clear air in a far, structure-free chunk instead: hidden =>
+    // pass, revealed => stop.
+    let open_chunk = tchunk(40, 40);
+    w.ensure_chunk(open_chunk);
+    let (ou, ov) = (
+        open_chunk.u() * 16 + 8,
+        open_chunk.v() * 16 + 8,
+    );
+    let open = crate::planet::BlockPos::new(
+        open_chunk.face(),
+        ou,
+        (w.surface_height_at(
+            crate::planet::SurfacePos::new(open_chunk.face(), ou, ov)
+                .expect("open surface position canonicalizes"),
+        )
+        .max(2)
+            + 3) as u8,
+        ov,
+    )
+    .expect("open cell is inside world");
+    w.set_block_at(
+        open,
+        reg.block_id("base:cobblestone").expect("cobblestone registers"),
+    );
+    let reveal_key = crate::world::RevealKey {
+        settlement: settlement_idx,
+        tier: 2,
+    };
+    w.hide_at(open, reveal_key);
+    assert!(w.is_hidden(open), "open cell is hidden before the check");
+    let center = crate::planet::EntityPos::new(
+        open.face(),
+        f32::from(open.u()) + 0.5,
+        f32::from(open.y()) + 0.5,
+        f32::from(open.v()) + 0.5,
+    )
+    .expect("center of an open cell is canonical");
+    let player = crate::physics::Player::new_at(center);
+    assert!(
+        !player.collides(&w, center),
+        "hidden cell does not collide"
+    );
+    // A ray straight up through the hidden cell passes through it too: the
+    // cast stops at the open sky, not at the hidden cell's stamped block.
+    let origin = crate::planet::EntityPos::new(
+        open.face(),
+        f32::from(open.u()) + 0.5,
+        f32::from(open.y()) - 0.5,
+        f32::from(open.v()) + 0.5,
+    )
+    .expect("ray origin below the open cell");
+    let hit = crate::raycast::raycast_at(&w, origin, Vec3::new(0.0, 1.0, 0.0), 6.0);
+    assert!(
+        hit.is_none_or(|h| h.block != open),
+        "ray passes through the hidden cell"
+    );
+    // The same body, after a reveal, is stopped by the now-visible block.
+    w.reveal_settlement(settlement_idx, 2);
+    assert!(
+        player.collides(&w, center),
+        "revealed cell collides again"
+    );
+    let hit_after = crate::raycast::raycast_at(&w, origin, Vec3::new(0.0, 1.0, 0.0), 6.0);
+    assert!(
+        hit_after.is_some_and(|h| h.block == open),
+        "revealed cell stops the ray"
+    );
+}
+
+#[test]
+fn settlement_reveal_drops_hidden_cells_when_rep_crosses_threshold() {
+    let reg = base_reg();
+    let mut w = test_world_with("settlereveal", reg.clone());
+    let asm = settlement_assembly(&reg);
+    w.place_assembly(asm, tchunk(0, 0), 0x3A82);
+    let settlement_idx = reg
+        .settlement_id("base:elder_haven")
+        .expect("base settlement registers");
+    assert!(
+        w.hidden_count_for(settlement_idx) >= 1,
+        "tier-2 cells hidden before reveal"
+    );
+    // Rep 1 is below the tier-2 threshold: nothing reveals.
+    assert_eq!(w.reveal_settlement(settlement_idx, 1), 0, "below threshold");
+    assert!(
+        w.hidden_count_for(settlement_idx) >= 1,
+        "still hidden below threshold"
+    );
+    // Rep 2 crosses tier 2: the tier-2 cells drop out.
+    let revealed = w.reveal_settlement(settlement_idx, 2);
+    assert_eq!(revealed, 1, "one tier revealed");
+    assert_eq!(
+        w.hidden_count_for(settlement_idx),
+        0,
+        "tier-2 cells dropped from the registry"
+    );
+    let remaining = w.hidden_positions_for_test(settlement_idx);
+    assert!(remaining.is_empty(), "no hidden cells remain after reveal");
+    // Reveal is one-way: re-revealing is a no-op.
+    assert_eq!(w.reveal_settlement(settlement_idx, 2), 0, "no-op second time");
+}
+
+#[test]
+fn settlement_hidden_cells_persist_across_save_reload() {
+    let reg = base_reg();
+    let name = "settlereload";
+    let dir = std::env::temp_dir().join(format!("wildforge-test-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut w = World::new(42, dir.clone(), reg.clone());
+    for x in -2..=2 {
+        for z in -2..=2 {
+            w.ensure_chunk(tchunk(x, z));
+        }
+    }
+    let asm = settlement_assembly(&reg);
+    w.place_assembly(asm, tchunk(0, 0), 0x3A83);
+    let settlement_idx = reg
+        .settlement_id("base:elder_haven")
+        .expect("base settlement registers");
+    let hidden_pos = w
+        .hidden_positions_for_test(settlement_idx)
+        .first()
+        .cloned()
+        .expect("hidden cells exist before save");
+    assert!(
+        w.hidden_count_for(settlement_idx) >= 1,
+        "hidden cells before save"
+    );
+    save_world(&mut w);
+    drop(w);
+    let mut w2 = crate::World::load_or_create(dir, reg.clone()).unwrap();
+    for x in -2..=2 {
+        for z in -2..=2 {
+            w2.ensure_chunk(tchunk(x, z));
+        }
+    }
+    assert!(
+        w2.is_hidden_tier_for_test(hidden_pos, settlement_idx, 2),
+        "hidden cell survives save/reload"
+    );
+    // Still unbreakable after reload, and reveals still work.
+    assert!(
+        w2.break_block_at(hidden_pos, None, true, false).is_none(),
+        "hidden cell stays unbreakable across reload"
+    );
+    assert_eq!(w2.reveal_settlement(settlement_idx, 2), 1, "reveals after reload");
+}
+
+#[test]
+fn settlement_hidden_cells_drop_when_settlement_removed_on_hot_reload() {
+    let reg = base_reg();
+    let mut w = test_world_with("settlehot", reg.clone());
+    let asm = settlement_assembly(&reg);
+    w.place_assembly(asm, tchunk(0, 0), 0x3A84);
+    let settlement_idx = reg
+        .settlement_id("base:elder_haven")
+        .expect("base settlement registers");
+    let hidden_pos = w
+        .hidden_positions_for_test(settlement_idx)
+        .first()
+        .cloned()
+        .expect("hidden cells exist before reload");
+    assert!(
+        w.is_hidden(hidden_pos),
+        "cell is hidden before the settlement def is removed"
+    );
+    // Rebuild the registry without the settlement def, remap the world (the
+    // hot-reload path): the record can no longer resolve a settlement def, so
+    // it is dropped and the cell is treated as revealed.
+    let mut reg_without = Arc::new(registry::load(Path::new("/nonexistent-mods-dir")));
+    Arc::get_mut(&mut reg_without)
+        .expect("registry has no other strong refs")
+        .settlements
+        .clear();
+    w.reg = reg_without.clone();
+    w.remap_from(&reg);
+    assert!(
+        !w.is_hidden(hidden_pos),
+        "cell is revealed once its settlement def is gone"
+    );
+}
+
+#[test]
+fn settlement_rep_reward_writes_kv_and_reveals_when_quest_completes() {
+    let reg = base_reg();
+    let mut w = test_world_with("settlequest", reg.clone());
+    let asm = settlement_assembly(&reg);
+    w.place_assembly(asm, tchunk(0, 0), 0x3A85);
+    let settlement_idx = reg
+        .settlement_id("base:elder_haven")
+        .expect("base settlement registers");
+    assert!(
+        w.hidden_count_for(settlement_idx) >= 1,
+        "tier-2 cells hidden before the reward"
+    );
+    let kv: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, std::collections::HashMap<String, String>>>> =
+        std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new()));
+    // The quest is accepted; the `elder_honor` quest grants rep 3, crossing
+    // the tier-2 threshold of 2 (and leaving tier 3 at 5 unmet).
+    crate::game::apply_reputation_reward(
+        &kv,
+        "player_test",
+        &reg,
+        &mut w,
+        "base:elder_haven",
+        3,
+    );
+    let ns = kv.borrow();
+    assert_eq!(
+        ns.get("player_test").and_then(|m| m.get("rep_base:elder_haven")),
+        Some(&"3".to_string()),
+        "reward increments the rep_key KV"
+    );
+    drop(ns);
+    assert_eq!(
+        w.hidden_count_for(settlement_idx),
+        0,
+        "tier-2 cells revealed by the rep reward"
+    );
+}
+
+#[test]
+fn settlement_reveal_makes_cells_breakable_again() {
+    let reg = base_reg();
+    let mut w = test_world_with("settlebreak", reg.clone());
+    let asm = settlement_assembly(&reg);
+    w.place_assembly(asm, tchunk(0, 0), 0x3A84);
+    let settlement_idx = reg
+        .settlement_id("base:elder_haven")
+        .expect("base settlement registers");
+    let hidden_pos = w
+        .hidden_positions_for_test(settlement_idx)
+        .first()
+        .cloned()
+        .expect("hidden cells exist");
+    assert!(
+        w.break_block_at(hidden_pos, None, true, false).is_none(),
+        "hidden growth cell refuses breaking before reveal"
+    );
+    w.reveal_settlement(settlement_idx, 2);
+    assert!(
+        w.break_block_at(hidden_pos, None, true, false).is_some(),
+        "revealed growth cell breaks normally"
+    );
+    assert!(
+        !w.is_hidden(hidden_pos),
+        "revealed cell leaves the hidden registry"
+    );
+}
+

@@ -334,7 +334,11 @@ fn cast_at(
 
     loop {
         let block = world.get_block_at(current);
-        if block != crate::registry::AIR && (hit_water || !world.reg.is_fluid(block)) {
+        // hidden settlement cell: behaves as air for aiming
+        if !world.is_hidden(current)
+            && block != crate::registry::AIR
+            && (hit_water || !world.reg.is_fluid(block))
+        {
             return Some(PlanetHit {
                 block: current,
                 adjacent: previous,

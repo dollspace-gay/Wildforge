@@ -1,6 +1,6 @@
 # Quest definitions (spec Part 3.3). Definitions are data; progress state
-# lives in the per-mod KV store. `item` and `set_flag` rewards are additive
-# and may both appear.
+# lives in the per-mod KV store. `item`, `set_flag`, and `add_reputation`
+# rewards are additive and may all appear together.
 
 [[quest]]
 id = "elder_cerium"
@@ -14,4 +14,21 @@ objectives = [
 rewards = [
   { item = "amethyst_shard", count = 2 },
   { set_flag = "elder_told_tales", flag_value = "true" },
+]
+
+# A second round: settle the Haven's honor. Reputation drives the settlement
+# growth tiers (spec 3.4): each point raises the elder_haven rep, and passing
+# a tier's threshold reveals that tier's hidden structures.
+[[quest]]
+id = "elder_honor"
+title = "Elder Haven's Honor"
+description = "Return with a heart of the land to raise Elder Haven's standing."
+giver = "elder"
+prereq = "elder_cerium"
+objectives = [
+  { key = "land_hearts", description = "Deliver a heart of the land", count = 1 },
+]
+rewards = [
+  { item = "cerium_shard", count = 1 },
+  { add_reputation = "elder_haven", rep_amount = 3 },
 ]

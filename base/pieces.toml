@@ -143,6 +143,87 @@ entries = [
   { piece = "far_path", weight = 1 },
 ]
 
+# A settlement (spec 3.4): all growth tiers are placed at worldgen; pieces
+# tagged `settlement_tier > 1` stay hidden until the player's reputation
+# (KV `rep_elder_haven`) crosses the tier threshold.
+[[settlement]]
+id = "elder_haven"
+tiers = [
+  { tier = 2, threshold = 2 },   # revealed when rep >= 2
+  { tier = 3, threshold = 5 },   # revealed when rep >= 5
+]
+
+# A tier-2 growth piece: placed at worldgen but hidden (non-colliding,
+# unrendered, unbreakable) until the elder_haven settlement reaches tier 2.
+[[piece]]
+id = "haven_hall"
+settlement_tier = 2
+connectors = [
+  { du = 2, dy = 0, dv = 0, kind = "path", facing = "south" },
+]
+cells = [
+  # wide stone hall (5x5 floor, 2-tall walls ring)
+  { du = 0, dy = 0, dv = 0, block = "base:cobblestone" },
+  { du = 1, dy = 0, dv = 0, block = "base:cobblestone" },
+  { du = 2, dy = 0, dv = 0, block = "base:cobblestone" },
+  { du = 3, dy = 0, dv = 0, block = "base:cobblestone" },
+  { du = 4, dy = 0, dv = 0, block = "base:cobblestone" },
+  { du = 0, dy = 0, dv = 4, block = "base:cobblestone" },
+  { du = 1, dy = 0, dv = 4, block = "base:cobblestone" },
+  { du = 2, dy = 0, dv = 4, block = "base:cobblestone" },
+  { du = 3, dy = 0, dv = 4, block = "base:cobblestone" },
+  { du = 4, dy = 0, dv = 4, block = "base:cobblestone" },
+  { du = 0, dy = 0, dv = 1, block = "base:cobblestone" },
+  { du = 4, dy = 0, dv = 1, block = "base:cobblestone" },
+  { du = 0, dy = 0, dv = 2, block = "base:cobblestone" },
+  { du = 4, dy = 0, dv = 2, block = "base:cobblestone" },
+  { du = 0, dy = 0, dv = 3, block = "base:cobblestone" },
+  { du = 4, dy = 0, dv = 3, block = "base:cobblestone" },
+  { du = 0, dy = 1, dv = 0, block = "base:cobblestone" },
+  { du = 1, dy = 1, dv = 0, block = "base:cobblestone" },
+  { du = 2, dy = 1, dv = 0, block = "base:cobblestone" },
+  { du = 3, dy = 1, dv = 0, block = "base:cobblestone" },
+  { du = 4, dy = 1, dv = 0, block = "base:cobblestone" },
+  { du = 0, dy = 1, dv = 4, block = "base:cobblestone" },
+  { du = 1, dy = 1, dv = 4, block = "base:cobblestone" },
+  { du = 2, dy = 1, dv = 4, block = "base:cobblestone" },
+  { du = 3, dy = 1, dv = 4, block = "base:cobblestone" },
+  { du = 4, dy = 1, dv = 4, block = "base:cobblestone" },
+  { du = 0, dy = 1, dv = 1, block = "base:cobblestone" },
+  { du = 4, dy = 1, dv = 1, block = "base:cobblestone" },
+  { du = 0, dy = 1, dv = 2, block = "base:cobblestone" },
+  { du = 4, dy = 1, dv = 2, block = "base:cobblestone" },
+  { du = 0, dy = 1, dv = 3, block = "base:cobblestone" },
+  { du = 4, dy = 1, dv = 3, block = "base:cobblestone" },
+  # entry porch cap
+  { du = 1, dy = 1, dv = 2, block = "base:cracked_masonry" },
+  { du = 2, dy = 1, dv = 2, block = "base:cracked_masonry" },
+  { du = 3, dy = 1, dv = 2, block = "base:cracked_masonry" },
+  { du = 1, dy = 2, dv = 2, block = "base:cracked_masonry" },
+  { du = 2, dy = 2, dv = 2, block = "base:cracked_masonry" },
+  { du = 3, dy = 2, dv = 2, block = "base:cracked_masonry" },
+]
+
+# Add the growth piece to its own pool so a settlement walk can place it.
+[[pool]]
+id = "haven"
+entries = [
+  { piece = "haven_hall", weight = 1 },
+]
+
+# The settlement assembly (spec 3.4): reuses the watch-platform plaza as its
+# tier-1 entry, then grows the hidden `haven_hall` hall when reputation climbs.
+[[assembly]]
+id = "elder_haven"
+biomes = ["plains", "forest", "scrubland", "taiga"]
+rarity = 300
+entry = "watch_platform"
+pools = { path = "haven" }
+max_depth = 2
+max_pieces = 4
+terrain = "none"
+settlement = "elder_haven"
+
 [[assembly]]
 id = "road_side_camp"
 biomes = ["plains", "forest", "scrubland", "taiga"]

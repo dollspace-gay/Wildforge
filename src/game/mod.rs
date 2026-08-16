@@ -8,6 +8,8 @@ mod containers;
 mod content;
 mod demos;
 mod dialogue;
+#[cfg(test)]
+pub(crate) use dialogue::apply_reputation_reward;
 mod frame;
 mod input;
 mod interaction;

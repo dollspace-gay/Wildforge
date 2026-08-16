@@ -319,6 +319,25 @@ impl World {
             path.clone(),
             super::persistence::atomic_replace(&path, &gates),
         );
+        // Settlement hidden cells (spec 3.4): each record is the 6-byte block
+        // position (face/u/y/v), the 2-byte settlement index, and the 1-byte
+        // tier.
+        let mut settlements = Vec::with_capacity(4 + self.hidden.len() * 9);
+        settlements.extend_from_slice(b"WFST1");
+        for (pos, key) in &self.hidden {
+            settlements.push(pos.face() as u8);
+            settlements.extend_from_slice(&pos.u().to_le_bytes());
+            settlements.push(pos.y());
+            settlements.extend_from_slice(&pos.v().to_le_bytes());
+            settlements.extend_from_slice(&(key.settlement as u16).to_le_bytes());
+            settlements.push(key.tier as u8);
+        }
+        let path = self.save_dir.join("settlements");
+        report.record(
+            "settlement hidden marks",
+            path.clone(),
+            super::persistence::atomic_replace(&path, &settlements),
+        );
         report.failures
     }
 
@@ -596,6 +615,42 @@ impl World {
                 // an unbreakable wall with no unlock is a softlock).
                 if gate < self.reg.gates.len() {
                     self.gated.insert(pos, gate);
+                }
+            }
+        }
+        // Settlement hidden cells (spec 3.4): 6-byte position + 2-byte
+        // settlement index + 1-byte tier, 9 bytes per record.
+        if let Ok(data) = fs::read(self.save_dir.join("settlements")) {
+            for p in data
+                .strip_prefix(b"WFST1")
+                .unwrap_or_default()
+                .chunks_exact(9)
+            {
+                let u = u16::from_le_bytes([p[1], p[2]]);
+                let v = u16::from_le_bytes([p[4], p[5]]);
+                let Some(face) = crate::planet::Face::from_u8(p[0]) else {
+                    continue;
+                };
+                let Ok(pos) = crate::planet::BlockPos::new(face, u, p[3], v) else {
+                    continue;
+                };
+                let settlement = u16::from_le_bytes([p[6], p[7]]) as usize;
+                let tier = p[8];
+                // Only keep cells whose settlement and tier still resolve;
+                // a removed tier/def is treated as already revealed.
+                if settlement < self.reg.settlements.len()
+                    && self.reg.settlements[settlement]
+                        .tiers
+                        .iter()
+                        .any(|t| t.tier == u32::from(tier))
+                {
+                    self.hidden.insert(
+                        pos,
+                        RevealKey {
+                            settlement,
+                            tier: u32::from(tier),
+                        },
+                    );
                 }
             }
         }
@@ -1176,6 +1231,15 @@ impl World {
             }
         }
         self.gated = gates;
+        // Re-resolve hidden cells (spec 3.4): a record whose settlement def
+        // was removed, or whose tier is no longer declared, is dropped and
+        // treated as revealed (the placed block simply becomes solid/visible).
+        self.hidden.retain(|_, key| {
+            self.reg
+                .settlements
+                .get(key.settlement)
+                .is_some_and(|def| def.tiers.iter().any(|t| t.tier == key.tier))
+        });
     }
 
     // ---------------- lighting ----------------

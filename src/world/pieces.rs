@@ -154,6 +154,12 @@ impl World {
         if entry.cells.is_empty() {
             return (Vec::new(), 0);
         }
+        // Settlement context for hidden-cell recording: `None` for ordinary
+        // assemblies; resolved registry index for a settlement's growth tiers.
+        let settlement: Option<usize> = asm
+            .settlement
+            .as_ref()
+            .and_then(|id| reg.settlement_id(id));
         let center = SurfacePos::new(
             pos.face(),
             pos.u() * CHUNK_X as u16 + CHUNK_X as u16 / 2,
@@ -222,6 +228,7 @@ impl World {
             Rotation::R0,
             None,
             0,
+            settlement,
             &mut occupied,
             &mut reserved,
             &mut markers,
@@ -289,6 +296,7 @@ impl World {
                     rot,
                     Some(i),
                     open.depth.saturating_add(1),
+                    settlement,
                     &mut occupied,
                     &mut reserved,
                     &mut markers,
@@ -374,6 +382,7 @@ impl World {
         rot: Rotation,
         consumed: Option<usize>,
         _depth: u32,
+        settlement: Option<usize>,
         occupied: &mut HashSet<BlockPos>,
         reserved: &mut HashSet<crate::planet::ChunkPos>,
         markers: &mut Vec<AssemblyMarker>,
@@ -412,6 +421,21 @@ impl World {
             let materials = reg.block(*block).materials.clone();
             if !materials.is_empty() {
                 inherited_placements.push((*world, materials));
+            }
+        }
+        // Settlement growth tier: a tier>1 piece in a settlement assembly is
+        // placed but hidden until its tier's reputation threshold is met.
+        if piece.settlement_tier > 1
+            && let Some(settlement) = settlement
+        {
+            for (world, _) in &placements {
+                self.hide_at(
+                    *world,
+                    RevealKey {
+                        settlement,
+                        tier: piece.settlement_tier,
+                    },
+                );
             }
         }
         // Chests get rolled, wild-owned loot, bound exactly like ruins.

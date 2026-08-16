@@ -608,10 +608,33 @@ pub struct QuestObjective {
     pub count: u32,
 }
 
+/// One growth tier of a settlement (spec 3.4): the tier number and the
+/// reputation value that reveals it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SettlementTier {
+    pub tier: u32,
+    pub threshold: u32,
+}
+
+/// A settlement (spec 3.4): a piece assembly whose tier-tagged pieces are
+/// all placed at worldgen, with tier-2+ pieces hidden (non-collidable, not
+/// rendered, unbreakable) until the player's numeric reputation crosses the
+/// tier's threshold. Reputation lives in the per-player KV under `rep_key`.
+#[derive(Clone, Debug)]
+pub struct SettlementDef {
+    /// Qualified id (`mod:settlement`).
+    pub id: String,
+    /// Per-player KV key holding the numeric reputation.
+    pub rep_key: String,
+    /// Growth tiers, ascending, with increasing thresholds.
+    pub tiers: Vec<SettlementTier>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QuestReward {
     Give(ItemId, u32),
     SetFlag(String, String),
+    Reputation(String, u32),
 }
 
 /// A flag-gated feature (spec 2.5): a sealed block placed by a
@@ -838,6 +861,10 @@ pub struct PieceDef {
     pub connectors: Vec<PieceConnector>,
     pub markers: Vec<PieceMarker>,
     pub chests: Vec<PieceChest>,
+    /// Growth tier of the piece within its settlement (spec 3.4). Tier 1 is
+    /// visible immediately; tier >= 2 is placed but hidden until reputation
+    /// reveals the tier.
+    pub settlement_tier: u32,
 }
 
 /// One weighted entry in a per-kind pool.
@@ -880,6 +907,9 @@ pub struct AssemblyDef {
     /// Total pieces placed before the walk stops.
     pub max_pieces: u32,
     pub terrain: TerrainAdaptation,
+    /// If set, this assembly generates the named settlement (spec 3.4): its
+    /// tier-tagged pieces place hidden growth tiers at worldgen.
+    pub settlement: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -934,6 +964,8 @@ pub struct Registry {
     pub pieces: Vec<PieceDef>,
     pub pools: Vec<PoolDef>,
     pub assemblies: Vec<AssemblyDef>,
+    /// Settlements (spec 3.4): tiered piece assemblies revealed by reputation.
+    pub settlements: Vec<SettlementDef>,
     /// Flag-gated features (spec 2.5): sealed blocks placed by
     /// `feature:<id>` markers, locked until a per-player KV flag reads a
     /// value. Indexed by `gate_for_block` at load.
@@ -2253,6 +2285,8 @@ struct PieceToml {
     markers: Vec<MarkerToml>,
     #[serde(default)]
     chests: Vec<ChestToml>,
+    #[serde(default)]
+    settlement_tier: u32,
 }
 
 #[derive(Deserialize, Clone)]
@@ -2328,6 +2362,23 @@ struct AssemblyToml {
     max_pieces: u32,
     #[serde(default)]
     terrain: Option<String>,
+    #[serde(default)]
+    settlement: Option<String>,
+}
+
+#[derive(Deserialize, Clone)]
+struct SettlementToml {
+    id: String,
+    #[serde(default)]
+    rep_key: Option<String>,
+    #[serde(default)]
+    tiers: Vec<SettlementTierToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct SettlementTierToml {
+    tier: u32,
+    threshold: u32,
 }
 
 #[derive(Deserialize, Default)]
@@ -2338,6 +2389,8 @@ struct PiecesFile {
     pool: Vec<PoolToml>,
     #[serde(default)]
     assembly: Vec<AssemblyToml>,
+    #[serde(default)]
+    settlement: Vec<SettlementToml>,
 }
 
 #[derive(Deserialize, Default)]
@@ -2450,6 +2503,10 @@ struct QuestRewardToml {
     set_flag: Option<String>,
     #[serde(default)]
     flag_value: Option<String>,
+    #[serde(default)]
+    add_reputation: Option<String>,
+    #[serde(default)]
+    rep_amount: u32,
 }
 
 struct RawMod {
@@ -2476,6 +2533,7 @@ struct RawMod {
     pieces: Vec<PieceToml>,
     pools: Vec<PoolToml>,
     assemblies: Vec<AssemblyToml>,
+    settlements: Vec<SettlementToml>,
     resonances: Vec<ResonanceToml>,
     arcane_sites: Vec<ArcaneSiteToml>,
     workings: Vec<crate::workings::RawWorkingDef>,
@@ -2605,6 +2663,7 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         pieces: pieces.piece,
         pools: pieces.pool,
         assemblies: pieces.assembly,
+        settlements: pieces.settlement,
         resonances: arcane.resonance,
         arcane_sites: arcane.sites,
         workings: workings.working,
@@ -2664,6 +2723,7 @@ fn base_mod() -> RawMod {
         pieces: pieces.piece,
         pools: pieces.pool,
         assemblies: pieces.assembly,
+        settlements: pieces.settlement,
         resonances: Vec::new(),
         arcane_sites: Vec::new(),
         workings: workings.working,
@@ -2769,6 +2829,7 @@ impl RemoveStable for Vec<RawMod> {
             pieces: vec![],
             pools: vec![],
             assemblies: vec![],
+            settlements: vec![],
             recipes: vec![],
             smelts: vec![],
             fuels: vec![],
@@ -2819,6 +2880,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         pieces: Vec::new(),
         pools: Vec::new(),
         assemblies: Vec::new(),
+        settlements: Vec::new(),
         gates: Vec::new(),
         gate_for_block: HashMap::new(),
         loots: HashMap::new(),
@@ -3112,6 +3174,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     let mut pending_npcs: Vec<(String, NpcToml, u16, u16, HashMap<String, u16>)> = Vec::new();
     let mut pending_dialogues: Vec<(String, DialogueToml)> = Vec::new();
     let mut pending_quests: Vec<(String, QuestToml)> = Vec::new();
+    let mut pending_settlements: Vec<(String, SettlementToml)> = Vec::new();
 
     for raw in &raws {
         if raw.info.id.is_empty() {
@@ -3642,6 +3705,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         for a in &raw.assemblies {
             pending_assemblies.push((raw.info.id.clone(), a.clone()));
         }
+        for s in &raw.settlements {
+            pending_settlements.push((raw.info.id.clone(), s.clone()));
+        }
         for lt in &raw.loots {
             pending_loots.push((raw.info.id.clone(), lt.clone()));
         }
@@ -3901,6 +3967,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             connectors,
             markers,
             chests,
+            settlement_tier: p.settlement_tier.max(1),
         });
     }
     for (modid, pool) in pending_pools {
@@ -3951,7 +4018,99 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             max_depth: a.max_depth.max(1),
             max_pieces: a.max_pieces.max(1),
             terrain,
+            settlement: a.settlement.as_ref().map(|s| qualify(&modid, s)),
         });
+    }
+    // Settlements (spec 3.4): resolve tier lists and validate them. The
+    // assembly->settlement wiring is checked against this list when
+    // assemblies resolve; a piece tier is validated against its assembly's
+    // settlement when pieces resolve (below, after settlements exist).
+    // Settlement errors are collected locally: `validate_material_graph`
+    // rebuilds `material_errors` from scratch at the end of build, so pushing
+    // straight to it here would be wiped.
+    let mut settlement_errors = Vec::new();
+    for (modid, s) in pending_settlements {
+        let id = qualify(&modid, &s.id);
+        if reg.settlements.iter().any(|existing| existing.id == id) {
+            settlement_errors.push(format!("{id}: duplicate settlement id"));
+            continue;
+        }
+        let mut tiers: Vec<SettlementTier> = s
+            .tiers
+            .iter()
+            .map(|t| SettlementTier {
+                tier: t.tier.max(2),
+                threshold: t.threshold,
+            })
+            .collect();
+        tiers.sort_by_key(|t| t.tier);
+        tiers.dedup_by_key(|t| t.tier);
+        if !tiers.windows(2).all(|w| w[0].threshold < w[1].threshold) {
+            settlement_errors.push(format!(
+                "{id}: settlement tiers must have strictly increasing thresholds"
+            ));
+            continue;
+        }
+        reg.settlements.push(SettlementDef {
+            rep_key: s.rep_key.clone().unwrap_or_else(|| format!("rep_{id}")),
+            id,
+            tiers,
+        });
+    }
+    // Cross-validate settlement wiring (spec 3.4): every assembly that names
+    // a settlement must resolve one, a piece tagged tier > 1 must be
+    // reachable from a settlement assembly (a hidden tier that can never be
+    // placed would silently never exist), and its tier must exist in that
+    // settlement's declared tiers (else reveal could never happen).
+    let mut assembly_settlements: Vec<Option<usize>> = reg.assemblies.iter().map(|_| None).collect();
+    for (i, asm) in reg.assemblies.iter().enumerate() {
+        if let Some(settlement) = &asm.settlement {
+            match reg.settlements.iter().position(|s| &s.id == settlement) {
+                Some(idx) => assembly_settlements[i] = Some(idx),
+                None => settlement_errors.push(format!(
+                    "{}: assembly names unknown settlement {settlement}",
+                    asm.name
+                )),
+            }
+        }
+    }
+    for piece in &reg.pieces {
+        if piece.settlement_tier <= 1 {
+            continue;
+        }
+        let mut reachable = false;
+        for (i, asm) in reg.assemblies.iter().enumerate() {
+            if assembly_settlements[i].is_none() {
+                continue;
+            }
+            let in_pool = asm.pools.values().any(|pool| {
+                reg.pools
+                    .iter()
+                    .find(|p| &p.id == pool)
+                    .is_some_and(|p| p.entries.iter().any(|e| e.piece == piece.name))
+            });
+            if !in_pool {
+                continue;
+            }
+            reachable = true;
+            let settlement = assembly_settlements[i].expect("checked above");
+            if !reg.settlements[settlement]
+                .tiers
+                .iter()
+                .any(|t| t.tier == piece.settlement_tier)
+            {
+                settlement_errors.push(format!(
+                    "{}: piece tier {} not declared in settlement {}",
+                    piece.name, piece.settlement_tier, reg.settlements[settlement].id
+                ));
+            }
+        }
+        if !reachable {
+            settlement_errors.push(format!(
+                "{}: piece tagged settlement_tier {} but no settlement assembly reaches it",
+                piece.name, piece.settlement_tier
+            ));
+        }
     }
     for pd in pending_drops {
         let d = match pd.rule.as_str() {
@@ -4336,8 +4495,39 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         if reg.quests.iter().any(|x| x.id == id) {
             continue;
         }
+        let mut quest_errors: Vec<String> = Vec::new();
+        let rewards: Vec<QuestReward> = q
+            .rewards
+            .iter()
+            .filter_map(|reward| {
+                if let Some(item) = &reward.item {
+                    let iid = lookup_item(&reg, &modid, item)?;
+                    Some(QuestReward::Give(iid, reward.count.max(1)))
+                } else if let Some(settlement) = &reward.add_reputation {
+                    let settlement_id = qualify(&modid, settlement);
+                    if !reg.settlements.iter().any(|s| s.id == settlement_id) {
+                        quest_errors.push(format!(
+                            "{id}: quest rewards reputation for unknown settlement {settlement_id}"
+                        ));
+                        return None;
+                    }
+                    Some(QuestReward::Reputation(
+                        settlement_id,
+                        reward.rep_amount.max(1),
+                    ))
+                } else {
+                    reward.set_flag.as_ref().map(|flag| {
+                        QuestReward::SetFlag(
+                            flag.clone(),
+                            reward.flag_value.clone().unwrap_or_else(|| "1".into()),
+                        )
+                    })
+                }
+            })
+            .collect();
+        settlement_errors.extend(quest_errors);
         reg.quests.push(QuestDef {
-            id,
+            id: id.clone(),
             title: q.title.clone(),
             description: q.description.clone(),
             giver: q.giver.as_ref().map(|g| qualify(&modid, g)),
@@ -4351,23 +4541,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     count: objective.count.max(1),
                 })
                 .collect(),
-            rewards: q
-                .rewards
-                .iter()
-                .filter_map(|reward| {
-                    if let Some(item) = &reward.item {
-                        let iid = lookup_item(&reg, &modid, item)?;
-                        Some(QuestReward::Give(iid, reward.count.max(1)))
-                    } else {
-                        reward.set_flag.as_ref().map(|flag| {
-                            QuestReward::SetFlag(
-                                flag.clone(),
-                                reward.flag_value.clone().unwrap_or_else(|| "1".into()),
-                            )
-                        })
-                    }
-                })
-                .collect(),
+            rewards,
         });
     }
     // Prey lists resolve after the whole roster exists (a fox may be
@@ -4701,6 +4875,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     // Gate feature errors survive past `validate_material_graph`, which
     // rebuilds `material_errors` from scratch.
     reg.material_errors.extend(gate_errors);
+    // Settlement and quest-reward errors, likewise collected locally.
+    reg.material_errors.extend(settlement_errors);
     reg.mods.append(&mut failed);
     reg
 }
