@@ -2854,3 +2854,61 @@ fn settlement_reveal_makes_cells_breakable_again() {
     );
 }
 
+#[test]
+fn recipe_unlock_reward_writes_the_learned_flag() {
+    let kv: std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, std::collections::HashMap<String, String>>>> =
+        std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new()));
+    crate::game::apply_recipe_unlock_reward(&kv, "player_test", "base:etched_tablet");
+    let ns = kv.borrow();
+    assert_eq!(
+        ns.get("player_test")
+            .and_then(|m| m.get("learned:base:etched_tablet")),
+        Some(&"1".to_string()),
+        "learn_recipe reward writes the recipe's default tech flag"
+    );
+}
+
+#[test]
+fn recipe_gate_seam_returns_unmet_gate_kind() {
+    use crate::game::recipe_gates_met;
+    let reg = base_reg();
+    let tablet = reg
+        .recipes
+        .iter()
+        .find(|r| r.output == it(&reg, "base:etched_tablet"))
+        .expect("base etched_tablet recipe");
+    let mut inv = crate::inventory::Inventory::new();
+    // Tech missing and blueprint absent -> locked by tech first.
+    assert_eq!(
+        recipe_gates_met(None, &inv, tablet),
+        Some("locked"),
+        "absent tech flag locks"
+    );
+    assert_eq!(
+        recipe_gates_met(Some("false"), &inv, tablet),
+        Some("locked"),
+        "falsy tech flag locks"
+    );
+    // Tech met but blueprint absent.
+    assert_eq!(
+        recipe_gates_met(Some("1"), &inv, tablet),
+        Some("blueprint"),
+        "met tech but missing blueprint locks"
+    );
+    // Both met -> unlocked.
+    let plate = it(&reg, "base:maker_calibration_plate");
+    inv.add(&reg, plate, 1);
+    assert_eq!(
+        recipe_gates_met(Some("1"), &inv, tablet),
+        None,
+        "met tech and present blueprint unlock"
+    );
+    // An ungated recipe is always unlocked.
+    let planks = reg
+        .recipes
+        .iter()
+        .find(|r| r.output == it(&reg, "base:planks"))
+        .expect("base planks recipe");
+    assert_eq!(recipe_gates_met(None, &inv, planks), None);
+}
+

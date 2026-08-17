@@ -1,6 +1,7 @@
 //! Inventory, crafting, armor, and machine-container interactions.
 
 use super::*;
+use crate::registry::RecipeDef;
 
 impl Game {
     pub(super) fn slot_get(&self, craft: bool, i: usize) -> Option<ItemStack> {
@@ -40,6 +41,21 @@ impl Game {
 
     /// Click the craft result slot: take the output, consume ingredients.
     pub(super) fn result_click(&mut self) {
+        let reg = self.content.reg.clone();
+        let n2 = self.interaction.craft_size * self.interaction.craft_size;
+        let recipe = crafting::match_recipe(
+            &reg,
+            &self.interaction.craft_grid[..n2],
+            self.interaction.craft_size,
+        );
+        // Spec 3.5 gate: a recipe locked by its tech flag or missing blueprint
+        // item is refused before the multiplayer request leaves the client (the
+        // KV lives client-side; the host re-enforces the blueprint gate).
+        if let Some(r) = recipe
+            && self.recipe_locked(r)
+        {
+            return;
+        }
         if let Some(remote) = &self.multiplayer.remote {
             remote.client.send(&net::C2S::CraftResult {
                 size: self.interaction.craft_size as u8,
@@ -104,6 +120,10 @@ impl Game {
             _ => return, // held stack can't take the output
         }
         crafting::consume(&mut self.interaction.craft_grid[..n2]);
+        // Spec 3.5: a blueprint item is consumed from the inventory, not the grid.
+        if let Some(blueprint) = recipe.blueprint {
+            self.inventory.try_consume(&[(blueprint, 1)]);
+        }
         if self.multiplayer.remote.is_none()
             && let Some(pos) = self.player.pos.block()
         {
@@ -153,6 +173,16 @@ impl Game {
                 .dispatch(&self.server.world, "on_craft", (name,));
             self.apply_script_cmds();
         }
+    }
+
+    /// Spec 3.5 gate: a recipe is locked when its tech KV key reads falsy or
+    /// when the player lacks the required blueprint item.
+    pub(super) fn recipe_locked(&self, recipe: &RecipeDef) -> bool {
+        let tech_value = recipe
+            .tech
+            .as_deref()
+            .and_then(|key| self.read_player_kv(key));
+        recipe_gates_met(tech_value.as_deref(), &self.inventory, recipe).is_some()
     }
 
     /// Furnace slot rects: 0 input, 1 fuel, 2 output (centered panel).
@@ -770,4 +800,27 @@ impl Game {
     pub(super) const BCOLS: usize = 6;
     pub(super) const BROWS: usize = 8;
     pub(super) const BSLOT: f32 = 40.0;
+}
+
+/// Spec 3.5 gate check as a pure seam: `tech_value` is the per-player KV
+/// value for `recipe.tech` (None = key absent). Returns `Some` with the
+/// unmet gate's label when the recipe is locked. Standalone so both craft
+/// sites and the tests share one implementation.
+pub(crate) fn recipe_gates_met(
+    tech_value: Option<&str>,
+    inventory: &crate::inventory::Inventory,
+    recipe: &RecipeDef,
+) -> Option<&'static str> {
+    if let Some(_tech) = &recipe.tech {
+        match tech_value {
+            Some(value) if !value.is_empty() && value != "false" && value != "0" => {}
+            _ => return Some("locked"),
+        }
+    }
+    if let Some(blueprint) = recipe.blueprint
+        && !inventory.can_afford(&[(blueprint, 1)])
+    {
+        return Some("blueprint");
+    }
+    None
 }

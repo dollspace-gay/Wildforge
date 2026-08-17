@@ -178,6 +178,36 @@ impl Game {
                         [1.0; 4],
                     );
                 }
+                let gate_hint = {
+                    let tech_value = r
+                        .tech
+                        .as_deref()
+                        .and_then(|key| self.read_player_kv(key));
+                    match crate::game::containers::recipe_gates_met(
+                        tech_value.as_deref(),
+                        &self.inventory,
+                        r,
+                    ) {
+                        Some("locked") => "LOCKED".to_string(),
+                        Some("blueprint") => {
+                            let label = r
+                                .blueprint
+                                .map(|b| reg.item(b).label.to_uppercase())
+                                .unwrap_or_default();
+                            format!("REQUIRES {label}")
+                        }
+                        _ => String::new(),
+                    }
+                };
+                if !gate_hint.is_empty() {
+                    ui.text_shadow(
+                        px + 150.0,
+                        y + r.h as f32 * 38.0 + 2.0,
+                        1.5,
+                        &gate_hint,
+                        [1.0, 0.35, 0.35, 1.0],
+                    );
+                }
                 y += r.h as f32 * 38.0 + 14.0;
             }
             for s in smelts.iter().take(2) {

@@ -284,5 +284,10 @@ already-playtested logic instead of a duplicate system.
 5. Piece-based structures (2.3) — depends on 1.4 being done.
 6. Prefab (non-block-built) trains + rail (2.2, scoped down) — depends on
    1.1 only.
-7. Everything else (3.4–3.7, block-built trains) — lower urgency, layer
-   on once the above are proven.
+7. Blueprint-gated recipes (3.5) — per-player recipe gates, the
+   `learn_recipe` quest reward, and one base example; layers on the
+   Phase 14 settlement/quest infra.
+8. Enemy behavior archetype library (3.6) — branches off 3.5's content
+   layer; damage types, multi-attack defs, and behavior archetypes.
+9. Everything else (3.7, block-built trains) — lower urgency, layer on once
+   the above are proven.

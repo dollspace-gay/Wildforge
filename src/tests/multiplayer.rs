@@ -2239,3 +2239,94 @@ fn a_guest_receives_the_ring_it_was_granted() {
         );
     }
 }
+
+#[test]
+fn host_refuses_and_consumes_blueprint_gated_craft() {
+    use crate::net::C2S;
+    let reg = base_reg();
+    let world = test_world_with("mp-blueprint", reg.clone());
+    let mut sim = crate::server::Server::new(world, 0.3, 5);
+    sim.world.set_edit_logging(true);
+    let mut sess = crate::mp::HostSession::start_on("mp-blueprint".into(), 0).expect("host binds");
+    prepare_test_entry(&mut sess, &sim);
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", sess.net.port).parse().unwrap();
+    let identity = crate::identity::LocalIdentity::load_or_create(&tmp_dir("mp-blueprint-id"))
+        .expect("test identity");
+    let mut client = crate::net::Client::connect(
+        addr,
+        "tester".into(),
+        sess.content_hash,
+        0,
+        &identity,
+        None,
+    )
+    .expect("connect");
+
+    let mut entry = TestEntry::default();
+    let ground = sim.world.surface_height(8, 8) as f32 + 1.0;
+    let gpos = Vec3::new(8.5, ground, 8.5);
+    for _ in 0..600 {
+        sess.pump(&mut sim, None, 0.05);
+        let messages = client.poll();
+        acknowledge_test_entry(&client, &mut entry, &messages);
+        if entry.accepted {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(entry.accepted, "guest admitted");
+    let gid = *sess.guests.keys().next().expect("guest present");
+
+    // Seed the guest's craft grid with the Maker's Tablet recipe (clay, clay)
+    // in a 2x2 grid and no blueprint item in the inventory.
+    let clay = reg.item_id("base:clay_ball").unwrap();
+    let plate = reg.item_id("base:maker_calibration_plate").unwrap();
+    let tablet = reg.item_id("base:etched_tablet").unwrap();
+    {
+        let guest = sess.guests.get_mut(&gid).unwrap();
+        guest.pos = ep(gpos);
+        // ["c", "c"] is a 1x2 column; place both clay in the first column of
+        // the 2x2 grid.
+        guest.craft_grid[0] = Some(ItemStack::new(&reg, clay, 1));
+        guest.craft_grid[2] = Some(ItemStack::new(&reg, clay, 1));
+    }
+    client.send(&C2S::CraftResult { size: 2 });
+    for _ in 0..120 {
+        sess.pump(&mut sim, None, 0.05);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    {
+        let guest = sess.guests.get(&gid).unwrap();
+        assert!(
+            guest.cursor.is_none(),
+            "blueprint-less craft must not put output on the cursor"
+        );
+        assert!(
+            guest.craft_grid[0].is_some(),
+            "blueprint-less craft must not consume the grid"
+        );
+    }
+
+    // Now add the blueprint; the craft succeeds and consumes exactly one.
+    {
+        let guest = sess.guests.get_mut(&gid).unwrap();
+        guest.inventory.slots[0] = Some(ItemStack::new(&reg, plate, 1));
+    }
+    client.send(&C2S::CraftResult { size: 2 });
+    for _ in 0..120 {
+        sess.pump(&mut sim, None, 0.05);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    {
+        let guest = sess.guests.get(&gid).unwrap();
+        let cursor = guest
+            .cursor
+            .expect("blueprint-present craft puts the tablet on the cursor");
+        assert_eq!(cursor.item, tablet, "crafted the gated output");
+        assert_eq!(
+            guest.inventory.count_of(plate),
+            0,
+            "exactly one blueprint consumed"
+        );
+    }
+}

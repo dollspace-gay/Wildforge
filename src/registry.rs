@@ -635,6 +635,9 @@ pub enum QuestReward {
     Give(ItemId, u32),
     SetFlag(String, String),
     Reputation(String, u32),
+    /// Unlocks the recipe whose output item id is the recipe id (spec 3.5):
+    /// writes the `learned:<recipe_id>` KV key truthy at apply time.
+    LearnRecipe(String),
 }
 
 /// A flag-gated feature (spec 2.5): a sealed block placed by a
@@ -711,6 +714,14 @@ pub struct RecipeDef {
     /// input vector to equal output + byproducts + this vector.
     pub loss: MaterialVector,
     pub byproducts: Vec<(ItemId, u32)>,
+    /// Per-player KV key that must read truthy to craft (spec 3.5). `None`
+    /// means no tech gate; a recipe unlocked by a `learn_recipe` reward uses
+    /// the runtime default `learned:<recipe_id>`.
+    pub tech: Option<String>,
+    /// Item consumed from the player's inventory (not the grid) on a
+    /// successful craft (spec 3.5). Counts as extra input in the material
+    /// graph.
+    pub blueprint: Option<ItemId>,
 }
 
 #[derive(Clone, Debug)]
@@ -2063,6 +2074,15 @@ struct RecipeToml {
     loss: MaterialVector,
     #[serde(default)]
     byproducts: Vec<ByproductToml>,
+    /// Per-player KV key that must read truthy to craft (spec 3.5). A recipe
+    /// without a `tech` field has no tech gate; `learn_recipe` quest rewards
+    /// unlock the runtime default `learned:<recipe_id>` key.
+    #[serde(default)]
+    tech: Option<String>,
+    /// Item consumed from the player's inventory (not the grid) on a
+    /// successful craft (spec 3.5).
+    #[serde(default)]
+    blueprint: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -2507,6 +2527,11 @@ struct QuestRewardToml {
     add_reputation: Option<String>,
     #[serde(default)]
     rep_amount: u32,
+    /// Recipe id whose `learned:<id>` tech key this reward sets truthy (spec
+    /// 3.5). Resolved to the qualified output-item id, which is also the
+    /// runtime recipe id.
+    #[serde(default)]
+    learn_recipe: Option<String>,
 }
 
 struct RawMod {
@@ -4029,6 +4054,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     // rebuilds `material_errors` from scratch at the end of build, so pushing
     // straight to it here would be wiped.
     let mut settlement_errors = Vec::new();
+    // Recipe gate errors are collected locally too (spec 3.5): unknown
+    // blueprint references must surface in `material_errors`, which
+    // `validate_material_graph` rebuilds from scratch.
+    let mut recipe_errors = Vec::new();
     for (modid, s) in pending_settlements {
         let id = qualify(&modid, &s.id);
         if reg.settlements.iter().any(|existing| existing.id == id) {
@@ -4515,6 +4544,20 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                         settlement_id,
                         reward.rep_amount.max(1),
                     ))
+                } else if let Some(recipe_out) = &reward.learn_recipe {
+                    let recipe_id = qualify(&modid, recipe_out);
+                    // The recipe id is its output item's qualified id; the
+                    // recipe must be declared somewhere in this load.
+                    let declared = pending_recipes
+                        .iter()
+                        .any(|(m, r)| qualify(m, &r.output) == recipe_id);
+                    if !declared {
+                        quest_errors.push(format!(
+                            "{id}: quest unlocks unknown recipe {recipe_id}"
+                        ));
+                        return None;
+                    }
+                    Some(QuestReward::LearnRecipe(recipe_id))
                 } else {
                     reward.set_flag.as_ref().map(|flag| {
                         QuestReward::SetFlag(
@@ -4594,6 +4637,18 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             }
         }
     }
+    // Recipes unlocked by a `learn_recipe` reward default their tech key to
+    // `learned:<recipe_id>` (spec 3.5) when they don't declare an explicit
+    // `tech`. The quests are parsed above, so their rewards are visible here.
+    let learned_recipe_ids: std::collections::HashSet<&str> = reg
+        .quests
+        .iter()
+        .flat_map(|q| &q.rewards)
+        .filter_map(|reward| match reward {
+            crate::registry::QuestReward::LearnRecipe(id) => Some(id.as_str()),
+            _ => None,
+        })
+        .collect();
     for (modid, r) in pending_recipes {
         let h = r.pattern.len();
         let w = r
@@ -4636,7 +4691,26 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         let Some(out) = lookup_item(&reg, &modid, &r.output) else {
             continue;
         };
+        let blueprint = match r.blueprint.as_deref() {
+            Some(name) => match lookup_item(&reg, &modid, name) {
+                Some(item) => Some(item),
+                None => {
+                    recipe_errors.push(format!(
+                        "{}: recipe blueprint {name} is unknown",
+                        r.output
+                    ));
+                    continue;
+                }
+            },
+            None => None,
+        };
         if ok {
+            let tech = r.tech.clone().or_else(|| {
+                let recipe_id = reg.item(out).name.clone();
+                learned_recipe_ids
+                    .contains(recipe_id.as_str())
+                    .then(|| format!("learned:{recipe_id}"))
+            });
             reg.recipes.push(RecipeDef {
                 w,
                 h,
@@ -4653,6 +4727,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                             .map(|item| (item, byproduct.count))
                     })
                     .collect(),
+                tech,
+                blueprint,
             });
         }
     }
@@ -4875,8 +4951,10 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     // Gate feature errors survive past `validate_material_graph`, which
     // rebuilds `material_errors` from scratch.
     reg.material_errors.extend(gate_errors);
-    // Settlement and quest-reward errors, likewise collected locally.
+    // Settlement, quest-reward, and recipe-gate errors, likewise collected
+    // locally.
     reg.material_errors.extend(settlement_errors);
+    reg.material_errors.extend(recipe_errors);
     reg.mods.append(&mut failed);
     reg
 }
@@ -4959,6 +5037,10 @@ fn reconcile_material_definitions(reg: &mut Registry) {
                 } else {
                     known = false;
                 }
+            }
+            // A blueprint item is extra input consumed on craft (spec 3.5).
+            if let Some(blueprint) = recipe.blueprint {
+                add_materials(&mut input, &reg.item(blueprint).materials, 1);
             }
             if !known {
                 continue;
@@ -5361,6 +5443,8 @@ fn register_salvage_content(reg: &mut Registry) {
             station: None,
             loss: MaterialVector::new(),
             byproducts: vec![(primitive_tail, 1)],
+            tech: None,
+            blueprint: None,
         });
 
         let (forge, forge_scale) = split_recovery(&original.materials, 900);
@@ -5482,6 +5566,10 @@ fn validate_material_graph(reg: &mut Registry) {
             } else {
                 valid_tags = false;
             }
+        }
+        // A blueprint item is extra input consumed on craft (spec 3.5).
+        if let Some(blueprint) = recipe.blueprint {
+            add_materials(&mut input, &reg.item(blueprint).materials, 1);
         }
         if !valid_tags {
             errors.push(format!(
@@ -6082,6 +6170,8 @@ dross_scar = { kind = "wet_film", handler = "filament_growth", carriers = ["wate
             station: None,
             loss: MaterialVector::new(),
             byproducts: Vec::new(),
+            tech: None,
+            blueprint: None,
         });
         validate_arcane_graph(&mut registry);
         assert!(

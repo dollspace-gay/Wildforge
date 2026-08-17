@@ -1375,3 +1375,14 @@ output = "base:alembic"
 pattern = ["fcf", "g.g", "ppp"]
 keys = { f = "base:filter_cloth", c = "base:charcoal", g = "base:glass", p = "#base:planks" }
 output = "base:filter_stand"
+
+# --- spec 3.5: gated recipe ---
+# The Maker's Tablet is a learned craft (the elder's technique, unlocked by
+# quest reward) and needs a calibration plate consumed from the inventory on
+# each craft. Both gates are per-player: the tech KV flag must read truthy and
+# the blueprint item must be present.
+[[recipe]]
+pattern = ["c", "c"]
+keys = { c = "base:clay_ball" }
+output = "base:etched_tablet"
+blueprint = "base:maker_calibration_plate"

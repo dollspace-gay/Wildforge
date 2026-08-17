@@ -10,6 +10,10 @@ mod demos;
 mod dialogue;
 #[cfg(test)]
 pub(crate) use dialogue::apply_reputation_reward;
+#[cfg(test)]
+pub(crate) use dialogue::apply_recipe_unlock_reward;
+#[cfg(test)]
+pub(crate) use containers::recipe_gates_met;
 mod frame;
 mod input;
 mod interaction;

@@ -419,6 +419,14 @@ speed = 1.5
   output × `count`, `byproducts = [{ item = "...", count = 1 }]`, plus
   `loss = { material = units }`. Use a byproduct whenever the remainder is a
   gameplay object; `loss` is the explicit dispersed/consumed sink.
+- `[[recipe]]` gates (spec 3.5): `tech = "kv_key"` requires the player's
+  per-player KV flag `kv_key` to read truthy (non-empty and not `"false"`);
+  `blueprint = "item"` requires that item in the player's inventory,
+  consuming one per craft. Either, both, or neither may appear. A blueprint
+  item is extra input in the material graph, so its material vector must be
+  balanced (empty vectors balance trivially). Recipes unlocked by a quest
+  `learn_recipe` reward default their tech key to `learned:<recipe_id>` (see
+  `quests.toml`); an explicit `tech` overrides that.
 - A tracked `[[smelt]]` uses the same rule with optional
   `spit = { item = "...", count = 1 }` and `loss = {...}`. A tracked
   `[[worked]]` may also declare `loss`; its input must equal output × `count`
@@ -775,6 +783,12 @@ pools = { path = "haven" }
 - Reputation is currently granted by quest rewards:
   `{ add_reputation = "elder_haven", rep_amount = 3 }` (in
   `quests.toml`). Crossing a threshold reveals that tier's cells.
+- `{ learn_recipe = "base:etched_tablet" }` (spec 3.5) unlocks a gated
+  recipe: on completion it writes the recipe's tech key truthy. The default
+  key is `learned:<recipe_id>` (the recipe id is its output item's qualified
+  id); an explicit `tech` on the recipe overrides it, and a recipe with
+  neither stays always-craftable. Reward types are additive — `item`,
+  `set_flag`, `add_reputation`, and `learn_recipe` may all appear together.
 - Reveal is one-way and persisted; removing the mod's settlement leaves
   the placed blocks as ordinary solid terrain.
 - The reveal is per-world, not per-player: one player's reputation

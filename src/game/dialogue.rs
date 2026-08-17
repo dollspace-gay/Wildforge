@@ -240,6 +240,13 @@ impl Game {
                             *amount,
                         );
                     }
+                    crate::registry::QuestReward::LearnRecipe(recipe_id) => {
+                        apply_recipe_unlock_reward(
+                            &self.content.scripts.kv,
+                            &self.player_namespace(),
+                            recipe_id,
+                        );
+                    }
                 }
             }
         }
@@ -281,4 +288,18 @@ pub(crate) fn apply_reputation_reward(
     if let Some(idx) = reg.settlement_id(settlement) {
         world.reveal_settlement(idx, at);
     }
+}
+
+/// Apply a `learn_recipe` quest reward (spec 3.5): write the recipe's runtime
+/// tech key `learned:<recipe_id>` truthy in the player's KV namespace.
+/// Standalone so the KV write is testable without a live `Game`.
+pub(crate) fn apply_recipe_unlock_reward(
+    kv: &Rc<RefCell<HashMap<String, HashMap<String, String>>>>,
+    namespace: &str,
+    recipe_id: &str,
+) {
+    kv.borrow_mut()
+        .entry(namespace.to_string())
+        .or_default()
+        .insert(format!("learned:{recipe_id}"), "1".to_string());
 }

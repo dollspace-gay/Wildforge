@@ -32,3 +32,19 @@ rewards = [
   { item = "cerium_shard", count = 1 },
   { add_reputation = "elder_haven", rep_amount = 3 },
 ]
+
+# The elder teaches the Maker's tablet (spec 3.5): the `learn_recipe` reward
+# writes the recipe's default tech key `learned:base:etched_tablet` truthy,
+# which unlocks the gated recipe alongside its blueprint requirement.
+[[quest]]
+id = "elder_maker"
+title = "The Hand That Measures"
+description = "Calibrate the maker's plate and learn the tablet craft."
+giver = "elder"
+prereq = "elder_honor"
+objectives = [
+  { key = "calibration_plate", description = "Calibrate a maker's plate", count = 1 },
+]
+rewards = [
+  { learn_recipe = "base:etched_tablet" },
+]

@@ -630,6 +630,29 @@ impl Game {
             false,
             self.hit(result_slot),
         );
+        // Spec 3.5: a locked recipe's preview shows a dimmed lock badge.
+        let locked = crafting::match_recipe(
+            &self.content.reg,
+            &self.interaction.craft_grid[..count],
+            self.interaction.craft_size,
+        )
+        .is_some_and(|r| self.recipe_locked(r));
+        if locked {
+            ui.rect(
+                result_slot.0,
+                result_slot.1,
+                result_slot.2,
+                result_slot.3,
+                [0.0, 0.0, 0.0, 0.55],
+            );
+            ui.text_shadow(
+                result_slot.0 + result_slot.2 / 2.0 - 24.0,
+                result_slot.1 + result_slot.3 / 2.0 - 8.0,
+                1.5,
+                "LOCKED",
+                [1.0, 0.8, 0.3, 1.0],
+            );
+        }
     }
 
     pub(super) fn draw_inventory_screen(&self, ui: &mut UiBatch) {

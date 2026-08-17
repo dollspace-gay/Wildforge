@@ -3755,6 +3755,14 @@ impl HostSession {
                 ) else {
                     return;
                 };
+                // Spec 3.5: the host enforces the blueprint gate (it holds the
+                // authoritative guest inventory). The tech gate is client-side
+                // only: the KV store lives on the client.
+                if let Some(blueprint) = recipe.blueprint
+                    && !guest.inventory.can_afford(&[(blueprint, 1)])
+                {
+                    return;
+                }
                 let output = ItemStack::new(&server.world.reg, recipe.output, recipe.count);
                 let recipe_loss = recipe.loss.clone();
                 let recipe_byproducts = recipe.byproducts.clone();
@@ -3779,6 +3787,9 @@ impl HostSession {
                     _ => return,
                 }
                 crate::crafting::consume(&mut guest.craft_grid[..size * size]);
+                if let Some(blueprint) = recipe.blueprint {
+                    guest.inventory.try_consume(&[(blueprint, 1)]);
+                }
                 if let Some(pos) = guest.pos.block() {
                     for stack in charged_inputs {
                         server.world.retire_arcane_stack_at(

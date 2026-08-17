@@ -988,6 +988,170 @@ settlement = "hollow"
 }
 
 #[test]
+fn recipe_gate_fields_parse_and_learn_default_applies() {
+    // The base Maker's Tablet recipe is blueprint-gated and is a
+    // `learn_recipe` target, so it carries the default `learned:` tech key.
+    let reg = base_reg();
+    let tablet = reg
+        .recipes
+        .iter()
+        .find(|r| r.output == it(&reg, "base:etched_tablet"))
+        .expect("base etched_tablet recipe registers");
+    assert_eq!(
+        tablet.tech.as_deref(),
+        Some("learned:base:etched_tablet"),
+        "learn_recipe reward implies the default tech key"
+    );
+    let plate = it(&reg, "base:maker_calibration_plate");
+    assert_eq!(tablet.blueprint, Some(plate), "blueprint gate resolved");
+
+    // A plain recipe keeps no gate.
+    let planks = reg
+        .recipes
+        .iter()
+        .find(|r| r.output == it(&reg, "base:planks"))
+        .expect("base planks recipe");
+    assert_eq!(planks.tech, None, "ungated recipe has no tech key");
+    assert_eq!(planks.blueprint, None, "ungated recipe has no blueprint");
+}
+
+#[test]
+fn recipe_unknown_blueprint_fails_load_naming_the_recipe() {
+    let root = tmp_dir("recipe-bad-blueprint");
+    let dir = root.join("badbp");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"badbp\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("recipes.toml"),
+        r#"
+[[recipe]]
+pattern = ["ss"]
+keys = { s = "base:stick" }
+output = "base:planks"
+count = 2
+blueprint = "base:no_such_blueprint"
+"#,
+    )
+    .unwrap();
+    let invalid = registry::load(&root);
+    assert!(
+        invalid
+            .material_errors
+            .iter()
+            .any(|e| e.contains("base:planks")
+                && e.contains("blueprint")
+                && e.contains("base:no_such_blueprint")),
+        "unknown blueprint names the recipe and item: {:?}",
+        invalid.material_errors
+    );
+}
+
+#[test]
+fn learn_recipe_reward_resolves_known_and_fails_unknown() {
+    // Known recipe: the base elder_maker quest's reward resolves.
+    let reg = base_reg();
+    let quest = reg
+        .quests
+        .iter()
+        .find(|q| q.id == "base:elder_maker")
+        .expect("base elder_maker quest");
+    assert!(
+        quest
+            .rewards
+            .iter()
+            .any(|r| matches!(r, crate::registry::QuestReward::LearnRecipe(id) if id == "base:etched_tablet")),
+        "elder_maker unlocks the tablet recipe"
+    );
+
+    // Unknown recipe: the reward is dropped with a load error.
+    let root = tmp_dir("recipe-bad-learn");
+    let dir = root.join("badlearn");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"badlearn\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("quests.toml"),
+        r#"
+[[quest]]
+id = "mystery"
+title = "Mystery"
+description = "Learn a lost craft."
+giver = "elder"
+prereq = ""
+objectives = [{ key = "proof", description = "Prove yourself", count = 1 }]
+rewards = [
+  { learn_recipe = "base:ghost_recipe" },
+]
+"#,
+    )
+    .unwrap();
+    let invalid = registry::load(&root);
+    assert!(
+        invalid
+            .material_errors
+            .iter()
+            .any(|e| e.contains("badlearn:mystery")
+                && e.contains("unlocks unknown recipe")
+                && e.contains("base:ghost_recipe")),
+        "unknown learn_recipe reward names the quest and recipe: {:?}",
+        invalid.material_errors
+    );
+}
+
+#[test]
+fn gated_recipe_material_balance_accounts_blueprint_input() {
+    // The blueprint item's materials are extra input: a recipe whose pattern
+    // alone balances but whose blueprint carries mass must fail validation.
+    let root = tmp_dir("recipe-bad-balance");
+    let dir = root.join("badbal");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"badbal\"\nworld_api = 2\ndepends = [\"base\"]\nretrogen = \"untouched_host_only\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("items.toml"),
+        r#"
+[[item]]
+id = "heavy_token"
+name = "Heavy Token"
+texture = "@stick"
+materials = { iron = 1200 }
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("recipes.toml"),
+        r#"
+[[recipe]]
+pattern = ["s"]
+keys = { s = "base:iron_ingot" }
+output = "base:iron_ingot"
+blueprint = "heavy_token"
+"#,
+    )
+    .unwrap();
+    let invalid = registry::load(&root);
+    assert!(
+        invalid
+            .material_errors
+            .iter()
+            .any(|e| e.contains("base:iron_ingot")
+                && e.contains("not material-balanced")),
+        "blueprint input must be accounted: {:?}",
+        invalid.material_errors
+    );
+}
+
+#[test]
 fn duplicate_settlement_id_fails() {
     let root = tmp_dir("settle-dup");
     let dir = root.join("settledup");
