@@ -80,7 +80,12 @@ pub(super) fn run_headless_server(world_name: &str) {
         sim.advance(dt, &players, &mut evs);
         for ev in evs {
             match ev {
-                server::SimEvent::PlayerHit { who, dmg, from } => {
+                server::SimEvent::PlayerHit {
+                    who,
+                    dmg,
+                    from,
+                    ..
+                } => {
                     // `who` is the guest's own net id; no positional lookup.
                     sess.hurt_guest(&mut sim, who, dmg, from);
                 }

@@ -1620,8 +1620,8 @@ fn base_animals_and_weapons_register() {
     );
     assert_eq!(
         reg.animals.iter().filter(|a| a.hostile).count(),
-        6,
-        "six wardens"
+        9,
+        "nine wardens: the classic six plus the spec 3.6 archetypes"
     );
     let deer = &reg.animals[reg.animal_id("base:deer").expect("deer")];
     assert_eq!(deer.biomes, vec!["forest"]);

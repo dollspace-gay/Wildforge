@@ -9,7 +9,7 @@ use crate::mesher::{CORNERS, FACE_SHADE, NORMALS, Vertex};
 use crate::planet::EntityPos;
 #[cfg(test)]
 use crate::planet::Face;
-use crate::registry::{AnimalDef, Registry};
+use crate::registry::{AnimalDef, AttackKind, BehaviorArchetype, Registry};
 use crate::server::PlayerCtx;
 use crate::world::World;
 
@@ -46,8 +46,15 @@ pub enum MobState {
 pub enum MobEvent {
     /// A lead stretched past its limit: drop the strip here.
     LeadSnapped(EntityPos),
-    /// Contact damage: (player index, half-hearts, attacker position).
-    HitPlayer(usize, f32, EntityPos),
+    /// Contact damage: (attacker index, half-hearts, damage class, attack
+    /// name, attacker position). Untyped melee carries an empty class.
+    HitPlayer {
+        who: usize,
+        dmg: f32,
+        dmg_type: Option<String>,
+        attack: String,
+        from: EntityPos,
+    },
     /// A caster fired: projectile spawn.
     Cast(Projectile),
     /// A wildlife pair bred at this position.
@@ -61,6 +68,13 @@ pub enum MobEvent {
     /// Digestion finished where it always does (true = a bat's
     /// guano, the cave's own fertilizer).
     Dung(EntityPos, bool),
+    /// A builder stamped a template: the world places the cells through
+    /// the ordinary block path.
+    Build {
+        template: String,
+        anchor: crate::planet::BlockPos,
+        rot: crate::world::multiblock::Rotation,
+    },
 }
 
 /// A bolt in flight: warden thorn/ember/frost, or a player's arrow.
@@ -74,6 +88,9 @@ pub struct Projectile {
     pub vel: Vec3,
     pub tile: u16,
     pub damage: f32,
+    /// Damage class this bolt carries ("pierce", "fire"...); the wild's
+    /// resistances key on it. None = untyped.
+    pub damage_type: Option<String>,
     pub age: f32,
     /// Player arrows seek mobs; warden bolts seek the player.
     pub from_player: bool,
@@ -219,8 +236,30 @@ pub struct Mob {
     pub hurt_flash: f32,
     pub on_ground: bool,
     hit_wall: bool,
-    attack_cd: f32,
-    cast_cd: f32,
+    /// Per-attack cooldown wheel (spec 3.6), one entry per species attack,
+    /// sized on first tick. Projectile attacks seed at 1.0s so a fresh
+    /// caster waits a beat like the legacy `cast_cd` did.
+    pub attack_cds: Vec<f32>,
+    /// A charge attack winding up: seconds until the dash starts.
+    pub charge_wind_up: f32,
+    /// Distance and direction recorded when the charge began.
+    charge_range: f32,
+    charge_dir: Vec3,
+    /// Yaw frozen while a charge winds up and dashes (it does not turn).
+    charge_yaw: f32,
+    /// Active dash: (blocks left, direction). The mob moves at speed*3
+    /// in a straight line until it collides or runs out of distance.
+    pub dash: Option<(f32, Vec3)>,
+    /// Behavioral archetype (spec 3.6), synced from the def each tick.
+    pub archetype: BehaviorArchetype,
+    /// A construct disabled by hacking: inert, non-aggressive.
+    pub hacked: bool,
+    /// A brute's enrage: seconds of doubled attack tempo (set by a hit
+    /// from a damage class it is vulnerable to).
+    pub rage: f32,
+    /// A builder's stamp rhythm.
+    pub build_cd: f32,
+    pub built_count: u32,
     /// Seconds spent out of aggro range while hunting (drops at 8).
     lose_aggro: f32,
     /// Fed and ready to breed (wildlife husbandry).
@@ -323,8 +362,17 @@ impl Mob {
             hurt_flash: 0.0,
             on_ground: false,
             hit_wall: false,
-            attack_cd: 0.0,
-            cast_cd: 1.0,
+            attack_cds: Vec::new(),
+            charge_wind_up: 0.0,
+            charge_range: 0.0,
+            charge_dir: Vec3::ZERO,
+            charge_yaw: yaw,
+            dash: None,
+            archetype: crate::registry::BehaviorArchetype::Standard,
+            hacked: false,
+            rage: 0.0,
+            build_cd: 0.0,
+            built_count: 0,
             lose_aggro: 0.0,
             fed: false,
             calm: 0.0,
@@ -371,10 +419,19 @@ impl Mob {
     }
 
     /// Take damage from an attacker at `from`: knockback, then panic
-    /// (wildlife) or retaliation (wardens).
-    pub fn hurt(&mut self, def: &AnimalDef, dmg: f32, from: EntityPos) {
-        self.health -= dmg;
+    /// (wildlife) or retaliation (wardens). `dmg_type` keys the species'
+    /// damage-class resistances (None = full).
+    pub fn hurt(&mut self, def: &AnimalDef, dmg: f32, dmg_type: Option<&str>, from: EntityPos) {
+        self.health -= dmg * def.damage_multiplier(dmg_type.unwrap_or(""));
         self.hurt_flash = 0.35;
+        // A brute wounded by a damage class it is vulnerable to (mult > 1)
+        // enrages: it swings on double time for a few seconds.
+        if def.behavior == BehaviorArchetype::Brute
+            && let Some(kind) = dmg_type
+            && def.damage_multiplier(kind) > 1.0
+        {
+            self.rage = 6.0;
+        }
         let mut away = -self.pos.local_delta_to(from);
         away.y = 0.0;
         let dir = if away.length_squared() > 0.001 {
@@ -423,6 +480,7 @@ impl Mob {
         rng: &mut u32,
         events: &mut Vec<MobEvent>,
     ) {
+        self.archetype = def.behavior;
         // The mob cares about whoever is closest (and, for hunting,
         // closest *attackable*).
         let nearest = players
@@ -448,8 +506,23 @@ impl Mob {
             .map(|(i, p)| (i, *p));
         self.state_timer -= dt;
         self.hurt_flash = (self.hurt_flash - dt).max(0.0);
-        self.attack_cd = (self.attack_cd - dt).max(0.0);
-        self.cast_cd = (self.cast_cd - dt).max(0.0);
+        // A raging brute's wheel drains at double tempo.
+        let wheel_rate = if self.archetype == BehaviorArchetype::Brute && self.rage > 0.0 {
+            2.0
+        } else {
+            1.0
+        };
+        self.rage = (self.rage - dt).max(0.0);
+        for cd in self.attack_cds.iter_mut() {
+            *cd = (*cd - dt * wheel_rate).max(0.0);
+        }
+        if self.charge_wind_up > 0.0 {
+            self.charge_wind_up -= dt;
+            if self.charge_wind_up <= 0.0 {
+                self.dash = Some((self.charge_range, self.charge_dir));
+                self.charge_wind_up = 0.0;
+            }
+        }
         self.calm = (self.calm - dt).max(0.0);
         self.breed_cd = (self.breed_cd - dt).max(0.0);
         self.quiet_notice = (self.quiet_notice - dt).max(0.0);
@@ -609,8 +682,12 @@ impl Mob {
                 None => self.belly = 45.0,
             }
         }
+        // Spec 3.6: an archetype may fully handle the tick (a hacked
+        // construct freezes) or add its own rhythm (a builder stamps)
+        // before the Standard state machine runs.
+        let archetype_handled = self.archetype_tick(world, def, dt, rng, events);
         // State transitions + wish velocity.
-        if !led_active {
+        if !led_active && !archetype_handled {
             match self.state {
                 MobState::Idle => {
                     if self.state_timer <= 0.0 {
@@ -799,54 +876,7 @@ impl Mob {
                         } else {
                             self.lose_aggro = 0.0;
                         }
-                        match &def.projectile {
-                            Some(pr) => {
-                                // Casters hold their range and lob bolts.
-                                if dist > 11.0 {
-                                    wish = dir * def.speed;
-                                } else if dist < 5.0 {
-                                    wish = -dir * def.speed * 0.8;
-                                }
-                                if dist < 14.0 && self.cast_cd <= 0.0 {
-                                    self.cast_cd = pr.cooldown;
-                                    let muzzle = self
-                                        .pos
-                                        .translated(Vec3::new(0.0, def.height * 0.7, 0.0))
-                                        .expect("mob muzzle stays in its chart")
-                                        .pos;
-                                    let aim = (muzzle.local_delta_to(p.pos)
-                                        + Vec3::new(0.0, 0.9, 0.0))
-                                    .normalize_or_zero();
-                                    events.push(MobEvent::Cast(Projectile {
-                                        stable_id: 0,
-                                        pos: muzzle
-                                            .translated(aim * 0.6)
-                                            .expect("bolt starts beside its caster")
-                                            .pos,
-                                        vel: aim * pr.speed,
-                                        tile: pr.tile,
-                                        damage: pr.damage,
-                                        age: 0.0,
-                                        from_player: false,
-                                        drop_item: None,
-                                        preparation_payload: None,
-                                        owner: 0,
-                                    }));
-                                }
-                            }
-                            None => {
-                                wish = dir * def.speed * 1.2;
-                                // Contact swing with a cooldown.
-                                let dy = p.pos.y - self.pos.y;
-                                if dist < def.half_w + 0.9
-                                    && dy.abs() < 2.0
-                                    && self.attack_cd <= 0.0
-                                {
-                                    self.attack_cd = 1.0;
-                                    events.push(MobEvent::HitPlayer(who, def.attack, self.pos));
-                                }
-                            }
-                        }
+                        self.hunt_wheel(def, who, p.pos, dt, events, dir, dist, &mut wish);
                     }
                 },
             }
@@ -925,7 +955,12 @@ impl Mob {
         // country a CALM animal minds the walls too (pens hold at one
         // block high). Panic is different: a fleeing animal will bolt
         // clean over the fence, so keep your livestock calm.
-        if !def.movement_float && self.hit_wall && self.on_ground && wish.length_squared() > 0.01 {
+        if !def.movement_float
+            && self.hit_wall
+            && self.on_ground
+            && wish.length_squared() > 0.01
+            && self.dash.is_none()
+        {
             let panicking = matches!(self.state, MobState::Flee | MobState::Hunt);
             let tended = self
                 .pos
@@ -939,6 +974,226 @@ impl Mob {
         // Legs swing with horizontal travel.
         let hspeed = Vec3::new(self.vel.x, 0.0, self.vel.z).length();
         self.anim_phase += hspeed * dt * 3.2;
+    }
+
+    /// The spec 3.6 attack wheel. Approaches, holds, or charges, picking
+    /// the first ready attack whose range condition trips and honoring
+    /// each attack's own cooldown. The synthesized single-melee list
+    /// reproduces the legacy warden swing exactly, so Standard behavior
+    /// is unchanged.
+    #[allow(clippy::too_many_arguments)]
+    fn hunt_wheel(
+        &mut self,
+        def: &AnimalDef,
+        who: usize,
+        target: EntityPos,
+        dt: f32,
+        events: &mut Vec<MobEvent>,
+        dir: Vec3,
+        dist: f32,
+        wish: &mut Vec3,
+    ) {
+        if self.attack_cds.len() != def.attacks.len() {
+            self.attack_cds = def
+                .attacks
+                .iter()
+                .map(|a| if a.kind == AttackKind::Projectile { 1.0 } else { 0.0 })
+                .collect();
+        }
+        // A dash in flight: move straight along the frozen line.
+        if let Some((left, d)) = self.dash {
+            self.yaw = self.charge_yaw;
+            let step = def.speed * 3.0 * dt;
+            if left - step <= 0.0 || self.hit_wall {
+                self.dash = None;
+                // The charge lands where the dash ends: only a target the
+                // line still touches takes its hit.
+                if dist < def.half_w + 1.0
+                    && let Some(atk) =
+                        def.attacks.iter().find(|a| a.kind == AttackKind::Charge)
+                {
+                    events.push(MobEvent::HitPlayer {
+                        who,
+                        dmg: atk.damage,
+                        dmg_type: atk.damage_type.clone(),
+                        attack: atk.name.clone(),
+                        from: self.pos,
+                    });
+                }
+            } else {
+                self.dash = Some((left - step, d));
+                *wish = d * def.speed * 3.0;
+            }
+            return;
+        }
+        if self.charge_wind_up > 0.0 {
+            // Wind-up: rooted, facing the chosen line.
+            self.yaw = self.charge_yaw;
+            return;
+        }
+        let mut charged = false;
+        for (i, atk) in def.attacks.iter().enumerate() {
+            if self.attack_cds[i] > 0.0 {
+                continue;
+            }
+            let dy = target.y - self.pos.y;
+            match atk.kind {
+                AttackKind::Melee => {
+                    if dist < atk.range && dy.abs() < 2.0 {
+                        self.attack_cds[i] = atk.cooldown;
+                        events.push(MobEvent::HitPlayer {
+                            who,
+                            dmg: atk.damage,
+                            dmg_type: atk.damage_type.clone(),
+                            attack: atk.name.clone(),
+                            from: self.pos,
+                        });
+                    }
+                }
+                AttackKind::Projectile => {
+                    if dist < atk.range
+                        && let Some(pr) = &atk.projectile
+                    {
+                            self.attack_cds[i] = atk.cooldown;
+                            let muzzle = self
+                                .pos
+                                .translated(Vec3::new(0.0, def.height * 0.7, 0.0))
+                                .expect("mob muzzle stays in its chart")
+                                .pos;
+                            let aim = (muzzle.local_delta_to(target)
+                                + Vec3::new(0.0, 0.9, 0.0))
+                            .normalize_or_zero();
+                            events.push(MobEvent::Cast(Projectile {
+                                stable_id: 0,
+                                pos: muzzle
+                                    .translated(aim * 0.6)
+                                    .expect("bolt starts beside its caster")
+                                    .pos,
+                                vel: aim * pr.speed,
+                                tile: pr.tile,
+                                damage: pr.damage,
+                                damage_type: pr.damage_type.clone(),
+                                age: 0.0,
+                                from_player: false,
+                                drop_item: None,
+                                preparation_payload: None,
+                                owner: 0,
+                            }));
+                    }
+                }
+                AttackKind::Charge => {
+                    if dist < atk.range && dist > def.half_w + 0.9 {
+                        self.attack_cds[i] = atk.cooldown;
+                        self.charge_dir = dir;
+                        self.charge_yaw = dir.x.atan2(dir.z);
+                        // The dash covers the ground to the target, so it
+                        // stops where the charge can land.
+                        self.charge_range = dist;
+                        self.charge_wind_up = 0.4;
+                        charged = true;
+                    }
+                }
+            }
+        }
+        // Movement: casters hold their band; everyone else closes in.
+        // A charging mob keeps closing until the wind-up roots it.
+        let caster = def
+            .attacks
+            .iter()
+            .any(|a| a.kind == AttackKind::Projectile);
+        if caster && !charged {
+            if dist > 11.0 {
+                *wish = dir * def.speed;
+            } else if dist < 5.0 {
+                *wish = -dir * def.speed * 0.8;
+            }
+        } else if dist > def.half_w + 0.9 {
+            *wish = dir * def.speed * 1.2;
+        }
+    }
+
+    /// Spec 3.6 archetype hooks that run before the Standard state
+    /// machine. Returns true when the archetype fully handled this tick.
+    /// Standard never handles, so its pipeline is byte-for-byte intact.
+    fn archetype_tick(
+        &mut self,
+        world: &World,
+        def: &AnimalDef,
+        dt: f32,
+        rng: &mut u32,
+        events: &mut Vec<MobEvent>,
+    ) -> bool {
+        match def.behavior {
+            BehaviorArchetype::Construct => {
+                // A hacked construct is inert: it stands, never fights,
+                // never flees, and its wheel never fires.
+                if self.hacked {
+                    self.state = MobState::Idle;
+                    self.state_timer = 1.0;
+                    return true;
+                }
+                false
+            }
+            BehaviorArchetype::Builder => {
+                self.builder_dispatch(world, def, dt, rng, events);
+                false
+            }
+            _ => false,
+        }
+    }
+
+    /// A builder stamps its template on a cooldown, up to its cap,
+    /// whenever it is not fleeing for its life. The world applies the
+    /// cells; the count caps the total.
+    fn builder_dispatch(
+        &mut self,
+        world: &World,
+        def: &AnimalDef,
+        dt: f32,
+        rng: &mut u32,
+        events: &mut Vec<MobEvent>,
+    ) {
+        self.build_cd = (self.build_cd - dt).max(0.0);
+        let Some(builder) = &def.builder else {
+            return;
+        };
+        let Some(template) = builder.template.as_deref() else {
+            return;
+        };
+        if self.build_cd > 0.0 || self.built_count >= builder.cap {
+            return;
+        }
+        if matches!(self.state, MobState::Flee | MobState::Stalk | MobState::Hunt) {
+            return;
+        }
+        // Templates live on the world registry; if the authored name is
+        // missing, back off for a long while rather than spamming.
+        if world.template(template).is_none() {
+            self.build_cd = 120.0;
+            return;
+        }
+        self.build_cd = builder.interval;
+        self.built_count += 1;
+        // Stamp a short distance in a random horizontal direction, at
+        // the builder's own ground line, in the chart's local frame.
+        let ang = r01(rng) * std::f32::consts::TAU;
+        let (sin, cos) = ang.sin_cos();
+        let du = (cos * 3.0).round() as i32;
+        let dv = (sin * 3.0).round() as i32;
+        let y = self.pos.y.floor() as i32;
+        let Some(anchor) = self
+            .pos
+            .block()
+            .and_then(|c| c.offset(du, y - c.y() as i32, dv))
+        else {
+            self.build_cd = 5.0;
+            return;
+        };
+        events.push(MobEvent::Build {
+            template: template.to_string(),
+            anchor,
+            rot: crate::world::multiblock::Rotation::R0,
+        });
     }
 
     /// The nearest richest plant meal within grazing range: a grown

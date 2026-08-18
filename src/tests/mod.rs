@@ -14,6 +14,7 @@ use crate::world::World;
 
 mod agent;
 mod alchemy;
+mod archetypes;
 mod atlas;
 mod belt;
 mod climate;

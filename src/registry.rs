@@ -355,6 +355,8 @@ pub struct ItemDef {
     /// Attack damage in half-hearts (swords set it high; tools get a
     /// modest implicit value, bare items 1).
     pub damage: f32,
+    /// Damage class wielded against the wild ("pierce", "blunt", "fire"...).
+    pub damage_type: Option<String>,
     pub bow: Option<BowDef>,
     /// Ammo class this item belongs to ("arrow"); bows consume it.
     pub ammo: Option<String>,
@@ -394,6 +396,8 @@ pub struct ItemDef {
     pub glow: Option<[f32; 3]>,
     /// Works blooms on an anvil.
     pub hammer: bool,
+    /// Right-click disables (hacks) a construct instead of destroying it.
+    pub hack: bool,
     /// Recoverable finite constituents per item, in canonical integer units.
     pub materials: MaterialVector,
     /// True only when the content file fixes the vector. Derived vectors may
@@ -425,8 +429,78 @@ pub struct ModelBox {
 pub struct ProjectileDef {
     pub tile: u16,
     pub damage: f32,
+    pub damage_type: Option<String>,
     pub speed: f32,
     pub cooldown: f32,
+}
+
+/// What an attack does once its range condition trips.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AttackKind {
+    /// Instant contact swing (the standard warden melee).
+    Melee,
+    /// Wind up briefly, then dash in a straight line until impact.
+    Charge,
+    /// Loose a bolt at the target (reuses [`ProjectileDef`]).
+    Projectile,
+}
+
+/// One entry in a species' attack wheel (spec 3.6). `attacks` empty on an
+/// animal synthesizes the implicit single melee from the `attack` scalar.
+#[derive(Clone, Debug)]
+pub struct AttackDef {
+    /// Name shown in hit logs and matched by script hooks ("melee",
+    /// "lunge", "ember").
+    pub name: String,
+    pub kind: AttackKind,
+    /// Half-hearts dealt on contact / per bolt.
+    pub damage: f32,
+    /// Seconds between uses of this attack.
+    pub cooldown: f32,
+    /// Trigger distance to the target (melee/charge); for projectile
+    /// attacks this is the cast trigger range.
+    pub range: f32,
+    /// Damage class the attack's strikes carry.
+    pub damage_type: Option<String>,
+    /// Bolt for projectile attacks.
+    pub projectile: Option<ProjectileDef>,
+}
+
+/// A warden's behavioral archetype (spec 3.6). Standard is the legacy
+/// warden pipeline; the others layer one new shape on top of it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BehaviorArchetype {
+    Standard,
+    /// Big and tough: authored resistances plus a multi-attack wheel; a
+    /// blow from a damage class it is vulnerable to (mult > 1) enrages it.
+    Brute,
+    /// Hackable-vs-destroy: a right-click with the right tool disables it
+    /// (freezes, turns non-aggressive, drops its core); destroying it
+    /// yields scrap.
+    Construct,
+    /// Stamps a template near itself on a cooldown, up to a cap.
+    Builder,
+}
+
+/// What a builder builds (spec 3.6). All cells land through the ordinary
+/// block path, so they save and reload like any world block.
+#[derive(Clone, Debug)]
+pub struct BuilderDef {
+    pub template: Option<String>,
+    /// Maximum stamps this builder will ever place.
+    pub cap: u32,
+    /// Seconds between stamps.
+    pub interval: f32,
+}
+
+/// The hack path for a construct (spec 3.6), distinct from its destroy
+/// `drops`.
+#[derive(Clone, Debug)]
+pub struct HackDef {
+    /// Item tag the tool must carry ("hack").
+    pub tool: Option<String>,
+    /// (item, min, max) rolled once when the construct is disabled.
+    pub drops: Vec<(ItemId, u32, u32)>,
 }
 
 #[derive(Clone, Debug)]
@@ -463,6 +537,15 @@ pub struct AnimalDef {
     pub hostile: bool,
     /// Contact damage in half-hearts.
     pub attack: f32,
+    /// Damage-class multipliers: absent class = 1.0 (full damage).
+    pub resistances: HashMap<String, f32>,
+    /// The attack wheel (spec 3.6). Never empty: an authored `attacks`
+    /// list is kept as-is, otherwise a single implicit melee is
+    /// synthesized from `attack`.
+    pub attacks: Vec<AttackDef>,
+    pub behavior: BehaviorArchetype,
+    pub builder: Option<BuilderDef>,
+    pub hack: Option<HackDef>,
     pub aggro_range: f32,
     /// Minimum world ire before this warden may spawn.
     pub ire_min: f32,
@@ -504,6 +587,14 @@ pub struct AnimalDef {
     /// Some(npc index) marks a synthesized companion species backed by an
     /// `NpcDef` (friendly characters, spec 3.1). Wildlife is None.
     pub npc: Option<usize>,
+}
+
+impl AnimalDef {
+    /// Multiplier applied to damage of `dmg_type` (1.0 when untyped or not
+    /// declared). The wild keys this on a damage-class string, not a block.
+    pub fn damage_multiplier(&self, dmg_type: &str) -> f32 {
+        self.resistances.get(dmg_type).copied().unwrap_or(1.0)
+    }
 }
 
 /// A friendly scripted character, authored apart from wildlife (spec 3.1).
@@ -1697,6 +1788,10 @@ struct ItemToml {
     places: Option<String>,
     #[serde(default)]
     damage: Option<f32>,
+    /// Player-wielded damage class ("pierce", "blunt", "fire"...); the
+    /// wild's resistances key on it. None = untyped (always full).
+    #[serde(default)]
+    damage_type: Option<String>,
     #[serde(default)]
     bow: Option<BowToml>,
     #[serde(default)]
@@ -1725,6 +1820,9 @@ struct ItemToml {
     /// Works blooms on an anvil.
     #[serde(default)]
     hammer: bool,
+    /// Right-click disables (hacks) a construct instead of destroying it.
+    #[serde(default)]
+    hack: bool,
     /// Carried-light color for non-placeable glowing items.
     #[serde(default)]
     glow: Option<[f32; 3]>,
@@ -1967,6 +2065,36 @@ struct AnimalDropToml {
     max: Option<u32>,
 }
 
+/// One damage-class multiplier: `mult = 0.5` halves that class, `mult = 2.0`
+/// doubles it. Absent classes pass untouched (full damage).
+#[derive(Deserialize, Clone)]
+struct ResistToml {
+    #[serde(rename = "type")]
+    kind: String,
+    mult: f32,
+}
+
+/// `resist` accepts a single table or a list of tables.
+#[derive(Deserialize, Clone)]
+#[serde(untagged)]
+enum ResistTomlList {
+    One(ResistToml),
+    Many(Vec<ResistToml>),
+}
+
+impl ResistTomlList {
+    fn resolved(&self) -> HashMap<String, f32> {
+        match self {
+            Self::One(r) => {
+                let mut map = HashMap::new();
+                map.insert(r.kind.clone(), r.mult);
+                map
+            }
+            Self::Many(list) => list.iter().map(|r| (r.kind.clone(), r.mult)).collect(),
+        }
+    }
+}
+
 #[derive(Deserialize, Clone)]
 struct AnimalToml {
     id: String,
@@ -1998,6 +2126,22 @@ struct AnimalToml {
     sound_pitch: Option<f32>,
     #[serde(default)]
     drops: Vec<AnimalDropToml>,
+    /// Damage-class multipliers ("fire", "pierce"...); see ResistTomlList.
+    #[serde(default)]
+    resist: Option<ResistTomlList>,
+    /// Authored attack wheel; empty = the `attack` scalar becomes a
+    /// single implicit melee (full back-compat).
+    #[serde(default)]
+    attacks: Vec<AttackToml>,
+    /// Archetype: "standard" (default), "brute", "construct", "builder".
+    #[serde(default)]
+    behavior: Option<String>,
+    /// Builder options (spec 3.6): template name, stamp cap, interval.
+    #[serde(default)]
+    builder: Option<BuilderToml>,
+    /// Construct hack options (spec 3.6): tool tag + core drops.
+    #[serde(default)]
+    hack: Option<HackToml>,
     #[serde(default)]
     model: HashMap<String, BoxToml>,
     #[serde(default)]
@@ -2055,9 +2199,50 @@ struct ProjectileToml {
     tex: String,
     damage: f32,
     #[serde(default)]
+    damage_type: Option<String>,
+    #[serde(default)]
     speed: Option<f32>,
     #[serde(default)]
     cooldown: Option<f32>,
+}
+
+/// One authored entry in a species' attack wheel (spec 3.6).
+#[derive(Deserialize, Clone)]
+struct AttackToml {
+    #[serde(default)]
+    name: Option<String>,
+    /// "melee" | "charge" | "projectile".
+    kind: String,
+    #[serde(default)]
+    damage: Option<f32>,
+    #[serde(default)]
+    cooldown: Option<f32>,
+    /// Trigger distance in blocks; defaults to melee reach for melee,
+    /// the cast range for projectile attacks.
+    #[serde(default)]
+    range: Option<f32>,
+    #[serde(default)]
+    damage_type: Option<String>,
+    #[serde(default)]
+    projectile: Option<ProjectileToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct BuilderToml {
+    #[serde(default)]
+    template: Option<String>,
+    #[serde(default)]
+    cap: Option<u32>,
+    #[serde(default)]
+    interval: Option<f32>,
+}
+
+#[derive(Deserialize, Clone)]
+struct HackToml {
+    #[serde(default)]
+    tool: Option<String>,
+    #[serde(default)]
+    drops: Vec<AnimalDropToml>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -3194,6 +3379,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         u16,
         HashMap<String, u16>,
         Option<u16>,
+        Vec<Option<u16>>,
     )> = Vec::new();
     #[allow(clippy::type_complexity)]
     let mut pending_npcs: Vec<(String, NpcToml, u16, u16, HashMap<String, u16>)> = Vec::new();
@@ -3494,6 +3680,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     places: Some(id),
                     food: None,
                     damage: 1.0,
+                    damage_type: None,
                     bow: None,
                     ammo: None,
                     armor: None,
@@ -3509,6 +3696,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     brush_tool: false,
                     throw_speed: None,
                     hammer: false,
+                    hack: false,
                     glow: None,
                     materials: b.materials.clone(),
                     materials_declared: !b.materials.is_empty(),
@@ -3653,6 +3841,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 places: None,
                 food,
                 damage,
+                damage_type: it.damage_type.clone(),
                 bow: it.bow.as_ref().map(|b| BowDef {
                     damage: b.damage,
                     speed: b.speed.unwrap_or(24.0),
@@ -3671,6 +3860,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 brush_tool: it.brush_tool,
                 throw_speed: it.throw.as_ref().map(|t| t.speed.unwrap_or(18.0)),
                 hammer: it.hammer,
+                hack: it.hack,
                 glow: it.glow,
                 materials: it.materials.clone(),
                 materials_declared: !it.materials.is_empty(),
@@ -3756,6 +3946,25 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 .projectile
                 .as_ref()
                 .map(|pr| resolve_tex(&pr.tex, &raw.info.path, &mut errs));
+            let mut attack_proj_tiles: Vec<Option<u16>> = Vec::new();
+            for atk in &a.attacks {
+                match atk.kind.as_str() {
+                    "melee" | "charge" | "projectile" => {}
+                    other => errs.push(format!("animal {}: unknown attack kind {other}", a.id)),
+                }
+                attack_proj_tiles.push(
+                    atk.projectile
+                        .as_ref()
+                        .map(|pr| resolve_tex(&pr.tex, &raw.info.path, &mut errs)),
+                );
+            }
+            match a.behavior.as_deref() {
+                None | Some("standard" | "brute" | "construct" | "builder") => {}
+                Some(other) => errs.push(format!(
+                    "animal {}: unknown behavior {other}",
+                    a.id
+                )),
+            }
             pending_animals.push((
                 raw.info.id.clone(),
                 a.clone(),
@@ -3763,6 +3972,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 head,
                 box_tiles,
                 proj_tile,
+                attack_proj_tiles,
             ));
         }
         for n in &raw.npcs {
@@ -4239,7 +4449,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         }
     }
     let mut pending_prey: Vec<(usize, String, Vec<String>)> = Vec::new();
-    for (modid, a, tile, head_tile, box_tiles, proj_tile) in pending_animals {
+    for (modid, a, tile, head_tile, box_tiles, proj_tile, attack_proj_tiles) in pending_animals {
         if !a.prey.is_empty() {
             pending_prey.push((reg.animals.len(), modid.clone(), a.prey.clone()));
         }
@@ -4338,6 +4548,97 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             height,
             hostile: a.hostile,
             attack: a.attack.unwrap_or(3.0),
+            resistances: a
+                .resist
+                .as_ref()
+                .map(ResistTomlList::resolved)
+                .unwrap_or_default(),
+            attacks: {
+                let reach = half_w.min(0.45) + 0.9;
+                let attack = a.attack.unwrap_or(3.0);
+                let mut list: Vec<AttackDef> = Vec::with_capacity(a.attacks.len());
+                for (atk, ptile) in a.attacks.iter().zip(&attack_proj_tiles) {
+                    let kind = match atk.kind.as_str() {
+                        "charge" => AttackKind::Charge,
+                        "projectile" => AttackKind::Projectile,
+                        _ => AttackKind::Melee,
+                    };
+                    list.push(AttackDef {
+                        name: atk.name.clone().unwrap_or_else(|| atk.kind.clone()),
+                        kind,
+                        damage: atk.damage.unwrap_or(attack),
+                        cooldown: atk.cooldown.unwrap_or(1.0),
+                        range: atk.range.unwrap_or(match kind {
+                            AttackKind::Projectile => 14.0,
+                            _ => reach,
+                        }),
+                        damage_type: atk.damage_type.clone(),
+                        projectile: atk.projectile.as_ref().map(|pr| ProjectileDef {
+                            tile: ptile.unwrap_or(crate::atlas::UNKNOWN_SLOT),
+                            damage: pr.damage,
+                            damage_type: pr.damage_type.clone(),
+                            speed: pr.speed.unwrap_or(14.0),
+                            cooldown: pr.cooldown.unwrap_or(2.0),
+                        }),
+                    });
+                }
+                if list.is_empty() {
+                    // Back-compat synthesis for the pre-spec 3.6 scalar
+                    // fields. A legacy `projectile` becomes a ranged "cast"
+                    // attack riding the projectile's own cooldown; every
+                    // warden keeps the implicit melee `attack` scalar, so a
+                    // caster still swings when the player closes in.
+                    if let Some(pr) = a.projectile.as_ref() {
+                        list.push(AttackDef {
+                            name: "cast".into(),
+                            kind: AttackKind::Projectile,
+                            damage: pr.damage,
+                            cooldown: pr.cooldown.unwrap_or(2.0),
+                            range: 14.0,
+                            damage_type: pr.damage_type.clone(),
+                            projectile: Some(ProjectileDef {
+                                tile: proj_tile.unwrap_or(crate::atlas::UNKNOWN_SLOT),
+                                damage: pr.damage,
+                                damage_type: pr.damage_type.clone(),
+                                speed: pr.speed.unwrap_or(14.0),
+                                cooldown: pr.cooldown.unwrap_or(2.0),
+                            }),
+                        });
+                    }
+                    list.push(AttackDef {
+                        name: "melee".into(),
+                        kind: AttackKind::Melee,
+                        damage: attack,
+                        cooldown: 1.0,
+                        range: reach,
+                        damage_type: None,
+                        projectile: None,
+                    });
+                }
+                list
+            },
+            behavior: match a.behavior.as_deref() {
+                Some("brute") => BehaviorArchetype::Brute,
+                Some("construct") => BehaviorArchetype::Construct,
+                Some("builder") => BehaviorArchetype::Builder,
+                _ => BehaviorArchetype::Standard,
+            },
+            builder: a.builder.as_ref().map(|b| BuilderDef {
+                template: b.template.clone(),
+                cap: b.cap.unwrap_or(8),
+                interval: b.interval.unwrap_or(30.0),
+            }),
+            hack: a.hack.as_ref().map(|h| HackDef {
+                tool: h.tool.clone(),
+                drops: h
+                    .drops
+                    .iter()
+                    .filter_map(|d| {
+                        lookup_item(&reg, &modid, &d.item)
+                            .map(|i| (i, d.min.unwrap_or(1), d.max.unwrap_or(1)))
+                    })
+                    .collect(),
+            }),
             aggro_range: a.aggro_range.unwrap_or(12.0),
             ire_min: a.ire_min.unwrap_or(0.0),
             movement_float: a.movement.as_deref() == Some("float"),
@@ -4361,6 +4662,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             projectile: a.projectile.as_ref().map(|pr| ProjectileDef {
                 tile: proj_tile.unwrap_or(crate::atlas::UNKNOWN_SLOT),
                 damage: pr.damage,
+                damage_type: pr.damage_type.clone(),
                 speed: pr.speed.unwrap_or(14.0),
                 cooldown: pr.cooldown.unwrap_or(2.0),
             }),
@@ -4452,6 +4754,11 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             height,
             hostile: false,
             attack: 0.0,
+            resistances: HashMap::new(),
+            attacks: Vec::new(),
+            behavior: BehaviorArchetype::Standard,
+            builder: None,
+            hack: None,
             aggro_range: 0.0,
             ire_min: 0.0,
             movement_float: false,
@@ -4889,6 +5196,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             places: Some(BlockId(bid)),
             food: None,
             damage: 1.0,
+            damage_type: None,
             bow: None,
             ammo: None,
             armor: None,
@@ -4904,6 +5212,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             brush_tool: false,
             throw_speed: None,
             hammer: false,
+            hack: false,
             glow: None,
             materials: d.materials.clone(),
             materials_declared: !d.materials.is_empty(),
@@ -5354,6 +5663,7 @@ fn push_salvage_item(
         places: None,
         food: None,
         damage: 1.0,
+        damage_type: None,
         bow: None,
         ammo: None,
         armor: None,
@@ -5369,6 +5679,7 @@ fn push_salvage_item(
         brush_tool: false,
         throw_speed: None,
         hammer: false,
+        hack: false,
         glow: None,
         materials,
         materials_declared: true,
@@ -5865,6 +6176,7 @@ impl Registry {
                 places: self.block_id(name),
                 food: None,
                 damage: 1.0,
+                damage_type: None,
                 bow: None,
                 ammo: None,
                 armor: None,
@@ -5880,6 +6192,7 @@ impl Registry {
                 brush_tool: false,
                 throw_speed: None,
                 hammer: false,
+                hack: false,
                 glow: None,
                 materials: MaterialVector::new(),
                 materials_declared: true,
@@ -5957,6 +6270,7 @@ impl Registry {
                 places: self.block_id(name),
                 food: None,
                 damage: 1.0,
+                damage_type: None,
                 bow: None,
                 ammo: None,
                 armor: None,
@@ -5972,6 +6286,7 @@ impl Registry {
                 brush_tool: false,
                 throw_speed: None,
                 hammer: false,
+                hack: false,
                 glow: None,
                 materials: saved.materials.clone(),
                 materials_declared: true,

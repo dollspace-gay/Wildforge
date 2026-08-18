@@ -2119,6 +2119,8 @@ fn the_wild_hurts_the_guest_it_actually_struck() {
     let hit = SimEvent::PlayerHit {
         who: players[1].id,
         dmg: 3.0,
+        dmg_type: None,
+        attack: "melee".into(),
         from: ep(Vec3::ZERO),
     };
     let SimEvent::PlayerHit { who, .. } = hit else {

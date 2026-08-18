@@ -44,6 +44,8 @@ pub enum SimEvent {
     PlayerHit {
         who: u32,
         dmg: f32,
+        dmg_type: Option<String>,
+        attack: String,
         from: crate::planet::EntityPos,
     },
     /// A warden loosed a bolt (sound cue; the projectile is already live).
@@ -254,11 +256,20 @@ impl Server {
         self.rng = rng;
         for ev in mob_events {
             match ev {
-                MobEvent::HitPlayer(who, dmg, from) => {
+                MobEvent::HitPlayer {
+                    who,
+                    dmg,
+                    dmg_type,
+                    from,
+                    attack,
+                    ..
+                } => {
                     if let Some(p) = players.get(who) {
                         events.push(SimEvent::PlayerHit {
                             who: p.id,
                             dmg,
+                            dmg_type,
+                            attack,
                             from,
                         });
                     }
@@ -268,6 +279,15 @@ impl Server {
                     events.push(SimEvent::BoltCast);
                 }
                 MobEvent::Bred => events.push(SimEvent::Bred),
+                MobEvent::Build {
+                    template,
+                    anchor,
+                    rot,
+                } => {
+                    if let Some(t) = self.world.template(&template).cloned() {
+                        self.world.stamp_mob(&t, anchor, rot);
+                    }
+                }
                 MobEvent::QuietSheltered { player: who, mob } => {
                     let mut paid = false;
                     if let Some(player) = players.get(who)
@@ -323,11 +343,13 @@ impl Server {
         }
         let deaths = self.world.settle_dead_mobs(&mut self.rng);
         events.extend(deaths.into_iter().map(SimEvent::MobDied));
-        for (who, dmg) in self.world.tick_projectiles(players, dt) {
+        for (who, dmg, dmg_type) in self.world.tick_projectiles(players, dt) {
             if let Some(p) = players.get(who).filter(|p| p.attackable) {
                 events.push(SimEvent::PlayerHit {
                     who: p.id,
                     dmg,
+                    dmg_type,
+                    attack: "bolt".into(),
                     from: p.pos,
                 });
             }

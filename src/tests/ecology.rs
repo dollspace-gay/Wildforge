@@ -356,7 +356,7 @@ fn the_polar_bear_needs_no_reason() {
         let evs = w.tick_mobs(&[ctx(player)], 1.0, 0.05, &mut rng);
         if evs
             .iter()
-            .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer(0, d, _) if *d >= 6.0))
+            .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer { who: 0, dmg: d, .. } if *d >= 6.0))
         {
             mauled = true;
             break;
@@ -391,7 +391,7 @@ fn the_desperate_winter_wolf_sizes_you_up_and_breaks_off() {
         let evs = w.tick_mobs(&[ctx(player)], 0.1, 0.05, &mut rng);
         if evs
             .iter()
-            .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer(0, _, _)))
+            .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer { who: 0, .. }))
         {
             bitten = true;
             break;
@@ -408,7 +408,7 @@ fn the_desperate_winter_wolf_sizes_you_up_and_breaks_off() {
         .iter_mut()
         .find(|m| m.species == wolf_si)
         .expect("the wolf");
-    wolf.hurt(&def, 4.0, ep(player));
+    wolf.hurt(&def, 4.0, None, ep(player));
     assert_eq!(
         wolf.state,
         crate::mobs::MobState::Flee,
@@ -431,7 +431,7 @@ fn the_desperate_winter_wolf_sizes_you_up_and_breaks_off() {
         let evs = w2.tick_mobs(&[ctx(player2)], 1.0, 0.05, &mut rng2);
         assert!(
             !evs.iter()
-                .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer(0, _, _))),
+                .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer { who: 0, .. })),
             "a sated summer wolf ignores everyone"
         );
     }
@@ -644,7 +644,7 @@ fn the_crab_pinches_what_bothers_it() {
         let evs = w.tick_mobs(&[ctx(player)], 1.0, 0.05, &mut rng);
         if evs
             .iter()
-            .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer(0, d, _) if *d <= 1.5))
+            .any(|e| matches!(e, crate::mobs::MobEvent::HitPlayer { who: 0, dmg: d, .. } if *d <= 1.5))
         {
             pinched = true;
             break;

@@ -279,6 +279,40 @@ impl World {
     /// Authoritative death settlement shared by windowed, dedicated, and
     /// loopback hosts. Presentation consumes the returned records; loot and
     /// accounting have already landed exactly once here.
+    /// Disable a construct at `index` (spec 3.6): freeze it and roll its
+    /// core drops out at its feet. Destroying a construct still yields its
+    /// scrap `drops`; this path yields the separate hack table. Returns
+    /// how many items landed.
+    pub fn hack_mob(&mut self, index: usize, rng: &mut u32) -> u32 {
+        let (species, at) = {
+            let Some(mob) = self.mobs.get_mut(index) else {
+                return 0;
+            };
+            mob.hacked = true;
+            let Some(at) = mob.pos.block() else {
+                return 0;
+            };
+            (mob.species, at)
+        };
+        let Some(def) = self.reg.animals.get(species).cloned() else {
+            return 0;
+        };
+        let Some(hack) = &def.hack else {
+            return 0;
+        };
+        let mut landed = 0;
+        for (item, min, max) in &hack.drops {
+            *rng = rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let span = max.saturating_sub(*min).saturating_add(1);
+            let count = min.saturating_add((*rng >> 8) % span.max(1)).min(*max);
+            if count != 0 {
+                self.push_drop_at(at, ItemStack::new(&self.reg, *item, count));
+                landed += 1;
+            }
+        }
+        landed
+    }
+
     pub fn settle_dead_mobs(&mut self, rng: &mut u32) -> Vec<SettledMobDeath> {
         let reg = self.reg.clone();
         let mut settled = Vec::new();
@@ -1442,9 +1476,9 @@ impl World {
         &mut self,
         players: &[crate::server::PlayerCtx],
         dt: f32,
-    ) -> Vec<(usize, f32)> {
-        let mut dmg: Vec<(usize, f32)> = Vec::new();
-        let mut mob_hits: Vec<(usize, f32, crate::planet::EntityPos)> = Vec::new();
+    ) -> Vec<(usize, f32, Option<String>)> {
+        let mut dmg: Vec<(usize, f32, Option<String>)> = Vec::new();
+        let mut mob_hits: Vec<(usize, f32, Option<String>, crate::planet::EntityPos)> = Vec::new();
         let mut drops: Vec<(crate::planet::BlockPos, crate::registry::ItemId)> = Vec::new();
         let mut preparation_spills: Vec<(crate::planet::BlockPos, ItemStack)> = Vec::new();
         let mut projectiles = std::mem::take(&mut self.projectiles);
@@ -1483,7 +1517,7 @@ impl World {
                 ProjHit::None => true,
                 ProjHit::Expired => false,
                 ProjHit::Player(i) => {
-                    dmg.push((i, p.damage));
+                    dmg.push((i, p.damage, p.damage_type.clone()));
                     false
                 }
                 ProjHit::Mob(i) => {
@@ -1492,7 +1526,7 @@ impl World {
                         .translated(-p.vel * dt)
                         .map(|moved| moved.pos)
                         .unwrap_or(p.pos);
-                    mob_hits.push((i, p.damage, from));
+                    mob_hits.push((i, p.damage, p.damage_type.clone(), from));
                     false
                 }
                 ProjHit::Block => {
@@ -1518,11 +1552,11 @@ impl World {
         });
         self.projectiles = projectiles;
         let reg = self.reg.clone();
-        for (i, d, from) in mob_hits {
+        for (i, d, dmg_type, from) in mob_hits {
             if let Some(m) = self.mobs.get_mut(i)
                 && let Some(def) = reg.animals.get(m.species)
             {
-                m.hurt(def, d, from);
+                m.hurt(def, d, dmg_type.as_deref(), from);
             }
         }
         for (pos, it) in drops {

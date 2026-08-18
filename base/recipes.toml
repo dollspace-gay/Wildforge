@@ -390,6 +390,11 @@ keys = { i = "base:iron_ingot", t = "base:stick" }
 output = "base:smith_hammer"
 
 [[recipe]]
+pattern = ["g", "s", "s"]
+keys = { g = "base:iron_gear", s = "base:stick" }
+output = "base:crank_rod"
+
+[[recipe]]
 pattern = ["i.i", ".i."]
 keys = { i = "base:iron_ingot" }
 output = "base:bucket"

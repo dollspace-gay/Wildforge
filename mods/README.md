@@ -361,6 +361,8 @@ food = { hunger = 7, nutrition = { grain = 30 } }
 | `tool_tier` | `1` | gates `min_tier` drops |
 | `durability` | `59` for tools, else `0` | uses before breaking |
 | `damage` | tools get a modest implicit value | attack damage in half-hearts |
+| `damage_type` | none | damage class your weapon deals (`"pierce"`, `"blunt"`, `"fire"`, ...) — the wild's resistances key on it; `None`/untyped is always full damage |
+| `hack` | `false` | tool tag for the construct hack: right-click a `behavior = "construct"` warden holding it to pop its core instead of grinding it into scrap |
 | `food` | none | `{ hunger, eat_time = 1.5, nutrition = { grain/vegetable/fruit/fungi/protein = 0..100 } }` |
 | `places` | none | placing this item puts down that block (seeds → crops) |
 | `bow` | none | `{ damage, speed = 24.0 }` — hold right-click to draw |
@@ -579,13 +581,73 @@ at = [2, 0, 2]
 - Hostile creatures (wardens) set `hostile = true` plus `attack`
   (half-hearts, default 3), `aggro_range` (12), `ire_min` (world ire
   before they may spawn), `spawn_light_max` (3), and optionally
-  `movement = "float"`, `emissive = true`, and `projectile =
-  { tex, damage, speed = 14, cooldown = 2 }`. Hostiles spawn from
+  `movement = "float"`, `emissive = true`. Hostiles spawn from
   darkness pressure, never persist, and dissolve in daylight.
 - `glow = [r, g, b]` (color × intensity) gives a creature a real
   shadow-casting light the player sees coming — the two nearest
   glowing creatures cast (emberkin's firelight, rimewisp's shimmer).
   Warm glows flicker like flame; cool ones hold steady.
+
+## Enemy archetypes (spec 3.6)
+
+Wardens can do more than chase and swing. The `behavior` field selects
+an archetype; `attacks`, `resist`, `hack`, and `builder` shape it.
+
+```toml
+[[animal]]
+id = "cragjaw"
+name = "Cragjaw"
+hostile = true
+biomes = ["underground"]
+health = 42
+speed = 1.7
+attack = 6
+tex = "@gravelurk"
+
+# Damage-class multipliers: 0.6 blunt = armoured against blunt, 1.5 fire
+# = burns hot. Absent classes pass untouched (full damage).
+resist = [
+  { type = "blunt", mult = 0.6 },
+  { type = "fire", mult = 1.5 },
+]
+
+# The attack wheel: each entry is one attack with its own cooldown and
+# trigger range. The first ready attack whose range trips fires.
+#   kind = "melee"     | "charge" | "projectile"
+#   range               melee uses its reach, projectiles default 14
+attacks = [
+  { name = "slam", kind = "melee", damage = 6, cooldown = 1.4, damage_type = "blunt" },
+  { name = "ram", kind = "charge", damage = 9, cooldown = 6.0, range = 10, damage_type = "blunt" },
+  { name = "spark", kind = "projectile", damage = 3, cooldown = 2.4,
+    damage_type = "fire", projectile = { tex = "@ember_bolt", damage = 3, speed = 13, cooldown = 2.4 } },
+]
+
+behavior = "brute"
+```
+
+Archetypes:
+
+| `behavior` | extras | what it does |
+|---|---|---|
+| `standard` | — | the classic warden: chase and swing (the default; an empty `attacks` list synthesizes exactly the old single melee) |
+| `brute` | `resist` | a hit from a class it is vulnerable to (`mult > 1`) enrages it: it attacks on double time for a few seconds |
+| `construct` | `hack = { tool = "hack", drops = [...] }` | right-click it holding a `hack = true` tool pops its `hack.drops` core instantly and freezes it inert — far better than grinding it into its ordinary `drops` scrap |
+| `builder` | `builder = { template = "name", cap = N, interval = s }` | stamps the named captured template on an `interval`, up to `cap` stamps, whenever it is not fleeing |
+
+- `attacks` entries: `name` (labels the hit), `kind`, `damage`
+  (defaults to the `attack` scalar), `cooldown` (default 1 s), `range`
+  (melee = its reach, projectile = 14), `damage_type`, and `projectile`
+  for projectile kinds. Charge winds up 0.4 s (rooted, frozen facing),
+  then dashes the gap at 3× speed and lands its `damage` if it still
+  touches the target where it stops.
+- `resist` accepts a single table or a list; each is
+  `{ type, mult }` where `mult < 1` shrugs that class off and `mult > 1`
+  is a vulnerability.
+- A builder's `template` resolves against the world template library —
+  capture one in-game under the same name, or the builder idles. The
+  stamped cells go through the ordinary block path and save normally.
+- The base mod ships one example of each archetype (`stonebrute`,
+  `cogmaw`, `tumulus`) plus a `hack = true` tool (`base:crank_rod`).
 
 ## structures.toml
 
@@ -680,6 +742,9 @@ fully qualified):
 | `on_interact` | `(face, u, y, v, block)` | right-click on a block; return `false` to cancel |
 | `on_craft` | `(item)` | after a craft is taken |
 | `on_animal_killed` | `(species, face, u, y, v)` | adult wildlife/warden death |
+| `on_enemy_destroyed` | `(species, face, u, y, v)` | a hostile warden died (spec 3.6) |
+| `on_hurt` | `(species, damage, damage_type)` | you hit a warden (spec 3.6); `damage_type` is `""` for untyped hits |
+| `on_attack` | `(attack_name, damage, damage_type)` | a warden hit you with a named wheel attack (spec 3.6); `"bolt"` for projectiles |
 | `on_player_respawn` | `()` | after the respawn button |
 | `on_mode_change` | `(mode)` | `"survival"`/`"creative"` toggle |
 

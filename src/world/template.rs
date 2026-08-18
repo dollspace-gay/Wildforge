@@ -361,6 +361,21 @@ impl World {
         Ok(format!("placed {placed} of {} blocks", cells.len()))
     }
 
+    /// A builder's stamp (spec 3.6): place every cell through the ordinary
+    /// block path with no inventory — the mob builds for free. Cells that
+    /// cannot land are skipped. Returns the number of blocks placed.
+    pub fn stamp_mob(&mut self, template: &Template, anchor: BlockPos, rot: Rotation) -> usize {
+        let cells = self.rotated_cells(template, anchor, rot);
+        let mut placed = 0usize;
+        for (pos, block) in &cells {
+            if self.place_block_at(*pos, *block) {
+                placed += 1;
+            }
+        }
+        self.finalize_stamp_shells(&cells);
+        placed
+    }
+
     /// Ghost stamp: register a pending fill at `anchor` — every template
     /// cell the world does not already hold. No blocks are placed; ordinary
     /// placement of the correct block at a pending cell clears it (see

@@ -577,6 +577,7 @@ impl Game {
                             vel: s.vel,
                             tile: s.tile,
                             damage: 0.0,
+                            damage_type: None,
                             age: s.age,
                             from_player: false,
                             drop_item: None,
@@ -726,7 +727,7 @@ impl Game {
                     });
                 }
                 net::S2C::WorkingEvent(cue) => self.present_working_cue(cue),
-                net::S2C::Hit { dmg, from } => self.hurt_player_from_wild(dmg, from),
+                net::S2C::Hit { dmg, from } => self.hurt_player_from_wild(dmg, from, None),
                 net::S2C::Give {
                     item,
                     count,

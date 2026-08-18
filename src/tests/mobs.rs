@@ -47,7 +47,7 @@ fn mob_settles_on_ground_and_flees_from_damage() {
 
     // Damage from the east: it panics away, gaining distance from the threat.
     let threat = m.pos.translated(Vec3::new(2.0, 0.0, 0.0)).unwrap().pos;
-    m.hurt(&def, 4.0, threat);
+    m.hurt(&def, 4.0, None, threat);
     assert_eq!(m.state, crate::mobs::MobState::Flee);
     assert!(m.health < def.health);
     let d0 = m.pos.distance_to(threat);
@@ -426,7 +426,7 @@ fn warden_hunts_strikes_and_caster_fires() {
     }
     let hits = events
         .iter()
-        .filter(|e| matches!(e, crate::mobs::MobEvent::HitPlayer(..)))
+        .filter(|e| matches!(e, crate::mobs::MobEvent::HitPlayer { .. }))
         .count();
     assert_eq!(hits, 1, "swing cooldown limits contact damage");
     // Creative players are invisible to the wild.
@@ -669,6 +669,7 @@ fn floaters_hover_and_projectiles_collide() {
         vel: Vec3::new(0.0, 0.0, 20.0),
         tile: 0,
         damage: 3.0,
+        damage_type: None,
         age: 0.0,
         from_player: false,
         drop_item: None,
@@ -703,6 +704,7 @@ fn floaters_hover_and_projectiles_collide() {
         vel: Vec3::new(0.0, 0.0, 12.0),
         tile: 0,
         damage: 3.0,
+        damage_type: None,
         age: 0.0,
         from_player: false,
         drop_item: None,
@@ -724,7 +726,7 @@ fn floaters_hover_and_projectiles_collide() {
                 1.0 / 30.0,
             )
             .iter()
-            .map(|(_, d)| d)
+            .map(|(_, d, _)| d)
             .sum::<f32>();
     }
     assert_eq!(dmg, 3.0, "bolt connected with the player");

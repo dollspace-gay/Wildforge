@@ -706,6 +706,7 @@ impl Agent {
                                 vel: snap.vel,
                                 tile: snap.tile,
                                 damage: 0.0,
+                                damage_type: None,
                                 age: snap.age,
                                 from_player: false,
                                 drop_item: None,

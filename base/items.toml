@@ -1471,6 +1471,14 @@ name = "Iron Gear"
 texture = "iron_gear.png"
 
 [[item]]
+id = "crank_rod"
+name = "Crank Rod"
+texture = "iron_gear.png"
+durability = 60
+damage = 2
+hack = true
+
+[[item]]
 id = "plate"
 name = "Plate"
 texture = "plate.png"

@@ -2291,10 +2291,14 @@ impl HostSession {
                     return;
                 }
                 guest.action_cooldown = 0.35;
-                let dmg = guest.inventory.slots[guest.hotbar]
+                let held = guest.inventory.slots[guest.hotbar];
+                let dmg = held
                     .map(|stack| server.world.reg.item(stack.item).damage)
                     .unwrap_or(1.0)
                     .clamp(0.0, 16.0);
+                let dmg_type = held.and_then(|stack| {
+                    server.world.reg.item(stack.item).damage_type.clone()
+                });
                 let from = guest
                     .pos
                     .translated(Vec3::new(0.0, 1.6, 0.0))
@@ -2307,7 +2311,7 @@ impl HostSession {
                 {
                     let def = reg.animals[m.species].clone();
                     let surface = m.pos.surface();
-                    m.hurt(&def, dmg, from);
+                    m.hurt(&def, dmg, dmg_type.as_deref(), from);
                     m.last_hit_by = id;
                     if !def.hostile {
                         server.world.add_ire_at_surface(surface, 2.0);
@@ -2357,6 +2361,29 @@ impl HostSession {
                             self.send_player_state(id);
                         }
                     }
+                }
+            }
+            C2S::HackMob { id: mob_id } => {
+                let gpos = guest.pos;
+                let reg = server.world.reg.clone();
+                let held = guest.inventory.slots[guest.hotbar].map(|s| s.item);
+                if let Some(m) = server.world.mob_by_id(mob_id)
+                    && (m.pos - gpos).length() <= REACH
+                    && let Some(def) = reg.animals.get(m.species)
+                    && let Some(hack) = &def.hack
+                    && let Some(tool) = hack.tool.as_deref()
+                    && held.is_some_and(|i| {
+                        let item = reg.item(i);
+                        match tool {
+                            "hack" => item.hack,
+                            other => item.name.ends_with(&format!(":{other}")),
+                        }
+                    })
+                {
+                    if let Some(index) = server.world.mobs().iter().position(|x| x.id == mob_id) {
+                        server.world.hack_mob(index, &mut server.rng);
+                    }
+                    guest.action_cooldown = 0.5;
                 }
             }
             C2S::LeadMob { id: mob_id } => {
@@ -3477,6 +3504,7 @@ impl HostSession {
                     vel: direction * speed.min(40.0),
                     tile,
                     damage: damage.clamp(0.0, 12.0),
+                    damage_type: None,
                     age: 0.0,
                     from_player: true,
                     drop_item,

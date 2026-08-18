@@ -2169,6 +2169,7 @@ fn embodied_hearth_batch_is_exact_transactional_and_cannot_overfill() {
         vel: glam::Vec3::new(6.0, 0.0, 0.0),
         tile: world.reg.item(thrown.item).icon,
         damage: 0.0,
+        damage_type: None,
         age: 0.0,
         from_player: true,
         drop_item: None,

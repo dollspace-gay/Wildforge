@@ -407,6 +407,11 @@ pub enum C2S {
     FeedMob {
         id: u32,
     },
+    /// Ask the host to disable a construct with the held hack tool
+    /// (spec 3.6) instead of destroying it.
+    HackMob {
+        id: u32,
+    },
     /// Attach a held lead to a tamed mob (host consumes the lead).
     LeadMob {
         id: u32,

@@ -430,6 +430,7 @@ impl Game {
             vel: dir * bow.speed * (0.6 + 0.4 * charge),
             tile: reg.item(arrow_id).icon,
             damage: bow.damage * (0.45 + 0.55 * charge),
+            damage_type: None,
             age: 0.0,
             from_player: true,
             // Arrows that stick into terrain are recoverable.
@@ -483,6 +484,20 @@ impl Game {
                 .render_pos(),
         );
         self.juice_burst(at, tile, 12, 2.0);
+        if def.hostile && self.content.scripts.wants("on_enemy_destroyed") {
+            self.content.scripts.dispatch(
+                &self.server.world,
+                "on_enemy_destroyed",
+                (
+                    def.name.clone(),
+                    death.pos.face().name().to_string(),
+                    death.pos.u().floor() as i64,
+                    death.pos.y().floor() as i64,
+                    death.pos.v().floor() as i64,
+                ),
+            );
+            self.apply_script_cmds();
+        }
         if self.content.scripts.wants("on_animal_killed") {
             self.content.scripts.dispatch(
                 &self.server.world,
@@ -1053,7 +1068,20 @@ impl Game {
                 let def = reg.animals[sp].clone();
                 if let Some(mob) = self.server.world.mob_mut(mi) {
                     let dmg = held.map(|i| reg.item(i).damage).unwrap_or(1.0);
-                    mob.hurt(&def, dmg, self.player.eye());
+                    let dmg_type = held.and_then(|i| reg.item(i).damage_type.clone());
+                    mob.hurt(&def, dmg, dmg_type.as_deref(), self.player.eye());
+                    if self.content.scripts.wants("on_hurt") {
+                        self.content.scripts.dispatch(
+                            &self.server.world,
+                            "on_hurt",
+                            (
+                                def.name.clone(),
+                                dmg as f64,
+                                dmg_type.clone().unwrap_or_default(),
+                            ),
+                        );
+                        self.apply_script_cmds();
+                    }
                 }
                 if self.presentation.juice {
                     self.presentation.hitch = 0.06;
@@ -1390,6 +1418,32 @@ impl Game {
                     });
                     return;
                 }
+                // Hacking: right-clicking a construct with a tagged tool
+                // disables it instead of destroying it (spec 3.6).
+                // Destroying one yields its scrap `drops`; hacking it
+                // yields the core. The hack arm sits next to dialogue,
+                // before feeding/taming ever runs.
+                if def.hack.is_some()
+                    && let Some(hack) = &def.hack
+                    && let Some(tool) = hack.tool.as_deref()
+                    && held.is_some_and(|i| {
+                        let item = reg.item(i);
+                        match tool {
+                            "hack" => item.hack,
+                            other => item.name.ends_with(&format!(":{other}")),
+                        }
+                    })
+                {
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::HackMob { id: mob_id });
+                    } else {
+                        self.server.world.hack_mob(mi, &mut self.server.rng);
+                    }
+                    self.input.action_cooldown = 0.5;
+                    self.sfx(Sfx::Place);
+                    self.toast(format!("The {def_label} goes still."));
+                    return;
+                }
                 // Feeding: breeds as ever, and repeated meals TAME —
                 // a tamed animal never flees people and takes a lead.
                 if let (Some(bf), Some(h)) = (def.breed_food, held)
@@ -1606,6 +1660,7 @@ impl Game {
                         vel,
                         tile,
                         damage: 0.0,
+                        damage_type: None,
                         age: 0.0,
                         from_player: true,
                         drop_item: None,

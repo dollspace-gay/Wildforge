@@ -2640,6 +2640,7 @@ fn snow_settles_melts_and_snowballs_fly() {
         vel: Vec3::new(0.0, 0.0, 12.0),
         tile: 0,
         damage: 0.0,
+        damage_type: None,
         age: 0.0,
         from_player: true,
         drop_item: None,

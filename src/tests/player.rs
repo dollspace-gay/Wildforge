@@ -611,6 +611,7 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
         vel: Vec3::new(0.0, 0.5, 18.0),
         tile: 0,
         damage: 6.0,
+        damage_type: None,
         age: 0.0,
         from_player: true,
         drop_item: Some(arrow_item),
@@ -633,7 +634,7 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
                 1.0 / 30.0,
             )
             .iter()
-            .map(|(_, d)| d)
+            .map(|(_, d, _)| d)
             .sum::<f32>();
     }
     assert!(
@@ -654,6 +655,7 @@ fn player_arrows_strike_mobs_and_stick_in_walls() {
         vel: Vec3::new(0.0, 0.0, 16.0),
         tile: 0,
         damage: 6.0,
+        damage_type: None,
         age: 0.0,
         from_player: true,
         drop_item: Some(arrow_item),

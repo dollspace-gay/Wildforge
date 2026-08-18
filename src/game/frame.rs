@@ -844,9 +844,27 @@ impl Game {
                 }
                 for ev in evs {
                     match ev {
-                        server::SimEvent::PlayerHit { who, dmg, from } => {
+                        server::SimEvent::PlayerHit {
+                            who,
+                            dmg,
+                            dmg_type,
+                            attack,
+                            from,
+                        } => {
                             if who == 0 && self.multiplayer.remote.is_none() {
-                                self.hurt_player_from_wild(dmg, from);
+                                if self.content.scripts.wants("on_attack") {
+                                    self.content.scripts.dispatch(
+                                        &self.server.world,
+                                        "on_attack",
+                                        (
+                                            attack.clone(),
+                                            dmg as f64,
+                                            dmg_type.clone().unwrap_or_default(),
+                                        ),
+                                    );
+                                    self.apply_script_cmds();
+                                }
+                                self.hurt_player_from_wild(dmg, from, dmg_type.as_deref());
                             } else if let Some(sess) = &mut self.multiplayer.host {
                                 // `who` is that guest's own net id.
                                 sess.hurt_guest(&mut self.server, who, dmg, from);

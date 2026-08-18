@@ -25,10 +25,19 @@ impl Game {
 
     /// Damage from a warden: knockback away from the attacker, and the
     /// death screen knows who to blame. Armor blocks 4% per point (cap
-    /// 60%) and wears; it does nothing against falls or hunger.
-    pub(super) fn hurt_player_from_wild(&mut self, amount: f32, from: crate::planet::EntityPos) {
+    /// 60%) and wears; it does nothing against falls or hunger. Per-type
+    /// player armor is out of scope; the damage class is logged only.
+    pub(super) fn hurt_player_from_wild(
+        &mut self,
+        amount: f32,
+        from: crate::planet::EntityPos,
+        dmg_type: Option<&str>,
+    ) {
         if self.creative || self.ui_state.screen == Screen::Dead {
             return;
+        }
+        if std::env::var("WILDFORGE_DEBUG").is_ok() {
+            eprintln!("wild hit {amount} dmg_type={dmg_type:?}");
         }
         let mut pts = self.armor_points();
         if let Some(mut charm) = self.survival.armor[4]
