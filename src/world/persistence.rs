@@ -74,9 +74,9 @@ impl World {
             )?;
             existing = load_world_meta(&save_dir)?;
         }
-        let (mode, ire, day) = existing
-            .map(|meta| (meta.mode, meta.ire, meta.day))
-            .unwrap_or_else(|| ("survival".to_string(), 0.0, 0));
+        let (mode, ire, day, camera) = existing
+            .map(|meta| (meta.mode, meta.ire, meta.day, meta.camera))
+            .unwrap_or_else(|| ("survival".to_string(), 0.0, 0, "first".to_string()));
         #[cfg(not(test))]
         let atlas =
             crate::planet_atlas::PlanetAtlas::load(&save_dir).map_err(std::io::Error::other)?;
@@ -161,7 +161,7 @@ impl World {
         let alchemy_state =
             crate::alchemy::AlchemyState::load_or_initialize(&save_dir, reg.content_hash)
                 .map_err(std::io::Error::other)?;
-        write_world_meta_full(&save_dir, seed, &mode, ire, day)?;
+        write_world_meta_full(&save_dir, seed, &mode, ire, day, &camera)?;
         let mut w = World::new_with_preloaded_atlas(seed, save_dir, reg, Arc::new(atlas));
         w.material_ledger = Some(material_ledger);
         w.arcane_ledger = Some(arcane_ledger);
@@ -171,6 +171,7 @@ impl World {
         w.workings_state = Some(workings_state);
         w.alchemy_state = Some(alchemy_state);
         w.mode = mode;
+        w.camera = camera;
         w.ire = ire;
         w.day = day;
         w.clock = day as f64 * crate::server::DAY_LENGTH as f64;

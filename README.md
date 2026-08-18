@@ -174,11 +174,18 @@ affect simulation until their exact entry manifest is decoded and accepted.
 | Hold right click | Contextual use: place a block, work an apparatus, aim a tuning lens, apply a preparation, or channel the selected wand working |
 | Hold right click with brush | Excavate a remnant, or sift ordinary stone/earth for regional salvage |
 | Middle click | Select targeted block if in hotbar |
-| 1–9 / scroll | Select hotbar slot |
+| 1–9 / scroll | Select hotbar slot (in the orbit camera, scroll zooms instead) |
 | E | Open/close inventory (click to move stacks, right-click half/one) |
+| Tab | Cycle camera: first person → over-shoulder chase → orbit → first (single-player) |
 | Esc | Pause menu (resume / save and quit) |
 | F2 | Screenshot (`screenshot-<ts>.ppm`) |
 | F11 | Fullscreen |
+
+The chosen view persists per world (`camera = "first"|"third"|"orbit"` in
+`world.toml`). In chase and orbit the local avatar is visible, the crosshair
+aim stays put, and drag spins the orbit camera while scroll zooms it. Guests
+in multiplayer keep the default first-person view (Tab opens the roster
+there); single-player Tab cycles the camera with a click.
 
 ## Modding (native, hot-reloadable)
 

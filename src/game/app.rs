@@ -428,7 +428,12 @@ impl ApplicationHandler for App {
                 // multiple events per physical notch.
                 let steps = game.input.scroll_accum.trunc() as i32;
                 if steps != 0 {
-                    if game.input.scroll_cooldown <= 0.0 {
+                    if game.camera.mode == crate::camera::CameraMode::Orbit {
+                        // The factory camera zooms instead of flipping the
+                        // hotbar.
+                        game.camera.orbit_dist =
+                            (game.camera.orbit_dist - steps as f32 * 0.8).clamp(2.0, 20.0);
+                    } else if game.input.scroll_cooldown <= 0.0 {
                         let n = HOTBAR_SLOTS as i32;
                         let sel = (game.input.hotbar_sel as i32 - steps.signum()).rem_euclid(n);
                         game.input.hotbar_sel = sel as usize;

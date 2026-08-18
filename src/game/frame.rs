@@ -68,7 +68,10 @@ impl Game {
     /// Emitted in world space; the renderer draws it depth-cleared so
     /// it never sinks into a wall you're standing against.
     pub(super) fn emit_hand(&self, verts: &mut Vec<mesher::Vertex>, idx: &mut Vec<u32>) {
-        if !self.in_world || self.survival.health <= 0.0 || self.ui_state.screen != Screen::Playing
+        if !self.in_world
+            || self.survival.health <= 0.0
+            || self.ui_state.screen != Screen::Playing
+            || self.camera.mode != crate::camera::CameraMode::First
         {
             return;
         }
@@ -1185,6 +1188,16 @@ impl Game {
             self.update_items(dt);
         }
         self.camera.follow_planet(self.player.eye());
+        match self.camera.mode {
+            crate::camera::CameraMode::First => {}
+            crate::camera::CameraMode::Third => {
+                self.camera
+                    .place_chase(self.player.eye(), &self.server.world);
+            }
+            crate::camera::CameraMode::Orbit => {
+                self.camera.place_orbit(self.player.eye());
+            }
+        }
 
         if self.ui_state.screen == Screen::Playing && self.input.mouse_captured {
             self.interact(dt);
@@ -1722,6 +1735,30 @@ impl Game {
                 );
             }
         }
+        // In chase / orbit views the local player finally has a body. The
+        // first-person hand model is suppressed (see emit_hand), so this is
+        // the sole on-screen avatar of your own character.
+        if self.in_world && self.camera.mode != crate::camera::CameraMode::First {
+            let logical = self.player.pos;
+            let render = logical.render_pos();
+            let held = self.inventory.slots[self.input.hotbar_sel];
+            let implement = held.and_then(|stack| self.server.world.implement_visual(stack));
+            let lum = sample(&self.server.world, self.player.eye());
+            let gait = self.gait_for(u32::MAX, render, dt);
+            mobs::emit_humanoid_interpolated(
+                logical,
+                render,
+                self.camera.yaw,
+                &Self::humanoid_art(self.style),
+                gait,
+                implement
+                    .map(|visual| self.held_art_implement(visual, |wire| Some(ItemId(wire))))
+                    .unwrap_or_else(|| self.held_art_stack(held)),
+                lum,
+                &mut entity_verts,
+                &mut entity_idx,
+            );
+        }
         // Airborne sand tumbles as full-size cubes.
         for f in self.server.world.falling_blocks().to_vec() {
             let lum = sample(&self.server.world, f.pos);
@@ -2188,9 +2225,22 @@ impl Game {
                 .and_then(|visual| self.implement_glow(visual))
                 .or_else(|| self.held_glow(stack.item));
             if let Some((color, range)) = glow {
+                let held_pos = if self.camera.mode == crate::camera::CameraMode::First {
+                    // First person: the light rides the camera, near the hand.
+                    self.camera.pos - self.camera.up() * 0.15
+                } else {
+                    // Chase / orbit: the body carries the held item at its
+                    // right hand, chest-high and a little ahead of the feet.
+                    let f = self.camera.forward();
+                    let r = f.cross(self.camera.up()).normalize_or_zero();
+                    self.player.pos.render_pos()
+                        + self.camera.up() * 1.2
+                        + r * 0.35
+                        + f * 0.35
+                };
                 dyn_lights.push(lights::DynLight {
                     key: lights::Key::Held,
-                    pos: self.camera.pos - self.camera.up() * 0.15,
+                    pos: held_pos,
                     color,
                     range,
                 });

@@ -1421,6 +1421,17 @@ fn world_meta_roundtrip_and_legacy_refusal() {
     assert!(text.contains("world_height = 256"));
     assert!(text.contains("planet_radius = 5215."));
     assert!(text.contains(&format!("generator_version = {WORLD_GENERATOR_VERSION}")));
+    // Camera mode round-trips through the same header.
+    let mut meta = load_world_meta(&dir).unwrap().unwrap();
+    assert_eq!(meta.camera, "first", "default camera is first-person");
+    meta.camera = "orbit".into();
+    crate::world::write_world_meta_full(&dir, meta.seed, &meta.mode, meta.ire, meta.day, &meta.camera)
+        .unwrap();
+    assert_eq!(
+        load_world_meta(&dir).unwrap().unwrap().camera,
+        "orbit",
+        "chosen camera mode is persisted per world"
+    );
     let previous = text.replace(
         &format!("generator_version = {WORLD_GENERATOR_VERSION}"),
         "generator_version = 9",

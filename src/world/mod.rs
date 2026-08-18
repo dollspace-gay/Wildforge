@@ -500,6 +500,8 @@ pub struct WorldMeta {
     pub mode: String,
     pub ire: f32,
     pub day: u32,
+    /// The client camera mode chosen for this world (`first`/`third`/`orbit`).
+    pub camera: String,
 }
 
 fn meta_value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
@@ -588,6 +590,7 @@ pub fn load_world_meta(dir: &std::path::Path) -> std::io::Result<Option<WorldMet
         .and_then(|value| value.parse::<u32>().ok())
         .ok_or_else(|| invalid_world_meta("world metadata is missing a valid seed"))?;
     let mode = meta_value(&text, "mode").unwrap_or("survival").to_string();
+    let camera = meta_value(&text, "camera").unwrap_or("first").to_string();
     let ire = meta_value(&text, "ire")
         .and_then(|value| value.parse::<f32>().ok())
         .unwrap_or(0.0)
@@ -598,6 +601,7 @@ pub fn load_world_meta(dir: &std::path::Path) -> std::io::Result<Option<WorldMet
     Ok(Some(WorldMeta {
         seed,
         mode,
+        camera,
         ire,
         day,
     }))
@@ -605,16 +609,28 @@ pub fn load_world_meta(dir: &std::path::Path) -> std::io::Result<Option<WorldMet
 
 /// (seed, mode, ire) from a validated planetary `world.toml`.
 pub fn read_world_meta(dir: &std::path::Path) -> (Option<u32>, String, f32) {
-    let (seed, mode, ire, _) = read_world_meta_full(dir);
+    let (seed, mode, ire, _, _) = read_world_meta_full(dir);
     (seed, mode, ire)
 }
 
-/// Full metadata: (seed, mode, ire, day). Dynamic local weather lives in the
-/// atlas snapshot, never in a world-wide metadata field.
-pub fn read_world_meta_full(dir: &std::path::Path) -> (Option<u32>, String, f32, u32) {
+/// Full metadata: (seed, mode, ire, day, camera). Dynamic local weather
+/// lives in the atlas snapshot, never in a world-wide metadata field.
+pub fn read_world_meta_full(dir: &std::path::Path) -> (Option<u32>, String, f32, u32, String) {
     match load_world_meta(dir) {
-        Ok(Some(meta)) => (Some(meta.seed), meta.mode, meta.ire, meta.day),
-        Ok(None) | Err(_) => (None, "survival".to_string(), 0.0, 0),
+        Ok(Some(meta)) => (
+            Some(meta.seed),
+            meta.mode,
+            meta.ire,
+            meta.day,
+            meta.camera,
+        ),
+        Ok(None) | Err(_) => (
+            None,
+            "survival".to_string(),
+            0.0,
+            0,
+            "first".to_string(),
+        ),
     }
 }
 
@@ -624,7 +640,7 @@ pub fn write_world_meta(
     mode: &str,
     ire: f32,
 ) -> std::io::Result<()> {
-    write_world_meta_full(dir, seed, mode, ire, 0)
+    write_world_meta_full(dir, seed, mode, ire, 0, "first")
 }
 
 pub fn write_world_meta_full(
@@ -633,9 +649,10 @@ pub fn write_world_meta_full(
     mode: &str,
     ire: f32,
     day: u32,
+    camera: &str,
 ) -> std::io::Result<()> {
     let text = format!(
-        "topology = \"{WORLD_TOPOLOGY}\"\nface_blocks = {}\nworld_height = {CHUNK_Y}\nplanet_radius = {:.6}\ngenerator_version = {WORLD_GENERATOR_VERSION}\nseed = {seed}\nmode = \"{mode}\"\nire = {ire:.2}\nday = {day}\n",
+        "topology = \"{WORLD_TOPOLOGY}\"\nface_blocks = {}\nworld_height = {CHUNK_Y}\nplanet_radius = {:.6}\ngenerator_version = {WORLD_GENERATOR_VERSION}\nseed = {seed}\nmode = \"{mode}\"\ncamera = \"{camera}\"\nire = {ire:.2}\nday = {day}\n",
         crate::planet::FACE_BLOCKS,
         crate::planet::PLANET_RADIUS,
     );
@@ -1119,6 +1136,9 @@ pub struct World {
     repop_timer: f32,
     /// Game mode string, persisted in world.toml alongside seed/ire.
     pub mode: String,
+    /// The client camera mode chosen for this world (`first`/`third`/`orbit`),
+    /// persisted in world.toml. Host-authoritative so a world carries its view.
+    pub camera: String,
     /// The wild's ire 0..100 — reciprocity meter driving hostile spawns.
     pub ire: f32,
     /// How much ire planting has already refunded today (daily cap).
@@ -1513,6 +1533,7 @@ impl World {
             mob_seeded: HashSet::new(),
             repop_timer: 0.0,
             mode: "survival".into(),
+            camera: "first".into(),
             ire: 0.0,
             plant_ire_today: 0.0,
             day_progress: 0.0,
@@ -1551,6 +1572,16 @@ impl World {
     /// string that no longer resolves falls back to survival.
     pub fn ruleset(&self) -> crate::ruleset::Ruleset {
         self.reg.ruleset_for(&self.mode)
+    }
+
+    /// Persist the client's chosen camera mode for this world. The host (or a
+    /// single-player client) owns `world.toml`; remote clients skip it.
+    pub fn set_camera(&mut self, camera: &str) -> std::io::Result<()> {
+        if self.remote {
+            return Ok(());
+        }
+        self.camera = camera.to_string();
+        write_world_meta_full(&self.save_dir, self.seed, &self.mode, self.ire, self.day, camera)
     }
 
     pub fn set_remote_weather(

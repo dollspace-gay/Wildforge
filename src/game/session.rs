@@ -155,6 +155,12 @@ impl Game {
         self.camera.follow_planet(self.player.eye());
         self.camera.yaw = -std::f32::consts::FRAC_PI_2;
         self.camera.pitch = 0.0;
+        // A world carries its chosen view (`camera` line in world.toml).
+        // Guests keep the default first-person view: Tab is the roster there,
+        // so a guest could never toggle back out of a host's orbit setting.
+        if self.multiplayer.remote.is_none() {
+            self.camera.mode = crate::camera::CameraMode::parse(&self.server.world.camera);
+        }
         self.inventory = Inventory::new();
         self.survival.armor = [None; 5];
         self.interaction.bow_draw = 0.0;

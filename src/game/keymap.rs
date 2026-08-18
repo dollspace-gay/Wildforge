@@ -108,6 +108,35 @@ impl Game {
                 self.multiplayer.chat_open = true;
                 self.multiplayer.chat_text.clear();
             }
+            KeyCode::Tab
+                if pressed
+                    && self.ui_state.screen == Screen::Playing
+                    && self.multiplayer.host.is_none()
+                    && self.multiplayer.remote.is_none() =>
+            {
+                // Single-player: Tab steps first → chase → orbit → first.
+                // (In multiplayer Tab opens the roster, below.)
+                use crate::camera::CameraMode;
+                match self.camera.mode {
+                    CameraMode::First | CameraMode::Third => {
+                        if self.camera.mode == CameraMode::First {
+                            // Enter the orbit view behind where the player is
+                            // aiming, at a slight three-quarter angle.
+                            self.camera.orbit_yaw =
+                                self.camera.yaw + std::f32::consts::PI + 0.4;
+                        }
+                        self.camera.mode = match self.camera.mode {
+                            CameraMode::First => CameraMode::Third,
+                            _ => CameraMode::Orbit,
+                        };
+                    }
+                    CameraMode::Orbit => self.camera.mode = CameraMode::First,
+                }
+                if let Err(error) = self.server.world.set_camera(self.camera.mode.key()) {
+                    eprintln!("camera: could not persist mode: {error}");
+                }
+                self.sfx(Sfx::Click);
+            }
             KeyCode::Tab => {
                 self.multiplayer.roster_open = pressed
                     && self.ui_state.screen == Screen::Playing

@@ -173,6 +173,7 @@ impl Game {
                         mode,
                         self.server.world.ire,
                         self.server.world.day,
+                        &self.server.world.camera,
                     );
                     match saved {
                         Ok(()) => {
