@@ -24,6 +24,7 @@ mod menus;
 mod remote;
 mod roster_ui;
 mod session;
+mod stats;
 mod status;
 mod streaming;
 mod survival;

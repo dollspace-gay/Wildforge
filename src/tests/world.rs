@@ -1179,7 +1179,7 @@ fn replicated_block_burst_preserves_state_and_settles_shared_lighting() {
         Some(("Rainbells fold shut beside the marsh.".into(), true)),
     );
     let ecology = world
-        .perceived_arcane_ecology_at(torch_pos.surface())
+        .perceived_arcane_ecology_at(torch_pos.surface(), 72.0)
         .expect("remote ecology observation");
     assert_eq!(ecology.text, "Rainbells fold shut beside the marsh.");
     assert!(ecology.damped);

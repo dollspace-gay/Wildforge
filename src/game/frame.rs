@@ -518,7 +518,8 @@ impl Game {
 
         let paused = self.ui_state.screen == Screen::Paused || !self.in_world;
         if !paused {
-            self.combat.tick(dt);
+            self.combat
+                .tick(dt, self.stamina_max(), self.stamina_regen());
             self.input.action_cooldown = (self.input.action_cooldown - dt).max(0.0);
             self.input.attack_cooldown = (self.input.attack_cooldown - dt).max(0.0);
             self.input.scroll_cooldown = (self.input.scroll_cooldown - dt).max(0.0);
@@ -1008,7 +1009,10 @@ impl Game {
                 {
                     self.toast(sign);
                 }
-                if let Some(observation) = self.server.world.perceived_arcane_ecology_at(surface)
+                if let Some(observation) =
+                    self.server
+                        .world
+                        .perceived_arcane_ecology_at(surface, self.scan_range())
                     && self
                         .presentation
                         .arcane_signs
@@ -1108,6 +1112,7 @@ impl Game {
                 strafe: strafe * guard,
                 jump: self.input.keys.space,
                 sprint: sprinting,
+                speed_mult: self.move_speed(),
             };
             if self.input.keys.space && self.player.on_ground {
                 self.survival.hunger = (self.survival.hunger - 0.005).max(0.0);
@@ -1419,7 +1424,7 @@ impl Game {
         let ecology_ambience = self
             .server
             .world
-            .perceived_arcane_ecology_at(self.player.pos.surface());
+            .perceived_arcane_ecology_at(self.player.pos.surface(), self.scan_range());
         if let Some(a) = &self.audio {
             let want = if self.ui_state.screen == Screen::Paused {
                 // The pause menu holds the world's breath: no rain,
@@ -1484,7 +1489,7 @@ impl Game {
                 &self.server.world,
                 self.player.eye(),
                 self.camera.local_forward(),
-                REACH,
+                self.reach(),
             )
             .map(|h| h.block)
         } else {

@@ -84,7 +84,7 @@ impl CombatState {
         }
     }
 
-    pub fn tick(&mut self, dt: f32) {
+    pub fn tick(&mut self, dt: f32, max: f32, regen: f32) {
         self.combo_window = (self.combo_window - dt).max(0.0);
         if self.combo_window == 0.0 {
             self.combo = 0;
@@ -95,8 +95,8 @@ impl CombatState {
         self.stamina_regen_delay = (self.stamina_regen_delay - dt).max(0.0);
         // Idle recovery: sprinting and blocking keep re-arming the delay,
         // so regen only runs once the player has been out of exertion.
-        if self.stamina < STAMINA_MAX && self.stamina_regen_delay <= 0.0 {
-            self.stamina = (self.stamina + STAMINA_REGEN * dt).min(STAMINA_MAX);
+        if self.stamina < max && self.stamina_regen_delay <= 0.0 {
+            self.stamina = (self.stamina + regen * dt).min(max);
         }
         for n in &mut self.damage_numbers {
             n.age += dt;
@@ -171,7 +171,7 @@ impl Game {
     /// player is sprinting this frame. Creative never exhausts.
     pub(super) fn stamina_tick(&mut self, dt: f32, sprinting: bool) {
         if self.creative {
-            self.combat.stamina = STAMINA_MAX;
+            self.combat.stamina = self.stamina_max();
             return;
         }
         let mut drain = 0.0;
@@ -252,7 +252,7 @@ mod tests {
         let mut c = CombatState::new();
         c.combo = 1;
         c.combo_window = 0.05;
-        c.tick(0.1);
+        c.tick(0.1, STAMINA_MAX, STAMINA_REGEN);
         assert_eq!(c.combo, 0);
         assert_eq!(c.combo_window, 0.0);
     }
@@ -267,7 +267,7 @@ mod tests {
             age: 0.0,
             lifetime: DAMAGE_NUMBER_LIFETIME,
         });
-        c.tick(DAMAGE_NUMBER_LIFETIME + 0.01);
+        c.tick(DAMAGE_NUMBER_LIFETIME + 0.01, STAMINA_MAX, STAMINA_REGEN);
         assert!(c.damage_numbers.is_empty());
     }
 
@@ -276,7 +276,7 @@ mod tests {
         let mut c = CombatState::new();
         c.stamina = 5.0;
         c.stamina_regen_delay = 0.1;
-        c.tick(0.2);
+        c.tick(0.2, STAMINA_MAX, STAMINA_REGEN);
         assert!(c.stamina > 5.0, "regen resumes once the delay clears");
         assert!(c.stamina <= STAMINA_MAX);
     }

@@ -228,6 +228,7 @@ impl Game {
         self.survival.drown_timer = 0.0;
         self.survival.since_damage = 100.0;
         self.combat = combat::CombatState::new();
+        self.combat.stamina = self.stamina_max();
         self.set_screen(Screen::Playing);
         if self.content.scripts.wants("on_player_respawn") {
             self.content

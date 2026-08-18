@@ -340,6 +340,7 @@ impl Agent {
                 || self.player.pushed_wall
                 || self.player.in_water,
             sprint: d.length() > 6.0,
+            speed_mult: 1.0,
         }
     }
 }
@@ -352,6 +353,7 @@ pub fn idle(in_water: bool) -> physics::Input {
         // their competence-layer equivalent of treading water between turns.
         jump: in_water,
         sprint: false,
+        speed_mult: 1.0,
     }
 }
 

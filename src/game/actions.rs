@@ -449,16 +449,17 @@ impl Game {
     pub(super) fn mob_in_crosshair(&self, hit: &Option<raycast::PlanetHit>) -> Option<usize> {
         let origin = self.player.eye();
         let dir = self.camera.tangent_forward();
+        let reach = self.reach();
         // A wall in the way shields the mob behind it (approximate the
         // wall distance by its block center).
         let wall_t = hit
             .as_ref()
             .map(|h| origin.distance_to(h.block.entity_center()) + 0.5)
-            .unwrap_or(REACH);
+            .unwrap_or(reach);
         let mut best: Option<(usize, f32)> = None;
         for (i, m) in self.server.world.mobs().iter().enumerate() {
             let def = &self.content.reg.animals[m.species];
-            if let Some(t) = m.ray_hit_from(def, origin, dir, REACH.min(wall_t))
+            if let Some(t) = m.ray_hit_from(def, origin, dir, reach.min(wall_t))
                 && best.is_none_or(|(_, bt)| t < bt)
             {
                 best = Some((i, t));
@@ -517,17 +518,18 @@ impl Game {
     /// Mining and placing while playing.
     pub(super) fn interact(&mut self, dt: f32) {
         let reg = self.content.reg.clone();
+        let reach = self.reach();
         let hit = raycast::raycast_at(
             &self.server.world,
             self.player.eye(),
             self.camera.local_forward(),
-            REACH,
+            reach,
         );
         let aim = raycast::raycast_target_at(
             &self.server.world,
             self.player.eye(),
             self.camera.local_forward(),
-            REACH,
+            reach,
         );
         let held = self.inventory.slots[self.input.hotbar_sel].map(|s| s.item);
         if self.interact_wand(dt, hit.as_ref()) {
@@ -544,7 +546,7 @@ impl Game {
                 &self.server.world,
                 self.player.eye(),
                 self.camera.local_forward(),
-                REACH,
+                self.reach(),
             )
         {
             let pos = w.block;
@@ -581,7 +583,7 @@ impl Game {
                     &self.server.world,
                     self.player.eye(),
                     self.camera.local_forward(),
-                    REACH,
+                    reach,
                 )
             {
                 let pos = w.block;
@@ -2753,7 +2755,7 @@ impl Game {
             &self.server.world,
             self.player.eye(),
             self.camera.local_forward(),
-            REACH,
+            self.reach(),
         )
         .filter(|water| {
             self.content
@@ -2762,6 +2764,7 @@ impl Game {
         });
         let eye = self.player.eye();
         let forward = self.camera.local_forward().normalize_or_zero();
+        let reach = self.reach();
         let entity_target = self
             .server
             .world
@@ -2778,7 +2781,7 @@ impl Game {
             .filter_map(|(pos, stable_id, radius)| {
                 let delta = eye.local_delta_to(pos);
                 let along = delta.dot(forward);
-                (along > 0.0 && along <= REACH && (delta - forward * along).length() <= radius)
+                (along > 0.0 && along <= reach && (delta - forward * along).length() <= radius)
                     .then_some((along, stable_id))
             })
             .min_by(|left, right| left.0.total_cmp(&right.0))

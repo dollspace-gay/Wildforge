@@ -395,7 +395,7 @@ impl ApplicationHandler for App {
                             &game.server.world,
                             game.player.eye(),
                             game.camera.local_forward(),
-                            REACH,
+                            game.reach(),
                         ) {
                             let b = game.server.world.get_block_at(h.block);
                             let reg = game.content.reg.clone();

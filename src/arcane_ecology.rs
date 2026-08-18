@@ -289,6 +289,7 @@ pub fn observation_at(
     geography: &ArcaneGeography,
     registry: &Registry,
     surface: SurfacePos,
+    radius: f32,
 ) -> Option<EcologyObservation> {
     let (distance, site) = geography
         .dynamic
@@ -306,7 +307,7 @@ pub fn observation_at(
                 site,
             ))
         })
-        .filter(|(distance, _)| *distance <= 72.0)
+        .filter(|(distance, _)| *distance <= radius as f64)
         .min_by(|(a, site_a), (b, site_b)| {
             a.total_cmp(b).then_with(|| site_a.id.cmp(&site_b.id))
         })?;
@@ -2384,7 +2385,7 @@ mod tests {
             .unwrap();
         geography.dynamic.ecology.sites[index].charge = [0; 6];
         let surface = geography.dynamic.ecology.sites[index].surface().unwrap();
-        let observation = observation_at(&geography, &registry, surface).unwrap();
+        let observation = observation_at(&geography, &registry, surface, 72.0).unwrap();
         assert!(observation.text.contains("fold shut"));
         assert!(
             !observation

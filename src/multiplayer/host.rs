@@ -1107,7 +1107,7 @@ impl HostSession {
                     let (bands, dominant) = server.world.arcane_sensory_cue_at(region);
                     let ecology = server
                         .world
-                        .arcane_ecology_observation_at(guest.pos.surface())
+                        .arcane_ecology_observation_at(guest.pos.surface(), 72.0)
                         .map(|observation| (observation.text, observation.damped));
                     self.net.send(
                         *id,

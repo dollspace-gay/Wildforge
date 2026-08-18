@@ -154,6 +154,17 @@ impl Inventory {
         self.add_stack(reg, ItemStack::new(reg, item, count))
     }
 
+    /// Total carry weight in units: each stack contributes
+    /// `count * item.carry_weight`. Creative-only items are weightless
+    /// by default only when their declaration says so (carry_weight 0).
+    pub fn total_weight(&self, reg: &Registry) -> u64 {
+        self.slots
+            .iter()
+            .flatten()
+            .map(|s| u64::from(s.count) * u64::from(reg.item(s.item).carry_weight))
+            .sum()
+    }
+
     pub fn take_one(&mut self, slot: usize) -> Option<ItemId> {
         self.take_one_stack(slot).map(|stack| stack.item)
     }

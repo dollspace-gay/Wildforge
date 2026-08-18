@@ -127,6 +127,61 @@ fn data_mod_loads_blocks_items_recipes_features() {
 }
 
 #[test]
+fn items_declare_carry_weight_and_stat_modifiers() {
+    let root = tmp_dir("stat-mod");
+    let dir = root.join("statmod");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"statmod\"\nworld_api = 2\ndepends = [\"base\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("items.toml"),
+        r#"
+[[item]]
+id = "pack"
+name = "Haul Pack"
+texture = "@leather"
+carry_weight = 12
+
+[[item.stats]]
+kind = "carry"
+flat = 128
+
+[[item.stats]]
+kind = "build_range"
+mult_permille = 1200
+
+[[item.stats]]
+kind = "move_speed"
+mult_permille = 900
+"#,
+    )
+    .unwrap();
+    let reg = registry::load(&root);
+    let pack = reg.item_id("statmod:pack").expect("item registered");
+    assert_eq!(reg.item(pack).carry_weight, 12);
+    let stats = &reg.item(pack).stats;
+    assert_eq!(stats.len(), 3, "all declared stats land on the item");
+    let carry = stats
+        .iter()
+        .find(|m| m.kind == crate::stats::StatKind::Carry)
+        .expect("carry modifier");
+    assert_eq!(carry.flat, 128.0);
+    assert_eq!(carry.mult_permille, 1_000, "flat-only keeps the neutral mult");
+    let range = stats
+        .iter()
+        .find(|m| m.kind == crate::stats::StatKind::BuildRange)
+        .expect("build range modifier");
+    assert_eq!(range.mult_permille, 1_200);
+    assert_eq!(range.flat, 0.0, "mult-only keeps a neutral flat");
+    // Un-declared items keep the lightweight default.
+    assert_eq!(reg.item(reg.item_id("base:stick").unwrap()).carry_weight, 1);
+    assert!(reg.item(reg.item_id("base:stick").unwrap()).stats.is_empty());
+}
+
+#[test]
 fn fixture_mod_declares_qualified_arcane_content_and_resonance() {
     let root = tmp_dir("arcane-valid-mod");
     let dir = root.join("greenfire");

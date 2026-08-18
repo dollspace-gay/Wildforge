@@ -67,17 +67,6 @@ impl Game {
         }
     }
 
-    pub(super) fn max_health(&self) -> f32 {
-        MAX_HEALTH
-            + self
-                .survival
-                .nutrition
-                .iter()
-                .filter(|&&n| n >= 40.0)
-                .count() as f32
-                * 2.0
-    }
-
     pub(super) fn update_food(&mut self, dt: f32, input: &physics::Input) {
         if self.creative || !self.server.world.ruleset().hunger {
             return;
@@ -464,6 +453,10 @@ impl Game {
             .translated(Vec3::new(0.0, 0.9, 0.0))
             .expect("pickup target stays beside the player")
             .pos;
+        // Carry weight: an over-burdened survivor cannot lift another stack
+        // off the ground. Creative ignores the ledger entirely.
+        let capacity = self.carry_capacity();
+        let mut weight = if self.creative { 0.0 } else { self.carried_weight() };
         let mut i = 0;
         while i < items.len() {
             let it = &items[i];
@@ -472,6 +465,11 @@ impl Game {
                 let it_pos = it.pos;
                 let (item, count, dur) = (items[i].item, items[i].count, items[i].durability);
                 let reg = self.content.reg.clone();
+                let unit = reg.item(item).carry_weight as f32;
+                if !self.creative && weight + count as f32 * unit > capacity {
+                    i += 1;
+                    continue;
+                }
                 let left = if dur > 0 {
                     let mut stack = ItemStack::new(&reg, item, count);
                     stack.durability = dur;
@@ -479,6 +477,7 @@ impl Game {
                 } else {
                     self.inventory.add(&reg, item, count)
                 };
+                weight += (count - left) as f32 * unit;
                 if left < count {
                     if !self.presentation.juice {
                         self.sfx(Sfx::Pickup);

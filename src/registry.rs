@@ -362,6 +362,11 @@ pub struct ItemDef {
     pub ammo: Option<String>,
     /// (slot, armor points) — each point blocks 4% damage from the wild.
     pub armor: Option<(ArmorSlot, u32)>,
+    /// Weight in carry units (default 1). Survival pickup respects the
+    /// player's Carry capacity; 0 means weightless.
+    pub carry_weight: u32,
+    /// Derived stat contributions granted while worn (equipment only).
+    pub stats: Vec<crate::stats::StatModifier>,
     /// Right-click to camp: sleep to dawn, set spawn (bedrolls).
     pub bedroll: bool,
     /// Breaking leaves with this drops the leaf block itself.
@@ -1834,6 +1839,10 @@ struct ItemToml {
     #[serde(default)]
     armor: Option<ArmorToml>,
     #[serde(default)]
+    carry_weight: Option<u32>,
+    #[serde(default)]
+    stats: Vec<StatToml>,
+    #[serde(default)]
     bedroll: bool,
     #[serde(default)]
     shears: bool,
@@ -1875,6 +1884,15 @@ struct ItemToml {
     observation: Option<ObservationToml>,
     #[serde(default)]
     discovery: Option<DiscoveryItemToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct StatToml {
+    kind: String,
+    #[serde(default)]
+    flat: Option<f32>,
+    #[serde(default)]
+    mult_permille: Option<u16>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -3749,6 +3767,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     bow: None,
                     ammo: None,
                     armor: None,
+                    carry_weight: 1,
+                    stats: Vec::new(),
                     bedroll: false,
                     shears: false,
                     charm: None,
@@ -3913,6 +3933,25 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 }),
                 ammo: it.ammo.clone(),
                 armor,
+                carry_weight: it.carry_weight.unwrap_or(1),
+                stats: it
+                    .stats
+                    .iter()
+                    .filter_map(|s| {
+                        let kind = match s.kind.parse() {
+                            Ok(kind) => kind,
+                            Err(error) => {
+                                errs.push(format!("{full}: {error}"));
+                                return None;
+                            }
+                        };
+                        Some(crate::stats::StatModifier {
+                            kind,
+                            flat: s.flat.unwrap_or(0.0),
+                            mult_permille: s.mult_permille.unwrap_or(1_000),
+                        })
+                    })
+                    .collect(),
                 bedroll: it.bedroll,
                 shears: it.shears,
                 charm: it.charm.as_ref().map(CharmToml::effect_id),
@@ -5265,6 +5304,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             bow: None,
             ammo: None,
             armor: None,
+            carry_weight: 1,
+            stats: Vec::new(),
             bedroll: false,
             shears: false,
             charm: None,
@@ -5802,6 +5843,8 @@ fn push_salvage_item(
         bow: None,
         ammo: None,
         armor: None,
+        carry_weight: 1,
+        stats: Vec::new(),
         bedroll: false,
         shears: false,
         charm: None,
@@ -6343,6 +6386,8 @@ impl Registry {
                 bow: None,
                 ammo: None,
                 armor: None,
+                carry_weight: 1,
+                stats: Vec::new(),
                 bedroll: false,
                 shears: false,
                 charm: None,
@@ -6437,6 +6482,8 @@ impl Registry {
                 bow: None,
                 ammo: None,
                 armor: None,
+                carry_weight: 1,
+                stats: Vec::new(),
                 bedroll: false,
                 shears: false,
                 charm: None,

@@ -54,6 +54,8 @@ pub struct Input {
     pub strafe: f32,  // -1..1
     pub jump: bool,
     pub sprint: bool,
+    /// Derived move-speed multiplier from the player stat surface.
+    pub speed_mult: f32,
 }
 
 impl Player {
@@ -121,7 +123,7 @@ impl Player {
             WALK_SPEED * SPRINT_MULT
         } else {
             WALK_SPEED
-        };
+        } * input.speed_mult;
         // Snappy ground control, floatier air control.
         let accel = if self.on_ground || self.in_water {
             18.0

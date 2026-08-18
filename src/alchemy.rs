@@ -385,6 +385,26 @@ pub struct PreparationModifiers {
     pub recovery_permille: u16,
     pub perception_permille: u16,
     pub stamina_permille: u16,
+    /// Derived-stat channels added by the capability ramp (E4). Each is a
+    /// multiplier permille (1000 = unchanged) feeding the same `StatBlock`
+    /// surface equipment stats use, so a preparation and a worn item
+    /// multiply rather than stack additively.
+    #[serde(default = "default_permille")]
+    pub health_permille: u16,
+    #[serde(default = "default_permille")]
+    pub stamina_regen_permille: u16,
+    #[serde(default = "default_permille")]
+    pub carry_permille: u16,
+    #[serde(default = "default_permille")]
+    pub reach_permille: u16,
+    #[serde(default = "default_permille")]
+    pub scan_permille: u16,
+    #[serde(default = "default_permille")]
+    pub move_speed_permille: u16,
+}
+
+fn default_permille() -> u16 {
+    1_000
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -421,6 +441,12 @@ impl Default for PreparationModifiers {
             recovery_permille: 1_000,
             perception_permille: 1_000,
             stamina_permille: 1_000,
+            health_permille: 1_000,
+            stamina_regen_permille: 1_000,
+            carry_permille: 1_000,
+            reach_permille: 1_000,
+            scan_permille: 1_000,
+            move_speed_permille: 1_000,
         }
     }
 }

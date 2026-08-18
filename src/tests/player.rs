@@ -285,6 +285,7 @@ fn every_planet_seam_carries_walk_sprint_swim_boat_and_flight() {
                 strafe: 0.0,
                 jump: false,
                 sprint: matches!(mode, Mode::Sprint),
+                speed_mult: 1.0,
             };
             match mode {
                 Mode::Fly => player.fly(&world, heading * 4.0, 0.1),
@@ -429,6 +430,7 @@ fn collision_and_auto_step_work_across_every_planet_seam() {
             strafe: 0.0,
             jump: false,
             sprint: false,
+            speed_mult: 1.0,
         };
         let mut heading = seam.heading;
         for _ in 0..16 {
@@ -475,6 +477,7 @@ fn player_falls_lands_and_jumps() {
         strafe: 0.0,
         jump: false,
         sprint: false,
+        speed_mult: 1.0,
     };
     for _ in 0..300 {
         p.update(&w, &idle, Vec3::Z, Vec3::X, 1.0 / 60.0);
@@ -505,6 +508,12 @@ fn inventory_and_clicks() {
     inv.add(&reg, pick, 1);
     assert_eq!(inv.slots[2].unwrap().count, 1);
     assert_eq!(inv.slots[3].unwrap().count, 1, "tools must not stack");
+    // Carry weight: one unit per base item by default.
+    assert_eq!(
+        inv.total_weight(&reg),
+        64 + 6 + 2,
+        "70 dirt (1 unit each) + 2 picks (1 unit each)"
+    );
     // Wear the tool out.
     let uses = reg.item(pick).durability;
     for _ in 0..uses {
@@ -756,6 +765,7 @@ fn a_fast_step_cannot_pass_through_a_wall() {
         strafe: 0.0,
         jump: false,
         sprint: true,
+        speed_mult: 1.0,
     };
     // One enormous step, the shape a hitch produces: far enough that the
     // destination is open ground on the far side of the wall.

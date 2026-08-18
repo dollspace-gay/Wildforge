@@ -1906,9 +1906,10 @@ impl World {
     pub fn arcane_ecology_observation_at(
         &self,
         surface: crate::planet::SurfacePos,
+        radius: f32,
     ) -> Option<crate::arcane_ecology::EcologyObservation> {
         self.arcane_geography.as_ref().and_then(|geography| {
-            crate::arcane_ecology::observation_at(geography, &self.reg, surface)
+            crate::arcane_ecology::observation_at(geography, &self.reg, surface, radius)
         })
     }
 
@@ -1971,6 +1972,7 @@ impl World {
     pub fn perceived_arcane_ecology_at(
         &self,
         surface: crate::planet::SurfacePos,
+        radius: f32,
     ) -> Option<crate::arcane_ecology::EcologyObservation> {
         if self.remote {
             return self.remote_arcane_ecology.as_ref().map(|(text, damped)| {
@@ -1980,7 +1982,7 @@ impl World {
                 }
             });
         }
-        self.arcane_ecology_observation_at(surface)
+        self.arcane_ecology_observation_at(surface, radius)
     }
 
     #[cfg(test)]

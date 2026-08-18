@@ -48,6 +48,7 @@ mod ruleset;
 mod script;
 mod server;
 mod sky;
+mod stats;
 mod style;
 #[cfg(test)]
 mod tests;

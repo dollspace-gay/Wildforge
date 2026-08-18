@@ -104,7 +104,7 @@ impl Agent {
                 self.world.ire
             ));
         }
-        if let Some(observation) = self.world.perceived_arcane_ecology_at(feet.surface()) {
+        if let Some(observation) = self.world.perceived_arcane_ecology_at(feet.surface(), 72.0) {
             out.push_str(&format!("ecology: {}\n", observation.text));
         }
         // Minimap: 2-block cells, north up. Legend in the footer.

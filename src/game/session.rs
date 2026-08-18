@@ -153,6 +153,7 @@ impl Game {
         self.player = Player::new_at(spawn);
         self.survival.spawn_point = self.player.pos;
         self.combat = combat::CombatState::new();
+        self.combat.stamina = self.stamina_max();
         self.camera.follow_planet(self.player.eye());
         self.camera.yaw = -std::f32::consts::FRAC_PI_2;
         self.camera.pitch = 0.0;
@@ -243,7 +244,7 @@ impl Game {
         self.interaction.craft_grid = [None; 9];
         self.server.world.clear_loose_items();
         self.interaction.breaking = None;
-        self.survival.health = MAX_HEALTH;
+        self.survival.health = self.max_health();
         self.survival.killed_by_wild = false;
         self.survival.hunger = 20.0;
         self.survival.nutrition = [0.0; 5];

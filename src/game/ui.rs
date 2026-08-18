@@ -1483,7 +1483,7 @@ impl Game {
             // Stamina bar under the hearts; hidden in creative (never
             // exhausts). Amber when low, since combat costs live here.
             if !self.creative {
-                let frac = (self.combat.stamina / combat::STAMINA_MAX).clamp(0.0, 1.0);
+                let frac = (self.combat.stamina / self.stamina_max()).clamp(0.0, 1.0);
                 let sw = 9.0 * Self::SLOT * 0.55;
                 let sy = hy - 10.0;
                 ui.rect(hx, sy, sw, 3.0, [0.02, 0.02, 0.03, 0.7]);
@@ -1493,6 +1493,21 @@ impl Game {
                     [0.9, 0.5, 0.3, 0.95]
                 };
                 ui.rect(hx, sy, sw * frac.max(0.04), 3.0, col);
+                // Carry burden meter under the stamina bar.
+                let capacity = self.carry_capacity();
+                if capacity > 0.0 {
+                    let burden = (self.carried_weight() / capacity).clamp(0.0, 1.0);
+                    let by = sy + 5.0;
+                    ui.rect(hx, by, sw, 2.0, [0.02, 0.02, 0.03, 0.7]);
+                    let col = if burden < 0.7 {
+                        [0.65, 0.6, 0.5, 0.9]
+                    } else if burden < 0.9 {
+                        [0.9, 0.7, 0.3, 0.95]
+                    } else {
+                        [0.95, 0.4, 0.3, 0.95]
+                    };
+                    ui.rect(hx, by, sw * burden.max(0.05), 2.0, col);
+                }
             }
             // Armor pips above the hearts, only while wearing any.
             let ap = if self.creative {
