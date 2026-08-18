@@ -169,8 +169,11 @@ affect simulation until their exact entry manifest is decoded and accepted.
 | Mouse | Look |
 | WASD / arrows | Move |
 | Space | Jump / swim up |
-| Ctrl | Sprint |
-| Hold left click | Mine block (per-block hardness; bedrock unbreakable) |
+| Ctrl | Sprint (drains stamina; cut off when the meter runs dry) |
+| Alt | Dodge — quick dash in your move direction (backward if standing still), brief invulnerability, cooldown |
+| F (hold) | Block — cuts warden damage and knockback while it holds, drains stamina; running dry staggers the guard |
+| Hold left click | Attack a mob in the crosshair; the third swing in the combo window is a heavy finisher, and hitting from behind the mob's facing backstabs for double |
+| Hold left click (no mob) | Mine block (per-block hardness; bedrock unbreakable) |
 | Hold right click | Contextual use: place a block, work an apparatus, aim a tuning lens, apply a preparation, or channel the selected wand working |
 | Hold right click with brush | Excavate a remnant, or sift ordinary stone/earth for regional salvage |
 | Middle click | Select targeted block if in hotbar |

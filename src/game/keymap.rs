@@ -28,6 +28,10 @@ impl Game {
                 self.input.keys.space = pressed;
             }
             KeyCode::ControlLeft | KeyCode::ControlRight => self.input.keys.sprint = pressed,
+            KeyCode::AltLeft | KeyCode::AltRight if pressed && self.ui_state.screen == Screen::Playing => {
+                self.input.dodge_pressed = true;
+            }
+            KeyCode::KeyF => self.input.keys.block = pressed,
             KeyCode::Escape if pressed => match self.ui_state.screen {
                 Screen::Playing => self.set_screen(Screen::Paused),
                 Screen::CreatingWorld => self.cancel_world_creation(),

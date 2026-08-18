@@ -429,6 +429,7 @@ impl HostSession {
                     yaw: m.yaw,
                     growth: m.growth,
                     hurt: m.hurt_flash,
+                    health: m.health,
                     fed: m.fed || m.breed_cd > 0.0 || m.growth < 1.0,
                 })
                 .collect();

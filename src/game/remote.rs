@@ -533,7 +533,7 @@ impl Game {
                             m.growth = s.growth;
                             m.hurt_flash = s.hurt;
                             m.fed = s.fed; // "won't take food" — gates guest feeding
-                            m.health = 1.0;
+                            m.health = s.health;
                             m.anim_phase = phase;
                             m
                         })
@@ -728,6 +728,14 @@ impl Game {
                 }
                 net::S2C::WorkingEvent(cue) => self.present_working_cue(cue),
                 net::S2C::Hit { dmg, from } => self.hurt_player_from_wild(dmg, from, None),
+                net::S2C::MobHit { id, dmg, crit } => {
+                    // The host's authoritative damage for the guest's swing;
+                    // float the number over the mob the snapshot still shows.
+                    let at = self.server.world.mob_by_id(id).map(|m| m.pos);
+                    if let Some(at) = at {
+                        self.spawn_damage_number(at, dmg, crit);
+                    }
+                }
                 net::S2C::Give {
                     item,
                     count,

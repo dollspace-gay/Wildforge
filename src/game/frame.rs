@@ -518,6 +518,7 @@ impl Game {
 
         let paused = self.ui_state.screen == Screen::Paused || !self.in_world;
         if !paused {
+            self.combat.tick(dt);
             self.input.action_cooldown = (self.input.action_cooldown - dt).max(0.0);
             self.input.attack_cooldown = (self.input.attack_cooldown - dt).max(0.0);
             self.input.scroll_cooldown = (self.input.scroll_cooldown - dt).max(0.0);
@@ -1088,14 +1089,25 @@ impl Game {
         };
         let can_sim = self.server.world.has_chunk(pchunk) && !paused;
         if can_sim && self.ui_state.screen != Screen::Dead {
+            self.update_blocking();
             let (forward, strafe) = movement_axes(&self.input.keys);
+            let sprinting = self.input.keys.sprint
+                && self.survival.hunger >= 6.0
+                && self.survival.preparation_modifiers.stamina_permille >= 900
+                && (self.creative || self.combat.stamina >= combat::SPRINT_MIN_STAMINA);
+            self.stamina_tick(dt, sprinting);
+            // Dodge consumes the edge-triggered request at the top of the
+            // move step so the burst applies before physics integrates.
+            if self.input.dodge_pressed {
+                self.input.dodge_pressed = false;
+                self.try_dodge();
+            }
+            let guard = if self.combat.blocking { 0.45 } else { 1.0 };
             let input = physics::Input {
-                forward,
-                strafe,
+                forward: forward * guard,
+                strafe: strafe * guard,
                 jump: self.input.keys.space,
-                sprint: self.input.keys.sprint
-                    && self.survival.hunger >= 6.0
-                    && self.survival.preparation_modifiers.stamina_permille >= 900,
+                sprint: sprinting,
             };
             if self.input.keys.space && self.player.on_ground {
                 self.survival.hunger = (self.survival.hunger - 0.005).max(0.0);

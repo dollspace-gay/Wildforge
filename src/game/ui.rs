@@ -238,6 +238,76 @@ impl Game {
         );
     }
 
+    /// World-space combat feedback: floating damage numbers and health bars
+    /// over damaged or hostile mobs.
+    fn draw_combat_overlays(&self, ui: &mut UiBatch, w: f32, h: f32) {
+        if !self.in_world {
+            return;
+        }
+        for n in &self.combat.damage_numbers {
+            let t = (n.age / n.lifetime).clamp(0.0, 1.0);
+            let relative = n.pos - self.camera.pos;
+            let Some((sx, sy)) = project_world_label(self.camera.view_proj(), relative, w, h)
+            else {
+                continue;
+            };
+            let scale = if n.critical { 2.0 } else { 1.4 };
+            let alpha = (1.0 - t).clamp(0.0, 1.0);
+            let text = format!("{:.1}", n.value);
+            let tw = UiBatch::text_width(scale, &text);
+            let color = if n.critical {
+                [1.0, 0.55, 0.25, alpha]
+            } else {
+                [0.95, 0.95, 0.95, alpha]
+            };
+            ui.text_shadow(sx - tw * 0.5, sy - t * 14.0, scale, &text, color);
+        }
+        let reg = &self.content.reg;
+        for m in self.server.world.mobs() {
+            let Some(def) = reg.animals.get(m.species) else {
+                continue;
+            };
+            // Fresh friendly critters keep their bars hidden; a damaged
+            // mob or anything hostile earns one.
+            if !def.hostile && m.health >= def.health {
+                continue;
+            }
+            let Ok(head) = m.pos.translated(Vec3::new(0.0, def.height + 0.4, 0.0)) else {
+                continue;
+            };
+            let head = head.pos;
+            let local_sight = self.player.eye().local_delta_to(head);
+            let distance = local_sight.length();
+            if !(1.0..=24.0).contains(&distance)
+                || raycast::raycast_at(
+                    &self.server.world,
+                    self.player.eye(),
+                    local_sight,
+                    (distance - 0.3).max(0.0),
+                )
+                .is_some()
+            {
+                continue;
+            }
+            let relative = head.render_pos() - self.camera.pos;
+            let Some((sx, sy)) = project_world_label(self.camera.view_proj(), relative, w, h)
+            else {
+                continue;
+            };
+            let bw = (12.0 * 24.0 / distance).clamp(6.0, 18.0);
+            let frac = (m.health / def.health).clamp(0.0, 1.0);
+            let fg = if frac > 0.55 {
+                [0.55, 0.85, 0.4, 0.95]
+            } else if frac > 0.25 {
+                [0.9, 0.8, 0.3, 0.95]
+            } else {
+                [0.9, 0.3, 0.25, 0.95]
+            };
+            ui.rect(sx - bw * 0.5, sy, bw, 2.0, [0.0, 0.0, 0.0, 0.55]);
+            ui.rect(sx - bw * 0.5, sy, bw * frac.max(0.02), 2.0, fg);
+        }
+    }
+
     // ---- title screen layout ----
 
     pub(super) fn title_row_y(&self, i: usize) -> f32 {
@@ -1410,6 +1480,20 @@ impl Game {
                 };
                 ui.heart(hx + i as f32 * 8.0 * hs, hy - 24.0 + wobble, hs, kind);
             }
+            // Stamina bar under the hearts; hidden in creative (never
+            // exhausts). Amber when low, since combat costs live here.
+            if !self.creative {
+                let frac = (self.combat.stamina / combat::STAMINA_MAX).clamp(0.0, 1.0);
+                let sw = 9.0 * Self::SLOT * 0.55;
+                let sy = hy - 10.0;
+                ui.rect(hx, sy, sw, 3.0, [0.02, 0.02, 0.03, 0.7]);
+                let col = if frac > 0.35 {
+                    [0.5, 0.85, 0.4, 0.95]
+                } else {
+                    [0.9, 0.5, 0.3, 0.95]
+                };
+                ui.rect(hx, sy, sw * frac.max(0.04), 3.0, col);
+            }
             // Armor pips above the hearts, only while wearing any.
             let ap = if self.creative {
                 0
@@ -1524,6 +1608,7 @@ impl Game {
                     }
                 }
             }
+            self.draw_combat_overlays(&mut ui, w, h);
             // Brushing progress near the crosshair.
             if self.interaction.anvil_work > 0.0 {
                 let t = (self.interaction.anvil_work / 2.0).min(1.0);

@@ -2284,7 +2284,7 @@ impl HostSession {
                     self.send_player_state(id);
                 }
             }
-            C2S::AttackMob { id: mob_id } => {
+            C2S::AttackMob { id: mob_id, heavy } => {
                 // Stable ids: snapshots lag the sim, so an index would
                 // race deaths/spawns and strike the wrong creature.
                 if guest.action_cooldown > 0.0 {
@@ -2311,7 +2311,17 @@ impl HostSession {
                 {
                     let def = reg.animals[m.species].clone();
                     let surface = m.pos.surface();
-                    m.hurt(&def, dmg, dmg_type.as_deref(), from);
+                    let mut final_dmg = dmg;
+                    let mut crit = false;
+                    if heavy {
+                        final_dmg *= crate::game::combat::HEAVY_MULT;
+                        crit = true;
+                    }
+                    if crate::game::combat::mob_facing_away(m.yaw, m.pos, gpos) {
+                        final_dmg *= crate::game::combat::BACKSTAB_MULT;
+                        crit = true;
+                    }
+                    m.hurt(&def, final_dmg, dmg_type.as_deref(), from);
                     m.last_hit_by = id;
                     if !def.hostile {
                         server.world.add_ire_at_surface(surface, 2.0);
@@ -2322,6 +2332,16 @@ impl HostSession {
                         refresh_held(guest);
                         self.send_player_state(id);
                     }
+                    // Report the authoritative number for the guest's
+                    // floating damage feedback.
+                    self.net.send(
+                        id,
+                        &net::S2C::MobHit {
+                            id: mob_id,
+                            dmg: final_dmg,
+                            crit,
+                        },
+                    );
                 }
             }
             C2S::FeedMob { id: mob_id } => {

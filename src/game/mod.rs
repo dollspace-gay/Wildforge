@@ -4,6 +4,7 @@ mod actions;
 mod app;
 mod browser;
 mod capture;
+pub(crate) mod combat;
 mod containers;
 mod content;
 mod demos;
@@ -116,6 +117,7 @@ struct KeysDown {
     d: bool,
     space: bool,
     sprint: bool,
+    block: bool,
 }
 
 /// Pointer, keyboard, capture, and input-rate state that resets together.
@@ -128,6 +130,8 @@ struct InputState {
     allow_warp: bool,
     left_held: bool,
     right_held: bool,
+    /// Edge-triggered dodge request, consumed by `advance_player`.
+    dodge_pressed: bool,
     action_cooldown: f32,
     attack_cooldown: f32,
     hotbar_sel: usize,
@@ -616,6 +620,7 @@ struct Game {
     survival: SurvivalState,
     interaction: InteractionState,
     presentation: PresentationState,
+    combat: combat::CombatState,
     rng: u32,
 
     // Menus / meta
@@ -842,6 +847,7 @@ impl Game {
                     && !std::path::Path::new("/mnt/wslg").exists(),
                 left_held: false,
                 right_held: false,
+                dodge_pressed: false,
                 action_cooldown: 0.0,
                 attack_cooldown: 0.0,
                 hotbar_sel: 0,
@@ -855,6 +861,7 @@ impl Game {
             survival: SurvivalState::new(spawn),
             interaction: InteractionState::default(),
             presentation: PresentationState::new(),
+            combat: combat::CombatState::new(),
             rng: if std::env::var("WILDFORGE_SHOT").is_ok() {
                 0x1234_5678
             } else {

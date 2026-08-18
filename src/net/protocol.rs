@@ -9,7 +9,7 @@ use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 40;
+pub const PROTOCOL: u32 = 41;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -88,6 +88,9 @@ pub struct MobSnap {
     pub yaw: f32,
     pub growth: f32,
     pub hurt: f32,
+    /// Current health, for world-space health bars. Guests show a bar for
+    /// damaged (or hostile) mobs using the same registry's max health.
+    pub health: f32,
     /// "Won't accept food right now" (fed, cooling down, or a juvenile).
     pub fed: bool,
 }
@@ -367,6 +370,9 @@ pub enum C2S {
     },
     AttackMob {
         id: u32,
+        /// Combo finisher: the host applies the heavy multiplier and the
+        /// backstab check (the client cannot be trusted with the number).
+        heavy: bool,
     },
     FireProjectile {
         direction: Vec3,
@@ -601,6 +607,13 @@ pub enum S2C {
     },
     EntryAccepted,
     PlayerState(PlayerStateSnap),
+    /// A swing the guest landed: the authoritative damage for its floating
+    /// number (the host computed heavy/backstab multipliers and criticality).
+    MobHit {
+        id: u32,
+        dmg: f32,
+        crit: bool,
+    },
     Refused(Refusal),
     /// Host mods dir (scripts excluded) when content hashes differ.
     ModFiles(Vec<(String, Vec<u8>)>),

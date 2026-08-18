@@ -744,7 +744,8 @@ impl Agent {
             net::S2C::Container { .. }
             | net::S2C::MobCargo { .. }
             | net::S2C::ImplementActivation { .. }
-            | net::S2C::Falling(_) => {}
+            | net::S2C::Falling(_)
+            | net::S2C::MobHit { .. } => {}
         }
     }
 

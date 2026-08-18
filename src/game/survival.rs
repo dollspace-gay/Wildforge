@@ -39,6 +39,16 @@ impl Game {
         if std::env::var("WILDFORGE_DEBUG").is_ok() {
             eprintln!("wild hit {amount} dmg_type={dmg_type:?}");
         }
+        // A raised guard takes most of the sting out of wild hits. The
+        // block costs stamina; running the guard dry staggers it.
+        let mut blocked = false;
+        let mut amount = amount;
+        if self.combat.blocking {
+            blocked = true;
+            amount *= 1.0 - combat::BLOCK_REDUCTION;
+            self.combat.landed_block();
+            self.sfx(Sfx::Block);
+        }
         let mut pts = self.armor_points();
         if let Some(mut charm) = self.survival.armor[4]
             && let Some(pos) = self.player.pos.block()
@@ -76,7 +86,15 @@ impl Game {
         away.y = 0.0;
         if away.length_squared() > 0.001 {
             let dir = away.normalize();
-            self.player.vel += dir * 6.0 + Vec3::new(0.0, 3.5, 0.0);
+            let (shove, lift) = if blocked {
+                (
+                    6.0 * combat::BLOCK_KNOCKBACK_MULT,
+                    3.5 * combat::BLOCK_KNOCKBACK_MULT,
+                )
+            } else {
+                (6.0, 3.5)
+            };
+            self.player.vel += dir * shove + Vec3::new(0.0, lift, 0.0);
             // The plan's one camera shake: a 2px nudge away from the
             // attacker, so the flinch points at the threat.
             if self.presentation.juice {
@@ -90,6 +108,11 @@ impl Game {
 
     pub(super) fn damage(&mut self, amount: f32) {
         if amount <= 0.0 || self.ui_state.screen == Screen::Dead || self.creative {
+            return;
+        }
+        // Dodge i-frames: the window makes the player untouchable, so a
+        // dodge cleanly avoids a warden's lunge, a fall, or a splash.
+        if self.combat.iframes > 0.0 {
             return;
         }
         if std::env::var("WILDFORGE_DEBUG").is_ok() {
@@ -204,6 +227,7 @@ impl Game {
         self.survival.fall_start = None;
         self.survival.drown_timer = 0.0;
         self.survival.since_damage = 100.0;
+        self.combat = combat::CombatState::new();
         self.set_screen(Screen::Playing);
         if self.content.scripts.wants("on_player_respawn") {
             self.content

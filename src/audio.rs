@@ -97,6 +97,10 @@ pub enum Sfx {
     /// Animal hit/death thumps, pitched per species (1.0 = deer-sized).
     MobHurt(f32),
     MobDeath(f32),
+    /// Dodge whoosh.
+    Dodge,
+    /// Metal/wood clank of a landed guard.
+    Block,
     /// Warden bolt cast/whoosh.
     Bolt(f32),
     /// Distant thunder, delayed after the flash.
@@ -292,6 +296,8 @@ fn synth(sfx: Sfx) -> Vec<f32> {
         Sfx::MobHurt(p) => burst(0.16, 320.0 * p, 110.0 * p, 0.5, 2.0, 121),
         Sfx::MobDeath(p) => burst(0.34, 240.0 * p, 55.0 * p, 0.7, 1.4, 122),
         Sfx::Bolt(p) => chirp(0.14, 900.0 * p, 300.0 * p),
+        Sfx::Dodge => chirp(0.16, 620.0, 210.0),
+        Sfx::Block => burst(0.10, 1400.0, 300.0, 0.5, 2.2, 205),
         Sfx::Craft => burst(0.12, 600.0, 200.0, 0.5, 2.5, 99),
         Sfx::Splash => burst(0.30, 1200.0, 0.0, 0.0, 1.2, 111),
     }

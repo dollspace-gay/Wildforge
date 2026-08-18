@@ -82,7 +82,7 @@ fn net_protocol_round_trips() {
         },
         C2S::Break { pos: bp(1, 2, 3) },
         C2S::Place { pos: bp(-9, 70, 4) },
-        C2S::AttackMob { id: 3 },
+        C2S::AttackMob { id: 3, heavy: false },
         C2S::FeedMob { id: 12 },
         C2S::BrushBlock { pos: bp(4, 30, -2) },
         C2S::BeginObserve {
@@ -260,6 +260,7 @@ fn net_protocol_round_trips() {
                 yaw: 0.5,
                 growth: 1.0,
                 hurt: 0.0,
+                health: 6.0,
                 fed: true,
             }],
         )),
@@ -1524,6 +1525,7 @@ fn mob_snaps(n: usize) -> Vec<crate::net::MobSnap> {
             yaw: 0.7,
             growth: 1.0,
             hurt: 0.0,
+            health: 8.0,
             fed: i % 2 == 0,
         })
         .collect()

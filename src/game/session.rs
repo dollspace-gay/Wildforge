@@ -152,6 +152,7 @@ impl Game {
         self.server = server::Server::new(world, 0.3, self.rng ^ 0x5ee1);
         self.player = Player::new_at(spawn);
         self.survival.spawn_point = self.player.pos;
+        self.combat = combat::CombatState::new();
         self.camera.follow_planet(self.player.eye());
         self.camera.yaw = -std::f32::consts::FRAC_PI_2;
         self.camera.pitch = 0.0;
