@@ -32,6 +32,7 @@ mod magic_qualification;
 mod materials;
 mod mesher;
 mod mobs;
+mod mod_lint;
 mod mp;
 mod npc;
 mod net;
@@ -633,6 +634,18 @@ pub fn run() {
             .cloned()
             .unwrap_or_else(|| "world1".to_string());
         dedicated::run_headless_server(&world);
+        return;
+    }
+    if let Some(i) = args.iter().position(|arg| arg == "--mod-qualification") {
+        let Some(mods_dir) = args.get(i + 1).map(PathBuf::from) else {
+            eprintln!("usage: wildforge --mod-qualification <mods_dir>");
+            std::process::exit(2);
+        };
+        let report = mod_lint::qualify_mods(&mods_dir);
+        print!("{}", report.render());
+        if !report.is_qualified() {
+            std::process::exit(1);
+        }
         return;
     }
     // An agent is a guest, not a god: same protocol, same admission,
