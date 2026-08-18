@@ -44,6 +44,7 @@ pub mod planet_atlas;
 mod raycast;
 mod registry;
 mod renderer;
+mod ruleset;
 mod script;
 mod server;
 mod sky;

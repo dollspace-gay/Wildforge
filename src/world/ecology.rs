@@ -331,7 +331,10 @@ impl World {
                 if let Some(at) = at {
                     self.wild_falls_at(&definition.name, at);
                 }
-            } else if !definition.vehicle && !definition.name.ends_with(":carcass") {
+            } else if !definition.vehicle
+                && !definition.name.ends_with(":carcass")
+                && self.ruleset().ire
+            {
                 self.add_ire_at_surface(mob.pos.surface(), if mob.tamed { 1.0 } else { 2.0 });
             }
             if let (Some(at), Some(cargo)) = (at, mob.cargo) {
@@ -1517,6 +1520,11 @@ impl World {
                 ProjHit::None => true,
                 ProjHit::Expired => false,
                 ProjHit::Player(i) => {
+                    // PvE-only mode: a player's arrow passes through other
+                    // players instead of hurting them (capability E1).
+                    if p.from_player && !self.ruleset().pvp {
+                        return true;
+                    }
                     dmg.push((i, p.damage, p.damage_type.clone()));
                     false
                 }
@@ -1651,6 +1659,9 @@ impl World {
         dt: f32,
         rng: &mut u32,
     ) {
+        if !self.ruleset().hostile_spawns {
+            return;
+        }
         self.hostile_spawn_timer += dt;
         if self.hostile_spawn_timer < 4.0 {
             return;
@@ -1681,7 +1692,9 @@ impl World {
         if watcher_near {
             return;
         }
-        if self.weather_at_surface(player_surface).kind == crate::planet_atlas::LocalWeather::Storm
+        if self.ruleset().weather_extremes
+            && self.weather_at_surface(player_surface).kind
+                == crate::planet_atlas::LocalWeather::Storm
             && tier >= 2
         {
             budget += 1; // dark skies are cover

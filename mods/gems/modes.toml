@@ -1,0 +1,11 @@
+# Capability E1 sample: a mod-declared ruleset. A world whose `mode` names
+# `gems:cozy` plays without hunger, fall damage, or PvP — everything else
+# inherits from the survival base. Declared modes never change how the mod's
+# own content behaves; they only name a ruleset a world can be started with.
+
+[[mode]]
+id = "cozy"
+base = "survival"
+hunger = false
+fall_damage = false
+pvp = false

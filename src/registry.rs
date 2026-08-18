@@ -1076,6 +1076,10 @@ pub struct Registry {
     /// without marker provenance.
     pub gate_for_block: HashMap<BlockId, usize>,
     pub loots: HashMap<String, Vec<LootEntry>>,
+    /// Named survival rulesets from mod `modes.toml` (capability E1), in
+    /// dependency order. A world's `mode` string names one of these or the
+    /// built-in `survival` / `creative`.
+    pub modes: Vec<ModeDef>,
     /// Load-time conservation/schema failures. Keeping these attached to the
     /// registry lets the mods screen explain a bad pack and lets production
     /// world creation refuse it without panicking the content browser.
@@ -1114,6 +1118,37 @@ struct ModToml {
     depends: Vec<String>,
     #[serde(default)]
     retrogen: Option<RetrogenPolicy>,
+}
+
+/// A `[[mode]]` entry from `modes.toml`: a named ruleset a world's `mode`
+/// string can name. The mode inherits every field from its `base`
+/// (built-in "survival" or "creative", or another declared mode) and
+/// overrides the fields it declares.
+#[derive(Deserialize, Clone)]
+struct ModeToml {
+    id: String,
+    #[serde(default)]
+    base: Option<String>,
+    #[serde(default)]
+    creative: Option<bool>,
+    #[serde(default)]
+    hunger: Option<bool>,
+    #[serde(default)]
+    fall_damage: Option<bool>,
+    #[serde(default)]
+    drowning: Option<bool>,
+    #[serde(default)]
+    lava_burn: Option<bool>,
+    #[serde(default)]
+    hostile_spawns: Option<bool>,
+    #[serde(default)]
+    ire: Option<bool>,
+    #[serde(default)]
+    hearts: Option<bool>,
+    #[serde(default)]
+    weather_extremes: Option<bool>,
+    #[serde(default)]
+    pvp: Option<bool>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -2398,6 +2433,11 @@ struct ItemsFile {
     item: Vec<ItemToml>,
 }
 #[derive(Deserialize, Default)]
+struct ModesFile {
+    #[serde(default)]
+    mode: Vec<ModeToml>,
+}
+#[derive(Deserialize, Default)]
 struct RecipesFile {
     #[serde(default)]
     recipe: Vec<RecipeToml>,
@@ -2748,6 +2788,25 @@ struct RawMod {
     arcane_sites: Vec<ArcaneSiteToml>,
     workings: Vec<crate::workings::RawWorkingDef>,
     preparations: Vec<crate::alchemy::RawPreparationDef>,
+    modes: Vec<ModeToml>,
+}
+
+/// A resolved `[[mode]]` (E1 ruleset): which survival toggles are live and
+/// which base it inherits from. Stored on the registry for `ruleset_for`.
+#[derive(Clone, Debug)]
+pub struct ModeDef {
+    pub id: String,
+    pub base: Option<String>,
+    pub creative: Option<bool>,
+    pub hunger: Option<bool>,
+    pub fall_damage: Option<bool>,
+    pub drowning: Option<bool>,
+    pub lava_burn: Option<bool>,
+    pub hostile_spawns: Option<bool>,
+    pub ire: Option<bool>,
+    pub hearts: Option<bool>,
+    pub weather_extremes: Option<bool>,
+    pub pvp: Option<bool>,
 }
 
 // ---------------- loading ----------------
@@ -2833,6 +2892,8 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
             crate::alchemy::PREPARATIONS_SCHEMA_VERSION
         ));
     }
+    let modes: ModesFile =
+        toml::from_str(&read("modes.toml")).map_err(|e| format!("modes.toml: {e}"))?;
     if !features.feature.is_empty() && m.retrogen.is_none() {
         return Err(
             "mod.toml: a worldgen feature requires retrogen = \"untouched_host_only\", \
@@ -2878,6 +2939,7 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         arcane_sites: arcane.sites,
         workings: workings.working,
         preparations: preparations.preparation,
+        modes: modes.mode,
     })
 }
 
@@ -2938,6 +3000,7 @@ fn base_mod() -> RawMod {
         arcane_sites: Vec::new(),
         workings: workings.working,
         preparations: preparations.preparation,
+        modes: Vec::new(),
     }
 }
 
@@ -3054,6 +3117,7 @@ impl RemoveStable for Vec<RawMod> {
             arcane_sites: vec![],
             workings: vec![],
             preparations: vec![],
+            modes: vec![],
         };
         std::mem::replace(&mut self[idx], dummy)
     }
@@ -3094,6 +3158,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         gates: Vec::new(),
         gate_for_block: HashMap::new(),
         loots: HashMap::new(),
+        modes: Vec::new(),
         material_errors: Vec::new(),
         arcane_registry: crate::arcane::ResonanceRegistry::base(),
         arcane_sites: Vec::new(),
@@ -5256,6 +5321,75 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         }
     }
 
+    // Named rulesets (capability E1): resolve `[[mode]]` base chains so a
+    // world's `mode` string maps to a Ruleset via `ruleset_for`. A mode
+    // whose base is undeclared or cyclic is recorded as a load error and
+    // falls back to survival semantics.
+    let mut mode_errors = Vec::new();
+    {
+        let mut pending: Vec<ModeDef> = Vec::new();
+        for raw in &raws {
+            for m in &raw.modes {
+                let id = qualify(&raw.info.id, &m.id);
+                if m.id == "survival" || m.id == "creative" {
+                    mode_errors
+                        .push(format!("mode {id}: built-in mode id is reserved"));
+                    continue;
+                }
+                if pending.iter().any(|p| p.id == id) {
+                    mode_errors.push(format!("mode {id}: duplicate mode id"));
+                    continue;
+                }
+                let base = m.base.as_deref().map(|b| {
+                    if b == "survival" || b == "creative" {
+                        b.to_string()
+                    } else {
+                        qualify(&raw.info.id, b)
+                    }
+                });
+                pending.push(ModeDef {
+                    id,
+                    base,
+                    creative: m.creative,
+                    hunger: m.hunger,
+                    fall_damage: m.fall_damage,
+                    drowning: m.drowning,
+                    lava_burn: m.lava_burn,
+                    hostile_spawns: m.hostile_spawns,
+                    ire: m.ire,
+                    hearts: m.hearts,
+                    weather_extremes: m.weather_extremes,
+                    pvp: m.pvp,
+                });
+            }
+        }
+        for mode in &pending {
+            let mut base = mode.base.clone().unwrap_or_else(|| "survival".into());
+            let mut chain = vec![mode.id.clone()];
+            // Chase the base chain to its root, cycle-guarded.
+            while base != "survival" && base != "creative" {
+                let Some(next) = pending.iter().find(|p| p.id == base) else {
+                    mode_errors.push(format!(
+                        "mode {}: base {base} is not a declared mode",
+                        mode.id
+                    ));
+                    break;
+                };
+                if chain.contains(&next.id) {
+                    mode_errors.push(format!(
+                        "mode {}: cyclic base chain through {}",
+                        mode.id, next.id
+                    ));
+                    break;
+                }
+                chain.push(next.id.clone());
+                base = next.base.clone().unwrap_or_else(|| "survival".into());
+            }
+        }
+        let modes = pending;
+        reg.modes = modes;
+    }
+
     reconcile_material_definitions(&mut reg);
     // Gate feature errors survive past `validate_material_graph`, which
     // rebuilds `material_errors` from scratch.
@@ -5264,6 +5398,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     // locally.
     reg.material_errors.extend(settlement_errors);
     reg.material_errors.extend(recipe_errors);
+    reg.material_errors.extend(mode_errors);
     reg.mods.append(&mut failed);
     reg
 }
@@ -6137,6 +6272,34 @@ impl Registry {
                 .values()
                 .find(|definition| definition.provider == "base" && definition.kind == kind)
         })
+    }
+
+    /// Resolve a world's `mode` string to its survival ruleset (capability
+    /// E1). Built-ins are `survival` and `creative`; anything else is a
+    /// mod-declared `[[mode]]`, chained through its `base`. A missing or
+    /// broken mode falls back to survival so an unknown mode string never
+    /// strips safety netting.
+    pub fn ruleset_for(&self, mode: &str) -> crate::ruleset::Ruleset {
+        if mode == "creative" {
+            return crate::ruleset::Ruleset::creative();
+        }
+        let mut chain: Vec<&ModeDef> = Vec::new();
+        let mut current = mode;
+        for _ in 0..=self.modes.len() {
+            let Some(def) = self.modes.iter().find(|d| d.id == current) else {
+                break;
+            };
+            if chain.iter().any(|d| d.id == def.id) {
+                return crate::ruleset::Ruleset::survival();
+            }
+            chain.push(def);
+            current = def.base.as_deref().unwrap_or("survival");
+        }
+        let mut ruleset = crate::ruleset::Ruleset::survival();
+        for def in chain.into_iter().rev() {
+            ruleset.apply_overrides(def);
+        }
+        ruleset
     }
 
     pub fn install_saved_arcane_placeholders(

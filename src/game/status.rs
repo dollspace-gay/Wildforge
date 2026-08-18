@@ -79,7 +79,7 @@ impl Game {
     }
 
     pub(super) fn update_food(&mut self, dt: f32, input: &physics::Input) {
-        if self.creative {
+        if self.creative || !self.server.world.ruleset().hunger {
             return;
         }
         // The hunger charm prepays one fixed five-second interval. If the
@@ -364,6 +364,7 @@ impl Game {
     }
 
     pub(super) fn update_survival(&mut self, dt: f32) {
+        let ruleset = self.server.world.ruleset();
         // Fall damage: measure from the apex of the fall.
         if self.player.in_water || self.player.on_ground {
             if let (Some(start), true) = (self.survival.fall_start, self.player.on_ground) {
@@ -387,7 +388,9 @@ impl Game {
                         self.sfx(Sfx::Step(m, p));
                     }
                 }
-                self.damage((fall - 3.0).floor());
+                if ruleset.fall_damage {
+                    self.damage((fall - 3.0).floor());
+                }
             }
             self.survival.fall_start = None;
         } else if self.player.vel.y < 0.0 {
@@ -416,7 +419,9 @@ impl Game {
             if self.survival.burn_timer >= 0.5 {
                 self.survival.burn_timer = 0.0;
                 self.survival.killed_by_wild = false;
-                self.damage(3.0);
+                if ruleset.lava_burn {
+                    self.damage(3.0);
+                }
             }
         } else {
             self.survival.burn_timer = 0.0;
@@ -430,7 +435,9 @@ impl Game {
                 self.survival.drown_timer += dt;
                 if self.survival.drown_timer >= 1.0 {
                     self.survival.drown_timer = 0.0;
-                    self.damage(2.0);
+                    if ruleset.drowning {
+                        self.damage(2.0);
+                    }
                 }
             }
         } else {

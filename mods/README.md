@@ -22,6 +22,7 @@ mods/<your_mod>/
   recipes.toml      [[recipe]], [[smelt]], [[fuel]] entries
   tags.toml         [[tag]] item groups for recipes
   features.toml     [[feature]] worldgen (ore veins)
+  modes.toml        [[mode]] named survival rulesets (capability E1)
   arcane.toml       [[resonance]] and [[arcane_site]] entries
   workings.toml     [[working]] entries using qualified native handlers
   preparations.toml [[preparation]] physical process/effect entries
@@ -533,6 +534,43 @@ Retrogen is atomic, recorded, versioned, and idempotent. The host tells every
 client which policy applies without exposing reserve coordinates. The planet
 manifest stores the content hash; changing saved material identity is not an
 implicit migration.
+
+## modes.toml
+
+A `[[mode]]` entry declares a named survival ruleset a world can be started
+with (its `mode` in `world.toml`). This is the modding-out mechanism: a mod
+can ship a mode that turns off hunger, disables hearts, or makes a world
+PvE-only without changing any engine rule.
+
+```toml
+# mods/meadow/modes.toml
+[[mode]]
+id = "cozy"
+base = "survival"      # inherit from "survival" or "creative"
+hunger = false
+fall_damage = false
+pvp = false
+```
+
+Every field is optional and inherits from `base`. The full toggle set:
+
+| field | what it controls | base survival |
+|---|---|---|
+| `creative` | no item costs, no survival pressure (the creative superset) | false |
+| `hunger` | hunger drains, food gates sprint, starvation weakens | true |
+| `fall_damage` | falling hurts | true |
+| `drowning` | underwater exhaustion drowns | true |
+| `lava_burn` | lava burns | true |
+| `hostile_spawns` | night-time / ire-driven wardens spawn | true |
+| `ire` | extraction and kills accrue the moral meter | true |
+| `hearts` | the hearts / offerings loop is live | true |
+| `weather_extremes` | storms intensify world pressure | true |
+| `pvp` | players can hurt each other | true |
+
+A mode's `base` names the built-in `survival` or `creative`, or another
+declared mode in the same pack (`base = "cozy"` chains through it). Built-in
+`survival` / `creative` ids are reserved. A broken base (undeclared or
+cyclic) is reported on the MODS screen and the mode falls back to survival.
 
 ## animals.toml
 

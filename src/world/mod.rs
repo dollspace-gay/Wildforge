@@ -1547,6 +1547,12 @@ impl World {
         self.common_spawn
     }
 
+    /// The survival ruleset this world's mode names (capability E1). A mode
+    /// string that no longer resolves falls back to survival.
+    pub fn ruleset(&self) -> crate::ruleset::Ruleset {
+        self.reg.ruleset_for(&self.mode)
+    }
+
     pub fn set_remote_weather(
         &mut self,
         side: u16,
@@ -3022,7 +3028,7 @@ impl World {
             arcane_harvest_handled = true;
         }
         self.player_touched.insert(pos.chunk());
-        if affect_ire {
+        if affect_ire && self.ruleset().ire {
             let mut cost = self.ire_for_block(block);
             if let Some(plan) = &ecology_plan {
                 cost += if plan.destructive { 2.0 } else { 0.35 };

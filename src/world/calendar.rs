@@ -799,7 +799,9 @@ impl World {
             *v -= v.signum() * (2.0 * day_frac).min(v.abs());
             v.abs() >= 0.01
         });
-        self.tick_hearts(day_frac);
+        if self.ruleset().hearts {
+            self.tick_hearts(day_frac);
+        }
         self.refresh_long_winter();
         self.tick_rooting(day_frac);
         self.tick_graft(day_frac);
