@@ -89,7 +89,10 @@ impl World {
                     let _ = writeln!(
                         out,
                         "[[machine]]\n{pos_line}\nkind = \"{}\"\nlit = {}\nprogress = {}{core}\npowder = {}\nseparator_fuel = {}\nneodymium = {}\ncerium = {}",
-                        m.kind.name(),
+                        self.reg
+                            .machine(m.kind)
+                            .map(|def| def.id.as_str())
+                            .unwrap_or(""),
                         m.lit,
                         m.progress,
                         m.powder,
@@ -572,7 +575,7 @@ impl World {
                 .insert(of.pos, BlockEntity::Offering(state));
         }
         for m in parsed.machine {
-            let Some(kind) = MachineKind::from_name(&m.kind) else {
+            let Some(kind) = MachineKind::from_name(&self.reg, &m.kind) else {
                 continue;
             };
             let mut state = MachineInstance {

@@ -182,15 +182,9 @@ pub fn capture_region(
 }
 
 /// Which `MachineKind`, if any, a placed block's interaction makes it the
-/// mouth of.
-fn machine_kind_for(interaction: &Option<String>) -> Option<MachineKind> {
-    match interaction.as_deref() {
-        Some("bloomery") => Some(MachineKind::Bloomery),
-        Some("forge") => Some(MachineKind::Forge),
-        Some("kiln") => Some(MachineKind::Kiln),
-        Some("separator") => Some(MachineKind::Separator),
-        _ => None,
-    }
+/// mouth of (capability E7: the interaction names the machine id).
+fn machine_kind_for(reg: &Registry, interaction: &Option<String>) -> Option<MachineKind> {
+    reg.machine_by_interaction(interaction.as_deref()?)
 }
 
 impl World {
@@ -450,7 +444,7 @@ impl World {
         let mut mouths: Vec<(BlockPos, MachineKind)> = Vec::new();
         for (pos, block) in cells {
             let kind = self.reg.block(*block).interaction.clone();
-            if let Some(kind) = machine_kind_for(&kind) {
+            if let Some(kind) = machine_kind_for(&self.reg, &kind) {
                 mouths.push((*pos, kind));
             }
         }

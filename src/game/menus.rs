@@ -536,6 +536,23 @@ impl Game {
                     }
                 }
             }
+            Screen::Workbench(pos) => {
+                if self.browser_click(right) {
+                    return;
+                }
+                for i in 0..20 {
+                    if self.hit(self.workbench_recipe_rect(i)) {
+                        self.workbench_craft(pos, i);
+                        return;
+                    }
+                }
+                for i in 0..TOTAL_SLOTS {
+                    if self.hit(self.inv_slot_rect(i)) {
+                        self.inventory_click(false, i, right);
+                        return;
+                    }
+                }
+            }
             Screen::SignEdit(_) => {}
             Screen::Stall(pos) => {
                 if self.hit(self.stall_buy_rect()) {

@@ -1401,7 +1401,7 @@ impl Game {
                         chart,
                         (px, y + 1, pz),
                         crate::world::BlockEntity::Multiblock(crate::world::MachineInstance {
-                            kind: crate::world::multiblock::MachineKind::Separator,
+                            kind: w.reg.machine_kind("base:separator").unwrap_or_default(),
                             powder: 4,
                             separator_fuel: 4,
                             ..Default::default()
@@ -1839,7 +1839,7 @@ impl Game {
                     reg2.item_id("base:charcoal"),
                 ) {
                     let mut st = world::MachineInstance {
-                        kind: world::multiblock::MachineKind::Bloomery,
+                        kind: reg2.machine_kind("base:bloomery").unwrap_or_default(),
                         ..Default::default()
                     };
                     for i in 0..4 {
@@ -1950,7 +1950,7 @@ impl Game {
                     reg.item_id("base:cobalt_powder"),
                 ) {
                     let mut st = world::MachineInstance {
-                        kind: world::multiblock::MachineKind::Kiln,
+                        kind: reg.machine_kind("base:kiln").unwrap_or_default(),
                         ..Default::default()
                     };
                     for i in 0..4 {

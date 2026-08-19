@@ -2304,10 +2304,16 @@ impl Game {
                     }
                     return;
                 }
-                Some("separator") if self.input.action_cooldown <= 0.0 => {
+                Some(interaction)
+                    if self.input.action_cooldown <= 0.0
+                        && reg.machine_by_interaction(interaction).is_some_and(|kind| {
+                            reg.machine(kind).is_some_and(|def| def.handler.hand_fed())
+                        }) =>
+                {
                     // Powder and fuel in by hand; bare hands take the
                     // split back out (smoker rules, no screen).
                     self.input.action_cooldown = 0.3;
+                    let kind = reg.machine_by_interaction(interaction).expect("resolved above");
                     let powder = reg.item_id("base:rare_earth_powder");
                     // Separator persistence stores this bed as a count and
                     // returns charcoal on dismantling, so admitting arbitrary
@@ -2316,11 +2322,11 @@ impl Game {
                     self.server.world.ensure_block_entity_at(
                         h.block,
                         world::BlockEntity::Multiblock(world::MachineInstance {
-                            kind: world::multiblock::MachineKind::Separator,
+                            kind,
                             ..Default::default()
                         }),
                     );
-                    let valid = self.server.world.check_separator_at(h.block).is_some();
+                    let valid = kind.validate(&self.server.world, h.block).is_some();
                     let Some(world::BlockEntity::Multiblock(sp)) =
                         self.server.world.block_entity_mut_at(&h.block)
                     else {
@@ -2437,24 +2443,27 @@ impl Game {
                     ));
                     return;
                 }
-                Some(station @ ("bloomery" | "kiln" | "forge"))
-                    if self.input.action_cooldown <= 0.0 =>
+                Some(interaction)
+                    if self.input.action_cooldown <= 0.0
+                        && reg.machine_by_interaction(interaction).is_some_and(|kind| {
+                            reg.machine(kind).is_some_and(|def| def.handler.has_fire())
+                        }) =>
                 {
                     self.input.action_cooldown = 0.3;
                     if let Some(rc) = &self.multiplayer.remote {
                         rc.client.send(&net::C2S::OpenContainer { pos: h.block });
                         return;
                     }
-                    let (kind, screen) = match station {
-                        "kiln" => (world::multiblock::MachineKind::Kiln, Screen::Kiln(h.block)),
-                        "forge" => (
-                            world::multiblock::MachineKind::Forge,
-                            Screen::Bloomery(h.block),
-                        ),
-                        _ => (
-                            world::multiblock::MachineKind::Bloomery,
-                            Screen::Bloomery(h.block),
-                        ),
+                    let kind = reg.machine_by_interaction(interaction).expect("resolved above");
+                    let screen = match reg.machine(kind).map(|def| def.handler) {
+                        Some(crate::machines::MachineHandler::Kiln) => {
+                            Screen::Kiln(h.block)
+                        }
+                        Some(crate::machines::MachineHandler::Bloomery)
+                        | Some(crate::machines::MachineHandler::Forge) => {
+                            Screen::Bloomery(h.block)
+                        }
+                        _ => return,
                     };
                     let default = world::BlockEntity::Multiblock(world::MachineInstance {
                         kind,
@@ -2462,6 +2471,28 @@ impl Game {
                     });
                     self.server.world.ensure_block_entity_at(h.block, default);
                     self.set_screen(screen);
+                    return;
+                }
+                Some(interaction)
+                    if reg.machine_by_interaction(interaction).is_some_and(|kind| {
+                        reg.machine(kind).is_some_and(|def| def.handler.is_station())
+                    }) =>
+                {
+                    // A recipe-list station (the workbench pattern): the
+                    // screen lists the machine's `station` recipes and the
+                    // player crafts them from the inventory.
+                    self.input.right_held = false;
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::OpenContainer { pos: h.block });
+                        return;
+                    }
+                    let kind = reg.machine_by_interaction(interaction).expect("resolved above");
+                    let default = world::BlockEntity::Multiblock(world::MachineInstance {
+                        kind,
+                        ..Default::default()
+                    });
+                    self.server.world.ensure_block_entity_at(h.block, default);
+                    self.set_screen(Screen::Workbench(h.block));
                     return;
                 }
                 _ => {}

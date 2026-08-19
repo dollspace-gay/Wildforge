@@ -50,6 +50,37 @@ fn every_shipped_mod_content_entry_has_a_real_texture() {
     );
 }
 
+#[test]
+fn every_shipped_mod_machine_resolves_and_station_recipes_bind() {
+    let mods = Path::new(env!("CARGO_MANIFEST_DIR")).join("mods");
+    let reg = registry::load(&mods);
+    assert!(
+        reg.material_errors.is_empty(),
+        "shipped mod material/qualification errors: {:?}",
+        reg.material_errors
+    );
+    // Capability E7: the gems sample declares a data-driven machine; its
+    // kind resolves and its `station` recipes bind to it.
+    let bench = reg
+        .machine_kind("gems:jewel_bench")
+        .expect("the gems jewel bench machine resolves");
+    assert_eq!(
+        reg.machine(bench).unwrap().handler,
+        crate::machines::MachineHandler::Workbench,
+        "the bench is a recipe-list station"
+    );
+    let recipes = reg.machine_recipes_for(bench);
+    assert_eq!(recipes.len(), 1, "one station recipe binds to the bench");
+    assert_eq!(
+        reg.item(recipes[0].output).name,
+        "gems:gem_circlet",
+        "the station recipe makes the circlet"
+    );
+    // The four base machines load first, so kind 0 is a real machine.
+    assert!(reg.machines.len() >= 5, "base four + the gems bench");
+    assert!(reg.machine_kind("base:bloomery").is_some());
+}
+
 fn assert_no_missing_textures(reg: &Registry) {
     let unknown = crate::atlas::UNKNOWN_SLOT;
     let missing_blocks: Vec<_> = reg

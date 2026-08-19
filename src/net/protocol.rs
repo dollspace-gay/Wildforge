@@ -9,7 +9,7 @@ use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 41;
+pub const PROTOCOL: u32 = 42;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -736,11 +736,23 @@ pub enum S2C {
     },
     Container {
         pos: BlockPos,
-        /// 0 chest, 1 furnace, 2 offering, 3 bloomery, 4 kiln.
+        /// 0 chest, 1 furnace, 2 offering, 6 stall (machine kinds use
+        /// `MachineContainer` since capability E7).
         kind: u8,
         slots: Vec<Option<StackSnap>>,
         /// Live machine state: furnace [progress, burn_left,
-        /// burn_total], bloomery/kiln [lit, progress 0..1].
+        /// burn_total], stall [owner].
+        aux: Vec<f32>,
+    },
+    /// A data-driven machine's container snapshot (capability E7). The
+    /// machine id names the kind — host and guest remap by id, mirroring
+    /// the item palette — and `slots`/`aux` carry the handler's layout
+    /// (bloomery/forge 8 slots + [lit, progress]; kiln 9 slots; a recipe
+    /// station has no slots).
+    MachineContainer {
+        pos: BlockPos,
+        machine: String,
+        slots: Vec<Option<StackSnap>>,
         aux: Vec<f32>,
     },
     /// Sign text (broadcast on set; the full set arrives on join).

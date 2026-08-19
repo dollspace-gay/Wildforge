@@ -255,4 +255,52 @@ impl Registry {
         }
         d.drops
     }
+
+    // ---------------- capability E7: data-driven machines ----------------
+
+    /// The kind for a qualified machine id (e.g. `base:bloomery`), if the
+    /// pack declares it.
+    pub fn machine_kind(&self, name: &str) -> Option<crate::world::multiblock::MachineKind> {
+        let index = self.machines.iter().position(|m| m.id == name)?;
+        Some(crate::world::multiblock::MachineKind(index as u16))
+    }
+
+    /// The declared machine for a kind (bounds-checked; kind 0 in a pack
+    /// with no base machines yields `None` rather than panicking).
+    pub fn machine(
+        &self,
+        kind: crate::world::multiblock::MachineKind,
+    ) -> Option<&crate::machines::MachineDef> {
+        self.machines.get(kind.index())
+    }
+
+    /// Resolve a block `interaction` string to a machine kind. The string
+    /// is a qualified id when it carries a `:`, otherwise a bare name
+    /// (base's `interaction = "bloomery"` names `base:bloomery`).
+    pub fn machine_by_interaction(&self, interaction: &str) -> Option<crate::world::multiblock::MachineKind> {
+        if let Some(kind) = self.machine_kind(interaction) {
+            return Some(kind);
+        }
+        if !interaction.contains(':')
+            && let Some(kind) = self.machine_kind(&format!("base:{interaction}"))
+        {
+            return Some(kind);
+        }
+        None
+    }
+
+    /// Every recipe bound to `machine` by its `station` field — the list a
+    /// workbench-style screen shows.
+    pub fn machine_recipes_for(
+        &self,
+        machine: crate::world::multiblock::MachineKind,
+    ) -> Vec<&RecipeDef> {
+        let Some(def) = self.machine(machine) else {
+            return Vec::new();
+        };
+        self.recipes
+            .iter()
+            .filter(|r| r.station.as_deref() == Some(def.id.as_str()))
+            .collect()
+    }
 }

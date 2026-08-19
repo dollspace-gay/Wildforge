@@ -2954,14 +2954,13 @@ mod tests {
 
     #[test]
     fn authored_machine_buffers_are_external_and_replacement_is_an_explicit_sink() {
-        use crate::world::multiblock::MachineKind;
         use crate::world::{BlockEntity, MachineInstance, SignState};
 
         let (root, reg, mut world) = accounted_world("authored-machine-buffers", 127);
         let forge_pos = BlockPos::of_world(10, 120, 10).unwrap();
         let iron = reg.item_id("base:iron_ingot").unwrap();
         let mut forge = MachineInstance {
-            kind: MachineKind::Forge,
+            kind: reg.machine_kind("base:forge").unwrap_or_default(),
             ..Default::default()
         };
         forge.charge[0] = Some(ItemStack::new(&reg, iron, 2));
@@ -2993,7 +2992,7 @@ mod tests {
         world.insert_block_entity_authored_at(
             separator_pos,
             BlockEntity::Multiblock(MachineInstance {
-                kind: MachineKind::Separator,
+                kind: reg.machine_kind("base:separator").unwrap_or_default(),
                 powder: 2,
                 separator_fuel: 3,
                 neodymium: 1,
@@ -3228,7 +3227,6 @@ mod tests {
 
     #[test]
     fn bloomery_never_mints_a_free_bloom_and_reports_physical_slag() {
-        use crate::world::multiblock::MachineKind;
         use crate::world::{BLOOMERY_FIRE_SECS, BlockEntity, MachineInstance};
 
         let (root, reg, mut world) = accounted_world("bloomery-runtime", 103);
@@ -3245,7 +3243,7 @@ mod tests {
             .record_external_stack(&reg, ItemStack::new(&reg, iron, 1), "test charge")
             .unwrap();
         let mut short = MachineInstance {
-            kind: MachineKind::Bloomery,
+            kind: reg.machine_kind("base:bloomery").unwrap_or_default(),
             lit: true,
             progress: BLOOMERY_FIRE_SECS,
             core: Some(core),
@@ -3284,7 +3282,7 @@ mod tests {
             .record_external_stack(&reg, ItemStack::new(&reg, iron, 8), "test charge")
             .unwrap();
         let mut full = MachineInstance {
-            kind: MachineKind::Bloomery,
+            kind: reg.machine_kind("base:bloomery").unwrap_or_default(),
             lit: true,
             progress: BLOOMERY_FIRE_SECS,
             core: Some(core),
@@ -3323,7 +3321,6 @@ mod tests {
 
     #[test]
     fn forge_runtime_enforces_ninety_and_ninety_five_percent_recovery() {
-        use crate::world::multiblock::MachineKind;
         use crate::world::{BlockEntity, FORGE_FIRE_SECS, MachineInstance};
 
         let (root, reg, mut world) = accounted_world("forge-salvage-runtime", 109);
@@ -3357,7 +3354,7 @@ mod tests {
         }
         let charcoal = reg.item_id("base:charcoal").unwrap();
         let mut state = MachineInstance {
-            kind: MachineKind::Forge,
+            kind: reg.machine_kind("base:forge").unwrap_or_default(),
             lit: true,
             progress: FORGE_FIRE_SECS,
             core: Some(BlockPos::of_world(11, 120, 10).unwrap()),
@@ -3389,7 +3386,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(stock.len(), 2);
         let mut second = MachineInstance {
-            kind: MachineKind::Forge,
+            kind: reg.machine_kind("base:forge").unwrap_or_default(),
             lit: true,
             progress: FORGE_FIRE_SECS,
             core: Some(BlockPos::of_world(11, 120, 10).unwrap()),
@@ -3447,7 +3444,6 @@ mod tests {
 
     #[test]
     fn worked_and_kiln_runtime_paths_declare_every_finite_loss() {
-        use crate::world::multiblock::MachineKind;
         use crate::world::{BlockEntity, KILN_FIRE_SECS, MachineInstance};
 
         let (root, reg, mut world) = accounted_world("worked-kiln-runtime", 113);
@@ -3483,7 +3479,7 @@ mod tests {
             .record_external_stack(&reg, ItemStack::new(&reg, gold, 1), "test pigment")
             .unwrap();
         let mut kiln = MachineInstance {
-            kind: MachineKind::Kiln,
+            kind: reg.machine_kind("base:kiln").unwrap_or_default(),
             lit: true,
             progress: KILN_FIRE_SECS,
             core: Some(BlockPos::of_world(11, 120, 10).unwrap()),

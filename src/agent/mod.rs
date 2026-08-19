@@ -742,6 +742,7 @@ impl Agent {
             // Containers, cargo, bolts, falling sand: not yet part of
             // the agent's world-model (fast follows).
             net::S2C::Container { .. }
+            | net::S2C::MachineContainer { .. }
             | net::S2C::MobCargo { .. }
             | net::S2C::ImplementActivation { .. }
             | net::S2C::Falling(_)

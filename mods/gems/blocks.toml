@@ -17,3 +17,11 @@ tool = "pickaxe"
 requires_tool = true
 light = 12
 light_color = [1.0, 0.12, 0.14]  # a block of rubies smoulders red — modded colored light
+
+[[block]]
+id = "jewel_bench"
+name = "Jewel Bench"
+texture = { top = "@table_top", side = "@table_side", bottom = "@planks" }
+hardness = 2.5
+tool = "axe"
+interaction = "gems:jewel_bench"  # capability E7: names the machine id

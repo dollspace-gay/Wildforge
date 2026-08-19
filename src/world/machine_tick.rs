@@ -1,7 +1,8 @@
 //! Runtime ticking for bloomeries, clamps, furnaces, and related machines.
 
-use super::multiblock::{BlockStore, MachineKind};
+use super::multiblock::BlockStore;
 use super::*;
+use crate::machines::MachineHandler;
 
 impl World {
     /// Advance machines. Returns true if any visible state changed.
@@ -848,7 +849,8 @@ pub(super) fn tick_bloomery_machines<B: BlockStore>(store: &mut B, dt: f32) {
             .block_entities()
             .iter()
             .filter(|(_, e)| {
-                matches!(e, BlockEntity::Multiblock(m) if m.kind == MachineKind::Bloomery && m.lit)
+                matches!(e, BlockEntity::Multiblock(m)
+                    if m.kind.handler(store.reg()) == Some(MachineHandler::Bloomery) && m.lit)
             })
             .map(|(k, _)| *k)
             .collect();
@@ -875,7 +877,12 @@ pub(super) fn tick_bloomery_machines<B: BlockStore>(store: &mut B, dt: f32) {
         }
         let heat = b.stats.heat_multiplier();
         b.progress += dt * if wet { 0.5 } else { 1.0 } * heat;
-        if b.progress >= BLOOMERY_FIRE_SECS {
+        let fire_secs = store
+            .reg()
+            .machine(b.kind)
+            .map(|def| def.fire_secs)
+            .unwrap_or(crate::world::BLOOMERY_FIRE_SECS);
+        if b.progress >= fire_secs {
             // Cash the batch: 2 charge + 2 fuel per bloom, +2 bonus
             // blooms on a full 8+8 firing.
             let chain = store.reg().bloomery.first().cloned();
@@ -982,7 +989,8 @@ pub(super) fn tick_forge_machines<B: BlockStore>(store: &mut B, dt: f32) {
             .block_entities()
             .iter()
             .filter(|(_, e)| {
-                matches!(e, BlockEntity::Multiblock(m) if m.kind == MachineKind::Forge && m.lit)
+                matches!(e, BlockEntity::Multiblock(m)
+                    if m.kind.handler(store.reg()) == Some(MachineHandler::Forge) && m.lit)
             })
             .map(|(k, _)| *k)
             .collect();
@@ -991,10 +999,19 @@ pub(super) fn tick_forge_machines<B: BlockStore>(store: &mut B, dt: f32) {
             continue;
         };
         f.progress += dt * f.stats.heat_multiplier();
-        if f.progress >= FORGE_FIRE_SECS {
+        let fire_secs = store
+            .reg()
+            .machine(f.kind)
+            .map(|def| def.fire_secs)
+            .unwrap_or(crate::world::FORGE_FIRE_SECS);
+        if f.progress >= fire_secs {
             let reg = store.reg().clone();
+            let items_per_fuel = reg
+                .machine(f.kind)
+                .map(|def| def.items_per_fuel)
+                .unwrap_or(crate::world::FORGE_ITEMS_PER_FUEL);
             let n_fuel: u32 = f.fuel.iter().flatten().map(|s| s.count).sum();
-            let mut budget = n_fuel * FORGE_ITEMS_PER_FUEL;
+            let mut budget = n_fuel * items_per_fuel;
             let mut burned = 0u32;
             let mut outputs: Vec<ItemStack> = Vec::new();
             for s in f.charge.iter_mut() {
@@ -1140,19 +1157,20 @@ pub(super) fn tick_forge_machines<B: BlockStore>(store: &mut B, dt: f32) {
 }
 
 pub(super) fn tick_separator_machines<B: BlockStore>(store: &mut B, dt: f32) {
-    let reg = store.reg().clone();
     let keys: Vec<B::Pos> = store
         .block_entities()
         .iter()
-        .filter(
-            |(_, e)| matches!(e, BlockEntity::Multiblock(m) if m.kind == MachineKind::Separator),
-        )
+        .filter(|(_, e)| {
+            matches!(e, BlockEntity::Multiblock(m)
+                if m.kind.handler(store.reg()) == Some(MachineHandler::Separator))
+        })
         .map(|(k, _)| *k)
         .collect();
     for pos in keys {
         let Some(BlockEntity::Multiblock(mut sp)) = store.block_entities_mut().remove(&pos) else {
             continue;
         };
+        let def = store.reg().machine(sp.kind).cloned();
         let working = sp.powder >= 1 && sp.separator_fuel >= 1;
         if !working {
             sp.progress = 0.0;
@@ -1167,12 +1185,16 @@ pub(super) fn tick_separator_machines<B: BlockStore>(store: &mut B, dt: f32) {
             }
         }
         let want = if working {
-            "base:separator_lit"
+            def.as_ref()
+                .and_then(|def| def.mouth_lit.clone())
+                .unwrap_or_else(|| "base:separator_lit".to_string())
         } else {
-            "base:separator"
+            def.as_ref()
+                .map(|def| def.mouth.clone())
+                .unwrap_or_else(|| "base:separator".to_string())
         };
-        if Some(store.get_block(pos)) != reg.block_id(want) {
-            store.swap_block_keep_entity(pos, want);
+        if Some(store.get_block(pos)) != store.reg().block_id(&want) {
+            store.swap_block_keep_entity(pos, &want);
         }
         store
             .block_entities_mut()
@@ -1185,7 +1207,8 @@ pub(super) fn tick_kiln_machines<B: BlockStore>(store: &mut B, dt: f32) {
             .block_entities()
             .iter()
             .filter(|(_, e)| {
-                matches!(e, BlockEntity::Multiblock(m) if m.kind == MachineKind::Kiln && m.lit)
+                matches!(e, BlockEntity::Multiblock(m)
+                    if m.kind.handler(store.reg()) == Some(MachineHandler::Kiln) && m.lit)
             })
             .map(|(k, _)| *k)
             .collect();
@@ -1215,7 +1238,12 @@ pub(super) fn tick_kiln_machines<B: BlockStore>(store: &mut B, dt: f32) {
         }
         let heat = k.stats.heat_multiplier();
         k.progress += dt * if wet { 0.5 } else { 1.0 } * heat;
-        if k.progress >= KILN_FIRE_SECS {
+        let fire_secs = store
+            .reg()
+            .machine(k.kind)
+            .map(|def| def.fire_secs)
+            .unwrap_or(crate::world::KILN_FIRE_SECS);
+        if k.progress >= fire_secs {
             if let Some((_, fuel_item, clear)) = store.reg().kiln_base {
                 let n_sand: u32 = k.charge.iter().flatten().map(|s| s.count).sum();
                 let n_fuel: u32 = k.fuel.iter().flatten().map(|s| s.count).sum();

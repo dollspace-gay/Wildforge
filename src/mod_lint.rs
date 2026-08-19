@@ -831,4 +831,98 @@ output = "cutgem:cut_ruby"
         assert!(report.is_qualified(), "{}", report.render());
         clean("cutgem");
     }
+
+    #[test]
+    fn an_invalid_machine_fails_qualification() {
+        clean("machinist");
+        write_mod(
+            "machinist",
+            "machinist",
+            &[
+                ("mod.toml", &base_mod_toml("machinist")),
+                (
+                    "machines.toml",
+                    r#"
+schema_version = 1
+[[machine]]
+id = "quacker"
+label = "Quacker"
+handler = "not_a_handler"
+mouth = "machinist:quacker"
+"#,
+                ),
+            ],
+        );
+        let report = qualify_mods(&mods_dir("machinist"));
+        assert!(!report.is_qualified());
+        assert!(
+            report.render().contains("unknown machine handler"),
+            "{}",
+            report.render()
+        );
+        clean("machinist");
+    }
+
+    #[test]
+    fn a_station_machine_and_recipes_pass_qualification() {
+        clean("bench");
+        write_mod(
+            "bench",
+            "bench",
+            &[
+                ("mod.toml", &base_mod_toml("bench")),
+                (
+                    "blocks.toml",
+                    r#"
+[[block]]
+id = "jewel_bench"
+name = "Jewel Bench"
+texture = "@table_top"
+hardness = 2.5
+tool = "axe"
+interaction = "bench:jewel_bench"
+"#,
+                ),
+                (
+                    "items.toml",
+                    r#"
+[[item]]
+id = "gem_circlet"
+name = "Gem Circlet"
+texture = "@bronze_helmet"
+armor = { slot = "head", points = 1 }
+"#,
+                ),
+                (
+                    "machines.toml",
+                    r#"
+schema_version = 1
+[[machine]]
+id = "jewel_bench"
+label = "Jewel Bench"
+handler = "workbench"
+mouth = "bench:jewel_bench"
+"#,
+                ),
+                (
+                    "recipes.toml",
+                    r#"
+[[recipe]]
+pattern = ["ff", "ff"]
+keys = { f = "base:firebrick" }
+output = "bench:jewel_bench"
+
+[[recipe]]
+station = "bench:jewel_bench"
+pattern = ["s"]
+keys = { s = "base:stick" }
+output = "bench:gem_circlet"
+"#,
+                ),
+            ],
+        );
+        let report = qualify_mods(&mods_dir("bench"));
+        assert!(report.is_qualified(), "{}", report.render());
+        clean("bench");
+    }
 }

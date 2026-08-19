@@ -1,0 +1,59 @@
+# Capability E7: the built-in machine kinds, declared as data. Each entry
+# names a closed native handler and the knobs that handler reads; the
+# engine dispatches on `handler` rather than a hardcoded kind. Base
+# declares these four first so kind 0 (the default) is a real machine.
+
+schema_version = 1
+
+[[machine]]
+id = "bloomery"
+label = "Bloomery"
+handler = "bloomery"
+mouth = "base:bloomery"
+mouth_lit = "base:bloomery_lit"
+fire_secs = 300.0
+charge_slots = 4
+fuel_slots = 4
+items_per_fuel = 1
+min_charge = 2
+min_fuel = 2
+
+[[machine]]
+id = "forge"
+label = "Forge"
+handler = "forge"
+mouth = "base:forge"
+mouth_lit = "base:forge_lit"
+fire_secs = 120.0
+charge_slots = 4
+fuel_slots = 4
+items_per_fuel = 2
+min_charge = 1
+min_fuel = 1
+
+[[machine]]
+id = "kiln"
+label = "Kiln"
+handler = "kiln"
+mouth = "base:kiln"
+mouth_lit = "base:kiln_lit"
+fire_secs = 150.0
+charge_slots = 4
+fuel_slots = 4
+reagent_slots = 1
+items_per_fuel = 1
+min_charge = 2
+min_fuel = 2
+
+[[machine]]
+id = "separator"
+label = "Separator"
+handler = "separator"
+mouth = "base:separator"
+mouth_lit = "base:separator_lit"
+fire_secs = 45.0
+charge_slots = 0
+fuel_slots = 0
+items_per_fuel = 1
+min_charge = 0
+min_fuel = 0

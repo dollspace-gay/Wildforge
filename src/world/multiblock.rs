@@ -268,37 +268,38 @@ fn block_in_tag(reg: &Registry, tag: &str, block: BlockId) -> bool {
     })
 }
 
-/// Which registered machine a generic multiblock instance is. Doubles as
-/// the instance's shape ID: each kind maps one-to-one to its shell shape
-/// (built in [`crate::world::machines`]).
+/// Which registered machine a generic multiblock instance is. Capability
+/// E7: this is the index of a [`crate::machines::MachineDef`] in
+/// `Registry::machines`, so the kinds are data (`machines.toml`), not an
+/// enum. Index 0 (the first base machine) is the default; the engine
+/// dispatches on the def's closed native handler instead of matching
+/// variants.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
-pub enum MachineKind {
-    #[default]
-    Bloomery,
-    Forge,
-    Kiln,
-    Separator,
-}
+pub struct MachineKind(pub u16);
 
 impl MachineKind {
-    /// The save/UI name for this kind.
-    pub fn name(self) -> &'static str {
-        match self {
-            MachineKind::Bloomery => "bloomery",
-            MachineKind::Forge => "forge",
-            MachineKind::Kiln => "kiln",
-            MachineKind::Separator => "separator",
-        }
+    /// The registry index this kind addresses.
+    pub fn index(self) -> usize {
+        self.0 as usize
     }
 
-    pub fn from_name(name: &str) -> Option<MachineKind> {
-        match name {
-            "bloomery" => Some(MachineKind::Bloomery),
-            "forge" => Some(MachineKind::Forge),
-            "kiln" => Some(MachineKind::Kiln),
-            "separator" => Some(MachineKind::Separator),
-            _ => None,
-        }
+    /// The registered machine id for this kind (the save/UI name), or the
+    /// empty string when the pack does not declare the kind.
+    pub fn name(self, reg: &Registry) -> String {
+        reg.machine(self).map(|m| m.id.clone()).unwrap_or_default()
+    }
+
+    /// The closed native handler this kind runs, if the pack declares it.
+    pub fn handler(
+        self,
+        reg: &Registry,
+    ) -> Option<crate::machines::MachineHandler> {
+        reg.machine(self).map(|m| m.handler)
+    }
+
+    /// Look a kind up by its registered machine id.
+    pub fn from_name(reg: &Registry, name: &str) -> Option<MachineKind> {
+        reg.machine_kind(name)
     }
 }
 

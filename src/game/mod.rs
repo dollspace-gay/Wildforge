@@ -70,6 +70,10 @@ enum Screen {
     Offering(crate::planet::BlockPos),
     Bloomery(crate::planet::BlockPos),
     Kiln(crate::planet::BlockPos),
+    /// A recipe-list station machine (capability E7): lists the machine's
+    /// `station` recipes and crafts them from the inventory. Temporary
+    /// hardcoded screen; E11 generalizes it into mod-extensible screens.
+    Workbench(crate::planet::BlockPos),
     /// A tamed carrier's saddlebags, keyed by mob id.
     MobCargo(u32),
     /// Writing a placed sign or waystone.

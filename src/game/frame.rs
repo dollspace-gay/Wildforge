@@ -1901,7 +1901,9 @@ impl Game {
                         }
                     }
                     world::BlockEntity::Multiblock(b)
-                        if b.lit && b.kind != world::multiblock::MachineKind::Separator =>
+                        if b.lit
+                            && b.kind.handler(&self.content.reg)
+                                != Some(crate::machines::MachineHandler::Separator) =>
                     {
                         for k in 0..3 {
                             let rise = (t * 0.7 + k as f32 * 0.65) % 2.0;

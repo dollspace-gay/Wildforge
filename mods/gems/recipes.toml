@@ -26,3 +26,16 @@ output = "gems:void_pearl"
 pattern = ["rr", "rr", "rr"]
 keys = { r = "gems:ruby" }
 output = "gems:gem_frame_chest"
+
+# The jewel bench itself: a firebrick stack mouth (capability E7).
+[[recipe]]
+pattern = ["ff", "ff"]
+keys = { f = "base:firebrick" }
+output = "gems:jewel_bench"
+
+# A station recipe: only craftable at the jewel bench screen.
+[[recipe]]
+station = "gems:jewel_bench"
+pattern = ["rr"]
+keys = { r = "gems:cut_ruby" }
+output = "gems:gem_circlet"

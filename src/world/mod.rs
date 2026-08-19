@@ -3172,10 +3172,23 @@ impl World {
                     .entry(pos)
                     .or_insert_with(|| BlockEntity::Steam(Default::default()));
             }
-            Some("separator") => {
+            Some(interaction)
+                if self
+                    .reg
+                    .machine_by_interaction(interaction)
+                    .is_some_and(|kind| {
+                        self.reg
+                            .machine(kind)
+                            .is_some_and(|def| def.handler.hand_fed())
+                    }) =>
+            {
+                let kind = self
+                    .reg
+                    .machine_by_interaction(interaction)
+                    .expect("resolved above");
                 self.block_entities.entry(pos).or_insert_with(|| {
                     BlockEntity::Multiblock(MachineInstance {
-                        kind: crate::world::multiblock::MachineKind::Separator,
+                        kind,
                         ..Default::default()
                     })
                 });

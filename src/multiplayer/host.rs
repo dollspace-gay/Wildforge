@@ -27,9 +27,9 @@ use crate::net::{
     self, C2S, HostEvent, MAX_GUEST_VIEW_DIST, ModerationAction, Refusal, RefusalCode, S2C,
     StackSnap,
 };
+use crate::machines::MachineHandler;
 use crate::planet::{BlockPos, EntityPos};
 use crate::server::Server;
-use crate::world::multiblock::MachineKind;
 use crate::world::{BlockEntity, MachineInstance, World};
 use moderation::{BanIdentity, ModerationStore};
 use profiles::{PlayerRuntime, ProfileStore};
@@ -3539,33 +3539,41 @@ impl HostSession {
                     return;
                 }
                 let b = server.world.get_block_at(pos);
-                let kind = match server.world.reg.block(b).interaction.as_deref() {
-                    Some("chest") => 0u8,
-                    Some("furnace") => 1,
-                    Some("offering") => 2,
-                    Some("bloomery") => 3,
-                    Some("kiln") => 4,
-                    Some("forge") => 5,
-                    Some("stall") => 6,
+                // Capability E7: machine interactions resolve to a
+                // `MachineDef` and ride `S2C::MachineContainer`; the
+                // classic containers keep their `S2C::Container` kind code.
+                let machine = server
+                    .world
+                    .reg
+                    .block(b)
+                    .interaction
+                    .as_deref()
+                    .and_then(|i| server.world.reg.machine_by_interaction(i))
+                    .filter(|kind| {
+                        server.world.reg.machine(*kind).is_some_and(|def| {
+                            def.handler.has_fire() || def.handler.is_station()
+                        })
+                    });
+                let kind = match (machine, server.world.reg.block(b).interaction.as_deref()) {
+                    (Some(_), _) => 7u8,
+                    (None, Some("chest")) => 0,
+                    (None, Some("furnace")) => 1,
+                    (None, Some("offering")) => 2,
+                    (None, Some("stall")) => 6,
                     _ => return,
                 };
-                let default = match kind {
-                    0 => BlockEntity::Chest(Default::default()),
-                    1 => BlockEntity::Furnace(Default::default()),
-                    3 => BlockEntity::Multiblock(MachineInstance {
-                        kind: MachineKind::Bloomery,
+                let default = if let Some(mkind) = machine {
+                    BlockEntity::Multiblock(MachineInstance {
+                        kind: mkind,
                         ..Default::default()
-                    }),
-                    4 => BlockEntity::Multiblock(MachineInstance {
-                        kind: MachineKind::Kiln,
-                        ..Default::default()
-                    }),
-                    5 => BlockEntity::Multiblock(MachineInstance {
-                        kind: MachineKind::Forge,
-                        ..Default::default()
-                    }),
-                    6 => BlockEntity::Stall(Default::default()),
-                    _ => BlockEntity::Offering(Default::default()),
+                    })
+                } else {
+                    match kind {
+                        0 => BlockEntity::Chest(Default::default()),
+                        1 => BlockEntity::Furnace(Default::default()),
+                        6 => BlockEntity::Stall(Default::default()),
+                        _ => BlockEntity::Offering(Default::default()),
+                    }
                 };
                 let entry = server.world.ensure_block_entity_at(pos, default);
                 // A fresh counter belongs to whoever opens it first.
@@ -3611,10 +3619,38 @@ impl HostSession {
                     return;
                 }
                 let b = server.world.get_block_at(pos);
-                let res = match server.world.reg.block(b).interaction.as_deref() {
-                    Some("kiln") => server.world.light_kiln_at(pos),
-                    Some("forge") => server.world.light_forge_at(pos),
-                    _ => server.world.light_bloomery_at(pos),
+                // Capability E7: light any fire handler's machine by its
+                // interaction, not a hardcoded three-way match.
+                let res = match server
+                    .world
+                    .reg
+                    .block(b)
+                    .interaction
+                    .as_deref()
+                    .and_then(|interaction| server.world.reg.machine_by_interaction(interaction))
+                    .filter(|kind| {
+                        server
+                            .world
+                            .reg
+                            .machine(*kind)
+                            .is_some_and(|def| def.handler.has_fire())
+                    }) {
+                    Some(kind) => {
+                        let matched = match kind.validate(&server.world, pos) {
+                            Some(matched) => matched,
+                            None => {
+                                self.net.send(id, &S2C::Toast("the stack is breached".into()));
+                                return;
+                            }
+                        };
+                        crate::world::machines::light_machine_at(
+                            &mut server.world,
+                            pos,
+                            kind,
+                            matched,
+                        )
+                    }
+                    None => return,
                 };
                 match res {
                     Ok(()) => {
@@ -4063,7 +4099,9 @@ impl HostSession {
         };
         let mut held = self.guests.get(&id).and_then(|guest| guest.cursor);
         match entity {
-            BlockEntity::Multiblock(bl) if bl.kind == MachineKind::Bloomery => {
+            BlockEntity::Multiblock(bl)
+                if bl.kind.handler(&reg) == Some(MachineHandler::Bloomery) =>
+            {
                 // Sealed while firing; charge takes ore-chain items,
                 // the bank takes its fuel. Taking out is always fine.
                 if !bl.lit && slot < 8 {
@@ -4081,7 +4119,7 @@ impl HostSession {
                     }
                 }
             }
-            BlockEntity::Multiblock(kl) if kl.kind == MachineKind::Kiln => {
+            BlockEntity::Multiblock(kl) if kl.kind.handler(&reg) == Some(MachineHandler::Kiln) => {
                 // Sealed while firing. Sand slots 0-3, powder 4, fuel
                 // 5-8; puts validate against the kiln tables.
                 if !kl.lit && slot < 9 {
@@ -4102,7 +4140,9 @@ impl HostSession {
                     }
                 }
             }
-            BlockEntity::Multiblock(fo) if fo.kind == MachineKind::Forge => {
+            BlockEntity::Multiblock(fo)
+                if fo.kind.handler(&reg) == Some(MachineHandler::Forge) =>
+            {
                 // Sealed while firing; charge takes anything with a
                 // smelt, the bank takes anything that burns.
                 if !fo.lit && slot < 8 {
@@ -4275,6 +4315,42 @@ impl HostSession {
                     .unwrap_or(0),
             })
         };
+        let reg = server.world.reg.clone();
+        // Capability E7: machine kinds ride `S2C::MachineContainer`, keyed
+        // by the machine id (host and guest remap by id like the palette).
+        // The layout comes from the def, so any data-driven kind works.
+        if let BlockEntity::Multiblock(b) = entity {
+            let Some(def) = reg.machine(b.kind) else {
+                return;
+            };
+            let fire = def.fire_secs.max(1.0);
+            let (slots, aux) = match def.handler {
+                MachineHandler::Kiln => (
+                    b.charge
+                        .iter()
+                        .chain([&b.reagent])
+                        .chain(b.fuel.iter())
+                        .map(snap)
+                        .collect(),
+                    vec![if b.lit { 1.0 } else { 0.0 }, b.progress / fire],
+                ),
+                MachineHandler::Workbench => (Vec::new(), Vec::new()),
+                _ => (
+                    b.charge.iter().chain(b.fuel.iter()).map(snap).collect(),
+                    vec![if b.lit { 1.0 } else { 0.0 }, b.progress / fire],
+                ),
+            };
+            self.net.send(
+                id,
+                &S2C::MachineContainer {
+                    pos,
+                    machine: def.id.clone(),
+                    slots,
+                    aux,
+                },
+            );
+            return;
+        }
         let (kind, slots, aux): (u8, Vec<Option<StackSnap>>, Vec<f32>) = match entity {
             BlockEntity::Chest(c) => (0, c.slots.iter().map(snap).collect(), Vec::new()),
             BlockEntity::Furnace(f) => (
@@ -4283,35 +4359,6 @@ impl HostSession {
                 vec![f.progress, f.burn_left, f.burn_total],
             ),
             BlockEntity::Offering(o) => (2, o.slots.iter().map(snap).collect(), Vec::new()),
-            BlockEntity::Multiblock(b) if b.kind == MachineKind::Bloomery => (
-                3,
-                b.charge.iter().chain(b.fuel.iter()).map(snap).collect(),
-                vec![
-                    if b.lit { 1.0 } else { 0.0 },
-                    b.progress / crate::world::BLOOMERY_FIRE_SECS,
-                ],
-            ),
-            BlockEntity::Multiblock(k) if k.kind == MachineKind::Kiln => (
-                4,
-                k.charge
-                    .iter()
-                    .chain([&k.reagent])
-                    .chain(k.fuel.iter())
-                    .map(snap)
-                    .collect(),
-                vec![
-                    if k.lit { 1.0 } else { 0.0 },
-                    k.progress / crate::world::KILN_FIRE_SECS,
-                ],
-            ),
-            BlockEntity::Multiblock(f) if f.kind == MachineKind::Forge => (
-                5,
-                f.charge.iter().chain(f.fuel.iter()).map(snap).collect(),
-                vec![
-                    if f.lit { 1.0 } else { 0.0 },
-                    f.progress / crate::world::FORGE_FIRE_SECS,
-                ],
-            ),
             BlockEntity::Stall(st) => {
                 let owner = self
                     .guests

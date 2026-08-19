@@ -435,7 +435,7 @@ impl Game {
         let held = self.ui_state.held_stack;
         let (b, ok) = match self.server.world.block_entity_mut_at(&pos) {
             Some(world::BlockEntity::Multiblock(b))
-                if b.kind == world::multiblock::MachineKind::Bloomery =>
+                if b.kind.handler(&reg) == Some(crate::machines::MachineHandler::Bloomery) =>
             {
                 let chain = reg.bloomery.first().cloned();
                 let want = chain.map(|c| if slot < 4 { c.charge } else { c.fuel });
@@ -443,7 +443,7 @@ impl Game {
                 (b, ok)
             }
             Some(world::BlockEntity::Multiblock(b))
-                if b.kind == world::multiblock::MachineKind::Forge =>
+                if b.kind.handler(&reg) == Some(crate::machines::MachineHandler::Forge) =>
             {
                 let ok = match held {
                     None => true,
@@ -494,17 +494,31 @@ impl Game {
             rc.client.send(&net::C2S::LightBloomery { pos });
             return;
         }
-        let station = self
-            .content
-            .reg
-            .block(self.server.world.get_block_at(pos))
-            .interaction
-            .clone();
-        let kilnish = station.as_deref() == Some("kiln");
-        let res = match station.as_deref() {
-            Some("kiln") => self.server.world.light_kiln_at(pos),
-            Some("forge") => self.server.world.light_forge_at(pos),
-            _ => self.server.world.light_bloomery_at(pos),
+        let block = self.server.world.get_block_at(pos);
+        let station = self.content.reg.block(block).interaction.as_deref();
+        // Capability E7: light any fire handler by its interaction; the
+        // kind's shell and charge rules come from the machine def.
+        let res = match station
+            .and_then(|interaction| reg.machine_by_interaction(interaction))
+            .filter(|kind| {
+                reg.machine(*kind).is_some_and(|def| def.handler.has_fire())
+            }) {
+            Some(kind) => {
+                let matched = match kind.validate(&self.server.world, pos) {
+                    Some(matched) => matched,
+                    None => {
+                        self.toast("The stack is breached.".to_string());
+                        return;
+                    }
+                };
+                crate::world::machines::light_machine_at(
+                    &mut self.server.world,
+                    pos,
+                    kind,
+                    matched,
+                )
+            }
+            None => self.server.world.light_bloomery_at(pos),
         };
         match res {
             Ok(()) => {
@@ -520,6 +534,14 @@ impl Game {
                     );
                 }
                 self.sfx(Sfx::Bolt(0.8));
+                let kilnish = self.server.world.block_entity_at(&pos).is_some_and(|e| {
+                    matches!(
+                        e,
+                        world::BlockEntity::Multiblock(m)
+                            if m.kind.handler(&reg)
+                                == Some(crate::machines::MachineHandler::Kiln)
+                    )
+                });
                 self.toast(if kilnish {
                     "The kiln takes the ember. White heat.".to_string()
                 } else {
@@ -807,6 +829,80 @@ impl Game {
     pub(super) const BCOLS: usize = 6;
     pub(super) const BROWS: usize = 8;
     pub(super) const BSLOT: f32 = 40.0;
+}
+
+impl Game {
+    /// One recipe row of the workbench list (capability E7). The list
+    /// starts under the title and drops one row per recipe.
+    pub(super) fn workbench_recipe_rect(&self, index: usize) -> (f32, f32, f32, f32) {
+        let w = self.renderer.config.width as f32;
+        let h = self.renderer.config.height as f32;
+        (w / 2.0 - 330.0, h / 2.0 - 250.0 + index as f32 * 62.0, 660.0, 56.0)
+    }
+
+    /// Craft a workbench recipe from the inventory (capability E7). The
+    /// screen lists the machine's `station` recipes; clicking one consumes
+    /// one of each ingredient and adds the output, exactly like the free
+    /// grid but bound to the machine rather than the player's hands.
+    pub(super) fn workbench_craft(
+        &mut self,
+        pos: crate::planet::BlockPos,
+        recipe_index: usize,
+    ) {
+        let reg = self.content.reg.clone();
+        let Some(world::BlockEntity::Multiblock(m)) =
+            self.server.world.block_entity_at(&pos)
+        else {
+            return;
+        };
+        let recipes = reg.machine_recipes_for(m.kind);
+        let Some(recipe) = recipes.get(recipe_index) else {
+            return;
+        };
+        let tech_value = recipe
+            .tech
+            .as_deref()
+            .and_then(|key| self.read_player_kv(key));
+        if let Some(gate) = recipe_gates_met(tech_value.as_deref(), &self.inventory, recipe) {
+            let label = if gate == "blueprint" {
+                recipe
+                    .blueprint
+                    .map(|b| format!("requires {}", reg.item(b).label))
+                    .unwrap_or_else(|| "requires a blueprint".to_string())
+            } else {
+                "is locked".to_string()
+            };
+            self.toast(format!("This recipe {label}."));
+            return;
+        }
+        let mut found: Vec<usize> = Vec::new();
+        'ingredients: for cell in recipe.pattern.iter().flatten() {
+            for (index, slot) in self.inventory.slots.iter().enumerate() {
+                if !found.contains(&index)
+                    && slot.is_some_and(|stack| cell.matches(stack.item))
+                {
+                    found.push(index);
+                    continue 'ingredients;
+                }
+            }
+            self.toast("You're missing an ingredient.".to_string());
+            return;
+        }
+        for index in found {
+            let stack = self.inventory.slots[index].as_mut().expect("just located");
+            stack.count -= 1;
+            if stack.count == 0 {
+                self.inventory.slots[index] = None;
+            }
+        }
+        let output = ItemStack::new(&reg, recipe.output, recipe.count);
+        let left = self.inventory.add_stack(&reg, output);
+        if left > 0 {
+            self.drop_stack(ItemStack { count: left, ..output });
+        }
+        self.sfx(Sfx::Craft);
+        self.grant_xp("craft");
+    }
 }
 
 /// Spec 3.5 gate check as a pure seam: `tech_value` is the per-player KV

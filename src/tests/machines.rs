@@ -553,7 +553,6 @@ fn glass_smelts_passes_light_and_grows_winter_crops() {
 
 #[test]
 fn bloomery_multiblock_fires_batches_and_fears_the_rain() {
-    use crate::world::multiblock::MachineKind;
     use crate::world::{BLOOMERY_FIRE_SECS, BlockEntity, MachineInstance};
     let reg = base_reg();
     let mut w = test_world_with("steel-fire", reg.clone());
@@ -575,7 +574,7 @@ fn bloomery_multiblock_fires_batches_and_fears_the_rain() {
     let coal = reg.item_id("base:charcoal").unwrap();
     let bloom = reg.item_id("base:steel_bloom").unwrap();
     let mut st = MachineInstance {
-        kind: MachineKind::Bloomery,
+        kind: reg.machine_kind("base:bloomery").unwrap_or_default(),
         ..Default::default()
     };
     for i in 0..4 {
@@ -615,7 +614,7 @@ fn bloomery_multiblock_fires_batches_and_fears_the_rain() {
 
     // A partial 2+2 charge yields a single bloom.
     let mut st = MachineInstance {
-        kind: MachineKind::Bloomery,
+        kind: reg.machine_kind("base:bloomery").unwrap_or_default(),
         ..Default::default()
     };
     st.charge[0] = Some(ItemStack::new(&reg, iron, 2));
@@ -639,7 +638,7 @@ fn bloomery_multiblock_fires_batches_and_fears_the_rain() {
 
     // Rain halves an unroofed stack; a storm douses it outright.
     let mut st = MachineInstance {
-        kind: MachineKind::Bloomery,
+        kind: reg.machine_kind("base:bloomery").unwrap_or_default(),
         ..Default::default()
     };
     st.charge[0] = Some(ItemStack::new(&reg, iron, 2));
@@ -801,7 +800,6 @@ fn anvil_works_blooms_into_bars() {
 
 #[test]
 fn quern_grinds_minerals_and_kiln_colors_glass() {
-    use crate::world::multiblock::MachineKind;
     use crate::world::{BlockEntity, KILN_FIRE_SECS, MachineInstance};
     let reg = base_reg();
     let mut w = test_world_with("gw-kiln", reg.clone());
@@ -848,7 +846,7 @@ fn quern_grinds_minerals_and_kiln_colors_glass() {
 
     // 8 sand + 1 cobalt powder + 8 charcoal -> 8 blue glass.
     let mut st = MachineInstance {
-        kind: MachineKind::Kiln,
+            kind: reg.machine_kind("base:kiln").unwrap_or_default(),
         ..Default::default()
     };
     for i in 0..4 {
@@ -887,7 +885,7 @@ fn quern_grinds_minerals_and_kiln_colors_glass() {
 
     // No powder = bulk clear glass.
     let mut st = MachineInstance {
-        kind: MachineKind::Kiln,
+            kind: reg.machine_kind("base:kiln").unwrap_or_default(),
         ..Default::default()
     };
     st.charge[0] = Some(ItemStack::new(&reg, it2("base:sand"), 2));
@@ -993,7 +991,7 @@ fn forge_wants_its_whole_workshop() {
     w.insert_block_entity(
         (10, my, 10),
         BlockEntity::Multiblock(crate::world::MachineInstance {
-            kind: crate::world::multiblock::MachineKind::Forge,
+            kind: reg.machine_kind("base:forge").unwrap_or_default(),
             ..Default::default()
         }),
     );
@@ -1002,7 +1000,6 @@ fn forge_wants_its_whole_workshop() {
 
 #[test]
 fn forge_batch_smelts_with_thrifty_fuel_in_any_weather() {
-    use crate::world::multiblock::MachineKind;
     use crate::world::{BlockEntity, FORGE_FIRE_SECS, MachineInstance};
     let reg = base_reg();
     let mut w = test_world_with("forge-fire", reg.clone());
@@ -1014,7 +1011,7 @@ fn forge_batch_smelts_with_thrifty_fuel_in_any_weather() {
     let ingot = reg.item_id("base:copper_ingot").unwrap();
     let coal = reg.item_id("base:charcoal").unwrap();
     let mut st = MachineInstance {
-        kind: MachineKind::Forge,
+        kind: reg.machine_kind("base:forge").unwrap_or_default(),
         ..Default::default()
     };
     for i in 0..4 {
@@ -1136,7 +1133,6 @@ fn legacy_food_stacks_initialize_instead_of_rotting() {
 
 #[test]
 fn chimneyed_kiln_is_a_glassworks() {
-    use crate::world::multiblock::MachineKind;
     use crate::world::{BlockEntity, KILN_FIRE_SECS, MachineInstance};
     let reg = base_reg();
     let mut w = test_world_with("glassworks", reg.clone());
@@ -1163,7 +1159,7 @@ fn chimneyed_kiln_is_a_glassworks() {
     let sand = reg.item_id("base:sand").unwrap();
     let coal = reg.item_id("base:charcoal").unwrap();
     let mut st = MachineInstance {
-        kind: MachineKind::Kiln,
+            kind: reg.machine_kind("base:kiln").unwrap_or_default(),
         ..Default::default()
     };
     for i in 0..4 {
@@ -1804,7 +1800,7 @@ fn the_separator_splits_the_rare_earth_and_the_generator_lights_the_lamp() {
     w.insert_block_entity(
         (sx, sy, sz),
         BlockEntity::Multiblock(crate::world::MachineInstance {
-            kind: crate::world::multiblock::MachineKind::Separator,
+            kind: reg.machine_kind("base:separator").unwrap_or_default(),
             powder: 2,
             separator_fuel: 2,
             ..Default::default()
@@ -1866,14 +1862,13 @@ fn the_separator_splits_the_rare_earth_and_the_generator_lights_the_lamp() {
 
 #[test]
 fn folded_stats_and_a_tier_swap_drive_the_heat_multiplier() {
-    use crate::world::multiblock::MachineKind;
     use crate::world::multiblock::fold_stats;
     let reg = base_reg();
     let mut w = test_world_with("fold-stats", reg.clone());
-    let (mx, my, mz) = (20, 130, 20);
+    let (mx, my, mz) = (10, 120, 10);
     build_bloomery(&mut w, &reg, mx, my, mz);
     let anchor = bp(mx, my, mz);
-    let matched = MachineKind::Bloomery
+    let matched = reg.machine_kind("base:bloomery").unwrap_or_default()
         .validate(&w, anchor)
         .expect("a fresh shell folds");
     let stats = fold_stats(&w, &matched.matched);
@@ -1888,7 +1883,7 @@ fn folded_stats_and_a_tier_swap_drive_the_heat_multiplier() {
     // mouth special-case, and the shell fires proportionally faster.
     let adv = reg.block_id("base:firebrick_advanced").unwrap();
     w.set_block(mx + 2, my, mz + 1, adv);
-    let matched = MachineKind::Bloomery
+    let matched = reg.machine_kind("base:bloomery").unwrap_or_default()
         .validate(&w, anchor)
         .expect("advanced firebrick still satisfies the ring tag");
     let stats = fold_stats(&w, &matched.matched);
@@ -1902,7 +1897,6 @@ fn folded_stats_and_a_tier_swap_drive_the_heat_multiplier() {
 
 #[test]
 fn the_edit_hook_revalidates_only_shell_blocks_and_refreshes_stats() {
-    use crate::world::multiblock::MachineKind;
     use crate::world::{BlockEntity, MachineInstance};
     let reg = base_reg();
     let mut w = test_world_with("reval-scope", reg.clone());
@@ -1911,7 +1905,7 @@ fn the_edit_hook_revalidates_only_shell_blocks_and_refreshes_stats() {
     w.insert_block_entity(
         (mx, my, mz),
         BlockEntity::Multiblock(MachineInstance {
-            kind: MachineKind::Bloomery,
+            kind: reg.machine_kind("base:bloomery").unwrap_or_default(),
             ..Default::default()
         }),
     );
@@ -1951,14 +1945,13 @@ fn the_edit_hook_revalidates_only_shell_blocks_and_refreshes_stats() {
 
 #[test]
 fn a_slot_module_swaps_in_place_and_refolds_without_disturbing_the_instance() {
-    use crate::world::multiblock::MachineKind;
     use crate::world::{BlockEntity, MachineInstance};
     let reg = base_reg();
     let mut w = test_world_with("slot-swap", reg.clone());
     let (mx, my, mz) = (30, 120, 24);
     build_bloomery(&mut w, &reg, mx, my, mz);
     let anchor = bp(mx, my, mz);
-    let matched = MachineKind::Bloomery
+    let matched = reg.machine_kind("base:bloomery").unwrap_or_default()
         .validate(&w, anchor)
         .expect("a fresh shell validates");
     let (slot, _) = matched
@@ -1975,7 +1968,7 @@ fn a_slot_module_swaps_in_place_and_refolds_without_disturbing_the_instance() {
     w.insert_block_entity(
         (mx, my, mz),
         BlockEntity::Multiblock(MachineInstance {
-            kind: MachineKind::Bloomery,
+            kind: reg.machine_kind("base:bloomery").unwrap_or_default(),
             charge: [Some(ItemStack::new(&reg, iron, 2)), None, None, None],
             fuel: [Some(ItemStack::new(&reg, coal, 2)), None, None, None],
             ..Default::default()

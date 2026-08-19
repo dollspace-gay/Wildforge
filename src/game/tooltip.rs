@@ -371,7 +371,7 @@ impl Game {
                         .and_then(|m| m.cargo.as_ref().and_then(|c| c[i]))
                 })
                 .or_else(inv),
-            Screen::Bloomery(_) | Screen::Kiln(_) | Screen::Stall(_) => inv(),
+            Screen::Bloomery(_) | Screen::Kiln(_) | Screen::Workbench(_) | Screen::Stall(_) => inv(),
             _ => None,
         }
     }

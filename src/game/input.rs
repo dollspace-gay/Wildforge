@@ -73,6 +73,7 @@ impl Game {
                 | Screen::Offering(_)
                 | Screen::Bloomery(_)
                 | Screen::Kiln(_)
+                | Screen::Workbench(_)
                 | Screen::MobCargo(_)
                 | Screen::Stall(_)
         ) && let Some(r) = &self.multiplayer.remote
@@ -88,6 +89,7 @@ impl Game {
                     | Screen::Offering(_)
                     | Screen::Bloomery(_)
                     | Screen::Kiln(_)
+                    | Screen::Workbench(_)
                     | Screen::MobCargo(_)
                     | Screen::Stall(_)
             )

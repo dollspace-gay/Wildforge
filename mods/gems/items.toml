@@ -53,3 +53,10 @@ materials = { ruby = 4800 }
 [[item.stats]]
 kind = "carry"
 flat = 32
+
+[[item]]
+id = "gem_circlet"
+name = "Gem Circlet"
+texture = "@bronze_helmet"
+armor = { slot = "head", points = 1 }
+materials = { ruby = 2400 }

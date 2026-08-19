@@ -25,6 +25,7 @@ mods/<your_mod>/
   modes.toml        [[mode]] named survival rulesets (capability E1)
   skills.toml       [[branch]]/[[branch.node]] skill trees (capability E5)
   items.toml        [[item]] entries — frames and components (capability E6)
+  machines.toml     [[machine]] data-driven machine kinds (capability E7)
   arcane.toml       [[resonance]] and [[arcane_site]] entries
   workings.toml     [[working]] entries using qualified native handlers
   preparations.toml [[preparation]] physical process/effect entries
@@ -407,6 +408,50 @@ worn frame.
   loadout screen's preset buttons SAVE the current loadout and APPLY a saved
   one from the inventory, returning the previously worn frame to your hand.
 - Both `frame` and `component` items are one-per-stack.
+
+## machines.toml
+
+A data-driven machine kind (capability E7). The `MachineKind` the engine
+uses is just an index into the machines declared here; each entry binds a
+kind to a **closed native handler** and the knobs that handler reads. A
+block whose `interaction` names the machine id becomes its mouth (right-
+click it in-world).
+
+```toml
+# mods/meadow/machines.toml
+schema_version = 1
+
+[[machine]]
+id = "jewel_bench"       # qualified to your mod: meadow:jewel_bench
+label = "Jewel Bench"
+handler = "workbench"    # one of the closed handler set
+mouth = "meadow:jewel_bench"            # the mouth block (unlit face)
+mouth_lit = "meadow:jewel_bench_lit"    # optional lit face (fire handlers)
+fire_secs = 150.0        # seconds before a batch completes (fire handlers)
+charge_slots = 4         # 0..4
+fuel_slots = 4           # 0..4
+reagent_slots = 0        # 0 or 1 (the kiln's pigment slot)
+items_per_fuel = 1       # items each fuel unit fires (the forge's 2)
+min_charge = 2           # charge units needed before lighting
+min_fuel = 2             # fuel units needed before lighting
+```
+
+- The **closed handler set** is `bloomery`, `forge`, `kiln`, `separator`,
+  and `workbench`. A handler owns the machine's shell shape, lighting,
+  ticking, click rules, and screen; the entries above tune it. An unknown
+  `handler`, a duplicate machine id, or an empty label/mouth fails the pack
+  on the MODS screen and fails `--mod-qualification`.
+- The four built-in machines are declared the same way in
+  `base/machines.toml`; base's machines always come first, so kind 0 (the
+  default) is a real machine.
+- **Workbench machines**: a `handler = "workbench"` machine is a
+  recipe-list station. Its screen (right-click the mouth) lists every
+  `[[recipe]]` whose `station` is this machine's id and crafts it from the
+  player's inventory. Station recipes are **not** craftable on the free
+  grid, so a station machine is the only way to reach them.
+- Machines ride their own `S2C::MachineContainer` over multiplayer, keyed
+  by machine id — a modded machine works on a guest without touching the
+  wire protocol.
 
 ## recipes.toml
 

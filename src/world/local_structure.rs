@@ -416,7 +416,10 @@ fn save_machine(reg: &Registry, offset: (i32, i32, i32), m: &MachineInstance) ->
     slots.sort_by_key(|s| s.index);
     SavedMachine {
         offset,
-        kind: m.kind.name().to_string(),
+        kind: reg
+            .machine(m.kind)
+            .map(|def| def.id.clone())
+            .unwrap_or_default(),
         lit: m.lit,
         progress: m.progress,
         core: m.core,
@@ -523,7 +526,7 @@ impl World {
             }
             let mut machines = HashMap::new();
             for sm in saved.machines {
-                let Some(kind) = MachineKind::from_name(&sm.kind) else {
+                let Some(kind) = MachineKind::from_name(&self.reg, &sm.kind) else {
                     continue;
                 };
                 let mut state = MachineInstance {

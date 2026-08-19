@@ -1,0 +1,18 @@
+# Capability E7 sample: a data-driven machine. `jewel_bench` is a
+# recipe-list station (the workbench handler): build the firebrick stack,
+# put the bench in its mouth, and the bench screen lists every recipe
+# bound to it by `station` — crafted from the player's inventory.
+
+schema_version = 1
+
+[[machine]]
+id = "jewel_bench"
+label = "Jewel Bench"
+handler = "workbench"
+mouth = "gems:jewel_bench"
+fire_secs = 1.0
+charge_slots = 0
+fuel_slots = 0
+items_per_fuel = 1
+min_charge = 0
+min_fuel = 0

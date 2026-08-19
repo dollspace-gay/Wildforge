@@ -1095,6 +1095,11 @@ pub struct Registry {
     /// The resolved skill tree (capability E5): branches, nodes, and XP
     /// sources declared across all mods' `skills.toml`. Empty in base.
     pub skills: crate::skills::SkillTree,
+    /// Data-driven machine kinds (capability E7) in declaration order. The
+    /// index is the stable `MachineKind` id; kind 0 (the first base
+    /// machine) is the default. `MachineKind::default()` must stay a valid
+    /// machine in every shipped pack, so base declares its machines first.
+    pub machines: Vec<crate::machines::MachineDef>,
     /// Load-time conservation/schema failures. Keeping these attached to the
     /// registry lets the mods screen explain a bad pack and lets production
     /// world creation refuse it without panicking the content browser.
@@ -2841,6 +2846,7 @@ struct RawMod {
     preparations: Vec<crate::alchemy::RawPreparationDef>,
     modes: Vec<ModeToml>,
     skills: Option<crate::skills::RawSkillToml>,
+    machines: Option<crate::machines::RawMachineToml>,
 }
 
 /// A resolved `[[mode]]` (E1 ruleset): which survival toggles are live and
@@ -2879,6 +2885,7 @@ const BASE_STRUCTURES: &str = include_str!("../base/structures.toml");
 const BASE_PIECES: &str = include_str!("../base/pieces.toml");
 const BASE_WORKINGS: &str = include_str!("../base/workings.toml");
 const BASE_PREPARATIONS: &str = include_str!("../base/preparations.toml");
+const BASE_MACHINES: &str = include_str!("../base/machines.toml");
 pub const WORLD_API_VERSION: u32 = 2;
 
 fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
@@ -2953,6 +2960,22 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
     } else {
         None
     };
+    let machines = if dir.join("machines.toml").exists() {
+        let parsed: crate::machines::RawMachineToml = toml::from_str(&read("machines.toml"))
+            .map_err(|error| format!("machines.toml: {error}"))?;
+        if parsed
+            .schema_version
+            .is_some_and(|version| version != crate::machines::MACHINES_SCHEMA_VERSION)
+        {
+            return Err(format!(
+                "machines.toml: schema_version must be {}",
+                crate::machines::MACHINES_SCHEMA_VERSION
+            ));
+        }
+        Some(parsed)
+    } else {
+        None
+    };
     if !features.feature.is_empty() && m.retrogen.is_none() {
         return Err(
             "mod.toml: a worldgen feature requires retrogen = \"untouched_host_only\", \
@@ -3000,6 +3023,7 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         preparations: preparations.preparation,
         modes: modes.mode,
         skills,
+        machines,
     })
 }
 
@@ -3020,6 +3044,8 @@ fn base_mod() -> RawMod {
         toml::from_str(BASE_WORKINGS).expect("base workings.toml");
     let preparations: crate::alchemy::PreparationsFile =
         toml::from_str(BASE_PREPARATIONS).expect("base preparations.toml");
+    let machines: crate::machines::RawMachineToml =
+        toml::from_str(BASE_MACHINES).expect("base machines.toml");
     RawMod {
         info: ModInfo {
             id: "base".into(),
@@ -3062,6 +3088,7 @@ fn base_mod() -> RawMod {
         preparations: preparations.preparation,
         modes: Vec::new(),
         skills: None,
+        machines: Some(machines),
     }
 }
 
@@ -3180,6 +3207,7 @@ impl RemoveStable for Vec<RawMod> {
             preparations: vec![],
             modes: vec![],
             skills: None,
+            machines: None,
         };
         std::mem::replace(&mut self[idx], dummy)
     }
@@ -3222,6 +3250,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         loots: HashMap::new(),
         modes: Vec::new(),
         skills: crate::skills::SkillTree::default(),
+        machines: Vec::new(),
         material_errors: Vec::new(),
         arcane_registry: crate::arcane::ResonanceRegistry::base(),
         arcane_sites: Vec::new(),
@@ -5526,6 +5555,19 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         Err(errors) => reg.material_errors.extend(errors),
     }
 
+    // Capability E7: merge every mod's machine kinds into the registry, in
+    // declaration order (base first, so kind 0 is a base machine).
+    // Failures surface as pack errors on the mods screen.
+    let raw_machines: Vec<(String, crate::machines::RawMachineToml)> = raws
+        .iter()
+        .filter_map(|raw| raw.machines.clone().map(|machines| (raw.info.id.clone(), machines)))
+        .collect();
+    let mut machine_errors = Vec::new();
+    match crate::machines::resolve(&raw_machines) {
+        Ok(machines) => reg.machines = machines,
+        Err(errors) => machine_errors.extend(errors),
+    }
+
     reconcile_material_definitions(&mut reg);
     // Gate feature errors survive past `validate_material_graph`, which
     // rebuilds `material_errors` from scratch.
@@ -5535,6 +5577,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     reg.material_errors.extend(settlement_errors);
     reg.material_errors.extend(recipe_errors);
     reg.material_errors.extend(mode_errors);
+    reg.material_errors.extend(machine_errors);
     reg.mods.append(&mut failed);
     reg
 }

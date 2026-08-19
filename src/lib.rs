@@ -30,6 +30,7 @@ mod implements;
 mod inventory;
 mod lights;
 mod magic_qualification;
+mod machines;
 mod materials;
 mod mesher;
 mod mobs;

@@ -6,6 +6,7 @@ use super::multiblock::{
     shape_extent,
 };
 use super::*;
+use crate::machines::MachineHandler;
 use crate::planet_atlas::LocalWeatherSample;
 
 /// A powered station's batch limit: what one loading can hold.
@@ -30,6 +31,13 @@ pub fn station_powered(station: &str) -> bool {
 }
 
 impl World {
+    /// Resolve a qualified machine id to its kind. Base ships all four of
+    /// its machines, so a missing lookup here degrades to kind 0 rather
+    /// than panicking mid-save.
+    pub(crate) fn machine_kind(&self, name: &str) -> MachineKind {
+        self.reg.machine_kind(name).unwrap_or_default()
+    }
+
     pub fn falling_blocks(&self) -> &[FallingBlock] {
         &self.falling
     }
@@ -124,7 +132,7 @@ impl World {
     /// core beside the mouth wrapped in a 3-wide, 3-tall firebrick
     /// ring (23 firebrick + the mouth), open on top. Returns the core.
     pub fn check_bloomery_at(&self, pos: BlockPos) -> Option<BlockPos> {
-        MachineKind::Bloomery
+        self.machine_kind("base:bloomery")
             .validate(self, pos)
             .map(|result| result.core)
     }
@@ -135,17 +143,21 @@ impl World {
     /// stone anvil within three blocks of the mouth. A building, not
     /// a block: the workshop is the capital (economy plan, leg 2).
     pub fn check_forge_at(&self, pos: BlockPos) -> Option<BlockPos> {
-        MachineKind::Forge
+        self.machine_kind("base:forge")
             .validate(self, pos)
             .map(|result| result.core)
     }
 
-    /// Light a charged forge. Errors name what's missing.
+    /// Light a charged forge. Errors name what's missing. The generic
+    /// [`light_machine_at`] is the data-driven path; this base shortcut is
+    /// kept for the test helpers.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn light_forge_at(&mut self, pos: BlockPos) -> Result<(), &'static str> {
-        let matched = MachineKind::Forge
+        let kind = self.machine_kind("base:forge");
+        let matched = kind
             .validate(self, pos)
             .ok_or("the forge wants its stack, chimney, and anvil")?;
-        light_machine_at(self, pos, MachineKind::Forge, matched)
+        light_machine_at(self, pos, kind, matched)
     }
 
     /// A kiln whose stack carries the chimney is a GLASSWORKS: the
@@ -162,15 +174,16 @@ impl World {
 
     /// The same stack with a separator in its mouth splits the mixed
     /// rare-earth powder instead (mechanization stage 6).
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn check_separator_at(&self, pos: BlockPos) -> Option<BlockPos> {
-        MachineKind::Separator
+        self.machine_kind("base:separator")
             .validate(self, pos)
             .map(|result| result.core)
     }
 
     /// The same stack with a kiln in its mouth fires glass instead.
     pub fn check_kiln_at(&self, pos: BlockPos) -> Option<BlockPos> {
-        MachineKind::Kiln
+        self.machine_kind("base:kiln")
             .validate(self, pos)
             .map(|result| result.core)
     }
@@ -185,18 +198,20 @@ impl World {
 
     /// Light a charged bloomery. Errors name what's missing.
     pub fn light_bloomery_at(&mut self, pos: BlockPos) -> Result<(), &'static str> {
-        let matched = MachineKind::Bloomery
+        let kind = self.machine_kind("base:bloomery");
+        let matched = kind
             .validate(self, pos)
             .ok_or("the stack is breached")?;
-        light_machine_at(self, pos, MachineKind::Bloomery, matched)
+        light_machine_at(self, pos, kind, matched)
     }
 
     /// Light a charged kiln. Errors name what's missing.
     pub fn light_kiln_at(&mut self, pos: BlockPos) -> Result<(), &'static str> {
-        let matched = MachineKind::Kiln
+        let kind = self.machine_kind("base:kiln");
+        let matched = kind
             .validate(self, pos)
             .ok_or("the stack is breached")?;
-        light_machine_at(self, pos, MachineKind::Kiln, matched)
+        light_machine_at(self, pos, kind, matched)
     }
 
     /// Swap a block without invalidating the machine living there.
@@ -572,24 +587,25 @@ impl World {
 
 impl MachineKind {
     /// The two mouth blocks a kind routes its craft through: the handed
-    /// and lit faces of its mouth station.
+    /// and lit faces of its mouth station. The lit face only exists for
+    /// fire handlers.
     fn mouth(self, reg: &Registry) -> [Option<BlockId>; 2] {
-        let (a, b) = match self {
-            MachineKind::Bloomery => ("base:bloomery", "base:bloomery_lit"),
-            MachineKind::Forge => ("base:forge", "base:forge_lit"),
-            MachineKind::Kiln => ("base:kiln", "base:kiln_lit"),
-            MachineKind::Separator => ("base:separator", "base:separator_lit"),
+        let Some(def) = reg.machine(self) else {
+            return [None, None];
         };
-        [reg.block_id(a), reg.block_id(b)]
+        let a = reg.block_id(&def.mouth);
+        let b = def.mouth_lit.as_deref().and_then(|lit| reg.block_id(lit));
+        [a, b]
     }
 
     /// Validate this kind's full shell at `anchor`: the firebrick stack,
-    /// the mouth block, and — for the forge — the chimney and anvil.
+    /// the mouth block, and — for the forge handler — the chimney and anvil.
     /// Returns the match result (core + folded cell map) on success.
     pub fn validate<B: BlockStore>(self, store: &B, anchor: B::Pos) -> Option<MatchResult<B::Pos>> {
+        let def = store.reg().machine(self)?;
         let shape = stack_shape(&self.mouth(store.reg()));
         let matched = match_shape(store, anchor, &shape)?;
-        if self == MachineKind::Forge {
+        if def.handler.requires_anvil() {
             if !has_chimney_at(store, matched.core) {
                 return None;
             }
@@ -621,8 +637,11 @@ impl MachineKind {
         store: &B,
         _anchor: B::Pos,
     ) -> ((i32, i32, i32), (i32, i32, i32)) {
+        let Some(def) = store.reg().machine(self) else {
+            return ((-3, -1, -3), (3, 5, 3));
+        };
         let shell = shape_extent(&stack_shape(&self.mouth(store.reg())));
-        if self == MachineKind::Kiln {
+        if def.handler.reads_chimney() {
             // A kiln's stats read the chimney too (glassworks): cover the
             // three courses of ring over the core, which sits one cell
             // out from the anchor in any cardinal direction.
@@ -632,7 +651,7 @@ impl MachineKind {
                 (mx.0.max(2), mx.1.max(5), mx.2.max(2)),
             );
         }
-        if self != MachineKind::Forge {
+        if !def.handler.requires_anvil() {
             return shell;
         }
         // Union with the chimney (three courses over the core) and the
@@ -770,22 +789,17 @@ pub(crate) fn light_machine_at<B: BlockStore>(
     kind: MachineKind,
     matched: MatchResult<B::Pos>,
 ) -> Result<(), &'static str> {
-    let wants = match kind {
-        MachineKind::Bloomery => (2, 2),
-        MachineKind::Forge => (1, 1),
-        MachineKind::Kiln => (2, 2),
-        MachineKind::Separator => (0, 0),
+    let Some(def) = store.reg().machine(kind).cloned() else {
+        return Err("unknown machine");
     };
+    let wants = (def.min_charge, def.min_fuel);
     let mut stats = fold_stats(store, &matched.matched);
-    if kind == MachineKind::Kiln {
+    if def.handler.reads_chimney() {
         stats.chimney = has_chimney_at(store, matched.core);
     }
     let capabilities = fold_capabilities(store, &matched.matched, &matched.slots);
-    let lit_block = match kind {
-        MachineKind::Bloomery => "base:bloomery_lit",
-        MachineKind::Forge => "base:forge_lit",
-        MachineKind::Kiln => "base:kiln_lit",
-        MachineKind::Separator => "base:separator_lit",
+    let Some(lit_block) = def.mouth_lit.clone() else {
+        return Err("this machine has no lit face");
     };
     let world_core = store.to_world(matched.core);
     let Some(BlockEntity::Multiblock(m)) = store.block_entities_mut().get_mut(&pos) else {
@@ -796,12 +810,12 @@ pub(crate) fn light_machine_at<B: BlockStore>(
     }
     let n_charge: u32 = m.charge.iter().flatten().map(|s| s.count).sum();
     let n_fuel: u32 = m.fuel.iter().flatten().map(|s| s.count).sum();
-    if n_charge < wants.0 || n_fuel < wants.1 {
-        return Err(match kind {
-            MachineKind::Bloomery => "needs at least 2 charge and 2 charcoal",
-            MachineKind::Forge => "needs charge and fuel",
-            MachineKind::Kiln => "needs at least 2 sand and 2 charcoal",
-            MachineKind::Separator => "nothing to charge",
+    if n_charge < u32::from(wants.0) || n_fuel < u32::from(wants.1) {
+        return Err(match def.handler {
+            MachineHandler::Bloomery => "needs at least 2 charge and 2 charcoal",
+            MachineHandler::Forge => "needs charge and fuel",
+            MachineHandler::Kiln => "needs at least 2 sand and 2 charcoal",
+            _ => "nothing to charge",
         });
     }
     m.lit = true;
@@ -809,7 +823,7 @@ pub(crate) fn light_machine_at<B: BlockStore>(
     m.core = world_core;
     m.stats = stats;
     m.capabilities = capabilities;
-    store.swap_block_keep_entity(pos, lit_block);
+    store.swap_block_keep_entity(pos, &lit_block);
     Ok(())
 }
 
@@ -825,16 +839,17 @@ pub(super) fn revalidate_machine_at<B: BlockStore>(store: &mut B, anchor: B::Pos
     };
     let kind = m.kind;
     let was_lit = m.lit;
+    let def = store.reg().machine(kind).cloned();
     let Some(matched) = kind.validate(store, anchor) else {
-        if was_lit && kind != MachineKind::Separator {
+        if was_lit
+            && def.as_ref().is_some_and(|def| !def.handler.hand_fed())
+        {
             m.lit = false;
             m.progress = 0.0;
-            let unlit = match kind {
-                MachineKind::Bloomery => "base:bloomery",
-                MachineKind::Forge => "base:forge",
-                MachineKind::Kiln => "base:kiln",
-                MachineKind::Separator => "base:separator",
-            };
+            let unlit = def
+                .as_ref()
+                .map(|def| def.mouth.as_str())
+                .unwrap_or("base:bloomery");
             store.swap_block_keep_entity(anchor, unlit);
         }
         store
@@ -843,7 +858,7 @@ pub(super) fn revalidate_machine_at<B: BlockStore>(store: &mut B, anchor: B::Pos
         return;
     };
     let mut stats = fold_stats(store, &matched.matched);
-    if kind == MachineKind::Kiln {
+    if def.as_ref().is_some_and(|def| def.handler.reads_chimney()) {
         stats.chimney = has_chimney_at(store, matched.core);
     }
     if stats != m.stats {

@@ -1811,7 +1811,8 @@ impl Game {
                 let forge = matches!(
                     self.server.world.block_entity_at(&pos),
                     Some(world::BlockEntity::Multiblock(b))
-                        if b.kind == world::multiblock::MachineKind::Forge
+                        if b.kind.handler(&self.content.reg)
+                            == Some(crate::machines::MachineHandler::Forge)
                 );
                 let title = if forge { "FORGE" } else { "BLOOMERY" };
                 let tw = UiBatch::text_width(3.0, title);
@@ -1962,6 +1963,117 @@ impl Game {
                     let r = self.inv_slot_rect(i);
                     Self::draw_slot(
                         &self.content.reg,
+                        &mut ui,
+                        r,
+                        self.inventory.slots[i],
+                        i == self.input.hotbar_sel,
+                        self.hit(r),
+                    );
+                }
+                self.draw_browser(&mut ui);
+                if let Some(s) = self.ui_state.held_stack {
+                    let (cx, cy) = self.input.ui_cursor;
+                    let icon = self.content.reg.item(s.item).icon;
+                    ui.tile(cx - 16.0, cy - 16.0, 32.0, 32.0, icon, [1.0; 4]);
+                    if s.count > 1 {
+                        ui.text_shadow(cx + 6.0, cy + 4.0, 2.0, &format!("{}", s.count), [1.0; 4]);
+                    }
+                }
+                self.ui = ui;
+                return;
+            }
+            Screen::Workbench(pos) => {
+                ui.rect(0.0, 0.0, w, h, [0.0, 0.0, 0.0, 0.55]);
+                let reg = &self.content.reg;
+                let machine = self.server.world.block_entity_at(&pos).and_then(|e| {
+                    match e {
+                        world::BlockEntity::Multiblock(m) => {
+                            reg.machine(m.kind).map(|def| def.label.clone())
+                        }
+                        _ => None,
+                    }
+                });
+                let title = machine
+                    .unwrap_or_else(|| "WORKBENCH".to_string())
+                    .to_uppercase();
+                let tw = UiBatch::text_width(3.0, &title);
+                ui.text_shadow((w - tw) / 2.0, h / 2.0 - 310.0, 3.0, &title, [1.0; 4]);
+                let recipes = self.server.world.block_entity_at(&pos).and_then(|e| {
+                    match e {
+                        world::BlockEntity::Multiblock(m) => {
+                            Some(reg.machine_recipes_for(m.kind))
+                        }
+                        _ => None,
+                    }
+                });
+                let recipes: Vec<&crate::registry::RecipeDef> = recipes.unwrap_or_default();
+                if recipes.is_empty() {
+                    ui.text_shadow(
+                        w / 2.0 - 120.0,
+                        h / 2.0 - 230.0,
+                        1.8,
+                        "NO RECIPES HERE",
+                        [0.6, 0.6, 0.6, 1.0],
+                    );
+                }
+                let cycle = (self.time_abs / 0.8) as usize;
+                for (i, r) in recipes.iter().enumerate().take(20) {
+                    let rr = self.workbench_recipe_rect(i);
+                    let tech_value = r.tech.as_deref().and_then(|key| self.read_player_kv(key));
+                    let locked = crate::game::containers::recipe_gates_met(
+                        tech_value.as_deref(),
+                        &self.inventory,
+                        r,
+                    )
+                    .is_some();
+                    let craftable = !locked
+                        && (0..r.h).all(|y| {
+                            (0..r.w).all(|x| {
+                                let Some(ing) = &r.pattern[y * r.w + x] else {
+                                    return true;
+                                };
+                                self.inventory
+                                    .slots
+                                    .iter()
+                                    .any(|slot| slot.is_some_and(|stack| ing.matches(stack.item)))
+                            })
+                        });
+                    let border = if self.hit(rr) {
+                        [1.0, 1.0, 1.0, 0.6]
+                    } else {
+                        [0.35, 0.35, 0.35, 0.9]
+                    };
+                    ui.rect(rr.0, rr.1, rr.2, rr.3, border);
+                    ui.rect(rr.0 + 2.0, rr.1 + 2.0, rr.2 - 4.0, rr.3 - 4.0, [0.15, 0.15, 0.15, 0.95]);
+                    let mut x = rr.0 + 12.0;
+                    for cell in r.pattern.iter().flatten() {
+                        let show = match cell {
+                            crate::registry::Ingredient::One(item) => *item,
+                            crate::registry::Ingredient::Any(items) => {
+                                items[cycle % items.len()]
+                            }
+                        };
+                        let icon = reg.item(show).icon;
+                        ui.tile(x, rr.1 + 10.0, 34.0, 34.0, icon, [1.0; 4]);
+                        x += 40.0;
+                    }
+                    ui.text_shadow(x + 4.0, rr.1 + 18.0, 2.4, ">", [1.0; 4]);
+                    let oc = reg.item(r.output).icon;
+                    ui.tile(x + 24.0, rr.1 + 10.0, 34.0, 34.0, oc, [1.0; 4]);
+                    if r.count > 1 {
+                        ui.text_shadow(x + 44.0, rr.1 + 32.0, 2.0, &format!("{}", r.count), [1.0; 4]);
+                    }
+                    ui.text_shadow(x + 70.0, rr.1 + 20.0, 1.6, &reg.item(r.output).label, [1.0; 4]);
+                    if locked {
+                        ui.text_shadow(rr.0 + rr.2 - 90.0, rr.1 + 20.0, 1.5, "LOCKED", [1.0, 0.35, 0.35, 1.0]);
+                    } else if !craftable {
+                        ui.text_shadow(rr.0 + rr.2 - 90.0, rr.1 + 20.0, 1.5, "MISSING", [0.8, 0.6, 0.3, 1.0]);
+                    }
+                }
+                for i in 0..TOTAL_SLOTS {
+                    let r = self.inv_slot_rect(i);
+                    Self::draw_slot(
+                        reg,
                         &mut ui,
                         r,
                         self.inventory.slots[i],

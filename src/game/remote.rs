@@ -834,24 +834,6 @@ impl Game {
                             };
                             world::BlockEntity::Furnace(f)
                         }
-                        4 => {
-                            let mut k = world::MachineInstance {
-                                kind: world::multiblock::MachineKind::Kiln,
-                                lit: aux.first().copied().unwrap_or(0.0) > 0.5,
-                                progress: aux.get(1).copied().unwrap_or(0.0)
-                                    * world::KILN_FIRE_SECS,
-                                ..Default::default()
-                            };
-                            for (i, sl) in slots.iter().enumerate().take(9) {
-                                let st = conv(sl);
-                                match i {
-                                    0..=3 => k.charge[i] = st,
-                                    4 => k.reagent = st,
-                                    _ => k.fuel[i - 5] = st,
-                                }
-                            }
-                            world::BlockEntity::Multiblock(k)
-                        }
                         6 => {
                             let mut st = world::StallState::default();
                             for (i, sl) in slots.iter().enumerate().take(13) {
@@ -869,32 +851,6 @@ impl Game {
                             }
                             world::BlockEntity::Stall(st)
                         }
-                        3 | 5 => {
-                            let secs = if kind == 5 {
-                                world::FORGE_FIRE_SECS
-                            } else {
-                                world::BLOOMERY_FIRE_SECS
-                            };
-                            let mkind = if kind == 5 {
-                                world::multiblock::MachineKind::Forge
-                            } else {
-                                world::multiblock::MachineKind::Bloomery
-                            };
-                            let mut b = world::MachineInstance {
-                                kind: mkind,
-                                lit: aux.first().copied().unwrap_or(0.0) > 0.5,
-                                progress: aux.get(1).copied().unwrap_or(0.0) * secs,
-                                ..Default::default()
-                            };
-                            for (i, s) in slots.iter().enumerate().take(8) {
-                                if i < 4 {
-                                    b.charge[i] = conv(s);
-                                } else {
-                                    b.fuel[i - 4] = conv(s);
-                                }
-                            }
-                            world::BlockEntity::Multiblock(b)
-                        }
                         _ => {
                             let mut o = world::OfferingState::default();
                             for (i, s) in slots.iter().enumerate().take(3) {
@@ -908,14 +864,77 @@ impl Game {
                         self.set_screen(match kind {
                             0 => Screen::Chest(pos),
                             1 => Screen::Furnace(pos),
-                            3 => Screen::Bloomery(pos),
-                            4 => Screen::Kiln(pos),
-                            5 => Screen::Bloomery(pos),
                             6 => Screen::Stall(pos),
                             _ => Screen::Offering(pos),
                         });
                     }
                     let _ = reg;
+                }
+                net::S2C::MachineContainer {
+                    pos,
+                    machine,
+                    slots,
+                    aux,
+                } => {
+                    // Capability E7: the machine id remaps like the item
+                    // palette; the handler's layout rebuilds the instance.
+                    let reg = self.content.reg.clone();
+                    let conv = |s: &Option<net::StackSnap>| -> Option<ItemStack> {
+                        let s = s.as_ref()?;
+                        let local = (*r.item_map.get(s.item as usize)?)?;
+                        Some(ItemStack {
+                            item: local,
+                            count: s.count,
+                            durability: s.durability,
+                            arcane_id: s.arcane_id,
+                        })
+                    };
+                    let Some(kind) = reg.machine_kind(&machine) else {
+                        return;
+                    };
+                    let Some(def) = reg.machine(kind) else {
+                        return;
+                    };
+                    let handler = def.handler;
+                    let mut m = world::MachineInstance {
+                        kind,
+                        lit: aux.first().copied().unwrap_or(0.0) > 0.5,
+                        progress: aux.get(1).copied().unwrap_or(0.0) * def.fire_secs,
+                        ..Default::default()
+                    };
+                    match handler {
+                        crate::machines::MachineHandler::Kiln => {
+                            for (i, sl) in slots.iter().enumerate().take(9) {
+                                let st = conv(sl);
+                                match i {
+                                    0..=3 => m.charge[i] = st,
+                                    4 => m.reagent = st,
+                                    _ => m.fuel[i - 5] = st,
+                                }
+                            }
+                        }
+                        crate::machines::MachineHandler::Workbench => {}
+                        _ => {
+                            for (i, s) in slots.iter().enumerate().take(8) {
+                                if i < 4 {
+                                    m.charge[i] = conv(s);
+                                } else {
+                                    m.fuel[i - 4] = conv(s);
+                                }
+                            }
+                        }
+                    }
+                    self.server.world.insert_block_entity_at(
+                        pos,
+                        world::BlockEntity::Multiblock(m),
+                    );
+                    if matches!(self.ui_state.screen, Screen::Playing) {
+                        self.set_screen(match handler {
+                            crate::machines::MachineHandler::Kiln => Screen::Kiln(pos),
+                            crate::machines::MachineHandler::Workbench => Screen::Workbench(pos),
+                            _ => Screen::Bloomery(pos),
+                        });
+                    }
                 }
                 net::S2C::HeldResult(held) => {
                     // The authoritative cursor after our click replaces

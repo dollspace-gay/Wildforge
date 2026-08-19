@@ -944,7 +944,7 @@ fn loopback_join_stream_and_edit() {
     let by = sim.world.surface_height(12, 8) + 1;
     build_bloomery(&mut sim.world, &reg, 12, by, 8);
     client.send(&C2S::OpenContainer { pos: bp(12, by, 8) });
-    let mut got_kind3 = false;
+    let mut got_bloomery = false;
     for _ in 0..300 {
         sess.pump(
             &mut sim,
@@ -952,16 +952,19 @@ fn loopback_join_stream_and_edit() {
             0.06,
         );
         for msg in client.poll() {
-            if matches!(msg, S2C::Container { kind: 3, .. }) {
-                got_kind3 = true;
+            if matches!(
+                msg,
+                S2C::MachineContainer { machine, .. } if machine == "base:bloomery"
+            ) {
+                got_bloomery = true;
             }
         }
-        if got_kind3 {
+        if got_bloomery {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    assert!(got_kind3, "bloomery streams as container kind 3");
+    assert!(got_bloomery, "bloomery streams as a MachineContainer");
     let iron = reg.item_id("base:iron_ingot").unwrap();
     let coal = reg.item_id("base:charcoal").unwrap();
     if let Some(crate::world::BlockEntity::Multiblock(state)) =
@@ -1089,7 +1092,7 @@ fn loopback_join_stream_and_edit() {
     let kiln_b = reg.block_id("base:kiln").unwrap();
     sim.world.set_block(6, ky, 12, kiln_b);
     client.send(&C2S::OpenContainer { pos: bp(6, ky, 12) });
-    let mut got_kind4 = false;
+    let mut got_kiln = false;
     for _ in 0..300 {
         sess.pump(
             &mut sim,
@@ -1097,16 +1100,19 @@ fn loopback_join_stream_and_edit() {
             0.06,
         );
         for msg in client.poll() {
-            if matches!(msg, S2C::Container { kind: 4, .. }) {
-                got_kind4 = true;
+            if matches!(
+                msg,
+                S2C::MachineContainer { machine, .. } if machine == "base:kiln"
+            ) {
+                got_kiln = true;
             }
         }
-        if got_kind4 {
+        if got_kiln {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    assert!(got_kind4, "kiln streams as container kind 4");
+    assert!(got_kiln, "kiln streams as a MachineContainer");
 
     // A withdrawn sleep vote blocks the dawn.
     sim.time_of_day = 0.75;
