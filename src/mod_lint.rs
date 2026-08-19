@@ -763,4 +763,72 @@ output = "crafty:diamond_pick"
         assert!(report.is_qualified(), "{}", report.render());
         clean("crafty");
     }
+
+    #[test]
+    fn an_invalid_frame_fails_qualification() {
+        clean("frame-smith");
+        write_mod(
+            "frame-smith",
+            "frame_smith",
+            &[
+                ("mod.toml", &base_mod_toml("frame_smith")),
+                (
+                    "items.toml",
+                    r#"
+[[item]]
+id = "broken_frame"
+name = "Broken Frame"
+texture = "@leather_chestplate"
+armor = { slot = "chest", points = 1 }
+frame = { slots = [ { type = "gem", max = 0 } ] }
+"#,
+                ),
+            ],
+        );
+        let report = qualify_mods(&mods_dir("frame-smith"));
+        assert!(!report.is_qualified());
+        assert!(
+            report.render().contains("max 0"),
+            "{}",
+            report.render()
+        );
+        clean("frame-smith");
+    }
+
+    #[test]
+    fn a_component_with_a_recipe_passes_qualification() {
+        clean("cutgem");
+        write_mod(
+            "cutgem",
+            "cutgem",
+            &[
+                ("mod.toml", &base_mod_toml("cutgem")),
+                (
+                    "items.toml",
+                    r#"
+[[item]]
+id = "cut_ruby"
+name = "Cut Ruby"
+texture = "@cinnabar_powder"
+component = "gem"
+[[item.stats]]
+kind = "health"
+flat = 2
+"#,
+                ),
+                (
+                    "recipes.toml",
+                    r#"
+[[recipe]]
+pattern = ["r"]
+keys = { r = "base:stick" }
+output = "cutgem:cut_ruby"
+"#,
+                ),
+            ],
+        );
+        let report = qualify_mods(&mods_dir("cutgem"));
+        assert!(report.is_qualified(), "{}", report.render());
+        clean("cutgem");
+    }
 }

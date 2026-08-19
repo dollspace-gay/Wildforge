@@ -559,6 +559,39 @@ impl Game {
                 );
             }
         }
+        for (i, loadout) in self.survival.loadouts.iter().enumerate() {
+            if loadout.is_empty() {
+                continue;
+            }
+            let _ = writeln!(out, "[[loadout]]\nindex = {i}");
+            for component in &loadout.components {
+                let _ = writeln!(
+                    out,
+                    "[[loadout.component]]\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
+                    self.content.reg.item(component.stack.item).name,
+                    component.stack.count,
+                    component.stack.durability,
+                    component.stack.arcane_id
+                );
+            }
+        }
+        for preset in &self.survival.loadout_presets {
+            if preset.slots.iter().all(Option::is_none) {
+                continue;
+            }
+            let _ = writeln!(out, "[[loadout_preset]]\nname = \"{}\"", preset.name);
+            for (i, slot) in preset.slots.iter().enumerate() {
+                let Some(slot) = slot else { continue };
+                let _ = writeln!(
+                    out,
+                    "[[loadout_preset.slot]]\nindex = {i}\nframe = \"{}\"",
+                    slot.frame
+                );
+                for component in &slot.components {
+                    let _ = writeln!(out, "[[loadout_preset.slot.component]]\nitem = \"{component}\"");
+                }
+            }
+        }
         let world = self.server.world.save_dir_for_saving();
         let path = identity::local_profile_path(&world, self.identity.device_id())?;
         identity::atomic_write(&path, out.as_bytes(), false)?;
@@ -743,6 +776,26 @@ impl Game {
             count: u32,
         }
         #[derive(Deserialize)]
+        struct LoadoutT {
+            index: usize,
+            #[serde(default)]
+            component: Vec<SlotT>,
+        }
+        #[derive(Deserialize)]
+        struct LoadoutPresetSlotT {
+            index: usize,
+            frame: String,
+            #[serde(default)]
+            component: Vec<String>,
+        }
+        #[derive(Deserialize)]
+        struct LoadoutPresetT {
+            #[serde(default)]
+            name: String,
+            #[serde(default)]
+            slot: Vec<LoadoutPresetSlotT>,
+        }
+        #[derive(Deserialize)]
         struct P {
             version: u32,
             face: u8,
@@ -775,6 +828,10 @@ impl Game {
             respecs: u32,
             #[serde(default)]
             skill_xp: Vec<SkillXpCount>,
+            #[serde(default)]
+            loadout: Vec<LoadoutT>,
+            #[serde(default)]
+            loadout_preset: Vec<LoadoutPresetT>,
         }
         let path = match identity::local_profile_path(dir, self.identity.device_id()) {
             Ok(path) => path,
@@ -848,6 +905,49 @@ impl Game {
                     arcane_id: s.arcane_id,
                 });
             }
+        }
+        for entry in p.loadout {
+            if entry.index >= 5 {
+                continue;
+            }
+            let mut loadout = crate::equipment::Loadout::default();
+            for component in entry.component {
+                let Some(item) = self.content.reg.item_id(&component.item) else {
+                    continue;
+                };
+                loadout.components.push(crate::equipment::SlottedComponent {
+                    slot_type: self
+                        .content
+                        .reg
+                        .item(item)
+                        .component
+                        .clone()
+                        .unwrap_or_default(),
+                    stack: ItemStack {
+                        item,
+                        count: component.count,
+                        durability: component.durability,
+                        arcane_id: component.arcane_id,
+                    },
+                });
+            }
+            self.survival.loadouts[entry.index] = loadout;
+        }
+        for entry in p.loadout_preset {
+            let mut slots: [Option<crate::equipment::PresetSlot>; 4] = Default::default();
+            for slot in entry.slot {
+                if slot.index >= 4 {
+                    continue;
+                }
+                slots[slot.index] = Some(crate::equipment::PresetSlot {
+                    frame: slot.frame,
+                    components: slot.component,
+                });
+            }
+            self.survival.loadout_presets.push(crate::equipment::LoadoutPreset {
+                name: entry.name,
+                slots,
+            });
         }
         if let Some(at) = self.player.pos.block() {
             let migrated = self.server.world.migrate_legacy_player_charms(

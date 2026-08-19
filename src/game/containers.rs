@@ -669,6 +669,10 @@ impl Game {
                 right: false,
             });
         }
+        // Swapping or removing a frame must not strand its components.
+        if i < 4 {
+            self.return_loadout_components(i);
+        }
         let reg = self.content.reg.clone();
         match (self.ui_state.held_stack, self.survival.armor[i]) {
             (Some(h), cur) => {

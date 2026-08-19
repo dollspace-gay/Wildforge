@@ -24,6 +24,7 @@ mods/<your_mod>/
   features.toml     [[feature]] worldgen (ore veins)
   modes.toml        [[mode]] named survival rulesets (capability E1)
   skills.toml       [[branch]]/[[branch.node]] skill trees (capability E5)
+  items.toml        [[item]] entries — frames and components (capability E6)
   arcane.toml       [[resonance]] and [[arcane_site]] entries
   workings.toml     [[working]] entries using qualified native handlers
   preparations.toml [[preparation]] physical process/effect entries
@@ -381,6 +382,31 @@ food = { hunger = 7, nutrition = { grain = 30 } }
 | `material_class` | inferred | one of the five finite-material classes above |
 | `materials` | `{}` | exact material vector per item; balanced transformations can infer an omitted output vector |
 | `salvage` | generated for tracked durables/machines | `{ station = "forge", recovery = 0.90 }`; recovery must be 0–1 |
+| `frame` | none | **capability E6**: `{ slots = [ { type = "gem", max = 2 } ] }` — this item is a frame with typed slots; a `max = 0` slot, a duplicate type, or an empty `[frame]` is a load error |
+| `component` | none | **capability E6**: a slot-type name (`"gem"`); this item slots into matching frame slots. An item cannot be both a `frame` and a `component`, and a component's slot type must be non-empty |
+
+### Frames, components, and loadouts (capability E6)
+
+A frame is a wearable item (it still uses `armor` for slot + points, and
+`durability`). A component is a normal item that grants E4 `[[item.stats]]`
+modifiers — but those stats only count while the component is slotted in a
+worn frame.
+
+- Open the **loadout screen** with `L` (mirror of the `K` skill screen) in a
+  world whose mode opts in — the frame's typed slots sit beside its armor
+  box; click a slot to insert the held component, click a filled slot to
+  take it back **intact** (components never stack down or deplete).
+- Derived stats: `armor.points` always count; a component's `[[item.stats]]`
+  count while its frame is worn and intact. Frames only — a frame whose
+  `durability` hits 0 is **disabled, not destroyed**: it stops granting its
+  armor points and its components' stats, but stays in its slot and can be
+  repaired through the crafting repair path (a damaged frame + any item whose
+  `materials` are a strict subset of the frame's, e.g. a component).
+- **Loadout presets**: the `[[loadout_preset]]` table in the profile saves a
+  snapshot of the four worn slots (frame id + per-slot component ids); the
+  loadout screen's preset buttons SAVE the current loadout and APPLY a saved
+  one from the inventory, returning the previously worn frame to your hand.
+- Both `frame` and `component` items are one-per-stack.
 
 ## recipes.toml
 
@@ -568,6 +594,7 @@ Every field is optional and inherits from `base`. The full toggle set:
 | `weather_extremes` | storms intensify world pressure | true |
 | `pvp` | players can hurt each other | true |
 | `skills` | the skill tree (E5) is live and XP accrues | false |
+| `equipment` | modular equipment (E6): frame/component slots and loadout presets are live | false |
 
 A mode's `base` names the built-in `survival` or `creative`, or another
 declared mode in the same pack (`base = "cozy"` chains through it). Built-in

@@ -36,6 +36,11 @@ pub struct Ruleset {
     /// default so Survival/Creative worlds are unchanged; a mod mode opts
     /// a world in with `skills = true`.
     pub skills: bool,
+    /// Modular equipment (E6): frames take slotted components, loadouts
+    /// derive stats, and frames disable at 0 durability instead of being
+    /// destroyed. Off by default so Survival/Creative worlds are unchanged;
+    /// a mod mode opts a world in with `equipment = true`.
+    pub equipment: bool,
 }
 
 impl Ruleset {
@@ -53,6 +58,7 @@ impl Ruleset {
             weather_extremes: true,
             pvp: true,
             skills: false,
+            equipment: false,
         }
     }
 
@@ -70,6 +76,7 @@ impl Ruleset {
             weather_extremes: false,
             pvp: false,
             skills: false,
+            equipment: false,
         }
     }
 
@@ -108,6 +115,9 @@ impl Ruleset {
         if let Some(value) = mode.skills {
             self.skills = value;
         }
+        if let Some(value) = mode.equipment {
+            self.equipment = value;
+        }
     }
 }
 
@@ -137,6 +147,7 @@ mod tests {
             weather_extremes: None,
             pvp,
             skills,
+            equipment: None,
         }
     }
 
@@ -149,6 +160,32 @@ mod tests {
         r.apply_overrides(&m);
         assert!(r.skills);
         assert!(r.hunger && r.pvp, "skills overlay leaves other toggles alone");
+    }
+
+    #[test]
+    fn equipment_toggle_is_opt_in_and_off_by_default() {
+        assert!(!Ruleset::survival().equipment);
+        assert!(!Ruleset::creative().equipment);
+        let mut r = Ruleset::survival();
+        let m = ModeDef {
+            id: "gear".into(),
+            base: Some("survival".into()),
+            creative: None,
+            hunger: None,
+            fall_damage: None,
+            drowning: None,
+            lava_burn: None,
+            hostile_spawns: None,
+            ire: None,
+            hearts: None,
+            weather_extremes: None,
+            pvp: None,
+            skills: Some(false),
+            equipment: Some(true),
+        };
+        r.apply_overrides(&m);
+        assert!(r.equipment, "mode opts into modular equipment");
+        assert!(!r.skills, "equipment overlay leaves other toggles alone");
     }
 
     #[test]

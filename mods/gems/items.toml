@@ -1,6 +1,55 @@
+# Capability E6 sample: modular equipment. `gem_frame_chest` is a frame with
+# two typed "gem" slots; the cut/faceted/void components slot in and out
+# intact, and their stats (E4 StatBlock channels) ride the worn loadout.
+# The frame disables at 0 durability instead of being destroyed, and is
+# repairable through the crafting repair path (damaged frame + a component,
+# whose `ruby` materials are a strict subset of the frame's).
+
 [[item]]
 id = "ruby"
 name = "Ruby"
 texture = "ruby.png"
 material_class = "geologically_finite"
 materials = { ruby = 1200 }
+
+[[item]]
+id = "gem_frame_chest"
+name = "Gem Frame Chest"
+texture = "@leather_chestplate"
+durability = 60
+armor = { slot = "chest", points = 2 }
+frame = { slots = [ { type = "gem", max = 2 } ] }
+materials = { ruby = 7200 }
+[[item.stats]]
+kind = "move_speed"
+mult_permille = 1050
+
+[[item]]
+id = "cut_ruby"
+name = "Cut Ruby"
+texture = "@cinnabar_powder"
+component = "gem"
+materials = { ruby = 1200 }
+[[item.stats]]
+kind = "health"
+flat = 2
+
+[[item]]
+id = "faceted_emerald"
+name = "Faceted Emerald"
+texture = "@amber_glass"
+component = "gem"
+materials = { ruby = 2400 }
+[[item.stats]]
+kind = "stamina_regen"
+mult_permille = 1125
+
+[[item]]
+id = "void_pearl"
+name = "Void Pearl"
+texture = "@charcoal"
+component = "gem"
+materials = { ruby = 4800 }
+[[item.stats]]
+kind = "carry"
+flat = 32

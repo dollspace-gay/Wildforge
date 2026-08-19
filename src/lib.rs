@@ -22,6 +22,7 @@ mod discovery;
 mod dross;
 mod edifice;
 mod entity;
+mod equipment;
 mod game;
 mod geode_capture;
 mod identity;

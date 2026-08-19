@@ -9,6 +9,7 @@ mod containers;
 mod content;
 mod demos;
 mod dialogue;
+mod equipment;
 #[cfg(test)]
 pub(crate) use dialogue::apply_reputation_reward;
 #[cfg(test)]
@@ -89,6 +90,10 @@ enum Screen {
     /// active world's mode-gated tree. Temporary hardcoded screen; E11
     /// generalizes this into mod-extensible screens.
     Skills,
+    /// The loadout (capability E6): slot components into worn frames,
+    /// repair disabled frames, and save/apply loadout presets. Temporary
+    /// hardcoded screen; E11 generalizes this into mod-extensible screens.
+    Loadout,
     Join,
     Paused,
     Dead,
@@ -152,6 +157,12 @@ struct InputState {
 /// Player vitals, armor, recovery timers, and respawn ownership.
 struct SurvivalState {
     armor: [Option<ItemStack>; 5],
+    /// Slotted components per armor slot (capability E6), index-aligned
+    /// with `armor`. Kept in sync: equipping a frame clears the slot's
+    /// loadout, unequipping returns its components intact.
+    loadouts: [crate::equipment::Loadout; 5],
+    /// Named saved equipment configurations (capability E6).
+    loadout_presets: Vec<crate::equipment::LoadoutPreset>,
     health: f32,
     hunger: f32,
     nutrition: [f32; 5],
@@ -183,6 +194,8 @@ impl SurvivalState {
     fn new(spawn_point: crate::planet::EntityPos) -> Self {
         Self {
             armor: [None; 5],
+            loadouts: Default::default(),
+            loadout_presets: Vec::new(),
             health: MAX_HEALTH,
             hunger: 20.0,
             nutrition: [0.0; 5],
@@ -288,6 +301,10 @@ struct UiState {
     creation_progress: (usize, usize),
     /// Index into `reg.skills.branches` shown on the skill screen.
     skills_branch: usize,
+    /// Which armor slot (0..=3) the loadout screen acts on.
+    loadout_select: usize,
+    /// Which numbered preset the loadout screen saves into / applies from.
+    loadout_preset_sel: usize,
 }
 
 enum AccountTaskResult {
@@ -373,6 +390,8 @@ impl Default for UiState {
             creation_status: String::new(),
             creation_progress: (0, crate::planet_atlas::AtlasStage::ALL.len()),
             skills_branch: 0,
+            loadout_select: 0,
+            loadout_preset_sel: 0,
         }
     }
 }

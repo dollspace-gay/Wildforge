@@ -2,7 +2,8 @@
 # `gems:cozy` plays without hunger, fall damage, or PvP — everything else
 # inherits from the survival base. Declared modes never change how the mod's
 # own content behaves; they only name a ruleset a world can be started with.
-# `skills = true` (capability E5) opts a world into the mod's skill tree.
+# `skills = true` (capability E5) opts a world into the mod's skill tree;
+# `equipment = true` (capability E6) opts it into modular equipment.
 
 [[mode]]
 id = "cozy"
@@ -11,3 +12,4 @@ hunger = false
 fall_damage = false
 pvp = false
 skills = true
+equipment = true

@@ -4,12 +4,20 @@ use super::*;
 
 impl Game {
     pub(super) fn armor_points(&self) -> u32 {
+        let enabled = super::equipment::equipment_enabled(self);
         let base: u32 = self
             .survival
             .armor
             .iter()
-            .flatten()
-            .filter_map(|s| self.content.reg.item(s.item).armor.map(|(_, p)| p))
+            .filter_map(|s| {
+                let s = s.as_ref()?;
+                let def = self.content.reg.item(s.item);
+                // A modular frame disabled at 0 durability protects nothing.
+                if enabled && def.frame.is_some() && s.durability == 0 {
+                    return None;
+                }
+                def.armor.map(|(_, p)| p)
+            })
             .sum();
         base
     }
@@ -65,14 +73,22 @@ impl Game {
         let amount = reduced_damage(amount, pts);
         if pts > 0 {
             let reg = self.content.reg.clone();
+            let equipment_enabled = super::equipment::equipment_enabled(self);
             for a in self.survival.armor.iter_mut() {
                 if let Some(st) = a {
-                    if reg.item(st.item).durability == 0 {
+                    let def = reg.item(st.item);
+                    if def.durability == 0 {
                         continue; // charms don't wear
                     }
+                    let frame = equipment_enabled && def.frame.is_some();
+                    // A modular frame disabled at 0 stays whole in its slot
+                    // (repairable); only legacy armor changes identity.
+                    if frame && st.durability == 0 {
+                        continue;
+                    }
                     st.durability = st.durability.saturating_sub(1);
-                    if st.durability == 0 {
-                        *a = reg.item(st.item).broken_into.map(|broken| ItemStack {
+                    if st.durability == 0 && !frame {
+                        *a = def.broken_into.map(|broken| ItemStack {
                             item: broken,
                             count: 1,
                             durability: 0,
@@ -192,6 +208,18 @@ impl Game {
                 .collect();
             for s in worn {
                 self.drop_stack(s);
+            }
+            let loadout_drops: Vec<ItemStack> = {
+                let mut out = Vec::new();
+                for loadout in self.survival.loadouts.iter_mut() {
+                    while let Some(stack) = loadout.unslot(0) {
+                        out.push(stack);
+                    }
+                }
+                out
+            };
+            for stack in loadout_drops {
+                self.drop_stack(stack);
             }
             self.set_screen(Screen::Dead);
         }

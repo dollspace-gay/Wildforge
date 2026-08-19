@@ -1,4 +1,28 @@
+# Capability E6 sample recipes: components and the frame are crafted from
+# the mod's ruby; the frame's own `ruby` materials make a worn component a
+# valid repair part (strict subset of the frame's material vector).
+
 [[recipe]]
 pattern = ["rr", "rr"]
 keys = { r = "gems:ruby" }
 output = "gems:ruby_block"
+
+[[recipe]]
+pattern = ["r"]
+keys = { r = "gems:ruby" }
+output = "gems:cut_ruby"
+
+[[recipe]]
+pattern = ["rr"]
+keys = { r = "gems:ruby" }
+output = "gems:faceted_emerald"
+
+[[recipe]]
+pattern = ["rr", "rr"]
+keys = { r = "gems:ruby" }
+output = "gems:void_pearl"
+
+[[recipe]]
+pattern = ["rr", "rr", "rr"]
+keys = { r = "gems:ruby" }
+output = "gems:gem_frame_chest"

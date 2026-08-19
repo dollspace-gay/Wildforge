@@ -367,6 +367,13 @@ pub struct ItemDef {
     pub carry_weight: u32,
     /// Derived stat contributions granted while worn (equipment only).
     pub stats: Vec<crate::stats::StatModifier>,
+    /// Modular equipment (E6): this item is a frame whose typed slots take
+    /// components. Frames disable at durability 0 instead of being
+    /// destroyed (repairable via the crafting repair path).
+    pub frame: Option<crate::equipment::FrameDef>,
+    /// Modular equipment (E6): the slot type this item fills when slotted
+    /// into a frame that declares it.
+    pub component: Option<String>,
     /// Right-click to camp: sleep to dawn, set spawn (bedrolls).
     pub bedroll: bool,
     /// Breaking leaves with this drops the leaf block itself.
@@ -1159,6 +1166,8 @@ struct ModeToml {
     pvp: Option<bool>,
     #[serde(default)]
     skills: Option<bool>,
+    #[serde(default)]
+    equipment: Option<bool>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -1847,6 +1856,12 @@ struct ItemToml {
     carry_weight: Option<u32>,
     #[serde(default)]
     stats: Vec<StatToml>,
+    /// Modular equipment (E6): typed slots this frame accepts.
+    #[serde(default)]
+    frame: Option<FrameToml>,
+    /// Modular equipment (E6): the slot type this component fills.
+    #[serde(default)]
+    component: Option<String>,
     #[serde(default)]
     bedroll: bool,
     #[serde(default)]
@@ -2104,6 +2119,19 @@ struct BowToml {
 struct ArmorToml {
     slot: String,
     points: u32,
+}
+
+#[derive(Deserialize, Clone)]
+struct FrameToml {
+    slots: Vec<FrameSlotToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct FrameSlotToml {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default = "one_u8")]
+    max: u8,
 }
 
 #[derive(Deserialize, Clone)]
@@ -2832,6 +2860,7 @@ pub struct ModeDef {
     pub weather_extremes: Option<bool>,
     pub pvp: Option<bool>,
     pub skills: Option<bool>,
+    pub equipment: Option<bool>,
 }
 
 // ---------------- loading ----------------
@@ -3785,6 +3814,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     armor: None,
                     carry_weight: 1,
                     stats: Vec::new(),
+                    frame: None,
+                    component: None,
                     bedroll: false,
                     shears: false,
                     charm: None,
@@ -3927,7 +3958,38 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 || discovery.is_some()
                 || charm_def.is_some()
                 || it.wand_component.is_some()
-                || it.implement.is_some();
+                || it.implement.is_some()
+                || it.frame.is_some()
+                || it.component.is_some();
+            let frame = match &it.frame {
+                Some(raw) => {
+                    let def = crate::equipment::FrameDef {
+                        slots: raw
+                            .slots
+                            .iter()
+                            .map(|s| crate::equipment::FrameSlotDef {
+                                slot_type: s.kind.clone(),
+                                max: s.max,
+                            })
+                            .collect(),
+                    };
+                    for error in def.validate() {
+                        errs.push(format!("{full}: {error}"));
+                    }
+                    if it.component.is_some() {
+                        errs.push(format!("{full}: an item cannot be both a frame and a component"));
+                    }
+                    Some(def)
+                }
+                None => {
+                    if let Some(slot_type) = &it.component
+                        && slot_type.is_empty()
+                    {
+                        errs.push(format!("{full}: component slot type must not be empty"));
+                    }
+                    None
+                }
+            };
             reg.items.push(ItemDef {
                 name: full.clone(),
                 label: it.name.clone().unwrap_or_else(|| it.id.clone()),
@@ -3968,6 +4030,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                         })
                     })
                     .collect(),
+                frame,
+                component: it.component.clone(),
                 bedroll: it.bedroll,
                 shears: it.shears,
                 charm: it.charm.as_ref().map(CharmToml::effect_id),
@@ -5322,6 +5386,8 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             armor: None,
             carry_weight: 1,
             stats: Vec::new(),
+            frame: None,
+            component: None,
             bedroll: false,
             shears: false,
             charm: None,
@@ -5418,6 +5484,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     weather_extremes: m.weather_extremes,
                     pvp: m.pvp,
                     skills: m.skills,
+                    equipment: m.equipment,
                 });
             }
         }
@@ -5873,6 +5940,8 @@ fn push_salvage_item(
         armor: None,
         carry_weight: 1,
         stats: Vec::new(),
+        frame: None,
+        component: None,
         bedroll: false,
         shears: false,
         charm: None,
@@ -6416,6 +6485,8 @@ impl Registry {
                 armor: None,
                 carry_weight: 1,
                 stats: Vec::new(),
+                frame: None,
+                component: None,
                 bedroll: false,
                 shears: false,
                 charm: None,
@@ -6512,6 +6583,8 @@ impl Registry {
                 armor: None,
                 carry_weight: 1,
                 stats: Vec::new(),
+                frame: None,
+                component: None,
                 bedroll: false,
                 shears: false,
                 charm: None,

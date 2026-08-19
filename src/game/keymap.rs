@@ -46,7 +46,8 @@ impl Game {
                 | Screen::Stall(_)
                 | Screen::Dialog { .. }
                 | Screen::Journal
-                | Screen::Skills => self.set_screen(Screen::Playing),
+                | Screen::Skills
+                | Screen::Loadout => self.set_screen(Screen::Playing),
                 Screen::SignEdit(pos) => self.commit_sign(pos),
                 Screen::Paused => self.set_screen(Screen::Playing),
                 Screen::Settings => {
@@ -97,7 +98,8 @@ impl Game {
                 | Screen::Stall(_)
                 | Screen::Dialog { .. }
                 | Screen::Journal
-                | Screen::Skills => self.set_screen(Screen::Playing),
+                | Screen::Skills
+                | Screen::Loadout => self.set_screen(Screen::Playing),
                 _ => {}
             },
             // Quest journal (spec 3.3): read-only progress overview.
@@ -110,6 +112,12 @@ impl Game {
             KeyCode::KeyK if pressed && self.in_world => match self.ui_state.screen {
                 Screen::Playing => self.set_screen(Screen::Skills),
                 Screen::Skills => self.set_screen(Screen::Playing),
+                _ => {}
+            },
+            // Loadout (capability E6): slot components, repair, presets.
+            KeyCode::KeyL if pressed && self.in_world => match self.ui_state.screen {
+                Screen::Playing => self.set_screen(Screen::Loadout),
+                Screen::Loadout => self.set_screen(Screen::Playing),
                 _ => {}
             },
             KeyCode::KeyT

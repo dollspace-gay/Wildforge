@@ -12,16 +12,6 @@ pub(crate) const BASE_CARRY_UNITS: f32 = 512.0;
 pub(crate) const BASE_SCAN_UNITS: f32 = 72.0;
 
 impl Game {
-    /// Aggregated stat modifiers from worn equipment.
-    pub(super) fn equipment_stats(&self) -> StatBlock {
-        let reg = &self.content.reg;
-        let mut block = StatBlock::default();
-        for slot in self.survival.armor.iter().flatten() {
-            block.add_all(reg.item(slot.item).stats.iter().copied());
-        }
-        block
-    }
-
     /// Aggregated stat modifiers from active preparations.
     pub(super) fn preparation_stats(&self) -> StatBlock {
         let p = self.survival.preparation_modifiers;
