@@ -765,6 +765,43 @@ impl Game {
                 self.dialog_select(npc, &node_id, sel);
             }
             Screen::Journal => {}
+            Screen::Skills => {
+                if !self.skills_enabled() {
+                    self.set_screen(Screen::Playing);
+                    return;
+                }
+                let tree = &self.content.reg.skills;
+                let branches = &tree.branches;
+                if branches.is_empty() {
+                    return;
+                }
+                let branch_idx = self.ui_state.skills_branch.min(branches.len() - 1);
+                for (i, _) in branches.iter().enumerate() {
+                    if self.hit(self.skill_branch_tab_rect(i)) {
+                        self.sfx(Sfx::Click);
+                        self.ui_state.skills_branch = i;
+                        return;
+                    }
+                }
+                if self.hit(self.skill_respec_rect()) {
+                    self.respec_skills();
+                    return;
+                }
+                let nodes: Vec<_> = tree
+                    .nodes
+                    .iter()
+                    .filter(|n| n.branch == branches[branch_idx].id)
+                    .collect();
+                for (i, node) in nodes.iter().enumerate() {
+                    if self.hit(self.skill_node_rect(i)) {
+                        let node_id = node.id.clone();
+                        if let Err(message) = self.allocate_skill(&node_id) {
+                            self.toast(message);
+                        }
+                        return;
+                    }
+                }
+            }
             Screen::Playing => {}
         }
     }

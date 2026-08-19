@@ -45,7 +45,8 @@ impl Game {
                 | Screen::MobCargo(_)
                 | Screen::Stall(_)
                 | Screen::Dialog { .. }
-                | Screen::Journal => self.set_screen(Screen::Playing),
+                | Screen::Journal
+                | Screen::Skills => self.set_screen(Screen::Playing),
                 Screen::SignEdit(pos) => self.commit_sign(pos),
                 Screen::Paused => self.set_screen(Screen::Playing),
                 Screen::Settings => {
@@ -95,13 +96,20 @@ impl Game {
                 | Screen::MobCargo(_)
                 | Screen::Stall(_)
                 | Screen::Dialog { .. }
-                | Screen::Journal => self.set_screen(Screen::Playing),
+                | Screen::Journal
+                | Screen::Skills => self.set_screen(Screen::Playing),
                 _ => {}
             },
             // Quest journal (spec 3.3): read-only progress overview.
             KeyCode::KeyJ if pressed && self.in_world => match self.ui_state.screen {
                 Screen::Playing => self.set_screen(Screen::Journal),
                 Screen::Journal => self.set_screen(Screen::Playing),
+                _ => {}
+            },
+            // Skill tree (capability E5): allocate mode-gated points.
+            KeyCode::KeyK if pressed && self.in_world => match self.ui_state.screen {
+                Screen::Playing => self.set_screen(Screen::Skills),
+                Screen::Skills => self.set_screen(Screen::Playing),
                 _ => {}
             },
             KeyCode::KeyT

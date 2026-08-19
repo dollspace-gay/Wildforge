@@ -24,6 +24,7 @@ mod menus;
 mod remote;
 mod roster_ui;
 mod session;
+mod skills;
 mod stats;
 mod status;
 mod streaming;
@@ -84,6 +85,10 @@ enum Screen {
     },
     /// The quest journal (spec 3.3): accepted quests and their progress.
     Journal,
+    /// The skill tree (capability E5): allocate learned nodes in the
+    /// active world's mode-gated tree. Temporary hardcoded screen; E11
+    /// generalizes this into mod-extensible screens.
+    Skills,
     Join,
     Paused,
     Dead,
@@ -281,6 +286,8 @@ struct UiState {
     world_entry: Option<WorldEntryTask>,
     creation_status: String,
     creation_progress: (usize, usize),
+    /// Index into `reg.skills.branches` shown on the skill screen.
+    skills_branch: usize,
 }
 
 enum AccountTaskResult {
@@ -365,6 +372,7 @@ impl Default for UiState {
             world_entry: None,
             creation_status: String::new(),
             creation_progress: (0, crate::planet_atlas::AtlasStage::ALL.len()),
+            skills_branch: 0,
         }
     }
 }
@@ -622,6 +630,8 @@ struct Game {
     interaction: InteractionState,
     presentation: PresentationState,
     combat: combat::CombatState,
+    /// Skill-tree progression (capability E5), persisted with the profile.
+    skills: crate::skills::SkillState,
     rng: u32,
 
     // Menus / meta
@@ -863,6 +873,7 @@ impl Game {
             interaction: InteractionState::default(),
             presentation: PresentationState::new(),
             combat: combat::CombatState::new(),
+            skills: crate::skills::SkillState::default(),
             rng: if std::env::var("WILDFORGE_SHOT").is_ok() {
                 0x1234_5678
             } else {

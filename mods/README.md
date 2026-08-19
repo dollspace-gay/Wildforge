@@ -23,6 +23,7 @@ mods/<your_mod>/
   tags.toml         [[tag]] item groups for recipes
   features.toml     [[feature]] worldgen (ore veins)
   modes.toml        [[mode]] named survival rulesets (capability E1)
+  skills.toml       [[branch]]/[[branch.node]] skill trees (capability E5)
   arcane.toml       [[resonance]] and [[arcane_site]] entries
   workings.toml     [[working]] entries using qualified native handlers
   preparations.toml [[preparation]] physical process/effect entries
@@ -566,11 +567,69 @@ Every field is optional and inherits from `base`. The full toggle set:
 | `hearts` | the hearts / offerings loop is live | true |
 | `weather_extremes` | storms intensify world pressure | true |
 | `pvp` | players can hurt each other | true |
+| `skills` | the skill tree (E5) is live and XP accrues | false |
 
 A mode's `base` names the built-in `survival` or `creative`, or another
 declared mode in the same pack (`base = "cozy"` chains through it). Built-in
 `survival` / `creative` ids are reserved. A broken base (undeclared or
 cyclic) is reported on the MODS screen and the mode falls back to survival.
+
+## skills.toml
+
+A data-driven skill tree (capability E5): branches of nodes that grant E4
+stat modifiers, bought with points earned from XP. The engine is closed —
+`skills.toml` declares the tree and the XP economy, never behavior.
+
+```toml
+# mods/meadow/skills.toml
+schema_version = 1
+
+[tree]
+max_level = 80        # the level cap
+points_per_level = 1  # points paid per level-up
+xp_base = 100.0       # XP needed for level 1 -> 2
+xp_exponent = 1.5     # xp_for_level(level) = xp_base * level^exponent
+
+[[xp_source]]
+id = "mine"           # the engine hook (one of the closed source set)
+base = 6              # XP for the first grant of this source
+decay = 0.25          # diminishing: the k-th grant is base / (1 + decay * k)
+
+[[branch]]
+id = "survivalist"
+name = "Survivalist"
+tier_gate = 3         # tier-(N-1) nodes needed to buy a tier-N node
+
+[[branch.node]]
+id = "hardy"
+name = "Hardy"
+tier = 1
+cost = 1              # defaults to `tier`
+description = "+2 max health"
+[[branch.node.stats]]
+kind = "health"
+flat = 2
+```
+
+- `schema_version` must be 1. `[tree]` and every `[[xp_source]]`,
+  `[[branch]]`, `[[branch.node]]`, and `[[branch.node.stats]]` table are
+  optional; `[tree]` and `[[xp_source]]` entries without a branch/node are
+  legal (an XP economy with no spendable tree, or vice versa).
+- Branch and node ids are qualified to your mod (`meadow:survivalist`,
+  `meadow:hardy`); the engine hooks are the **closed XP source set**
+  `mine`, `build`, `craft`, `smelt`, `kill`, `fish`, `harvest`. Declare
+  `base`/`decay` for the sources you want — an undeclared source grants
+  nothing.
+- Nodes may sit in any `tier` 1–4. A tier-N node unlocks when the branch
+  has `tier_gate` allocated tier-(N-1) nodes. `cost` defaults to the tier.
+- A node's `stats` entries are E4 `StatModifier`s (`kind` is one of
+  `health`, `stamina`, `stamina_regen`, `carry`, `build_range`,
+  `scan_range`, `move_speed`; `flat` and `mult_permille` as in
+  `[[item.stats]]`).
+- Skills are **mode-gated** (E1): nothing accrues, allocates, or applies
+  unless the world's mode sets `skills = true`, so built-in Survival and
+  Creative are numerically identical. Press `K` in-game to open the skill
+  screen and spend points.
 
 ## animals.toml
 

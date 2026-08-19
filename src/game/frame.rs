@@ -905,6 +905,7 @@ impl Game {
                         }
                         server::SimEvent::MobDied(death) => {
                             self.present_settled_mob_death(death);
+                            self.grant_xp("kill");
                         }
                         server::SimEvent::Dawn { offering_refund } => {
                             if offering_refund > 0.0 {

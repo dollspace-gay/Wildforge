@@ -48,6 +48,7 @@ impl Game {
     pub(super) fn stat_block(&self) -> StatBlock {
         let mut block = self.equipment_stats();
         block.merge(&self.preparation_stats());
+        block.merge(&self.skills_stats());
         block
     }
 

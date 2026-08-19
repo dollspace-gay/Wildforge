@@ -1325,6 +1325,7 @@ impl Game {
                                 10,
                                 2.2,
                             );
+                            self.grant_xp("mine");
                             if !self.creative {
                                 self.inventory.wear_tool(&reg, self.input.hotbar_sel);
                             }
@@ -1765,6 +1766,7 @@ impl Game {
                         }
                         self.inventory.wear_tool(&reg, self.input.hotbar_sel);
                         self.sfx(Sfx::Pickup);
+                        self.grant_xp("fish");
                     } else {
                         self.sfx(Sfx::Splash);
                     }
@@ -1805,6 +1807,7 @@ impl Game {
                     self.drop_stack(ItemStack::new(&reg, item, left));
                 }
                 self.sfx(Sfx::Pickup);
+                self.grant_xp("harvest");
                 self.input.action_cooldown = 0.3;
                 return;
             }
@@ -2559,9 +2562,10 @@ impl Game {
                             if let Some(r) = &self.multiplayer.remote {
                                 r.client.send(&net::C2S::Place { pos });
                             }
-                            self.input.action_cooldown = 0.22;
-                            self.sfx(Sfx::Place);
-                        }
+self.input.action_cooldown = 0.22;
+                        self.sfx(Sfx::Place);
+                        self.grant_xp("build");
+                    }
                         return;
                     }
                     if self.inventory.slots[self.input.hotbar_sel].is_none() && !self.creative {

@@ -32,6 +32,10 @@ pub struct Ruleset {
     pub weather_extremes: bool,
     /// Players can hurt each other.
     pub pvp: bool,
+    /// The skill-tree progression (E5) is live and XP accrues. Off by
+    /// default so Survival/Creative worlds are unchanged; a mod mode opts
+    /// a world in with `skills = true`.
+    pub skills: bool,
 }
 
 impl Ruleset {
@@ -48,6 +52,7 @@ impl Ruleset {
             hearts: true,
             weather_extremes: true,
             pvp: true,
+            skills: false,
         }
     }
 
@@ -64,6 +69,7 @@ impl Ruleset {
             hearts: false,
             weather_extremes: false,
             pvp: false,
+            skills: false,
         }
     }
 
@@ -99,6 +105,9 @@ impl Ruleset {
         if let Some(value) = mode.pvp {
             self.pvp = value;
         }
+        if let Some(value) = mode.skills {
+            self.skills = value;
+        }
     }
 }
 
@@ -112,6 +121,7 @@ mod tests {
         base: Option<&str>,
         hunger: Option<bool>,
         pvp: Option<bool>,
+        skills: Option<bool>,
     ) -> ModeDef {
         ModeDef {
             id: id.into(),
@@ -126,7 +136,19 @@ mod tests {
             hearts: None,
             weather_extremes: None,
             pvp,
+            skills,
         }
+    }
+
+    #[test]
+    fn skills_toggle_is_opt_in_and_off_by_default() {
+        assert!(!Ruleset::survival().skills);
+        assert!(!Ruleset::creative().skills);
+        let mut r = Ruleset::survival();
+        let m = mode("progression", Some("survival"), None, None, Some(true));
+        r.apply_overrides(&m);
+        assert!(r.skills);
+        assert!(r.hunger && r.pvp, "skills overlay leaves other toggles alone");
     }
 
     #[test]
@@ -140,18 +162,18 @@ mod tests {
     #[test]
     fn overrides_layer_onto_survival() {
         let mut r = Ruleset::survival();
-        let m = mode("belt_quest", Some("survival"), Some(false), Some(false));
+        let m = mode("belt_quest", Some("survival"), Some(false), Some(false), Some(true));
         r.apply_overrides(&m);
-        assert!(!r.hunger && !r.pvp);
+        assert!(!r.hunger && !r.pvp && r.skills);
         assert!(r.fall_damage && r.drowning && r.hostile_spawns);
     }
 
     #[test]
     fn overrides_layer_onto_creative() {
         let mut r = Ruleset::creative();
-        let m = mode("calm", Some("creative"), Some(true), None);
+        let m = mode("calm", Some("creative"), Some(true), None, None);
         r.apply_overrides(&m);
-        assert!(r.creative && r.hunger && !r.pvp);
+        assert!(r.creative && r.hunger && !r.pvp && !r.skills);
     }
 
     #[test]

@@ -1,0 +1,178 @@
+# Capability E5 sample: a data-only skill tree. A world started on the
+# gems:cozy mode plays with it (cozy sets skills = true). Nodes grant E4
+# stat modifiers; XP accrues from the canonical engine sources below and
+# decays per source so no single activity grind dominates. A tier-N node
+# unlocks after 3 tier-(N-1) nodes are allocated in the same branch.
+
+schema_version = 1
+
+[tree]
+max_level = 80
+points_per_level = 1
+xp_base = 100.0
+xp_exponent = 1.5
+
+[[xp_source]]
+id = "mine"
+base = 6
+decay = 0.25
+
+[[xp_source]]
+id = "build"
+base = 4
+decay = 0.25
+
+[[xp_source]]
+id = "craft"
+base = 10
+decay = 0.3
+
+[[xp_source]]
+id = "smelt"
+base = 12
+decay = 0.3
+
+[[xp_source]]
+id = "kill"
+base = 20
+decay = 0.2
+
+[[xp_source]]
+id = "fish"
+base = 8
+decay = 0.25
+
+[[xp_source]]
+id = "harvest"
+base = 6
+decay = 0.25
+
+[[branch]]
+id = "survivalist"
+name = "Survivalist"
+tier_gate = 3
+
+[[branch.node]]
+id = "hardy"
+name = "Hardy"
+tier = 1
+cost = 1
+description = "+2 max health"
+[[branch.node.stats]]
+kind = "health"
+flat = 2
+
+[[branch.node]]
+id = "runner"
+name = "Runner"
+tier = 1
+cost = 1
+description = "+5% move speed"
+[[branch.node.stats]]
+kind = "move_speed"
+mult_permille = 1050
+
+[[branch.node]]
+id = "focused"
+name = "Focused"
+tier = 1
+cost = 1
+description = "+10% stamina regen"
+[[branch.node.stats]]
+kind = "stamina_regen"
+mult_permille = 1100
+
+[[branch.node]]
+id = "burly"
+name = "Burly"
+tier = 2
+cost = 2
+description = "+128 carry capacity"
+[[branch.node.stats]]
+kind = "carry"
+flat = 128
+
+[[branch.node]]
+id = "unbreakable"
+name = "Unbreakable"
+tier = 2
+cost = 2
+description = "+2 max health"
+[[branch.node.stats]]
+kind = "health"
+flat = 2
+
+[[branch.node]]
+id = "sprinter"
+name = "Sprinter"
+tier = 3
+cost = 3
+description = "+8% move speed"
+[[branch.node.stats]]
+kind = "move_speed"
+mult_permille = 1080
+
+[[branch]]
+id = "fieldhand"
+name = "Fieldhand"
+tier_gate = 3
+
+[[branch.node]]
+id = "gatherer"
+name = "Gatherer"
+tier = 1
+cost = 1
+description = "+16 scan range"
+[[branch.node.stats]]
+kind = "scan_range"
+flat = 16
+
+[[branch.node]]
+id = "steady"
+name = "Steady"
+tier = 1
+cost = 1
+description = "+1 max stamina"
+[[branch.node.stats]]
+kind = "stamina"
+flat = 1
+
+[[branch.node]]
+id = "longarm"
+name = "Longarm"
+tier = 1
+cost = 1
+description = "+1 build range"
+[[branch.node.stats]]
+kind = "build_range"
+flat = 1
+
+[[branch.node]]
+id = "trailwise"
+name = "Trailwise"
+tier = 2
+cost = 2
+description = "+4% move speed"
+[[branch.node.stats]]
+kind = "move_speed"
+mult_permille = 1040
+
+[[branch.node]]
+id = "field_hardened"
+name = "Field Hardened"
+tier = 2
+cost = 2
+description = "+2 max health"
+[[branch.node.stats]]
+kind = "health"
+flat = 2
+
+[[branch.node]]
+id = "surveyor"
+name = "Surveyor"
+tier = 3
+cost = 3
+description = "+24 scan range"
+[[branch.node.stats]]
+kind = "scan_range"
+flat = 24

@@ -47,6 +47,7 @@ mod renderer;
 mod ruleset;
 mod script;
 mod server;
+mod skills;
 mod sky;
 mod stats;
 mod style;

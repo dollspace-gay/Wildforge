@@ -1085,6 +1085,9 @@ pub struct Registry {
     /// dependency order. A world's `mode` string names one of these or the
     /// built-in `survival` / `creative`.
     pub modes: Vec<ModeDef>,
+    /// The resolved skill tree (capability E5): branches, nodes, and XP
+    /// sources declared across all mods' `skills.toml`. Empty in base.
+    pub skills: crate::skills::SkillTree,
     /// Load-time conservation/schema failures. Keeping these attached to the
     /// registry lets the mods screen explain a bad pack and lets production
     /// world creation refuse it without panicking the content browser.
@@ -1154,6 +1157,8 @@ struct ModeToml {
     weather_extremes: Option<bool>,
     #[serde(default)]
     pvp: Option<bool>,
+    #[serde(default)]
+    skills: Option<bool>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -2807,6 +2812,7 @@ struct RawMod {
     workings: Vec<crate::workings::RawWorkingDef>,
     preparations: Vec<crate::alchemy::RawPreparationDef>,
     modes: Vec<ModeToml>,
+    skills: Option<crate::skills::RawSkillToml>,
 }
 
 /// A resolved `[[mode]]` (E1 ruleset): which survival toggles are live and
@@ -2825,6 +2831,7 @@ pub struct ModeDef {
     pub hearts: Option<bool>,
     pub weather_extremes: Option<bool>,
     pub pvp: Option<bool>,
+    pub skills: Option<bool>,
 }
 
 // ---------------- loading ----------------
@@ -2912,6 +2919,11 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
     }
     let modes: ModesFile =
         toml::from_str(&read("modes.toml")).map_err(|e| format!("modes.toml: {e}"))?;
+    let skills = if dir.join("skills.toml").exists() {
+        Some(crate::skills::parse_skills(&read("skills.toml"), &m.id)?)
+    } else {
+        None
+    };
     if !features.feature.is_empty() && m.retrogen.is_none() {
         return Err(
             "mod.toml: a worldgen feature requires retrogen = \"untouched_host_only\", \
@@ -2958,6 +2970,7 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         workings: workings.working,
         preparations: preparations.preparation,
         modes: modes.mode,
+        skills,
     })
 }
 
@@ -3019,6 +3032,7 @@ fn base_mod() -> RawMod {
         workings: workings.working,
         preparations: preparations.preparation,
         modes: Vec::new(),
+        skills: None,
     }
 }
 
@@ -3136,6 +3150,7 @@ impl RemoveStable for Vec<RawMod> {
             workings: vec![],
             preparations: vec![],
             modes: vec![],
+            skills: None,
         };
         std::mem::replace(&mut self[idx], dummy)
     }
@@ -3177,6 +3192,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         gate_for_block: HashMap::new(),
         loots: HashMap::new(),
         modes: Vec::new(),
+        skills: crate::skills::SkillTree::default(),
         material_errors: Vec::new(),
         arcane_registry: crate::arcane::ResonanceRegistry::base(),
         arcane_sites: Vec::new(),
@@ -5401,6 +5417,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     hearts: m.hearts,
                     weather_extremes: m.weather_extremes,
                     pvp: m.pvp,
+                    skills: m.skills,
                 });
             }
         }
@@ -5429,6 +5446,17 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         }
         let modes = pending;
         reg.modes = modes;
+    }
+
+    // Capability E5: merge every mod's skill tree into the registry.
+    // Failures surface as pack errors on the mods screen.
+    let raw_skills: Vec<crate::skills::RawSkillToml> = raws
+        .iter()
+        .filter_map(|raw| raw.skills.clone())
+        .collect();
+    match crate::skills::resolve(&raw_skills) {
+        Ok(tree) => reg.skills = tree,
+        Err(errors) => reg.material_errors.extend(errors),
     }
 
     reconcile_material_definitions(&mut reg);

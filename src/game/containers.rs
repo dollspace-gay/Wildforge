@@ -166,6 +166,7 @@ impl Game {
             }
         }
         self.sfx(Sfx::Craft);
+        self.grant_xp("craft");
         if self.content.scripts.wants("on_craft") {
             let name = reg.item(recipe.output).name.clone();
             self.content
@@ -780,6 +781,7 @@ impl Game {
                     None => {
                         self.ui_state.held_stack = Some(out);
                         f.output = None;
+                        self.grant_xp("smelt");
                     }
                     Some(h)
                         if h.can_merge(&reg, &out)
@@ -790,6 +792,7 @@ impl Game {
                             ..h
                         });
                         f.output = None;
+                        self.grant_xp("smelt");
                     }
                     _ => {}
                 }

@@ -511,6 +511,21 @@ impl Game {
         );
         let _ = writeln!(out, "nutrition = {:?}", self.survival.nutrition);
         let _ = writeln!(out, "hotbar = {}", self.input.hotbar_sel);
+        let _ = writeln!(
+            out,
+            "level = {}\nxp = {}\nskill_points = {}\nallocated = {:?}\nrespecs = {}",
+            self.skills.level,
+            self.skills.xp,
+            self.skills.points,
+            self.skills.allocated,
+            self.skills.respecs
+        );
+        for (source, count) in &self.skills.source_counts {
+            let _ = writeln!(
+                out,
+                "[[skill_xp]]\nsource = \"{source}\"\ncount = {count}"
+            );
+        }
         let sp = self.survival.spawn_point;
         let _ = writeln!(
             out,
@@ -723,6 +738,11 @@ impl Game {
             arcane_id: u64,
         }
         #[derive(Deserialize)]
+        struct SkillXpCount {
+            source: String,
+            count: u32,
+        }
+        #[derive(Deserialize)]
         struct P {
             version: u32,
             face: u8,
@@ -743,6 +763,18 @@ impl Game {
             slot: Vec<SlotT>,
             #[serde(default)]
             armor: Vec<SlotT>,
+            #[serde(default)]
+            level: u32,
+            #[serde(default)]
+            xp: f64,
+            #[serde(default)]
+            skill_points: u32,
+            #[serde(default)]
+            allocated: Vec<String>,
+            #[serde(default)]
+            respecs: u32,
+            #[serde(default)]
+            skill_xp: Vec<SkillXpCount>,
         }
         let path = match identity::local_profile_path(dir, self.identity.device_id()) {
             Ok(path) => path,
@@ -781,6 +813,18 @@ impl Game {
         self.survival.nutrition = p.nutrition;
         self.input.hotbar_sel = p.hotbar.min(HOTBAR_SLOTS - 1);
         self.survival.spawn_point = spawn;
+        if p.level > 0 {
+            self.skills.level = p.level;
+        }
+        self.skills.xp = p.xp;
+        self.skills.points = p.skill_points;
+        self.skills.allocated = p.allocated;
+        self.skills.respecs = p.respecs;
+        for entry in p.skill_xp {
+            self.skills
+                .source_counts
+                .insert(entry.source, entry.count);
+        }
         for s in p.slot {
             if s.index < TOTAL_SLOTS
                 && let Some(item) = self.content.reg.item_id(&s.item)
