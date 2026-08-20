@@ -2642,6 +2642,25 @@ impl HostSession {
                 );
                 self.broadcast_ready(&S2C::SignText { pos, lines });
             }
+            C2S::ToggleSwitch { pos } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH {
+                    return;
+                }
+                let b = server.world.get_block_at(pos);
+                let interaction = server.world.reg.block(b).interaction.as_deref();
+                if !matches!(interaction, Some("rail_switch") | Some("belt_switch")) {
+                    return;
+                }
+                server.world.toggle_switch(pos);
+                let selected = server
+                    .world
+                    .switch_selected(pos)
+                    .unwrap_or(crate::planet::Direction4::North);
+                self.broadcast_ready(&S2C::SwitchState {
+                    pos,
+                    selected: selected as u8,
+                });
+            }
             C2S::BrushBlock { pos } => {
                 if guest.pos.distance_to(pos.entity_center()) > REACH {
                     return;

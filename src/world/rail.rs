@@ -289,8 +289,9 @@ fn curve_exit(orientation: CurveOrientation, entered: Direction4) -> Option<Dire
 }
 
 /// Which `(du, dv)` offset a direction steps to, matching the offset space
-/// `BlockPos::offset` and `Rotation::apply` share.
-fn direction_offset(direction: Direction4) -> (i32, i32) {
+/// `BlockPos::offset` and `Rotation::apply` share. Shared with the belt
+/// geometry (capability E8), which steps cargo in the same offset space.
+pub(crate) fn direction_offset(direction: Direction4) -> (i32, i32) {
     match direction {
         Direction4::East => (1, 0),
         Direction4::North => (0, 1),

@@ -1,6 +1,7 @@
-//! Tests for minimal belt transport (spec §2.2, scoped): straight North
-//! travel, back-pressure, mouth drops, and the same load-tier power draw
-//! machinery trains use.
+//! Tests for belt transport (spec §2.2): straight travel in all four
+//! orientations, curves, inclines, switches, splitters/mergers, machine
+//! feed, persistence, and the same load-tier power draw machinery trains
+//! use.
 
 use super::*;
 use crate::entity::ItemEntity;
@@ -42,7 +43,7 @@ fn belt_kind_classifies_the_belt_block() {
     let rc = base_reg();
     assert_eq!(
         BeltKind::from_block(&rc, b(&rc, "base:belt")),
-        Some(BeltKind::Straight)
+        Some(BeltKind::Straight(crate::planet::Direction4::North))
     );
     assert_eq!(BeltKind::from_block(&rc, b(&rc, "base:stone")), None);
 }
@@ -220,5 +221,335 @@ fn belt_with_heavy_cargo_stalls_without_power_and_rolls_with_it() {
     assert!(
         w.belt_cell_at(bp(12, MY, 10)).unwrap().progress > 0.0,
         "powered steam rolls the heavy belt"
+    );
+}
+
+/// Place a named belt piece (capability E8 geometry).
+fn belt_of(w: &mut World, rc: &Registry, pos: (i32, i32, i32), name: &str) {
+    w.set_block_at(bp(pos.0, pos.1, pos.2), b(rc, name));
+}
+
+#[test]
+fn belt_straights_carry_along_their_facing() {
+    let rc = base_reg();
+    let ingot = it(&rc, "base:copper_ingot");
+    // East: (12,MY,12) -> (13,MY,12).
+    let mut w = test_world_with("belt-orient-e", rc.clone());
+    belt_of(&mut w, &rc, (12, MY, 12), "base:belt_e");
+    belt_of(&mut w, &rc, (13, MY, 12), "base:belt_e");
+    assert!(w.belt_insert_at(bp(12, MY, 12), ItemStack::new(&rc, ingot, 1)));
+    w.tick_entities(0.5);
+    assert!(
+        w.belt_cell_at(bp(12, MY, 12))
+            .is_none_or(|s| s.cargo.is_empty()),
+        "the cargo left the east-facing cell"
+    );
+    assert_eq!(
+        w.belt_cell_at(bp(13, MY, 12)).unwrap().cargo.len(),
+        1,
+        "an east belt carries east"
+    );
+    // South: (12,MY,12) -> (12,MY,11).
+    let mut w = test_world_with("belt-orient-s", rc.clone());
+    belt_of(&mut w, &rc, (12, MY, 12), "base:belt_s");
+    belt_of(&mut w, &rc, (12, MY, 11), "base:belt_s");
+    assert!(w.belt_insert_at(bp(12, MY, 12), ItemStack::new(&rc, ingot, 1)));
+    w.tick_entities(0.5);
+    assert_eq!(
+        w.belt_cell_at(bp(12, MY, 11)).unwrap().cargo.len(),
+        1,
+        "a south belt carries south"
+    );
+    // West: (12,MY,12) -> (11,MY,12).
+    let mut w = test_world_with("belt-orient-w", rc.clone());
+    belt_of(&mut w, &rc, (12, MY, 12), "base:belt_w");
+    belt_of(&mut w, &rc, (11, MY, 12), "base:belt_w");
+    assert!(w.belt_insert_at(bp(12, MY, 12), ItemStack::new(&rc, ingot, 1)));
+    w.tick_entities(0.5);
+    assert_eq!(
+        w.belt_cell_at(bp(11, MY, 12)).unwrap().cargo.len(),
+        1,
+        "a west belt carries west"
+    );
+}
+
+#[test]
+fn belt_curves_turn_cargo() {
+    let rc = base_reg();
+    let ingot = it(&rc, "base:copper_ingot");
+    // Traveling North into a NE curve turns East.
+    let mut w = test_world_with("belt-curve-ne", rc.clone());
+    belt_of(&mut w, &rc, (12, MY, 12), "base:belt_curve_ne");
+    belt_of(&mut w, &rc, (13, MY, 12), "base:belt_e");
+    belt_of(&mut w, &rc, (14, MY, 12), "base:belt_e");
+    assert!(w.belt_insert_at(bp(12, MY, 12), ItemStack::new(&rc, ingot, 1)));
+    w.tick_entities(0.5);
+    assert_eq!(
+        w.belt_cell_at(bp(13, MY, 12)).unwrap().cargo.len(),
+        1,
+        "a NE curve turns northbound cargo east"
+    );
+    // Traveling East into an SE curve turns South.
+    let mut w = test_world_with("belt-curve-se", rc.clone());
+    belt_of(&mut w, &rc, (11, MY, 12), "base:belt_e");
+    belt_of(&mut w, &rc, (12, MY, 12), "base:belt_curve_se");
+    belt_of(&mut w, &rc, (12, MY, 11), "base:belt_s");
+    assert!(w.belt_insert_at(bp(11, MY, 12), ItemStack::new(&rc, ingot, 1)));
+    w.tick_entities(0.5);
+    w.tick_entities(0.5);
+    assert_eq!(
+        w.belt_cell_at(bp(12, MY, 11)).unwrap().cargo.len(),
+        1,
+        "an SE curve turns eastbound cargo south"
+    );
+}
+
+#[test]
+fn belt_incline_climbs_north() {
+    let rc = base_reg();
+    let mut w = test_world_with("belt-incline", rc.clone());
+    let ingot = it(&rc, "base:copper_ingot");
+    belt_of(&mut w, &rc, (12, MY, 11), "base:belt");
+    belt_of(&mut w, &rc, (12, MY, 12), "base:belt_incline_n");
+    belt_of(&mut w, &rc, (12, MY + 1, 13), "base:belt");
+    assert!(w.belt_insert_at(bp(12, MY, 11), ItemStack::new(&rc, ingot, 1)));
+    w.tick_entities(0.5);
+    w.tick_entities(0.5);
+    assert!(
+        w.belt_cell_at(bp(12, MY, 12))
+            .is_none_or(|s| s.cargo.is_empty()),
+        "the cargo left the incline"
+    );
+    assert_eq!(
+        w.belt_cell_at(bp(12, MY + 1, 13)).unwrap().cargo.len(),
+        1,
+        "an incline climbs one block north"
+    );
+}
+
+#[test]
+fn belt_switch_defaults_straight_and_branches_when_toggled() {
+    let rc = base_reg();
+    let ingot = it(&rc, "base:copper_ingot");
+    // Default selection keeps the mainline.
+    let mut w = test_world_with("belt-switch-def", rc.clone());
+    belt_of(&mut w, &rc, (12, MY, 11), "base:belt");
+    belt_of(&mut w, &rc, (12, MY, 12), "base:belt_switch");
+    belt_of(&mut w, &rc, (12, MY, 13), "base:belt");
+    assert!(w.belt_insert_at(bp(12, MY, 11), ItemStack::new(&rc, ingot, 1)));
+    w.tick_entities(0.5);
+    w.tick_entities(0.5);
+    assert_eq!(
+        w.belt_cell_at(bp(12, MY, 13)).unwrap().cargo.len(),
+        1,
+        "an un-toggled switch continues the mainline north"
+    );
+    // Toggled: northbound cargo branches east.
+    let mut w = test_world_with("belt-switch-branch", rc.clone());
+    belt_of(&mut w, &rc, (12, MY, 11), "base:belt");
+    belt_of(&mut w, &rc, (12, MY, 12), "base:belt_switch");
+    belt_of(&mut w, &rc, (13, MY, 12), "base:belt_e");
+    w.toggle_switch(bp(12, MY, 12));
+    assert!(w.belt_insert_at(bp(12, MY, 11), ItemStack::new(&rc, ingot, 1)));
+    w.tick_entities(0.5);
+    w.tick_entities(0.5);
+    assert_eq!(
+        w.belt_cell_at(bp(13, MY, 12)).unwrap().cargo.len(),
+        1,
+        "a toggled switch branches east"
+    );
+}
+
+#[test]
+fn belt_splitter_alternates_north_and_east() {
+    let rc = base_reg();
+    let mut w = test_world_with("belt-splitter", rc.clone());
+    let ingot = it(&rc, "base:copper_ingot");
+    belt_of(&mut w, &rc, (12, MY, 12), "base:belt_splitter");
+    belt_of(&mut w, &rc, (12, MY, 13), "base:belt");
+    belt_of(&mut w, &rc, (13, MY, 12), "base:belt_e");
+    assert!(w.belt_insert_at(bp(12, MY, 12), ItemStack::new(&rc, ingot, 1)));
+    w.tick_entities(0.5);
+    assert_eq!(
+        w.belt_cell_at(bp(12, MY, 13)).unwrap().cargo.len(),
+        1,
+        "the first split item goes north"
+    );
+    assert!(w.belt_insert_at(bp(12, MY, 12), ItemStack::new(&rc, ingot, 1)));
+    w.tick_entities(0.5);
+    assert_eq!(
+        w.belt_cell_at(bp(13, MY, 12)).unwrap().cargo.len(),
+        1,
+        "the second split item goes east"
+    );
+}
+
+#[test]
+fn belt_merger_joins_two_inputs_into_one_output() {
+    let rc = base_reg();
+    let mut w = test_world_with("belt-merger", rc.clone());
+    let ingot = it(&rc, "base:copper_ingot");
+    belt_of(&mut w, &rc, (12, MY, 11), "base:belt");
+    belt_of(&mut w, &rc, (11, MY, 12), "base:belt_e");
+    belt_of(&mut w, &rc, (12, MY, 12), "base:belt_merger");
+    for v in 13..=16 {
+        belt_of(&mut w, &rc, (12, MY, v), "base:belt");
+    }
+    assert!(w.belt_insert_at(bp(12, MY, 11), ItemStack::new(&rc, ingot, 1)));
+    assert!(w.belt_insert_at(bp(11, MY, 12), ItemStack::new(&rc, ingot, 1)));
+    for _ in 0..4 {
+        w.tick_entities(0.5);
+    }
+    let on_line = (13..=16)
+        .filter(|v| {
+            w.belt_cell_at(bp(12, MY, *v))
+                .is_some_and(|s| !s.cargo.is_empty())
+        })
+        .count();
+    assert_eq!(on_line, 2, "both inputs merged north onto the output line");
+}
+
+#[test]
+fn belt_backpressures_through_a_curve() {
+    let rc = base_reg();
+    let mut w = test_world_with("belt-curve-block", rc.clone());
+    let ingot = it(&rc, "base:copper_ingot");
+    belt_of(&mut w, &rc, (12, MY, 11), "base:belt");
+    belt_of(&mut w, &rc, (12, MY, 12), "base:belt_curve_ne");
+    belt_of(&mut w, &rc, (13, MY, 12), "base:belt_e");
+    // Cap the east mouth with a loose item.
+    park_mouth_item(&mut w, &rc, (14, MY, 12), ingot);
+    assert!(w.belt_insert_at(bp(12, MY, 11), ItemStack::new(&rc, ingot, 1)));
+    assert!(w.belt_insert_at(bp(12, MY, 12), ItemStack::new(&rc, ingot, 1)));
+    w.tick_entities(0.3);
+    assert!(w.pending_drops().is_empty(), "nothing left the line");
+    assert_eq!(
+        w.belt_cell_at(bp(12, MY, 12)).unwrap().cargo.len(),
+        1,
+        "the curve cell held by the capped mouth"
+    );
+    assert_eq!(
+        w.belt_cell_at(bp(12, MY, 11)).unwrap().cargo.len(),
+        1,
+        "the feeder held by the full curve cell"
+    );
+}
+
+#[test]
+fn belt_feeds_a_machine_mouth_and_backpressures_when_full() {
+    let reg = base_reg();
+    let mut w = test_world_with("belt-feed", reg.clone());
+    let my = 120;
+    build_bloomery(&mut w, &reg, 12, my, 12);
+    let iron = it(&reg, "base:iron_ingot");
+    // The bloomery shell leaves its West side open, so the belt runs West
+    // of the mouth and feeds East into it.
+    belt_of(&mut w, &reg, (11, my, 12), "base:belt_e");
+    assert!(w.belt_insert_at(bp(11, my, 12), ItemStack::new(&reg, iron, 1)));
+    w.tick_entities(0.5);
+    let Some(crate::world::BlockEntity::Multiblock(m)) = w.block_entity(&(12, my, 12)) else {
+        panic!("the belt created the machine instance");
+    };
+    assert!(
+        m.charge
+            .iter()
+            .any(|s| s.as_ref().is_some_and(|s| s.item == iron)),
+        "the first belt-fed ingot landed in a charge slot"
+    );
+    assert!(w.pending_drops().is_empty(), "no loose drop while it accepts");
+    // Feed three more distinct ingots so all four charge slots fill (same
+    // items would merge into one slot, which is fine but doesn't fill it).
+    for name in ["base:copper_ingot", "base:gold_ingot", "base:silver_ingot"] {
+        let item = it(&reg, name);
+        assert!(w.belt_insert_at(bp(11, my, 12), ItemStack::new(&reg, item, 1)));
+        w.tick_entities(0.5);
+    }
+    let Some(crate::world::BlockEntity::Multiblock(m)) = w.block_entity(&(12, my, 12)) else {
+        panic!()
+    };
+    let n = m.charge.iter().filter(|s| s.is_some()).count();
+    assert_eq!(n, 4, "the machine holds its four belt-fed ingots");
+    // A full machine back-pressures the belt instead of overflowing.
+    assert!(w.belt_insert_at(bp(11, my, 12), ItemStack::new(&reg, iron, 1)));
+    w.tick_entities(0.5);
+    assert_eq!(
+        w.belt_cell_at(bp(11, my, 12)).unwrap().cargo.len(),
+        1,
+        "the belt stalls against a full machine"
+    );
+    assert!(w.pending_drops().is_empty(), "no overflow drop");
+}
+
+#[test]
+fn belt_cargo_survives_save_and_reload() {
+    let rc = base_reg();
+    let mut w = test_world_with("belt-persist", rc.clone());
+    let ingot = it(&rc, "base:copper_ingot");
+    belt_of(&mut w, &rc, (12, MY, 11), "base:belt");
+    belt_of(&mut w, &rc, (12, MY, 12), "base:belt");
+    assert!(w.belt_insert_at(bp(12, MY, 11), ItemStack::new(&rc, ingot, 1)));
+    w.tick_entities(0.4);
+    save_world(&mut w);
+    let dir = w.save_dir_for_test();
+    let mut reloaded = World::load_or_create(dir, rc.clone()).expect("world reloads");
+    for x in -2..=2 {
+        for z in -2..=2 {
+            reloaded.ensure_chunk(tchunk(x, z));
+        }
+    }
+    let cell = reloaded.belt_cell_at(bp(12, MY, 11)).unwrap();
+    assert_eq!(cell.cargo.len(), 1, "belt cargo persisted");
+    assert!(
+        (0.0..1.0).contains(&cell.progress),
+        "belt progress persisted"
+    );
+    // And the reloaded line resumes moving.
+    reloaded.tick_entities(0.2);
+    reloaded.tick_entities(0.1);
+    assert!(
+        reloaded
+            .belt_cell_at(bp(12, MY, 11))
+            .is_none_or(|s| s.cargo.is_empty()),
+        "the reloaded belt finished its cell"
+    );
+    assert_eq!(
+        reloaded.belt_cell_at(bp(12, MY, 12)).unwrap().cargo.len(),
+        1,
+        "the reloaded cargo rode forward"
+    );
+}
+
+#[test]
+fn belt_splitter_phase_survives_a_drain_and_reload() {
+    let rc = base_reg();
+    let mut w = test_world_with("belt-split-persist", rc.clone());
+    let ingot = it(&rc, "base:copper_ingot");
+    belt_of(&mut w, &rc, (12, MY, 12), "base:belt_splitter");
+    belt_of(&mut w, &rc, (12, MY, 13), "base:belt");
+    assert!(w.belt_insert_at(bp(12, MY, 12), ItemStack::new(&rc, ingot, 1)));
+    w.tick_entities(0.5);
+    assert!(
+        w.belt_cell_at(bp(12, MY, 12)).unwrap().split_phase,
+        "the splitter flipped after its first handoff"
+    );
+    save_world(&mut w);
+    let mut reloaded = World::load_or_create(w.save_dir_for_test(), rc.clone()).expect("reloads");
+    for x in -2..=2 {
+        for z in -2..=2 {
+            reloaded.ensure_chunk(tchunk(x, z));
+        }
+    }
+    assert!(
+        reloaded.belt_cell_at(bp(12, MY, 12)).unwrap().split_phase,
+        "the splitter phase persisted"
+    );
+    // The reloaded splitter prefers the East branch next.
+    belt_of(&mut reloaded, &rc, (13, MY, 12), "base:belt_e");
+    assert!(reloaded.belt_insert_at(bp(12, MY, 12), ItemStack::new(&rc, ingot, 1)));
+    reloaded.tick_entities(0.5);
+    assert_eq!(
+        reloaded.belt_cell_at(bp(13, MY, 12)).unwrap().cargo.len(),
+        1,
+        "the reloaded splitter resumed alternating east"
     );
 }

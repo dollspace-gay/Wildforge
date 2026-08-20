@@ -9,7 +9,7 @@ use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 42;
+pub const PROTOCOL: u32 = 43;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -444,6 +444,11 @@ pub enum C2S {
         pos: BlockPos,
         lines: [String; 3],
     },
+    /// Flip a rail or belt switch (host owns the authoritative selection
+    /// and broadcasts the result).
+    ToggleSwitch {
+        pos: BlockPos,
+    },
     /// One transactional click in a mob's pack.
     MobCargoClick {
         id: u32,
@@ -759,6 +764,11 @@ pub enum S2C {
     SignText {
         pos: BlockPos,
         lines: [String; 3],
+    },
+    /// A switch's newly-selected exit (broadcast after a toggle).
+    SwitchState {
+        pos: BlockPos,
+        selected: u8,
     },
     /// A mob pack's contents (sent on open and after each change).
     MobCargo {

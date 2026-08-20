@@ -778,6 +778,18 @@ impl Game {
                         world::BlockEntity::Sign(world::SignState { lines }),
                     );
                 }
+                net::S2C::SwitchState { pos, selected } => {
+                    let selected = match selected & 3 {
+                        0 => crate::planet::Direction4::East,
+                        1 => crate::planet::Direction4::North,
+                        2 => crate::planet::Direction4::West,
+                        _ => crate::planet::Direction4::South,
+                    };
+                    self.server.world.insert_block_entity_at(
+                        pos,
+                        world::BlockEntity::Switch(world::SwitchState { selected }),
+                    );
+                }
                 net::S2C::MobCargo { id, slots } => {
                     // The host's pack truth: mirror it onto the local
                     // snapshot mob and open the screen if we asked.

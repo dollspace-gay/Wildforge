@@ -655,6 +655,18 @@ impl Agent {
                     crate::world::BlockEntity::Sign(crate::world::SignState { lines }),
                 );
             }
+            net::S2C::SwitchState { pos, selected } => {
+                let selected = match selected & 3 {
+                    0 => crate::planet::Direction4::East,
+                    1 => crate::planet::Direction4::North,
+                    2 => crate::planet::Direction4::West,
+                    _ => crate::planet::Direction4::South,
+                };
+                self.world.insert_block_entity_at(
+                    pos,
+                    crate::world::BlockEntity::Switch(crate::world::SwitchState { selected }),
+                );
+            }
             net::S2C::HeldResult(held) => {
                 self.cursor = held.and_then(|s| {
                     Some(ItemStack {

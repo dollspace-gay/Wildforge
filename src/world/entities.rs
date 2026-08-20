@@ -10,7 +10,7 @@ impl World {
 
     pub(super) fn save_entities(&self) -> std::io::Result<()> {
         use std::fmt::Write as _;
-        let mut out = String::from("version = 9\n");
+        let mut out = String::from("version = 10\n");
         let pos_value = |pos: BlockPos| {
             format!(
                 "{{ face = \"{:?}\", u = {}, y = {}, v = {} }}",
@@ -293,6 +293,34 @@ impl World {
                 }
             }
         }
+        // Belt cells (capability E8) are persisted here too: cargo, progress,
+        // entry direction, and splitter phase so a reloaded line resumes.
+        // Cells are pruned when empty, so the only empty records worth
+        // writing are splitter cells still holding their alternation phase.
+        for (pos, state) in &self.belt_state {
+            if state.cargo.is_empty() && !state.split_phase {
+                continue;
+            }
+            let _ = writeln!(
+                out,
+                "[[belt]]\npos = {}\nentry_dir = \"{:?}\"\nprogress = {}\nsplit_phase = {}",
+                pos_value(*pos),
+                state.entry_dir,
+                state.progress,
+                state.split_phase
+            );
+            for (i, st) in state.cargo.iter().enumerate() {
+                let _ = writeln!(
+                    out,
+                    "[[belt.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
+                    self.reg.item(st.item).name,
+                    st.count,
+                    st.durability,
+                    st.arcane_id
+                );
+            }
+            let _ = writeln!(out);
+        }
         super::persistence::replace_or_remove(
             &self.entities_path(),
             (!out.is_empty()).then_some(out.as_bytes()),
@@ -471,6 +499,30 @@ impl World {
             selected: String,
         }
         #[derive(Deserialize)]
+        struct BeltSlotT {
+            // Written for hand-editing; the VecDeque order is authoritative
+            // on load, so the index is not consulted.
+            #[allow(dead_code)]
+            index: usize,
+            item: String,
+            count: u32,
+            durability: u32,
+            #[serde(default)]
+            arcane_id: u64,
+        }
+        #[derive(Deserialize)]
+        struct BeltT {
+            pos: crate::planet::BlockPos,
+            #[serde(default)]
+            entry_dir: String,
+            #[serde(default)]
+            progress: f32,
+            #[serde(default)]
+            split_phase: bool,
+            #[serde(default)]
+            slot: Vec<BeltSlotT>,
+        }
+        #[derive(Deserialize)]
         struct FileT {
             version: u32,
             #[serde(default)]
@@ -503,6 +555,8 @@ impl World {
             charge_vessel: Vec<ChargeVesselT>,
             #[serde(default)]
             switch: Vec<SwitchT>,
+            #[serde(default)]
+            belt: Vec<BeltT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else {
             return;
@@ -510,7 +564,10 @@ impl World {
         let Ok(parsed) = toml::from_str::<FileT>(&text) else {
             return;
         };
-        if parsed.version != 9 {
+        // Version 9 saves still load (they simply have no belt records); a
+        // version 10 file adds the belt table. Anything else is foreign and
+        // the whole sidecar is left alone rather than half-misread.
+        if !(9..=10).contains(&parsed.version) {
             return;
         }
         let conv = |reg: &Registry, s: Option<SlotT>| -> Option<ItemStack> {
@@ -760,6 +817,33 @@ impl World {
             };
             self.block_entities
                 .insert(sw.pos, BlockEntity::Switch(SwitchState { selected }));
+        }
+        for bt in parsed.belt {
+            use crate::planet::Direction4;
+            let mut state = crate::world::belt::BeltState::new();
+            state.progress = bt.progress;
+            state.split_phase = bt.split_phase;
+            state.entry_dir = match bt.entry_dir.to_ascii_lowercase().as_str() {
+                "east" => Direction4::East,
+                "west" => Direction4::West,
+                "south" => Direction4::South,
+                _ => Direction4::North,
+            };
+            for sl in bt.slot {
+                if let Some(item) = self.reg.item_id(&sl.item) {
+                    state.cargo.push_back(ItemStack {
+                        item,
+                        count: sl.count,
+                        durability: sl.durability.min(self.reg.item(item).durability),
+                        arcane_id: sl.arcane_id,
+                    });
+                }
+            }
+            // Restore unconditionally: chunks load lazily, so a `get_block_at`
+            // check here would see unloaded chunks as air and drop every
+            // record. The belt tick parks cells whose chunk is still unloaded
+            // and spills cargo only once the cell genuinely is not a belt.
+            self.belt_state.insert(bt.pos, state);
         }
     }
 

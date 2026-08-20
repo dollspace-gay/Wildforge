@@ -1920,9 +1920,16 @@ impl Game {
                     self.set_screen(Screen::Furnace(h.block));
                     return;
                 }
-                Some("rail_switch") if self.input.action_cooldown <= 0.0 => {
+                Some("rail_switch") | Some("belt_switch")
+                    if self.input.action_cooldown <= 0.0 =>
+                {
                     self.input.action_cooldown = 0.25;
                     self.input.right_held = false;
+                    if let Some(rc) = &self.multiplayer.remote {
+                        // The host owns the switch; it echoes the selection.
+                        rc.client.send(&net::C2S::ToggleSwitch { pos: h.block });
+                        return;
+                    }
                     self.server.world.toggle_switch(h.block);
                     self.toast("The switch points differently now.".to_string());
                     return;

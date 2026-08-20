@@ -1060,8 +1060,10 @@ pub struct World {
     /// Seconds of work banked per powered station (transient: a
     /// partial strike is honest to lose across a save).
     station_work: HashMap<BlockPos, f32>,
-    /// Belt cells carrying cargo (spec §2.2): transient runtime state,
-    /// exactly like `RailState` — a reloaded belt is empty until fed again.
+    /// Belt cells carrying cargo (spec §2.2). Persisted as `[[belt]]`
+    /// records in `entities.toml` (capability E8), so a reloaded line
+    /// resumes with its cargo, progress, entry direction, and splitter
+    /// phase instead of starting empty.
     belt_state: HashMap<crate::planet::BlockPos, crate::world::belt::BeltState>,
     /// The land's memory: per-256-block-cell standing (±20), charged
     /// by taking, credited by tending, fading over days.

@@ -2620,13 +2620,117 @@ solid = true
 opaque = false
 interaction = "rail_switch"
 
-# ---- belts (spec Part 2.2, scoped) ----
-# A minimal straight belt segment. Travel direction is fixed at North (+v);
-# geometry variants (curves, inclines, switches) are a later belt phase.
+# ---- belts (spec Part 2.2) ----
+# Straight belt segments, orientable in all four directions (North is the
+# original `belt`). Geometry pieces classify by block id, exactly like the
+# rail variants above: curves in four orientations, the North-climbing
+# incline, a switch (interaction toggles the branch), an alternating
+# splitter, and a merger. All are world-only blocks (crafting recipes are
+# the belts-quest mod's business, not base).
 
 [[block]]
 id = "belt"
 name = "Belt"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "belt_s"
+name = "Belt (South)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "belt_e"
+name = "Belt (East)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "belt_w"
+name = "Belt (West)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "belt_curve_ne"
+name = "Belt Curve (North-East)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "belt_curve_nw"
+name = "Belt Curve (North-West)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "belt_curve_se"
+name = "Belt Curve (South-East)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "belt_curve_sw"
+name = "Belt Curve (South-West)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "belt_incline_n"
+name = "Belt Incline (North)"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "belt_switch"
+name = "Belt Switch"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+interaction = "belt_switch"
+
+[[block]]
+id = "belt_splitter"
+name = "Belt Splitter"
+texture = "@stone"
+hardness = 1.0
+tool = "pickaxe"
+solid = true
+opaque = false
+
+[[block]]
+id = "belt_merger"
+name = "Belt Merger"
 texture = "@stone"
 hardness = 1.0
 tool = "pickaxe"
