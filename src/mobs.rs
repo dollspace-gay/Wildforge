@@ -2,7 +2,7 @@
 //! Species are data (`registry::AnimalDef`); this module is the runtime —
 //! movement, steering, rendering, and ray hits.
 
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 
 use crate::atlas::ATLAS_TILES;
 use crate::mesher::{CORNERS, FACE_SHADE, NORMALS, Vertex};
@@ -74,6 +74,20 @@ pub enum MobEvent {
         template: String,
         anchor: crate::planet::BlockPos,
         rot: crate::world::multiblock::Rotation,
+    },
+    /// A support healed its allies (capability E9): restore `heal` to every
+    /// hostile mob within `radius` of `origin`.
+    HealPulse {
+        origin: EntityPos,
+        radius: f32,
+        heal: f32,
+    },
+    /// A controller summoned its companions (capability E9): the world
+    /// spawns `count` of `species` near `pos`.
+    SpawnMinions {
+        pos: EntityPos,
+        species: usize,
+        count: u32,
     },
 }
 
@@ -260,6 +274,11 @@ pub struct Mob {
     /// A builder's stamp rhythm.
     pub build_cd: f32,
     pub built_count: u32,
+    /// E9 rhythms: a support's heal-pulse cooldown, a controller's minion
+    /// cooldown, a phaser's blink cooldown. Host-side transient, like `rage`.
+    pub support_cd: f32,
+    pub controller_cd: f32,
+    pub phaser_cd: f32,
     /// Seconds spent out of aggro range while hunting (drops at 8).
     lose_aggro: f32,
     /// Fed and ready to breed (wildlife husbandry).
@@ -327,6 +346,21 @@ fn block_at_height(world: &World, pos: EntityPos, y: i32) -> crate::registry::Bl
     world.get_block_at(block)
 }
 
+/// Whether an attacker at `from` is behind the mob's facing, judged within
+/// a `cone_deg` cone off the nose (the E3 backstab check, parameterized so
+/// a shield-bearer's front cone can mirror it).
+fn mob_facing_away(yaw: f32, mob_pos: EntityPos, from: EntityPos, cone_deg: f32) -> bool {
+    let delta = mob_pos.local_delta_to(from);
+    let to = Vec2::new(delta.x, delta.z);
+    let len = to.length();
+    if len < 1e-4 {
+        return false;
+    }
+    let to = to / len;
+    let forward = Vec2::new(yaw.sin(), yaw.cos());
+    forward.dot(to) < cone_deg.to_radians().cos()
+}
+
 /// Shortest-arc angle interpolation (snapshot smoothing).
 pub fn lerp_yaw(a: f32, b: f32, t: f32) -> f32 {
     use std::f32::consts::{PI, TAU};
@@ -373,6 +407,9 @@ impl Mob {
             rage: 0.0,
             build_cd: 0.0,
             built_count: 0,
+            support_cd: 0.0,
+            controller_cd: 0.0,
+            phaser_cd: 0.0,
             lose_aggro: 0.0,
             fed: false,
             calm: 0.0,
@@ -422,7 +459,16 @@ impl Mob {
     /// (wildlife) or retaliation (wardens). `dmg_type` keys the species'
     /// damage-class resistances (None = full).
     pub fn hurt(&mut self, def: &AnimalDef, dmg: f32, dmg_type: Option<&str>, from: EntityPos) {
-        self.health -= dmg * def.damage_multiplier(dmg_type.unwrap_or(""));
+        let mut mult = def.damage_multiplier(dmg_type.unwrap_or(""));
+        // E9: a shield-bearer blocks what it faces — the E3 backstab
+        // check, inverted. Front hits land reduced; rear hits land full.
+        if def.behavior == BehaviorArchetype::ShieldBearer
+            && let Some(shield) = def.archetype.shield.as_ref()
+            && !mob_facing_away(self.yaw, self.pos, from, shield.front_deg)
+        {
+            mult *= shield.front_mult;
+        }
+        self.health -= dmg * mult;
         self.hurt_flash = 0.35;
         // A brute wounded by a damage class it is vulnerable to (mult > 1)
         // enrages: it swings on double time for a few seconds.
@@ -439,7 +485,15 @@ impl Mob {
         } else {
             Vec3::Z
         };
-        let kb = if def.movement_float { 2.5 } else { 6.0 };
+        let mut kb = if def.movement_float { 2.5 } else { 6.0 };
+        // E9: a tank holds its ground.
+        if def.behavior == BehaviorArchetype::Tank {
+            kb *= def
+                .archetype
+                .tank
+                .as_ref()
+                .map_or(0.25, |t| t.knockback_mult);
+        }
         self.vel += dir * kb + Vec3::new(0.0, if def.movement_float { 1.0 } else { 4.5 }, 0.0);
         if def.hostile || def.fierce {
             // Wardens retaliate; the polar bear was already coming.
@@ -876,7 +930,7 @@ impl Mob {
                         } else {
                             self.lose_aggro = 0.0;
                         }
-                        self.hunt_wheel(def, who, p.pos, dt, events, dir, dist, &mut wish);
+                        self.hunt_wheel(world, def, who, p.pos, dt, events, dir, dist, &mut wish);
                     }
                 },
             }
@@ -984,6 +1038,7 @@ impl Mob {
     #[allow(clippy::too_many_arguments)]
     fn hunt_wheel(
         &mut self,
+        world: &World,
         def: &AnimalDef,
         who: usize,
         target: EntityPos,
@@ -1095,21 +1150,81 @@ impl Mob {
                 }
             }
         }
+        // E9: a phaser blinks into reach instead of closing on foot.
+        if def.behavior == BehaviorArchetype::Phaser
+            && self.phaser_blink(world, def, dt, target, dir, dist)
+        {
+            return;
+        }
         // Movement: casters hold their band; everyone else closes in.
         // A charging mob keeps closing until the wind-up roots it.
         let caster = def
             .attacks
             .iter()
             .any(|a| a.kind == AttackKind::Projectile);
-        if caster && !charged {
+        // E9: a sniper keeps its authored band (a caster with its own
+        // parameters outranks the generic 11/5 band).
+        if def.behavior == BehaviorArchetype::Sniper
+            && let Some(sniper) = def.archetype.sniper.as_ref()
+        {
+            if dist > sniper.keep_max {
+                *wish = dir * def.speed;
+            } else if dist < sniper.keep_min {
+                *wish = -dir * def.speed * 0.8;
+            }
+        } else if caster && !charged {
             if dist > 11.0 {
                 *wish = dir * def.speed;
             } else if dist < 5.0 {
                 *wish = -dir * def.speed * 0.8;
             }
         } else if dist > def.half_w + 0.9 {
-            *wish = dir * def.speed * 1.2;
+            // E9: a rusher closes at a flat-out sprint.
+            let mult = if def.behavior == BehaviorArchetype::Rusher {
+                def.archetype.rusher.as_ref().map_or(2.4, |r| r.rush_mult)
+            } else {
+                1.2
+            };
+            *wish = dir * def.speed * mult;
         }
+    }
+
+    /// A phaser's blink (E9): while hunting, on its cooldown, it teleports
+    /// to a valid spot just short of its target and strikes there. Returns
+    /// true when it blinked, so the caller skips its walking wish.
+    fn phaser_blink(
+        &mut self,
+        world: &World,
+        def: &AnimalDef,
+        dt: f32,
+        target: EntityPos,
+        dir: Vec3,
+        dist: f32,
+    ) -> bool {
+        let Some(phaser) = def.archetype.phaser.as_ref() else {
+            return false;
+        };
+        if self.phaser_cd > 0.0 {
+            self.phaser_cd = (self.phaser_cd - dt).max(0.0);
+            return false;
+        }
+        // Only blink when outside melee reach but inside the blink range.
+        if dist < def.half_w + 1.2 || dist > phaser.blink_range {
+            return false;
+        }
+        let step = (dist - (def.half_w + 0.7)).max(1.0);
+        let probe = self
+            .pos
+            .translated(dir * step)
+            .map(|moved| moved.pos)
+            .unwrap_or(self.pos);
+        if self.collides(world, def, probe) {
+            return false;
+        }
+        self.pos = probe;
+        self.phaser_cd = phaser.blink_cd;
+        let _ = target;
+        true
     }
 
     /// Spec 3.6 archetype hooks that run before the Standard state
@@ -1138,8 +1253,82 @@ impl Mob {
                 self.builder_dispatch(world, def, dt, rng, events);
                 false
             }
+            BehaviorArchetype::Support => {
+                self.support_pulse(world, def, dt, events);
+                false
+            }
+            BehaviorArchetype::Controller => {
+                self.controller_summon(world, def, dt, events);
+                false
+            }
             _ => false,
         }
+    }
+
+    /// A support's heal pulse (E9): every `interval` seconds, while it is
+    /// not fleeing, it heals its hostile allies within `radius`.
+    fn support_pulse(&mut self, world: &World, def: &AnimalDef, dt: f32, events: &mut Vec<MobEvent>) {
+        let Some(support) = def.archetype.support.as_ref() else {
+            return;
+        };
+        if self.support_cd > 0.0 {
+            self.support_cd = (self.support_cd - dt).max(0.0);
+            return;
+        }
+        if matches!(self.state, MobState::Flee) {
+            self.support_cd = 2.0;
+            return;
+        }
+        self.support_cd = support.interval;
+        events.push(MobEvent::HealPulse {
+            origin: self.pos,
+            radius: support.radius,
+            heal: support.heal,
+        });
+        let _ = world;
+    }
+
+    /// A controller's summon (E9): every `interval` seconds, while it is
+    /// not fleeing and fewer than `max` of its companions live within
+    /// `radius`, it calls `count` more.
+    fn controller_summon(
+        &mut self,
+        world: &World,
+        def: &AnimalDef,
+        dt: f32,
+        events: &mut Vec<MobEvent>,
+    ) {
+        let Some(controller) = def.archetype.controller.as_ref() else {
+            return;
+        };
+        let Some(species) = world.reg.animal_id(&controller.spawn) else {
+            self.controller_cd = 60.0;
+            return;
+        };
+        if self.controller_cd > 0.0 {
+            self.controller_cd = (self.controller_cd - dt).max(0.0);
+            return;
+        }
+        if matches!(self.state, MobState::Flee) {
+            self.controller_cd = 3.0;
+            return;
+        }
+        let radius = def.aggro_range.max(12.0);
+        let living = world
+            .mobs()
+            .iter()
+            .filter(|m| m.species == species && m.pos.local_delta_to(self.pos).length() <= radius)
+            .count();
+        if living >= controller.max as usize {
+            self.controller_cd = controller.interval;
+            return;
+        }
+        self.controller_cd = controller.interval;
+        events.push(MobEvent::SpawnMinions {
+            pos: self.pos,
+            species,
+            count: controller.count,
+        });
     }
 
     /// A builder stamps its template on a cooldown, up to its cap,

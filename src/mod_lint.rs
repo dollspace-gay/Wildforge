@@ -925,4 +925,141 @@ output = "bench:gem_circlet"
         assert!(report.is_qualified(), "{}", report.render());
         clean("bench");
     }
+
+    #[test]
+    fn an_invalid_nest_fails_qualification() {
+        clean("den");
+        write_mod(
+            "den",
+            "den",
+            &[
+                ("mod.toml", &base_mod_toml("den")),
+                (
+                    "blocks.toml",
+                    r#"
+[[block]]
+id = "gravelurk_nest"
+name = "Gravelurk Nest"
+texture = "@stone"
+hardness = 2.0
+"#,
+                ),
+                (
+                    "animals.toml",
+                    r#"
+[[animal]]
+id = "gravelurk"
+name = "Gravelurk"
+hostile = true
+biomes = ["plains"]
+health = 10
+attack = 3
+tex = "@deer"
+"#,
+                ),
+                (
+                    "nests.toml",
+                    r#"
+[[nest]]
+id = "gravelurk_den"
+block = "den:gravelurk_nest"
+species = "den:missing_species"
+"#,
+                ),
+            ],
+        );
+        let report = qualify_mods(&mods_dir("den"));
+        assert!(!report.is_qualified());
+        assert!(
+            report.render().contains("unknown species"),
+            "{}",
+            report.render()
+        );
+        clean("den");
+    }
+
+    #[test]
+    fn a_nest_bound_species_passes_qualification() {
+        clean("dengood");
+        write_mod(
+            "dengood",
+            "dengood",
+            &[
+                ("mod.toml", &base_mod_toml("dengood")),
+                (
+                    "blocks.toml",
+                    r#"
+[[block]]
+id = "gravelurk_nest"
+name = "Gravelurk Nest"
+texture = "@stone"
+hardness = 2.0
+"#,
+                ),
+                (
+                    "animals.toml",
+                    r#"
+[[animal]]
+id = "gravelurk"
+name = "Gravelurk"
+hostile = true
+biomes = ["plains"]
+health = 10
+attack = 3
+tex = "@deer"
+behavior = "rusher"
+"#,
+                ),
+                (
+                    "nests.toml",
+                    r#"
+[[nest]]
+id = "gravelurk_den"
+block = "dengood:gravelurk_nest"
+species = "dengood:gravelurk"
+radius = 20.0
+interval = 6.0
+cap = 3
+"#,
+                ),
+            ],
+        );
+        let report = qualify_mods(&mods_dir("dengood"));
+        assert!(report.is_qualified(), "{}", report.render());
+        clean("dengood");
+    }
+
+    #[test]
+    fn a_swarm_without_a_companion_fails_qualification() {
+        clean("brood");
+        write_mod(
+            "brood",
+            "brood",
+            &[
+                ("mod.toml", &base_mod_toml("brood")),
+                (
+                    "animals.toml",
+                    r#"
+[[animal]]
+id = "broodmother"
+name = "Broodmother"
+hostile = true
+biomes = ["plains"]
+health = 20
+attack = 4
+tex = "@deer"
+behavior = "swarm"
+"#,
+                ),
+            ],
+        );
+        let report = qualify_mods(&mods_dir("brood"));
+        assert!(!report.is_qualified());
+        assert!(
+            report.render().contains("requires a companion species"),
+            "{}",
+            report.render()
+        );
+        clean("brood");
+    }
 }

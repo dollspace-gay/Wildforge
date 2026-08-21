@@ -319,6 +319,23 @@ impl World {
             path.clone(),
             super::persistence::atomic_replace(&path, &gates),
         );
+        // Nest spawn-gates (capability E9): same 8-byte record shape as the
+        // gates — 6-byte block position + 2-byte nest index.
+        let mut nests = Vec::with_capacity(4 + self.nests.len() * 8);
+        nests.extend_from_slice(b"WFN1");
+        for (pos, nest) in &self.nests {
+            nests.push(pos.face() as u8);
+            nests.extend_from_slice(&pos.u().to_le_bytes());
+            nests.push(pos.y());
+            nests.extend_from_slice(&pos.v().to_le_bytes());
+            nests.extend_from_slice(&(*nest as u16).to_le_bytes());
+        }
+        let path = self.save_dir.join("nests");
+        report.record(
+            "nest spawn-gate marks",
+            path.clone(),
+            super::persistence::atomic_replace(&path, &nests),
+        );
         // Settlement hidden cells (spec 3.4): each record is the 6-byte block
         // position (face/u/y/v), the 2-byte settlement index, and the 1-byte
         // tier.
@@ -615,6 +632,29 @@ impl World {
                 // an unbreakable wall with no unlock is a softlock).
                 if gate < self.reg.gates.len() {
                     self.gated.insert(pos, gate);
+                }
+            }
+        }
+        // Nest spawn-gates (capability E9): 8-byte records like the gates.
+        // Only keep nests that still resolve; a stale record whose marker
+        // block is gone is cleaned by the spawner when its chunk loads.
+        if let Ok(data) = fs::read(self.save_dir.join("nests")) {
+            for p in data
+                .strip_prefix(b"WFN1")
+                .unwrap_or_default()
+                .chunks_exact(8)
+            {
+                let u = u16::from_le_bytes([p[1], p[2]]);
+                let v = u16::from_le_bytes([p[4], p[5]]);
+                let Some(face) = crate::planet::Face::from_u8(p[0]) else {
+                    continue;
+                };
+                let Ok(pos) = crate::planet::BlockPos::new(face, u, p[3], v) else {
+                    continue;
+                };
+                let nest = u16::from_le_bytes([p[6], p[7]]) as usize;
+                if nest < self.reg.nests.len() {
+                    self.nests.insert(pos, nest);
                 }
             }
         }

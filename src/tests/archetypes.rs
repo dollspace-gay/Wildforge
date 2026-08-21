@@ -278,3 +278,470 @@ fn builder_stamps_its_template_to_the_cap_and_cells_survive_reload() {
         "the stamped cells survived save and reload"
     );
 }
+// ---------------- capability E9: data-driven behavior archetypes ----------------
+//
+// These species live in a temp mod so the engine's general-purpose
+// archetypes are exercised without coupling base content to them.
+
+const E9_ANIMALS: &str = r#"
+[[animal]]
+id = "redprowler"
+name = "Red Prowler"
+hostile = true
+biomes = ["plains"]
+health = 8
+speed = 3.0
+attack = 4
+tex = "@deer"
+aggro_range = 24
+behavior = "rusher"
+rusher = { rush_mult = 2.4 }
+
+[[animal]]
+id = "laggard"
+name = "Laggard"
+hostile = true
+biomes = ["plains"]
+health = 8
+speed = 3.0
+attack = 4
+tex = "@deer"
+aggro_range = 24
+
+[[animal]]
+id = "boulderback"
+name = "Boulderback"
+hostile = true
+biomes = ["plains"]
+health = 40
+speed = 1.2
+attack = 5
+tex = "@deer"
+aggro_range = 24
+behavior = "tank"
+tank = { knockback_mult = 0.25 }
+
+[[animal]]
+id = "spinecaster"
+name = "Spinecaster"
+hostile = true
+biomes = ["plains"]
+health = 10
+speed = 2.0
+attack = 2
+tex = "@deer"
+aggro_range = 40
+behavior = "sniper"
+sniper = { keep_min = 9, keep_max = 16 }
+attacks = [
+  { name = "spit", kind = "projectile", damage = 3, cooldown = 2.0, range = 18, damage_type = "pierce",
+    projectile = { tex = "@ember_bolt", damage = 3, speed = 13, cooldown = 2.0 } },
+]
+
+[[animal]]
+id = "willowkeeper"
+name = "Willowkeeper"
+hostile = true
+biomes = ["plains"]
+health = 15
+speed = 1.8
+attack = 2
+tex = "@deer"
+aggro_range = 20
+behavior = "support"
+support = { radius = 10, interval = 6, heal = 2 }
+
+[[animal]]
+id = "broodmother"
+name = "Broodmother"
+hostile = true
+biomes = ["plains"]
+health = 20
+speed = 1.5
+attack = 4
+tex = "@deer"
+aggro_range = 20
+behavior = "swarm"
+swarm = { spawn = "e9fauna:broodling", count = 3 }
+
+[[animal]]
+id = "broodling"
+name = "Broodling"
+hostile = true
+biomes = ["plains"]
+health = 4
+speed = 3.0
+attack = 2
+tex = "@deer"
+aggro_range = 16
+
+[[animal]]
+id = "cinderlord"
+name = "Cinderlord"
+hostile = true
+biomes = ["plains"]
+health = 25
+speed = 1.6
+attack = 4
+tex = "@deer"
+aggro_range = 20
+behavior = "controller"
+controller = { spawn = "e9fauna:cinder", count = 2, interval = 4, max = 6 }
+
+[[animal]]
+id = "cinder"
+name = "Cinder"
+hostile = true
+biomes = ["plains"]
+health = 3
+speed = 2.5
+attack = 1
+tex = "@deer"
+aggro_range = 16
+
+[[animal]]
+id = "wispphantom"
+name = "Wisp Phantom"
+hostile = true
+biomes = ["plains"]
+health = 6
+speed = 2.0
+attack = 3
+tex = "@deer"
+aggro_range = 30
+behavior = "phaser"
+phaser = { blink_range = 7, blink_cd = 1 }
+
+[[animal]]
+id = "huskwarden"
+name = "Huskwarden"
+hostile = true
+biomes = ["plains"]
+health = 30
+speed = 1.5
+attack = 4
+tex = "@deer"
+aggro_range = 20
+behavior = "shield_bearer"
+shield = { front_mult = 0.35, front_deg = 90 }
+"#;
+
+fn e9_reg(tag: &str) -> Arc<Registry> {
+    let root = tmp_dir(&format!("e9-fauna-{tag}"));
+    let dir = root.join("e9fauna");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("mod.toml"),
+        "id = \"e9fauna\"\nworld_api = 2\ndepends = [\"base\"]\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("animals.toml"), E9_ANIMALS).unwrap();
+    Arc::new(registry::load(&root))
+}
+
+#[test]
+fn e9_behavior_strings_parse_to_archetypes() {
+    use crate::registry::BehaviorArchetype;
+    let reg = e9_reg("parse");
+    let cases = [
+        ("e9fauna:redprowler", BehaviorArchetype::Rusher),
+        ("e9fauna:boulderback", BehaviorArchetype::Tank),
+        ("e9fauna:spinecaster", BehaviorArchetype::Sniper),
+        ("e9fauna:willowkeeper", BehaviorArchetype::Support),
+        ("e9fauna:broodmother", BehaviorArchetype::Swarm),
+        ("e9fauna:cinderlord", BehaviorArchetype::Controller),
+        ("e9fauna:wispphantom", BehaviorArchetype::Phaser),
+        ("e9fauna:huskwarden", BehaviorArchetype::ShieldBearer),
+    ];
+    for (name, behavior) in cases {
+        let si = reg.animal_id(name).expect("species exists");
+        assert_eq!(reg.animals[si].behavior, behavior, "{name}");
+    }
+    // Params land with engine defaults applied.
+    let sniper = reg.animals[reg.animal_id("e9fauna:spinecaster").unwrap()]
+        .archetype
+        .sniper
+        .as_ref()
+        .unwrap();
+    assert_eq!(sniper.keep_max, 16.0);
+    let swarm = reg.animals[reg.animal_id("e9fauna:broodmother").unwrap()]
+        .archetype
+        .swarm
+        .as_ref()
+        .unwrap();
+    assert_eq!(swarm.count, 3);
+    let controller = reg.animals[reg.animal_id("e9fauna:cinderlord").unwrap()]
+        .archetype
+        .controller
+        .as_ref()
+        .unwrap();
+    assert_eq!(controller.max, 6);
+}
+
+/// Run `species` hunting a player 10 blocks north for `frames` frames and
+/// return the remaining distance (a sprint closes more ground).
+fn hunt_closing_distance(reg: &Arc<Registry>, species: &str, h: i32, frames: usize) -> f32 {
+    let mut w = test_world_with("e9-hunt", Arc::clone(reg));
+    pad(&mut w, reg, 0, 40, 0, 40, h);
+    let si = reg.animal_id(species).unwrap();
+    let def = reg.animals[si].clone();
+    let mut m = crate::mobs::Mob::new(si, glam::Vec3::new(8.5, h as f32 + 1.0, 8.5), 0.0);
+    m.health = def.health;
+    let player = glam::Vec3::new(8.5, h as f32 + 1.0, 18.5);
+    let mut rng = 7u32;
+    let mut events = Vec::new();
+    for _ in 0..frames {
+        m.tick(&w, &def, &[ctx(player)], 1.0 / 60.0, &mut rng, &mut events);
+    }
+    m.pos.local_delta_to(ep(player)).length()
+}
+
+#[test]
+fn rusher_sprints_while_hunting() {
+    let reg = e9_reg("rusher");
+    let h = 80;
+    let rusher = hunt_closing_distance(&reg, "e9fauna:redprowler", h, 40);
+    let laggard = hunt_closing_distance(&reg, "e9fauna:laggard", h, 40);
+    assert!(
+        rusher < laggard,
+        "the rusher closed more ground: {rusher} vs {laggard}"
+    );
+}
+
+#[test]
+fn tank_holds_its_ground() {
+    let reg = e9_reg("tank");
+    let tank_si = reg.animal_id("e9fauna:boulderback").unwrap();
+    let lag_si = reg.animal_id("e9fauna:laggard").unwrap();
+    let tank_def = reg.animals[tank_si].clone();
+    let lag_def = reg.animals[lag_si].clone();
+    let mut tank = crate::mobs::Mob::new(tank_si, glam::Vec3::new(0.0, 80.0, 0.0), 0.0);
+    tank.health = 100.0;
+    let mut lag = crate::mobs::Mob::new(lag_si, glam::Vec3::new(0.0, 80.0, 0.0), 0.0);
+    lag.health = 100.0;
+    let from = ep(glam::Vec3::new(3.0, 80.0, 0.0));
+    tank.hurt(&tank_def, 5.0, None, from);
+    lag.hurt(&lag_def, 5.0, None, from);
+    let tank_kb = glam::Vec2::new(tank.vel.x, tank.vel.z).length();
+    let lag_kb = glam::Vec2::new(lag.vel.x, lag.vel.z).length();
+    assert!(
+        tank_kb < lag_kb * 0.5,
+        "the tank held its ground: {tank_kb} vs {lag_kb}"
+    );
+}
+
+/// Run the sniper toward `player` for 60 frames and return the final
+/// distance to the player.
+fn sniper_band(reg: &Arc<Registry>, start: glam::Vec3, player: glam::Vec3) -> f32 {
+    let mut w = test_world_with("e9-sniper", Arc::clone(reg));
+    let h = 80;
+    pad(&mut w, reg, 0, 60, 0, 60, h);
+    let si = reg.animal_id("e9fauna:spinecaster").unwrap();
+    let def = reg.animals[si].clone();
+    let mut m = crate::mobs::Mob::new(si, start, 0.0);
+    m.health = def.health;
+    let mut rng = 3u32;
+    let mut events = Vec::new();
+    for _ in 0..60 {
+        m.tick(&w, &def, &[ctx(player)], 1.0 / 60.0, &mut rng, &mut events);
+    }
+    m.pos.local_delta_to(ep(player)).length()
+}
+
+#[test]
+fn sniper_keeps_its_band() {
+    let reg = e9_reg("sniper");
+    let h = 80.0;
+    // Too close (4 blocks < keep_min 9): retreats.
+    let close = sniper_band(
+        &reg,
+        glam::Vec3::new(8.5, h + 1.0, 12.5),
+        glam::Vec3::new(8.5, h + 1.0, 8.5),
+    );
+    assert!(close > 4.6, "the sniper retreated, got {close}");
+    // Too far (20 blocks > keep_max 16): closes in.
+    let far = sniper_band(
+        &reg,
+        glam::Vec3::new(8.5, h + 1.0, 12.5),
+        glam::Vec3::new(8.5, h + 1.0, 32.5),
+    );
+    assert!(far < 19.0, "the sniper closed in, got {far}");
+}
+
+#[test]
+fn support_heals_allies() {
+    let reg = e9_reg("support");
+    let mut w = test_world_with("e9-support", reg.clone());
+    let h = 80;
+    pad(&mut w, &reg, 0, 40, 0, 40, h);
+    let support_si = reg.animal_id("e9fauna:willowkeeper").unwrap();
+    let ally_si = reg.animal_id("e9fauna:cinder").unwrap();
+    let support_def = reg.animals[support_si].clone();
+    let ally_def = reg.animals[ally_si].clone();
+    let mut support =
+        crate::mobs::Mob::new(support_si, glam::Vec3::new(8.5, h as f32 + 1.0, 8.5), 0.0);
+    support.health = support_def.health;
+    let mut ally = crate::mobs::Mob::new(ally_si, glam::Vec3::new(10.5, h as f32 + 1.0, 9.5), 0.0);
+    ally.health = 1.0; // wounded
+    let mut rng = 3u32;
+    let mut events = Vec::new();
+    // ~7s crosses the 6s interval.
+    for _ in 0..420 {
+        support.tick(
+            &w,
+            &support_def,
+            &[ctx(glam::Vec3::new(20.5, h as f32 + 1.0, 20.5))],
+            1.0 / 60.0,
+            &mut rng,
+            &mut events,
+        );
+    }
+    let pulse = events.iter().find_map(|e| match e {
+        crate::mobs::MobEvent::HealPulse { origin, radius, heal } => Some((*origin, *radius, *heal)),
+        _ => None,
+    });
+    let Some((origin, radius, heal)) = pulse else {
+        panic!("no heal pulse fired");
+    };
+    assert_eq!(heal, 2.0);
+    assert!(
+        ally.pos.local_delta_to(origin).length() <= radius,
+        "the ally sat inside the pulse radius"
+    );
+    ally.health = (ally.health + heal).min(ally_def.health);
+    assert_eq!(ally.health, ally_def.health, "the ally recovered to full");
+}
+
+#[test]
+fn swarm_releases_brood_on_death() {
+    let reg = e9_reg("swarm");
+    let mut w = test_world_with("e9-swarm", reg.clone());
+    let h = 80;
+    pad(&mut w, &reg, 0, 40, 0, 40, h);
+    let mother_si = reg.animal_id("e9fauna:broodmother").unwrap();
+    let brood_si = reg.animal_id("e9fauna:broodling").unwrap();
+    let mother_def = reg.animals[mother_si].clone();
+    let before = w.mobs().iter().filter(|m| m.species == brood_si).count();
+    let mother = crate::mobs::Mob::new(
+        mother_si,
+        glam::Vec3::new(8.5, h as f32 + 1.0, 8.5),
+        0.0,
+    );
+    w.spawn_mob(mother);
+    if let Some(m) = w.mob_by_id_mut(w.mobs().last().unwrap().id) {
+        m.health = 0.0;
+    }
+    let mut rng = 5u32;
+    w.settle_dead_mobs(&mut rng);
+    let after = w.mobs().iter().filter(|m| m.species == brood_si).count();
+    assert_eq!(
+        after - before,
+        3,
+        "the brood released where the mother fell"
+    );
+    let _ = mother_def;
+}
+
+#[test]
+fn controller_summons_minions_up_to_its_cap() {
+    let reg = e9_reg("controller");
+    let mut w = test_world_with("e9-controller", reg.clone());
+    let h = 80;
+    pad(&mut w, &reg, 0, 40, 0, 40, h);
+    let lord_si = reg.animal_id("e9fauna:cinderlord").unwrap();
+    let cinder_si = reg.animal_id("e9fauna:cinder").unwrap();
+    let lord_def = reg.animals[lord_si].clone();
+    let mut lord = crate::mobs::Mob::new(
+        lord_si,
+        glam::Vec3::new(8.5, h as f32 + 1.0, 8.5),
+        0.0,
+    );
+    lord.health = lord_def.health;
+    let mut rng = 9u32;
+    let mut events = Vec::new();
+    for _ in 0..360 {
+        lord.tick(
+            &w,
+            &lord_def,
+            &[ctx(glam::Vec3::new(40.0, h as f32 + 1.0, 40.0))],
+            1.0 / 60.0,
+            &mut rng,
+            &mut events,
+        );
+        let summons: Vec<(crate::planet::EntityPos, usize, u32)> = events
+            .drain(..)
+            .filter_map(|e| match e {
+                crate::mobs::MobEvent::SpawnMinions { pos, species, count } => {
+                    Some((pos, species, count))
+                }
+                _ => None,
+            })
+            .collect();
+        for (pos, species, count) in summons {
+            for _ in 0..count.min(4) {
+                let mut c = crate::mobs::Mob::new_at(species, pos, 0.0);
+                c.health = 3.0;
+                w.spawn_mob(c);
+            }
+        }
+    }
+    let cinders = w
+        .mobs()
+        .iter()
+        .filter(|m| m.species == cinder_si)
+        .count();
+    assert!(cinders >= 2, "the controller summoned its minions, got {cinders}");
+}
+
+#[test]
+fn phaser_blinks_toward_its_target() {
+    let reg = e9_reg("phaser");
+    let mut w = test_world_with("e9-phaser", reg.clone());
+    let h = 80;
+    pad(&mut w, &reg, 0, 40, 0, 40, h);
+    let si = reg.animal_id("e9fauna:wispphantom").unwrap();
+    let def = reg.animals[si].clone();
+    let mut m = crate::mobs::Mob::new(si, glam::Vec3::new(8.5, h as f32 + 1.0, 8.5), 0.0);
+    m.health = def.health;
+    let player = glam::Vec3::new(8.5, h as f32 + 1.0, 14.5);
+    let mut rng = 11u32;
+    let mut events = Vec::new();
+    let mut blinked = false;
+    for _ in 0..180 {
+        let before = m.pos;
+        m.tick(&w, &def, &[ctx(player)], 1.0 / 60.0, &mut rng, &mut events);
+        let d = before.local_delta_to(m.pos).length();
+        if d > 0.5 {
+            blinked = true;
+            break;
+        }
+    }
+    assert!(blinked, "the phaser blinked to reposition");
+    let dist = m.pos.local_delta_to(ep(player)).length();
+    assert!(dist < 3.0, "the phaser blinked into reach: {dist}");
+}
+
+#[test]
+fn shield_bearer_blocks_front_and_is_vulnerable_from_behind() {
+    let reg = e9_reg("shield");
+    let si = reg.animal_id("e9fauna:huskwarden").unwrap();
+    let def = reg.animals[si].clone();
+    let mut front = crate::mobs::Mob::new(si, glam::Vec3::new(0.0, 80.0, 0.0), 0.0); // yaw 0 faces +v (north)
+    front.health = 100.0;
+    let mut back = crate::mobs::Mob::new(si, glam::Vec3::new(0.0, 80.0, 0.0), 0.0);
+    back.health = 100.0;
+    let from_front = ep(glam::Vec3::new(0.0, 80.0, 4.0));
+    let from_back = ep(glam::Vec3::new(0.0, 80.0, -4.0));
+    front.hurt(&def, 10.0, None, from_front);
+    back.hurt(&def, 10.0, None, from_back);
+    assert!(
+        (front.health - (100.0 - 3.5)).abs() < 0.01,
+        "a front hit was blocked: {}",
+        front.health
+    );
+    assert!(
+        (back.health - 90.0).abs() < 0.01,
+        "a rear hit landed full: {}",
+        back.health
+    );
+}

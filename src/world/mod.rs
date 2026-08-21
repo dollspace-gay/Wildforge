@@ -1085,6 +1085,15 @@ pub struct World {
     /// locked until the player's KV flag reads the gate's `value`. Persisted
     /// so a save never depends on regeneration to know what is sealed.
     gated: HashMap<BlockPos, usize>,
+    /// Nest/dens spawn-gates (capability E9): world position -> nest index
+    /// into the registry. The record lives exactly while its marker block
+    /// does: breaking the nest removes it, and the species stops respawning
+    /// nearby. Persisted like `gated`.
+    nests: HashMap<BlockPos, usize>,
+    /// Per-nest spawn cadence (capability E9): last-spawn clock per nest
+    /// position. Transient — the 4-second spawn cycle already paces spawns,
+    /// so a lost cadence across a restart costs at most one interval.
+    nest_spawn_cd: HashMap<BlockPos, f32>,
     /// Settlement hidden cells (spec 3.4): world position -> the settlement
     /// tier that reveals it. Tier-2+ pieces are placed at worldgen but behave
     /// as air until the player's reputation crosses the tier threshold.
@@ -1521,6 +1530,8 @@ impl World {
             player_touched: HashSet::new(),
             structure_chunks: HashSet::new(),
             gated: HashMap::new(),
+            nests: HashMap::new(),
+            nest_spawn_cd: HashMap::new(),
             hidden: HashMap::new(),
             bloom: HashMap::new(),
             hearts: HashMap::new(),
@@ -2314,6 +2325,12 @@ impl World {
 
     pub fn block_entities(&self) -> impl Iterator<Item = (&crate::planet::BlockPos, &BlockEntity)> {
         self.block_entities.iter()
+    }
+
+    /// Live nest spawn-gate records (capability E9), for tests and tooling.
+    #[cfg(test)]
+    pub fn nests(&self) -> impl Iterator<Item = (&crate::planet::BlockPos, usize)> {
+        self.nests.iter().map(|(pos, nest)| (pos, *nest))
     }
 
     pub fn has_chunk(&self, pos: ChunkPos) -> bool {
@@ -3724,6 +3741,22 @@ impl World {
             };
             for stack in spilled {
                 self.push_drop_at(pos, stack);
+            }
+        }
+
+        // Nest spawn-gates (capability E9) live exactly while their marker
+        // block does: placing a nest block records it; replacing or breaking
+        // it clears the record, which stops that species respawning nearby.
+        if old != block {
+            match self.reg.nest_index_for_block(block) {
+                Some(nest) => {
+                    self.nests.insert(pos, nest);
+                    self.nest_spawn_cd.entry(pos).or_insert(0.0);
+                }
+                None => {
+                    self.nests.remove(&pos);
+                    self.nest_spawn_cd.remove(&pos);
+                }
             }
         }
 

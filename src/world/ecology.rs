@@ -416,6 +416,41 @@ impl World {
                     self.push_drop_at(at, stack);
                 }
             }
+            // E9: a swarm releases its brood where the mother fell.
+            if definition.hostile
+                && definition.behavior == crate::registry::BehaviorArchetype::Swarm
+                && let Some(swarm) = definition.archetype.swarm.as_ref()
+                && let Some(brood) = reg.animal_id(&swarm.spawn)
+                && let Some(brood_def) = reg.animals.get(brood)
+            {
+                let n = swarm.count.clamp(1, 8);
+                for i in 0..n {
+                    *rng = rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    let ang = *rng as f32;
+                    let step = ((*rng >> 8) % 7) as f32 + 1.0;
+                    let du = ang.cos() * step;
+                    let dv = ang.sin() * step;
+                    let Some(moved) = mob
+                        .pos
+                        .translated(glam::Vec3::new(du, 0.0, dv))
+                        .ok()
+                        .map(|m| m.pos)
+                    else {
+                        continue;
+                    };
+                    *rng = rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    let mut hatchling = crate::mobs::Mob::new_at(
+                        brood,
+                        moved,
+                        (*rng % 1024) as f32 / 1024.0 * std::f32::consts::TAU,
+                    );
+                    hatchling.health = brood_def.health;
+                    if self.mobs.len() + (n - i) as usize >= crate::world::MOB_CAP {
+                        break;
+                    }
+                    self.spawn_mob(hatchling);
+                }
+            }
             settled.push(SettledMobDeath {
                 species: mob.species,
                 pos: mob.pos,
@@ -1714,6 +1749,95 @@ impl World {
             *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
             *rng >> 8
         };
+        // Capability E9 nests: species bound to a nest only spawn near their
+        // live nests — clearing the nest block (which removes the record)
+        // stops those respawns entirely. A nest spawn is one spawn this
+        // cycle, exactly like the ring.
+        let nest_species: std::collections::HashSet<usize> =
+            reg.nests.iter().map(|nest| nest.species).collect();
+        let nest_positions: Vec<(BlockPos, usize)> = self
+            .nests
+            .iter()
+            .filter(|(pos, _)| pos.entity_center().distance_to(player) < 96.0)
+            .map(|(pos, index)| (*pos, *index))
+            .collect();
+        for (pos, nest_index) in nest_positions {
+            let Some(nest) = reg.nest(nest_index) else {
+                continue;
+            };
+            // A stale record (marker block broken while its chunk was
+            // unloaded) self-heals once the chunk loads: no block, no nest.
+            if self.get_block_at(pos) != nest.block {
+                self.nests.remove(&pos);
+                self.nest_spawn_cd.remove(&pos);
+                continue;
+            }
+            let Some(def) = reg.animals.get(nest.species) else {
+                continue;
+            };
+            let local =
+                (self.ire + self.regional_ire_at_surface(pos.surface()) * 3.0).clamp(0.0, 100.0);
+            if !def.hostile || local < def.ire_min {
+                continue;
+            }
+            let mut cd = *self.nest_spawn_cd.entry(pos).or_insert(0.0);
+            cd -= dt;
+            if cd > 0.0 {
+                continue;
+            }
+            let living = self
+                .mobs
+                .iter()
+                .filter(|m| {
+                    m.species == nest.species
+                        && m.pos.horizontal_distance_to(pos.entity_center()) <= nest.radius
+                })
+                .count();
+            if living >= nest.cap as usize {
+                self.nest_spawn_cd.insert(pos, nest.interval);
+                continue;
+            }
+            // The spawn cell is the nest's own surface, light-gated like any
+            // warden manifestation.
+            let surface = pos.surface();
+            if !self.chunks.contains_key(&ChunkPos::from_surface(surface)) {
+                continue;
+            }
+            let surface_y = self.surface_height_at(surface);
+            let at = BlockPos::new(surface.face(), surface.u(), (surface_y + 1) as u8, surface.v());
+            let spawned = if let Ok(at) = at {
+                let (bl, sl) = self.light_at_pos(at);
+                let eff = (bl as f32).max(sl as f32 * daylight);
+                if eff < def.spawn_light_max as f32 {
+                    let entity = EntityPos::new(
+                        surface.face(),
+                        f32::from(surface.u()) + 0.5,
+                        surface_y as f32 + 1.0,
+                        f32::from(surface.v()) + 0.5,
+                    )
+                    .expect("nest spawn is canonical");
+                    let mut m = crate::mobs::Mob::new_at(
+                        nest.species,
+                        entity,
+                        (roll(rng) % 1024) as f32 / 1024.0 * std::f32::consts::TAU,
+                    );
+                    m.health = def.health;
+                    self.spawn_mob(m);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            // A successful nest spawn is one spawn this cycle; a light- or
+            // terrain-blocked nest retries soon.
+            self.nest_spawn_cd
+                .insert(pos, if spawned { nest.interval } else { 2.0 });
+            if spawned {
+                return;
+            }
+        }
         for _ in 0..6 {
             let r = roll(rng);
             let ang = (r % 1024) as f32 / 1024.0 * std::f32::consts::TAU;
@@ -1748,10 +1872,12 @@ impl World {
                 .animals
                 .iter()
                 .enumerate()
-                .filter(|(_, d)| {
+                .filter(|(i, d)| {
                     let local =
                         (self.ire + self.regional_ire_at_surface(surface) * 3.0).clamp(0.0, 100.0);
-                    d.hostile && local >= d.ire_min
+                    // A nest-bound species spawns only from its nests, never
+                    // from the ire ring.
+                    d.hostile && local >= d.ire_min && !nest_species.contains(i)
                 })
                 .filter_map(|(i, d)| {
                     if d.biomes.iter().any(|b| b == "underground") {

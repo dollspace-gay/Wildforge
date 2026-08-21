@@ -303,4 +303,16 @@ impl Registry {
             .filter(|r| r.station.as_deref() == Some(def.id.as_str()))
             .collect()
     }
+
+    /// The nest index whose marker block is `block`, if any (capability E9).
+    pub fn nest_index_for_block(&self, block: BlockId) -> Option<usize> {
+        self.nests
+            .iter()
+            .position(|nest| nest.block == block)
+    }
+
+    /// The nest def with the given index, if it still exists.
+    pub fn nest(&self, index: usize) -> Option<&crate::registry::NestDef> {
+        self.nests.get(index)
+    }
 }

@@ -30,6 +30,7 @@ mod local_structure;
 mod machines;
 mod mobs;
 mod multiblock;
+mod nests;
 mod multiplayer;
 mod player;
 mod power_draw;

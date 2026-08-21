@@ -278,6 +278,48 @@ impl Server {
                     self.world.spawn_projectile(proj);
                     events.push(SimEvent::BoltCast);
                 }
+                MobEvent::HealPulse { origin, radius, heal } => {
+                    let reg = self.world.reg.clone();
+                    self.world.for_each_mob_mut(|m| {
+                        let Some(def) = reg.animals.get(m.species) else {
+                            return;
+                        };
+                        if def.hostile && m.pos.local_delta_to(origin).length() <= radius {
+                            m.health = (m.health + heal).min(def.health);
+                        }
+                    });
+                }
+                MobEvent::SpawnMinions { pos, species, count } => {
+                    if self.world.mobs().len() >= crate::world::MOB_CAP {
+                        break;
+                    }
+                    let Some(def) = self.world.reg.animals.get(species).cloned() else {
+                        break;
+                    };
+                    for _ in 0..count.min(4) {
+                        self.rng = self.rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                        let ang = self.rng as f32;
+                        let step = ((self.rng >> 8) % 9) as f32;
+                        let du = ang.cos() * (step + 2.0);
+                        let dv = ang.sin() * (step + 2.0);
+                        let Some(moved) = pos
+                            .translated(glam::Vec3::new(du, 0.0, dv))
+                            .ok()
+                            .map(|m| m.pos)
+                        else {
+                            continue;
+                        };
+                        self.rng = self.rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                        let mut mob = crate::mobs::Mob::new_at(
+                            species,
+                            moved,
+                            (self.rng % 1024) as f32 / 1024.0 * std::f32::consts::TAU,
+                        );
+                        mob.health = def.health;
+                        self.world.spawn_mob(mob);
+                    }
+                    events.push(SimEvent::BoltCast);
+                }
                 MobEvent::Bred => events.push(SimEvent::Bred),
                 MobEvent::Build {
                     template,

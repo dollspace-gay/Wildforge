@@ -492,6 +492,133 @@ pub enum BehaviorArchetype {
     Construct,
     /// Stamps a template near itself on a cooldown, up to a cap.
     Builder,
+    /// A flat-out sprinter: while hunting it closes at a burst multiple of
+    /// its speed and its melee swings are never delayed.
+    Rusher,
+    /// A living wall: reduced knockback (holds its ground) on top of its
+    /// authored `resist` data.
+    Tank,
+    /// Keeps a preferred distance band while hunting: retreats when too
+    /// close, closes when too far, fires from inside the band.
+    Sniper,
+    /// A field medic: periodically heals its allies inside a radius.
+    Support,
+    /// A brood mother: on death it releases a swarm of a companion species.
+    Swarm,
+    /// A minion commander: periodically spawns its companions while it
+    /// lives and fights.
+    Controller,
+    /// Blinks: on a cooldown it teleports to a valid spot near its target
+    /// before striking.
+    Phaser,
+    /// A shielded front: damage from the direction it faces is reduced;
+    /// it stays vulnerable from behind.
+    ShieldBearer,
+}
+
+/// Data-driven knobs for the E9 behavior archetypes. Each archetype reads
+/// its own `Option` and falls back to engine defaults when the mod omits it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ArchetypeParams {
+    pub rusher: Option<RusherDef>,
+    pub tank: Option<TankDef>,
+    pub sniper: Option<SniperDef>,
+    pub support: Option<SupportDef>,
+    pub swarm: Option<SwarmDef>,
+    pub controller: Option<ControllerDef>,
+    pub phaser: Option<PhaserDef>,
+    pub shield: Option<ShieldDef>,
+}
+
+/// Sprint multiple while hunting (default 2.4×).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RusherDef {
+    pub rush_mult: f32,
+}
+
+/// Knockback taken while defending (default 0.25×).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TankDef {
+    pub knockback_mult: f32,
+}
+
+/// Preferred engagement band in blocks (defaults 9..16).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SniperDef {
+    pub keep_min: f32,
+    pub keep_max: f32,
+}
+
+/// Ally-heal pulse: radius, seconds between pulses, health restored.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SupportDef {
+    pub radius: f32,
+    pub interval: f32,
+    pub heal: f32,
+}
+
+/// Death burst: the companion species (by qualified id) and how many.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SwarmDef {
+    pub spawn: String,
+    pub count: u32,
+}
+
+/// Recurring minion spawner: the companion species, how many each wave,
+/// seconds between waves, and the max living at once.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ControllerDef {
+    pub spawn: String,
+    pub count: u32,
+    pub interval: f32,
+    pub max: u32,
+}
+
+/// Blink: how far a phase-jump may reach and its cooldown.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PhaserDef {
+    pub blink_range: f32,
+    pub blink_cd: f32,
+}
+
+/// Front-facing damage multiplier (default 0.35×) and the facing cone.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShieldDef {
+    pub front_mult: f32,
+    pub front_deg: f32,
+}
+
+/// A nest/dens spawn-gate (capability E9): a world block whose presence
+/// lets its species respawn nearby; breaking it stops the respawns.
+#[derive(Clone, Debug)]
+pub struct NestDef {
+    pub id: String,
+    /// Qualified block id that marks the nest.
+    pub block: BlockId,
+    /// Qualified species id the nest spawns.
+    pub species: usize,
+    /// Blocks from the nest a spawn may land.
+    pub radius: f32,
+    /// Seconds between spawn attempts per nest.
+    pub interval: f32,
+    /// Max living spawns of this species within `radius` of the nest.
+    pub cap: u32,
+}
+
+/// The raw `[[nest]]` row from `nests.toml` (mods own the content).
+#[derive(Deserialize, Clone)]
+pub struct RawNestToml {
+    pub id: String,
+    #[serde(default)]
+    pub block: String,
+    #[serde(default)]
+    pub species: String,
+    #[serde(default)]
+    pub radius: Option<f32>,
+    #[serde(default)]
+    pub interval: Option<f32>,
+    #[serde(default)]
+    pub cap: Option<u32>,
 }
 
 /// What a builder builds (spec 3.6). All cells land through the ordinary
@@ -558,6 +685,9 @@ pub struct AnimalDef {
     pub behavior: BehaviorArchetype,
     pub builder: Option<BuilderDef>,
     pub hack: Option<HackDef>,
+    /// E9 archetype knobs: one Option per archetype, engine defaults when
+    /// the mod omits them.
+    pub archetype: ArchetypeParams,
     pub aggro_range: f32,
     /// Minimum world ire before this warden may spawn.
     pub ire_min: f32,
@@ -1100,6 +1230,10 @@ pub struct Registry {
     /// machine) is the default. `MachineKind::default()` must stay a valid
     /// machine in every shipped pack, so base declares its machines first.
     pub machines: Vec<crate::machines::MachineDef>,
+    /// Nest/dens spawn-gate blocks (capability E9) in declaration order. A
+    /// nest's index is its persisted record id; records drop cleanly when a
+    /// mod removes a nest.
+    pub nests: Vec<NestDef>,
     /// Load-time conservation/schema failures. Keeping these attached to the
     /// registry lets the mods screen explain a bad pack and lets production
     /// world creation refuse it without panicking the content browser.
@@ -2233,6 +2367,23 @@ struct AnimalToml {
     /// Construct hack options (spec 3.6): tool tag + core drops.
     #[serde(default)]
     hack: Option<HackToml>,
+    /// E9 archetype knobs (optional; engine defaults apply when omitted).
+    #[serde(default)]
+    rusher: Option<RusherToml>,
+    #[serde(default)]
+    tank: Option<TankToml>,
+    #[serde(default)]
+    sniper: Option<SniperToml>,
+    #[serde(default)]
+    support: Option<SupportToml>,
+    #[serde(default)]
+    swarm: Option<SwarmToml>,
+    #[serde(default)]
+    controller: Option<ControllerToml>,
+    #[serde(default)]
+    phaser: Option<PhaserToml>,
+    #[serde(default)]
+    shield: Option<ShieldToml>,
     #[serde(default)]
     model: HashMap<String, BoxToml>,
     #[serde(default)]
@@ -2334,6 +2485,72 @@ struct HackToml {
     tool: Option<String>,
     #[serde(default)]
     drops: Vec<AnimalDropToml>,
+}
+
+#[derive(Deserialize, Clone, Default)]
+struct RusherToml {
+    #[serde(default)]
+    rush_mult: Option<f32>,
+}
+
+#[derive(Deserialize, Clone, Default)]
+struct TankToml {
+    #[serde(default)]
+    knockback_mult: Option<f32>,
+}
+
+#[derive(Deserialize, Clone, Default)]
+struct SniperToml {
+    #[serde(default)]
+    keep_min: Option<f32>,
+    #[serde(default)]
+    keep_max: Option<f32>,
+}
+
+#[derive(Deserialize, Clone, Default)]
+struct SupportToml {
+    #[serde(default)]
+    radius: Option<f32>,
+    #[serde(default)]
+    interval: Option<f32>,
+    #[serde(default)]
+    heal: Option<f32>,
+}
+
+#[derive(Deserialize, Clone, Default)]
+struct SwarmToml {
+    #[serde(default)]
+    spawn: Option<String>,
+    #[serde(default)]
+    count: Option<u32>,
+}
+
+#[derive(Deserialize, Clone, Default)]
+struct ControllerToml {
+    #[serde(default)]
+    spawn: Option<String>,
+    #[serde(default)]
+    count: Option<u32>,
+    #[serde(default)]
+    interval: Option<f32>,
+    #[serde(default)]
+    max: Option<u32>,
+}
+
+#[derive(Deserialize, Clone, Default)]
+struct PhaserToml {
+    #[serde(default)]
+    blink_range: Option<f32>,
+    #[serde(default)]
+    blink_cd: Option<f32>,
+}
+
+#[derive(Deserialize, Clone, Default)]
+struct ShieldToml {
+    #[serde(default)]
+    front_mult: Option<f32>,
+    #[serde(default)]
+    front_deg: Option<f32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -2847,6 +3064,15 @@ struct RawMod {
     modes: Vec<ModeToml>,
     skills: Option<crate::skills::RawSkillToml>,
     machines: Option<crate::machines::RawMachineToml>,
+    nests: Option<NestFileToml>,
+}
+
+/// The `nests.toml` content (capability E9): a list of `[[nest]]` spawn-gate
+/// rows. Mods own the content; base ships none.
+#[derive(Deserialize, Clone, Default)]
+pub struct NestFileToml {
+    #[serde(default)]
+    pub nest: Vec<RawNestToml>,
 }
 
 /// A resolved `[[mode]]` (E1 ruleset): which survival toggles are live and
@@ -2976,6 +3202,14 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
     } else {
         None
     };
+    let nests = if dir.join("nests.toml").exists() {
+        Some(
+            toml::from_str::<NestFileToml>(&read("nests.toml"))
+                .map_err(|error| format!("nests.toml: {error}"))?,
+        )
+    } else {
+        None
+    };
     if !features.feature.is_empty() && m.retrogen.is_none() {
         return Err(
             "mod.toml: a worldgen feature requires retrogen = \"untouched_host_only\", \
@@ -3024,6 +3258,7 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         modes: modes.mode,
         skills,
         machines,
+        nests,
     })
 }
 
@@ -3089,6 +3324,7 @@ fn base_mod() -> RawMod {
         modes: Vec::new(),
         skills: None,
         machines: Some(machines),
+        nests: None,
     }
 }
 
@@ -3208,6 +3444,7 @@ impl RemoveStable for Vec<RawMod> {
             modes: vec![],
             skills: None,
             machines: None,
+            nests: None,
         };
         std::mem::replace(&mut self[idx], dummy)
     }
@@ -3251,6 +3488,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         modes: Vec::new(),
         skills: crate::skills::SkillTree::default(),
         machines: Vec::new(),
+        nests: Vec::new(),
         material_errors: Vec::new(),
         arcane_registry: crate::arcane::ResonanceRegistry::base(),
         arcane_sites: Vec::new(),
@@ -4172,11 +4410,43 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 );
             }
             match a.behavior.as_deref() {
-                None | Some("standard" | "brute" | "construct" | "builder") => {}
+                None
+                | Some(
+                    "standard"
+                    | "brute"
+                    | "construct"
+                    | "builder"
+                    | "rusher"
+                    | "tank"
+                    | "sniper"
+                    | "support"
+                    | "swarm"
+                    | "controller"
+                    | "phaser"
+                    | "shield_bearer",
+                ) => {}
                 Some(other) => errs.push(format!(
                     "animal {}: unknown behavior {other}",
                     a.id
                 )),
+            }
+            // E9: an archetype that names a companion species must resolve
+            // it (checked against base + this mod's roster names here; the
+            // full cross-mod resolution happens after the roster exists).
+            if a.behavior.as_deref() == Some("swarm") || a.behavior.as_deref() == Some("controller")
+            {
+                let spawn = if a.behavior.as_deref() == Some("swarm") {
+                    a.swarm.as_ref().and_then(|s| s.spawn.clone())
+                } else {
+                    a.controller.as_ref().and_then(|c| c.spawn.clone())
+                };
+                if spawn.is_none() {
+                    errs.push(format!(
+                        "animal {}: behavior {} requires a companion species (`spawn`)",
+                        a.id,
+                        a.behavior.as_deref().unwrap_or("")
+                    ));
+                }
             }
             pending_animals.push((
                 raw.info.id.clone(),
@@ -4834,7 +5104,50 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                 Some("brute") => BehaviorArchetype::Brute,
                 Some("construct") => BehaviorArchetype::Construct,
                 Some("builder") => BehaviorArchetype::Builder,
+                Some("rusher") => BehaviorArchetype::Rusher,
+                Some("tank") => BehaviorArchetype::Tank,
+                Some("sniper") => BehaviorArchetype::Sniper,
+                Some("support") => BehaviorArchetype::Support,
+                Some("swarm") => BehaviorArchetype::Swarm,
+                Some("controller") => BehaviorArchetype::Controller,
+                Some("phaser") => BehaviorArchetype::Phaser,
+                Some("shield_bearer") => BehaviorArchetype::ShieldBearer,
                 _ => BehaviorArchetype::Standard,
+            },
+            archetype: ArchetypeParams {
+                rusher: a.rusher.as_ref().map(|r| RusherDef {
+                    rush_mult: r.rush_mult.unwrap_or(2.4),
+                }),
+                tank: a.tank.as_ref().map(|t| TankDef {
+                    knockback_mult: t.knockback_mult.unwrap_or(0.25),
+                }),
+                sniper: a.sniper.as_ref().map(|s| SniperDef {
+                    keep_min: s.keep_min.unwrap_or(9.0),
+                    keep_max: s.keep_max.unwrap_or(16.0),
+                }),
+                support: a.support.as_ref().map(|s| SupportDef {
+                    radius: s.radius.unwrap_or(10.0),
+                    interval: s.interval.unwrap_or(6.0),
+                    heal: s.heal.unwrap_or(2.0),
+                }),
+                swarm: a.swarm.as_ref().map(|s| SwarmDef {
+                    spawn: qualify(&modid, s.spawn.as_deref().unwrap_or("")),
+                    count: s.count.unwrap_or(3),
+                }),
+                controller: a.controller.as_ref().map(|c| ControllerDef {
+                    spawn: qualify(&modid, c.spawn.as_deref().unwrap_or("")),
+                    count: c.count.unwrap_or(2),
+                    interval: c.interval.unwrap_or(12.0),
+                    max: c.max.unwrap_or(6),
+                }),
+                phaser: a.phaser.as_ref().map(|p| PhaserDef {
+                    blink_range: p.blink_range.unwrap_or(7.0),
+                    blink_cd: p.blink_cd.unwrap_or(5.0),
+                }),
+                shield: a.shield.as_ref().map(|sh| ShieldDef {
+                    front_mult: sh.front_mult.unwrap_or(0.35),
+                    front_deg: sh.front_deg.unwrap_or(90.0),
+                }),
             },
             builder: a.builder.as_ref().map(|b| BuilderDef {
                 template: b.template.clone(),
@@ -4972,6 +5285,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             behavior: BehaviorArchetype::Standard,
             builder: None,
             hack: None,
+            archetype: ArchetypeParams::default(),
             aggro_range: 0.0,
             ire_min: 0.0,
             movement_float: false,
@@ -5568,6 +5882,38 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         Err(errors) => machine_errors.extend(errors),
     }
 
+    // Capability E9: resolve mods' nest spawn-gates after the block and
+    // species rosters exist. Each `[[nest]]` names a block (its marker) and
+    // a species; both must resolve or the nest is dropped with an error.
+    let mut nest_errors = Vec::new();
+    for (modid, nests) in raws
+        .iter()
+        .filter_map(|raw| raw.nests.clone().map(|nests| (raw.info.id.clone(), nests)))
+    {
+        for nest in &nests.nest {
+            let full = qualify(&modid, &nest.id);
+            let block = qualify(&modid, &nest.block);
+            let species = qualify(&modid, &nest.species);
+            let Some(block) = reg.block_id(&block).or_else(|| reg.block_id(&nest.block)) else {
+                nest_errors.push(format!("nest {full}: unknown block {}", nest.block));
+                continue;
+            };
+            let Some(species) = reg.animal_id(&species).or_else(|| reg.animal_id(&nest.species))
+            else {
+                nest_errors.push(format!("nest {full}: unknown species {}", nest.species));
+                continue;
+            };
+            reg.nests.push(NestDef {
+                id: full,
+                block,
+                species,
+                radius: nest.radius.unwrap_or(24.0),
+                interval: nest.interval.unwrap_or(8.0),
+                cap: nest.cap.unwrap_or(4),
+            });
+        }
+    }
+
     reconcile_material_definitions(&mut reg);
     // Gate feature errors survive past `validate_material_graph`, which
     // rebuilds `material_errors` from scratch.
@@ -5578,6 +5924,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     reg.material_errors.extend(recipe_errors);
     reg.material_errors.extend(mode_errors);
     reg.material_errors.extend(machine_errors);
+    reg.material_errors.extend(nest_errors);
     reg.mods.append(&mut failed);
     reg
 }
