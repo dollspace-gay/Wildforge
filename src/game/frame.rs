@@ -828,6 +828,20 @@ impl Game {
                                 self.survival.spawn_point = self.player.pos;
                                 self.toast("Dawn. The camp wakes.".to_string());
                             }
+                            mp::HostFx::ScreenClick { screen, action } => {
+                                // Capability E11: a guest's mod-screen
+                                // button. Ids were validated host-side;
+                                // dispatch the mod's hook here where the
+                                // scripts live.
+                                if self.content.scripts.wants("on_screen_click") {
+                                    self.content.scripts.dispatch(
+                                        &self.server.world,
+                                        "on_screen_click",
+                                        (screen, action),
+                                    );
+                                    self.apply_script_cmds();
+                                }
+                            }
                         }
                     }
                     let players = sess.authoritative_player_ctxs(&self.server.world, Some(ctx));

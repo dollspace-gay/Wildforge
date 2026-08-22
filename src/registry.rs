@@ -1246,6 +1246,9 @@ pub struct Registry {
     /// nest's index is its persisted record id; records drop cleanly when a
     /// mod removes a nest.
     pub nests: Vec<NestDef>,
+    /// Data-driven mod screens (capability E11) in declaration order. The
+    /// index is the runtime `Screen::Mod` id; base ships none.
+    pub screens: Vec<crate::screens::ScreenDef>,
     /// Load-time conservation/schema failures. Keeping these attached to the
     /// registry lets the mods screen explain a bad pack and lets production
     /// world creation refuse it without panicking the content browser.
@@ -3087,6 +3090,7 @@ struct RawMod {
     skills: Option<crate::skills::RawSkillToml>,
     machines: Option<crate::machines::RawMachineToml>,
     nests: Option<NestFileToml>,
+    screens: Option<crate::screens::RawScreensToml>,
 }
 
 /// The `nests.toml` content (capability E9): a list of `[[nest]]` spawn-gate
@@ -3232,6 +3236,22 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
     } else {
         None
     };
+    let screens = if dir.join("screens.toml").exists() {
+        let parsed: crate::screens::RawScreensToml = toml::from_str(&read("screens.toml"))
+            .map_err(|error| format!("screens.toml: {error}"))?;
+        if parsed
+            .schema_version
+            .is_some_and(|version| version != crate::screens::SCREENS_SCHEMA_VERSION)
+        {
+            return Err(format!(
+                "screens.toml: schema_version must be {}",
+                crate::screens::SCREENS_SCHEMA_VERSION
+            ));
+        }
+        Some(parsed)
+    } else {
+        None
+    };
     if !features.feature.is_empty() && m.retrogen.is_none() {
         return Err(
             "mod.toml: a worldgen feature requires retrogen = \"untouched_host_only\", \
@@ -3281,6 +3301,7 @@ fn parse_mod_dir(dir: &Path) -> Result<RawMod, String> {
         skills,
         machines,
         nests,
+        screens,
     })
 }
 
@@ -3347,6 +3368,7 @@ fn base_mod() -> RawMod {
         skills: None,
         machines: Some(machines),
         nests: None,
+        screens: None,
     }
 }
 
@@ -3467,6 +3489,7 @@ impl RemoveStable for Vec<RawMod> {
             skills: None,
             machines: None,
             nests: None,
+            screens: None,
         };
         std::mem::replace(&mut self[idx], dummy)
     }
@@ -3511,6 +3534,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
         skills: crate::skills::SkillTree::default(),
         machines: Vec::new(),
         nests: Vec::new(),
+        screens: Vec::new(),
         material_errors: Vec::new(),
         arcane_registry: crate::arcane::ResonanceRegistry::base(),
         arcane_sites: Vec::new(),
@@ -5950,6 +5974,18 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
     reg.material_errors.extend(mode_errors);
     reg.material_errors.extend(machine_errors);
     reg.material_errors.extend(nest_errors);
+    // Capability E11: merge every mod's screens into the registry, in
+    // declaration order. Failures surface as pack errors on the mods
+    // screen, collected locally because `validate_material_graph` rebuilds
+    // `material_errors` from scratch.
+    let raw_screens: Vec<(String, crate::screens::RawScreensToml)> = raws
+        .iter()
+        .filter_map(|raw| raw.screens.clone().map(|screens| (raw.info.id.clone(), screens)))
+        .collect();
+    match crate::screens::resolve(&raw_screens) {
+        Ok(screens) => reg.screens = screens,
+        Err(errors) => reg.material_errors.extend(errors),
+    }
     reg.mods.append(&mut failed);
     reg
 }

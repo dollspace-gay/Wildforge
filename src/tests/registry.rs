@@ -81,6 +81,35 @@ fn every_shipped_mod_machine_resolves_and_station_recipes_bind() {
     assert!(reg.machine_kind("base:bloomery").is_some());
 }
 
+#[test]
+fn every_shipped_mod_screen_resolves_and_binds_to_its_block() {
+    let mods = Path::new(env!("CARGO_MANIFEST_DIR")).join("mods");
+    let reg = registry::load(&mods);
+    assert!(
+        reg.material_errors.is_empty(),
+        "shipped mod material/qualification errors: {:?}",
+        reg.material_errors
+    );
+    // Capability E11: the gems sample declares a data-driven screen; it
+    // resolves, its widgets parse, and the altar block opens it.
+    let idx = reg
+        .screen_by_name("gems:altar")
+        .expect("the gems altar screen resolves");
+    let def = &reg.screens[idx];
+    assert_eq!(def.title, "Gem Altar");
+    assert!(def.rows().iter().any(
+        |row| matches!(row, crate::screens::ScreenWidget::Button { action, .. } if action == "offer")
+    ));
+    let block = reg.block_id("gems:gem_altar").expect("altar block exists");
+    assert_eq!(
+        reg.screen_by_interaction(
+            reg.block(block).interaction.as_deref().unwrap_or("")
+        ),
+        Some(idx),
+        "the altar block's interaction opens the altar screen"
+    );
+}
+
 fn assert_no_missing_textures(reg: &Registry) {
     let unknown = crate::atlas::UNKNOWN_SLOT;
     let missing_blocks: Vec<_> = reg

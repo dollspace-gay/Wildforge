@@ -9,7 +9,7 @@ use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 44;
+pub const PROTOCOL: u32 = 45;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -455,6 +455,13 @@ pub enum C2S {
     DungeonUse {
         pos: BlockPos,
         kind: u8,
+    },
+    /// Click an action button on a mod screen (capability E11). The host
+    /// validates both ids against its own registry before dispatching the
+    /// mod's `on_screen_click` hook.
+    ScreenClick {
+        screen: String,
+        action: String,
     },
     /// One transactional click in a mob's pack.
     MobCargoClick {

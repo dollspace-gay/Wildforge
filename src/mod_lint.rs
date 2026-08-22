@@ -1062,4 +1062,80 @@ behavior = "swarm"
         );
         clean("brood");
     }
+
+    #[test]
+    fn an_invalid_screen_fails_qualification() {
+        clean("boards");
+        write_mod(
+            "boards",
+            "boards",
+            &[
+                ("mod.toml", &base_mod_toml("boards")),
+                (
+                    "screens.toml",
+                    r#"
+schema_version = 1
+[[screen]]
+id = "board"
+title = "Board"
+[[screen.button]]
+label = "Broken"
+action = ""
+"#,
+                ),
+            ],
+        );
+        let report = qualify_mods(&mods_dir("boards"));
+        assert!(!report.is_qualified());
+        assert!(
+            report.render().contains("needs a label and an action"),
+            "{}",
+            report.render()
+        );
+        clean("boards");
+    }
+
+    #[test]
+    fn a_screen_and_its_block_pass_qualification() {
+        clean("board-ok");
+        write_mod(
+            "board-ok",
+            "boardok",
+            &[
+                ("mod.toml", &base_mod_toml("board-ok")),
+                (
+                    "blocks.toml",
+                    r#"
+[[block]]
+id = "notice_board"
+name = "Notice Board"
+texture = "@planks"
+hardness = 1.5
+tool = "axe"
+interaction = "screen:boardok:board"
+"#,
+                ),
+                (
+                    "screens.toml",
+                    r#"
+schema_version = 1
+[[screen]]
+id = "board"
+title = "Notice Board"
+[[screen.label]]
+text = "Welcome."
+[[screen.toggle]]
+label = "Read"
+key = "board_read"
+[[screen.button]]
+label = "Sign the ledger"
+action = "sign"
+"#,
+                ),
+            ],
+        );
+        let report = qualify_mods(&mods_dir("board-ok"));
+        assert!(report.is_qualified(), "{}", report.render());
+        clean("board-ok");
+    }
 }

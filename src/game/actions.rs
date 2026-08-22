@@ -1934,6 +1934,24 @@ impl Game {
                     self.toast("The switch points differently now.".to_string());
                     return;
                 }
+                // Capability E11: a mod screen block. Opening is pure
+                // presentation, so it works identically solo and as a
+                // guest; the screen's buttons carry the authority.
+                Some(s) if s.starts_with("screen:") => {
+                    self.input.right_held = false;
+                    if self.input.action_cooldown > 0.0 {
+                        return;
+                    }
+                    self.input.action_cooldown = 0.3;
+                    match reg.screen_by_interaction(s) {
+                        Some(idx) => {
+                            self.sfx(Sfx::Click);
+                            self.set_screen(Screen::Mod(idx));
+                        }
+                        None => self.toast("The panel is blank.".to_string()),
+                    }
+                    return;
+                }
                 Some(s) if s.starts_with("dungeon_entry:") && self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.5;
                     self.input.right_held = false;
@@ -3156,6 +3174,14 @@ self.input.action_cooldown = 0.22;
                     }
                 }
                 script::Cmd::Hud(msg) => self.toast(msg),
+                script::Cmd::OpenScreen(name) => {
+                    // Capability E11: scripts open mod screens by qualified
+                    // id; an unknown id says so instead of silently failing.
+                    match reg.screen_by_name(&name).map(Screen::Mod) {
+                        Some(screen) => self.set_screen(screen),
+                        None => self.toast(format!("No screen named {name}.")),
+                    }
+                }
                 script::Cmd::SpawnAnimal(name, pos) => {
                     if let Some(si) = reg.animal_id(&name)
                         && self.server.world.mob_count() < world::MOB_CAP

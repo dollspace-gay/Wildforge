@@ -43,6 +43,7 @@ impl Game {
                 | Screen::Bloomery(_)
                 | Screen::Kiln(_)
                 | Screen::Workbench(_)
+                | Screen::Mod(_)
                 | Screen::MobCargo(_)
                 | Screen::Stall(_)
                 | Screen::Dialog { .. }
@@ -96,6 +97,7 @@ impl Game {
                 | Screen::Bloomery(_)
                 | Screen::Kiln(_)
                 | Screen::Workbench(_)
+                | Screen::Mod(_)
                 | Screen::MobCargo(_)
                 | Screen::Stall(_)
                 | Screen::Dialog { .. }

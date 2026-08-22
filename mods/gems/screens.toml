@@ -1,0 +1,25 @@
+# Capability E11: data-driven mod screens. `screen:<qualified id>` block
+# interactions open them; buttons dispatch this mod's `on_screen_click`
+# hook (host-authoritative for guests), toggles flip player-KV keys, and
+# kv_labels read them back live.
+
+schema_version = 1
+
+[[screen]]
+id = "altar"
+title = "Gem Altar"
+
+[[screen.label]]
+text = "Offer cut gems. The altar remembers."
+
+[[screen.kv_label]]
+key = "gems_altar_offered"
+prefix = "Offered: "
+
+[[screen.toggle]]
+label = "Track offerings"
+key = "gems_altar_track"
+
+[[screen.button]]
+label = "Make an offering"
+action = "offer"

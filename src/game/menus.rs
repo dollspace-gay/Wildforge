@@ -553,6 +553,14 @@ impl Game {
                     }
                 }
             }
+            Screen::Mod(_) => {
+                // Capability E11: widget rows first, then the shared
+                // inventory grid beneath.
+                if self.browser_click(right) {
+                    return;
+                }
+                self.mod_screen_click();
+            }
             Screen::SignEdit(_) => {}
             Screen::Stall(pos) => {
                 if self.hit(self.stall_buy_rect()) {

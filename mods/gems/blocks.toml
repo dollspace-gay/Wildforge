@@ -25,3 +25,11 @@ texture = { top = "@table_top", side = "@table_side", bottom = "@planks" }
 hardness = 2.5
 tool = "axe"
 interaction = "gems:jewel_bench"  # capability E7: names the machine id
+
+[[block]]
+id = "gem_altar"
+name = "Gem Altar"
+texture = { top = "@table_top", side = "@stone" }
+hardness = 3.0
+tool = "pickaxe"
+interaction = "screen:gems:altar"  # capability E11: opens the mod screen

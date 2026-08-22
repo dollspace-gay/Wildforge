@@ -132,7 +132,7 @@ impl Game {
         format!("player_{}", hex(id))
     }
 
-    fn write_player_kv(&self, key: &str, value: String) {
+    pub(super) fn write_player_kv(&self, key: &str, value: String) {
         let ns = self.player_namespace();
         self.content
             .scripts

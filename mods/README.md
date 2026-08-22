@@ -26,6 +26,7 @@ mods/<your_mod>/
   skills.toml       [[branch]]/[[branch.node]] skill trees (capability E5)
   items.toml        [[item]] entries — frames and components (capability E6)
   machines.toml     [[machine]] data-driven machine kinds (capability E7)
+  screens.toml      [[screen]] data-driven UI screens (capability E11)
   arcane.toml       [[resonance]] and [[arcane_site]] entries
   workings.toml     [[working]] entries using qualified native handlers
   preparations.toml [[preparation]] physical process/effect entries
@@ -1027,3 +1028,60 @@ pools = { path = "haven" }
   the placed blocks as ordinary solid terrain.
 - The reveal is per-world, not per-player: one player's reputation
   reveals the tier for everyone on the save.
+
+## screens.toml
+
+```toml
+# mods/meadow/screens.toml
+schema_version = 1
+
+[[screen]]
+id = "notice_board"
+title = "Notice Board"
+
+[[screen.label]]
+text = "Welcome to Meadow."
+
+[[screen.kv_label]]
+key = "meadow_standing"
+prefix = "Standing: "
+
+[[screen.toggle]]
+label = "Track bounties"
+key = "meadow_track"
+
+[[screen.button]]
+label = "Sign the ledger"
+action = "sign"
+```
+
+- A block opens a screen with `interaction = "screen:<qualified screen id>"`
+  (e.g. `interaction = "screen:meadow:notice_board"`). Opening is pure
+  presentation: it works identically solo and as a guest.
+- **Widgets** render grouped in declaration order within each kind:
+  `[[screen.label]]` static text, `[[screen.kv_label]]` a live readout of
+  one per-player KV key, `[[screen.toggle]] { label, key }` flips that key
+  between `"1"` and `"0"` client-side, and `[[screen.button]]`
+  `{ label, action }` dispatches your script.
+- **Buttons** call the `on_screen_click(screen_id, action)` hook in your
+  mod's `main.rhai`. React with the ordinary command queue — `give`,
+  `set_block`, `hud_message`, `storage_set`, ... — and read state back on
+  the screen with a matching `kv_label`.
+  ```rhai
+  fn on_screen_click(screen, action) {
+    if screen == "meadow:notice_board" && action == "sign" {
+      let n = parse_int(storage_get("signed") ?? "0") + 1;
+      storage_set("signed", `${n}`);
+      hud_message("You signed the ledger.");
+    }
+  }
+  ```
+- On a guest, a button click rides `C2S::ScreenClick`; the host validates
+  both ids against its own registry before dispatching, so only buttons
+  your content actually declares can ever fire. Scripts run where they
+  always have — on the host.
+- An unknown widget field, an empty title/label/action, or a duplicate
+  screen id fails the pack on the MODS screen and fails
+  `--mod-qualification`. Scripts may also open screens directly with
+  `open_screen("<qualified id>")`.
+

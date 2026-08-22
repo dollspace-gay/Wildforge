@@ -207,6 +207,9 @@ pub enum HostFx {
     AlchemyEvent(crate::alchemy::AlchemyCue),
     /// Everyone slept: the host's own dawn side-effects should run.
     AllSlept,
+    /// A guest clicked an action button on a mod screen (capability E11):
+    /// both ids are already validated; dispatch the script hook.
+    ScreenClick { screen: String, action: String },
 }
 
 pub struct HostSession {
@@ -2641,6 +2644,21 @@ impl HostSession {
                     }),
                 );
                 self.broadcast_ready(&S2C::SignText { pos, lines });
+            }
+            C2S::ScreenClick { screen, action } => {
+                // Capability E11: a mod-screen button click. Both ids are
+                // validated against the host's own registry, so a tampered
+                // client can only ever name buttons that exist. Scripts
+                // live on the windowed host, so the click rides HostFx.
+                let Some(def) = server.world.reg.screens.iter().find(|s| s.id == screen) else {
+                    return;
+                };
+                if !def.rows().iter().any(
+                    |row| matches!(row, crate::screens::ScreenWidget::Button { action: a, .. } if a == &action),
+                ) {
+                    return;
+                }
+                fx.push(HostFx::ScreenClick { screen, action });
             }
             C2S::ToggleSwitch { pos } => {
                 if guest.pos.distance_to(pos.entity_center()) > REACH {

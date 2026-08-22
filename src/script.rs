@@ -33,6 +33,9 @@ pub enum Cmd {
         n: u32,
     },
     QuestAccept(String),
+    /// Capability E11: open a mod screen by qualified id. Applied
+    /// client-side; unknown ids fall back to a toast.
+    OpenScreen(String),
     ArcaneMoveWorking {
         mod_id: String,
         from: u64,
@@ -245,6 +248,10 @@ impl ScriptHost {
         let q = queue.clone();
         engine.register_fn("hud_message", move |msg: &str| {
             q.borrow_mut().push(Cmd::Hud(msg.into()));
+        });
+        let q = queue.clone();
+        engine.register_fn("open_screen", move |name: &str| {
+            q.borrow_mut().push(Cmd::OpenScreen(name.into()));
         });
         let q = queue.clone();
         engine.register_fn("play_sound", move |name: &str| {

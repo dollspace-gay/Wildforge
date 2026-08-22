@@ -98,6 +98,10 @@ enum Screen {
     /// repair disabled frames, and save/apply loadout presets. Temporary
     /// hardcoded screen; E11 generalizes this into mod-extensible screens.
     Loadout,
+    /// A data-driven mod screen (capability E11): the index into
+    /// `Registry::screens`. Rows render from the def; buttons dispatch the
+    /// mod's `on_screen_click` hook host-authoritatively.
+    Mod(usize),
     Join,
     Paused,
     Dead,
