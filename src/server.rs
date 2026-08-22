@@ -150,9 +150,19 @@ impl Server {
     }
 
     fn step(&mut self, dt: f32, players: &[PlayerCtx], events: &mut Vec<SimEvent>) {
+        // Instanced dungeons (capability E10): when EVERY player stands in
+        // the Deep, the overworld holds its breath — the sleep-consensus
+        // rule. Industry and dungeon creatures keep ticking; the sun,
+        // weather, fluids, ire, and crops do not.
+        let players_deep = players
+            .iter()
+            .filter(|p| p.pos.face().is_deep())
+            .count();
+        let all_deep = !players.is_empty() && players_deep == players.len();
+        self.world.tick_dungeon_runs(dt, players_deep);
         // The clock, the wild's ire, and dawn. A frozen clock holds the sun
         // still (headless capture); everything else still ticks.
-        if !self.freeze_clock {
+        if !self.freeze_clock && !all_deep {
             let before = self.time_of_day;
             self.time_of_day = (self.time_of_day + dt / DAY_LENGTH) % 1.0;
             if self.time_of_day < before {
@@ -160,22 +170,10 @@ impl Server {
             }
             self.world.clock = Server::clock_of(self.world.day, self.time_of_day);
         }
-        if let Err(error) = self.world.tick_planetary_weather(4_096) {
-            eprintln!("planetary weather update failed: {error}");
+        if !all_deep {
+            self.tick_overworld_nature(dt, events);
         }
-        if let Err(error) = self.world.tick_arcane_geography(4_096) {
-            eprintln!("planetary Current update failed: {error}");
-        }
-        match self
-            .world
-            .tick_dross(crate::dross::DROSS_SERVER_SLICE_CELLS)
-        {
-            Ok(report) => events.extend(report.cues.into_iter().map(SimEvent::Dross)),
-            Err(error) => eprintln!("planetary dross update failed: {error}"),
-        }
-        if let Err(error) = self.world.tick_arcane_ecology(512) {
-            eprintln!("planetary magical ecology update failed: {error}");
-        }
+
         events.extend(
             self.world
                 .tick_workings()
@@ -189,44 +187,6 @@ impl Server {
                 Ok(cues) => events.extend(cues.into_iter().map(SimEvent::Alchemy)),
                 Err(error) => eprintln!("alchemy update failed: {error}"),
             }
-        }
-        let winter_before = self.world.long_winter;
-        if self.world.tick_ire(dt / DAY_LENGTH) {
-            let refund = self.world.accept_offerings();
-            events.push(SimEvent::Dawn {
-                offering_refund: refund,
-            });
-        }
-        if self.world.long_winter != winter_before {
-            events.push(SimEvent::LongWinter(self.world.long_winter));
-        }
-        let tier = self.world.ire_tier();
-        if tier != self.prev_tier {
-            events.push(SimEvent::IreTier {
-                rose: tier > self.prev_tier,
-                tier,
-            });
-            self.prev_tier = tier;
-        }
-
-        // Fluids at 5 Hz, like classic water.
-        self.water_timer += dt;
-        while self.water_timer >= 0.2 {
-            self.water_timer -= 0.2;
-            self.world.tick_water(512);
-        }
-        // Lava creeps at a quarter of that pace.
-        self.lava_timer += dt;
-        while self.lava_timer >= 0.8 {
-            self.lava_timer -= 0.8;
-            self.world.tick_lava(256);
-        }
-        // Fire moves faster than either: a burn you can outrun but
-        // not ignore.
-        self.fire_timer += dt;
-        while self.fire_timer >= 0.35 {
-            self.fire_timer -= 0.35;
-            self.world.tick_fire(256, &mut self.rng);
         }
 
         // Machines and gravity.
@@ -480,6 +440,68 @@ impl Server {
             let mut rng = self.rng;
             self.world.random_tick(&mut rng);
             self.rng = rng;
+        }
+    }
+
+    /// The overworld's natural processes: planetary weather and Current,
+    /// the wild's ire and dawn, and fluids. Gated off while every player
+    /// stands in the Deep (capability E10) — the world holds its breath —
+    /// and behind `freeze_clock` semantics they never had a clock of their
+    /// own to pause before now.
+    fn tick_overworld_nature(&mut self, dt: f32, events: &mut Vec<SimEvent>) {
+        if let Err(error) = self.world.tick_planetary_weather(4_096) {
+            eprintln!("planetary weather update failed: {error}");
+        }
+        if let Err(error) = self.world.tick_arcane_geography(4_096) {
+            eprintln!("planetary Current update failed: {error}");
+        }
+        match self
+            .world
+            .tick_dross(crate::dross::DROSS_SERVER_SLICE_CELLS)
+        {
+            Ok(report) => events.extend(report.cues.into_iter().map(SimEvent::Dross)),
+            Err(error) => eprintln!("planetary dross update failed: {error}"),
+        }
+        if let Err(error) = self.world.tick_arcane_ecology(512) {
+            eprintln!("planetary magical ecology update failed: {error}");
+        }
+        let winter_before = self.world.long_winter;
+        if self.world.tick_ire(dt / DAY_LENGTH) {
+            let refund = self.world.accept_offerings();
+            events.push(SimEvent::Dawn {
+                offering_refund: refund,
+            });
+        }
+        if self.world.long_winter != winter_before {
+            events.push(SimEvent::LongWinter(self.world.long_winter));
+        }
+        let tier = self.world.ire_tier();
+        if tier != self.prev_tier {
+            events.push(SimEvent::IreTier {
+                rose: tier > self.prev_tier,
+                tier,
+            });
+            self.prev_tier = tier;
+        }
+
+        // Fluids at 5 Hz, like classic water.
+        self.water_timer += dt;
+        while self.water_timer >= 0.2 {
+            self.water_timer -= 0.2;
+            self.world.tick_water(512);
+        }
+        // Lava creeps at a quarter of that pace.
+        self.lava_timer += dt;
+        while self.lava_timer >= 0.8 {
+            self.lava_timer -= 0.8;
+            self.world.tick_lava(256);
+        }
+        // Fire moves faster than either: a burn you can outrun but
+        // not ignore.
+        self.fire_timer += dt;
+        while self.fire_timer >= 0.35 {
+            self.fire_timer -= 0.35;
+            self.world.tick_fire(256, &mut self.rng);
         }
     }
 

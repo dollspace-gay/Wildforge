@@ -1154,7 +1154,19 @@ pub struct AssemblyDef {
     /// If set, this assembly generates the named settlement (spec 3.4): its
     /// tier-tagged pieces place hidden growth tiers at worldgen.
     pub settlement: Option<String>,
+    /// If set, this assembly is a DUNGEON (capability E10): it never
+    /// generates at worldgen — runs stamp it into a reserved Deep slot on
+    /// demand and reset when empty.
+    pub dungeon: Option<DungeonDef>,
 }
+
+/// A dungeon run's rules (capability E10).
+#[derive(Clone, Debug)]
+pub struct DungeonDef {
+    /// Seconds after the last participant leaves before the zone resets.
+    pub reset: f32,
+}
+
 
 #[derive(Clone, Debug)]
 pub struct ModInfo {
@@ -2882,6 +2894,16 @@ struct AssemblyToml {
     terrain: Option<String>,
     #[serde(default)]
     settlement: Option<String>,
+    /// Dungeon run rules (capability E10): presence makes this assembly a
+    /// dungeon that runs on demand in the Deep.
+    #[serde(default)]
+    dungeon: Option<DungeonToml>,
+}
+
+#[derive(Deserialize, Clone, Default)]
+struct DungeonToml {
+    #[serde(default)]
+    reset: Option<f32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -4737,6 +4759,9 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             max_pieces: a.max_pieces.max(1),
             terrain,
             settlement: a.settlement.as_ref().map(|s| qualify(&modid, s)),
+            dungeon: a.dungeon.as_ref().map(|d| DungeonDef {
+                reset: d.reset.unwrap_or(60.0).max(1.0),
+            }),
         });
     }
     // Settlements (spec 3.4): resolve tier lists and validate them. The

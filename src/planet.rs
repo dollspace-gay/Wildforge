@@ -32,9 +32,17 @@ pub enum Face {
     NegY = 3,
     PosZ = 4,
     NegZ = 5,
+    /// The Deep (capability E10): a seventh wing of the same chunk store
+    /// where instanced dungeon zones live. Not part of the planet's surface —
+    /// worldgen emits void here, planetary geography has no cells here, and
+    /// chunks on this face are never persisted, so every dungeon run starts
+    /// fresh.
+    Deep = 6,
 }
 
 impl Face {
+    /// The six faces of the planet cube: everything worldgen, the atlas,
+    /// and geography iterate. The Deep is deliberately excluded.
     pub const ALL: [Face; SURFACE_FACES] = [
         Face::PosX,
         Face::NegX,
@@ -49,6 +57,12 @@ impl Face {
         self as usize
     }
 
+    /// Whether this face is the Deep: outside the planetary geography.
+    #[inline]
+    pub const fn is_deep(self) -> bool {
+        matches!(self, Self::Deep)
+    }
+
     pub const fn from_u8(value: u8) -> Option<Self> {
         match value {
             0 => Some(Self::PosX),
@@ -57,6 +71,7 @@ impl Face {
             3 => Some(Self::NegY),
             4 => Some(Self::PosZ),
             5 => Some(Self::NegZ),
+            6 => Some(Self::Deep),
             _ => None,
         }
     }
@@ -69,10 +84,14 @@ impl Face {
             Self::NegY => "neg_y",
             Self::PosZ => "pos_z",
             Self::NegZ => "neg_z",
+            Self::Deep => "deep",
         }
     }
 
     pub fn from_name(value: &str) -> Option<Self> {
+        if value == Self::Deep.name() {
+            return Some(Self::Deep);
+        }
         Self::ALL.into_iter().find(|face| face.name() == value)
     }
 }
@@ -592,6 +611,15 @@ impl ChunkPos {
                 rotation: QuarterTurn::IDENTITY,
             };
         }
+        // The Deep's borders are walls (capability E10): a step off its
+        // edge stays put rather than wrapping onto the planet cube.
+        if self.face.is_deep() {
+            return ChunkStep {
+                pos: self,
+                direction,
+                rotation: QuarterTurn::IDENTITY,
+            };
+        }
         let edge = direction.edge();
         let transform = edge_transform(self.face, edge);
         let varying = match edge {
@@ -901,6 +929,22 @@ impl EntityPos {
                 });
             };
             let edge = edge.expect("edge selected above");
+            // The Deep's borders are walls (capability E10): drifting past
+            // one clamps back inside instead of wrapping onto the cube.
+            if self.face.is_deep() {
+                self.x = self.x.clamp(
+                    -f32::from(FACE_BLOCKS) * 0.5,
+                    f32::from(FACE_BLOCKS) * 0.5,
+                );
+                self.z = self.z.clamp(
+                    -f32::from(FACE_BLOCKS) * 0.5,
+                    f32::from(FACE_BLOCKS) * 0.5,
+                );
+                return Ok(CanonicalEntity {
+                    pos: self,
+                    rotation,
+                });
+            }
             let transform = edge_transform(self.face, edge);
             let (u, v) = transform.cross_continuous(edge, u, v);
             self.face = transform.to;
@@ -1326,6 +1370,14 @@ pub fn step4(pos: SurfacePos, direction: Direction4) -> SurfaceStep {
         };
     }
     let edge = direction.edge();
+    // The Deep has no neighbor faces: its borders are simply walls.
+    if pos.face.is_deep() {
+        return SurfaceStep {
+            pos,
+            direction,
+            rotation: QuarterTurn::IDENTITY,
+        };
+    }
     let transform = edge_transform(pos.face, edge);
     let rotation = transform.rotation_for(edge);
     SurfaceStep {
@@ -1437,7 +1489,15 @@ fn cube_point(point: SurfacePoint) -> DVec3 {
     let side = f64::from(FACE_BLOCKS);
     let s = point.u.mul_add(2.0 / side, -1.0);
     let t = point.v.mul_add(2.0 / side, -1.0);
-    let basis = FACE_BASES[point.face.index()];
+    // The Deep borrows the PosZ frame (see local_frame): its positions are
+    // never on the cube, but the math must stay finite for callers like
+    // daylight sampling.
+    let basis_index = if point.face.is_deep() {
+        Face::PosZ.index()
+    } else {
+        point.face.index()
+    };
+    let basis = FACE_BASES[basis_index];
     basis.normal.as_dvec3() + basis.u.as_dvec3() * s + basis.v.as_dvec3() * t
 }
 
@@ -1469,7 +1529,14 @@ pub struct LocalFrame {
 
 pub fn local_frame(point: SurfacePoint) -> LocalFrame {
     let up = surface_to_unit(point);
-    let basis = FACE_BASES[point.face.index()];
+    // The Deep is not on the cube: it borrows the PosZ tangent frame, which
+    // only matters for rendering orientation of axis-aligned dungeon rooms.
+    let basis_index = if point.face.is_deep() {
+        Face::PosZ.index()
+    } else {
+        point.face.index()
+    };
+    let basis = FACE_BASES[basis_index];
     let mut east = basis.u.as_dvec3();
     east -= up * east.dot(up);
     east = east.normalize();
@@ -1576,7 +1643,9 @@ mod tests {
         assert!(ChunkPos::new(Face::NegZ, FACE_CHUNKS - 1, FACE_CHUNKS - 1).is_ok());
         assert!(ChunkPos::new(Face::NegZ, FACE_CHUNKS, 0).is_err());
         assert!(Face::from_u8(5).is_some());
-        assert!(Face::from_u8(6).is_none());
+        // Face 6 is the Deep (capability E10); 7 and beyond stay invalid.
+        assert_eq!(Face::from_u8(6), Some(Face::Deep));
+        assert!(Face::from_u8(7).is_none());
     }
 
     #[test]

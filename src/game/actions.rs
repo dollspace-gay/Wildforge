@@ -1934,6 +1934,56 @@ impl Game {
                     self.toast("The switch points differently now.".to_string());
                     return;
                 }
+                Some(s) if s.starts_with("dungeon_entry:") && self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.5;
+                    self.input.right_held = false;
+                    let name = s.trim_start_matches("dungeon_entry:").to_string();
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::DungeonUse { pos: h.block, kind: 0 });
+                        return;
+                    }
+                    match self
+                        .server
+                        .world
+                        .enter_dungeon(0, self.player.pos, &name)
+                    {
+                        Some(spawn) => {
+                            self.player = Player::new_at(spawn);
+                            self.toast("The dark takes you. The door is behind you.".to_string());
+                        }
+                        None => self.toast("The way below does not answer.".to_string()),
+                    }
+                    return;
+                }
+                Some("dungeon_exit") if self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.5;
+                    self.input.right_held = false;
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::DungeonUse { pos: h.block, kind: 1 });
+                        return;
+                    }
+                    match self.server.world.exit_dungeon(0, self.player.pos) {
+                        Some(back) => {
+                            self.player = Player::new_at(back);
+                            self.toast("Daylight again. The deep forgets you.".to_string());
+                        }
+                        None => self.toast("This door leads nowhere.".to_string()),
+                    }
+                    return;
+                }
+                Some("dungeon_checkpoint")
+                    if self.input.action_cooldown <= 0.0 =>
+                {
+                    self.input.action_cooldown = 0.5;
+                    self.input.right_held = false;
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::DungeonUse { pos: h.block, kind: 2 });
+                        return;
+                    }
+                    self.server.world.set_dungeon_checkpoint(self.player.pos);
+                    self.toast("The shrine remembers you.".to_string());
+                    return;
+                }
                 Some("chest") if self.input.action_cooldown <= 0.0 => {
                     self.input.action_cooldown = 0.3;
                     if let Some(rc) = &self.multiplayer.remote {

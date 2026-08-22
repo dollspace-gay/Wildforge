@@ -36,6 +36,7 @@ mod fire;
 mod fluids;
 mod hearts;
 mod implements;
+pub(crate) mod dungeon;
 mod lighting;
 mod machine_tick;
 pub(crate) mod machines;
@@ -1136,6 +1137,15 @@ pub struct World {
     mobs: Vec<crate::mobs::Mob>,
     projectiles: Vec<Projectile>,
     next_projectile_id: u64,
+    /// The entry-piece anchor of the most recent `place_assembly` that
+    /// placed anything (capability E10): a dungeon run reads it to know
+    /// where to stand its participants. Transient, single-threaded.
+    pub(crate) last_entry_anchor: Option<BlockPos>,
+    /// Live instanced dungeon runs (capability E10), keyed by their Deep
+    /// slot. Runs are session state: their chunks never persist.
+    pub dungeon_runs: Vec<crate::world::dungeon::DungeonRun>,
+    /// Per-run generation seed drift so two visits to one dungeon differ.
+    run_seed: u32,
     /// Ordinary dropped items are host-owned entities, not renderer-local
     /// decorations. This makes pickup, collision, persistence, replication,
     /// and Nudge share one authority.
@@ -1540,6 +1550,9 @@ impl World {
             mobs: Vec::new(),
             projectiles: Vec::new(),
             next_projectile_id: 1,
+            last_entry_anchor: None,
+            dungeon_runs: Vec::new(),
+            run_seed: 0x5EED_0000,
             loose_items: Vec::new(),
             next_loose_item_id: LOOSE_ITEM_ID_BASE,
             hostile_spawn_timer: 0.0,

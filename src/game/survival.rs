@@ -188,7 +188,12 @@ impl Game {
             }
             // Death: scatter every player-owned stack. The cursor and craft
             // grid are inventories too; clearing either would be an invisible
-            // finite-material sink.
+            // finite-material sink. A dungeon death (capability E10) keeps
+            // everything: you respawn at the party checkpoint instead.
+            if self.player.pos.face().is_deep() {
+                self.set_screen(Screen::Dead);
+                return;
+            }
             let mut stacks = self.inventory.drain();
             stacks.extend(self.ui_state.held_stack.take());
             stacks.extend(
@@ -243,6 +248,22 @@ impl Game {
     pub(super) fn respawn(&mut self) {
         if let Some(remote) = &self.multiplayer.remote {
             remote.client.send(&net::C2S::Respawn);
+        }
+        // A dungeon death (capability E10) wakes at the party's checkpoint
+        // with belongings intact. The host owns run state; a guest falls
+        // through to the ordinary spawn and is corrected by the host snap.
+        if let Some(cp) = self.server.world.dungeon_checkpoint_for(self.player.pos) {
+            self.player = Player::new_at(cp);
+            self.survival.health = self.max_health();
+            self.survival.hunger = 20.0;
+            self.survival.air = MAX_AIR;
+            self.survival.fall_start = None;
+            self.survival.drown_timer = 0.0;
+            self.survival.since_damage = 100.0;
+            self.combat = combat::CombatState::new();
+            self.combat.stamina = self.stamina_max();
+            self.set_screen(Screen::Playing);
+            return;
         }
         // The stored spawn can be stale in both directions — built
         // over (you'd wake inside a hill) or dug out (you'd wake in

@@ -2661,6 +2661,63 @@ impl HostSession {
                     selected: selected as u8,
                 });
             }
+            C2S::DungeonUse { pos, kind } => {
+                if guest.pos.distance_to(pos.entity_center()) > REACH {
+                    return;
+                }
+                let interaction = server
+                    .world
+                    .reg
+                    .block(server.world.get_block_at(pos))
+                    .interaction
+                    .clone();
+                match (kind, interaction.as_deref()) {
+                    // Entry: stand the guest at their run's spawn point.
+                    (0, Some(s)) if s.starts_with("dungeon_entry:") => {
+                        let name = s.trim_start_matches("dungeon_entry:").to_string();
+                        if let Some(spawn) =
+                            server.world.enter_dungeon(id, guest.pos, &name)
+                        {
+                            if let Some(g) = self.guests.get_mut(&id) {
+                                g.pos = spawn;
+                                self.net.send(
+                                    id,
+                                    &S2C::PlayerState(PlayerRuntime::from_guest(g).to_snap()),
+                                );
+                            }
+                            self.net.send(
+                                id,
+                                &S2C::Toast("The dark takes you. The door is behind you.".into()),
+                            );
+                        }
+                    }
+                    // Exit: route back to the participant's own door.
+                    (1, Some("dungeon_exit")) => {
+                        if let Some(back) = server.world.exit_dungeon(id, guest.pos) {
+                            if let Some(g) = self.guests.get_mut(&id) {
+                                g.pos = back;
+                                self.net.send(
+                                    id,
+                                    &S2C::PlayerState(PlayerRuntime::from_guest(g).to_snap()),
+                                );
+                            }
+                            self.net.send(
+                                id,
+                                &S2C::Toast("Daylight again. The deep forgets you.".into()),
+                            );
+                        }
+                    }
+                    // Checkpoint: party-shared, host-owned.
+                    (2, Some("dungeon_checkpoint")) => {
+                        server.world.set_dungeon_checkpoint(guest.pos);
+                        self.net.send(
+                            id,
+                            &S2C::Toast("The shrine remembers you.".into()),
+                        );
+                    }
+                    _ => {}
+                }
+            }
             C2S::BrushBlock { pos } => {
                 if guest.pos.distance_to(pos.entity_center()) > REACH {
                     return;
@@ -3967,6 +4024,17 @@ impl HostSession {
             }
             C2S::Respawn => {
                 if guest.health > 0.0 {
+                    return;
+                }
+                // A dungeon death (capability E10) wakes at the party's
+                // checkpoint with belongings intact; the host never
+                // scattered them.
+                if let Some(cp) = server.world.dungeon_checkpoint_for(guest.pos) {
+                    guest.pos = cp;
+                    guest.health = 14.0;
+                    guest.hunger = 20.0;
+                    guest.since_damage = 100.0;
+                    self.send_player_state(id);
                     return;
                 }
                 // The saved spawn may be buried or dug out by now.

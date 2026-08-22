@@ -1384,6 +1384,11 @@ impl World {
             let Some(player) = player else {
                 return events;
             };
+            // The Deep stocks no wildlife (capability E10): a restock ring
+            // around a player below would fill dungeons with deer.
+            if player.face().is_deep() {
+                return events;
+            }
             let near = self
                 .mobs
                 .iter()

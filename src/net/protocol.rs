@@ -9,7 +9,7 @@ use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 43;
+pub const PROTOCOL: u32 = 44;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -448,6 +448,13 @@ pub enum C2S {
     /// and broadcasts the result).
     ToggleSwitch {
         pos: BlockPos,
+    },
+    /// Use a dungeon block (capability E10): kind 0 = entry, 1 = exit,
+    /// 2 = checkpoint. The host validates the block's interaction, runs
+    /// the zone state machine, and teleports via a PlayerState correction.
+    DungeonUse {
+        pos: BlockPos,
+        kind: u8,
     },
     /// One transactional click in a mob's pack.
     MobCargoClick {

@@ -278,12 +278,15 @@ impl<T> AtlasGrid<T> {
 
     #[inline]
     pub fn get(&self, pos: AtlasPos) -> Option<&T> {
-        (pos.u < self.side && pos.v < self.side).then(|| &self.values[pos.index(self.side)])
+        // The Deep (capability E10) has no planetary cells: lookups there
+        // miss like any out-of-range cell.
+        (!pos.face.is_deep() && pos.u < self.side && pos.v < self.side)
+            .then(|| &self.values[pos.index(self.side)])
     }
 
     #[inline]
     pub fn get_mut(&mut self, pos: AtlasPos) -> Option<&mut T> {
-        (pos.u < self.side && pos.v < self.side).then(move || {
+        (!pos.face.is_deep() && pos.u < self.side && pos.v < self.side).then(move || {
             let index = pos.index(self.side);
             &mut self.values[index]
         })

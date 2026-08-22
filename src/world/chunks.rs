@@ -53,6 +53,14 @@ impl World {
     /// The main-thread half of chunk arrival: bedrock heal, insert,
     /// structures, wildlife, stamps, seam wake, light, reconcile.
     fn adopt_chunk(&mut self, pos: ChunkPos, mut chunk: Chunk, fresh: bool) {
+        // The Deep (capability E10) adopts bare: no bedrock floor, no
+        // water seeding, no ruins, no country hearts, no ecology, and no
+        // material reservations — a dungeon run is pure stamped rooms in
+        // void, and its geography has no planetary cells to reconcile.
+        if pos.face().is_deep() {
+            self.chunks.insert(pos, chunk);
+            return;
+        }
         // The floor reseals on load: any hole in the bedrock (a
         // creative dig, an old bug) heals when the chunk comes back.
         // Idempotent — set() doesn't mark the chunk modified.

@@ -28,6 +28,11 @@ use crate::inventory::ItemStack;
 use crate::planet::{BlockPos, Direction4, SurfacePos};
 use crate::registry::{AssemblyDef, BlockId, MaterialVector, PieceDef, PoolDef};
 
+/// The floor line every dungeon run floats at in the Deep's void
+/// (capability E10): high enough to leave headroom, low enough to keep
+/// rooms well inside the chunk.
+pub const DEEP_RUN_Y: i32 = 48;
+
 /// Horizontal offset a [`Direction4`] takes in (du, dv) step space, matching
 /// `step4`'s convention (East = +u, North = +v, ...).
 fn dir_offset(dir: Direction4) -> (i32, i32) {
@@ -190,20 +195,31 @@ impl World {
             i32::from(origin_surface.v()) + d / 2,
         )
         .expect("piece center canonicalizes");
-        let surface_y = self.surface_height_at(sample);
-        if surface_y <= crate::chunk::SEA_LEVEL + 1 || surface_y >= CHUNK_Y as i32 - 24 {
-            return (Vec::new(), 0);
-        }
-        let mut rng = seed ^ 0xa55e_b1e3;
-        let y0 = match asm.terrain {
-            crate::registry::TerrainAdaptation::None => surface_y,
-            crate::registry::TerrainAdaptation::Bury => {
-                let depth = 4 + ((rng >> 4) % 9) as i32;
-                (surface_y - depth - height).max(6)
+        // Deep runs (capability E10) float their rooms on a fixed floor
+        // line in pure void: no terrain sampling, no sea-level veto.
+        let (surface_y, terrain) = if pos.face().is_deep() {
+            (DEEP_RUN_Y, asm.terrain)
+        } else {
+            let surface_y = self.surface_height_at(sample);
+            if surface_y <= crate::chunk::SEA_LEVEL + 1 || surface_y >= CHUNK_Y as i32 - 24 {
+                return (Vec::new(), 0);
             }
-            crate::registry::TerrainAdaptation::Encapsulate => {
-                let depth = 8 + ((rng >> 4) % 12) as i32;
-                (surface_y - depth - height).max(6)
+            (surface_y, asm.terrain)
+        };
+        let mut rng = seed ^ 0xa55e_b1e3;
+        let y0 = if pos.face().is_deep() {
+            DEEP_RUN_Y
+        } else {
+            match terrain {
+                crate::registry::TerrainAdaptation::None => surface_y,
+                crate::registry::TerrainAdaptation::Bury => {
+                    let depth = 4 + ((rng >> 4) % 9) as i32;
+                    (surface_y - depth - height).max(6)
+                }
+                crate::registry::TerrainAdaptation::Encapsulate => {
+                    let depth = 8 + ((rng >> 4) % 12) as i32;
+                    (surface_y - depth - height).max(6)
+                }
             }
         };
         let entry_anchor = BlockPos::new(
@@ -251,6 +267,8 @@ impl World {
                 });
             }
             placed_count += 1;
+            // The run machine stands its participants just inside the door.
+            self.last_entry_anchor = Some(entry_anchor);
         }
 
         while let Some(open) = queue.pop_front() {
@@ -407,11 +425,15 @@ impl World {
         }
         // Reserve every touched chunk first so a chunk `ensure_chunk`ed mid
         // walk (which runs its own `seed_structures`) early-returns, and so
-        // retrogen leaves the whole assembly alone.
+        // retrogen leaves the whole assembly alone. Deep chunks (capability
+        // E10) skip the global reservation: they never worldgen, never save,
+        // and runs bound themselves to their own slot.
         for (world, _) in &placements {
             let chunk = world.chunk();
             if reserved.insert(chunk) {
-                self.structure_chunks.insert(chunk);
+                if !chunk.face().is_deep() {
+                    self.structure_chunks.insert(chunk);
+                }
                 self.ensure_chunk(chunk);
             }
         }

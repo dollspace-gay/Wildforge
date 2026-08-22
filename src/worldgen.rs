@@ -740,6 +740,11 @@ impl Generator {
 
     /// Planetary biome classification used by generation and typed callers.
     pub fn biome_at(&self, pos: SurfacePos) -> Biome {
+        // The Deep has no biomes; dungeons read as generic grassland so
+        // habitat checks behave predictably below (capability E10).
+        if pos.face().is_deep() {
+            return Biome::Plains;
+        }
         if let Some(atlas) = &self.atlas {
             let sample = atlas.biome_sample(pos);
             if sample.habitat_flags
@@ -1960,6 +1965,11 @@ impl Generator {
 
     pub fn generate(&self, pos: ChunkPos, reg: &Registry) -> Chunk {
         let mut c = Chunk::new();
+        // The Deep (capability E10) has no natural terrain: dungeon runs
+        // stamp their rooms into pure void.
+        if pos.face().is_deep() {
+            return c;
+        }
         let (lat, lat_g) = self.sample_lattice(pos);
 
         // Stage 1: shape. Track pre-carve solid tops for the 18x18 ring.

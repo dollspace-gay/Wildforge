@@ -282,6 +282,11 @@ impl World {
     /// counts as living — the wild is presumed well until seen
     /// otherwise, and a heart registers the moment its chunk loads.
     pub fn heart_alive_at_surface(&self, pos: SurfacePos) -> bool {
+        // The Deep has no country heart: the wild's immune response does
+        // not reach below (capability E10).
+        if pos.face().is_deep() {
+            return false;
+        }
         self.heart_at_surface(pos).is_none_or(|h| h.alive())
     }
 
@@ -621,6 +626,10 @@ impl World {
     /// What a country counts as now: its own nature, or the one its
     /// heart was grafted from once the drift has carried far enough.
     pub fn country_biome_at(&self, pos: SurfacePos) -> crate::worldgen::Biome {
+        // The Deep has no countries (capability E10).
+        if pos.face().is_deep() {
+            return self.generator.biome_at(pos);
+        }
         let key = self.generator.province_at(pos).key;
         match self.hearts.get(&key) {
             Some(h)

@@ -1061,6 +1061,11 @@ impl World {
     }
 
     pub(super) fn save_chunk(&self, pos: ChunkPos) -> std::io::Result<()> {
+        // Deep chunks (capability E10) never persist: dungeon runs are
+        // ephemeral by construction, so every entry regenerates fresh.
+        if pos.face().is_deep() {
+            return Ok(());
+        }
         #[cfg(test)]
         if self.save_fail_chunks.contains(&pos) {
             return Err(std::io::Error::new(

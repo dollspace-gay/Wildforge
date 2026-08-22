@@ -2152,6 +2152,7 @@ fn piece_assembly() -> crate::registry::AssemblyDef {
         max_pieces: 12,
         terrain: crate::registry::TerrainAdaptation::None,
         settlement: None,
+        dungeon: None,
     }
 }
 

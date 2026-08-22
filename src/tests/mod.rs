@@ -18,6 +18,7 @@ mod archetypes;
 mod atlas;
 mod belt;
 mod climate;
+mod dungeon;
 mod dross;
 mod ecology;
 mod geology;
