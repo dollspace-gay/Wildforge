@@ -78,7 +78,6 @@ fn a_nest_spawns_its_species_until_it_is_cleared() {
     w.set_block_at(bp(8, h, 8), b(&reg, "denworld:denwolf_nest"));
     assert_eq!(w.nests().count(), 1, "placing the nest recorded it");
     let player = ep(Vec3::new(8.0, (h + 1) as f32, 8.0));
-    let world_spawn = ep(Vec3::new(-500.0, 70.0, -500.0));
     let mut rng = 21u32;
     // Night cycles near the nest: the denwolf manifests from its den.
     for _ in 0..160 {
@@ -128,7 +127,7 @@ fn nests_survive_save_and_reload() {
     // And a live nest spawns after reload.
     let wolf = reg.animal_id("denworld:denwolf").unwrap();
     let player = ep(Vec3::new(8.0, (h + 1) as f32, 8.0));
-    let world_spawn = ep(Vec3::new(-500.0, 70.0, -500.0));
+
     let mut rng = 5u32;
     for _ in 0..120 {
         reloaded.tick_nest_spawns(player, 0.12, 5.0, &mut rng);
