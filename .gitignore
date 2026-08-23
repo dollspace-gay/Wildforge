@@ -34,3 +34,7 @@ __pycache__/
 
 # Claude Code local settings temp files
 .claude/settings.local.json.tmp.*
+
+# Mods installed for local testing/CI (belt-quest lives in its own repo at
+# ../belt-quest and gets copied here per docs/port-plan.md section 6).
+/mods/belt_quest/
