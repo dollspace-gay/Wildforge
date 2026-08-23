@@ -1068,6 +1068,9 @@ pub struct World {
     /// Industrial ire cadence (capability E12): seconds since the last
     /// one-second charge for running machines.
     industrial_ire_accum: f32,
+    /// Nest-spawn cadence (capability E9): seconds since the last nest
+    /// cycle. Independent of the hostile ring's own timer.
+    nest_spawn_timer: f32,
     /// Multiblock revalidations triggered by block edits since construction.
     /// Test-only: proves the 2c edit hook is scoped, not global.
     #[cfg(test)]
@@ -1547,6 +1550,7 @@ impl World {
             pending_drops: Vec::new(),
             perish_accum: 0.0,
             industrial_ire_accum: 0.0,
+            nest_spawn_timer: 0.0,
             station_work: HashMap::new(),
             belt_state: HashMap::new(),
             regional_ire: HashMap::new(),

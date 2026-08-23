@@ -212,6 +212,10 @@ impl Server {
             let local_daylight = self.world.daylight_at_surface(p.pos.surface());
             self.world
                 .tick_hostile_spawns(p.pos, p.spawn, local_daylight, dt, &mut rng);
+            // Nest spawns run on their own toggle and their own clock:
+            // silencing the ring must not silence the dens (capability E9).
+            self.world
+                .tick_nest_spawns(p.pos, local_daylight, dt, &mut rng);
         }
         self.rng = rng;
         for ev in mob_events {

@@ -1760,95 +1760,11 @@ impl World {
             *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
             *rng >> 8
         };
-        // Capability E9 nests: species bound to a nest only spawn near their
-        // live nests — clearing the nest block (which removes the record)
-        // stops those respawns entirely. A nest spawn is one spawn this
-        // cycle, exactly like the ring.
+        // Nest-bound species never ride the ring: their dens are their only
+        // source (that is what makes clearing a den stop the respawns).
         let nest_species: std::collections::HashSet<usize> =
             reg.nests.iter().map(|nest| nest.species).collect();
-        let nest_positions: Vec<(BlockPos, usize)> = self
-            .nests
-            .iter()
-            .filter(|(pos, _)| pos.entity_center().distance_to(player) < 96.0)
-            .map(|(pos, index)| (*pos, *index))
-            .collect();
-        for (pos, nest_index) in nest_positions {
-            let Some(nest) = reg.nest(nest_index) else {
-                continue;
-            };
-            // A stale record (marker block broken while its chunk was
-            // unloaded) self-heals once the chunk loads: no block, no nest.
-            if self.get_block_at(pos) != nest.block {
-                self.nests.remove(&pos);
-                self.nest_spawn_cd.remove(&pos);
-                continue;
-            }
-            let Some(def) = reg.animals.get(nest.species) else {
-                continue;
-            };
-            let local =
-                (self.ire + self.regional_ire_at_surface(pos.surface()) * 3.0).clamp(0.0, 100.0);
-            if !def.hostile || local < def.ire_min {
-                continue;
-            }
-            let mut cd = *self.nest_spawn_cd.entry(pos).or_insert(0.0);
-            cd -= dt;
-            if cd > 0.0 {
-                continue;
-            }
-            let living = self
-                .mobs
-                .iter()
-                .filter(|m| {
-                    m.species == nest.species
-                        && m.pos.horizontal_distance_to(pos.entity_center()) <= nest.radius
-                })
-                .count();
-            if living >= nest.cap as usize {
-                self.nest_spawn_cd.insert(pos, nest.interval);
-                continue;
-            }
-            // The spawn cell is the nest's own surface, light-gated like any
-            // warden manifestation.
-            let surface = pos.surface();
-            if !self.chunks.contains_key(&ChunkPos::from_surface(surface)) {
-                continue;
-            }
-            let surface_y = self.surface_height_at(surface);
-            let at = BlockPos::new(surface.face(), surface.u(), (surface_y + 1) as u8, surface.v());
-            let spawned = if let Ok(at) = at {
-                let (bl, sl) = self.light_at_pos(at);
-                let eff = (bl as f32).max(sl as f32 * daylight);
-                if eff < def.spawn_light_max as f32 {
-                    let entity = EntityPos::new(
-                        surface.face(),
-                        f32::from(surface.u()) + 0.5,
-                        surface_y as f32 + 1.0,
-                        f32::from(surface.v()) + 0.5,
-                    )
-                    .expect("nest spawn is canonical");
-                    let mut m = crate::mobs::Mob::new_at(
-                        nest.species,
-                        entity,
-                        (roll(rng) % 1024) as f32 / 1024.0 * std::f32::consts::TAU,
-                    );
-                    m.health = def.health;
-                    self.spawn_mob(m);
-                    true
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
-            // A successful nest spawn is one spawn this cycle; a light- or
-            // terrain-blocked nest retries soon.
-            self.nest_spawn_cd
-                .insert(pos, if spawned { nest.interval } else { 2.0 });
-            if spawned {
-                return;
-            }
-        }
+        let _ = &nest_species;
         for _ in 0..6 {
             let r = roll(rng);
             let ang = (r % 1024) as f32 / 1024.0 * std::f32::consts::TAU;
@@ -1961,6 +1877,123 @@ impl World {
             }
             self.spawn_mob(m);
             return; // one spawn per cycle
+        }
+    }
+
+    /// Nest spawns (capability E9, split from the hostile ring during the
+    /// belt-quest content pass): species bound to a live nest spawn near
+    /// their den — clearing the nest block stops those respawns entirely.
+    /// Deliberately INDEPENDENT of `hostile_spawns` and of any country
+    /// heart: a mod mode can silence the ring yet keep its dens alive, and
+    /// the Deep has no hearts but its dungeons still need populations.
+    pub fn tick_nest_spawns(
+        &mut self,
+        player: EntityPos,
+        daylight: f32,
+        dt: f32,
+        rng: &mut u32,
+    ) {
+        if !self.ruleset().nest_spawns {
+            return;
+        }
+        self.nest_spawn_timer += dt;
+        if self.nest_spawn_timer < 4.0 {
+            return;
+        }
+        self.nest_spawn_timer = 0.0;
+        if self.mobs.len() >= MOB_CAP {
+            return;
+        }
+        let reg = self.reg.clone();
+        if reg.nests.is_empty() || self.nests.is_empty() {
+            return;
+        }
+        let roll = |rng: &mut u32| {
+            *rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
+            *rng >> 8
+        };
+        let nest_positions: Vec<(BlockPos, usize)> = self
+            .nests
+            .iter()
+            .filter(|(pos, _)| pos.entity_center().distance_to(player) < 96.0)
+            .map(|(pos, index)| (*pos, *index))
+            .collect();
+        for (pos, nest_index) in nest_positions {
+            let Some(nest) = reg.nest(nest_index) else {
+                continue;
+            };
+            // A stale record (marker block broken while its chunk was
+            // unloaded) self-heals once the chunk loads: no block, no nest.
+            if self.get_block_at(pos) != nest.block {
+                self.nests.remove(&pos);
+                self.nest_spawn_cd.remove(&pos);
+                continue;
+            }
+            let Some(def) = reg.animals.get(nest.species) else {
+                continue;
+            };
+            let local =
+                (self.ire + self.regional_ire_at_surface(pos.surface()) * 3.0).clamp(0.0, 100.0);
+            if !def.hostile || local < def.ire_min {
+                continue;
+            }
+            let mut cd = *self.nest_spawn_cd.entry(pos).or_insert(0.0);
+            cd -= dt;
+            if cd > 0.0 {
+                continue;
+            }
+            let living = self
+                .mobs
+                .iter()
+                .filter(|m| {
+                    m.species == nest.species
+                        && m.pos.horizontal_distance_to(pos.entity_center()) <= nest.radius
+                })
+                .count();
+            if living >= nest.cap as usize {
+                self.nest_spawn_cd.insert(pos, nest.interval);
+                continue;
+            }
+            // The spawn cell is the nest's own surface, light-gated like any
+            // warden manifestation.
+            let surface = pos.surface();
+            if !self.chunks.contains_key(&ChunkPos::from_surface(surface)) {
+                continue;
+            }
+            let surface_y = self.surface_height_at(surface);
+            let at = BlockPos::new(surface.face(), surface.u(), (surface_y + 1) as u8, surface.v());
+            let spawned = if let Ok(at) = at {
+                let (bl, sl) = self.light_at_pos(at);
+                let eff = (bl as f32).max(sl as f32 * daylight);
+                if eff < def.spawn_light_max as f32 {
+                    let entity = EntityPos::new(
+                        surface.face(),
+                        f32::from(surface.u()) + 0.5,
+                        surface_y as f32 + 1.0,
+                        f32::from(surface.v()) + 0.5,
+                    )
+                    .expect("nest spawn is canonical");
+                    let mut m = crate::mobs::Mob::new_at(
+                        nest.species,
+                        entity,
+                        (roll(rng) % 1024) as f32 / 1024.0 * std::f32::consts::TAU,
+                    );
+                    m.health = def.health;
+                    self.spawn_mob(m);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            // A successful nest spawn is one spawn this cycle; a light- or
+            // terrain-blocked nest retries soon.
+            self.nest_spawn_cd
+                .insert(pos, if spawned { nest.interval } else { 2.0 });
+            if spawned {
+                return;
+            }
         }
     }
 }

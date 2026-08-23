@@ -1324,6 +1324,8 @@ struct ModeToml {
     equipment: Option<bool>,
     #[serde(default)]
     industrial_ire: Option<bool>,
+    #[serde(default)]
+    nest_spawns: Option<bool>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -3122,6 +3124,7 @@ pub struct ModeDef {
     pub skills: Option<bool>,
     pub equipment: Option<bool>,
     pub industrial_ire: Option<bool>,
+    pub nest_spawns: Option<bool>,
 }
 
 // ---------------- loading ----------------
@@ -5881,6 +5884,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     skills: m.skills,
                     equipment: m.equipment,
                     industrial_ire: m.industrial_ire,
+                    nest_spawns: m.nest_spawns,
                 });
             }
         }

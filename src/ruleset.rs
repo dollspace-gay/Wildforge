@@ -46,6 +46,11 @@ pub struct Ruleset {
     /// wherever `ire` is live; a mod mode can repoint it off with
     /// `industrial_ire = false`.
     pub industrial_ire: bool,
+    /// Nest/den spawns (E9): species bound to a nest block spawn near it.
+    /// Split from `hostile_spawns` so a mode can silence the warden ring
+    /// yet keep its dens (belt-quest's enemy model), and so the Deep's
+    /// dungeons populate regardless of overworld pressure.
+    pub nest_spawns: bool,
 }
 
 impl Ruleset {
@@ -60,6 +65,7 @@ impl Ruleset {
             hostile_spawns: true,
             ire: true,
             industrial_ire: true,
+            nest_spawns: true,
             hearts: true,
             weather_extremes: true,
             pvp: true,
@@ -84,6 +90,7 @@ impl Ruleset {
             skills: false,
             equipment: false,
             industrial_ire: false,
+            nest_spawns: false,
         }
     }
 
@@ -128,6 +135,9 @@ impl Ruleset {
         if let Some(value) = mode.industrial_ire {
             self.industrial_ire = value;
         }
+        if let Some(value) = mode.nest_spawns {
+            self.nest_spawns = value;
+        }
     }
 }
 
@@ -159,6 +169,7 @@ mod tests {
             skills,
             equipment: None,
             industrial_ire: None,
+            nest_spawns: None,
         }
     }
 
@@ -194,6 +205,7 @@ mod tests {
             skills: Some(false),
             equipment: Some(true),
             industrial_ire: None,
+            nest_spawns: None,
         };
         r.apply_overrides(&m);
         assert!(r.equipment, "mode opts into modular equipment");

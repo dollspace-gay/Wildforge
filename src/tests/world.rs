@@ -4561,6 +4561,7 @@ fn a_mode_can_repoint_the_industrial_feed_off() {
         skills: None,
         equipment: None,
         industrial_ire: Some(false),
+        nest_spawns: None,
     });
     assert!(!ruleset.industrial_ire, "the mode repoints the feed off");
 }

@@ -82,7 +82,7 @@ fn a_nest_spawns_its_species_until_it_is_cleared() {
     let mut rng = 21u32;
     // Night cycles near the nest: the denwolf manifests from its den.
     for _ in 0..160 {
-        w.tick_hostile_spawns(player, world_spawn, 0.12, 5.0, &mut rng);
+        w.tick_nest_spawns(player, 0.12, 5.0, &mut rng);
     }
     let spawned = w
         .mobs()
@@ -100,7 +100,7 @@ fn a_nest_spawns_its_species_until_it_is_cleared() {
     assert_eq!(w.nests().count(), 0, "breaking the nest cleared the record");
     w.mobs_mut().retain(|m| m.species != wolf);
     for _ in 0..200 {
-        w.tick_hostile_spawns(player, world_spawn, 0.12, 5.0, &mut rng);
+        w.tick_nest_spawns(player, 0.12, 5.0, &mut rng);
     }
     assert_eq!(
         w.mobs().iter().filter(|m| m.species == wolf).count(),
@@ -131,7 +131,7 @@ fn nests_survive_save_and_reload() {
     let world_spawn = ep(Vec3::new(-500.0, 70.0, -500.0));
     let mut rng = 5u32;
     for _ in 0..120 {
-        reloaded.tick_hostile_spawns(player, world_spawn, 0.12, 5.0, &mut rng);
+        reloaded.tick_nest_spawns(player, 0.12, 5.0, &mut rng);
     }
     assert!(
         reloaded.mobs().iter().any(|m| m.species == wolf),
