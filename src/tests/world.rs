@@ -4497,3 +4497,70 @@ fn measure_chunk_composition() {
         sky_vals as f64 / n as f64
     );
 }
+
+#[test]
+fn industrial_machines_and_buildings_feed_regional_ire() {
+    use crate::world::{BlockEntity, MachineInstance};
+    let reg = base_reg();
+    let mut w = test_world_with("e12-industrial", reg.clone());
+    let my = 120;
+    assert_eq!(w.ire, 0.0);
+    // Raising a machine mouth costs the valley once (capability E12).
+    let mouth = reg.block_id("base:bloomery").unwrap();
+    let spot = bp(20, my, 20);
+    w.ensure_chunk(spot.chunk());
+    w.set_block_at(spot, AIR); // make sure the cell is replaceable
+    assert!(w.place_block_at(spot, mouth), "the building places");
+    let after_build = w.ire;
+    assert!(
+        (after_build - crate::world::World::INDUSTRIAL_BUILDING_IRE).abs() < 0.001,
+        "raising an industrial building charges ire: {after_build}"
+    );
+    // A lit bloomery feeds ire while it runs: ~0.01/s.
+    build_bloomery(&mut w, &reg, 12, my, 12);
+    let iron = it(&reg, "base:iron_ingot");
+    let coal = it(&reg, "base:charcoal");
+    let mut st = MachineInstance {
+        kind: reg.machine_kind("base:bloomery").unwrap_or_default(),
+        ..Default::default()
+    };
+    st.charge[0] = Some(ItemStack::new(&reg, iron, 2));
+    st.fuel[0] = Some(ItemStack::new(&reg, coal, 2));
+    w.insert_block_entity((12, my, 12), BlockEntity::Multiblock(st));
+    w.force_local_weather("clear");
+    w.light_bloomery(12, my, 12).expect("lights when charged");
+    let before = w.ire;
+    for _ in 0..60 {
+        w.tick_entities(1.0);
+    }
+    let fed = w.ire - before;
+    assert!(
+        fed > 0.5,
+        "a minute of firing feeds regional ire: {fed}"
+    );
+}
+
+#[test]
+fn a_mode_can_repoint_the_industrial_feed_off() {
+    // Modes parse `industrial_ire`; verify the override plumbing directly.
+    let mut ruleset = crate::ruleset::Ruleset::survival();
+    assert!(ruleset.industrial_ire, "survival keeps the feed live");
+    ruleset.apply_overrides(&crate::registry::ModeDef {
+        id: "quiet".into(),
+        base: None,
+        creative: None,
+        hunger: None,
+        fall_damage: None,
+        drowning: None,
+        lava_burn: None,
+        hostile_spawns: None,
+        ire: None,
+        hearts: None,
+        weather_extremes: None,
+        pvp: None,
+        skills: None,
+        equipment: None,
+        industrial_ire: Some(false),
+    });
+    assert!(!ruleset.industrial_ire, "the mode repoints the feed off");
+}

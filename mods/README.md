@@ -641,6 +641,7 @@ Every field is optional and inherits from `base`. The full toggle set:
 | `pvp` | players can hurt each other | true |
 | `skills` | the skill tree (E5) is live and XP accrues | false |
 | `equipment` | modular equipment (E6): frame/component slots and loadout presets are live | false |
+| `industrial_ire` | the industrial response gradient (E12): running machines and industrial buildings feed regional ire, and high ire tiers fray wildlife nerves | true |
 
 A mode's `base` names the built-in `survival` or `creative`, or another
 declared mode in the same pack (`base = "cozy"` chains through it). Built-in

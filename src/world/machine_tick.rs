@@ -695,6 +695,8 @@ impl World {
     }
 
     pub fn tick_entities(&mut self, dt: f32) {
+        // Capability E12: running machines feed regional ire.
+        self.tick_industrial_ire(dt);
         self.tick_loose_items(dt);
         self.tick_steam(dt);
         self.tick_separators(dt);

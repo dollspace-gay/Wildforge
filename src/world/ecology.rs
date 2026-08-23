@@ -1052,6 +1052,9 @@ impl World {
         let snapshot: Vec<(u32, usize, crate::planet::EntityPos)> =
             self.mobs.iter().map(|m| (m.id, m.species, m.pos)).collect();
         let mut spooked: Vec<(u32, crate::planet::EntityPos)> = Vec::new();
+        // Capability E12: the global tier once per pass — a region's
+        // industrial temper is shared by every animal in it.
+        let ire_tier = self.ire_tier();
         for m in &mut self.mobs {
             let Some(d) = reg.animals.get(m.species) else {
                 continue;
@@ -1060,12 +1063,15 @@ impl World {
                 .get(&m.id)
                 .copied()
                 .unwrap_or((fallback_season, fallback_daylight));
+            // Capability E12: the industrial response gradient — in tier-2+
+            // country a hungry predator sizes up the player regardless of
+            // season or hour. Hunger stays a hard requirement.
             m.bold = !d.hostile
                 && !d.fierce
                 && !d.prey.is_empty()
                 && d.attack > 0.0
                 && m.belly < crate::mobs::BELLY_DESPERATE
-                && (season == 3 || daylight < 0.35);
+                && (season == 3 || daylight < 0.35 || ire_tier >= 2);
             if d.prey.is_empty() || d.belly_secs <= 0.0 || m.belly > 0.0 || m.growth < 1.0 {
                 m.quarry = None;
                 continue;

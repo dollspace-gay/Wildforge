@@ -963,6 +963,17 @@ impl RegionCell {
             v: (surface.v() / Self::BLOCKS) as u8,
         }
     }
+
+    /// A representative surface position inside this cell — its center —
+    /// for charging ire when only the cell is known (capability E12).
+    pub fn any_surface(self) -> Option<crate::planet::SurfacePos> {
+        crate::planet::SurfacePos::new(
+            self.face,
+            u16::from(self.u) * Self::BLOCKS + Self::BLOCKS / 2,
+            u16::from(self.v) * Self::BLOCKS + Self::BLOCKS / 2,
+        )
+        .ok()
+    }
 }
 
 /// A settlement hidden cell's reveal key (spec 3.4): which settlement and
@@ -1054,6 +1065,9 @@ pub struct World {
     edit_relight_batch: bool,
     /// Accumulator for the food-freshness sweep (containers).
     perish_accum: f32,
+    /// Industrial ire cadence (capability E12): seconds since the last
+    /// one-second charge for running machines.
+    industrial_ire_accum: f32,
     /// Multiblock revalidations triggered by block edits since construction.
     /// Test-only: proves the 2c edit hook is scoped, not global.
     #[cfg(test)]
@@ -1532,6 +1546,7 @@ impl World {
             next_local_structure_id: 0,
             pending_drops: Vec::new(),
             perish_accum: 0.0,
+            industrial_ire_accum: 0.0,
             station_work: HashMap::new(),
             belt_state: HashMap::new(),
             regional_ire: HashMap::new(),
@@ -3190,6 +3205,20 @@ impl World {
         }
         if self.reg.is_solid(block) {
             self.register_player_waterwork_at(pos);
+        }
+        // Industrial response gradient (capability E12): raising an
+        // industrial building — any machine mouth — costs the valley a
+        // little ire, once, alongside the machine's running feed.
+        if self.ruleset().ire
+            && self.ruleset().industrial_ire
+            && self
+                .reg
+                .block(block)
+                .interaction
+                .as_deref()
+                .is_some_and(|i| self.reg.machine_by_interaction(i).is_some())
+        {
+            self.add_ire_at_surface(pos.surface(), Self::INDUSTRIAL_BUILDING_IRE);
         }
         // Power sources carry a marker entity from birth so the
         // station sweep finds them without scanning the world.

@@ -1322,6 +1322,8 @@ struct ModeToml {
     skills: Option<bool>,
     #[serde(default)]
     equipment: Option<bool>,
+    #[serde(default)]
+    industrial_ire: Option<bool>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -3119,6 +3121,7 @@ pub struct ModeDef {
     pub pvp: Option<bool>,
     pub skills: Option<bool>,
     pub equipment: Option<bool>,
+    pub industrial_ire: Option<bool>,
 }
 
 // ---------------- loading ----------------
@@ -5877,6 +5880,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
                     pvp: m.pvp,
                     skills: m.skills,
                     equipment: m.equipment,
+                    industrial_ire: m.industrial_ire,
                 });
             }
         }

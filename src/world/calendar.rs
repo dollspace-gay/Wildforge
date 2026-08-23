@@ -621,6 +621,58 @@ impl World {
         self.ease_bloom_debt_at_surface(pos, amt);
     }
 
+    /// Industrial response gradient (capability E12): running machines
+    /// feed regional ire alongside extraction — the valley feels a
+    /// bloomery's smoke as surely as the mine that fed it. Charged once
+    /// per second per lit fire machine; gated behind `ire` and
+    /// `industrial_ire` so modes repoint it off cleanly.
+    pub const INDUSTRIAL_IRE_PER_SEC: f32 = 0.01;
+
+    /// One-time ire for raising an industrial building (capability E12).
+    pub const INDUSTRIAL_BUILDING_IRE: f32 = 0.5;
+
+    /// Charge the region for every lit fire machine on a one-second beat.
+    pub fn tick_industrial_ire(&mut self, dt: f32) {
+        if !self.ruleset().ire || !self.ruleset().industrial_ire {
+            return;
+        }
+        self.industrial_ire_accum += dt;
+        if self.industrial_ire_accum < 1.0 {
+            return;
+        }
+        let step = std::mem::take(&mut self.industrial_ire_accum);
+        let lit: Vec<crate::planet::SurfacePos> = self
+            .block_entities
+            .iter()
+            .filter_map(|(pos, e)| {
+                let BlockEntity::Multiblock(m) = e else {
+                    return None;
+                };
+                let handler = m.kind.handler(&self.reg)?;
+                (handler.has_fire() && m.lit)
+                    .then(|| pos.surface())
+            })
+            .collect();
+        let amt =
+            step * Self::INDUSTRIAL_IRE_PER_SEC * lit.len() as f32;
+        if amt <= 0.0 {
+            return;
+        }
+        // One charge per distinct region cell: a workshop row smokes as
+        // one chimney, not four.
+        let mut cells: std::collections::HashSet<RegionCell> =
+            std::collections::HashSet::new();
+        for surface in &lit {
+            cells.insert(RegionCell::from_surface(*surface));
+        }
+        for cell in cells {
+            let Some(surface) = cell.any_surface() else {
+                continue;
+            };
+            self.add_ire_at_surface(surface, amt);
+        }
+    }
+
     // ---------------- the bloom (wrath as renewal) ----------------
 
     /// Days of bloom left in a cell: lightning strikes and fallen

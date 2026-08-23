@@ -608,7 +608,9 @@ impl Mob {
         }
 
         // Skittish species bolt when anyone closes in — unless recently
-        // fed (feeding is taming-lite).
+        // fed (feeding is taming-lite). The industrial response gradient
+        // (capability E12) frays their nerves: in tier-2+ country they
+        // startle from three quarters the distance, at tier 3 half.
         if let Some((_, near)) = nearest
             && def.flee_range > 0.0
             && !def.hostile
@@ -616,9 +618,15 @@ impl Mob {
             && self.calm <= 0.0
             && self.state != MobState::Flee
         {
+            let fear = match world.ire_tier() {
+                0 | 1 => 1.0,
+                2 => 0.75,
+                _ => 0.5,
+            };
+            let range = def.flee_range * fear;
             let mut d = self.pos.local_delta_to(near.pos);
             d.y = 0.0;
-            if d.length_squared() < def.flee_range * def.flee_range {
+            if d.length_squared() < range * range {
                 self.state = MobState::Flee;
                 self.state_timer = 4.0;
                 self.target = near.pos;

@@ -41,6 +41,11 @@ pub struct Ruleset {
     /// destroyed. Off by default so Survival/Creative worlds are unchanged;
     /// a mod mode opts a world in with `equipment = true`.
     pub equipment: bool,
+    /// Industrial response gradient (capability E12): running machines and
+    /// industrial buildings feed regional ire alongside extraction. Live
+    /// wherever `ire` is live; a mod mode can repoint it off with
+    /// `industrial_ire = false`.
+    pub industrial_ire: bool,
 }
 
 impl Ruleset {
@@ -54,6 +59,7 @@ impl Ruleset {
             lava_burn: true,
             hostile_spawns: true,
             ire: true,
+            industrial_ire: true,
             hearts: true,
             weather_extremes: true,
             pvp: true,
@@ -77,6 +83,7 @@ impl Ruleset {
             pvp: false,
             skills: false,
             equipment: false,
+            industrial_ire: false,
         }
     }
 
@@ -118,6 +125,9 @@ impl Ruleset {
         if let Some(value) = mode.equipment {
             self.equipment = value;
         }
+        if let Some(value) = mode.industrial_ire {
+            self.industrial_ire = value;
+        }
     }
 }
 
@@ -148,6 +158,7 @@ mod tests {
             pvp,
             skills,
             equipment: None,
+            industrial_ire: None,
         }
     }
 
@@ -182,6 +193,7 @@ mod tests {
             pvp: None,
             skills: Some(false),
             equipment: Some(true),
+            industrial_ire: None,
         };
         r.apply_overrides(&m);
         assert!(r.equipment, "mode opts into modular equipment");

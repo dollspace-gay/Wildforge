@@ -139,6 +139,42 @@ fn skittish_flees_players_bold_does_not() {
 }
 
 #[test]
+fn wrathful_country_frays_the_wilds_nerves() {
+    // Capability E12: at tier 3 the deer startles from half the distance —
+    // a player inside the calm-country radius no longer spooks it.
+    let reg = base_reg();
+    let deer_i = reg.animal_id("base:deer").unwrap();
+    let deer_def = reg.animals[deer_i].clone();
+    let pos = Vec3::new(0.5, 120.0, 0.5);
+    let player = pos + Vec3::new(7.5, 0.0, 0.0); // inside calm flee_range 10, outside tier-3's 5
+    let player_ctx = crate::server::PlayerCtx {
+        id: 0,
+        pos: ep(player),
+        spawn: ep(Vec3::ZERO),
+        attackable: true,
+        aggro_mod: 0.0,
+        quiet_charm: None,
+    };
+    let mut rng = 3u32;
+    // Calm country: the deer bolts.
+    let w = test_world("e12-calm");
+    let mut deer = crate::mobs::Mob::new(deer_i, pos, 0.0);
+    deer.tick(&w, &deer_def, &[player_ctx], 1.0 / 60.0, &mut rng, &mut Vec::new());
+    assert_eq!(deer.state, crate::mobs::MobState::Flee);
+    // Wrathful country: same geometry, frayed nerves hold.
+    let mut w = test_world("e12-wrath");
+    w.ire = 100.0;
+    assert_eq!(w.ire_tier(), 3);
+    let mut deer = crate::mobs::Mob::new(deer_i, pos, 0.0);
+    deer.tick(&w, &deer_def, &[player_ctx], 1.0 / 60.0, &mut rng, &mut Vec::new());
+    assert_ne!(
+        deer.state,
+        crate::mobs::MobState::Flee,
+        "wrathful country shortens the flight distance"
+    );
+}
+
+#[test]
 fn mob_ray_hit_works() {
     let reg = base_reg();
     let si = reg.animal_id("base:deer").unwrap();
