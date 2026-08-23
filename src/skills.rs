@@ -205,7 +205,13 @@ pub fn resolve(raws: &[RawSkillToml]) -> Result<SkillTree, Vec<String>> {
         tree.xp_exponent = raw.tree.xp_exponent.max(0.0);
         for src in &raw.xp_source {
             if tree.xp_sources.contains_key(&src.id) {
-                errors.push(format!("skills.toml: duplicate xp source {}", src.id));
+                // XP sources are the closed engine hook points, not content
+                // namespaces: two mods tuning `kill` is legitimate, and the
+                // first declaration in dependency order wins (the same
+                // first-wins convention branches and machines use). A hard
+                // error here made any two skill mods mutually exclusive —
+                // and the resulting default tree silently dropped every
+                // branch behind it.
                 continue;
             }
             tree.xp_sources.insert(

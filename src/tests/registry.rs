@@ -2383,3 +2383,44 @@ fn every_shipped_label_can_actually_be_drawn() {
         check("animal", &a.name, &a.label);
     }
 }
+
+#[test]
+fn belt_quest_skill_tree_resolves_with_authored_breadth() {
+    let mods = Path::new(env!("CARGO_MANIFEST_DIR")).join("mods");
+    let reg = registry::load(&mods);
+    assert!(
+        reg.material_errors.is_empty(),
+        "shipped mod material/qualification errors: {:?}",
+        reg.material_errors
+    );
+    // Capability C6: six visible branches, ~90 authored nodes, per-tier
+    // costs 1..4. The hidden Temporal branch arrives with Act 3 (C9).
+    let raw_text = std::fs::read_to_string(mods.join("belt_quest").join("skills.toml")).expect("file");
+    match crate::skills::parse_skills(&raw_text, "belt_quest") {
+        Ok(raw) => eprintln!("parse ok: {} branches", raw.branch.len()),
+        Err(e) => eprintln!("parse ERR: {e}"),
+    }
+    eprintln!("skills diag: branches={} nodes={} errs={:?}", reg.skills.branches.len(), reg.skills.nodes.len(), reg.material_errors);
+    let tree = &reg.skills;
+    // The registry merges every mod's tree; scope assertions to belt_quest.
+    let bq_branches = tree
+        .branches
+        .iter()
+        .filter(|b| b.id.starts_with("belt_quest:"))
+        .count();
+    assert_eq!(bq_branches, 6, "six visible branches");
+    let bq_nodes: Vec<_> = tree
+        .nodes
+        .iter()
+        .filter(|n| n.branch.starts_with("belt_quest:"))
+        .collect();
+    assert!(bq_nodes.len() >= 85, "authored breadth: {} nodes", bq_nodes.len());
+    assert!(
+        bq_nodes.iter().any(|n| n.branch == "belt_quest:warrior" && n.tier == 4),
+        "tier-4 caps each branch"
+    );
+    // XP sources stay the closed engine set despite two mods declaring them.
+    for source in ["mine", "build", "craft", "smelt", "kill", "fish", "harvest"] {
+        assert!(tree.xp_sources.contains_key(source), "{source} declared");
+    }
+}
