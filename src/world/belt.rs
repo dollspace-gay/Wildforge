@@ -416,6 +416,11 @@ impl World {
                     let next_state = states.entry(next).or_insert_with(BeltState::new);
                     next_state.cargo.push_back(stack);
                     next_state.entry_dir = exit;
+                } else if self.depot_accept(next, &stack) > 0 {
+                    // The mouth: a settlement depot takes what its
+                    // settlement needs (capability E13); belt-fed stock
+                    // counts toward needs without player attribution. The
+                    // depot's staging is the delivery — surplus rides on.
                 } else if let Some(leftover) = self.machine_insert_at(next, stack) {
                     // The mouth: a machine that accepts the stack takes it;
                     // otherwise the item leaves the belt as a loose item.

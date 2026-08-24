@@ -1937,6 +1937,68 @@ impl Game {
                 // Capability E11: a mod screen block. Opening is pure
                 // presentation, so it works identically solo and as a
                 // guest; the screen's buttons carry the authority.
+                // Capability E13: a settlement depot. Depositing held
+                // goods the bound settlement needs pays reputation; the
+                // pay-out lands in the game layer via SimEvent.
+                Some(s) if s.starts_with("depot:") && self.input.action_cooldown <= 0.0 => {
+                    self.input.action_cooldown = 0.3;
+                    self.input.right_held = false;
+                    let held = self.inventory.slots[self.input.hotbar_sel];
+                    let Some(held) = held else {
+                        self.toast("Nothing in hand to deliver.".to_string());
+                        return;
+                    };
+                    if let Some(rc) = &self.multiplayer.remote {
+                        rc.client.send(&net::C2S::DepotDeposit { pos: h.block });
+                        return;
+                    }
+                    let item_name = reg.item(held.item).name.clone();
+                    let need = self.server.world.depot_need_at(h.block, held.item);
+                    let accepted = self.server.world.depot_deposit(h.block, &held);
+                    match (need, accepted) {
+                        (Some((wanted, rep_per_unit)), accepted) if accepted > 0 => {
+                            let units = accepted.min(wanted);
+                            self.inventory.take_one(self.input.hotbar_sel);
+                            self.sfx(Sfx::Click);
+                            // Solo: the player KV namespace lives on this
+                            // Game, so pay the standing directly.
+                            let settlement = s.trim_start_matches("depot:").to_string();
+                            let rep = units * rep_per_unit;
+                            let rep_key = self
+                                .content
+                                .reg
+                                .settlements
+                                .iter()
+                                .find(|sd| sd.id == settlement)
+                                .map(|sd| sd.rep_key.clone())
+                                .unwrap_or_else(|| format!("rep_{settlement}"));
+                            let ns = self.player_namespace();
+                            self.content
+                                .scripts
+                                .kv
+                                .borrow_mut()
+                                .entry(ns)
+                                .or_default()
+                                .entry(rep_key)
+                                .and_modify(|current: &mut String| {
+                                    *current = (current.parse::<u32>().unwrap_or(0)
+                                        + rep)
+                                        .to_string();
+                                })
+                                .or_insert_with(|| rep.to_string());
+                            self.toast(format!(
+                                "{settlement} appreciates the {item_name} (+{rep} standing)."
+                            ));
+                        }
+                        _ => {
+                            self.toast(format!(
+                                "The depot has no appetite for {} right now.",
+                                reg.item(held.item).label
+                            ));
+                        }
+                    }
+                    return;
+                }
                 Some(s) if s.starts_with("screen:") => {
                     self.input.right_held = false;
                     if self.input.action_cooldown > 0.0 {

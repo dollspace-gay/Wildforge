@@ -655,6 +655,10 @@ impl Agent {
                     crate::world::BlockEntity::Sign(crate::world::SignState { lines }),
                 );
             }
+            net::S2C::SettlementDelivery { settlement, item, units, rep_per_unit } => {
+                // Capability E13: standing pays locally, like quest rewards.
+                let _ = (settlement, item, units, rep_per_unit);
+            }
             net::S2C::SwitchState { pos, selected } => {
                 let selected = match selected & 3 {
                     0 => crate::planet::Direction4::East,

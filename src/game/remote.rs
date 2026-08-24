@@ -778,6 +778,40 @@ impl Game {
                         world::BlockEntity::Sign(world::SignState { lines }),
                     );
                 }
+                net::S2C::SettlementDelivery {
+                    settlement,
+                    item,
+                    units,
+                    rep_per_unit,
+                } => {
+                    // Capability E13: the host's depot accepted the goods;
+                    // standing pays locally, exactly like quest rewards.
+                    let rep = units * rep_per_unit;
+                    let ns = self.player_namespace();
+                    let rep_key = self
+                        .content
+                        .reg
+                        .settlements
+                        .iter()
+                        .find(|s| s.id == settlement)
+                        .map(|s| s.rep_key.clone())
+                        .unwrap_or_else(|| format!("rep_{settlement}"));
+                    self.content
+                        .scripts
+                        .kv
+                        .borrow_mut()
+                        .entry(ns)
+                        .or_default()
+                        .entry(rep_key)
+                        .and_modify(|current: &mut String| {
+                            *current =
+                                (current.parse::<u32>().unwrap_or(0) + rep).to_string();
+                        })
+                        .or_insert_with(|| rep.to_string());
+                    self.toast(format!(
+                        "{settlement} appreciates the {item} (+{rep} standing)."
+                    ));
+                }
                 net::S2C::SwitchState { pos, selected } => {
                     let selected = match selected & 3 {
                         0 => crate::planet::Direction4::East,

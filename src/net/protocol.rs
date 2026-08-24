@@ -9,7 +9,7 @@ use crate::identity::{AdmissionPolicy, IdentityPolicy, Role};
 use crate::planet::{BlockPos, EntityPos};
 
 /// Bump whenever a serialized DTO changes shape.
-pub const PROTOCOL: u32 = 45;
+pub const PROTOCOL: u32 = 46;
 pub(super) const PREAUTH_FRAME_MAX: usize = 4 * 1024;
 pub(super) const CLIENT_FRAME_MAX: usize = 64 * 1024;
 pub(super) const AUTH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -463,6 +463,12 @@ pub enum C2S {
         screen: String,
         action: String,
     },
+    /// Deposit the held stack into a settlement depot (capability E13).
+    /// The host validates the need, consumes from the guest's inventory,
+    /// and pays reputation host-side.
+    DepotDeposit {
+        pos: BlockPos,
+    },
     /// One transactional click in a mob's pack.
     MobCargoClick {
         id: u32,
@@ -783,6 +789,14 @@ pub enum S2C {
     SwitchState {
         pos: BlockPos,
         selected: u8,
+    },
+    /// A depot accepted your delivery (capability E13): pay your standing
+    /// locally, exactly as quest rewards do.
+    SettlementDelivery {
+        settlement: String,
+        item: String,
+        units: u32,
+        rep_per_unit: u32,
     },
     /// A mob pack's contents (sent on open and after each change).
     MobCargo {

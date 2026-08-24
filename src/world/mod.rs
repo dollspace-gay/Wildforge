@@ -217,6 +217,8 @@ pub enum BlockEntity {
     Sign(SignState),
     /// A market stall counter: goods, a price, and the owner's till.
     Stall(StallState),
+    /// A settlement depot (capability E13): needs deliveries + staging.
+    Depot(DepotState),
     /// A smoking rack: raw cuts curing over a live torch.
     Smoker(SmokerState),
     /// A steam firebox: banked fire and exact boiler water.
@@ -401,6 +403,19 @@ pub struct StallState {
     /// Price per item sold: any stack is a legal price (barter-native).
     pub price: Option<ItemStack>,
     pub till: [Option<ItemStack>; 6],
+}
+
+/// A settlement depot (capability E13): the logistics mouth of a
+/// settlement. Deliveries of the bound settlement's declared needs are
+/// consumed into the depot and pay reputation through the game layer;
+/// belt-fed stock counts toward the same needs without attribution.
+#[derive(Clone)]
+pub struct DepotState {
+    /// Qualified settlement id this depot serves.
+    pub settlement: String,
+    /// Delivered goods staged here (bounded; surplus of unneeded items is
+    /// refused at the door rather than stored).
+    pub storage: Box<[Option<crate::inventory::ItemStack>; 12]>,
 }
 
 #[derive(Default, Clone)]
@@ -3237,6 +3252,17 @@ impl World {
                     .entry(pos)
                     .or_insert_with(|| BlockEntity::Steam(Default::default()));
             }
+            // Settlement depots (capability E13): `depot:<settlement id>`
+            // binds the depot to that settlement's delivery needs.
+            Some(interaction) if interaction.starts_with("depot:") => {
+                let settlement = interaction.trim_start_matches("depot:").to_string();
+                self.block_entities.entry(pos).or_insert_with(|| {
+                    BlockEntity::Depot(DepotState {
+                        settlement,
+                        storage: Default::default(),
+                    })
+                });
+            }
             Some(interaction)
                 if self
                     .reg
@@ -3494,6 +3520,7 @@ impl World {
             BlockEntity::Furnace(state) => {
                 add(&[state.input, state.fuel, state.output]);
             }
+            BlockEntity::Depot(d) => add(d.storage.as_ref()),
             BlockEntity::Chest(state) => add(&state.slots),
             BlockEntity::Offering(state) => add(&state.slots),
             BlockEntity::Multiblock(state) => {
@@ -3716,6 +3743,7 @@ impl World {
                     [f.input, f.fuel, f.output].into_iter().flatten().collect()
                 }
                 BlockEntity::Chest(c) => c.slots.into_iter().flatten().collect(),
+                BlockEntity::Depot(d) => d.storage.into_iter().flatten().collect(),
                 BlockEntity::Offering(o) => o.slots.into_iter().flatten().collect(),
                 BlockEntity::Multiblock(m) => {
                     let reg = &self.reg;

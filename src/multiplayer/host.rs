@@ -2645,6 +2645,73 @@ impl HostSession {
                 );
                 self.broadcast_ready(&S2C::SignText { pos, lines });
             }
+            C2S::DepotDeposit { pos } => {
+                // Capability E13: a guest delivers held goods to a depot.
+                // The host validates the need against its own registry,
+                // consumes from the guest's inventory, and pays the
+                // reputation through HostFx (the KV namespace lives in the
+                // windowed host).
+                if guest.pos.distance_to(pos.entity_center()) > REACH {
+                    return;
+                }
+                let interaction = server
+                    .world
+                    .reg
+                    .block(server.world.get_block_at(pos))
+                    .interaction
+                    .clone();
+                let Some(interaction) = interaction else { return };
+                if !interaction.starts_with("depot:") {
+                    return;
+                }
+                let settlement = interaction.trim_start_matches("depot:").to_string();
+                let Some(held) = guest.inventory.slots[guest.hotbar] else {
+                    return;
+                };
+                let Some((wanted, rep_per_unit)) =
+                    server.world.depot_need_at(pos, held.item)
+                else {
+                    self.net.send(
+                        id,
+                        &S2C::Toast(format!(
+                            "The depot has no appetite for {} right now.",
+                            server.world.reg.item(held.item).label
+                        )),
+                    );
+                    return;
+                };
+                let accepted = server.world.depot_deposit(pos, &held);
+                if accepted == 0 {
+                    return;
+                }
+                let units = accepted.min(wanted);
+                // Consume from the guest's inventory (largest stacks first).
+                let mut left = units;
+                for slot in guest.inventory.slots.iter_mut() {
+                    if left == 0 {
+                        break;
+                    }
+                    if let Some(st) = slot
+                        && st.item == held.item
+                    {
+                        let take = st.count.min(left);
+                        st.count -= take;
+                        left -= take;
+                        if st.count == 0 {
+                            *slot = None;
+                        }
+                    }
+                }
+                self.net.send(
+                    id,
+                    &S2C::SettlementDelivery {
+                        settlement,
+                        item: server.world.reg.item(held.item).name.clone(),
+                        units,
+                        rep_per_unit,
+                    },
+                );
+            }
             C2S::ScreenClick { screen, action } => {
                 // Capability E11: a mod-screen button click. Both ids are
                 // validated against the host's own registry, so a tampered
@@ -4204,6 +4271,8 @@ impl HostSession {
         };
         let mut held = self.guests.get(&id).and_then(|guest| guest.cursor);
         match entity {
+            // Depots are deposit-only through the interaction path.
+            BlockEntity::Depot(_) => return,
             BlockEntity::Multiblock(bl)
                 if bl.kind.handler(&reg) == Some(MachineHandler::Bloomery) =>
             {
@@ -4457,6 +4526,9 @@ impl HostSession {
             return;
         }
         let (kind, slots, aux): (u8, Vec<Option<StackSnap>>, Vec<f32>) = match entity {
+            // Depots have no container screen; deposits go through the
+            // interaction arm and C2S::DepotDeposit.
+            BlockEntity::Depot(_) => return,
             BlockEntity::Chest(c) => (0, c.slots.iter().map(snap).collect(), Vec::new()),
             BlockEntity::Furnace(f) => (
                 1,

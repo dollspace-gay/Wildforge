@@ -861,6 +861,18 @@ pub struct SettlementDef {
     pub rep_key: String,
     /// Growth tiers, ascending, with increasing thresholds.
     pub tiers: Vec<SettlementTier>,
+    /// What the settlement wants delivered (capability E13): item and
+    /// reputation per unit. A depot bound to this settlement converts
+    /// deliveries into reputation through this table.
+    pub needs: Vec<SettlementNeed>,
+}
+
+/// One deliverable need (capability E13).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SettlementNeed {
+    pub item: ItemId,
+    /// Reputation per unit delivered.
+    pub rep_per_unit: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2920,6 +2932,15 @@ struct SettlementToml {
     rep_key: Option<String>,
     #[serde(default)]
     tiers: Vec<SettlementTierToml>,
+    #[serde(default)]
+    need: Vec<SettlementNeedToml>,
+}
+
+#[derive(Deserialize, Clone)]
+struct SettlementNeedToml {
+    item: String,
+    #[serde(default)]
+    rep: Option<u32>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -4828,10 +4849,26 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             ));
             continue;
         }
+        // Capability E13: resolve the delivery needs against the roster.
+        let mut needs: Vec<SettlementNeed> = Vec::new();
+        for need in &s.need {
+            let Some(item) =
+                lookup_item(&reg, &modid, &need.item)
+            else {
+                settlement_errors
+                    .push(format!("{id}: need item {} does not resolve", need.item));
+                continue;
+            };
+            needs.push(SettlementNeed {
+                item,
+                rep_per_unit: need.rep.unwrap_or(1).max(1),
+            });
+        }
         reg.settlements.push(SettlementDef {
             rep_key: s.rep_key.clone().unwrap_or_else(|| format!("rep_{id}")),
             id,
             tiers,
+            needs,
         });
     }
     // Cross-validate settlement wiring (spec 3.4): every assembly that names

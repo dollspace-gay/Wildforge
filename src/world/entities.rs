@@ -10,7 +10,7 @@ impl World {
 
     pub(super) fn save_entities(&self) -> std::io::Result<()> {
         use std::fmt::Write as _;
-        let mut out = String::from("version = 10\n");
+        let mut out = String::from("version = 11\n");
         let pos_value = |pos: BlockPos| {
             format!(
                 "{{ face = \"{:?}\", u = {}, y = {}, v = {} }}",
@@ -291,6 +291,26 @@ impl World {
                         sw.selected
                     );
                 }
+                BlockEntity::Depot(d) => {
+                    let _ = writeln!(
+                        out,
+                        "[[depot]]\n{pos_line}\nsettlement = \"{}\"",
+                        d.settlement.replace(['\\', '"'], "")
+                    );
+                    for (i, st) in d.storage.iter().enumerate() {
+                        if let Some(st) = st {
+                            let _ = writeln!(
+                                out,
+                                "[[depot.slot]]\nindex = {i}\nitem = \"{}\"\ncount = {}\ndurability = {}\narcane_id = {}",
+                                self.reg.item(st.item).name,
+                                st.count,
+                                st.durability,
+                                st.arcane_id
+                            );
+                        }
+                    }
+                    let _ = writeln!(out);
+                }
             }
         }
         // Belt cells (capability E8) are persisted here too: cargo, progress,
@@ -511,6 +531,23 @@ impl World {
             arcane_id: u64,
         }
         #[derive(Deserialize)]
+        struct DepotSlotT {
+            index: usize,
+            item: String,
+            count: u32,
+            durability: u32,
+            #[serde(default)]
+            arcane_id: u64,
+        }
+        #[derive(Deserialize)]
+        struct DepotT {
+            pos: crate::planet::BlockPos,
+            #[serde(default)]
+            settlement: String,
+            #[serde(default)]
+            slot: Vec<DepotSlotT>,
+        }
+        #[derive(Deserialize)]
         struct BeltT {
             pos: crate::planet::BlockPos,
             #[serde(default)]
@@ -557,6 +594,8 @@ impl World {
             switch: Vec<SwitchT>,
             #[serde(default)]
             belt: Vec<BeltT>,
+            #[serde(default)]
+            depot: Vec<DepotT>,
         }
         let Ok(text) = fs::read_to_string(self.entities_path()) else {
             return;
@@ -567,7 +606,7 @@ impl World {
         // Version 9 saves still load (they simply have no belt records); a
         // version 10 file adds the belt table. Anything else is foreign and
         // the whole sidecar is left alone rather than half-misread.
-        if !(9..=10).contains(&parsed.version) {
+        if !(9..=11).contains(&parsed.version) {
             return;
         }
         let conv = |reg: &Registry, s: Option<SlotT>| -> Option<ItemStack> {
@@ -844,6 +883,25 @@ impl World {
             // record. The belt tick parks cells whose chunk is still unloaded
             // and spills cargo only once the cell genuinely is not a belt.
             self.belt_state.insert(bt.pos, state);
+        }
+        for dt_ent in parsed.depot {
+            let mut state = super::DepotState {
+                settlement: dt_ent.settlement,
+                storage: Default::default(),
+            };
+            for sl in dt_ent.slot {
+                if sl.index < 12
+                    && let Some(item) = self.reg.item_id(&sl.item)
+                {
+                    state.storage[sl.index] = Some(ItemStack {
+                        item,
+                        count: sl.count,
+                        durability: sl.durability.min(self.reg.item(item).durability),
+                        arcane_id: sl.arcane_id,
+                    });
+                }
+            }
+            self.block_entities.insert(dt_ent.pos, BlockEntity::Depot(state));
         }
     }
 

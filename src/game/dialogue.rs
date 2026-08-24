@@ -123,7 +123,7 @@ impl Game {
     // The player namespace rides the written-with-the-world KV, so it
     // survives saves, reloads, and (once the 11c rule lands) hot reloads.
 
-    fn player_namespace(&self) -> String {
+    pub(super) fn player_namespace(&self) -> String {
         let mut id = [0u8; 16];
         let world_dir = self.server.world.save_dir_for_saving();
         if let Ok(p) = identity::local_player_id(&world_dir, self.identity.device_id()) {

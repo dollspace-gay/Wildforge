@@ -631,6 +631,82 @@ impl World {
     /// One-time ire for raising an industrial building (capability E12).
     pub const INDUSTRIAL_BUILDING_IRE: f32 = 0.5;
 
+    /// The delivery contract of the depot at `pos` (capability E13): how
+    /// many units of `item` the bound settlement still wants staged, and
+    /// the reputation per unit. `None` when the cell is not a depot,
+    /// nothing is bound, or the item is not one of its needs.
+    pub fn depot_need_at(
+        &self,
+        pos: BlockPos,
+        item: crate::registry::ItemId,
+    ) -> Option<(u32, u32)> {
+        let Some(BlockEntity::Depot(d)) = self.block_entity_at(&pos) else {
+            return None;
+        };
+        let def = self
+            .reg
+            .settlements
+            .iter()
+            .find(|s| s.id == d.settlement)?;
+        let need = def.needs.iter().find(|need| need.item == item)?;
+        // Staged stock counts against the appetite: a depot full of iron
+        // has no more use for iron.
+        let staged: u32 = d
+            .storage
+            .iter()
+            .flatten()
+            .filter(|stack| stack.item == item)
+            .map(|stack| stack.count)
+            .sum();
+        let wanted = 64u32.saturating_sub(staged.min(64));
+        (wanted > 0).then_some((wanted, need.rep_per_unit))
+    }
+
+    /// A belt's offer to the depot at `pos`: how many units of this stack
+    /// the settlement currently needs (capability E13 belt port).
+    pub fn depot_accept(&mut self, pos: BlockPos, stack: &crate::inventory::ItemStack) -> u32 {
+        let Some((wanted, _rep)) = self.depot_need_at(pos, stack.item) else {
+            return 0;
+        };
+        let take = stack.count.min(wanted);
+        self.depot_deposit(pos, &crate::inventory::ItemStack {
+            count: take,
+            ..*stack
+        })
+    }
+
+    /// Deposit up to `count` units of `stack` into the depot at `pos`,
+    /// filling its staging slots. Returns how many units were accepted.
+    pub fn depot_deposit(&mut self, pos: BlockPos, stack: &crate::inventory::ItemStack) -> u32 {
+        let max_stack = self.reg.item(stack.item).max_stack;
+        let Some(BlockEntity::Depot(d)) = self.block_entity_mut_at(&pos) else {
+            return 0;
+        };
+        let mut left = stack.count;
+        // Top up part-stacks first.
+        for slot in d.storage.iter_mut().flatten() {
+            if slot.item == stack.item
+                && slot.arcane_id == stack.arcane_id
+                && slot.durability == stack.durability
+                && u64::from(slot.count) + u64::from(left) <= u64::from(max_stack)
+            {
+                slot.count += left;
+                left = 0;
+                break;
+            }
+        }
+        if left > 0 {
+            for slot in d.storage.iter_mut() {
+                if slot.is_none() {
+                    *slot = Some(crate::inventory::ItemStack { count: left, ..*stack });
+                    left = 0;
+                    break;
+                }
+            }
+        }
+        stack.count - left
+    }
+
     /// Charge the region for every lit fire machine on a one-second beat.
     pub fn tick_industrial_ire(&mut self, dt: f32) {
         if !self.ruleset().ire || !self.ruleset().industrial_ire {
