@@ -2421,7 +2421,7 @@ fn belt_quest_skill_tree_resolves_with_authored_breadth() {
         .iter()
         .filter(|b| b.id.starts_with("belt_quest:"))
         .count();
-    assert_eq!(bq_branches, 6, "six visible branches");
+    assert_eq!(bq_branches, 7, "seven branches (six visible + Temporal);");
     let bq_nodes: Vec<_> = tree
         .nodes
         .iter()
