@@ -77,9 +77,26 @@ impl World {
         let seed = self.seed ^ self.run_seed;
         // Void chunks generate instantly, so stamping is synchronous: the
         // rooms exist before this call returns and nobody falls through.
-        let (_, placed) = self.place_assembly(asm, anchor, seed);
+        let (markers, placed) = self.place_assembly(asm, anchor, seed);
         if placed == 0 {
             return None;
+        }
+        // Resolve the markers a run cares about: nest markers place their
+        // den blocks through the ordinary block path, which registers the
+        // garrison automatically (capability E9). Unknown kinds are
+        // silently skipped, exactly like worldgen marker resolution.
+        #[cfg(test)]
+        eprintln!("diag-enter: markers={} first={:?}", markers.len(), markers.first().map(|m| m.kind.clone()));
+        for marker in &markers {
+            if let Some(nest_name) = marker.kind.strip_prefix("spawn:nest:") {
+                let full = format!("belt_quest:{nest_name}");
+                let _ = &full;
+                if let Some(nest) =
+                    self.reg.nests.iter().find(|n| n.id.ends_with(nest_name))
+                {
+                    self.set_block_at(marker.at, nest.block);
+                }
+            }
         }
         let origin = self.last_entry_anchor?;
         let spawn = EntityPos::new(

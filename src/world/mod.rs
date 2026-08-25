@@ -42,7 +42,7 @@ mod machine_tick;
 pub(crate) mod machines;
 pub(crate) mod multiblock;
 mod persistence;
-mod pieces;
+pub(crate) mod pieces;
 mod power;
 pub(crate) mod power_draw;
 #[cfg_attr(test, allow(unused))]

@@ -306,6 +306,8 @@ impl World {
                     continue;
                 };
                 if !self.piece_fits(piece, anchor, rot, &occupied, &reserved) {
+                    #[cfg(test)]
+                    eprintln!("diag-walk: FIT FAILED for {}", piece.name);
                     continue;
                 }
                 if let Some(attach) = self.place_piece(

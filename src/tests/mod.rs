@@ -33,6 +33,7 @@ mod mobs;
 mod multiblock;
 mod nests;
 mod multiplayer;
+mod playtest;
 mod player;
 mod power_draw;
 mod qualification;
@@ -170,6 +171,10 @@ fn test_world_with(name: &str, reg: Arc<Registry>) -> World {
         }
     }
     w
+}
+
+fn test_world_seeded(name: &str, reg: Arc<Registry>, seed: u32) -> World {
+    World::new(seed, tmp_dir(name), reg)
 }
 
 fn test_world(name: &str) -> World {

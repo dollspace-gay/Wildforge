@@ -100,6 +100,19 @@ fn every_shipped_mod_screen_resolves_and_binds_to_its_block() {
     assert!(def.rows().iter().any(
         |row| matches!(row, crate::screens::ScreenWidget::Button { action, .. } if action == "offer")
     ));
+    let haven = reg
+        .settlements
+        .iter()
+        .find(|sd| sd.id == "belt_quest:haven")
+        .expect("haven settlement resolves");
+    eprintln!(
+        "diag: haven needs = {:?}",
+        haven
+            .needs
+            .iter()
+            .map(|n| reg.item(n.item).name.clone())
+            .collect::<Vec<_>>()
+    );
     let block = reg.block_id("gems:gem_altar").expect("altar block exists");
     assert_eq!(
         reg.screen_by_interaction(
