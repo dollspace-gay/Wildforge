@@ -725,6 +725,10 @@ pub struct AnimalDef {
     /// Hunts players on sight, fed or not. The polar bear needs no
     /// reason. (Wildlife, not warden: persists, ignores daylight.)
     pub fierce: bool,
+    /// Capability E15: a non-hostile creature that defends its area from
+    /// hostile mobs. Guards pick the nearest hostile as quarry, approach,
+    /// and deal contact damage per swing instead of instant-killing.
+    pub guards: bool,
     pub arcane: Option<ArcaneContentDef>,
     /// Some(npc index) marks a synthesized companion species backed by an
     /// `NpcDef` (friendly characters, spec 3.1). Wildlife is None.
@@ -2449,6 +2453,8 @@ struct AnimalToml {
     prey: Vec<String>,
     #[serde(default)]
     fierce: bool,
+    #[serde(default)]
+    guards: bool,
     #[serde(default)]
     vehicle: bool,
     #[serde(default)]
@@ -5276,6 +5282,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             grazes: a.grazes,
             prey: Vec::new(), // resolved after every species exists
             fierce: a.fierce,
+            guards: a.guards,
             arcane,
             projectile: a.projectile.as_ref().map(|pr| ProjectileDef {
                 tile: proj_tile.unwrap_or(crate::atlas::UNKNOWN_SLOT),
@@ -5394,6 +5401,7 @@ fn build(raws: Vec<RawMod>, mut failed: Vec<ModInfo>) -> Registry {
             grazes: false,
             prey: Vec::new(),
             fierce: false,
+            guards: false,
             arcane: None,
             projectile: None,
             npc: Some(reg.npcs.len()),

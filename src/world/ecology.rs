@@ -1094,6 +1094,27 @@ impl World {
             {
                 spooked.push((id, m.pos));
             }
+            // Capability E15: guards scan for hostile mobs regardless of
+            // hunger or prey lists — they defend their post.
+            if d.guards && !d.hostile {
+                let mut best_hostile: Option<(u32, EntityPos, f32)> = None;
+                for &(id, sp, pos) in &snapshot {
+                    if id == m.id {
+                        continue;
+                    }
+                    let Some(sd) = reg.animals.get(sp) else { continue };
+                    if !sd.hostile {
+                        continue;
+                    }
+                    let delta = m.pos.local_delta_to(pos);
+                    let dist = delta.length();
+                    let range = d.aggro_range.max(crate::mobs::HUNT_RANGE);
+                    if dist < range && best_hostile.is_none_or(|(_, _, bd)| dist < bd) {
+                        best_hostile = Some((id, pos, dist));
+                    }
+                }
+                m.quarry = best_hostile.map(|(id, pos, _)| (id, pos));
+            }
         }
         for (id, from) in spooked {
             if let Some(p) = self.mob_by_id_mut(id)

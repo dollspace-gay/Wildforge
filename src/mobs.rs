@@ -89,6 +89,14 @@ pub enum MobEvent {
         species: usize,
         count: u32,
     },
+    /// A guard struck a hostile mob (capability E15): the world applies
+    /// the damage through `Mob::hurt`, which triggers retaliation.
+    HitMob {
+        id: u32,
+        dmg: f32,
+        dmg_type: Option<String>,
+        from: EntityPos,
+    },
 }
 
 /// A bolt in flight: warden thorn/ember/frost, or a player's arrow.
@@ -718,6 +726,17 @@ impl Mob {
             self.state = MobState::Stalk;
             self.state_timer = 18.0;
         }
+        // Capability E15: guards enter Stalk when a hostile is nearby,
+        // regardless of hunger or prey lists.
+        if !led_active
+            && def.guards
+            && !def.hostile
+            && self.quarry.is_some()
+            && !matches!(self.state, MobState::Stalk | MobState::Hunt | MobState::Flee)
+        {
+            self.state = MobState::Stalk;
+            self.state_timer = 30.0;
+        }
         // A hungry grazer drops what it was doing (short of fleeing or
         // being led) and walks to the nearest richest plant — which,
         // beside a farm, will tend to be the farm.
@@ -893,13 +912,31 @@ impl Mob {
                         to.y = 0.0;
                         let flat = to.length();
                         if flat < def.half_w + 0.9 && dy.abs() < 2.0 {
-                            // The kill. The world turns the prey into
-                            // a carcass; the hunter eats first.
-                            events.push(MobEvent::Killed(prey_id));
-                            self.belly = def.belly_secs;
-                            self.digest = 90.0 + (self.id % 45) as f32;
+                            if def.guards {
+                                // Combat: deal damage per swing instead of
+                                // instant-killing. The target retaliates via
+                                // its own hurt() retaliation path.
+                                if self.state_timer <= 0.0 {
+                                    events.push(MobEvent::HitMob {
+                                        id: prey_id,
+                                        dmg: def.attack,
+                                        dmg_type: None,
+                                        from: self.pos,
+                                    });
+                                    self.state_timer = 1.5;
+                                } else {
+                                    // Hold position between swings.
+                                    wish = Vec3::ZERO;
+                                }
+                            } else {
+                                // The kill. The world turns the prey into
+                                // a carcass; the hunter eats first.
+                                events.push(MobEvent::Killed(prey_id));
+                                self.belly = def.belly_secs;
+                                self.digest = 90.0 + (self.id % 45) as f32;
+                            }
                             self.state = MobState::Idle;
-                            self.state_timer = 3.0;
+                            self.state_timer = if def.guards { 1.5 } else { 3.0 };
                         } else if self.state_timer <= 0.0 {
                             self.belly = 60.0;
                             self.state = MobState::Idle;

@@ -284,6 +284,16 @@ impl Server {
                     }
                     events.push(SimEvent::BoltCast);
                 }
+                MobEvent::HitMob { id, dmg, dmg_type, from } => {
+                    let td = self.world.reg.animals.get(
+                        self.world.mob_by_id(id).map_or(usize::MAX, |m| m.species),
+                    ).cloned();
+                    if let Some(td) = td
+                        && let Some(target) = self.world.mob_by_id_mut(id)
+                    {
+                        target.hurt(&td, dmg, dmg_type.as_deref(), from);
+                    }
+                }
                 MobEvent::Bred => events.push(SimEvent::Bred),
                 MobEvent::Build {
                     template,
