@@ -58,6 +58,18 @@ impl Game {
         }
     }
 
+    /// All game modes available for new-world creation (capability E1):
+    /// the two built-ins plus every mode declared by loaded mods.
+    pub(super) fn available_new_world_modes(&self) -> Vec<String> {
+        let mut modes = vec!["survival".to_string(), "creative".to_string()];
+        for m in &self.content.reg.modes {
+            if !modes.contains(&m.id) {
+                modes.push(m.id.clone());
+            }
+        }
+        modes
+    }
+
     pub(super) fn set_screen(&mut self, screen: Screen) {
         if self.ui_state.screen == screen {
             return;

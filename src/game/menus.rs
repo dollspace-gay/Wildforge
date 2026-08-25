@@ -382,6 +382,28 @@ impl Game {
                     self.sfx(Sfx::Click);
                     self.set_screen(Screen::Title);
                 }
+                // Mode cycler arrows (capability E1).
+                let modes = self.available_new_world_modes();
+                if modes.len() > 1 {
+                    let w = self.renderer.config.width as f32;
+                    let h = self.renderer.config.height as f32;
+                    let mode_y = h * 0.56;
+                    let left_r = (w / 2.0 - 200.0, mode_y - 6.0, 36.0, 30.0);
+                    let right_r = (w / 2.0 + 164.0, mode_y - 6.0, 36.0, 30.0);
+                    let cur = modes
+                        .iter()
+                        .position(|m| m == &self.ui_state.new_world_mode)
+                        .unwrap_or(0);
+                    if self.hit(left_r) {
+                        self.sfx(Sfx::Click);
+                        let prev = if cur == 0 { modes.len() - 1 } else { cur - 1 };
+                        self.ui_state.new_world_mode = modes[prev].clone();
+                    } else if self.hit(right_r) {
+                        self.sfx(Sfx::Click);
+                        let next = (cur + 1) % modes.len();
+                        self.ui_state.new_world_mode = modes[next].clone();
+                    }
+                }
             }
             Screen::CreatingWorld => {
                 if self.hit(self.world_creation_cancel_rect()) {

@@ -758,6 +758,26 @@ impl Game {
                         );
                     }
                 }
+                // Mode selector (capability E1): cycle through all
+                // declared modes from base + mods.
+                let modes = self.available_new_world_modes();
+                let current_idx = modes
+                    .iter()
+                    .position(|m| m == &self.ui_state.new_world_mode)
+                    .unwrap_or(0);
+                let mode_y = h * 0.56;
+                let mode_label = format!("MODE: {}", modes[current_idx].to_uppercase());
+                let mlw = UiBatch::text_width(2.0, &mode_label);
+                ui.text_shadow((w - mlw) / 2.0, mode_y, 2.0, &mode_label, [0.85, 0.95, 0.85, 1.0]);
+                // Left/right arrows as clickable rects.
+                let arrow_w = 36.0;
+                let left_r = (w / 2.0 - 200.0, mode_y - 6.0, arrow_w, 30.0);
+                let right_r = (w / 2.0 + 164.0, mode_y - 6.0, arrow_w, 30.0);
+                let lc = if self.hit(left_r) { [1.0; 4] } else { [0.5, 0.6, 0.5, 1.0] };
+                let rc = if self.hit(right_r) { [1.0; 4] } else { [0.5, 0.6, 0.5, 1.0] };
+                ui.text_shadow(left_r.0 + 8.0, left_r.1 + 4.0, 2.5, "<", lc);
+                ui.text_shadow(right_r.0 + 8.0, right_r.1 + 4.0, 2.5, ">", rc);
+
                 for (index, label) in ["CREATE PLANET", "ROLL SEED", "BACK"].iter().enumerate() {
                     let rect = self.new_world_button_rect(index);
                     Self::draw_button(&mut ui, rect, label, self.hit(rect));
