@@ -1,0 +1,107 @@
+Gameplay fix validation
+RUSTC_WRAPPER= used for Cargo commands because configured sccache is absent.
+
+after-build
+
+   Compiling wildforge v0.1.0 (/home/doll/Wildforge)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 1.14s
+
+after-clippy
+
+    Checking wildforge v0.1.0 (/home/doll/Wildforge)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 12.73s
+
+after-visual-tests
+
+   Compiling wildforge v0.1.0 (/home/doll/Wildforge)
+    Finished `test` profile [optimized + debuginfo] target(s) in 50.18s
+     Running unittests src/lib.rs (target/debug/deps/wildforge-f0a33d411336b84d)
+
+running 8 tests
+test visual_capture::tests::cracked_geode_capture_contains_host_shell_lining_and_heart ... ok
+test visual_capture::tests::cracked_geode_capture_manifest_is_complete ... ok
+test visual_capture::tests::evidence_paths_are_adjacent_and_fail_closed ... ok
+test visual_capture::tests::strata_capture_metrics_meet_readability_budget ... ok
+test visual_capture::tests::visual_polish_closeout_is_qualified ... ok
+test visual_capture::tests::visual_polish_manifest_is_complete ... ok
+test visual_capture::tests::visual_polish_validator_rejects_incomplete_and_stale_manifests ... ok
+test visual_capture::tests::wfd_encoder_removes_padding_and_has_a_versioned_header ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 1037 filtered out; finished in 0.48s
+
+after-agent-tests
+
+   Compiling wildforge v0.1.0 (/home/doll/Wildforge)
+    Finished `test` profile [optimized + debuginfo] target(s) in 51.61s
+     Running unittests src/lib.rs (target/debug/deps/wildforge-f0a33d411336b84d)
+
+running 10 tests
+test tests::agent::four_identity_magic_society_shares_one_unprivileged_host ... ok
+test tests::agent::the_agent_assembles_a_real_wand_and_its_identity_survives_hosted_death ... ok
+test tests::agent::the_agent_crafts_places_and_deposits ... ok
+test tests::agent::the_agent_earns_and_reads_a_host_signed_magic_observation ... ok
+test tests::agent::the_agent_follows_the_leader ... ok
+test tests::agent::the_agent_joins_speaks_and_sees ... ok
+test tests::agent::the_agent_perceives_and_excavates_dross_without_private_provenance ... ok
+test tests::agent::the_agent_runs_an_ordinary_alchemy_job_through_the_host ... ok
+test tests::agent::the_agent_runs_and_cancels_a_real_working_through_the_dedicated_host ... ok
+test tests::agent::the_agent_walks_and_chops ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 1035 filtered out; finished in 26.03s
+
+     Running unittests src/main.rs (target/debug/deps/wildforge-beb7620471041592)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+after-doctests
+
+   Compiling wildforge v0.1.0 (/home/doll/Wildforge)
+    Finished `test` profile [optimized + debuginfo] target(s) in 33.97s
+   Doc-tests wildforge
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+Broad-suite baseline
+
+failures:
+    tests::playtest::brood_gallery_opens_and_the_den_populates
+    tests::playtest::conduit_lock_judges_valve_sequences
+    tests::playtest::custodian_thresholds_unlock_their_paths
+    tests::playtest::depot_deliveries_pay_haven_appetite
+    tests::playtest::haven_stamps_and_its_people_show_up
+    tests::playtest::quest_arc_callbacks_behave
+    tests::registry_tests::belt_quest_skill_tree_resolves_with_authored_breadth
+    tests::registry_tests::every_shipped_mod_screen_resolves_and_binds_to_its_block
+
+test result: FAILED. 999 passed; 8 failed; 23 ignored; 0 measured; 10 filtered out; finished in 239.65s
+
+error: test failed, to rerun pass `--lib`
+
+Broad-suite final
+
+failures:
+    tests::playtest::brood_gallery_opens_and_the_den_populates
+    tests::playtest::conduit_lock_judges_valve_sequences
+    tests::playtest::custodian_thresholds_unlock_their_paths
+    tests::playtest::depot_deliveries_pay_haven_appetite
+    tests::playtest::haven_stamps_and_its_people_show_up
+    tests::playtest::quest_arc_callbacks_behave
+    tests::registry_tests::belt_quest_skill_tree_resolves_with_authored_breadth
+    tests::registry_tests::every_shipped_mod_screen_resolves_and_binds_to_its_block
+
+test result: FAILED. 1003 passed; 8 failed; 24 ignored; 0 measured; 10 filtered out; finished in 168.72s
+
+error: test failed, to rerun pass `--lib`
+
+The eight failure names match exactly.
+
+cargo fmt --all -- --check: exit 1 on baseline and final.
+Baseline: 62 files / 293 diff sections. Final: same 62 files / 290 sections.
+
+rustfmt --edition 2024 --check src/game/gameplay_proofs.rs src/tests/gameplay.rs: passed.
+
+git diff --check: passed.

@@ -2664,12 +2664,13 @@ impl HostSession {
                 if !interaction.starts_with("depot:") {
                     return;
                 }
-                let settlement = interaction.trim_start_matches("depot:").to_string();
                 let Some(held) = guest.inventory.slots[guest.hotbar] else {
                     return;
                 };
-                let Some((wanted, rep_per_unit)) =
-                    server.world.depot_need_at(pos, held.item)
+                let Some((settlement, item, units, rep_per_unit)) =
+                    server
+                        .world
+                        .deliver_to_depot(pos, &mut guest.inventory, guest.hotbar)
                 else {
                     self.net.send(
                         id,
@@ -2680,33 +2681,13 @@ impl HostSession {
                     );
                     return;
                 };
-                let accepted = server.world.depot_deposit(pos, &held);
-                if accepted == 0 {
-                    return;
-                }
-                let units = accepted.min(wanted);
-                // Consume from the guest's inventory (largest stacks first).
-                let mut left = units;
-                for slot in guest.inventory.slots.iter_mut() {
-                    if left == 0 {
-                        break;
-                    }
-                    if let Some(st) = slot
-                        && st.item == held.item
-                    {
-                        let take = st.count.min(left);
-                        st.count -= take;
-                        left -= take;
-                        if st.count == 0 {
-                            *slot = None;
-                        }
-                    }
-                }
+                refresh_held(guest);
+                self.send_player_state(id);
                 self.net.send(
                     id,
                     &S2C::SettlementDelivery {
                         settlement,
-                        item: server.world.reg.item(held.item).name.clone(),
+                        item: server.world.reg.item(item).name.clone(),
                         units,
                         rep_per_unit,
                     },

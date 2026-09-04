@@ -13,6 +13,54 @@ fn proof_registry() -> Arc<Registry> {
 }
 
 #[test]
+fn gameplay_depot_transfer_is_atomic_for_accepted_and_refused_goods() {
+    let reg = proof_registry();
+    for (case, name, held, staged, accepted) in [
+        ("whole", "base:clay_ball", 32, 0, 32),
+        ("partial", "base:clay_ball", 16, 60, 4),
+        ("full", "base:clay_ball", 8, 64, 0),
+        ("unwanted", "base:cobblestone", 8, 0, 0),
+        ("bread", "base:bread", 8, 0, 8),
+    ] {
+        let mut world = World::new(42, tmp_dir(&format!("proof-transfer-{case}")), reg.clone());
+        let pos = bp(8, 200, 8);
+        world.ensure_chunk(pos.chunk());
+        world.set_block_at(pos, AIR);
+        assert!(world.place_block_at(pos, b(&reg, "proof:depot")));
+        let item = it(&reg, name);
+        if staged > 0 {
+            assert_eq!(
+                world.depot_deposit(pos, &ItemStack::new(&reg, item, staged)),
+                staged
+            );
+        }
+        let mut inventory = Inventory::new();
+        inventory.slots[0] = Some(ItemStack::new(&reg, item, 7));
+        inventory.slots[3] = Some(ItemStack::new(&reg, item, held));
+        let receipt = world.deliver_to_depot(pos, &mut inventory, 3);
+        assert_eq!(receipt.as_ref().map_or(0, |r| r.2), accepted, "{case}");
+        assert_eq!(
+            inventory.slots[0].map(|s| s.count),
+            Some(7),
+            "{case}: unrelated slot remains intact"
+        );
+        assert_eq!(
+            inventory.slots[3].map_or(0, |s| s.count),
+            held - accepted,
+            "{case}: exact source debit"
+        );
+        let Some(crate::world::BlockEntity::Depot(state)) = world.block_entity_at(&pos) else {
+            panic!("depot remains")
+        };
+        assert_eq!(
+            state.storage.iter().flatten().map(|s| s.count).sum::<u32>(),
+            staged + accepted,
+            "{case}: exact destination credit"
+        );
+    }
+}
+
+#[test]
 fn gameplay_belt_depot_preserves_unaccepted_cargo() {
     let reg = proof_registry();
     let mut world = World::new(42, tmp_dir("proof-belt-depot"), reg.clone());

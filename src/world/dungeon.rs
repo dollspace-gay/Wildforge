@@ -193,12 +193,10 @@ impl World {
             }
             // Nests stamped inside the zone die with it.
             let anchor = run.anchor;
-            let max_u = anchor.u() + SLOT_CHUNKS;
-            let max_v = anchor.v() + SLOT_CHUNKS;
-            self.nests.retain(|nest_pos, _| {
-                let c = nest_pos.chunk();
-                !(c.u() >= anchor.u() && c.u() < max_u && c.v() >= anchor.v() && c.v() < max_v)
-            });
+            self.nests
+                .retain(|pos, _| !Self::chunk_in_slot(anchor, pos.chunk()));
+            self.nest_spawn_cd
+                .retain(|pos, _| !Self::chunk_in_slot(anchor, pos.chunk()));
         }
     }
 
@@ -210,7 +208,8 @@ impl World {
     }
 
     fn chunk_in_slot(anchor: ChunkPos, chunk: crate::planet::ChunkPos) -> bool {
-        chunk.u() >= anchor.u()
+        chunk.face() == anchor.face()
+            && chunk.u() >= anchor.u()
             && chunk.u() < anchor.u() + SLOT_CHUNKS
             && chunk.v() >= anchor.v()
             && chunk.v() < anchor.v() + SLOT_CHUNKS

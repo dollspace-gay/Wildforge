@@ -5,10 +5,13 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 
 
 def main():
+    if sys.platform != "linux":
+        raise SystemExit("The real client proof requires Linux and an X11 display.")
     root = Path(__file__).resolve().parents[1]
     env = os.environ.copy()
     if not shutil.which("sccache"):
@@ -36,7 +39,7 @@ def main():
             if key.startswith("WILDFORGE_"):
                 del env[key]
         result = subprocess.run(
-            [executable, "game::gameplay_proofs::", "--ignored", "--nocapture", "--test-threads=1"],
+            [executable, "gameplay_proofs::", "--ignored", "--nocapture", "--test-threads=1"],
             cwd=stage, env=env,
         )
         return result.returncode

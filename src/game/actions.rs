@@ -2,6 +2,10 @@
 
 use super::*;
 
+#[cfg(all(test, target_os = "linux"))]
+#[path = "gameplay_proofs.rs"]
+mod gameplay_proofs;
+
 impl Game {
     /// The tile set dressing a humanoid for a given style.
     pub(super) fn humanoid_art(st: style::Style) -> mobs::HumanoidArt {
@@ -1793,9 +1797,15 @@ impl Game {
             return;
         }
         let held_is_food = held.is_some_and(|i| reg.item(i).food.is_some());
+        let targets_depot = hit.as_ref().is_some_and(|h| {
+            reg.block(self.server.world.get_block_at(h.block))
+                .interaction
+                .as_deref()
+                .is_some_and(|interaction| interaction.starts_with("depot:"))
+        });
         if self.input.right_held
             && self.input.action_cooldown <= 0.0
-            && !held_is_food
+            && (!held_is_food || targets_depot)
             && let Some(h) = &hit
         {
             let tb = self.server.world.get_block_at(h.block);
@@ -1953,16 +1963,16 @@ impl Game {
                         return;
                     }
                     let item_name = reg.item(held.item).name.clone();
-                    let need = self.server.world.depot_need_at(h.block, held.item);
-                    let accepted = self.server.world.depot_deposit(h.block, &held);
-                    match (need, accepted) {
-                        (Some((wanted, rep_per_unit)), accepted) if accepted > 0 => {
-                            let units = accepted.min(wanted);
-                            self.inventory.take_one(self.input.hotbar_sel);
+                    let delivery = self.server.world.deliver_to_depot(
+                        h.block,
+                        &mut self.inventory,
+                        self.input.hotbar_sel,
+                    );
+                    match delivery {
+                        Some((settlement, _, units, rep_per_unit)) => {
                             self.sfx(Sfx::Click);
                             // Solo: the player KV namespace lives on this
                             // Game, so pay the standing directly.
-                            let settlement = s.trim_start_matches("depot:").to_string();
                             let rep = units * rep_per_unit;
                             let rep_key = self
                                 .content

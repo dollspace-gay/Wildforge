@@ -10,8 +10,6 @@ mod content;
 mod demos;
 mod dialogue;
 mod equipment;
-#[cfg(all(test, target_os = "linux"))]
-mod gameplay_proofs;
 #[cfg(test)]
 pub(crate) use dialogue::apply_reputation_reward;
 #[cfg(test)]
